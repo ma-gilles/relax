@@ -490,7 +490,6 @@ def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
         "significance_image_batch_size_override": 75,
         "significance_rotation_block_size_override": 100,
     }
-    assert expectation_batches._largest_image_size(half) == 40
 
     # Each class's call receives its own plan.
     received = []

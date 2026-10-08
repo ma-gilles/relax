@@ -65,7 +65,6 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         firstiter_coarse_current_size=2 if adaptive else None,
         firstiter_fine_current_size=4 if adaptive else None,
         firstiter_log_label='' if adaptive else '(non-adaptive site) ',
-        firstiter_updates_em_kwargs_ibs=adaptive,
     )
     kwargs = dict(
         sampling=sampling, tomo_sampling=None,

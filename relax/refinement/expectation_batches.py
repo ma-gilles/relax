@@ -22,8 +22,6 @@ from relax.helpers.batch_planning import (
 from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
 from relax.helpers.projection import _host_relion_projector_texture_enabled
 from relax.refinement import optics_shapes
-from relax.refinement.firstiter_cc import single_class_bucketed_pass2_selected
-from relax.refinement.optics_shapes import MultiShapeHalf
 from relax.refinement.refinement_options import RefinementBatching
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
@@ -101,14 +99,6 @@ class BatchPlanner:
         return plan.image_batch_size, plan.rotation_block_size
 
 
-def _largest_image_size(dataset) -> int:
-    """The largest image box of a half (its shape classes' for several shapes)."""
-
-    if isinstance(dataset, MultiShapeHalf):
-        return max(int(c.box_size) for c in dataset.classes)
-    return int(dataset.image_shape[0])
-
-
 def _class_adaptive_batch_overrides(half, *, plan, cs_for_engine, coarse_cs, coarse_sizing):
     """Adaptive dense batch sizes planned per shape class, from the class's own box and sizes."""
 
@@ -159,7 +149,6 @@ def prepare_half_batches(
     firstiter_winner_take_all_this_iter,
     source_faithful_spectrum_norm,
     preserve_bpref_particle_order,
-    image_fourier_backend,
     bpref_device_signature_active,
     multi_shape_halves,
     coarse_sizing,
@@ -190,7 +179,6 @@ def prepare_half_batches(
     if (
         use_adaptive and not use_local and not k_class_enabled
         and relion_firstiter_cc_this_iter and compact_precision
-        and single_class_bucketed_pass2_selected(firstiter=True)
         and _host_relion_projector_texture_enabled(
             projector_half, r_max=None if projector is None else projector.r_max,
             padding_factor=PROJECTION_PADDING_FACTOR, allow_float32_cast=True,
@@ -229,37 +217,6 @@ def prepare_half_batches(
                 "Compact firstiter K1 batch planning: model_size=%d deferred=%s coarse_staging=%d",
                 model_size, decision.deferred_firstiter_bpref, projector_half.nbytes,
             )
-    if (
-        use_adaptive and not k_class_enabled
-        and not relion_firstiter_cc_this_iter and compact_precision
-        and single_class_bucketed_pass2_selected(firstiter=False)
-        and _host_relion_projector_texture_enabled(
-            projector_half, r_max=None if projector is None else projector.r_max,
-            padding_factor=PROJECTION_PADDING_FACTOR, allow_float32_cast=True,
-        )
-    ):
-        model_size = int(volume_shape[0] if model_current_size_for_engine is None
-                         else model_current_size_for_engine)
-        if firstiter_bpref._relion_soft_compact_batch_planning_safe(
-            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-            preserve_bpref_particle_order=preserve_bpref_particle_order,
-            use_relion_x_half_mstep=_k1_relion_x_half_mstep_enabled(),
-            relion_cuda_images=image_fourier_backend == "relion_cuda",
-            projector_half=SimpleNamespace(shape=projector_half.shape, dtype=np.dtype(np.complex64)),
-            score_complex_dtype=np.complex64,
-            model_current_size=model_size,
-            # The largest image box among the half's shape classes.
-            box_size=_largest_image_size(dataset),
-            bpref_device_signature_active=bpref_device_signature_active,
-        ):
-            safe_batch_sizes_for_half = partial(
-                planner, compact_k1_relion_layout=True,
-                compact_k1_relion_score_bpref_overlap=True,
-                model_current_size_for_batch=model_size,
-            )
-            # Coarse Gaussian backends can retain full-cube staging.
-            # Their existing conservative callback remains separate.
-            planner.log.info("Compact soft K1 planning: model_size=%d", model_size)
     if use_adaptive:
         adaptive_batch_plan = _plan_adaptive_dense_batch_sizes(
             n_rot=rotations.shape[0],

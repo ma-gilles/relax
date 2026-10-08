@@ -637,7 +637,6 @@ def score_numbered_half(
         firstiter_winner_take_all_this_iter=phase.variant.firstiter_winner_take_all_this_iter,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
-        image_fourier_backend=options.parity.image_fourier_backend,
         bpref_device_signature_active=bpref_device_signature_active,
         multi_shape_halves=multi_shape_halves,
         coarse_sizing=(coarse_size_step_deg, particle_diameter_ang) if phase.use_adaptive and multi_shape_halves else None,

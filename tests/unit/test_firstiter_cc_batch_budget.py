@@ -80,7 +80,6 @@ def _dense_owners(**values):
             firstiter_coarse_current_size=values.pop("firstiter_coarse_current_size", None),
             firstiter_fine_current_size=values.pop("firstiter_fine_current_size", None),
             firstiter_log_label=values.pop("firstiter_log_label", "(non-adaptive site) "),
-            firstiter_updates_em_kwargs_ibs=values.pop("firstiter_updates_em_kwargs_ibs", False),
         ),
         half_scoring.DenseExecutionPolicy(
             disc_type=values.pop("disc_type"),
@@ -369,10 +368,8 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
             coarse_current_size=40,
             fine_current_size=90,
     )
-    execution = firstiter_cc.FirstIterCCExecution(
-            update_em_kwargs_image_batch_size=True,
-    )
-    result, _rot_parent, _trans_parent, n_trans_fine, _adaptive_os = (
+    execution = firstiter_cc.FirstIterCCExecution()
+    result, _rot_parent, _trans_parent, n_trans_fine = (
         firstiter_cc._score_kclass_firstiter_cc_pass2(data, grid, policy, batching, execution)
     )
 
@@ -393,9 +390,8 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
 
 
 @pytest.mark.parametrize("n_classes", [1, 4], ids=["k1", "k4"])
-@pytest.mark.parametrize("update_batch", [False, True], ids=["keep-batch", "update-batch"])
 @pytest.mark.parametrize("separate_coarse", [False, True])
-def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n_classes, update_batch, separate_coarse):
+def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n_classes, separate_coarse):
     captured = {}
     dispatch = {}
     original_dispatch = half_scoring._score_kclass_firstiter_cc_pass2
@@ -535,7 +531,6 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
         firstiter_fine_current_size=90,
         bpref_device_signature_active=True,
         debug_iteration=7,
-        firstiter_updates_em_kwargs_ibs=update_batch,
         firstiter_log_label="test K-class ",
         coarse_rotation_ids=coarse_ids,
     ))
@@ -558,10 +553,8 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
 
     assert dispatch["data"].mean.shape == (n_classes, 4)
     assert dispatch["execution"].log_label == ("K=1 " if n_classes == 1 else "test K-class ")
-    assert dispatch["execution"].update_em_kwargs_image_batch_size is update_batch
-    assert dispatch["batching"].em_kwargs["image_batch_size"] == (
-        captured["image_batch_size"] if update_batch else 187
-    )
+    # The engine receives the clamped copy; the dispatch leaves the caller's dictionary alone.
+    assert dispatch["batching"].em_kwargs["image_batch_size"] == 187
     if n_classes == 1:
         assert dispatch["grid"].coarse_rotation_ids is None
         assert captured["coarse_rotation_ids"] is None

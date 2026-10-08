@@ -236,7 +236,6 @@ class DenseVariantPolicy:
     firstiter_coarse_current_size: int | None = None
     firstiter_fine_current_size: int | None = None
     firstiter_log_label: str = "(non-adaptive site) "
-    firstiter_updates_em_kwargs_ibs: bool = False
     # RELION --skip_align: classify at each particle's stored pose (relax.classification.given_poses).
     skip_align: bool = False
 
@@ -652,7 +651,7 @@ def _score_half_dense_one_shape(
 
     Used by both the single-pass (``else``) and adaptive-2-pass
     (``elif use_adaptive``) branches of the half-set loop. The two modes
-    differ in five places, all controlled by explicit policy fields:
+    differ in four places, all controlled by explicit policy fields:
 
     1. ``k_class_image_batch_size_override`` /
        ``k_class_rotation_block_size_override`` — adaptive overrides
@@ -664,9 +663,6 @@ def _score_half_dense_one_shape(
        adaptive 2-pass engine; single-pass omits them.
     4. ``firstiter_log_label`` — single-pass uses
        ``"(non-adaptive site) "`` for the routing log message.
-    5. ``firstiter_updates_em_kwargs_ibs`` — adaptive overrides
-       em_kwargs["image_batch_size"] with the firstiter clamp; single-pass
-       leaves em_kwargs untouched.
 
     Returns common statistics, class summaries and explicit poses together.
     The controller records them at its existing half-update boundary.
@@ -795,7 +791,6 @@ def _score_half_dense_one_shape(
         )
         firstiter_execution = FirstIterCCExecution(
                 log_label=variant.firstiter_log_label,
-                update_em_kwargs_image_batch_size=variant.firstiter_updates_em_kwargs_ibs,
                 bpref_device_signature_active=execution.bpref_device_signature_active,
                 debug_iteration=execution.debug_iteration,
         )
@@ -830,12 +825,12 @@ def _score_half_dense_one_shape(
             rot_pmap_for_collapse, trans_pmap_for_collapse, n_trans_fine_for_collapse = _given_pose_collapse(given)
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         elif variant.relion_firstiter_cc_this_iter:
+            adaptive_os_local = int(sampling.oversampling_order)
             (
                 k_class_result,
                 rot_pmap_for_collapse,
                 trans_pmap_for_collapse,
                 n_trans_fine_for_collapse,
-                adaptive_os_local,
             ) = _score_kclass_firstiter_cc_pass2(
                 firstiter_data,
                 replace(
@@ -942,7 +937,6 @@ def _score_half_dense_one_shape(
             rot_pmap_for_collapse,
             trans_pmap_for_collapse,
             n_trans_fine_for_collapse,
-            adaptive_os_local,
         ) = _score_kclass_firstiter_cc_pass2(
             replace(firstiter_data, mean=jnp.asarray(half.reference)[None, :]),
             replace(

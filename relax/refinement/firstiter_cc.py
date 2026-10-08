@@ -80,17 +80,8 @@ class FirstIterCCExecution:
     """Routing, mutation and diagnostic controls."""
 
     log_label: str = ""
-    update_em_kwargs_image_batch_size: bool = False
     bpref_device_signature_active: bool = False
     debug_iteration: int | None = None
-
-
-def single_class_bucketed_pass2_selected(*, firstiter: bool) -> bool:
-    """Whether K=1 plans its batches for the sparse projector/BPref lifetime.
-
-    Only the ``--firstiter_cc`` pass does (its compact batch planning).
-    """
-    return bool(firstiter)
 
 
 def _score_kclass_firstiter_cc_pass2(
@@ -107,12 +98,12 @@ def _score_kclass_firstiter_cc_pass2(
     policy applies to M-step support as well as reported Pmax.
 
     The K-class and K=1 adaptive scoring branches share this dispatcher.
-    ``update_em_kwargs_image_batch_size`` controls whether the batch clamp
-    also updates the caller's dictionary; the engine receives a clamped copy
-    either way. Coarse/fine size overrides are forwarded only when supplied.
+    The engine receives a clamped copy of ``batching.em_kwargs``; the caller's
+    dictionary is not changed. Coarse/fine size overrides are forwarded only when supplied.
     ``log_label`` identifies the caller in routing messages.
 
-    Return ``(k_class_result, rot_pmap, trans_pmap, n_trans_fine, adaptive_os)``.
+    Return ``(k_class_result, rot_pmap, trans_pmap, n_trans_fine)``; the oversampling
+    order used is the caller's ``grid.oversampling_order``.
     """
 
     adaptive_os_local = int(grid.oversampling_order)
@@ -224,8 +215,6 @@ def _score_kclass_firstiter_cc_pass2(
                 requested_firstiter_image_batch_size,
                 firstiter_image_batch_size,
             )
-    if execution.update_em_kwargs_image_batch_size:
-        batching.em_kwargs["image_batch_size"] = firstiter_image_batch_size
     firstiter_em_kwargs = dict(batching.em_kwargs)
     firstiter_em_kwargs["image_batch_size"] = firstiter_image_batch_size
     firstiter_em_kwargs["rotation_block_size"] = firstiter_rotation_block_size
@@ -276,4 +265,4 @@ def _score_kclass_firstiter_cc_pass2(
         **extra,
         **firstiter_em_kwargs,
     )
-    return k_class_result, rot_pmap, trans_pmap, int(fine_trans.shape[0]), adaptive_os_local
+    return k_class_result, rot_pmap, trans_pmap, int(fine_trans.shape[0])

@@ -34,7 +34,7 @@ def prepare(planner, **overrides):
         relion_firstiter_cc_this_iter=False, firstiter_winner_take_all_this_iter=False,
         firstiter_cc_tree_rescore_max_margin=None,
         source_faithful_spectrum_norm=True, preserve_bpref_particle_order=True,
-        image_fourier_backend="relion_cuda", bpref_device_signature_active=False,
+        bpref_device_signature_active=False,
         multi_shape_halves=False, coarse_sizing=(30.0, 100.0),
     )
     options.update(overrides)
@@ -110,7 +110,6 @@ def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monk
     calls = capture_estimates(monkeypatch)
     monkeypatch.setattr(batches.sparse_pass2_budget, "_device_free_memory_bytes", lambda: 8_000_000_000)
     monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: True)
-    monkeypatch.setattr(batches, "single_class_bucketed_pass2_selected", lambda **k: True)
     monkeypatch.setattr(significance, "_global_pass1_relion_projector_texture_enabled", lambda: True)
     monkeypatch.setattr(batches.firstiter_bpref, "_relion_firstiter_compact_batch_planning_decision",
                         lambda **k: SimpleNamespace(enabled=True, deferred_firstiter_bpref=True))

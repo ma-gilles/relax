@@ -686,7 +686,6 @@ def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coa
         firstiter_coarse_current_size=coarse_cs,
         firstiter_fine_current_size=fine_window_size if use_adaptive else None,
         firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
-        firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
         skip_align=bool(k_class.skip_align),
     )
 
