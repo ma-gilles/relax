@@ -132,6 +132,7 @@ def test_sealed_sampling_override_never_reads_external_replay_files(monkeypatch,
             previous_best_rotation_eulers=None,
             image_corrections=None,
             scale_corrections=None,
+            optics_group_ids=(None, None), group_ids=None, group_count=None,
         ),
         previous_best_rotations=[None, None],
         noise_model=NoiseModel(
@@ -214,6 +215,7 @@ def test_frozen_replay_explicitly_suppresses_external_direction_prior_reload(
             previous_best_rotation_eulers=None,
             image_corrections=None,
             scale_corrections=None,
+            optics_group_ids=(None, None), group_ids=None, group_count=None,
         ),
         previous_best_rotations=[None, None],
         noise_model=NoiseModel(
@@ -410,6 +412,7 @@ def _sampling_change_operands(monkeypatch, tmp_path, source, prior, new_order, s
         (None, None),
             previous_best_translations=None, previous_best_rotation_eulers=None,
             image_corrections=None, scale_corrections=None,
+            optics_group_ids=(None, None), group_ids=None, group_count=None,
         ),
         previous_best_rotations=[None, None], noise_model=NoiseModel(
                                                   variance_per_half=[None, None],

@@ -20,6 +20,7 @@ def test_particle_ownership_survives_model_changes_without_repacking():
         datasets, optics_group_ids=optics,
         previous_best_rotation_eulers=eulers, previous_best_translations=translations,
         image_corrections=corrections, scale_corrections=None,
+        group_ids=None, group_count=None,
     )
     for index, half in enumerate(halves):
         assert half.index == index
@@ -45,6 +46,7 @@ def test_shape_view_does_not_replace_the_resident_particle_state():
     halves = initialize_halfsets(
         [object(), object()], previous_best_rotation_eulers=None,
         previous_best_translations=None, image_corrections=None, scale_corrections=None,
+        optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
     resident = halves[0]
     subset = replace(resident, dataset=object(), rotation_eulers=object())

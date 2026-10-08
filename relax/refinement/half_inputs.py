@@ -321,13 +321,13 @@ def prepare_pose_comparison(
 def initialize_halfsets(
     datasets,
     *,
-    optics_group_ids=(None, None),
+    optics_group_ids,
     previous_best_translations,
     previous_best_rotation_eulers,
     image_corrections,
     scale_corrections,
-    group_ids=None,
-    group_count=None,
+    group_ids,
+    group_count,
 ) -> tuple[HalfSet, HalfSet]:
     """Normalize input arrays once and attach each to its particle half."""
     translations = optional_half_arrays(previous_best_translations)

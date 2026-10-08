@@ -126,7 +126,8 @@ def test_a_continuation_must_repeat_the_option(name, value):
     def validate(extra, consistency):
         snapshot = SimpleNamespace(relion_iteration=2, n_classes=1, box_size=8, extra=extra)
         iteration_snapshot.validate_resume_snapshot(
-            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=stand_in.options(consistency=consistency)
+            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=stand_in.options(consistency=consistency),
+            replays_relion_trajectory=False, starts_from_frozen_boundary=False, swaps_state=False,
         )
 
     chosen = RelionConsistencyOptions(**{name: value})

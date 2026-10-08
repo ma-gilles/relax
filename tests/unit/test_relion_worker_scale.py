@@ -175,6 +175,7 @@ def test_serialized_replay_preserves_live_follower_scale_between_iterations():
         scale_corrections=[live_scales.copy(), np.zeros(0, dtype=np.float32)],
         group_ids=[groups, np.zeros(0, dtype=np.int64)],
         group_count=[2, 2],
+        optics_group_ids=(None, None),
     )
 
     applied = _apply_replay_correction_overrides(
@@ -1012,6 +1013,7 @@ def test_final_dispatch_remaps_scoring_scale_norm_ratio_and_xa_aa_group_ids():
         scale_corrections=[np.asarray([1.2, 0.8]), np.zeros(0)],
         group_ids=[np.asarray([1, 1]), np.zeros(0, dtype=np.int64)],
         group_count=[2, 2],
+        optics_group_ids=(None, None),
     )
 
     stats_group_ids = _remap_relion_follower_runtime_inputs(

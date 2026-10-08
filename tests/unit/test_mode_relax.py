@@ -180,7 +180,8 @@ def test_a_continuation_must_resolve_to_the_recorded_options():
             extra={f"consistency_{name}": value for name, value in recorded.non_default().items()},
         )
         iteration_snapshot.validate_resume_snapshot(
-            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=stand_in.options(consistency=consistency)
+            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=stand_in.options(consistency=consistency),
+            replays_relion_trajectory=False, starts_from_frozen_boundary=False, swaps_state=False,
         )
 
     relax = _resolve(RELAX)

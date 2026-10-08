@@ -19,6 +19,7 @@ def _inputs():
         scale_corrections=[np.array([3.0]), np.array([4.0])],
         previous_best_translations=[np.zeros((1, 2)), np.zeros((1, 2))],
         previous_best_rotation_eulers=[np.zeros((1, 3)), np.zeros((1, 3))],
+        optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
     direction_priors = [DirectionPrior(np.array([0.5]), 4), DirectionPrior(np.array([0.5]), 4)]
     tau2 = np.array([50.0])

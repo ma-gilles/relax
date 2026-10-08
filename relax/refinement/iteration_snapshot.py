@@ -220,8 +220,8 @@ def host_half_pair(values, dtype=None):
 
 
 def validate_resume_snapshot(
-    snapshot: IterationSnapshot, *, init_relion_iteration, n_classes, box_size, options, replays_relion_trajectory=False,
-    starts_from_frozen_boundary=False, swaps_state=False, hands_reference_real=False,
+    snapshot: IterationSnapshot, *, init_relion_iteration, n_classes, box_size, options, replays_relion_trajectory,
+    starts_from_frozen_boundary, swaps_state, hands_reference_real=False,
 ):
     """Refuse a continuation the loop cannot start exactly from ``snapshot``.
 

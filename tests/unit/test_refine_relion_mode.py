@@ -668,6 +668,7 @@ def test_replay_translation_grid_preserves_state_grid_for_subtolerance_star_roun
             previous_best_rotation_eulers=None,
             image_corrections=None,
             scale_corrections=None,
+            optics_group_ids=(None, None), group_ids=None, group_count=None,
         ),
         previous_best_rotations=[None, None],
         noise_model=NoiseModel(
@@ -801,6 +802,7 @@ def test_replay_override_preserves_half_specific_sigma_offsets():
             previous_best_rotation_eulers=None,
             image_corrections=None,
             scale_corrections=None,
+            optics_group_ids=(None, None), group_ids=None, group_count=None,
         ),
         previous_best_rotations=[None, None],
         noise_model=NoiseModel(
@@ -840,6 +842,7 @@ def test_replay_override_preserves_native_scale_and_rescales_star_image_correcti
         scale_corrections=[np.asarray([7.0, 7.0], dtype=np.float32), np.asarray([6.0], dtype=np.float32)],
         group_ids=group_ids,
         group_count=3000,
+        optics_group_ids=(None, None),
     )
 
     direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
@@ -887,6 +890,7 @@ def test_replay_explicit_scoring_scale_preserves_image_to_scale_ratio():
         previous_best_rotation_eulers=None,
         image_corrections=None,
         scale_corrections=None,
+        optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
 
     class State:
@@ -937,6 +941,7 @@ def test_replay_cold_start_falls_back_to_serialized_scale():
         previous_best_rotation_eulers=None,
         image_corrections=None,
         scale_corrections=None,
+        optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
     state = SimpleNamespace(
         healpix_order=1,
@@ -995,6 +1000,7 @@ def test_replay_explicit_paired_image_scale_state_remains_exact(with_resident_st
             if with_resident_state
             else None
         ),
+        optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
 
     with pytest.raises(ValueError, match="Replay scale requires"):
@@ -1024,6 +1030,7 @@ def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
             previous_best_rotation_eulers=None,
             image_corrections=[np.asarray([9.0, 9.0]), np.asarray([], dtype=np.float32)],
             scale_corrections=[np.asarray([8.0, 10.0]), np.asarray([], dtype=np.float32)],
+            optics_group_ids=(None, None), group_ids=None, group_count=None,
         )
 
     override = {
@@ -1051,6 +1058,7 @@ def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
         previous_best_rotation_eulers=None,
         image_corrections=[np.asarray([9.0, 9.0]), np.asarray([], dtype=np.float32)],
         scale_corrections=[np.asarray([8.0, 10.0]), np.asarray([], dtype=np.float32)],
+        optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
     applied = relion_replay_module._apply_replay_correction_overrides(
         relion_half_inputs=relion_half_inputs,

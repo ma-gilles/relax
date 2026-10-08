@@ -438,7 +438,6 @@ def score_tomo_half(
     scale_correction_group_count=None,
     scale_correction_data_vs_prior=None,
     reconstruction_current_size=None,
-    rotation_index_order: str = "recovar",
     local_rotations=None,
     symmetry: str = "C1",
     unit_seed_classes=None,
@@ -456,8 +455,8 @@ def score_tomo_half(
     previous 3D offsets (unrounded, pixels); ``noise_variance`` is one spectrum or ``[G, N^2]`` rows
     with ``unit_groups`` the dense optics group of each particle. The flags are the production K=1
     ones (the one-iteration RELION-pinned replay, em_work/cryoet_s42_20260925/tomo_replay_it1.py).
-    The coarse grid is RELION's HEALPix grid at ``sampling.healpix_order`` in ``rotation_index_order``
-    (the loop's order, so ``rotation_log_prior`` and the returned rotation sums share it).
+    The coarse grid is RELION's HEALPix grid at ``sampling.healpix_order`` in the loop's ("recovar")
+    rotation order, so ``rotation_log_prior`` and the returned rotation sums share it.
 
     A local search passes ``local_rotations`` (:func:`tomo_local_rotations`): the coarse grid is then
     the union of the particles' local rotations at ``sampling.healpix_order`` and each particle is
@@ -524,7 +523,6 @@ def score_tomo_half(
             scale_correction_group_count=scale_correction_group_count,
             scale_correction_data_vs_prior=scale_correction_data_vs_prior,
             reconstruction_current_size=reconstruction_current_size,
-            rotation_index_order=rotation_index_order,
             symmetry=symmetry,
             normalized_cc=True,
         )
@@ -546,7 +544,7 @@ def score_tomo_half(
     )
     n_rot = int(coarse_ids.size)
     coarse_eulers_deg = relax_sampling.rotation_indices_to_relion_eulers(
-        coarse_ids, sampling.healpix_order, rotation_index_order=rotation_index_order, symmetry=symmetry
+        coarse_ids, sampling.healpix_order, rotation_index_order="recovar", symmetry=symmetry
     )
     fine_rot, rot_parent, fine_mstep, fine_eulers = relax_sampling.get_oversampled_rotation_grid_from_samples(
         coarse_ids,
@@ -555,7 +553,7 @@ def score_tomo_half(
         random_perturbation=sampling.random_perturbation,
         return_mstep_rotations=True,
         return_source_eulers=True,
-        rotation_index_order=rotation_index_order,
+        rotation_index_order="recovar",
         symmetry=symmetry,
         dtype=np.float32,
     )

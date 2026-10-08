@@ -25,6 +25,7 @@ def _shared_inputs(dtype, offset_dimension, empty_second_half):
         image_corrections=[np.ones(n, dtype=dtype) for n in rows],
         scale_corrections=[np.ones(n, dtype=dtype) for n in rows],
         group_ids=[None, np.zeros(rows[1], dtype=np.int64)], group_count=None,
+        optics_group_ids=(None, None),
     )
     return dict(
         unfiltered_means=None,

@@ -1359,6 +1359,7 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
         previous_best_rotation_eulers=None,
         image_corrections=None,
         scale_corrections=None,
+        optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
     direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     result = apply_iter_replay_overrides(

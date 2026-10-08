@@ -232,7 +232,7 @@ def split_half_sets(
 
 def _apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
-    explicit_particle_diameter = getattr(args, "particle_diameter_ang", None)
+    explicit_particle_diameter = args.particle_diameter_ang
     explicit_width_mask_edge = args.width_mask_edge_px
     if sealed_optimiser_star is not None:
         optimiser_star = Path(sealed_optimiser_star).resolve()

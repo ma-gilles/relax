@@ -129,6 +129,7 @@ def test_staged_snapshot_capture_copies_complete_k1_state():
         scale_corrections=[np.ones(2, dtype=np.float32)] * 2,
         group_ids=[None, np.ones(2, dtype=np.int64)],
         group_count=None,
+        optics_group_ids=(None, None),
     )
     result = capture.finish_k1(
         snapshot, means, unfiltered, tau2, np.arange(5, dtype=np.float32), noise,

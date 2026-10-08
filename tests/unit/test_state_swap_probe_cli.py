@@ -324,6 +324,7 @@ def test_sigma_offset_state_swap_preserves_asymmetric_half_values():
         scale_corrections=[np.array([3.0]), np.array([4.0])],
         previous_best_translations=[np.zeros((1, 2)), np.ones((1, 2))],
         previous_best_rotation_eulers=[np.zeros((1, 3)), np.ones((1, 3))],
+        optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
     direction_priors = [DirectionPrior(np.array([0.4]), 3), DirectionPrior(np.array([0.6]), 3)]
     snapshot_tau2 = np.array([5.0])
