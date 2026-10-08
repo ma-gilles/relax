@@ -1062,11 +1062,32 @@ def _reconstruct_volume_eager(
                 relion_functions,
             )
             del wiener_half_host
+        elif _relion_pad_exceeds_device_working_set(reconstruction_shape):
+            # The same Wiener solve and pad on the CPU backend: the device would need the zero FFTW half and its
+            # scattered copy as single blocks (relax#49: at box 380 a 1.64 GiB FFTW half could not be placed in
+            # a fragmented 16 GB pool; at box 448 2.69 GiB did not fit). Only the small accumulators move.
+            cpu = jax.devices("cpu")[0]
+
+            def on_cpu(value):
+                return jax.device_put(value, cpu) if isinstance(value, jax.Array) else value
+
+            with jax.default_device(cpu):
+                fftw_half_host = np.asarray(
+                    relion_functions.post_process_from_filter_v2(
+                        *[on_cpu(value) for value in postprocess_args],
+                        **{key: on_cpu(value) for key, value in postprocess_kwargs.items()},
+                        input_half_volume=True,
+                        return_fftw_half_before_ifft=True,
+                    )
+                )
+            logger.info(
+                "RELION Wiener solve and FFTW pad on the CPU backend: accumulator_shape=%s reconstruction_shape=%s",
+                accumulator_shape,
+                reconstruction_shape,
+            )
         else:
-            # The device CTF row caches yield if the device cannot hand out the pad's working set now: the zero
-            # FFTW half and its scattered copy (relax#49: at box 380 on a 16 GB card the 1.64 GiB FFTW half could
-            # not be placed beside 0.8 GiB of cached CTF rows in a fragmented pool), as before the device inverse
-            # FFT (relax#40).
+            # The device CTF row caches yield if the device cannot hand out the pad's working set now, as before
+            # the device inverse FFT (relax#40).
             fftw_half_bytes = int(np.prod(fourier_transform_utils.volume_shape_to_half_volume_shape(reconstruction_shape))) * 8
             relion_ctf.ensure_device_headroom(int(_DEVICE_PAD_HALVES * fftw_half_bytes))
             fftw_half_device = relion_functions.post_process_from_filter_v2(
@@ -1886,6 +1907,21 @@ def _device_allocator_limit_bytes() -> int | None:
     stats = devices[0].memory_stats() or {}
     limit = stats.get("bytes_limit")
     return None if limit is None else int(limit)
+
+
+def _relion_pad_exceeds_device_working_set(reconstruction_shape, *, allocator_limit_bytes: int | None = None) -> bool:
+    """Whether the Wiener solve and pad into the FFTW half of ``reconstruction_shape`` should run on the CPU.
+
+    When the pad's device working set (``_DEVICE_PAD_HALVES`` packed complex64 halves) exceeds the single working
+    set the allocator's limit allows (``xla_memory_reserve.single_working_set_bytes``; the limit is
+    ``allocator_limit_bytes``, read from the device when None). Off GPU it is False.
+    """
+
+    limit = _device_allocator_limit_bytes() if allocator_limit_bytes is None else int(allocator_limit_bytes)
+    if limit is None:
+        return False
+    half_bytes = int(np.prod(fourier_transform_utils.volume_shape_to_half_volume_shape(reconstruction_shape))) * 8
+    return _DEVICE_PAD_HALVES * half_bytes > single_working_set_bytes(limit)
 
 
 def _large_relion_host_irfft_enabled(volume_shape, *, allocator_limit_bytes: int | None = None) -> bool:

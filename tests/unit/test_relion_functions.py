@@ -2420,6 +2420,8 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
         "_large_relion_host_irfft_enabled",
         lambda *_args, **_kwargs: False,
     )
+    # The device pad route (its CPU route for a 16 GB pool is tested in test_wiener_pad_route.py).
+    monkeypatch.setattr(mean_helpers, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_stage)
     monkeypatch.setattr(
         relion_functions_relion,
@@ -2585,6 +2587,8 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
         "_large_relion_host_irfft_enabled",
         lambda *_args, **_kwargs: False,
     )
+    # The device pad route (its CPU route for a 16 GB pool is tested in test_wiener_pad_route.py).
+    monkeypatch.setattr(mean_helpers, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_stage)
     monkeypatch.setattr(
         relion_functions_relion,
@@ -2804,6 +2808,8 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
         "_large_relion_host_irfft_enabled",
         lambda *_args, **_kwargs: False,
     )
+    # The device pad route (its CPU route for a 16 GB pool is tested in test_wiener_pad_route.py).
+    monkeypatch.setattr(mean_helpers, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         rf,
         "_relion_reconstruction_padded_shape",
