@@ -6,6 +6,11 @@ import logging
 
 import numpy as np
 
+from relax.helpers.expected_accuracy import (
+    RELION_DEFAULT_SIGMA2_FUDGE,
+    Half1AccuracyInputs,
+    prepare_relion_half1_trial_order,
+)
 from relax.helpers.resolution import ImageGeometry
 from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
 from relax.refinement.iteration_planning import RunOptics
@@ -185,4 +190,42 @@ def reconstruction_settings_for_run(
             )
             or 0
         ),
+    )
+
+
+def expected_accuracy_inputs_for_run(
+    options: RefinementOptions, half1_dataset, volume_shape, *, optics_group_ids, gridding_kernel: str
+) -> Half1AccuracyInputs:
+    """The run-constant inputs of RELION's expected-accuracy estimate on half 1, with its trial order.
+
+    ``optics_group_ids`` are half 1's per-image optics-group rows (None for one group); ``gridding_kernel`` is
+    the projector's gridding-correction window.
+    """
+    # RELION randomises each half once at the first iteration and then uses
+    # the first 100 half-1 particles for calculateExpectedAngularErrors.
+    # Build that immutable local order once.  A missing/rebuilt-without-this-
+    # helper binding is handled fail-closed below: acc_rot stays infinite and
+    # cannot trigger convergence.
+    effective_optimizer_random_seed = (
+        options.parity.perturb_seed
+        if options.parity.optimizer_random_seed is None
+        else options.parity.optimizer_random_seed
+    )
+    expected_accuracy_trial_order = prepare_relion_half1_trial_order(
+        expected_accuracy=options.expected_accuracy,
+        half1_dataset=half1_dataset,
+        optimizer_random_seed=effective_optimizer_random_seed,
+        init_relion_iteration=options.schedule.init_relion_iteration,
+        log=logger,
+    )
+    return Half1AccuracyInputs(
+        trial_order_local=expected_accuracy_trial_order,
+        dataset=half1_dataset,
+        volume_shape=volume_shape,
+        padding_factor=PROJECTION_PADDING_FACTOR,
+        sigma2_fudge=RELION_DEFAULT_SIGMA2_FUDGE,
+        optimizer_random_seed=effective_optimizer_random_seed,
+        expected_accuracy=options.expected_accuracy,
+        optics_group_ids=optics_group_ids,
+        gridding_kernel=gridding_kernel,
     )

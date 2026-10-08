@@ -43,12 +43,7 @@ from relax.helpers.convergence import (
     expectation_statistics,
     hard_class_change_fraction,
 )
-from relax.helpers.expected_accuracy import (
-    RELION_DEFAULT_SIGMA2_FUDGE,
-    Half1AccuracyInputs,
-    estimate_iteration_accuracy,
-    prepare_relion_half1_trial_order,
-)
+from relax.helpers.expected_accuracy import estimate_iteration_accuracy
 from relax.helpers.iteration_history import RefinementHistory
 from relax.helpers.orientation_priors import (
     DirectionPrior,
@@ -183,12 +178,12 @@ from relax.refinement.refinement_result import (
 from relax.refinement.setup_checks import (
     checked_optics_group_ids,
     checked_run_optics,
+    expected_accuracy_inputs_for_run,
     reconstruction_settings_for_run,
     translation_angle_scale_for_run,
 )
 from relax.refinement.tomo_half import TomoHalf, numbered_iteration_tomo_sampling
 from relax.relion.geometry import (
-    PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
 )
 from relax.relion.relion_normalization import (
@@ -501,33 +496,9 @@ def refine_single_volume(
     if int(options.schedule.init_relion_incr_size) <= 0:
         raise ValueError("init_relion_incr_size must be positive")
 
-    # RELION randomises each half once at the first iteration and then uses
-    # the first 100 half-1 particles for calculateExpectedAngularErrors.
-    # Build that immutable local order once.  A missing/rebuilt-without-this-
-    # helper binding is handled fail-closed below: acc_rot stays infinite and
-    # cannot trigger convergence.
-    effective_optimizer_random_seed = (
-        options.parity.perturb_seed
-        if options.parity.optimizer_random_seed is None
-        else options.parity.optimizer_random_seed
-    )
-    expected_accuracy_trial_order = prepare_relion_half1_trial_order(
-        expected_accuracy=options.expected_accuracy,
-        half1_dataset=experiment_datasets[0],
-        optimizer_random_seed=effective_optimizer_random_seed,
-        init_relion_iteration=options.schedule.init_relion_iteration,
-        log=logger,
-    )
-    expected_accuracy_inputs = Half1AccuracyInputs(
-        trial_order_local=expected_accuracy_trial_order,
-        dataset=experiment_datasets[0],
-        volume_shape=volume_shape,
-        padding_factor=PROJECTION_PADDING_FACTOR,
-        sigma2_fudge=RELION_DEFAULT_SIGMA2_FUDGE,
-        optimizer_random_seed=effective_optimizer_random_seed,
-        expected_accuracy=options.expected_accuracy,
-        optics_group_ids=optics_group_ids_per_half[0],
-        gridding_kernel=consistency.gridding_kernel,
+    expected_accuracy_inputs = expected_accuracy_inputs_for_run(
+        options, experiment_datasets[0], volume_shape,
+        optics_group_ids=optics_group_ids_per_half[0], gridding_kernel=consistency.gridding_kernel,
     )
 
     follower_setup = setup_relion_follower_scale_state(
