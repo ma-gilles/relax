@@ -1012,7 +1012,6 @@ def _restore_convergence_state_from_replay_restart(state, replay, init_relion_it
     which handles the same ``perturb_replay_relion_dir`` source per mid-loop
     iteration.
     """
-    init_relion_iteration = int(init_relion_iteration)
     init_opt_star = os.path.join(
         replay.perturb_replay_relion_dir,
         f"{replay.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_optimiser.star",
@@ -2191,7 +2190,6 @@ def _build_replay_iteration_overrides(
     # Allocate one extra slot so convergence on the last configured numbered
     # iteration can replay RELION run_it{max_iter:03d}_data.star.
     overrides = [None] * (max_iter + 1)
-    init_relion_iteration = int(init_relion_iteration)
     for recovar_iter in range(0, max_iter + 1):
         # recovar iter k uses corrections computed by RELION iter k (which were
         # written into run_it{k}_data.star). Fresh non-replay runs retain the

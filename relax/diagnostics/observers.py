@@ -305,10 +305,9 @@ def observers_from_environment() -> list[RunObserver]:
     return found
 
 
-def combine(observers) -> RunObserver | None:
+def combine(observers: list[RunObserver]) -> RunObserver | None:
     """One observer for ``observers``: None for none, the observer itself for one, else a group."""
 
-    observers = list(observers)
     if not observers:
         return None
     return observers[0] if len(observers) == 1 else ObserverGroup(observers)

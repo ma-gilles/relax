@@ -111,7 +111,6 @@ class BPrefContributionBundle:
         )
         selected = np.arange(self.row_count, dtype=np.int64)
         if reconstruction_group is not None:
-            reconstruction_group = int(reconstruction_group)
             if reconstruction_group < 0:
                 raise ValueError("reconstruction_group must be non-negative")
             selected = selected[

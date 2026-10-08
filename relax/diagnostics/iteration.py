@@ -457,7 +457,6 @@ def _save_iteration_intermediates(
     current_translations = trial_grid.translations
     use_local = sampling_plan.local is not None
     local_search_order = sampling_plan.local.search.healpix_order if use_local else None
-    n_classes = int(options.k_class.n_classes)
     symmetry = options.symmetry.point_group
     os.makedirs(save_dir, exist_ok=True)
     np.save(os.path.join(save_dir, f"it{iteration:03d}_Ft_y_0.npy"), _dump_array_or_empty(Ft_y_0))
@@ -465,7 +464,7 @@ def _save_iteration_intermediates(
     np.save(os.path.join(save_dir, f"it{iteration:03d}_Ft_ctf_0.npy"), _dump_array_or_empty(Ft_ctf_0))
     np.save(os.path.join(save_dir, f"it{iteration:03d}_Ft_ctf_1.npy"), _dump_array_or_empty(Ft_ctf_1))
     for k_half in range(2):
-        class_indices_to_save = range(n_classes) if n_classes > 1 else (None,)
+        class_indices_to_save = range(options.k_class.n_classes) if options.k_class.n_classes > 1 else (None,)
         for class_idx in class_indices_to_save:
             suffix = f"_class{class_idx + 1}" if class_idx is not None else ""
             mean_to_save = means[k_half][class_idx] if class_idx is not None else means[k_half]
