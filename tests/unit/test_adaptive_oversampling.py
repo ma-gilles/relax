@@ -190,11 +190,11 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
     from relax.helpers import oversampling
-    from relax.scoring import significance
+    from relax.scoring import pass1_support, significance
 
     install_exact_pass1_mocks(monkeypatch)
     monkeypatch.setattr(significance, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
-    support_program = significance.coarse_support_posterior
+    support_program = pass1_support.coarse_support_posterior
 
     def run(n_classes, rotation_log_prior, translation_log_prior):
         calls = []
@@ -204,7 +204,7 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
             calls.append((np.asarray(values), raw_max, rotation_prior, translation_prior, static, support))
             return support
 
-        monkeypatch.setattr(significance, "coarse_support_posterior", record)
+        monkeypatch.setattr(pass1_support, "coarse_support_posterior", record)
         args, projector = _exact_pass1_call(n_classes)
         result = significance._compute_k_class_significance_batched(
             *args,

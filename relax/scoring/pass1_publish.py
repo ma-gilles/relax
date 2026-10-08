@@ -40,6 +40,9 @@ def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, 
     """
 
     if plan.collect_significance:
+        if batch.normalization_sum_weight is not None:
+            outputs.relion_f32_sum_weight[batch.start_idx:batch.end_idx] = batch.normalization_sum_weight
+            outputs.relion_f32_max_posterior[batch.start_idx:batch.end_idx] = batch.normalization_max_posterior
         if plan.relion_f32_coarse_support_enabled:
             outputs.relion_f32_sum_weight[batch.start_idx:batch.end_idx] = np.asarray(
                 batch.sum_weight,

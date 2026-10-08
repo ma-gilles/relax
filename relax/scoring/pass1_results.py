@@ -82,7 +82,9 @@ class BatchOutputs:
     that a route does not produce is ``None``.
 
     ``pmax`` .. ``cutoff_count`` and ``sum_weight`` are the float32 support's results (the pass's ``collect_significance``
-    route); ``best_*`` is the joint class-and-pose winner; ``class_*`` hold one array per class.
+    route); ``normalization_sum_weight`` and ``normalization_max_posterior`` are the generic route's RELION float32
+    normalization when asked (host arrays of the real rows, written to the pass's results as they are); ``best_*`` is the
+    joint class-and-pose winner; ``class_*`` hold one array per class.
 
     The last six fields are read only to dump the batch (``debug_dump_enabled``). A batch that waits for its
     read-back while the device scores the next one (the float32 support route without a dump) leaves them ``None``,
@@ -103,6 +105,8 @@ class BatchOutputs:
     cutoff_count: Any
     sum_weight: Any
     significant_weight: Any
+    normalization_sum_weight: Any
+    normalization_max_posterior: Any
     best_argmax: Any
     best_class: Any
     best_score: Any

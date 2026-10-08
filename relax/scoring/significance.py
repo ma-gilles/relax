@@ -35,7 +35,7 @@ from relax.scoring.coarse_gaussian_gemm import (
     _coarse_gaussian_gemm_projection_cache_stats,
 )
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
-from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
+from relax.scoring.coarse_publication import coarse_square_layout_metadata
 from relax.scoring.gaussian_plan import plan_coarse_gaussian
 from relax.scoring.pass1_assembly import log_batch_timing, significant_samples_after_loop
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
@@ -43,6 +43,13 @@ from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, PassShape, ScoreDumpContext
 from relax.scoring.pass1_scores import ScoreProgramPlan, block_prior_terms, run_score_program, score_blocks
+from relax.scoring.pass1_support import (
+    NO_SUPPORT,
+    SupportPlan,
+    exact_order_rotation_prior,
+    float32_support,
+    generic_support,
+)
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
 )
@@ -104,17 +111,6 @@ def _require_exact_pass1_operands(
         missing.append("float32 scoring and projections")
     if missing:
         raise ValueError("pass 1 scores RELION's exact coarse operands and needs " + ", ".join(missing))
-
-
-def _coarse_max_posterior_for_host(batch_weights, actual_batch_size):
-    """Publish active row maxima without specializing on fringe batch sizes.
-
-    Rows are independent. Reducing the physical table before slicing the
-    compact host vector keeps padded rows out of the published statistics.
-    """
-    return np.asarray(jnp.max(batch_weights, axis=1), dtype=np.float32)[
-        :actual_batch_size
-    ]
 
 
 def _coarse_significance_support_audit_enabled(
@@ -274,7 +270,6 @@ def _compute_k_class_significance_batched(
 
     from relax.helpers.fourier_window import make_fourier_window_spec
     from relax.helpers.half_spectrum import make_scoring_half_image_weights
-    from relax.helpers.oversampling import find_significant_rotations as _find_sig
 
     if score_mode not in {"gaussian", "normalized_cc"}:
         raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {score_mode!r}")
@@ -641,8 +636,21 @@ def _compute_k_class_significance_batched(
         track_class_second=bool(track_class_second),
         return_values=bool(collect_significance),
     )
-    # The rotation-and-class prior of the exact-weight-order support program, built at its first batch.
-    exact_rotation_prior = None
+    support_plan = SupportPlan(
+        n_classes=n_classes,
+        n_rot=n_rot,
+        n_trans=int(n_trans),
+        adaptive_fraction=adaptive_fraction,
+        max_significants=max_significants,
+        tie_score_ulps=int(relion_f32_coarse_tie_ulps),
+        return_relion_f32_normalization=return_relion_f32_normalization,
+        exact_weight_order=relion_exact_coarse_weight_order,
+        exact_rotation_prior=(
+            exact_order_rotation_prior(class_log_priors_np, rotation_log_prior_padded, n_rot)
+            if relion_exact_coarse_weight_order
+            else None
+        ),
+    )
 
     output_plan = OutputPlan(
         n_classes=n_classes,
@@ -714,9 +722,6 @@ def _compute_k_class_significance_batched(
                 f"batch {len(_coarse_batch_starts) - 1} (images {start_idx}-{end_idx - 1} of the pass, "
                 f"dataset images {int(indices[0])}-{int(indices[-1])})"
             )
-            # The outputs a batch has only on some routes; publish_batch receives every name.
-            batch_pmax = batch_weights = batch_sig_mask = batch_sig_rot_mask = batch_n_sig = batch_cutoff_count = None
-            _batch_sum_weight = _batch_significant_weight = None
             batch_inputs = prepare_batch_inputs(
                 batch_input_plan,
                 batch_data,
@@ -797,87 +802,15 @@ def _compute_k_class_significance_batched(
                 class_max + jnp.log(class_sum) for class_max, class_sum in zip(scores.class_max, scores.class_sum)
             ]
 
-            normalization_score_mats = []
+            support = NO_SUPPORT
             if collect_significance:
-                batch_values = (
-                    scores.support_values
-                    if relion_f32_coarse_support_enabled
-                    else jnp.exp(scores.support_values - global_log_z[:, None])
-                )
-                if return_relion_f32_normalization and not relion_f32_coarse_support_enabled:
-                    # The program's values are the with-prior scores here.
-                    normalization_score_mats.append(scores.support_values)
                 if relion_f32_coarse_support_enabled:
-                    # The float32 posterior and what the batch publishes from it are one program
-                    # (coarse_support_posterior). K=1 hands it the pre-prior scores and the priors:
-                    # RELION's log-weight order (relion_exact_coarse_weight_order above).
-                    if relion_exact_coarse_weight_order and exact_rotation_prior is None:
-                        exact_rotation_prior = (
-                            jnp.zeros(n_rot, dtype=jnp.float32)
-                            if rotation_log_prior_padded is None
-                            else jnp.asarray(rotation_log_prior_padded[0, :n_rot], dtype=jnp.float32)
-                        ) + jnp.asarray(class_log_priors_np[0], dtype=jnp.float32)
-                    support = coarse_support_posterior(
-                        batch_values,
-                        scores.raw_score_max,
-                        exact_rotation_prior,
-                        (
-                            None
-                            if not relion_exact_coarse_weight_order
-                            else np.zeros(n_trans, dtype=np.float32)
-                            if batch_inputs.translation_log_prior is None
-                            else batch_inputs.translation_log_prior
-                        ),
-                        exact_weight_order=relion_exact_coarse_weight_order,
-                        n_trans=int(n_trans),
-                        adaptive_fraction=float(adaptive_fraction),
-                        max_significants=max_significants,
-                        tie_score_ulps=int(relion_f32_coarse_tie_ulps),
-                    )
-                    batch_weights = support["weights"]
-                    batch_sig_mask = support["mask"]
-                    batch_n_sig = support["n_significant"]
-                    batch_cutoff_count = support["cutoff_count"]
-                    _batch_sum_weight = support["sum_weight"]
-                    _batch_significant_weight = support["significant_weight"]
-                    batch_sig_rot_mask = support["rotation_mask"]
-                    batch_pmax = support["pmax"]
-                    if relion_exact_coarse_weight_order:
-                        # RELION publishes the coarse winner from these weights (class 0: one class).
-                        scores = scores._replace(best_argmax=support["winner"])
+                    support = float32_support(support_plan, scores, batch_inputs.translation_log_prior)
                 else:
-                    batch_weights = batch_values
-                    if return_relion_f32_normalization:
-                        from relax.sparse_pass2.sparse_pass2_posterior import _relion_f32_fine_posterior
-
-                        # Retain the existing coarse selector and all of its outputs.
-                        # The symbolic fine pass needs the numeric maximum-shifted
-                        # denominator, not exp(logZ) or a second normalized support.
-                        # See docs/math/zero_oversampling.md.
-                        normalization_probs, _, _, _, normalization_sum, _ = _relion_f32_fine_posterior(
-                            jnp.concatenate(normalization_score_mats, axis=1),
-                            adaptive_fraction=adaptive_fraction,
-                            keep_all=True,
-                        )
-                        outputs.relion_f32_sum_weight[start_idx:end_idx] = np.asarray(
-                            normalization_sum, dtype=np.float32,
-                        )[:actual_batch_size]
-                        outputs.relion_f32_max_posterior[start_idx:end_idx] = (
-                            _coarse_max_posterior_for_host(normalization_probs, actual_batch_size)
-                        )
-                    (
-                        batch_sig_mask,
-                        batch_sig_rot_mask,
-                        batch_n_sig,
-                        batch_cutoff_count,
-                    ) = _find_sig(
-                        batch_weights,
-                        n_classes * n_rot,
-                        n_trans,
-                        adaptive_fraction=adaptive_fraction,
-                        max_significants=max_significants,
-                        return_cutoff_count=True,
-                    )
+                    support = generic_support(support_plan, scores, global_log_z, actual_batch_size)
+                if support.winner is not None:
+                    # RELION publishes the coarse winner from these weights (class 0: one class).
+                    scores = scores._replace(best_argmax=support.winner)
 
             # A batch on the float32 support route publishes while the next batch's operands are on the
             # device and before that batch's score program (the call above the program): the device
@@ -890,14 +823,16 @@ def _compute_k_class_significance_batched(
                 actual_batch_size=actual_batch_size,
                 batch_size=batch_inputs.batch_size,
                 indices=indices,
-                pmax=batch_pmax,
-                weights=None if defer_publish else batch_weights,
-                sig_mask=batch_sig_mask,
-                sig_rot_mask=batch_sig_rot_mask,
-                n_sig=batch_n_sig,
-                cutoff_count=batch_cutoff_count,
-                sum_weight=_batch_sum_weight,
-                significant_weight=None if defer_publish else _batch_significant_weight,
+                pmax=support.pmax,
+                weights=None if defer_publish else support.weights,
+                sig_mask=support.mask,
+                sig_rot_mask=support.rotation_mask,
+                n_sig=support.n_significant,
+                cutoff_count=support.cutoff_count,
+                sum_weight=support.sum_weight,
+                significant_weight=None if defer_publish else support.significant_weight,
+                normalization_sum_weight=support.normalization_sum_weight,
+                normalization_max_posterior=support.normalization_max_posterior,
                 best_argmax=scores.best_argmax,
                 best_class=scores.best_class,
                 best_score=scores.best_score,
