@@ -819,6 +819,27 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     assert pmax.shape == (3,)
 
 
+def test_near_cut_rows_take_a_tenth_of_the_gemm_bound(monkeypatch):
+    """The cut's margin takes _GEMM_ERROR_MARGIN_SHARE of the GEMM bound: a rotation 0.05 bounds from the cut is
+    scored again, one 0.5 bounds away keeps its GEMM score (the full bound would score it again), relax#43."""
+
+    bound = np.float32(100.0)
+    diff2 = np.asarray([1000.0, 1000.0 + 0.05 * bound, 1000.0 + 0.5 * bound, 1000.0 + 5 * bound], np.float32)
+    diff2 = diff2.reshape(1, 4, 1)
+    values = (diff2.min() - diff2).reshape(1, -1).astype(np.float32)
+    mask = np.zeros((1, 4), bool)
+    mask[0, 0] = True  # max_significants 1 keeps the best sample
+    args = (jnp.asarray(diff2), jnp.asarray(values), jnp.asarray(mask), jnp.asarray([1], np.int32),
+            jnp.asarray([bound]), jnp.asarray([1]))
+    rows, _, _ = tomo_coarse._near_cut_rows(*args, max_significants=1, adaptive_fraction=0.999)
+    np.testing.assert_array_equal(np.asarray(rows)[0], [True, True, False, False])
+    monkeypatch.setattr(tomo_coarse, "_GEMM_ERROR_MARGIN_SHARE", 1.0)
+    tomo_coarse._near_cut_rows.clear_cache()
+    rows, _, _ = tomo_coarse._near_cut_rows(*args, max_significants=1, adaptive_fraction=0.999)
+    np.testing.assert_array_equal(np.asarray(rows)[0], [True, True, True, False])
+    tomo_coarse._near_cut_rows.clear_cache()
+
+
 def test_near_cut_rows_are_the_cut_and_minimum_neighbourhoods_of_capped_particles():
     """Undecided samples: within twice the bound of the cut's log weight, or of the smallest diff2, and only for
     a particle that max_significants cuts."""
@@ -939,7 +960,8 @@ def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbatio
 @pytest.mark.parametrize("variant", ["one_flush", "one_row", "flushes_of_three", "rescored_one_by_one"])
 @pytest.mark.parametrize("n_classes", [1, 2])
 def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotations(monkeypatch, n_classes, variant):
-    """The pass with a scorer that is off by less than its stated bound: where max_significants cuts, the
+    """The pass with a scorer that is off by less than the share of its stated bound the cut's margin takes
+    (_GEMM_ERROR_MARGIN_SHARE): where max_significants cuts, the
     supports are the cut of the exact diff2, and only the undecided rotations were scored exactly.
 
     ``one_row`` leaves room for one undecided rotation per particle, so the flush learns from the device that
@@ -963,8 +985,9 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         block = slice(int(first), int(first) + count)
         image = exact_image_diff2(class_value, rotations[:, block], initial[:, block], angles[:, block])
         valid = (initial[:, block] > 0)[:, :, None, None]
-        # The "GEMM": the exact values off by up to half the stated bound per image, in a fixed pattern.
-        wobble = jnp.float32(0.5) * bound * jnp.cos(jnp.arange(image.size, dtype=jnp.float32) * 1.7).reshape(image.shape)
+        # The "GEMM": the exact values off by up to half the margin's share of the stated bound per image, in a
+        # fixed pattern.
+        wobble = jnp.float32(0.5 * tomo_coarse._GEMM_ERROR_MARGIN_SHARE) * bound * jnp.cos(jnp.arange(image.size, dtype=jnp.float32) * 1.7).reshape(image.shape)
         image = jnp.where(valid, image + wobble, 0.0)
         for slot in range(image.shape[1]):
             total = total + image[:, slot].swapaxes(1, 2)

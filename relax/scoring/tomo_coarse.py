@@ -430,6 +430,15 @@ _SORTED_ROTATIONS = 256
 _UNDECIDED_ROTATIONS = 8
 
 
+# The share of the GEMM error bound (relax.scoring.exact_cut.gemm_error_bound) the cut's margin takes. The bound is
+# the worst case, (4P + 11) u times the largest term, while the measured GEMM - direct-square differences are 1.6e3
+# to 2.6e4 times smaller (10th to 50th percentile per particle over a w2_09 box-192 Refine3D, relax#33 dumps, job
+# 15178008). On hard-noise subtomogram VDAM K=1 (cell 13, one iteration from RELION it190, job 15206974) a tenth of
+# it leaves 79,880 rows undecided instead of 56.8M and flips none of the 22,782 significant cells against the full
+# bound (GEMM scores alone flip 26); the tenth still leaves a factor of 160 over the largest observed difference.
+_GEMM_ERROR_MARGIN_SHARE = 0.1
+
+
 @partial(jax.jit, static_argnames=("max_significants", "adaptive_fraction", "sorted_rotations"))
 def _near_cut_rows(
     diff2, values, mask, cutoff_count, error, n_slots,
@@ -437,14 +446,14 @@ def _near_cut_rows(
 ):
     """:func:`relax.scoring.exact_cut.undecided_rotations` of particles from their summed GEMM diff2 ``[P, K * R, T]``.
 
-    The particle's bound is its images' GEMM bounds ``error`` plus one float32 unit of its largest diff2 per image
-    for the two slot-order sums and four for forming the log weights.
+    The particle's bound is ``_GEMM_ERROR_MARGIN_SHARE`` of its images' GEMM bounds ``error`` plus one float32 unit
+    of its largest diff2 per image for the two slot-order sums and four for forming the log weights.
     """
 
     scored = jnp.isfinite(values).reshape(diff2.shape)
     largest = jnp.max(jnp.where(scored, diff2, 0.0), axis=(1, 2))
     smallest = jnp.min(jnp.where(scored, diff2, jnp.inf), axis=(1, 2))
-    margin = 2.0 * (error + (n_slots.astype(jnp.float32) + 4.0) * float32_unit(largest))
+    margin = 2.0 * (_GEMM_ERROR_MARGIN_SHARE * error + (n_slots.astype(jnp.float32) + 4.0) * float32_unit(largest))
     return undecided_rotations(
         values,
         mask,
