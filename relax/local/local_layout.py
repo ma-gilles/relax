@@ -133,7 +133,6 @@ def _ladder_image_capacity(max_images: int, ladder: tuple[int, ...]) -> int:
     non-empty, and raising it would break the bound.
     """
 
-    max_images = int(max_images)
     if not ladder:
         return max_images
     rungs = [rung for rung in ladder if rung <= max_images]
@@ -176,7 +175,6 @@ def _exact_bucket_rotation_size(
     sizes reuse the same compiled shapes instead of each exact count generating
     its own XLA program.
     """
-    local_rotation_count = int(local_rotation_count)
     if local_rotation_count <= 0:
         return 1
     engine_cap = int(_local_search_engine_rotation_block_size(rotation_block_size))
@@ -452,7 +450,7 @@ def _chunk_local_supports(values, candidates, to_distance, cutoff_deg, sigma_deg
         # Candidate (image, point) pairs already listed, image-major with
         # ascending points, with their values; ``values`` gives the dense
         # values of an image that keeps no candidate.
-        n_images = int(candidates.n_images)
+        n_images = candidates.n_images
         image, point = candidates.image, candidates.point
         distance = to_distance(candidates.values)
     elif candidates is None:
@@ -682,10 +680,8 @@ def _build_parent_expanded_local_entries(
     inherit the parent prior; the prior is not redistributed over children.
     """
 
-    oversampling_order = int(oversampling_order)
     if oversampling_order <= 0:
         raise ValueError("oversampling_order must be positive for parent-expanded local support")
-    fine_healpix_order = int(fine_healpix_order)
     parent_order = fine_healpix_order - oversampling_order
     if parent_order < 0:
         raise ValueError(
@@ -1164,7 +1160,6 @@ def expand_local_layout_classes(layout: LocalHypothesisLayout, n_classes: int) -
     are its K=1 row's; ``row_class_flat`` says which class's reference it is scored against.
     """
 
-    n_classes = int(n_classes)
     if n_classes < 2:
         raise ValueError(f"a class expansion needs at least two classes, got {n_classes}")
     if layout.n_classes != 1:
@@ -1266,19 +1261,16 @@ def build_local_adaptive_pass2_hypothesis_layout(
     its own surviving parents; the children carry their parent's class.
     """
 
-    oversampling_order = int(oversampling_order)
     if oversampling_order <= 0:
         raise ValueError("oversampling_order must be positive for adaptive local pass 2")
-    parent_healpix_order = int(parent_healpix_order)
     fine_healpix_order = parent_healpix_order + oversampling_order
     symmetry = canonicalize_rotational_symmetry(
         parent_layout.symmetry if symmetry is None else symmetry
     )
-    n_images = int(parent_layout.n_images)
-    if len(significant_sample_indices) != n_images:
+    if len(significant_sample_indices) != parent_layout.n_images:
         raise ValueError(
             "significant_sample_indices must have one entry per image; "
-            f"got {len(significant_sample_indices)} for {n_images} images",
+            f"got {len(significant_sample_indices)} for {parent_layout.n_images} images",
         )
 
     coarse_translations = np.asarray(parent_layout.translation_grid, dtype=dtype)
@@ -1294,17 +1286,16 @@ def build_local_adaptive_pass2_hypothesis_layout(
     fine_translation_parent = np.asarray(fine_translation_parent, dtype=np.int32)
     n_fine_trans = int(fine_translations.shape[0])
 
-    n_classes = int(parent_layout.n_classes)
     n_real_global = int(parent_layout.n_global_rotations)
     # Class-expanded layouts number a (class, rotation) parent class * n_global + rotation.
-    n_parent_global = n_classes * n_real_global
+    n_parent_global = parent_layout.n_classes * n_real_global
     parent_offsets = np.asarray(parent_layout.rotation_offsets, dtype=np.int64)
     parent_ids_flat = np.asarray(parent_layout.rotation_ids_flat, dtype=np.int64)
-    if n_classes > 1:
+    if parent_layout.n_classes > 1:
         parent_ids_flat = np.asarray(parent_layout.row_class_flat, dtype=np.int64) * n_real_global + parent_ids_flat
     parent_log_prior_flat = np.asarray(parent_layout.rotation_log_priors_flat, dtype=dtype)
     parent_counts = np.diff(parent_offsets)
-    if n_images and np.any(parent_counts == 0):
+    if parent_layout.n_images and np.any(parent_counts == 0):
         image_idx = int(np.flatnonzero(parent_counts == 0)[0])
         raise ValueError(f"Image {image_idx} has no local parent rotations for adaptive pass 2")
 
@@ -1316,10 +1307,10 @@ def build_local_adaptive_pass2_hypothesis_layout(
         np.zeros(0, dtype=np.int64) if samples is None else np.asarray(samples, dtype=np.int64).reshape(-1)
         for samples in significant_sample_indices
     ]
-    sig_counts = np.fromiter((a.size for a in sig_arrays), dtype=np.int64, count=n_images)
+    sig_counts = np.fromiter((a.size for a in sig_arrays), dtype=np.int64, count=parent_layout.n_images)
     full_images = sig_counts == 0
     sig_flat = np.concatenate(sig_arrays) if sig_arrays else np.zeros(0, dtype=np.int64)
-    sig_image = np.repeat(np.arange(n_images, dtype=np.int64), sig_counts)
+    sig_image = np.repeat(np.arange(parent_layout.n_images, dtype=np.int64), sig_counts)
     sig_rot = sig_flat // n_coarse_trans
     sig_trans = sig_flat % n_coarse_trans
     key_scale = np.int64(max(n_parent_global, 1)) + np.int64(1)
@@ -1327,7 +1318,7 @@ def build_local_adaptive_pass2_hypothesis_layout(
     sparse_image = sparse_keys // key_scale
     sparse_rot = sparse_keys % key_scale
     full_parent_rows = np.flatnonzero(np.repeat(full_images, parent_counts))
-    full_image = np.repeat(np.arange(n_images, dtype=np.int64), parent_counts)[full_parent_rows]
+    full_image = np.repeat(np.arange(parent_layout.n_images, dtype=np.int64), parent_counts)[full_parent_rows]
     unit_image = np.concatenate([sparse_image, full_image])
     unit_rot = np.concatenate([sparse_rot, parent_ids_flat[full_parent_rows]])
     order = np.argsort(unit_image, kind="stable")
@@ -1339,7 +1330,7 @@ def build_local_adaptive_pass2_hypothesis_layout(
 
     # Each unit's log prior from its image's local parents (a later duplicate
     # id wins, as in the id lookup of tests/unit/test_refine_relion_mode.py).
-    parent_image = np.repeat(np.arange(n_images, dtype=np.int64), parent_counts)
+    parent_image = np.repeat(np.arange(parent_layout.n_images, dtype=np.int64), parent_counts)
     parent_keys = parent_image * key_scale + parent_ids_flat
     parent_order = np.argsort(parent_keys, kind="stable")
     sorted_parent_keys = parent_keys[parent_order]
@@ -1380,15 +1371,15 @@ def build_local_adaptive_pass2_hypothesis_layout(
     posterior_ids_flat = unit_rot[parent_map].astype(np.int32)
     rotation_log_priors_flat = unit_log_prior[parent_map].astype(dtype, copy=False)
     child_image = unit_image[parent_map]
-    counts = np.bincount(child_image, minlength=n_images).astype(np.int32)
-    offsets = np.zeros(n_images + 1, dtype=np.int64)
+    counts = np.bincount(child_image, minlength=parent_layout.n_images).astype(np.int32)
+    offsets = np.zeros(parent_layout.n_images + 1, dtype=np.int64)
     offsets[1:] = np.cumsum(counts, dtype=np.int64)
 
     if np.all(full_images):
         # ``None`` is the exact-local engine's compact representation of full
         # per-rotation/per-translation support. Avoid materializing massive
         # all-ones masks for RELION full-parent local pass 2.
-        sample_mask_bits = None if n_images else np.zeros((0, (n_fine_trans + 7) // 8), dtype=np.uint8)
+        sample_mask_bits = None if parent_layout.n_images else np.zeros((0, (n_fine_trans + 7) // 8), dtype=np.uint8)
     else:
         coarse_mask = np.repeat(full_images[unit_image][:, None], n_coarse_trans, axis=1)
         sig_unit = np.searchsorted(unit_keys, sig_image * key_scale + sig_rot)
@@ -1407,7 +1398,7 @@ def build_local_adaptive_pass2_hypothesis_layout(
         rotations_flat=rotations_flat,
         source_eulers_flat=(
             np.empty((0, 3), dtype=np.float64)
-            if not n_images
+            if not parent_layout.n_images
             else (None if source_eulers is None else np.asarray(source_eulers))
         ),
         rotation_log_priors_flat=rotation_log_priors_flat,
@@ -1420,8 +1411,8 @@ def build_local_adaptive_pass2_hypothesis_layout(
         sample_mask_bits=sample_mask_bits,
         mstep_rotations_flat=mstep_rotations_flat,
         symmetry=symmetry,
-        row_class_flat=None if n_classes == 1 else unit_class[parent_map],
-        n_classes=n_classes,
+        row_class_flat=None if parent_layout.n_classes == 1 else unit_class[parent_map],
+        n_classes=parent_layout.n_classes,
     )
 
 
@@ -1747,7 +1738,6 @@ def plan_local_hypothesis_buckets(
     if unify_bucket_sizes is None:
         unify_bucket_sizes = os.environ.get("RELAX_LOCAL_BUCKET_UNIFY", "").lower() in {"1", "true", "yes", "on"}
     if consecutive_mixed_bucket_size is not None:
-        consecutive_mixed_bucket_size = int(consecutive_mixed_bucket_size)
         if consecutive_mixed_bucket_size <= 0:
             raise ValueError("consecutive_mixed_bucket_size must be positive")
         if not preserve_image_order:
