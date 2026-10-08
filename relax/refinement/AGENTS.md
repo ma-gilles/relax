@@ -14,6 +14,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `full_refinement.py` | `relax refine` and `relax class3d`: `run_from_command_line`, `main` (one 1,020-line function) |
 | `command_options.py`, `refinement_options.py` | the flags, the RELION GUI job defaults, input-mode admission; the grouped options `refine_single_volume(options=...)` accepts |
 | `iteration_loop.py` | `refine_single_volume`: the numbered-iteration controller for K=1 and for K classes |
+| `setup_checks.py` | what the controller checks or resolves from its inputs before the first iteration |
 | `iteration_planning.py`, `convergence.py`, `iteration_snapshot.py` | start-up state, sampling and convergence transitions, the state one iteration hands to the next |
 | `expectation.py`, `expectation_batches.py`, `half_scoring.py`, `half_inputs.py`, `local_search_iteration.py`, `local_sampling.py`, `firstiter_cc.py` | preparing and running a half's expectation |
 | `maximization.py` | the numbered M-steps (K=1 split-half, Class3D) the controller chooses, and their results |

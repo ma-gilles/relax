@@ -192,7 +192,7 @@ def test_corrected_fsc_needs_a_mask_of_the_model_shape():
 
 
 def test_mask_file_reaches_the_internal_frame(tmp_path):
-    from relax.refinement.iteration_loop import _internal_solvent_mask
+    from relax.refinement.setup_checks import _internal_solvent_mask
 
     data = np.zeros((8, 8, 8))
     data[1, 2, 3] = 1.0  # file (z, y, x)

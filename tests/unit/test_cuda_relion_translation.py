@@ -60,7 +60,7 @@ def test_relion_translation_angle_scale_changes_only_final_angle_operand():
 
 
 def test_relion_k1_translation_angle_scale_uses_model_over_optics_pixel_size():
-    from relax.refinement.iteration_loop import _relion_k1_translation_angle_scale
+    from relax.refinement.setup_checks import _relion_k1_translation_angle_scale
 
     scale = _relion_k1_translation_angle_scale(
         n_classes=1,
@@ -76,7 +76,7 @@ def test_relion_k1_translation_angle_scale_uses_model_over_optics_pixel_size():
 
 
 def test_relion_k1_translation_angle_scale_rejects_heterogeneous_optics():
-    from relax.refinement.iteration_loop import _relion_k1_translation_angle_scale
+    from relax.refinement.setup_checks import _relion_k1_translation_angle_scale
 
     with pytest.raises(NotImplementedError, match="one shared optics pixel size"):
         _relion_k1_translation_angle_scale(
