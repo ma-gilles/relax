@@ -294,6 +294,38 @@ def plan_adaptive_image_size(
     return CoarseImageSize(size=coarse_size, angular_step_deg=angular_step_deg)
 
 
+def adaptive_pass1_size(
+    coarse_image_plan: CoarseImageSize | None,
+    windows: ExpectationWindows,
+    state: RefinementState,
+    options: RefinementOptions,
+    *,
+    box_size: int,
+    log: logging.Logger,
+) -> int | None:
+    """Pass 1's image window on the adaptive route (``coarse_image_plan``, None off it), logged with pass 2's;
+    None where pass 1 takes the full window (no plan, or a plan as wide as the box)."""
+    coarse_cs = (
+        coarse_image_plan.size
+        if coarse_image_plan is not None and coarse_image_plan.size < box_size
+        else None
+    )
+    if coarse_image_plan is not None:
+        log.info(
+            "Adaptive oversampling: pass 1 at coarse_size=%s, "
+            "pass 2 at current_size=%s (oversampling=%d, particle_diameter=%s)",
+            coarse_cs,
+            windows.image_window_size,
+            state.adaptive_oversampling,
+            (
+                f"{float(options.schedule.particle_diameter_ang):.1f} A"
+                if options.schedule.particle_diameter_ang is not None
+                else "box_size"
+            ),
+        )
+    return coarse_cs
+
+
 def initialize_refinement_state(
     options: RefinementOptions,
     image_geometry: ImageGeometry,

@@ -97,6 +97,7 @@ from relax.refinement.half_scoring import (
     HalfScoringData,
 )
 from relax.refinement.iteration_planning import (
+    adaptive_pass1_size,
     build_initial_coarse_grids,
     builds_coarse_pass1_rotations,
     class_seeding,
@@ -992,24 +993,9 @@ def refine_single_volume(
             if use_adaptive
             else None
         )
-        coarse_cs = (
-            coarse_image_plan.size
-            if coarse_image_plan is not None and coarse_image_plan.size < image_geometry.box_size
-            else None
+        coarse_cs = adaptive_pass1_size(
+            coarse_image_plan, sampling_plan.windows, state, options, box_size=image_geometry.box_size, log=logger,
         )
-        if use_adaptive:
-            logger.info(
-                "Adaptive oversampling: pass 1 at coarse_size=%s, "
-                "pass 2 at current_size=%s (oversampling=%d, particle_diameter=%s)",
-                coarse_cs,
-                sampling_plan.windows.image_window_size,
-                state.adaptive_oversampling,
-                (
-                    f"{float(options.schedule.particle_diameter_ang):.1f} A"
-                    if options.schedule.particle_diameter_ang is not None
-                    else "box_size"
-                ),
-            )
 
         # The previous iteration's slabs are released before this iteration's are built.
         projectors = [None, None]
