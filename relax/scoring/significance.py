@@ -17,7 +17,6 @@ import numpy as np
 from recovar.utils.nvtx_shim import nvtx
 
 from relax.diagnostics.coarse_gaussian_diagnostics import (
-    _maybe_dump_tree_rescore_batch,
     _significance_debug_dump_matches,
 )
 from relax.diagnostics.coarse_score_diagnostics import (
@@ -36,7 +35,6 @@ from relax.relion.relion_coarse_operands import (
     _process_relion_exact_coarse_half_image,
     _relion_cc_inverse_power_from_processed,
     _repeat_pad_batch_axis,
-    _select_relion_coarse_rescore_winner_slots,
     assemble_relion_cc_coarse_operands,
 )
 from relax.scoring.coarse_gaussian_gemm import (
@@ -61,6 +59,13 @@ from relax.scoring.scoring import (
     _relion_coarse_gaussian_gemm_scores_jit,
     _relion_coarse_normalized_cc_gemm_scores_jit,
     _update_logsumexp,
+)
+from relax.scoring.tree_rescore import (
+    TreeRescoreGeometry,
+    TreeRescoreState,
+    plan_tree_rescore,
+    require_tree_rescore_call,
+    rescore_ambiguous_images,
 )
 
 _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
@@ -229,17 +234,6 @@ def _global_pass1_relion_projector_texture_enabled() -> bool:
         _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV,
         default=True,
     )
-
-
-def _dense_projection_scale(image_shape) -> float:
-    """Match the dense E-step projection scaling used by the shared helper."""
-
-    token = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
-    n = int(image_shape[0])
-    scale = {"-N2": -(n**2), "N2": float(n**2)}.get(token)
-    if scale is None:
-        raise ValueError(f"Unsupported RELAX_DENSE_MEANS_SCALE={token!r}")
-    return scale
 
 
 @lru_cache(maxsize=8)
@@ -713,7 +707,7 @@ def _compute_k_class_significance_batched(
 
     from recovar.reconstruction import noise as noise_utils
 
-    from relax.helpers.fourier_window import make_fourier_window_spec, relion_fftw_order_for_square_score_window
+    from relax.helpers.fourier_window import make_fourier_window_spec
     from relax.helpers.half_spectrum import make_scoring_half_image_weights, redundant_nyquist_column_pixels
     from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, tiled_half_image_phase_factors
     from relax.helpers.oversampling import find_significant_rotations as _find_sig
@@ -722,9 +716,6 @@ def _compute_k_class_significance_batched(
     )
     from relax.helpers.projection import (
         compute_relion_projector_projections_block as _compute_relion_projector_projections_block,
-    )
-    from relax.scoring.scoring import (
-        _relion_coarse_normalized_cc_rescore,
     )
 
     if score_mode not in {"gaussian", "normalized_cc"}:
@@ -879,7 +870,6 @@ def _compute_k_class_significance_batched(
     coarse_gaussian_score_active_mask = None
     coarse_gaussian_window_positions = None
     coarse_gaussian_powerclass = None
-    coarse_gaussian_projector_full = None
     coarse_gaussian_gemm_resource_estimate = None
     coarse_gaussian_gemm_projection_cache_plan = None
     coarse_gaussian_square_layout = None
@@ -1015,75 +1005,6 @@ def _compute_k_class_significance_batched(
             n_trans,
             bool(stable_fourier_window_shapes),
         )
-    tree_rescore_fftw_order = None
-    tree_rescore_translation_angles = None
-    if tree_rescore_enabled:
-        if n_classes != 1:
-            raise ValueError(
-                "the coarse-tree top-2 rescore (tree_rescore_max_margin) currently "
-                "supports K=1 only",
-            )
-        if not return_class_best:
-            raise ValueError(
-                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
-                "return_class_best=True",
-            )
-        if not use_relion_projector or not coarse_texture_interp:
-            raise ValueError(
-                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
-                "the supplied RELION projector with texture interpolation",
-            )
-        if not half_spectrum_scoring:
-            raise ValueError(
-                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
-                "half-spectrum scoring",
-            )
-        from recovar import cuda_backproject
-
-        from relax.helpers.projection import relion_projector_half_to_texture_full
-        from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
-        from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
-
-        if (
-            jax.default_backend() != "gpu"
-            or not cuda_backproject.custom_cuda_requested()
-            or not cuda_backproject.cuda_available()
-        ):
-            raise RuntimeError(
-                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
-                "the custom CUDA backend",
-            )
-        coarse_gaussian_projector_full = jnp.asarray(
-            relion_projector_half_to_texture_full(relion_projector_half[0])
-            * jnp.asarray(_dense_projection_scale(image_shape), dtype=jnp.float32),
-            dtype=jnp.complex64,
-        )
-        score_indices_np = (
-            np.arange(n_half, dtype=np.int32)
-            if window_spec.score_indices_np is None
-            else window_spec.score_indices_np
-        )
-        tree_rescore_fftw_order = jnp.asarray(
-            relion_fftw_order_for_square_score_window(
-                image_shape,
-                score_size,
-                score_indices_np,
-            ),
-            dtype=jnp.int32,
-        )
-        tree_rescore_translation_angles = jnp.asarray(
-            _relion_translation_angles_f32(
-                translations_source,
-                image_shape,
-                angle_scale=relion_translation_angle_scale,
-            ),
-            dtype=jnp.float32,
-        )
-        logger.warning(
-            "RELION coarse-tree top-2 rescore: max_margin=%g current_size=%d",
-            tree_rescore_max_margin,
-            score_size,
-        )
     # --firstiter_cc on RELION's exact coarse operands: the tree rescore's per-image
     # FFT, RFLOAT CTF and corr_img operands, translated with RELION's sincosf for
     # every translation and scored by the coarse GEMMs
@@ -1118,6 +1039,35 @@ def _compute_k_class_significance_batched(
     track_class_second = return_class_second or tree_rescore_enabled
     if use_window:
         half_weights_windowed = window_spec.score_values(half_weights)
+    tree_rescore_plan = None
+    if tree_rescore_enabled:
+        require_tree_rescore_call(
+            n_classes=n_classes,
+            return_class_best=return_class_best,
+            use_relion_projector=use_relion_projector,
+            coarse_texture_interp=coarse_texture_interp,
+            half_spectrum_scoring=half_spectrum_scoring,
+        )
+        tree_rescore_plan = plan_tree_rescore(
+            max_margin=tree_rescore_max_margin,
+            relion_projector_half=relion_projector_half,
+            image_shape=image_shape,
+            n_half=n_half,
+            score_indices_np=window_spec.score_indices_np,
+            translations_source=translations_source,
+            relion_translation_angle_scale=relion_translation_angle_scale,
+            geometry=TreeRescoreGeometry(
+                half_weights=half_weights_windowed if use_window else half_weights,
+                rotations=rotations,
+                n_trans=n_trans,
+                score_size=score_size,
+                padding_factor=projection_padding_factor,
+                projector_max_r=relion_projector_r_max,
+                coarse_healpix_order=coarse_healpix_order,
+                coarse_rotation_ids=coarse_rotation_ids,
+                symmetry_label=symmetry_label,
+            ),
+        )
 
     n_blocks = (n_rot + rotation_block_size - 1) // rotation_block_size
     n_rot_padded = n_blocks * rotation_block_size
@@ -1486,12 +1436,6 @@ def _compute_k_class_significance_batched(
                 exact_cc_pixel_weight = exact_cc_operands.windowed_corr_img * (
                     half_weights_windowed if use_window else half_weights
                 )
-                if tree_rescore_enabled:
-                    # The bounded top-two rescore uses these same exact CUDA
-                    # operands. Reuse the per-image FFT/CTF assembly instead of
-                    # preparing a second copy before the GEMM coarse pass.
-                    tree_rescore_unshifted_data = exact_cc_operands.windowed_unshifted
-                    tree_rescore_corr_img_data = exact_cc_operands.windowed_corr_img
 
             if exact_gaussian:
                 processed_direct = _process_relion_exact_coarse_half_image(
@@ -1718,136 +1662,34 @@ def _compute_k_class_significance_batched(
                 class_second_best_argmaxes = list(class_second_argmax_tuple)
 
             if tree_rescore_enabled:
-                tree_score_dtype = np.float32
-                best_scores_np = np.asarray(class_best_scores[0], dtype=tree_score_dtype)
-                second_scores_np = np.asarray(class_second_best_scores[0], dtype=tree_score_dtype)
-                score_margins = best_scores_np - second_scores_np
-                ambiguous_rows = np.flatnonzero(
-                    np.isfinite(score_margins) & (score_margins <= tree_rescore_max_margin)
-                ).astype(np.int32)
+                # The bounded top-two rescore uses the batch's exact CUDA CC operands (the per-image FFT/CTF
+                # assembly), not a second copy.
+                rescored = rescore_ambiguous_images(
+                    tree_rescore_plan,
+                    TreeRescoreState(
+                        best_argmax=best_argmax_batch,
+                        best_score=best_score_batch,
+                        class_best_argmax=class_best_argmaxes[0],
+                        class_best_score=class_best_scores[0],
+                        class_second_argmax=class_second_best_argmaxes[0],
+                        class_second_score=class_second_best_scores[0],
+                    ),
+                    exact_cc_operands.windowed_unshifted,
+                    exact_cc_operands.windowed_corr_img,
+                    experiment_dataset=experiment_dataset,
+                    indices=indices,
+                    debug_iteration=debug_iteration,
+                )
                 tree_rescore_examined += int(batch_size)
-                tree_rescore_ambiguous += int(ambiguous_rows.size)
-                if ambiguous_rows.size:
-                    best_pose_np = np.asarray(class_best_argmaxes[0], dtype=np.int32)[ambiguous_rows]
-                    second_pose_np = np.asarray(class_second_best_argmaxes[0], dtype=np.int32)[
-                        ambiguous_rows
-                    ]
-                    candidate_pose_ids = np.sort(
-                        np.stack([best_pose_np, second_pose_np], axis=1),
-                        axis=1,
-                    )
-                    candidate_rotation_ids = candidate_pose_ids // n_trans
-                    candidate_translation_ids = candidate_pose_ids % n_trans
-                    candidate_rotations = jnp.asarray(
-                        rotations[candidate_rotation_ids.reshape(-1)],
-                        dtype=jnp.float32,
-                    ).reshape(
-                        ambiguous_rows.size,
-                        2,
-                        3,
-                        3,
-                    )
-                    unshifted_candidates = jnp.broadcast_to(
-                        tree_rescore_unshifted_data[
-                            jnp.asarray(ambiguous_rows, dtype=jnp.int32), None, :
-                        ],
-                        (
-                            ambiguous_rows.size,
-                            2,
-                            tree_rescore_unshifted_data.shape[-1],
-                        ),
-                    )
-                    candidate_translation_angles = tree_rescore_translation_angles[
-                        jnp.asarray(candidate_translation_ids, dtype=jnp.int32)
-                    ]
-                    score_weight_candidates = jnp.broadcast_to(
-                        tree_rescore_corr_img_data[
-                            jnp.asarray(ambiguous_rows, dtype=jnp.int32), None, :
-                        ],
-                        unshifted_candidates.shape,
-                    )
-                    rescored_candidates = _relion_coarse_normalized_cc_rescore(
-                        unshifted_candidates,
-                        score_weight_candidates,
-                        None,
-                        half_weights_windowed if use_window else half_weights,
-                        tree_rescore_fftw_order,
-                        projector_full=coarse_gaussian_projector_full,
-                        rotation_matrices=candidate_rotations,
-                        translation_angles=candidate_translation_angles,
-                        current_size=score_size,
-                        padding_factor=projection_padding_factor,
-                        projector_max_r=relion_projector_r_max,
-                        numerator_weight_candidates=score_weight_candidates,
-                    )
-                    rescored_scores_np = np.asarray(rescored_candidates, dtype=tree_score_dtype)
-                    rescored_winner_slot, exact_ties = _select_relion_coarse_rescore_winner_slots(
-                        rescored_scores_np,
-                        candidate_pose_ids,
-                        n_trans=n_trans,
-                        healpix_order=coarse_healpix_order,
-                        coarse_rotation_ids=coarse_rotation_ids,
-                        score_dtype=tree_score_dtype,
-                        **({"symmetry_label": symmetry_label} if symmetry_label != "C1" else {}),
-                    )
-                    _maybe_dump_tree_rescore_batch(
-                        experiment_dataset=experiment_dataset,
-                        indices=indices,
-                        ambiguous_rows=ambiguous_rows,
-                        candidate_pose_ids=candidate_pose_ids,
-                        original_best_pose=best_pose_np,
-                        original_best_score=best_scores_np[ambiguous_rows],
-                        original_second_pose=second_pose_np,
-                        original_second_score=second_scores_np[ambiguous_rows],
-                        rescored_scores=rescored_scores_np,
-                        rescored_winner_slot=rescored_winner_slot,
-                        shifted_candidates=unshifted_candidates,
-                        score_weight_candidates=score_weight_candidates,
-                        numerator_weight_candidates=score_weight_candidates,
-                        rotation_matrices=candidate_rotations,
-                        translation_angles=candidate_translation_angles,
-                        n_trans=n_trans,
-                        half_weights=(
-                            half_weights_windowed if use_window else half_weights
-                        ),
-                        packed_to_compact=tree_rescore_fftw_order,
-                        projector_full=coarse_gaussian_projector_full,
-                        current_size=score_size,
-                        padding_factor=projection_padding_factor,
-                        projector_max_r=relion_projector_r_max,
-                        debug_iteration=debug_iteration,
-                    )
-                    tree_rescore_exact_ties += exact_ties
-                    row_ids = np.arange(ambiguous_rows.size, dtype=np.int32)
-                    rescored_runner_slot = 1 - rescored_winner_slot
-                    rescored_winner_pose = candidate_pose_ids[row_ids, rescored_winner_slot]
-                    rescored_runner_pose = candidate_pose_ids[row_ids, rescored_runner_slot]
-                    rescored_winner_score = rescored_scores_np[row_ids, rescored_winner_slot]
-                    rescored_runner_score = rescored_scores_np[row_ids, rescored_runner_slot]
-                    tree_rescore_winner_changes += int(
-                        np.count_nonzero(rescored_winner_pose != best_pose_np)
-                    )
-                    applied_rows = np.arange(ambiguous_rows.size, dtype=np.int32)
-                    if applied_rows.size:
-                        rows_jax = jnp.asarray(ambiguous_rows[applied_rows], dtype=jnp.int32)
-                        best_argmax_batch = best_argmax_batch.at[rows_jax].set(
-                            rescored_winner_pose[applied_rows]
-                        )
-                        best_score_batch = best_score_batch.at[rows_jax].set(
-                            rescored_winner_score[applied_rows]
-                        )
-                        class_best_argmaxes[0] = class_best_argmaxes[0].at[rows_jax].set(
-                            rescored_winner_pose[applied_rows]
-                        )
-                        class_best_scores[0] = class_best_scores[0].at[rows_jax].set(
-                            rescored_winner_score[applied_rows]
-                        )
-                        class_second_best_argmaxes[0] = class_second_best_argmaxes[0].at[
-                            rows_jax
-                        ].set(rescored_runner_pose[applied_rows])
-                        class_second_best_scores[0] = class_second_best_scores[0].at[
-                            rows_jax
-                        ].set(rescored_runner_score[applied_rows])
+                tree_rescore_ambiguous += rescored.ambiguous_images
+                tree_rescore_exact_ties += rescored.exact_ties
+                tree_rescore_winner_changes += rescored.winner_changes
+                best_argmax_batch = rescored.state.best_argmax
+                best_score_batch = rescored.state.best_score
+                class_best_argmaxes[0] = rescored.state.class_best_argmax
+                class_best_scores[0] = rescored.state.class_best_score
+                class_second_best_argmaxes[0] = rescored.state.class_second_argmax
+                class_second_best_scores[0] = rescored.state.class_second_score
 
             global_log_z = global_max + jnp.log(global_sum)
             class_log_z_values = [

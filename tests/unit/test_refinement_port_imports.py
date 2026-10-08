@@ -58,6 +58,7 @@ ALLOWED_IMPORTS = {
     ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): "the run report's timing rows (" + _INLINE_DUMP + ")",
     ("relax.relion.relion_normalization", "relax.diagnostics.finite_check"): _INLINE_CHECK,
     ("relax.scoring.pass1_publish", "relax.diagnostics.coarse_gaussian_diagnostics"): _INLINE_DUMP,
+    ("relax.scoring.tree_rescore", "relax.diagnostics.coarse_gaussian_diagnostics"): _INLINE_DUMP,
     ("relax.scoring.significance", "relax.diagnostics.coarse_gaussian_diagnostics"): _INLINE_DUMP,
     ("relax.scoring.significance", "relax.diagnostics.coarse_score_diagnostics"): _INLINE_DUMP,
     ("relax.sparse_pass2.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,

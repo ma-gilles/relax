@@ -420,7 +420,7 @@
   "env-read:relax.scoring.scoring:_coarse_gemm_float64_requested:RELAX_COARSE_GEMM_FLOAT64",
   "env-read:relax.scoring.significance:_coarse_rotated_radius_enabled:RELAX_K1_COARSE_ROTATED_RADIUS",
   "env-read:relax.scoring.significance:_compute_k_class_significance_batched:_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV",
-  "env-read:relax.scoring.significance:_dense_projection_scale:RELAX_DENSE_MEANS_SCALE",
+  "env-read:relax.scoring.tree_rescore:_dense_projection_scale:RELAX_DENSE_MEANS_SCALE",
   "env-read:relax.sparse_pass2.compile_ahead:_max_programs_from_env:COMPILE_AHEAD_MAX_ENV",
   "env-read:relax.sparse_pass2.compile_ahead:resolve_compile_ahead_config:COMPILE_AHEAD_ENV",
   "env-read:relax.sparse_pass2.firstiter_bpref:_relion_firstiter_deferred_bpref_enabled:_RELION_FIRSTITER_DEFERRED_BPREF_ENV",
