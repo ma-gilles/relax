@@ -10,7 +10,10 @@ import numpy as np
 import recovar
 
 import relax
-from relax.reference.e_step import compute_probability_from_residual_normal_squared_one_image
+
+# The E-step oracle lives with the tests (tests/oracles); the script is run from the checkout.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests"))
+from oracles.e_step import compute_probability_from_residual_normal_squared_one_image  # noqa: E402
 
 
 def main(input_path: Path, output_path: Path) -> None:

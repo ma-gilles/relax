@@ -1,11 +1,11 @@
+import jax.numpy as jnp
 import numpy as np
 import pytest
-import jax.numpy as jnp
 
 pytest.importorskip("jax")
 pytest.importorskip("healpy")
 
-import relax.reference.heterogeneity as hetero
+import oracles.heterogeneity as hetero
 
 pytestmark = pytest.mark.unit
 

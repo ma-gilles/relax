@@ -86,7 +86,8 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 | `relax/ppca_refinement/` | pose-marginal PPCA refinement |
 | `relax/helpers/`, `relax/sampling.py`, `relax/healpix_sampling.py`, `relax/symmetry.py` | shared layouts, planning, grids |
 | `relax/cuda/` | CUDA kernels and their FFI (`librelax_cuda.so`) |
-| `relax/diagnostics/`, `relax/reference/`, `relax/relion_bind/` | capture and replay; independent references; the RELION binding (never imported by production code) |
+| `relax/diagnostics/`, `relax/relion_bind/` | capture and replay; the RELION binding (never imported by production code) |
+| `tests/helpers/`, `tests/oracles/` | test helpers; independent EM references (earlier formulations, imported as `oracles.<module>`) |
 | `tests/tiers/`, `tests/baselines/`, `tests/fixtures/` | gates and pinned outputs; pinned references and the benchmark ledger; the fixture manifest |
 | `scripts/` | the tier runner, `dev/doctor.py`, launchers, scorecard renderers, analysis |
 

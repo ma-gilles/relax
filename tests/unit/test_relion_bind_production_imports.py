@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "relax"
 
-ALLOWED_PREFIXES = ("relax/relion_bind/", "relax/diagnostics/", "relax/reference/")
+ALLOWED_PREFIXES = ("relax/relion_bind/", "relax/diagnostics/")
 # Builds the oracle; it is a tool, not a refinement path.
 ALLOWED_FILES = {"relax/commands/build_relion_bind.py"}
 PENDING: set[str] = set()

@@ -2,8 +2,8 @@
 
 import numpy as np
 import pytest
-
-from relax.reference.normalized_cc_replay import (
+from helpers.float_compare import assert_matches, matches
+from oracles.normalized_cc_replay import (
     RELION_COARSE_REDUCTION_LANES,
     RELION_FINE_REDUCTION_LANES,
     canonical_float32_reduce,
@@ -16,8 +16,8 @@ from relax.reference.normalized_cc_replay import (
     replay_normalized_cc,
     replay_normalized_cc_candidates,
 )
+
 from relax.relion.relion_coarse_operands import _relion_cc_inverse_power_from_processed
-from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -165,8 +165,8 @@ def test_relion_coarse_native_rescore_matches_exact_uniform_operands():
     pytest.importorskip("jax")
     import jax
     import jax.numpy as jnp
-
     from recovar import cuda_backproject
+
     from relax.scoring.scoring import (
         _relion_coarse_normalized_cc_rescore,
         _relion_coarse_normalized_cc_rescore_jax,
@@ -209,8 +209,8 @@ def test_relion_coarse_native_texture_rescore_exposes_reduced_components():
     pytest.importorskip("jax")
     import jax
     import jax.numpy as jnp
-
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     if jax.default_backend() != "gpu" or not cuda_backproject.custom_cuda_requested():
@@ -535,6 +535,7 @@ def test_native_cc_rescore_limits_support_to_current_image(model_radius, padding
     import jax
     import jax.numpy as jnp
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     if jax.default_backend() != "gpu" or not cuda_backproject.custom_cuda_requested():

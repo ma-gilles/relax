@@ -222,7 +222,7 @@ device-resident sparse engine (the dense pass 2 and its `RELAX_K1_DENSE_PASS2` /
 `RELAX_K_CLASS_DENSE_PASS2` switches were removed on 2026-10-03), and `_coarse_pose_assignments` collapses fine pose
 assignments onto the coarse grid when a fine pass ran
 ([`test_adaptive_engine_call_owner.py`](../../tests/unit/test_adaptive_engine_call_owner.py)).
-[`heterogeneity._fixed_rotation_covariance_images`](../../relax/reference/heterogeneity.py) accumulates the
+[`heterogeneity._fixed_rotation_covariance_images`](../../tests/oracles/heterogeneity.py) accumulates the
 fixed-rotation covariance-column update in image space (right-hand side and normal
 operator per rotation) for both the Equinox and the classic accumulator, which only
 convert to half images and back-project. In [`vdam.layout`](../../relax/vdam/layout.py),

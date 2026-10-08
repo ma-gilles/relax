@@ -10,10 +10,11 @@ and `relax/ppca_refinement/` have their own guides.
   `relax.classification.k_class`, result types from `relax.classification.k_class_results`.
 - The helper and diagnostic modules listed in `scripts/run_em_fast_guard.sh` must not load an execution module
   (controller, scoring, pass 2); `pixi run test-em-fast-guard` fails when they do.
-- Production code does not import `relax.relion_bind`. Only `relax/relion_bind/`, `relax/diagnostics/`,
-  `relax/reference/` and `relax/commands/build_relion_bind.py` may
+- Production code does not import `relax.relion_bind`. Only `relax/relion_bind/`, `relax/diagnostics/`
+  and `relax/commands/build_relion_bind.py` may
   (`tests/unit/test_relion_bind_production_imports.py`).
-- `relax/reference/` holds independent numerical references; keep them independent of production code.
+- Independent numerical references live in `tests/oracles/` (imported by tests as `oracles.<module>`); keep them
+  independent of production code.
   Replay and score-audit modules belong in `relax/diagnostics/`.
 - EM and VDAM Python APIs and command lines carry no backward-compatibility requirement: migrate callers,
   tests and documents in the same change and leave no forwarding wrapper. Stop at a stored format
@@ -45,7 +46,7 @@ and `relax/ppca_refinement/` have their own guides.
 - Never label an intentional difference strict parity, and never tune until outputs agree.
 - Every final all-data map is gridding-corrected, as RELION's reconstruct always is; there is no option to
   skip it.
-- In `relax/reference/iterations.py`, `run_halfset_em_iteration` reads `state.Ft_y` and `state.Ft_CTF` after
+- In `tests/oracles/iterations.py`, `run_halfset_em_iteration` reads `state.Ft_y` and `state.Ft_CTF` after
   `finish_up_M_step`; keep that order.
 
 ## RELION oracle

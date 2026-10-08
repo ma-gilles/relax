@@ -1,5 +1,7 @@
 """Deterministic normalized-CC reduction replay diagnostics.
 
+Test oracle: moved unchanged from relax/reference/normalized_cc_replay.py, which no relax command imports.
+
 This module operates on frozen per-pixel operands.  It does not replace the
 production scorer and deliberately has no JAX dependency.  In particular, a
 float64 replay of captured float32 contributions is labelled as *promoted*:

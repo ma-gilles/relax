@@ -1,4 +1,7 @@
-"""M-step: volume update via weighted backprojection."""
+"""M-step: volume update via weighted backprojection.
+
+Test oracle: moved unchanged from relax/reference/m_step.py, which no relax command imports.
+"""
 
 import logging
 

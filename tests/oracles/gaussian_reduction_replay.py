@@ -1,5 +1,7 @@
 """Deterministic CPU replay of RELION's coarse Gaussian reduction.
 
+Test oracle: moved unchanged from relax/reference/gaussian_reduction_replay.py, which no relax command imports.
+
 This diagnostic is not wired into production scoring and has no JAX
 dependency.  It requires one immutable production capture containing all
 1,624 packed contributions, the captured float32 ``highres_Xi2_img/2`` term,

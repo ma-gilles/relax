@@ -1,4 +1,7 @@
-"""E-step: posterior probability computation over poses and translations."""
+"""E-step: posterior probability computation over poses and translations.
+
+Test oracle: moved unchanged from relax/reference/e_step.py, which no relax command imports.
+"""
 
 import functools
 import logging

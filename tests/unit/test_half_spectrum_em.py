@@ -434,7 +434,7 @@ class TestEStepHalfMatchesFull:
         ctf_params = jnp.asarray(ds.CTF_params)
 
         # === FULL-SPECTRUM reference (from em.core) ===
-        from relax.reference import core as em_core
+        from oracles import core as em_core
 
         # Full-spectrum projections
         proj_full = core.slice_volume(volume, rotations, IMAGE_SHAPE, VOLUME_SHAPE, "linear_interp", half_image=False)
@@ -502,7 +502,7 @@ class TestEStepHalfMatchesFull:
         ctf_params = jnp.asarray(ds.CTF_params)
 
         # Full-spectrum scores
-        from relax.reference import core as em_core
+        from oracles import core as em_core
 
         proj_full = core.slice_volume(volume, rotations, IMAGE_SHAPE, VOLUME_SHAPE, "linear_interp", half_image=False)
         proj_abs2_full = jnp.abs(proj_full) ** 2

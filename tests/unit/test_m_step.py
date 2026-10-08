@@ -7,9 +7,9 @@ pytest.importorskip("jax")
 
 import jax
 import jax.numpy as jnp
+from oracles.m_step import sum_up_translate_one_image
 
-from relax.sampling import translations_to_indices, get_translation_grid
-from relax.reference.m_step import sum_up_translate_one_image
+from relax.sampling import get_translation_grid, translations_to_indices
 
 pytestmark = pytest.mark.unit
 

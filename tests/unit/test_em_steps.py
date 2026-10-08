@@ -3,8 +3,7 @@ import pytest
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
-
-from relax.reference import e_step, m_step
+from oracles import e_step, m_step
 
 pytestmark = pytest.mark.unit
 

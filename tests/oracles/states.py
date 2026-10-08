@@ -1,4 +1,7 @@
-"""Reference state containers for homogeneous and heterogeneous EM."""
+"""Reference state containers for homogeneous and heterogeneous EM.
+
+Test oracle: moved unchanged from relax/reference/states.py, which no relax command imports.
+"""
 
 import jax
 import numpy as np

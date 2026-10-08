@@ -14,8 +14,7 @@ pytest.importorskip("jax")
 
 import jax
 import jax.numpy as jnp
-
-import relax.reference.heterogeneity as hetero
+import oracles.heterogeneity as hetero
 
 pytestmark = pytest.mark.unit
 

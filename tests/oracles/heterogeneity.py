@@ -1,3 +1,5 @@
+"""Test oracle: moved unchanged from relax/reference/heterogeneity.py, which no relax command imports."""
+
 import functools
 import logging
 from typing import NamedTuple

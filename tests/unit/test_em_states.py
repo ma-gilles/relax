@@ -13,7 +13,7 @@ from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 
-from relax.reference.states import EMState, HeterogeneousEMState
+from oracles.states import EMState, HeterogeneousEMState
 
 pytestmark = pytest.mark.unit
 

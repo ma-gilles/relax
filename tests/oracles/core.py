@@ -1,4 +1,7 @@
-"""Core EM iteration logic: cross-correlation, residual computation."""
+"""Core EM iteration logic: cross-correlation, residual computation.
+
+Test oracle: moved unchanged from relax/reference/core.py, which no relax command imports.
+"""
 
 import equinox as eqx
 import jax

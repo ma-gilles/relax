@@ -1,10 +1,10 @@
 """Owners for the fixed-rotation covariance images and the BPref centered sources."""
 
 import numpy as np
+import oracles.heterogeneity as hetero
 import pytest
 from helpers.float_compare import matches
 
-import relax.reference.heterogeneity as hetero
 from relax.vdam import layout
 
 

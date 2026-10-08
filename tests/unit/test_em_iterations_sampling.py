@@ -8,7 +8,8 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 pytest.importorskip("healpy")
 
-import relax.reference.iterations as em_iterations
+import oracles.iterations as em_iterations
+
 import relax.sampling as em_sampling
 from relax.relion import relion_metadata
 

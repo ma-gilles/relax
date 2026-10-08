@@ -1,4 +1,7 @@
-"""High-level EM loop orchestration and convergence tracking."""
+"""High-level EM loop orchestration and convergence tracking.
+
+Test oracle: moved unchanged from relax/reference/iterations.py, which no relax command imports.
+"""
 
 import logging
 
@@ -6,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.reference.core import hard_assignment_idx_to_pose
+from oracles.core import hard_assignment_idx_to_pose
 
 logger = logging.getLogger(__name__)
 

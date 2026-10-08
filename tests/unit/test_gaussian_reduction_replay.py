@@ -8,8 +8,7 @@ from itertools import permutations
 import numpy as np
 import pytest
 from helpers.float_compare import matches
-
-from relax.reference.gaussian_reduction_replay import (
+from oracles.gaussian_reduction_replay import (
     CAPTURE_SCHEMA,
     RELION_COARSE_ATOMIC_LANES,
     RELION_COARSE_CHUNK_PIXELS,

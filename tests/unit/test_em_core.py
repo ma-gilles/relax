@@ -14,7 +14,7 @@ import pytest
 pytest.importorskip("jax")
 
 import jax.numpy as jnp
-from relax.reference import core as em_core
+from oracles import core as em_core
 
 pytestmark = pytest.mark.unit
 
