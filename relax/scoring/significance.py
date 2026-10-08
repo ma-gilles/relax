@@ -29,13 +29,8 @@ from relax.helpers.env_flags import (
 )
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion.relion_coarse_operands import (
-    _assemble_relion_exact_coarse_gaussian_operands,
     _infer_relion_coarse_healpix_order,
     _k1_relion_f32_coarse_support_enabled,
-    _process_relion_exact_coarse_half_image,
-    _relion_cc_inverse_power_from_processed,
-    _repeat_pad_batch_axis,
-    assemble_relion_cc_coarse_operands,
 )
 from relax.scoring.coarse_gaussian_gemm import (
     _coarse_gaussian_gemm_projection_cache_stats,
@@ -45,6 +40,7 @@ from relax.scoring.coarse_publication import coarse_square_layout_metadata, coar
 from relax.scoring.gaussian_plan import plan_coarse_gaussian
 from relax.scoring.pass1_assembly import log_batch_timing, significant_samples_after_loop
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
+from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, PassShape, ScoreDumpContext
 from relax.scoring.scoring import (
@@ -647,8 +643,7 @@ def _compute_k_class_significance_batched(
     from recovar.reconstruction import noise as noise_utils
 
     from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.helpers.half_spectrum import make_scoring_half_image_weights, redundant_nyquist_column_pixels
-    from relax.helpers.image_shifts import tiled_half_image_phase_factors
+    from relax.helpers.half_spectrum import make_scoring_half_image_weights
     from relax.helpers.oversampling import find_significant_rotations as _find_sig
 
     if score_mode not in {"gaussian", "normalized_cc"}:
@@ -796,7 +791,6 @@ def _compute_k_class_significance_batched(
     exact_cc_score_indices = None
     exact_cc_translation_angles = None
     if exact_cc_enabled:
-        from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
         from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
 
         exact_cc_score_indices = jnp.asarray(
@@ -820,8 +814,7 @@ def _compute_k_class_significance_batched(
             n_trans,
         )
     track_class_second = return_class_second or tree_rescore_enabled
-    if use_window:
-        half_weights_windowed = window_spec.score_values(half_weights)
+    score_half_weights = window_spec.score_values(half_weights) if use_window else half_weights
     tree_rescore_plan = None
     if tree_rescore_enabled:
         require_tree_rescore_call(
@@ -840,7 +833,7 @@ def _compute_k_class_significance_batched(
             translations_source=translations_source,
             relion_translation_angle_scale=relion_translation_angle_scale,
             geometry=TreeRescoreGeometry(
-                half_weights=half_weights_windowed if use_window else half_weights,
+                half_weights=score_half_weights,
                 rotations=rotations,
                 n_trans=n_trans,
                 score_size=score_size,
@@ -850,6 +843,39 @@ def _compute_k_class_significance_batched(
                 coarse_rotation_ids=coarse_rotation_ids,
                 symmetry_label=symmetry_label,
             ),
+        )
+
+    if exact_cc_enabled:
+        operand_plan = CcOperandPlan(
+            experiment_dataset=experiment_dataset,
+            image_shape=image_shape,
+            image_pre_shifts=image_pre_shifts,
+            window_indices=window_indices if use_window else None,
+            score_indices=exact_cc_score_indices,
+            score_half_weights=score_half_weights,
+            support_power_weights=score_half_weights if cc_gaussian_support else None,
+            translation_angles=exact_cc_translation_angles,
+            n_trans=n_trans,
+            score_with_masked_images=score_with_masked_images,
+            scale_corrections_enabled=scale_corrections is not None,
+        )
+    else:
+        operand_plan = GaussianOperandPlan(
+            experiment_dataset=experiment_dataset,
+            gaussian_plan=gaussian_plan,
+            image_shape=image_shape,
+            half_weights=half_weights,
+            translations_source=translations_source,
+            relion_translation_angle_scale=relion_translation_angle_scale,
+            score_with_masked_images=score_with_masked_images,
+            nyquist_column_counting=nyquist_column_counting,
+            scale_corrections_enabled=scale_corrections is not None,
+            use_float64_scoring=use_float64_scoring,
+            stable_fourier_window_shapes=stable_fourier_window_shapes,
+            score_size=score_size,
+            current_size=current_size,
+            coarse_kernel_window=coarse_kernel_window,
+            coarse_kernel_r_max=None if coarse_kernel_window is None else int(relion_projector_r_max),
         )
 
     n_blocks = (n_rot + rotation_block_size - 1) // rotation_block_size
@@ -909,10 +935,6 @@ def _compute_k_class_significance_batched(
     # compile a program for every batch size (1339 compiles in a several-shape VDAM run).
     noise_table_host = np.asarray(noise_variance_half) if noise_variance_half.ndim == 2 else None
     image_groups_host = None if noise_table_host is None else np.asarray(optics_group_ids, dtype=np.int32)
-    coarse_gaussian_shifted_corrected = None
-    coarse_gaussian_unshifted_corrected = None
-    coarse_gaussian_pixel_weight = None
-    coarse_gaussian_initial_diff2 = None
 
     # The texture projector naturally produces a centered current-size crop.
     # Ask it only for the rows consumed by the scorer instead of scattering the
@@ -1008,9 +1030,7 @@ def _compute_k_class_significance_batched(
         relion_projector_half=relion_projector_half,
         relion_projector_r_max=relion_projector_r_max,
         projection_padding_factor=projection_padding_factor,
-        exact_cc_enabled=exact_cc_enabled,
-        exact_cc_score_indices=exact_cc_score_indices,
-        coarse_gaussian_score_indices=None if gaussian_plan is None else gaussian_plan.score_indices,
+        score_indices=operand_plan.score_indices,
     )
     batch_input_plan = BatchInputPlan(
         experiment_dataset=experiment_dataset,
@@ -1044,7 +1064,6 @@ def _compute_k_class_significance_batched(
             # The outputs a batch has only on some routes; publish_batch receives every name.
             batch_pmax = batch_weights = batch_sig_mask = batch_sig_rot_mask = batch_n_sig = batch_cutoff_count = None
             _batch_sum_weight = _batch_significant_weight = None
-            exact_cc_operands = exact_cc_pixel_weight = exact_cc_shifted = None
             batch_inputs = prepare_batch_inputs(
                 batch_input_plan,
                 batch_data,
@@ -1052,100 +1071,7 @@ def _compute_k_class_significance_batched(
                 start_idx=start_idx,
                 end_idx=end_idx,
             )
-            if exact_cc_enabled:
-                from relax.cuda import kernels as em_cuda_kernels
-
-                exact_cc_processed = _process_relion_exact_coarse_half_image(
-                    experiment_dataset,
-                    batch_inputs.batch_data,
-                    score_with_masked_images,
-                    relion_preprocess_kwargs=batch_inputs.relion_preprocess_kwargs,
-                    image_indices=batch_inputs.batch_image_indices,
-                )
-                exact_cc_phase_factors = None
-                if image_pre_shifts is not None and not batch_inputs.real_space_pre_shift_applied:
-                    exact_cc_shifts = np.asarray(image_pre_shifts)[np.asarray(indices)]
-                    exact_cc_phase_factors = tiled_half_image_phase_factors(
-                        image_shape,
-                        jnp.asarray(_repeat_pad_batch_axis(exact_cc_shifts, batch_inputs.batch_size)),
-                        1,
-                    )
-                # The padded rows of a short last batch repeat its first image's CTF row.
-                exact_cc_operands = assemble_relion_cc_coarse_operands(
-                    exact_cc_processed,
-                    _relion_exact_ctf_half_from_source_star(
-                        experiment_dataset,
-                        _repeat_pad_batch_axis(np.asarray(indices), batch_inputs.batch_size),
-                        image_shape,
-                    ),
-                    _relion_cc_inverse_power_from_processed(
-                        exact_cc_processed,
-                        window_indices if use_window else None,
-                        (half_weights_windowed if use_window else half_weights) if cc_gaussian_support else None,
-                    ),
-                    jnp.asarray(batch_inputs.batch_scale_np, dtype=jnp.float32),
-                    phase_factors=exact_cc_phase_factors,
-                    window_indices=window_indices if use_window else None,
-                    scale_corrections_enabled=scale_corrections is not None,
-                )
-                exact_cc_shifted = em_cuda_kernels.relion_translate_score_f32(
-                    exact_cc_operands.windowed_unshifted,
-                    exact_cc_translation_angles,
-                    exact_cc_score_indices,
-                    image_shape,
-                ).reshape(batch_inputs.batch_size, n_trans, -1)
-                exact_cc_pixel_weight = exact_cc_operands.windowed_corr_img * (
-                    half_weights_windowed if use_window else half_weights
-                )
-
-            if exact_gaussian:
-                processed_direct = _process_relion_exact_coarse_half_image(
-                    experiment_dataset,
-                    batch_inputs.batch_data,
-                    score_with_masked_images,
-                    relion_preprocess_kwargs=batch_inputs.relion_preprocess_kwargs,
-                    image_indices=batch_inputs.batch_image_indices,
-                )
-                if nyquist_column_counting != "relion":
-                    # The score weights are zero on these pixels; zeroing them here also takes them
-                    # out of powerClass's high-shell image power (the diff2 constant).
-                    processed_direct = jnp.where(
-                        jnp.asarray(redundant_nyquist_column_pixels(image_shape))[None, :],
-                        jnp.zeros((), dtype=processed_direct.dtype),
-                        processed_direct,
-                    )
-                exact_operands = _assemble_relion_exact_coarse_gaussian_operands(
-                    experiment_dataset,
-                    processed_direct,
-                    indices,
-                    use_float64_scoring=use_float64_scoring,
-                    batch_scale_np=batch_inputs.batch_scale_np,
-                    batch_size=batch_inputs.batch_size,
-                    score_indices=gaussian_plan.score_indices,
-                    score_indices_np=gaussian_plan.score_indices_np,
-                    score_active_mask=gaussian_plan.score_active_mask,
-                    translations_source=translations_source,
-                    relion_translation_angle_scale=relion_translation_angle_scale,
-                    image_shape=image_shape,
-                    noise_variance_half=batch_inputs.batch_noise_half,
-                    scale_corrections_enabled=scale_corrections is not None,
-                    half_weights=half_weights,
-                    powerclass=gaussian_plan.powerclass,
-                    current_size=(
-                        gaussian_plan.square_layout.physical_current_size
-                        if stable_fourier_window_shapes
-                        else current_size
-                    ),
-                    runtime_current_size=(
-                        jnp.asarray(score_size, dtype=jnp.int32) if stable_fourier_window_shapes else None
-                    ),
-                    coarse_kernel_window=coarse_kernel_window,
-                    coarse_kernel_r_max=None if coarse_kernel_window is None else int(relion_projector_r_max),
-                )
-                coarse_gaussian_shifted_corrected = exact_operands.shifted_corrected
-                coarse_gaussian_pixel_weight = exact_operands.pixel_weight
-                coarse_gaussian_unshifted_corrected = exact_operands.unshifted_corrected
-                coarse_gaussian_initial_diff2 = exact_operands.initial_diff2
+            operands = operand_plan.prepare(batch_inputs, indices)
 
             # Identify per-batch dump target rows so we can record raw scores
             # (pre-prior) for each target image inside the per-class block loop.
@@ -1225,14 +1151,7 @@ def _compute_k_class_significance_batched(
                 for class_index in range(n_classes)
                 for r0 in range(0, n_rot, rotation_block_size)
             )
-            if exact_cc_enabled:
-                pass1_operands = (exact_cc_shifted, jnp.asarray(exact_cc_pixel_weight, dtype=jnp.float32), None)
-            else:
-                pass1_operands = (
-                    jnp.asarray(coarse_gaussian_shifted_corrected, dtype=jnp.complex64),
-                    jnp.asarray(coarse_gaussian_pixel_weight, dtype=jnp.float32),
-                    jnp.asarray(coarse_gaussian_initial_diff2, dtype=jnp.float32),
-                )
+            program_inputs = operands.program_inputs()
             pass1_static = dict(
                 n_trans=int(n_trans),
                 image_shape=tuple(int(value) for value in image_shape),
@@ -1257,7 +1176,7 @@ def _compute_k_class_significance_batched(
                 pass1_state, pass1_values, pass1_dumps = _coarse_pass1_blocks(
                     pass1_state,
                     coarse_gaussian_gemm_projection_cache,
-                    *pass1_operands,
+                    *program_inputs,
                     actual_batch_size,
                     tuple(
                         pass1_prior_terms[class_index][r0 // rotation_block_size]
@@ -1280,7 +1199,7 @@ def _compute_k_class_significance_batched(
                     block_state, block_values, block_dump = _coarse_pass1_block(
                         _class_block_state(pass1_state, class_index),
                         reference,
-                        *pass1_operands,
+                        *program_inputs,
                         actual_batch_size,
                         pass1_prior_terms[class_index][r0 // rotation_block_size],
                         batch_inputs.translation_log_prior,
@@ -1333,8 +1252,8 @@ def _compute_k_class_significance_batched(
                         class_second_argmax=class_second_best_argmaxes[0],
                         class_second_score=class_second_best_scores[0],
                     ),
-                    exact_cc_operands.windowed_unshifted,
-                    exact_cc_operands.windowed_corr_img,
+                    operands.unshifted,
+                    operands.corr_img,
                     experiment_dataset=experiment_dataset,
                     indices=indices,
                     debug_iteration=debug_iteration,
@@ -1471,13 +1390,7 @@ def _compute_k_class_significance_batched(
                 dump_target_pre_prior_blocks_per_class=None if defer_publish else dump_target_pre_prior_blocks_per_class,
                 dump_target_with_prior_blocks_per_class=None if defer_publish else dump_target_with_prior_blocks_per_class,
                 translation_log_prior=None if defer_publish else batch_inputs.translation_log_prior,
-                coarse_gaussian_shifted_corrected=None if defer_publish else coarse_gaussian_shifted_corrected,
-                coarse_gaussian_unshifted_corrected=None if defer_publish else coarse_gaussian_unshifted_corrected,
-                coarse_gaussian_pixel_weight=None if defer_publish else coarse_gaussian_pixel_weight,
-                coarse_gaussian_initial_diff2=None if defer_publish else coarse_gaussian_initial_diff2,
-                exact_cc_operands=None if defer_publish else exact_cc_operands,
-                exact_cc_pixel_weight=None if defer_publish else exact_cc_pixel_weight,
-                exact_cc_shifted=None if defer_publish else exact_cc_shifted,
+                operands=None if defer_publish else operands,
             )
             if defer_publish:
                 pending_batch = batch_outputs

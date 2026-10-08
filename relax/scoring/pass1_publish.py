@@ -210,21 +210,11 @@ def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, 
             target_scores_pre_prior_per_class=target_scores_pre_prior_per_class,
             target_scores_with_prior_per_class=target_scores_with_prior_per_class,
             # RELION's exact coarse operands: the Gaussian GEMM's, or the CC pass's.
-            coarse_gaussian_shifted_corrected=(
-                batch.exact_cc_shifted if dump.exact_cc_enabled else batch.coarse_gaussian_shifted_corrected
-            ),
-            coarse_gaussian_unshifted_corrected=(
-                batch.exact_cc_operands.windowed_unshifted
-                if dump.exact_cc_enabled
-                else batch.coarse_gaussian_unshifted_corrected
-            ),
-            coarse_gaussian_pixel_weight=(
-                batch.exact_cc_pixel_weight if dump.exact_cc_enabled else batch.coarse_gaussian_pixel_weight
-            ),
-            coarse_gaussian_initial_diff2=None if dump.exact_cc_enabled else batch.coarse_gaussian_initial_diff2,
-            coarse_gaussian_score_indices=(
-                dump.exact_cc_score_indices if dump.exact_cc_enabled else dump.coarse_gaussian_score_indices
-            ),
+            coarse_gaussian_shifted_corrected=batch.operands.shifted,
+            coarse_gaussian_unshifted_corrected=batch.operands.unshifted,
+            coarse_gaussian_pixel_weight=batch.operands.pixel_weight,
+            coarse_gaussian_initial_diff2=batch.operands.initial_diff2,
+            coarse_gaussian_score_indices=dump.score_indices,
             translation_phase_source=dump.translations_source,
             relion_projector_half=dump.relion_projector_half,
             relion_projector_r_max=dump.relion_projector_r_max,

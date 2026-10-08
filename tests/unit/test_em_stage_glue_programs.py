@@ -164,17 +164,17 @@ def test_coarse_pad_env_flag_stays_inside_the_null_band_on_gpu(monkeypatch):
 def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
     """With the flag on, preprocessing sees ``image_batch_size`` rows every time."""
 
-    from relax.scoring import significance
+    from relax.scoring import pass1_operands, significance
 
     args, kwargs = _significance_call(monkeypatch, n_classes=1)
-    original = significance._process_relion_exact_coarse_half_image
+    original = pass1_operands._process_relion_exact_coarse_half_image
     seen = []
 
     def record(experiment_dataset, batch, *rest, **batch_kwargs):
         seen.append(int(np.asarray(batch).shape[0]))
         return original(experiment_dataset, batch, *rest, **batch_kwargs)
 
-    monkeypatch.setattr(significance, "_process_relion_exact_coarse_half_image", record)
+    monkeypatch.setattr(pass1_operands, "_process_relion_exact_coarse_half_image", record)
 
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     significance._compute_k_class_significance_batched(*args, **kwargs)

@@ -53,9 +53,8 @@ class ScoreDumpContext:
 
     ``RELAX_SIGNIFICANCE_DUMP_*`` writes the scores and operands of chosen images
     (:func:`relax.diagnostics.coarse_gaussian_diagnostics._maybe_dump_k_class_significance_batch`). The dump only
-    observes; nothing here steers the pass. ``exact_cc_enabled`` says which operand set the dump records: the
-    normalized CC's (``exact_cc_score_indices``) or the Gaussian GEMM's (``coarse_gaussian_score_indices``, ``None``
-    off the Gaussian route).
+    observes; nothing here steers the pass. ``score_indices`` are the scored rows of the half spectrum of the pass's
+    own score (the Gaussian GEMM's square rows, or the normalized CC's), on the device.
     """
 
     experiment_dataset: Any
@@ -71,9 +70,7 @@ class ScoreDumpContext:
     relion_projector_half: Any
     relion_projector_r_max: int | None
     projection_padding_factor: int
-    exact_cc_enabled: bool
-    exact_cc_score_indices: Any
-    coarse_gaussian_score_indices: Any
+    score_indices: Any
 
 
 @dataclass(frozen=True)
@@ -87,9 +84,10 @@ class BatchOutputs:
     ``pmax`` .. ``cutoff_count`` and ``sum_weight`` are the float32 support's results (the pass's ``collect_significance``
     route); ``best_*`` is the joint class-and-pose winner; ``class_*`` hold one array per class.
 
-    The last twelve fields are read only to dump the batch (``debug_dump_enabled``). A batch that waits for its
+    The last six fields are read only to dump the batch (``debug_dump_enabled``). A batch that waits for its
     read-back while the device scores the next one (the float32 support route without a dump) leaves them ``None``,
-    so that it does not hold the batch's score and operand arrays.
+    so that it does not hold the batch's score and operand arrays. ``operands`` are the batch's
+    :class:`relax.scoring.pass1_operands.ScoreOperands`.
     """
 
     start_idx: int
@@ -119,13 +117,7 @@ class BatchOutputs:
     dump_target_pre_prior_blocks_per_class: list | None
     dump_target_with_prior_blocks_per_class: list | None
     translation_log_prior: Any
-    coarse_gaussian_shifted_corrected: Any
-    coarse_gaussian_unshifted_corrected: Any
-    coarse_gaussian_pixel_weight: Any
-    coarse_gaussian_initial_diff2: Any
-    exact_cc_operands: Any
-    exact_cc_pixel_weight: Any
-    exact_cc_shifted: Any
+    operands: Any
 
 
 @dataclass
