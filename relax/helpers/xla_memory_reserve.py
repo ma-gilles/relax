@@ -230,6 +230,21 @@ def _backend_pool_limit_bytes() -> int | None:
     return None if not limit else int(limit)
 
 
+# The share of the XLA pool limit that one device working set (a large transform, or one chunk of it) may take.
+# After a pass's peak, or with preallocation off, the pool fragments (relax#20): at 16 GB (limit 17.0 GB, 4.8 GB in
+# use) the 1.63 GiB cuFFT work area of a 5.2 GB inverse FFT could not be found and XLA aborted (relax#40, job
+# 15191052), while the same transform at 40 and 80 GB ran.
+SINGLE_WORKING_SET_LIMIT_SHARE = 0.25
+
+
+def single_working_set_bytes(pool_limit_bytes: int | None = None) -> int | None:
+    """The largest working set one device transform may take: ``SINGLE_WORKING_SET_LIMIT_SHARE`` of the XLA pool
+    limit, the running backend's when ``pool_limit_bytes`` is None. ``None`` off GPU."""
+
+    limit = _backend_pool_limit_bytes() if pool_limit_bytes is None else int(pool_limit_bytes)
+    return None if limit is None else int(SINGLE_WORKING_SET_LIMIT_SHARE * limit)
+
+
 def require_projector_texture_reserve(
     model_box: int | None,
     padding_factor: int,

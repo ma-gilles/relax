@@ -30,6 +30,7 @@ from relax.helpers.resolution import (
     _firstiter_cc_ini_high_tau2_taper,
     shell_index_to_resolution_angstrom,
 )
+from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, single_working_set_bytes
 from relax.reconstruction import regularization_relion
 from relax.refinement.ports import ClassPriorEstimated, RunObserver
 from relax.refinement.tomo_half import TomoHalf
@@ -1911,12 +1912,6 @@ def _large_irfft_requires_explicit_normalization(volume_shape) -> bool:
 # 1.76 GB (0.93 of it; relax#40), so three halves.
 _DEVICE_IRFFT_HALVES = 3.0
 
-# The share of the allocator's limit the device inverse FFT may take. With preallocation off the pool fragments
-# after the E-step's peak (relax#20): at 16 GB (limit 17.0 GB, 4.8 GB in use) the 1.63 GiB cuFFT work area for a
-# 5.2 GB working set could not be found and XLA aborted (relax#40, job 15191052), while the same transform at 40
-# and 80 GB ran.
-_DEVICE_IRFFT_LIMIT_SHARE = 0.25
-
 
 def _device_allocator_limit_bytes() -> int | None:
     """The JAX allocator's byte limit on the first GPU, or None off GPU."""
@@ -1933,9 +1928,9 @@ def _large_relion_host_irfft_enabled(volume_shape, *, allocator_limit_bytes: int
     """Return whether a padded RELION inverse FFT should execute on the host.
 
     Automatically when the transform's int32 size product overflows, or when its device working set
-    (``_DEVICE_IRFFT_HALVES`` packed complex64 halves) exceeds ``_DEVICE_IRFFT_LIMIT_SHARE`` of the allocator's
-    limit (``allocator_limit_bytes``, read from the device when None): a cuFFT work area that cannot be found aborts
-    the process instead of raising.
+    (``_DEVICE_IRFFT_HALVES`` packed complex64 halves) exceeds the single working set the allocator's limit allows
+    (``xla_memory_reserve.single_working_set_bytes``; the limit is ``allocator_limit_bytes``, read from the device
+    when None): a cuFFT work area that cannot be found aborts the process instead of raising.
     """
 
     mode = os.environ.get("RELAX_RELION_HOST_IRFFT", "auto").strip().lower()
@@ -1955,12 +1950,12 @@ def _large_relion_host_irfft_enabled(volume_shape, *, allocator_limit_bytes: int
         return False
     half_bytes = int(np.prod(fourier_transform_utils.volume_shape_to_half_volume_shape(volume_shape))) * 8
     working_set = _DEVICE_IRFFT_HALVES * half_bytes
-    if working_set <= _DEVICE_IRFFT_LIMIT_SHARE * limit:
+    if working_set <= single_working_set_bytes(limit):
         return False
     logger.info(
         "RELION padded inverse FFT on the host: its device working set %.2f GiB exceeds %.0f%% of the %.2f GiB "
         "allocator limit (relax#40)",
-        working_set / 2**30, 100 * _DEVICE_IRFFT_LIMIT_SHARE, limit / 2**30,
+        working_set / 2**30, 100 * SINGLE_WORKING_SET_LIMIT_SHARE, limit / 2**30,
     )
     return True
 

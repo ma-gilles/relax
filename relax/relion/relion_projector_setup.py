@@ -27,6 +27,7 @@ from relax.helpers.deterministic_reduce import (
     static_shell_voxel_lists,
 )
 from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.helpers.xla_memory_reserve import single_working_set_bytes
 from relax.relion.relion_project import gridding_correct_volume_real, gridding_correct_volume_real_separable
 
 # Real-space gridding-correction windows of the projector setup: RELION's radial
@@ -186,6 +187,23 @@ def _checked_reference(reference_relion, box_size, padding_factor, compute_dtype
 # Complex working set of one chunk of the transform. Boxes up to padded 512 are one chunk.
 _CHUNK_BYTES = 2 * 1024**3
 
+# Device bytes one chunk of the host build holds, per byte of ``chunk_bytes``: the padded input, its transform and
+# the cropped output. Measured at box 448, padding 2, full radius on an A100: the build's high-water rises 3.2-3.3
+# GiB per GiB of chunk (0.25, 0.5 and 1 GiB chunks, xy stage on the host: 1.70, 2.50, 4.17 GiB).
+_CHUNK_WORKING_SET_MULTIPLE = 3.5
+
+
+def _host_build_chunk_bytes(working_set_bytes: int | None) -> int:
+    """``_CHUNK_BYTES``, lowered so that one chunk's device working set fits ``working_set_bytes``.
+
+    On a 16 GB card the fixed 2 GiB chunks were single requests the fragmented pool could not place: box 380's final
+    pass (2.00 GiB) and box 448's iteration 3 (relax#46).
+    """
+
+    if working_set_bytes is None:
+        return _CHUNK_BYTES
+    return max(1, min(_CHUNK_BYTES, int(working_set_bytes / _CHUNK_WORKING_SET_MULTIPLE)))
+
 
 def _build_projector_window(
     reference, r_max, box_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False, output_radius=None,
@@ -216,7 +234,15 @@ def _build_projector_window(
     # ftu centers y/z with -Nyquist at index zero. RELION's FFTW traversal
     # instead gives that same coefficient +Nyquist; never duplicate it at -N/2.
     yz_index = jnp.asarray((np.arange(size) - size // 2) % m, dtype=jnp.int32)
-    chunk_bytes = _CHUNK_BYTES if chunk_bytes is None else int(chunk_bytes)
+    # On the host build one chunk's working set and the xy stage are each held to the single working set the device
+    # allows; an xy stage larger than that stays on the host (relax#46). Each FFT sees the same rows. At box 448 on
+    # a 16 GB card this takes the build's high-water from 10.4 to 3.2 GiB; 40 and 80 GB cards keep 2 GiB chunks.
+    working_set_bytes = single_working_set_bytes() if to_host else None
+    if chunk_bytes is None:
+        chunk_bytes = _host_build_chunk_bytes(working_set_bytes) if to_host else _CHUNK_BYTES
+    chunk_bytes = int(chunk_bytes)
+    xy_bytes = n * size * n_x * 2 * jnp.dtype(reference.dtype).itemsize
+    xy_on_host = working_set_bytes is not None and xy_bytes > working_set_bytes
 
     cz = max(1, chunk_bytes // (16 * m * m))
     cy = max(1, chunk_bytes // (16 * m * n_x))
@@ -236,7 +262,7 @@ def _build_projector_window(
     else:
         stages = _window_in_chunks(
             reference, yz_index, r_max, box_size=n, padding_factor=pf, size=size, n_x=n_x,
-            cz=cz, cy=cy, to_host=to_host, pair_once=pair_once,
+            cz=cz, cy=cy, to_host=to_host, pair_once=pair_once, xy_on_host=xy_on_host,
         )
     blocks, slab, sums, counts = [], None, None, None
     for y0, block, block_sums, block_counts in stages:
@@ -277,11 +303,24 @@ def _window_in_one_program(reference, yz_index, r_max, *, box_size, padding_fact
     )
 
 
-def _window_in_chunks(reference, yz_index, r_max, *, box_size, padding_factor, size, n_x, cz, cy, to_host, pair_once):
-    """The window in z-slabs, then y-slabs: yields ``(y_start, block, sums, counts)`` per y-slab."""
+def _window_in_chunks(
+    reference, yz_index, r_max, *, box_size, padding_factor, size, n_x, cz, cy, to_host, pair_once, xy_on_host=False
+):
+    """The window in z-slabs, then y-slabs: yields ``(y_start, block, sums, counts)`` per y-slab.
+
+    ``xy_on_host`` collects the xy stage on the host and moves one y-slab at a time back for the z transform.
+    """
 
     n, m = int(box_size), int(padding_factor) * int(box_size)
-    if to_host and cz < n:
+    if xy_on_host:
+        xy = None
+        for z0 in range(0, n, cz):
+            block = np.asarray(jax.device_get(_transform_xy(reference[z0 : z0 + cz], yz_index, fft_size=m, n_x=n_x)))
+            if xy is None:
+                xy = np.empty((n,) + block.shape[1:], dtype=block.dtype)
+            xy[z0 : z0 + block.shape[0]] = block
+            del block
+    elif to_host and cz < n:
         # Eager chunks are written into one preallocated array in place, so the
         # xy stage never holds its chunks and their concatenation together (2 x
         # 15.3 GiB at EMPIAR-10202's full box, current size 800).
@@ -296,7 +335,9 @@ def _window_in_chunks(reference, yz_index, r_max, *, box_size, padding_factor, s
         xy = [_transform_xy(reference[z0 : z0 + cz], yz_index, fft_size=m, n_x=n_x) for z0 in range(0, n, cz)]
         xy = xy[0] if len(xy) == 1 else jnp.concatenate(xy, axis=0)
     for y0 in range(0, size, cy):
-        block = _transform_z(xy[:, y0 : y0 + cy], yz_index, fft_size=m)
+        y_slab = jnp.asarray(np.ascontiguousarray(xy[:, y0 : y0 + cy])) if xy_on_host else xy[:, y0 : y0 + cy]
+        block = _transform_z(y_slab, yz_index, fft_size=m)
+        del y_slab
         yield (y0,) + _mask_and_shell_power(
             block, r_max, box_size=n, padding_factor=padding_factor, size=size, y_start=y0, pair_once=pair_once
         )
