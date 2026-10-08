@@ -411,8 +411,9 @@ def _estimate_native_sampling_accuracy(
         if isolate_in_subprocess
         else estimate_relion_expected_accuracy_from_prepared_inputs
     )
-    def group_constant(values, trials, name):
-        unique = np.unique(np.broadcast_to(np.asarray(values, dtype=np.float64), (len(particle_state.translation_offsets),))[trials])
+    def group_constant(values, trials, name, n_rows=len(particle_state.translation_offsets)):
+        """The one value of an optics constant over ``trials`` (rows of ``values``, a scalar or ``n_rows`` values)."""
+        unique = np.unique(np.broadcast_to(np.asarray(values, dtype=np.float64), (n_rows,))[trials])
         if unique.size != 1:
             raise ValueError(f"the expected-accuracy trials of one optics group have several {name} values")
         return float(unique[0])
@@ -443,7 +444,7 @@ def _estimate_native_sampling_accuracy(
                 defocus_angle=zeros,
                 phase_shift=zeros,
                 **{
-                    name: float(np.unique(np.asarray(tilt_images[name], dtype=np.float64)[images])[0])
+                    name: group_constant(tilt_images[name], images, name, n_rows=len(tilt_images[name]))
                     for name in ("voltage", "spherical_aberration", "amplitude_contrast")
                 },
                 pixel_size=float(state.pixel_size),

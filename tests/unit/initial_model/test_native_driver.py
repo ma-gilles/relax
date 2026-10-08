@@ -812,6 +812,55 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
     assert_matches(captured["eulers"], np.zeros((2, 3)))
 
 
+@pytest.mark.parametrize("name", ["voltage", "spherical_aberration", "amplitude_contrast"])
+def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monkeypatch, name):
+    """An optics group has one voltage, Cs and Q0 (RELION's CTF::setValuesByGroup reads them from the
+    group's optics table, ctf.cpp:166-171, for every tilt image, ml_optimiser.cpp:9409-9418): tilt images
+    of one estimate with several values are refused, as the single-particle branch refuses them."""
+    reached = {}
+
+    def fake_estimator(**kwargs):
+        reached.update(kwargs)
+        raise RuntimeError("estimator reached")
+
+    monkeypatch.setattr(native_sampling, "estimate_relion_expected_accuracy_from_prepared_inputs", fake_estimator)
+    particle_state = NativeParticleState(
+        translation_offsets=np.zeros((2, 3)),
+        class_assignments=np.zeros(2, dtype=np.int32),
+        max_posterior=np.zeros(2, dtype=np.float32),
+        best_pose_eulers_deg=np.zeros((2, 3)),
+        best_pose_eulers_valid=np.ones(2, dtype=bool),
+    )
+    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
+    tilt_images = {
+        "image_offsets": np.asarray([0, 2, 4]),
+        "voltage": np.full(4, 300.0),
+        "spherical_aberration": np.full(4, 2.7),
+        "amplitude_contrast": np.full(4, 0.07),
+    }
+
+    def estimate(images):
+        return native_sampling._estimate_native_sampling_accuracy(
+            native_sampling._initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
+            state,
+            particle_state,
+            None,
+            particle_order=np.asarray([0, 1], dtype=np.int64),
+            random_seed=0,
+            padding_factor=1,
+            sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+            tilt_images=images,
+        )
+
+    with pytest.raises(RuntimeError, match="estimator reached"):
+        estimate(tilt_images)  # one value each: valid input reaches the estimator unchanged
+    assert reached["voltage"] == 300.0 and reached["spherical_aberration"] == 2.7
+
+    mixed = dict(tilt_images, **{name: np.asarray([1.0, 1.0, 1.0, 2.0]) * tilt_images[name]})
+    with pytest.raises(ValueError, match=f"several {name} values"):
+        estimate(mixed)
+
+
 @pytest.mark.parametrize("missing_name", ["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"])
 def test_particle_state_from_star_rejects_partial_euler_triplet(missing_name):
     main = pd.DataFrame(
