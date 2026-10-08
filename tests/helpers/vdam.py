@@ -143,3 +143,38 @@ def particle_state_table(rows):
             "_rlnMaxValueProbDistribution",
         ),
     )
+
+
+def projector_power_refresh(state, *, padding_factor):
+    """A loop projector refresh for tests: tau2 from the projector setup's power spectrum, no operands kept.
+
+    The arithmetic of ``relax.vdam.dense_adapter._IterationProjectorContext.refresh`` without its
+    handoff to the E-step (the tests' E-steps are stand-ins).
+    """
+    from dataclasses import replace
+
+    from relax.relion import relion_projector_setup
+
+    _, power, _ = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+        state.Iref,
+        current_size=int(state.current_size if state.current_size > 0 else state.ori_size),
+        padding_factor=int(padding_factor),
+    )
+    return replace(state, tau2_class=np.asarray(power, dtype=np.float64))
+
+
+def keep_tau2(state, *, padding_factor):
+    """A loop projector refresh for tests that keeps the state's tau2."""
+    del padding_factor
+    return state
+
+
+class PreparedProjector:
+    """A projector context for E-step tests: every ``take`` hands over the same prepared projector."""
+
+    def __init__(self, inputs=(np.zeros((1, 1), dtype=np.complex64), 1)):
+        self.inputs = inputs
+
+    def take(self, state, *, padding_factor):
+        del state, padding_factor
+        return self.inputs

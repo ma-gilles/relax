@@ -66,30 +66,6 @@ IterArtifactSink = Callable[[InitialModelState, int, dict], None]
 PostMstepUpdateFn = Callable[[InitialModelState, int, dict], InitialModelState]
 
 
-def refresh_tau2_from_projector_power(
-    state: InitialModelState,
-    *,
-    padding_factor: int = 1,
-    interpolator: int = 1,
-) -> InitialModelState:
-    """``MlModel::setFourierTransformMaps(!fix_tau)``: tau2 from the projector setup's power spectrum.
-
-    The same device transform the default projector context runs
-    (:func:`relax.vdam.dense_adapter.prepare_relion_projector_class_inputs_and_power`),
-    without keeping the scoring operands.
-    """
-    from relax.relion import relion_projector_setup
-
-    _, power, _ = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
-        state.Iref,
-        current_size=int(state.current_size if state.current_size > 0 else state.ori_size),
-        padding_factor=int(padding_factor),
-        interpolator=int(interpolator),
-    )
-    new_tau2 = np.asarray(power, dtype=np.float64)
-    return replace(state, tau2_class=new_tau2)
-
-
 def default_schedule_update(
     state: InitialModelState,
     iter: int,
@@ -259,10 +235,8 @@ def run_vdam_iterations(
     phase_lengths: VdamPhaseLengths | None = None,
     grad_stepsize: float | None = None,
     mu: float = DEFAULT_GRAD_MU,
-    refresh_tau2_from_projector: bool = True,
-    projector_refresh_fn: Callable[..., InitialModelState] | None = None,
+    projector_refresh_fn: Callable[..., InitialModelState],
     projector_padding_factor: int = 1,
-    projector_interpolator: int = 1,
     start_iteration: int = 0,
     diagnostic_stop_after_iteration: int | None = None,
     fourier_radius_schedule: tuple[int, ...] | None = None,
@@ -273,7 +247,9 @@ def run_vdam_iterations(
     """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``.
 
     ``update`` is the optimizer's model update (:class:`VdamUpdate` or :class:`MomentumSgdUpdate`), chosen
-    once by the caller. ``record_iteration`` updates the caller's own run state from the completed
+    once by the caller. ``projector_refresh_fn(state, padding_factor=...)`` runs before every E-step:
+    RELION's ``MlModel::setFourierTransformMaps(!fix_tau)``, the projector and tau2 from its power
+    spectrum (:meth:`relax.vdam.dense_adapter._IterationProjectorContext.refresh`). ``record_iteration`` updates the caller's own run state from the completed
     iteration (the sampling controller's counters) before ``iter_artifact_sink`` writes its outputs.
     """
     phase_lengths = _resolve_phase_lengths(
@@ -366,13 +342,7 @@ def run_vdam_iterations(
                 current_resolution_shell=radius,
                 current_resolution=float(radius) / (float(state.pixel_size) * float(state.ori_size)),
             )
-        if refresh_tau2_from_projector:
-            refresh = projector_refresh_fn or refresh_tau2_from_projector_power
-            current = refresh(
-                current,
-                padding_factor=projector_padding_factor,
-                interpolator=projector_interpolator,
-            )
+        current = projector_refresh_fn(current, padding_factor=projector_padding_factor)
         if profile_iterations:
             _record_stage("projector_refresh")
 

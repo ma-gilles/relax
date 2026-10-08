@@ -1,6 +1,8 @@
 """Native-oracle coverage of the VDAM device projector adapter boundary."""
 
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -120,10 +122,17 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
         half, r_max = native_reference_to_relion_projector_half_maps(state.Iref, current_size=8, padding_factor=1)
         return adapter._finish_relion_projector_class_inputs(state, 1, half, r_max)
 
+    def candidate_inputs():
+        # The E-step's projector, as the iteration's refresh prepares it.
+        (half, r_max), _ = adapter.prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+        return adapter._resolve_class_inputs(
+            state, replace(config, relion_projector_half_by_class=half, relion_projector_r_max=r_max)
+        )
+
     natives = [native_inputs() for _ in range(2)]
-    candidate2 = adapter._resolve_class_inputs(state, config)
+    candidate2 = candidate_inputs()
     monkeypatch.setenv(adapter._RELION_PROJECTOR_DUMP_DIR_ENV, str(tmp_path))
-    candidate = adapter._resolve_class_inputs(state, config)
+    candidate = candidate_inputs()
     assert candidate[3] == natives[0][1] == 4
     assert candidate[2].dtype == np.complex64
     _assert_existing_consumer_policy(natives[0][0], candidate[2], candidate2[2], natives[1][0])

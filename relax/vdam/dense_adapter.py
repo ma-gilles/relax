@@ -56,28 +56,24 @@ class _IterationProjectorContext:
     reference: np.ndarray | None = None
     geometry: tuple | None = None
 
-    def refresh(self, state, *, padding_factor, interpolator):
+    def refresh(self, state, *, padding_factor):
         # Clear even if construction fails, so stale data cannot survive a retry.
         self.prepared = self.reference = self.geometry = None
-        inputs, power = prepare_relion_projector_class_inputs_and_power(
-            state, padding_factor=padding_factor, interpolator=interpolator,
-        )
+        inputs, power = prepare_relion_projector_class_inputs_and_power(state, padding_factor=padding_factor)
         self.prepared = inputs
         self.reference = state.Iref
         self.geometry = (
-            int(state.iter), int(state.ori_size), int(state.current_size),
-            int(state.K), int(padding_factor), int(interpolator),
+            int(state.iter), int(state.ori_size), int(state.current_size), int(state.K), int(padding_factor),
         )
         return replace(state, tau2_class=power)
 
-    def take(self, state, *, padding_factor, interpolator=1):
+    def take(self, state, *, padding_factor):
         if self.prepared is None:
-            return None  # No refresh callback: preserve standalone/disabled behavior.
+            raise ValueError("no projector refresh ran before this E-step")
         inputs, reference, geometry = self.prepared, self.reference, self.geometry
         self.prepared = self.reference = self.geometry = None
         expected = (
-            int(state.iter), int(state.ori_size), int(state.current_size),
-            int(state.K), int(padding_factor), int(interpolator),
+            int(state.iter), int(state.ori_size), int(state.current_size), int(state.K), int(padding_factor),
         )
         if reference is not state.Iref or geometry != expected:
             raise ValueError("projector refresh/E-step reference or geometry changed")
@@ -298,34 +294,16 @@ def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEste
     return engine_kwargs
 
 
-def prepare_relion_projector_class_inputs(
-    state: InitialModelState,
-    *,
-    padding_factor: int,
-) -> tuple[np.ndarray, int]:
-    """Build InitialModel's production RELION projector once per iteration: ``(half maps by class, r_max)``."""
-    projector_half_by_class, projector_r_max = relion_projector_setup.reference_to_relion_projector_half_maps(
-        state.Iref,
-        current_size=state.current_size if state.current_size > 0 else state.ori_size,
-        padding_factor=padding_factor,
-    )
-    return _finish_relion_projector_class_inputs(
-        state, padding_factor, projector_half_by_class, projector_r_max
-    )
-
-
 def prepare_relion_projector_class_inputs_and_power(
     state: InitialModelState,
     *,
     padding_factor: int,
-    interpolator: int = 1,
 ) -> tuple[tuple[np.ndarray, int], np.ndarray]:
-    """Produce scoring operands and tau2 from the identical corrected FFT."""
+    """Produce scoring operands and tau2 from the identical corrected FFT (RELION's linear interpolator)."""
     half_maps, power, r_max = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
         state.Iref,
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
         padding_factor=padding_factor,
-        interpolator=interpolator,
     )
     return _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max), power
 
@@ -356,24 +334,17 @@ def _resolve_class_inputs(
     state: InitialModelState,
     config: DenseInitialModelEstepConfig,
 ) -> tuple[Any, Any, np.ndarray, int]:
-    """The exact RELION projector for one E-step, with NaN stand-ins for the dense class means.
+    """The iteration's RELION projector (prepared by the projector refresh), with NaN stand-ins for the
+    dense class means.
 
     The resident adaptive route scores with the projector and reads only K and the dtype of the dense
     N^3 means and their power (a NaN stand-in left 12-iteration K=1 and K=2 maps unchanged, job
     14512033), so ``(K, 1)`` NaN arrays replace them and any read shows up as NaN.
     """
-    if config.relion_projector_half_by_class is not None:
-        if config.relion_projector_r_max is None:
-            raise ValueError(
-                "relion_projector_r_max is required with relion_projector_half_by_class"
-            )
-        relion_projector_half_by_class = np.asarray(config.relion_projector_half_by_class)
-        relion_projector_r_max = int(config.relion_projector_r_max)
-    else:
-        relion_projector_half_by_class, relion_projector_r_max = prepare_relion_projector_class_inputs(
-            state,
-            padding_factor=config.padding_factor,
-        )
+    if config.relion_projector_half_by_class is None or config.relion_projector_r_max is None:
+        raise ValueError("the E-step needs the iteration's RELION projector: relion_projector_half_by_class and _r_max")
+    relion_projector_half_by_class = np.asarray(config.relion_projector_half_by_class)
+    relion_projector_r_max = int(config.relion_projector_r_max)
     means = np.full((int(state.K), 1), np.nan, dtype=np.complex64)
     mean_variance = np.full((int(state.K), 1), np.nan, dtype=np.float32)
     return means, mean_variance, relion_projector_half_by_class, relion_projector_r_max

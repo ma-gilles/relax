@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.vdam import keep_tau2
 
 from relax.commands import initial_model as initial_model_command
 from relax.diagnostics import vdam_mstep_replay
@@ -276,7 +277,7 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
             [_accum(current), _accum(current)],
             {"max_posterior_per_image": np.ones(len(ids)), "class_posterior_sums": np.asarray([float(len(ids))])},
         ),
-        refresh_tau2_from_projector=False,
+        projector_refresh_fn=keep_tau2,
         update=iteration_loop.VdamUpdate(padding_factor=1, mstep_compute_dtype="float32"),
     )
     assert calls == [1, 2]

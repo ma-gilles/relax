@@ -63,9 +63,6 @@ def test_shared_device_projector_matches_both_native_calls(
     assert np.all(relative_metrics(np.asarray(expected_half), inputs[0]) <= 4 * np.finfo(np.float32).eps)
     assert power.dtype == np.float64
     assert np.all(relative_metrics(np.asarray(expected_power), power) < 1e-12)
-    old_inputs = adapter.prepare_relion_projector_class_inputs(state, padding_factor=padding)
-    for actual, expected in zip(inputs, old_inputs):
-        assert_matches(actual, expected)
     assert_matches(state.Iref, references_before)
 
 
@@ -76,7 +73,7 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
     )
     calls = []
 
-    def prepare(current, *, padding_factor, interpolator):
+    def prepare(current, *, padding_factor):
         calls.append((current.iter, current.Iref.copy()))
         return (current.Iref.copy(), 4), np.full((1, 5), current.iter)
 
@@ -85,12 +82,13 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
     for iteration in (1, 2):
         state = replace(state, iter=iteration, Iref=state.Iref + 1)
         before = state.tau2_class.copy()
-        refreshed = ctx.refresh(state, padding_factor=1, interpolator=1)
+        refreshed = ctx.refresh(state, padding_factor=1)
         assert_matches(state.tau2_class, before)
         assert_matches(refreshed.tau2_class, np.full((1, 5), iteration))
         inputs = ctx.take(refreshed, padding_factor=1)
         assert_matches(inputs[0], state.Iref)
-        assert ctx.take(refreshed, padding_factor=1) is None
+        with pytest.raises(ValueError, match="no projector refresh"):
+            ctx.take(refreshed, padding_factor=1)
         assert ctx.reference is None
     assert len(calls) == 2
     assert not np.array_equal(calls[0][1], calls[1][1])
@@ -105,7 +103,7 @@ def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power",
                         lambda *a, **k: ((None, 4), np.ones((1, 5))))
     ctx = adapter._IterationProjectorContext()
-    current = ctx.refresh(state, padding_factor=1, interpolator=1)
+    current = ctx.refresh(state, padding_factor=1)
     kwargs = {"padding_factor": 1}
     if change == "reference":
         current = replace(current, Iref=current.Iref.copy())
@@ -120,18 +118,17 @@ def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
     assert ctx.prepared is ctx.reference is ctx.geometry is None
 
 
-@pytest.mark.parametrize("refresh_enabled", [False, True])
 @pytest.mark.parametrize("mstep_compute_dtype", ["float32", "float64"])
-def test_loop_callback_is_once_before_estep_and_respects_disabled(monkeypatch, refresh_enabled, mstep_compute_dtype):
+def test_loop_callback_is_once_before_estep(monkeypatch, mstep_compute_dtype):
     state = initialise_denovo_state(
         ori_size=8, pixel_size=1.0, K=1, nr_iter=2,
         n_directions=3, pseudo_halfsets=True,
     )
     events = []
 
-    def refresh(current, *, padding_factor, interpolator):
+    def refresh(current, *, padding_factor):
         events.append((current.iter, "refresh", current.current_size))
-        assert padding_factor == interpolator == 1
+        assert padding_factor == 1
         return current
 
     def estep(current, ids, halves):
@@ -147,8 +144,8 @@ def test_loop_callback_is_once_before_estep_and_respects_disabled(monkeypatch, r
         state, nr_particles=20, optics_group_by_particle=[0] * 20,
         grad_ini_subset_size=10, grad_fin_subset_size=10, tau2_fudge_arg=4.0,
         grad_em_iters=0, random_seed=29,
-        expectation_step=estep, refresh_tau2_from_projector=refresh_enabled,
+        expectation_step=estep,
         projector_refresh_fn=refresh, update=loop.VdamUpdate(padding_factor=1, mstep_compute_dtype=mstep_compute_dtype),
     )
-    expected = ["refresh", "estep"] * 2 if refresh_enabled else ["estep"] * 2
+    expected = ["refresh", "estep"] * 2
     assert [event[1] for event in events] == expected

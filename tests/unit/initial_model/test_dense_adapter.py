@@ -14,6 +14,7 @@ from relax.vdam.adaptive_estep import _resolve_sparse_pass1_current_size, _safe_
 from relax.vdam.dense_adapter import (
     _resolve_class_inputs,
     class_log_priors_from_state,
+    prepare_relion_projector_class_inputs_and_power,
     run_dense_initial_model_estep,
 )
 from relax.vdam.estep_common import (
@@ -443,16 +444,19 @@ def _assert_nan_stand_ins(means, mean_variance, n_classes):
 
 
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
-def test_resolve_class_inputs_builds_the_exact_projector_and_no_dense_means(monkeypatch, dtype):
+def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(monkeypatch, dtype):
     projector_half = np.ones((1, 3, 3, 2), dtype=dtype)
     monkeypatch.setattr(
-        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps",
-        lambda *args, **kwargs: (projector_half, 2),
+        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power",
+        lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
+    (half, r_max), _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),
+        relion_projector_half_by_class=half,
+        relion_projector_r_max=r_max,
     )
 
     means, mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
@@ -483,26 +487,22 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
     assert_matches(exact_half, projector_half)
     assert exact_rmax == 2
 
-    with pytest.raises(ValueError, match="relion_projector_r_max is required"):
+    with pytest.raises(ValueError, match="needs the iteration's RELION projector"):
         _resolve_class_inputs(state, replace(config, relion_projector_r_max=None))
 
 
-def test_resolve_class_inputs_can_dump_exact_projector_operand(monkeypatch, tmp_path):
+def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_path):
     projector_half = np.arange(54, dtype=np.float32).reshape(1, 3, 3, 6)[..., :2].astype(np.complex64)
     monkeypatch.setattr(
-        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps",
-        lambda *args, **kwargs: (projector_half, 2),
+        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power",
+        lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", str(tmp_path))
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     state.iter = 7
     state.current_size = 4
-    config = DenseInitialModelEstepConfig(
-        noise_variance=np.ones(8 * 8, dtype=np.float32),
-        translations=np.zeros((1, 2), dtype=np.float32),
-    )
 
-    _resolve_class_inputs(state, config)
+    prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
 
     with np.load(tmp_path / "iter007_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], projector_half)

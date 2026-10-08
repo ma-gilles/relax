@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.vdam import PreparedProjector
 from recovar.data_io.starfile import read_star
 from recovar.utils.helpers import R_from_relion, write_relion_mrc
 
@@ -861,6 +862,7 @@ def test_native_expectation_step_uses_rfloat_metadata_translations(monkeypatch):
         sampling_state=native_sampling._initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=1), pixel_size=1.0,
         ),
+        projector_context=PreparedProjector(),
     )
     expectation_step(state, np.asarray([0]), np.asarray([0], dtype=np.int8))
 
@@ -1586,6 +1588,7 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
         sampling_state=native_sampling._initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=1.0,
         ),
+        projector_context=PreparedProjector(),
     )
     accumulators, meta = expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
 
@@ -1640,6 +1643,7 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
         sampling_state=native_sampling._initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star", translation_sigma_angstrom=2.0), pixel_size=1.0,
         ),
+        projector_context=PreparedProjector(),
     )
 
     expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
@@ -1817,6 +1821,7 @@ def test_native_expectation_step_uses_autosampling_state_at_iteration_ten(monkey
         opts,
         particle_state,
         sampling_state,
+        projector_context=PreparedProjector(),
     )
     _accumulators, meta = expectation_step(state, np.asarray([0]), np.asarray([0], dtype=np.int8))
 
@@ -1905,7 +1910,6 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         )
 
     monkeypatch.setattr(driver, "_estimate_native_sampling_accuracy", fake_estimate_sampling_accuracy)
-    monkeypatch.setattr(driver, "prepare_relion_projector_class_inputs", fake_prepare_projector)
     monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
     monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
 
@@ -1941,6 +1945,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         particle_state,
         sampling_state,
         optics_state,
+        projector_context=SimpleNamespace(take=fake_prepare_projector),
     )
     _accumulators, meta = expectation_step(state, np.asarray([1, 0]), np.asarray([0, 1], dtype=np.int8))
 
@@ -2158,6 +2163,7 @@ def test_native_expectation_step_records_sampling_changes_each_gradient_iteratio
         opts,
         particle_state,
         sampling_state,
+        projector_context=PreparedProjector(),
     )
     _accumulators, meta = expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
 

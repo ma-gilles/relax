@@ -718,12 +718,12 @@ def test_native_vdam_tau2_refresh_and_ssnr_diagnostics_are_merge_guarded():
 
     haystack = "\n".join([package, star_io, bind, tests, native_mstep])
     expected_tokens = [
-        "def refresh_tau2_from_projector_power",
+        "def prepare_relion_projector_class_inputs_and_power",
         "vdam_projector_power_spectrum",
-        "refresh_tau2_from_projector: bool = True",
+        "projector_refresh_fn: Callable[..., InitialModelState],",
         "projector_padding_factor=int(opts.padding_factor)",
-        "refresh = projector_refresh_fn or refresh_tau2_from_projector_power",
-        "current = refresh(",
+        "projector_refresh_fn=projector_context.refresh",
+        "current = projector_refresh_fn(current, padding_factor=projector_padding_factor)",
         "sigma2_class:  (K, S)",
         "fourier_coverage_class: (K, S)",
         "new_sigma2_class[k] = np.asarray(sigma2",

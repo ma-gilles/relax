@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.vdam import PreparedProjector
 
 from relax import sampling
 from relax.vdam import driver, native_options, native_sampling
@@ -79,6 +80,7 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
         sampling_state=native_sampling._initial_sampling_state(
             opts, pixel_size=1.0,
         ),
+        projector_context=PreparedProjector(),
     )
     args = (state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
     _, meta = expectation(*args)

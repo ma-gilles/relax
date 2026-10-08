@@ -42,10 +42,7 @@ from relax.relion.relion_metadata import (
 from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 from relax.vdam import dense_adapter, estep_meta_updates, native_sampling, output, schedules
 from relax.vdam.bootstrap_iref import _initial_state_from_particles, _initial_state_from_tomo_particles
-from relax.vdam.dense_adapter import (
-    prepare_relion_projector_class_inputs,
-    run_dense_initial_model_estep,
-)
+from relax.vdam.dense_adapter import run_dense_initial_model_estep
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.mstep_single_class import _prepare_mstep_state_precision
@@ -89,12 +86,14 @@ def _native_expectation_step(
     sampling_state: NativeSamplingState,
     optics_state: NativeOpticsState | None = None,
     *,
-    projector_context: dense_adapter._IterationProjectorContext | None = None,
+    projector_context: dense_adapter._IterationProjectorContext,
     tilt_images: dict | None = None,
     optics_group_ids: np.ndarray | None = None,
     premultiplied_ctf: bool = False,
 ):
     """VDAM's E-step closure; ``dataset`` is a ``TomoDataset`` for subtomogram particles, with ``tilt_images``.
+
+    ``projector_context`` hands each E-step the projector its iteration's refresh prepared.
 
     ``optics_group_ids`` (several optics groups only) gives each particle-STAR row's zero-based
     group: its image is scored with its group's noise row and adds to its group's noise sums.
@@ -114,11 +113,7 @@ def _native_expectation_step(
             state, iteration, grad_em_iters=int(opts.grad_em_iters)
         )
         accuracy_meta = None
-        prepared_projector_inputs = (
-            None if projector_context is None else projector_context.take(
-                state, padding_factor=int(opts.padding_factor)
-            )
-        )
+        prepared_projector_inputs = projector_context.take(state, padding_factor=int(opts.padding_factor))
         pass1_healpix_order = int(sampling_state.healpix_order)
         skip_expected_accuracy = opts.environment.skip_expected_accuracy
         if (
@@ -132,14 +127,7 @@ def _native_expectation_step(
         ):
             # RELION expectationSetup constructs the production PPref
             # before calculateExpectedAngularErrors and reuses that PPref
-            # for scoring. Build RECOVAR's production projector in the
-            # same order and pass it through the shared E-step adapter so
-            # the accuracy helper cannot perturb a later rebuild.
-            if prepared_projector_inputs is None:
-                prepared_projector_inputs = prepare_relion_projector_class_inputs(
-                    state,
-                    padding_factor=int(opts.padding_factor),
-                )
+            # for scoring: the projector refresh built it before this estimate.
             accuracy_meta = _estimate_native_sampling_accuracy(
                 sampling_state,
                 state,
@@ -181,10 +169,6 @@ def _native_expectation_step(
             previous_classes[~np.asarray(particle_state.visited, dtype=bool)] = -1
         if tomo:
             max_significants = schedules._active_relion_initialmodel_max_significants(state, do_grad=do_grad)
-            if prepared_projector_inputs is None:
-                prepared_projector_inputs = prepare_relion_projector_class_inputs(
-                    state, padding_factor=int(opts.padding_factor)
-                )
             ids = np.asarray(particle_ids, dtype=np.int64)
             result = run_tomo_initial_model_estep(
                 dataset,
@@ -298,13 +282,12 @@ def _native_expectation_step(
             config = replace(
                 config, engine_kwargs={**config.engine_kwargs, "optics_group_ids": np.asarray(optics_group_ids, dtype=np.int32)}
             )
-        if prepared_projector_inputs is not None:
-            prepared_half, prepared_r_max = prepared_projector_inputs
-            config = replace(
-                config,
-                relion_projector_half_by_class=prepared_half,
-                relion_projector_r_max=prepared_r_max,
-            )
+        prepared_half, prepared_r_max = prepared_projector_inputs
+        config = replace(
+            config,
+            relion_projector_half_by_class=prepared_half,
+            relion_projector_r_max=prepared_r_max,
+        )
         class_rotation_log_prior = native_sampling._class_rotation_log_prior_for_sampling(
             state,
             sampling_state,
@@ -725,7 +708,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
                 if opts.optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=float(opts.sgd_learning_rate), padding_factor=int(opts.padding_factor))
             ),
-            projector_refresh_fn=None if projector_context is None else projector_context.refresh,
+            projector_refresh_fn=projector_context.refresh,
             start_iteration=int(state.iter),
             diagnostic_stop_after_iteration=opts.diagnostic_stop_after_iteration,
             fourier_radius_schedule=opts.fourier_radius_schedule,

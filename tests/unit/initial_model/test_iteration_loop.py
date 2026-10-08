@@ -13,6 +13,7 @@ from functools import partial
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.vdam import keep_tau2, projector_power_refresh
 
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.vdam.estep_common import estep_sums
@@ -21,7 +22,6 @@ from relax.vdam.init import initialise_denovo_state
 from relax.vdam.iteration_loop import (
     VdamUpdate,
     _ave_pmax,
-    refresh_tau2_from_projector_power,
     run_vdam_iterations,
     update_current_resolution_from_data_vs_prior,
     update_image_size_and_resolution_pointers,
@@ -148,7 +148,7 @@ def test_vdam_iteration_loop_can_execute_exactly_one_absolute_restart_iteration(
         grad_em_iters=0,
         random_seed=29,
         expectation_step=estep,
-        refresh_tau2_from_projector=False,
+        projector_refresh_fn=keep_tau2,
         start_iteration=180,
         diagnostic_stop_after_iteration=181,
     )
@@ -179,13 +179,13 @@ def test_vdam_iteration_loop_restart_rejects_state_iteration_mismatch():
             grad_em_iters=0,
             random_seed=29,
             expectation_step=lambda *_args: ([], {}),
-            refresh_tau2_from_projector=False,
+            projector_refresh_fn=keep_tau2,
             start_iteration=179,
             diagnostic_stop_after_iteration=180,
         )
 
 
-def test_refresh_tau2_from_projector_power_updates_all_classes(bind):
+def test_projector_refresh_updates_tau2_of_all_classes(bind):
     ori = 8
     state = initialise_denovo_state(
         ori_size=ori,
@@ -201,7 +201,9 @@ def test_refresh_tau2_from_projector_power_updates_all_classes(bind):
     state.tau2_class.fill(123.0)
     state.current_size = 6
 
-    out = refresh_tau2_from_projector_power(state)
+    from relax.vdam.dense_adapter import _IterationProjectorContext
+
+    out = _IterationProjectorContext().refresh(state, padding_factor=1)
 
     assert out is not state
     assert out.tau2_class.shape == (2, ori // 2 + 1)
@@ -321,6 +323,7 @@ class TestRunVdamIterations:
             grad_em_iters=0,
             random_seed=0,
             expectation_step=estep,
+            projector_refresh_fn=projector_power_refresh,
         )
 
         assert seen_current_sizes == [28, 60]
@@ -355,7 +358,7 @@ class TestRunVdamIterations:
             grad_em_iters=0,
             random_seed=0,
             expectation_step=estep,
-            refresh_tau2_from_projector=False,
+            projector_refresh_fn=keep_tau2,
             diagnostic_stop_after_iteration=2,
         )
 
@@ -384,6 +387,7 @@ class TestRunVdamIterations:
                 random_seed=0,
                 expectation_step=lambda current, particle_ids, halfset_ids: ([], {}),
                 diagnostic_stop_after_iteration=201,
+                projector_refresh_fn=projector_power_refresh,
             )
 
     def test_iteration_loop_refreshes_tau2_before_estep(self, monkeypatch):
@@ -401,9 +405,8 @@ class TestRunVdamIterations:
         state.tau2_class.fill(0.0)
         seen = {}
 
-        def fake_refresh(current, *, padding_factor, interpolator):
+        def fake_refresh(current, *, padding_factor):
             assert padding_factor == 1
-            assert interpolator == 1
             out = current
             out.tau2_class = np.full_like(current.tau2_class, 7.0)
             seen["refresh_current_size"] = int(current.current_size)
@@ -416,7 +419,6 @@ class TestRunVdamIterations:
         def fake_m_step(current, accumulators, **kwargs):
             return current
 
-        monkeypatch.setattr(loop, "refresh_tau2_from_projector_power", fake_refresh)
         monkeypatch.setattr(loop, "vdam_m_step", fake_m_step)
 
         run_vdam_iterations(
@@ -429,6 +431,7 @@ class TestRunVdamIterations:
             grad_em_iters=0,
             random_seed=0,
             expectation_step=estep,
+            projector_refresh_fn=fake_refresh,
         )
 
         assert seen["refresh_current_size"] == 16
@@ -466,7 +469,7 @@ class TestRunVdamIterations:
             grad_em_iters=0,
             random_seed=0,
             expectation_step=estep,
-            refresh_tau2_from_projector=False,
+            projector_refresh_fn=keep_tau2,
             projector_padding_factor=2,
             update=VdamUpdate(padding_factor=2, mstep_compute_dtype="float64"),
         )
@@ -504,7 +507,7 @@ class TestRunVdamIterations:
             random_seed=0,
             expectation_step=lambda current, particle_ids, halfset_ids: ([], {}),
             iter_artifact_sink=sink,
-            refresh_tau2_from_projector=False,
+            projector_refresh_fn=keep_tau2,
             environment=VdamEnvironment(profile=True),
         )
 
@@ -598,6 +601,7 @@ class TestRunVdamIterations:
             expectation_step=_stub_estep_factory(ori),
             iter_artifact_sink=sink,
             post_mstep_update=post_update,
+            projector_refresh_fn=projector_power_refresh,
         )
 
         assert seen["meta_seen"] is True
@@ -791,7 +795,7 @@ class TestRunVdamIterations:
             grad_em_iters=0,
             random_seed=0,
             expectation_step=estep,
-            refresh_tau2_from_projector=False,
+            projector_refresh_fn=keep_tau2,
         )
 
         assert len(seen_noise) == 2
@@ -1169,6 +1173,7 @@ class TestRunVdamIterations:
             expectation_step=_stub_estep_factory(ori),
             iter_artifact_sink=sink,
             grad_stepsize=0.25,
+            projector_refresh_fn=projector_power_refresh,
         )
         assert final.iter == nr_iter
         assert len(iter_log) == nr_iter
@@ -1215,6 +1220,7 @@ class TestRunVdamIterations:
             random_seed=1,
             expectation_step=_stub_estep_factory(ori),
             iter_artifact_sink=sink,
+            projector_refresh_fn=projector_power_refresh,
         )
         # Last 2 iters drop gradient mode -> pseudo_halfsets becomes False
         # select_subset_for_iter copies do_grad's value to pseudo field
@@ -1255,6 +1261,7 @@ class TestRunVdamIterations:
             random_seed=7,
             expectation_step=_stub_estep_factory(ori),
             iter_artifact_sink=sink,
+            projector_refresh_fn=projector_power_refresh,
         )
         # 6 iters should have subset_size entries
         assert len(iter_log) == 6

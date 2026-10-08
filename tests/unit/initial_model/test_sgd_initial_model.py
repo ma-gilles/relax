@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.vdam import keep_tau2
 from recovar.data_io.image_backends import _apply_relion_soft_image_mask_numpy, _centered_rfft2_numpy
 from recovar.reconstruction.noise import make_radial_noise
 
@@ -371,7 +372,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
             expectation_step=fake_estep,
             iter_artifact_sink=sink,
             post_mstep_update=lambda state, iteration, meta: replace(state, has_converged=True),
-            refresh_tau2_from_projector=False,
+            projector_refresh_fn=keep_tau2,
             update=(
                 VdamUpdate(padding_factor=1, mstep_compute_dtype="float32")
                 if optimizer == "vdam"
