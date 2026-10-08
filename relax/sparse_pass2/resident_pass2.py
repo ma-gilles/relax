@@ -8895,6 +8895,7 @@ def _run_lone_resident_chunk(
     """
 
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.sparse_pass2.resident_candidates import expand_chunk_mask_jnp
     from relax.sparse_pass2.resident_scoring import cached_score_reference, score_resident_chunk_in_row_blocks
 
     if spec.firstiter_cc or (spec.presum_adjoint and stream_projection_fn is not None):
@@ -8928,8 +8929,7 @@ def _run_lone_resident_chunk(
         block_reference,
         rows.row_image_local,
         rows.row_log_prior,
-        rows.row_mask_bits,
-        rows.row_mask_mode,
+        expand_chunk_mask_jnp(rows.row_mask_bits, rows.row_mask_mode, tables.fine_translation_parent),
         int(n_valid_rows),
         jnp.where(image_index < rows.n_valid_images, image_index, jnp.int32(-1)),
         operands.score_input,
@@ -8940,7 +8940,6 @@ def _run_lone_resident_chunk(
         half_weights=tables.half_weights,
         translation_angles=tables.translation_angles,
         full_to_compact=tables.full_to_compact,
-        fine_translation_parent=tables.fine_translation_parent,
         logical_current_size=_logical_current_size(tables, spec),
         row_capacity=int(spec.row_capacity),
         image_capacity=int(spec.image_capacity),

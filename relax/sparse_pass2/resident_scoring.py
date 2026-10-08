@@ -566,8 +566,7 @@ def score_resident_chunk_in_row_blocks(
     block_reference,  # callable: row start -> complex64 [block_rows, N] the block's score projections
     row_image_local,  # int32 [C_R]
     row_log_prior,  # float32 [C_R]
-    row_mask_bits,  # uint32 [C_R, n_mask_words]
-    row_mask_mode,  # int8 [C_R]
+    candidate_mask,  # bool [C_R, T], or None for "every cell is a candidate"
     n_valid_rows: int,  # host int: the rows past it are padding
     image_ids,  # int32 [C_B]
     score_input,
@@ -579,7 +578,6 @@ def score_resident_chunk_in_row_blocks(
     half_weights,
     translation_angles,
     full_to_compact,
-    fine_translation_parent,
     logical_current_size,
     row_capacity: int,
     image_capacity: int,
@@ -595,6 +593,10 @@ def score_resident_chunk_in_row_blocks(
     log-weight conversion then run once over all rows, exactly as for a chunk
     scored in one call. The kernel's per-row output does not depend on the other
     rows of its call, so the scores are those of the one-call chunk.
+
+    The global pass (cached projections, parent-translation masks) and local
+    search (projected rows, per-row translation masks) share it: each caller
+    expands its own ``candidate_mask`` and supplies its own ``block_reference``.
     """
 
     row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
@@ -603,7 +605,6 @@ def score_resident_chunk_in_row_blocks(
         image_ids, score_input, corr_img_score, highres_xi2_half, translation_prior, image_capacity=image_capacity
     )
     row_is_valid = jnp.arange(row_capacity, dtype=jnp.int32) < jnp.int32(int(n_valid_rows))
-    candidate_mask = expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent)
     kernel_row_image_ids = jnp.where(row_is_valid, row_image_local, jnp.int32(-1))
     raw_blocks = []
     for start in range(0, int(row_capacity), int(block_rows)):

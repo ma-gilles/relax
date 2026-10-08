@@ -99,6 +99,7 @@ from relax.relion.relion_projector_setup import (
 from relax.sparse_pass2 import resident_pass2 as rp
 from relax.sparse_pass2.resident_candidates import chunk_segment_offsets
 from relax.sparse_pass2.resident_local_layout import (
+    expand_local_chunk_mask_jnp,
     materialize_local_chunk,
     plan_local_capacity_chunks,
     tables_from_local_layout,
@@ -110,6 +111,7 @@ from relax.sparse_pass2.resident_operands import (
 from relax.sparse_pass2.resident_scoring import (
     project_resident_live_rows,
     resident_row_projection_bytes,
+    score_resident_chunk_in_row_blocks,
     score_resident_projected_chunk,
     score_resident_projected_chunk_normalized_cc,
 )
@@ -1041,6 +1043,11 @@ def compute_local_search_resident(
             projection_transient_bytes=projection_block_rows * projection_row_bytes,
             fixed_bytes=accumulator_bytes,
             max_image_rows=rp.max_image_rows(tables.row_offsets),
+            # An image past the largest row class runs alone in row blocks of that class (single-class passes,
+            # _start_resident_local_chunk), as the global pass runs it (relax#49 follow-up).
+            lone_row_bytes=(
+                rp.lone_chunk_row_bytes(int(n_fine_trans)) if tables.n_classes == 1 and not firstiter_cc else None
+            ),
             **tile_pixels,
         )
         row_ladder = memory_plan.row_capacity_ladder
@@ -1160,8 +1167,11 @@ def compute_local_search_resident(
         pipelined = _local_chunk_loop_pipelined()
         pending = None
         pending_alone = False
+        n_lone_chunks = 0
         for chunk in chunks:
             alone = rp.chunk_runs_alone(chunk, row_ladder)
+            lone_block_rows = max(int(v) for v in row_ladder) if alone else None
+            n_lone_chunks += int(alone)
             if pending is not None and (alone or pending_alone):
                 Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
                 pending = None
@@ -1227,6 +1237,7 @@ def compute_local_search_resident(
                 relion_projector_capacity_texture=capacity_texture,
                 class_projectors=class_projectors,
                 class_scale_masks_rect=class_scale_masks_rect,
+                lone_block_rows=lone_block_rows,
             )
             if pending is not None:
                 Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
@@ -1237,6 +1248,12 @@ def compute_local_search_resident(
         if pending is not None:
             Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
         loop_s = time.time() - loop_t0
+        if n_lone_chunks:
+            logger.info(
+                "Resident local pass-2 ran %d lone overflow image(s) in row blocks of %d rows",
+                n_lone_chunks,
+                max(int(v) for v in row_ladder),
+            )
     finally:
         for texture in class_textures:
             if texture is not None:
@@ -2252,6 +2269,7 @@ def _start_resident_local_chunk(
     relion_projector_capacity_texture=None,
     class_projectors=None,
     class_scale_masks_rect=None,
+    lone_block_rows=None,
 ):
     """Enqueue one local capacity chunk's front stages; return its ``finish``.
 
@@ -2277,8 +2295,30 @@ def _start_resident_local_chunk(
     readback the segmented posterior performs internally, the optional
     significance-count pull and ``finish``'s live row count; no per-chunk
     result is otherwise brought back.
+
+    ``lone_block_rows`` is set for one image's overflow chunk: its rows are projected and scored that many at a
+    time, keeping only their ``[C_R, T]`` scores (:func:`~relax.sparse_pass2.resident_scoring.score_resident_chunk_in_row_blocks`,
+    shared with the global pass), the posterior is formed over all of them at once, and each M-step block projects
+    its own rows. Each row's projection and score are those of the one-call chunk; only the grouping of the
+    projector calls changes.
     """
 
+    if lone_block_rows is not None:
+        if firstiter_cc:
+            raise ResidentConfigurationUnsupported(
+                "an image past the largest local row class runs in row blocks, which the first-iteration "
+                "cross-correlation pass does not implement"
+            )
+        if class_projectors is not None:
+            raise ResidentConfigurationUnsupported(
+                "an image past the largest local row class runs in row blocks, which the Class3D local pass does "
+                "not implement"
+            )
+        if int(lone_block_rows) % int(mstep_block_rows) or int(chunk.row_capacity) % int(lone_block_rows):
+            raise ValueError(
+                f"lone row blocks of {lone_block_rows} must divide the chunk's {chunk.row_capacity} rows and be a "
+                f"multiple of the M-step's {mstep_block_rows}-row blocks"
+            )
     image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
     # The operands' powerClass terms sum above the weighted sums' size (--strict_highres_exp).
     operand_current_size = current_size if wsum_current_size is None else wsum_current_size
@@ -2386,18 +2426,26 @@ def _start_resident_local_chunk(
         window_union=window_union,
         **projection_kwargs,
     )
-    if class_projectors is None:
-        score_proj, recon_proj, recon_abs2, n_projected_rows = project_resident_live_rows(
+    chunk_rotations = jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype)
+
+    def project_rows(rotations, n_valid_rows):
+        return project_resident_live_rows(
             mean,
-            jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype),
+            rotations,
             image_shape,
             volume_shape,
             disc_type,
-            n_valid_rows=chunk.n_valid_rows,
+            n_valid_rows=n_valid_rows,
             relion_projector_half=relion_projector_half,
             relion_projector_capacity_texture=relion_projector_capacity_texture,
             **projection_options,
         )
+
+    if lone_block_rows is not None:
+        score_proj = recon_proj = recon_abs2 = None
+        n_projected_rows = int(chunk.n_valid_rows)
+    elif class_projectors is None:
+        score_proj, recon_proj, recon_abs2, n_projected_rows = project_rows(chunk_rotations, chunk.n_valid_rows)
     else:
         (score_proj, recon_proj, recon_abs2), n_projected_rows = _project_class_rows(
             host_chunk,
@@ -2456,26 +2504,57 @@ def _start_resident_local_chunk(
             jnp.arange(chunk.image_capacity, dtype=jnp.int32),
             jnp.int32(-1),
         )
-        scored = score_resident_projected_chunk(
-            score_proj,
-            row_image_local,
-            row_log_prior,
-            row_mask_bits,
-            n_valid_rows_device,
-            chunk_image_ids,
-            recon["score_input"],
-            recon["corr_img_score"],
-            recon["highres_xi2_half"],
-            recon["translation_prior"],
-            half_weights=half_weights,
-            translation_angles=translation_angles,
-            full_to_compact=full_to_compact,
-            logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
-            row_capacity=chunk.row_capacity,
-            image_capacity=chunk.image_capacity,
-            n_fine_trans=int(n_fine_trans),
-            n_score_pixels=int(n_score_pixels),
-        )
+        if lone_block_rows is not None:
+
+            def block_reference(start):
+                stop = min(start + int(lone_block_rows), int(chunk.row_capacity))
+                # The projection window union covers both windows, so the block projects both; the planned
+                # largest-class chunk counts both.
+                return project_rows(
+                    chunk_rotations[start:stop], max(0, min(int(chunk.n_valid_rows), stop) - start)
+                )[0]
+
+            scored = score_resident_chunk_in_row_blocks(
+                block_reference,
+                row_image_local,
+                row_log_prior,
+                expand_local_chunk_mask_jnp(row_mask_bits, n_trans=int(n_fine_trans)),
+                int(chunk.n_valid_rows),
+                chunk_image_ids,
+                recon["score_input"],
+                recon["corr_img_score"],
+                recon["highres_xi2_half"],
+                recon["translation_prior"],
+                block_rows=int(lone_block_rows),
+                half_weights=half_weights,
+                translation_angles=translation_angles,
+                full_to_compact=full_to_compact,
+                logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
+                row_capacity=chunk.row_capacity,
+                image_capacity=chunk.image_capacity,
+                n_fine_trans=int(n_fine_trans),
+            )
+        else:
+            scored = score_resident_projected_chunk(
+                score_proj,
+                row_image_local,
+                row_log_prior,
+                row_mask_bits,
+                n_valid_rows_device,
+                chunk_image_ids,
+                recon["score_input"],
+                recon["corr_img_score"],
+                recon["highres_xi2_half"],
+                recon["translation_prior"],
+                half_weights=half_weights,
+                translation_angles=translation_angles,
+                full_to_compact=full_to_compact,
+                logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
+                row_capacity=chunk.row_capacity,
+                image_capacity=chunk.image_capacity,
+                n_fine_trans=int(n_fine_trans),
+                n_score_pixels=int(n_score_pixels),
+            )
         del score_proj
         scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
         mark("score", scores_flat)
@@ -2573,7 +2652,17 @@ def _start_resident_local_chunk(
         block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=True)
 
         def run_mstep(rows, n_live, Ft_y, Ft_ctf):
-            if block_row_program:
+            if lone_block_rows is not None:
+                # Each M-step block projects its own (live-first) rows: the lone image's projections never all
+                # live at once.
+                chunk_projections = None
+
+                def block_projections(start, stop):
+                    block_rows = rows.row_ids[start:stop]
+                    _, recon_block, abs2_block, _ = project_rows(chunk_rotations[block_rows], int(stop - start))
+                    return recon_block, abs2_block, mstep_rotations[block_rows]
+
+            elif block_row_program:
                 block_projections = None
                 chunk_projections = (recon_proj, recon_abs2, mstep_rotations)
             else:

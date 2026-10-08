@@ -1040,3 +1040,44 @@ def test_local_firstiter_cc_probe_keeps_the_fine_pass_winner(monkeypatch, _resid
     assert [np.asarray(s).size for s in samples] == [1] * N_IMAGES
     assert_matches(np.asarray(probe.hard_assignment), np.asarray(fine.hard_assignment))
 
+
+@requires_resident_gpu
+def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_local_env):
+    """An image past the largest local row class runs alone in row blocks (relax#49 follow-up): its rows are
+    projected and scored a block at a time (the scorer the global pass's lone chunk uses), the posterior is
+    formed over all of them, and each M-step block projects its own rows. Each row's projection and score are
+    those of the one-call chunk, so the discrete outputs agree exactly and the accumulators within the driver's
+    repeat band (the x-half BPref and Wavg atomics are not bit-reproducible in either arm)."""
+
+    from relax.sparse_pass2 import resident_scoring
+
+    case = _case()
+    whole = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+
+    blocked_calls = []
+    real_blocked = rlp.score_resident_chunk_in_row_blocks
+
+    def spy(*args, **kwargs):
+        blocked_calls.append(int(kwargs["row_capacity"]))
+        return real_blocked(*args, **kwargs)
+
+    monkeypatch.setattr(rlp, "score_resident_chunk_in_row_blocks", spy)
+    assert real_blocked is resident_scoring.score_resident_chunk_in_row_blocks
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "8")
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
+    lone = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+
+    assert blocked_calls, "the 8-row ladder made no lone chunk"
+    assert_matches(np.asarray(whole.hard_assignment), np.asarray(lone.hard_assignment))
+    assert_matches(np.asarray(whole.best_pose_rotations), np.asarray(lone.best_pose_rotations))
+    assert_matches(np.asarray(whole.best_pose_translations), np.asarray(lone.best_pose_translations))
+
+    def rel_l2(a, b):
+        a = np.asarray(a, dtype=np.complex128)
+        b = np.asarray(b, dtype=np.complex128)
+        den = float(np.linalg.norm(a))
+        return float(np.linalg.norm(a - b) / den) if den else 0.0
+
+    assert rel_l2(whole.Ft_y, lone.Ft_y) < 1e-6
+    assert rel_l2(whole.Ft_ctf, lone.Ft_ctf) < 1e-6
+    assert rel_l2(whole.noise_stats.wsum_sigma2_noise, lone.noise_stats.wsum_sigma2_noise) < 1e-6
