@@ -111,6 +111,7 @@ from relax.sparse_pass2.resident_scoring import (
     project_resident_live_rows,
     resident_row_projection_bytes,
     score_resident_projected_chunk,
+    score_resident_projected_chunk_normalized_cc,
 )
 from relax.sparse_pass2.resident_statistics import (
     finalize_statistics,
@@ -455,6 +456,7 @@ def compute_local_search_resident(
     symmetry_label="C1",
     reconstruction_image_radius=None,
     nyquist_column_counting="relion",
+    firstiter_cc=False,
 ) -> LocalEMResult:
     """Run one K=1 local-search fine pass 2 on the device-resident stages.
 
@@ -478,6 +480,11 @@ def compute_local_search_resident(
 
     ``wsum_current_size`` is the weighted sums' image size when the fine pass scores below it
     (``--strict_highres_exp``), as in :func:`resident_pass2._resident_pass2`; None is ``current_size``.
+
+    ``firstiter_cc`` is RELION's ``--firstiter_cc`` iteration of a search that is local from its
+    first iteration (``--sigma_ang``): both the parent probe and the fine pass score the
+    normalized CC and keep only each image's best hidden variable (ml_optimiser.cpp:9266-9292),
+    as the global ``--firstiter_cc`` pass does (resident_pass2 ``_resident_chunk_posterior_firstiter_cc``).
     """
 
     from recovar import cuda_backproject
@@ -495,6 +502,11 @@ def compute_local_search_resident(
         # (window_at_box below), so the full box is an explicit current size here.
         current_size = int(experiment_dataset.image_shape[0])
     wsum_current_size = current_size if wsum_current_size is None else int(wsum_current_size)
+    score_mode = "normalized_cc" if firstiter_cc else "gaussian"
+    if firstiter_cc and class_log_priors is not None:
+        raise ResidentConfigurationUnsupported(
+            "the local --firstiter_cc iteration is K=1: RELION's Class3D CC iteration scores one reference"
+        )
     try:
         (
             mstep_current_size,
@@ -509,8 +521,8 @@ def compute_local_search_resident(
             reconstruction_current_size=reconstruction_current_size,
             half_spectrum_scoring=half_spectrum_scoring,
             square_window=square_window,
-            relion_firstiter_score_mode="gaussian",
-            use_exact_relion_gaussian=True,
+            relion_firstiter_score_mode=score_mode,
+            use_exact_relion_gaussian=not firstiter_cc,
             use_float64_scoring=use_float64_scoring,
             # RELION's window at every size, including the box (a shape class reaches its
             # box before the reference does): the resident driver never scores a full half.
@@ -584,6 +596,10 @@ def compute_local_search_resident(
             f"the local layout covers {tables.n_images} images but the half has {n_images}"
         )
     n_fine_trans = tables.n_trans
+    if firstiter_cc and tables.n_classes > 1:
+        raise ResidentConfigurationUnsupported(
+            "the local --firstiter_cc iteration is K=1: RELION's Class3D CC iteration scores one reference"
+        )
     fine_translations = np.asarray(
         tables.translation_grid, dtype=precision_policy.score_real_dtype
     )
@@ -617,7 +633,7 @@ def compute_local_search_resident(
         image_shape,
         window_spec,
         half_spectrum_scoring=half_spectrum_scoring,
-        relion_firstiter_score_mode="gaussian",
+        relion_firstiter_score_mode=score_mode,
         use_float64_scoring=use_float64_scoring,
         nyquist_column_counting=nyquist_column_counting,
     )
@@ -856,13 +872,15 @@ def compute_local_search_resident(
             image_pre_shifts=image_pre_shifts,
             use_float64_scoring=use_float64_scoring,
             score_only=False,
-            score_mode="gaussian",
+            score_mode=score_mode,
             window_indices=window_indices,
             recon_window_indices=recon_window_indices,
             translation_phases_half=translation_phases_half,
             relion_score_translation_angles=relion_score_translation_angles,
             return_windowed_shifted=windowed_prepare,
-            relion_exact_normalized_cc_operands=False,
+            # The --firstiter_cc iteration takes RELION's exact normalized-CC operands, as the
+            # global K=1 CC pass does (k_class: relion_exact_fine_normalized_cc for one class).
+            relion_exact_normalized_cc_operands=bool(firstiter_cc),
             # The exact local engine runs its production path with the plain
             # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
             # so keep that here rather than silently switching operand families.
@@ -909,6 +927,7 @@ def compute_local_search_resident(
                 return_profile=return_profile,
                 overall_t0=overall_t0,
                 max_significants=-1 if max_significants is None else int(max_significants),
+                firstiter_cc=bool(firstiter_cc),
                 window_union=(
                     projection_window_union(
                         window_indices,
@@ -940,8 +959,10 @@ def compute_local_search_resident(
 
         # The operand family decides what a chunk holds, so it is chosen before the
         # plan; the per-chunk fallback in _start_resident_local_chunk stays as a guard.
+        # The --firstiter_cc iteration scores the translated corrected score tile, which only
+        # the pre-shifted family prepares (resident_pass2 refuses unshifted operands for it too).
         operand_route = {
-            "unshifted": _unshifted_operands_route(
+            "unshifted": (not firstiter_cc) and _unshifted_operands_route(
                 bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
             )
         }
@@ -982,6 +1003,7 @@ def compute_local_search_resident(
             n_recon_pixels=n_recon_windowed,
             n_rect_pixels=n_rect,
             n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
+            normalized_cc=bool(firstiter_cc),
             masked_scoring=bool(score_with_masked_images),
         )
         image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
@@ -1201,6 +1223,7 @@ def compute_local_search_resident(
                 cuda_backproject=em_cuda_kernels,
                 significant_counts=significant_counts,
                 operand_route=operand_route,
+                firstiter_cc=bool(firstiter_cc),
                 relion_projector_capacity_texture=capacity_texture,
                 class_projectors=class_projectors,
                 class_scale_masks_rect=class_scale_masks_rect,
@@ -1446,12 +1469,16 @@ def _prepare_chunk_score_operands(
     image_shape,
     current_size,
     source_faithful_spectrum_norm,
+    normalized_cc=False,
 ):
     """One probe chunk's score operands, from the same preparation as pass 2.
 
     :func:`~relax.sparse_pass2.resident_pass2._prepare_chunk_reconstruction_operands`
     minus every reconstruction, noise and Wavg tile: ``_prepare_bucket_io`` runs
     with ``score_only`` and the rows are permuted and padded exactly as there.
+    ``normalized_cc`` (the ``--firstiter_cc`` iteration) adds that function's
+    normalized-CC operands, the translated corrected score tile and half the
+    image power; ``corr_img_score`` is then the CC pixel weight.
     """
 
     image_indices = np.asarray(image_indices)
@@ -1467,8 +1494,10 @@ def _prepare_chunk_score_operands(
         return_direct_scoring_io=True,
         **bucket_io_kwargs,
     )
+    batch_norm = prepared[2]
     ctf2_over_nv_half = prepared[3]
     processed_score_half_for_noise = prepared[6]
+    shifted_corrected_score_half = prepared[7]
     direct_score_input = prepared[8]
     if windowed_prepare:
         score_input = direct_score_input
@@ -1497,12 +1526,57 @@ def _prepare_chunk_score_operands(
         else rp._pad_batch_to_capacity(np.asarray(fine_translation_prior_2d)[image_indices], chunk.image_capacity),
         dtype=score_real_dtype,
     )
-    return {
+    operands = {
         "score_input": take(score_input),
         "corr_img_score": take(corr_img_score),
         "highres_xi2_half": take(highres_xi2_half),
         "translation_prior": rp._zero_padded_images(translation_prior, valid_images),
     }
+    if normalized_cc:
+        tile = shifted_corrected_score_half.reshape(chunk.image_capacity, int(n_fine_trans), -1)
+        if not windowed_prepare:
+            tile = tile[:, :, jnp.asarray(score_window_indices, dtype=jnp.int32)]
+        operands["score_shifted_cc"] = take(tile)
+        operands["cc_half_batch_norm"] = take(0.5 * jnp.reshape(batch_norm, (chunk.image_capacity,)).real)
+    return operands
+
+
+def _cc_block_rows(row_capacity: int) -> int:
+    """Rows per normalized-CC scoring block: the largest power of two up to 128 dividing the capacity."""
+
+    block = 128
+    while int(row_capacity) % block:
+        block //= 2
+    return block
+
+
+def _local_firstiter_cc_posterior(
+    scores, row_image_local, row_is_valid, segment_offsets, n_valid_images, *, image_capacity: int, cuda_backproject
+):
+    """RELION's ``--firstiter_cc`` posterior of a local chunk's normalized-CC scores.
+
+    RELION zeroes every weight but the best one (ml_optimiser.cpp:9266-9292), so
+    the posterior is one-hot at each image's first maximum in segment order and
+    Pmax is 1, as in the global pass (``resident_pass2._winner_take_all_posterior``).
+    log-Z is the log-sum-exp of the CC scores, the evidence the global pass reports.
+    Returns ``(log_z, best_log_score, best_cell_index, max_posterior, row_posterior,
+    n_significant)``.
+    """
+
+    scores = jnp.asarray(scores, dtype=jnp.float32)
+    log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(scores.reshape(-1), segment_offsets, n_valid_images)
+    best_log_score, best_cell_index, row_posterior = rp._winner_take_all_cells(
+        scores, row_image_local, row_is_valid, segment_offsets, image_capacity=image_capacity
+    )
+    has_winner = jnp.isfinite(best_log_score)
+    return (
+        jnp.asarray(log_z, dtype=jnp.float64),
+        best_log_score,
+        best_cell_index,
+        has_winner.astype(jnp.float32),
+        row_posterior,
+        has_winner.astype(jnp.int32),
+    )
 
 
 def _cap_significant_samples(mask, weights, row_bounds, max_significants: int):
@@ -1583,6 +1657,7 @@ def _run_resident_parent_probe(
     return_profile,
     overall_t0,
     max_significants=-1,
+    firstiter_cc=False,
     window_union=None,
     class_projectors=None,
 ) -> LocalEMResult:
@@ -1605,6 +1680,10 @@ def _run_resident_parent_probe(
     A Class3D layout (``class_projectors``) projects each class's rows with its
     own reference; the significance is joint over the image's classes and poses,
     and a sample's posterior id carries its class (``class * n_bins + bin``).
+
+    ``firstiter_cc`` scores the normalized CC and keeps only each image's best
+    sample (RELION's ``--firstiter_cc`` pass 1: its binarized weights leave one
+    significant coarse sample, ml_optimiser.cpp:9266-9292).
     """
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -1692,6 +1771,7 @@ def _run_resident_parent_probe(
             image_shape=image_shape,
             current_size=current_size,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+            normalized_cc=bool(firstiter_cc),
         )
         # Host rotations: the coarse kernel's wrapped-row check reads each
         # block's first rotation, which on a device array waits for the queue.
@@ -1736,55 +1816,84 @@ def _run_resident_parent_probe(
             jnp.arange(chunk.image_capacity, dtype=jnp.int32),
             jnp.int32(-1),
         )
-        scored = score_resident_projected_chunk(
-            score_proj,
-            jnp.asarray(host_chunk["row_image_local"], dtype=jnp.int32),
-            jnp.asarray(host_chunk["row_log_prior"], dtype=jnp.float32),
-            None if host_chunk["row_mask_bits"] is None else jnp.asarray(host_chunk["row_mask_bits"], dtype=jnp.uint8),
-            jnp.asarray(host_chunk["n_valid_rows"], dtype=jnp.int32),
-            chunk_image_ids,
-            ops["score_input"],
-            ops["corr_img_score"],
-            ops["highres_xi2_half"],
-            ops["translation_prior"],
-            half_weights=half_weights,
-            translation_angles=translation_angles,
-            full_to_compact=full_to_compact,
-            logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
-            row_capacity=int(chunk.row_capacity),
-            image_capacity=chunk.image_capacity,
-            n_fine_trans=t,
-            n_score_pixels=int(n_score_pixels),
-        )
-        del score_proj, ops
-        scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
         segment_offsets_np = chunk_segment_offsets(tables, chunk, n_fine_trans=t)
         segment_offsets = jnp.asarray(segment_offsets_np, dtype=jnp.int32)
-        log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
-            scores_flat, segment_offsets, n_valid_images_device
-        )
-        (
-            log_z_out,
-            best_log,
-            best_cell,
-            max_post,
-            _probs,
-            weights,
-            _reconstruction_probs,
-            mask,
-            n_significant,
-            _sum_weight,
-            _threshold,
-        ) = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
-            scores_flat,
-            segment_offsets,
-            n_valid_images_device,
-            log_z,
-            jnp.ones((chunk.image_capacity,), dtype=jnp.float32),
-            adaptive_fraction=float(adaptive_fraction),
-            keep_all=False,
-            use_external_sum_weight=False,
-        )
+        if firstiter_cc:
+            row_image_local = jnp.asarray(host_chunk["row_image_local"], dtype=jnp.int32)
+            scored = score_resident_projected_chunk_normalized_cc(
+                score_proj,
+                row_image_local,
+                None if host_chunk["row_mask_bits"] is None else jnp.asarray(host_chunk["row_mask_bits"], dtype=jnp.uint8),
+                jnp.asarray(host_chunk["n_valid_rows"], dtype=jnp.int32),
+                ops["score_shifted_cc"],
+                ops["corr_img_score"],
+                ops["cc_half_batch_norm"],
+                half_weights=half_weights,
+                full_to_compact=full_to_compact,
+                row_capacity=int(chunk.row_capacity),
+                n_fine_trans=t,
+                block_rows=_cc_block_rows(int(chunk.row_capacity)),
+            )
+            del score_proj, ops
+            log_z_out, best_log, best_cell, max_post, winner, n_significant = _local_firstiter_cc_posterior(
+                scored.scores,
+                row_image_local,
+                jnp.arange(int(chunk.row_capacity), dtype=jnp.int32) < int(chunk.n_valid_rows),
+                segment_offsets,
+                n_valid_images_device,
+                image_capacity=chunk.image_capacity,
+                cuda_backproject=em_cuda_kernels,
+            )
+            weights = winner.reshape(-1)
+            mask = weights > 0
+        else:
+            scored = score_resident_projected_chunk(
+                score_proj,
+                jnp.asarray(host_chunk["row_image_local"], dtype=jnp.int32),
+                jnp.asarray(host_chunk["row_log_prior"], dtype=jnp.float32),
+                None if host_chunk["row_mask_bits"] is None else jnp.asarray(host_chunk["row_mask_bits"], dtype=jnp.uint8),
+                jnp.asarray(host_chunk["n_valid_rows"], dtype=jnp.int32),
+                chunk_image_ids,
+                ops["score_input"],
+                ops["corr_img_score"],
+                ops["highres_xi2_half"],
+                ops["translation_prior"],
+                half_weights=half_weights,
+                translation_angles=translation_angles,
+                full_to_compact=full_to_compact,
+                logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
+                row_capacity=int(chunk.row_capacity),
+                image_capacity=chunk.image_capacity,
+                n_fine_trans=t,
+                n_score_pixels=int(n_score_pixels),
+            )
+            del score_proj, ops
+            scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
+            log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+                scores_flat, segment_offsets, n_valid_images_device
+            )
+            (
+                log_z_out,
+                best_log,
+                best_cell,
+                max_post,
+                _probs,
+                weights,
+                _reconstruction_probs,
+                mask,
+                n_significant,
+                _sum_weight,
+                _threshold,
+            ) = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
+                scores_flat,
+                segment_offsets,
+                n_valid_images_device,
+                log_z,
+                jnp.ones((chunk.image_capacity,), dtype=jnp.float32),
+                adaptive_fraction=float(adaptive_fraction),
+                keep_all=False,
+                use_external_sum_weight=False,
+            )
         device = (mask, best_cell, log_z_out, best_log, max_post, n_significant, weights, scored.min_diff2)
         return chunk, host_chunk, segment_offsets_np, device
 
@@ -2139,6 +2248,7 @@ def _start_resident_local_chunk(
     cuda_backproject,
     significant_counts,
     operand_route,
+    firstiter_cc=False,
     relion_projector_capacity_texture=None,
     class_projectors=None,
     class_scale_masks_rect=None,
@@ -2159,6 +2269,9 @@ def _start_resident_local_chunk(
     ``[images, translations, pixels]`` tiles and the XLA reduction. A
     configuration the unshifted preparation refuses switches the half to the
     tiles at its first chunk.
+
+    ``firstiter_cc`` scores the chunk's rows with RELION's normalized CC and puts each image's
+    whole posterior on its best cell (:func:`_local_firstiter_cc_posterior`).
 
     The only host work inside is the chunk's operand upload, the T7 offsets
     readback the segmented posterior performs internally, the optional
@@ -2253,6 +2366,7 @@ def _start_resident_local_chunk(
             optics_groups_np=optics_groups_np,
             noise_shell_indices_half=image_tables.shell_indices_half,
             n_noise_shells=int(stats_config.n_shells),
+            normalized_cc=bool(firstiter_cc),
         )
     recon_operand = recon["recon_image"] if recon.get("recon_image") is not None else recon["shifted_recon"]
 
@@ -2298,69 +2412,104 @@ def _start_resident_local_chunk(
 
     mark("project", score_proj, recon_proj, recon_abs2)
 
-    # --- stage 3: score ----------------------------------------------------
-    # Chunk-local image slots address the chunk's own operands.
-    chunk_image_ids = jnp.where(
-        jnp.arange(chunk.image_capacity, dtype=jnp.int32) < n_valid_images_device,
-        jnp.arange(chunk.image_capacity, dtype=jnp.int32),
-        jnp.int32(-1),
-    )
-    scored = score_resident_projected_chunk(
-        score_proj,
-        row_image_local,
-        row_log_prior,
-        row_mask_bits,
-        n_valid_rows_device,
-        chunk_image_ids,
-        recon["score_input"],
-        recon["corr_img_score"],
-        recon["highres_xi2_half"],
-        recon["translation_prior"],
-        half_weights=half_weights,
-        translation_angles=translation_angles,
-        full_to_compact=full_to_compact,
-        logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
-        row_capacity=chunk.row_capacity,
-        image_capacity=chunk.image_capacity,
-        n_fine_trans=int(n_fine_trans),
-        n_score_pixels=int(n_score_pixels),
-    )
-    del score_proj
-    scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
-    mark("score", scores_flat)
-
-    # --- stage 4: segmented RELION float32 fine posterior -------------------
     segment_offsets_np = chunk_segment_offsets(tables, chunk, n_fine_trans=n_fine_trans)
     segment_offsets = jnp.asarray(segment_offsets_np, dtype=jnp.int32)
-    log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
-        scores_flat, segment_offsets, n_valid_images_device
-    )
-    posterior = cuda_backproject.sparse_pass2_segmented_posterior_f32(
-        scores_flat,
-        segment_offsets,
-        n_valid_images_device,
-        log_z,
-        jnp.ones((chunk.image_capacity,), dtype=jnp.float32),
-        adaptive_fraction=float(adaptive_fraction),
-        keep_all=bool(keep_all_weights),
-        use_external_sum_weight=False,
-    )
-    (
-        log_z_out,
-        best_log_score,
-        best_cell_index,
-        max_posterior,
-        _probs,
-        _normalized_weights,
-        reconstruction_probs,
-        _mask,
-        n_significant,
-        _sum_weight,
-        _threshold,
-    ) = posterior
-    row_posterior = jnp.asarray(reconstruction_probs, dtype=jnp.float32).reshape(
-        chunk.row_capacity, int(n_fine_trans)
-    )
+    if firstiter_cc:
+        # --- stages 3-4, --firstiter_cc: normalized CC, winner takes all ---
+        scored = score_resident_projected_chunk_normalized_cc(
+            score_proj,
+            row_image_local,
+            row_mask_bits,
+            n_valid_rows_device,
+            recon["score_shifted_cc"],
+            recon["corr_img_score"],
+            recon["cc_half_batch_norm"],
+            half_weights=half_weights,
+            full_to_compact=full_to_compact,
+            row_capacity=chunk.row_capacity,
+            n_fine_trans=int(n_fine_trans),
+            block_rows=_cc_block_rows(chunk.row_capacity),
+        )
+        del score_proj
+        mark("score", scored.scores)
+        (
+            log_z_out,
+            best_log_score,
+            best_cell_index,
+            max_posterior,
+            row_posterior,
+            n_significant,
+        ) = _local_firstiter_cc_posterior(
+            scored.scores,
+            row_image_local,
+            row_is_valid,
+            segment_offsets,
+            n_valid_images_device,
+            image_capacity=chunk.image_capacity,
+            cuda_backproject=cuda_backproject,
+        )
+    else:
+        # --- stage 3: score ----------------------------------------------------
+        # Chunk-local image slots address the chunk's own operands.
+        chunk_image_ids = jnp.where(
+            jnp.arange(chunk.image_capacity, dtype=jnp.int32) < n_valid_images_device,
+            jnp.arange(chunk.image_capacity, dtype=jnp.int32),
+            jnp.int32(-1),
+        )
+        scored = score_resident_projected_chunk(
+            score_proj,
+            row_image_local,
+            row_log_prior,
+            row_mask_bits,
+            n_valid_rows_device,
+            chunk_image_ids,
+            recon["score_input"],
+            recon["corr_img_score"],
+            recon["highres_xi2_half"],
+            recon["translation_prior"],
+            half_weights=half_weights,
+            translation_angles=translation_angles,
+            full_to_compact=full_to_compact,
+            logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
+            row_capacity=chunk.row_capacity,
+            image_capacity=chunk.image_capacity,
+            n_fine_trans=int(n_fine_trans),
+            n_score_pixels=int(n_score_pixels),
+        )
+        del score_proj
+        scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
+        mark("score", scores_flat)
+
+        # --- stage 4: segmented RELION float32 fine posterior -------------------
+        log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
+            scores_flat, segment_offsets, n_valid_images_device
+        )
+        posterior = cuda_backproject.sparse_pass2_segmented_posterior_f32(
+            scores_flat,
+            segment_offsets,
+            n_valid_images_device,
+            log_z,
+            jnp.ones((chunk.image_capacity,), dtype=jnp.float32),
+            adaptive_fraction=float(adaptive_fraction),
+            keep_all=bool(keep_all_weights),
+            use_external_sum_weight=False,
+        )
+        (
+            log_z_out,
+            best_log_score,
+            best_cell_index,
+            max_posterior,
+            _probs,
+            _normalized_weights,
+            reconstruction_probs,
+            _mask,
+            n_significant,
+            _sum_weight,
+            _threshold,
+        ) = posterior
+        row_posterior = jnp.asarray(reconstruction_probs, dtype=jnp.float32).reshape(
+            chunk.row_capacity, int(n_fine_trans)
+        )
     mark("posterior", row_posterior, log_z_out, best_cell_index)
     if significant_counts is not None:
         significant_counts[chunk.image_start : chunk.image_stop] = np.asarray(

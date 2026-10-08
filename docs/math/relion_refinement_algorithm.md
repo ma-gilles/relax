@@ -820,6 +820,11 @@ angles (the input STAR's at iteration 1; 0 where the STAR has none, and
 (0, 0, 0) with a warning). The one exception is RELION's prior mode below the local-search order:
 there an angle with an `rlnAngle*Prior` is centred on that prior in every iteration, including the final
 one ([`local_search_centre_half`](../../relax/refinement/local_sampling.py); non-helical).
+With `--firstiter_cc`, iteration 1 of such a search is RELION's CC iteration in the local window: the
+parent probe and the fine pass score the normalized CC with no orientational or translational prior and
+keep only each image's best hidden variable (ml_optimiser.cpp:9266-9292), as the global CC iteration
+does ([`compute_local_search_resident`](../../relax/sparse_pass2/resident_local_pass2.py) with
+`firstiter_cc`; relax#51).
 
 **Class3D with `--sigma_ang` (K>1).** Every iteration is a local search of that width at the fixed HEALPix
 order, centred on each particle's previous best angles (the input STAR's at iteration 1). RELION scores

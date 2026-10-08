@@ -747,6 +747,9 @@ def score_numbered_half(
                 precision=options.precision,
                 fine_precision=local_precision(options.precision, numbered_relion_iteration, pass_index=2),
                 score_only=options.local_search.stop_after_local_search_score_only,
+                # A search local from iteration 1 (--sigma_ang) scores RELION's --firstiter_cc
+                # iteration with the normalized CC, as the subtomogram local path above does.
+                firstiter_cc=phase.variant.firstiter_score_mode_this_iter == "normalized_cc",
             ),
             diagnostics=replace(
                 phase.local_diagnostics, bpref_device_signature_active=bpref_device_signature_active,

@@ -958,3 +958,85 @@ def test_two_identical_classes_split_the_single_class_pass(monkeypatch, _residen
         # The pruned support is joint over the duplicated rows, so a cutoff tie may keep one copy of a
         # pair; the totals still agree to the pruned mass.
         assert rel_l2(np.asarray(joint.Ft_y[0]) + np.asarray(joint.Ft_y[1]), single.Ft_y) < 1e-2
+
+
+def test_cc_block_rows_divide_every_capacity():
+    for capacity in (64, 96, 256, 1000, 1024, 65536, 7):
+        block = rlp._cc_block_rows(capacity)
+        assert 1 <= block <= 128 and capacity % block == 0 and block & (block - 1) == 0
+
+
+def test_local_firstiter_cc_refuses_a_class3d_pass():
+    """RELION's --firstiter_cc iteration scores one reference; a local Class3D CC pass is refused
+    before any device work."""
+
+    with pytest.raises(rlp.ResidentConfigurationUnsupported, match="firstiter_cc iteration is K=1"):
+        rlp.compute_local_search_resident(
+            MockDataset(n_images=2, seed=1), None, None, None, "linear_interp",
+            current_size=CURRENT_SIZE, class_log_priors=np.zeros(2), firstiter_cc=True,
+        )
+
+
+@requires_resident_gpu
+def test_local_firstiter_cc_is_winner_take_all_and_ignores_the_priors(monkeypatch, _resident_local_env):
+    """RELION's --firstiter_cc iteration when the search is local from iteration 1 (--sigma_ang).
+
+    RELION scores the normalized CC and zeroes every weight but the best
+    (ml_optimiser.cpp:9266-9292): Pmax is 1 for every image, and the
+    orientational and translational priors play no part (the Gaussian pass of
+    the same layout spreads its posterior; noise 200 keeps Pmax below 1 there).
+    relax#51: the local engine ran a Gaussian E-step in that iteration.
+    """
+
+    import dataclasses
+
+    case = _case()
+    gaussian = _run(case, monkeypatch=monkeypatch)
+    assert float(np.min(np.asarray(gaussian.relion_stats.max_posterior_per_image))) < 1.0
+
+    cc = _run(case, monkeypatch=monkeypatch, firstiter_cc=True)
+    np.testing.assert_array_equal(np.asarray(cc.relion_stats.max_posterior_per_image), 1.0)
+
+    rng = np.random.default_rng(7)
+    layout = case["layout"]
+    reweighted = dict(
+        case,
+        layout=dataclasses.replace(
+            layout,
+            rotation_log_priors_flat=rng.normal(0.0, 3.0, np.shape(layout.rotation_log_priors_flat)).astype(
+                np.asarray(layout.rotation_log_priors_flat).dtype
+            ),
+            translation_log_priors=rng.normal(0.0, 3.0, np.shape(layout.translation_log_priors)).astype(
+                np.asarray(layout.translation_log_priors).dtype
+            ),
+        ),
+    )
+    cc_reweighted = _run(reweighted, monkeypatch=monkeypatch, firstiter_cc=True)
+    assert_matches(np.asarray(cc.hard_assignment), np.asarray(cc_reweighted.hard_assignment))
+
+
+@requires_resident_gpu
+def test_local_firstiter_cc_probe_keeps_the_fine_pass_winner(monkeypatch, _resident_local_env):
+    """The --firstiter_cc parent probe keeps one sample per image, the one the fine pass picks.
+
+    Scored on the same layout, the score-only probe (its own operand preparation)
+    and the fine pass (the translated tiles) choose the same (rotation, translation).
+    """
+
+    parent, translations = _parent_layout()
+    case = dict(_case(), layout=parent, translations=translations)
+    fine = _run(case, monkeypatch=monkeypatch, firstiter_cc=True)
+    probe = _run(
+        case,
+        monkeypatch=monkeypatch,
+        firstiter_cc=True,
+        score_only=True,
+        disable_adjoint_y=True,
+        disable_adjoint_ctf=True,
+        return_reconstruction_sample_indices=True,
+        return_profile=True,
+    )
+    samples = probe.profile_summary["reconstruction_sample_indices_by_image"]
+    assert [np.asarray(s).size for s in samples] == [1] * N_IMAGES
+    assert_matches(np.asarray(probe.hard_assignment), np.asarray(fine.hard_assignment))
+

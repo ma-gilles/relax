@@ -1209,6 +1209,8 @@ class LocalExecutionPolicy:
     fine_precision: DensePrecisionPolicy
     # --stop_after_local_search_score_only: score without backprojection, noise accumulation or x-half M-step.
     score_only: bool
+    # RELION's --firstiter_cc iteration when the search is local from iteration 1 (--sigma_ang).
+    firstiter_cc: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1693,6 +1695,7 @@ def _score_half_local_one_shape(
             ),
             nyquist_column_counting=execution.nyquist_column_counting,
             wsum_current_size=sampling.wsum_current_size,
+            firstiter_cc=execution.firstiter_cc,
     )
     local_support = LocalSearchSupportPolicy(
             disable_adjoint_y=execution.disable_adjoint_y,

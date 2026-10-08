@@ -90,6 +90,7 @@ def local_iteration_owners(*args, **values):
             projection_scale=values.pop("projection_scale", 1.0),
             reconstruction_volume_current_size=values.pop("reconstruction_volume_current_size", None),
             reconstruction_image_radius=values.pop("reconstruction_image_radius", None),
+            firstiter_cc=values.pop("firstiter_cc", False),
         ),
         local_search_iteration.LocalSearchSupportPolicy(
             mstep_relion_x_half=values.pop("mstep_relion_x_half", False),

@@ -121,6 +121,9 @@ class LocalSearchKernelPolicy:
     nyquist_column_counting: str = "relion"
     # --strict_highres_exp: the fine pass's weighted-sum image size (None: current_size).
     wsum_current_size: int | None = None
+    # RELION's --firstiter_cc iteration of a search local from its first iteration (--sigma_ang):
+    # normalized CC and winner-take-all in the parent probe and the fine pass.
+    firstiter_cc: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -296,6 +299,7 @@ def _run_local_search_iteration(
         symmetry_label=grid.symmetry,
         reconstruction_image_radius=kernel.reconstruction_image_radius,
         nyquist_column_counting=kernel.nyquist_column_counting,
+        firstiter_cc=kernel.firstiter_cc,
     )
     record_pass_engine("local_probe" if support.score_only else "local", "resident")
     if local_n_classes > 1 and not support.score_only:
