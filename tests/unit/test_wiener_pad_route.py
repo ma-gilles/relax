@@ -7,6 +7,7 @@ from helpers.float_compare import assert_matches
 from recovar.reconstruction import relion_functions as rf
 
 from relax.refinement import mean_helpers
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -59,6 +60,7 @@ def test_cpu_route_matches_the_device_route(monkeypatch):
         projection_padding_factor=1,
         use_spherical_mask=True,
         grid_correct=True,
+        programs=ReconstructionPrograms.from_environ(),
     )
     calls = []
     real = rf.post_process_from_filter_v2
