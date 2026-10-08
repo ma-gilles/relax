@@ -38,7 +38,11 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
    that point nothing reads `args`, `os.environ` or a mode string; the one exception is a dump destination
    owned by `relax/diagnostics` that changes no computed value, read where the dump is written and listed in
    the module's status document. Below the boundary, parameters whose values come from options have no
-   defaults: a default that copies an options default is a second owner (rule 7).
+   defaults: a default that copies an options default is a second owner (rule 7). Types are converted once,
+   where a value enters relax (CLI and option builders, file readers, a value read off a device array, into a
+   new name); inside relax a parameter has its annotated type and is not re-cast (`x = int(x)`,
+   `x = int(obj.x)`). If a caller passes the wrong type, fix the caller. A conversion that changes what the
+   value is (`int(arr.sum())`, `float(jax_scalar)` at a host boundary) is not a re-cast.
 6. **Split by contract, not by flag.** If two variants need different operands, invariants or state
    transitions, they are two functions, or two records with the same methods called at the same points of
    the controller, chosen by one decision; a function whose arguments are half unused
@@ -141,6 +145,8 @@ From the test of the rules on `relax/vdam` (gap numbers of `refactor_vdam_202610
 - Rule 15 (comparison and observation enter through ports), from the parity and diagnostics audit
   (2026-10-06), numbered after rule 14 so cited rule numbers do not change. It gives rule 9 a mechanism and
   rule 5 the object the decision yields.
+- Rule 5: types are converted once where a value enters relax, and a parameter is not re-cast inside it (owner,
+  2026-10-08, `COMMENTS.md` item F: "should not exist either"; 197 self-casts and 109 cast-aliases on main).
 - Rule 10: two sentences from the owner's review of `relax/refinement` (2026-10-07,
   `em_work/refactor_review_20261007/COMMENTS.md`, items A-C): no unpacking of records or option groups into
   locals, and no closures over controller state as callbacks. Option aliases, a record unpacked into seven
