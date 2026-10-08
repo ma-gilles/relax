@@ -1,6 +1,7 @@
 """After the last batch of pass 1: the per-class significant samples and the pass's own timing log."""
 
 import logging
+import time
 
 from relax.scoring.pass1_results import OutputPlan, Pass1Outputs
 from relax.sparse_pass2.resident_significance import (
@@ -10,6 +11,34 @@ from relax.sparse_pass2.resident_significance import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def log_batch_timing(batch_starts, loop_start, n_images):
+    """Log the wall time of the pass's batches: ``batch_starts`` are the ``time.time()`` at the start of each batch.
+
+    A batch's wall time runs from its start to the next batch's start (the last one to now), so it includes the host
+    work of publishing the batch before it. Logs nothing for a pass without batches.
+    """
+
+    if not batch_starts:
+        return
+    loop_end = time.time()
+    loop_seconds = loop_end - loop_start
+    batch_walls = [b - a for a, b in zip(batch_starts, batch_starts[1:])] + [loop_end - batch_starts[-1]]
+    covered = sum(batch_walls)
+    ordered = sorted(batch_walls)
+    logger.info(
+        "K-class coarse pass-1 batch timing: batches=%d images=%d loop=%.2fs "
+        "covered=%.2fs uncovered=%.2fs mean=%.3fs median=%.3fs max=%.3fs",
+        len(batch_walls),
+        int(n_images),
+        loop_seconds,
+        covered,
+        loop_seconds - covered,
+        covered / len(batch_walls),
+        ordered[len(ordered) // 2],
+        ordered[-1],
+    )
 
 
 def significant_samples_after_loop(outputs: Pass1Outputs, plan: OutputPlan):

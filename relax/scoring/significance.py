@@ -53,7 +53,7 @@ from relax.scoring.coarse_gaussian_gemm import (
 from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
-from relax.scoring.pass1_assembly import significant_samples_after_loop
+from relax.scoring.pass1_assembly import log_batch_timing, significant_samples_after_loop
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
@@ -1638,26 +1638,7 @@ def _compute_k_class_significance_batched(
         if pending_batch is not None:
             publish_batch(pending_batch, outputs, output_plan, dump_context)
 
-    if _coarse_batch_starts:
-        _loop_end = time.time()
-        _loop_s = _loop_end - _coarse_loop_t0
-        _coarse_batch_walls = [
-            b - a for a, b in zip(_coarse_batch_starts, _coarse_batch_starts[1:])
-        ] + [_loop_end - _coarse_batch_starts[-1]]
-        _tot = sum(_coarse_batch_walls)
-        _srt = sorted(_coarse_batch_walls)
-        logger.info(
-            "K-class coarse pass-1 batch timing: batches=%d images=%d loop=%.2fs "
-            "covered=%.2fs uncovered=%.2fs mean=%.3fs median=%.3fs max=%.3fs",
-            len(_coarse_batch_walls),
-            int(n_images),
-            _loop_s,
-            _tot,
-            _loop_s - _tot,
-            _tot / len(_coarse_batch_walls),
-            _srt[len(_srt) // 2],
-            _srt[-1],
-        )
+    log_batch_timing(_coarse_batch_starts, _coarse_loop_t0, n_images)
 
     significant_sample_indices = significant_samples_after_loop(outputs, output_plan)
 
