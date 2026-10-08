@@ -11,7 +11,6 @@ See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 
 
 import logging
-import time
 from dataclasses import replace
 from functools import partial
 from typing import NamedTuple
@@ -68,6 +67,7 @@ from relax.helpers.resolution import (
     relion_expectation_coarse_size_order,
     shell_index_to_resolution_angstrom,
 )
+from relax.helpers.timing import Stopwatch
 from relax.reconstruction.regularization_relion import (
     RELION_MINRES_MAP,
     update_relion_growth_state_from_fsc,
@@ -398,7 +398,7 @@ def class_maximization(
     # keep device references here and let the later per-class tau2/sign
     # code transfer only the slices it actually needs.
     previous_means = [jnp.asarray(mean) if mean is not None else None for mean in reference_model.maps]
-    _t_unreg_first = time.time()
+    tau2_clock = Stopwatch()
     class_priors = estimate_class_priors(
         previous_means,
         Ft_y_combined,
@@ -415,7 +415,6 @@ def class_maximization(
         projector_power_spectrum=projector_power_spectrum,
         class_tau2=class_tau2,
         scoring_dtype=scoring_dtype,
-        started_at=_t_unreg_first,
         log=logger,
         observer=observer,
     )
@@ -424,7 +423,7 @@ def class_maximization(
         "Computed iter-%d Class3D tau2 from %s: %.1fs",
         iteration + 1,
         class_tau2.source,
-        time.time() - _t_unreg_first,
+        tau2_clock.seconds,
     )
     reference_model.tau2 = class_priors.variance
     reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
@@ -435,7 +434,7 @@ def class_maximization(
         reference_model.maps[k] = None
 
     # --- Now reconstruct the regularized means ---
-    _t_recon = time.time()
+    recon_clock = Stopwatch()
     reference_model.maps[:] = reconstruct_numbered_class_maps(
         Ft_y_combined,
         Ft_ctf_combined,
@@ -450,7 +449,7 @@ def class_maximization(
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",
-        time.time() - _t_recon,
+        recon_clock.seconds,
     )
     if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
         # Class3D tapers each class's tau2_class and data_vs_prior_class the
@@ -571,7 +570,6 @@ def k1_maximization(
             return_retained_first_numerator=True,
         )
     previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
-    _t_unreg_first = time.time()
     observer.k1_accumulators_joined(
         iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), settings=reconstruction_settings,
         current_size=current_size, accumulator_shape=mstep_accumulator_shape,
@@ -586,7 +584,6 @@ def k1_maximization(
         full_half_axes=mstep_full_half_axes,
         iteration=iteration,
         scoring_dtype=scoring_dtype,
-        started_at=_t_unreg_first,
         log=logger,
     )
     logger.info("tau2 updated from this iteration's FSC")
@@ -599,7 +596,7 @@ def k1_maximization(
 
     # --- Now reconstruct the regularized means ---
     # (the previous K=1 references were released by the snapshot above)
-    _t_recon = time.time()
+    recon_clock = Stopwatch()
     reference_model.maps[:] = reconstruct_numbered_k1_halfmaps(
         (Ft_y_0, Ft_y_1),
         (Ft_ctf_0, Ft_ctf_1),
@@ -614,7 +611,7 @@ def k1_maximization(
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",
-        time.time() - _t_recon,
+        recon_clock.seconds,
     )
     retained_Ft_y_0_device = None
 
@@ -762,11 +759,9 @@ def refine_single_volume(
     # The dtype of the controller's float64-sensitive host operands (rotation grids, priors), from the precision.
     scoring_dtype = options.precision.rotation_real_dtype
 
-    setup_t0 = time.time()
+    # Each set-up phase's cumulative seconds since the set-up started (a result: the archive and the ledger).
+    setup_clock = Stopwatch()
     setup_phase_seconds = {}
-
-    def _mark_setup_phase(name: str) -> None:
-        setup_phase_seconds[name] = time.time() - setup_t0
 
     volume_shape = experiment_datasets[0].volume_shape
     # Keep the input scalar type for host arithmetic; geometry validates its value.
@@ -894,7 +889,7 @@ def refine_single_volume(
         log=logger,
     )
 
-    _mark_setup_phase("mask_and_image_cache")
+    setup_phase_seconds["mask_and_image_cache"] = setup_clock.seconds
 
     state = initialize_refinement_state(
         options,
@@ -904,7 +899,7 @@ def refine_single_volume(
         source=source,
     )
     resume = options.checkpoint.resume
-    _mark_setup_phase("state_init")
+    setup_phase_seconds["state_init"] = setup_clock.seconds
 
     # The refinement schedule owns the initial coarse HEALPix grid; a continuation
     # rebuilds the grid of its restored sampling state.
@@ -944,7 +939,7 @@ def refine_single_volume(
     )
     if options.local_search.stop_after_local_search_profile:
         collect_local_search_profile = True
-    _mark_setup_phase("sampling_grid")
+    setup_phase_seconds["sampling_grid"] = setup_clock.seconds
 
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
 
@@ -968,7 +963,7 @@ def refine_single_volume(
     optics_group_ids_per_half = _optics_group_ids_per_half(
         options.parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
     )
-    _mark_setup_phase("initial_arrays")
+    setup_phase_seconds["initial_arrays"] = setup_clock.seconds
 
     # History tracking: one RefinementHistory instance accumulates every
     # per-iteration trajectory (see helpers/iteration_history.py).
@@ -1171,8 +1166,7 @@ def refine_single_volume(
             float(state.current_resolution),
         )
     # Both start-up states end here; the archive keeps the two phase names it has always had.
-    _mark_setup_phase("direction_prior")
-    _mark_setup_phase("noise_radial_init")
+    setup_phase_seconds["direction_prior"] = setup_phase_seconds["noise_radial_init"] = setup_clock.seconds
     # RELION measures the first iteration's orientation changes from the input angles, as its offset
     # changes from the input offsets (updateOverallChangesInHiddenVariables); they seed the smallest-change
     # trackers of the hidden-variable stall counter. An empty half keeps an empty stack, as the loop does.
@@ -1186,7 +1180,7 @@ def refine_single_volume(
     ]
     perturb_rng = None if options.parity.perturb_seed is not None else np.random.default_rng()
     iteration = 0
-    _mark_setup_phase("before_iterations")
+    setup_phase_seconds["before_iterations"] = setup_clock.seconds
     logger.info(
         "RELION mode setup timing before iteration loop: %s",
         ", ".join(f"{key}={value:.1f}s" for key, value in setup_phase_seconds.items()),
@@ -1280,7 +1274,7 @@ def refine_single_volume(
                 iteration,
             )
             break
-        t0 = time.time()
+        iteration_clock = Stopwatch()
         observer.iteration_started(iteration)
         first_iteration = first_iteration_policy(options, iteration=iteration)
         numbered_relion_iteration = replay_policy._numbered_relion_iteration(
@@ -1756,7 +1750,7 @@ def refine_single_volume(
         Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf
 
         if options.local_search.stops_after_local_search and use_local:
-            elapsed = time.time() - t0
+            elapsed = iteration_clock.seconds
             logger.info(
                 "Stopping after local-search diagnostic at iteration %d: profiles=%d score_only=%s wall=%.1fs",
                 iteration + 1,
@@ -1952,7 +1946,7 @@ def refine_single_volume(
                 )
             )
         )
-        _t_unreg = time.time()
+        unreg_clock = Stopwatch()
         if k_class_enabled:
             unreg_means = (
                 reconstruct_unregularized_class_means(
@@ -1980,7 +1974,7 @@ def refine_single_volume(
             align_k1_volume_signs(reference_model.maps, mstep.previous_means, unreg_means, volume_shape)
         logger.info(
             "Unregularized reconstruction (2 halves): %.1fs%s",
-            time.time() - _t_unreg,
+            unreg_clock.seconds,
             "" if need_unreg_means else " (skipped; diagnostics disabled)",
         )
 
@@ -2286,7 +2280,7 @@ def refine_single_volume(
             checkpoint_writer(snapshot)
 
         observer.iteration_finished(FinishedIteration(
-            iteration, iteration_start=t0, init_relion_iteration=options.schedule.init_relion_iteration, state=state,
+            iteration, init_relion_iteration=options.schedule.init_relion_iteration, state=state,
             current_size=current_size, sigma_offset_angstrom=sigma_offset.shared_angstrom,
             random_perturbation=random_perturbation, settings=reconstruction_settings,
             pixel_size_angstrom=source_pixel_size_angstrom, ave_pmax=statistics.ave_pmax, fsc=fsc,
@@ -2296,7 +2290,7 @@ def refine_single_volume(
         ))
 
         # --- Timing ---
-        elapsed = time.time() - t0
+        elapsed = iteration_clock.seconds
         history.wall_times.append(elapsed)
 
         res_angstrom = shell_index_to_resolution_angstrom(

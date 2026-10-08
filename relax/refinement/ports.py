@@ -108,10 +108,10 @@ class ClassPriorEstimated(NamedTuple):
 
 class FinishedIteration(NamedTuple):
     """A numbered iteration at its end, after the convergence update and the run files: its state, maps,
-    poses, corrections and statistics. ``iteration_start`` is its ``time.time()`` at the top of the loop."""
+    poses, corrections and statistics. An observer that times the iteration starts its clock at
+    ``iteration_started``."""
 
     iteration: int
-    iteration_start: float
     init_relion_iteration: int
     state: Any
     current_size: int

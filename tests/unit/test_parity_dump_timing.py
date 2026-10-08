@@ -98,42 +98,6 @@ def test_dump_iteration_writes_wall_and_stage_fields(parity_env):
     assert 0 not in p._ITER_TIMERS
 
 
-def test_dump_iteration_falls_back_to_iteration_start_arg(parity_env):
-    p, dump = parity_env
-    # Don't call start_iteration; pass iteration_start directly.
-    t0 = time.time()
-    time.sleep(0.02)
-    p.dump_iteration(
-        iteration=0,
-        init_relion_iteration=3,
-        current_size=80,
-        sigma_offset=1.0,
-        translation_step=2.0,
-        translation_range=10.0,
-        random_perturbation=0.0,
-        random_perturbation_instance=0,
-        tau2_fudge=4.0,
-        voxel_size=4.25,
-        box_size=128,
-        volume_shape=(8, 8, 8),
-        ave_pmax=0.5,
-        fsc=np.zeros(64),
-        sigma2_noise=np.ones(64),
-        means=[None, None],
-        unreg_means=[None, None],
-        new_iter_best_rotation_eulers=[None, None],
-        new_iter_best_translations=[None, None],
-        iteration_start=t0,
-    )
-    files = sorted(dump.glob("iter_*.npz"))
-    assert len(files) == 1
-    npz = np.load(files[0], allow_pickle=False)
-    assert "wall_time_s" in npz.files
-    assert float(npz["wall_time_s"]) >= 0.02
-    # No stage_seconds_* expected.
-    assert not any(k.startswith("stage_seconds_") for k in npz.files)
-
-
 def test_timing_only_dump_does_not_require_full_parity_env(tmp_path, monkeypatch):
     monkeypatch.delenv("RELAX_PARITY_DUMP_DIR", raising=False)
     timing = tmp_path / "timing"

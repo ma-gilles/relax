@@ -120,7 +120,6 @@ class ParityDumpObserver(RunObserver):
                 parity_dump.dump_timing_iteration(
                     iteration=finished.iteration,
                     init_relion_iteration=int(finished.init_relion_iteration),
-                    iteration_start=finished.iteration_start,
                 )
             except Exception as exc:
                 logger.warning("parity_dump.dump_timing_iteration failed at iter %d: %s", finished.iteration, exc)

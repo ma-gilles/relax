@@ -9,7 +9,6 @@ mapping, the previous-resolution cap, dtypes and the detail-record layout.
 from __future__ import annotations
 
 import inspect
-import time
 from unittest.mock import Mock
 
 import jax.numpy as jnp
@@ -79,7 +78,7 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diamete
         current_size=GRID_SIZE, accumulator_shape=ACCUMULATOR_SHAPE,
         full_half_axes=[None, 2],
         iteration=2, scoring_dtype=dtype,
-        started_at=time.time(), log=log,
+        log=log,
     )
     assert events == ["raw FSC", "half 0 prior", "half 1 prior"]
     assert result.fsc is raw_fsc

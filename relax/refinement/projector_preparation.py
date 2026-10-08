@@ -9,11 +9,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import time
 from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
+
+from relax.helpers.timing import Stopwatch
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +269,7 @@ def build_numbered_projectors(
     (the start-up handoff of the first iteration). Reads from ``settings`` (the run's
     ``ReconstructionSettings``): ``volume_shape``, ``projection_padding_factor`` and ``gridding_kernel``.
     """
-    started_at = time.time()
+    clock = Stopwatch()
     projectors = [None, None]
     for half in halves:
         if half.dataset.n_units == 0:
@@ -299,7 +300,7 @@ def build_numbered_projectors(
         current_size,
         None if projectors[0] is None else projectors[0].r_max,
         None if projectors[0] is None else projectors[0].data.dtype,
-        time.time() - started_at,
+        clock.seconds,
     )
     return projectors
 

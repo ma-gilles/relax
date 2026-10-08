@@ -210,14 +210,11 @@ def dump_iteration(
     avg_norm_corrections: list | None = None,
     zero_norm_residual_counts: list | None = None,
     scale_correction_data_vs_prior=None,
-    iteration_start: float | None = None,
 ) -> None:
     """Write one .npz per iteration combining both halves with E-step snapshots.
 
     If ``start_iteration(iteration)`` was called, the dump records ``wall_time_s``
     plus a ``stage_seconds_<name>`` field per stage and clears the timer entry.
-    If the timer was not registered but ``iteration_start`` is provided, falls
-    back to ``time.time() - iteration_start`` for the wall time only.
     """
 
     out = dump_dir()
@@ -253,8 +250,6 @@ def dump_iteration(
 
     # --- Wall-time / per-stage timing ---
     wall_time_s, stage_seconds = get_iteration_timing(iteration)
-    if wall_time_s is None and iteration_start is not None:
-        wall_time_s = float(time.time() - iteration_start)
     if wall_time_s is not None:
         payload["wall_time_s"] = np.float64(wall_time_s)
     for stage_name, stage_t in stage_seconds.items():
@@ -332,7 +327,6 @@ def dump_timing_iteration(
     *,
     iteration: int,
     init_relion_iteration: int,
-    iteration_start: float | None = None,
 ) -> None:
     """Write a lightweight timing-only NPZ for one iteration.
 
@@ -346,8 +340,6 @@ def dump_timing_iteration(
         return
 
     wall_time_s, stage_seconds = get_iteration_timing(iteration)
-    if wall_time_s is None and iteration_start is not None:
-        wall_time_s = float(time.time() - iteration_start)
 
     relion_iter = int(init_relion_iteration) + int(iteration) + 1
     payload: dict[str, Any] = {

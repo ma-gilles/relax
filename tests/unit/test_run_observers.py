@@ -69,13 +69,13 @@ def test_the_parity_observer_writes_the_capture_or_else_the_timing(monkeypatch):
     monkeypatch.setattr(observers, "dump_numbered_iteration", lambda iteration, **kw: calls.append(("capture", iteration)))
     monkeypatch.setattr(observers.parity_dump, "dump_timing_iteration", lambda **kw: calls.append(("timing", kw)))
     finished = FinishedIteration(*([None] * len(FinishedIteration._fields)))._replace(
-        iteration=3, iteration_start=1.5, init_relion_iteration=2,
+        iteration=3, init_relion_iteration=2,
     )
     for active, timing in ((True, True), (False, True), (False, False)):
         monkeypatch.setattr(observers.parity_dump, "is_active", lambda active=active: active)
         monkeypatch.setattr(observers.parity_dump, "timing_is_active", lambda timing=timing: timing)
         observers.ParityDumpObserver().iteration_finished(finished)
-    assert calls == [("capture", 3), ("timing", dict(iteration=3, init_relion_iteration=2, iteration_start=1.5))]
+    assert calls == [("capture", 3), ("timing", dict(iteration=3, init_relion_iteration=2))]
 
 
 def test_a_group_hands_each_hook_to_every_observer_in_order():

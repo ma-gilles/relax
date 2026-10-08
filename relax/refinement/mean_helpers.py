@@ -11,7 +11,6 @@ import functools
 import gc
 import logging
 import math
-import time
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -28,6 +27,7 @@ from relax.helpers.resolution import (
     _firstiter_cc_ini_high_tau2_taper,
     shell_index_to_resolution_angstrom,
 )
+from relax.helpers.timing import Stopwatch
 from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, single_working_set_bytes
 from relax.reconstruction import regularization_relion
 from relax.refinement.ports import ClassPriorEstimated, RunObserver
@@ -564,7 +564,6 @@ def estimate_class_priors(
     projector_power_spectrum,
     class_tau2,
     scoring_dtype,
-    started_at,
     log,
     observer: RunObserver | None = None,
 ) -> ClassPriorAggregation:
@@ -575,6 +574,7 @@ def estimate_class_priors(
     products and applies first-CC taper only after regularized reconstruction.
     See ``docs/math/relion_refinement_algorithm.md`` for the M-step ordering.
     """
+    clock = Stopwatch()
     tau2_update_details_per_class = []
     mean_signal_variance_per_class = []
     mean_signal_variance_shells_per_class = []
@@ -644,7 +644,7 @@ def estimate_class_priors(
             iteration + 1,
             class_idx + 1,
             n_classes,
-            time.time() - started_at,
+            clock.seconds,
         )
     mean_signal_variance = jnp.stack(mean_signal_variance_per_class, axis=0)
     mean_signal_variance_shells = jnp.stack(mean_signal_variance_shells_per_class, axis=0)
@@ -1341,7 +1341,6 @@ def estimate_split_half_prior(
     full_half_axes,
     iteration,
     scoring_dtype,
-    started_at,
     log,
 ) -> SplitHalfPrior:
     """Estimate independent half priors from this expectation's shared FSC.
@@ -1352,6 +1351,7 @@ def estimate_split_half_prior(
     See ``docs/math/relion_refinement_algorithm.md`` for the M-step ordering.
     """
 
+    fsc_clock = Stopwatch()
     current_iter_fsc = regularization_relion.compute_relion_fsc_from_backprojector(
         numerators[0],
         numerators[1],
@@ -1367,7 +1367,7 @@ def estimate_split_half_prior(
     log.info(
         "Computed iter-%d FSC for tau2 (RELION backprojector path): %.1fs",
         iteration + 1,
-        time.time() - started_at,
+        fsc_clock.seconds,
     )
     if settings.solvent_correct_fsc:
         current_iter_fsc = _solvent_corrected_fsc(
@@ -1427,7 +1427,7 @@ def _solvent_corrected_fsc(
 
     from relax.reconstruction.solvent_mask import solvent_corrected_fsc
 
-    started = time.time()
+    clock = Stopwatch()
     unregularised = reconstruct_unregularized_k1_halfmaps(
         numerators,
         denominators,
@@ -1459,7 +1459,7 @@ def _solvent_corrected_fsc(
         iteration + 1,
         details["randomize_at"],
         settings.box_size * settings.voxel_size / max(details["randomize_at"], 1),
-        time.time() - started,
+        clock.seconds,
     )
     return jnp.asarray(fsc, dtype=like.dtype)
 
@@ -1521,7 +1521,7 @@ def _reconstruct_class_maps(
     """Reconstruct the shared Class3D stack from combined accumulators."""
 
     _require_radial_gridding_for_classes(settings)
-    _t_recon = time.time()
+    clock = Stopwatch()
     cs_int = int(current_size) if current_size is not None else None
     shared_class_maps = []
     for class_idx in range(n_classes):
@@ -1546,14 +1546,14 @@ def _reconstruct_class_maps(
             iteration + 1,
             class_idx + 1,
             n_classes,
-            time.time() - _t_recon,
+            clock.seconds,
         )
     shared_classes = jnp.stack(shared_class_maps, axis=0)
     logger.info(
         "Class3D reconstruction stack complete: iter=%d classes=%d elapsed=%.1fs",
         iteration + 1,
         n_classes,
-        time.time() - _t_recon,
+        clock.seconds,
     )
     return shared_classes
 

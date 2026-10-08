@@ -6,7 +6,6 @@ post-convergence sampling/scoring/reconstruction sequence and its result.
 
 
 import logging
-import time
 
 import numpy as np
 
@@ -31,6 +30,7 @@ from relax.helpers.resolution import (
     relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
+from relax.helpers.timing import Stopwatch
 from relax.refinement import final_reconstruction
 from relax.refinement.expectation import prepare_final_half
 from relax.refinement.final_sampling import prepare_final_sampling
@@ -150,7 +150,7 @@ def run_final_all_data(
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
     final_expected_accuracy = None
     final_expected_accuracy_status = "not_run"
-    final_iter_t0 = time.time()
+    final_iter_clock = Stopwatch()
     final_current_size = image_geometry.box_size
     if native_sampling_boundary:
         final_eulers_half1 = halves[0].rotation_eulers
@@ -257,7 +257,7 @@ def run_final_all_data(
             final_adaptive_pass1_current_size = None
             final_adaptive_pass2_current_size = None
     # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
-    projector_t0 = time.time()
+    projector_clock = Stopwatch()
     final_projectors = [
         prepare_scoring_projector(
             reference,
@@ -274,7 +274,7 @@ def run_final_all_data(
         "RELION final all-data: built exact Projector::data for scoring at current_size=%d r_max=%s in %.2fs",
         final_current_size,
         final_projectors[0].r_max,
-        time.time() - projector_t0,
+        projector_clock.seconds,
     )
     logger.info("=== RELION final all-data Nyquist iteration ===")
     if final_use_local:
@@ -353,7 +353,7 @@ def run_final_all_data(
     for half, projector in zip(halves, final_projectors, strict=True):
         half = local_search_centre_half(half, (options.replay.init_angle_priors or (None, None))[half.index], state)
         bpref_diagnostics.clear_bpref_contribution_dump_context()
-        final_half_t0 = time.time()
+        final_half_clock = Stopwatch()
         logger.info(
             "RELION final all-data half-%d start: images=%d current_size=%d "
             "healpix_order=%d n_rot=%d n_trans=%d local_search=%s",
@@ -498,7 +498,7 @@ def run_final_all_data(
         logger.info(
             "RELION final all-data half-%d done: wall=%.1fs",
             half.index + 1,
-            time.time() - final_half_t0,
+            final_half_clock.seconds,
         )
         observer.final_half_scored(FinalHalfScored(
             half, final_sampling, final_inputs,
@@ -511,7 +511,7 @@ def run_final_all_data(
         final_outs.mstep_accumulator_shape,
         padded_volume_shape,
     )
-    final_reconstruct_t0 = time.time()
+    final_reconstruct_clock = Stopwatch()
     # The one mode decision of the final reconstruction. Each branch is its mode's whole sequence over the
     # steps of final_reconstruction.py, in order: accumulators, prior, resolution, maps.
     #
@@ -539,7 +539,7 @@ def run_final_all_data(
                 class_weights,
             ),
         )
-        _t_final_tau2 = time.time()
+        final_tau2_clock = Stopwatch()
         final_class_priors = final_reconstruction.compute_final_class_priors(
             final_ft_ctf,
             final_join_means[0],
@@ -554,7 +554,7 @@ def run_final_all_data(
         logger.info(
             "RELION final all-data Class3D tau2 from Iref power spectra: dvp_shell_1=%.4f wall=%.1fs",
             float(np.asarray(final_data_vs_prior)[0, 1]) if np.asarray(final_data_vs_prior).shape[-1] > 1 else float("nan"),
-            time.time() - _t_final_tau2,
+            final_tau2_clock.seconds,
         )
         final_res_shell = class_current_resolution_shell(
             final_data_vs_prior, current_size=final_current_size, box_size=image_geometry.box_size,
@@ -644,7 +644,7 @@ def run_final_all_data(
         final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
         final_outs.Ft_ctf[0] = final_outs.Ft_ctf[1] = None
         final_mstep_full_half_axis = _resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
-        _t_final_tau2 = time.time()
+        final_tau2_clock = Stopwatch()
         final_halfmap_prior = final_reconstruction.compute_final_halfmap_prior(
             (final_Ft_y_0, final_Ft_y_1),
             (final_Ft_ctf_0, final_Ft_ctf_1),
@@ -659,7 +659,7 @@ def run_final_all_data(
         logger.info(
             "RELION final all-data tau2 from joined FSC: fsc_shell_1=%.4f wall=%.1fs",
             float(np.asarray(final_iter_fsc)[1]) if np.asarray(final_iter_fsc).size > 1 else float("nan"),
-            time.time() - _t_final_tau2,
+            final_tau2_clock.seconds,
         )
         final_res_shell = k1_current_resolution_shell(
             np.asarray(final_tau2_update_details["ssnr_shells"], dtype=scoring_dtype),
@@ -704,9 +704,9 @@ def run_final_all_data(
         )
     logger.info(
         "RELION final all-data reconstruction done: wall=%.1fs",
-        time.time() - final_reconstruct_t0,
+        final_reconstruct_clock.seconds,
     )
-    final_iter_elapsed = time.time() - final_iter_t0
+    final_iter_elapsed = final_iter_clock.seconds
     logger.info(
         "Final iter complete: current_size=%d (Nyquist), wall=%.1fs",
         final_current_size,

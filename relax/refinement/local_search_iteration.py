@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import time
 from dataclasses import dataclass
 
 import numpy as np
 
+from relax.helpers.timing import Stopwatch
 from relax.helpers.types import NoiseStats, RelionStats
 from relax.local.local_layout import (
     build_local_hypothesis_layout,
@@ -180,15 +180,15 @@ def _run_local_search_iteration(
         )
 
     if grid.pass2_layout is None:
-        metadata_t0 = time.time()
+        metadata_clock = Stopwatch()
         # RELION local priors remain factorized in canonical direction/psi index
         # space even when the scored trial rotations have been perturbed.
         local_grid_metadata = build_local_search_grid_metadata(
             grid.healpix_order, symmetry=grid.symmetry
         )
-        metadata_build_time = time.time() - metadata_t0
+        metadata_build_time = metadata_clock.seconds
 
-        layout_t0 = time.time()
+        layout_clock = Stopwatch()
         local_layout = build_local_hypothesis_layout(
             prior_rotations,
             grid.rotation_grid_rotations,
@@ -212,7 +212,7 @@ def _run_local_search_iteration(
             generate_relion_mstep_rotations=grid.generate_relion_mstep_rotations,
             dtype=local_layout_dtype,
         )
-        selector_time = time.time() - layout_t0
+        selector_time = layout_clock.seconds
     else:
         local_layout = grid.pass2_layout
         metadata_build_time = 0.0
