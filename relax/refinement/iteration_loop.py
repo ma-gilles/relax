@@ -531,7 +531,6 @@ class K1Maximization(NamedTuple):
     # Host copies of the references the M-step replaced, for sign alignment.
     previous_means: list
     fsc: object
-    fsc_for_update: object
     tau2_update_details: dict
     tau2_update_details_per_half: list
 
@@ -600,26 +599,17 @@ def k1_maximization(
         started_at=_t_unreg_first,
         log=logger,
     )
-    current_iter_fsc = split_prior.fsc
-    tau2_fsc_for_update = split_prior.fsc_for_update
-    mean_signal_variance = split_prior.variance
-    mean_signal_variance_per_half = split_prior.variance_per_half
-    mean_signal_variance_shells_per_half = split_prior.shells_per_half
-    tau2_update_details_per_half = split_prior.details_per_half
-    # Diagnostics follow the half-1 model.star, matching the parity report.
-    tau2_update_details = tau2_update_details_per_half[0]
-    del split_prior
     logger.info(
         "tau2 update from THIS-iter FSC: old_max=%.4e new_max=%.4e half_max=(%.4e, %.4e)",
         float(jnp.max(jnp.abs(reference_model.tau2))),
-        float(jnp.max(jnp.abs(mean_signal_variance))),
-        float(jnp.max(jnp.abs(mean_signal_variance_per_half[0]))),
-        float(jnp.max(jnp.abs(mean_signal_variance_per_half[1]))),
+        float(jnp.max(jnp.abs(split_prior.variance))),
+        float(jnp.max(jnp.abs(split_prior.variance_per_half[0]))),
+        float(jnp.max(jnp.abs(split_prior.variance_per_half[1]))),
     )
-    reference_model.tau2 = mean_signal_variance
+    reference_model.tau2 = split_prior.variance
     reference_model.tau2_per_half = _updated_mean_variance_per_half(
         reference_model.tau2,
-        mean_signal_variance_per_half,
+        split_prior.variance_per_half,
         use_per_half_mean_variance=parity.use_per_half_mean_variance,
     )
 
@@ -629,7 +619,7 @@ def k1_maximization(
     reference_model.maps[:] = reconstruct_numbered_k1_halfmaps(
         (Ft_y_0, Ft_y_1),
         (Ft_ctf_0, Ft_ctf_1),
-        mean_signal_variance_shells_per_half,
+        split_prior.shells_per_half,
         reconstruction_settings,
         iteration=iteration,
         current_size=current_size,
@@ -649,25 +639,20 @@ def k1_maximization(
     # initialLowPassFilterReferences taper tau2/data_vs_prior for the
     # model state and reporting; that tapered spectrum is explicitly not
     # used in the reconstruction calculation (ml_optimiser.cpp:5296-5328).
+    # The taper rewrites split_prior's per-half volumes and details in place; its shared volume is new.
     if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
-        tapered_prior = taper_first_cc_k1_prior(
-            mean_signal_variance_per_half,
-            tau2_update_details_per_half,
+        reference_model.tau2 = taper_first_cc_k1_prior(
+            split_prior.variance_per_half,
+            split_prior.details_per_half,
             reconstruction_settings,
             pixel_size_angstrom=source_pixel_size_angstrom,
             scoring_dtype=scoring_dtype,
-        )
-        mean_signal_variance = tapered_prior.variance
-        mean_signal_variance_per_half = tapered_prior.variance_per_half
-        tau2_update_details_per_half = tapered_prior.details_per_half
-        del tapered_prior
-        reference_model.tau2 = mean_signal_variance
+        ).variance
         reference_model.tau2_per_half = _updated_mean_variance_per_half(
             reference_model.tau2,
-            mean_signal_variance_per_half,
+            split_prior.variance_per_half,
             use_per_half_mean_variance=parity.use_per_half_mean_variance,
         )
-        tau2_update_details = tau2_update_details_per_half[0]
         logger.info(
             "RELION iter-1 CC emulation: tapered post-reconstruction tau2/data-vs-prior "
             "with ini_high=%.2f A",
@@ -678,25 +663,19 @@ def k1_maximization(
     # uses, as RELION keeps tau2 as a host spectrum: at box 800 the four
     # float32 volumes are 8 GB of the device floor (GPU census, bigbox
     # 14480607). The per-half reconstruction volumes are not read again:
-    # drop them here instead of copying them.
-    (
+    # they are released with split_prior when this function returns.
+    reference_model.tau2, reference_model.tau2_per_half = _host_tau2_volumes(
         reference_model.tau2,
         reference_model.tau2_per_half,
-        mean_signal_variance,
-    ) = _host_tau2_volumes(
-        reference_model.tau2,
-        reference_model.tau2_per_half,
-        mean_signal_variance,
     )
-    mean_signal_variance_per_half = None
     return K1Maximization(
         (Ft_y_0, Ft_y_1),
         (Ft_ctf_0, Ft_ctf_1),
         previous_means,
-        current_iter_fsc,
-        tau2_fsc_for_update,
-        tau2_update_details,
-        tau2_update_details_per_half,
+        split_prior.fsc,
+        # Diagnostics follow the half-1 model.star, matching the parity report.
+        split_prior.details_per_half[0],
+        split_prior.details_per_half,
     )
 
 
@@ -1899,7 +1878,6 @@ def refine_single_volume(
                 (Ft_ctf_0, Ft_ctf_1),
                 previous_means,
                 current_iter_fsc,
-                tau2_fsc_for_update,
                 tau2_update_details,
                 tau2_update_details_per_half,
             ) = k1_maximization(
@@ -2040,7 +2018,8 @@ def refine_single_volume(
             # Reuse it here — recomputing would give the same value (same
             # underlying unreg accumulators).
             fsc = current_iter_fsc
-            history.record_fsc(fsc, tau2_fsc_for_update)
+            # The FSC also drives size growth; the history and the run files keep it as that curve too.
+            history.record_fsc(fsc, fsc)
             observer.stage_finished(iteration, "fsc")
 
         observer.maps_reconstructed(ReconstructedIteration(
@@ -2282,7 +2261,7 @@ def refine_single_volume(
             if not k_class_enabled:
                 incr_size_after, high_fsc_after = update_relion_growth_state_from_fsc(
                     _zero_shells_past_current_size(
-                        tau2_fsc_for_update,
+                        fsc,
                         current_size=current_size,
                         grid_size=grid_size,
                         dtype=scoring_dtype,
@@ -2314,7 +2293,7 @@ def refine_single_volume(
                 previous_data_vs_prior_for_scheduling,
                 noise_model.radial_per_half,
                 fsc=fsc,
-                fsc_for_growth=None if k_class_enabled else tau2_fsc_for_update,
+                fsc_for_growth=None if k_class_enabled else fsc,
                 class_weights=class_mixture.weights if k_class_enabled else None,
                 direction_priors=direction_priors,
                 half_inputs=halves,

@@ -96,10 +96,9 @@ def reference_model_from_snapshot(snapshot, volume_shape, *, k_class_enabled, dt
 class HostTau2(NamedTuple):
     shared: object
     per_half: list
-    reconstruction: object
 
 
-def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_variance):
+def _host_tau2_volumes(mean_variance, mean_variance_per_half):
     """Move the K1 tau2 volumes that are read again to host, copying each distinct device array once.
 
     The per-half reconstruction volumes are not among them: nothing reads them
@@ -119,7 +118,6 @@ def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_varian
     return HostTau2(
         to_host(mean_variance),
         [to_host(value) for value in mean_variance_per_half],
-        to_host(mean_signal_variance),
     )
 
 
@@ -1278,13 +1276,12 @@ def _require_radial_gridding_for_classes(settings: ReconstructionSettings) -> No
 
 @dataclass(frozen=True)
 class SplitHalfPrior:
-    """K1 scoring/reconstruction priors and the shared FSC (``fsc_for_update`` is ``fsc``)."""
+    """K1 scoring/reconstruction priors and the shared FSC, which also drives tau2 and size growth."""
 
     variance: object
     variance_per_half: list
     shells_per_half: list
     fsc: object
-    fsc_for_update: object
     details_per_half: list[dict]
 
 
@@ -1303,8 +1300,8 @@ def estimate_split_half_prior(
 ) -> SplitHalfPrior:
     """Estimate independent half priors from this expectation's shared FSC.
 
-    The raw backprojector FSC is reported and drives tau2 and size growth
-    (``fsc_for_update`` is the same curve). The two halves retain their own
+    The raw backprojector FSC is reported and drives tau2 and size growth.
+    The two halves retain their own
     Fourier weights.
     See ``docs/math/relion_refinement_algorithm.md`` for the M-step ordering.
     """
@@ -1368,7 +1365,6 @@ def estimate_split_half_prior(
         variance_per_half=mean_signal_variance_per_half,
         shells_per_half=mean_signal_variance_shells_per_half,
         fsc=current_iter_fsc,
-        fsc_for_update=current_iter_fsc,
         details_per_half=tau2_update_details_per_half,
     )
 

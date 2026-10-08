@@ -82,7 +82,6 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diamete
     )
     assert events == ["raw FSC", "half 0 prior", "half 1 prior"]
     assert result.fsc is raw_fsc
-    assert result.fsc_for_update is raw_fsc
     for half in range(2):
         assert result.variance_per_half[half] is variances[half]
         assert result.details_per_half[half] is detail_rows[half]

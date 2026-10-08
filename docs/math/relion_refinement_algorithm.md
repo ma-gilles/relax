@@ -663,7 +663,7 @@ Final first-iteration, replay, CTF and DVP precision policies remain distinct.
 [`estimate_split_half_prior`](../../relax/refinement/mean_helpers.py) owns the
 numbered K1 backprojector FSC and each half's weight-based tau2. RELION's
 `--solvent_correct_fsc` is not implemented, so the FSC used for priors and size
-growth (`SplitHalfPrior.fsc_for_update`) is the raw reporting FSC. It supplies the shared/per-half variance,
+growth is the raw reporting FSC, `SplitHalfPrior.fsc`. It supplies the shared/per-half variance,
 reconstruction shells and detail records. It runs after the existing optional
 low-frequency join and previous-map release, before regularized reconstruction.
 The controller applies tau2 updates and retains post-reconstruction firstiter-CC

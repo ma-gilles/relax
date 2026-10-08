@@ -561,7 +561,7 @@ MUTATIONS = (
     ("k1_mstep_join_radius", "low_resolution_angstrom=parity.low_resol_join_halves_angstrom,\npixel_resolutions=pixel_resolutions,", "low_resolution_angstrom=0.5 * parity.low_resol_join_halves_angstrom,\npixel_resolutions=pixel_resolutions,",
      "the K=1 M-step joins the half accumulators out to twice the requested resolution (the previous "
      "resolution caps the join radius in these cases)", False),
-    ("k1_mstep_details_from_half2", "tau2_update_details = tau2_update_details_per_half[0]\ndel split_prior", "tau2_update_details = tau2_update_details_per_half[1]\ndel split_prior",
+    ("k1_mstep_details_from_half2", "split_prior.details_per_half[0],\nsplit_prior.details_per_half,", "split_prior.details_per_half[1],\nsplit_prior.details_per_half,",
      "the K=1 M-step reports half 2's tau2 details", True),
     ("class_mstep_curve_doubled", "data_vs_prior_trajectory.append(data_vs_prior_iter)", "data_vs_prior_trajectory.append(2 * data_vs_prior_iter)",
      "the Class3D M-step publishes a doubled data-vs-prior curve to the history", True),
@@ -837,7 +837,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
             def host_spy(*args, _original=original_host, **kwargs):
                 out = _original(*args, **kwargs)
-                record("call", "_host_tau2_volumes", json.dumps(flatten([list(args), kwargs, list(out)]), sort_keys=True))
+                # The shared and per-half volumes: a third, the shared one again, was dropped (main after a4396d82).
+                record("call", "_host_tau2_volumes", json.dumps(flatten([list(args)[:2], kwargs, list(out)[:2]]), sort_keys=True))
                 return out
 
             patch(owner, "_host_tau2_volumes", host_spy)

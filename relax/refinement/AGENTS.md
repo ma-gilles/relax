@@ -82,8 +82,8 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 - A flag that tells a callee how to read another argument may still have one live caller.
   `_reconstruct_volume_eager` keeps `tau_is_1d` because the final K=1 solve passes a full volume while the
   numbered operations pass shell curves. Trace every caller before removing such a flag.
-- Stop a deletion at a stored format. `SplitHalfPrior.fsc_for_update` equals `fsc` for K=1 and stays because
-  snapshots and the growth history carry it.
+- Stop a deletion at a stored format. The growth history and the snapshots keep their `fsc_for_growth` column
+  although for K=1 it is the FSC; the in-memory records hold that curve once (`SplitHalfPrior.fsc`).
 - `relax/refinement/full_refinement.py` maps to `tests/unit/test_refine_relion_mode.py` in
   `tests/tiers/gpu_path_map.json`. That file takes about 33 minutes on a GPU, so smoke defers it to medium.
 - Extraction changes when arguments are evaluated. A value read under a guard in the controller may not exist
