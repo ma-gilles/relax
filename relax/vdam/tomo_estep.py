@@ -18,6 +18,7 @@ import logging
 import numpy as np
 
 from relax import sampling
+from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.vdam.adaptive_estep import (
     _direction_posterior_stats,
     _recovar_order_prior,
@@ -142,7 +143,7 @@ def run_tomo_initial_model_estep(
         rotation_log_prior=prior if K > 1 else prior[0],
         old_offsets_px=old,
         sigma_offset_angst=float(sigma_offset_angstrom),
-        adaptive_fraction=0.999,
+        adaptive_fraction=RELION_ADAPTIVE_FRACTION,
         max_significants=int(max_significants),
         unit_groups=(
             np.zeros(particle_ids.size, dtype=np.int32)
