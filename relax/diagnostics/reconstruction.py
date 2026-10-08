@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils
 
@@ -197,17 +196,10 @@ def write_class_mstep(
         tau2_shells=np.asarray(prior.shells, dtype=np.float64),
         tau2_shells_relion=np.asarray(prior.relion_shells, dtype=np.float64),
         tau2_source=np.asarray(source),
-        sigma2_shells=np.asarray(
-            jnp.where(
-                prior.weight_shells["avg_weight_shells"] > 0,
-                1.0 / (settings.padding_factor**3 * prior.weight_shells["avg_weight_shells"]),
-                0.0,
-            ),
-            dtype=np.float64,
-        ),
-        avg_weight_shells=np.asarray(prior.weight_shells["avg_weight_shells"], dtype=np.float64),
-        shell_sum=np.asarray(prior.weight_shells["shell_sum"], dtype=np.float64),
-        shell_count=np.asarray(prior.weight_shells["shell_count"], dtype=np.float64),
+        sigma2_shells=prior.details["sigma2_shells"],
+        avg_weight_shells=prior.details["avg_weight_shells"],
+        shell_sum=prior.details["shell_sum"],
+        shell_count=prior.details["shell_count"],
         reconstruct_floor_avg_weight_shells=np.asarray(
             reconstruct_floor_stats_k["avg_weight_shells"],
             dtype=np.float64,

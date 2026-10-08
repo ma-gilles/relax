@@ -144,7 +144,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
     )
     prior_calls = [] if source == "replay" else ["reference", *(["projector"] if source == "projector" else []), "prior"]
     assert calls == prior_calls + ["denominator", "weight statistics", "denominator", "data vs prior"]
-    assert result.weight_shells is weight_shells and result.details is details
+    assert result.details is details
     if source == "replay":
         assert result.variance.dtype == result.shells.dtype == result.relion_shells.dtype == np.float32
     else:

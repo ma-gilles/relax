@@ -565,7 +565,7 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
         recorded.append(settings.shell_pair_counting)
         return mean_helpers.ClassPriorEstimate(
             variance=jnp.ones(4), shells=jnp.ones(3), relion_shells=jnp.ones(3), data_vs_prior=jnp.ones(3),
-            details={key: np.ones(3) for key in mean_helpers._CLASS_TAU2_DETAIL_KEYS}, weight_shells={},
+            details={key: np.ones(3) for key in mean_helpers._CLASS_TAU2_DETAIL_KEYS},
         )
 
     monkeypatch.setattr(mean_helpers, "estimate_class_prior", estimate)

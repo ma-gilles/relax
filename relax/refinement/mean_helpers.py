@@ -447,7 +447,7 @@ class ClassPriorEstimate:
     """One class's prior, weight statistics and data-vs-prior estimate.
 
     ``variance`` and ``shells`` use the RECOVAR frame. ``relion_shells`` keeps
-    the unscaled diagnostic spectrum; ``weight_shells`` uses round shells.
+    the unscaled diagnostic spectrum. ``details`` holds the weight statistics on round shells.
     """
 
     variance: object
@@ -455,7 +455,6 @@ class ClassPriorEstimate:
     relion_shells: object
     data_vs_prior: object
     details: dict
-    weight_shells: dict
 
 
 def estimate_class_prior(
@@ -528,7 +527,6 @@ def estimate_class_prior(
         relion_shells=relion_shells,
         data_vs_prior=data_vs_prior,
         details=details,
-        weight_shells=weight_shells,
     )
 
 

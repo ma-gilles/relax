@@ -121,8 +121,8 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
     prior = ClassPriorEstimate(
         variance=None, shells=values["tau2_shells_recovar_frame_k"],
         relion_shells=values["tau2_shells_relion_frame_k"],
-        data_vs_prior=values["data_vs_prior_k"], details={},
-        weight_shells=values["shell_stats_k"],
+        data_vs_prior=values["data_vs_prior_k"],
+        details={"sigma2_shells": 1.0 / (2**3 * values["shell_stats_k"]["avg_weight_shells"]), **values["shell_stats_k"]},
     )
     settings = ReconstructionSettings(
         box_size=values["grid_size"], voxel_size=values["voxel_size"],
