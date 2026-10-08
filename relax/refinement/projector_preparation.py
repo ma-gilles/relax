@@ -37,10 +37,6 @@ class ProjectorReuse:
     projector: PreparedProjector
 
 
-class InitialReferenceReplayError(ValueError):
-    """A direct initial-reference handoff was requested for a run that resumes after RELION iteration 0."""
-
-
 def prepare_initial_real_references(init_reference_real, *, volume_shape, n_classes, init_relion_iteration, log):
     """Normalize direct real references to half/class axes without Fourier conversion.
 
@@ -52,7 +48,7 @@ def prepare_initial_real_references(init_reference_real, *, volume_shape, n_clas
     """
     initial_real_references_by_half = [None, None]
     if init_reference_real is not None and int(init_relion_iteration) != 0:
-        raise InitialReferenceReplayError(
+        raise ValueError(
             "direct initial real-reference handoff (the K=1 --firstiter_cc default or "
             "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE=1) would score the first loop "
             "iteration against the start-up reference, but this run resumes after RELION "
@@ -119,8 +115,7 @@ def prepare_scoring_projector(
     The returned ``power_spectrum`` (float64
     ``[K, ori_size // 2 + 1]``) is each class's corrected power spectrum from
     the same transform, as ``computeFourierTransformMap`` returns it; Class3D
-    derives its tau2 from it. It is ``None`` when the slabs come from a
-    projector cache entry written without it.
+    derives its tau2 from it.
 
     The slabs come from the device projector setup
     (:func:`relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power`);
@@ -187,9 +182,7 @@ def prepare_scoring_projector(
                 with np.load(cache_path, allow_pickle=False) as cached:
                     projector_half = np.asarray(cached["projector_half"])
                     projector_r_max = int(np.asarray(cached["projector_r_max"]))
-                    projector_power = (
-                        np.asarray(cached["projector_power"]) if "projector_power" in cached.files else None
-                    )
+                    projector_power = np.asarray(cached["projector_power"])
                     if (
                         int(np.asarray(cached["current_size"])) != resolved_current_size
                         or int(np.asarray(cached["padding_factor"])) != int(padding_factor)
@@ -241,10 +234,9 @@ def prepare_scoring_projector(
     dump_dir = os.environ.get("RELAX_RELION_PROJECTOR_DUMP_DIR")
     if dump_dir:
         label = dump_label or "projector"
-        safe_label = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(label))
         os.makedirs(dump_dir, exist_ok=True)
         np.savez_compressed(
-            os.path.join(dump_dir, f"{safe_label}_relion_projector_half.npz"),
+            os.path.join(dump_dir, f"{label}_relion_projector_half.npz"),
             projector_half=np.asarray(projector_half),
             reference_real=np.asarray(refs_real),
             projector_r_max=np.int64(projector_r_max),
