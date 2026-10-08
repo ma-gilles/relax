@@ -553,11 +553,8 @@ def refine_single_volume(
         logger.info(
             "Continuing after numbered iteration %d: current_size=%d healpix_order=%d "
             "local_search=%s resolution=%.3f A",
-            int(resume.relion_iteration),
-            int(resume.current_size),
-            int(state.healpix_order),
-            bool(state.do_local_search),
-            float(state.current_resolution),
+            int(resume.relion_iteration), int(resume.current_size), int(state.healpix_order),
+            bool(state.do_local_search), float(state.current_resolution),
         )
     # Both start-up states end here; the archive keeps the two phase names it has always had.
     setup_phase_seconds["direction_prior"] = setup_phase_seconds["noise_radial_init"] = setup_clock.seconds
@@ -785,9 +782,7 @@ def refine_single_volume(
         # Accuracy and the preceding iteration's stall counters select this
         # expectation's grid; completed-iteration updates remain after M-step.
         state = advance_expectation_sampling(
-            state,
-            options.adaptive,
-            iteration=iteration,
+            state, options.adaptive, iteration=iteration,
             may_advance_natively=has_previous_iteration and uses_native_auto_refine(
                 native_sampling_boundary=native_sampling_boundary, n_classes=options.k_class.n_classes,
             ),
@@ -1042,27 +1037,18 @@ def refine_single_volume(
         # as tau2 and solves once per class. mstep is the mode's record (ClassMaximization or K1Maximization). ---
         if k_class_enabled:
             mstep = class_maximization(
-                reference_model,
-                (Ft_y_0, Ft_y_1),
-                (Ft_ctf_0, Ft_ctf_1),
-                reconstruction_settings,
-                options,
-                halves=halves,
-                iteration=iteration,
-                current_size=current_size,
+                reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), reconstruction_settings, options,
+                halves=halves, iteration=iteration, current_size=current_size,
                 image_current_size=sampling_plan.windows.image_current_size,
-                mstep_accumulator_shape=mstep_accumulator_shape,
-                mstep_full_half_axis=mstep_full_half_axis,
+                mstep_accumulator_shape=mstep_accumulator_shape, mstep_full_half_axis=mstep_full_half_axis,
                 projector_power_spectrum=(
                     None
                     if not has_previous_iteration or projectors[0] is None
                     else projectors[0].power_spectrum
                 ),
-                class_tau2=source.class_tau2(iteration, options.k_class.n_classes),
-                scoring_dtype=scoring_dtype,
+                class_tau2=source.class_tau2(iteration, options.k_class.n_classes), scoring_dtype=scoring_dtype,
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
-                source_pixel_size_angstrom=source_pixel_size_angstrom,
-                observer=observer,
+                source_pixel_size_angstrom=source_pixel_size_angstrom, observer=observer,
             )
             history.data_vs_prior_trajectory.append(mstep.data_vs_prior)
             previous_data_vs_prior_for_scheduling = mstep.data_vs_prior
@@ -1184,10 +1170,8 @@ def refine_single_volume(
             logger.info(
                 "Class3D optimizer Pmax: value=%.9f numerator=%.9f "
                 "half1_mstep_posterior_mass=%.9f half1_particle_count=%d",
-                statistics.ave_pmax,
-                float(np.sum(np.asarray(per_half.max_posterior[0]), dtype=np.float64)),
-                statistics.ave_pmax_mass,
-                int(np.asarray(per_half.max_posterior[0]).size),
+                statistics.ave_pmax, float(np.sum(np.asarray(per_half.max_posterior[0]), dtype=np.float64)),
+                statistics.ave_pmax_mass, int(np.asarray(per_half.max_posterior[0]).size),
             )
         history.record_pmax(statistics.ave_pmax, statistics.ave_pmax_mass, statistics.max_posterior.copy())
         history.record_pass2_engines(take_pass_engines())
@@ -1221,8 +1205,7 @@ def refine_single_volume(
             logger.info(
                 "RELION firstiter_cc resolution state: using ini_high=%.2f A shell %d "
                 "instead of live data-vs-prior shell %d",
-                float(options.parity.relion_firstiter_ini_high_angstrom),
-                int(resolution_estimate.scheduling_shell),
+                float(options.parity.relion_firstiter_ini_high_angstrom), int(resolution_estimate.scheduling_shell),
                 int(resolution_estimate.observed_shell),
             )
         history.pixel_resolutions.append(resolution_estimate.scheduling_shell)
@@ -1316,25 +1299,16 @@ def refine_single_volume(
 
         # --- Convergence state: assignment changes, resolution stalls, angular-step refinement ---
         state, accuracy_replay = update_iteration_convergence(
-            state,
-            pose_comparison,
-            options,
-            image_geometry=image_geometry,
-            iteration=iteration,
+            state, pose_comparison, options, image_geometry=image_geometry, iteration=iteration,
             sampling_decision_now=not k_class_enabled and not native_sampling_boundary,
             class_change_fraction=(
                 hard_class_change_fraction(current_combined_classes, previous_combined_classes)
                 if k_class_enabled
                 else 0.0
             ),
-            scheduling_resolution_shell=resolution_estimate.scheduling_shell,
-            source=source,
-            translations=coarse_grids.translations,
-            statistics=statistics,
-            significant_counts=significance.convergence,
-            exact_acc_rot=iteration_accuracy.acc_rot,
-            exact_acc_trans=iteration_accuracy.acc_trans_angstrom,
-            log=logger,
+            scheduling_resolution_shell=resolution_estimate.scheduling_shell, source=source,
+            translations=coarse_grids.translations, statistics=statistics, significant_counts=significance.convergence,
+            exact_acc_rot=iteration_accuracy.acc_rot, exact_acc_trans=iteration_accuracy.acc_trans_angstrom, log=logger,
         )
         if not k_class_enabled:
             state = reset_follower_counter_once(state, options, iteration=iteration)
@@ -1430,14 +1404,8 @@ def refine_single_volume(
             "RELION Iteration %d: current_size=%d, pixel_res=%.1f, "
             "res=%.2f A, ave_Pmax=%.4f, healpix_order=%d, "
             "converged=%s, time=%.1fs",
-            iteration + 1,
-            current_size,
-            resolution_estimate.scheduling_shell,
-            res_angstrom,
-            statistics.ave_pmax,
-            state.healpix_order,
-            state.has_converged,
-            elapsed,
+            iteration + 1, current_size, resolution_estimate.scheduling_shell, res_angstrom, statistics.ave_pmax,
+            state.healpix_order, state.has_converged, elapsed,
         )
 
         # End-of-iteration memory boundary. The next iteration pads each half-map to the projection
@@ -1495,9 +1463,7 @@ def refine_single_volume(
                 else finalization.numbered_k1_maps(reference_model.maps)
             ),
             replay=_follower_replay_telemetry(follower_scale_replay, history),
-            follower_scale=follower_setup.result_outputs(history),
-            convergence_state=state,
-            numbered=numbered,
+            follower_scale=follower_setup.result_outputs(history), convergence_state=state, numbered=numbered,
             history=history,
         )
     # --- RELION's final iteration (do_join_random_halves + do_use_all_data, ml_optimiser.cpp:10157-10160 and
