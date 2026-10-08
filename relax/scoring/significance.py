@@ -179,7 +179,6 @@ def _plan_coarse_gaussian_square_layout(
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
 
     image_shape = tuple(int(value) for value in image_shape)
-    logical_current_size = int(logical_current_size)
     physical_current_size = (
         stable_fourier_window_current_size(
             logical_current_size,
@@ -203,8 +202,6 @@ def _plan_coarse_gaussian_square_layout(
     )
     logical_indices = np.asarray(logical_indices, dtype=np.int32)
     physical_indices = np.asarray(physical_indices, dtype=np.int32)
-    logical_count = int(logical_count)
-    physical_count = int(physical_count)
     expected_logical_count = logical_current_size * (logical_current_size // 2 + 1)
     expected_physical_count = physical_current_size * (physical_current_size // 2 + 1)
     if logical_count != expected_logical_count or physical_count != expected_physical_count:
@@ -926,7 +923,6 @@ def _compute_k_class_significance_batched(
         _relion_coarse_normalized_cc_rescore,
     )
 
-    score_mode = str(score_mode)
     if score_mode not in {"gaussian", "normalized_cc"}:
         raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {score_mode!r}")
     # VDAM asks for the padded tail batch explicitly; the global coarse pass
@@ -1870,7 +1866,6 @@ def _compute_k_class_significance_batched(
         if collect_significance and not device_significance_batch:
             samples_per_class = n_rot * n_trans
             for local_idx, global_idx in enumerate(indices):
-                global_idx = int(global_idx)
                 for class_index in range(n_classes):
                     c0 = class_index * samples_per_class
                     c1 = c0 + samples_per_class

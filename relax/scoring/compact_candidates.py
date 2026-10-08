@@ -152,7 +152,7 @@ def compact_candidate_indices_in_source_order(candidate_mask):
 
 
 def build_compact_pair_index_arrays(
-    candidate_masks,
+    candidate_masks: list[SparseCandidateMask | np.ndarray],
     *,
     pair_bucket_size: int | None = None,
     pair_block_size_for_quantization: int = 5000,
@@ -165,7 +165,6 @@ def build_compact_pair_index_arrays(
     pass 2 instead of creating exact-count shape families.
     """
 
-    candidate_masks = tuple(candidate_masks)
     compact_indices = _batched_compact_candidate_indices(candidate_masks)
     if compact_indices is None:
         compact_indices = tuple(
@@ -181,7 +180,6 @@ def build_compact_pair_index_arrays(
             required_capacity,
             pair_block_size_for_quantization,
         )
-    pair_bucket_size = int(pair_bucket_size)
     if pair_bucket_size <= 0:
         raise ValueError("compact pair bucket size must be positive")
     if required_capacity > pair_bucket_size:
@@ -260,7 +258,6 @@ def build_compact_fine_job_plan_from_pair_arrays(
             valid_job_count,
             job_block_size_for_quantization,
         )
-    job_bucket_size = int(job_bucket_size)
     if job_bucket_size <= 0:
         raise ValueError("compact fine-job bucket size must be positive")
     if valid_job_count > job_bucket_size:
@@ -490,7 +487,7 @@ def _gather_resident_tables_impl(valid_flat, parent_flat, pair_bounds, row_bound
 
 
 def compact_pair_index_arrays_device(
-    candidate_masks,
+    candidate_masks: list[SparseCandidateMask | np.ndarray],
     *,
     pair_bucket_size: int,
     n_alloc: int | None = None,
@@ -525,7 +522,6 @@ def compact_pair_index_arrays_device(
     64-row quantum.
     """
 
-    candidate_masks = tuple(candidate_masks)
     if not candidate_masks:
         return None
     if not all(isinstance(m, SparseCandidateMask) for m in candidate_masks):
@@ -538,7 +534,6 @@ def compact_pair_index_arrays_device(
         return None
     batch = len(candidate_masks)
     n_alloc = batch if n_alloc is None else max(batch, int(n_alloc))
-    pair_bucket_size = int(pair_bucket_size)
     counts = np.zeros(n_alloc, dtype=np.int32)
     for i, m in enumerate(candidate_masks):
         counts[i] = int(m.count)

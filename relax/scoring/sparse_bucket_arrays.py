@@ -167,8 +167,7 @@ def _bucket_pass2_inputs(
 
     unique_bucket_sizes = np.unique(bucket_sizes[processing_order])
     buckets = []
-    for bucket_size in unique_bucket_sizes:
-        bucket_size = int(bucket_size)
+    for bucket_size in unique_bucket_sizes.tolist():
         bucket_image_indices = processing_order[bucket_sizes[processing_order] == bucket_size]
         # Chunk by max_hypotheses_per_microbatch and max_images_per_microbatch
         cap_by_hypotheses = max(
@@ -217,7 +216,6 @@ def _coalesce_tail_bucket_sizes(
     bucket_sizes = np.asarray(bucket_sizes, dtype=np.int64)
     if bucket_sizes.size == 0 or max_images is None:
         return bucket_sizes
-    max_images = int(max_images)
     if max_images <= 1:
         return bucket_sizes
     max_inflation = (
@@ -488,7 +486,6 @@ def relion_parent_execution_key(parent_ids, *, n_coarse_rot: int, nside_level: i
     from relax.sampling import rotation_grid_n_in_planes
 
     n_psi = int(rotation_grid_n_in_planes(nside_level))
-    n_coarse_rot = int(n_coarse_rot)
     if n_coarse_rot <= 0 or n_coarse_rot % n_psi:
         raise ValueError(
             f"RELION parent execution order needs whole psi rows: {n_coarse_rot} coarse "
@@ -1338,7 +1335,6 @@ def bucket_chunk_bounds(n_images: int, max_per_chunk: int, *, ladder: bool | Non
     :data:`LADDER_CHUNK_FLOOR` images remain, then one remainder chunk.
     """
 
-    n_images = int(n_images)
     max_per_chunk = max(1, int(max_per_chunk))
     if ladder is None:
         ladder = ladder_chunks_enabled()

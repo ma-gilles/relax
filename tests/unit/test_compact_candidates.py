@@ -71,7 +71,7 @@ def test_sparse_mask_roundtrip_and_source_order(mode, protocol):
 
 
 def test_pair_and_job_prefix_preserve_image_rotation_translation_order():
-    masks = np.array([[[False, True], [True, True]], [[True, False], [False, False]]])
+    masks = list(np.array([[[False, True], [True, True]], [[True, False], [False, False]]]))
     pair = build_compact_pair_index_arrays(masks, pair_bucket_size=4)
     assert_matches(pair["pair_counts"], [3, 1])
     assert_matches(pair["local_rotation_row"], [[0, 1, 1, -1], [0, -1, -1, -1]])
@@ -87,7 +87,7 @@ def test_pair_and_job_prefix_preserve_image_rotation_translation_order():
 
 
 def test_job_plan_rejects_nonprefix_pair_mask():
-    pair = build_compact_pair_index_arrays(np.ones((1, 1, 1), dtype=bool), pair_bucket_size=2)
+    pair = build_compact_pair_index_arrays([np.ones((1, 1), dtype=bool)], pair_bucket_size=2)
     pair["pair_mask"][0] = [False, True]
     with pytest.raises(ValueError, match="source-ordered prefix"):
         build_compact_fine_job_plan_from_pair_arrays(pair, np.zeros((1, 1), dtype=np.int32))
