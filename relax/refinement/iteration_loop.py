@@ -1865,7 +1865,7 @@ def refine_single_volume(
                 reconstruction_settings,
                 parity=options.parity,
                 pixel_resolutions=history.pixel_resolutions,
-                current_resolution=getattr(state, "current_resolution", float("inf")),
+                current_resolution=state.current_resolution,
                 iteration=iteration,
                 current_size=current_size,
                 mstep_accumulator_shape=mstep_accumulator_shape,
@@ -1983,7 +1983,6 @@ def refine_single_volume(
         if k_class_enabled:
             fsc = None
             history.record_fsc(fsc, None)
-            observer.stage_finished(iteration, "fsc")
         else:
             # FSC was already computed above in the RELION-exact ordering block
             # (mstep.fsc) and used to derive tau2 BEFORE the Wiener solve.
@@ -1992,7 +1991,7 @@ def refine_single_volume(
             fsc = mstep.fsc
             # The FSC also drives size growth; the history and the run files keep it as that curve too.
             history.record_fsc(fsc, fsc)
-            observer.stage_finished(iteration, "fsc")
+        observer.stage_finished(iteration, "fsc")
 
         observer.maps_reconstructed(ReconstructedIteration(
             iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), reference_model=reference_model,
@@ -2097,11 +2096,8 @@ def refine_single_volume(
         )
 
         if not k_class_enabled:
-            history.data_vs_prior_trajectory.append(np.asarray(resolution_estimate.data_vs_prior, dtype=scoring_dtype))
-            previous_data_vs_prior_for_scheduling = np.asarray(
-                resolution_estimate.data_vs_prior,
-                dtype=scoring_dtype,
-            )
+            previous_data_vs_prior_for_scheduling = np.asarray(resolution_estimate.data_vs_prior, dtype=scoring_dtype)
+            history.data_vs_prior_trajectory.append(previous_data_vs_prior_for_scheduling)
 
         # RELION-style posterior-weighted noise update. Helper folds the
         # K-class (shared) / K=1 (per-half) / firstiter_cc-skip variants;
@@ -2332,7 +2328,7 @@ def refine_single_volume(
                 resolution_estimate.scheduling_shell,
             )
             break
-        if state.has_converged and options.schedule.force_max_iter_after_convergence:
+        if state.has_converged:
             logger.info(
                 "Convergence reached at iteration %d, continuing because force_max_iter_after_convergence=True",
                 iteration + 1,
@@ -2366,7 +2362,7 @@ def refine_single_volume(
         k_class_enabled=k_class_enabled,
     )
     if options.schedule.skip_final_iteration or not should_run_final_iteration:
-        if not options.schedule.skip_final_iteration and not should_run_final_iteration:
+        if not options.schedule.skip_final_iteration:
             logger.info(
                 "Skipping RELION final all-data iteration: has_converged=%s, "
                 "iteration=%d, max_iter=%d, force_max_iter_after_convergence=%s",
@@ -2440,14 +2436,10 @@ def refine_single_volume(
     if final_use_local:
         for half in halves:
             half.require_local_search_poses()
-    if not k_class_enabled:
-        # RELION joins the half-set weighted sums after the post-convergence
-        # expectation step.  During that E-step each MPI follower still owns
-        # its numbered-iteration half model, so particles from random subset
-        # 1 and 2 are scored with sigma2_noise from half 1 and 2 respectively.
-        logger.info(
-            "RELION final all-data: scoring each particle half with its own sigma2_noise",
-        )
+    # K=1: RELION joins the half-set weighted sums after the post-convergence
+    # expectation step.  During that E-step each MPI follower still owns
+    # its numbered-iteration half model, so particles from random subset
+    # 1 and 2 are scored with sigma2_noise from half 1 and 2 respectively.
     final_result = finalization.run_final_all_data(
         halves,
         reference_model=reference_model,
