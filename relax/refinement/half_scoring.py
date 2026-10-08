@@ -1215,6 +1215,8 @@ class LocalExecutionPolicy:
     # iteration may widen (scoring_policy.local_precision); resolved by the caller.
     precision: DensePrecisionPolicy
     fine_precision: DensePrecisionPolicy
+    # --stop_after_local_search_score_only: score without backprojection, noise accumulation or x-half M-step.
+    score_only: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1223,7 +1225,6 @@ class LocalDiagnosticPolicy:
 
     iteration: int
     collect_local_search_profile: bool
-    diagnostic_score_only: bool
     local_profile_history: object
     debug_iteration: int | None = None
     bpref_device_signature_active: bool = False
@@ -1799,9 +1800,9 @@ def _score_half_local_one_shape(
             fine_local_layout_dtype,
         )
     local_relion_x_half_mstep = execution.relion_x_half_mstep
-    if diagnostics.diagnostic_score_only:
+    if execution.score_only:
         local_relion_x_half_mstep = False
-    if sampling.search.symmetry != "C1" and not diagnostics.diagnostic_score_only and not local_relion_x_half_mstep:
+    if sampling.search.symmetry != "C1" and not execution.score_only and not local_relion_x_half_mstep:
         raise RuntimeError(
             f"{sampling.search.symmetry} exact-local reconstruction requires RELION x-half BPref "
             f"accumulation; {_K1_RELION_X_HALF_MSTEP_ENV}=0, CPU-only execution, or disabled custom CUDA "
@@ -1872,9 +1873,9 @@ def _score_half_local_one_shape(
     # candidates. Do not apply the 0.999 significant-support prune on
     # this os0 path.
     local_reconstruct_significant_only = int(sampling.search.oversampling_order) > 0
-    local_accumulate_noise = not diagnostics.diagnostic_score_only
-    local_disable_adjoint_y = bool(execution.disable_adjoint_y or diagnostics.diagnostic_score_only)
-    local_disable_adjoint_ctf = bool(execution.disable_adjoint_ctf or diagnostics.diagnostic_score_only)
+    local_accumulate_noise = not execution.score_only
+    local_disable_adjoint_y = bool(execution.disable_adjoint_y or execution.score_only)
+    local_disable_adjoint_ctf = bool(execution.disable_adjoint_ctf or execution.score_only)
     logger.info(
         "RELION local fine pass 2: supplied-PPref interpolation follows "
         "RELAX_RELION_PROJECTOR_TEXTURE_INTERP (default texture)"
@@ -1905,7 +1906,7 @@ def _score_half_local_one_shape(
             return_best_pose_details=True,
             normalization_log_evidence=local_normalization_log_evidence,
             stats_use_reconstruction_probs=local_reconstruct_significant_only,
-            score_only=diagnostics.diagnostic_score_only,
+            score_only=execution.score_only,
         ),
     )
     Ft_y_k = local_outputs.Ft_y
@@ -1922,7 +1923,7 @@ def _score_half_local_one_shape(
         profile_row["half_index"] = np.int32(half.particles.index)
         profile_row["local_adaptive_pass2_parent_mode"] = local_adaptive_pass2_parent_mode
         profile_row["local_adaptive_pass2_full_parent"] = np.bool_(local_adaptive_pass2_parent_mode == "full_parent")
-        profile_row["diagnostic_score_only"] = np.bool_(diagnostics.diagnostic_score_only)
+        profile_row["diagnostic_score_only"] = np.bool_(execution.score_only)
         diagnostics.local_profile_history.append(profile_row)
         diagnostics.observer.local_search_profile(diagnostics.iteration, half.particles.index, local_profile_k)
     # Must match the current-size BPref grid allocated by the local engine above; downstream

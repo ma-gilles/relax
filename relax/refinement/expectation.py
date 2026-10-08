@@ -489,7 +489,6 @@ def prepare_numbered_expectation(
             debug_iteration=numbered_relion_iteration,
             observer=observer,
             collect_local_search_profile=collect_local_search_profile,
-            diagnostic_score_only=bool(options.local_search.stop_after_local_search_score_only),
             local_profile_history=local_profile_history,
         )
     else:
@@ -751,6 +750,7 @@ def score_numbered_half(
                 adaptive_pass2=options.variants.local_adaptive_pass2.at(sampling.search.oversampling_order),
                 precision=options.precision,
                 fine_precision=local_precision(options.precision, numbered_relion_iteration, pass_index=2),
+                score_only=options.local_search.stop_after_local_search_score_only,
             ),
             diagnostics=replace(
                 phase.local_diagnostics, bpref_device_signature_active=bpref_device_signature_active,

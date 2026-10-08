@@ -202,12 +202,12 @@ def local_half_owners(**values):
                 values["iteration"] + 1 if values.get("debug_iteration") is None else values["debug_iteration"],
                 pass_index=2,
             ),
+            score_only=values.pop("diagnostic_score_only"),
         ),
         half_scoring.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),
             debug_iteration=values.pop("debug_iteration", None),
             collect_local_search_profile=values.pop("collect_local_search_profile"),
-            diagnostic_score_only=values.pop("diagnostic_score_only"),
             local_profile_history=values.pop("local_profile_history"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
         ),

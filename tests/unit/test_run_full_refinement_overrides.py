@@ -935,8 +935,8 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
 def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkeypatch, score_only):
     """A score-only local half scores without backprojecting or accumulating noise.
 
-    The numbered phase sets ``diagnostic_score_only`` from ``--stop_after_local_search_score_only``
-    (test_numbered_expectation_preparation); the controller's local stop has no CPU run.
+    ``LocalExecutionPolicy.score_only`` is ``--stop_after_local_search_score_only`` (expectation); the
+    controller's local stop has no CPU run.
     """
     from helpers.refinement_specs import local_half_owners
     from helpers.sparse_pass2_mock import MockDataset

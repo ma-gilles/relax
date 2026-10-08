@@ -294,13 +294,13 @@ def run_final_all_data(
             adaptive_pass2=options.variants.local_adaptive_pass2.at(state.adaptive_oversampling),
             precision=options.precision,
             fine_precision=final_precision,
+            score_only=False,
         )
         final_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration + 1,
             debug_iteration=final_sampling.settings.relion_iteration,
             observer=observer,
             collect_local_search_profile=collect_local_search_profile,
-            diagnostic_score_only=False,
             local_profile_history=history.local_profile_history,
         )
     else:

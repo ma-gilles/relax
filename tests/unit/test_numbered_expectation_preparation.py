@@ -85,7 +85,7 @@ def test_dense_phase_preserves_full_grid_sentinels_and_distinct_support(
 def test_local_phase_borrows_sampling_and_carries_only_observation_policy(order):
     grid, windows, inputs = preparation_inputs(local=True, adaptive=order > 0)
     # Dense-only options and geometry may be absent on the local path.
-    inputs['options'] = SimpleNamespace(local_search=SimpleNamespace(stop_after_local_search_score_only=True))
+    inputs['options'] = None
     phase = expectation.prepare_numbered_expectation(grid, object(), **inputs)
     assert phase.sampling is inputs['local_sampling']
     assert phase.grid is grid
@@ -95,7 +95,6 @@ def test_local_phase_borrows_sampling_and_carries_only_observation_policy(order)
     assert diagnostics.debug_iteration == 17
     assert diagnostics.observer is inputs['observer']
     assert diagnostics.collect_local_search_profile is True
-    assert diagnostics.diagnostic_score_only is True
 
 
 def test_local_adaptive_pass2_support_applies_only_with_parent_oversampling():
