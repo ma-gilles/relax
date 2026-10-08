@@ -4621,7 +4621,7 @@ class TestRelionModeSmokeTest:
             particle_diameter=200.0,
         )
         assert coarse_size == 100
-        assert clamp_relion_coarse_image_size(coarse_size, current_size=60, ori_size=128) == 60
+        assert clamp_relion_coarse_image_size(coarse_size, current_size=60, box_size=128) == 60
 
     def test_clamp_relion_coarse_image_size_allows_small_even_sizes(self):
         """RELION allows adaptive coarse sizes below the generic current-size floor."""
@@ -4632,13 +4632,13 @@ class TestRelionModeSmokeTest:
             particle_diameter=380.0,
         )
         assert coarse_size == 14
-        assert clamp_relion_coarse_image_size(coarse_size, current_size=44, ori_size=128) == 14
+        assert clamp_relion_coarse_image_size(coarse_size, current_size=44, box_size=128) == 14
 
     def test_relion_optics_image_current_size_preserves_upward_ceil_boundary(self):
         """A rounded STAR angpix can add one even shell without changing model r_max."""
         sizes = relion_optics_image_current_sizes(
             56,
-            model_ori_size=384,
+            model_box_size=384,
             model_pixel_size=float(np.float32(544.0 / 384.0)),
             optics_image_sizes=[384],
             optics_pixel_sizes=[1.416667],
@@ -4650,7 +4650,7 @@ class TestRelionModeSmokeTest:
         assert_matches(
             relion_optics_image_current_sizes(
                 56,
-                model_ori_size=384,
+                model_box_size=384,
                 model_pixel_size=pixel_size,
                 optics_image_sizes=[384],
                 optics_pixel_sizes=[pixel_size],
@@ -4660,7 +4660,7 @@ class TestRelionModeSmokeTest:
         assert_matches(
             relion_optics_image_current_sizes(
                 384,
-                model_ori_size=384,
+                model_box_size=384,
                 model_pixel_size=pixel_size,
                 optics_image_sizes=[384],
                 optics_pixel_sizes=[1.416667],
@@ -4678,7 +4678,7 @@ class TestRelionModeSmokeTest:
         pass1_size = relion_local_pass1_current_size(
             pre_update_healpix_order=incoming_order,
             pixel_size=3.28,
-            ori_size=128,
+            box_size=128,
             particle_diameter=280.0,
             current_size=122,
         )

@@ -68,7 +68,7 @@ class TestResolutionScheduling:
         corrected = resolution_helpers._zero_shells_past_current_size(
             corrected_dvp,
             current_size=current_size,
-            grid_size=256,
+            box_size=256,
         )
 
         assert corrected[boundary_shell] > 1.0
@@ -92,7 +92,7 @@ class TestResolutionScheduling:
         truncated = resolution_helpers._zero_shells_past_current_size(
             data_vs_prior,
             current_size=current_size,
-            grid_size=128,
+            box_size=128,
         )
 
         assert_matches(
@@ -133,7 +133,7 @@ class TestResolutionScheduling:
         truncated = resolution_helpers._zero_shells_past_current_size(
             data_vs_prior,
             current_size=current_size,
-            grid_size=grid_size,
+            box_size=grid_size,
         )
         resolution_shell = regularization_relion.resolution_from_data_vs_prior(
             truncated,
@@ -161,7 +161,7 @@ class TestResolutionScheduling:
         growth_fsc = resolution_helpers._zero_shells_past_current_size(
             fsc,
             current_size=68,
-            grid_size=128,
+            box_size=128,
         )
         incr_size, has_high_fsc = regularization_relion.update_relion_growth_state_from_fsc(
             growth_fsc,
@@ -204,7 +204,7 @@ class TestResolutionScheduling:
             emulate_relion_firstiter_cc=True,
             ini_high_angstrom=60.0,
             relion_iteration=1,
-            grid_size=256,
+            box_size=256,
             voxel_size=2.125,
         )
         current_size = regularization_relion.compute_current_size_relion(
@@ -226,7 +226,7 @@ class TestResolutionScheduling:
     def test_firstiter_cc_scheduling_override_is_only_physical_iteration_one(self):
         common = {
             "resolution_shell": 10,
-            "grid_size": 256,
+            "box_size": 256,
             "voxel_size": 2.125,
         }
         assert (
@@ -268,7 +268,7 @@ def test_initial_fsc_seeding_preserves_input_and_sets_both_resolution_fields(dty
         parity=SimpleNamespace(tau2_fudge=1.0),
     )
     resolution_helpers.initialize_resolution_from_fsc(
-        state, options, grid_size=128, voxel_size=3.28, dtype=dtype,
+        state, options, box_size=128, voxel_size=3.28, dtype=dtype,
     )
     # Initial FSC seeding truncates at shell16; the last supported shell is15.
     assert state.current_resolution == state.previous_resolution == 128 * 3.28 / 15
@@ -289,7 +289,7 @@ def test_initial_fsc_without_resolved_shell_seeds_minres_map(dtype):
         parity=SimpleNamespace(tau2_fudge=1.0),
     )
     resolution_helpers.initialize_resolution_from_fsc(
-        state, options, grid_size=128, voxel_size=3.28, dtype=dtype,
+        state, options, box_size=128, voxel_size=3.28, dtype=dtype,
     )
     assert state.current_resolution == state.previous_resolution == 128 * 3.28 / 5
 
@@ -303,7 +303,7 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
     state = SimpleNamespace(current_resolution=100.0, previous_resolution=200.0)
     options = SimpleNamespace(parity=SimpleNamespace(relion_firstiter_ini_high_angstrom=ini_high))
     resolution_helpers.initialize_resolution_from_firstiter_ini_high(
-        state, options, grid_size=128, voxel_size=pixel,
+        state, options, box_size=128, voxel_size=pixel,
     )
     assert state.current_resolution == state.previous_resolution == expected
 
@@ -312,21 +312,21 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         dvp = np.full(33, 5.0, dtype=np.float32)
         dvp[12:] = 0.5
         assert resolution_helpers.k1_current_resolution_shell(
-            dvp, current_size=64, grid_size=64
+            dvp, current_size=64, box_size=64
         ) == 11
         # Shells beyond current_size // 2 are unavailable before the scan.
         assert resolution_helpers.k1_current_resolution_shell(
-            np.full(33, 5.0, dtype=np.float32), current_size=20, grid_size=64
+            np.full(33, 5.0, dtype=np.float32), current_size=20, box_size=64
         ) == 10
         # Split-half auto-refine keeps a rise more than three shells later.
         rising = dvp.copy()
         rising[20] = 2.0
         assert resolution_helpers.k1_current_resolution_shell(
-            rising, current_size=64, grid_size=64
+            rising, current_size=64, box_size=64
         ) == 20
         classes = np.stack([dvp, np.where(np.arange(33) < 16, 5.0, 0.5).astype(np.float32), rising])
         assert resolution_helpers.class_current_resolution_shell(
-            classes, current_size=64, grid_size=64
+            classes, current_size=64, box_size=64
         ) == 15
 
     def test_whole_data_dvp_crosses_at_fsc_0143(self):
@@ -335,10 +335,10 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         whole = regularization_relion.fsc_to_relion_ssnr(fsc, is_whole_instead_of_half=True)
         half = regularization_relion.fsc_to_relion_ssnr(fsc)
         whole_shell = resolution_helpers.k1_current_resolution_shell(
-            whole, current_size=64, grid_size=64
+            whole, current_size=64, box_size=64
         )
         half_shell = resolution_helpers.k1_current_resolution_shell(
-            half, current_size=64, grid_size=64
+            half, current_size=64, box_size=64
         )
         assert fsc[whole_shell] >= 1.0 / 7.0 > fsc[whole_shell + 1]
         assert fsc[half_shell] >= 0.5 > fsc[half_shell + 1]
@@ -376,7 +376,7 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         assert regularization_relion.resolution_from_data_vs_prior(early, ori_size=64) == 5
         assert regularization_relion.resolution_from_data_vs_prior(early, ori_size=64, minres_map=0) == 2
         assert resolution_helpers.class_current_resolution_shell(
-            np.stack([early, early]), current_size=64, grid_size=64
+            np.stack([early, early]), current_size=64, box_size=64
         ) == 5
 
 
@@ -401,7 +401,7 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
     grid_size, voxel_size = 32, 17.0
     state = SimpleNamespace(current_resolution=float("inf"), previous_resolution=float("inf"))
     resolution_helpers.initialize_resolution_from_ini_high(
-        state, ini_high, grid_size=grid_size, voxel_size=voxel_size,
+        state, ini_high, box_size=grid_size, voxel_size=voxel_size,
     )
 
     volume_shape = (grid_size,) * 3
@@ -438,7 +438,7 @@ def test_k1_iteration_resolution_uses_reconstruction_curve_and_keeps_window_edge
     original = curve.tobytes()
     estimate = resolution_helpers.estimate_k1_iteration_resolution(
         curve,
-        current_size=12, grid_size=16, voxel_size=1.5,
+        current_size=12, box_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=False, ini_high_angstrom=12.0,
         relion_iteration=2, dtype=dtype,
     )
@@ -463,7 +463,7 @@ def test_class_iteration_resolution_uses_all_class_curves(dtype):
     ], dtype=dtype)
     estimate = resolution_helpers.estimate_class_iteration_resolution(
         curves,
-        current_size=16, grid_size=16, voxel_size=1.5,
+        current_size=16, box_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=False, ini_high_angstrom=12.0,
         relion_iteration=2, dtype=dtype,
     )
@@ -481,7 +481,7 @@ def test_k1_iteration_resolution_keeps_observed_and_firstiter_scheduling_signals
     curve = np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2], dtype=dtype)
     estimate = resolution_helpers.estimate_k1_iteration_resolution(
         curve,
-        current_size=16, grid_size=16, voxel_size=1.5,
+        current_size=16, box_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=True, ini_high_angstrom=12.0,
         relion_iteration=relion_iteration, dtype=dtype,
     )
@@ -498,7 +498,7 @@ def test_class_iteration_resolution_keeps_observed_and_firstiter_scheduling_sign
     class_curves = np.tile(np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2], dtype=dtype), (4, 1))
     estimate = resolution_helpers.estimate_class_iteration_resolution(
         class_curves,
-        current_size=16, grid_size=16, voxel_size=1.5,
+        current_size=16, box_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=True, ini_high_angstrom=12.0,
         relion_iteration=relion_iteration, dtype=dtype,
     )

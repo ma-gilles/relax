@@ -579,7 +579,7 @@ def run_final_all_data(
             time.time() - _t_final_tau2,
         )
         final_res_shell = class_current_resolution_shell(
-            final_data_vs_prior, current_size=final_current_size, grid_size=image_geometry.box_size,
+            final_data_vs_prior, current_size=final_current_size, box_size=image_geometry.box_size,
             dtype=scoring_dtype,
         )
         state.previous_resolution = state.current_resolution
@@ -684,7 +684,7 @@ def run_final_all_data(
         )
         final_res_shell = k1_current_resolution_shell(
             np.asarray(final_tau2_update_details["ssnr_shells"], dtype=scoring_dtype),
-            current_size=final_current_size, grid_size=image_geometry.box_size, dtype=scoring_dtype,
+            current_size=final_current_size, box_size=image_geometry.box_size, dtype=scoring_dtype,
         )
         state.previous_resolution = state.current_resolution
         state.current_resolution = shell_index_to_resolution_angstrom(

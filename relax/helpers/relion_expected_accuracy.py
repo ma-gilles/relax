@@ -142,12 +142,12 @@ class _Projector:
 
     ``capacity_image_size`` and ``capacity_r_max`` give the device shapes: the images take the
     capacity's FFTW half layout and the slab is zero-padded to the capacity radius. The
-    visited pixels and the radius test stay those of ``image_size`` and ``r_max``.
+    visited pixels and the radius test stay those of ``current_image_size`` and ``r_max``.
     The float64 real and imaginary planes stay on the host; :meth:`device` places them.
     """
 
     def __init__(
-        self, data, r_max: int, padding_factor: int, image_size: int,
+        self, data, r_max: int, padding_factor: int, current_image_size: int,
         *, capacity_image_size: int | None = None, capacity_r_max: int | None = None,
     ):
         data = np.asarray(data)
@@ -162,7 +162,7 @@ class _Projector:
         self.real = np.ascontiguousarray(data.real, dtype=np.float64)
         self.imag = np.ascontiguousarray(data.imag, dtype=np.float64)
         del data
-        size = int(image_size)
+        size = int(current_image_size)
         capacity = size if capacity_image_size is None else int(capacity_image_size)
         half = capacity // 2 + 1
         row_index, x_index, y = _visited_pixels(size)
@@ -366,12 +366,12 @@ def _schedule(mode: int) -> tuple[np.ndarray, np.ndarray, int]:
             return np.asarray(angles), np.asarray(shifts), len(angles) - 1
 
 
-def _snr_terms(image_size, full_size, sigma2_noise, sigma2_fudge, remap_image_sizes):
+def _snr_terms(current_image_size, full_size, sigma2_noise, sigma2_fudge, remap_image_sizes):
     """Per-pixel ``1 / (2 fudge sigma2)`` of the pixels the SNR sums, zero elsewhere."""
 
-    half = image_size // 2 + 1
-    rows = np.arange(image_size)
-    iy = np.where(rows < half, rows, rows - image_size)[:, None]
+    half = current_image_size // 2 + 1
+    rows = np.arange(current_image_size)
+    iy = np.where(rows < half, rows, rows - current_image_size)[:, None]
     ix = np.arange(half)[None, :]
     ires = relion_round_array(np.sqrt((iy * iy + ix * ix).astype(np.float64))).astype(np.int64)
     remapped = relion_round_array(np.asarray(remap_image_sizes * ires, dtype=np.float64)).astype(np.int64)
@@ -401,7 +401,7 @@ def _trial_chunks(counts, max_images: int) -> list[np.ndarray]:
     return chunks
 
 
-def _chunk_errors(projector, device, matrices, *, rows, counts, eulers, draws, ctf, aproj, image_full_size, valid, denominator):
+def _chunk_errors(projector, device, matrices, *, rows, counts, eulers, draws, ctf, aproj, box_size, valid, denominator):
     """Angular and translational errors of one chunk of trials (``rows`` are their images).
 
     Every image of the chunk is projected and scored at each step; a trial's error is
@@ -449,7 +449,7 @@ def _chunk_errors(projector, device, matrices, *, rows, counts, eulers, draws, c
                     yshift = np.where(draws < 0.5, 0.0, shifts[step])
                 f2_real, f2_imag = _shift(
                     f1_real, f1_imag, jnp.asarray(-xshift), jnp.asarray(-yshift),
-                    shape=projector.shape, oridim=int(image_full_size),
+                    shape=projector.shape, oridim=int(box_size),
                 )
             snr = np.asarray(snr_of(f1_ctf_real, f1_ctf_imag, f2_real, f2_imag))
             done = active & ~(snr <= PVALUE)
@@ -470,13 +470,13 @@ def expected_angular_errors(
     sigma2_noise,
     ctf_images,
     pixel_size: float,
-    ori_size: int,
+    model_box_size: int,
     current_image_size: int,
     sigma2_fudge: float,
     random_seed: int,
     random_seed_particle_ids,
     model_pixel_size: float | None = None,
-    image_full_size: int | None = None,
+    box_size: int | None = None,
     image_offsets=None,
     image_projections=None,
     projection_left=None,
@@ -493,9 +493,9 @@ def expected_angular_errors(
     """
 
     model_pixel_size = float(pixel_size if model_pixel_size is None or model_pixel_size <= 0 else model_pixel_size)
-    image_full_size = int(ori_size if image_full_size is None or image_full_size <= 0 else image_full_size)
-    scale_difference = (image_full_size * float(pixel_size)) / (int(ori_size) * model_pixel_size)
-    remap_image_sizes = (int(ori_size) * model_pixel_size) / (image_full_size * float(pixel_size))
+    box_size = int(model_box_size if box_size is None or box_size <= 0 else box_size)
+    scale_difference = (box_size * float(pixel_size)) / (int(model_box_size) * model_pixel_size)
+    remap_image_sizes = (int(model_box_size) * model_pixel_size) / (box_size * float(pixel_size))
     eulers = np.asarray(eulers_deg, dtype=np.float64).reshape(-1, 3)
     particles = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
     seed_particles = np.asarray(random_seed_particle_ids, dtype=np.int64).reshape(-1)
@@ -529,11 +529,11 @@ def expected_angular_errors(
                 draws[row] = float(relion_random.rnd_unif(generator))
 
     valid, denominator = _snr_terms(
-        int(current_image_size), image_full_size, sigma2_noise, float(sigma2_fudge), remap_image_sizes
+        int(current_image_size), box_size, sigma2_noise, float(sigma2_fudge), remap_image_sizes
     )
     # Device shapes: the stable window class of the image and of the projector radius.
-    capacity = _capacity_size(int(current_image_size), image_full_size)
-    capacity_r_max = _capacity_size(2 * int(projector_r_max), int(ori_size)) // 2
+    capacity = _capacity_size(int(current_image_size), box_size)
+    capacity_r_max = _capacity_size(2 * int(projector_r_max), int(model_box_size)) // 2
     valid, denominator = _to_capacity(valid, capacity, False), _to_capacity(denominator, capacity, 1.0)
     ctf = None if ctf_images is None else _to_capacity(np.asarray(ctf_images, dtype=np.float64), capacity, 0.0)
     left = None if projection_left is None else np.asarray(projection_left, dtype=np.float64).reshape(3, 3)
@@ -575,7 +575,7 @@ def expected_angular_errors(
                 draws=draws[rows],
                 ctf=None if ctf is None else ctf[rows],
                 aproj=None if aproj is None else aproj[rows],
-                image_full_size=image_full_size,
+                box_size=box_size,
                 valid=valid,
                 denominator=denominator,
             )

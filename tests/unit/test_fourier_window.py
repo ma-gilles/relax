@@ -874,24 +874,24 @@ class TestQuantizeCurrentSize:
 
     def test_exact_match(self):
         for s in [16, 18, 30, 50, 98, 128]:
-            assert quantize_current_size(s, ori_size=128) == s
+            assert quantize_current_size(s, box_size=128) == s
 
     def test_default_allowed_path_preserved(self):
         for s in ALLOWED_CURRENT_SIZES:
             assert quantize_current_size(s) == s
 
     def test_round_up(self):
-        assert quantize_current_size(10, ori_size=128) == 16
-        assert quantize_current_size(17, ori_size=128) == 18
-        assert quantize_current_size(25, ori_size=128) == 26
-        assert quantize_current_size(33, ori_size=128) == 34
-        assert quantize_current_size(49, ori_size=128) == 50
-        assert quantize_current_size(65, ori_size=128) == 66
-        assert quantize_current_size(81, ori_size=128) == 82
-        assert quantize_current_size(97, ori_size=128) == 98
+        assert quantize_current_size(10, box_size=128) == 16
+        assert quantize_current_size(17, box_size=128) == 18
+        assert quantize_current_size(25, box_size=128) == 26
+        assert quantize_current_size(33, box_size=128) == 34
+        assert quantize_current_size(49, box_size=128) == 50
+        assert quantize_current_size(65, box_size=128) == 66
+        assert quantize_current_size(81, box_size=128) == 82
+        assert quantize_current_size(97, box_size=128) == 98
 
     def test_above_max(self):
-        assert quantize_current_size(200, ori_size=128) == 128
+        assert quantize_current_size(200, box_size=128) == 128
 
     def test_custom_allowed(self):
         assert quantize_current_size(10, allowed=[8, 16, 32]) == 16

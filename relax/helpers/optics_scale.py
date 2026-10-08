@@ -24,10 +24,10 @@ import math
 import numpy as np
 
 
-def scale_difference(box_size, pixel_size, ori_size, ref_pixel_size) -> float:
+def scale_difference(box_size, pixel_size, model_box_size, ref_pixel_size) -> float:
     """``s_g``: the factor RELION's applyScaleDifference multiplies a matrix by."""
 
-    return float(box_size) * float(pixel_size) / (float(ori_size) * float(ref_pixel_size))
+    return float(box_size) * float(pixel_size) / (float(model_box_size) * float(ref_pixel_size))
 
 
 def group_current_size(current_size, box_size, scale) -> int:

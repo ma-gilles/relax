@@ -169,7 +169,7 @@ def plan_expectation_windows(
     if optics_image_sizes is not None:
         remapped = relion_optics_image_current_sizes(
             current_size,
-            model_ori_size=image_geometry.box_size,
+            model_box_size=image_geometry.box_size,
             model_pixel_size=model_pixel_size,
             optics_image_sizes=optics_image_sizes,
             optics_pixel_sizes=optics_pixel_sizes,
@@ -338,16 +338,16 @@ def initialize_refinement_state(
         pass
     elif schedule.init_fsc is not None:
         initialize_resolution_from_fsc(
-            state, options, grid_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom,
+            state, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom,
             dtype=dtype,
         )
     elif init_relion_iteration == 0 and parity.relion_firstiter_ini_high_angstrom is not None:
         initialize_resolution_from_firstiter_ini_high(
-            state, options, grid_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom
+            state, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom
         )
     elif init_relion_iteration == 0 and schedule.ini_high_angstrom is not None:
         initialize_resolution_from_ini_high(
-            state, schedule.ini_high_angstrom, grid_size=image_geometry.box_size,
+            state, schedule.ini_high_angstrom, box_size=image_geometry.box_size,
             voxel_size=image_geometry.pixel_size_angstrom,
         )
     source.restore_boundary_state(state)
@@ -395,7 +395,7 @@ def resolve_current_size(
     entry means.
     """
     oracle_sizes = options.adaptive.relion_current_sizes
-    current_size = quantize_current_size(image_size_plan.size, ori_size=box_size)
+    current_size = quantize_current_size(image_size_plan.size, box_size=box_size)
     if previous_size is not None:
         log.info(
             "RELION current-size decision: iter=%d prev=%d res_shell=%d "
@@ -416,7 +416,7 @@ def resolve_current_size(
             oracle_cs = int(oracle_sizes[-1])
         if oracle_cs <= 0:
             oracle_cs = int(options.schedule.init_current_size)
-        current_size = quantize_current_size(oracle_cs, ori_size=box_size)
+        current_size = quantize_current_size(oracle_cs, box_size=box_size)
         log.info(
             "Current-size oracle: iteration %d using current_size=%d",
             iteration + 1,
@@ -789,7 +789,7 @@ def plan_initial_image_size(
         fsc_prev = _zero_shells_past_current_size(
             schedule.init_fsc,
             current_size=prev_cs,
-            grid_size=box_size,
+            box_size=box_size,
             dtype=dtype,
         )
         data_vs_prior_iter = np.asarray(
@@ -814,7 +814,7 @@ def plan_initial_image_size(
             has_high_fsc_at_limit=has_high_fsc_at_limit,
             incr_size=incr_size,
         )
-        current_size = quantize_current_size(raw_cs, ori_size=box_size)
+        current_size = quantize_current_size(raw_cs, box_size=box_size)
     else:
         current_size = _bootstrap_current_size_relion(schedule.init_current_size, box_size)
         data_vs_prior_iter = None
@@ -849,11 +849,11 @@ def plan_class_image_size(
     data_vs_prior_prev = _zero_shells_past_current_size(
         data_vs_prior_prev_raw,
         current_size=previous_size,
-        grid_size=box_size,
+        box_size=box_size,
         dtype=dtype,
     )
     per_class_res_shell = np.asarray(
-        class_resolution_shells(data_vs_prior_prev, grid_size=box_size),
+        class_resolution_shells(data_vs_prior_prev, box_size=box_size),
         dtype=np.int32,
     )
     res_shell = int(np.max(per_class_res_shell))
@@ -862,7 +862,7 @@ def plan_class_image_size(
         emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
         ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
         relion_iteration=completed_relion_iteration,
-        grid_size=box_size,
+        box_size=box_size,
         voxel_size=pixel_size_angstrom,
     )
     if scheduling_res_shell != res_shell:
@@ -880,7 +880,7 @@ def plan_class_image_size(
         has_high_fsc_at_limit=False,
         incr_size=incr_size,
     )
-    computed_cs = quantize_current_size(raw_cs, ori_size=box_size)
+    computed_cs = quantize_current_size(raw_cs, box_size=box_size)
 
     return ClassImageSize(
         size=computed_cs, resolution_shell=res_shell, raw_size=raw_cs,
@@ -922,14 +922,14 @@ def plan_halfmap_image_size(
         if growth_fsc_history
         else (fsc_prev_raw if restart is None or restart.fsc_for_growth is None else restart.fsc_for_growth),
         current_size=previous_size,
-        grid_size=box_size,
+        box_size=box_size,
         dtype=dtype,
     )
 
     data_vs_prior_iter = _zero_shells_past_current_size(
         data_vs_prior,
         current_size=previous_size,
-        grid_size=box_size,
+        box_size=box_size,
         dtype=dtype,
     )
     res_shell = resolution_from_data_vs_prior(
@@ -948,7 +948,7 @@ def plan_halfmap_image_size(
         emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
         ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
         relion_iteration=completed_relion_iteration,
-        grid_size=box_size,
+        box_size=box_size,
         voxel_size=pixel_size_angstrom,
     )
     if scheduling_res_shell != res_shell:
@@ -966,7 +966,7 @@ def plan_halfmap_image_size(
         has_high_fsc_at_limit=has_high_fsc_at_limit,
         incr_size=incr_size,
     )
-    current_size = quantize_current_size(raw_cs, ori_size=box_size)
+    current_size = quantize_current_size(raw_cs, box_size=box_size)
 
     return HalfmapImageSize(
         size=current_size, data_vs_prior=data_vs_prior_iter,

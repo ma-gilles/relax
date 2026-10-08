@@ -48,13 +48,13 @@ def project_relion_projector_half_spectrum(
 
     from relax.relion.relion_project import relion_project_half
 
-    image_size = int(image_shape[0])
+    box_size = int(image_shape[0])
 
     def project_one(R):
         return relion_project_half(
             volume_relion_half,
             R,
-            image_size,
+            box_size,
             int(r_max),
             int(padding_factor),
             relion_acc_double_floorf_quirk,
@@ -68,7 +68,7 @@ def project_relion_projector_half_spectrum(
 def _relion_projector_fftw_block(
     volume_relion_half,
     rotations_block,
-    image_size: int,
+    box_size: int,
     r_max: int,
     padding_factor: int,
     projector_output_size: int | None,
@@ -83,8 +83,8 @@ def _relion_projector_fftw_block(
     """
 
     projector_image_size = int(r_max) * 2 if projector_output_size is None else int(projector_output_size)
-    if projector_image_size <= 0 or projector_image_size > image_size:
-        projector_image_size = image_size
+    if projector_image_size <= 0 or projector_image_size > box_size:
+        projector_image_size = box_size
     projector_rotations = jnp.swapaxes(rotations_block, -1, -2)
     proj_fftw = project_relion_projector_half_spectrum(
         volume_relion_half,
@@ -117,18 +117,18 @@ def project_relion_projector_half_spectrum_centered_rows(
     centered order.
     """
 
-    image_size = int(image_shape[0])
+    box_size = int(image_shape[0])
     proj_fftw, projector_image_size = _relion_projector_fftw_block(
         volume_relion_half,
         rotations_block,
-        image_size,
+        box_size,
         r_max,
         padding_factor,
         projector_output_size,
         relion_acc_double_floorf_quirk,
     )
-    if projector_image_size == image_size:
-        row_order = jnp.fft.fftshift(jnp.arange(image_size, dtype=jnp.int32))
+    if projector_image_size == box_size:
+        row_order = jnp.fft.fftshift(jnp.arange(box_size, dtype=jnp.int32))
         return proj_fftw[:, row_order, :].reshape((rotations_block.shape[0], -1))
 
     # Placing the crop into the full centred half image as
@@ -147,11 +147,11 @@ def project_relion_projector_half_spectrum_centered_rows(
     # the row bounds, so the two paths agree by construction and the values
     # moved are identical, not merely equal.
     crop_x_half = projector_image_size // 2 + 1
-    full_x_half = image_size // 2 + 1
-    full_pixels = jnp.arange(image_size * full_x_half, dtype=jnp.int32)
+    full_x_half = box_size // 2 + 1
+    full_pixels = jnp.arange(box_size * full_x_half, dtype=jnp.int32)
     full_rows_of = full_pixels // full_x_half
     full_cols_of = full_pixels - full_rows_of * full_x_half
-    crop_ky_of = full_rows_of - image_size // 2
+    crop_ky_of = full_rows_of - box_size // 2
     crop_rows_of = jnp.where(crop_ky_of >= 0, crop_ky_of, crop_ky_of + projector_image_size)
     # Clip so the gather stays in bounds; the round-trip check below discards
     # whatever the clip invented.
@@ -163,7 +163,7 @@ def project_relion_projector_half_spectrum_centered_rows(
         safe_rows,
         safe_rows - projector_image_size,
     )
-    covered = (round_trip_ky + image_size // 2) * full_x_half + safe_cols == full_pixels
+    covered = (round_trip_ky + box_size // 2) * full_x_half + safe_cols == full_pixels
     gathered = proj_fftw.reshape((rotations_block.shape[0], -1))[:, source]
     return jnp.where(covered[None, :], gathered, jnp.zeros((), dtype=proj_fftw.dtype))
 
@@ -186,11 +186,11 @@ def project_relion_projector_half_spectrum_centered_rows_at_indices(
     when RELION's current image size only needs a cropped Fourier window.
     """
 
-    image_size = int(image_shape[0])
+    box_size = int(image_shape[0])
     proj_fftw, projector_image_size = _relion_projector_fftw_block(
         volume_relion_half,
         rotations_block,
-        image_size,
+        box_size,
         r_max,
         padding_factor,
         projector_output_size,
@@ -198,14 +198,14 @@ def project_relion_projector_half_spectrum_centered_rows_at_indices(
     )
 
     indices = jnp.asarray(pixel_indices, dtype=jnp.int32)
-    full_x_half = image_size // 2 + 1
+    full_x_half = box_size // 2 + 1
     full_rows = indices // full_x_half
     cols = indices - full_rows * full_x_half
-    if projector_image_size == image_size:
-        row_order = jnp.fft.fftshift(jnp.arange(image_size, dtype=jnp.int32))
+    if projector_image_size == box_size:
+        row_order = jnp.fft.fftshift(jnp.arange(box_size, dtype=jnp.int32))
         projector_rows = row_order[full_rows]
     else:
-        ky = full_rows - image_size // 2
+        ky = full_rows - box_size // 2
         projector_rows = jnp.where(ky >= 0, ky, ky + projector_image_size)
     projector_x_half = projector_image_size // 2 + 1
     projector_flat_indices = projector_rows * projector_x_half + cols
@@ -222,22 +222,22 @@ def centered_relion_projector_crop_mask(pixel_indices, *, image_shape, projector
     """
 
     indices = np.asarray(pixel_indices, dtype=np.int64)
-    image_size = int(image_shape[0])
-    full_x_half = image_size // 2 + 1
+    box_size = int(image_shape[0])
+    full_x_half = box_size // 2 + 1
     rows = indices // full_x_half
     cols = indices - rows * full_x_half
-    ky = rows - image_size // 2
+    ky = rows - box_size // 2
     projector_size = int(projector_output_size)
     projector_x_half = projector_size // 2 + 1
     min_ky = -(projector_size // 2 - 1)
     max_ky = projector_size // 2
-    if projector_size == image_size:
+    if projector_size == box_size:
         # The full even box stores its positive Nyquist row at centered row zero,
         # matching the texture gather. Smaller crops exclude that physical row.
         ky = np.where(rows == 0, max_ky, ky)
     return (
         (indices >= 0)
-        & (indices < image_size * full_x_half)
+        & (indices < box_size * full_x_half)
         & (ky >= min_ky)
         & (ky <= max_ky)
         & (cols >= 0)
@@ -284,7 +284,7 @@ def _validate_centered_relion_projector_pixel_indices(
 RELION_KERNELS = ("coarse", "fine")
 
 
-def relion_kernel_zero_rows(image_size: int, projector_output_size: int, r_max, relion_kernel: str = "fine"):
+def relion_kernel_zero_rows(box_size: int, projector_output_size: int, r_max, relion_kernel: str = "fine"):
     """Centred half-image pixels whose reference RELION's accelerated kernels set to zero, or ``None``.
 
     ``AccProjectorKernel::makeKernel`` clamps ``maxR = min(PPref.r_max, imgX - 1)``
@@ -311,7 +311,7 @@ def relion_kernel_zero_rows(image_size: int, projector_output_size: int, r_max, 
     outside the sphere, so either rule changes nothing there.
 
     ``r_max`` is the model radius, or a traced runtime radius (projector-capacity route).
-    Returns a boolean mask over the ``image_size x (image_size // 2 + 1)`` centred grid
+    Returns a boolean mask over the ``box_size x (box_size // 2 + 1)`` centred grid
     (true where RELION's reference is zero), or ``None`` when a static radius leaves no
     row affected.
     """
@@ -325,7 +325,7 @@ def relion_kernel_zero_rows(image_size: int, projector_output_size: int, r_max, 
         max_r = int(r_max)
     else:
         max_r = jnp.minimum(jnp.asarray(r_max, jnp.int32), size // 2)
-    n = int(image_size)
+    n = int(box_size)
     label = np.arange(n) - n // 2
     if size == n:
         # The full even box keeps the positive Nyquist row at centred row zero.
@@ -339,7 +339,7 @@ class RelionCoarseRelabel(NamedTuple):
     """The pixels RELION's coarse diff2 kernel projects and shifts at a relabelled row.
 
     ``positions`` index the caller's pixel axis (entries of its ``pixel_indices``, or the
-    centred ``image_size x (image_size // 2 + 1)`` grid). ``grid_indices`` are the same
+    centred ``box_size x (box_size // 2 + 1)`` grid). ``grid_indices`` are the same
     pixels' centred indices in a ``grid_size`` square grid whose rows hold the relabelled
     labels, so the unchanged projector and translate kernels evaluate them there.
     ``row_shift`` is the relabelled minus the caller's row label, ``-window`` for every pixel.
@@ -351,7 +351,7 @@ class RelionCoarseRelabel(NamedTuple):
     row_shift: int
 
 
-def relion_coarse_relabel(image_size: int, window: int, r_max: int, pixel_indices=None):
+def relion_coarse_relabel(box_size: int, window: int, r_max: int, pixel_indices=None):
     """RELION's coarse diff2 row relabelling for a window wider than the model sphere, or ``None``.
 
     The coarse kernel reads FFTW row ``i`` of a ``window``-sized image as ``y = i`` for
@@ -364,7 +364,7 @@ def relion_coarse_relabel(image_size: int, window: int, r_max: int, pixel_indice
     full box that row is centred row 0. Returns ``None`` when ``window / 2 <= maxR`` (no row moves).
     """
 
-    n = int(image_size)
+    n = int(box_size)
     window = int(window)
     max_r = min(int(r_max), window // 2)
     if window // 2 <= max_r:
@@ -489,7 +489,7 @@ def _texture_centered_crop_to_full(
     return _texture_centered_crop_to_full_jit(
         projection_crop,
         None if current_image_mask_size is None else jnp.asarray(current_image_mask_size, dtype=jnp.int32),
-        image_size=int(image_shape[0]),
+        box_size=int(image_shape[0]),
         projector_output_size=int(projector_output_size),
         mask_current_image_disk=bool(mask_current_image_disk),
     )
@@ -497,17 +497,17 @@ def _texture_centered_crop_to_full(
 
 @partial(
     jax.jit,
-    static_argnames=("image_size", "projector_output_size", "mask_current_image_disk"),
+    static_argnames=("box_size", "projector_output_size", "mask_current_image_disk"),
 )
 def _texture_centered_crop_to_full_jit(
     projection_crop,
     current_image_mask_size,
     *,
-    image_size: int,
+    box_size: int,
     projector_output_size: int,
     mask_current_image_disk: bool,
 ):
-    image_size = int(image_size)
+    box_size = int(box_size)
     crop_size = int(projector_output_size)
     crop = projection_crop.reshape((projection_crop.shape[0], crop_size, crop_size // 2 + 1))
     crop_rows = jnp.arange(crop_size, dtype=jnp.int32)
@@ -524,29 +524,29 @@ def _texture_centered_crop_to_full_jit(
     # independent current-image disk here before embedding the crop.
     if mask_current_image_disk:
         crop = jnp.where(output_disk[None, :, :], crop, jnp.zeros((), dtype=crop.dtype))
-    if crop_size == image_size:
+    if crop_size == box_size:
         return crop.reshape((projection_crop.shape[0], -1))
     # Row zero is the even-box Nyquist row (+N/2 == -N/2); remaining rows
     # proceed from -N/2+1 through +N/2-1 in centered order.
-    full_rows = crop_ky + image_size // 2
-    full_indices = (full_rows[:, None] * (image_size // 2 + 1) + crop_cols[None, :]).reshape(-1)
+    full_rows = crop_ky + box_size // 2
+    full_indices = (full_rows[:, None] * (box_size // 2 + 1) + crop_cols[None, :]).reshape(-1)
     full = jnp.zeros(
-        (projection_crop.shape[0], image_size * (image_size // 2 + 1)),
+        (projection_crop.shape[0], box_size * (box_size // 2 + 1)),
         dtype=projection_crop.dtype,
     )
     return full.at[:, full_indices].set(crop.reshape((projection_crop.shape[0], -1)))
 
 
-def _centered_crop_indices(pixel_indices, *, image_size: int, crop_size: int):
+def _centered_crop_indices(pixel_indices, *, box_size: int, crop_size: int):
     """Flat crop-grid indices of centred full-image half pixels, with their signed row ``ky`` and column."""
 
-    full_x_half = image_size // 2 + 1
+    full_x_half = box_size // 2 + 1
     crop_x_half = crop_size // 2 + 1
     indices = jnp.asarray(pixel_indices, dtype=jnp.int32)
     full_rows = indices // full_x_half
     cols = indices - full_rows * full_x_half
 
-    if crop_size == image_size:
+    if crop_size == box_size:
         crop_rows = full_rows
         ky = jnp.where(
             full_rows == 0,
@@ -554,7 +554,7 @@ def _centered_crop_indices(pixel_indices, *, image_size: int, crop_size: int):
             full_rows - crop_size // 2,
         )
     else:
-        ky = full_rows - image_size // 2
+        ky = full_rows - box_size // 2
         crop_rows = jnp.where(
             ky == crop_size // 2,
             0,
@@ -580,7 +580,7 @@ def _texture_centered_crop_at_indices(
     """
 
     crop_size = int(projector_output_size)
-    crop_indices, ky, cols = _centered_crop_indices(pixel_indices, image_size=int(image_shape[0]), crop_size=crop_size)
+    crop_indices, ky, cols = _centered_crop_indices(pixel_indices, box_size=int(image_shape[0]), crop_size=crop_size)
     selected = projection_crop.reshape((projection_crop.shape[0], -1))[:, crop_indices]
     if not mask_current_image_disk:
         return selected
@@ -845,12 +845,12 @@ def compute_relion_projector_projections_block(
     Callers emulating RELION's coarse diff2 kernel pass "coarse".
     """
 
-    image_size = int(image_shape[0])
+    box_size = int(image_shape[0])
     resolved_output_size = int(r_max) * 2 if projector_output_size is None else int(projector_output_size)
-    if resolved_output_size <= 0 or resolved_output_size > image_size:
-        resolved_output_size = image_size
+    if resolved_output_size <= 0 or resolved_output_size > box_size:
+        resolved_output_size = box_size
     zero_rows = relion_kernel_zero_rows(
-        image_size, resolved_output_size, runtime_r_max if projector_capacity else int(r_max), relion_kernel
+        box_size, resolved_output_size, runtime_r_max if projector_capacity else int(r_max), relion_kernel
     )
     coarse_relabel = None
     coarse_window = None
@@ -882,7 +882,7 @@ def compute_relion_projector_projections_block(
                     "(diff2.cuh:86-90); this projection route (a runtime radius, an image-disk mask or "
                     "uncentred rows) does not reproduce them"
                 )
-            coarse_relabel = relion_coarse_relabel(image_size, coarse_window, int(r_max), pixel_indices)
+            coarse_relabel = relion_coarse_relabel(box_size, coarse_window, int(r_max), pixel_indices)
     if persistent_texture is not None:
         if projector_capacity or runtime_r_max is not None or image_r_max is not None:
             raise ValueError("persistent texture cannot use the runtime capacity/radius route")
@@ -893,7 +893,7 @@ def compute_relion_projector_projections_block(
         if (
             int(r_max) != 0 or runtime_r_max is None or not centered_rows
             or pixel_indices is None or projector_output_size is None
-            or not 0 < int(projector_output_size) <= image_size
+            or not 0 < int(projector_output_size) <= box_size
             or int(projector_output_size) % 2
         ):
             raise ValueError(
@@ -952,7 +952,7 @@ def compute_relion_projector_projections_block(
             proj_half = proj_centered
         else:
             proj_half = jnp.fft.ifftshift(
-                proj_centered.reshape((proj_centered.shape[0], image_size, image_size // 2 + 1)),
+                proj_centered.reshape((proj_centered.shape[0], box_size, box_size // 2 + 1)),
                 axes=1,
             ).reshape((proj_centered.shape[0], -1))
 
@@ -966,7 +966,7 @@ def compute_relion_projector_projections_block(
     elif pixel_indices is not None:
         if not centered_rows:
             raise ValueError("pixel_indices are only supported with centered_rows=True")
-        if resolved_output_size < image_size and _host_pixel_indices(pixel_indices):
+        if resolved_output_size < box_size and _host_pixel_indices(pixel_indices):
             _validate_centered_relion_projector_pixel_indices(
                 pixel_indices,
                 image_shape=image_shape,
@@ -1042,21 +1042,21 @@ def compute_relion_projector_projections_block(
     return proj_half, proj_abs2_half
 
 
-def _dense_means_scale(image_size: int):
+def _dense_means_scale(box_size: int):
     """The dense-means projection scale, ``-N^2`` unless ``RELAX_DENSE_MEANS_SCALE`` selects ``N2``."""
 
     token = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
-    scale = {"-N2": -(image_size**2), "N2": float(image_size**2)}.get(token)
+    scale = {"-N2": -(box_size**2), "N2": float(box_size**2)}.get(token)
     if scale is None:
         raise ValueError(f"Unsupported RELAX_DENSE_MEANS_SCALE={token!r}")
     return scale
 
 
-def relion_coarse_packed_rows_serve(image_size: int, projector_output_size: int, r_max: int) -> bool:
+def relion_coarse_packed_rows_serve(box_size: int, projector_output_size: int, r_max: int) -> bool:
     """Whether :func:`project_relion_coarse_packed_rows` reproduces this coarse projection: no coarse-kernel
     row of the window is zeroed or relabelled (the window lies within the model sphere)."""
 
-    return relion_kernel_zero_rows(int(image_size), int(projector_output_size), int(r_max), "coarse") is None
+    return relion_kernel_zero_rows(int(box_size), int(projector_output_size), int(r_max), "coarse") is None
 
 
 def project_relion_coarse_packed_rows(
@@ -1070,7 +1070,7 @@ def project_relion_coarse_packed_rows(
     """
 
     crop_size = int(projector_output_size)
-    crop_indices, _ky, _cols = _centered_crop_indices(pixel_indices, image_size=int(image_shape[0]), crop_size=crop_size)
+    crop_indices, _ky, _cols = _centered_crop_indices(pixel_indices, box_size=int(image_shape[0]), crop_size=crop_size)
     # One launch for any number of rotations (no per-launch chunks to concatenate).
     return capacity_texture.project_compact_packed(
         rotations_block,

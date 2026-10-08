@@ -139,7 +139,7 @@ def _relion_adaptive_coarse_image_size(
         clamp_relion_coarse_image_size(
             coarse_size,
             current_size=current_size,
-            ori_size=grid_size,
+            box_size=grid_size,
         )
     )
 

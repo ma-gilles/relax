@@ -112,7 +112,7 @@ def prepare_numbered_local_sampling(
                         if optics.optics_pixel_sizes is not None
                         else optics.model_pixel_size
                     ),
-                    ori_size=(
+                    box_size=(
                         int(optics.optics_image_sizes[0])
                         if optics.optics_image_sizes is not None
                         else optics.image_geometry.box_size
@@ -180,7 +180,7 @@ def prepare_final_local_sampling(
         coarse_image_window_size = relion_local_pass1_current_size(
             pre_update_healpix_order=search.parent_order,
             pixel_size=image_geometry.pixel_size_angstrom,
-            ori_size=image_geometry.box_size,
+            box_size=image_geometry.box_size,
             particle_diameter=particle_diameter_angstrom,
             current_size=image_window_size,
         )

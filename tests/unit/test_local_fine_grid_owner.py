@@ -243,7 +243,7 @@ def test_numbered_parent_window_uses_preceding_order_and_optics_geometry(monkeyp
     assert result.coarse_image_window_size == 12
     assert result.search.parent_order == 0
     assert calls[0]['pre_update_healpix_order'] == sizing_order
-    assert calls[0]['ori_size'] == 48
+    assert calls[0]['box_size'] == 48
     assert matches(calls[0]['pixel_size'], 2.0)
     assert calls[0]['current_size'] == 32
 

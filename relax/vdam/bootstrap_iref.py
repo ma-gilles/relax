@@ -428,7 +428,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
             defocus=None,
             optics=None,
             pixel_size=pixel_size,
-            image_full_size=ori_size,
+            box_size=ori_size,
             current_image_size=ori_size,
             tilt_images=tilt,
         )

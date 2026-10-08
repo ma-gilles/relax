@@ -323,11 +323,11 @@ def relion_half_translation_lattice(image_shape):
             image_shape, voxel_size=1, scaled=True
         )
     )
-    image_size = int(image_shape[0])
-    if image_size % 2 == 0:
+    box_size = int(image_shape[0])
+    if box_size % 2 == 0:
         for axis in (1, 0):
-            k = jnp.rint(lattice[:, axis] * image_size).astype(jnp.int32)
-            nyquist = k == -(image_size // 2)
+            k = jnp.rint(lattice[:, axis] * box_size).astype(jnp.int32)
+            nyquist = k == -(box_size // 2)
             lattice = lattice.at[:, axis].set(jnp.where(nyquist, -lattice[:, axis], lattice[:, axis]))
     return lattice
 

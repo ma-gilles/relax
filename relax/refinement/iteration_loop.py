@@ -2028,7 +2028,7 @@ def refine_single_volume(
             resolution_estimate = estimate_class_iteration_resolution(
                 history.data_vs_prior_trajectory[-1],
                 current_size=current_size,
-                grid_size=image_geometry.box_size,
+                box_size=image_geometry.box_size,
                 voxel_size=source_pixel_size_angstrom,
                 emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
                 ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
@@ -2042,7 +2042,7 @@ def refine_single_volume(
             resolution_estimate = estimate_k1_iteration_resolution(
                 mstep.tau2_update_details["ssnr_shells"],
                 current_size=current_size,
-                grid_size=image_geometry.box_size,
+                box_size=image_geometry.box_size,
                 voxel_size=source_pixel_size_angstrom,
                 emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
                 ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
@@ -2230,7 +2230,7 @@ def refine_single_volume(
                     _zero_shells_past_current_size(
                         fsc,
                         current_size=current_size,
-                        grid_size=image_geometry.box_size,
+                        box_size=image_geometry.box_size,
                         dtype=scoring_dtype,
                     ),
                     current_size,

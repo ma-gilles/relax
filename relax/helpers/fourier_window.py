@@ -602,7 +602,7 @@ def make_fourier_window_spec(
 
 def stable_fourier_window_current_size(
     current_size: int,
-    image_size: int,
+    box_size: int,
     *,
     quantum: int = 8,
 ) -> int:
@@ -619,21 +619,21 @@ def stable_fourier_window_current_size(
     """
 
     current_size = int(current_size)
-    image_size = int(image_size)
+    box_size = int(box_size)
     quantum = int(quantum)
-    if image_size < 4 or image_size % 2:
-        raise ValueError(f"image_size must be an even integer >= 4, got {image_size}")
-    if current_size <= 0 or current_size > image_size or current_size % 2:
+    if box_size < 4 or box_size % 2:
+        raise ValueError(f"box_size must be an even integer >= 4, got {box_size}")
+    if current_size <= 0 or current_size > box_size or current_size % 2:
         raise ValueError(
-            f"current_size must be positive, even, and <= {image_size}, got {current_size}",
+            f"current_size must be positive, even, and <= {box_size}, got {current_size}",
         )
     if quantum < 2 or quantum % 2:
         raise ValueError(f"quantum must be a positive even integer >= 2, got {quantum}")
-    if current_size == image_size:
-        return image_size
+    if current_size == box_size:
+        return box_size
     return min(
         round_up_to_multiple(current_size, quantum),
-        image_size - 2,
+        box_size - 2,
     )
 
 
@@ -756,7 +756,7 @@ def make_stable_fourier_window_shape_plan(
     )
 
 
-def quantize_current_size(cs, allowed=None, ori_size=None, min_size=16):
+def quantize_current_size(cs, allowed=None, box_size=None, min_size=16):
     """Quantize ``cs`` to a valid current_size.
 
     Parameters
@@ -766,13 +766,13 @@ def quantize_current_size(cs, allowed=None, ori_size=None, min_size=16):
     allowed : list of int, optional
         Sorted list of allowed sizes. When provided, round up to the
         smallest allowed size >= ``cs``.
-    ori_size : int, optional
+    box_size : int, optional
         Original image box size. When provided and ``allowed`` is None,
-        quantize to the nearest even size in ``[min_size, ori_size]`` (matching
+        quantize to the nearest even size in ``[min_size, box_size]`` (matching
         RELION's arbitrary-even current image sizes).
     min_size : int, optional
-        Minimum current_size to allow in the ``ori_size`` path. For tiny
-        test boxes where ``ori_size < min_size``, the lower bound is reduced
+        Minimum current_size to allow in the ``box_size`` path. For tiny
+        test boxes where ``box_size < min_size``, the lower bound is reduced
         automatically so those tests can still exercise non-trivial windowing.
 
     Returns
@@ -786,12 +786,12 @@ def quantize_current_size(cs, allowed=None, ori_size=None, min_size=16):
                 return s
         return allowed[-1]
 
-    if ori_size is not None:
-        upper = int(ori_size)
+    if box_size is not None:
+        upper = int(box_size)
         if upper % 2 != 0:
             upper -= 1
         if upper < 2:
-            raise ValueError(f"ori_size must allow at least one even size, got {ori_size}")
+            raise ValueError(f"box_size must allow at least one even size, got {box_size}")
 
         lower = int(min_size)
         if upper < lower:
