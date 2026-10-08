@@ -342,7 +342,10 @@ class RestartProvenance(NamedTuple):
 
 @dataclass(frozen=True)
 class ExpectedAccuracyOptions:
-    """Half1 oracle inputs for RELION's expected-accuracy calculation."""
+    """Half 1's particle order, optics groups, ids and CTFs for RELION's expected-accuracy estimate.
+
+    The estimate sets the angular and translational sampling, so these are algorithm inputs (code rule 9).
+    """
 
     half1_base_order_local: Any | None = None
     half1_trial_order_local: Any | None = None
@@ -402,7 +405,6 @@ class EngineDebugOptions:
 
     disable_adjoint_y: bool = False
     disable_adjoint_ctf: bool = False
-    expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # Read from the environment when the options are built; nothing below reads it again.
     environment: DiagnosticEnvironment = field(default_factory=DiagnosticEnvironment.from_environ)
 
@@ -526,6 +528,7 @@ class RefinementOptions:
     # Read from the environment when the options are built; nothing below reads it again.
     final_pass: FinalPassOptions = field(default_factory=FinalPassOptions.from_environ)
     solvent: SolventOptions = field(default_factory=SolventOptions)
+    expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # The dense scoring precision, taken when the options are built (code rule 5); see _process_dense_precision.
     precision: DensePrecisionPolicy = field(default_factory=lambda: _process_dense_precision())
 

@@ -24,17 +24,18 @@ upstream changes every later array of the run. The comparison is exact because b
 arithmetic on the same CPU; it is a check for move-only commits, not a merge gate for numerical changes
 (``tests/CLAUDE.md``: no bitwise float asserts).
 
-``diff`` and ``check`` count differences in five classes: outputs (cases, status, results, files and
-checkpoints), added controller inputs, retired controller inputs, non-log trace rows (selected calls), and log
-trace rows. Log order is not behaviour (code rule 2 in ``docs/development/refactor_rules.md``), so when only
+``diff`` and ``check`` count differences in six classes: outputs (cases, status, results, files and
+checkpoints), added controller inputs, retired controller inputs, moved controller inputs, non-log trace rows
+(selected calls), and log trace rows. Log order is not behaviour (code rule 2 in ``docs/development/refactor_rules.md``), so when only
 log rows differ they print "only log rows differ (N); accepted under rule 2" and exit 0. A controller input
 present only in B (a leaf under ``refine<N>/inputs``: a new option field the command hands the controller) is
 listed and accepted: a value that changed what the controller does would change its results, which are
 compared. So is one present only in A whose value there was ``None``, ``False`` or the field's declared default
 (recorded with a ``=default`` mark; an option field that was off in the case and is retired, its behaviour now
 chosen through a port: code rule 15), and the length of the
-container that holds only such added or retired members; a removed input that was on, or a changed one, is an
-output difference. Any other difference exits 1.
+container that holds only such added or retired members. So is an input moved to another option group with its
+value (``MOVED_INPUTS`` names each move). A removed input that was on, or a changed one, is an output
+difference. Any other difference exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
@@ -81,7 +82,7 @@ NODE_DEPENDENT_TEMPLATES = (
 DROPPED_RESULT_KEYS = frozenset({"wall_times", "setup_phase_seconds"})
 SECTIONS = ("status", "result", "files", "checkpoints")
 # The classes a difference is counted in; only a difference confined to "log" is accepted.
-DIFFERENCE_CLASSES = ("outputs", "added", "retired", "trace", "log")
+DIFFERENCE_CLASSES = ("outputs", "added", "retired", "moved", "trace", "log")
 # A controller input B no longer has is accepted only at one of these off values in A, or at its declared
 # default (a leaf ending in DEFAULT_MARK): an option field that was off in the case is retired (its non-default
 # behaviour moved behind a port, code rule 15).
@@ -89,6 +90,12 @@ OFF_VALUES = frozenset({"None", "False"})
 DEFAULT_MARK = "=default"
 # Leaves of what full_refinement.main hands the controller (fingerprints of the main_* cases).
 CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
+# Option fields moved to another group, as (old path piece, new path piece) of a controller-input leaf: a leaf only in
+# A whose renamed path is a leaf only in B with the same value is a moved input, accepted.
+MOVED_INPUTS = (
+    # The expected-accuracy inputs steer sampling: an algorithm group, not debug (code rule 9; main after a4396d82).
+    ("/debug<EngineDebugOptions>/expected_accuracy<", "/expected_accuracy<"),
+)
 TMP_TOKEN = "<TMP>"
 
 
@@ -265,6 +272,18 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
             flat_a, flat_b = case_a[section], case_b[section]
             totals[section] += len(flat_a)
             changed = [key for key in sorted(set(flat_a) | set(flat_b)) if flat_a.get(key) != flat_b.get(key)]
+            moved_pairs = {
+                key: key.replace(old, new)
+                for key in changed
+                if key not in flat_b and CONTROLLER_INPUT.match(key)
+                for old, new in MOVED_INPUTS
+                if old in key and key.replace(old, new) not in flat_a
+                and flat_b.get(key.replace(old, new)) == flat_a[key]
+            }
+            counts["moved"] += len(moved_pairs)
+            for key in list(moved_pairs)[:shown_per_section]:
+                lines.append(f"MOVED {name} {section} {key} -> {moved_pairs[key]}")
+            changed = [key for key in changed if key not in moved_pairs and key not in moved_pairs.values()]
             added = [key for key in changed if key not in flat_a and CONTROLLER_INPUT.match(key)]
             counts["added"] += len(added)
             for key in added[:shown_per_section]:
@@ -315,6 +334,7 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
     lines.append(
         f"{len(set(cases_a) & set(cases_b))} cases compared; {sum(counts.values())} differences "
         f"(outputs {counts['outputs']}, added inputs {counts['added']}, retired inputs {counts['retired']}, "
+        f"moved inputs {counts['moved']}, "
         f"trace rows {counts['trace']}, log rows {counts['log']}); leaves compared: "
         + ", ".join(f"{section} {totals[section]}" for section in SECTIONS)
         + f"; trace rows {totals['trace']}"
@@ -325,6 +345,8 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
         lines.append(f"controller inputs added ({counts['added']}); accepted: new option fields")
     if counts["retired"] and not counts["outputs"] and not counts["trace"]:
         lines.append(f"controller inputs retired ({counts['retired']}); accepted: option fields removed at their off value")
+    if counts["moved"] and not counts["outputs"] and not counts["trace"]:
+        lines.append(f"controller inputs moved ({counts['moved']}); accepted: option fields moved (MOVED_INPUTS)")
     return counts, lines
 
 

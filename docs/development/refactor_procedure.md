@@ -95,7 +95,9 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       as a retired input); `tests/unit/test_refinement_port_imports.py` must still pass.
 - [ ] A new option field shows in the fingerprint as "added inputs" (a controller input only the new side
       has); it is accepted and listed. A removed field that the cases left at `None` or `False` shows as
-      "retired inputs" and is accepted too; a removed field that a case set is an output difference.
+      "retired inputs" and is accepted too; a removed field that a case set is an output difference. A field
+      moved to another group shows as "moved inputs" when its move is listed in the harness's `MOVED_INPUTS`
+      and its value is unchanged.
       Results, files, checkpoints and trace must still be identical.
 - [ ] The commit message says what moved, what did not, the benefit, the supporting numbers, and any
       log-only trace differences, added or retired inputs.

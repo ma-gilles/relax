@@ -968,7 +968,6 @@ def main(command=None):
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.refinement_options import (
         CheckpointOptions,
-        EngineDebugOptions,
         ExpectedAccuracyOptions,
         RefinementOptions,
         RelionParityOptions,
@@ -1278,15 +1277,13 @@ def main(command=None):
             ),
             preserve_initial_direction_prior=frozen_boundary is not None,
         ),
-        debug=EngineDebugOptions(
-            expected_accuracy=ExpectedAccuracyOptions(
-                half1_base_order_local=particle_layout.accuracy_base_order_local,
-                half1_trial_order_local=particle_layout.accuracy_trial_order_local,
-                half1_optics_group_ids=particle_layout.accuracy_optics_group_ids,
-                half1_particle_ids=particle_layout.accuracy_particle_ids,
-                half1_ctf_params=half_sets.accuracy_ctf_params,
-                do_ctf_correction=expected_accuracy_do_ctf_correction,
-            ),
+        expected_accuracy=ExpectedAccuracyOptions(
+            half1_base_order_local=particle_layout.accuracy_base_order_local,
+            half1_trial_order_local=particle_layout.accuracy_trial_order_local,
+            half1_optics_group_ids=particle_layout.accuracy_optics_group_ids,
+            half1_particle_ids=particle_layout.accuracy_particle_ids,
+            half1_ctf_params=half_sets.accuracy_ctf_params,
+            do_ctf_correction=expected_accuracy_do_ctf_correction,
         ),
     )
     result = refine_single_volume(

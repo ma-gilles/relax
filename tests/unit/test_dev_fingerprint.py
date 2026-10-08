@@ -99,7 +99,7 @@ def test_equal_fingerprints_have_no_difference():
 
     counts, lines = fingerprint.diff_fingerprints(_fingerprint(k1=case), _fingerprint(k1=case))
 
-    assert counts == {"outputs": 0, "added": 0, "retired": 0, "trace": 0, "log": 0}
+    assert counts == {"outputs": 0, "added": 0, "retired": 0, "moved": 0, "trace": 0, "log": 0}
     assert fingerprint.accepted(counts)
     assert lines[-1].startswith("1 cases compared; 0 differences")
     assert fingerprint.differing_cases(_fingerprint(k1=case), _fingerprint(k1=case)) == []
@@ -120,7 +120,7 @@ def test_every_kind_of_difference_is_counted_and_named():
     report = "\n".join(lines)
 
     # one missing case, three result keys, and the removed and added trace row of the renamed logger
-    assert counts == {"outputs": 1 + 3, "added": 0, "retired": 0, "trace": 0, "log": 2}
+    assert counts == {"outputs": 1 + 3, "added": 0, "retired": 0, "moved": 0, "trace": 0, "log": 2}
     assert not fingerprint.accepted(counts)
     assert "only log rows differ" not in report
     assert "CASE only_a: only in A" in report
@@ -137,7 +137,7 @@ def test_a_new_controller_input_is_listed_and_accepted_but_a_new_result_is_not()
     b = _fingerprint(k1=_case({"refine0/inputs[1]/options/debug/x": "1", "refine0/inputs[1]/options/debug/new": "None",
                                "/mean": "aa"}))
     counts, lines = fingerprint.diff_fingerprints(a, b)
-    assert counts == {"outputs": 0, "added": 1, "retired": 0, "trace": 0, "log": 0} and fingerprint.accepted(counts)
+    assert counts == {"outputs": 0, "added": 1, "retired": 0, "moved": 0, "trace": 0, "log": 0} and fingerprint.accepted(counts)
     assert "ADDED k1 result refine0/inputs[1]/options/debug/new: None" in lines
     assert lines[-1] == "controller inputs added (1); accepted: new option fields"
     # A removed or changed input, or a new leaf anywhere else, is an output difference.
@@ -152,7 +152,7 @@ def test_a_controller_input_retired_at_its_off_value_is_listed_and_accepted_but_
                                "refine0/inputs[1]/options/debug/flag": "False", "/mean": "aa"}))
     b = _fingerprint(k1=_case({"refine0/inputs[1]/options/debug/x": "1", "/mean": "aa"}))
     counts, lines = fingerprint.diff_fingerprints(a, b)
-    assert counts == {"outputs": 0, "added": 0, "retired": 2, "trace": 0, "log": 0} and fingerprint.accepted(counts)
+    assert counts == {"outputs": 0, "added": 0, "retired": 2, "moved": 0, "trace": 0, "log": 0} and fingerprint.accepted(counts)
     assert "RETIRED k1 result refine0/inputs[1]/options/debug/off: None" in lines
     assert lines[-1] == "controller inputs retired (2); accepted: option fields removed at their off value"
     # The keyword mapping's length changes with its members, and is accepted with them.
@@ -162,13 +162,30 @@ def test_a_controller_input_retired_at_its_off_value_is_listed_and_accepted_but_
         _fingerprint(k1=_case({"refine0/inputs[1]#": "dict[2]", "refine0/inputs[1]/options/debug/x": "1",
                                "refine0/inputs[1]/observer": "None", "/mean": "aa"})),
     )
-    assert counts == {"outputs": 0, "added": 1, "retired": 2, "trace": 0, "log": 0}
+    assert counts == {"outputs": 0, "added": 1, "retired": 2, "moved": 0, "trace": 0, "log": 0}
     # A removed input that was on, or a removed result leaf, is an output difference.
     for flat in ({"/mean": "aa"}, {"refine0/inputs[1]/options/debug/x": "1"}):
         counts, _ = fingerprint.diff_fingerprints(
             _fingerprint(k1=_case({"refine0/inputs[1]/options/debug/x": "1", "/mean": "aa"})), _fingerprint(k1=_case(flat))
         )
         assert counts["outputs"] == 1 and not fingerprint.accepted(counts)
+
+
+def test_a_controller_input_moved_to_another_group_with_its_value_is_listed_and_accepted():
+    old, new = fingerprint.MOVED_INPUTS[0]
+    moved_a = f"refine0/inputs[1]/options<RefinementOptions>{old}X>/order"
+    moved_b = moved_a.replace(old, new)
+    a = _fingerprint(k1=_case({moved_a: "numpy int64 (6,) sha256:aa", "/mean": "aa"}))
+    b = _fingerprint(k1=_case({moved_b: "numpy int64 (6,) sha256:aa", "/mean": "aa"}))
+    counts, lines = fingerprint.diff_fingerprints(a, b)
+    assert counts == {"outputs": 0, "added": 0, "retired": 0, "moved": 1, "trace": 0, "log": 0}
+    assert fingerprint.accepted(counts)
+    assert f"MOVED k1 result {moved_a} -> {moved_b}" in lines
+    assert lines[-1] == "controller inputs moved (1); accepted: option fields moved (MOVED_INPUTS)"
+    # A moved input whose value changed is an output difference.
+    b = _fingerprint(k1=_case({moved_b: "numpy int64 (6,) sha256:bb", "/mean": "aa"}))
+    counts, _ = fingerprint.diff_fingerprints(a, b)
+    assert counts["moved"] == 0 and counts["outputs"] == 1 and not fingerprint.accepted(counts)
 
 
 def test_a_dataclass_field_at_its_declared_default_is_marked_and_may_be_retired():

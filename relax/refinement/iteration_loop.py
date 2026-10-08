@@ -792,7 +792,7 @@ def refine_single_volume(
     replay = options.replay
     debug = options.debug
     batching = options.batching
-    expected_accuracy = debug.expected_accuracy
+    expected_accuracy = options.expected_accuracy
 
     particle_diameter_ang = schedule.particle_diameter_ang
     tau2_fudge = parity.tau2_fudge
