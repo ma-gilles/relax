@@ -242,13 +242,15 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
 
 
 @pytest.mark.parametrize("oversampling_order", [0, 1])
-def test_route_perturbs_the_coarse_grid_by_relions_euler_route(oversampling_order):
+def test_route_perturbs_the_coarse_grid_by_relions_euler_route(oversampling_order, monkeypatch):
     """RELION perturbs each orientation as Euler angles: ``A = Euler(rot, tilt, psi) * Euler(p, p, p)`` back to
     angles (healpix_sampling.cpp:1909-1934, getOrientations), and the scorer's matrices are the host inverses of
     those angles (generateEulerMatrices). The route's host coarse matrices (pass 1 off the GPU, and the fine
     rows of --oversampling 0) follow that route, not a float32 product of perturbed matrices."""
     from relax import healpix_sampling
 
+    # The host route: on a GPU node pass 1 takes the device builder's matrices instead.
+    monkeypatch.setattr(sampling, "_relion_adaptive_pass1_rotations", lambda *args, **kwargs: None)
     order, random_perturbation = 1, 0.37
     route = adaptive_estep.adaptive_route_grids(
         healpix_order=order,
