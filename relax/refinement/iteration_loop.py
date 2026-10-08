@@ -596,13 +596,7 @@ def k1_maximization(
         started_at=_t_unreg_first,
         log=logger,
     )
-    logger.info(
-        "tau2 update from THIS-iter FSC: old_max=%.4e new_max=%.4e half_max=(%.4e, %.4e)",
-        float(jnp.max(jnp.abs(reference_model.tau2))),
-        float(jnp.max(jnp.abs(split_prior.variance))),
-        float(jnp.max(jnp.abs(split_prior.variance_per_half[0]))),
-        float(jnp.max(jnp.abs(split_prior.variance_per_half[1]))),
-    )
+    logger.info("tau2 updated from this iteration's FSC")
     reference_model.tau2 = split_prior.variance
     reference_model.tau2_per_half = _updated_mean_variance_per_half(
         reference_model.tau2,

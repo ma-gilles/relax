@@ -8,7 +8,6 @@ post-convergence sampling/scoring/reconstruction sequence and its result.
 import logging
 import time
 
-import jax.numpy as jnp
 import numpy as np
 
 from relax import sampling
@@ -577,10 +576,7 @@ def run_final_all_data(
         )
         final_data_vs_prior = final_class_priors.data_vs_prior
         logger.info(
-            "RELION final all-data Class3D tau2 from Iref power spectra: old_max=%.4e new_max=%.4e "
-            "dvp_shell_1=%.4f wall=%.1fs",
-            float(jnp.max(jnp.abs(reference_model.tau2))),
-            float(jnp.max(jnp.abs(final_class_priors.variance))),
+            "RELION final all-data Class3D tau2 from Iref power spectra: dvp_shell_1=%.4f wall=%.1fs",
             float(np.asarray(final_data_vs_prior)[0, 1]) if np.asarray(final_data_vs_prior).shape[-1] > 1 else float("nan"),
             time.time() - _t_final_tau2,
         )
@@ -683,10 +679,7 @@ def run_final_all_data(
         final_iter_fsc = final_halfmap_prior.fsc
         final_tau2_update_details = final_halfmap_prior.details
         logger.info(
-            "RELION final all-data tau2 from joined FSC: old_max=%.4e new_max=%.4e "
-            "fsc_shell_1=%.4f wall=%.1fs",
-            float(jnp.max(jnp.abs(reference_model.tau2))),
-            float(jnp.max(jnp.abs(final_halfmap_prior.variance))),
+            "RELION final all-data tau2 from joined FSC: fsc_shell_1=%.4f wall=%.1fs",
             float(np.asarray(final_iter_fsc)[1]) if np.asarray(final_iter_fsc).size > 1 else float("nan"),
             time.time() - _t_final_tau2,
         )
