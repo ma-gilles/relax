@@ -29,6 +29,7 @@ from relax.scoring.pass1_assembly import build_full_stats, log_batch_timing, sig
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
 from relax.scoring.pass1_dump import select_dump_targets
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
+from relax.scoring.pass1_priors import plan_rotation_blocks, validated_translation_log_prior
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import (
     BatchOutputs,
@@ -480,55 +481,21 @@ def _compute_k_class_significance_batched(
             coarse_kernel_r_max=None if coarse_kernel_window is None else int(relion_projector_r_max),
         )
 
-    n_blocks = (n_rot + rotation_block_size - 1) // rotation_block_size
-    n_rot_padded = n_blocks * rotation_block_size
-    if n_rot_padded > n_rot:
-        pad_size = n_rot_padded - n_rot
-        rotations_padded = np.concatenate(
-            [
-                rotations,
-                np.tile(np.eye(3, dtype=np.asarray(rotations).dtype), (pad_size, 1, 1)),
-            ],
-            axis=0,
-        )
-    else:
-        rotations_padded = rotations
-
-    rotation_log_prior_padded = None
-    if rotation_log_prior is not None:
-        prior = np.asarray(rotation_log_prior, dtype=score_real_dtype)
-        if prior.ndim == 1:
-            if prior.shape != (n_rot,):
-                raise ValueError(f"rotation_log_prior must have shape ({n_rot},), got {prior.shape}")
-            prior = np.broadcast_to(prior[None, :], (n_classes, n_rot)).copy()
-        elif prior.shape != (n_classes, n_rot):
-            raise ValueError(
-                f"rotation_log_prior must have shape ({n_rot},) or ({n_classes}, {n_rot}), got {prior.shape}",
-            )
-        if n_rot_padded > n_rot:
-            rotation_log_prior_padded = np.pad(
-                prior,
-                ((0, 0), (0, n_rot_padded - n_rot)),
-                mode="constant",
-            )
-        else:
-            rotation_log_prior_padded = prior
-
-    if translation_log_prior is not None:
-        translation_log_prior = np.asarray(translation_log_prior, dtype=score_real_dtype)
-        if translation_log_prior.ndim == 1:
-            if translation_log_prior.shape != (n_trans,):
-                raise ValueError(
-                    f"translation_log_prior must have shape ({n_trans},), got {translation_log_prior.shape}"
-                )
-        elif translation_log_prior.ndim == 2:
-            if translation_log_prior.shape != (n_images, n_trans):
-                raise ValueError(
-                    "translation_log_prior must have shape "
-                    f"({n_images}, {n_trans}) when image-specific, got {translation_log_prior.shape}",
-                )
-        else:
-            raise ValueError(f"translation_log_prior must be 1D or 2D, got {translation_log_prior.ndim} dimensions")
+    rotation_blocks = plan_rotation_blocks(
+        rotations,
+        rotation_log_prior,
+        n_classes=n_classes,
+        rotation_block_size=rotation_block_size,
+        score_real_dtype=score_real_dtype,
+    )
+    rotations_padded = rotation_blocks.rotations_padded
+    rotation_log_prior_padded = rotation_blocks.rotation_log_prior_padded
+    translation_log_prior = validated_translation_log_prior(
+        translation_log_prior,
+        n_images=n_images,
+        n_trans=n_trans,
+        score_real_dtype=score_real_dtype,
+    )
 
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, image_shape).squeeze()
     if noise_variance_half.ndim == 2 and optics_group_ids is None:
