@@ -553,7 +553,7 @@ MUTATIONS = (
      "a STAR class prior is installed reversed", True),
     ("replay_reads_k1_layout", "if n_classes > 1:\nreturn apply_class_iter_replay_overrides(", "if False:\nreturn apply_class_iter_replay_overrides(",
      "the per-iteration replay treats every run as K1", True),
-    ("intermediates_one_class", "range(n_classes) if n_classes > 1 else (None,)", "(None,)",
+    ("intermediates_one_class", "range(options.k_class.n_classes) if options.k_class.n_classes > 1 else (None,)", "(None,)",
      "the intermediates writer saves one class", True),
     ("shell_cutoff_off_by_one", "first_unavailable_shell = min(truncated.shape[-1], int(current_size) // 2 + 1)", "first_unavailable_shell = min(truncated.shape[-1], int(current_size) // 2)",
      "the current-size shell cut-off moves by one", True),
