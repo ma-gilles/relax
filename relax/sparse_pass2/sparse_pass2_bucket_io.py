@@ -95,8 +95,8 @@ def _relion_translation_angles_f64(translations, image_shape, *, angle_scale=1.0
     the candidate grid and reported pose coordinates stay in model pixels.
     """
 
-    image_size = int(image_shape[0])
-    if image_size <= 0:
+    box_size = int(image_shape[0])
+    if box_size <= 0:
         raise ValueError(f"image_shape must be positive, got {image_shape}")
     translations_f64 = np.asarray(translations, dtype=np.float64)
     if translations_f64.ndim != 2 or translations_f64.shape[1] != 2:
@@ -107,7 +107,7 @@ def _relion_translation_angles_f64(translations, image_shape, *, angle_scale=1.0
     angle_scale = float(angle_scale)
     if not np.isfinite(angle_scale) or angle_scale <= 0.0:
         raise ValueError("RELION translation angle scale must be positive and finite")
-    return -2.0 * np.pi * (translations_f64 * angle_scale) / float(image_size)
+    return -2.0 * np.pi * (translations_f64 * angle_scale) / float(box_size)
 
 
 def _relion_translation_angles_f32(translations, image_shape, *, angle_scale=1.0):

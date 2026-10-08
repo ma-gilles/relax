@@ -172,7 +172,7 @@ def _relion_soft_compact_batch_planning_safe(
     projector_half,
     score_complex_dtype,
     model_current_size: int,
-    image_size: int,
+    box_size: int,
     bpref_device_signature_active: bool,
 ) -> bool:
     """Admit compact planning for the exact windowed K=1 soft-posterior path."""
@@ -194,7 +194,7 @@ def _relion_soft_compact_batch_planning_safe(
         and projector_host_owned
         and np.dtype(projector_half.dtype) == np.dtype(np.complex64)
         and np.dtype(score_complex_dtype) == np.dtype(np.complex64)
-        and 0 < int(model_current_size) < int(image_size)
+        and 0 < int(model_current_size) < int(box_size)
         and not diagnostics_active
     )
 

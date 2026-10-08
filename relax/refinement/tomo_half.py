@@ -599,7 +599,7 @@ def score_tomo_half(
             relion_projector_r_max=int(relion_projector_r_max),
             padding_factor=int(padding_factor),
             coarse_size=int(sampling.coarse_size),
-            image_size=size,
+            box_size=size,
             scale_corrections=image_scale,
         )
         supports = [np.asarray([cell], dtype=np.int32) for cell in winners]
@@ -628,7 +628,7 @@ def score_tomo_half(
             max_significants=max_significants,
             model_max_r=int(relion_projector_r_max),
             padding_factor=int(padding_factor),
-            image_size=size,
+            box_size=size,
             optics_group_ids=image_groups,
             scale_corrections=image_scale,
             **(

@@ -46,14 +46,14 @@ def _relion_cuda_fine_reduce_lanes(lanes):
 def _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, compact_indices):
     """Map RELION's full current-size packed pixel order to compact score rows."""
 
-    image_size = int(image_shape[0])
-    current_size = image_size if current_size is None else int(current_size)
+    box_size = int(image_shape[0])
+    current_size = box_size if current_size is None else int(current_size)
     original_half_width = int(image_shape[1]) // 2 + 1
     current_half_width = current_size // 2 + 1
     compact_indices = np.asarray(compact_indices, dtype=np.int64).reshape(-1)
     centered_rows = compact_indices // original_half_width
     columns = compact_indices % original_half_width
-    ky = centered_rows - image_size // 2
+    ky = centered_rows - box_size // 2
     fftw_rows = np.where(ky < 0, ky + current_size, ky)
     if np.any(fftw_rows < 0) or np.any(fftw_rows >= current_size):
         raise ValueError("compact score indices contain rows outside the RELION current-size crop")
@@ -419,8 +419,8 @@ def _relion_cuda_corr_img_from_native_noise_variance(
     output_dtype = jnp.dtype(output_dtype)
     if output_dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
         raise TypeError(f"output_dtype must be float32 or float64, got {output_dtype}")
-    image_size = int(image_shape[0])
-    native_fourier_scale_rfloat = jnp.asarray(image_size**4, dtype=jnp.float64)
+    box_size = int(image_shape[0])
+    native_fourier_scale_rfloat = jnp.asarray(box_size**4, dtype=jnp.float64)
     native_corr_img = _relion_cuda_native_corr_img_from_noise_variance(
         noise_variance,
         ctf_rfloat,
@@ -444,10 +444,10 @@ def _relion_cuda_native_corr_img_from_noise_variance(
 ):
     """Return RELION's native-unit XFLOAT ``corr_img`` before FFT rescaling."""
 
-    image_size = int(image_shape[0])
-    if tuple(image_shape) != (image_size, image_size):
+    box_size = int(image_shape[0])
+    if tuple(image_shape) != (box_size, box_size):
         raise ValueError(f"RELION corr_img requires a square image, got {image_shape}")
-    native_fourier_scale_rfloat = jnp.asarray(image_size**4, dtype=jnp.float64)
+    native_fourier_scale_rfloat = jnp.asarray(box_size**4, dtype=jnp.float64)
     native_variance = (
         jnp.asarray(noise_variance, dtype=jnp.float64)
         / native_fourier_scale_rfloat

@@ -198,7 +198,7 @@ def _capacity_projections_block(
     rotations,
     pixel_indices,
     runtime_r_max,
-    image_size,
+    current_image_mask_size,
     *,
     image_shape,
     r_max,
@@ -233,7 +233,7 @@ def _capacity_projections_block(
         pixel_indices=pixel_indices,
         projector_capacity=True,
         runtime_r_max=runtime_r_max,
-        current_image_mask_size=image_size,
+        current_image_mask_size=current_image_mask_size,
     )
 
 

@@ -312,7 +312,7 @@ def test_soft_compact_k1_route_gate_is_windowed_exact_and_diagnostic_free(
         projector_half=host_projector,
         score_complex_dtype=np.complex64,
         model_current_size=294,
-        image_size=800,
+        box_size=800,
         bpref_device_signature_active=False,
     )
     assert sparse._relion_soft_compact_batch_planning_safe(**common)
@@ -351,7 +351,7 @@ def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch, diag
             projector_half=host,
             score_complex_dtype=np.complex64,
             model_current_size=294,
-            image_size=800,
+            box_size=800,
             bpref_device_signature_active=False,
         )
     finally:

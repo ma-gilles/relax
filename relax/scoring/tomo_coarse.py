@@ -729,7 +729,7 @@ def _rescore_rows_per_call(particles: int, slots: int, n_trans: int, rescore_byt
 
 
 def _coarse_projection_bytes_per_pixel(
-    class_textures, projector_dtype, *, image_size, current_size, model_max_r
+    class_textures, projector_dtype, *, box_size, current_size, model_max_r
 ) -> int:
     """Device bytes one projected score pixel takes in :func:`_coarse_gemm_slot_block`.
 
@@ -742,7 +742,7 @@ def _coarse_projection_bytes_per_pixel(
     from relax.helpers.projection import relion_coarse_packed_rows_serve
 
     if all(t is not None for t in class_textures) and relion_coarse_packed_rows_serve(
-        int(image_size), int(current_size), int(model_max_r)
+        int(box_size), int(current_size), int(model_max_r)
     ):
         return 8
     return 2 * int(np.dtype(projector_dtype).itemsize)
@@ -925,7 +925,7 @@ def particle_coarse_supports(
     max_significants,
     model_max_r: int,
     padding_factor: int,
-    image_size: int,
+    box_size: int,
     optics_group_ids=None,
     scale_corrections=None,
     unit_rotation_ids=None,
@@ -1027,7 +1027,7 @@ def particle_coarse_supports(
         projection_bytes_per_pixel=_coarse_projection_bytes_per_pixel(
             class_textures,
             jnp.asarray(class_projectors[0]).dtype,
-            image_size=int(layout.image_shape[0]),
+            box_size=int(layout.image_shape[0]),
             current_size=int(layout.current_size),
             model_max_r=int(model_max_r),
         ),
@@ -1297,7 +1297,7 @@ def particle_coarse_supports(
                 old[unit : unit + 1],
                 image_projections[images],
                 np.zeros(images.size, int),
-                image_size,
+                box_size,
             )
             image_index[p, : images.size] = images
             image_valid[p, : images.size] = True
@@ -1462,7 +1462,7 @@ def particle_coarse_cc_winners(
     relion_projector_r_max: int,
     padding_factor: int,
     coarse_size: int,
-    image_size: int,
+    box_size: int,
     scale_corrections=None,
 ):
     """Each particle's coarse ``--firstiter_cc`` winner: the cell ``rotation * T + translation`` and its CC.
@@ -1534,7 +1534,7 @@ def particle_coarse_cc_winners(
             dtype=np.float32,
         )
         angles = tomo_particles.tilt_translation_angles(
-            coarse_translations_px, old[unit : unit + 1], image_projections[images], np.zeros(images.size, int), image_size
+            coarse_translations_px, old[unit : unit + 1], image_projections[images], np.zeros(images.size, int), box_size
         )
         running = jnp.zeros((n_rot, n_trans), dtype=jnp.float32)
         for slot in range(images.size):

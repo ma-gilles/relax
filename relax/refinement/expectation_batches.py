@@ -249,7 +249,7 @@ def prepare_half_batches(
             score_complex_dtype=np.complex64,
             model_current_size=model_size,
             # The largest image box among the half's shape classes.
-            image_size=_largest_image_size(dataset),
+            box_size=_largest_image_size(dataset),
             bpref_device_signature_active=bpref_device_signature_active,
         ):
             safe_batch_sizes_for_half = partial(

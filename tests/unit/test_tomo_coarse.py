@@ -282,14 +282,14 @@ def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_shar
     rotations, slots, trans, pixels = 4608, 41, 81, 278
     # The JAX fallback holds the rows in the projector's complex dtype and one temporary: 32 B a complex128 pixel.
     assert tomo_coarse._coarse_projection_bytes_per_pixel(
-        [None], np.complex128, image_size=128, current_size=26, model_max_r=24
+        [None], np.complex128, box_size=128, current_size=26, model_max_r=24
     ) == 32
     assert tomo_coarse._coarse_projection_bytes_per_pixel(
-        [None], np.complex64, image_size=128, current_size=26, model_max_r=24
+        [None], np.complex64, box_size=128, current_size=26, model_max_r=24
     ) == 16
     monkeypatch.setattr(projection, "relion_coarse_packed_rows_serve", lambda *a: True)
     assert tomo_coarse._coarse_projection_bytes_per_pixel(
-        [object()], np.complex64, image_size=128, current_size=26, model_max_r=24
+        [object()], np.complex64, box_size=128, current_size=26, model_max_r=24
     ) == 8
 
     # The device share: a quarter of what the allocator can still hand out (6.6 GiB free beside half 1's state).
@@ -332,7 +332,7 @@ def test_coarse_batch_plan_on_an_80gb_card_is_the_fixed_2gib_plan(monkeypatch):
     monkeypatch.setattr(projection, "relion_coarse_packed_rows_serve", lambda *a: True)
     assert tomo_coarse._coarse_pass_budget(0).batch == tomo_coarse._COARSE_BATCH_BYTES
     bytes_per_pixel = tomo_coarse._coarse_projection_bytes_per_pixel(
-        [object()], np.complex64, image_size=128, current_size=48, model_max_r=24
+        [object()], np.complex64, box_size=128, current_size=48, model_max_r=24
     )
     assert bytes_per_pixel == 8
     for rotations, pixels in ((4608, 278), (36864, 921), (448, 2520)):
@@ -792,7 +792,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         max_significants=None,
         model_max_r=3,
         padding_factor=2,
-        image_size=8,
+        box_size=8,
     )
     assert len(supports) == 2 and all(len(class_supports) == 3 for class_supports in supports)
     # A batch with an undecided rotation is cut again (same translation prior): its last cut is published.
@@ -1037,7 +1037,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         max_significants=cap,
         model_max_r=3,
         padding_factor=2,
-        image_size=8,
+        box_size=8,
     )
     if variant == "one_row":
         monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATIONS", 1)

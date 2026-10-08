@@ -2272,14 +2272,14 @@ def stable_window_class_history(quantum: int | None = None):
         _STABLE_WINDOW_CLASSES_RUN.reset(token)
 
 
-def _stable_window_physical_class(image_size: int, current_size: int, quantum: int) -> int | None:
+def _stable_window_physical_class(box_size: int, current_size: int, quantum: int) -> int | None:
     """The physical class to run ``current_size`` in, or None for its quantized class."""
 
     history = _STABLE_WINDOW_CLASSES_RUN.get()
     if history is None:
         return None
-    quantized = stable_fourier_window_current_size(int(current_size), int(image_size), quantum=int(quantum))
-    classes = history.setdefault((int(image_size), int(quantum)), set())
+    quantized = stable_fourier_window_current_size(int(current_size), int(box_size), quantum=int(quantum))
+    classes = history.setdefault((int(box_size), int(quantum)), set())
     reusable = [size for size in classes if quantized < size <= quantized + int(quantum)]
     chosen = min(reusable) if reusable else quantized
     classes.add(chosen)
