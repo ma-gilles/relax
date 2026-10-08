@@ -92,6 +92,16 @@ class HalfSet:
     group_ids: object | None = None
     group_count: int | None = None
 
+    def centre_absent_poses(self, *, offset_dims: int):
+        """Set absent angles and offsets to zeros, in place: RELION reads absent angles and origins as 0
+        (exp_model.cpp:1103-1134) and searches locally around them (ml_optimiser.cpp:978-983); it never falls
+        back to a global search. ``offset_dims`` is 2, or 3 for subtomograms."""
+        n_particles = int(self.dataset.n_units)
+        if self.rotation_eulers is None:
+            self.rotation_eulers = np.zeros((n_particles, 3), dtype=np.float64)
+        if self.translations is None:
+            self.translations = np.zeros((n_particles, offset_dims), dtype=np.float64)
+
     def require_local_search_poses(self):
         if self.rotation_eulers is None or self.translations is None:
             raise ValueError(f"Local search requires orientations and translations for half {self.index + 1}")

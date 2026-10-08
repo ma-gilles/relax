@@ -98,6 +98,7 @@ from relax.refinement.half_scoring import (
 )
 from relax.refinement.iteration_planning import (
     build_initial_coarse_grids,
+    builds_coarse_pass1_rotations,
     class_seeding,
     coarse_pass1_rotations,
     first_iteration_policy,
@@ -911,15 +912,9 @@ def refine_single_volume(
         # snapped grid indices.
         adaptive_pass1_rotations = None
         if state.do_local_search:
-            # RELION reads absent angles and origins as 0 (exp_model.cpp:1103-1134) and searches locally around
-            # them (ml_optimiser.cpp:978-983); it never falls back to a global search. A half without poses is
-            # centred at Euler angles (0, 0, 0) with zero offsets.
+            # A half without poses is centred at Euler angles (0, 0, 0) with zero offsets.
             for half in halves:
-                n_particles = int(half.dataset.n_units)
-                if half.rotation_eulers is None:
-                    half.rotation_eulers = np.zeros((n_particles, 3), dtype=np.float64)
-                if half.translations is None:
-                    half.translations = np.zeros((n_particles, 3 if tomo_halves else 2), dtype=np.float64)
+                half.centre_absent_poses(offset_dims=3 if tomo_halves else 2)
         use_local = state.do_local_search
         if use_local and k_class_enabled and options.local_search.sigma_ang_deg is None:
             # Class3D searches locally only with --sigma_ang: RELION switches from the HEALPix
@@ -949,18 +944,7 @@ def refine_single_volume(
             sealed_grid=source.sealed_sampling_state is not None, dtype=scoring_dtype,
         )
         coarse_grids = replace(coarse_grids, translations=trial_grid.translations)
-        # RELION's coarse device geometry also applies at OS0. Keep this
-        # separate from host fine/M-step geometry; see docs/math/zero_coarse_geometry.md.
-        if not use_local and (
-            int(state.adaptive_oversampling) > 0
-            or (
-                int(state.adaptive_oversampling) == 0
-                and options.k_class.n_classes == 1
-                and first_iteration.score_mode == "gaussian"
-                and not first_iteration.winner_take_all
-                and not options.precision.use_float64_scoring
-            )
-        ):
+        if builds_coarse_pass1_rotations(state, options, first_iteration, use_local=use_local):
             adaptive_pass1_rotations = coarse_pass1_rotations(
                 coarse_grids.rotation_grid, random_perturbation, options,
                 perturbation_order=perturbation_order, dtype=scoring_dtype, log=logger,

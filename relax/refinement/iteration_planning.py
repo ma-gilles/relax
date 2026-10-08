@@ -638,6 +638,26 @@ def iteration_trial_grid(
     )
 
 
+def builds_coarse_pass1_rotations(
+    state: RefinementState, options: RefinementOptions, first_iteration: FirstIterationPolicy, *, use_local: bool
+) -> bool:
+    """Whether a global search scores pass 1 with RELION's device-built coarse rotations
+    (``coarse_pass1_rotations``): with adaptive oversampling, and at OS0 for a K=1 Gaussian iteration in single
+    precision. RELION's coarse device geometry also applies at OS0; it stays separate from the host fine/M-step
+    geometry (docs/math/zero_coarse_geometry.md).
+    """
+    return not use_local and (
+        int(state.adaptive_oversampling) > 0
+        or (
+            int(state.adaptive_oversampling) == 0
+            and options.k_class.n_classes == 1
+            and first_iteration.score_mode == "gaussian"
+            and not first_iteration.winner_take_all
+            and not options.precision.use_float64_scoring
+        )
+    )
+
+
 def coarse_pass1_rotations(
     rotation_grid: sampling.RotationGrid,
     random_perturbation: float,
