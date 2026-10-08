@@ -109,6 +109,13 @@ rounded image support (\(\text{max\_r}=r_{\max}+1/2\)). It masks each row's pixe
 (`recon_exact_radius=False`). The forward projector already clips on the rotated radius with
 RELION's integer-truncated \(r^2\) (relax/cuda/relion_scoring.cuh:464).
 
+Optics groups with different `rlnMagMat` (relax#48) are split into shape classes like groups on
+other grids ([`optics_shape_class_rows`](../../relax/refinement/optics_shapes.py)), so each class
+applies one matrix and the mask above reads that class's \(A=M_3^{-1}A_{\mathrm{proj}}R/s\). A
+class on another grid with anisotropic magnification keeps \(\text{max\_r}=r_{\max}+1/2\) when
+\(s\le 1\): its recon window holds its rounded support, which lies inside that radius. A class with
+\(s>1\) and anisotropic magnification is refused.
+
 Implementation: [`ReferenceSphereClip`, `mstep_adjoint_max_r` and `rotated_radius_mask`](../../relax/helpers/adjoint.py),
 selected by `dataset_magnification_is_anisotropic` in the resident and local engines. Regression:
 `tests/unit/test_mstep_rotated_radius_clip.py`. Its CPU half checks relax's support against the rule

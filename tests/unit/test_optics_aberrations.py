@@ -220,9 +220,17 @@ def test_exact_ctf_rows_carry_the_magnification(tmp_path):
     expected = _relion_ctf_reference(20000.0, 19000.0, 40.0, 200.0, 2.0, 0.1, BOX, PIXEL, gamma, mag=MAG)
     assert_matches(rows[0], -np.fft.fftshift(expected, axes=0).reshape(-1), rtol=1e-12)
     assert oa.dataset_needs_exact_ctf(dataset)
-    # Projection matrices are transformed per scoring call: one magnification for every group.
-    with pytest.raises(NotImplementedError, match="different magnification"):
+    # Projection matrices are transformed per scoring call: a dataset spanning groups with
+    # different magnifications must be split into shape classes, one matrix each (relax#48).
+    with pytest.raises(ValueError, match="split into shape classes"):
         oa.dataset_projection_magnification(dataset)
+    # Particles 1 and 3 are optics group 2 (MAG), particle 2 group 1 (identity).
+    group_2 = SimpleNamespace(**vars(dataset), n_units=2, dataset_indices=np.asarray([0, 2]))
+    group_1 = SimpleNamespace(**vars(dataset), n_units=1, dataset_indices=np.asarray([1]))
+    assert_matches(oa.dataset_projection_magnification(group_2), oa.relax_projection_magnification(MAG))
+    assert oa.dataset_projection_magnification(group_1) is None
+    assert oa.dataset_magnification_is_anisotropic(group_2)
+    assert not oa.dataset_magnification_is_anisotropic(group_1)
     shared = SimpleNamespace(
         particles_file=str(_write_star(tmp_path / "shared.star", tilt=None, odd=None, mag=MAG, mag_both=True)),
         image_shape=(BOX, BOX),

@@ -62,14 +62,22 @@ def mstep_adjoint_max_r(volume_current_size, image_radius, padding_factor, *, an
     """The adjoint ``max_r``: r_max on one grid, a :class:`ReferenceSphereClip` otherwise.
 
     ``anisotropic_magnification`` (:func:`magnification_is_anisotropic` of the images' optics
-    groups) selects the rotated-radius mask; it is defined for images on the reference grid.
+    groups) selects the rotated-radius mask, keeping the rounded image support ``r_max + 1/2``
+    (the runtime-radius adjoint reads the reference radius back as ``image radius - 1/2``).
+    An optics group on another grid (``image_radius = r_max * s``) with anisotropic
+    magnification (relax#48) takes the same clip when ``s <= 1``: its reconstruction window
+    holds its rounded image support (``reference_sphere_clip`` windows), which lies inside
+    ``r_max + 1/2``, and the mask applies RELION's ``|A^-1 k| <= r_max`` with the group's
+    scale and magnification in ``A``. A group whose field of view is larger (``s > 1``)
+    has image pixels beyond ``r_max + 1/2`` inside the rotated sphere and is refused.
     """
 
     r_max = float(int(volume_current_size) // 2)
     if anisotropic_magnification:
-        if image_radius is not None:
+        if image_radius is not None and float(image_radius) > r_max:
             raise NotImplementedError(
-                "anisotropic magnification on another pixel size or box than the reference is not supported"
+                "anisotropic magnification on an optics group whose field of view is larger than the "
+                "reference's (scale > 1) is not supported; list that group first"
             )
         return ReferenceSphereClip(r_max + 0.5, int(padding_factor), r_max)
     if image_radius is None:

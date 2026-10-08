@@ -238,12 +238,18 @@ def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
     return classes
 
 
-def optics_shape_class_rows(particles_star):
-    """Particle rows per image shape when optics groups differ in box or pixel size.
+_MAG_MATRIX_COLUMNS = ("rlnMagMat00", "rlnMagMat01", "rlnMagMat10", "rlnMagMat11")
 
-    ``None`` when every optics group has one box and pixel size (the single-dataset
-    path). Otherwise one row array per (box, pixel size), in optics-table order, so
-    the first class holds optics group 1, whose grid is RELION's model grid.
+
+def optics_shape_class_rows(particles_star):
+    """Particle rows per image shape when optics groups differ in box, pixel size or magnification.
+
+    ``None`` when every optics group has one box, pixel size and ``rlnMagMat`` (the
+    single-dataset path). Otherwise one row array per (box, pixel size, magnification
+    matrix), in optics-table order, so the first class holds optics group 1, whose grid
+    is RELION's model grid. RELION applies each group's ``rlnMagMat`` to its images'
+    projection and backprojection matrices (``applyAnisoMag``); a class holds one
+    matrix, which its scoring calls apply (relax#48).
     """
     import starfile
 
@@ -251,8 +257,14 @@ def optics_shape_class_rows(particles_star):
     optics = star.get("optics") if isinstance(star, dict) else None
     if optics is None or not {"rlnImageSize", "rlnImagePixelSize"}.issubset(optics.columns):
         return None
+    mags = (
+        [tuple(row) for row in np.asarray(optics[list(_MAG_MATRIX_COLUMNS)], dtype=np.float64).tolist()]
+        if set(_MAG_MATRIX_COLUMNS).issubset(optics.columns)
+        else [None] * len(optics)
+    )
     shapes = list(zip(np.asarray(optics["rlnImageSize"], dtype=np.int64).tolist(),
-                      np.asarray(optics["rlnImagePixelSize"], dtype=np.float64).tolist()))
+                      np.asarray(optics["rlnImagePixelSize"], dtype=np.float64).tolist(),
+                      mags))
     unique_shapes = list(dict.fromkeys(shapes))
     if len(unique_shapes) == 1:
         return None

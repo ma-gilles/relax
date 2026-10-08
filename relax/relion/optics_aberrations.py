@@ -319,13 +319,18 @@ def relax_projection_magnification(mag_matrix) -> np.ndarray:
     return matrix.T
 
 
-def dataset_projection_magnification(experiment_dataset) -> np.ndarray | None:
-    """The dataset's :func:`relax_projection_magnification`, or None without magnification.
+def dataset_optics_mag_matrices(experiment_dataset) -> dict | None:
+    """Each optics group's 2x2 ``rlnMagMat`` among the dataset's own images, or None without magnification.
 
-    Every optics group of the dataset must share one magnification matrix: the
-    projection matrices are transformed per scoring call, not per image.
+    Only the groups the dataset's images belong to count: a shape class
+    (:func:`relax.refinement.optics_shapes.optics_shape_class_rows`) holds one
+    magnification matrix even when the source STAR has several. A dataset without a
+    RELION source STAR or without magnification columns has none.
     """
 
+    from recovar.data_io.starfile import star_column
+
+    from relax.helpers.batch_fetch import original_image_indices
     from relax.relion.relion_ctf import _relion_exact_ctf_source_star
 
     try:
@@ -336,11 +341,30 @@ def dataset_projection_magnification(experiment_dataset) -> np.ndarray | None:
     labels = {str(label).lstrip("_") for row in cache["optics"].values() for label in row.keys()}
     if not any(label.startswith("rlnMagMat") for label in labels):
         return None
-    matrices = {group: optics_group_mag_matrix(row) for group, row in cache["optics"].items()}
+    groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)
+    n_units = getattr(experiment_dataset, "n_units", None)
+    if n_units is not None:
+        groups = groups[original_image_indices(experiment_dataset, np.arange(int(n_units), dtype=np.int64))]
+    return {int(group): optics_group_mag_matrix(cache["optics"][int(group)]) for group in np.unique(groups)}
+
+
+def dataset_projection_magnification(experiment_dataset) -> np.ndarray | None:
+    """The dataset's :func:`relax_projection_magnification`, or None without magnification.
+
+    The projection matrices are transformed per scoring call, so the dataset's images
+    must share one magnification matrix. Optics groups with different matrices are
+    split into shape classes, one matrix each, as groups on other grids are
+    (:func:`relax.refinement.optics_shapes.optics_shape_class_rows`, relax#48).
+    """
+
+    matrices = dataset_optics_mag_matrices(experiment_dataset)
+    if not matrices:
+        return None
     first = next(iter(matrices.values()))
     if any(not np.array_equal(m, first) for m in matrices.values()):
-        raise NotImplementedError(
-            "optics groups with different magnification matrices are not supported by relax yet"
+        raise ValueError(
+            "this dataset's images span optics groups with different magnification matrices "
+            f"({sorted(matrices)}); they must be split into shape classes (optics_shape_class_rows)"
         )
     if np.array_equal(first, np.eye(2)):
         return None
@@ -379,14 +403,8 @@ def dataset_magnification_is_anisotropic(experiment_dataset) -> bool:
 
     from relax.helpers.adjoint import magnification_is_anisotropic
 
-    try:
-        _, cache = _source_tables(experiment_dataset, tuple(int(s) for s in experiment_dataset.image_shape))
-    except ValueError:
-        return False
-    labels = {str(label).lstrip("_") for row in cache["optics"].values() for label in row.keys()}
-    if not any(label.startswith("rlnMagMat") for label in labels):
-        return False
-    return magnification_is_anisotropic(optics_group_mag_matrix(row) for row in cache["optics"].values())
+    matrices = dataset_optics_mag_matrices(experiment_dataset)
+    return bool(matrices) and magnification_is_anisotropic(matrices.values())
 
 
 def projection_rotations(rotations, scale: float, magnification=None, *, dtype=np.float32):

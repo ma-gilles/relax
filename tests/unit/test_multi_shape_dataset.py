@@ -197,3 +197,24 @@ def test_optics_shape_class_rows(tmp_path):
     assert [r.tolist() for r in rows] == [[1, 2, 4, 5], [0, 3]]
     starfile.write({"optics": optics.assign(rlnImagePixelSize=4.25, rlnImageSize=128), "particles": particles}, path)
     assert optics_shapes.optics_shape_class_rows(path) is None
+
+
+def test_optics_shape_class_rows_split_on_the_magnification_matrix(tmp_path):
+    """Groups on one grid with different rlnMagMat are separate classes, one matrix each (relax#48);
+    groups sharing a matrix stay together, and one shared matrix keeps the single-dataset path."""
+
+    mags = {"rlnMagMat00": [0.988, 1.044, 0.988], "rlnMagMat01": [-0.010, -0.001, -0.010],
+            "rlnMagMat10": [-0.010, 0.0, -0.010], "rlnMagMat11": [0.996, 1.039, 0.996]}
+    optics = pd.DataFrame(
+        {"rlnOpticsGroup": [1, 2, 3], "rlnImagePixelSize": [1.4, 1.4, 1.4], "rlnImageSize": [128, 128, 128], **mags}
+    )
+    particles = pd.DataFrame(
+        {"rlnImageName": [f"{i}@a.mrcs" for i in range(1, 7)], "rlnOpticsGroup": [2, 1, 3, 2, 1, 1]}
+    )
+    path = tmp_path / "particles.star"
+    starfile.write({"optics": optics, "particles": particles}, path)
+    rows = optics_shapes.optics_shape_class_rows(path)
+    assert [r.tolist() for r in rows] == [[1, 2, 4, 5], [0, 3]]
+    shared = optics.assign(rlnMagMat00=0.988, rlnMagMat01=-0.010, rlnMagMat10=-0.010, rlnMagMat11=0.996)
+    starfile.write({"optics": shared, "particles": particles}, path)
+    assert optics_shapes.optics_shape_class_rows(path) is None

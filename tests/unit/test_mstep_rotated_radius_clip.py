@@ -78,7 +78,11 @@ def test_anisotropic_clip_keeps_the_rounded_image_support_and_the_reference_radi
     assert_matches(kwargs["max_r"], 18.5)
     # Without magnification nothing changes.
     assert_matches(adjoint.mstep_adjoint_max_r(36, None, 2), 18.0)
-    with pytest.raises(NotImplementedError, match="another pixel size"):
+    # An optics group on a finer or equal field of view (scale <= 1, relax#48) keeps the same clip;
+    # its window holds the group's rounded support, and the mask uses the group's matrix.
+    on_finer_grid = adjoint.mstep_adjoint_max_r(36, 18.0 * 0.971, 2, anisotropic_magnification=True)
+    assert_matches([on_finer_grid.image_radius, on_finer_grid.reference_radius], [18.5, 18.0])
+    with pytest.raises(NotImplementedError, match="scale > 1"):
         adjoint.mstep_adjoint_max_r(36, 20.0, 2, anisotropic_magnification=True)
 
 
