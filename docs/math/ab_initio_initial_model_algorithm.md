@@ -233,7 +233,7 @@ Use this index only after reading the algorithm sections above.
 - VDAM loop and schedules:
   [`iteration_loop.py::run_vdam_iterations`](../../relax/vdam/iteration_loop.py),
   [`schedules.py`](../../relax/vdam/schedules.py),
-  [`subset.py::select_vdam_subset`](../../relax/vdam/subset.py)
+  [`subset_schedule.py::select_vdam_subset`](../../relax/vdam/subset_schedule.py)
 - InitialModel dense bridge and M-step:
   [`dense_adapter.py`](../../relax/vdam/dense_adapter.py),
   [`layout.py`](../../relax/vdam/layout.py),

@@ -293,7 +293,7 @@ def test_projector_power_spectrum_smoke(bind):
 class TestRandomiseParticlesOrderBinding:
     """The C++ binding uses RELION's std::shuffle path.
 
-    The Python fallback in subset.py is deterministic but not bit-identical.
+    The Python fallback in subset_schedule.py is deterministic but not bit-identical.
     Parity paths call this binding directly.
     """
 

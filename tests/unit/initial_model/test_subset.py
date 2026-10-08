@@ -16,7 +16,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.vdam import numpy_rnd_unif_factory, randomise_particles_order
 
-from relax.vdam.subset import select_vdam_subset
+from relax.vdam.subset_schedule import select_vdam_subset
 
 pytestmark = pytest.mark.unit
 

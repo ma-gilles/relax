@@ -296,7 +296,7 @@ LOC_BUDGETS = {
     # scratch and mask setup: 1952 -> 1977 lines on main 7d7f3c92 (+25; ceiling +19).
     "controller": (1977, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
-        "schedules.py", "subset.py", "subset_schedule.py",
+        "schedules.py", "subset_schedule.py",
     )),
     # bootstrap_reconstruction.py (419 lines, 2026-09-29) is relax's own port of the
     # bootstrap RELION's C++ ran through relax.relion_bind (vdam_bootstrap_iref and
