@@ -93,7 +93,6 @@ def relion_point_group_symmetrise_bpref(
             f"got {volume_shape}"
         )
 
-    support_radius = int(support_radius)
     maximum_supported_radius = volume_shape[0] // 2 - 1
     if support_radius < 0 or support_radius > maximum_supported_radius:
         raise ValueError(
@@ -193,7 +192,6 @@ def relion_point_group_symmetrise_bpref_host(
             "RELION point-group BPref symmetry requires an odd positive grid, "
             f"got {volume_shape}"
         )
-    support_radius = int(support_radius)
     maximum_supported_radius = volume_shape[0] // 2 - 1
     if support_radius < 0 or support_radius > maximum_supported_radius:
         raise ValueError(
@@ -242,7 +240,6 @@ def relion_point_group_symmetrise_bpref_host(
             "RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS",
         )
         chunk_voxels = 16 * 1024 * 1024 if raw_chunk_voxels is None else int(raw_chunk_voxels)
-    chunk_voxels = int(chunk_voxels)
     if chunk_voxels <= 0:
         raise ValueError(f"RELION BPref symmetry chunk_voxels must be positive, got {chunk_voxels}")
     chunk_voxels = min(chunk_voxels, expected_size)
@@ -2579,8 +2576,6 @@ class RelionCapacityHalfTextureF32:
     ) -> None:
         projector_half = jnp.asarray(projector_half)
         shape = tuple(int(v) for v in projector_half.shape)
-        padding_factor = int(padding_factor)
-        logical_r_max = int(logical_r_max)
         if projector_half.dtype != jnp.complex64 or len(shape) != 3:
             raise ValueError("projector_half must be C64 [pf*Q+3,pf*Q+3,pf*Q//2+2]")
         if jax.default_backend() != "gpu" or not custom_cuda_requested():
@@ -3501,9 +3496,6 @@ class RelionPersistentHalfTextureF32:
                 f"(z, y, x-half) slab, got shape={projector_half.shape} "
                 f"c_contiguous={projector_half.flags.c_contiguous}"
             )
-        padding_factor = int(padding_factor)
-        projector_max_r = int(projector_max_r)
-        projector_scale = float(projector_scale)
         if padding_factor <= 0 or projector_max_r <= 0:
             raise ValueError("padding_factor and projector_max_r must be positive")
         if projector_scale != 1.0:
@@ -3765,10 +3757,6 @@ def relion_projector_half_texture_f32(
 
     projector_half = jnp.asarray(projector_half)
     rotation_matrices = jnp.asarray(rotation_matrices)
-    current_size = int(current_size)
-    padding_factor = int(padding_factor)
-    projector_max_r = int(projector_max_r)
-    projector_scale = float(projector_scale)
     expected_pad = 2 * projector_max_r * padding_factor + 3
     expected_shape = (
         expected_pad,
@@ -4768,7 +4756,6 @@ def ppca_latent_epilogue_f32(inner, gram, rows, prior_tables, start, kept):
     """
 
     _ensure_ffi()
-    kept = tuple(kept)
     out_types = tuple(jax.ShapeDtypeStruct(x.shape, x.dtype) for x in kept)
     first = 9
     return jax.ffi.ffi_call(
