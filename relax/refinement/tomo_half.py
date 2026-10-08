@@ -301,14 +301,17 @@ def numbered_iteration_tomo_sampling(
     """
     use_local = local_sampling is not None
     tomo_oversampling = int(state.adaptive_oversampling)
-    return TomoSampling(
-        healpix_order=int(local_sampling.search.healpix_order) - tomo_oversampling if use_local else int(grid_healpix_order),
+    box_size = image_geometry.image_shape[0]
+    return local_tomo_sampling(
+        # A global search's grid order is its pass-1 order.
+        fine_order=int(local_sampling.search.healpix_order) if use_local else int(grid_healpix_order) + tomo_oversampling,
         oversampling_order=tomo_oversampling,
-        offset_range_angst=float(state.translation_range) * image_geometry.pixel_size_angstrom,
-        offset_step_angst=float(state.translation_step) * image_geometry.pixel_size_angstrom,
-        random_perturbation=float(local_sampling.perturbation if use_local else random_perturbation),
-        coarse_size=int(image_geometry.image_shape[0] if coarse_size is None else coarse_size),
-        fine_size=int(image_geometry.image_shape[0] if fine_size is None else fine_size),
+        translation_range_px=state.translation_range,
+        translation_step_px=state.translation_step,
+        voxel_size=image_geometry.pixel_size_angstrom,
+        random_perturbation=local_sampling.perturbation if use_local else random_perturbation,
+        pass1_size=box_size if coarse_size is None else coarse_size,
+        current_size=box_size if fine_size is None else fine_size,
     )
 
 
@@ -323,7 +326,8 @@ def local_tomo_sampling(
     pass1_size: int | None,
     current_size: int,
 ) -> TomoSampling:
-    """A local search's :class:`TomoSampling`: pass 1 one oversampling order below the fine order.
+    """A :class:`TomoSampling` with pass 1 one oversampling order below the fine order (a local search, the
+    final pass, and through :func:`numbered_iteration_tomo_sampling` a numbered iteration).
 
     ``pass1_size`` is RELION's parent-pass image size; without one (no adaptive parent pass, e.g. the
     final pass at a high order) the coarse size is the current size, as RELION's coarse_size is.
