@@ -13,6 +13,7 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
+from relax.parity import oracle_admission
 from relax.refinement import command_options
 from relax.relion import relion_worker_scale
 
@@ -66,7 +67,7 @@ def dispatch_inputs(tmp_path):
 
 
 def test_no_dispatch_reads_no_oracle_or_particle_metadata():
-    admitted = command_options.load_verified_dispatch_schedule(
+    admitted = oracle_admission.load_verified_dispatch_schedule(
         SimpleNamespace(relion_dispatch_schedule=None), object(), strict_replay=False,
     )
     assert admitted.schedule is None
@@ -79,7 +80,7 @@ def test_dispatch_refuses_non_replay_before_loading(monkeypatch):
 
     monkeypatch.setattr(relion_worker_scale, "load_relion_dispatch_schedule", forbidden)
     with pytest.raises(SystemExit, match="strict K>1 RELION replay/init state only"):
-        command_options.load_verified_dispatch_schedule(
+        oracle_admission.load_verified_dispatch_schedule(
             SimpleNamespace(relion_dispatch_schedule="absent.npz"), object(), strict_replay=False,
         )
 
@@ -97,7 +98,7 @@ def test_verified_dispatch_keeps_particle_identity_and_root_order(dispatch_input
         copy = tmp_path / "relocated"
         shutil.copytree(oracle, copy)
         args.relion_init_dir = copy
-    admitted = command_options.load_verified_dispatch_schedule(args, particles, strict_replay=True)
+    admitted = oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True)
     expected_roots = [oracle.resolve()]
     if other_root == "relocated":
         expected_roots.append(args.relion_init_dir.resolve())
@@ -145,7 +146,7 @@ def test_dispatch_refuses_unbound_consumed_inputs(dispatch_inputs, tmp_path, dam
         particles = particles.copy()
         particles.loc[0, "rlnGroupNumber"] = 99
     with pytest.raises(SystemExit, match=message) as failure:
-        command_options.load_verified_dispatch_schedule(args, particles, strict_replay=True)
+        oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True)
     assert isinstance(failure.value.__cause__, ValueError)
 
 
@@ -167,8 +168,8 @@ def test_dispatch_verifies_all_roots_before_discovering_inputs(dispatch_inputs, 
         return discover(request)
 
     monkeypatch.setattr(relion_worker_scale, "verify_relion_dispatch_schedule_oracle", record_verify)
-    monkeypatch.setattr(command_options, "find_relion_optimiser_star", record_discover)
-    command_options.load_verified_dispatch_schedule(args, particles, strict_replay=True)
+    monkeypatch.setattr(oracle_admission, "find_relion_optimiser_star", record_discover)
+    oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True)
     assert events == [("verify", oracle.resolve()), ("verify", copy.resolve()), ("discover", args)]
 
 
@@ -179,7 +180,7 @@ def test_dispatch_preserves_exception_scope(monkeypatch, failure, wrapped):
 
     monkeypatch.setattr(relion_worker_scale, "load_relion_dispatch_schedule", fail)
     with pytest.raises(SystemExit if wrapped else RuntimeError) as caught:
-        command_options.load_verified_dispatch_schedule(
+        oracle_admission.load_verified_dispatch_schedule(
             SimpleNamespace(relion_dispatch_schedule="capture.npz"), object(), strict_replay=True,
         )
     if wrapped:
@@ -273,7 +274,7 @@ def test_follower_routing_hands_the_admitted_capture_and_its_oracle_to_the_topol
 
     monkeypatch.setattr(relion_worker_scale, "prepare_follower_topology", prepare)
     groups = object()
-    routing = command_options.admit_follower_routing(
+    routing = oracle_admission.admit_follower_routing(
         args, SimpleNamespace(particles=particles, path=oracle / "run_it000_data.star"), groups, log=LOG
     )
     _, schedule, routed_groups, kwargs = calls[0]
@@ -311,7 +312,7 @@ def test_restart_provenance_is_refused_without_its_companions(tmp_path, iteratio
     args = SimpleNamespace(perturb_replay_restart_state_iterations=iterations, perturb_replay_relion_dir=replay_dir,
                            perturb_replay_restart_provenance=None if provenance is None else tmp_path / provenance)
     with pytest.raises(SystemExit, match=message):
-        command_options.resolve_restart_provenance(args, log=LOG)
+        oracle_admission.resolve_restart_provenance(args, log=LOG)
 
 
 def test_restart_provenance_sorts_the_iterations_and_hashes_the_file(tmp_path):
@@ -319,10 +320,10 @@ def test_restart_provenance_sorts_the_iterations_and_hashes_the_file(tmp_path):
     provenance.write_text("{}")
     args = SimpleNamespace(perturb_replay_restart_state_iterations="5, 3,5,", perturb_replay_relion_dir="r",
                            perturb_replay_restart_provenance=provenance)
-    restart = command_options.resolve_restart_provenance(args, log=LOG)
+    restart = oracle_admission.resolve_restart_provenance(args, log=LOG)
     assert restart.iterations == (3, 5) and restart.path == provenance.resolve()
     assert restart.sha256 == "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
-    assert command_options.resolve_restart_provenance(
+    assert oracle_admission.resolve_restart_provenance(
         SimpleNamespace(perturb_replay_restart_state_iterations="", perturb_replay_relion_dir=None,
                         perturb_replay_restart_provenance=None), log=LOG,
     ) == ((), None, None)

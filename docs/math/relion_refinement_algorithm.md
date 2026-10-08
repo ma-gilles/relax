@@ -1033,7 +1033,7 @@ order. Result-file ownership does not change convergence or finalization timing.
 
 ### Command admission
 
-[`load_verified_dispatch_schedule`](../../relax/refinement/command_options.py)
+[`load_verified_dispatch_schedule`](../../relax/parity/oracle_admission.py)
 admits a captured dispatch schedule only in the existing strict Class3D
 init/replay mode. It verifies unique resolved oracle roots before discovering the
 consumed optimiser and sampling files; all consumed files must be manifested and

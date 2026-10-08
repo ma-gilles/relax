@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from helpers.tiny_main import controller_inputs
 
+from relax.parity import oracle_admission
 from relax.refinement import command_options
 from relax.refinement.refinement_options import (
     AdaptiveOptions,
@@ -102,16 +103,16 @@ def test_class_seeds_are_drawn_only_for_a_fresh_class3d_run_from_one_reference()
 
 def test_a_frozen_boundary_replays_its_state_and_its_sealed_sampling_on_the_fixed_arm():
     assert command_options.resolve_local_search(_args("--stop_after_local_search")).stops_after_local_search
-    assert command_options.frozen_boundary_replay(None) == {}
+    assert oracle_admission.frozen_boundary_replay(None) == {}
     boundary = SimpleNamespace(fixed_diagnostic_arm=True, sampling_state="sampling", schema="s", completed_relion_iteration=3,
                                consumer_relion_iteration=4, source_sha256="h", source_roles={}, runtime_config={},
                                map_lineage=[], refinement_state_fields={"healpix_order": 2})
-    sealed = command_options.frozen_boundary_replay(boundary)
+    sealed = oracle_admission.frozen_boundary_replay(boundary)
     assert sealed["sealed_sampling_state"] == "sampling"
     assert sealed["sealed_scoring_context"]["consumer_relion_iteration"] == 4
     assert sealed["frozen_refinement_state_fields"] == {"healpix_order": 2}
     boundary.fixed_diagnostic_arm = False
-    unsealed = command_options.frozen_boundary_replay(boundary)
+    unsealed = oracle_admission.frozen_boundary_replay(boundary)
     assert unsealed["frozen_refinement_state_fields"] == {"healpix_order": 2}
     assert unsealed["sealed_scoring_context"] is None
     assert unsealed["sealed_sampling_state"] is None

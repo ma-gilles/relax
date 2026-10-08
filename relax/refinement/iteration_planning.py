@@ -10,8 +10,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax import sampling
-from relax.dense.scoring_policy import _dense_global_scoring_dtype
-from relax.diagnostics.relion_replay import _sealed_sampling_base_grids
 from relax.helpers.convergence import RefinementState, _exhaustive_grid_order_for_state, healpix_angular_step
 from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.resolution import (
@@ -678,42 +676,6 @@ def coarse_pass1_rotations(
             "double-precision CUDA" if adaptive_pass1_use_float64 else "CUDA",
         )
     return adaptive_pass1_rotations
-
-
-def build_sealed_initial_coarse_grids(
-    sealed_sampling_state,
-    *,
-    initialized_healpix_order,
-    voxel_size,
-    symmetry: str,
-    log: logging.Logger,
-) -> CoarseGrids:
-    """Materialize and validate a schema-v3 sealed initial sampling grid."""
-
-    rotations, rotation_eulers, current_translations = _sealed_sampling_base_grids(
-        sealed_sampling_state,
-        voxel_size_angstrom=voxel_size,
-        dtype=_dense_global_scoring_dtype(),
-    )
-    healpix_order = int(sealed_sampling_state["healpix_order_original"])
-    if healpix_order != int(initialized_healpix_order):
-        raise ValueError(
-            "sealed sampling HEALPix order does not match initialized boundary: "
-            f"sealed={healpix_order} init={initialized_healpix_order}"
-        )
-    log.info(
-        "Frozen-boundary v3 directly materialized %d Euler rows and %d translations",
-        int(rotation_eulers.shape[0]),
-        int(current_translations.shape[0]),
-    )
-    return CoarseGrids(
-        rotation_grid=sampling.RotationGrid(
-            rotations=rotations, rotation_eulers=rotation_eulers,
-            healpix_order=healpix_order, symmetry=symmetry,
-        ),
-        base_translations=np.asarray(current_translations, dtype=np.float64),
-        translations=current_translations,
-    )
 
 
 @dataclass(frozen=True)

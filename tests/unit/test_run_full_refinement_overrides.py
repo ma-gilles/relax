@@ -896,7 +896,8 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     from helpers.refinement_results import refinement_result
     from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
-    from relax.refinement import command_options, full_refinement, iteration_loop
+    from relax.parity import oracle_admission
+    from relax.refinement import full_refinement, iteration_loop
     from relax.relion import relion_worker_scale
 
     # The controller's replay telemetry is archived as integers.
@@ -907,8 +908,8 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     assert saved["relion_follower_scale_replay_requested_iterations"].dtype == np.int64
     assert saved["relion_follower_scale_replay_applied_iterations"].tolist() == [1]
     replay, schedule = object(), object()
-    monkeypatch.setattr(command_options, "load_verified_dispatch_schedule",
-                        lambda *a, **k: command_options.VerifiedDispatchSchedule(schedule, [tmp_path]))
+    monkeypatch.setattr(oracle_admission, "load_verified_dispatch_schedule",
+                        lambda *a, **k: oracle_admission.VerifiedDispatchSchedule(schedule, [tmp_path]))
     monkeypatch.setattr(relion_worker_scale, "prepare_follower_topology",
                         lambda *a, **k: relion_worker_scale.PreparedFollowerTopology(
                             n_followers=0, replay=replay, reduction_mode=None, owners_by_iteration=None))

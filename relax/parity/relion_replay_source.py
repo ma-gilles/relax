@@ -39,6 +39,7 @@ from relax.diagnostics.relion_replay import (
     _prepare_final_replay_references,
     _resolve_replay_random_perturbation,
     _restore_convergence_state_from_replay_restart,
+    _sealed_sampling_base_grids,
     _select_final_replay_override,
     apply_final_replay_state,
     apply_iter_replay_overrides,
@@ -53,7 +54,7 @@ from relax.diagnostics.state_swap_runtime import _apply_state_swap_probe, _snaps
 from relax.helpers.env_flags import parse_env_true_flag
 from relax.refinement.final_sampling import FinalSamplingSettings, native_final_sampling_settings
 from relax.refinement.half_inputs import SigmaOffset
-from relax.refinement.iteration_planning import build_sealed_initial_coarse_grids
+from relax.refinement.iteration_planning import CoarseGrids
 from relax.refinement.mean_helpers import class_mixture_from_weights
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState
 from relax.refinement.refinement_options import (
@@ -568,6 +569,42 @@ class RelionReplaySource(InputSource):
         )
 
 
+
+
+def build_sealed_initial_coarse_grids(
+    sealed_sampling_state,
+    *,
+    initialized_healpix_order,
+    voxel_size,
+    symmetry: str,
+    log: logging.Logger,
+) -> CoarseGrids:
+    """Materialize and validate a schema-v3 sealed initial sampling grid."""
+
+    rotations, rotation_eulers, current_translations = _sealed_sampling_base_grids(
+        sealed_sampling_state,
+        voxel_size_angstrom=voxel_size,
+        dtype=_dense_global_scoring_dtype(),
+    )
+    healpix_order = int(sealed_sampling_state["healpix_order_original"])
+    if healpix_order != int(initialized_healpix_order):
+        raise ValueError(
+            "sealed sampling HEALPix order does not match initialized boundary: "
+            f"sealed={healpix_order} init={initialized_healpix_order}"
+        )
+    log.info(
+        "Frozen-boundary v3 directly materialized %d Euler rows and %d translations",
+        int(rotation_eulers.shape[0]),
+        int(current_translations.shape[0]),
+    )
+    return CoarseGrids(
+        rotation_grid=sampling.RotationGrid(
+            rotations=rotations, rotation_eulers=rotation_eulers,
+            healpix_order=healpix_order, symmetry=symmetry,
+        ),
+        base_translations=np.asarray(current_translations, dtype=np.float64),
+        translations=current_translations,
+    )
 
 
 def _log_replayed_translation_grid_change(settings, *, replay_dir, replay_prefix, n_classes):

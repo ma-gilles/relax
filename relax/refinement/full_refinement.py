@@ -43,6 +43,7 @@ from relax.diagnostics.state_swap_probe import (
 from relax.helpers import xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
+from relax.parity import oracle_admission, startup_noise_inputs
 from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
@@ -615,7 +616,7 @@ def main(command=None):
     )
     group_particle_source = prepared_particle_groups.source
     particle_groups = prepared_particle_groups.layout
-    follower_routing = command_options.admit_follower_routing(
+    follower_routing = oracle_admission.admit_follower_routing(
         args, group_particle_source, particle_groups, log=logger
     )
     relion_dispatch_schedule = follower_routing.schedule
@@ -786,13 +787,13 @@ def main(command=None):
 
     optics_group_ids_per_half = None
     if frozen_boundary is not None:
-        initial_noise = startup_noise.frozen_boundary_noise(frozen_boundary, ds.image_shape)
+        initial_noise = startup_noise_inputs.frozen_boundary_noise(frozen_boundary, ds.image_shape)
         logger.info(
             "Initial noise/tau2 state is owned by frozen boundary %s",
             frozen_boundary.source_dir,
         )
     elif args.init_noise_from_npz is not None:
-        initial_noise = startup_noise.archived_noise(
+        initial_noise = startup_noise_inputs.archived_noise(
             args.init_noise_from_npz, args.init_noise_iter, ds.image_shape, log=logger,
         )
     elif args.relion_init_dir is not None:
@@ -852,7 +853,7 @@ def main(command=None):
     if use_relion_live_initial_noise:
         _refuse_live_initial_noise(args, frozen_boundary=frozen_boundary, half_sets=half_sets,
                                    mask_params=relion_mask_params)
-        relion_live_initial_sigma2, relion_live_initial_noise_variance = startup_noise.live_initial_noise(
+        relion_live_initial_sigma2, relion_live_initial_noise_variance = startup_noise_inputs.live_initial_noise(
             ds, half_sets, mask_params=relion_mask_params, log=logger,
         )
     if args.relion_init_dir is not None and frozen_boundary is None:
@@ -1107,7 +1108,7 @@ def main(command=None):
             effective_tau2_fudge=effective_tau2_fudge,
             effective_perturb_seed=effective_perturb_seed,
         )
-    restart_provenance = command_options.resolve_restart_provenance(args, log=logger)
+    restart_provenance = oracle_admission.resolve_restart_provenance(args, log=logger)
     logger.info(
         "SamplingPerturbation seed: %s%s",
         "unseeded" if effective_perturb_seed is None else str(effective_perturb_seed),
@@ -1306,7 +1307,7 @@ def main(command=None):
                     final_sampling_replay_relion_dir=final_replay.sampling_dir,
                     state_swap_probe=state_swap_probe,
                     follower_topology=follower_topology,
-                    **command_options.frozen_boundary_replay(frozen_boundary),
+                    **oracle_admission.frozen_boundary_replay(frozen_boundary),
                 ),
                 run_options,
             ),

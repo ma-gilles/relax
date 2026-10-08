@@ -19,7 +19,9 @@ import relax.refinement.finalization as finalization
 import relax.refinement.iteration_loop as iteration_loop
 import relax.refinement.iteration_planning as iteration_planning
 import relax.sampling as sampling_module
+from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.diagnostics.relion_replay import _sealed_sampling_base_grids
+from relax.parity import relion_replay_source
 from relax.sampling import _translation_grid_for_class_count
 
 pytestmark = pytest.mark.unit
@@ -63,7 +65,7 @@ def _initial_grids(**overrides):
     translation_range = kwargs.pop("init_translation_range")
     translation_step = kwargs.pop("init_translation_step")
     if sealed_sampling_state is not None:
-        return iteration_planning.build_sealed_initial_coarse_grids(
+        return relion_replay_source.build_sealed_initial_coarse_grids(
             sealed_sampling_state,
             initialized_healpix_order=initialized_healpix_order,
             voxel_size=kwargs["voxel_size"],
@@ -75,7 +77,7 @@ def _initial_grids(**overrides):
         kwargs.pop("translations"),
         translation_range=translation_range,
         translation_step=translation_step,
-        dtype=iteration_planning._dense_global_scoring_dtype(),
+        dtype=_dense_global_scoring_dtype(),
         **kwargs,
     )
 
@@ -116,14 +118,14 @@ def test_sealed_state_must_sit_at_the_initialized_order():
 def test_relion_translation_grid_pairs_with_the_canonical_rotation_grid(monkeypatch):
     monkeypatch.setattr(sampling_module, "relion_scoring_rotation_grid", _fake_rotation_grid)
     grids = _initial_grids(n_classes=4)
-    _rotation_grid_rotations = _fake_rotation_grid(3, dtype=iteration_planning._dense_global_scoring_dtype())
+    _rotation_grid_rotations = _fake_rotation_grid(3, dtype=_dense_global_scoring_dtype())
     rotations = _rotation_grid_rotations.rotations
     eulers = _rotation_grid_rotations.rotation_eulers
     assert _same(grids.rotation_grid.rotations, rotations) and _same(grids.rotation_grid.rotation_eulers, eulers)
     expected = sampling_module._relion_base_translation_grid(4.25, 1.416667, n_classes=4, voxel_size=2.0)
     assert _same(grids.base_translations, expected)
     assert isinstance(grids.translations, jnp.ndarray)
-    assert _same(grids.translations, jnp.asarray(expected, dtype=iteration_planning._dense_global_scoring_dtype()))
+    assert _same(grids.translations, jnp.asarray(expected, dtype=_dense_global_scoring_dtype()))
     assert grids.rotation_grid.healpix_order == 3
 
 
@@ -132,7 +134,7 @@ def test_caller_translation_table_is_kept_as_the_base_grid(monkeypatch):
     table = np.asarray([[0.5, -1.0], [0.0, 0.0]], dtype=np.float32)
     grids = _initial_grids(translations=table)
     assert grids.base_translations.dtype == np.float64 and _same(grids.base_translations, table.astype(np.float64))
-    assert _same(grids.translations, jnp.asarray(table, dtype=iteration_planning._dense_global_scoring_dtype()))
+    assert _same(grids.translations, jnp.asarray(table, dtype=_dense_global_scoring_dtype()))
 
 
 def test_controller_materializes_explicit_coarse_grid_variants():
@@ -147,7 +149,7 @@ def test_controller_materializes_explicit_coarse_grid_variants():
         "dtype",
     )
     assert tuple(
-        inspect.signature(iteration_planning.build_sealed_initial_coarse_grids).parameters
+        inspect.signature(relion_replay_source.build_sealed_initial_coarse_grids).parameters
     ) == (
         "sealed_sampling_state",
         "initialized_healpix_order",
