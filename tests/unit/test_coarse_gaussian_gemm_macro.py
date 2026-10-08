@@ -15,7 +15,7 @@ from helpers.pass1_programs import clear_pass1_programs
 
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion import relion_ctf
-from relax.scoring import coarse_gaussian_gemm, pass1_batch, scoring, significance
+from relax.scoring import coarse_gaussian_gemm, pass1_batch, pass1_program, scoring, significance
 from relax.scoring.significant_samples import significant_sample_ids
 
 
@@ -739,7 +739,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
         )
 
     clear_pass1_programs(request)
-    monkeypatch.setattr(significance, "_relion_coarse_gaussian_gemm_scores_jit", controlled_scores)
+    monkeypatch.setattr(pass1_program, "_relion_coarse_gaussian_gemm_scores_jit", controlled_scores)
 
     dataset = ExactPass1Dataset()
     rotations = np.tile(np.eye(3, dtype=np.float32), (16, 1, 1))
@@ -940,9 +940,9 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         t1 = jnp.where(live & (image_id == 1) & ((class_index == 0) & (rotation_index == 0))[None, :], -0.05, t1)
         return jnp.stack([t0, t1], axis=-1).astype(jnp.float32)
 
-    # The one-program pass 1 (significance._coarse_pass1_blocks) traces its scorer.
+    # The one-program pass 1 (pass1_program._coarse_pass1_blocks) traces its scorer.
     clear_pass1_programs(request)
-    monkeypatch.setattr(significance, "_relion_coarse_gaussian_gemm_scores_jit", traced_designed_scores)
+    monkeypatch.setattr(pass1_program, "_relion_coarse_gaussian_gemm_scores_jit", traced_designed_scores)
     jax.clear_caches()
 
     original_pad = pass1_batch._pad_significance_preprocess_inputs
@@ -1298,7 +1298,7 @@ def _pass1_case(seed=20261002):
         (jnp.asarray(case["class_prior"][k]), jnp.asarray(case["rotation_prior"][k, r0 : r0 + block]))
         for k, r0, _, _ in case["blocks"]
     )
-    case["state"] = significance._pass1_initial_state(
+    case["state"] = pass1_program._pass1_initial_state(
         (
             jnp.full(n_images, -jnp.inf, dtype=jnp.float32),
             jnp.zeros(n_images, dtype=jnp.float32),
@@ -1335,7 +1335,7 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
 
     case = _pass1_case()
     n_classes, n_rot, n_images, n_trans = case["n_classes"], case["n_rot"], case["n_images"], case["n_trans"]
-    state, values, dumps = significance._coarse_pass1_blocks(
+    state, values, dumps = pass1_program._coarse_pass1_blocks(
         case["state"],
         case["cache"],
         case["shifted"],
@@ -1405,7 +1405,7 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
     case = _pass1_case(seed=7)
     static = _pass1_static(case, score_kind, False)
     common = (case["shifted"], case["weight"], case["initial"], 2)
-    whole_state, whole_values, _ = significance._coarse_pass1_blocks(
+    whole_state, whole_values, _ = pass1_program._coarse_pass1_blocks(
         case["state"], case["cache"], *common, case["prior_terms"], case["translation_prior"],
         blocks=case["blocks"], **static,
     )
@@ -1413,12 +1413,12 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
     for block, terms in zip(case["blocks"], case["prior_terms"]):
         class_index, r0, rows, block_rows = block
         reference = jnp.pad(case["cache"][class_index, r0 : r0 + rows], ((0, block_rows - rows), (0, 0)))
-        block_state, block_values, _ = significance._coarse_pass1_block(
-            significance._class_block_state(state, class_index), reference, *common, terms,
+        block_state, block_values, _ = pass1_program._coarse_pass1_block(
+            pass1_program._class_block_state(state, class_index), reference, *common, terms,
             case["translation_prior"], jnp.int32(class_index), jnp.int32(r0), rows=rows, block_rows=block_rows,
             **static,
         )
-        state = significance._merge_class_block_state(state, block_state, class_index)
+        state = pass1_program._merge_class_block_state(state, block_state, class_index)
         values.append(block_values)
     # Separate programs may pick different GEMM algorithms for the same block shapes: on an A100 the
     # CC values of a per-block fold and one call differed by 2.6e-6 relative (2026-10-02).
@@ -1460,9 +1460,9 @@ def test_coarse_pass1_dump_rows_are_the_target_rows_scores():
         case["state"], case["cache"], case["shifted"], case["weight"], case["initial"], 2,
         case["prior_terms"], case["translation_prior"],
     )
-    plain_state, plain_values, _ = significance._coarse_pass1_blocks(*args, blocks=case["blocks"], **static)
+    plain_state, plain_values, _ = pass1_program._coarse_pass1_blocks(*args, blocks=case["blocks"], **static)
     targets = np.asarray([2, 0])
-    state, values, dumps = significance._coarse_pass1_blocks(
+    state, values, dumps = pass1_program._coarse_pass1_blocks(
         *args, jnp.asarray(targets, dtype=jnp.int32), blocks=case["blocks"], **static
     )
     for got, want in zip(jax.tree_util.tree_leaves((state, values)), jax.tree_util.tree_leaves((plain_state, plain_values))):

@@ -6531,6 +6531,7 @@ class TestRelionModeSmokeTest:
         import recovar.cuda_backproject as cuda_backproject
 
         import relax.helpers.projection as projection_module
+        import relax.scoring.pass1_program as pass1_program
         import relax.scoring.scoring as scoring_module
         import relax.scoring.significance as significance_module
         from relax.cuda import kernels as em_cuda_kernels
@@ -6595,9 +6596,9 @@ class TestRelionModeSmokeTest:
                 (n_images, 2, n_trans),
             )
 
-        # The pass-1 program (significance) and the scorer module each bind the scorer.
+        # The pass-1 program (pass1_program) and the scorer module each bind the scorer.
         clear_pass1_programs(request)
-        for module in (scoring_module, significance_module):
+        for module in (scoring_module, pass1_program):
             monkeypatch.setattr(module, "_relion_coarse_normalized_cc_gemm_scores_jit", fake_cc_gemm_scores)
         monkeypatch.setattr(
             em_cuda_kernels,
