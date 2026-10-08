@@ -110,9 +110,8 @@ def run_tomo_initial_model_estep(
     from relax.refinement.tomo_half import score_tomo_half, tomo_translation_grids
 
     particle_ids = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
-    K = int(state.K)
     if particle_ids.size == 0:
-        empty = [_empty_accumulator(state, k, h) for h in (0, 1) for k in range(K)]
+        empty = [_empty_accumulator(state, k, h) for h in (0, 1) for k in range(state.K)]
         return DenseInitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "tomo"})
     if not state.pseudo_halfsets:
         raise NotImplementedError("subtomogram InitialModel backprojects into RELION's two pseudo-halfsets")
@@ -127,20 +126,20 @@ def run_tomo_initial_model_estep(
     n_coarse_rot = int(sampling.rotation_grid_size(order))
     relion_of_recovar = relion_order_of_recovar_rotations(order)
     prior = np.asarray(_recovar_order_prior(np.asarray(class_rotation_log_prior), relion_of_recovar), dtype=np.float32)
-    if prior.shape != (K, n_coarse_rot):
-        raise ValueError(f"the class/direction prior must be [K, R] = {(K, n_coarse_rot)}, got {prior.shape}")
+    if prior.shape != (state.K, n_coarse_rot):
+        raise ValueError(f"the class/direction prior must be [K, R] = {(state.K, n_coarse_rot)}, got {prior.shape}")
     projector_half = np.asarray(relion_projector_half_by_class)
     old = np.asarray(previous_offsets_px, dtype=np.float64).reshape(particle_ids.size, 3)
     # The resident pass reads only the projector halves (a NaN stand-in shows any other read).
-    volume_stand_in = np.full((K, 1) if K > 1 else (1,), np.nan, dtype=np.complex64)
+    volume_stand_in = np.full((state.K, 1) if state.K > 1 else (1,), np.nan, dtype=np.complex64)
     scored = score_tomo_half(
         half,
         volume=volume_stand_in,
         noise_variance=noise_variance,
-        relion_projector_half=projector_half if K > 1 else projector_half[0],
+        relion_projector_half=projector_half if state.K > 1 else projector_half[0],
         relion_projector_r_max=int(relion_projector_r_max),
         sampling=tomo_sampling,
-        rotation_log_prior=prior if K > 1 else prior[0],
+        rotation_log_prior=prior if state.K > 1 else prior[0],
         old_offsets_px=old,
         sigma_offset_angst=float(sigma_offset_angstrom),
         adaptive_fraction=RELION_ADAPTIVE_FRACTION,
@@ -171,10 +170,10 @@ def run_tomo_initial_model_estep(
     mstep_shape = relion_backprojector_volume_shape(
         half.volume_shape, int(padding_factor), current_size=int(tomo_sampling.fine_size)
     )
-    if K > 1:
+    if state.K > 1:
         result = _class_segmented_em_result(
             scored.pass2,
-            n_classes=K,
+            n_classes=state.K,
             class_posterior_sums_from_noise=True,
             return_profile=False,
             host_accumulators=True,
@@ -217,7 +216,7 @@ def run_tomo_initial_model_estep(
         tomo_particles.relion_gpu_old_offsets(old) + np.asarray(fine_px, dtype=np.float64)[pose % int(fine_px.shape[0])]
     )
     meta.update(offset_dims=3, significant_counts=counts.astype(np.int32))  # nsig as Refine3D writes it
-    _add_accumulator_weight_meta(meta, accumulators, K)
+    _add_accumulator_weight_meta(meta, accumulators, state.K)
     meta["pass2_engine"] = "tomo"
     meta["halfset_ids"] = (0, 1)
     meta["joint_halfset_particle_stream"] = True

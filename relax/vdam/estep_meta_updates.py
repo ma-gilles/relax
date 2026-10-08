@@ -206,8 +206,7 @@ def update_probabilities_from_estep(
         # Its sum_weight is accumulated from the same significant-pruned
         # reconstruction weights as wsum_sigma2_offset, rather than from the
         # unpruned per-image class responsibilities.
-        offset_dims = float(sums.offset_dims)
-        sigma2_offset += (1.0 - my_mu) * wsum_sigma2_offset / (offset_dims * sigma2_offset_sumw)
+        sigma2_offset += (1.0 - my_mu) * wsum_sigma2_offset / (sums.offset_dims * sigma2_offset_sumw)
         new_state.sigma2_offset = max(float(sigma2_offset), MIN_SIGMA2_OFFSET_ANGSTROM2)
 
     return new_state

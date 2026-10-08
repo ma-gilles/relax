@@ -193,8 +193,6 @@ def restore_subset_order_for_continuation(
     of guessing when either convergence flag is already set.
     """
 
-    through_iteration = int(through_iteration)
-    nr_particles = int(nr_particles)
     if through_iteration < 0 or through_iteration > int(state.nr_iter):
         raise ValueError("continuation iteration must be between 0 and nr_iter")
     if int(state.iter) != through_iteration:

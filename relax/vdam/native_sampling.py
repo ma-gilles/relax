@@ -138,7 +138,6 @@ def _n_directions_for_healpix_order(healpix_order: int) -> int:
 def _initial_sampling_state(
     opts: NativeInitialModelOptions, *, pixel_size: float, subtomogram: bool = False
 ) -> NativeSamplingState:
-    pixel_size = float(pixel_size)
     if pixel_size <= 0.0:
         raise ValueError(f"pixel_size must be positive, got {pixel_size}")
     return NativeSamplingState(
@@ -172,12 +171,11 @@ def _record_native_sampling_post_iteration(
     the sampling decision for iteration ``N`` must only see the stall counter
     written by iteration ``N - 1``.
     """
-    current_resolution = float(state.current_resolution)
-    if current_resolution <= float(sampling_state.last_current_resolution) + 0.0001:
+    if state.current_resolution <= float(sampling_state.last_current_resolution) + 0.0001:
         sampling_state.nr_iter_wo_resol_gain += 1
     else:
         sampling_state.nr_iter_wo_resol_gain = 0
-    sampling_state.last_current_resolution = current_resolution
+    sampling_state.last_current_resolution = state.current_resolution
     meta["sampling_nr_iter_wo_resol_gain"] = int(sampling_state.nr_iter_wo_resol_gain)
     meta["sampling_nr_iter_wo_large_hidden_variable_changes"] = int(
         sampling_state.nr_iter_wo_large_hidden_variable_changes
@@ -649,17 +647,17 @@ def _build_sampling_plan(
     defer_fine_rotations: bool = False,
 ) -> NativeSamplingPlan:
     if sampling_state is None:
-        healpix_order = int(opts.healpix_order)
-        oversampling = int(opts.oversampling)
-        offset_range_px = offset_range_angstrom = float(opts.offset_range_px)
-        offset_step_px = offset_step_angstrom = float(opts.offset_step_px)
+        healpix_order = opts.healpix_order
+        oversampling = opts.oversampling
+        offset_range_px = offset_range_angstrom = opts.offset_range_px
+        offset_step_px = offset_step_angstrom = opts.offset_step_px
     else:
-        healpix_order = int(sampling_state.healpix_order)
-        oversampling = int(sampling_state.adaptive_oversampling)
-        offset_range_px = float(sampling_state.offset_range_px)
-        offset_step_px = float(sampling_state.offset_step_px)
-        offset_range_angstrom = float(sampling_state.offset_range_angstrom)
-        offset_step_angstrom = float(sampling_state.offset_step_angstrom)
+        healpix_order = sampling_state.healpix_order
+        oversampling = sampling_state.adaptive_oversampling
+        offset_range_px = sampling_state.offset_range_px
+        offset_step_px = sampling_state.offset_step_px
+        offset_range_angstrom = sampling_state.offset_range_angstrom
+        offset_step_angstrom = sampling_state.offset_step_angstrom
     if oversampling < 0:
         raise ValueError("oversampling must be >= 0")
 
@@ -784,7 +782,6 @@ def _translation_log_prior(
     ``docs/math/relion_initial_model_em_parity_conventions.md#prior-preparation``.
     """
 
-    sigma_angstrom = float(sigma_angstrom)
     if sigma_angstrom <= 0.0:
         raise ValueError("translation_sigma_angstrom must be positive when provided")
     translations_arr = np.asarray(translations, dtype=np.float64)

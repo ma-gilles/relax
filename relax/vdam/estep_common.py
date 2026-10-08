@@ -279,11 +279,9 @@ def _add_accumulator_weight_meta(meta: dict[str, Any], accumulators: list[VdamAc
     sums = np.zeros(int(K), dtype=np.float64)
     halfset_sums: dict[int, np.ndarray] = {}
     for accum in accumulators:
-        class_idx = int(accum.class_idx)
-        halfset_idx = int(accum.halfset_idx)
         value = float(np.sum(np.asarray(accum.weight, dtype=np.float64)))
-        sums[class_idx] += value
-        halfset_sums.setdefault(halfset_idx, np.zeros(int(K), dtype=np.float64))[class_idx] += value
+        sums[accum.class_idx] += value
+        halfset_sums.setdefault(accum.halfset_idx, np.zeros(int(K), dtype=np.float64))[accum.class_idx] += value
     meta["class_bpref_weight_sums"] = sums
     for halfset_idx, values in sorted(halfset_sums.items()):
         meta[f"halfset_{halfset_idx}_class_bpref_weight_sums"] = values

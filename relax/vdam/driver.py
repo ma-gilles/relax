@@ -525,8 +525,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             if opts.pilot_controls is None
             else opts.pilot_controls.subset_sizes(n_particles)
         )
-        grad_ini_frac = float(opts.grad_ini_frac)
-        grad_fin_frac = float(opts.grad_fin_frac)
+        grad_ini_frac = opts.grad_ini_frac
+        grad_fin_frac = opts.grad_fin_frac
         continuation_phase_lengths = None
         sampling_state = _initial_sampling_state(opts, pixel_size=float(dataset.voxel_size), subtomogram=tomo)
         state, optics_group_by_particle = (
@@ -537,10 +537,10 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:
         vdam_checkpoint._validate_continuation_order_replay(continuation)
-        grad_ini_subset_size = int(continuation.grad_ini_subset_size)
-        grad_fin_subset_size = int(continuation.grad_fin_subset_size)
-        grad_ini_frac = float(continuation.grad_ini_frac)
-        grad_fin_frac = float(continuation.grad_fin_frac)
+        grad_ini_subset_size = continuation.grad_ini_subset_size
+        grad_fin_subset_size = continuation.grad_fin_subset_size
+        grad_ini_frac = continuation.grad_ini_frac
+        grad_fin_frac = continuation.grad_fin_frac
         continuation_phase_lengths = phase_lengths_from_effective_fractions(
             int(continuation.state.nr_iter),
             grad_ini_frac,

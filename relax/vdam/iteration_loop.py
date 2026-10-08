@@ -253,7 +253,6 @@ def run_vdam_iterations(
         float(grad_fin_frac),
         phase_lengths,
     )
-    start_iteration = int(start_iteration)
     if start_iteration < 0 or start_iteration >= int(state.nr_iter):
         raise ValueError("start_iteration must be between 0 and state.nr_iter - 1")
     if int(state.iter) != start_iteration:

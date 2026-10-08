@@ -325,10 +325,9 @@ def _resolve_class_inputs(
     if config.relion_projector_half_by_class is None or config.relion_projector_r_max is None:
         raise ValueError("the E-step needs the iteration's RELION projector: relion_projector_half_by_class and _r_max")
     relion_projector_half_by_class = np.asarray(config.relion_projector_half_by_class)
-    relion_projector_r_max = int(config.relion_projector_r_max)
     means = np.full((int(state.K), 1), np.nan, dtype=np.complex64)
     mean_variance = np.full((int(state.K), 1), np.nan, dtype=np.float32)
-    return means, mean_variance, relion_projector_half_by_class, relion_projector_r_max
+    return means, mean_variance, relion_projector_half_by_class, config.relion_projector_r_max
 
 
 def run_dense_initial_model_estep(
