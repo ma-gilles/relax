@@ -133,7 +133,6 @@ from relax.refinement.mean_helpers import (
     reconstruct_unregularized_class_means,
     reconstruct_unregularized_k1_halfmaps,
     reference_model_from_snapshot,
-    share_kclass_volume_signs,
     shared_tau2_per_half,
 )
 from relax.refinement.noise_updates import (
@@ -1337,7 +1336,6 @@ def refine_single_volume(
                 if need_unreg_means
                 else [None, None]
             )
-            share_kclass_volume_signs(reference_model.maps, unreg_means)
         else:
             unreg_means = (
                 reconstruct_unregularized_k1_halfmaps(

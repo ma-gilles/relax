@@ -127,9 +127,6 @@ def test_unregularized_reconstruction_variants_expose_dependencies():
     assert tuple(inspect.signature(mean_helpers_module.align_k1_volume_signs).parameters) == (
         "means", "previous_means", "unregularized_means", "volume_shape",
     )
-    assert tuple(inspect.signature(mean_helpers_module.share_kclass_volume_signs).parameters) == (
-        "means", "unregularized_means",
-    )
     for name in (
         "UnregularizedMeanState",
         "UnregularizedAccumulatorState",

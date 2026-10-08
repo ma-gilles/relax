@@ -9663,7 +9663,9 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
     previous = reconstructed.copy()
     previous[1::2] *= -1
     unregularized = reconstructed * np.complex64(2)
-    means = [jnp.asarray(reconstructed), jnp.asarray(reconstructed)]
+    # A Class3D M-step leaves both halves one shared class stack.
+    shared = jnp.asarray(reconstructed)
+    means = [shared, shared]
     calls = []
 
     def reconstruct(_weight, numerator, *_args, **_kwargs):
@@ -9686,7 +9688,6 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
         if need_unreg
         else [None, None]
     )
-    mean_helpers_module.share_kclass_volume_signs(means, result)
     assert_matches(means[0], reconstructed)
     assert_matches(means[1], reconstructed)
     assert means[0] is means[1]

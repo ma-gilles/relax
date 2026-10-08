@@ -78,7 +78,9 @@ def copy_first_class_to_every_class(
     # After the CC iteration RELION copies class 0's model to every class for the seed iteration:
     # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
     # (maximizationOtherParameters, ml_optimiser.cpp:6423-6437).
-    reference_model.maps = [None if mean is None else _copy_first_class(mean) for mean in reference_model.maps]
+    # One copy serves both halves: a Class3D M-step leaves the two halves one shared class stack.
+    first_class_maps = None if reference_model.maps[0] is None else _copy_first_class(reference_model.maps[0])
+    reference_model.maps = [first_class_maps, first_class_maps]
     reference_model.tau2 = _copy_first_class(reference_model.tau2)
     reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
     copied = mstep._replace(

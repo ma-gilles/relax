@@ -1911,15 +1911,6 @@ def align_k1_volume_signs(means, previous_means, unregularized_means, volume_sha
             logger.info("Aligned half-%d volume sign to the previous reference", k + 1)
 
 
-def share_kclass_volume_signs(means, unregularized_means) -> None:
-    """Keep the image/CTF-determined K-class sign and share its class stack, in place (slot 1 of ``means``
-    and ``unregularized_means`` takes slot 0's)."""
-
-    means[1] = means[0]
-    if unregularized_means[0] is not None:
-        unregularized_means[1] = unregularized_means[0]
-
-
 def _large_irfft_requires_explicit_normalization(volume_shape) -> bool:
     """Return whether XLA's inverse-FFT normalization exceeds int32 range."""
 
