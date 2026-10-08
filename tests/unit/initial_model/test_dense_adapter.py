@@ -13,7 +13,6 @@ from relax.local.local_layout import LocalHypothesisLayout
 from relax.vdam.adaptive_estep import _resolve_sparse_pass1_current_size, _safe_coarse_significance_image_batch_size
 from relax.vdam.dense_adapter import (
     _resolve_class_inputs,
-    class_log_priors_from_state,
     prepare_relion_projector_class_inputs_and_power,
     run_dense_initial_model_estep,
 )
@@ -194,20 +193,6 @@ def test_arrays_to_accumulators_splits_grouped_halfsets():
     assert not np.array_equal(actual[0].weight, actual[1].weight)
 
 
-def test_class_log_priors_from_state_normalizes_weights():
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
-    state.pdf_class = np.asarray([2.0, 1.0])
-    np.testing.assert_allclose(class_log_priors_from_state(state), np.log([2.0 / 3.0, 1.0 / 3.0]))
-
-
-def test_class_log_priors_from_state_allows_inactive_class():
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
-    state.pdf_class = np.asarray([1.0, 0.0])
-    out = class_log_priors_from_state(state)
-    assert out[0] == 0.0
-    assert out[1] < -1.0e20
-
-
 def _capture_adaptive_route(monkeypatch):
     """Replace the adaptive E-step and return the keyword arguments it was called with."""
     calls = []
@@ -249,7 +234,8 @@ def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_ada
     assert len(calls) == 1
     assert_matches(calls[0]["joint_particle_ids"], [3, 0, 2])
     assert_matches(calls[0]["joint_halfset_ids"], [1, 0, 1])
-    np.testing.assert_allclose(calls[0]["class_log_priors"], np.log([0.75, 0.25]))
+    # Class priors travel in the joint class/direction prior: the engine's own class term is zero.
+    assert_matches(calls[0]["class_log_priors"], np.zeros(2))
     assert calls[0]["engine_kwargs"]["current_size"] == 8
     assert calls[0]["relion_projector_r_max"] == 3
     assert "pass2_engines" in result.meta and "coarse_engine_calls" in result.meta

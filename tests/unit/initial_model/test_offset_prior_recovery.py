@@ -29,7 +29,7 @@ def test_initialmodel_fine_children_inherit_frozen_relion_parent_prior():
         np.ones(5, np.float32), SimpleNamespace(**fields),
         np.asarray([[4.2, -14.1]], np.float32),
         sigma_offset_angstrom=10,
-        class_log_priors=np.zeros(4, np.float64), pass1_healpix_order=1,
+        pass1_healpix_order=1,
     )
     # RELION row114 capture retained by Q donor d1f2f9f934f1.
     expected = np.asarray([[-7.8247542]], np.float32)

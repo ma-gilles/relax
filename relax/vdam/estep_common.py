@@ -38,7 +38,6 @@ class DenseInitialModelEstepConfig:
     rotation_block_size: int = 5000
     coarse_engine: str = "auto"
     padding_factor: int = 1
-    class_log_priors: Any | None = None
     relion_projector_half_by_class: Any | None = None
     relion_projector_r_max: int | None = None
     engine_kwargs: dict[str, Any] = field(default_factory=dict)

@@ -37,7 +37,6 @@ from relax.vdam.state import InitialModelState
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE = 256
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB = 32
 
-_INACTIVE_CLASS_LOG_PRIOR = -1.0e30
 _RELION_PROJECTOR_DUMP_DIR_ENV = "RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
 # VDAM prepares its projector one way: the device FFT in double, narrowed to
 # the complex64 slab that RELION's GPU projector holds as a float texture
@@ -154,7 +153,6 @@ def _dense_estep_config(
     sampling_plan: NativeSamplingPlan,
     translation_offsets: np.ndarray,
     sigma_offset_angstrom: float,
-    class_log_priors: np.ndarray,
     pass1_healpix_order: int,
 ) -> DenseInitialModelEstepConfig:
     image_pre_shifts = relion_round_away_from_zero(translation_offsets)
@@ -253,25 +251,8 @@ def _dense_estep_config(
         rotation_block_size=int(opts.rotation_block_size),
         coarse_engine=str(opts.coarse_engine),
         padding_factor=int(opts.padding_factor),
-        class_log_priors=class_log_priors,
         engine_kwargs=engine_kwargs,
     )
-
-
-def class_log_priors_from_state(state: InitialModelState) -> np.ndarray:
-    """Log class priors from ``state.pdf_class`` (collapsed classes get a finite sentinel)."""
-    weights = np.asarray(state.pdf_class, dtype=np.float64)
-    if weights.shape != (state.K,):
-        raise ValueError(f"state.pdf_class must have shape ({state.K},), got {weights.shape}")
-    if not np.all(np.isfinite(weights)) or np.any(weights < 0.0):
-        raise ValueError("state.pdf_class must contain non-negative finite class probabilities")
-    total = float(np.sum(weights))
-    if total <= 0.0:
-        raise ValueError("state.pdf_class must contain at least one positive class probability")
-    out = np.full(state.K, _INACTIVE_CLASS_LOG_PRIOR, dtype=np.float64)
-    positive = weights > 0.0
-    out[positive] = np.log(weights[positive] / total)
-    return out
 
 
 def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEstepConfig) -> dict[str, Any]:
@@ -363,9 +344,6 @@ def run_dense_initial_model_estep(
     VDAM's one E-step route is the adaptive pass-1/pass-2 route on the
     device-resident pass 2; the dense E-step was removed on 2026-10-03.
     """
-    class_log_priors = (
-        class_log_priors_from_state(state) if config.class_log_priors is None else np.asarray(config.class_log_priors)
-    )
     engine_kwargs = _dense_engine_kwargs(state, config)
     selected_particle_ids = (
         np.arange(int(experiment_dataset.n_images), dtype=np.int64)
@@ -385,7 +363,8 @@ def run_dense_initial_model_estep(
         experiment_dataset,
         state,
         config,
-        class_log_priors=class_log_priors,
+        # The class priors travel in the joint class/direction prior (class_rotation_log_prior).
+        class_log_priors=np.zeros(int(state.K), dtype=np.float64),
         joint_particle_ids=selected_particle_ids,
         joint_halfset_ids=selected_halfset_ids,
         means=means,

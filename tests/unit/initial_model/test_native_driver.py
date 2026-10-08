@@ -2207,7 +2207,6 @@ def test_dense_estep_config_splits_fine_and_coarse_translation_priors():
         plan,
         np.zeros((1, 2), dtype=np.float32),
         sigma_offset_angstrom=4.0,
-        class_log_priors=np.zeros(opts.nr_classes, dtype=np.float64),
         pass1_healpix_order=plan.healpix_order,
     )
 
@@ -2238,7 +2237,6 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
         plan,
         np.zeros((1, 2), dtype=np.float32),
         sigma_offset_angstrom=10.0,
-        class_log_priors=np.zeros(opts.nr_classes, dtype=np.float64),
         pass1_healpix_order=plan.healpix_order,
     )
 

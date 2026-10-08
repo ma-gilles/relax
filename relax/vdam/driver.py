@@ -275,7 +275,6 @@ def _native_expectation_step(
             sampling_plan,
             particle_state.translation_offsets,
             sigma_offset_angstrom=sigma_offset_angstrom,
-            class_log_priors=np.zeros(int(state.K), dtype=np.float64),
             pass1_healpix_order=pass1_healpix_order,
         )
         if optics_group_ids is not None:
