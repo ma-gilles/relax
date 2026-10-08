@@ -55,7 +55,7 @@ from relax.scoring.coarse_gaussian_gemm import (
 )
 from relax.scoring.coarse_layout import compact_projection_window_positions, plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
-from relax.scoring.pass1_results import BatchOutputs
+from relax.scoring.pass1_results import BatchOutputs, Pass1Outputs
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
     _relion_coarse_gaussian_gemm_scores_jit,
@@ -896,10 +896,6 @@ def _compute_k_class_significance_batched(
     coarse_significance_device_enabled = bool(collect_significance)
     # Per class: each class's slice of the joint support mask is compacted on
     # its own, exactly as the host path encodes each class's slice.
-    device_significance_counts = [[] for _ in range(int(n_classes))]
-    device_significance_polarity = [[] for _ in range(int(n_classes))]
-    device_significance_ids = [[] for _ in range(int(n_classes))]
-    device_significance_starts = [[] for _ in range(int(n_classes))]
     if coarse_significance_device_enabled:
         from relax.sparse_pass2.resident_significance import (
             compact_batch_significance_classes,
@@ -1351,47 +1347,18 @@ def _compute_k_class_significance_batched(
     pass1_prior_terms = None
     exact_rotation_prior = None
 
-    sig_rot_any = np.zeros((n_classes, n_rot), dtype=bool)
-    n_sig_all = np.empty(n_images, dtype=np.int32)
-    cutoff_count_all = np.empty(n_images, dtype=np.int32)
-    hard_assignment = np.empty(n_images, dtype=np.int32)
-    class_assignment = np.empty(n_images, dtype=np.int32)
-    significant_sample_indices = [[None] * n_images for _ in range(n_classes)] if collect_significance else None
-    normalization_log_z = np.empty(n_images, dtype=np.float64)
-    normalization_log_evidence = np.empty(n_images, dtype=np.float64)
-    log_evidence = np.empty(n_images, dtype=score_real_dtype)
-    best_log_score = np.empty(n_images, dtype=score_real_dtype)
-    max_posterior = np.empty(n_images, dtype=score_real_dtype)
-    relion_f32_sum_weight = (
-        np.empty(n_images, dtype=np.float32)
-        if (relion_f32_coarse_support_enabled or return_relion_f32_normalization) and collect_significance
-        else None
+    outputs = Pass1Outputs.allocate(
+        n_classes=n_classes,
+        n_rot=n_rot,
+        n_images=n_images,
+        score_real_dtype=score_real_dtype,
+        collect_significance=collect_significance,
+        relion_f32_coarse_support_enabled=relion_f32_coarse_support_enabled,
+        return_relion_f32_normalization=return_relion_f32_normalization,
+        return_class_best=return_class_best,
+        return_class_second=return_class_second,
     )
-    relion_f32_max_posterior = (
-        np.empty(n_images, dtype=np.float32) if return_relion_f32_normalization else None
-    )
-    class_log_evidence = np.empty((n_classes, n_images), dtype=np.float64)
-    class_best_log_score = (
-        np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_best else None
-    )
-    class_second_best_log_score = (
-        np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_second else None
-    )
-    # Diagnostic-only native scores before the large, class-common image
-    # normalization offset.  The offset is useful for absolute log evidence,
-    # but adding it before a float32 cast can erase class and pose margins.
-    class_best_offset_free_log_score = (
-        np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_best else None
-    )
-    class_second_best_offset_free_log_score = (
-        np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_second else None
-    )
-    class_hard_assignment = (
-        np.empty((n_classes, n_images), dtype=np.int32) if return_class_best else None
-    )
-    class_second_hard_assignment = (
-        np.empty((n_classes, n_images), dtype=np.int32) if return_class_second else None
-    )
+
     tree_rescore_examined = 0
     tree_rescore_ambiguous = 0
     tree_rescore_winner_changes = 0
@@ -1412,16 +1379,15 @@ def _compute_k_class_significance_batched(
         image order.
         """
 
-        nonlocal sig_rot_any
         if collect_significance:
             if relion_f32_coarse_support_enabled:
-                relion_f32_sum_weight[batch.start_idx:batch.end_idx] = np.asarray(
+                outputs.relion_f32_sum_weight[batch.start_idx:batch.end_idx] = np.asarray(
                     batch.sum_weight,
                     dtype=np.float32,
                 )[:batch.actual_batch_size]
                 batch_pmax_host = np.asarray(batch.pmax, dtype=np.float32)[:batch.actual_batch_size]
                 if return_relion_f32_normalization:
-                    relion_f32_max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
+                    outputs.relion_f32_max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
             device_significance_batch = (
                 coarse_significance_device_enabled
                 and not batch.debug_dump_enabled
@@ -1453,31 +1419,31 @@ def _compute_k_class_significance_batched(
                     batch_device_ids,
                     _batch_device_rot_any,
                 ) in enumerate(class_results):
-                    device_significance_counts[class_index].append(batch_device_counts)
-                    device_significance_polarity[class_index].append(batch_device_polarity)
-                    device_significance_ids[class_index].append(batch_device_ids)
-                    device_significance_starts[class_index].append(int(batch.start_idx))
+                    outputs.device_significance_counts[class_index].append(batch_device_counts)
+                    outputs.device_significance_polarity[class_index].append(batch_device_polarity)
+                    outputs.device_significance_ids[class_index].append(batch_device_ids)
+                    outputs.device_significance_starts[class_index].append(int(batch.start_idx))
             else:
                 batch_sig_mask_np = np.array(batch.sig_mask, dtype=bool, copy=True)
-            sig_rot_any |= np.asarray(
+            outputs.sig_rot_any |= np.asarray(
                 _any_over_leading_rows(batch.sig_rot_mask, batch.actual_batch_size),
                 dtype=bool,
             ).reshape(n_classes, n_rot)
-            n_sig_all[batch.start_idx:batch.end_idx] = np.asarray(batch.n_sig, dtype=np.int32)[:batch.actual_batch_size]
-            cutoff_count_all[batch.start_idx:batch.end_idx] = np.asarray(
+            outputs.n_sig_all[batch.start_idx:batch.end_idx] = np.asarray(batch.n_sig, dtype=np.int32)[:batch.actual_batch_size]
+            outputs.cutoff_count_all[batch.start_idx:batch.end_idx] = np.asarray(
                 batch.cutoff_count,
                 dtype=np.int32,
             )[:batch.actual_batch_size]
         else:
             batch_sig_mask_np = None
-            n_sig_all[batch.start_idx:batch.end_idx] = 0
-            cutoff_count_all[batch.start_idx:batch.end_idx] = 0
+            outputs.n_sig_all[batch.start_idx:batch.end_idx] = 0
+            outputs.cutoff_count_all[batch.start_idx:batch.end_idx] = 0
 
-        hard_assignment[batch.start_idx:batch.end_idx] = np.asarray(
+        outputs.hard_assignment[batch.start_idx:batch.end_idx] = np.asarray(
             batch.best_argmax,
             dtype=np.int32,
         )[:batch.actual_batch_size]
-        class_assignment[batch.start_idx:batch.end_idx] = np.asarray(
+        outputs.class_assignment[batch.start_idx:batch.end_idx] = np.asarray(
             batch.best_class,
             dtype=np.int32,
         )[:batch.actual_batch_size]
@@ -1487,22 +1453,22 @@ def _compute_k_class_significance_batched(
         global_log_z_np = np.asarray(batch.global_log_z, dtype=np.float64)
         best_score_np = np.asarray(batch.best_score, dtype=np.float64)
         output_slice = slice(0, batch.actual_batch_size)
-        normalization_log_z[batch.start_idx:batch.end_idx] = global_log_z_np[output_slice]
-        normalization_log_evidence[batch.start_idx:batch.end_idx] = (
+        outputs.normalization_log_z[batch.start_idx:batch.end_idx] = global_log_z_np[output_slice]
+        outputs.normalization_log_evidence[batch.start_idx:batch.end_idx] = (
             global_log_z_np[output_slice] + log_score_offset[output_slice]
         )
-        log_evidence[batch.start_idx:batch.end_idx] = normalization_log_evidence[batch.start_idx:batch.end_idx].astype(score_real_dtype)
-        best_log_score[batch.start_idx:batch.end_idx] = (
+        outputs.log_evidence[batch.start_idx:batch.end_idx] = outputs.normalization_log_evidence[batch.start_idx:batch.end_idx].astype(score_real_dtype)
+        outputs.best_log_score[batch.start_idx:batch.end_idx] = (
             best_score_np[output_slice] + log_score_offset[output_slice]
         ).astype(score_real_dtype)
         if relion_f32_coarse_support_enabled and collect_significance:
-            max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
+            outputs.max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
         else:
-            max_posterior[batch.start_idx:batch.end_idx] = np.exp(
+            outputs.max_posterior[batch.start_idx:batch.end_idx] = np.exp(
                 best_score_np[output_slice] - global_log_z_np[output_slice]
             ).astype(score_real_dtype)
         for class_index, class_log_z in enumerate(batch.class_log_z_values):
-            class_log_evidence[class_index, batch.start_idx:batch.end_idx] = (
+            outputs.class_log_evidence[class_index, batch.start_idx:batch.end_idx] = (
                 np.asarray(class_log_z, dtype=np.float64)[output_slice]
                 + log_score_offset[output_slice]
             )
@@ -1512,9 +1478,9 @@ def _compute_k_class_significance_batched(
                     batch.class_best_scores[class_index],
                     log_score_offset,
                 )
-                class_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
-                class_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
-                class_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
+                outputs.class_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
+                outputs.class_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
+                outputs.class_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
                     batch.class_best_argmaxes[class_index][output_slice],
                     dtype=np.int32,
                 )
@@ -1524,9 +1490,9 @@ def _compute_k_class_significance_batched(
                     batch.class_second_best_scores[class_index],
                     log_score_offset,
                 )
-                class_second_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
-                class_second_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
-                class_second_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
+                outputs.class_second_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
+                outputs.class_second_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
+                outputs.class_second_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
                     batch.class_second_best_argmaxes[class_index][output_slice],
                     dtype=np.int32,
                 )
@@ -1576,7 +1542,7 @@ def _compute_k_class_significance_batched(
                 global_log_z=global_log_z_np,
                 class_log_z_values=batch.class_log_z_values,
                 best_score=best_score_np,
-                max_posterior=max_posterior[batch.start_idx:batch.end_idx],
+                max_posterior=outputs.max_posterior[batch.start_idx:batch.end_idx],
                 rotation_log_prior_padded=rotation_log_prior_padded,
                 batch_translation_log_prior=batch.translation_log_prior,
                 class_log_priors=class_log_priors_np,
@@ -1628,7 +1594,7 @@ def _compute_k_class_significance_batched(
                     c0 = class_index * samples_per_class
                     c1 = c0 + samples_per_class
                     mask = batch_sig_mask_np[local_idx, c0:c1]
-                    significant_sample_indices[class_index][global_idx] = compact_significant_sample_indices_from_mask(
+                    outputs.significant_sample_indices[class_index][global_idx] = compact_significant_sample_indices_from_mask(
                         mask,
                     )
 
@@ -2187,10 +2153,10 @@ def _compute_k_class_significance_batched(
                             adaptive_fraction=adaptive_fraction,
                             keep_all=True,
                         )
-                        relion_f32_sum_weight[start_idx:end_idx] = np.asarray(
+                        outputs.relion_f32_sum_weight[start_idx:end_idx] = np.asarray(
                             normalization_sum, dtype=np.float32,
                         )[:actual_batch_size]
-                        relion_f32_max_posterior[start_idx:end_idx] = (
+                        outputs.relion_f32_max_posterior[start_idx:end_idx] = (
                             _coarse_max_posterior_for_host(normalization_probs, actual_batch_size)
                         )
                     (
@@ -2277,7 +2243,7 @@ def _compute_k_class_significance_batched(
             _srt[-1],
         )
 
-    if any(device_significance_counts):
+    if any(outputs.device_significance_counts):
         from relax.sparse_pass2.resident_significance import (
             DeviceCompactedSignificantSamples,
             build_coarse_significance_csr,
@@ -2285,15 +2251,15 @@ def _compute_k_class_significance_batched(
         )
 
         for class_index in range(n_classes):
-            covered = int(sum(int(counts.size) for counts in device_significance_counts[class_index]))
+            covered = int(sum(int(counts.size) for counts in outputs.device_significance_counts[class_index]))
             if covered != n_images:
                 # Some batches kept the host mask (a score dump): publish the
                 # compacted batches as host rows too.
                 for start, counts, polarity, ids in zip(
-                    device_significance_starts[class_index],
-                    device_significance_counts[class_index],
-                    device_significance_polarity[class_index],
-                    device_significance_ids[class_index],
+                    outputs.device_significance_starts[class_index],
+                    outputs.device_significance_counts[class_index],
+                    outputs.device_significance_polarity[class_index],
+                    outputs.device_significance_ids[class_index],
                     strict=True,
                 ):
                     batch_rows = host_support_rows(
@@ -2307,17 +2273,17 @@ def _compute_k_class_significance_batched(
                         )
                     )
                     for offset, row in enumerate(batch_rows):
-                        significant_sample_indices[class_index][start + offset] = row
+                        outputs.significant_sample_indices[class_index][start + offset] = row
                 continue
             coarse_significance_csr = build_coarse_significance_csr(
                 n_images=n_images,
                 n_coarse_rot=n_rot,
                 n_coarse_trans=n_trans,
-                n_significant_per_batch=device_significance_counts[class_index],
-                store_excluded_per_batch=device_significance_polarity[class_index],
-                ids_per_batch=device_significance_ids[class_index],
+                n_significant_per_batch=outputs.device_significance_counts[class_index],
+                store_excluded_per_batch=outputs.device_significance_polarity[class_index],
+                ids_per_batch=outputs.device_significance_ids[class_index],
             )
-            significant_sample_indices[class_index] = DeviceCompactedSignificantSamples(
+            outputs.significant_sample_indices[class_index] = DeviceCompactedSignificantSamples(
                 host_support_rows(coarse_significance_csr),
                 csr=coarse_significance_csr,
             )
@@ -2332,16 +2298,16 @@ def _compute_k_class_significance_batched(
             )
 
     full_stats = {
-        "normalization_log_z": normalization_log_z,
-        "normalization_log_evidence": normalization_log_evidence,
-        "log_evidence_per_image": log_evidence,
-        "best_log_score_per_image": best_log_score,
-        "max_posterior_per_image": max_posterior,
-        "class_log_evidence_per_image": class_log_evidence,
-        "class_assignments": class_assignment,
+        "normalization_log_z": outputs.normalization_log_z,
+        "normalization_log_evidence": outputs.normalization_log_evidence,
+        "log_evidence_per_image": outputs.log_evidence,
+        "best_log_score_per_image": outputs.best_log_score,
+        "max_posterior_per_image": outputs.max_posterior,
+        "class_log_evidence_per_image": outputs.class_log_evidence,
+        "class_assignments": outputs.class_assignment,
         # RELION serializes the cutoff rank before inclusive threshold ties
         # expand the pass-2/M-step support represented by ``n_sig_all``.
-        "significant_cutoff_counts": cutoff_count_all,
+        "significant_cutoff_counts": outputs.cutoff_count_all,
         "executed_coarse_backend": (
             "exact_cc_gemm" if exact_cc_enabled else "gemm_macro"
         ),
@@ -2364,34 +2330,34 @@ def _compute_k_class_significance_batched(
             )
         )
     if _coarse_significance_support_audit_enabled():
-        if significant_sample_indices is None:
+        if outputs.significant_sample_indices is None:
             raise RuntimeError(
                 f"{_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV}=1 requires "
                 "collect_significance=True",
             )
         full_stats["coarse_significance_support_audit"] = (
             _build_coarse_significance_support_audit(
-                significant_sample_indices,
+                outputs.significant_sample_indices,
                 samples_per_class=n_rot * n_trans,
                 include_ids=_coarse_significance_support_audit_ids_enabled(),
             )
         )
-    if relion_f32_sum_weight is not None:
+    if outputs.relion_f32_sum_weight is not None:
         # RELION's oversampling-zero second pass deliberately reuses this
         # coarse, maximum-shifted float32 denominator numerically.  It is not
         # interchangeable with a log-evidence value because the fine pass
         # independently shifts its own maximum to 50 before division.
-        full_stats["relion_f32_sum_weight"] = relion_f32_sum_weight
-    if relion_f32_max_posterior is not None:
-        full_stats["relion_f32_max_posterior"] = relion_f32_max_posterior
+        full_stats["relion_f32_sum_weight"] = outputs.relion_f32_sum_weight
+    if outputs.relion_f32_max_posterior is not None:
+        full_stats["relion_f32_max_posterior"] = outputs.relion_f32_max_posterior
     if return_class_best:
-        full_stats["class_best_log_score_per_image"] = class_best_log_score
-        full_stats["class_best_offset_free_log_score_per_image"] = class_best_offset_free_log_score
-        full_stats["class_hard_assignments"] = class_hard_assignment
+        full_stats["class_best_log_score_per_image"] = outputs.class_best_log_score
+        full_stats["class_best_offset_free_log_score_per_image"] = outputs.class_best_offset_free_log_score
+        full_stats["class_hard_assignments"] = outputs.class_hard_assignment
     if return_class_second:
-        full_stats["class_second_best_log_score_per_image"] = class_second_best_log_score
-        full_stats["class_second_hard_assignments"] = class_second_hard_assignment
-        full_stats["class_second_best_offset_free_log_score_per_image"] = class_second_best_offset_free_log_score
+        full_stats["class_second_best_log_score_per_image"] = outputs.class_second_best_log_score
+        full_stats["class_second_hard_assignments"] = outputs.class_second_hard_assignment
+        full_stats["class_second_best_offset_free_log_score_per_image"] = outputs.class_second_best_offset_free_log_score
     if tree_rescore_enabled:
         full_stats["firstiter_cc_tree_top2_rescore"] = {
             "max_margin": float(tree_rescore_max_margin),
@@ -2408,4 +2374,11 @@ def _compute_k_class_significance_batched(
             tree_rescore_exact_ties,
             tree_rescore_winner_changes,
         )
-    return sig_rot_any, n_sig_all, hard_assignment, class_assignment, significant_sample_indices, full_stats
+    return (
+        outputs.sig_rot_any,
+        outputs.n_sig_all,
+        outputs.hard_assignment,
+        outputs.class_assignment,
+        outputs.significant_sample_indices,
+        full_stats,
+    )

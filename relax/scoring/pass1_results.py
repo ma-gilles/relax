@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 
 @dataclass(frozen=True)
 class BatchOutputs:
@@ -54,3 +56,103 @@ class BatchOutputs:
     exact_cc_operands: Any
     exact_cc_pixel_weight: Any
     exact_cc_shifted: Any
+
+
+@dataclass
+class Pass1Outputs:
+    """The per-image results of one pass 1: arrays allocated once for the pass and filled batch by batch.
+
+    ``_publish_batch`` writes rows ``start_idx:end_idx`` of every array in place; nothing else writes them. Rows are
+    images in the order of the pass; ``K`` is the number of classes, ``R`` the number of coarse rotations. Arrays are
+    ``np.empty`` until their rows are published. The class arrays and the float32 arrays exist only on the routes
+    that return them (the other fields are ``None``).
+
+    ``class_best_offset_free_log_score`` and its runner-up twin are diagnostic native scores before the large,
+    class-common image normalization offset: the offset is useful for absolute log evidence, but adding it before a
+    float32 cast can erase class and pose margins.
+
+    ``device_significance_*`` hold, per class and per batch, the support compacted on the device (counts, polarity,
+    ids, and the first image of the batch); they are read once, after the loop, to build the class's CSR.
+    """
+
+    sig_rot_any: np.ndarray  # bool [K, R]: rotations with a significant sample for some image
+    n_sig_all: np.ndarray  # int32 [N]: significant samples, ties included
+    cutoff_count_all: np.ndarray  # int32 [N]: RELION's cutoff rank, before ties
+    hard_assignment: np.ndarray  # int32 [N]: best joint (rotation * T + translation) pose
+    class_assignment: np.ndarray  # int32 [N]: best class
+    significant_sample_indices: list | None  # [K][N] per-image encodings; None without collect_significance
+    normalization_log_z: np.ndarray  # float64 [N]
+    normalization_log_evidence: np.ndarray  # float64 [N]
+    log_evidence: np.ndarray  # score dtype [N]
+    best_log_score: np.ndarray  # score dtype [N]
+    max_posterior: np.ndarray  # score dtype [N]
+    relion_f32_sum_weight: np.ndarray | None  # float32 [N]
+    relion_f32_max_posterior: np.ndarray | None  # float32 [N]
+    class_log_evidence: np.ndarray  # float64 [K, N]
+    class_best_log_score: np.ndarray | None  # score dtype [K, N]
+    class_second_best_log_score: np.ndarray | None
+    class_best_offset_free_log_score: np.ndarray | None
+    class_second_best_offset_free_log_score: np.ndarray | None
+    class_hard_assignment: np.ndarray | None  # int32 [K, N]
+    class_second_hard_assignment: np.ndarray | None
+    device_significance_counts: list
+    device_significance_polarity: list
+    device_significance_ids: list
+    device_significance_starts: list
+
+    @classmethod
+    def allocate(
+        cls,
+        *,
+        n_classes: int,
+        n_rot: int,
+        n_images: int,
+        score_real_dtype,
+        collect_significance: bool,
+        relion_f32_coarse_support_enabled: bool,
+        return_relion_f32_normalization: bool,
+        return_class_best: bool,
+        return_class_second: bool,
+    ) -> "Pass1Outputs":
+        """The arrays of a pass over ``n_images`` images, for the routes the call asks for."""
+
+        return cls(
+            sig_rot_any=np.zeros((n_classes, n_rot), dtype=bool),
+            n_sig_all=np.empty(n_images, dtype=np.int32),
+            cutoff_count_all=np.empty(n_images, dtype=np.int32),
+            hard_assignment=np.empty(n_images, dtype=np.int32),
+            class_assignment=np.empty(n_images, dtype=np.int32),
+            significant_sample_indices=[[None] * n_images for _ in range(n_classes)] if collect_significance else None,
+            normalization_log_z=np.empty(n_images, dtype=np.float64),
+            normalization_log_evidence=np.empty(n_images, dtype=np.float64),
+            log_evidence=np.empty(n_images, dtype=score_real_dtype),
+            best_log_score=np.empty(n_images, dtype=score_real_dtype),
+            max_posterior=np.empty(n_images, dtype=score_real_dtype),
+            relion_f32_sum_weight=(
+                np.empty(n_images, dtype=np.float32)
+                if (relion_f32_coarse_support_enabled or return_relion_f32_normalization) and collect_significance
+                else None
+            ),
+            relion_f32_max_posterior=np.empty(n_images, dtype=np.float32) if return_relion_f32_normalization else None,
+            class_log_evidence=np.empty((n_classes, n_images), dtype=np.float64),
+            class_best_log_score=(
+                np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_best else None
+            ),
+            class_second_best_log_score=(
+                np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_second else None
+            ),
+            class_best_offset_free_log_score=(
+                np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_best else None
+            ),
+            class_second_best_offset_free_log_score=(
+                np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_second else None
+            ),
+            class_hard_assignment=np.empty((n_classes, n_images), dtype=np.int32) if return_class_best else None,
+            class_second_hard_assignment=(
+                np.empty((n_classes, n_images), dtype=np.int32) if return_class_second else None
+            ),
+            device_significance_counts=[[] for _ in range(n_classes)],
+            device_significance_polarity=[[] for _ in range(n_classes)],
+            device_significance_ids=[[] for _ in range(n_classes)],
+            device_significance_starts=[[] for _ in range(n_classes)],
+        )
