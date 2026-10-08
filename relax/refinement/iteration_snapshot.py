@@ -41,6 +41,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.helpers.convergence import RefinementState
+from relax.helpers.orientation_priors import DirectionPrior, initial_direction_priors_from_snapshot
 
 # RefinementState fields that hold per-image arrays rather than scalars; the
 # snapshot carries per-image state separately.
@@ -113,6 +114,43 @@ class IterationSnapshot:
             )
         restored = {name: value for name, value in self.state_fields.items() if name not in RUN_LIMIT_FIELDS}
         return dataclasses.replace(base, **restored)
+
+
+def direction_priors_from_snapshot(
+    snapshot: IterationSnapshot,
+    init_direction_prior,
+    *,
+    n_classes: int,
+    grid_healpix_order: int,
+    symmetry: str,
+    dtype,
+    log,
+) -> list[DirectionPrior]:
+    """Each half's direction prior a continued run starts from: the snapshot's, with the sampling orders it
+    saved; ``init_direction_prior`` at the run's grid order (``grid_healpix_order``) when it saved none."""
+
+    if snapshot.direction_prior is None:
+        return initial_direction_priors_from_snapshot(
+            init_direction_prior,
+            n_classes=n_classes,
+            dtype=dtype,
+            log=log,
+            symmetry=symmetry, expected_order=grid_healpix_order,
+        )
+    # The saved order resolves a prior length that is ambiguous under symmetry.
+    saved_orders = [int(snapshot.extra.get(f"direction_prior_order_half{h + 1}", -1)) for h in range(2)]
+    saved_orders = [None if order < 0 else order for order in saved_orders]
+    direction_priors = initial_direction_priors_from_snapshot(
+        snapshot.direction_prior,
+        n_classes=n_classes,
+        dtype=dtype,
+        log=log,
+        symmetry=symmetry, expected_order=saved_orders[0],
+    )
+    return [
+        DirectionPrior(prior.values, order)
+        for prior, order in zip(direction_priors, saved_orders, strict=True)
+    ]
 
 
 def refinement_state_fields(state: RefinementState) -> dict:

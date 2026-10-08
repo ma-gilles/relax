@@ -8533,7 +8533,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
         relion_replay_module,
         "read_relion_sampling_metadata",
         lambda _path: {
-            "random_perturbation": refine_mod.relion_sampling_perturbation_for_iteration(
+            "random_perturbation": sampling_module.relion_sampling_perturbation_for_iteration(
                 0.5, 0, 14
             ),
             "perturbation_factor": 0.5,

@@ -46,7 +46,6 @@ from relax.helpers.convergence import (
 from relax.helpers.expected_accuracy import estimate_iteration_accuracy
 from relax.helpers.iteration_history import RefinementHistory
 from relax.helpers.orientation_priors import (
-    DirectionPrior,
     initial_direction_priors_from_snapshot,
     learn_class_direction_priors,
     learn_k1_direction_priors,
@@ -101,6 +100,7 @@ from relax.refinement.iteration_planning import (
     build_initial_coarse_grids,
     coarse_pass1_rotations,
     first_iteration_policy,
+    initial_random_perturbation,
     initialize_refinement_state,
     iteration_trial_grid,
     plan_adaptive_image_size,
@@ -112,9 +112,7 @@ from relax.refinement.iteration_planning import (
     resolve_numbered_perturbation,
     strict_e_step_size,
 )
-from relax.refinement.iteration_snapshot import (
-    SnapshotCapture,
-)
+from relax.refinement.iteration_snapshot import SnapshotCapture, direction_priors_from_snapshot
 from relax.refinement.local_sampling import local_search_centre_half, plan_expectation_sampling
 from relax.refinement.maximization import (
     class_maximization,
@@ -200,7 +198,6 @@ from relax.relion.relion_worker_scale import (
     setup_relion_follower_scale_state,
 )
 from relax.sampling import (
-    relion_sampling_perturbation_for_iteration,
     rotation_grid_size,
 )
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
@@ -566,27 +563,7 @@ def refine_single_volume(
             log=logger,
             symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
         )
-        # --- RELION SamplingPerturbation state (healpix_sampling.cpp:167-174) ---
-        # RELION applies a random rigid rotation of the entire SO(3) trial grid at
-        # each iteration: A -> A @ R_perturb with R_perturb = R_from_relion([m,m,m])
-        # and m = random_perturbation * angular_sampling. The random_perturbation
-        # is advanced per iter via realWRAP(prev + rnd_unif(0.5*pf, pf), -pf, +pf).
-        # For exact parity replay, read _rlnSamplingPerturbInstance from RELION's
-        # per-iter sampling.star.
-        if options.parity.perturb_factor > 0 and options.parity.perturb_seed is not None:
-            random_perturbation = relion_sampling_perturbation_for_iteration(
-                options.parity.perturb_factor,
-                options.parity.perturb_seed,
-                options.schedule.init_relion_iteration,
-            )
-            logger.info(
-                "Perturbation init: relion_iter=%d random_seed=%d rp=%+.5f",
-                int(options.schedule.init_relion_iteration),
-                int(options.parity.perturb_seed),
-                random_perturbation,
-            )
-        else:
-            random_perturbation = 0.0
+        random_perturbation = initial_random_perturbation(options, log=logger)
         published_accuracy = PublishedAccuracy.before_first_estimate(options.k_class.n_classes)
     else:
         # --- A continued run starts from the run files of an earlier run (RELION --continue) ---
@@ -617,29 +594,15 @@ def refine_single_volume(
         sigma_offset = sigma_offset_from_halves(as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
         relion_incr_size = int(resume.incr_size)
         relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
-        if resume.direction_prior is None:
-            direction_priors = initial_direction_priors_from_snapshot(
-                options.replay.init_direction_prior,
-                n_classes=options.k_class.n_classes,
-                dtype=scoring_dtype,
-                log=logger,
-                symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
-            )
-        else:
-            # The saved order resolves a prior length that is ambiguous under symmetry.
-            saved_orders = [int(resume.extra.get(f"direction_prior_order_half{h + 1}", -1)) for h in range(2)]
-            saved_orders = [None if order < 0 else order for order in saved_orders]
-            direction_priors = initial_direction_priors_from_snapshot(
-                resume.direction_prior,
-                n_classes=options.k_class.n_classes,
-                dtype=scoring_dtype,
-                log=logger,
-                symmetry=options.symmetry.point_group, expected_order=saved_orders[0],
-            )
-            direction_priors = [
-                DirectionPrior(prior.values, order)
-                for prior, order in zip(direction_priors, saved_orders, strict=True)
-            ]
+        direction_priors = direction_priors_from_snapshot(
+            resume,
+            options.replay.init_direction_prior,
+            n_classes=options.k_class.n_classes,
+            grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
+            symmetry=options.symmetry.point_group,
+            dtype=scoring_dtype,
+            log=logger,
+        )
         random_perturbation = resume.random_perturbation
         published_accuracy = PublishedAccuracy.before_first_estimate(
             options.k_class.n_classes, resume.acc_rot_per_class, resume.acc_trans_per_class_angstrom

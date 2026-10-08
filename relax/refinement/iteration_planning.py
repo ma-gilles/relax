@@ -39,6 +39,33 @@ if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions
 
 
+def initial_random_perturbation(options: RefinementOptions, *, log: logging.Logger) -> float:
+    """A fresh run's sampling perturbation before its first iteration: RELION's value at
+    ``schedule.init_relion_iteration`` from ``parity.perturb_seed`` (logged), else 0.0.
+
+    RELION applies a random rigid rotation of the entire SO(3) trial grid at each iteration
+    (SamplingPerturbation, healpix_sampling.cpp:167-174): A -> A @ R_perturb with R_perturb =
+    R_from_relion([m,m,m]) and m = random_perturbation * angular_sampling; the perturbation advances per
+    iteration (``resolve_numbered_perturbation``). A replay reads _rlnSamplingPerturbInstance from RELION's
+    sampling.star instead (an input source's).
+    """
+    if options.parity.perturb_factor > 0 and options.parity.perturb_seed is not None:
+        random_perturbation = sampling.relion_sampling_perturbation_for_iteration(
+            options.parity.perturb_factor,
+            options.parity.perturb_seed,
+            options.schedule.init_relion_iteration,
+        )
+        log.info(
+            "Perturbation init: relion_iter=%d random_seed=%d rp=%+.5f",
+            int(options.schedule.init_relion_iteration),
+            int(options.parity.perturb_seed),
+            random_perturbation,
+        )
+    else:
+        random_perturbation = 0.0
+    return random_perturbation
+
+
 def resolve_numbered_perturbation(
     previous_perturbation: float,
     options: RefinementOptions,
