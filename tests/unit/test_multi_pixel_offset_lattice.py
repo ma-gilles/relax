@@ -82,3 +82,17 @@ def test_image_translation_factors():
         optics_shapes.image_translation_factors(half), [MODEL_PIXEL / OWN_PIXEL, 1.0, MODEL_PIXEL / OWN_PIXEL]
     )
     assert optics_shapes.image_translation_factors(SimpleNamespace(n_units=3)) is None
+
+
+def test_subtomogram_offsets_keep_their_rounding():
+    # A subtomogram half is one grid (a TomoHalf, never a MultiShapeHalf): no factors, and its 3D offsets keep the
+    # whole-pixel rounding of RELION's GPU path (tomo_particles.relion_gpu_old_offsets), unchanged by relax#52.
+    from relax.refinement.tomo_half import TomoHalf
+    from relax.refinement.tomo_particles import relion_gpu_old_offsets
+    from relax.relion.relion_metadata import _relion_metadata_translations
+
+    assert not issubclass(TomoHalf, optics_shapes.MultiShapeHalf)
+    old = np.array([[1.5, -2.49, 0.51], [-0.5, 3.2, -1.7]])
+    shift = np.array([[0.25, -0.5, 1.0], [0.0, 0.75, -0.25]])
+    published = _relion_metadata_translations(old, shift, own_pixel_factors=None, dtype=np.float64)
+    assert_matches(published, relion_gpu_old_offsets(old) + shift)
