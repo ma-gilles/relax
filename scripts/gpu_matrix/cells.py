@@ -27,6 +27,8 @@ FIXTURES = {
     "ms2_448": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_ms2_icos_448_b40_20260930",
     "multioptics_k2_10k128": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/project",
     "optics_mag_k1": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_mag_k1_10k256_20260929",
+    # speedw's cell-15 10k subset of EMPIAR-10073 as one compact stack (build_cell15_compact.py, COMPACT.json).
+    "e10073_10k380": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_gpuport_20261003/cell15_compact_20261007",
 }
 
 _REFINE_K1 = [
@@ -442,6 +444,18 @@ CELLS["refine_k1_mag_10k256"] = {
         *("--init_volume", "{fx:optics_mag_k1}/reference_init_class001_relion.mrc", "--seed", "42"),
     ],
     "box": 256,
+}
+
+# Robustness cell 15 (speedw, relax_speedw_20260930/cell15_10073_class3d_20261007/cell15.sbatch): Class3D K=3 at box 380.
+CELLS["class3d_k3_10073_10k380_s29"] = {
+    "module": "relax.commands.class3d",
+    "args": [
+        *("--n_classes", "3", "--data_dir", "{fx:e10073_10k380}", "--output", "{out}"),
+        *("--init_volume", "{fx:e10073_10k380}/reference_init_relion.mrc", "--tau2_fudge", "4", "--max_iter", "25"),
+        *("--init_resolution", "60", "--healpix_order", "2", "--offset_range", "5", "--offset_step", "2"),
+        *("--particle_diameter_ang", "250", "--no-firstiter_cc", "--adaptive_oversampling", "1", "--seed", "29"),
+    ],
+    "box": 380,
 }
 
 
