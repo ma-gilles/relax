@@ -93,7 +93,6 @@ def _expand_significant_samples_to_full_parent_translations(
 ):
     """Expand significant parent rotation ids to every parent translation."""
 
-    n_parent_translations = int(n_parent_translations)
     if n_parent_translations <= 0:
         raise ValueError(f"n_parent_translations must be positive, got {n_parent_translations}")
     expanded = []

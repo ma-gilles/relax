@@ -147,9 +147,8 @@ def run_final_all_data(
     See ``docs/math/relion_refinement_algorithm.md``, section 7.
     """
     scoring_dtype = options.precision.rotation_real_dtype
-    n_classes = int(options.k_class.n_classes)
     class_weights = class_mixture.weights
-    k_class_enabled = n_classes > 1
+    k_class_enabled = options.k_class.n_classes > 1
     volume_shape = reconstruction_settings.volume_shape
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
     final_expected_accuracy = None
@@ -272,7 +271,7 @@ def run_final_all_data(
             volume_shape=volume_shape,
             current_size=final_current_size,
             padding_factor=PROJECTION_PADDING_FACTOR,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             dump_label=f"final_half{half.index}",
             gridding_kernel=reconstruction_settings.gridding_kernel,
         )
@@ -444,7 +443,7 @@ def run_final_all_data(
                 sigma_offset_angstrom=final_sigma_offset_k,
                 noise_radial=noise_model.radial_per_half[half.index],
                 direction_prior=direction_priors[half.index],
-                n_classes=n_classes,
+                n_classes=options.k_class.n_classes,
                 use_local=final_use_local,
                 coarse_angular_step_deg=final_local_sampling.coarse_angular_step_deg if final_use_local else None,
                 particle_diameter_angstrom=options.schedule.particle_diameter_ang,
@@ -550,14 +549,14 @@ def run_final_all_data(
         final_mstep_full_half_axis = _resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
         class_weights = _class_weights_from_posterior(
             final_outs.class_posterior,
-            n_classes,
+            options.k_class.n_classes,
             class_weights,
         )
         history.record_class_weights(
             class_weights,
             _class_weights_from_posterior(
                 final_outs.class_full_posterior,
-                n_classes,
+                options.k_class.n_classes,
                 class_weights,
             ),
         )
@@ -566,7 +565,7 @@ def run_final_all_data(
             final_ft_ctf,
             final_join_means[0],
             projector=final_projectors[0],
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             settings=reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
@@ -593,14 +592,15 @@ def run_final_all_data(
             state.previous_resolution,
         )
         logger.info(
-            "RELION final all-data reconstruction start: current_size=%d n_classes=%d", final_current_size, n_classes,
+            "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
+            final_current_size, options.k_class.n_classes,
         )
         final_maps = final_reconstruction.reconstruct_final_class_maps(
             final_ft_y,
             final_ft_ctf,
             final_class_priors.shells,
             class_weights=class_weights,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             settings=reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
@@ -697,7 +697,8 @@ def run_final_all_data(
             state.previous_resolution,
         )
         logger.info(
-            "RELION final all-data reconstruction start: current_size=%d n_classes=%d", final_current_size, n_classes,
+            "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
+            final_current_size, options.k_class.n_classes,
         )
         # The merged map from the COMBINED accumulators (summed only now: 24.7 GB of host at box 800), each half
         # map from its own, at full Nyquist. The list is the only owner; each slot is freed after its solve.

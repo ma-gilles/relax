@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import math
+import operator
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -422,9 +423,11 @@ class KClassOptions:
     skip_align: bool = False
 
     def __post_init__(self):
-        if int(self.n_classes) == 1 and self.skip_align:
+        # The class count enters relax here (the command, scripts, a resumed snapshot): an int from here on.
+        object.__setattr__(self, "n_classes", operator.index(self.n_classes))
+        if self.n_classes == 1 and self.skip_align:
             raise ValueError("--skip_align classifies; K=1 has nothing to classify")
-        if int(self.n_classes) == 1 and self.first_iteration_seed_classes is not None:
+        if self.n_classes == 1 and self.first_iteration_seed_classes is not None:
             raise ValueError("first_iteration_seed_classes seeds a Class3D start; K=1 has no classes to seed")
 
 

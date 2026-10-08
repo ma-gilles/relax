@@ -756,7 +756,6 @@ def _shell_resolution_angstrom(shell_index, box_size, voxel_size):
     """The resolution of a Fourier shell in Angstrom (infinite for shell 0, the shell index without a pixel size)."""
     if voxel_size <= 0:
         return float(shell_index)
-    shell_index = float(shell_index)
     if shell_index <= 0:
         return float("inf")
     return float(box_size) * float(voxel_size) / shell_index

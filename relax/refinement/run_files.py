@@ -73,12 +73,12 @@ def _format_value(value) -> str:
     if isinstance(value, (int, np.integer)):
         return str(int(value))
     if isinstance(value, (float, np.floating)):
-        value = float(value)
-        if math.isnan(value):
+        number = float(value)
+        if math.isnan(number):
             return "nan"
-        if math.isinf(value):
-            return "inf" if value > 0 else "-inf"
-        return repr(value)
+        if math.isinf(number):
+            return "inf" if number > 0 else "-inf"
+        return repr(number)
     text = str(value)
     if text == "" or any(ch.isspace() for ch in text):
         return '"' + text.replace('"', "'") + '"'
@@ -533,7 +533,6 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             if snapshot.class_weights is not None
             else np.ones(int(snapshot.n_classes)) / int(snapshot.n_classes)
         )
-        n_classes = int(snapshot.n_classes)
         tau2 = np.asarray(snapshot.tau2_shells, dtype=np.float64)
         dvp = np.asarray(snapshot.data_vs_prior, dtype=np.float64)
         if not snapshot.k_class:
@@ -548,12 +547,12 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
                     "rlnAccuracyTranslationsAngst": snapshot.acc_trans_per_class_angstrom,
                     "rlnEstimatedResolution": [
                         _estimated_resolution_angstrom(dvp[k] if snapshot.k_class else dvp, snapshot)
-                        for k in range(n_classes)
+                        for k in range(snapshot.n_classes)
                     ],
                 },
             )
         )
-        for k in range(n_classes):
+        for k in range(snapshot.n_classes):
             tau2_k = tau2[k] if snapshot.k_class else tau2[h]
             dvp_k = dvp[k] if snapshot.k_class else dvp
             n_shells = tau2_k.shape[-1]
@@ -606,7 +605,11 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
         if snapshot.direction_prior is not None and snapshot.direction_prior[h] is not None:
             prior = np.asarray(snapshot.direction_prior[h], dtype=np.float64)
             # RELION's pdf_direction[class] sums to the class fraction (ml_optimiser.cpp:5325).
-            prior = prior.reshape(n_classes, -1) * class_weights[:, None] if snapshot.k_class else prior.reshape(1, -1)
+            prior = (
+                prior.reshape(snapshot.n_classes, -1) * class_weights[:, None]
+                if snapshot.k_class
+                else prior.reshape(1, -1)
+            )
             for k in range(prior.shape[0]):
                 text.append(_loop_block(f"model_pdf_orient_class_{k + 1}", {"rlnOrientationDistribution": prior[k]}))
         path.write_text("".join(text))

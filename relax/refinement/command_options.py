@@ -1403,9 +1403,9 @@ def resolve_relion_runtime_controls(
         from relax.relion.relion_metadata import read_relion_optimiser_metadata
 
         relion_optimiser_metadata = read_relion_optimiser_metadata(optimiser_star)
-        expected_accuracy_do_ctf_correction = relion_optimiser_metadata.get("do_correct_ctf")
-        if expected_accuracy_do_ctf_correction is not None:
-            expected_accuracy_do_ctf_correction = bool(expected_accuracy_do_ctf_correction)
+        stored_do_correct_ctf = relion_optimiser_metadata.get("do_correct_ctf")
+        if stored_do_correct_ctf is not None:
+            expected_accuracy_do_ctf_correction = bool(stored_do_correct_ctf)
             log.info(
                 "RELION expected-accuracy CTF correction: %s (from %s)",
                 expected_accuracy_do_ctf_correction,

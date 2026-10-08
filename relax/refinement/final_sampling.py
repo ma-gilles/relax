@@ -125,7 +125,6 @@ def prepare_final_sampling(
     ``options.k_class.n_classes``, ``schedule.init_relion_iteration`` and the fields
     ``native_final_sampling_settings`` and ``advance_final_perturbation`` name.
     """
-    n_classes = int(options.k_class.n_classes)
     grid_order = _exhaustive_grid_order_for_state(state)
     symmetry = previous_rotation_grid.symmetry
     if grid_order == previous_rotation_grid.healpix_order:
@@ -149,7 +148,7 @@ def prepare_final_sampling(
     base_translations = jnp.asarray(
         sampling._relion_base_translation_grid(
             settings.translation_range, settings.translation_step,
-            n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
+            n_classes=options.k_class.n_classes, voxel_size=settings.pixel_size_angstrom,
         ),
         dtype=dtype,
     )

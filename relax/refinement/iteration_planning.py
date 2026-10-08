@@ -308,7 +308,6 @@ def initialize_refinement_state(
     schedule = options.schedule
     parity = options.parity
     init_relion_iteration = schedule.init_relion_iteration
-    n_classes = int(options.k_class.n_classes)
     # RELION --sigma_ang turns the orientational prior on from iteration 1 at any HEALPix order, with that
     # width for rot, tilt and psi (ml_optimiser.cpp parseInitial); without it a local start uses 2 x step.
     sigma_ang_deg = options.local_search.sigma_ang_deg
@@ -322,7 +321,7 @@ def initialize_refinement_state(
         max_healpix_order=schedule.max_healpix_order,
         auto_local_healpix_order=options.local_search.auto_local_healpix_order,
         # Class3D (K>1) never switches to local searches from the HEALPix order.
-        auto_sampling=not (n_classes > 1),
+        auto_sampling=not (options.k_class.n_classes > 1),
         current_resolution=float("inf"),
         voxel_size_angstrom=image_geometry.pixel_size_angstrom,
         particle_diameter_angstrom=float(schedule.particle_diameter_ang or 0.0),
@@ -358,7 +357,7 @@ def initialize_refinement_state(
         _validate_resume_snapshot(
             resume,
             init_relion_iteration=init_relion_iteration,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             box_size=image_geometry.box_size,
             options=options,
             replays_relion_trajectory=source.relion_replay is not None and (
@@ -528,7 +527,6 @@ def refresh_coarse_grids(
     exhaustive-grid cap reads), ``translation_range`` and ``translation_step``; from ``options``:
     ``k_class.n_classes`` and ``symmetry.point_group``.
     """
-    n_classes = int(options.k_class.n_classes)
     symmetry = options.symmetry.point_group
     replay_translations = star_sampling
     current_rotation_grid = grids.rotation_grid
@@ -557,7 +555,7 @@ def refresh_coarse_grids(
         base_translations = sampling._relion_base_translation_grid(
             state.translation_range,
             state.translation_step,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             voxel_size=voxel_size,
         )
         current_translations = jnp.asarray(base_translations, dtype=dtype)
@@ -574,7 +572,7 @@ def refresh_coarse_grids(
         _new_t_source = sampling._relion_base_translation_grid(
             state.translation_range,
             state.translation_step,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             voxel_size=voxel_size,
         )
         _new_t = jnp.asarray(_new_t_source, dtype=dtype)

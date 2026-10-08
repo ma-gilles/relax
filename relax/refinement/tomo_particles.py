@@ -85,7 +85,6 @@ def relion_offset_log_prior_3d(translations_angst, old_offsets_px, *, pixel_size
 
     from relax.helpers.orientation_priors import make_relion_translation_log_prior
 
-    pixel_size = float(pixel_size)
     centers = -relion_gpu_old_offsets(np.asarray(old_offsets_px, dtype=np.float64).reshape(-1, 3)) / pixel_size
     return make_relion_translation_log_prior(
         np.asarray(translations_angst, dtype=np.float64) / pixel_size,

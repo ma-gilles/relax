@@ -236,7 +236,6 @@ def _relion_k1_translation_angle_scale(
 
     if int(n_classes) != 1 or optics_pixel_sizes is None:
         return 1.0
-    model_pixel_size = float(model_pixel_size)
     optics = np.asarray(optics_pixel_sizes, dtype=np.float64).reshape(-1)
     if optics.size == 0 or not np.all(np.isfinite(optics)) or np.any(optics <= 0.0):
         raise ValueError("RELION optics pixel sizes must be non-empty, positive, and finite")
@@ -246,7 +245,8 @@ def _relion_k1_translation_angle_scale(
             "K=1 exact RELION translation phases currently require one shared optics pixel size; "
             "per-particle optics scaling is not yet implemented"
         )
-    return model_pixel_size / float(unique_optics[0])
+    # A Python float: the model pixel size may arrive as the input's float32, and the scale is float64 arithmetic.
+    return float(model_pixel_size) / float(unique_optics[0])
 
 
 
@@ -386,7 +386,6 @@ def class_maximization(
     ``parity.relion_firstiter_ini_high_angstrom``.
     """
     parity = options.parity
-    n_classes = int(options.k_class.n_classes)
     Ft_y_0, Ft_y_1 = Ft_y_per_half
     Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
     Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
@@ -406,7 +405,7 @@ def class_maximization(
         half_denominators=(Ft_ctf_0, Ft_ctf_1),
         prior_tau2=reference_model.tau2,
         halves=halves,
-        n_classes=n_classes,
+        n_classes=options.k_class.n_classes,
         iteration=iteration,
         current_size=current_size,
         image_current_size=image_current_size,
@@ -441,7 +440,7 @@ def class_maximization(
         Ft_ctf_combined,
         class_priors.shells,
         reconstruction_settings,
-        n_classes=n_classes,
+        n_classes=options.k_class.n_classes,
         iteration=iteration,
         current_size=current_size,
         accumulator_volume_shape=mstep_accumulator_shape,
@@ -776,8 +775,7 @@ def refine_single_volume(
         image_shape=experiment_datasets[0].image_shape,
         pixel_size_angstrom=source_pixel_size_angstrom,
     )
-    n_classes = int(options.k_class.n_classes)
-    k_class_enabled = n_classes > 1
+    k_class_enabled = options.k_class.n_classes > 1
     if (options.parity.relion_optics_image_sizes is None) != (options.parity.relion_optics_pixel_sizes is None):
         raise ValueError(
             "relion_optics_image_sizes and relion_optics_pixel_sizes must be supplied together",
@@ -816,7 +814,7 @@ def refine_single_volume(
         1.0
         if multi_shape_halves or tomo_halves
         else _relion_k1_translation_angle_scale(
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             model_pixel_size=model_pixel_size,
             optics_pixel_sizes=optics_pixel_sizes,
         )
@@ -831,7 +829,7 @@ def refine_single_volume(
         )
     _validate_bpref_particle_order_scope(
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
-        n_classes=n_classes,
+        n_classes=options.k_class.n_classes,
         init_relion_iteration=options.schedule.init_relion_iteration,
         perturb_replay_relion_dir=None if source.relion_replay is None else source.relion_replay.perturb_replay_relion_dir,
         replay_iteration_overrides=(
@@ -844,7 +842,7 @@ def refine_single_volume(
         continues_own_run=options.checkpoint.resume is not None,
     )
     class_mixture = _initialize_class_log_priors(
-        n_classes,
+        options.k_class.n_classes,
         options.k_class.init_class_log_priors,
         options.replay.init_direction_prior,
     )
@@ -877,7 +875,7 @@ def refine_single_volume(
         ),
     )
     snapshot_capture = SnapshotCapture(
-        n_classes=n_classes,
+        n_classes=options.k_class.n_classes,
         box_size=image_geometry.box_size,
         voxel_size=image_geometry.pixel_size_angstrom,
         tau2_fudge=options.parity.tau2_fudge,
@@ -925,7 +923,7 @@ def refine_single_volume(
             translation_step=(
                 options.schedule.init_translation_step if resume is None else state.translation_step
             ),
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             voxel_size=source_pixel_size_angstrom,
             symmetry=options.symmetry.point_group,
         ),
@@ -951,14 +949,14 @@ def refine_single_volume(
         requested=options.batching,
         image_shape=image_geometry.image_shape,
         volume_shape=volume_shape,
-        n_classes=n_classes,
+        n_classes=options.k_class.n_classes,
         log=logger,
     )
 
     initial_real_references_by_half = prepare_initial_real_references(
         options.replay.init_reference_real,
         volume_shape=volume_shape,
-        n_classes=n_classes,
+        n_classes=options.k_class.n_classes,
         init_relion_iteration=options.schedule.init_relion_iteration,
         log=logger,
     )
@@ -1038,7 +1036,7 @@ def refine_single_volume(
         # Each half stores its references in the loop's layout: an explicit leading
         # class axis for K classes, one flat reference for K=1.
         reference_model = initialize_reference_model(
-            _normalize_initial_means(init_volume, n_classes),
+            _normalize_initial_means(init_volume, options.k_class.n_classes),
             jnp.asarray(init_mean_variance),
             use_per_half_mean_variance=options.parity.use_per_half_mean_variance,
             k_class_enabled=k_class_enabled,
@@ -1078,7 +1076,7 @@ def refine_single_volume(
         )
         direction_priors = initial_direction_priors_from_snapshot(
             options.replay.init_direction_prior,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             dtype=scoring_dtype,
             log=logger,
             symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
@@ -1104,7 +1102,7 @@ def refine_single_volume(
             )
         else:
             random_perturbation = 0.0
-        published_accuracy = PublishedAccuracy.before_first_estimate(n_classes)
+        published_accuracy = PublishedAccuracy.before_first_estimate(options.k_class.n_classes)
     else:
         # --- A continued run starts from the run files of an earlier run (RELION --continue) ---
         # The snapshot replaces every value the next numbered iteration reads, so the
@@ -1137,7 +1135,7 @@ def refine_single_volume(
         if resume.direction_prior is None:
             direction_priors = initial_direction_priors_from_snapshot(
                 options.replay.init_direction_prior,
-                n_classes=n_classes,
+                n_classes=options.k_class.n_classes,
                 dtype=scoring_dtype,
                 log=logger,
                 symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
@@ -1148,7 +1146,7 @@ def refine_single_volume(
             saved_orders = [None if order < 0 else order for order in saved_orders]
             direction_priors = initial_direction_priors_from_snapshot(
                 resume.direction_prior,
-                n_classes=n_classes,
+                n_classes=options.k_class.n_classes,
                 dtype=scoring_dtype,
                 log=logger,
                 symmetry=options.symmetry.point_group, expected_order=saved_orders[0],
@@ -1157,9 +1155,9 @@ def refine_single_volume(
                 DirectionPrior(prior.values, order)
                 for prior, order in zip(direction_priors, saved_orders, strict=True)
             ]
-        random_perturbation = float(resume.random_perturbation)
+        random_perturbation = resume.random_perturbation
         published_accuracy = PublishedAccuracy.before_first_estimate(
-            n_classes, resume.acc_rot_per_class, resume.acc_trans_per_class_angstrom
+            options.k_class.n_classes, resume.acc_rot_per_class, resume.acc_trans_per_class_angstrom
         )
         logger.info(
             "Continuing after numbered iteration %d: current_size=%d healpix_order=%d "
@@ -1267,7 +1265,7 @@ def refine_single_volume(
         if (
             uses_native_auto_refine(
                 native_sampling_boundary=native_sampling_boundary,
-                n_classes=n_classes,
+                n_classes=options.k_class.n_classes,
             )
             and not options.schedule.force_max_iter_after_convergence
             and has_previous_iteration
@@ -1433,7 +1431,7 @@ def refine_single_volume(
             sigma2_noise_native=noise_model.radial_per_half[0],
             current_size=current_size, accuracy_image_size=strict_e_step_size(current_size, optics, options),
             image_box_size=image_geometry.box_size,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             iteration=iteration,
             native_sampling_boundary=native_sampling_boundary,
             relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
@@ -1459,7 +1457,7 @@ def refine_single_volume(
             iteration=iteration,
             has_previous_iteration=has_previous_iteration,
             native_sampling_boundary=native_sampling_boundary,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             log=logger,
         )
 
@@ -1526,7 +1524,7 @@ def refine_single_volume(
             int(state.adaptive_oversampling) > 0
             or (
                 int(state.adaptive_oversampling) == 0
-                and n_classes == 1
+                and options.k_class.n_classes == 1
                 and first_iteration.score_mode == "gaussian"
                 and not first_iteration.winner_take_all
                 and not options.precision.use_float64_scoring
@@ -1610,7 +1608,7 @@ def refine_single_volume(
             reference_model.maps,
             reconstruction_settings,
             current_size=sampling_plan.windows.model_window_size,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             reusable_half1=shared_projector_half1,
             real_references_by_half=initial_real_references_by_half if iteration == 0 else None,
             iteration=iteration,
@@ -1624,7 +1622,7 @@ def refine_single_volume(
 
         diagnostic_half_indices = _significance_dump_half_indices(
             numbered_iteration=numbered_relion_iteration,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             experiment_datasets=experiment_datasets,
         )
         # The two halves are independent inside the E-step. Extracting one
@@ -1779,7 +1777,7 @@ def refine_single_volume(
             class_mixture = class_mixture_from_weights(
                 _class_weights_from_posterior(
                     per_half.class_posterior,
-                    n_classes,
+                    options.k_class.n_classes,
                     class_mixture.weights,
                 )
             )
@@ -1787,7 +1785,7 @@ def refine_single_volume(
                 class_mixture.weights,
                 _class_weights_from_posterior(
                     per_half.class_full_posterior,
-                    n_classes,
+                    options.k_class.n_classes,
                     class_mixture.weights,
                 ),
             )
@@ -1846,7 +1844,7 @@ def refine_single_volume(
                     if not has_previous_iteration or projectors[0] is None
                     else projectors[0].power_spectrum
                 ),
-                class_tau2=source.class_tau2(iteration, n_classes),
+                class_tau2=source.class_tau2(iteration, options.k_class.n_classes),
                 scoring_dtype=scoring_dtype,
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
@@ -1910,7 +1908,7 @@ def refine_single_volume(
                 ):
                     learned_priors = learn_class_direction_priors(
                         per_half.class_rotation_posterior,
-                        n_classes=n_classes,
+                        n_classes=options.k_class.n_classes,
                         healpix_order=direction_prior_healpix_order,
                         dtype=scoring_dtype,
                         symmetry=options.symmetry.point_group,
@@ -1919,7 +1917,7 @@ def refine_single_volume(
                         direction_priors[half_index] = learned
         if single_class_iteration:
             mstep, class_mixture = copy_first_class_to_every_class(
-                reference_model, direction_priors, mstep, class_mixture, n_classes=n_classes,
+                reference_model, direction_priors, mstep, class_mixture, n_classes=options.k_class.n_classes,
             )
             history.data_vs_prior_trajectory[-1] = mstep.data_vs_prior
             previous_data_vs_prior_for_scheduling = mstep.data_vs_prior
@@ -1938,7 +1936,9 @@ def refine_single_volume(
             observer.wants_unfiltered_maps(numbered_relion_iteration)
             or (
                 options.checkpoint.writer is not None
-                and options.checkpoint.writer.wants_unfiltered_maps(numbered_relion_iteration, n_classes=n_classes)
+                and options.checkpoint.writer.wants_unfiltered_maps(
+                    numbered_relion_iteration, n_classes=options.k_class.n_classes
+                )
             )
         )
         _t_unreg = time.time()
@@ -1948,7 +1948,7 @@ def refine_single_volume(
                     mstep.Ft_y_combined,
                     mstep.Ft_ctf_combined,
                     reconstruction_settings,
-                    n_classes,
+                    options.k_class.n_classes,
                     accumulator_volume_shape=mstep_accumulator_shape,
                 )
                 if need_unreg_means
@@ -2195,7 +2195,7 @@ def refine_single_volume(
         sigma_offset_result = update_c1_sigma_offset_from_posterior(
             per_half,
             sigma_offset,
-            n_classes=n_classes,
+            n_classes=options.k_class.n_classes,
             state_fallback_offsets_angstrom=state.current_changes_optimal_offsets_angstrom,
             offset_dims=3 if tomo_halves else 2,
         )
@@ -2209,7 +2209,9 @@ def refine_single_volume(
             copy_optional_float_pair(sigma_offset.per_half_angstrom),
             None if per_class_sigma_offset is None else per_class_sigma_offset.tolist(),
         )
-        history.record_pose_accuracy_diagnostics(accuracy_replay, iteration_accuracy, state, n_classes=n_classes)
+        history.record_pose_accuracy_diagnostics(
+            accuracy_replay, iteration_accuracy, state, n_classes=options.k_class.n_classes
+        )
 
         # Save assignments for next iteration's change tracking.
         # Use per_half.coarse_ha (indexed into trial_grid.rotations/base rotation grid)
