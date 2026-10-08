@@ -42,52 +42,55 @@ def relion_x_half_mstep_accumulator_dtypes(dataset_dtype, *, use_relion_x_half_m
     return base_dtype, base_dtype
 
 
-def _large_relion_x_half_to_native_half_enabled(full_voxels: int) -> bool:
-    """Return whether large RELION x-half accumulators should stay half-packed."""
+def _large_grid_switch(flag_raw: str | None, min_voxels_raw: str | None, default_min_voxels: int, full_voxels: int) -> bool:
+    """Whether a large-grid route is on: an explicit flag value decides, else ``full_voxels >= min_voxels``.
 
-    raw = os.environ.get("RELAX_RELION_X_HALF_TO_NATIVE_HALF")
-    if raw is not None:
-        return raw.strip().lower() not in {"0", "false", "no", "off"}
-    min_voxels_raw = os.environ.get("RELAX_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS")
-    min_voxels = _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS
+    ``flag_raw`` is on unless it is a false token; ``min_voxels_raw`` overrides ``default_min_voxels``, and a value
+    that is not an integer silently keeps the default (unchanged behaviour of the three switches below).
+    """
+
+    if flag_raw is not None:
+        return flag_raw.strip().lower() not in {"0", "false", "no", "off"}
+    min_voxels = default_min_voxels
     if min_voxels_raw is not None:
         try:
             min_voxels = int(min_voxels_raw)
         except ValueError:
-            min_voxels = _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS
+            min_voxels = default_min_voxels
     return int(full_voxels) >= int(min_voxels)
+
+
+def _large_relion_x_half_to_native_half_enabled(full_voxels: int) -> bool:
+    """Return whether large RELION x-half accumulators should stay half-packed."""
+
+    return _large_grid_switch(
+        os.environ.get("RELAX_RELION_X_HALF_TO_NATIVE_HALF"),
+        os.environ.get("RELAX_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS"),
+        _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS,
+        full_voxels,
+    )
 
 
 def _large_relion_x_half_full_host_enabled(full_voxels: int) -> bool:
     """Return whether large RELION x-half full expansion should run on host."""
 
-    raw = os.environ.get("RELAX_RELION_X_HALF_FULL_HOST")
-    if raw is not None:
-        return raw.strip().lower() not in {"0", "false", "no", "off"}
-    min_voxels_raw = os.environ.get("RELAX_RELION_X_HALF_FULL_HOST_MIN_VOXELS")
-    min_voxels = _RELION_X_HALF_FULL_HOST_MIN_VOXELS
-    if min_voxels_raw is not None:
-        try:
-            min_voxels = int(min_voxels_raw)
-        except ValueError:
-            min_voxels = _RELION_X_HALF_FULL_HOST_MIN_VOXELS
-    return int(full_voxels) >= int(min_voxels)
+    return _large_grid_switch(
+        os.environ.get("RELAX_RELION_X_HALF_FULL_HOST"),
+        os.environ.get("RELAX_RELION_X_HALF_FULL_HOST_MIN_VOXELS"),
+        _RELION_X_HALF_FULL_HOST_MIN_VOXELS,
+        full_voxels,
+    )
 
 
 def _large_relion_x_half_host_x0_enabled(full_voxels: int) -> bool:
     """Return whether x=0 plane enforcement should run on host for large grids."""
 
-    raw = os.environ.get(_RELION_X_HALF_HOST_X0_ENV)
-    if raw is not None:
-        return raw.strip().lower() not in {"0", "false", "no", "off"}
-    min_voxels_raw = os.environ.get("RELAX_RELION_X_HALF_HOST_X0_MIN_VOXELS")
-    min_voxels = _RELION_X_HALF_HOST_X0_MIN_VOXELS
-    if min_voxels_raw is not None:
-        try:
-            min_voxels = int(min_voxels_raw)
-        except ValueError:
-            min_voxels = _RELION_X_HALF_HOST_X0_MIN_VOXELS
-    return int(full_voxels) >= int(min_voxels)
+    return _large_grid_switch(
+        os.environ.get(_RELION_X_HALF_HOST_X0_ENV),
+        os.environ.get("RELAX_RELION_X_HALF_HOST_X0_MIN_VOXELS"),
+        _RELION_X_HALF_HOST_X0_MIN_VOXELS,
+        full_voxels,
+    )
 
 
 def half_volume_accumulator_shape(recon_volume_shape):
