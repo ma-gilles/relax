@@ -31,7 +31,7 @@ class LocalSearchSettings:
     oversampling_order: int
     sigma_rot: float
     sigma_psi: float
-    symmetry: str = "C1"
+    symmetry: str
 
     @property
     def parent_order(self) -> int:
@@ -70,9 +70,8 @@ def prepare_numbered_local_sampling(
     coarse_size_healpix_order: int,
     perturbation: float,
     particle_diameter_angstrom: float | None,
-    log,
-    strict_pass1: bool = False,
-    wsum_current_size: int | None = None,
+    strict_pass1: bool,
+    wsum_current_size: int | None,
 ) -> LocalSampling:
     """Resolve a numbered local grid and its pre-update pass-1 window.
 
@@ -84,7 +83,7 @@ def prepare_numbered_local_sampling(
     coarse_image_window_size = image_window_size
     coarse_angular_step_deg = None
     if grid.rotations.shape[0] != sampling.rotation_grid_size(search.healpix_order, symmetry=search.symmetry):
-        log.info(
+        logger.info(
             "Using lazy fine local-search grid: order=%d (%d rotations) from capped base order=%d",
             search.healpix_order,
             sampling.rotation_grid_size(search.healpix_order, symmetry=search.symmetry),
@@ -105,7 +104,7 @@ def prepare_numbered_local_sampling(
             rotations = rotation_eulers = mstep_rotations = None
             deferred_perturbation = float(perturbation)
             if search.oversampling_order > 0:
-                log.info(
+                logger.info(
                     "RELION local search: expanding selected coarse parents by oversampling_order=%d",
                     int(search.oversampling_order),
                 )
@@ -120,7 +119,7 @@ def prepare_numbered_local_sampling(
                     particle_diameter=particle_diameter_angstrom,
                     current_size=image_window_size,
                 )
-                log.info(
+                logger.info(
                     "Local adaptive oversampling: pass 1 at coarse_size=%s, "
                     "pass 2 at current_size=%s (size_order=%d, parent_order=%d, oversampling=%d)",
                     coarse_image_window_size,
@@ -137,7 +136,7 @@ def prepare_numbered_local_sampling(
         )
         deferred_perturbation = 0.0
         angular_step_deg = None
-    log.info(
+    logger.info(
         "Local search (batched exact): fine_order=%d, sigma_rot=%.4f rad (%.2f deg), sigma_psi=%.4f rad",
         search.healpix_order,
         search.sigma_rot,
@@ -277,7 +276,6 @@ def plan_expectation_sampling(
             coarse_size_healpix_order=coarse_size_healpix_order,
             perturbation=perturbation,
             particle_diameter_angstrom=options.schedule.particle_diameter_ang,
-            log=logger,
         )
     else:
         local_sampling = None

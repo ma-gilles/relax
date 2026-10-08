@@ -18,7 +18,7 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize("symmetry", ["C1", "C4"])
 def test_local_empty_half_uses_the_direction_prior_grid(oversampling, symmetry):
     # A coarse order-4 local search: the fine grid is order 4 + oversampling, the parent grid order 4.
-    search = LocalSearchSettings(healpix_order=4 + oversampling, oversampling_order=oversampling, sigma_rot=0.03, sigma_psi=0.03)
+    search = LocalSearchSettings(healpix_order=4 + oversampling, oversampling_order=oversampling, sigma_rot=0.03, sigma_psi=0.03, symmetry="C1")
     sampling = SimpleNamespace(search=search)
     state = RefinementState(healpix_order=4, adaptive_oversampling=oversampling, do_local_search=True)
     prior_order = _direction_prior_healpix_order_for_scoring(

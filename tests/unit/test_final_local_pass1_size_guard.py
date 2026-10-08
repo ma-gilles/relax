@@ -43,7 +43,9 @@ def preparation(monkeypatch):
     monkeypatch.setattr(local_sampling, "relion_local_pass1_current_size", size_parent)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda *a, **kw: False)
     inputs = dict(
-        search=local_sampling.LocalSearchSettings(healpix_order=2, oversampling_order=0, sigma_rot=0.1, sigma_psi=0.2),
+        search=local_sampling.LocalSearchSettings(
+            healpix_order=2, oversampling_order=0, sigma_rot=0.1, sigma_psi=0.2, symmetry="C1"
+        ),
         optics=_optics(),
         translations=object(), base_translations=object(), image_window_size=64,
         particle_diameter_angstrom=100.0,

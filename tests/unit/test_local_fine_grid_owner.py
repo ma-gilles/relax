@@ -109,8 +109,6 @@ def _optics(image_sizes, pixel_sizes):
 
 
 def _numbered_local_inputs(*, reuse=False, oversampling=0, symmetry="C1"):
-    import logging
-
     _rotation_grid_rotations = _fake_grid(ORDER) if symmetry == "C1" else _fake_reduced_grid(ORDER, symmetry=symmetry)
     rotations = _rotation_grid_rotations.rotations
     eulers = _rotation_grid_rotations.rotation_eulers
@@ -128,7 +126,7 @@ def _numbered_local_inputs(*, reuse=False, oversampling=0, symmetry="C1"):
         image_window_size=32, model_support_size=24, base_healpix_order=0,
         coarse_size_healpix_order=0, perturbation=0.125,
         optics=_optics(None, None),
-        particle_diameter_angstrom=100.0, log=logging.getLogger(__name__),
+        particle_diameter_angstrom=100.0, strict_pass1=False, wsum_current_size=None,
     )
 
 

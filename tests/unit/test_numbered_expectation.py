@@ -47,7 +47,8 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
     )
     if local:
         sampling = LocalSampling(
-            search=LocalSearchSettings(healpix_order=0, oversampling_order=int(adaptive), sigma_rot=.2, sigma_psi=.3),
+            search=LocalSearchSettings(healpix_order=0, oversampling_order=int(adaptive), sigma_rot=.2, sigma_psi=.3,
+                                       symmetry='C1'),
             rotations=rotations, translations=translations, base_translations=translations,
             image_window_size=4, coarse_image_window_size=2, perturbation=.125, angular_step_deg=None,
             coarse_angular_step_deg=15.,
