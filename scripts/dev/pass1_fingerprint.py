@@ -201,8 +201,8 @@ REFUSED_CASES = frozenset(name for name in CASES if name.startswith("refused_"))
 # A deliberately wrong pass 1 for the self-test: (name, old lines, new lines, what breaks, detected).
 # A target must occur in exactly one place of the tree: when a statement is rewritten, update its entry.
 MUTATIONS = (
-    ("class_prior", "jnp.asarray(class_log_priors_np[class_index], dtype=jnp.float32),",
-     "jnp.asarray(class_log_priors_np[class_index] * 2.0, dtype=jnp.float32),",
+    ("class_prior", "jnp.asarray(class_log_priors[class_index], dtype=jnp.float32),",
+     "jnp.asarray(class_log_priors[class_index] * 2.0, dtype=jnp.float32),",
      "the class prior is doubled", True),
     ("rotation_prior_class", "rotation_log_prior_padded[class_index, r0 : r0 + rotation_block_size]",
      "rotation_log_prior_padded[0, r0 : r0 + rotation_block_size]",

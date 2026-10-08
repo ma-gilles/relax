@@ -11,7 +11,6 @@ import os
 import time
 from functools import partial
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar.utils.nvtx_shim import nvtx
@@ -41,16 +40,9 @@ from relax.scoring.gaussian_plan import plan_coarse_gaussian
 from relax.scoring.pass1_assembly import log_batch_timing, significant_samples_after_loop
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
-from relax.scoring.pass1_program import (
-    _class_block_state,
-    _coarse_pass1_block,
-    _coarse_pass1_blocks,
-    _merge_class_block_state,
-    _pass1_batch_constants,
-    _pass1_initial_state,
-)
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, PassShape, ScoreDumpContext
+from relax.scoring.pass1_scores import ScoreProgramPlan, block_prior_terms, run_score_program, score_blocks
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
 )
@@ -625,8 +617,31 @@ def _compute_k_class_significance_batched(
             gaussian_plan.projection_cache_plan.budget_bytes,
         )
 
-    # The class and rotation prior terms of the pass-1 program, built at its first batch.
-    pass1_prior_terms = None
+    # RELION's CUDA coarse kernel forms ``pdf_orientation + pdf_offset +
+    # min_diff2 - diff2`` left to right (cuda_kernel_weights_exponent_coarse).
+    # Adding the priors to the absolute scores and the min_diff2 offset
+    # afterwards can tie poses that RELION separates by one ULP, so the
+    # support pass keeps the pre-prior scores.
+    relion_exact_coarse_weight_order = bool(relion_f32_coarse_support_enabled and n_classes == 1)
+    pass1_blocks = score_blocks(n_classes, n_rot, rotation_block_size)
+    score_program_plan = ScoreProgramPlan(
+        blocks=pass1_blocks,
+        prior_terms=block_prior_terms(pass1_blocks, class_log_priors_np, rotation_log_prior_padded, rotation_block_size),
+        rotations_padded=rotations_padded,
+        projector=coarse_projector,
+        projection_cache=coarse_gaussian_gemm_projection_cache,
+        n_classes=n_classes,
+        n_trans=int(n_trans),
+        image_shape=tuple(int(value) for value in image_shape),
+        volume_shape=tuple(int(value) for value in volume_shape),
+        float64=_coarse_gemm_float64_requested(),
+        score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
+        exact_weight_order=relion_exact_coarse_weight_order,
+        return_class_best=bool(return_class_best),
+        track_class_second=bool(track_class_second),
+        return_values=bool(collect_significance),
+    )
+    # The rotation-and-class prior of the exact-weight-order support program, built at its first batch.
     exact_rotation_prior = None
 
     output_plan = OutputPlan(
@@ -728,61 +743,8 @@ def _compute_k_class_significance_batched(
                     _positions = np.flatnonzero(np.isin(_orig, np.fromiter(_dump_targets, dtype=np.int64)))
                     if _positions.size:
                         dump_target_local_positions = _positions.astype(np.int64)
-            # Per-class collectors for raw (pre-prior) score blocks at target rows.
-            # Shape after concat per class: (n_targets, n_rot, n_trans)
-            dump_target_pre_prior_blocks_per_class = (
-                [[] for _ in range(n_classes)] if dump_target_local_positions is not None else None
-            )
-            dump_target_with_prior_blocks_per_class = (
-                [[] for _ in range(n_classes)] if dump_target_local_positions is not None else None
-            )
-            neg_inf_f, zeros_f64, zeros_i32 = _pass1_batch_constants(batch_inputs.batch_size, bool(jax.config.jax_enable_x64))
-            # RELION's CUDA coarse kernel forms ``pdf_orientation + pdf_offset +
-            # min_diff2 - diff2`` left to right (cuda_kernel_weights_exponent_coarse).
-            # Adding the priors to the absolute scores and the min_diff2 offset
-            # afterwards can tie poses that RELION separates by one ULP, so the
-            # support pass keeps the pre-prior scores.
-            relion_exact_coarse_weight_order = bool(relion_f32_coarse_support_enabled and n_classes == 1)
-
-            # Pass 1 of the coarse GEMM scorers is one program per batch
-            # (_coarse_pass1_blocks): over the cached projections in one call, or
-            # one call per class and rotation block on its projection when the
-            # cache does not fit and for --firstiter_cc. The program also returns
-            # the RELAX_SIGNIFICANCE_DUMP_* targets' scores and the class runner-up.
-            batched_support_values = None
-            if pass1_prior_terms is None:
-                pass1_prior_terms = tuple(
-                    tuple(
-                        (
-                            jnp.asarray(class_log_priors_np[class_index], dtype=jnp.float32),
-                            None
-                            if rotation_log_prior_padded is None
-                            else jnp.asarray(
-                                rotation_log_prior_padded[class_index, r0 : r0 + rotation_block_size]
-                            ),
-                        )
-                        for r0 in range(0, n_rot_padded, rotation_block_size)
-                    )
-                    for class_index in range(n_classes)
-                )
-            pass1_blocks = tuple(
-                (class_index, r0, min(rotation_block_size, n_rot - r0), int(rotation_block_size))
-                for class_index in range(n_classes)
-                for r0 in range(0, n_rot, rotation_block_size)
-            )
             program_inputs = operands.program_inputs()
-            pass1_static = dict(
-                n_trans=int(n_trans),
-                image_shape=tuple(int(value) for value in image_shape),
-                volume_shape=tuple(int(value) for value in volume_shape),
-                float64=_coarse_gemm_float64_requested(),
-                score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
-                exact_weight_order=relion_exact_coarse_weight_order,
-                return_class_best=bool(return_class_best),
-                track_class_second=bool(track_class_second),
-                return_values=bool(collect_significance),
-            )
-            pass1_dump_rows = (
+            dump_rows = (
                 None
                 if dump_target_local_positions is None
                 else jnp.asarray(dump_target_local_positions, dtype=jnp.int32)
@@ -790,70 +752,13 @@ def _compute_k_class_significance_batched(
             if pending_batch is not None:
                 publish_batch(pending_batch, outputs, output_plan, dump_context)
                 pending_batch = None
-            pass1_state = _pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), n_classes)
-            if coarse_gaussian_gemm_projection_cache is not None and not exact_cc_enabled:
-                pass1_state, pass1_values, pass1_dumps = _coarse_pass1_blocks(
-                    pass1_state,
-                    coarse_gaussian_gemm_projection_cache,
-                    *program_inputs,
-                    actual_batch_size,
-                    tuple(
-                        pass1_prior_terms[class_index][r0 // rotation_block_size]
-                        for class_index, r0, _, _ in pass1_blocks
-                    ),
-                    batch_inputs.translation_log_prior,
-                    pass1_dump_rows,
-                    blocks=pass1_blocks,
-                    **pass1_static,
-                )
-            else:
-                pass1_values = []
-                pass1_dumps = []
-                for class_index, r0, rows, block_rows in pass1_blocks:
-                    rots_b = rotations_padded[r0 : r0 + block_rows]
-                    if exact_cc_enabled:
-                        reference, _ = coarse_projector.block_once(class_index, rots_b, rotation_start=r0)
-                    else:
-                        reference, _ = coarse_projector.compact_rows(class_index, rots_b, return_abs2=True)
-                    block_state, block_values, block_dump = _coarse_pass1_block(
-                        _class_block_state(pass1_state, class_index),
-                        reference,
-                        *program_inputs,
-                        actual_batch_size,
-                        pass1_prior_terms[class_index][r0 // rotation_block_size],
-                        batch_inputs.translation_log_prior,
-                        jnp.int32(class_index),
-                        jnp.int32(r0),
-                        pass1_dump_rows,
-                        rows=rows,
-                        block_rows=block_rows,
-                        **pass1_static,
-                    )
-                    pass1_state = _merge_class_block_state(pass1_state, block_state, class_index)
-                    pass1_values.append(block_values)
-                    pass1_dumps.append(block_dump)
-            if collect_significance:
-                batched_support_values = jnp.concatenate(pass1_values, axis=1)
-            if pass1_dump_rows is not None:
-                for (class_index, _, _, _), (pre_prior, with_prior) in zip(pass1_blocks, pass1_dumps, strict=True):
-                    dump_target_pre_prior_blocks_per_class[class_index].append(np.asarray(pre_prior, dtype=np.float64))
-                    dump_target_with_prior_blocks_per_class[class_index].append(
-                        np.asarray(with_prior, dtype=np.float64)
-                    )
-            (
-                (global_max, global_sum),
-                (class_max_tuple, class_sum_tuple),
-                (best_score_batch, best_argmax_batch, best_class_batch),
-                (class_best_tuple, class_best_argmax_tuple, class_second_tuple, class_second_argmax_tuple),
-                pass1_raw_score_max,
-            ) = pass1_state
-            relion_raw_score_max = pass1_raw_score_max if relion_f32_coarse_support_enabled else None
-            class_max_values = list(class_max_tuple)
-            class_sum_values = list(class_sum_tuple)
-            class_best_scores = list(class_best_tuple) if return_class_best else None
-            class_best_argmaxes = list(class_best_argmax_tuple) if return_class_best else None
-            class_second_best_scores = list(class_second_tuple) if track_class_second else None
-            class_second_best_argmaxes = list(class_second_argmax_tuple) if track_class_second else None
+            scores = run_score_program(
+                score_program_plan,
+                program_inputs,
+                batch_inputs.translation_log_prior,
+                actual_batch_size,
+                dump_rows,
+            )
 
             if tree_rescore_enabled:
                 # The bounded top-two rescore uses the batch's exact CUDA CC operands (the per-image FFT/CTF
@@ -861,12 +766,12 @@ def _compute_k_class_significance_batched(
                 rescored = rescore_ambiguous_images(
                     tree_rescore_plan,
                     TreeRescoreState(
-                        best_argmax=best_argmax_batch,
-                        best_score=best_score_batch,
-                        class_best_argmax=class_best_argmaxes[0],
-                        class_best_score=class_best_scores[0],
-                        class_second_argmax=class_second_best_argmaxes[0],
-                        class_second_score=class_second_best_scores[0],
+                        best_argmax=scores.best_argmax,
+                        best_score=scores.best_score,
+                        class_best_argmax=scores.class_best_argmaxes[0],
+                        class_best_score=scores.class_best_scores[0],
+                        class_second_argmax=scores.class_second_best_argmaxes[0],
+                        class_second_score=scores.class_second_best_scores[0],
                     ),
                     operands.unshifted,
                     operands.corr_img,
@@ -878,28 +783,30 @@ def _compute_k_class_significance_batched(
                 tree_rescore_ambiguous += rescored.ambiguous_images
                 tree_rescore_exact_ties += rescored.exact_ties
                 tree_rescore_winner_changes += rescored.winner_changes
-                best_argmax_batch = rescored.state.best_argmax
-                best_score_batch = rescored.state.best_score
-                class_best_argmaxes[0] = rescored.state.class_best_argmax
-                class_best_scores[0] = rescored.state.class_best_score
-                class_second_best_argmaxes[0] = rescored.state.class_second_argmax
-                class_second_best_scores[0] = rescored.state.class_second_score
+                scores = scores._replace(
+                    best_argmax=rescored.state.best_argmax,
+                    best_score=rescored.state.best_score,
+                    class_best_argmaxes=[rescored.state.class_best_argmax],
+                    class_best_scores=[rescored.state.class_best_score],
+                    class_second_best_argmaxes=[rescored.state.class_second_argmax],
+                    class_second_best_scores=[rescored.state.class_second_score],
+                )
 
-            global_log_z = global_max + jnp.log(global_sum)
+            global_log_z = scores.global_max + jnp.log(scores.global_sum)
             class_log_z_values = [
-                class_max + jnp.log(class_sum) for class_max, class_sum in zip(class_max_values, class_sum_values)
+                class_max + jnp.log(class_sum) for class_max, class_sum in zip(scores.class_max, scores.class_sum)
             ]
 
             normalization_score_mats = []
             if collect_significance:
                 batch_values = (
-                    batched_support_values
+                    scores.support_values
                     if relion_f32_coarse_support_enabled
-                    else jnp.exp(batched_support_values - global_log_z[:, None])
+                    else jnp.exp(scores.support_values - global_log_z[:, None])
                 )
                 if return_relion_f32_normalization and not relion_f32_coarse_support_enabled:
                     # The program's values are the with-prior scores here.
-                    normalization_score_mats.append(batched_support_values)
+                    normalization_score_mats.append(scores.support_values)
                 if relion_f32_coarse_support_enabled:
                     # The float32 posterior and what the batch publishes from it are one program
                     # (coarse_support_posterior). K=1 hands it the pre-prior scores and the priors:
@@ -912,7 +819,7 @@ def _compute_k_class_significance_batched(
                         ) + jnp.asarray(class_log_priors_np[0], dtype=jnp.float32)
                     support = coarse_support_posterior(
                         batch_values,
-                        relion_raw_score_max,
+                        scores.raw_score_max,
                         exact_rotation_prior,
                         (
                             None
@@ -937,7 +844,7 @@ def _compute_k_class_significance_batched(
                     batch_pmax = support["pmax"]
                     if relion_exact_coarse_weight_order:
                         # RELION publishes the coarse winner from these weights (class 0: one class).
-                        best_argmax_batch = support["winner"]
+                        scores = scores._replace(best_argmax=support["winner"])
                 else:
                     batch_weights = batch_values
                     if return_relion_f32_normalization:
@@ -991,19 +898,19 @@ def _compute_k_class_significance_batched(
                 cutoff_count=batch_cutoff_count,
                 sum_weight=_batch_sum_weight,
                 significant_weight=None if defer_publish else _batch_significant_weight,
-                best_argmax=best_argmax_batch,
-                best_class=best_class_batch,
-                best_score=best_score_batch,
+                best_argmax=scores.best_argmax,
+                best_class=scores.best_class,
+                best_score=scores.best_score,
                 global_log_z=global_log_z,
                 class_log_z_values=class_log_z_values,
-                class_best_scores=class_best_scores,
-                class_best_argmaxes=class_best_argmaxes,
-                class_second_best_scores=class_second_best_scores,
-                class_second_best_argmaxes=class_second_best_argmaxes,
+                class_best_scores=scores.class_best_scores,
+                class_best_argmaxes=scores.class_best_argmaxes,
+                class_second_best_scores=scores.class_second_best_scores,
+                class_second_best_argmaxes=scores.class_second_best_argmaxes,
                 debug_dump_enabled=debug_dump_enabled,
                 dump_target_local_positions=dump_target_local_positions,
-                dump_target_pre_prior_blocks_per_class=None if defer_publish else dump_target_pre_prior_blocks_per_class,
-                dump_target_with_prior_blocks_per_class=None if defer_publish else dump_target_with_prior_blocks_per_class,
+                dump_target_pre_prior_blocks_per_class=None if defer_publish else scores.dump_pre_prior_blocks,
+                dump_target_with_prior_blocks_per_class=None if defer_publish else scores.dump_with_prior_blocks,
                 translation_log_prior=None if defer_publish else batch_inputs.translation_log_prior,
                 operands=None if defer_publish else operands,
             )

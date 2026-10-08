@@ -4169,9 +4169,7 @@ def _exact_pass1_on_cpu(monkeypatch):
 
     import recovar.cuda_backproject as cuda_backproject
 
-    import relax.scoring.significance as significance_module
-
-    monkeypatch.setattr(significance_module.jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
     monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "0")
 
@@ -6533,7 +6531,6 @@ class TestRelionModeSmokeTest:
         import relax.helpers.projection as projection_module
         import relax.scoring.pass1_program as pass1_program
         import relax.scoring.scoring as scoring_module
-        import relax.scoring.significance as significance_module
         from relax.cuda import kernels as em_cuda_kernels
 
         dataset = half_datasets[0]
@@ -6545,7 +6542,7 @@ class TestRelionModeSmokeTest:
         dataset.process_images_half = fake_relion_process_half
         rotations = _make_rotations(2, seed=6322)
         translations = jnp.zeros((1, 2), dtype=jnp.float32)
-        monkeypatch.setattr(significance_module.jax, "default_backend", lambda: "gpu")
+        monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
         monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
         monkeypatch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
         monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)

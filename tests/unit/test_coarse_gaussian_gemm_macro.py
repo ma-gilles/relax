@@ -680,7 +680,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     }.items():
         monkeypatch.setenv(name, value)
 
-    monkeypatch.setattr(significance.jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
     mock_unit_ctf_and_zero_highres_power(monkeypatch)
     monkeypatch.setattr(
@@ -824,7 +824,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     }.items():
         monkeypatch.setenv(name, value)
 
-    monkeypatch.setattr(significance.jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
     monkeypatch.setattr(
         relion_ctf,
