@@ -43,6 +43,7 @@ import numpy as np
 
 from relax.helpers import relion_random
 from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.helpers.shells import shell_of_radius_sq
 from relax.relion.macros import PI, relion_round_array
 from relax.sparse_pass2.sparse_pass2_budget import ACCURACY_SLAB_STREAM_CHUNK_BYTES, accuracy_slab_resident_bytes
 
@@ -367,7 +368,7 @@ def _snr_terms(current_image_size, full_size, sigma2_noise, sigma2_fudge, remap_
     rows = np.arange(current_image_size)
     iy = np.where(rows < half, rows, rows - current_image_size)[:, None]
     ix = np.arange(half)[None, :]
-    ires = relion_round_array(np.sqrt((iy * iy + ix * ix).astype(np.float64))).astype(np.int64)
+    ires = shell_of_radius_sq(iy * iy + ix * ix, rule="half_up")
     remapped = relion_round_array(np.asarray(remap_image_sizes * ires, dtype=np.float64)).astype(np.int64)
     sigma = np.asarray(sigma2_noise, dtype=np.float64)
     valid = (ires > 0) & (ires < half) & ~((ix == 0) & (iy < 0)) & (remapped < sigma.size)

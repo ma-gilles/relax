@@ -10,6 +10,7 @@ import numpy as np
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
 from relax.helpers.deterministic_reduce import deterministic_reductions_enabled, fixed_order_segment_sum
+from relax.helpers.shells import shell_index
 
 
 @dataclass(frozen=True)
@@ -46,12 +47,9 @@ def _host_half_spectrum_plan(image_shape):
         relion_scoring_weights[1 : (height + 1) // 2, 0] = 0.0
     relion_cc_scoring_weights = np.ones((height, half_width), dtype=np.float32)
 
-    vertical_grid = np.arange(-(height // 2), height - height // 2, dtype=np.float32)
-    packed_grid = np.arange(0, half_width, dtype=np.float32)
-    radial_sq = np.zeros((height, half_width), dtype=np.float32)
-    radial_sq = radial_sq + vertical_grid[:, None] ** 2
-    radial_sq = radial_sq + packed_grid[None, :] ** 2
-    shell_indices = np.rint(np.sqrt(radial_sq)).astype(np.int32).reshape(-1)
+    shell_indices = shell_index(
+        (height, width), rows="centred", half=True, rule="half_even", real_dtype=np.float32, index_dtype=np.int32
+    ).reshape(-1)
 
     coords = fourier_transform_utils.get_k_coordinate_of_each_pixel_half_np(
         image_shape,

@@ -17,6 +17,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.helpers.env_flags import parse_env_binary_flag
+from relax.helpers.shells import shell_of_radius_sq
 
 DETERMINISTIC_REDUCTIONS_ENV = "RELAX_EM_DETERMINISTIC_REDUCTIONS"
 
@@ -78,7 +79,7 @@ def static_shell_voxel_lists(
     y = coord if rows is None else coord[int(rows[0]) : int(rows[1])]
     x = np.arange(int(capacity) // 2 + 1, dtype=np.int64)
     r2 = coord[:, None, None] ** 2 + y[None, :, None] ** 2 + x[None, None, :] ** 2
-    shells = np.floor(np.sqrt(r2.astype(np.float64)) / float(padding_factor) + 0.5).astype(np.int64)
+    shells = shell_of_radius_sq(r2, rule="half_up", padding_factor=float(padding_factor))
     if clamp_to_last:
         shells = np.minimum(shells, int(n_shells) - 1)
     shells = shells.reshape(-1)
