@@ -163,22 +163,15 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch):
             return self.deleted
 
     volume_ft = FakeBuffer("volume_ft", np.complex64)
-    vol_real = FakeBuffer("vol_real", np.complex64)
     solvent_mask = FakeBuffer("solvent_mask", np.float64)
     flattened = FakeBuffer("flattened", np.complex128)
     flattened_host_source = np.asarray([3.0 + 4.0j], dtype=np.complex128)
 
-    def fake_idft(value):
-        events.append(("idft", value.name))
-        return vol_real
-
-    def fake_dft(value):
-        assert value == (vol_real, solvent_mask)
-        events.append(("dft", "masked_real"))
+    def fake_flatten(value, mask, *, volume_shape):
+        events.append(("flatten", value.name, mask.name, volume_shape))
         return flattened
 
-    monkeypatch.setattr(mean_helpers.fourier_transform_utils, "get_idft3", fake_idft)
-    monkeypatch.setattr(mean_helpers.fourier_transform_utils, "get_dft3", fake_dft)
+    monkeypatch.setattr(mean_helpers, "_flatten_volume", fake_flatten)
     monkeypatch.setattr(
         mean_helpers.jax,
         "device_get",
@@ -202,16 +195,12 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch):
     assert result.flags.c_contiguous
     assert result.flags.owndata
     assert_matches(result, flattened_host_source)
+    # The transforms are one program (_flatten_volume), so no real-space volume outlives it (relax#49).
     assert events == [
-        ("reshape", "volume_ft", (800, 800, 800)),
-        ("idft", "volume_ft"),
-        ("multiply", "vol_real", "solvent_mask"),
-        ("dft", "masked_real"),
-        ("reshape", "flattened", -1),
+        ("flatten", "volume_ft", "solvent_mask", (800, 800, 800)),
         ("block", "flattened"),
         ("device_get", "flattened"),
         ("delete", "flattened"),
-        ("delete", "vol_real"),
         ("delete", "solvent_mask"),
         ("gc",),
     ]
@@ -312,19 +301,14 @@ def test_small_solvent_flatten_keeps_async_default_path(monkeypatch):
             raise AssertionError("small/default solvent flatten must not delete caller buffers")
 
     volume_ft = FakeBuffer("volume_ft")
-    vol_real = FakeBuffer("vol_real")
     solvent_mask = FakeBuffer("solvent_mask")
     flattened = FakeBuffer("flattened")
 
     monkeypatch.setattr(
-        mean_helpers.fourier_transform_utils,
-        "get_idft3",
-        lambda value: events.append(("idft", value.name)) or vol_real,
-    )
-    monkeypatch.setattr(
-        mean_helpers.fourier_transform_utils,
-        "get_dft3",
-        lambda value: events.append(("dft", value)) or flattened,
+        mean_helpers,
+        "_flatten_volume",
+        lambda value, mask, *, volume_shape: events.append(("flatten", value.name, mask.name, volume_shape))
+        or flattened,
     )
     monkeypatch.setattr(
         mean_helpers,
@@ -339,13 +323,7 @@ def test_small_solvent_flatten_keeps_async_default_path(monkeypatch):
     )
 
     assert result is flattened
-    assert events == [
-        ("reshape", "volume_ft", (8, 8, 8)),
-        ("idft", "volume_ft"),
-        ("multiply", "vol_real", "solvent_mask"),
-        ("dft", (vol_real, solvent_mask)),
-        ("reshape", "flattened", -1),
-    ]
+    assert events == [("flatten", "volume_ft", "solvent_mask", (8, 8, 8))]
 
 
 @pytest.mark.parametrize("dtype", [jnp.float32, jnp.float64])

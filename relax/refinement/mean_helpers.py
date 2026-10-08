@@ -660,8 +660,12 @@ def estimate_class_priors(
 
 
 def merged_half_map(means):
-    """The mean of the two half maps (or half class stacks)."""
-    return (means[0] + means[1]) / 2
+    """The mean of the two half maps (or half class stacks).
+
+    Class3D's two slots hold one stack, and (x + x) / 2 is x: no second box-scale stack (relax#49: 1.23 GiB at the
+    end of a box-380 K3 run on a 16 GB card).
+    """
+    return means[0] if means[0] is means[1] else (means[0] + means[1]) / 2
 
 
 def weighted_class_merge(class_means, class_weights):
@@ -798,14 +802,34 @@ def _reconstruct_volume_eager(
 
     from relax.reconstruction import relion_functions_relion
 
-    Ft_ctf, Ft_y = _pack_compact_full_accumulators_for_large_relion_ifft(
-        Ft_ctf,
-        Ft_y,
-        vol_shape,
-        padding_factor,
-        accumulator_volume_shape,
-        relion_functions,
-    )
+    # The device CTF row caches yield if the device cannot hand out this reconstruction's largest working set now
+    # (the pad into the FFTW half: two halves), before any of its box-scale steps: after a pass, the cached rows left
+    # a 16 GB pool too fragmented for the 0.56-1.64 GiB pack and pad requests at box 380 and 448 (relax#49).
+    padded_shape = relion_functions._relion_reconstruction_padded_shape(vol_shape, padding_factor)
+    padded_half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(padded_shape)
+    relion_ctf.ensure_device_headroom(int(_DEVICE_PAD_HALVES * np.prod(padded_half_shape) * 8))
+    # A compact accumulator whose FFTW pad the device cannot hold (_relion_pad_exceeds_device_working_set) is solved
+    # on the CPU backend from its repack on: after a pass the 16 GB pool could not place even the 0.69 GiB repacked
+    # half at box 448 (relax#49). The accumulators go back to the device if the reconstruction is not host-staged.
+    cpu_accumulators = not relion_functions._large_grid_postprocess_is_physically_large(
+        int(np.prod(accumulator_volume_shape or [int(vol_shape[0]) * int(padding_factor)] * 3))
+    ) and _relion_pad_exceeds_device_working_set(padded_shape)
+    if cpu_accumulators:
+        cpu = jax.devices("cpu")[0]
+        Ft_ctf, Ft_y = (jax.device_put(value, cpu) if isinstance(value, jax.Array) else value for value in (Ft_ctf, Ft_y))
+        with jax.default_device(cpu):
+            Ft_ctf, Ft_y = _pack_compact_full_accumulators_for_large_relion_ifft(
+                Ft_ctf, Ft_y, vol_shape, padding_factor, accumulator_volume_shape, relion_functions
+            )
+    else:
+        Ft_ctf, Ft_y = _pack_compact_full_accumulators_for_large_relion_ifft(
+            Ft_ctf,
+            Ft_y,
+            vol_shape,
+            padding_factor,
+            accumulator_volume_shape,
+            relion_functions,
+        )
     stable_class = _stable_reconstruction_class(
         current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d
     )
@@ -842,6 +866,8 @@ def _reconstruct_volume_eager(
         accumulator_volume_shape,
         relion_functions,
     )
+    if cpu_accumulators and not host_stage_large_ifft:
+        Ft_ctf, Ft_y = (jax.device_put(value, jax.devices()[0]) for value in (Ft_ctf, Ft_y))
     if retained_device_numerator is not None and not host_stage_large_ifft:
         raise ValueError(
             "A retained device numerator is only valid for the large host-staged RELION reconstruction path"
@@ -1086,10 +1112,6 @@ def _reconstruct_volume_eager(
                 reconstruction_shape,
             )
         else:
-            # The device CTF row caches yield if the device cannot hand out the pad's working set now, as before
-            # the device inverse FFT (relax#40).
-            fftw_half_bytes = int(np.prod(fourier_transform_utils.volume_shape_to_half_volume_shape(reconstruction_shape))) * 8
-            relion_ctf.ensure_device_headroom(int(_DEVICE_PAD_HALVES * fftw_half_bytes))
             fftw_half_device = relion_functions.post_process_from_filter_v2(
                 *postprocess_args,
                 **postprocess_kwargs,
@@ -1580,11 +1602,17 @@ def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes
     return class_maps
 
 
+@functools.partial(jax.jit, static_argnames=("volume_shape",))
+def _flatten_volume(volume_ft_flat, solvent_mask, *, volume_shape):
+    """RELION's solventFlatten of one flat Fourier map as one program: inverse transform, mask, forward transform."""
+    vol_real = fourier_transform_utils.get_idft3(volume_ft_flat.reshape(volume_shape))
+    return fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1)
+
+
 @functools.partial(jax.jit, static_argnames=("volume_shape",), donate_argnums=0)
 def _flatten_class_row(class_maps, solvent_mask, class_idx, *, volume_shape):
     """``class_maps`` with class ``class_idx`` solvent-flattened, in place (the stack is donated)."""
-    vol_real = fourier_transform_utils.get_idft3(class_maps[class_idx].reshape(volume_shape))
-    return class_maps.at[class_idx].set(fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1))
+    return class_maps.at[class_idx].set(_flatten_volume(class_maps[class_idx], solvent_mask, volume_shape=volume_shape))
 
 
 def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
@@ -1887,6 +1915,10 @@ def _large_irfft_requires_explicit_normalization(volume_shape) -> bool:
 
     return math.prod(int(size) for size in volume_shape) > _LARGE_IRFFT_TRANSFORM_SIZE_LIMIT
 
+
+# The solvent flatten program of one complex64 map holds about two maps on the device (measured 2.0 class maps at
+# box 256; the eager statements held 5.0; test_class_stack_postprocess.py).
+_DEVICE_FLATTEN_MAPS = 2.0
 
 # Padding the Wiener half into the FFTW half on the device holds the zero FFTW half and its scattered copy side by
 # side (bigbox 14468686): two halves.
@@ -2328,8 +2360,11 @@ def _apply_relion_solvent_flatten_k1(
 ):
     """Apply the K=1 solvent mask and host-stage box-scale FFT results."""
 
-    vol_real = fourier_transform_utils.get_idft3(volume_ft_flat.reshape(volume_shape))
-    flattened = fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1)
+    # One program (_flatten_volume): the eager statements held four box-size shift copies and transforms at once, and
+    # at box 448 on a 16 GB card the fifth could not be placed (relax#49). The device CTF row caches yield if the
+    # device cannot hand out the program's working set now, as before the device inverse FFT.
+    relion_ctf.ensure_device_headroom(int(_DEVICE_FLATTEN_MAPS * np.prod(volume_shape) * 8))
+    flattened = _flatten_volume(volume_ft_flat, solvent_mask, volume_shape=tuple(int(n) for n in volume_shape))
     if not _large_relion_solvent_mask_uses_compiled_builder(volume_shape):
         return flattened
 
@@ -2343,7 +2378,6 @@ def _apply_relion_solvent_flatten_k1(
     flattened.block_until_ready()
     flattened_host = np.array(jax.device_get(flattened), copy=True, order="C")
     regularization_relion.delete_device_array(flattened)
-    regularization_relion.delete_device_array(vol_real)
     regularization_relion.delete_device_array(solvent_mask)
     gc.collect()
     return flattened_host
