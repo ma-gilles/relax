@@ -29,7 +29,7 @@ from typing import Callable, Literal, Sequence
 import numpy as np
 
 from relax.helpers.convergence import _relion_optimizer_average_pmax
-from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
+from relax.reconstruction.regularization_relion import RELION_MINRES_MAP, resolution_from_data_vs_prior
 from relax.relion.macros import relion_round
 from relax.vdam.estep_common import EstepSums, estep_sums
 from relax.vdam.estep_meta_updates import (
@@ -40,8 +40,6 @@ from relax.vdam.estep_meta_updates import (
 from relax.vdam.m_step import vdam_m_step
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.schedules import (
-    DEFAULT_GRAD_EM_ITERS,
-    DEFAULT_GRAD_MU,
     VdamPhaseLengths,
     compute_stepsize,
     compute_subset_size,
@@ -75,7 +73,7 @@ def default_schedule_update(
     grad_fin_subset_size: int,
     nr_particles: int,
     tau2_fudge_arg: float,
-    grad_em_iters: int = DEFAULT_GRAD_EM_ITERS,
+    grad_em_iters: int,
     grad_stepsize: float | None = None,
 ) -> InitialModelState:
     """Apply the three VDAM schedules to `state.iter=iter`."""
@@ -110,11 +108,7 @@ def default_schedule_update(
     )
 
 
-def update_current_resolution_from_data_vs_prior(
-    state: InitialModelState,
-    *,
-    minres_map: int = 5,
-) -> InitialModelState:
+def update_current_resolution_from_data_vs_prior(state: InitialModelState) -> InitialModelState:
     """Mirror RELION ``updateCurrentResolution`` for InitialModel/VDAM.
 
     Gradient InitialModel uses ``data_vs_prior_class`` produced by
@@ -127,7 +121,7 @@ def update_current_resolution_from_data_vs_prior(
         resolution_from_data_vs_prior(
             np.asarray(state.data_vs_prior_class[k], dtype=np.float64),
             box_size=state.ori_size,
-            minres_map=minres_map,
+            minres_map=RELION_MINRES_MAP,
         )
         for k in range(int(state.K))
     )
@@ -230,19 +224,19 @@ def run_vdam_iterations(
     record_iteration: IterArtifactSink | None = None,
     post_mstep_update: PostMstepUpdateFn | None = None,
     particle_order: Sequence[int] | None = None,
-    grad_ini_frac: float = 0.3,
-    grad_fin_frac: float = 0.2,
+    grad_ini_frac: float,
+    grad_fin_frac: float,
     phase_lengths: VdamPhaseLengths | None = None,
     grad_stepsize: float | None = None,
-    mu: float = DEFAULT_GRAD_MU,
+    mu: float,
     projector_refresh_fn: Callable[..., InitialModelState],
     projector_padding_factor: int = 1,
     start_iteration: int = 0,
     diagnostic_stop_after_iteration: int | None = None,
     fourier_radius_schedule: tuple[int, ...] | None = None,
     stochastic_all_iterations: bool = False,
-    uniform_class_direction_prior: bool = False,
-    environment: VdamEnvironment = VdamEnvironment(),
+    uniform_class_direction_prior: bool,
+    environment: VdamEnvironment,
 ) -> InitialModelState:
     """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``.
 
@@ -265,12 +259,6 @@ def run_vdam_iterations(
         raise ValueError(
             f"state.iter must equal start_iteration ({int(state.iter)} != {start_iteration})"
         )
-    if fourier_radius_schedule is not None and len(fourier_radius_schedule) != int(state.nr_iter):
-        raise ValueError("fourier_radius_schedule must have one radius per iteration")
-    if stochastic_all_iterations and (
-        grad_em_iters != 0 or pilot_controls is None or pilot_controls.stochastic_batch_size is None
-    ):
-        raise ValueError("stochastic_all_iterations requires a fixed batch and no EM tail")
     final_iteration = int(state.nr_iter)
     if diagnostic_stop_after_iteration is not None:
         final_iteration = int(diagnostic_stop_after_iteration)
@@ -325,9 +313,6 @@ def run_vdam_iterations(
             do_grad=do_grad,
             particle_order=particle_order,
         )
-        if fourier_radius_schedule is not None or stochastic_all_iterations:
-            subset_ids = np.ascontiguousarray(current.subset_particle_ids, dtype=np.int64)
-            subset_halfsets = np.ascontiguousarray(current.subset_halfset_ids, dtype=np.int8)
         if profile_iterations:
             _record_stage("subset")
 
@@ -353,6 +338,8 @@ def run_vdam_iterations(
             current.subset_halfset_ids,
         )
         if fourier_radius_schedule is not None or stochastic_all_iterations:
+            subset_ids = np.ascontiguousarray(current.subset_particle_ids, dtype=np.int64)
+            subset_halfsets = np.ascontiguousarray(current.subset_halfset_ids, dtype=np.int8)
             meta["subset_particle_ids_sha256"] = hashlib.sha256(subset_ids.tobytes()).hexdigest()
             meta["subset_halfset_ids_sha256"] = hashlib.sha256(subset_halfsets.tobytes()).hexdigest()
             meta["effective_estep_fourier_radius"] = int(current.current_size) // 2
@@ -399,7 +386,6 @@ def run_vdam_iterations(
         current = update.update_resolution(current)
         if profile_iterations:
             _record_stage("state_update")
-        meta = dict(meta)
         meta.update(
             {
                 "current_size": int(current.current_size),

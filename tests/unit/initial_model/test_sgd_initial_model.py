@@ -29,8 +29,9 @@ from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_meta_updates import update_probabilities_from_estep
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
-from relax.vdam.native_options import NativeInitialModelOptions
+from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
 from relax.vdam.native_sampling import _build_sampling_plan
+from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.state import InitialModelState, VdamAccumulator
 
 pytestmark = pytest.mark.unit
@@ -381,6 +382,10 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
             fourier_radius_schedule=(3, 4, 4),
             stochastic_all_iterations=True,
             uniform_class_direction_prior=True,
+            grad_ini_frac=0.3,
+            grad_fin_frac=0.2,
+            mu=DEFAULT_GRAD_MU,
+            environment=VdamEnvironment(),
         )
         histories[optimizer] = history
     assert len(histories["vdam"]) == len(histories["momentum_sgd"]) == 3

@@ -7,6 +7,8 @@ import pytest
 from relax.vdam import dense_adapter as adapter
 from relax.vdam import iteration_loop as loop
 from relax.vdam.init import initialise_denovo_state
+from relax.vdam.native_options import VdamEnvironment
+from relax.vdam.schedules import DEFAULT_GRAD_MU
 from recovar.utils.helpers import recovar_volume_to_relion
 from helpers.float_compare import assert_matches
 from helpers.vdam import relative_metrics
@@ -146,6 +148,11 @@ def test_loop_callback_is_once_before_estep(monkeypatch, mstep_compute_dtype):
         grad_em_iters=0, random_seed=29,
         expectation_step=estep,
         projector_refresh_fn=refresh, update=loop.VdamUpdate(padding_factor=1, mstep_compute_dtype=mstep_compute_dtype),
+        grad_ini_frac=0.3,
+        grad_fin_frac=0.2,
+        mu=DEFAULT_GRAD_MU,
+        uniform_class_direction_prior=False,
+        environment=VdamEnvironment(),
     )
     expected = ["refresh", "estep"] * 2
     assert [event[1] for event in events] == expected

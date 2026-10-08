@@ -15,6 +15,8 @@ from relax.diagnostics import vdam_mstep_replay
 from relax.relion import initial_model_io
 from relax.vdam import dense_adapter, driver, iteration_loop, m_step, mstep_single_class, native_options
 from relax.vdam.init import initialise_denovo_state
+from relax.vdam.native_options import VdamEnvironment
+from relax.vdam.schedules import DEFAULT_GRAD_MU
 
 pytestmark = pytest.mark.unit
 
@@ -279,6 +281,11 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
         ),
         projector_refresh_fn=keep_tau2,
         update=iteration_loop.VdamUpdate(padding_factor=1, mstep_compute_dtype="float32"),
+        grad_ini_frac=0.3,
+        grad_fin_frac=0.2,
+        mu=DEFAULT_GRAD_MU,
+        uniform_class_direction_prior=False,
+        environment=VdamEnvironment(),
     )
     assert calls == [1, 2]
 
