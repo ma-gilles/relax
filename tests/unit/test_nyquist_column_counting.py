@@ -223,7 +223,7 @@ def test_local_search_policies_carry_the_rule():
     pruned = LocalAdaptivePass2Support(full_parent=False, rotation_only=False, denominator_mode=None)
     assert LocalExecutionPolicy(
         disc_type="x", disable_adjoint_y=False, disable_adjoint_ctf=False, relion_x_half_mstep=False, adaptive_pass2=pruned,
-        precision=DensePrecisionPolicy(), fine_precision=DensePrecisionPolicy(),
+        precision=DensePrecisionPolicy(), fine_precision=DensePrecisionPolicy(), score_only=False,
     ).nyquist_column_counting == "relion"
     assert LocalSearchKernelPolicy(disc_type="x", current_size=8).nyquist_column_counting == "relion"
 
