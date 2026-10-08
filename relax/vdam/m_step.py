@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.vdam.mstep_single_class import vdam_m_step_single_class
-from relax.vdam.state import InitialModelState, VdamAccumulator
+from relax.vdam.state import InitialModelState, VdamAccumulator, half_slot_count, half_slot_index
 
 
 def relion_solvent_mask(
@@ -103,7 +103,7 @@ def vdam_m_step(
     (halfset 0 of each class first, then halfset 1), else ``K``.
     """
     K = state.K
-    expected = 2 * K if state.pseudo_halfsets else K
+    expected = half_slot_count(K, state.pseudo_halfsets)
     if len(accumulators) != expected:
         raise ValueError(f"expected {expected} accumulators, got {len(accumulators)}")
 
@@ -112,8 +112,8 @@ def vdam_m_step(
         out = vdam_m_step_single_class(
             out,
             k=k,
-            accum_h0=accumulators[k],
-            accum_h1=accumulators[K + k] if state.pseudo_halfsets else None,
+            accum_h0=accumulators[half_slot_index(k, 0, K, state.pseudo_halfsets)],
+            accum_h1=accumulators[half_slot_index(k, 1, K, True)] if state.pseudo_halfsets else None,
             grad_current_stepsize=grad_current_stepsize,
             tau2_fudge_factor=tau2_fudge_factor,
             grad_min_resol_shell=grad_min_resol_shell,

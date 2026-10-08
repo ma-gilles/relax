@@ -29,6 +29,7 @@ from relax.helpers.expected_accuracy import (
 )
 from relax.relion.optics_aberrations import expected_accuracy_optics
 from relax.vdam.native_options import InitialModelDefaults, NativeInitialModelOptions
+from relax.vdam.schedules import relion_sampling_cadence
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 
 RELION_INITIALMODEL_LOCAL_SEARCH_HEALPIX_ORDER = 4
@@ -153,12 +154,9 @@ def _initial_sampling_state(
     )
 
 
-def _should_update_native_sampling(*, iteration: int, nr_iter: int, do_grad: bool) -> bool:
-    """Mirror the InitialModel ``updateAngularSampling`` call cadence."""
-    iteration = int(iteration)
-    if iteration <= 1 or (bool(do_grad) and iteration % 10 != 0):
-        return False
-    return iteration <= int(nr_iter)
+def _should_update_native_sampling(*, iteration: int, do_grad: bool) -> bool:
+    """The InitialModel ``updateAngularSampling`` call cadence: RELION's sampling cadence, never in iteration 1."""
+    return int(iteration) > 1 and relion_sampling_cadence(iteration=iteration, do_grad=do_grad)
 
 
 def _record_native_sampling_post_iteration(
@@ -288,7 +286,7 @@ def _prepare_native_sampling_for_iteration(
     if bool(do_grad) and int(iteration) < 10:
         sampling_state.nr_iter_wo_resol_gain = 0
         sampling_state.nr_iter_wo_large_hidden_variable_changes = 0
-    if not _should_update_native_sampling(iteration=iteration, nr_iter=int(state.nr_iter), do_grad=do_grad):
+    if not _should_update_native_sampling(iteration=iteration, do_grad=do_grad):
         return False
     if sampling_state.nr_iter_wo_resol_gain < RELION_INITIALMODEL_MAX_NR_ITER_WO_RESOL_GAIN:
         return False
@@ -746,27 +744,19 @@ def _build_sampling_plan(
 
 
 def _random_perturbation_for_iteration(opts: NativeInitialModelOptions, iteration: int) -> float:
+    """The iteration's SamplingPerturbation: the fixed option, or RELION's per-iteration sequence."""
     if opts.random_perturbation is not None:
         return float(opts.random_perturbation)
-    return _random_perturbation_sequence(
-        int(opts.random_seed),
-        float(opts.perturbation_factor),
-        max(1, int(iteration)),
-    )
-
-
-def _random_perturbation_sequence(random_seed: int, perturbation_factor: float, n_steps: int) -> float:
-    """Replay RELION's per-iter perturbation sequence with source float arithmetic."""
-    if perturbation_factor <= 0.0:
+    if float(opts.perturbation_factor) <= 0.0:
         return 0.0
     # rnd_unif(low, high) performs its range scaling inside RELION's float
     # function. Scaling a separately rounded unit draw changes the result by
     # one float32 ulp for seed 0 / iteration 1, which is enough to flip the
     # integer-truncated fine-projector radius predicate on the rounded rim.
     return sampling.relion_sampling_perturbation_for_iteration(
-        float(perturbation_factor),
-        int(random_seed),
-        max(1, int(n_steps)),
+        float(opts.perturbation_factor),
+        int(opts.random_seed),
+        max(1, int(iteration)),
     )
 
 
