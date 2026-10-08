@@ -72,7 +72,7 @@ class TestIniHighAndCurrentSize:
 class TestInitialiseDenovoState:
     def test_gui_defaults(self):
         state = initialise_denovo_state(
-            ori_size=64,
+            box_size=64,
             pixel_size=8.5,
             K=1,
             nr_iter=200,
@@ -84,7 +84,7 @@ class TestInitialiseDenovoState:
         assert state.iter == 0
         assert state.nr_iter == 200
         assert state.K == 1
-        assert state.ori_size == 64
+        assert state.box_size == 64
         assert state.pseudo_halfsets is True
         assert state.current_resolution_shell == 4
         assert state.current_size == 28
@@ -92,7 +92,7 @@ class TestInitialiseDenovoState:
         assert state.sigma2_offset == pytest.approx(100.0)
 
     def test_iref_is_zero(self):
-        state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=2, nr_iter=50, n_directions=48)
+        state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=2, nr_iter=50, n_directions=48)
         assert state.Iref.shape == (2, 16, 16, 16)
         assert state.Iref.dtype == np.float64
         assert_matches(state.Iref, 0.0)
@@ -100,7 +100,7 @@ class TestInitialiseDenovoState:
     def test_igrad1_zero_slots(self):
         K = 3
         state = initialise_denovo_state(
-            ori_size=16,
+            box_size=16,
             pixel_size=1.0,
             K=K,
             nr_iter=50,
@@ -115,7 +115,7 @@ class TestInitialiseDenovoState:
     def test_igrad1_without_pseudo_halfsets_k_slots(self):
         K = 3
         state = initialise_denovo_state(
-            ori_size=16,
+            box_size=16,
             pixel_size=1.0,
             K=K,
             nr_iter=50,
@@ -125,7 +125,7 @@ class TestInitialiseDenovoState:
         assert state.Igrad1.shape == (K, 16, 16, 9)
 
     def test_igrad2_constant(self):
-        state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=2, nr_iter=50, n_directions=48)
+        state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=2, nr_iter=50, n_directions=48)
         assert state.Igrad2.shape == (2, 16, 16, 9)
         assert state.Igrad2.dtype == np.complex128
         expected = MOM2_INIT_CONSTANT + 1j * MOM2_INIT_CONSTANT
@@ -133,20 +133,20 @@ class TestInitialiseDenovoState:
 
     def test_pdf_class_uniform(self):
         for K in [1, 2, 5]:
-            state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=K, nr_iter=50, n_directions=48)
+            state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=K, nr_iter=50, n_directions=48)
             assert state.pdf_class.shape == (K,)
             np.testing.assert_allclose(state.pdf_class, 1.0 / K)
 
     def test_pdf_direction_uniform(self):
         K = 3
         n_dir = 10
-        state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=K, nr_iter=50, n_directions=n_dir)
+        state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=K, nr_iter=50, n_directions=n_dir)
         assert state.pdf_direction.shape == (K, n_dir)
         np.testing.assert_allclose(state.pdf_direction, 1.0 / (K * n_dir))
 
     def test_padding_factor_2(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=10,
@@ -158,7 +158,7 @@ class TestInitialiseDenovoState:
 
     def test_invalid_K_raises(self):
         with pytest.raises(ValueError):
-            initialise_denovo_state(ori_size=16, pixel_size=1.0, K=0, nr_iter=10, n_directions=12)
+            initialise_denovo_state(box_size=16, pixel_size=1.0, K=0, nr_iter=10, n_directions=12)
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ class TestHalfSlotIndex:
 
 class TestSeedNoiseFromMavg:
     def test_roundtrip(self):
-        state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=1, nr_iter=10, n_directions=12)
+        state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=1, nr_iter=10, n_directions=12)
         sigma = np.arange(9, dtype=np.float64).reshape(1, 9) * 0.1
         new_state = seed_noise_from_mavg(state, sigma)
         assert_matches(new_state.sigma2_noise, sigma)
@@ -203,7 +203,7 @@ class TestSeedNoiseFromMavg:
 
     def test_shape_mismatch_raises(self):
         state = initialise_denovo_state(
-            ori_size=16,
+            box_size=16,
             pixel_size=1.0,
             K=1,
             nr_iter=10,
@@ -217,7 +217,7 @@ class TestSeedNoiseFromMavg:
 class TestInitialiseDataVsPrior:
     def test_seeds_nonzero_tau2_and_relion_data_vs_prior_formula(self):
         state = initialise_denovo_state(
-            ori_size=16,
+            box_size=16,
             pixel_size=2.0,
             K=2,
             nr_iter=10,
@@ -256,7 +256,7 @@ class TestInitialiseDataVsPrior:
         from recovar.utils.helpers import recovar_volume_to_relion
 
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -268,17 +268,17 @@ class TestInitialiseDataVsPrior:
 
         out = initialise_data_vs_prior_from_references(state, nr_particles=10)
         expected = _relion_power_spectrum_3d(
-            recovar_volume_to_relion(state.Iref[0]), state.ori_size // 2 + 1
-        ) * (state.ori_size * state.ori_size / 2.0)
-        direct_wrong_frame = _relion_power_spectrum_3d(state.Iref[0], state.ori_size // 2 + 1) * (
-            state.ori_size * state.ori_size / 2.0
+            recovar_volume_to_relion(state.Iref[0]), state.box_size // 2 + 1
+        ) * (state.box_size * state.box_size / 2.0)
+        direct_wrong_frame = _relion_power_spectrum_3d(state.Iref[0], state.box_size // 2 + 1) * (
+            state.box_size * state.box_size / 2.0
         )
 
         np.testing.assert_allclose(out.tau2_class[0], expected, rtol=1e-14, atol=0.0)
         assert not np.allclose(out.tau2_class[0], direct_wrong_frame, rtol=1e-8, atol=0.0)
 
     def test_rejects_missing_noise(self):
-        state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=1, nr_iter=10, n_directions=12)
+        state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=1, nr_iter=10, n_directions=12)
         state.Iref[0, 8, 8, 8] = 1.0
 
         with pytest.raises(ValueError, match="sigma2_noise"):

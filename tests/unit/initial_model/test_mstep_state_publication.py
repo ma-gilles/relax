@@ -33,7 +33,7 @@ def _case(K, pseudo, order):
 
     state = InitialModelState(
         K=K,
-        ori_size=4,
+        box_size=4,
         pseudo_halfsets=pseudo,
         Iref=array((K, 4, 4, 4)),
         Igrad1=array(((2 if pseudo else 1) * K, 4, 4, 3), True),

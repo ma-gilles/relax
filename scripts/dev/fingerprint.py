@@ -109,6 +109,8 @@ MOVED_INPUTS = (
 RENAMED_FIELDS = (
     # Item D (box_size is the one name of the image box): IterationSnapshot.ori_size -> box_size.
     ("<IterationSnapshot>/ori_size", "<IterationSnapshot>/box_size"),
+    # Item D in relax/vdam: InitialModelState.ori_size -> box_size.
+    ("<InitialModelState>/ori_size", "<InitialModelState>/box_size"),
 )
 TMP_TOKEN = "<TMP>"
 

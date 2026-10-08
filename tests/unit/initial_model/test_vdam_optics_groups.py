@@ -35,7 +35,7 @@ def test_bootstrap_class_is_the_position_modulo_k():
     positions = np.array([0, 3, 4, 7, 8, 11, 13, 14, 17, 20, 21, 22])
     common = dict(
         ctf_images=None,
-        ori_size=size,
+        box_size=size,
         pixel_size=2.0,
         particle_diameter_ang=0.7 * size * 2.0,
         width_mask_edge_px=3.0,
@@ -94,7 +94,7 @@ def test_noise_rows_per_group():
 
 def _state(n_groups, size=16):
     state = initialise_denovo_state(
-        ori_size=size, pixel_size=2.0, K=1, nr_iter=10, n_directions=48, nr_optics_groups=n_groups, pseudo_halfsets=True
+        box_size=size, pixel_size=2.0, K=1, nr_iter=10, n_directions=48, nr_optics_groups=n_groups, pseudo_halfsets=True
     )
     state.sigma2_noise = np.full((n_groups, size // 2 + 1), 2.0)
     state.subset_size = 100

@@ -30,16 +30,16 @@ def test_covariance_images_have_per_rotation_layout():
 
 def test_centered_bpref_sources_validate_and_agree():
     cube = (np.arange(8**3, dtype=np.float32) + 0j).astype(np.complex64)
-    data, weight, center, radius = layout._centered_bpref_sources(cube, cube, ori_size=8, r_max=3, padding_factor=1)
+    data, weight, center, radius = layout._centered_bpref_sources(cube, cube, box_size=8, r_max=3, padding_factor=1)
     assert data.shape == weight.shape == (8, 8, 8) and (center, radius) == (4, 3)
     with pytest.raises(NotImplementedError):
-        layout._centered_bpref_sources(cube, cube, ori_size=8, r_max=3, padding_factor=3)
+        layout._centered_bpref_sources(cube, cube, box_size=8, r_max=3, padding_factor=3)
     with pytest.raises(ValueError, match="non-negative"):
-        layout._centered_bpref_sources(cube, cube, ori_size=8, r_max=-1, padding_factor=1)
+        layout._centered_bpref_sources(cube, cube, box_size=8, r_max=-1, padding_factor=1)
     full_10 = np.zeros(10**3, dtype=np.complex64)  # center 5
     compact = np.zeros(9**3, dtype=np.complex64)  # current-size cube for r_max=3, center 4
     with pytest.raises(ValueError, match="different centered layouts"):
-        layout._centered_bpref_sources(full_10, compact, ori_size=10, r_max=3, padding_factor=1)
+        layout._centered_bpref_sources(full_10, compact, box_size=10, r_max=3, padding_factor=1)
 
 
 def test_bpref_slab_outputs_cast_and_clamp():

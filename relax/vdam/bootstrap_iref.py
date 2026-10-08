@@ -29,24 +29,24 @@ from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_co
 INI_HIGH_DIGITAL_FREQ: float = 0.07
 
 
-def compute_ini_high_shell(ori_size: int) -> int:
+def compute_ini_high_shell(box_size: int) -> int:
     """``ROUND(0.07 * ori_size)`` (initial resolution shell)."""
-    return int(math.floor(INI_HIGH_DIGITAL_FREQ * ori_size + 0.5))
+    return int(math.floor(INI_HIGH_DIGITAL_FREQ * box_size + 0.5))
 
 
-def compute_ini_high_angstrom(ori_size: int, pixel_size: float) -> float:
+def compute_ini_high_angstrom(box_size: int, pixel_size: float) -> float:
     """Initial low-pass in Ångström (1/getResolution(ini_shell))."""
-    return ori_size * pixel_size / compute_ini_high_shell(ori_size)
+    return box_size * pixel_size / compute_ini_high_shell(box_size)
 
 
-def compute_current_size_for_denovo(ori_size: int) -> int:
-    """Pre-iter-1 ``current_size = 2*(ini_shell + 10)`` clipped to ``ori_size``."""
-    return min(2 * (compute_ini_high_shell(ori_size) + 10), ori_size)
+def compute_current_size_for_denovo(box_size: int) -> int:
+    """Pre-iter-1 ``current_size = 2*(ini_shell + 10)`` clipped to ``box_size``."""
+    return min(2 * (compute_ini_high_shell(box_size) + 10), box_size)
 
 
 def initialise_denovo_state(
     *,
-    ori_size: int,
+    box_size: int,
     pixel_size: float,
     K: int,
     nr_iter: int,
@@ -60,22 +60,22 @@ def initialise_denovo_state(
         raise ValueError("K must be >= 1")
     if n_directions < 1:
         raise ValueError("n_directions must be >= 1")
-    if ori_size < 2:
-        raise ValueError("ori_size must be >= 2")
+    if box_size < 2:
+        raise ValueError("box_size must be >= 2")
 
     pf = padding_factor
-    pad_shape = (ori_size * pf, ori_size * pf, (ori_size * pf) // 2 + 1)
-    n_shells = ori_size // 2 + 1
-    ini_high_A = compute_ini_high_angstrom(ori_size, pixel_size)
+    pad_shape = (box_size * pf, box_size * pf, (box_size * pf) // 2 + 1)
+    n_shells = box_size // 2 + 1
+    ini_high_A = compute_ini_high_angstrom(box_size, pixel_size)
 
     return InitialModelState(
         iter=0,
         nr_iter=nr_iter,
         K=K,
-        ori_size=ori_size,
+        box_size=box_size,
         pixel_size=pixel_size,
         pseudo_halfsets=pseudo_halfsets,
-        Iref=np.zeros((K, ori_size, ori_size, ori_size), dtype=np.float64),
+        Iref=np.zeros((K, box_size, box_size, box_size), dtype=np.float64),
         Igrad1=np.zeros((half_slot_count(K, pseudo_halfsets), *pad_shape), dtype=np.complex128),
         Igrad2=np.full((K, *pad_shape), MOM2_INIT_CONSTANT + 1j * MOM2_INIT_CONSTANT, dtype=np.complex128),
         sigma2_noise=np.zeros((nr_optics_groups, n_shells), dtype=np.float64),
@@ -89,8 +89,8 @@ def initialise_denovo_state(
         sigma2_offset=100.0,
         ini_high=ini_high_A,
         current_resolution=1.0 / ini_high_A,
-        current_resolution_shell=compute_ini_high_shell(ori_size),
-        current_size=compute_current_size_for_denovo(ori_size),
+        current_resolution_shell=compute_ini_high_shell(box_size),
+        current_size=compute_current_size_for_denovo(box_size),
     )
 
 
@@ -115,8 +115,8 @@ def initialise_data_vs_prior_from_references(
     if nr_particles <= 0:
         raise ValueError(f"nr_particles must be positive, got {nr_particles}")
     sigma2 = np.asarray(state.sigma2_noise, dtype=np.float64)
-    if sigma2.ndim != 2 or sigma2.shape[1] != state.ori_size // 2 + 1:
-        raise ValueError(f"sigma2_noise must have shape (G, {state.ori_size // 2 + 1}), got {sigma2.shape}")
+    if sigma2.ndim != 2 or sigma2.shape[1] != state.box_size // 2 + 1:
+        raise ValueError(f"sigma2_noise must have shape (G, {state.box_size // 2 + 1}), got {sigma2.shape}")
     group_has_noise = np.sum(sigma2, axis=1) > 0.0
     if not np.any(group_has_noise):
         raise ValueError("cannot initialise data_vs_prior without positive sigma2_noise")
@@ -164,7 +164,7 @@ def compute_bootstrap_iref(
     Cs,
     Q0,
     pixel_size: float,
-    ori_size: int,
+    box_size: int,
     nr_classes: int,
     particle_diameter_ang: float,
     width_mask_edge_px: float,
@@ -196,7 +196,7 @@ def compute_bootstrap_iref(
 
     if current_size <= 0:
         # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not A).
-        current_size = compute_ini_high_shell(ori_size)
+        current_size = compute_ini_high_shell(box_size)
     todo = min(max(int(minimum_nr_particles), int(nr_classes) * 5), int(images.shape[0]))
     ctf_images = None
     if do_ctf_correction:
@@ -215,22 +215,22 @@ def compute_bootstrap_iref(
             ]
         )
         if image_gamma_offsets is None:
-            ctf_images = relion_ctf_fftw_half(params, int(ori_size), float(pixel_size))
+            ctf_images = relion_ctf_fftw_half(params, int(box_size), float(pixel_size))
         else:
             # Each optics group's even Zernike phase (ObservationModel::getGammaOffset), as
             # RELION's start-up CTF::getFftwImage applies it (ml_optimiser.cpp:3306-3307).
             image_group, gamma_by_group = image_gamma_offsets
             image_group = np.asarray(image_group)[:todo]
-            ctf_images = np.empty((todo, int(ori_size), int(ori_size) // 2 + 1), dtype=np.float64)
+            ctf_images = np.empty((todo, int(box_size), int(box_size) // 2 + 1), dtype=np.float64)
             for group, gamma in gamma_by_group.items():
                 rows = image_group == group
                 ctf_images[rows] = relion_ctf_fftw_half(
-                    params[rows], int(ori_size), float(pixel_size), gamma_offset=gamma
+                    params[rows], int(box_size), float(pixel_size), gamma_offset=gamma
                 )
     iref_relion, rand_state = bootstrap_reconstruction.bootstrap_references(
         images=np.asarray(images[:todo], dtype=np.float64),
         ctf_images=ctf_images,
-        ori_size=int(ori_size),
+        box_size=int(box_size),
         pixel_size=float(pixel_size),
         nr_classes=int(nr_classes),
         particle_diameter_ang=float(particle_diameter_ang),
@@ -246,7 +246,7 @@ def compute_bootstrap_iref(
     return np.asarray([relion_volume_to_recovar(vol) for vol in iref_relion], dtype=np.float64), rand_state
 
 
-def _bootstrap_gamma_offsets(dataset, image_indices, ori_size: int):
+def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
     """``(image_group, {group: gamma})`` for the bootstrap CTF, or None without even Zernike terms.
 
     The groups' even Zernike gamma offsets on the model grid, as relax's exact CTF rows
@@ -261,12 +261,12 @@ def _bootstrap_gamma_offsets(dataset, image_indices, ori_size: int):
 
     if not dataset_needs_exact_ctf(dataset):
         return None
-    _, cache = relion_ctf._exact_ctf_source_cache(dataset, (int(ori_size), int(ori_size)))
+    _, cache = relion_ctf._exact_ctf_source_cache(dataset, (int(box_size), int(box_size)))
     original = np.asarray(relion_ctf.original_image_indices(dataset, np.asarray(image_indices, dtype=np.int64)))
     groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[original]
     gamma_by_group = {}
     for group in np.unique(groups):
-        gamma, mag = relion_ctf._optics_group_ctf_geometry(cache, int(group), int(ori_size))
+        gamma, mag = relion_ctf._optics_group_ctf_geometry(cache, int(group), int(box_size))
         if mag is not None:
             raise NotImplementedError("InitialModel does not implement anisotropic magnification")
         gamma_by_group[int(group)] = gamma
@@ -326,14 +326,14 @@ def _model_grid_startup_images(dataset, rows, pixel_sizes, opts: NativeInitialMo
 
     from relax.relion.initial_noise import _rescale_to_model_grid
 
-    ori_size = int(dataset.grid_size)
-    out = np.empty((len(rows), ori_size, ori_size), dtype=np.float64)
+    box_size = int(dataset.grid_size)
+    out = np.empty((len(rows), box_size, box_size), dtype=np.float64)
     for i, (_row, image) in enumerate(dataset.iter_images(rows, batch_size=max(1, int(opts.image_batch_size)))):
         image = np.asarray(image, dtype=np.float64)
         if bool(opts.do_zero_mask):
             radius = float(opts.particle_diameter) / (2.0 * float(pixel_sizes[i]))
             image = bootstrap_reconstruction.soft_mask_outside_map(image, radius, float(opts.width_mask_edge_px))
-        out[i] = _rescale_to_model_grid(image, float(pixel_sizes[i]), float(model_pixel_size), ori_size)
+        out[i] = _rescale_to_model_grid(image, float(pixel_sizes[i]), float(model_pixel_size), box_size)
     return out
 
 
@@ -360,7 +360,7 @@ def _initial_state_from_particles(
 ) -> tuple[InitialModelState, np.ndarray]:
     profile = output._StageProfile(opts.environment.profile)
 
-    ori_size = int(dataset.grid_size)
+    box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)
     order = _experiment_read_order(main_star)
     optics_group_by_particle = initial_model_io._optics_group_indices(main_star)
@@ -383,7 +383,7 @@ def _initial_state_from_particles(
                 for row, image in dataset.iter_images(noise_order, batch_size=batch_size)
             )
         ),
-        box_size=ori_size,
+        box_size=box_size,
         pixel_size=pixel_size,
         particle_diameter_ang=float(opts.particle_diameter),
         width_mask_edge_px=int(opts.width_mask_edge_px),
@@ -423,7 +423,7 @@ def _initial_state_from_particles(
             Cs=Cs,
             Q0=Q0,
             pixel_size=pixel_size,
-            ori_size=ori_size,
+            box_size=box_size,
             nr_classes=int(opts.nr_classes),
             particle_diameter_ang=float(opts.particle_diameter),
             width_mask_edge_px=float(opts.width_mask_edge_px),
@@ -436,13 +436,13 @@ def _initial_state_from_particles(
             minimum_nr_particles=int(bootstrap_positions.size),
             particle_positions=bootstrap_positions,
             image_gamma_offsets=None if group_pixel_sizes is not None else _bootstrap_gamma_offsets(
-                dataset, bootstrap_order, ori_size
+                dataset, bootstrap_order, box_size
             ),
         )
     profile.record("bootstrap")
 
     state = initialise_denovo_state(
-        ori_size=ori_size,
+        box_size=box_size,
         pixel_size=pixel_size,
         K=int(opts.nr_classes),
         nr_iter=int(opts.nr_iter),
@@ -473,9 +473,9 @@ def _initial_state_from_particles(
             [np.asarray(load_relion_volume(p), dtype=np.float64) for p in paths],
             axis=0,
         )
-        if vols.shape[1:] != (ori_size, ori_size, ori_size):
-            raise ValueError(f"RELAX_INITIAL_IREF_OVERRIDE volume shape {vols.shape[1:]} != {(ori_size,) * 3}")
-        state.Iref = np.broadcast_to(vols, (K, ori_size, ori_size, ori_size)).copy() if len(paths) == 1 else vols
+        if vols.shape[1:] != (box_size, box_size, box_size):
+            raise ValueError(f"RELAX_INITIAL_IREF_OVERRIDE volume shape {vols.shape[1:]} != {(box_size,) * 3}")
+        state.Iref = np.broadcast_to(vols, (K, box_size, box_size, box_size)).copy() if len(paths) == 1 else vols
     else:
         state.Iref = postprocess_bootstrap_iref(
             iref,
@@ -511,7 +511,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
     from relax.relion.optics_aberrations import dataset_needs_exact_ctf
     from relax.relion.relion_ctf import relion_fftw_ctf_rows
 
-    ori_size = int(dataset.grid_size)
+    box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)
     order = _experiment_read_order(particles_table)
     optics_group_by_particle = initial_model_io._optics_group_indices(particles_table)
@@ -523,7 +523,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
     image_groups = np.repeat(optics_group_by_particle[units], [block.shape[0] for block in unit_images])
     Mavg, sigma2_per_group = compute_avg_unaligned_and_sigma2(
         zip(image_groups.tolist(), images),
-        box_size=ori_size,
+        box_size=box_size,
         pixel_size=pixel_size,
         particle_diameter_ang=float(opts.particle_diameter),
         width_mask_edge_px=int(opts.width_mask_edge_px),
@@ -539,7 +539,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
         # phase and magnified frequencies (ml_optimiser.cpp:3036-3047); a premultiplied image keeps the
         # plain CTF here and is multiplied by it once more, as RELION's start-up does.
         ctf_images = relion_fftw_ctf_rows(
-            half.images, np.arange(half.n_images), (ori_size, ori_size), square_premultiplied=False
+            half.images, np.arange(half.n_images), (box_size, box_size), square_premultiplied=False
         )
     elif bool(opts.do_ctf_correction):
         ctf_images = _trial_ctf_images(
@@ -547,8 +547,8 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
             defocus=None,
             optics=None,
             pixel_size=pixel_size,
-            box_size=ori_size,
-            current_image_size=ori_size,
+            box_size=box_size,
+            current_image_size=box_size,
             tilt_images=tilt,
         )
     # Each image's particle as its position in RELION's order (the seed and the class, part_id_sorted % K).
@@ -558,7 +558,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
     iref_relion, _ = bootstrap_reconstruction.bootstrap_references(
         images=images,
         ctf_images=ctf_images,
-        ori_size=ori_size,
+        box_size=box_size,
         pixel_size=pixel_size,
         nr_classes=int(opts.nr_classes),
         particle_diameter_ang=float(opts.particle_diameter),
@@ -567,7 +567,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
         random_seed=int(opts.random_seed),
         padding_factor=int(opts.padding_factor),
         minimum_nr_particles=int(units.size),
-        current_size=compute_ini_high_shell(ori_size),
+        current_size=compute_ini_high_shell(box_size),
         image_particle=image_particle,
         image_projections=half.image_projections,
     )
@@ -576,7 +576,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
     iref = np.asarray([relion_volume_to_recovar(vol) for vol in iref_relion], dtype=np.float64)
 
     state = initialise_denovo_state(
-        ori_size=ori_size,
+        box_size=box_size,
         pixel_size=pixel_size,
         K=int(opts.nr_classes),
         nr_iter=int(opts.nr_iter),

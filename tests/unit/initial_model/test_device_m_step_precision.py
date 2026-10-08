@@ -34,7 +34,7 @@ def _case(dtype=np.float32):
         r_max=np.int32(4),
         first_initializes_h0=np.bool_(True),
         first_initializes_h1=np.bool_(True),
-        ori_size=size,
+        box_size=size,
         return_intermediates=True,
     )
 
@@ -112,7 +112,7 @@ def test_invalid_precision_rejected_before_native_or_device_work(dtype):
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_small_fft_grid_is_refused(dtype):
     case = _case()
-    case["ori_size"] = 8
+    case["box_size"] = 8
     with pytest.raises(ValueError, match="FFT grid >=16"):
         relion_vdam_m_step_device(**case, compute_dtype=dtype)
     case.pop("first_initializes_h0")

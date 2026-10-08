@@ -109,7 +109,7 @@ def test_unsupported_projector_geometry_is_refused(size, padding, interpolator):
 
 @pytest.mark.requires_relion_bind
 def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monkeypatch, tmp_path):
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=2, n_directions=3, pseudo_halfsets=True)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=2, n_directions=3, pseudo_halfsets=True)
     state.Iref = np.random.default_rng(33).normal(size=state.Iref.shape)
     state.current_size = 0
     config = adapter.DenseInitialModelEstepConfig(

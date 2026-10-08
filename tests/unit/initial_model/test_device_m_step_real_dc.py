@@ -32,7 +32,7 @@ def _imaginary_dc_case(dtype, sign):
         r_max=np.int32(4),
         first_initializes_h0=np.bool_(True),
         first_initializes_h1=np.bool_(True),
-        ori_size=16,
+        box_size=16,
         padding_factor=1,
         pseudo_halfsets=True,
         compute_dtype=dtype,

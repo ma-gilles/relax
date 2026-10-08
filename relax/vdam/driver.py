@@ -154,7 +154,7 @@ def _native_expectation_step(
             **sampling_kwargs,
         )
         sigma_offset_angstrom = float(np.sqrt(max(float(state.sigma2_offset), 0.0)))
-        current_noise_variance = estep_setup._noise_variance_from_sigma2(state.sigma2_noise, int(state.ori_size))
+        current_noise_variance = estep_setup._noise_variance_from_sigma2(state.sigma2_noise, int(state.box_size))
         previous_translations = np.asarray(particle_state.translation_offsets, dtype=np.float64).copy()
         previous_rotations = (
             None
@@ -197,7 +197,7 @@ def _native_expectation_step(
                     [dataset.subset(ids).images],
                     [None],
                     int(state.effective_current_size),
-                    int(state.ori_size),
+                    int(state.box_size),
                 )
         else:
             result = _spa_estep(
@@ -220,7 +220,7 @@ def _native_expectation_step(
                     [dataset.subset(np.asarray(particle_ids, dtype=np.int64))],
                     [None],
                     int(state.effective_current_size),
-                    int(state.ori_size),
+                    int(state.box_size),
                 )
         result.meta.update(
             random_perturbation=float(sampling_plan.random_perturbation),
@@ -332,7 +332,7 @@ def _native_expectation_step(
                 sigma2_noise=state.sigma2_noise,
                 groups=np.zeros(ids.size, np.int64) if optics_group_ids is None else np.asarray(optics_group_ids)[ids],
                 n_images=np.ones(ids.size) if tilt_images is None else np.diff(tilt_images["image_offsets"])[ids],
-                ori_size=int(state.ori_size),
+                box_size=int(state.box_size),
                 current_size=int(state.effective_current_size),
             )
         estep_meta_updates._update_particle_state_from_estep_meta(
@@ -649,7 +649,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     solvent_mask = None
     if opts.do_solvent:
         solvent_mask = relion_solvent_mask(
-            ori_size=int(state.ori_size),
+            box_size=int(state.box_size),
             pixel_size=float(state.pixel_size),
             particle_diameter_ang=float(opts.particle_diameter),
             width_mask_edge_px=float(opts.width_mask_edge_px),

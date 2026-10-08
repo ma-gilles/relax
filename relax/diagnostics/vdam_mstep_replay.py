@@ -247,7 +247,7 @@ def _maybe_replay_iteration_references(
         [np.asarray(load_relion_volume(path), dtype=np.float64) for path in paths],
         axis=0,
     )
-    expected_shape = (int(state.K), int(state.ori_size), int(state.ori_size), int(state.ori_size))
+    expected_shape = (int(state.K), int(state.box_size), int(state.box_size), int(state.box_size))
     if references.shape != expected_shape:
         raise ValueError(
             f"iteration reference replay shape {references.shape} != {expected_shape}"

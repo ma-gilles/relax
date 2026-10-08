@@ -62,7 +62,7 @@ class _IterationProjectorContext:
         self.prepared = inputs
         self.reference = state.Iref
         self.geometry = (
-            int(state.iter), int(state.ori_size), int(state.current_size), int(state.K), int(padding_factor),
+            int(state.iter), int(state.box_size), int(state.current_size), int(state.K), int(padding_factor),
         )
         return replace(state, tau2_class=power)
 
@@ -72,7 +72,7 @@ class _IterationProjectorContext:
         inputs, reference, geometry = self.prepared, self.reference, self.geometry
         self.prepared = self.reference = self.geometry = None
         expected = (
-            int(state.iter), int(state.ori_size), int(state.current_size), int(state.K), int(padding_factor),
+            int(state.iter), int(state.box_size), int(state.current_size), int(state.K), int(padding_factor),
         )
         if reference is not state.Iref or geometry != expected:
             raise ValueError("projector refresh/E-step reference or geometry changed")
@@ -95,20 +95,20 @@ def _configure_relion_image_mask(dataset, opts: NativeInitialModelOptions) -> No
     backend.set_relion_fourier_backend(opts.image_fourier_backend)
 
 
-def _noise_variance_from_sigma2(sigma2_noise: np.ndarray, ori_size: int) -> np.ndarray:
+def _noise_variance_from_sigma2(sigma2_noise: np.ndarray, box_size: int) -> np.ndarray:
     """Convert RELION normalized shell power to engine-frame radial noise (unnormalised FFT).
 
     One optics group gives the ``[P]`` pixel row; several give one row per group, ``[G, P]``
     (each image is then scored with its group's row through ``optics_group_ids``).
     """
-    n4 = int(ori_size) ** 4
+    n4 = int(box_size) ** 4
     # Keep RELION's RFLOAT shell spectrum through the reciprocal used by the
     # guarded exact coarse path.  The downstream float32 kernels already cast
     # their ordinary operands explicitly; narrowing here first loses up to a
     # few ULP in Minvsigma2 and changes near-threshold candidate weights.
     rows = np.stack(
         [
-            np.asarray(make_radial_noise(group * n4, (ori_size, ori_size)), dtype=np.float64).reshape(-1)
+            np.asarray(make_radial_noise(group * n4, (box_size, box_size)), dtype=np.float64).reshape(-1)
             for group in np.asarray(sigma2_noise, dtype=np.float64)
         ]
     )
@@ -118,13 +118,13 @@ def _noise_variance_from_sigma2(sigma2_noise: np.ndarray, ori_size: int) -> np.n
 def _effective_initial_model_image_batch_size(
     requested: int,
     *,
-    grid_size: int,
+    box_size: int,
     gpu_memory_gb: float,
 ) -> int:
     """Conservatively cap exact-local batches for large InitialModel grids.
 
     Exact fine search has a transient that scales approximately with
-    ``batch * grid_size**2`` in addition to its resident projector/cache
+    ``batch * box_size**2`` in addition to its resident projector/cache
     state.  The user-facing batch remains an upper bound; 128-pixel jobs keep
     their established behavior, while 256+ grids scale from 32 images on a
     40 GB accelerator.
@@ -132,15 +132,15 @@ def _effective_initial_model_image_batch_size(
 
     if requested < 1:
         raise ValueError(f"image_batch_size must be positive, got {requested}")
-    if grid_size < 1:
-        raise ValueError(f"grid_size must be positive, got {grid_size}")
+    if box_size < 1:
+        raise ValueError(f"box_size must be positive, got {box_size}")
     if gpu_memory_gb <= 0:
         raise ValueError(f"gpu_memory_gb must be positive, got {gpu_memory_gb}")
-    if grid_size < INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE:
+    if box_size < INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE:
         return int(requested)
     scaled_cap = int(
         INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB
-        * (INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE / float(grid_size)) ** 2
+        * (INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE / float(box_size)) ** 2
         * (float(gpu_memory_gb) / 40.0)
     )
     return min(int(requested), max(1, scaled_cap))
@@ -233,15 +233,15 @@ def _dense_estep_config(
     engine_kwargs["translation_log_prior"] = translation_log_prior
     engine_kwargs["coarse_translation_log_prior"] = coarse_translation_log_prior
 
-    grid_size = int(dataset.image_shape[0])
+    box_size = int(dataset.image_shape[0])
     gpu_memory_gb = (
         float(get_gpu_memory_total())
-        if grid_size >= INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE
+        if box_size >= INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE
         else 40.0
     )
     effective_image_batch_size = _effective_initial_model_image_batch_size(
         int(opts.image_batch_size),
-        grid_size=grid_size,
+        box_size=box_size,
         gpu_memory_gb=gpu_memory_gb,
     )
     return DenseInitialModelEstepConfig(

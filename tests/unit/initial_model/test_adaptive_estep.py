@@ -139,7 +139,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     monkeypatch.setattr(adaptive_estep, "_arrays_to_accumulators", fake_accumulators)
     monkeypatch.setattr(adaptive_estep, "_sparse_pass2_estep_meta", lambda results, selected: {})
     monkeypatch.setattr(adaptive_estep, "_add_accumulator_weight_meta", lambda meta, acc, K: None)
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=n_classes, nr_iter=4, n_directions=4, pseudo_halfsets=True)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=n_classes, nr_iter=4, n_directions=4, pseudo_halfsets=True)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(64, dtype=np.float32),
         translations=plan.translations,
@@ -208,7 +208,7 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
     plan = native_sampling._build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
     state = initialise_denovo_state(
-        ori_size=8, pixel_size=1.0, K=2, nr_iter=4, n_directions=4, pseudo_halfsets=pseudo_halfsets
+        box_size=8, pixel_size=1.0, K=2, nr_iter=4, n_directions=4, pseudo_halfsets=pseudo_halfsets
     )
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(64, dtype=np.float32),

@@ -73,7 +73,7 @@ def _first_moment(old, data, initialize, valid):
 
 
 @partial(
-    jax.jit, static_argnames=("ori_size", "padding_factor", "pseudo_halfsets", "return_intermediates", "compute_dtype")
+    jax.jit, static_argnames=("box_size", "padding_factor", "pseudo_halfsets", "return_intermediates", "compute_dtype")
 )
 def relion_vdam_m_step_device(
     reference_relion,
@@ -93,7 +93,7 @@ def relion_vdam_m_step_device(
     first_initializes_h1,
     average_ctf2=None,
     *,
-    ori_size: int,
+    box_size: int,
     padding_factor: int = 1,
     pseudo_halfsets: bool = True,
     return_intermediates: bool = False,
@@ -112,23 +112,23 @@ def relion_vdam_m_step_device(
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
     if not jax.config.x64_enabled:
         raise ValueError("RELION VDAM M-step requires JAX float64 support")
-    if ori_size <= 0 or ori_size % 2 or padding_factor not in (1, 2):
+    if box_size <= 0 or box_size % 2 or padding_factor not in (1, 2):
         raise ValueError("device M-step supports positive even boxes and padding 1/2")
-    fft_size = padding_factor * ori_size
+    fft_size = padding_factor * box_size
     if fft_size < 16:
         raise ValueError("device M-step requires FFT grid >=16")
     capacity = fft_size + 3
     half_shape = (capacity, capacity, capacity // 2 + 1)
     moment_shape = (fft_size, fft_size, fft_size // 2 + 1)
-    if reference_relion.shape != (ori_size,) * 3:
-        raise ValueError("reference must have shape (ori_size,)*3")
+    if reference_relion.shape != (box_size,) * 3:
+        raise ValueError("reference must have shape (box_size,)*3")
     pairs = [
         (data_h0, half_shape),
         (weight_h0, half_shape),
         (mom1_h0, moment_shape),
         (mom2, moment_shape),
-        (fsc_reconstruct, (ori_size // 2 + 1,)),
-        (tau2, (ori_size // 2 + 1,)),
+        (fsc_reconstruct, (box_size // 2 + 1,)),
+        (tau2, (box_size // 2 + 1,)),
     ]
     if pseudo_halfsets:
         pairs += [(data_h1, half_shape), (weight_h1, half_shape), (mom1_h1, moment_shape)]
@@ -144,12 +144,12 @@ def relion_vdam_m_step_device(
     stepsize = jnp.asarray(grad_stepsize, real_dtype)
     fudge = jnp.asarray(tau2_fudge, real_dtype)
     radius = jnp.asarray(r_max, jnp.int32)
-    radius = jnp.where(radius > 0, radius, ori_size // 2)
+    radius = jnp.where(radius > 0, radius, box_size // 2)
     coord = jnp.arange(capacity, dtype=jnp.int32) - capacity // 2
     x = jnp.arange(capacity // 2 + 1, dtype=jnp.int32)
     r2 = coord[:, None, None] ** 2 + coord[None, :, None] ** 2 + x[None, None, :] ** 2
     valid = r2 < (padding_factor * radius) ** 2
-    n_shells = ori_size // 2 + 1
+    n_shells = box_size // 2 + 1
     shells = shell_of_radius_sq(
         r2, rule="half_up", real_dtype=jnp.float64, padding_factor=padding_factor, index_dtype=jnp.int32, xp=jnp
     )
@@ -232,7 +232,7 @@ def relion_vdam_m_step_device(
         projector, _unused_power = setup_relion_projector(
             reference_relion,
             radius,
-            box_size=ori_size,
+            box_size=box_size,
             padding_factor=padding_factor,
             do_gridding=False,
         )
@@ -240,7 +240,7 @@ def relion_vdam_m_step_device(
         projector, _unused_power = setup_relion_projector_uncorrected(
             reference_relion,
             radius,
-            box_size=ori_size,
+            box_size=box_size,
             padding_factor=padding_factor,
             compute_dtype=real_dtype,
         )
@@ -272,9 +272,9 @@ def relion_vdam_m_step_device(
     dc_real = fft_half[dc].real
     fft_half = fft_half.at[dc].set(_complex(dc_real, jnp.zeros_like(dc_real)))
     real = ftu.get_idft3_real(fft_half, (fft_size,) * 3, norm="forward")
-    start = (fft_size - ori_size) // 2
-    real = real[start : start + ori_size, start : start + ori_size, start : start + ori_size]
-    real = real / float(padding_factor**3 * ori_size)
+    start = (fft_size - box_size) // 2
+    real = real[start : start + box_size, start : start + box_size, start : start + box_size]
+    real = real / float(padding_factor**3 * box_size)
     real, _mask = mask.soft_mask_outside_map(real)
     result = {
         "iref": real,
@@ -342,7 +342,7 @@ def _pack_bpref_to_capacity(value, *, capacity):
     return packed.at[before : before + value.shape[0], before : before + value.shape[1], : value.shape[2]].set(value)
 
 
-def _pad_bpref_to_window_class(value, *, radius: int, ori_size: int, padding_factor: int):
+def _pad_bpref_to_window_class(value, *, radius: int, box_size: int, padding_factor: int):
     """A host BPref slab zero-padded to the slab of its stable Fourier-window class.
 
     The device pack is one program per slab shape, and the slab follows RELION's current size,
@@ -352,9 +352,9 @@ def _pad_bpref_to_window_class(value, *, radius: int, ori_size: int, padding_fac
     """
 
     current_size = 2 * int(radius)
-    if not (0 < current_size < int(ori_size)) or int(ori_size) % 2:
+    if not (0 < current_size < int(box_size)) or int(box_size) % 2:
         return value
-    class_size = stable_fourier_window_current_size(current_size, int(ori_size), quantum=stable_fourier_window_quantum())
+    class_size = stable_fourier_window_current_size(current_size, int(box_size), quantum=stable_fourier_window_quantum())
     grow = int(padding_factor) * class_size + 3 - value.shape[0]
     if grow <= 0 or grow % 2:
         return value
@@ -375,7 +375,7 @@ def relion_vdam_m_step_host(
     tau2,
     grad_stepsize,
     tau2_fudge,
-    ori_size,
+    box_size,
     padding_factor=1,
     interpolator=1,
     r_max=-1,
@@ -401,32 +401,32 @@ def relion_vdam_m_step_host(
     returned ``iref`` and moments stay on the device; the shell spectra and
     flags come back to the host. VDAM keeps its volumes on the device across
     iterations this way instead of reading back and re-uploading them.
-    ``average_ctf2`` (``[ori_size // 2 + 1]``, CTF-premultiplied images only,
+    ``average_ctf2`` (``[box_size // 2 + 1]``, CTF-premultiplied images only,
     :func:`relax.relion.relion_ctf.premultiplied_average_ctf2`) corrects the SSNR's tau2
     as RELION's ``updateSSNRarrays`` does; the reconstruction keeps the uncorrected tau2.
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
-    if ori_size * padding_factor < 16:
-        raise ValueError("the VDAM M-step requires an FFT grid (ori_size * padding_factor) of at least 16")
-    if interpolator != 1 or r_max > ori_size // 2:
+    if box_size * padding_factor < 16:
+        raise ValueError("the VDAM M-step requires an FFT grid (box_size * padding_factor) of at least 16")
+    if interpolator != 1 or r_max > box_size // 2:
         raise ValueError("unsupported interpolator or radius")
     pseudo = data_h1 is not None
     if pseudo != (weight_h1 is not None) or pseudo != (mom1_h1 is not None):
         raise ValueError("half-1 data, weight, and moment must be present together")
-    if np.shape(fsc_ssnr) != (ori_size // 2 + 1,):
+    if np.shape(fsc_ssnr) != (box_size // 2 + 1,):
         raise ValueError("fsc_ssnr has incompatible shell shape")
-    capacity = padding_factor * ori_size + 3
+    capacity = padding_factor * box_size + 3
 
     def pack(value):
         shape = np.shape(value)
         if len(shape) != 3 or shape[0] != shape[1] or shape[2] != shape[0] // 2 + 1:
             raise ValueError("BPref must be a centered half volume")
-        radius = r_max if r_max > 0 else ori_size // 2
+        radius = r_max if r_max > 0 else box_size // 2
         if shape[0] // 2 < padding_factor * radius or shape[0] > capacity:
             raise ValueError("BPref does not cover the logical radius or exceeds capacity")
         if not isinstance(value, jax.Array):
             value = _pad_bpref_to_window_class(
-                np.asarray(value), radius=radius, ori_size=ori_size, padding_factor=padding_factor
+                np.asarray(value), radius=radius, box_size=box_size, padding_factor=padding_factor
             )
         return _pack_bpref_to_capacity(jnp.asarray(value), capacity=capacity)
 
@@ -458,7 +458,7 @@ def relion_vdam_m_step_host(
         np.bool_(first0),
         np.bool_(first1),
         None if average_ctf2 is None else np.asarray(average_ctf2, np.float64),
-        ori_size=ori_size,
+        box_size=box_size,
         padding_factor=padding_factor,
         pseudo_halfsets=pseudo,
         compute_dtype=real_dtype,

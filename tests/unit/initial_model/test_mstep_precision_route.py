@@ -45,7 +45,7 @@ def clean_diagnostics(monkeypatch):
 
 
 def _state(K=1):
-    state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=K, nr_iter=2, n_directions=3, pseudo_halfsets=True)
+    state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=K, nr_iter=2, n_directions=3, pseudo_halfsets=True)
     state.tau2_class[:] = np.nextafter(1.0, 2.0)
     return state
 

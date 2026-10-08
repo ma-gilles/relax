@@ -259,7 +259,7 @@ def _load_native_vdam_continuation(
         iter=iteration,
         nr_iter=nr_iter,
         K=nr_classes,
-        ori_size=box_size,
+        box_size=box_size,
         pixel_size=pixel_size,
         pseudo_halfsets=True,
         Iref=np.stack(references, axis=0),

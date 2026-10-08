@@ -70,7 +70,7 @@ def tomo_initial_model_sampling(
         offset_range_angst=float(sampling_plan.offset_range_angstrom),
         offset_step_angst=float(sampling_plan.offset_step_angstrom),
         random_perturbation=float(sampling_plan.random_perturbation),
-        coarse_size=int(state.ori_size) if coarse_size is None else int(coarse_size),
+        coarse_size=int(state.box_size) if coarse_size is None else int(coarse_size),
         fine_size=fine_size,
     )
 

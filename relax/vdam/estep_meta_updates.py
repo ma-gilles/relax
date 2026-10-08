@@ -75,7 +75,7 @@ def update_noise_from_estep(
         raise ValueError(
             f"wsum_sigma2_noise and wsum_img_power shape mismatch: {wsum_sigma2_noise.shape} vs {wsum_img_power.shape}"
         )
-    expected_shells = int(state.ori_size) // 2 + 1
+    expected_shells = int(state.box_size) // 2 + 1
     new_sigma2 = np.asarray(state.sigma2_noise, dtype=np.float64).copy()
     if new_sigma2.ndim != 2 or new_sigma2.shape[1] != expected_shells:
         raise ValueError(f"sigma2_noise must have shape (G, {expected_shells}), got {new_sigma2.shape}")
@@ -110,7 +110,7 @@ def update_noise_from_estep(
             continue
         if sumw_rows[g] <= 0.0:
             raise ValueError(f"optics group {g + 1} has noise sums but no weight")
-        shape = (int(state.ori_size), int(state.ori_size))
+        shape = (int(state.box_size), int(state.box_size))
         wsum_g = noise_relion.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)
         # RELION blends, then applies its floors (ml_optimiser.cpp:5255-5282): a shell without data decays by mu.
         new_sigma2[g] = noise_relion.apply_relion_sigma2_floors(
@@ -297,7 +297,7 @@ def _update_particle_state_from_estep_meta(
         particle_state.significant_counts[ids] = np.asarray(nsig, dtype=np.int32).reshape(-1)
 
 
-def relion_log_likelihood_contributions(log_evidence, *, sigma2_noise, groups, n_images, ori_size: int, current_size: int):
+def relion_log_likelihood_contributions(log_evidence, *, sigma2_noise, groups, n_images, box_size: int, current_size: int):
     """RELION's per-particle dLL, ``log(sum_weight) - min_diff2 - logsigma2`` (ml_optimiser.cpp:9029-9058).
 
     ``log_evidence`` is the E-step's ``log(sum_weight) - min_diff2`` per particle; ``logsigma2`` sums
@@ -306,7 +306,7 @@ def relion_log_likelihood_contributions(log_evidence, *, sigma2_noise, groups, n
     """
     from relax.relion.relion_ctf import _fftw_shell_labels
 
-    shells = _fftw_shell_labels(int(ori_size), int(current_size), centered_rows=False)
+    shells = _fftw_shell_labels(int(box_size), int(current_size), centered_rows=False)
     sigma2 = np.atleast_2d(np.asarray(sigma2_noise, dtype=np.float64))
     shells = shells[(shells > 0) & (shells < sigma2.shape[1])]
     logsigma2 = np.log(2.0 * np.pi * sigma2[:, shells]).sum(axis=1)

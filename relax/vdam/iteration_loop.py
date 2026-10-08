@@ -121,7 +121,7 @@ def update_current_resolution_from_data_vs_prior(state: InitialModelState) -> In
     maxres = max(
         resolution_from_data_vs_prior(
             np.asarray(state.data_vs_prior_class[k], dtype=np.float64),
-            box_size=state.ori_size,
+            box_size=state.box_size,
             minres_map=regularization_relion.RELION_MINRES_MAP,
         )
         for k in range(int(state.K))
@@ -130,18 +130,18 @@ def update_current_resolution_from_data_vs_prior(state: InitialModelState) -> In
     return replace(
         state,
         current_resolution_shell=int(maxres),
-        current_resolution=float(maxres) / (float(state.pixel_size) * float(state.ori_size)),
+        current_resolution=float(maxres) / (float(state.pixel_size) * float(state.box_size)),
     )
 
 
 def update_image_size_and_resolution_pointers(state: InitialModelState, pilot_controls=None) -> InitialModelState:
     """Mirror the current-size part of RELION ``updateImageSizeAndResolutionPointers``."""
-    maxres = relion_round(float(state.current_resolution) * float(state.pixel_size) * float(state.ori_size))
+    maxres = relion_round(float(state.current_resolution) * float(state.pixel_size) * float(state.box_size))
     if float(state.ave_Pmax) > 0.1 and bool(state.has_high_fsc_at_limit):
-        maxres += relion_round(0.25 * float(state.ori_size) / 2.0)
+        maxres += relion_round(0.25 * float(state.box_size) / 2.0)
     else:
         maxres += int(state.incr_size)
-    current_size = min(max(2 * maxres, 2), int(state.ori_size))
+    current_size = min(max(2 * maxres, 2), int(state.box_size))
     current_size = current_size if pilot_controls is None else pilot_controls.cap_current_size(current_size)
 
     return replace(state, current_size=int(current_size))
@@ -320,13 +320,13 @@ def run_vdam_iterations(
         current = update_image_size_and_resolution_pointers(current, pilot_controls)
         if fourier_radius_schedule is not None:
             radius = int(fourier_radius_schedule[it - 1])
-            if radius < 1 or radius > int(state.ori_size) // 2:
+            if radius < 1 or radius > int(state.box_size) // 2:
                 raise ValueError("scheduled Fourier radius exceeds the model box")
             current = replace(
                 current,
                 current_size=2 * radius,
                 current_resolution_shell=radius,
-                current_resolution=float(radius) / (float(state.pixel_size) * float(state.ori_size)),
+                current_resolution=float(radius) / (float(state.pixel_size) * float(state.box_size)),
             )
         current = projector_refresh_fn(current, padding_factor=projector_padding_factor)
         if profile_iterations:

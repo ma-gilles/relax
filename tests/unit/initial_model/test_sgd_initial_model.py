@@ -181,7 +181,7 @@ def test_class_pooling_uses_both_halves_without_crossing_classes(k):
     n, capacity = 16, 19
     state = InitialModelState(
         K=k,
-        ori_size=n,
+        box_size=n,
         current_size=10,
         pseudo_halfsets=True,
         Iref=jnp.zeros((k, n, n, n), jnp.float32),
@@ -238,7 +238,7 @@ def test_corner_prior_matches_actual_masked_fft_covariance():
 def test_noise_state_is_relion_units_and_adapter_restores_engine_units():
     n = 16
     state = InitialModelState(
-        ori_size=n,
+        box_size=n,
         current_size=8,
         iter=1,
         Iref=np.zeros((1, n, n, n), np.float32),
@@ -337,7 +337,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
         return InitialModelState(
             nr_iter=3,
             K=3,
-            ori_size=16,
+            box_size=16,
             pixel_size=1,
             current_size=6,
             Iref=np.zeros((3, 16, 16, 16), np.float32),
@@ -411,7 +411,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
 
 @pytest.mark.parametrize("k", [1, 4])
 def test_uniform_joint_prior_is_fixed_while_offset_updates_and_default_still_learns(k):
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=k, nr_iter=1, n_directions=3, pseudo_halfsets=True)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=k, nr_iter=1, n_directions=3, pseudo_halfsets=True)
     state.subset_size = 50
     posterior = np.zeros(k, dtype=np.float64)
     posterior[-1] = 100.0

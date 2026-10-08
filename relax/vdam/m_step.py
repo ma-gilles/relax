@@ -23,7 +23,7 @@ from relax.vdam.state import InitialModelState, VdamAccumulator, half_slot_count
 
 def relion_solvent_mask(
     *,
-    ori_size: int,
+    box_size: int,
     pixel_size: float,
     particle_diameter_ang: float,
     width_mask_edge_px: float,
@@ -36,7 +36,7 @@ def relion_solvent_mask(
     if pixel_size <= 0.0:
         raise ValueError(f"pixel_size must be positive, got {pixel_size}")
 
-    n = int(ori_size)
+    n = int(box_size)
     radius = float(particle_diameter_ang) / (2.0 * float(pixel_size))
     width = float(width_mask_edge_px)
     radius_p = radius + width
@@ -67,10 +67,10 @@ def relion_solvent_flatten_state(
     iref = jnp.asarray(state.Iref)
     if compute_dtype == "float32" and iref.dtype != np.dtype(np.float32):
         raise ValueError("float32 solvent multiplication requires float32 state.Iref")
-    if iref.ndim != 4 or iref.shape[1:] != (state.ori_size,) * 3:
-        raise ValueError(f"state.Iref must have shape (K, {state.ori_size}, ...), got {iref.shape}")
-    if np.shape(mask) != (state.ori_size,) * 3:
-        raise ValueError(f"mask must have shape ({state.ori_size},)*3, got {np.shape(mask)}")
+    if iref.ndim != 4 or iref.shape[1:] != (state.box_size,) * 3:
+        raise ValueError(f"state.Iref must have shape (K, {state.box_size}, ...), got {iref.shape}")
+    if np.shape(mask) != (state.box_size,) * 3:
+        raise ValueError(f"mask must have shape ({state.box_size},)*3, got {np.shape(mask)}")
     # The references stay on the device (_run_m_step_transaction below);
     # the same elementwise product and cast run there, with the mask uploaded once.
     return replace(state, Iref=(iref * _device_solvent_mask(mask, compute_dtype)[None]).astype(iref.dtype))
@@ -203,11 +203,11 @@ def validate_mstep_inputs(state: InitialModelState, k: int, accum_h1) -> None:
         raise ValueError("pseudo_halfsets=False must have accum_h1=None")
 
 
-def _relion_resolution_shell(ori_size: int, pixel_size: float, resolution_angstrom: float) -> int:
+def _relion_resolution_shell(box_size: int, pixel_size: float, resolution_angstrom: float) -> int:
     """RELION ``MlModel::getPixelFromResolution(1./resolution_angstrom)``."""
     if resolution_angstrom <= 0.0:
         raise ValueError(f"resolution_angstrom must be positive, got {resolution_angstrom}")
-    shell = float(ori_size) * float(pixel_size) / float(resolution_angstrom)
+    shell = float(box_size) * float(pixel_size) / float(resolution_angstrom)
     return relion_round(shell)
 
 
@@ -220,7 +220,7 @@ def _grad_min_resol_shell_from_state(
         return float(grad_min_resol_shell)
     return float(
         _relion_resolution_shell(
-            int(state.ori_size),
+            int(state.box_size),
             float(state.pixel_size),
             RELION_DEFAULT_GRAD_MIN_RESOL_ANGSTROM,
         )
@@ -279,7 +279,7 @@ def _run_m_step_transaction(
         state.tau2_class[k],
         effective_stepsize,
         tau2_fudge_factor,
-        state.ori_size,
+        state.box_size,
         padding_factor,
         1,
         r_max,

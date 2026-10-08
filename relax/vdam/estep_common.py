@@ -30,7 +30,7 @@ def _bp_slab(arr: np.ndarray, r_max: int, c: int) -> np.ndarray:
 def _as_centered_bpref_source(
     values: np.ndarray,
     *,
-    ori_size: int,
+    box_size: int,
     r_max: int,
     padding_factor: int,
 ) -> tuple[np.ndarray, int, int]:
@@ -42,7 +42,7 @@ def _as_centered_bpref_source(
     support and must feed the one BPref slab conversion below.
     """
     arr = np.asarray(values)
-    full_size = int(ori_size) * int(padding_factor)
+    full_size = int(box_size) * int(padding_factor)
     if arr.size == full_size**3:
         return arr.reshape(full_size, full_size, full_size), full_size // 2, int(r_max)
 
@@ -65,7 +65,7 @@ def _as_centered_bpref_source(
     )
 
 
-def _centered_bpref_sources(Ft_y, Ft_ctf, *, ori_size: int, r_max: int, padding_factor: int):
+def _centered_bpref_sources(Ft_y, Ft_ctf, *, box_size: int, r_max: int, padding_factor: int):
     """Return ``(data cube, weight cube, center, radius)`` for the RELION-x-half BPref converter.
 
     Both accumulators must encode the same centered support.
@@ -77,13 +77,13 @@ def _centered_bpref_sources(Ft_y, Ft_ctf, *, ori_size: int, r_max: int, padding_
 
     data_cube, data_center, data_radius = _as_centered_bpref_source(
         Ft_y,
-        ori_size=ori_size,
+        box_size=box_size,
         r_max=r_max,
         padding_factor=padding_factor,
     )
     weight_cube, weight_center, weight_radius = _as_centered_bpref_source(
         Ft_ctf,
-        ori_size=ori_size,
+        box_size=box_size,
         r_max=r_max,
         padding_factor=padding_factor,
     )
@@ -99,16 +99,16 @@ def _bpref_slab_outputs(bp_data: np.ndarray, bp_weight: np.ndarray) -> tuple[np.
     return np.asarray(bp_data, dtype=np.complex128).copy(), bp_weight_f64
 
 
-def relion_bpref_frame_scales(ori_size: int) -> tuple[float, float]:
+def relion_bpref_frame_scales(box_size: int) -> tuple[float, float]:
     """``(-N², N⁴)`` — RECOVAR unnormalised-FFT → RELION BPref frame."""
-    n = float(ori_size)
+    n = float(box_size)
     return -(n**2), n**4
 
 
 def relion_x_public_output_to_bpref(
     Ft_y: np.ndarray,
     Ft_ctf: np.ndarray,
-    ori_size: int,
+    box_size: int,
     r_max: int,
     padding_factor: int = 1,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -123,7 +123,7 @@ def relion_x_public_output_to_bpref(
     data_cube, weight_cube, center, radius = _centered_bpref_sources(
         Ft_y,
         Ft_ctf,
-        ori_size=ori_size,
+        box_size=box_size,
         r_max=r_max,
         padding_factor=padding_factor,
     )
@@ -291,8 +291,8 @@ def _add_accumulator_weight_meta(meta: dict[str, Any], accumulators: list[VdamAc
 
 def _empty_accumulator(state: InitialModelState, class_idx: int, halfset_idx: int) -> VdamAccumulator:
     r_max = state.effective_current_size // 2
-    if r_max >= state.ori_size // 2:
-        shape = (state.ori_size, state.ori_size, state.ori_size // 2 + 1)
+    if r_max >= state.box_size // 2:
+        shape = (state.box_size, state.box_size, state.box_size // 2 + 1)
     else:
         half_ps = r_max + 1
         shape = (2 * half_ps + 1, 2 * half_ps + 1, half_ps + 1)
@@ -327,7 +327,7 @@ def _arrays_to_accumulators(
             f"{int(state.K)} classes, got data={data_class_count} and weight={weight_class_count}",
         )
     r_max = state.effective_current_size // 2
-    data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
+    data_scale, weight_scale = relion_bpref_frame_scales(state.box_size)
     dump_dir = os.environ.get("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR")
 
     grouped = halfset_idx is None
@@ -361,7 +361,7 @@ def _arrays_to_accumulators(
             bp_data, bp_weight = relion_x_public_output_to_bpref(
                 public_data,
                 public_weight,
-                state.ori_size,
+                state.box_size,
                 r_max,
                 padding_factor=padding_factor,
             )
@@ -379,7 +379,7 @@ def _arrays_to_accumulators(
                     data_scale=np.float64(data_scale),
                     weight_scale=np.float64(weight_scale),
                     padding_factor=np.int32(padding_factor),
-                    ori_size=np.int32(state.ori_size),
+                    ori_size=np.int32(state.box_size),
                     current_size=np.int32(state.current_size),
                 )
             accumulators.append(

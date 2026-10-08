@@ -51,7 +51,7 @@ def _case(size=8, padding=1, radius=2, pseudo=True, moments="populated"):
         tau2=tau,
         grad_stepsize=0.3,
         tau2_fudge=4.0,
-        ori_size=size,
+        box_size=size,
         padding_factor=padding,
         interpolator=1,
         r_max=radius,
@@ -85,7 +85,7 @@ def test_complete_device_transaction_native_fp64(bind, size, padding, full, pseu
 
 
 def _assert_case(bind, case):
-    size, padding = case["ori_size"], case["padding_factor"]
+    size, padding = case["box_size"], case["padding_factor"]
     if size * padding < 16:
         # RELION's M-step (the oracle) takes these grids; relax's transaction refuses them.
         with pytest.raises(ValueError, match="FFT grid"):
@@ -252,7 +252,7 @@ def test_pure_device_rejects_unsupported_small_fft():
             2,
             False,
             False,
-            ori_size=8,
+            box_size=8,
             padding_factor=1,
             pseudo_halfsets=True,
         )
@@ -265,7 +265,7 @@ def test_average_ctf2_divides_invtau2_as_relion_update_ssnr_arrays(bind, padding
     if "avgctf2:" not in (bind.vdam_update_ssnr_arrays_from_bpref.__doc__ or ""):
         pytest.skip("the RELION binding predates the avgctf2 oracle argument")
     case = _case(size=16, padding=padding, radius=6, pseudo=True)
-    average_ctf2 = np.linspace(0.3, 1.7, case["ori_size"] // 2 + 1)
+    average_ctf2 = np.linspace(0.3, 1.7, case["box_size"] // 2 + 1)
     average_ctf2[3] = 0.0  # RELION keeps invtau2 where avgctf2 is not positive
     for spectrum in (None, average_ctf2):
         _tau2, _sigma2, relion_dvp, relion_coverage = bind.vdam_update_ssnr_arrays_from_bpref(
@@ -273,7 +273,7 @@ def test_average_ctf2_divides_invtau2_as_relion_update_ssnr_arrays(bind, padding
             case["fsc_reconstruct"],
             case["tau2"],
             case["tau2_fudge"],
-            case["ori_size"],
+            case["box_size"],
             padding,
             1,
             case["r_max"],
@@ -300,7 +300,7 @@ def test_bpref_slabs_of_one_window_class_share_the_pack_program(padding):
     for radius in (8, 7, 6, 5):
         edge = 2 * padding * radius + 3
         slab = rng.normal(size=(edge, edge, edge // 2 + 1)) + 1j * rng.normal(size=(edge, edge, edge // 2 + 1))
-        padded = helper._pad_bpref_to_window_class(slab, radius=radius, ori_size=size, padding_factor=padding)
+        padded = helper._pad_bpref_to_window_class(slab, radius=radius, box_size=size, padding_factor=padding)
         assert padded.shape[0] == padding * 16 + 3
         packed = np.asarray(helper._pack_bpref_to_capacity(jnp.asarray(padded), capacity=capacity))
         expected = np.zeros((capacity, capacity, capacity // 2 + 1), np.complex128)
@@ -310,4 +310,4 @@ def test_bpref_slabs_of_one_window_class_share_the_pack_program(padding):
         counts.append(helper._pack_bpref_to_capacity._cache_size())
     assert len(set(counts)) == 1, counts
     full = rng.normal(size=(size + 3, size + 3, size // 2 + 2))
-    assert helper._pad_bpref_to_window_class(full, radius=size // 2, ori_size=size, padding_factor=1) is full
+    assert helper._pad_bpref_to_window_class(full, radius=size // 2, box_size=size, padding_factor=1) is full

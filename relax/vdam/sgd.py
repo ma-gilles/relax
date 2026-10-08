@@ -140,13 +140,13 @@ def sgd_m_step(
     if previous.shape != state.Iref.shape or previous.dtype != np.dtype(np.float32):
         raise ValueError("SGD previous update shape/dtype does not match references")
     radius = int(state.current_size) // 2
-    if radius < 1 or radius > int(state.ori_size) // 2:
+    if radius < 1 or radius > int(state.box_size) // 2:
         raise ValueError("SGD current Fourier radius is outside the model box")
     references, updates = [], []
     curvature_max, gradient_norm, step_norm = [], [], []
     for k in range(state.K):
         residual, curvature = _pooled_class_accumulators(accumulators, state.K, k)
-        capacity = int(padding_factor) * int(state.ori_size) + 3
+        capacity = int(padding_factor) * int(state.box_size) + 3
         if residual.ndim != 3 or residual.shape[0] > capacity or residual.shape[1] != residual.shape[0]:
             raise ValueError("SGD BPref has invalid capacity")
         if residual.shape[0] // 2 < int(padding_factor) * radius:
@@ -164,7 +164,7 @@ def sgd_m_step(
             curvature,
             np.int32(radius),
             np.float32(learning_rate),
-            ori_size=int(state.ori_size),
+            ori_size=int(state.box_size),
             padding_factor=int(padding_factor),
         )
         if not bool(jnp.all(jnp.isfinite(reference))) or not bool(jnp.all(jnp.isfinite(update))):
@@ -265,15 +265,15 @@ def update_sgd_noise(state: InitialModelState, meta: dict) -> InitialModelState:
     residual = np.asarray(meta["wsum_sigma2_noise"], dtype=np.float64)
     image_power = np.asarray(meta["wsum_img_power"], dtype=np.float64)
     mass = float(meta["noise_sumw"])
-    shells = int(state.ori_size) // 2 + 1
+    shells = int(state.box_size) // 2 + 1
     if residual.shape != (shells,) or image_power.shape != (shells,):
         raise ValueError("SGD residual noise has the wrong Fourier shell shape")
     if not (np.all(np.isfinite(residual)) and np.all(np.isfinite(image_power)) and np.isfinite(mass) and mass > 0.0):
         raise ValueError("SGD residual noise sums/count must be finite and count positive")
     batch_noise = np.asarray(
-        normalize_wsum_to_sigma2_noise(residual, image_power, mass, (state.ori_size,) * 2),
+        normalize_wsum_to_sigma2_noise(residual, image_power, mass, (state.box_size,) * 2),
         dtype=np.float64,
-    ) / float(state.ori_size**4)
+    ) / float(state.box_size**4)
     active = np.arange(shells) <= int(state.current_size) // 2
     batch_noise = np.where(active, batch_noise, 0.0)
     if not np.all(np.isfinite(batch_noise)) or np.any(batch_noise < 0.0):

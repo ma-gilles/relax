@@ -121,7 +121,7 @@ def test_vdam_iteration_loop_can_execute_exactly_one_absolute_restart_iteration(
     import relax.vdam.iteration_loop as loop
 
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=1.0,
         K=1,
         nr_iter=200,
@@ -165,7 +165,7 @@ def test_vdam_iteration_loop_can_execute_exactly_one_absolute_restart_iteration(
 
 def test_vdam_iteration_loop_restart_rejects_state_iteration_mismatch():
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=1.0,
         K=1,
         nr_iter=200,
@@ -199,7 +199,7 @@ def test_vdam_iteration_loop_restart_rejects_state_iteration_mismatch():
 def test_projector_refresh_updates_tau2_of_all_classes(bind):
     ori = 8
     state = initialise_denovo_state(
-        ori_size=ori,
+        box_size=ori,
         pixel_size=1.0,
         K=2,
         nr_iter=1,
@@ -255,7 +255,7 @@ def test_projector_refresh_updates_tau2_of_all_classes(bind):
 class TestRunVdamIterations:
     def test_current_resolution_uses_relion_data_vs_prior_scan(self):
         state = initialise_denovo_state(
-            ori_size=64,
+            box_size=64,
             pixel_size=2.0,
             K=2,
             nr_iter=1,
@@ -275,7 +275,7 @@ class TestRunVdamIterations:
 
     def test_current_size_update_uses_previous_resolution_for_next_estep(self):
         state = initialise_denovo_state(
-            ori_size=64,
+            box_size=64,
             pixel_size=2.0,
             K=1,
             nr_iter=1,
@@ -299,7 +299,7 @@ class TestRunVdamIterations:
         import relax.vdam.iteration_loop as loop
 
         state = initialise_denovo_state(
-            ori_size=64,
+            box_size=64,
             pixel_size=1.0,
             K=1,
             nr_iter=2,
@@ -349,7 +349,7 @@ class TestRunVdamIterations:
         import relax.vdam.iteration_loop as loop
 
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=200,
@@ -389,7 +389,7 @@ class TestRunVdamIterations:
 
     def test_diagnostic_stop_rejects_iteration_outside_full_schedule(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=200,
@@ -420,7 +420,7 @@ class TestRunVdamIterations:
         import relax.vdam.iteration_loop as loop
 
         state = initialise_denovo_state(
-            ori_size=16,
+            box_size=16,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -472,7 +472,7 @@ class TestRunVdamIterations:
         import relax.vdam.iteration_loop as loop
 
         state = initialise_denovo_state(
-            ori_size=16,
+            box_size=16,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -516,7 +516,7 @@ class TestRunVdamIterations:
         import relax.vdam.iteration_loop as loop
 
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -570,7 +570,7 @@ class TestRunVdamIterations:
 
     def test_relion_solvent_flatten_state_matches_centered_spherical_mask(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -580,7 +580,7 @@ class TestRunVdamIterations:
         state.Iref = np.ones((1, 8, 8, 8), dtype=np.float64)
 
         mask = relion_solvent_mask(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             particle_diameter_ang=6.0,
             width_mask_edge_px=2.0,
@@ -604,7 +604,7 @@ class TestRunVdamIterations:
     def test_post_mstep_update_runs_before_iteration_artifact_sink(self, bind):
         ori = 16
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -620,7 +620,7 @@ class TestRunVdamIterations:
             updated = relion_solvent_flatten_state(
                 current,
                 mask=relion_solvent_mask(
-                    ori_size=int(current.ori_size),
+                    box_size=int(current.box_size),
                     pixel_size=float(current.pixel_size),
                     particle_diameter_ang=8.0,
                     width_mask_edge_px=2.0,
@@ -659,7 +659,7 @@ class TestRunVdamIterations:
 
     def test_updates_class_and_direction_priors_from_estep_meta(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=2,
             nr_iter=1,
@@ -693,7 +693,7 @@ class TestRunVdamIterations:
 
     def test_sigma2_offset_uses_significant_reconstruction_mass(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -715,7 +715,7 @@ class TestRunVdamIterations:
         from relax.reconstruction import noise_relion
 
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -745,7 +745,7 @@ class TestRunVdamIterations:
         from relax.reconstruction import noise_relion
 
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -775,7 +775,7 @@ class TestRunVdamIterations:
         self, monkeypatch, tmp_path
     ):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -812,7 +812,7 @@ class TestRunVdamIterations:
         import relax.vdam.iteration_loop as loop
 
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=2,
@@ -862,7 +862,7 @@ class TestRunVdamIterations:
 
     def test_direction_prior_resizes_uniformly_when_sampling_changes(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=2,
             nr_iter=1,
@@ -891,7 +891,7 @@ class TestRunVdamIterations:
 
     def test_all_particle_probability_update_replaces_priors_and_allows_zero_class(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=2,
             nr_iter=1,
@@ -915,7 +915,7 @@ class TestRunVdamIterations:
     @pytest.mark.requires_relion_bind
     def test_random_seed_zero_skips_particle_shuffle(self, monkeypatch):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -946,7 +946,7 @@ class TestRunVdamIterations:
     @pytest.mark.requires_relion_bind
     def test_random_seed_zero_preserves_relion_sorted_idx_base_order(self, monkeypatch):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -977,7 +977,7 @@ class TestRunVdamIterations:
 
     def test_rejects_invalid_particle_order(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=1,
@@ -999,7 +999,7 @@ class TestRunVdamIterations:
 
     def test_nonzero_seed_full_dataset_randomises_only_once(self, bind):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=2,
@@ -1035,7 +1035,7 @@ class TestRunVdamIterations:
 
     def test_nonzero_seed_true_subset_reshuffles_previous_sorted_idx(self, bind):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=2,
@@ -1078,7 +1078,7 @@ class TestRunVdamIterations:
 
     def test_continuation_replays_complete_relion_sorted_idx_history(self, bind):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=10,
@@ -1162,7 +1162,7 @@ class TestRunVdamIterations:
 
     def test_continuation_order_replay_fails_closed_after_convergence(self):
         state = initialise_denovo_state(
-            ori_size=8,
+            box_size=8,
             pixel_size=1.0,
             K=1,
             nr_iter=10,
@@ -1193,7 +1193,7 @@ class TestRunVdamIterations:
         nr_iter = 5
         nr_particles = 300
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=1.0,
             K=K,
             nr_iter=nr_iter,
@@ -1258,7 +1258,7 @@ class TestRunVdamIterations:
         K = 1
         nr_iter = 10
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=1.0,
             K=K,
             nr_iter=nr_iter,
@@ -1305,7 +1305,7 @@ class TestRunVdamIterations:
         K = 1
         nr_iter = 6
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=1.0,
             K=K,
             nr_iter=nr_iter,

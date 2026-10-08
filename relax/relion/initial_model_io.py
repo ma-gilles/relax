@@ -289,8 +289,8 @@ def _particle_state_from_star(
 
 def _write_model_star(path: str, state: InitialModelState, class_mrcs: tuple[str, ...]) -> None:
     current_resolution_angstrom = 1.0 / float(state.current_resolution) if state.current_resolution > 0 else np.inf
-    pixel_x_ori = float(state.pixel_size) * float(state.ori_size)
-    n_shells = int(state.ori_size) // 2 + 1
+    pixel_x_ori = float(state.pixel_size) * float(state.box_size)
+    n_shells = int(state.box_size) // 2 + 1
     pdf_direction = np.asarray(state.pdf_direction, dtype=np.float64)
 
     lines: list[str] = [

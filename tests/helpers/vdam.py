@@ -157,7 +157,7 @@ def projector_power_refresh(state, *, padding_factor):
 
     _, power, _ = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
         state.Iref,
-        current_size=int(state.current_size if state.current_size > 0 else state.ori_size),
+        current_size=int(state.current_size if state.current_size > 0 else state.box_size),
         padding_factor=int(padding_factor),
     )
     return replace(state, tau2_class=np.asarray(power, dtype=np.float64))

@@ -458,7 +458,7 @@ def _estimate_native_sampling_accuracy(
             # model-size projector (ml_optimiser.cpp:9336-9353).
             pixel = group_constant(optics_state.image_pixel_size, ids, "pixel size")
             box = int(group_constant(optics_state.image_box, ids, "box"))
-            scale = optics_scale.scale_difference(box, pixel, int(state.ori_size), float(optics_state.pixel_size))
+            scale = optics_scale.scale_difference(box, pixel, int(state.box_size), float(optics_state.pixel_size))
             optics_kwargs["pixel_size"] = pixel
             grid_kwargs = dict(
                 current_image_size=optics_scale.group_current_size(current_image_size, box, scale),
@@ -476,7 +476,7 @@ def _estimate_native_sampling_accuracy(
             class_weights=np.asarray(state.pdf_class, dtype=np.float64),
             sigma2_noise_relion=np.asarray(sigma2_noise_relion, dtype=np.float64),
             **optics_kwargs,
-            model_box_size=int(state.ori_size),
+            model_box_size=int(state.box_size),
             **grid_kwargs,
             padding_factor=int(padding_factor),
             sigma2_fudge=float(sigma2_fudge),
@@ -538,7 +538,7 @@ def _estimate_native_sampling_accuracy(
             Cs=np.asarray(optics_state.Cs, dtype=np.float64),
             Q0=np.asarray(optics_state.Q0, dtype=np.float64),
             pixel_size=np.asarray(float(optics_state.pixel_size), dtype=np.float64),
-            ori_size=np.asarray(int(state.ori_size), dtype=np.int64),
+            ori_size=np.asarray(int(state.box_size), dtype=np.int64),
             current_image_size=np.asarray(current_image_size, dtype=np.int64),
             padding_factor=np.asarray(int(padding_factor), dtype=np.int64),
             sigma2_fudge=np.asarray(float(sigma2_fudge), dtype=np.float64),

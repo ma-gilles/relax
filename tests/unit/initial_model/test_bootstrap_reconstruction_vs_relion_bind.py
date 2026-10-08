@@ -57,7 +57,7 @@ def test_bootstrap_and_postprocess_match(size, padding, do_ctf, classes, n, curr
     ctf = _ctf(case, size, pixel) if do_ctf else None
     common = dict(
         pixel_size=pixel,
-        ori_size=size,
+        box_size=size,
         nr_classes=classes,
         particle_diameter_ang=0.7 * size * pixel,
         width_mask_edge_px=5.0,
@@ -123,7 +123,7 @@ def test_production_bootstrap_with_relax_ctf_matches():
 
     size, n, pixel = 32, 60, 3.0
     case = _case(size, n, seed=8)
-    args = dict(voltage=300.0, Cs=2.7, Q0=0.1, pixel_size=pixel, ori_size=size, nr_classes=2,
+    args = dict(voltage=300.0, Cs=2.7, Q0=0.1, pixel_size=pixel, box_size=size, nr_classes=2,
                 particle_diameter_ang=0.7 * size * pixel, width_mask_edge_px=5.0, do_zero_mask=True,
                 do_ctf_correction=True, random_seed=23, padding_factor=1, minimum_nr_particles=50)
     expected = np.asarray(

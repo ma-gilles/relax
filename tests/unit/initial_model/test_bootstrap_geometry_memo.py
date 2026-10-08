@@ -57,7 +57,7 @@ def _reference_reconstruct(bp):
     floor = radavg[np.minimum(shell, r_max - 1)]
     weight = np.maximum(f_weight, floor)
     f_conv = np.where(weight == 0.0, f_conv, f_conv / np.where(weight == 0.0, 1.0, weight))
-    ori = bp.ori_size
+    ori = bp.box_size
     padoridim = relion_round(pf * ori)
     padoridim += padoridim % 2
     new_half = padoridim // 2 + 1

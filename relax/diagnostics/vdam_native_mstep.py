@@ -50,7 +50,6 @@ def native_vdam_m_step_single_class(
     """One class's M-step through RELION's primitives; ``dump_dir`` saves each intermediate."""
 
     bind = _bindings()
-    ori_size = state.ori_size
     # backprojector.h:335/343 EMA defaults
     mu_first, mu_second = 0.9, 0.999
     _do_dump = dump_dir is not None
@@ -78,10 +77,10 @@ def native_vdam_m_step_single_class(
     _dump("fsc_halves_in", state.fsc_halves_class[k])
 
     # Step 2. reweightGrad per halfset
-    data_h0 = np.asarray(bind.vdam_reweight_grad(accum_h0.data, accum_h0.weight, ori_size, padding_factor, 1, r_max))
+    data_h0 = np.asarray(bind.vdam_reweight_grad(accum_h0.data, accum_h0.weight, state.box_size, padding_factor, 1, r_max))
     if state.pseudo_halfsets:
         data_h1 = np.asarray(
-            bind.vdam_reweight_grad(accum_h1.data, accum_h1.weight, ori_size, padding_factor, 1, r_max)
+            bind.vdam_reweight_grad(accum_h1.data, accum_h1.weight, state.box_size, padding_factor, 1, r_max)
         )
     else:
         data_h1 = None
@@ -97,7 +96,7 @@ def native_vdam_m_step_single_class(
         bind.vdam_first_moment(
             data_h0,
             state.Igrad1[slot_h0],
-            ori_size,
+            state.box_size,
             padding_factor,
             1,
             r_max,
@@ -110,7 +109,7 @@ def native_vdam_m_step_single_class(
             bind.vdam_first_moment(
                 data_h1,
                 state.Igrad1[slot_h1],
-                ori_size,
+                state.box_size,
                 padding_factor,
                 1,
                 r_max,
@@ -138,7 +137,7 @@ def native_vdam_m_step_single_class(
                 data_h0,
                 data_h1,
                 state.Igrad2[k],
-                ori_size,
+                state.box_size,
                 padding_factor,
                 1,
                 r_max,
@@ -157,7 +156,7 @@ def native_vdam_m_step_single_class(
     m1_h0 = new_Igrad1[slot_h0]
     m1_h1 = new_Igrad1[slot_h1] if state.pseudo_halfsets else m1_h0
     _post_data, mom1_noise_power = bind.vdam_apply_momenta(
-        data_h0, m1_h0, m1_h1, new_Igrad2[k], ori_size, padding_factor, 1, r_max
+        data_h0, m1_h0, m1_h1, new_Igrad2[k], state.box_size, padding_factor, 1, r_max
     )
     _post_data = np.asarray(_post_data)
     mom1_noise_power = np.asarray(mom1_noise_power)
@@ -183,7 +182,7 @@ def native_vdam_m_step_single_class(
         fsc_for_ssnr,
         state.tau2_class[k],
         tau2_fudge_factor,
-        ori_size,
+        state.box_size,
         padding_factor,
         1,
         r_max,
@@ -226,7 +225,7 @@ def native_vdam_m_step_single_class(
                 state.fsc_halves_class[k],
                 effective_stepsize,
                 tau2_fudge_factor,
-                ori_size,
+                state.box_size,
                 padding_factor,
                 1,
                 r_max,

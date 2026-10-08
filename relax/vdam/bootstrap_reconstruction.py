@@ -150,11 +150,11 @@ def _gridding_geometry(ori: int, pf: float):
 class BackProjector3D:
     """A RELION ``BackProjector`` of a 3-D reference fed with 2-D images (trilinear, no symmetry)."""
 
-    def __init__(self, ori_size: int, padding_factor: int, current_size: int = -1):
-        self.ori_size = int(ori_size)
+    def __init__(self, box_size: int, padding_factor: int, current_size: int = -1):
+        self.box_size = int(box_size)
         self.padding_factor = float(padding_factor)
-        r_max = self.ori_size // 2 if current_size < 0 else int(current_size) // 2
-        self.r_max = min(r_max, self.ori_size // 2)
+        r_max = self.box_size // 2 if current_size < 0 else int(current_size) // 2
+        self.r_max = min(r_max, self.box_size // 2)
         self.pad_size = 2 * (relion_round(self.padding_factor * self.r_max) + 1) + 1
         shape = (self.pad_size, self.pad_size, self.pad_size // 2 + 1)
         self.data = np.zeros(shape, dtype=np.complex128)
@@ -273,7 +273,7 @@ class BackProjector3D:
     def _window_to_oridim_real_space(self, f_in) -> np.ndarray:
         """``windowToOridimRealSpace`` then ``griddingCorrect`` (backprojector.cpp:2848-2967, projector.cpp:595)."""
 
-        pf, ori = self.padding_factor, self.ori_size
+        pf, ori = self.padding_factor, self.box_size
         padoridim = relion_round(pf * ori)
         padoridim += padoridim % 2
         new_half = padoridim // 2 + 1
@@ -302,7 +302,7 @@ def bootstrap_references(
     *,
     images,
     ctf_images,
-    ori_size: int,
+    box_size: int,
     pixel_size: float,
     nr_classes: int,
     particle_diameter_ang: float,
@@ -371,11 +371,11 @@ def bootstrap_references(
         matrices = np.einsum("nij,njk->nik", image_projections, matrices[image_particle])
         image_class = image_particle
         todo = n_images
-    size = int(ori_size) if current_size <= 0 else int(current_size)
-    projectors = [BackProjector3D(ori_size, padding_factor, current_size) for _ in range(int(nr_classes))]
+    size = int(box_size) if current_size <= 0 else int(current_size)
+    projectors = [BackProjector3D(box_size, padding_factor, current_size) for _ in range(int(nr_classes))]
     # windowFourierTransform to the bootstrap size, then CenterFFTbySign on the window
     # (the order matters for odd sizes).
-    rows_window = fftw_window_rows(int(ori_size), size)
+    rows_window = fftw_window_rows(int(box_size), size)
     sign = (-1.0) ** np.add.outer(np.arange(size), np.arange(size // 2 + 1))
     batch = 64
     for start in range(0, todo, batch):
@@ -383,7 +383,7 @@ def bootstrap_references(
         stack = images[rows]
         if do_zero_mask:
             stack = np.stack([soft_mask_outside_map(image, radius_px, float(width_mask_edge_px)) for image in stack])
-        fimg = np.fft.rfftn(stack, axes=(-2, -1)) / float(ori_size * ori_size)
+        fimg = np.fft.rfftn(stack, axes=(-2, -1)) / float(box_size * box_size)
         fimg = fimg[:, rows_window, : size // 2 + 1] * sign
         if ctf_images is None:
             weight = np.ones(fimg.shape)
@@ -467,12 +467,12 @@ def postprocess_references(
 ) -> np.ndarray:
     """Low-pass, blobs and soft mask of the bootstrap references (ml_optimiser.cpp:2940-2980)."""
 
-    ori_size = np.shape(references)[-1]
+    box_size = np.shape(references)[-1]
     diameter_px = float(particle_diameter_ang) / float(pixel_size)
     # ``initialLowPassFilterReferences`` (ml_optimiser.cpp:3556-3586); ini_high_ang = N px / ROUND(0.07 N) > 0.
     low_pass = functools.partial(
         initial_low_pass_filter_references,
-        box_size=int(ori_size),
+        box_size=int(box_size),
         pixel_size=float(pixel_size),
         ini_high_ang=float(ini_high_ang),
     )

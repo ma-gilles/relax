@@ -33,7 +33,7 @@ def transaction_bind():
 def _case(K, pseudo, current_size, populated_moments, padding_factor=1):
     n = 16
     state = initialise_denovo_state(
-        ori_size=n,
+        box_size=n,
         pixel_size=1.5,
         K=K,
         nr_iter=200,

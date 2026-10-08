@@ -78,7 +78,7 @@ def test_k1_pseudo_halfsets_uses_primary_weight(_bind_module, monkeypatch):
     rec = _patch_ssnr(monkeypatch, _bind_module)
 
     ori = 16
-    state = initialise_denovo_state(ori_size=ori, pixel_size=1.0, K=1, nr_iter=10, n_directions=12, pseudo_halfsets=True)
+    state = initialise_denovo_state(box_size=ori, pixel_size=1.0, K=1, nr_iter=10, n_directions=12, pseudo_halfsets=True)
     state.Iref[0] = np.random.default_rng(0).standard_normal((ori, ori, ori))
     a0 = _make_accumulator(k=0, h=0, ori_size=ori, seed=1, weight_scale=1.0)
     a1 = _make_accumulator(k=0, h=1, ori_size=ori, seed=2, weight_scale=2.0)
@@ -103,7 +103,7 @@ def test_k1_no_halfsets_uses_h0_weight(_bind_module, monkeypatch):
     rec = _patch_ssnr(monkeypatch, _bind_module)
 
     ori = 16
-    state = initialise_denovo_state(ori_size=ori, pixel_size=1.0, K=1, nr_iter=10, n_directions=12, pseudo_halfsets=False)
+    state = initialise_denovo_state(box_size=ori, pixel_size=1.0, K=1, nr_iter=10, n_directions=12, pseudo_halfsets=False)
     state.Iref[0] = np.random.default_rng(0).standard_normal((ori, ori, ori))
     a0 = _make_accumulator(k=0, h=0, ori_size=ori, seed=1, weight_scale=1.0)
 
@@ -126,7 +126,7 @@ def test_k_class_pseudo_halfsets_uses_h0_weight(_bind_module, monkeypatch, K):
     rec = _patch_ssnr(monkeypatch, _bind_module)
 
     ori = 16
-    state = initialise_denovo_state(ori_size=ori, pixel_size=1.0, K=K, nr_iter=10, n_directions=12, pseudo_halfsets=True)
+    state = initialise_denovo_state(box_size=ori, pixel_size=1.0, K=K, nr_iter=10, n_directions=12, pseudo_halfsets=True)
     rng = np.random.default_rng(0)
     state.Iref[0] = rng.standard_normal((ori, ori, ori))
     a0 = _make_accumulator(k=0, h=0, ori_size=ori, seed=1, weight_scale=1.0)

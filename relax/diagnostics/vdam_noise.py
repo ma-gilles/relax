@@ -42,7 +42,7 @@ def _dump_noise_failure_meta(state: InitialModelState, meta: dict, summaries: Se
     payload: dict[str, np.ndarray] = {
         "state_iter": np.asarray([getattr(state, "iter", -1)], dtype=np.int64),
         "state_subset_size": np.asarray([getattr(state, "subset_size", -1)], dtype=np.int64),
-        "state_ori_size": np.asarray([getattr(state, "ori_size", -1)], dtype=np.int64),
+        "state_ori_size": np.asarray([getattr(state, "box_size", -1)], dtype=np.int64),
         "summaries": np.asarray(list(summaries), dtype=str),
     }
     for key, value in sorted(meta.items()):
@@ -84,7 +84,7 @@ def _maybe_dump_noise_update_boundary(
     dump_path = dump_dir / f"initialmodel_noise_update_it{int(state.iter):03d}.npz"
     if dump_path.exists():
         raise ValueError(f"refusing to overwrite {dump_path}")
-    n4 = float(int(state.ori_size) ** 4)
+    n4 = float(int(state.box_size) ** 4)
     old_noise = np.asarray(state.sigma2_noise, dtype=np.float64)[0] * n4
     new_noise = np.asarray(updated_state.sigma2_noise, dtype=np.float64)[0] * n4
     residual = np.asarray(wsum_sigma2_noise, dtype=np.float64)
@@ -93,8 +93,8 @@ def _maybe_dump_noise_update_boundary(
         "schema": np.asarray("recovar.initialmodel.noise_update_boundary.v1"),
         "iteration": np.asarray([int(state.iter)], dtype=np.int32),
         "current_size": np.asarray([int(state.current_size)], dtype=np.int32),
-        "image_shape": np.asarray([int(state.ori_size), int(state.ori_size)], dtype=np.int32),
-        "relion_half_plane_shell_counts": _relion_half_plane_shell_counts((int(state.ori_size), int(state.ori_size))),
+        "image_shape": np.asarray([int(state.box_size), int(state.box_size)], dtype=np.int32),
+        "relion_half_plane_shell_counts": _relion_half_plane_shell_counts((int(state.box_size), int(state.box_size))),
         "half0_wsum_sigma2_noise": residual,
         "half0_wsum_img_power": image_power,
         "half0_wsum_total": residual + image_power,

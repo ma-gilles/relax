@@ -74,7 +74,7 @@ def _make_accumulator(k: int, h: int, ori_size: int, seed: int, min_weight: floa
 
 def test_default_grad_min_resol_shell_matches_relion_initialmodel_default():
     state = initialise_denovo_state(
-        ori_size=256,
+        box_size=256,
         pixel_size=2.125,
         K=1,
         nr_iter=4,
@@ -89,7 +89,7 @@ def test_default_grad_min_resol_shell_matches_relion_initialmodel_default():
 def test_relion_weight_guard_keeps_tiny_nonzero_class_support():
     """Do not impose a particle-support floor beyond RELION's BPref epsilon."""
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=1.0,
         K=1,
         nr_iter=4,
@@ -240,7 +240,7 @@ def test_native_reference_input_replay_is_explicit_iteration_gated_and_exact(
 def test_m_step_matches_relion_fsc_routing_for_ssnr_and_reconstruct(monkeypatch):
     ori = 16
     state = initialise_denovo_state(
-        ori_size=ori,
+        box_size=ori,
         pixel_size=1.0,
         K=2,
         nr_iter=10,
@@ -303,7 +303,7 @@ class TestMstepSingleClass:
     def test_seeded_tau2_prevents_zero_tau_current_window_runaway(self, bind):
         ori = 64
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=2.0,
             K=1,
             nr_iter=10,
@@ -360,7 +360,7 @@ class TestMstepSingleClass:
     def test_pseudo_halfsets_on_updates_iref_and_moments(self, bind):
         ori = 16
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=1.0,
             K=1,
             nr_iter=10,
@@ -406,7 +406,7 @@ class TestMstepSingleClass:
     def test_inactive_class_with_tiny_weight_is_preserved(self, bind):
         ori = 16
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=1.0,
             K=1,
             nr_iter=10,
@@ -446,7 +446,7 @@ class TestMstepSingleClass:
 
     def test_input_state_unchanged(self, bind):
         ori = 16
-        state = initialise_denovo_state(ori_size=ori, pixel_size=1.0, K=1, nr_iter=10, n_directions=12)
+        state = initialise_denovo_state(box_size=ori, pixel_size=1.0, K=1, nr_iter=10, n_directions=12)
         a0 = _make_accumulator(k=0, h=0, ori_size=ori, seed=1)
         a1 = _make_accumulator(k=0, h=1, ori_size=ori, seed=2)
 
@@ -473,7 +473,7 @@ class TestMstepSingleClass:
 
     def test_pseudo_halfsets_mismatch_raises(self, bind):
         state = initialise_denovo_state(
-            ori_size=16,
+            box_size=16,
             pixel_size=1.0,
             K=1,
             nr_iter=10,
@@ -495,7 +495,7 @@ class TestMstepSingleClass:
     def test_pseudo_halfsets_off_without_halfsets(self, bind):
         ori = 16
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=1.0,
             K=1,
             nr_iter=10,
@@ -516,7 +516,7 @@ class TestMstepSingleClass:
         assert new_state.Igrad1.shape == (1, 16, 16, 9)
 
     def test_invalid_class_index(self, bind):
-        state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=2, nr_iter=10, n_directions=12)
+        state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=2, nr_iter=10, n_directions=12)
         a0 = _make_accumulator(0, 0, 16, seed=1)
         a1 = _make_accumulator(0, 1, 16, seed=2)
         with pytest.raises(ValueError):
@@ -536,7 +536,7 @@ class TestMstepFull:
         ori = 16
         K = 2
         state = initialise_denovo_state(
-            ori_size=ori,
+            box_size=ori,
             pixel_size=1.0,
             K=K,
             nr_iter=10,
@@ -568,7 +568,7 @@ class TestMstepFull:
 
     def test_accumulator_count_mismatch_raises(self, bind):
         state = initialise_denovo_state(
-            ori_size=16,
+            box_size=16,
             pixel_size=1.0,
             K=2,
             nr_iter=10,

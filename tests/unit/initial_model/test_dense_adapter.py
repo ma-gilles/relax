@@ -120,7 +120,7 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
         relion_x_half_volume_to_full,
     )
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=1.0,
         K=1,
         nr_iter=1,
@@ -151,14 +151,14 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
         padding_factor=1,
     )[0]
 
-    data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
+    data_scale, weight_scale = relion_bpref_frame_scales(state.box_size)
     assert_matches(actual.data, bp_data.astype(np.complex128) * data_scale)
     assert_matches(actual.weight, bp_weight.astype(np.float64) * weight_scale)
 
 
 def test_arrays_to_accumulators_splits_grouped_halfsets():
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=1.0,
         K=1,
         nr_iter=1,
@@ -219,7 +219,7 @@ def _projector_config(n_classes, **overrides):
 
 def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_adaptive_route(monkeypatch):
     calls = _capture_adaptive_route(monkeypatch)
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
     state.current_size = 8
     state.pdf_class = np.asarray([0.75, 0.25])
 
@@ -244,12 +244,12 @@ def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_ada
 
 def test_initial_model_estep_defaults_to_every_particle_in_alternating_halves(monkeypatch):
     calls = _capture_adaptive_route(monkeypatch)
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     run_dense_initial_model_estep(_Dataset(), state, _projector_config(1))
     assert_matches(calls[0]["joint_particle_ids"], [0, 1, 2, 3])
     assert_matches(calls[0]["joint_halfset_ids"], [0, 1, 0, 1])
 
-    single = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4, pseudo_halfsets=False)
+    single = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4, pseudo_halfsets=False)
     run_dense_initial_model_estep(_Dataset(), single, _projector_config(1))
     assert calls[1]["joint_halfset_ids"] is None
 
@@ -333,7 +333,7 @@ def test_estep_meta_keeps_each_halfset_profile_summary():
 
 def test_initial_model_estep_with_a_projector_passes_no_dense_means(monkeypatch):
     calls = _capture_adaptive_route(monkeypatch)
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
     run_dense_initial_model_estep(_Dataset(), state, _projector_config(2))
     # The resident route reads only K and the dtype of the dense means: a NaN stand-in.
     assert np.asarray(calls[0]["means"]).shape == (2, 1) and np.all(np.isnan(calls[0]["means"]))
@@ -437,7 +437,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power",
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     (half, r_max), _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
@@ -460,7 +460,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
         "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps",
         lambda *args, **kwargs: pytest.fail("prebuilt production projector was rebuilt"),
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),
@@ -485,7 +485,7 @@ def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_pat
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", str(tmp_path))
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     state.iter = 7
     state.current_size = 4
 
@@ -500,7 +500,7 @@ def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_pat
 
 def test_sparse_pass2_pass1_current_size_matches_relion_fixture_coarse_size():
     state = initialise_denovo_state(
-        ori_size=64,
+        box_size=64,
         pixel_size=8.5,
         K=1,
         nr_iter=1,
@@ -517,7 +517,7 @@ def test_sparse_pass2_pass1_current_size_matches_relion_fixture_coarse_size():
 def test_sparse_pass2_pass1_current_size_uses_pre_update_healpix_order():
     """InitialModel sizes pass 1 before RELION promotes the sampling order."""
     state = initialise_denovo_state(
-        ori_size=128,
+        box_size=128,
         pixel_size=4.25,
         K=1,
         nr_iter=25,
@@ -544,10 +544,10 @@ def test_sparse_control_split_preserves_input_and_array_identity():
 
 
 def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
-    state = InitialModelState(K=4, ori_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
+    state = InitialModelState(K=4, box_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
     r_max = state.current_size // 2
     compact_size = 2 * (r_max + 1) + 1
-    full_center = state.ori_size // 2
+    full_center = state.box_size // 2
     coordinates = np.arange(compact_size**3, dtype=np.float32).reshape((compact_size,) * 3)
 
     compact_data = []
@@ -557,8 +557,8 @@ def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
     for class_index in range(state.K):
         data_cube = (coordinates + 1j * (coordinates[::-1] + 10 * class_index)).astype(np.complex64)
         weight_cube = (coordinates + 1 + 100 * class_index).astype(np.float32)
-        data_full = np.zeros((state.ori_size,) * 3, dtype=np.complex64)
-        weight_full = np.zeros((state.ori_size,) * 3, dtype=np.float32)
+        data_full = np.zeros((state.box_size,) * 3, dtype=np.complex64)
+        weight_full = np.zeros((state.box_size,) * 3, dtype=np.float32)
         full_cube = (slice(full_center - (r_max + 1), full_center + (r_max + 1) + 1),) * 3
         data_full[full_cube] = data_cube
         weight_full[full_cube] = weight_cube
@@ -590,7 +590,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
     data_class_count,
     weight_class_count,
 ):
-    state = InitialModelState(K=4, ori_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
+    state = InitialModelState(K=4, box_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
     compact_voxels = 7**3
     data = [np.zeros(compact_voxels, dtype=np.complex64) for _ in range(data_class_count)]
     weight = [np.zeros(compact_voxels, dtype=np.float32) for _ in range(weight_class_count)]
@@ -614,7 +614,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
 def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
     """Pin the real-data K=4 current-size bridge that failed on 59-cubed outputs."""
 
-    state = InitialModelState(K=4, ori_size=256, current_size=56, Iref=None, Igrad1=None, Igrad2=None)
+    state = InitialModelState(K=4, box_size=256, current_size=56, Iref=None, Igrad1=None, Igrad2=None)
     compact_size = 59
     compact_voxels = compact_size**3
     data = np.stack(
@@ -639,7 +639,7 @@ def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
         (0, 2),
         (0, 3),
     ]
-    data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
+    data_scale, weight_scale = relion_bpref_frame_scales(state.box_size)
     for class_index, accumulator in enumerate(accumulators):
         assert accumulator.data.shape == (59, 59, 30)
         assert accumulator.weight.shape == (59, 59, 30)

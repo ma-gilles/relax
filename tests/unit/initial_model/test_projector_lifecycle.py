@@ -24,7 +24,7 @@ def test_shared_device_projector_matches_both_native_calls(
     from relax.relion_bind import _relion_bind_core as bind
 
     state = initialise_denovo_state(
-        ori_size=16, pixel_size=1.0, K=classes, nr_iter=2,
+        box_size=16, pixel_size=1.0, K=classes, nr_iter=2,
         n_directions=3, pseudo_halfsets=True,
     )
     state.Iref = np.random.default_rng(17).normal(size=state.Iref.shape)
@@ -70,7 +70,7 @@ def test_shared_device_projector_matches_both_native_calls(
 
 def test_context_builds_once_and_consumes_once(monkeypatch):
     state = initialise_denovo_state(
-        ori_size=8, pixel_size=1.0, K=1, nr_iter=2,
+        box_size=8, pixel_size=1.0, K=1, nr_iter=2,
         n_directions=3, pseudo_halfsets=True,
     )
     calls = []
@@ -99,7 +99,7 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
 @pytest.mark.parametrize("change", ["reference", "iteration", "geometry", "padding"])
 def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
     state = initialise_denovo_state(
-        ori_size=8, pixel_size=1.0, K=1, nr_iter=2,
+        box_size=8, pixel_size=1.0, K=1, nr_iter=2,
         n_directions=3, pseudo_halfsets=True,
     )
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power",
@@ -123,7 +123,7 @@ def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
 @pytest.mark.parametrize("mstep_compute_dtype", ["float32", "float64"])
 def test_loop_callback_is_once_before_estep(monkeypatch, mstep_compute_dtype):
     state = initialise_denovo_state(
-        ori_size=8, pixel_size=1.0, K=1, nr_iter=2,
+        box_size=8, pixel_size=1.0, K=1, nr_iter=2,
         n_directions=3, pseudo_halfsets=True,
     )
     events = []

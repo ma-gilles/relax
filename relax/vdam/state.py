@@ -1,7 +1,7 @@
 """VDAM ``InitialModelState`` carried through the iteration loop.
 
 Shape conventions (RELION ``pad=1``, single-optics GUI InitialModel):
-``K`` classes, ``N=ori_size``, ``S=N//2+1`` Fourier shells, ``H=2`` if
+``K`` classes, ``N=box_size``, ``S=N//2+1`` Fourier shells, ``H=2`` if
 pseudo-halfsets else 1, ``G`` optics groups (1 on the fixture).
 
 Per-class spectra: tau2_class, sigma2_class:  (K, S);
@@ -25,7 +25,7 @@ class InitialModelState:
     iter: int = 0
     nr_iter: int = 200
     K: int = 1
-    ori_size: int = 64
+    box_size: int = 64
     pixel_size: float = 1.0
     pseudo_halfsets: bool = True
 
@@ -77,7 +77,7 @@ class InitialModelState:
     @property
     def effective_current_size(self) -> int:
         """The Fourier box the iteration works at: ``current_size``, or the full box while none is set (<= 0)."""
-        return self.current_size if self.current_size > 0 else self.ori_size
+        return self.current_size if self.current_size > 0 else self.box_size
 
 
 def half_slot_count(K: int, pseudo_halfsets: bool) -> int:

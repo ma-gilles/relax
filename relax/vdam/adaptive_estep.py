@@ -101,15 +101,15 @@ def _resolve_sparse_pass1_current_size(
         compute_coarse_image_size(
             healpix_angular_step(int(pass1_healpix_order)),
             float(state.pixel_size),
-            int(state.ori_size),
+            int(state.box_size),
             particle_diameter=float(particle_diameter_ang),
         )
     )
-    current_limit = int(current_size) if current_size is not None else int(state.ori_size)
-    coarse_size = min(max(2, coarse_size), current_limit, int(state.ori_size))
+    current_limit = int(current_size) if current_size is not None else int(state.box_size)
+    coarse_size = min(max(2, coarse_size), current_limit, int(state.box_size))
     if coarse_size % 2:
         coarse_size += 1
-    return None if int(coarse_size) >= int(state.ori_size) else int(coarse_size)
+    return None if int(coarse_size) >= int(state.box_size) else int(coarse_size)
 
 
 def _sparse_pass2_estep_meta(

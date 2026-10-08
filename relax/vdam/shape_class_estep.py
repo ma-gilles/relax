@@ -74,7 +74,7 @@ def run_by_shape_class(
     offsets_ref = np.asarray(shape_translations["offsets_px"], dtype=np.float64)[image_indices]
     coarse_prior_ref = np.asarray(shape_translations["coarse_prior_translations"], dtype=np.float64)
     sigma_angstrom = shape_translations["sigma_angstrom"]
-    noise_radial = np.asarray(state.sigma2_noise, dtype=np.float64) * float(state.ori_size) ** 4
+    noise_radial = np.asarray(state.sigma2_noise, dtype=np.float64) * float(state.box_size) ** 4
     kwargs = {
         name: value
         for name, value in route_kwargs.items()

@@ -61,7 +61,7 @@ def test_effective_initial_model_image_batch_size(requested, grid_size, gpu_memo
     assert (
         estep_setup._effective_initial_model_image_batch_size(
             requested,
-            grid_size=grid_size,
+            box_size=grid_size,
             gpu_memory_gb=gpu_memory_gb,
         )
         == expected
@@ -374,7 +374,7 @@ def test_continuation_order_replay_accepts_pre_local_checkpoint():
 
 def test_iteration_reference_replay_expands_iteration_and_class(monkeypatch, tmp_path):
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=1.5,
         K=2,
         nr_iter=10,
@@ -404,7 +404,7 @@ def test_iteration_reference_replay_expands_iteration_and_class(monkeypatch, tmp
 
 def test_iteration_reference_replay_rejects_wrong_class_count(monkeypatch):
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=1.0,
         K=2,
         nr_iter=10,
@@ -436,7 +436,7 @@ def test_seed_zero_halfsets_use_relion_experiment_position_parity(monkeypatch):
         }
     )
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=1.0,
         K=1,
         nr_iter=1,
@@ -740,7 +740,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         }
     )
     particle_state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=2.0, n_images=3))
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
     state.Iref[:] = 1.0
     optics_state = NativeOpticsState(
         voltage=300.0,
@@ -945,7 +945,7 @@ def test_native_expectation_step_uses_rfloat_metadata_translations(monkeypatch):
         class_assignments=np.zeros(1, dtype=np.int32),
         max_posterior=np.zeros(1, dtype=np.float32),
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=1)
     state.iter = 1
 
     expectation_step = driver._native_expectation_step(
@@ -1175,7 +1175,7 @@ def test_native_sampling_updates_like_relion_gradient_initialmodel_default():
         offset_step_px=2.0,
     )
     sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
-    state = initialise_denovo_state(ori_size=256, pixel_size=2.125, K=1, nr_iter=200, n_directions=1)
+    state = initialise_denovo_state(box_size=256, pixel_size=2.125, K=1, nr_iter=200, n_directions=1)
     state.current_resolution = 1.0 / 108.8
 
     assert native_sampling._prepare_native_sampling_for_iteration(
@@ -1253,7 +1253,7 @@ def test_native_sampling_refreshes_gf46_translation_grid_without_stable_assignme
         nr_iter_wo_resol_gain=2,
         nr_iter_wo_large_hidden_variable_changes=0,
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=4.25, K=1, nr_iter=200, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=4.25, K=1, nr_iter=200, n_directions=1)
 
     assert native_sampling._prepare_native_sampling_for_iteration(sampling_state, state, iteration=60, do_grad=do_grad) is True
     assert sampling_state.healpix_order == expected_order
@@ -1269,7 +1269,7 @@ def test_native_sampling_still_waits_for_resolution_stall():
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200)
     sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
     state = initialise_denovo_state(
-        ori_size=128,
+        box_size=128,
         pixel_size=2.125,
         K=1,
         nr_iter=200,
@@ -1302,7 +1302,7 @@ def test_native_sampling_uses_previous_completed_resolution_counter():
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200)
     sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
     state = initialise_denovo_state(
-        ori_size=128,
+        box_size=128,
         pixel_size=2.125,
         K=1,
         nr_iter=200,
@@ -1352,7 +1352,7 @@ def test_native_sampling_burnin_resets_before_decision_then_records_checkpoint()
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200)
     sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
     state = initialise_denovo_state(
-        ori_size=128,
+        box_size=128,
         pixel_size=2.125,
         K=1,
         nr_iter=200,
@@ -1470,7 +1470,7 @@ def test_uniform_local_orientation_prior_replaces_learned_direction_prior():
     # RELION's zero-width local prior: pdf_orientation = 1/(n_dir n_psi) for every rotation of every class
     # (healpix_sampling.cpp:837-842), so it shifts each particle's evidence by -log(n_rot) and leaves the
     # per-class softmax unchanged.
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=2, nr_iter=200, n_directions=12)
+    state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=2, nr_iter=200, n_directions=12)
     state.pdf_direction = np.stack([np.linspace(1.0, 12.0, 12), np.linspace(2.0, 3.0, 12)])
     sampling_state = native_sampling.NativeSamplingState(
         healpix_order=0,
@@ -1493,7 +1493,7 @@ def test_uniform_local_orientation_prior_replaces_learned_direction_prior():
 
 def test_noprior_sampling_uses_learned_direction_prior(monkeypatch):
     expected = np.asarray([[0.0, 1.0]], dtype=np.float32)
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=12)
+    state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=12)
     sampling_state = native_sampling.NativeSamplingState(
         healpix_order=0,
         adaptive_oversampling=1,
@@ -1513,7 +1513,7 @@ def test_noprior_sampling_uses_learned_direction_prior(monkeypatch):
 
 def test_direction_prior_preserves_relion_absolute_log_scale_and_cutoff_tie():
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=2.0,
         K=1,
         nr_iter=200,
@@ -1541,14 +1541,14 @@ def test_direction_prior_preserves_relion_absolute_log_scale_and_cutoff_tie():
 
 
 def test_active_relion_initialmodel_max_significants_matches_gradient_default():
-    state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=3, nr_iter=8, n_directions=1)
+    state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=3, nr_iter=8, n_directions=1)
 
     assert schedules._active_relion_initialmodel_max_significants(state, do_grad=True) == 300
     assert schedules._active_relion_initialmodel_max_significants(state, do_grad=False) == -1
 
 
 def test_native_initialmodel_do_grad_honors_terminal_em_iterations():
-    state = initialise_denovo_state(ori_size=16, pixel_size=1.0, K=1, nr_iter=8, n_directions=1)
+    state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=1, nr_iter=8, n_directions=1)
 
     assert schedules._native_initialmodel_do_grad(state, 6, grad_em_iters=2)
     assert not schedules._native_initialmodel_do_grad(state, 7, grad_em_iters=2)
@@ -1599,7 +1599,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         return np.zeros((2, 8, 8), dtype=np.float64)
 
     def fake_bootstrap(**kwargs):
-        assert kwargs["ori_size"] == 8
+        assert kwargs["box_size"] == 8
         assert kwargs["nr_classes"] == 1
         assert kwargs["particle_diameter_ang"] == 16.0
         assert kwargs.get("particle_seed_ids") is None
@@ -1717,7 +1717,7 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
     monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
     monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
     dataset = SimpleNamespace(image_shape=(8, 8), voxel_size=1.0, n_images=2)
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=3, n_directions=3)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=3, n_directions=3)
     state.iter = 3
 
     expectation_step = driver._native_expectation_step(
@@ -1774,7 +1774,7 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
     monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
     monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
     dataset = SimpleNamespace(image_shape=(8, 8), voxel_size=1.0, n_images=2)
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=2, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=2, n_directions=1)
     particle_state = NativeParticleState(
         translation_offsets=np.asarray([[0.0, 0.0], [1.1, -1.0]], dtype=np.float32),
         class_assignments=np.zeros(2, dtype=np.int32),
@@ -1955,7 +1955,7 @@ def test_native_expectation_step_uses_autosampling_state_at_iteration_ten(monkey
         max_posterior=np.zeros(1, dtype=np.float32),
         pose_assignments=np.full(1, -1, dtype=np.int32),
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.125, K=1, nr_iter=200, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=2.125, K=1, nr_iter=200, n_directions=1)
     state.iter = 10
     sampling_state.nr_iter_wo_resol_gain = 1
     sampling_state.nr_iter_wo_large_hidden_variable_changes = 1
@@ -2066,7 +2066,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         max_posterior=np.zeros(2, dtype=np.float32),
         pose_assignments=np.full(2, -1, dtype=np.int32),
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.125, K=1, nr_iter=200, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=2.125, K=1, nr_iter=200, n_directions=1)
     state.iter = 10
     state.tau2_fudge_factor = 3.995253
     sampling_state.last_current_resolution = float(state.current_resolution)
@@ -2193,7 +2193,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
 
     monkeypatch.setattr(relion_expected_accuracy, "expected_angular_errors", fake_expected_accuracy)
     state = initialise_denovo_state(
-        ori_size=8,
+        box_size=8,
         pixel_size=2.125,
         K=1,
         nr_iter=200,
@@ -2298,7 +2298,7 @@ def test_native_expectation_step_records_sampling_changes_each_gradient_iteratio
         pose_assignments=np.full(2, -1, dtype=np.int32),
         visited=np.asarray(visited, dtype=bool),
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
     state.iter = 9
     sampling_state.last_current_resolution = float(state.current_resolution)
 
@@ -2430,7 +2430,7 @@ def test_driver_output_mrc_path_removes_only_the_run_suffix(prefix, expected):
 
 
 def test_model_star_uses_relion_model_blocks(tmp_path):
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=12)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=12)
     state.pdf_class = np.asarray([0.25, 0.75], dtype=np.float64)
     state.iter = 3
     state.current_size = 6
@@ -2477,7 +2477,7 @@ def test_model_star_uses_relion_model_blocks(tmp_path):
 
 
 def test_iteration_zero_artifacts_use_the_normal_iteration_writer(monkeypatch, tmp_path, capsys):
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.5, K=1, nr_iter=8, n_directions=12)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.5, K=1, nr_iter=8, n_directions=12)
     main = pd.DataFrame(
         {
             "_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs"],
@@ -2740,6 +2740,6 @@ def test_log_likelihood_contribution_is_relions_dll():
                 if 0 < ires < cs // 2 + 1 and not (jp == 0 and ip < 0):
                     expected[g] += np.log(2.0 * np.pi * sigma2[g, ires])
     got = relion_log_likelihood_contributions(
-        np.array([5.0, 6.0, 7.0]), sigma2_noise=sigma2, groups=[0, 1, 1], n_images=[1, 1, 3], ori_size=ori, current_size=cs
+        np.array([5.0, 6.0, 7.0]), sigma2_noise=sigma2, groups=[0, 1, 1], n_images=[1, 1, 3], box_size=ori, current_size=cs
     )
     np.testing.assert_allclose(got, [5.0 - expected[0], 6.0 - expected[1], 7.0 - 3 * expected[1]], rtol=1e-12)
