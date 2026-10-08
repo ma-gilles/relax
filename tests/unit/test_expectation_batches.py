@@ -134,7 +134,6 @@ def test_local_half_plans_no_compact_staging(planner, monkeypatch):
     """The local pass sizes its own tiles: a non-adaptive local half keeps the plain planner."""
     calls = capture_estimates(monkeypatch)
     monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: True)
-    monkeypatch.setattr(batches.firstiter_bpref, "_relion_soft_compact_batch_planning_safe", lambda **k: True)
     policy = prepare(planner, use_local=True, rotations=None, translations=None)
     assert calls == []
     assert policy.safe_batch_sizes is planner

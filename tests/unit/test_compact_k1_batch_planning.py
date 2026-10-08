@@ -284,55 +284,6 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
     finally:
         sparse.bpref_diagnostics.clear_bpref_contribution_dump_context()
 
-def test_soft_compact_k1_route_gate_is_windowed_exact_and_diagnostic_free(
-    monkeypatch,
-):
-    sparse = firstiter_bpref
-    host_projector = SimpleNamespace(
-        shape=(591, 591, 296),
-        dtype=np.dtype(np.complex64),
-    )
-    for name in (
-        "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-        "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
-        "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
-        "RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
-        "RELAX_PASS2_DUMP_DIR",
-        "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-        "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
-    ):
-        monkeypatch.delenv(name, raising=False)
-
-    common = dict(
-        source_faithful_spectrum_norm=True,
-        preserve_bpref_particle_order=True,
-        use_relion_x_half_mstep=True,
-        relion_cuda_images=True,
-        projector_half=host_projector,
-        score_complex_dtype=np.complex64,
-        model_current_size=294,
-        box_size=800,
-        bpref_device_signature_active=False,
-    )
-    assert sparse._relion_soft_compact_batch_planning_safe(**common)
-
-    for override in (
-        {"source_faithful_spectrum_norm": False},
-        {"preserve_bpref_particle_order": False},
-        {"use_relion_x_half_mstep": False},
-        {"relion_cuda_images": False},
-        {"score_complex_dtype": np.complex128},
-        {"model_current_size": 800},
-    ):
-        assert not sparse._relion_soft_compact_batch_planning_safe(
-            **(common | override)
-        )
-
-    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/diagnostic")
-    assert not sparse._relion_soft_compact_batch_planning_safe(**common)
-
-
 @pytest.mark.parametrize("diagnostic_env", ["RELAX_EM_FINITE_CHECK", "RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR"])
 def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch, diagnostic_env):
     monkeypatch.setenv(diagnostic_env, "1")
@@ -343,17 +294,6 @@ def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch, diag
         decision = _compact_route_decision(projector_half=host)
         assert not decision.enabled
         assert not decision.deferred_firstiter_bpref
-        assert not firstiter_bpref._relion_soft_compact_batch_planning_safe(
-            source_faithful_spectrum_norm=True,
-            preserve_bpref_particle_order=True,
-            use_relion_x_half_mstep=True,
-            relion_cuda_images=True,
-            projector_half=host,
-            score_complex_dtype=np.complex64,
-            model_current_size=294,
-            box_size=800,
-            bpref_device_signature_active=False,
-        )
     finally:
         firstiter_bpref.bpref_diagnostics.clear_bpref_contribution_dump_context()
 
