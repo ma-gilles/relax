@@ -158,7 +158,6 @@ def estimate_startup_sigma2(
     image_pixel_size: float,
     particle_diameter_ang: float,
     width_mask_edge_px: int,
-    minimum_nr_particles: int = 1000,
     group_pixel_sizes=None,
     pair_counting: str = "relion",
 ) -> np.ndarray:
@@ -188,8 +187,6 @@ def estimate_startup_sigma2(
         raise ValueError("fresh K=1 live-noise source rows contain duplicates")
     if int(np.min(source_rows)) < 0 or int(np.max(source_rows)) >= int(dataset.n_units):
         raise ValueError("fresh K=1 live-noise source rows are out of dataset bounds")
-    if int(minimum_nr_particles) <= 0:
-        raise ValueError("minimum_nr_particles must be positive")
     if not np.isfinite(image_pixel_size) or float(image_pixel_size) <= 0.0:
         raise ValueError("RELION image pixel size must be positive and finite")
 
@@ -248,7 +245,8 @@ def estimate_startup_sigma2(
         do_zero_mask=True,
         nr_optics_groups=len(unique_optics),
         # A subtomogram iterator is already capped per particle; every one of its images counts.
-        minimum_nr_particles=int(dataset.unit_image_offsets[-1]) if tomo else int(minimum_nr_particles),
+        # Otherwise RELION's minimum_nr_particles_sigma2_noise for single particles, 1,000.
+        minimum_nr_particles=int(dataset.unit_image_offsets[-1]) if tomo else 1000,
         power_spectrum=_POWER_SPECTRUM[pair_counting],
         **(
             {}
@@ -257,12 +255,6 @@ def estimate_startup_sigma2(
         ),
     )
     sigma2_per_group = np.asarray(sigma2_per_group, dtype=np.float64)
-    expected_shape = (len(unique_optics), int(dataset.grid_size) // 2 + 1)
-    if sigma2_per_group.shape != expected_shape:
-        raise ValueError(
-            f"fresh K=1 live-noise spectrum shape {sigma2_per_group.shape} "
-            f"does not match expected {expected_shape}",
-        )
     if not np.all(np.isfinite(sigma2_per_group)) or not np.all(sigma2_per_group > 0.0):
         raise ValueError("fresh K=1 live-noise spectrum must be positive and finite")
     return sigma2_per_group

@@ -168,33 +168,34 @@ class _FakeImageSource:
 
 
 def test_compute_relion_fresh_k1_initial_sigma2_preserves_source_order():
+    # RELION's bootstrap reads at most 1,000 particles per optics group, in the given source order.
     rng = np.random.default_rng(19)
-    images = rng.normal(size=(6, 8, 8)).astype(np.float32)
+    images = rng.normal(size=(1003, 8, 8)).astype(np.float32)
     dataset = SimpleNamespace(
         n_units=images.shape[0],
         grid_size=8,
         voxel_size=2.0,
         image_source=_FakeImageSource(images),
     )
-    source_rows = np.asarray([4, 1, 5], dtype=np.int64)
+    source_rows = np.r_[[4, 1, 5], np.arange(1003)[::-1]]
+    source_rows = source_rows[np.sort(np.unique(source_rows, return_index=True)[1])][:1001].astype(np.int64)
     got = estimate_startup_sigma2(
         dataset,
         source_rows=source_rows,
-        optics_group_ids=np.asarray([7, 7, 7], dtype=np.int64),
+        optics_group_ids=np.full(source_rows.size, 7, dtype=np.int64),
         image_pixel_size=2.0,
         particle_diameter_ang=8.0,
         width_mask_edge_px=2,
-        minimum_nr_particles=2,
     )
     _average, expected = compute_avg_unaligned_and_sigma2(
-        iter([(0, images[4]), (0, images[1])]),
+        iter([(0, images[row]) for row in source_rows[:1000]]),
         box_size=8,
         pixel_size=2.0,
         particle_diameter_ang=8.0,
         width_mask_edge_px=2,
         do_zero_mask=True,
         nr_optics_groups=1,
-        minimum_nr_particles=2,
+        minimum_nr_particles=1000,
     )
     assert_matches(got, expected)
 
@@ -235,7 +236,6 @@ def test_compute_relion_fresh_k1_initial_sigma2_uses_optics_pixel_size():
         image_pixel_size=2.0,
         particle_diameter_ang=12.0,
         width_mask_edge_px=2,
-        minimum_nr_particles=3,
     )
     _average, expected = compute_avg_unaligned_and_sigma2(
         iter((0, image) for image in images),
