@@ -46,10 +46,12 @@ def test_the_algorithm_modules_import_no_port_implementation():
     assert leaked == []
 
 
-def test_the_command_does_import_the_observers():
-    """The check above would pass vacuously if the implementation lived somewhere else."""
+def test_the_command_does_import_the_observers_and_the_input_sources():
+    """The check above would pass vacuously if the implementations lived somewhere else."""
+    implementations = ("relax.diagnostics.observers", "relax.parity.relion_replay_source", "relax.parity.oracle_admission")
     out = subprocess.run(
-        [sys.executable, "-c", "import sys, relax.refinement.full_refinement; print('relax.diagnostics.observers' in sys.modules)"],
+        [sys.executable, "-c",
+         f"import sys, relax.refinement.full_refinement; print(all(n in sys.modules for n in {implementations!r}))"],
         capture_output=True, text=True, check=True,
     )
     assert out.stdout.strip().splitlines()[-1] == "True"

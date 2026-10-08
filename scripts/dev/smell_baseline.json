@@ -261,7 +261,7 @@
   "diagnostics-import:relax.refinement.finalization:relax.diagnostics",
   "diagnostics-import:relax.refinement.full_refinement:relax.diagnostics",
   "diagnostics-import:relax.refinement.full_refinement:relax.diagnostics.state_swap_probe",
-  "diagnostics-import:relax.refinement.full_refinement:relax.parity.relion_replay_source",
+  "diagnostics-import:relax.refinement.full_refinement:relax.parity",
   "diagnostics-import:relax.refinement.half_scoring:relax.diagnostics",
   "diagnostics-import:relax.refinement.half_scoring:relax.diagnostics.local_debug",
   "diagnostics-import:relax.refinement.iteration_loop:relax.diagnostics",

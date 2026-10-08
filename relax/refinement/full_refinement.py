@@ -43,9 +43,7 @@ from relax.diagnostics.state_swap_probe import (
 from relax.helpers import xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
-from relax.parity import oracle_admission, startup_noise_inputs
-from relax.parity.archive_provenance import replay_archive_metadata
-from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
+from relax.parity import archive_provenance, oracle_admission, relion_replay_source, startup_noise_inputs
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
@@ -1296,8 +1294,8 @@ def main(command=None):
             translations=translations_jnp,
             options=run_options,
             observer=observers.command_observer(args),
-            source=RelionReplaySource.for_run(
-                RelionReplay.from_frozen_boundary(
+            source=relion_replay_source.RelionReplaySource.for_run(
+                relion_replay_source.RelionReplay.from_frozen_boundary(
                     frozen_boundary,
                     perturb_replay_relion_dir=args.perturb_replay_relion_dir,
                     perturb_replay_restart_state_iterations=restart_provenance.iterations,
@@ -1374,7 +1372,7 @@ def main(command=None):
         optimizer_seed_source=optimizer_seed_source,
         particle_diameter_ang=particle_diameter_ang,
         particle_layout=particle_layout,
-        replay_provenance=replay_archive_metadata(
+        replay_provenance=archive_provenance.replay_archive_metadata(
             restart=restart_provenance,
             frozen_boundary=frozen_boundary,
             state_swap_probe=state_swap_probe,

@@ -896,7 +896,7 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     from helpers.refinement_results import refinement_result
     from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
-    from relax.parity import oracle_admission
+    from relax.parity import archive_provenance, oracle_admission
     from relax.refinement import full_refinement, iteration_loop
     from relax.relion import relion_worker_scale
 
@@ -920,7 +920,7 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     def build_archive_metadata(result, **kw):
         raise _Stop
 
-    monkeypatch.setattr(full_refinement, "replay_archive_metadata", lambda **kw: archive.update(kw) or {})
+    monkeypatch.setattr(archive_provenance, "replay_archive_metadata", lambda **kw: archive.update(kw) or {})
     monkeypatch.setattr(full_refinement, "build_archive_metadata", build_archive_metadata)
     _stand_in_device(monkeypatch)
     with pytest.raises(_Stop):

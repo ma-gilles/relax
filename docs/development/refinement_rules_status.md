@@ -20,7 +20,7 @@ reason; the sections after this one hold the detail.
 | 7 one owner | Met; no known duplicate. Exception: the pixel size is kept as the input scalar and as `ReconstructionSettings.voxel_size` (a float) on purpose (rule 1). |
 | 8 config/state/results | Met: option records are frozen; the controller and the final pass return `RefinementResult`. Exception: the prior's per-shell outputs come from `relax.reconstruction.regularization_relion` as a dict (`return_details=True`); that module owns the type. |
 | 9 transitions | Met (audit below). The expected-accuracy inputs, which steer sampling, are `options.expected_accuracy`, no longer under `debug`; each numbered half's per_half and significance writes are `finish_numbered_half`, a module-level step with explicit inputs (owner review, 2026-10-07). Exceptions: the local-search profile sink and the opt-in pass-2 diagnostic variants. |
-| 10 signatures | Met: two groupings; every remaining function with ten or more parameters is accepted with its reason (table below). The two sentences added on 2026-10-07 (no record or option group unpacked into locals; no closures over controller state as callbacks) are met by `k1_maximization` (reads `SplitHalfPrior` where used), the two controllers (no option aliases) and the numbered halves (`NumberedHalfInputs`, `finish_numbered_half`). The M-step results are kept as records (mstep). Open against the 2026-10-08 extension: `_state_swap_inputs` and `_frozen_scoring_state_now` (thunks handed to the input source), `dump_debug=partial(observer.noise_updated, ...)` (an observer callback handed to the noise update), and the positional unpacks of the state-swap 7-tuple and `join_half_accumulators_at_low_resolution`'s five values. |
+| 10 signatures | Met: two groupings; every remaining function with ten or more parameters is accepted with its reason (table below). The two sentences added on 2026-10-07 (no record or option group unpacked into locals; no closures over controller state as callbacks) are met by `k1_maximization` (reads `SplitHalfPrior` where used), the two controllers (no option aliases) and the numbered halves (`NumberedHalfInputs`, `finish_numbered_half`). The M-step results are kept as records (mstep). The input source receives the scoring state as values (`ports.ScoringState`, `ScoringArrays`; deep2 c3), not thunks. Open against the 2026-10-08 extension: `dump_debug=partial(observer.noise_updated, ...)` (an observer callback handed to the noise update), and the positional unpacks of the state-swap 7-tuple and `join_half_accumulators_at_low_resolution`'s five values. |
 | 11 layers | Met (audit below). Exceptions: `tomo_particles` (shared by engines and other workflows) and 62 private-name imports from `relax.helpers`, `relax.diagnostics` and `relax.relion`, until those modules are refactored. |
 | 12 edges | Met: every command admission refuses with a message, each tested; the end-of-iteration sync no longer swallows device errors. |
 | 13 tests | Met: no test reads controller or command source. Exception: four engine-core lint tests. |
@@ -85,7 +85,7 @@ reason; the sections after this one hold the detail.
    replace (the M-step records are done, 2026-10-08): Class3D's class state (assignments, previous assignments, mixture); RELION's growth
    latch (`incr_size`, `has_high_fsc_at_limit`, which the planners and the run files take apart). 29
    functions take ten or more parameters; the widest are `run_final_all_data` (28), `score_tomo_half` (26)
-   and `build_archive_metadata` (25).
+   and `build_archive_metadata` (20).
 
 ## Rule 15: what goes through the ports, and what does not yet (2026-10-06)
 
@@ -111,6 +111,14 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
   replay are ported on the fingerprint and the CPU admission tests alone. **Runs from a real RELION run
   directory (a frozen boundary, a state-swap probe, a final-only replay) are not tested**: no tier runs
   them and no CPU fixture is a RELION run directory (see Known coverage limits).
+- At the command, in `relax/parity` (deep2 c3): the admission of RELION oracle inputs
+  (`oracle_admission.py`: the dispatch capture, the follower routing, the restart provenance), the start-up
+  noise taken from elsewhere (`startup_noise_inputs.py`: a frozen boundary's, `--init_noise_from_npz`, the live
+  K=1 estimate), what a frozen boundary replays (`RelionReplay.from_frozen_boundary`, with the start-up direction
+  priors it keeps) and the archive's replay keys (`archive_provenance.py`). The source owns the sealed
+  perturbation, a replayed translation grid at an unchanged order (`coarse_grids`), a sealed pass-1 width
+  (`adaptive_coarse_size`), the sealed initial grid and the two replay predicates of the resume check; the
+  controller passes the perturbation's HEALPix order, not the replayed sampling record.
 - Run options, not diagnostics (rule 9): the local-search probe (`LocalSearchOptions.stop_after_local_search*`)
   and the final pass's after-the-cap and merged-reference variants (`FinalPassOptions`).
 
@@ -126,6 +134,16 @@ Not yet through the ports, each still read where it was:
 - The significance and pass-2 single-half selectors (`RELAX_SIGNIFICANCE_DUMP_TARGET_HALF`,
   `RELAX_PASS2_DUMP_TARGET_HALF`) steer the run (one half only) and read the environment in the controller.
 - The per-half E-step capture (`parity_dump.collect_e_step`) and the engines' own dump variables.
+- Port-only parameters still threaded through the algorithm (REVIEW_DEEP #12; None or False natively):
+  `NumberedState.prior_translations` -> `score_numbered_half(replay_prior_translations=)` ->
+  `LocalPriorSpec.replay_prior_translations`; `source.sealed_sampling_state` -> `relion_direction_log_priors`,
+  `prepare_final_half` and `iteration_trial_grid(sealed_grid=)`; `_validate_bpref_particle_order_scope` reads
+  the replay's fields. `FinalSamplingSettings.sampling_star`/`sampling_star_source` (set only by the replay
+  source) reach the archive through `RefinementResult`.
+- The projector disk cache (`RELAX_RELION_PROJECTOR_CACHE_DIR`, deep2 M S43) is read in
+  `prepare_scoring_projector`, which `relax/helpers/expected_accuracy.py` also calls.
+- `parity.use_per_half_mean_variance` (deep2 O S2, checked): set only on a frozen boundary's fixed arm, it is a
+  variant of the algorithm (each half scores against its own tau2), not a replaced input; it stays a run option.
 
 ## Rule 10: the functions with ten or more parameters
 
@@ -137,7 +155,7 @@ accepted, with the reason:
 | --- | --- | --- |
 | `finalization.run_final_all_data` | 28 | Takes the controller's owners whole; the rest are run flags and perturbation values of different lifetimes that no record holds. |
 | `tomo_half.score_tomo_half` | 26 | Engine boundary (rule 11: engines take arrays); `relax/vdam` calls it with raw arrays. |
-| `result_files.build_archive_metadata` | 23 | One field each of many owners, written once into the archive. |
+| `result_files.build_archive_metadata` | 20 | One field each of many owners, written once into the archive; the replay provenance keys come as one dict (`relax/parity/archive_provenance.py`, deep2 c3). |
 | `expectation.score_numbered_half` | 17 | Takes `NumberedHalfInputs`, the phase and the options; the rest are the iteration's shared operands, bound once by the controller. |
 | `expectation_batches.prepare_half_batches` | 19 | Reads three fields of `RelionParityOptions` and two of `DenseVariantPolicy`: fields of a large object (rule 10). |
 | `mean_helpers.estimate_class_priors` | 19 | Array operands and iteration scalars; `reference_model` would add a mutable owner. |
