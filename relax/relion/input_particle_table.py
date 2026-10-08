@@ -103,8 +103,8 @@ def _post_job_micrograph_name(name: str) -> str:
     raise ValueError(f"more than 20 directories deep in pipeline filename: {name}")
 
 
-def relion_scale_group_numbers(particles_in_order: pd.DataFrame) -> np.ndarray:
-    """One-based RELION scale-group numbers for particles already in RELION order.
+def _relion_group_name_per_particle(particles_in_order: pd.DataFrame) -> list[str]:
+    """Each particle's RELION scale-group name (exp_model.cpp:926-955).
 
     Without rlnGroupName or rlnMicrographName every particle reads an empty
     micrograph name (Experiment::getMicrographName, exp_model.cpp:154-167) and
@@ -119,8 +119,17 @@ def relion_scale_group_numbers(particles_in_order: pd.DataFrame) -> np.ndarray:
         group_names = [_post_job_micrograph_name(name) for name in particles_in_order["rlnTomoName"].astype(str)]
     else:
         group_names = [""] * len(particles_in_order)
+    return group_names
+
+
+def relion_scale_group_numbers(particles_in_order: pd.DataFrame) -> np.ndarray:
+    """One-based RELION scale-group numbers for particles already in RELION order, by first appearance of
+    their names (:func:`_relion_group_name_per_particle`)."""
     numbers: dict[str, int] = {}
-    return np.asarray([numbers.setdefault(name, len(numbers) + 1) for name in group_names], dtype=np.int64)
+    return np.asarray(
+        [numbers.setdefault(name, len(numbers) + 1) for name in _relion_group_name_per_particle(particles_in_order)],
+        dtype=np.int64,
+    )
 
 
 def build_relion_start_particle_table(particles: pd.DataFrame, *, seed: int) -> pd.DataFrame:
@@ -263,6 +272,8 @@ class PreparedParticleGroups(NamedTuple):
 
     source: GroupParticleSource
     layout: ParticleGroupLayout
+    # Each group's RELION name, group 1 first (model_groups rlnGroupName, ml_model.cpp:780, 1146).
+    group_names: tuple[str, ...]
 
 
 def prepare_particle_group_layout(
@@ -389,7 +400,11 @@ def prepare_particle_group_layout(
         source=source,
     )
 
-    return PreparedParticleGroups(source=group_source, layout=layout)
+    names_by_number: dict[int, str] = {}
+    for number, name in zip(group_numbers_source.tolist(), _relion_group_name_per_particle(group_particles)):
+        names_by_number.setdefault(int(number), name)
+    group_names = tuple(names_by_number.get(g, "") for g in range(1, n_groups + 1))
+    return PreparedParticleGroups(source=group_source, layout=layout, group_names=group_names)
 
 
 def _read_replay_group_particles(relion_dir, *, init_relion_iteration=0):

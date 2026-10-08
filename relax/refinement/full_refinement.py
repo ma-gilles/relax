@@ -1204,6 +1204,7 @@ def main(command=None):
                 mode=args.mode,
             ),
             input_star=os.path.join(args.data_dir, "particles.star"),
+            group_names=prepared_particle_groups.group_names,
             half_rows=[particle_layout.half1_rows, particle_layout.half2_rows],
             write_every=int(args.write_iteration_every),
             # RELION writes run_itNNN_half{1,2}_class001_unfil.mrc when it corrects the FSC.

@@ -100,7 +100,8 @@ def test_fresh_group_source_has_named_absence_and_derives_input_groups():
         "rlnMicrographName": ["job010/a.mrc", "job010/b.mrc"],
     })
     prepared = prepare_particle_group_layout(particles, [0, 1], [])
-    source, groups = prepared
+    source, groups, names = prepared
+    assert names == ("a.mrc", "b.mrc")
     assert isinstance(source, GroupParticleSource)
     assert source.particles is source.path is None
     np.testing.assert_array_equal(groups.group_ids_per_half[0], [0, 1])

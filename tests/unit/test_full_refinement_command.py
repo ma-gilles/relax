@@ -224,3 +224,18 @@ def test_run_files_record_the_runs_mask_edge_and_join_resolution(monkeypatch, tm
     values = dict(line.split()[:2] for line in text.splitlines() if line.startswith("_rln") and len(line.split()) >= 2)
     assert int(values["_rlnWidthMaskEdge"]) == 7
     assert float(values["_rlnJoinHalvesUntilThisResolution"]) == join
+
+
+def test_model_star_names_the_scale_groups_as_relion(monkeypatch, tmp_path):
+    # RELION names each scale group by rlnGroupName or, without it, the micrograph name after its job
+    # directory (exp_model.cpp:926-955), numbers them by first appearance in micrograph-sorted order
+    # (exp_model.cpp:900-901) and writes those names to model_groups (ml_model.cpp:780, 1146); relax wrote
+    # group_N. The tiny data put each particle on its own micrograph "1", "2", ...
+    import starfile
+
+    data = write_tiny_data_dir(tmp_path / "data")
+    micrographs = starfile.read(data / "particles.star")["particles"]["rlnMicrographName"].astype(str)
+    expected = sorted(set(micrographs), key=str.encode)
+    out = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", data=data)
+    groups = starfile.read(out / "run_it001_half1_model.star")["model_groups"]
+    assert groups["rlnGroupName"].astype(str).tolist() == expected

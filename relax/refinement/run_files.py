@@ -380,12 +380,15 @@ class RunFileWriter:
 
         ids = np.concatenate([np.asarray(g, dtype=np.int64) for g in snapshot.group_ids if g is not None])
         n_groups = int(ids.max()) + 1 if ids.size else 1
+        if self.group_names is None:
+            names = [f"group_{g + 1}" for g in range(n_groups)]
+        else:
+            # RELION writes every group of its model axis, by name (ml_model.cpp:780).
+            names = list(self.group_names)
+            if len(names) < n_groups:
+                raise ValueError(f"{len(names)} scale-group names for particles in {n_groups} groups")
+            n_groups = len(names)
         counts = np.bincount(ids, minlength=n_groups)
-        names = (
-            list(self.group_names)
-            if self.group_names is not None and len(self.group_names) == n_groups
-            else [f"group_{g + 1}" for g in range(n_groups)]
-        )
         return [(g + 1, names[g], int(counts[g])) for g in range(n_groups)]
 
 
