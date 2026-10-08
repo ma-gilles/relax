@@ -15,7 +15,6 @@ import numpy as np
 from relax.diagnostics import vdam_noise
 from relax.helpers.orientation_priors import relion_round_away_from_zero
 from relax.vdam.estep_common import EstepSums
-from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.state import InitialModelState, NativeParticleState
 
 MIN_SIGMA2_OFFSET_ANGSTROM2: float = 2.0
@@ -51,7 +50,7 @@ def update_noise_from_estep(
     sums: EstepSums,
     *,
     do_grad: bool,
-    mu: float = DEFAULT_GRAD_MU,
+    mu: float,
     report: dict | None = None,
 ) -> InitialModelState:
     """Update ``sigma2_noise`` from E-step weighted sums (engine units → RELION /N⁴).
@@ -138,7 +137,7 @@ def update_probabilities_from_estep(
     sums: EstepSums,
     *,
     do_grad: bool,
-    mu: float = DEFAULT_GRAD_MU,
+    mu: float,
     uniform_class_direction_prior: bool = False,
 ) -> InitialModelState:
     """``MlOptimiser::maximizationOtherParameters`` for pdf_class / pdf_direction / sigma2_offset."""

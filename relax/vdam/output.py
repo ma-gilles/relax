@@ -100,11 +100,11 @@ def _write_iteration_artifacts(
     iteration: int,
     meta: dict,
     *,
-    main_star=None,
-    optics_star=None,
-    dataset=None,
-    particle_state: NativeParticleState | None = None,
-    profile_stages: bool = False,
+    main_star,
+    optics_star,
+    dataset,
+    particle_state: NativeParticleState,
+    profile_stages: bool,
 ) -> None:
     profile = _StageProfile(profile_stages)
 
@@ -122,14 +122,13 @@ def _write_iteration_artifacts(
     with open(meta_path, "w") as f:
         json.dump(_json_ready(meta), f, indent=2, sort_keys=True)
     profile.record("meta_json")
-    if main_star is not None and dataset is not None and particle_state is not None:
-        _write_data_star(
-            f"{output_prefix}_it{iteration:03d}_data.star",
-            main_star,
-            optics_star,
-            dataset,
-            particle_state,
-        )
+    _write_data_star(
+        f"{output_prefix}_it{iteration:03d}_data.star",
+        main_star,
+        optics_star,
+        dataset,
+        particle_state,
+    )
     profile.record("data_star")
     profile.report(f"iteration {iteration} artifact")
 

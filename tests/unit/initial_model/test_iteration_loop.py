@@ -729,7 +729,7 @@ class TestRunVdamIterations:
             "noise_sumw": 4.0,
         }
 
-        out = update_noise_from_estep(state, estep_sums(meta), do_grad=False)
+        out = update_noise_from_estep(state, estep_sums(meta), do_grad=False, mu=DEFAULT_GRAD_MU,)
 
         expected_engine_units = noise_relion.normalize_wsum_to_sigma2_noise(
             meta["wsum_sigma2_noise"],
@@ -795,7 +795,7 @@ class TestRunVdamIterations:
         monkeypatch.setenv("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR", str(tmp_path))
         monkeypatch.setenv("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION", "1")
 
-        out = update_noise_from_estep(state, estep_sums(meta), do_grad=False)
+        out = update_noise_from_estep(state, estep_sums(meta), do_grad=False, mu=DEFAULT_GRAD_MU,)
 
         dump_path = tmp_path / "initialmodel_noise_update_it001.npz"
         with np.load(dump_path, allow_pickle=False) as payload:
