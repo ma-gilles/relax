@@ -892,28 +892,17 @@ def _reconstruct_volume_eager(
             # monolithic branch to avoid overlapping another box-scale device
             # buffer, so apply the reciprocal to the completed result in a
             # separate donating executable.
-            transform_size = math.prod(reconstruction_shape)
             logger.info(
                 "RELION large inverse-FFT normalization boundary: "
                 "reconstruction_shape=%s transform_size=%d "
                 "implementation=jax_monolithic_dynamic_scale",
                 reconstruction_shape,
-                transform_size,
+                math.prod(reconstruction_shape),
             )
-            inverse_transform_scale = jnp.asarray(
-                np.float32(1.0 / float(transform_size)),
-            )
-            result = _normalize_large_irfft_result_donate(
-                result,
-                inverse_transform_scale,
-            )
+            result = _apply_large_irfft_scale(result, reconstruction_shape)
         return result
 
-    accumulator_shape = (
-        tuple(3 * [int(vol_shape[0]) * int(padding_factor)])
-        if accumulator_volume_shape is None
-        else tuple(int(s) for s in accumulator_volume_shape)
-    )
+    accumulator_shape = _accumulator_shape_or_default(vol_shape, padding_factor, accumulator_volume_shape)
     reconstruction_shape = relion_functions._relion_reconstruction_padded_shape(
         vol_shape,
         padding_factor,
@@ -1136,27 +1125,16 @@ def _reconstruct_volume_eager(
             gridding_padding_factor=projection_padding_factor,
         )
     if explicit_irfft_normalization:
-        transform_size = math.prod(reconstruction_shape)
         logger.info(
             "RELION large inverse-FFT normalization boundary: "
             "reconstruction_shape=%s transform_size=%d implementation=%s",
             reconstruction_shape,
-            transform_size,
+            math.prod(reconstruction_shape),
             "scipy_host_backward" if host_irfft else "jax_dynamic_scale",
         )
     if explicit_irfft_normalization and not host_irfft:
-        # XLA's built-in ``norm='backward'`` normalization overflows its
-        # signed-int32 transform-size product at 1600^3 and silently omits the
-        # reciprocal. Apply that reciprocal in a separate executable after
-        # the affected inverse-FFT executable has completed.
-        # Donation keeps this correction memory-neutral for box-scale maps.
-        inverse_transform_scale = jnp.asarray(
-            np.float32(1.0 / float(transform_size)),
-        )
-        result = _normalize_large_irfft_result_donate(
-            result,
-            inverse_transform_scale,
-        )
+        # The inverse-FFT executable has completed; see _apply_large_irfft_scale.
+        result = _apply_large_irfft_scale(result, reconstruction_shape)
     return result
 
 
@@ -2007,6 +1985,30 @@ def _host_irfft_and_center_crop(
     return cropped
 
 
+def _accumulator_shape_or_default(vol_shape, padding_factor, accumulator_volume_shape) -> tuple:
+    """The backprojector accumulator's full shape: ``accumulator_volume_shape``, else the padded box cubed."""
+    return (
+        tuple(3 * [int(vol_shape[0]) * int(padding_factor)])
+        if accumulator_volume_shape is None
+        else tuple(int(s) for s in accumulator_volume_shape)
+    )
+
+
+def _apply_large_irfft_scale(result, reconstruction_shape):
+    """Apply the inverse FFT's 1 / N in a separate donating executable.
+
+    XLA's built-in ``norm='backward'`` normalization overflows its signed-int32 transform-size product at
+    1600^3 and silently omits the reciprocal; donation keeps this correction memory-neutral for box-scale maps.
+    """
+    inverse_transform_scale = jnp.asarray(
+        np.float32(1.0 / float(math.prod(reconstruction_shape))),
+    )
+    return _normalize_large_irfft_result_donate(
+        result,
+        inverse_transform_scale,
+    )
+
+
 @functools.partial(jax.jit, donate_argnums=(0,))
 def _normalize_large_irfft_result_donate(result, inverse_transform_scale):
     """Normalize a large raw inverse FFT in a separate donating executable."""
@@ -2024,11 +2026,7 @@ def _should_host_stage_large_relion_ifft(
 ):
     """Return whether eager reconstruction should cross the padded-iFFT host boundary."""
 
-    accumulator_shape = (
-        tuple(3 * [int(vol_shape[0]) * int(padding_factor)])
-        if accumulator_volume_shape is None
-        else tuple(int(s) for s in accumulator_volume_shape)
-    )
+    accumulator_shape = _accumulator_shape_or_default(vol_shape, padding_factor, accumulator_volume_shape)
     reconstruction_shape = relion_functions._relion_reconstruction_padded_shape(
         vol_shape,
         padding_factor,
@@ -2079,11 +2077,7 @@ def _pack_compact_full_accumulators_for_large_relion_ifft(
     changing the public M-step contract or the large-accumulator offload path.
     """
 
-    accumulator_shape = (
-        tuple(3 * [int(vol_shape[0]) * int(padding_factor)])
-        if accumulator_volume_shape is None
-        else tuple(int(s) for s in accumulator_volume_shape)
-    )
+    accumulator_shape = _accumulator_shape_or_default(vol_shape, padding_factor, accumulator_volume_shape)
     reconstruction_shape = relion_functions._relion_reconstruction_padded_shape(
         vol_shape,
         padding_factor,
