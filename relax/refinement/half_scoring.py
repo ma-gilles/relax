@@ -8,7 +8,6 @@ by the ownership boundary.
 """
 
 import logging
-import os
 from dataclasses import dataclass, field, replace
 
 import jax.numpy as jnp
@@ -1809,48 +1808,37 @@ def _score_half_local_one_shape(
         )
     if local_adaptive_pass2_denominator_layout is not None:
         logger.info("RELION local adaptive pass 2 diagnostic: running score-only broad-denominator probe")
-        local_debug_env_names = [
-            name
-            for name in os.environ
-            if name.startswith("RELAX_LOCAL_SCORE_DUMP_")
-            or name.startswith("RELAX_LOCAL_FUSED_POSTERIOR_DUMP_")
-            or name.startswith("RELAX_LOCAL_NOISE_COMPONENT_DUMP_")
-        ]
-        saved_local_debug_env = {name: os.environ.pop(name) for name in local_debug_env_names}
-        try:
-            denominator_outputs = _run_local_search_iteration(
-                local_data,
-                replace(
-                    local_grid,
-                    pass2_layout=local_adaptive_pass2_denominator_layout,
-                    rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
-                        sampling.search.healpix_order,
-                        adaptive_oversampling=0,
-                    ),
-                    local_parent_oversampling_order=0,
-                    rotation_grid_mstep_rotations=None,
-                    generate_relion_mstep_rotations=False,
+        denominator_outputs = _run_local_search_iteration(
+            local_data,
+            replace(
+                local_grid,
+                pass2_layout=local_adaptive_pass2_denominator_layout,
+                rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
+                    sampling.search.healpix_order,
+                    adaptive_oversampling=0,
                 ),
-                replace(
-                    local_kernel,
-                    accumulate_noise=False,
-                    use_float64_scoring=execution.fine_precision.use_float64_scoring,
-                    use_float64_projections=execution.fine_precision.use_float64_projections,
-                    relion_exact_score_translation=bool(
-                        scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not execution.fine_precision.use_float64_scoring
-                    ),
+                local_parent_oversampling_order=0,
+                rotation_grid_mstep_rotations=None,
+                generate_relion_mstep_rotations=False,
+            ),
+            replace(
+                local_kernel,
+                accumulate_noise=False,
+                use_float64_scoring=execution.fine_precision.use_float64_scoring,
+                use_float64_projections=execution.fine_precision.use_float64_projections,
+                relion_exact_score_translation=bool(
+                    scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not execution.fine_precision.use_float64_scoring
                 ),
-                replace(
-                    local_support,
-                    disable_adjoint_y=True,
-                    disable_adjoint_ctf=True,
-                    reconstruct_significant_only=False,
-                    score_only=True,
-                    return_profile=False,
-                ),
-            )
-        finally:
-            os.environ.update(saved_local_debug_env)
+            ),
+            replace(
+                local_support,
+                disable_adjoint_y=True,
+                disable_adjoint_ctf=True,
+                reconstruct_significant_only=False,
+                score_only=True,
+                return_profile=False,
+            ),
+        )
         denominator_stats = denominator_outputs.relion_stats
         local_normalization_log_evidence = np.asarray(
             denominator_stats.log_evidence_per_image,
