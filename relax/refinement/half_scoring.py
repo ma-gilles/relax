@@ -532,8 +532,7 @@ def _score_adaptive_k1_dense(
             "adaptive engine (current_size=%s)",
             sampling.cs_for_engine,
         )
-    relion_x_half_mstep = execution.relion_x_half_mstep
-    if symmetry != "C1" and not relion_x_half_mstep:
+    if symmetry != "C1" and not execution.relion_x_half_mstep:
         raise RuntimeError(
             f"{symmetry} reconstruction requires RELION x-half BPref accumulation; "
             "RELAX_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
@@ -545,7 +544,7 @@ def _score_adaptive_k1_dense(
     adaptive_em_kwargs["sparse_pass2"] = True
     if half.scale_group_ids is not None:
         adaptive_em_kwargs["group_ids"] = half.scale_group_ids
-    if relion_x_half_mstep:
+    if execution.relion_x_half_mstep:
         adaptive_em_kwargs["mstep_relion_x_half"] = True
     logger.info(
         "RELION adaptive K=1 routing through run_dense_k_class_em_adaptive "
@@ -553,7 +552,7 @@ def _score_adaptive_k1_dense(
         "fine_mstep_prune=True, relion_x_half_mstep=%s, supplied_ppref=%s, "
         "engine_ppref=%s)",
         adaptive_os,
-        bool(relion_x_half_mstep),
+        bool(execution.relion_x_half_mstep),
         half.projector is not None,
         adaptive_em_kwargs.get("relion_projector_half") is not None,
     )
@@ -567,7 +566,7 @@ def _score_adaptive_k1_dense(
                 sampling.coarse_scoring_rotations
                 if sampling.coarse_scoring_rotations is not None
                 and adaptive_os == 0
-                and relion_x_half_mstep
+                and execution.relion_x_half_mstep
                 and variant.firstiter_score_mode_this_iter == "gaussian"
                 and not execution.diagnostic_float64_pass2
                 else pass2_grids.coarse_rotations
@@ -779,10 +778,9 @@ def _score_half_dense_one_shape(
         # K-class uses RELION's x-half BackProjector accumulator layout by
         # default, matching the K=1 parity path. The explicit selector can
         # still choose the dense full-volume path.
-        k_class_relion_x_half_mstep = execution.relion_x_half_mstep
-        if symmetry != "C1" and not k_class_relion_x_half_mstep:
+        if symmetry != "C1" and not execution.relion_x_half_mstep:
             raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
-        em_kwargs["mstep_relion_x_half"] = bool(k_class_relion_x_half_mstep)
+        em_kwargs["mstep_relion_x_half"] = bool(execution.relion_x_half_mstep)
         em_kwargs["relion_half_volume_mstep"] = False
         k_class_mstep_full_half_axis_this_score = None
         rot_pmap_for_collapse = None
@@ -891,8 +889,7 @@ def _score_half_dense_one_shape(
     n_trans_fine_for_collapse = None
     fine_rotations_for_pose = None
     if variant.relion_firstiter_cc_this_iter:
-        k1_relion_x_half_mstep = execution.relion_x_half_mstep
-        if symmetry != "C1" and not k1_relion_x_half_mstep:
+        if symmetry != "C1" and not execution.relion_x_half_mstep:
             raise RuntimeError(
                 f"{symmetry} reconstruction requires RELION x-half BPref accumulation; "
                 "RELAX_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
@@ -919,7 +916,7 @@ def _score_half_dense_one_shape(
                 firstiter_batching,
                 em_kwargs={
                     **em_kwargs,
-                    **({"mstep_relion_x_half": True} if k1_relion_x_half_mstep else {}),
+                    **({"mstep_relion_x_half": True} if execution.relion_x_half_mstep else {}),
                     **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
                 },
             ),
@@ -1597,25 +1594,23 @@ def _score_half_local_one_shape(
     local_debug_iteration = (
         diagnostics.iteration + 1 if diagnostics.debug_iteration is None else int(diagnostics.debug_iteration)
     )
-    parent_precision = execution.precision
-    fine_precision = execution.fine_precision
     # Adaptive pass-2 (fine, oversampled) hypothesis layout precision; see
     # ``parent_local_layout_dtype`` below for the matching pass-1 value.
-    fine_local_layout_dtype = fine_precision.rotation_real_dtype
-    if fine_precision.use_float64_scoring or fine_precision.use_float64_projections:
+    fine_local_layout_dtype = execution.fine_precision.rotation_real_dtype
+    if execution.fine_precision.use_float64_scoring or execution.fine_precision.use_float64_projections:
         logger.info(
             "Local-search precision iteration %d: pass1 scoring/projections=%s/%s pass2 scoring/projections=%s/%s",
             local_debug_iteration,
-            parent_precision.use_float64_scoring,
-            parent_precision.use_float64_projections,
-            fine_precision.use_float64_scoring,
-            fine_precision.use_float64_projections,
+            execution.precision.use_float64_scoring,
+            execution.precision.use_float64_projections,
+            execution.fine_precision.use_float64_scoring,
+            execution.fine_precision.use_float64_projections,
         )
 
     # Keep the local-search hypothesis grid genuinely double precision end to
     # end when either flag requests it; default stays float32 to match
     # RELION's accelerated-GPU precision.
-    parent_local_layout_dtype = parent_precision.rotation_real_dtype
+    parent_local_layout_dtype = execution.precision.rotation_real_dtype
     if priors.local_search_translation_prior_mode == "coarse":
         translation_prior_reference_translations, prior_grid_source, prior_grid_shape_mismatch = (
             _local_translation_prior_reference_translations(
@@ -1761,10 +1756,10 @@ def _score_half_local_one_shape(
                 current_size=sampling.coarse_image_window_size,
                 reconstruction_current_size=None,
                 wsum_current_size=None,
-                use_float64_scoring=parent_precision.use_float64_scoring,
-                use_float64_projections=parent_precision.use_float64_projections,
+                use_float64_scoring=execution.precision.use_float64_scoring,
+                use_float64_projections=execution.precision.use_float64_projections,
                 relion_exact_score_translation=bool(
-                    scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not parent_precision.use_float64_scoring
+                    scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not execution.precision.use_float64_scoring
                 ),
                 # RELION's GPU pass 1 projects through the projector texture, as the
                 # global pass 1 and pass 2 do.
@@ -1839,10 +1834,10 @@ def _score_half_local_one_shape(
                 replace(
                     local_kernel,
                     accumulate_noise=False,
-                    use_float64_scoring=fine_precision.use_float64_scoring,
-                    use_float64_projections=fine_precision.use_float64_projections,
+                    use_float64_scoring=execution.fine_precision.use_float64_scoring,
+                    use_float64_projections=execution.fine_precision.use_float64_projections,
                     relion_exact_score_translation=bool(
-                        scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not fine_precision.use_float64_scoring
+                        scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not execution.fine_precision.use_float64_scoring
                     ),
                 ),
                 replace(
@@ -1886,10 +1881,10 @@ def _score_half_local_one_shape(
         replace(
             local_kernel,
             accumulate_noise=local_accumulate_noise,
-            use_float64_scoring=fine_precision.use_float64_scoring,
-            use_float64_projections=fine_precision.use_float64_projections,
+            use_float64_scoring=execution.fine_precision.use_float64_scoring,
+            use_float64_projections=execution.fine_precision.use_float64_projections,
             relion_exact_score_translation=bool(
-                scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not fine_precision.use_float64_scoring
+                scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not execution.fine_precision.use_float64_scoring
             ),
             # RELION local execution is intentionally hybrid: parent pass 1
             # uses manual supplied-PPref projection, while fine pass 2 follows

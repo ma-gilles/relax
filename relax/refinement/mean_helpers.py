@@ -1132,20 +1132,19 @@ def _reconstruct_volume_eager(
     )
     host_irfft = _large_relion_host_irfft_enabled(reconstruction_shape, forced=programs.host_irfft)
     if host_irfft:
-        workers = programs.host_fft_workers
         logger.info(
             "RELION padded inverse FFT using host scipy.fft: reconstruction_shape=%s "
             "output_shape=%s input_bytes=%d workers=%d",
             reconstruction_shape,
             tuple(int(size) for size in vol_shape),
             int(fftw_half_host.nbytes),
-            workers,
+            programs.host_fft_workers,
         )
         unpadded_real_host = _host_irfft_and_center_crop(
             fftw_half_host,
             reconstruction_shape,
             vol_shape,
-            workers=workers,
+            workers=programs.host_fft_workers,
         )
         del fftw_half_host
         gc.collect()
