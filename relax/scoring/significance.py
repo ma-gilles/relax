@@ -1099,31 +1099,12 @@ def _compute_k_class_significance_batched(
                 [[] for _ in range(n_classes)] if dump_target_local_positions is not None else None
             )
             neg_inf_f, zeros_f64, zeros_i32 = _pass1_batch_constants(batch_inputs.batch_size, bool(jax.config.jax_enable_x64))
-            global_max = neg_inf_f
-            global_sum = zeros_f64
-            class_max_values = []
-            class_sum_values = []
-            best_score_batch = neg_inf_f
-            best_argmax_batch = zeros_i32
-            best_class_batch = zeros_i32
-            class_best_scores = [neg_inf_f] * n_classes if return_class_best else None
-            class_best_argmaxes = [zeros_i32] * n_classes if return_class_best else None
-            class_second_best_scores = [neg_inf_f] * n_classes if track_class_second else None
-            class_second_best_argmaxes = [zeros_i32] * n_classes if track_class_second else None
             # RELION's CUDA coarse kernel forms ``pdf_orientation + pdf_offset +
             # min_diff2 - diff2`` left to right (cuda_kernel_weights_exponent_coarse).
             # Adding the priors to the absolute scores and the min_diff2 offset
             # afterwards can tie poses that RELION separates by one ULP, so the
             # support pass keeps the pre-prior scores.
             relion_exact_coarse_weight_order = bool(relion_f32_coarse_support_enabled and n_classes == 1)
-            if not relion_f32_coarse_support_enabled:
-                relion_raw_score_max = None
-            else:
-                relion_raw_score_max = jnp.full(
-                    batch_inputs.batch_size,
-                    -jnp.inf,
-                    dtype=jnp.float32,
-                )
 
             # Pass 1 of the coarse GEMM scorers is one program per batch
             # (_coarse_pass1_blocks): over the cached projections in one call, or
@@ -1228,16 +1209,13 @@ def _compute_k_class_significance_batched(
                 (class_best_tuple, class_best_argmax_tuple, class_second_tuple, class_second_argmax_tuple),
                 pass1_raw_score_max,
             ) = pass1_state
-            if relion_raw_score_max is not None:
-                relion_raw_score_max = pass1_raw_score_max
+            relion_raw_score_max = pass1_raw_score_max if relion_f32_coarse_support_enabled else None
             class_max_values = list(class_max_tuple)
             class_sum_values = list(class_sum_tuple)
-            if return_class_best:
-                class_best_scores = list(class_best_tuple)
-                class_best_argmaxes = list(class_best_argmax_tuple)
-            if track_class_second:
-                class_second_best_scores = list(class_second_tuple)
-                class_second_best_argmaxes = list(class_second_argmax_tuple)
+            class_best_scores = list(class_best_tuple) if return_class_best else None
+            class_best_argmaxes = list(class_best_argmax_tuple) if return_class_best else None
+            class_second_best_scores = list(class_second_tuple) if track_class_second else None
+            class_second_best_argmaxes = list(class_second_argmax_tuple) if track_class_second else None
 
             if tree_rescore_enabled:
                 # The bounded top-two rescore uses the batch's exact CUDA CC operands (the per-image FFT/CTF
