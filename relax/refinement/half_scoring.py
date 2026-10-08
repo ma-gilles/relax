@@ -1129,6 +1129,26 @@ def _dense_owners_for_shape(
     )
 
 
+def _require_multi_shape_inputs(half: HalfScoringData, optics: OpticsSpec) -> None:
+    """A half with several image shapes needs reference-shell noise spectra and each image's optics group."""
+    if optics.noise_radial_k is None:
+        raise ValueError("a half with several image shapes needs reference-shell noise spectra")
+    if half.particles.optics_group_ids is None:
+        raise ValueError("a half with several image shapes needs each image's optics group")
+
+
+def _merge_shape_class_results(results, experiment_half) -> HalfScoreResult:
+    """One result for a multi-shape half from its shape classes' results, on the reference box."""
+    from relax.refinement import optics_shapes
+
+    return optics_shapes.merge_class_results(
+        results,
+        experiment_half.classes,
+        experiment_half.n_units,
+        int(experiment_half.image_shape[0]),
+    )
+
+
 def _score_half_dense(
     half: HalfScoringData,
     sampling: DenseSamplingSpec,
@@ -1145,10 +1165,7 @@ def _score_half_dense(
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
         return _score_half_dense_one_shape(half, sampling, priors, batching, variant, execution, optics)
-    if optics.noise_radial_k is None:
-        raise ValueError("a half with several image shapes needs reference-shell noise spectra")
-    if half.particles.optics_group_ids is None:
-        raise ValueError("a half with several image shapes needs each image's optics group")
+    _require_multi_shape_inputs(half, optics)
     if batching.class_batch_overrides is not None and len(batching.class_batch_overrides) != len(experiment_half.classes):
         raise ValueError("class_batch_overrides needs one entry per shape class")
 
@@ -1171,13 +1188,7 @@ def _score_half_dense(
             # K1 shape merging retains common statistics, not class-prior summaries.
             result.classes = None
         results.append(result)
-    merged = optics_shapes.merge_class_results(
-        results,
-        experiment_half.classes,
-        experiment_half.n_units,
-        int(experiment_half.image_shape[0]),
-    )
-    return merged
+    return _merge_shape_class_results(results, experiment_half)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1526,10 +1537,7 @@ def _score_half_local(
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
         return _score_half_local_one_shape(half, sampling, priors, batching, execution, diagnostics, optics)
-    if optics.noise_radial_k is None:
-        raise ValueError("a half with several image shapes needs reference-shell noise spectra")
-    if half.particles.optics_group_ids is None:
-        raise ValueError("a half with several image shapes needs each image's optics group")
+    _require_multi_shape_inputs(half, optics)
     optics_shapes.require_exact_local_parent_windows(
         {
             "experiment_dataset": experiment_half,
@@ -1554,13 +1562,7 @@ def _score_half_local(
         )
         for index, shape_class in enumerate(experiment_half.classes)
     ]
-    merged = optics_shapes.merge_class_results(
-        results,
-        experiment_half.classes,
-        experiment_half.n_units,
-        int(experiment_half.image_shape[0]),
-    )
-    return merged
+    return _merge_shape_class_results(results, experiment_half)
 
 
 def _score_half_local_one_shape(
