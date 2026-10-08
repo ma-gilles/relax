@@ -50,14 +50,18 @@ def _active_relion_initialmodel_max_significants(state: InitialModelState, *, do
 
 def relion_sampling_cadence(*, iteration: int, do_grad: bool) -> bool:
     """Every iteration without gradients, every tenth with them: the cadence of RELION's
-    ``updateAngularSampling`` and ``calculateExpectedAngularErrors`` calls (whose ``iter <= nr_iter``
-    term always holds in the loop)."""
+    ``updateAngularSampling`` call (ml_optimiser.cpp:3555-3558)."""
     return not bool(do_grad) or int(iteration) % 10 == 0
 
 
-def _should_estimate_native_sampling_accuracy(*, iteration: int, do_grad: bool) -> bool:
-    """RELION's ``calculateExpectedAngularErrors`` cadence: the sampling cadence, and always in iteration 1."""
-    return int(iteration) <= 1 or relion_sampling_cadence(iteration=iteration, do_grad=do_grad)
+def _should_estimate_native_sampling_accuracy(*, iteration: int, nr_iter: int, do_grad: bool) -> bool:
+    """RELION's ``calculateExpectedAngularErrors`` cadence (ml_optimiser.cpp:3541-3542): the sampling cadence,
+    always in iteration 1, and in the last iteration (``iter == nr_iter``) also under gradients."""
+    return (
+        int(iteration) <= 1
+        or int(iteration) == int(nr_iter)
+        or relion_sampling_cadence(iteration=iteration, do_grad=do_grad)
+    )
 
 
 @dataclass(frozen=True)

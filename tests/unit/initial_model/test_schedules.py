@@ -23,6 +23,7 @@ from relax.vdam.native_options import InitialModelDefaults
 from relax.vdam.schedules import (
     DEFAULT_STEPSIZE_3D_INITIAL_MODEL,
     DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL,
+    _should_estimate_native_sampling_accuracy,
     _step_sigmoid_value,
     compute_phase_lengths,
     compute_stepsize,
@@ -628,3 +629,17 @@ def test_gui_initial_model_defaults_produce_plan_trajectory():
     assert tau0 < tau_end
     assert abs(tau0 - 1.0) < 1e-2
     assert abs(tau_end - 4.0) < 1e-2
+
+
+@pytest.mark.parametrize("nr_iter", [25, 30, 200])
+@pytest.mark.parametrize("do_grad", [True, False])
+def test_expected_accuracy_cadence_is_relions_including_the_last_iteration(nr_iter, do_grad):
+    """ml_optimiser.cpp:3541-3542 (InitialModel: no auto-refine): calculateExpectedAngularErrors runs when
+    ``!do_grad || iter % 10 == 0 || iter == nr_iter || iter <= 1``; with gradients and nr_iter = 25 that
+    includes iteration 25."""
+    for iteration in range(1, nr_iter + 1):
+        relion = (not do_grad) or iteration % 10 == 0 or iteration == nr_iter or iteration <= 1
+        assert (
+            _should_estimate_native_sampling_accuracy(iteration=iteration, nr_iter=nr_iter, do_grad=do_grad)
+            == relion
+        ), iteration
