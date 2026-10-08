@@ -3,8 +3,8 @@
 
 import numpy as np
 import pytest
+from recovar import utils as recovar_utils
 
-import relax.refinement.iteration_loop as iteration_loop_module
 from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
 from relax.local.local_layout import (
     LocalHypothesisLayout,
@@ -103,8 +103,8 @@ def test_relion_em_batch_sizing_does_not_pad_beyond_actual_rotation_grid():
 
 
 def test_relion_em_batch_sizing_uses_runtime_gpu_occupancy(monkeypatch):
-    monkeypatch.setattr(iteration_loop_module.utils, "get_gpu_memory_total", lambda: 80.0)
-    monkeypatch.setattr(iteration_loop_module.utils, "get_gpu_memory_used", lambda: 60.0)
+    monkeypatch.setattr(recovar_utils, "get_gpu_memory_total", lambda: 80.0)
+    monkeypatch.setattr(recovar_utils, "get_gpu_memory_used", lambda: 60.0)
 
     plan = _estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
@@ -124,8 +124,8 @@ def test_relion_em_batch_sizing_uses_runtime_gpu_occupancy(monkeypatch):
 
 
 def test_relion_em_batch_sizing_caps_runtime_highres_local_translation_tile(monkeypatch):
-    monkeypatch.setattr(iteration_loop_module.utils, "get_gpu_memory_total", lambda: 80.0)
-    monkeypatch.setattr(iteration_loop_module.utils, "get_gpu_memory_used", lambda: 24.0)
+    monkeypatch.setattr(recovar_utils, "get_gpu_memory_total", lambda: 80.0)
+    monkeypatch.setattr(recovar_utils, "get_gpu_memory_used", lambda: 24.0)
 
     plan = _estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
@@ -145,8 +145,8 @@ def test_relion_em_batch_sizing_caps_runtime_highres_local_translation_tile(monk
 
 
 def test_relion_em_batch_sizing_caps_dense_big_jit_score_workspace(monkeypatch):
-    monkeypatch.setattr(iteration_loop_module.utils, "get_gpu_memory_total", lambda: 80.0)
-    monkeypatch.setattr(iteration_loop_module.utils, "get_gpu_memory_used", lambda: 41.0)
+    monkeypatch.setattr(recovar_utils, "get_gpu_memory_total", lambda: 80.0)
+    monkeypatch.setattr(recovar_utils, "get_gpu_memory_used", lambda: 41.0)
 
     plan = _estimate_relion_em_batch_sizes(
         requested_image_batch_size=64,
@@ -169,8 +169,8 @@ def test_relion_em_batch_sizing_caps_dense_big_jit_score_workspace(monkeypatch):
 
 
 def test_relion_em_batch_sizing_uses_active_window_for_dense_score_workspace(monkeypatch):
-    monkeypatch.setattr(iteration_loop_module.utils, "get_gpu_memory_total", lambda: 80.0)
-    monkeypatch.setattr(iteration_loop_module.utils, "get_gpu_memory_used", lambda: 0.0)
+    monkeypatch.setattr(recovar_utils, "get_gpu_memory_total", lambda: 80.0)
+    monkeypatch.setattr(recovar_utils, "get_gpu_memory_used", lambda: 0.0)
 
     common = dict(
         requested_image_batch_size=64,

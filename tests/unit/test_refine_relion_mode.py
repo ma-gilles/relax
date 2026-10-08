@@ -42,6 +42,7 @@ from helpers.refinement_specs import (
     local_iteration_keywords,
     local_iteration_owners,
 )
+from recovar import utils as recovar_utils
 
 import relax.diagnostics.relion_replay as relion_replay_module
 import relax.helpers.expected_accuracy as expected_accuracy_module
@@ -8064,7 +8065,7 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
         "apply_relion_rotation_perturbation_to_eulers",
         fake_apply_relion_rotation_perturbation_to_eulers,
     )
-    monkeypatch.setattr(refine_mod.utils, "R_to_relion", fake_r_to_relion)
+    monkeypatch.setattr(recovar_utils, "R_to_relion", fake_r_to_relion)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -9296,7 +9297,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         None,
         build_local_search_grid_metadata(5),
     )
-    expected_euler = iteration_loop_module.utils.R_to_relion(expected_rotation, degrees=True)[0].astype(np.float32)
+    expected_euler = recovar_utils.R_to_relion(expected_rotation, degrees=True)[0].astype(np.float32)
     observed = np.asarray(result.history.best_rotation_eulers_history[0], dtype=np.float32).reshape(-1, 3)
     assert observed.shape[0] == N_IMAGES
     np.testing.assert_allclose(
@@ -9315,7 +9316,7 @@ def test_canonical_rotation_grid_reuses_relion_euler_table(monkeypatch):
     def fail_r_to_relion(*_args, **_kwargs):
         raise AssertionError("generic R_to_relion should not be called for canonical grids")
 
-    monkeypatch.setattr(iteration_loop_module.utils, "R_to_relion", fail_r_to_relion)
+    monkeypatch.setattr(recovar_utils, "R_to_relion", fail_r_to_relion)
     _rotation_grid_ = sampling_module.relion_scoring_rotation_grid(order)
     _ = _rotation_grid_.rotations
     got = _rotation_grid_.rotation_eulers

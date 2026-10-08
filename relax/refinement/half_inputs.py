@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 import numpy as np
+from recovar import utils
 
 from relax.helpers.convergence import concatenate_pose_stacks_or_none
 
@@ -94,6 +95,20 @@ class HalfSet:
     def require_local_search_poses(self):
         if self.rotation_eulers is None or self.translations is None:
             raise ValueError(f"Local search requires orientations and translations for half {self.index + 1}")
+
+
+def best_rotation_matrices(halves, *, dtype) -> list:
+    """Each half's rotation matrices of its current best angles (None without angles; an empty half an empty
+    ``(0, 3, 3)`` stack), in ``dtype``."""
+
+    return [
+        None
+        if half.rotation_eulers is None
+        else np.zeros((0, 3, 3), dtype=dtype)
+        if len(half.rotation_eulers) == 0
+        else np.asarray(utils.R_from_relion(np.asarray(half.rotation_eulers), degrees=True), dtype=dtype)
+        for half in halves
+    ]
 
 
 @dataclass(frozen=True, eq=False)

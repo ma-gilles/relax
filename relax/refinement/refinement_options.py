@@ -320,6 +320,14 @@ class LocalSearchOptions:
     def stops_after_local_search(self) -> bool:
         return self.stop_after_local_search or self.stop_after_local_search_profile or self.stop_after_local_search_score_only
 
+    def collects_profile(self, observer_collects: bool) -> bool:
+        """Whether local searches collect their profile: always for a profile probe, else by the mode, where
+        "auto" follows the run's observer (``observer_collects``)."""
+        collect = observer_collects if self.local_search_profile_mode == "auto" else self.local_search_profile_mode == "on"
+        if self.stop_after_local_search_profile:
+            collect = True
+        return collect
+
     def __post_init__(self):
         if self.sigma_ang_deg is not None and not self.sigma_ang_deg > 0:
             raise ValueError(f"sigma_ang_deg must be positive, got {self.sigma_ang_deg}")

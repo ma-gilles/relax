@@ -18,7 +18,6 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from recovar import utils
 from recovar.data_io import cryoem_dataset
 
 from relax.dense.score_outputs import (
@@ -84,6 +83,7 @@ from relax.refinement.half_inputs import (
     SigmaOffset,
     _sigma_offset_for_half,
     as_sigma_offset_half_pair,
+    best_rotation_matrices,
     configure_half_image_preprocessing,
     copy_optional_float_pair,
     initialize_halfsets,
@@ -441,13 +441,7 @@ def refine_single_volume(
     # Keep RELION's host-RFLOAT base grid separate so each perturbation starts
     # from the unrounded coordinates.  In double mode the score/pose grid is
     # also RFLOAT; explicit CUDA-f32 helpers cast only at their ABI boundary.
-    collect_local_search_profile = (
-        observer.collects_local_search_profiles
-        if options.local_search.local_search_profile_mode == "auto"
-        else options.local_search.local_search_profile_mode == "on"
-    )
-    if options.local_search.stop_after_local_search_profile:
-        collect_local_search_profile = True
+    collect_local_search_profile = options.local_search.collects_profile(observer.collects_local_search_profiles)
     setup_phase_seconds["sampling_grid"] = setup_clock.seconds
 
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
@@ -621,14 +615,7 @@ def refine_single_volume(
     # RELION measures the first iteration's orientation changes from the input angles, as its offset
     # changes from the input offsets (updateOverallChangesInHiddenVariables); they seed the smallest-change
     # trackers of the hidden-variable stall counter. An empty half keeps an empty stack, as the loop does.
-    previous_best_rotations = [
-        None
-        if half.rotation_eulers is None
-        else np.zeros((0, 3, 3), dtype=scoring_dtype)
-        if len(half.rotation_eulers) == 0
-        else np.asarray(utils.R_from_relion(np.asarray(half.rotation_eulers), degrees=True), dtype=scoring_dtype)
-        for half in halves
-    ]
+    previous_best_rotations = best_rotation_matrices(halves, dtype=scoring_dtype)
     perturb_rng = None if options.parity.perturb_seed is not None else np.random.default_rng()
     iteration = 0
     setup_phase_seconds["before_iterations"] = setup_clock.seconds
