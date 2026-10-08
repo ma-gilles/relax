@@ -97,8 +97,6 @@ def _format_column(values) -> list[str]:
     array = np.asarray(values)
     if array.dtype.kind == "f":
         return [_format_value(v) for v in array.astype(np.float64).tolist()]
-    if array.dtype.kind in "iub":
-        return [_format_value(v) for v in array.tolist()]
     return [_format_value(v) for v in array.tolist()]
 
 
@@ -397,15 +395,10 @@ def _class_map_paths(root: Path, snapshot: IterationSnapshot, half: int | None):
     return [Path(f"{stem}_class{k + 1:03d}.mrc") for k in range(int(snapshot.n_classes))]
 
 
-def _volume_shape(snapshot):
-    n = int(snapshot.box_size)
-    return (n, n, n)
-
-
 def _write_maps(root: Path, snapshot: IterationSnapshot) -> None:
     from relax.helpers.map_io import write_map
 
-    shape = _volume_shape(snapshot)
+    shape = (snapshot.box_size,) * 3
 
     def _write(path, volume_ft):
         write_map(path, _real_from_fourier(volume_ft, shape), voxel_size=snapshot.pixel_size)
@@ -933,9 +926,6 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     models = [read_star_blocks(directory / name) for name in model_names]
     halves = [models[0], models[0]] if k_class else models
 
-    def _general(model, label):
-        return model["model_general"][label]
-
     volume_shape = (box_size, box_size, box_size)
     means = []
     for model in models:
@@ -968,7 +958,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
 
     noise_shells = []
     for model in halves:
-        n_optics = int(_general(model, "rlnNrOpticsGroups"))
+        n_optics = int(model["model_general"]["rlnNrOpticsGroups"])
         n_shells = box_size // 2 + 1
         rows = np.zeros((n_optics, n_shells), dtype=np.float64)
         for g in range(n_optics):
@@ -993,7 +983,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     if all(p is None for p in direction_prior):
         direction_prior = None
 
-    avg_norm = tuple(float(_general(m, "rlnNormCorrectionAverage")) * float(box_size) ** 2 for m in halves)
+    avg_norm = tuple(float(m["model_general"]["rlnNormCorrectionAverage"]) * float(box_size) ** 2 for m in halves)
     classes_table = models[0]["model_classes"]
     acc_rot = _floats(classes_table["rlnAccuracyRotations"])
     acc_trans = _floats(classes_table["rlnAccuracyTranslationsAngst"])
