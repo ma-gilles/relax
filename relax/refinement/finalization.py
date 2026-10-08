@@ -525,6 +525,10 @@ def run_final_all_data(
         # class from its reference's power spectrum, the resolution, the class maps.
         final_ft_y = final_outs.Ft_y[0] + final_outs.Ft_y[1]
         final_ft_ctf = final_outs.Ft_ctf[0] + final_outs.Ft_ctf[1]
+        # As for K=1, drop the pass outputs' references to the partition accumulators: the summed ones are the
+        # only ones read from here on.
+        final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
+        final_outs.Ft_ctf[0] = final_outs.Ft_ctf[1] = None
         final_mstep_full_half_axis = _resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
         class_weights = _class_weights_from_posterior(
             final_outs.class_posterior,
