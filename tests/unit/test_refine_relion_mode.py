@@ -213,10 +213,12 @@ def test_local_search_precision_defaults_to_production_float32(monkeypatch):
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
 
     assert scoring_policy.local_precision(
+        scoring_policy.DENSE_PRECISION,
         12,
         pass_index=1,
     ) == dtype_policy_module.DensePrecisionPolicy()
     assert scoring_policy.local_precision(
+        scoring_policy.DENSE_PRECISION,
         12,
         pass_index=2,
     ) == dtype_policy_module.DensePrecisionPolicy()
@@ -236,14 +238,17 @@ def test_local_search_precision_targeted_diagnostic_upgrades_only_pass2(monkeypa
     monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "12")
 
     assert scoring_policy.local_precision(
+        scoring_policy.DENSE_PRECISION,
         12,
         pass_index=1,
     ) == dtype_policy_module.DensePrecisionPolicy()
     assert scoring_policy.local_precision(
+        scoring_policy.DENSE_PRECISION,
         12,
         pass_index=2,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
     assert scoring_policy.local_precision(
+        scoring_policy.DENSE_PRECISION,
         11,
         pass_index=2,
     ) == dtype_policy_module.DensePrecisionPolicy()
@@ -263,10 +268,12 @@ def test_local_search_precision_global_switches_upgrade_both_passes(monkeypatch)
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
 
     assert scoring_policy.local_precision(
+        scoring_policy.DENSE_PRECISION,
         12,
         pass_index=1,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
     assert scoring_policy.local_precision(
+        scoring_policy.DENSE_PRECISION,
         12,
         pass_index=2,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
@@ -443,6 +450,7 @@ def test_local_search_precision_rejects_unknown_pass(monkeypatch):
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     with pytest.raises(ValueError, match="pass_index"):
         scoring_policy.local_precision(
+            scoring_policy.DENSE_PRECISION,
             12,
                 pass_index=3,
         )

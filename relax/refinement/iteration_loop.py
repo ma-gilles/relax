@@ -927,6 +927,7 @@ def refine_single_volume(
             n_classes=options.k_class.n_classes,
             voxel_size=source_pixel_size_angstrom,
             symmetry=options.symmetry.point_group,
+            dtype=scoring_dtype,
         ),
     )
     # Unperturbed base grid — `coarse_grids.translations` may be replaced per-iter by
@@ -951,6 +952,7 @@ def refine_single_volume(
         image_shape=image_geometry.image_shape,
         volume_shape=volume_shape,
         n_classes=options.k_class.n_classes,
+        precision=options.precision,
         log=logger,
     )
 
@@ -1038,6 +1040,7 @@ def refine_single_volume(
             jnp.asarray(init_mean_variance),
             use_per_half_mean_variance=options.parity.use_per_half_mean_variance,
             k_class_enabled=k_class_enabled,
+            dtype=scoring_dtype,
             log=logger,
         )
         # Per-shell radial profiles of the input pixel-array noise variances, for the

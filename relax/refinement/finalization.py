@@ -199,7 +199,7 @@ def run_final_all_data(
         rng=perturb_rng,
         dtype=scoring_dtype,
     )
-    final_precision = local_precision(final_sampling.settings.relion_iteration, pass_index=2)
+    final_precision = local_precision(options.precision, final_sampling.settings.relion_iteration, pass_index=2)
     ## THIS ALL SHOULD BE AN OBJECT/DICT/ENUM OR SOMETHING PROBABLY WITH THESE DECISIONS OR SOMETHING?
     ## SHOULD BE WANTING TO DEFINE 100 THINGS LIKE THIS
     if final_use_local:
@@ -292,6 +292,8 @@ def run_final_all_data(
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
             adaptive_pass2=options.variants.local_adaptive_pass2.at(state.adaptive_oversampling),
+            precision=options.precision,
+            fine_precision=final_precision,
         )
         final_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration + 1,
@@ -345,6 +347,7 @@ def run_final_all_data(
             firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
+            precision=options.precision,
         )
     final_outs = PerHalfOutputs()
     for half, projector in zip(halves, final_projectors, strict=True):

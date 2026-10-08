@@ -3,6 +3,7 @@
 import numpy as np
 
 from relax.classification import k_class
+from relax.dense import scoring_policy
 from relax.refinement import half_scoring
 from relax.refinement.refinement_options import ScoringVariants
 
@@ -70,6 +71,7 @@ def test_common_engine_keywords_are_the_sparse_pass2_keywords():
                 bpref_device_signature_active=False,
                 debug_iteration=3,
                 relion_x_half_mstep=ScoringVariants.from_environ().k1_relion_x_half_mstep,
+                precision=scoring_policy.DENSE_PRECISION,
             ),
         )
 

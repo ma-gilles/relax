@@ -10,6 +10,7 @@ from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
+from relax.dense import scoring_policy
 from relax.helpers import batch_planning, oversampling
 from relax.helpers.batch_planning import (
     _estimate_relion_em_batch_sizes,
@@ -89,6 +90,7 @@ def _dense_owners(**values):
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
             debug_iteration=values.pop("debug_iteration", None),
             relion_x_half_mstep=ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
+            precision=scoring_policy.DENSE_PRECISION,
         ),
         optics_shapes.OpticsSpec(),
     )

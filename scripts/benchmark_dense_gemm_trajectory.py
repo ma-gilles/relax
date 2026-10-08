@@ -184,6 +184,7 @@ def load_half_metadata(models, data_table, half_rows, *, voxel_size, base_transl
 
 def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, translations, rotation_tile, translation_tile):
     """Freeze a deterministic subset of the canonical checkpoint's full SO(3)/shift grid."""
+    from relax.dense import scoring_policy
     from relax.dense.gemm_experiment import native_phase_table, pad_grid
     from relax.helpers.oversampling import prepare_adaptive_pass2_grids
     from relax.refinement.iteration_planning import build_initial_coarse_grids
@@ -204,6 +205,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
         translation_range=float(sampling_state["offset_range"]) / pixel_size,
         translation_step=float(sampling_state["offset_step"]) / pixel_size,
         n_classes=1, voxel_size=pixel_size, symmetry="C1",
+        dtype=scoring_policy.DENSE_PRECISION.rotation_real_dtype,
     )
     pose_grid = prepare_adaptive_pass2_grids(
         base.rotation_grid.rotations, base.translations, base.base_translations,

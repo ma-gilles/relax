@@ -83,7 +83,7 @@ def test_incompatible_real_reference_fails_without_broadcast(value, classes):
 def test_shared_tau2_keeps_original_object(classes):
     initial = jnp.asarray([1.0, 3.0], dtype=jnp.float32)
     model = initialize_reference_model(
-        [None, None], initial, use_per_half_mean_variance=False, k_class_enabled=classes, log=LOG
+        [None, None], initial, use_per_half_mean_variance=False, k_class_enabled=classes, dtype=np.float32, log=LOG
     )
     shared, halves = model.tau2, model.tau2_per_half
     assert shared is initial
@@ -91,13 +91,11 @@ def test_shared_tau2_keeps_original_object(classes):
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-def test_half_tau2_values_and_existing_promoted_average(dtype, monkeypatch):
-    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "0")
-    monkeypatch.setenv("RELAX_USE_FLOAT64_PROJECTIONS", "0")
+def test_half_tau2_values_and_existing_promoted_average(dtype):
     source = np.array([[1, 2**24, 3], [2**-20, -(2**24), 5]], dtype=dtype)
     initial = jnp.asarray(source)
     model = initialize_reference_model(
-        [None, None], initial, use_per_half_mean_variance=True, k_class_enabled=False, log=LOG
+        [None, None], initial, use_per_half_mean_variance=True, k_class_enabled=False, dtype=np.float32, log=LOG
     )
     shared, halves = model.tau2, model.tau2_per_half
     expected = ((source[0].astype(np.float64) + source[1].astype(np.float64)) * 0.5).astype(np.float32)
@@ -114,4 +112,4 @@ def test_half_tau2_values_and_existing_promoted_average(dtype, monkeypatch):
 )
 def test_half_tau2_rejects_unsupported_inputs(shape, kclass, message):
     with pytest.raises(ValueError, match=message):
-        initialize_reference_model([None, None], jnp.ones(shape), use_per_half_mean_variance=True, k_class_enabled=kclass, log=LOG)
+        initialize_reference_model([None, None], jnp.ones(shape), use_per_half_mean_variance=True, k_class_enabled=kclass, dtype=np.float32, log=LOG)

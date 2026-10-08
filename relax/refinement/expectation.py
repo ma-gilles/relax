@@ -17,6 +17,7 @@ from relax.dense.score_outputs import (
     _record_score_profile,
     empty_half_result,
 )
+from relax.dense.scoring_policy import local_precision
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.diagnostics.iteration import _bpref_device_signature_active_for_numbered_half
@@ -748,6 +749,8 @@ def score_numbered_half(
                 nyquist_column_counting=options.consistency.nyquist_column_counting,
                 relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
                 adaptive_pass2=options.variants.local_adaptive_pass2.at(sampling.search.oversampling_order),
+                precision=options.precision,
+                fine_precision=local_precision(options.precision, numbered_relion_iteration, pass_index=2),
             ),
             diagnostics=replace(
                 phase.local_diagnostics, bpref_device_signature_active=bpref_device_signature_active,
@@ -812,6 +815,7 @@ def score_numbered_half(
             firstiter_cc_support=options.consistency.firstiter_cc_support,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
+            precision=options.precision,
         )
         dense_result = _score_half_dense_in_bpref_scope(
             dense_half,

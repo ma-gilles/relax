@@ -10,7 +10,6 @@ from types import SimpleNamespace
 import numpy as np
 
 from relax.classification.k_class_inputs import _select_projector_half_for_class
-from relax.dense import scoring_policy
 from relax.helpers.batch_planning import (
     _RELION_EM_COMPACT_K1_FIXED_BASE_GB,
     _estimate_relion_em_batch_sizes,
@@ -18,6 +17,7 @@ from relax.helpers.batch_planning import (
     _safe_dense_k_class_rotation_block_size,
     _safe_firstiter_cc_image_batch_size,
 )
+from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
 from relax.helpers.projection import _host_relion_projector_texture_enabled
 from relax.refinement import optics_shapes
@@ -34,6 +34,8 @@ class BatchPlanner:
     image_shape: tuple
     volume_shape: tuple
     n_classes: int
+    # The run's dense precision (RefinementOptions.precision).
+    precision: DensePrecisionPolicy
     log: object
 
     def __call__(
@@ -45,7 +47,7 @@ class BatchPlanner:
     ):
         """Reduce batch sizes using the selected phase's pending allocations."""
         use_float64_scoring_for_batch = bool(
-            scoring_policy.DENSE_PRECISION.use_float64_scoring
+            self.precision.use_float64_scoring
             or os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
         )
         runtime_free_memory_gb = None
@@ -172,8 +174,8 @@ def prepare_half_batches(
         None if projector is None else projector.data, 0, n_classes,
     )
     compact_precision = not (
-        scoring_policy.DENSE_PRECISION.use_float64_scoring
-        or scoring_policy.DENSE_PRECISION.use_float64_projections
+        planner.precision.use_float64_scoring
+        or planner.precision.use_float64_projections
         or os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
     )
     if (

@@ -49,11 +49,13 @@ RELION_EXACT_FINE_GAUSSIAN = not parse_env_true_flag(
     "RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN"
 )
 
-def local_precision(iteration: int | None, *, pass_index: int) -> DensePrecisionPolicy:
-    """Resolve production precision and the configured float64 diagnostic override."""
+def local_precision(
+    precision: DensePrecisionPolicy, iteration: int | None, *, pass_index: int
+) -> DensePrecisionPolicy:
+    """The run's ``precision`` for one local-search pass, with the configured float64 diagnostic override."""
     if pass_index not in (1, 2):
         raise ValueError(f"local-search pass_index must be 1 or 2, got {pass_index}")
-    return DENSE_PRECISION.for_local_pass(iteration, pass_index=pass_index)
+    return precision.for_local_pass(iteration, pass_index=pass_index)
 
 
 # Off by default: reproduces RELION's GPU-accelerated projector/backprojector

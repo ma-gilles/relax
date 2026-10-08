@@ -33,12 +33,11 @@ from relax.dense.scoring_policy import (
     RELION_ACC_DOUBLE_FLOORF_QUIRK,
     RELION_ADAPTIVE_FRACTION,
     RELION_FOURIER_WINDOW_SQUARE,
-    _dense_global_scoring_dtype,
-    local_precision,
 )
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.diagnostics.local_debug import log_local_adaptive_support, log_local_denominator_support
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
+from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.oversampling import AdaptivePass2Grids, prepare_adaptive_pass2_grids
 from relax.local.local_layout import (
@@ -261,6 +260,8 @@ class DenseExecutionPolicy:
     nyquist_column_counting: str = "relion"
     # ScoringVariants.relion_x_half_mstep for this half's class count: RELION's x-half M-step accumulators.
     relion_x_half_mstep: bool
+    # The run's dense precision (RefinementOptions.precision): engine precision and the pose dtype.
+    precision: DensePrecisionPolicy
 
 
 def _score_adaptive_kclass_dense(
@@ -400,7 +401,7 @@ def _score_kclass_at_given_poses(
     eulers = np.asarray(particles.rotation_eulers, dtype=np.float64)
     stored = np.asarray(particles.translations, dtype=np.float64)
     base = np.zeros_like(stored) if priors.translation_search_base is None else np.asarray(priors.translation_search_base)
-    pose_dtype = _dense_global_scoring_dtype()
+    pose_dtype = execution.precision.rotation_real_dtype
     grids = given_pose_grids(
         np.asarray(utils.R_from_relion(eulers, degrees=True), dtype=pose_dtype),
         # RELION's offsets are RFLOAT: the remainder stays double until pass 2 forms its phase.
@@ -668,8 +669,8 @@ def _score_half_dense_one_shape(
         "half_spectrum_scoring": True,
         "projection_padding_factor": PROJECTION_PADDING_FACTOR,
         "reconstruction_padding_factor": RECONSTRUCTION_PADDING_FACTOR,
-        "use_float64_scoring": scoring_policy.DENSE_PRECISION.use_float64_scoring,
-        "use_float64_projections": scoring_policy.DENSE_PRECISION.use_float64_projections,
+        "use_float64_scoring": execution.precision.use_float64_scoring,
+        "use_float64_projections": execution.precision.use_float64_projections,
         "relion_exact_fine_gaussian": scoring_policy.RELION_EXACT_FINE_GAUSSIAN,
         "do_gridding_correction": True,
         "square_window": RELION_FOURIER_WINDOW_SQUARE,
@@ -861,7 +862,7 @@ def _score_half_dense_one_shape(
             rot_pmap_for_collapse=rot_pmap_for_collapse,
             adaptive_os_local=adaptive_os_local,
             require_best_pose_details=execution.return_best_pose_details or variant.skip_align,
-            pose_dtype=_dense_global_scoring_dtype(),
+            pose_dtype=execution.precision.rotation_real_dtype,
         )
         if variant.skip_align:
             _keep_given_poses(score_result, half, given)
@@ -947,7 +948,7 @@ def _score_half_dense_one_shape(
         k1_adaptive_result.stats,
         rot_parent_map=rot_pmap_for_collapse,
         n_rot_coarse=sampling.effective_rotations.shape[0],
-        dtype=_dense_global_scoring_dtype(),
+        dtype=execution.precision.rotation_real_dtype,
     )
     noise_stats_k = k1_adaptive_result.aggregate_noise_stats
     if noise_stats_k is None and k1_adaptive_result.noise_stats is not None:
@@ -964,7 +965,7 @@ def _score_half_dense_one_shape(
     if execution.return_best_pose_details:
         if k1_adaptive_result.best_pose_rotations is None or k1_adaptive_result.best_pose_translations is None:
             raise RuntimeError("K=1 adaptive path did not return best pose details")
-        pose_dtype = _dense_global_scoring_dtype()
+        pose_dtype = execution.precision.rotation_real_dtype
         best_rots = np.asarray(k1_adaptive_result.best_pose_rotations, dtype=pose_dtype)
         magnification = dataset_projection_magnification(half.particles.dataset)
         if optics.projection_scale != 1.0 or magnification is not None:
@@ -1210,6 +1211,10 @@ class LocalExecutionPolicy:
     # ScoringVariants: the K=1 x-half M-step, and adaptive pass 2's support (off without oversampling).
     relion_x_half_mstep: bool
     adaptive_pass2: LocalAdaptivePass2Support
+    # The run's dense precision (pass 1 and the pose dtype), and pass 2's, which a float64 diagnostic of this
+    # iteration may widen (scoring_policy.local_precision); resolved by the caller.
+    precision: DensePrecisionPolicy
+    fine_precision: DensePrecisionPolicy
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1591,8 +1596,8 @@ def _score_half_local_one_shape(
     local_debug_iteration = (
         diagnostics.iteration + 1 if diagnostics.debug_iteration is None else int(diagnostics.debug_iteration)
     )
-    parent_precision = local_precision(local_debug_iteration, pass_index=1)
-    fine_precision = local_precision(local_debug_iteration, pass_index=2)
+    parent_precision = execution.precision
+    fine_precision = execution.fine_precision
     # Adaptive pass-2 (fine, oversampled) hypothesis layout precision; see
     # ``parent_local_layout_dtype`` below for the matching pass-1 value.
     fine_local_layout_dtype = fine_precision.rotation_real_dtype
@@ -1942,8 +1947,9 @@ def _score_half_local_one_shape(
             n_classes=n_classes,
             significant_counts=relion_significant_counts_k,
             mstep_accumulator_shape=mstep_accumulator_shape,
+            pose_dtype=execution.precision.rotation_real_dtype,
         )
-    pose_dtype = _dense_global_scoring_dtype()
+    pose_dtype = execution.precision.rotation_real_dtype
     best_rots = np.asarray(best_rots_k, dtype=pose_dtype)
     best_eulers = (
         np.asarray(local_outputs.best_pose_eulers_deg, dtype=np.float64)
@@ -1966,7 +1972,7 @@ def _score_half_local_one_shape(
     )
 
 
-def _class_local_half_result(class_pass, *, n_classes: int, significant_counts, mstep_accumulator_shape):
+def _class_local_half_result(class_pass, *, n_classes: int, significant_counts, mstep_accumulator_shape, pose_dtype):
     """A Class3D local pass as the half's K-class result, as the subtomogram K-class pass adapts its own.
 
     ``class_pass`` is the resident local engine's ``ResidentKClassPass2Output``; its class rotation sums
@@ -1990,7 +1996,7 @@ def _class_local_half_result(class_pass, *, n_classes: int, significant_counts, 
         rot_pmap_for_collapse=None,
         adaptive_os_local=0,
         require_best_pose_details=True,
-        pose_dtype=_dense_global_scoring_dtype(),
+        pose_dtype=pose_dtype,
     )
     score_result.ha = np.asarray(score_result.ha, dtype=np.int32)
     score_result.significant_counts = significant_counts

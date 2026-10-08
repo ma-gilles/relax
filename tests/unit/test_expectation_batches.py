@@ -1,12 +1,13 @@
 """Pass-specific staging and batch planning preserve memory and grid contracts."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.dense import scoring_policy
+from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.refinement import expectation_batches as batches
 from relax.refinement.refinement_options import RefinementBatching
 
@@ -15,13 +16,10 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture
 def planner(monkeypatch):
-    monkeypatch.setattr(scoring_policy, "DENSE_PRECISION", SimpleNamespace(
-        use_float64_scoring=False, use_float64_projections=False,
-    ))
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     return batches.BatchPlanner(
         requested=RefinementBatching(image_batch_size=200, rotation_block_size=1000),
-        image_shape=(16, 16), volume_shape=(16, 16, 16), n_classes=1,
+        image_shape=(16, 16), volume_shape=(16, 16, 16), n_classes=1, precision=DensePrecisionPolicy(),
         log=SimpleNamespace(info=lambda *args: None),
     )
 
@@ -145,7 +143,7 @@ def test_diagnostic_precision_keeps_compact_planning_disabled(planner, monkeypat
     if precision == "pass2":
         monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "2")
     else:
-        monkeypatch.setattr(scoring_policy, "DENSE_PRECISION", SimpleNamespace(
+        planner = replace(planner, precision=DensePrecisionPolicy(
             use_float64_scoring=precision == "scoring", use_float64_projections=precision == "projection",
         ))
     monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: pytest.fail("compact planning"))

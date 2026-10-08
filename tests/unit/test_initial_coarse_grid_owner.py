@@ -75,6 +75,7 @@ def _initial_grids(**overrides):
         kwargs.pop("translations"),
         translation_range=translation_range,
         translation_step=translation_step,
+        dtype=iteration_planning._dense_global_scoring_dtype(),
         **kwargs,
     )
 
@@ -143,6 +144,7 @@ def test_controller_materializes_explicit_coarse_grid_variants():
         "n_classes",
         "voxel_size",
         "symmetry",
+        "dtype",
     )
     assert tuple(
         inspect.signature(iteration_planning.build_sealed_initial_coarse_grids).parameters

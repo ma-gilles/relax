@@ -9,6 +9,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
+from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.orientation_priors import HalfDirectionLogPriors
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement import expectation
@@ -72,7 +73,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         class_log_priors=None, sigma_offset_angstrom=2.,
         batch_planner=BatchPlanner(requested=RefinementBatching(image_batch_size=2, rotation_block_size=2),
                                    image_shape=(4, 4), volume_shape=(4, 4, 4), n_classes=n_classes,
-                                   log=logging.getLogger(__name__)),
+                                   precision=DensePrecisionPolicy(), log=logging.getLogger(__name__)),
         image_geometry=ImageGeometry(image_shape=(4, 4), pixel_size_angstrom=1.25),
         padded_volume_shape=(8, 8, 8),
         use_adaptive=adaptive, multi_shape_halves=False, variant=variant,

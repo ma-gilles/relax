@@ -21,7 +21,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils, mask
 
-from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.helpers.env_flags import parse_env_auto_flag
 from relax.helpers.orientation_priors import (
     class_weights_from_direction_prior,
@@ -62,8 +61,11 @@ def shared_tau2_per_half(tau2) -> list:
     return [tau2, tau2]
 
 
-def initialize_reference_model(half_maps, initial_mean_variance, *, use_per_half_mean_variance, k_class_enabled, log):
-    """Attach shared/per-half tau2 to the already normalized references."""
+def initialize_reference_model(
+    half_maps, initial_mean_variance, *, use_per_half_mean_variance, k_class_enabled, dtype, log
+):
+    """Attach shared/per-half tau2 to the already normalized references; a per-half pair's mean is in the
+    scoring ``dtype``."""
     if use_per_half_mean_variance:
         if k_class_enabled:
             raise ValueError("per-half scoring tau2 is supported only for K=1")
@@ -75,7 +77,7 @@ def initialize_reference_model(half_maps, initial_mean_variance, *, use_per_half
         ]
         mean_variance = jnp.asarray(
             0.5 * (mean_variance_per_half[0].astype(jnp.float64) + mean_variance_per_half[1].astype(jnp.float64)),
-            dtype=_dense_global_scoring_dtype(),
+            dtype=dtype,
         )
         log.info("Initialized exact per-half K=1 tau2 priors")
     else:

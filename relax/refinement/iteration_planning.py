@@ -10,7 +10,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax import sampling
-from relax.dense import scoring_policy
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.diagnostics.relion_replay import _sealed_sampling_base_grids
 from relax.helpers.convergence import RefinementState, _exhaustive_grid_order_for_state, healpix_angular_step
@@ -484,10 +483,10 @@ def build_initial_coarse_grids(
     n_classes,
     voxel_size,
     symmetry="C1",
+    dtype,
 ) -> CoarseGrids:
-    """Pair RELION's canonical initial rotations with its translation grid."""
+    """Pair RELION's canonical initial rotations with its translation grid, in the scoring ``dtype``."""
 
-    dtype = _dense_global_scoring_dtype()
     rotation_grid = sampling.relion_scoring_rotation_grid(
         healpix_order,
         dtype=dtype,
@@ -665,7 +664,7 @@ def coarse_pass1_rotations(
         if replay_metadata is not None
         else int(rotation_grid.healpix_order)
     )
-    adaptive_pass1_use_float64 = bool(scoring_policy.DENSE_PRECISION.use_float64_scoring)
+    adaptive_pass1_use_float64 = options.precision.use_float64_scoring
     adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
         source_eulers,
         random_perturbation if (replay_metadata is not None or perturb_factor > 0) else 0.0,

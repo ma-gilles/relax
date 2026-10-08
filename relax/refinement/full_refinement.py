@@ -33,6 +33,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import relax
+from relax.dense import scoring_policy
 from relax.diagnostics import frozen_boundary_cli, initial_model_replay, observers, replay_inputs
 from relax.diagnostics.state_swap_probe import (
     build_state_swap_probe,
@@ -42,7 +43,6 @@ from relax.diagnostics.state_swap_probe import (
 from relax.helpers import xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
-from relax.helpers.env_flags import parse_env_true_flag
 from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
@@ -634,24 +634,13 @@ def main(command=None):
     relion_firstiter_ini_high_angstrom = runtime_controls.firstiter_ini_high_angstrom
 
     # ---- Load initial volume ----
-    # RELION's Image<RFLOAT>::read() widens a reference MRC (on-disk float32)
-    # to RFLOAT (double, in our ACC_DOUBLE_PRECISION oracle build) as part of
-    # the read itself (src/ml_model.cpp:MlModel::readImages -> Iref.push_back
-    # (img()), where Iref is std::vector<MultidimArray<RFLOAT>>). Every
-    # downstream step -- including the FFT that builds Projector::data
-    # (MultidimArray<Complex>, Complex = tComplex<RFLOAT>) -- then runs at
-    # that same double precision. Match that here instead of narrowing to
-    # float32/complex64 immediately after the (inherently float32-on-disk)
-    # MRC read, which would otherwise defeat RELAX_USE_FLOAT64_PROJECTIONS
-    # no matter how carefully every later cast is fixed (a "narrow-then-
-    # widen" bug: DensePrecisionPolicy.cast_projection_volume, gated on this
-    # same flag, cannot recover precision already lost here). Gated on
-    # RELAX_USE_FLOAT64_PROJECTIONS specifically (not also
-    # _SCORING/_dense_global_scoring_dtype's OR) to match
-    # projection_complex_dtype's own condition exactly and avoid forcing an
-    # unrequested precision/memory cost on the projection path when a
-    # caller wants float64 scoring without float64 projections.
-    _init_volume_use_float64 = parse_env_true_flag("RELAX_USE_FLOAT64_PROJECTIONS")
+    # RELION's Image<RFLOAT>::read() widens a reference MRC (on-disk float32) to RFLOAT (double in the
+    # ACC_DOUBLE_PRECISION oracle build); every later step, including the FFT that builds Projector::data,
+    # runs at that precision. Narrowing here would defeat float64 projections however carefully later casts
+    # widen again (DensePrecisionPolicy.cast_projection_volume cannot recover it). Gated on
+    # use_float64_projections alone, as projection_complex_dtype is, so float64 scoring alone costs no
+    # projection memory. The process's precision policy owns the flag (RefinementOptions.precision is it).
+    _init_volume_use_float64 = scoring_policy.DENSE_PRECISION.use_float64_projections
     _init_volume_dtype = np.float64 if _init_volume_use_float64 else np.float32
     _init_volume_complex_dtype = np.complex128 if _init_volume_use_float64 else np.complex64
 

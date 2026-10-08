@@ -14,6 +14,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
+from relax.dense import scoring_policy
 from relax.dense.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
 from relax.helpers.types import RelionStats, make_noise_stats
 from relax.refinement import half_scoring, optics_shapes
@@ -185,6 +186,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             disable_adjoint_y=False,
             disable_adjoint_ctf=False,
             relion_x_half_mstep=ScoringVariants.from_environ().k1_relion_x_half_mstep,
+            precision=scoring_policy.DENSE_PRECISION,
         ),
         optics,
     )

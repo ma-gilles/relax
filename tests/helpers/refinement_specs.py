@@ -2,6 +2,7 @@
 
 import dataclasses
 
+from relax.dense import scoring_policy
 from relax.refinement import half_scoring, local_sampling, local_search_iteration, optics_shapes
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.projector_preparation import PreparedProjector
@@ -193,6 +194,13 @@ def local_half_owners(**values):
                 full_parent=values.pop("adaptive_pass2_full_parent", False),
                 rotation_only=values.pop("adaptive_pass2_rotation_only", False),
                 denominator_mode=values.pop("adaptive_pass2_denominator_mode", None),
+            ),
+            # The process precision, and pass 2's for the debug iteration (iteration + 1 by default).
+            precision=scoring_policy.DENSE_PRECISION,
+            fine_precision=scoring_policy.local_precision(
+                scoring_policy.DENSE_PRECISION,
+                values["iteration"] + 1 if values.get("debug_iteration") is None else values["debug_iteration"],
+                pass_index=2,
             ),
         ),
         half_scoring.LocalDiagnosticPolicy(
