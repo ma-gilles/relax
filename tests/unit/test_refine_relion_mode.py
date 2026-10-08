@@ -140,6 +140,7 @@ from relax.sampling import (
     rotation_grid_size,
 )
 from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores
+from relax.scoring.pass1_results import Pass1Result
 from relax.scoring.significance import _compute_k_class_significance_batched
 
 pytestmark = pytest.mark.unit
@@ -9416,7 +9417,7 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
         assert kwargs["score_mode"] == "normalized_cc"
         assert kwargs["max_significants"] == 1
         assert kwargs["return_class_best"] is True
-        return (
+        return Pass1Result(
             None,
             None,
             None,

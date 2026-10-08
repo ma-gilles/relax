@@ -38,6 +38,7 @@ from relax.helpers.types import (
 )
 from relax.refinement.noise_updates import update_class_sigma_offset_from_posterior
 from relax.relion.relion_metadata import read_relion_direction_priors
+from relax.scoring.pass1_results import Pass1Result
 from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
 
 
@@ -98,7 +99,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
 
     def coarse(*args, **kwargs):
         coarse_calls.append(kwargs)
-        return (None, np.ones(1, dtype=np.int32), coarse_pose, np.zeros(1, dtype=np.int32),
+        return Pass1Result(None, np.ones(1, dtype=np.int32), coarse_pose, np.zeros(1, dtype=np.int32),
                 [[np.asarray([0], dtype=np.int32)] for _ in range(n_classes)],
                 {"significant_cutoff_counts": np.ones(1, dtype=np.int32),
                  "relion_f32_sum_weight": coarse_sum, "relion_f32_max_posterior": coarse_pmax})
@@ -173,7 +174,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch):
 
     def fake_significance(*_args, **kwargs):
         significance_calls.append(kwargs)
-        return (
+        return Pass1Result(
             None,
             np.full(1, 6, dtype=np.int32),
             np.zeros(1, dtype=np.int32),
@@ -726,7 +727,7 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
 
     def fake_compute_significance(*args, **kwargs):
         calls.append(kwargs)
-        return (
+        return Pass1Result(
             None,
             None,
             None,
@@ -1532,7 +1533,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
 
     def fake_compute_significance(*args, **kwargs):
         calls.append(kwargs)
-        return (
+        return Pass1Result(
             None,
             None,
             None,

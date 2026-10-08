@@ -1,7 +1,7 @@
 """What pass 1 hands from one stage to the next, as records."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -225,3 +225,21 @@ class Pass1Outputs:
             device_significance_ids=[[] for _ in range(plan.n_classes)],
             device_significance_starts=[[] for _ in range(plan.n_classes)],
         )
+
+
+class Pass1Result(NamedTuple):
+    """What pass 1 returns to its callers; the six positions of the tuple it returned before, now named.
+
+    ``sig_rot_any`` is the bool ``[K, R]`` of rotations with a significant sample for some image, ``n_sig_all`` the
+    significant samples per image (ties included), ``hard_assignment`` and ``class_assignment`` the best joint pose and
+    class per image, and ``significant_sample_indices`` the per-class supports (``None`` without
+    ``collect_significance``). ``full_stats`` is the dict of the pass's statistics and reports
+    (:func:`relax.scoring.pass1_assembly.build_full_stats`).
+    """
+
+    sig_rot_any: np.ndarray
+    n_sig_all: np.ndarray
+    hard_assignment: np.ndarray
+    class_assignment: np.ndarray
+    significant_sample_indices: Any
+    full_stats: dict

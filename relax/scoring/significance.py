@@ -34,7 +34,14 @@ from relax.scoring.pass1_assembly import build_full_stats, log_batch_timing, sig
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
 from relax.scoring.pass1_publish import publish_batch
-from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, PassShape, ScoreDumpContext
+from relax.scoring.pass1_results import (
+    BatchOutputs,
+    OutputPlan,
+    Pass1Outputs,
+    Pass1Result,
+    PassShape,
+    ScoreDumpContext,
+)
 from relax.scoring.pass1_scores import ScoreProgramPlan, block_prior_terms, run_score_program, score_blocks
 from relax.scoring.pass1_support import (
     NO_SUPPORT,
@@ -847,11 +854,11 @@ def _compute_k_class_significance_batched(
     )
     if tree_rescore_enabled:
         log_tree_rescore_totals(tree_rescore_totals)
-    return (
-        outputs.sig_rot_any,
-        outputs.n_sig_all,
-        outputs.hard_assignment,
-        outputs.class_assignment,
-        significant_sample_indices,
-        full_stats,
+    return Pass1Result(
+        sig_rot_any=outputs.sig_rot_any,
+        n_sig_all=outputs.n_sig_all,
+        hard_assignment=outputs.hard_assignment,
+        class_assignment=outputs.class_assignment,
+        significant_sample_indices=significant_sample_indices,
+        full_stats=full_stats,
     )

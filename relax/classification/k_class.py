@@ -835,7 +835,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         translation_phase_source=engine_kwargs.get("translation_phase_source"),
         **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(engine_kwargs),
-    )[-1]
+    ).full_stats
     from relax.diagnostics.global_winner_summary import maybe_dump_global_winner_summary
 
     maybe_dump_global_winner_summary(
@@ -1835,14 +1835,7 @@ def run_dense_k_class_em_adaptive(
             sig_kwargs["return_relion_f32_normalization"] = True
 
         with nvtx.annotate("kclass.adaptive.significance", color="orange", domain=NVTX_DOMAIN_EM):
-            (
-                _sig_rot_any_by_class,
-                _n_sig_per_image,
-                _coarse_hard_assignment,
-                _coarse_class_assignment,
-                sig_sample_indices_by_class,
-                _full_coarse_stats,
-            ) = _compute_k_class_significance_batched(
+            pass1_result = _compute_k_class_significance_batched(
                 experiment_dataset,
                 noise_variance,
                 coarse_rotations_np,
@@ -1852,6 +1845,8 @@ def run_dense_k_class_em_adaptive(
                 **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
                 **_translation_angle_scale_kwargs(engine_kwargs),
             )
+        sig_sample_indices_by_class = pass1_result.significant_sample_indices
+        _full_coarse_stats = pass1_result.full_stats
         if image_seed_classes is not None:
             sig_sample_indices_by_class = seed_iteration_supports(
                 sig_sample_indices_by_class[0], image_seed_classes, n_classes
@@ -1927,7 +1922,7 @@ def run_dense_k_class_em_adaptive(
     if reuse_zero_oversampling_coarse_state:
         pass2_kwargs["relion_f32_normalization_sum_weight"] = _full_coarse_stats["relion_f32_sum_weight"]
         pass2_kwargs["relion_coarse_max_posterior"] = _full_coarse_stats["relion_f32_max_posterior"]
-        pass2_kwargs["relion_coarse_hard_assignment"] = _coarse_hard_assignment
+        pass2_kwargs["relion_coarse_hard_assignment"] = pass1_result.hard_assignment
     if pass2_use_float64_scoring is not None:
         pass2_kwargs["use_float64_scoring"] = bool(pass2_use_float64_scoring)
     if pass2_use_float64_projections is not None:
