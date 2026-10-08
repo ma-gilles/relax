@@ -60,6 +60,18 @@ def test_read_relion_model_pixel_size_uses_mrc_header(tmp_path):
     assert read_relion_model_pixel_size(model) == pytest.approx(1.4166666269302368)
 
 
+def test_read_relion_model_pixel_size_divides_in_double_like_relion(tmp_path):
+    # rwMRC.h:239: (RFLOAT)header->a / header->mx, the float32 cell length divided in double. For 1.244 A at
+    # box 200 a float32 division is 4.6e-8 relative off.
+    model = tmp_path / "run_it001_half1_class001.mrc"
+    with mrcfile.new(model, overwrite=False) as handle:
+        handle.set_data(np.zeros((200, 4, 4), dtype=np.float32))
+        handle.header.cella = (np.float32(1.244 * 200),) * 3
+        handle.header.mx = handle.header.my = handle.header.mz = 200
+    expected = float(np.float64(np.float32(1.244 * 200)) / 200.0)
+    assert_matches(np.float64(read_relion_model_pixel_size(model)), np.float64(expected))
+
+
 def test_read_relion_optics_image_geometry_uses_particle_star(tmp_path):
     particle_star = tmp_path / "particles.star"
     starfile.write(
