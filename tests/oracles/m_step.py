@@ -12,7 +12,7 @@ import recovar.core.fourier_transform_utils as fourier_transform_utils
 from recovar import core, utils
 from recovar.core.configs import ForwardModelConfig
 
-from relax.sampling import translations_to_indices
+from oracles.core import translations_to_indices
 
 logger = logging.getLogger(__name__)
 

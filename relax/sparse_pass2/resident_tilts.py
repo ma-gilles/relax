@@ -39,21 +39,6 @@ class ChunkTiltLayout(NamedTuple):
     n_valid_images: int
 
 
-def validate_unit_image_offsets(unit_image_offsets, n_units: int) -> np.ndarray:
-    """The CSR of images over units: ``[n_units + 1]``, starting at 0, every unit owning an image."""
-
-    offsets = np.asarray(unit_image_offsets, dtype=np.int64).reshape(-1)
-    if offsets.shape != (int(n_units) + 1,) or offsets[0] != 0:
-        raise ValueError(f"unit_image_offsets must have shape ({int(n_units) + 1},) and start at 0")
-    if np.any(np.diff(offsets) < 1):
-        raise ValueError("every unit must own at least one image")
-    return offsets
-
-
-def max_images_per_unit(unit_image_offsets) -> int:
-    return int(np.max(np.diff(np.asarray(unit_image_offsets, dtype=np.int64))))
-
-
 def chunk_tilt_layout(
     unit_image_offsets,
     *,

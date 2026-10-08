@@ -431,46 +431,6 @@ def validate_fixed_diagnostic_boundary_runtime_config(
         raise ValueError("fixed diagnostic boundary runtime config mismatch: " + "; ".join(mismatches))
 
 
-def validate_fixed_diagnostic_boundary_sampling_state(
-    boundary: FrozenRefinementBoundary,
-    observed_sampling: dict[str, np.ndarray | float | int | bool],
-) -> None:
-    """Fail closed unless exact live/runtime sampling equals sealed schema-v3 state."""
-
-    if not boundary.fixed_diagnostic_arm:
-        raise ValueError("frozen-boundary v2 has no fixed-arm sampling-state contract")
-    expected = boundary.sampling_state
-    if set(observed_sampling) != set(expected):
-        raise ValueError(
-            "fixed diagnostic boundary sampling-state closure failed: "
-            f"missing={sorted(set(expected) - set(observed_sampling))}, "
-            f"unknown={sorted(set(observed_sampling) - set(expected))}"
-        )
-    mismatches = []
-    for key in sorted(expected):
-        expected_value = expected[key]
-        observed_value = observed_sampling[key]
-        if isinstance(expected_value, np.ndarray):
-            observed_array = np.asarray(observed_value)
-            equal = (
-                observed_array.dtype == expected_value.dtype
-                and observed_array.shape == expected_value.shape
-                and np.array_equal(observed_array, expected_value)
-            )
-        else:
-            equal = type(observed_value) is type(expected_value) and observed_value == expected_value
-        if not equal:
-            observed_shape = getattr(np.asarray(observed_value), "shape", None)
-            expected_shape = getattr(np.asarray(expected_value), "shape", None)
-            mismatches.append(
-                f"{key}: observed_type={type(observed_value).__name__} "
-                f"observed_shape={observed_shape} expected_type={type(expected_value).__name__} "
-                f"expected_shape={expected_shape}"
-            )
-    if mismatches:
-        raise ValueError("fixed diagnostic boundary sampling state mismatch: " + "; ".join(mismatches))
-
-
 def _frozen_scoring_state_arrays(
     *,
     means,

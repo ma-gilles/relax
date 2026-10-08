@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from dataclasses import fields
+from dataclasses import asdict, fields
 from types import SimpleNamespace
 
 import pytest
@@ -15,9 +15,16 @@ from relax.commands.initial_model import GuiInitialModelDefaults
 from relax.vdam import driver, native_options
 
 
+# Moved from relax/commands/initial_model.py (PLAN e1): no relax module uses it, only this test file.
+def initial_model_defaults_dict() -> dict[str, object]:
+    """Return the public CLI/GUI defaults as a JSON-compatible mapping."""
+
+    return asdict(initial_model.DEFAULTS)
+
+
 @pytest.mark.unit
 def test_public_defaults_match_native_option_defaults():
-    defaults = initial_model.initial_model_defaults_dict()
+    defaults = initial_model_defaults_dict()
     native = native_options.NativeInitialModelOptions(fn_img="particles.star")
 
     assert defaults == {

@@ -326,16 +326,6 @@ def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: i
     return np.where(denominator > 0, numerator / np.where(denominator > 0, denominator, 1.0), numerator)
 
 
-def require_no_premultiplied_ctf(experiment_dataset, image_indices, image_shape, *, where: str) -> None:
-    """Refuse CTF-premultiplied images on a path that backprojects them as ordinary ones."""
-
-    flags = premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape)
-    if flags is not None and flags.any():
-        raise NotImplementedError(
-            f"{where} does not implement CTF-premultiplied images; they run on the resident sparse pass 2"
-        )
-
-
 def _refuse_generic_ctf(ctf_params, image_shape, voxel_size, *, half_image=False, **kwargs):
     raise NotImplementedError(
         "CTF-premultiplied images, even Zernike aberrations and magnification need RELION's exact CTF "

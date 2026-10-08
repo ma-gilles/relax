@@ -19,6 +19,103 @@ from relax.scoring import coarse_gaussian_gemm, scoring, significance
 from relax.scoring.significant_samples import significant_sample_ids
 
 
+# Moved from relax/scoring/scoring.py (PLAN e1): no relax module uses it, only this test file.
+def _relion_coarse_gaussian_gemm_scores(
+    projected_reference,
+    projected_reference_abs2,
+    shifted_corrected,
+    pixel_weight,
+    initial_diff2,
+    actual_image_count,
+    *,
+    image_shape,
+    volume_shape,
+):
+    """Validate and score one projection-once coarse Gaussian macro batch.
+
+    The arithmetic is mathematically equivalent in exact arithmetic to
+    RELION's direct-square
+    ``0.5 * weight * |reference - shifted_image|**2 + initial_diff2``.
+    It intentionally reuses :func:`_e_step_block_scores_windowed` so both EM
+    and InitialModel exercise the mature half-spectrum GEMMs instead of a
+    second VDAM scoring implementation.  This expands the square into model,
+    cross, and image terms and therefore changes both operation order and
+    cancellation behavior; it is not merely a parallel-reduction reorder.
+    Keep the path qualification-only until paired production operands show
+    repeat-bounded, non-directional, non-growing drift, unchanged discrete
+    choices/support and final quality, plus a material end-to-end speedup.
+    """
+
+    projected_reference = jnp.asarray(projected_reference)
+    projected_reference_abs2 = jnp.asarray(projected_reference_abs2)
+    shifted_corrected = jnp.asarray(shifted_corrected)
+    pixel_weight = jnp.asarray(pixel_weight)
+    initial_diff2 = jnp.asarray(initial_diff2)
+    if projected_reference.ndim != 2 or shifted_corrected.ndim != 3:
+        raise ValueError(
+            "coarse GEMM macro expects projected_reference=(R,F) and "
+            f"shifted_corrected=(B,T,F), got {projected_reference.shape} and "
+            f"{shifted_corrected.shape}",
+        )
+    n_images, n_trans, n_pixels = map(int, shifted_corrected.shape)
+    expected_projection_shape = (int(projected_reference.shape[0]), n_pixels)
+    if tuple(projected_reference.shape) != expected_projection_shape:
+        raise ValueError(
+            "coarse GEMM projection and image pixels must match, got "
+            f"{projected_reference.shape} and {shifted_corrected.shape}",
+        )
+    if tuple(projected_reference_abs2.shape) != expected_projection_shape:
+        raise ValueError(
+            "coarse GEMM projection abs2 must match the projection, got "
+            f"{projected_reference_abs2.shape} and {projected_reference.shape}",
+        )
+    if tuple(pixel_weight.shape) != (n_images, n_pixels):
+        raise ValueError(
+            "coarse GEMM pixel_weight must have shape "
+            f"({n_images}, {n_pixels}), got {pixel_weight.shape}",
+        )
+    if tuple(initial_diff2.shape) != (n_images,):
+        raise ValueError(
+            "coarse GEMM initial_diff2 must have one value per image, got "
+            f"{initial_diff2.shape}",
+        )
+    if projected_reference.dtype != shifted_corrected.dtype:
+        raise TypeError(
+            "coarse GEMM projection and shifted images must share a complex "
+            f"dtype, got {projected_reference.dtype} and {shifted_corrected.dtype}",
+        )
+    expected_real_dtype = np.empty(0, dtype=projected_reference.dtype).real.dtype
+    if (
+        projected_reference_abs2.dtype != expected_real_dtype
+        or pixel_weight.dtype != expected_real_dtype
+        or initial_diff2.dtype != expected_real_dtype
+    ):
+        raise TypeError(
+            "coarse GEMM abs2, pixel weights, and initial diff2 must use the "
+            f"projection's real dtype {expected_real_dtype}",
+        )
+    if not isinstance(actual_image_count, jax.core.Tracer):
+        actual_count = int(np.asarray(actual_image_count))
+        if actual_count < 0 or actual_count > n_images:
+            raise ValueError(
+                "coarse GEMM actual_image_count must be in "
+                f"[0, {n_images}], got {actual_count}",
+            )
+    return scoring._relion_coarse_gaussian_gemm_scores_jit(
+        projected_reference,
+        projected_reference_abs2,
+        shifted_corrected,
+        pixel_weight,
+        initial_diff2,
+        actual_image_count,
+        n_images=n_images,
+        n_trans=n_trans,
+        image_shape=tuple(int(value) for value in image_shape),
+        volume_shape=tuple(int(value) for value in volume_shape),
+        float64=scoring._coarse_gemm_float64_requested(),
+    )
+
+
 def _macro_operands(*, real_dtype, n_images=4, n_trans=3, n_rotations=5, n_pixels=11):
     rng = np.random.default_rng(20260901)
     complex_dtype = np.complex64 if real_dtype == np.float32 else np.complex128
@@ -215,7 +312,7 @@ def test_coarse_gaussian_gemm_scores_report_direct_objective(record_property, re
 
     operands = _macro_operands(real_dtype=real_dtype)
     actual = np.asarray(
-        scoring._relion_coarse_gaussian_gemm_scores(
+        _relion_coarse_gaussian_gemm_scores(
             *map(jnp.asarray, operands),
             operands[2].shape[0],
             image_shape=(8, 8),
@@ -274,7 +371,7 @@ def test_coarse_gaussian_gemm_direct_square_cancellation_stress_equal_operands(
         shifted = projected[None, :, :].copy()
         initial = np.zeros(1, dtype=real_dtype)
         macro = np.asarray(
-            scoring._relion_coarse_gaussian_gemm_scores(
+            _relion_coarse_gaussian_gemm_scores(
                 jnp.asarray(projected),
                 jnp.asarray(np.abs(projected) ** 2, dtype=real_dtype),
                 jnp.asarray(shifted),
@@ -381,7 +478,7 @@ def test_coarse_gaussian_gemm_direct_square_cancellation_stress_nearby_operands(
     weight = rng.uniform(0.5, 1.5, size=(1, 4096)).astype(real_dtype)
     initial = np.zeros(1, dtype=real_dtype)
     macro = np.asarray(
-        scoring._relion_coarse_gaussian_gemm_scores(
+        _relion_coarse_gaussian_gemm_scores(
             jnp.asarray(projected),
             jnp.asarray(np.abs(projected) ** 2, dtype=real_dtype),
             jnp.asarray(shifted),
@@ -517,7 +614,7 @@ def test_coarse_gaussian_gemm_scores_ignore_poisoned_tail_exactly():
         jnp.asarray(projected_abs2),
     )
     clean = np.asarray(
-        scoring._relion_coarse_gaussian_gemm_scores(
+        _relion_coarse_gaussian_gemm_scores(
             *common,
             jnp.asarray(clean_shifted),
             jnp.asarray(clean_weight),
@@ -528,7 +625,7 @@ def test_coarse_gaussian_gemm_scores_ignore_poisoned_tail_exactly():
         )
     )
     poisoned = np.asarray(
-        scoring._relion_coarse_gaussian_gemm_scores(
+        _relion_coarse_gaussian_gemm_scores(
             *common,
             jnp.asarray(poisoned_shifted),
             jnp.asarray(poisoned_weight),
@@ -1125,7 +1222,7 @@ def test_coarse_gaussian_gemm_macro_rejects_ambiguous_bindings(
         actual_count += 1
 
     with pytest.raises((ValueError, TypeError), match=message):
-        scoring._relion_coarse_gaussian_gemm_scores(
+        _relion_coarse_gaussian_gemm_scores(
             *map(jnp.asarray, (projected, projected_abs2, shifted, weight, initial)),
             actual_count,
             image_shape=(8, 8),
@@ -1265,7 +1362,7 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
     raw = np.stack(
         [
             np.asarray(
-                scoring._relion_coarse_gaussian_gemm_scores(
+                _relion_coarse_gaussian_gemm_scores(
                     case["cache"][k], jnp.abs(case["cache"][k]) ** 2, case["shifted"], case["weight"],
                     case["initial"], 2, image_shape=(4, 4), volume_shape=(4, 4, 4),
                 )
@@ -1380,7 +1477,7 @@ def test_coarse_pass1_dump_rows_are_the_target_rows_scores():
     raw = np.stack(
         [
             np.asarray(
-                scoring._relion_coarse_gaussian_gemm_scores(
+                _relion_coarse_gaussian_gemm_scores(
                     case["cache"][k], jnp.abs(case["cache"][k]) ** 2, case["shifted"], case["weight"],
                     case["initial"], 2, image_shape=(4, 4), volume_shape=(4, 4, 4),
                 )

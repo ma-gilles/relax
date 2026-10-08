@@ -63,7 +63,6 @@ from relax.sparse_pass2.sparse_pass2_budget import (
     _projection_cache_transient_bytes,
 )
 from relax.sparse_pass2.sparse_pass2_policy import (
-    _native_dual_weighted_sums_supported_for_operands,
     _projection_cache_enabled_for_pass,
 )
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
@@ -75,6 +74,27 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_corr_img_from_rfloat_ctf,
     _relion_cuda_pixel_correction_from_rfloat_ctf,
 )
+
+
+# Moved from relax/sparse_pass2/sparse_pass2_policy.py (PLAN e1): no relax module uses it, only this test file.
+def _native_dual_weighted_sums_supported_for_operands(
+    *,
+    requested: bool,
+    accumulate_noise: bool,
+    probability_dtype,
+    reconstruction_dtype,
+    noise_dtype,
+) -> bool:
+    """Return whether operands satisfy the native F32/C64 reduction contract."""
+
+    return bool(
+        requested
+        and accumulate_noise
+        and np.dtype(probability_dtype) == np.dtype(np.float32)
+        and np.dtype(reconstruction_dtype) == np.dtype(np.complex64)
+        and np.dtype(noise_dtype) == np.dtype(np.complex64)
+    )
+
 
 pytestmark = pytest.mark.unit
 

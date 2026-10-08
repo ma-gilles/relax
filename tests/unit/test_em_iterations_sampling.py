@@ -9,6 +9,7 @@ pytest.importorskip("jax")
 pytest.importorskip("healpy")
 
 import oracles.iterations as em_iterations
+from oracles.core import translations_to_indices
 
 import relax.sampling as em_sampling
 from relax.relion import relion_metadata
@@ -178,7 +179,7 @@ def test_translations_to_indices_maps_centered_integer_offsets():
         dtype=np.int32,
     )
 
-    out = np.asarray(em_sampling.translations_to_indices(translations, image_shape))
+    out = np.asarray(translations_to_indices(translations, image_shape))
     expected = np.array([36, 29, 58], dtype=np.int32)
     assert_matches(out, expected)
 

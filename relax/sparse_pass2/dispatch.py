@@ -2,8 +2,6 @@
 
 import logging
 
-import numpy as np
-
 from relax.sparse_pass2.engine_record import record_pass_engine
 
 # Preserve the category consumed by existing run-log collectors.
@@ -234,46 +232,4 @@ def compute_pass2_stats_sparse(
             if reconstruction_image_radius is not None
             else {}
         ),
-    )
-
-
-def _open_persistent_relion_projector_texture(
-    relion_projector_half,
-    *,
-    relion_projector_r_max,
-    projection_padding_factor,
-    relion_texture_interp=None,
-    log_label="Sparse pass-2",
-):
-    """Upload an eligible host ``PPref`` slab once as a persistent float32 RELION texture.
-
-    Returns ``None`` when the slab is not eligible (the caller then projects from
-    ``relion_projector_half`` as before). The caller owns the texture and closes it.
-    """
-
-    from relax.helpers.projection import _host_relion_projector_texture_enabled
-
-    if not _host_relion_projector_texture_enabled(
-        relion_projector_half, r_max=relion_projector_r_max,
-        padding_factor=projection_padding_factor, allow_float32_cast=True,
-        enabled=relion_texture_interp,
-    ):
-        return None
-
-    from relax.cuda.kernels import RelionPersistentHalfTextureF32
-
-    # RELION's texture is float32 (AccProjector::setMdlData); cast before any device upload.
-    relion_projector_half = np.asarray(relion_projector_half, dtype=np.complex64)
-
-    logger.info(
-        "%s persistent RELION projector texture: shape=%s host=%.2f GiB",
-        str(log_label),
-        tuple(relion_projector_half.shape),
-        relion_projector_half.nbytes / float(1024**3),
-    )
-    return RelionPersistentHalfTextureF32(
-        relion_projector_half,
-        padding_factor=int(projection_padding_factor),
-        projector_max_r=int(relion_projector_r_max),
-        projector_scale=1.0,
     )

@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import os
 
-import numpy as np
-
 from relax.helpers.env_flags import parse_env_flag
 
 _RELION_WAVG_ATOMIC_SCALE_AA_ENV = "RELAX_RELION_WAVG_ATOMIC_SCALE_AA"
@@ -59,25 +57,6 @@ _SPARSE_PASS2_PROJECTION_CACHE_ENV = "RELAX_SPARSE_PASS2_PROJECTION_CACHE"
 
 
 _SPARSE_PASS2_WINDOWED_PREPARE_ENV = "RELAX_SPARSE_PASS2_WINDOWED_PREPARE"
-
-
-def _native_dual_weighted_sums_supported_for_operands(
-    *,
-    requested: bool,
-    accumulate_noise: bool,
-    probability_dtype,
-    reconstruction_dtype,
-    noise_dtype,
-) -> bool:
-    """Return whether operands satisfy the native F32/C64 reduction contract."""
-
-    return bool(
-        requested
-        and accumulate_noise
-        and np.dtype(probability_dtype) == np.dtype(np.float32)
-        and np.dtype(reconstruction_dtype) == np.dtype(np.complex64)
-        and np.dtype(noise_dtype) == np.dtype(np.complex64)
-    )
 
 
 def _relion_wavg_direct_modes(

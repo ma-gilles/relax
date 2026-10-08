@@ -1,10 +1,56 @@
 """Persistent texture ownership contracts retained from Q."""
+import logging
+
 import numpy as np
 import pytest
 import jax
 import jax.numpy as jnp
 from helpers.float_compare import assert_matches
 pytestmark = pytest.mark.unit
+
+
+# Moved from relax/sparse_pass2/dispatch.py (PLAN e1): no relax module uses it, only this test file.
+def _open_persistent_relion_projector_texture(
+    relion_projector_half,
+    *,
+    relion_projector_r_max,
+    projection_padding_factor,
+    relion_texture_interp=None,
+    log_label="Sparse pass-2",
+):
+    """Upload an eligible host ``PPref`` slab once as a persistent float32 RELION texture.
+
+    Returns ``None`` when the slab is not eligible (the caller then projects from
+    ``relion_projector_half`` as before). The caller owns the texture and closes it.
+    """
+
+    from relax.helpers.projection import _host_relion_projector_texture_enabled
+
+    if not _host_relion_projector_texture_enabled(
+        relion_projector_half, r_max=relion_projector_r_max,
+        padding_factor=projection_padding_factor, allow_float32_cast=True,
+        enabled=relion_texture_interp,
+    ):
+        return None
+
+    from relax.cuda.kernels import RelionPersistentHalfTextureF32
+
+    # RELION's texture is float32 (AccProjector::setMdlData); cast before any device upload.
+    relion_projector_half = np.asarray(relion_projector_half, dtype=np.complex64)
+
+    logging.getLogger("relax.helpers.oversampling").info(
+        "%s persistent RELION projector texture: shape=%s host=%.2f GiB",
+        str(log_label),
+        tuple(relion_projector_half.shape),
+        relion_projector_half.nbytes / float(1024**3),
+    )
+    return RelionPersistentHalfTextureF32(
+        relion_projector_half,
+        padding_factor=int(projection_padding_factor),
+        projector_max_r=int(relion_projector_r_max),
+        projector_scale=1.0,
+    )
+
 
 def _projector(*, r_max=1, padding_factor=1, seed=260830):
     padded = int(r_max) * int(padding_factor)
@@ -610,7 +656,6 @@ def test_projector_class_selection_preserves_host_view(monkeypatch, classes, dty
 
 def test_sparse_pass2_opens_eligible_texture_from_original_host_slab(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2 import dispatch as oversampling
     from relax.helpers import projection
 
     projector = _projector()
@@ -631,7 +676,7 @@ def test_sparse_pass2_opens_eligible_texture_from_original_host_slab(monkeypatch
         "RelionPersistentHalfTextureF32",
         fake_constructor,
     )
-    actual = oversampling._open_persistent_relion_projector_texture(
+    actual = _open_persistent_relion_projector_texture(
         projector,
         relion_projector_r_max=1,
         projection_padding_factor=1,
@@ -650,7 +695,6 @@ def test_sparse_pass2_opens_eligible_texture_from_original_host_slab(monkeypatch
 
 
 def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
-    from relax.sparse_pass2 import dispatch
     from relax.helpers import projection
     from relax.cuda import kernels as em_cuda_kernels
     source = _projector().astype(np.complex128)
@@ -660,7 +704,7 @@ def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
     monkeypatch.setattr(projection, "_relion_projector_texture_enabled", lambda value, **kw: value.dtype == np.complex64)
     monkeypatch.setattr(em_cuda_kernels, "RelionPersistentHalfTextureF32", lambda value, **kw: captured.append(value) or object())
     assert projection._host_relion_projector_texture_enabled(source, r_max=1, padding_factor=1, allow_float32_cast=True)
-    dispatch._open_persistent_relion_projector_texture(source, relion_projector_r_max=1, projection_padding_factor=1)
+    _open_persistent_relion_projector_texture(source, relion_projector_r_max=1, projection_padding_factor=1)
     assert captured[0].dtype == np.complex64
     assert_matches(captured[0], source.astype(np.complex64))
     assert_matches(source, original)
@@ -669,7 +713,6 @@ def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
 
 @pytest.mark.gpu
 def test_host_cast_matches_device_cast_and_texture_projection(custom_cuda_lib, gpu_device):
-    from relax.sparse_pass2 import dispatch
     from relax.helpers.projection import compute_relion_projector_projections_block
     source = _projector(r_max=7, padding_factor=2).astype(np.complex128)
     source += np.float64(2**-26)
@@ -682,7 +725,7 @@ def test_host_cast_matches_device_cast_and_texture_projection(custom_cuda_lib, g
         rotations = jnp.asarray(_rotations())
         kwargs = dict(r_max=7, padding_factor=2, projector_output_size=16, centered_rows=True, dense_scale=True)
         expected = compute_relion_projector_projections_block(old_float, rotations, (16, 16), **kwargs)
-        texture = dispatch._open_persistent_relion_projector_texture(source, relion_projector_r_max=7, projection_padding_factor=2)
+        texture = _open_persistent_relion_projector_texture(source, relion_projector_r_max=7, projection_padding_factor=2)
         assert texture is not None
         try:
             actual = compute_relion_projector_projections_block(None, rotations, (16, 16), persistent_texture=texture, **kwargs)

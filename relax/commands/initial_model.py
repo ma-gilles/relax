@@ -6,7 +6,7 @@ import argparse
 import importlib
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
@@ -68,12 +68,6 @@ def _assert_expected_repo_imports() -> dict[str, str]:
             f"{expected_root}, found " + ", ".join(failures)
         )
     return imported
-
-
-def initial_model_defaults_dict() -> dict[str, object]:
-    """Return the public CLI/GUI defaults as a JSON-compatible mapping."""
-
-    return asdict(DEFAULTS)
 
 
 def _positive_int(value: str) -> int:

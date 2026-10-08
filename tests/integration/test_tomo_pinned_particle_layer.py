@@ -37,6 +37,7 @@ import numpy as np
 import pytest
 import starfile
 from helpers import natives
+from helpers import tomo_particles_reference as tomo_ref
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.relion_projector_reference import make_projector, project
 
@@ -93,7 +94,7 @@ def pinned():
     )
     assert np.array_equal(data["rlnRandomSubset"].to_numpy(), index.half_set)
     image_matrices = _euler(*(np.asarray(star_column(rows, k), dtype=float) for k in ANGLES))
-    aproj = tp.tilt_projection_matrices(image_matrices, _euler(*(gt[k].to_numpy() for k in ANGLES)), image_particle)
+    aproj = tomo_ref.tilt_projection_matrices(image_matrices, _euler(*(gt[k].to_numpy() for k in ANGLES)), image_particle)
     models = {h: starfile.read(RELION / f"run_it{IT - 1:03d}_half{h}_model.star") for h in (1, 2)}
     cs = int(models[1]["model_general"]["rlnCurrentImageSize"])
     refs = {
@@ -158,7 +159,7 @@ def _local_posterior(p, particle, shift_sign, rotation_deltas, offset_deltas):
     inv_sigma2 = np.where(inside, 1.0 / sigma2[np.minimum(p.shell, sigma2.size - 1)], 0.0)
     ctf = p.ctf(imgs) * _scale(p, h, particle)
     rotations = _euler(*(p.pose[particle][None, :] + rotation_deltas).T)
-    image_rotations = p.tp.tilt_image_rotations(rotations, p.aproj[imgs])
+    image_rotations = tomo_ref.tilt_image_rotations(rotations, p.aproj[imgs])
     model = project(p.projectors[h], image_rotations.reshape(-1, 3, 3), p.n).reshape(len(imgs), len(rotations), p.n, -1)
     model = model * ctf[:, None]
     trial = p.offset[particle][None, :] + offset_deltas
@@ -168,7 +169,7 @@ def _local_posterior(p, particle, shift_sign, rotation_deltas, offset_deltas):
         for t in range(len(trial)):
             x = p.bind.shift_image_in_fourier_transform_2d(fimg[i], p.n, p.n, *(shift_sign * shifts[i, t]))
             diff2[i, :, t] = 0.5 * np.sum(np.abs(x[None] - model[i]) ** 2 * inv_sigma2[None], axis=(-2, -1))
-    score = p.tp.particle_scores(diff2.reshape(len(imgs), -1), np.zeros(len(imgs), dtype=int), 1)[0]
+    score = tomo_ref.particle_scores(diff2.reshape(len(imgs), -1), np.zeros(len(imgs), dtype=int), 1)[0]
     sigma_offset = float(p.models[h]["model_general"]["rlnSigmaOffsetsAngst"])
     log_prior = -np.sum((trial - p.prev_offset[particle]) ** 2, axis=1) / (2 * sigma_offset**2)
     log_post = -score.reshape(len(rotations), len(trial)) + log_prior[None, :]
@@ -234,7 +235,7 @@ def test_mstep_noise_per_optics_group_is_relions(pinned):
     imgs = np.concatenate([np.arange(p.index.image_offsets[q], p.index.image_offsets[q + 1]) for q in particles])
     local_particle = np.repeat(np.arange(particles.size), np.diff(p.index.image_offsets)[particles])
     noise_scale = tp.image_noise_scale(local_particle, particles.size)
-    weight = tp.image_weights(np.ones(particles.size), local_particle)
+    weight = tomo_ref.image_weights(np.ones(particles.size), local_particle)
     rotations = _euler(*p.pose[particles].T)
     for start in range(0, imgs.size, 512):
         block = np.arange(start, min(start + 512, imgs.size))

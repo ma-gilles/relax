@@ -7,11 +7,23 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.ppca.triangular import unpack_tri_to_full
 
 from relax.helpers.half_spectrum import make_half_image_weights
-from relax.ppca_initial_model.noise import expected_residual_power, relion_to_coefficient_variance
+from relax.ppca_initial_model.noise import relion_to_coefficient_variance
 from relax.ppca_refinement.engine import dense_pose_ppca_score_with_moments_blocked
 from relax.ppca_refinement.residual_statistics import full_float32
 
 pytestmark = pytest.mark.unit
+
+
+# Moved from relax/ppca_initial_model/noise.py (PLAN e1): no relax module uses it, only this test file.
+def expected_residual_power(y, projected_mean, projected_loadings, mean, covariance):
+    """Expected squared residual, retaining posterior coordinate uncertainty.
+
+    Pixel dimension is last in y/mean projection and penultimate in loadings;
+    leading dimensions broadcast. No division by CTF (which may have zeros).
+    """
+    residual = y - projected_mean - jnp.einsum("...fq,...q->...f", projected_loadings, mean)
+    uncertainty = jnp.einsum("...fq,...qp,...fp->...f", projected_loadings, covariance, projected_loadings.conj()).real
+    return jnp.abs(residual) ** 2 + uncertainty
 
 
 @pytest.mark.parametrize("dtype,tol", [(np.float32, 2e-5), (np.float64, 2e-11)])

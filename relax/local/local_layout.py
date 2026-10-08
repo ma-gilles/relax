@@ -1332,7 +1332,7 @@ def build_local_adaptive_pass2_hypothesis_layout(
         raise ValueError(f"Image {image_idx} has significant rotation ids outside the parent grid")
 
     # Each unit's log prior from its image's local parents (a later duplicate
-    # id wins, as in _lookup_values_by_id).
+    # id wins, as in the id lookup of tests/unit/test_refine_relion_mode.py).
     parent_image = np.repeat(np.arange(n_images, dtype=np.int64), parent_counts)
     parent_keys = parent_image * key_scale + parent_ids_flat
     parent_order = np.argsort(parent_keys, kind="stable")
@@ -1417,31 +1417,6 @@ def build_local_adaptive_pass2_hypothesis_layout(
         row_class_flat=None if n_classes == 1 else unit_class[parent_map],
         n_classes=n_classes,
     )
-
-
-def _lookup_values_by_id(ids: np.ndarray, values: np.ndarray, query_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Return ``values`` for integer ids without allocating a global id table."""
-
-    ids_np = np.asarray(ids, dtype=np.int64).reshape(-1)
-    values_np = np.asarray(values)
-    query_np = np.asarray(query_ids, dtype=np.int64).reshape(-1)
-    if query_np.size == 0:
-        return values_np[:0], np.ones(0, dtype=bool)
-    if ids_np.size == 0:
-        return values_np[:0], np.zeros(query_np.shape, dtype=bool)
-
-    order = np.argsort(ids_np, kind="stable")
-    sorted_ids = ids_np[order]
-    # Match the previous dense table behavior for duplicate ids: later writes
-    # won, so search to the right and take the last matching entry.
-    pos = np.searchsorted(sorted_ids, query_np, side="right") - 1
-    valid = pos >= 0
-    matched = np.zeros(query_np.shape, dtype=bool)
-    if np.any(valid):
-        matched[valid] = sorted_ids[pos[valid]] == query_np[valid]
-    if not np.all(matched):
-        return values_np[:0], matched
-    return values_np[order[pos]], matched
 
 
 def _positions_in_sorted_unique_ids(sorted_ids: np.ndarray, query_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

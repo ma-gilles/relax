@@ -7,8 +7,6 @@ set of padded shape classes and pass masks/counts for the valid rows.
 
 from __future__ import annotations
 
-import numpy as np
-
 
 def round_up_to_multiple(value: int, multiple: int) -> int:
     """Round ``value`` up to a positive multiple."""
@@ -74,20 +72,3 @@ def coarse_bucket(value: int, *, small_power2_max: int, large_multiple: int, min
     if value <= int(small_power2_max):
         return power_of_two_bucket(value, minimum=minimum, maximum=small_power2_max)
     return round_up_to_multiple(value, large_multiple)
-
-
-def pad_axis(array, axis: int, size: int, *, value=0):
-    """Pad one axis to ``size`` without changing existing values."""
-
-    arr = np.asarray(array)
-    axis = int(axis)
-    size = int(size)
-    if axis < 0:
-        axis += arr.ndim
-    if axis < 0 or axis >= arr.ndim:
-        raise ValueError(f"axis {axis} out of bounds for array with ndim={arr.ndim}")
-    if arr.shape[axis] > size:
-        raise ValueError(f"cannot pad axis {axis} from {arr.shape[axis]} down to {size}")
-    pad_width = [(0, 0)] * arr.ndim
-    pad_width[axis] = (0, size - arr.shape[axis])
-    return np.pad(arr, pad_width, mode="constant", constant_values=value)

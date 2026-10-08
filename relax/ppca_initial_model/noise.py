@@ -15,17 +15,6 @@ def relion_to_coefficient_variance(sigma2, image_shape):
     return jnp.asarray(sigma2, dtype=jnp.float32) * np.float32(2 * np.prod(image_shape) ** 2)
 
 
-def expected_residual_power(y, projected_mean, projected_loadings, mean, covariance):
-    """Expected squared residual, retaining posterior coordinate uncertainty.
-
-    Pixel dimension is last in y/mean projection and penultimate in loadings;
-    leading dimensions broadcast. No division by CTF (which may have zeros).
-    """
-    residual = y - projected_mean - jnp.einsum("...fq,...q->...f", projected_loadings, mean)
-    uncertainty = jnp.einsum("...fq,...qp,...fp->...f", projected_loadings, covariance, projected_loadings.conj()).real
-    return jnp.abs(residual) ** 2 + uncertainty
-
-
 def update_noise(previous, numerator, denominator, *, full_data=False):
     """Apply VDAM timing to raw shell sums at the old E-step model.
 

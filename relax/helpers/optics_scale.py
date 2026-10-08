@@ -52,20 +52,6 @@ def coarse_rows_wrap_inside(window: int, r_max: int, scale: float) -> bool:
     return half > int(r_max) and half < float(scale) * math.sqrt(int(r_max) ** 2 + 1)
 
 
-def group_coarse_size(coarse_resolution_pixels, current_size_g, box_size, scale, max_coarse_size=None) -> int:
-    """``image_coarse_size[g]`` for adaptive oversampling (``ml_optimiser.cpp:5761-5777``).
-
-    ``coarse_resolution_pixels`` is ``pixel_size_ref * ori_size / coarse_resolution``, the
-    reference-grid Fourier radius RELION's coarse pass needs; the group's size is that
-    radius scaled by ``s_g``, capped by the scaled ``max_coarse_size`` and by the group's
-    current size.
-    """
-
-    size = 2 * math.ceil(float(scale) * float(coarse_resolution_pixels))
-    cap = int(box_size) if max_coarse_size is None or max_coarse_size <= 0 else int(float(scale) * max_coarse_size)
-    return int(min(size, cap, int(current_size_g)))
-
-
 def reference_shell_of_group_shell(n_group_shells, scale) -> np.ndarray:
     """Reference shell RELION reads for each group shell: ``round(i / s_g)`` (RELION ROUND)."""
 

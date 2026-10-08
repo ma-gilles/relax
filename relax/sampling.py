@@ -1821,11 +1821,3 @@ def get_local_rotation_grid_fast(
     if per_image:
         return selected_indices, log_prior
     return selected_indices, np.max(log_prior, axis=0).astype(np.float32)
-
-
-@functools.partial(jax.jit, static_argnums=[1])
-def translations_to_indices(translations, image_shape):
-    # Assumes that translations are integers
-    indices = translations + image_shape[0] // 2
-    vec_indices = indices[..., 1] * image_shape[1] + indices[..., 0]
-    return vec_indices

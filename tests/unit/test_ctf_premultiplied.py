@@ -17,6 +17,18 @@ from helpers.float_compare import assert_matches
 from relax.relion import relion_ctf
 from relax.relion.relion_metadata import refuse_unsupported_optics
 
+
+# Moved from relax/relion/relion_ctf.py (PLAN e1): no relax module uses it, only this test file.
+def require_no_premultiplied_ctf(experiment_dataset, image_indices, image_shape, *, where: str) -> None:
+    """Refuse CTF-premultiplied images on a path that backprojects them as ordinary ones."""
+
+    flags = relion_ctf.premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape)
+    if flags is not None and flags.any():
+        raise NotImplementedError(
+            f"{where} does not implement CTF-premultiplied images; they run on the resident sparse pass 2"
+        )
+
+
 BOX = 16
 PARTICLES = (
     # defocus U, V, angle, optics group
@@ -76,9 +88,9 @@ def test_premultiplied_rows_follow_the_optics_group_flag(star_dataset, tmp_path,
     flags = relion_ctf.premultiplied_ctf_rows(star_dataset, np.asarray([3, 1, 0, 2]), (BOX, BOX))
     assert_matches(flags, np.asarray([False, True, False, True]))
     assert relion_ctf.dataset_has_premultiplied_ctf(star_dataset, (BOX, BOX))
-    relion_ctf.require_no_premultiplied_ctf(star_dataset, np.asarray([0, 3]), (BOX, BOX), where="a test path")
+    require_no_premultiplied_ctf(star_dataset, np.asarray([0, 3]), (BOX, BOX), where="a test path")
     with pytest.raises(NotImplementedError, match="a test path"):
-        relion_ctf.require_no_premultiplied_ctf(star_dataset, np.asarray([0, 2]), (BOX, BOX), where="a test path")
+        require_no_premultiplied_ctf(star_dataset, np.asarray([0, 2]), (BOX, BOX), where="a test path")
 
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     ordinary = SimpleNamespace(

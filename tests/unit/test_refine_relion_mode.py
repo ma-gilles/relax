@@ -1520,11 +1520,37 @@ def test_build_pass2_hypothesis_layout_can_keep_empty_class_support():
     assert not np.any(layout.sample_mask_rows())
 
 
+# Moved from relax/local/local_layout.py (PLAN e1): no relax module uses it, only this test.
+def _lookup_values_by_id(ids: np.ndarray, values: np.ndarray, query_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``values`` for integer ids without allocating a global id table."""
+
+    ids_np = np.asarray(ids, dtype=np.int64).reshape(-1)
+    values_np = np.asarray(values)
+    query_np = np.asarray(query_ids, dtype=np.int64).reshape(-1)
+    if query_np.size == 0:
+        return values_np[:0], np.ones(0, dtype=bool)
+    if ids_np.size == 0:
+        return values_np[:0], np.zeros(query_np.shape, dtype=bool)
+
+    order = np.argsort(ids_np, kind="stable")
+    sorted_ids = ids_np[order]
+    # Match the previous dense table behavior for duplicate ids: later writes
+    # won, so search to the right and take the last matching entry.
+    pos = np.searchsorted(sorted_ids, query_np, side="right") - 1
+    valid = pos >= 0
+    matched = np.zeros(query_np.shape, dtype=bool)
+    if np.any(valid):
+        matched[valid] = sorted_ids[pos[valid]] == query_np[valid]
+    if not np.all(matched):
+        return values_np[:0], matched
+    return values_np[order[pos]], matched
+
+
 def test_local_id_lookup_matches_dense_table_duplicate_semantics():
     ids = np.array([4, 2, 4, 9], dtype=np.int32)
     values = np.array([0.25, 0.5, 0.75, 1.0], dtype=np.float32)
 
-    selected, matched = local_layout_module._lookup_values_by_id(ids, values, np.array([2, 4, 9], dtype=np.int32))
+    selected, matched = _lookup_values_by_id(ids, values, np.array([2, 4, 9], dtype=np.int32))
 
     assert_matches(matched, np.array([True, True, True]))
     np.testing.assert_allclose(selected, np.array([0.5, 0.75, 1.0], dtype=np.float32))

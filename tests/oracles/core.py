@@ -3,6 +3,8 @@
 Test oracle: moved unchanged from relax/reference/core.py, which no relax command imports.
 """
 
+import functools
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -70,3 +72,12 @@ def hard_assignment_idx_to_pose(indices, rotation_grid, translation_grid):
     predicted_trans = translation_grid[maxpos_vect[:, 1]]
     predicted_pose = rotation_grid[maxpos_vect[:, 0]]
     return predicted_pose, predicted_trans
+
+
+# Moved from relax/sampling.py (PLAN e1): no relax module uses it, only these oracles and tests.
+@functools.partial(jax.jit, static_argnums=[1])
+def translations_to_indices(translations, image_shape):
+    # Assumes that translations are integers
+    indices = translations + image_shape[0] // 2
+    vec_indices = indices[..., 1] * image_shape[1] + indices[..., 0]
+    return vec_indices

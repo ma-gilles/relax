@@ -6,6 +6,7 @@ RELION-pinned one-E-step test on the S1 dataset checks the conventions end to en
 
 import numpy as np
 import pytest
+from helpers import tomo_particles_reference as tomo_ref
 from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
@@ -24,7 +25,7 @@ def _setup(seed=0):
 
 def test_image_matrix_is_projection_times_pose():
     _rng, image_particle, projections, poses = _setup()
-    out = tomo_particles.tilt_image_rotations(poses, projections)
+    out = tomo_ref.tilt_image_rotations(poses, projections)
     assert out.shape == (image_particle.size, 4, 3, 3)
     for i in range(image_particle.size):
         for h in range(4):
@@ -53,11 +54,11 @@ def test_image_shift_projects_trial_plus_old_offset():
 def test_particle_scores_sum_images_and_weights_come_back_per_image():
     rng, image_particle, _projections, _poses = _setup(2)
     scores = rng.normal(size=(image_particle.size, 6))
-    summed = tomo_particles.particle_scores(scores, image_particle, 3)
+    summed = tomo_ref.particle_scores(scores, image_particle, 3)
     for p in range(3):
         np.testing.assert_allclose(summed[p], scores[image_particle == p].sum(axis=0))
     weights = rng.random((3, 6))
-    np.testing.assert_array_equal(tomo_particles.image_weights(weights, image_particle), weights[image_particle])
+    np.testing.assert_array_equal(tomo_ref.image_weights(weights, image_particle), weights[image_particle])
 
 
 def test_noise_sums_are_averaged_over_a_particles_images():
@@ -71,7 +72,7 @@ def test_noise_sums_are_averaged_over_a_particles_images():
 def test_projection_matrices_recovered_from_the_flattened_image_matrices():
     _rng, image_particle, projections, poses = _setup(3)
     image_matrices = np.einsum("iab,ibc->iac", projections, poses[image_particle])
-    recovered = tomo_particles.tilt_projection_matrices(image_matrices, poses, image_particle)
+    recovered = tomo_ref.tilt_projection_matrices(image_matrices, poses, image_particle)
     np.testing.assert_allclose(recovered, projections, atol=1e-12)
 
 

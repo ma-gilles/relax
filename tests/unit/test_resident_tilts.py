@@ -7,10 +7,26 @@ from helpers.float_compare import assert_matches
 from relax.sparse_pass2 import resident_tilts
 
 
+# Moved from relax/sparse_pass2/resident_tilts.py (PLAN e1): no relax module uses them, only this test file.
+def validate_unit_image_offsets(unit_image_offsets, n_units: int) -> np.ndarray:
+    """The CSR of images over units: ``[n_units + 1]``, starting at 0, every unit owning an image."""
+
+    offsets = np.asarray(unit_image_offsets, dtype=np.int64).reshape(-1)
+    if offsets.shape != (int(n_units) + 1,) or offsets[0] != 0:
+        raise ValueError(f"unit_image_offsets must have shape ({int(n_units) + 1},) and start at 0")
+    if np.any(np.diff(offsets) < 1):
+        raise ValueError("every unit must own at least one image")
+    return offsets
+
+
+def max_images_per_unit(unit_image_offsets) -> int:
+    return int(np.max(np.diff(np.asarray(unit_image_offsets, dtype=np.int64))))
+
+
 @pytest.mark.unit
 def test_chunk_tilt_layout_enumerates_each_rows_images_in_slot_order():
     # Four units owning 2, 3, 1 and 2 images; the chunk holds units 1..2 (images 2..5).
-    offsets = resident_tilts.validate_unit_image_offsets([0, 2, 5, 6, 8], 4)
+    offsets = validate_unit_image_offsets([0, 2, 5, 6, 8], 4)
     row_unit_local = np.array([0, 0, 1, 1, 1, 0, 0])  # 5 valid rows, 2 padding rows
     layout = resident_tilts.chunk_tilt_layout(
         offsets,
@@ -30,12 +46,12 @@ def test_chunk_tilt_layout_enumerates_each_rows_images_in_slot_order():
         [2, 2, -1, -1, -1, -1, -1],
         [-1, -1, -1, -1, -1, -1, -1],
     ]
-    assert resident_tilts.max_images_per_unit(offsets) == 3
+    assert max_images_per_unit(offsets) == 3
 
 
 @pytest.mark.unit
 def test_single_particle_units_are_the_one_image_case():
-    offsets = resident_tilts.validate_unit_image_offsets(np.arange(6), 5)
+    offsets = validate_unit_image_offsets(np.arange(6), 5)
     layout = resident_tilts.chunk_tilt_layout(
         offsets,
         unit_start=2,
@@ -51,14 +67,14 @@ def test_single_particle_units_are_the_one_image_case():
 
 @pytest.mark.unit
 def test_chunk_tilt_layout_refuses_overflow_and_bad_offsets():
-    offsets = resident_tilts.validate_unit_image_offsets([0, 3, 4], 2)
+    offsets = validate_unit_image_offsets([0, 3, 4], 2)
     kwargs = dict(unit_start=0, n_valid_units=2, row_unit_local=np.array([0, 1]), n_valid_rows=2)
     with pytest.raises(ValueError, match="image capacity"):
         resident_tilts.chunk_tilt_layout(offsets, image_capacity=3, slot_capacity=3, **kwargs)
     with pytest.raises(ValueError, match="image slots"):
         resident_tilts.chunk_tilt_layout(offsets, image_capacity=4, slot_capacity=2, **kwargs)
     with pytest.raises(ValueError, match="at least one image"):
-        resident_tilts.validate_unit_image_offsets([0, 2, 2], 2)
+        validate_unit_image_offsets([0, 2, 2], 2)
 
 
 @pytest.mark.unit
@@ -66,7 +82,7 @@ def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
     from relax.sampling import _relion_euler_angles_to_matrix
 
     rng = np.random.default_rng(3)
-    offsets = resident_tilts.validate_unit_image_offsets([0, 2, 3], 2)
+    offsets = validate_unit_image_offsets([0, 2, 3], 2)
     layout = resident_tilts.chunk_tilt_layout(
         offsets,
         unit_start=0,
@@ -104,7 +120,7 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
 
     from relax.sparse_pass2 import resident_pass2 as rp
 
-    offsets = resident_tilts.validate_unit_image_offsets([0, 3, 4, 6], 3)
+    offsets = validate_unit_image_offsets([0, 3, 4, 6], 3)
     layout = resident_tilts.chunk_tilt_layout(
         offsets,
         unit_start=0,

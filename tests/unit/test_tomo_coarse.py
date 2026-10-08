@@ -14,6 +14,41 @@ import jax.numpy as jnp
 from relax.cuda import kernels as em_cuda_kernels
 from relax.scoring import tomo_coarse
 
+
+# Moved from relax/scoring/tomo_coarse.py (PLAN e1): no relax module uses them, only this test file.
+def particle_coarse_diff2(image_diff2_in_slot_order):
+    """A particle's coarse diff2: its images' diff2 added in slot (``img_id``) order, float32."""
+
+    total = None
+    for image_diff2 in image_diff2_in_slot_order:
+        image_diff2 = jnp.asarray(image_diff2, dtype=jnp.float32)
+        total = image_diff2 if total is None else total + image_diff2
+    return total
+
+
+def _coarse_gemm_projections(
+    projector_half, rotations, layout: tomo_coarse.CoarseScoreLayout, *, model_max_r: int, padding_factor: int, texture=None
+):
+    """The score-window rows of a RELION ``PPref`` half at ``rotations`` ``[N, 3, 3]`` (see
+    :func:`_score_window_projections` for the two layouts).
+
+    The projection the SPA coarse GEMM scorer reads (significance.py ``_project_relion_compact_score_rows``):
+    RELION's texture interpolation with the coarse diff2 kernel's row rule, in ``layout``'s score pixels.
+    ``texture`` is the half's :class:`relax.cuda.kernels.RelionCapacityHalfTextureF32`, staged once per pass.
+    """
+
+    return tomo_coarse._score_window_projections(
+        projector_half,
+        rotations,
+        jnp.asarray(layout.score_indices_np, dtype=jnp.int32),
+        image_shape=tuple(layout.image_shape),
+        current_size=int(layout.current_size),
+        model_max_r=int(model_max_r),
+        padding_factor=int(padding_factor),
+        texture=texture,
+    )
+
+
 pytestmark = pytest.mark.unit
 
 
@@ -50,7 +85,7 @@ def test_translations_are_scored_in_chunks_and_images_add_in_slot_order(monkeypa
     for i in range(3):
         expected = initial[i] + rotations[i].sum(axis=(1, 2))[:, None] + angles[i][None, :, 0]
         assert_matches(np.asarray(per_image[i]), expected.astype(np.float32))
-    total = np.asarray(tomo_coarse.particle_coarse_diff2(per_image))
+    total = np.asarray(particle_coarse_diff2(per_image))
     expected_total = np.float32(
         np.float32(np.asarray(per_image[0]) + np.asarray(per_image[1])) + np.asarray(per_image[2])
     )
@@ -70,7 +105,7 @@ def test_particle_significance_cuts_the_summed_diff2_with_its_3d_offset_prior():
     rng = np.random.default_rng(5)
     n_particles, n_rot, n_trans = 3, 40, 27
     image_diff2 = rng.uniform(1000.0, 1010.0, size=(4, n_particles, n_rot, n_trans)).astype(np.float32)
-    particle = tomo_coarse.particle_coarse_diff2(list(image_diff2))
+    particle = particle_coarse_diff2(list(image_diff2))
     rotation_prior = np.log(rng.uniform(0.5, 1.0, size=n_rot)).astype(np.float32)
     offset_prior = np.log(rng.uniform(0.1, 1.0, size=(n_particles, n_trans))).astype(np.float32)
     got = tomo_coarse.particle_coarse_significance(
@@ -436,7 +471,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
             if persistent_texture else None
         )
         assert (texture is not None) == persistent_texture
-        projected = tomo_coarse._coarse_gemm_projections(
+        projected = _coarse_gemm_projections(
             f["half"], jnp.asarray(f["rotations"]), layout, model_max_r=f["max_r"], padding_factor=f["pad"],
             texture=texture,
         ).reshape(f["n_images"], f["n_rot"], -1)
@@ -487,7 +522,7 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
         n_images, n_rot, n_trans = 3, 2816, 120
         f = _gemm_fixture(np.random.default_rng(29 + box), n_images=n_images, n_rot=n_rot, n_trans=n_trans, box=box)
         layout = f["layout"]
-        projected = tomo_coarse._coarse_gemm_projections(
+        projected = _coarse_gemm_projections(
             f["half"], jnp.asarray(f["rotations"]), layout, model_max_r=f["max_r"], padding_factor=f["pad"], texture=None
         ).reshape(n_images, n_rot, -1)
         gemm = np.asarray(
@@ -591,13 +626,13 @@ def test_packed_rows_are_the_complex_projections_split(gpu_device):
         )
         assert texture is not None
         packed = np.asarray(
-            tomo_coarse._coarse_gemm_projections(
+            _coarse_gemm_projections(
                 f["half"], rotations, layout, model_max_r=f["max_r"], padding_factor=f["pad"], texture=texture
             )
         )
         texture.close()
         complex_rows = np.asarray(
-            tomo_coarse._coarse_gemm_projections(f["half"], rotations, layout, model_max_r=f["max_r"], padding_factor=f["pad"])
+            _coarse_gemm_projections(f["half"], rotations, layout, model_max_r=f["max_r"], padding_factor=f["pad"])
         )
     assert packed.shape == (complex_rows.shape[0], 2 * complex_rows.shape[1])
     assert np.count_nonzero(complex_rows) > complex_rows.size // 2
@@ -620,15 +655,15 @@ def test_the_class_texture_is_refilled_for_the_next_pass(gpu_device):
         layout, rotations = f["layout"], jnp.asarray(f["rotations"])
         kwargs = dict(model_max_r=f["max_r"], padding_factor=f["pad"])
         first = tomo_coarse._coarse_capacity_texture(f["half"], layout, class_index=0, **kwargs)
-        used = tomo_coarse._coarse_gemm_projections(f["half"], rotations, layout, texture=first, **kwargs)
+        used = _coarse_gemm_projections(f["half"], rotations, layout, texture=first, **kwargs)
         tomo_coarse._CLASS_TEXTURES[0] = (first, used)  # the pass's end (particle_coarse_supports)
         changed = jnp.asarray(f["half"] * (0.5 + 0.25j))
         second = tomo_coarse._coarse_capacity_texture(changed, layout, class_index=0, **kwargs)
         assert second is first
-        refilled = np.asarray(tomo_coarse._coarse_gemm_projections(changed, rotations, layout, texture=second, **kwargs))
+        refilled = np.asarray(_coarse_gemm_projections(changed, rotations, layout, texture=second, **kwargs))
         tomo_coarse._CLASS_TEXTURES.pop(0)[0].close_after(jnp.asarray(refilled))
         fresh = tomo_coarse._coarse_capacity_texture(changed, layout, class_index=1, **kwargs)
-        expected = np.asarray(tomo_coarse._coarse_gemm_projections(changed, rotations, layout, texture=fresh, **kwargs))
+        expected = np.asarray(_coarse_gemm_projections(changed, rotations, layout, texture=fresh, **kwargs))
         tomo_coarse._CLASS_TEXTURES.pop(1)[0].close_after(jnp.asarray(expected))
     assert fresh is not first
     # Both textures hold the same projector and interpolate it with the same kernel: the default float32 band

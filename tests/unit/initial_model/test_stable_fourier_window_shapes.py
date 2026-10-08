@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.array_padding import pad_axis
 from helpers.cuda_source import read_em_cuda_source
 from helpers.float_compare import assert_matches, matches
 
@@ -15,7 +16,6 @@ from relax.helpers.fourier_window import (
 )
 from relax.helpers.half_volume_mstep import crop_relion_x_half_accumulator
 from relax.helpers.projection import _texture_centered_crop_at_indices
-from relax.helpers.shape_buckets import pad_axis
 from relax.scoring.significance import _coarse_gaussian_fused_logical_lookup, _plan_coarse_gaussian_square_layout
 from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle

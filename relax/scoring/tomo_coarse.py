@@ -203,16 +203,6 @@ def tilt_image_coarse_diff2(
     return jnp.concatenate(chunks, axis=1)
 
 
-def particle_coarse_diff2(image_diff2_in_slot_order):
-    """A particle's coarse diff2: its images' diff2 added in slot (``img_id``) order, float32."""
-
-    total = None
-    for image_diff2 in image_diff2_in_slot_order:
-        image_diff2 = jnp.asarray(image_diff2, dtype=jnp.float32)
-        total = image_diff2 if total is None else total + image_diff2
-    return total
-
-
 # Bytes of per-image projections ([images, R, P]) and coarse diff2 ([images, R, T] float32) one call holds, at most
 # (_coarse_pass_budget caps it by what the device can still hand out).
 _COARSE_BATCH_BYTES = 2 << 30
@@ -220,29 +210,6 @@ _COARSE_BATCH_BYTES = 2 << 30
 # Bytes of particles' summed diff2 ([P, K * R, T] float32) one significance call cuts, at most
 # (_flush_plan bounds the flush by what the device can still hand out).
 _SIGNIFICANCE_BATCH_BYTES = 512 << 20
-
-
-def _coarse_gemm_projections(
-    projector_half, rotations, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int, texture=None
-):
-    """The score-window rows of a RELION ``PPref`` half at ``rotations`` ``[N, 3, 3]`` (see
-    :func:`_score_window_projections` for the two layouts).
-
-    The projection the SPA coarse GEMM scorer reads (significance.py ``_project_relion_compact_score_rows``):
-    RELION's texture interpolation with the coarse diff2 kernel's row rule, in ``layout``'s score pixels.
-    ``texture`` is the half's :class:`relax.cuda.kernels.RelionCapacityHalfTextureF32`, staged once per pass.
-    """
-
-    return _score_window_projections(
-        projector_half,
-        rotations,
-        jnp.asarray(layout.score_indices_np, dtype=jnp.int32),
-        image_shape=tuple(layout.image_shape),
-        current_size=int(layout.current_size),
-        model_max_r=int(model_max_r),
-        padding_factor=int(padding_factor),
-        texture=texture,
-    )
 
 
 # Each class's projector texture, kept from pass to pass and refilled with the pass's projector: the compiled
