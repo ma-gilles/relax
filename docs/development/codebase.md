@@ -359,8 +359,8 @@ lines to probability updates; their E-step allowance grows by 36 over the
 upstream 1,900-line ceiling. The upstream exact-local VDAM removal integrates
 `adaptive_estep.py` into that responsibility and removes `sparse_pass2_estep.py`;
 its merged E-step count is 1,880 lines. All 309 lines of the new
-`sgd_initial_model` package have a separate owner and allowance, and the
-inventory guard checks that package dynamically. Other responsibility limits
+momentum-SGD code (the `sgd_initial_model` package, one module `vdam/sgd.py` since
+2026-10-08) have a separate owner and allowance. Other responsibility limits
 are unchanged. These are reviewed allowances for
 the [new optimizer and shared controls](../math/momentum_sgd.md), not changes
 to accuracy thresholds or exclusions of extracted code from accounting.

@@ -20,7 +20,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
 | 6 contracts | Met: the optimizer is decided once (`VdamUpdate` or `MomentumSgdUpdate`, built by the driver). The SPA/subtomogram split of the E-step closure is one `if tomo:` with a block each (accepted, as refinement's final reconstruction). `mstep_compute_dtype` and `uniform_class_direction_prior` are variants of one operation. |
 | 7 one owner | Met, with one exception: `do_grad` is computed by the loop and again by the E-step closure from the same state (item 2). |
 | 8 config/state/results | Met for the model update: the E-step's operands are a frozen `EstepSums`; the driver returns `NativeInitialModelResult`. Exception: the E-step callback still returns `(accumulators, meta)`, with `meta` both its transport and its report (item 3). |
-| 9 transitions | Met in the loop: model-state installs are statements of `run_vdam_iterations`; the sampling-counter install is `record_iteration`, no longer the output sink. Exceptions: item 3 (the E-step closure updates `particle_state` and `sampling_state` in place), and `relax.sgd_initial_model` reads and writes `meta`. |
+| 9 transitions | Met in the loop: model-state installs are statements of `run_vdam_iterations`; the sampling-counter install is `record_iteration`, no longer the output sink. Exceptions: item 3 (the E-step closure updates `particle_state` and `sampling_state` in place), and `relax.vdam.sgd` reads and writes `meta`. |
 | 10 signatures | Partly: `run_vdam_iterations` takes 30 parameters, as before: three optimizer arguments became `update`, and `environment` and `record_iteration` were added (item 4). |
 | 11 layers | Partly: item 5. |
 | 12 edges | Met: the unreachable and test-only fallbacks are gone (`retained_fallback`, the Pmax normalisation chain, the defaulted offset weight, partial noise sums, the missing M-step class mass); switches nothing honours refuse; a NaN tau2-fudge schedule refuses at the options edge (item 7). Accepted: "no sums at all keeps the model" (an empty subset), documented on `EstepSums`. |
@@ -64,7 +64,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    `diagnostics.vdam_mstep_replay._maybe_replay_iteration_references`; `estep_meta_updates` imports
    `diagnostics.vdam_noise`), refinement internals (`refinement.optics_shapes`, `refinement.tomo_half`,
    `sparse_pass2.resident_pass2.stable_window_class_history`) and private names of
-   `relion.initial_model_io`. `relax.sgd_initial_model` imports `relax.vdam.state`, and the loop imports
+   `relion.initial_model_io`. `relax.vdam.sgd` imports `relax.vdam.state`, and the loop imports
    it back (lazily, inside `MomentumSgdUpdate`). `relion_solvent_mask` has copies in
    `relax/relion/reference_initialization.py` and `relax/relion/initial_noise.py` (one formula, three
    homes).

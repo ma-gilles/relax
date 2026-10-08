@@ -568,7 +568,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     if opts.optimizer == "momentum_sgd" and int(np.unique(optics_group_by_particle).size) > 1:
         raise NotImplementedError("the momentum-SGD InitialModel takes one optics group")
     if opts.optimizer == "momentum_sgd":
-        from relax.sgd_initial_model.noise import corner_white_sigma2, initialize_sgd_noise
+        from relax.vdam.sgd import corner_white_sigma2, initialize_sgd_noise
 
         corner_count = min(int(opts.sigma2_min_particles), int(dataset.n_images))
         corner_images = _load_raw_images(

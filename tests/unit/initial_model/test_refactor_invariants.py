@@ -343,10 +343,8 @@ LOC_BUDGETS = {
     "symmetry_alignment": (321, ("align_symmetry.py",)),
     # Scalar-curvature momentum and masked observation-noise adaptation are an
     # opt-in package with its own exact reviewed budget and complete inventory.
-    "sgd_optimizer_noise": (309, (
-        "../sgd_initial_model/__init__.py", "../sgd_initial_model/noise.py",
-        "../sgd_initial_model/optimizer.py",
-    )),
+    # The package's three files (309 lines) are one module, vdam/sgd.py, since 2026-10-08 (e3).
+    "sgd_optimizer_noise": (309, ("sgd.py",)),
     # Optics groups on several image shapes (2026-10-05): each particle's pixel size and box in
     # NativeOpticsState: 549 -> 552 lines on main 7d7f3c92 (+3; ceiling +2).
     "reconstruction_state": (552, ("m_step.py", "state.py")),
@@ -378,9 +376,6 @@ def test_loc_budget_inventory_covers_every_vdam_module():
     assert all(path.is_file() for path in paths), "Update budget ownership when moving a module"
     listed = {path for path in paths if path.is_relative_to(PACKAGE_DIR)}
     assert listed == set(PACKAGE_DIR.rglob("*.py")), "Assign every VDAM module to a responsibility budget"
-    sgd_package_dir = PACKAGE_DIR.parent / "sgd_initial_model"
-    listed_sgd = {path for path in paths if path.is_relative_to(sgd_package_dir)}
-    assert listed_sgd == set(sgd_package_dir.rglob("*.py")), "Assign every SGD module to its responsibility budget"
 
 
 @pytest.mark.parametrize("responsibility", LOC_BUDGETS)

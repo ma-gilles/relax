@@ -26,8 +26,7 @@ These support an interpretation with no default Wiener volume penalty; they do
 not identify the optional sparsity formula or prove the proprietary update.
 See the saved parameters (`/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_speed_20260925/csparc_sgd/abinit_params_v506.tsv`; outside the repository).
 
-Implementation owners are [the optimizer](../../relax/sgd_initial_model/optimizer.py),
-[noise estimation](../../relax/sgd_initial_model/noise.py), and
+Implementation owners are [the optimizer and noise estimation](../../relax/vdam/sgd.py), and
 [the shared iteration loop](../../relax/vdam/iteration_loop.py). Mathematical
 and option contracts are tested in
 [test_sgd_initial_model.py](../../tests/unit/initial_model/test_sgd_initial_model.py).

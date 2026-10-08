@@ -187,19 +187,19 @@ class VdamUpdate:
 class MomentumSgdUpdate:
     """The opt-in momentum-SGD update; its resolution is the caller's Fourier radius schedule.
 
-    relax.sgd_initial_model reads its noise sums from the E-step's ``meta`` and adds its report there.
+    relax.vdam.sgd reads its noise sums from the E-step's ``meta`` and adds its report there.
     """
 
     learning_rate: float
     padding_factor: int
 
     def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:
-        from relax.sgd_initial_model.optimizer import sgd_m_step
+        from relax.vdam.sgd import sgd_m_step
 
         return sgd_m_step(current, accumulators, learning_rate=self.learning_rate, padding_factor=self.padding_factor, meta=meta)
 
     def update_noise(self, current, sums: EstepSums, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
-        from relax.sgd_initial_model.noise import update_sgd_noise
+        from relax.vdam.sgd import update_sgd_noise
 
         del sums, do_grad, mu  # its own noise estimate, without VDAM's momentum
         return update_sgd_noise(current, meta)

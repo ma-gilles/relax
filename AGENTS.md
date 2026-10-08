@@ -82,7 +82,7 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 | `relax/local/`, `relax/classification/` | exact local-search layout and backprojection; K-class execution and results |
 | `relax/dense/` | score payloads and scoring policy; the dense GEMM coarse pass and experiment |
 | `relax/reconstruction/`, `relax/relion/` | RELION M-step, regularization and noise; RELION metadata, CTF, projector, normalization |
-| `relax/vdam/`, `relax/ppca_initial_model/`, `relax/sgd_initial_model/` | InitialModel variants |
+| `relax/vdam/` (momentum SGD in `vdam/sgd.py`), `relax/ppca_initial_model/` | InitialModel variants |
 | `relax/ppca_refinement/` | pose-marginal PPCA refinement |
 | `relax/helpers/`, `relax/sampling.py`, `relax/healpix_sampling.py`, `relax/symmetry.py` | shared layouts, planning, grids |
 | `relax/cuda/` | CUDA kernels and their FFI (`librelax_cuda.so`) |

@@ -15,15 +15,6 @@ from relax.commands.initial_model import _native_options_dict, make_parser
 from relax.helpers.half_spectrum import _host_half_spectrum_plan
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.relion.relion_projector_setup import setup_relion_projector, swap_relion_volume_layout
-from relax.sgd_initial_model.noise import (
-    GAMMA,
-    INFLATED_PRIOR_COUNT,
-    WHITE_PRIOR_COUNT,
-    corner_white_sigma2,
-    initialize_sgd_noise,
-    update_sgd_noise,
-)
-from relax.sgd_initial_model.optimizer import _bandlimit_real_map, _class_step, sgd_m_step
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_meta_updates import update_probabilities_from_estep
@@ -32,6 +23,17 @@ from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_it
 from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
 from relax.vdam.native_sampling import _build_sampling_plan
 from relax.vdam.schedules import DEFAULT_GRAD_MU
+from relax.vdam.sgd import (
+    GAMMA,
+    INFLATED_PRIOR_COUNT,
+    WHITE_PRIOR_COUNT,
+    _bandlimit_real_map,
+    _class_step,
+    corner_white_sigma2,
+    initialize_sgd_noise,
+    sgd_m_step,
+    update_sgd_noise,
+)
 from relax.vdam.state import InitialModelState, VdamAccumulator
 
 pytestmark = pytest.mark.unit
@@ -320,9 +322,9 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
         np.testing.assert_array_equal(grid.rotations, grids[0].rotations)
         np.testing.assert_array_equal(grid.translations, grids[0].translations)
 
-    from relax.sgd_initial_model import noise as sgd_noise
-    from relax.sgd_initial_model import optimizer as sgd_optimizer
     from relax.vdam import iteration_loop
+    from relax.vdam import sgd as sgd_noise
+    from relax.vdam import sgd as sgd_optimizer
 
     monkeypatch.setattr(iteration_loop, "vdam_m_step", lambda state, **kwargs: state)
     monkeypatch.setattr(iteration_loop, "update_noise_from_estep", lambda state, sums, **kwargs: state)
