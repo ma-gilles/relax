@@ -26,7 +26,7 @@ from relax.relion.relion_coarse_operands import (
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.gaussian_plan import coarse_gaussian_report, plan_coarse_gaussian
 from relax.scoring.pass1_assembly import build_full_stats, log_batch_timing, significant_samples_after_loop
-from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
+from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs, resolve_noise_tables
 from relax.scoring.pass1_dump import select_dump_targets
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
 from relax.scoring.pass1_priors import plan_rotation_blocks, validated_translation_log_prior
@@ -244,7 +244,6 @@ def _compute_k_class_significance_batched(
     ):
         raise ValueError("RELION float32 normalization requires Gaussian float32 significance")
 
-    from recovar.reconstruction import noise as noise_utils
 
     from relax.helpers.fourier_window import make_fourier_window_spec
     from relax.helpers.half_spectrum import make_scoring_half_image_weights
@@ -497,13 +496,7 @@ def _compute_k_class_significance_batched(
         score_real_dtype=score_real_dtype,
     )
 
-    noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, image_shape).squeeze()
-    if noise_variance_half.ndim == 2 and optics_group_ids is None:
-        raise ValueError("a per-optics-group noise table needs optics_group_ids")
-    # Each batch gathers its images' group spectra on the host: an eager device gather would
-    # compile a program for every batch size (1339 compiles in a several-shape VDAM run).
-    noise_table_host = np.asarray(noise_variance_half) if noise_variance_half.ndim == 2 else None
-    image_groups_host = None if noise_table_host is None else np.asarray(optics_group_ids, dtype=np.int32)
+    noise_tables = resolve_noise_tables(noise_variance, image_shape, optics_group_ids)
 
     # The texture projector naturally produces a centered current-size crop.
     # Ask it only for the rows consumed by the scorer instead of scattering the
@@ -642,9 +635,7 @@ def _compute_k_class_significance_batched(
         score_real_dtype=score_real_dtype,
         pad_final_image_batch=pad_final_image_batch,
         image_batch_size=image_batch_size,
-        noise_variance_half=noise_variance_half,
-        noise_table_host=noise_table_host,
-        image_groups_host=image_groups_host,
+        noise=noise_tables,
         translation_log_prior=translation_log_prior,
     )
     pending_batch = None

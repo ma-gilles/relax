@@ -54,16 +54,46 @@ def _pad_significance_preprocess_inputs(
     )
 
 
+class NoiseTables(NamedTuple):
+    """The noise spectrum of a pass: one shared half-pixel spectrum, or one row per optics group.
+
+    ``noise_variance_half`` is ``[P]`` shared by every image, or ``[G, P]`` rows of G optics groups; with rows,
+    ``noise_table_host`` is the same table on the host and ``image_groups_host`` (int32 ``[N]``) gives each image of the
+    dataset its group. Both are ``None`` for the shared spectrum.
+    """
+
+    noise_variance_half: Any
+    noise_table_host: Any
+    image_groups_host: Any
+
+
+def resolve_noise_tables(noise_variance, image_shape, optics_group_ids) -> NoiseTables:
+    """The pass's noise spectrum on the half image grid, from ``noise_variance`` (one spectrum or ``[G, P]`` rows).
+
+    Rows need ``optics_group_ids``; a pass with one shared spectrum ignores them.
+    """
+
+    from recovar.reconstruction import noise as noise_utils
+
+    noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, image_shape).squeeze()
+    if noise_variance_half.ndim == 2 and optics_group_ids is None:
+        raise ValueError("a per-optics-group noise table needs optics_group_ids")
+    # Each batch gathers its images' group spectra on the host: an eager device gather would
+    # compile a program for every batch size (1339 compiles in a several-shape VDAM run).
+    noise_table_host = np.asarray(noise_variance_half) if noise_variance_half.ndim == 2 else None
+    image_groups_host = None if noise_table_host is None else np.asarray(optics_group_ids, dtype=np.int32)
+    return NoiseTables(noise_variance_half, noise_table_host, image_groups_host)
+
+
 @dataclass(frozen=True)
 class BatchInputPlan:
     """What pass 1 prepares every image batch from, fixed for the pass.
 
     ``image_corrections``, ``scale_corrections`` and ``image_pre_shifts`` are per-image RELION factors indexed by
     dataset image (``None``: absent). ``pad_final_image_batch`` repeat-pads a short last batch to ``image_batch_size``
-    rows so that every program sees one image extent. ``noise_variance_half`` is the one shared spectrum; with a
-    ``noise_table_host`` ``[G, P]`` and ``image_groups_host`` (each image's optics group) every image takes its own
-    group's row. ``translation_log_prior`` is ``None``, ``[T]`` (shared by every image) or ``[N, T]`` (one row per
-    image of the pass).
+    rows so that every program sees one image extent. ``noise`` is the pass's spectrum: the one shared spectrum, or a
+    row per optics group that every image takes from its own group. ``translation_log_prior`` is ``None``, ``[T]``
+    (shared by every image) or ``[N, T]`` (one row per image of the pass).
     """
 
     experiment_dataset: Any
@@ -73,9 +103,7 @@ class BatchInputPlan:
     score_real_dtype: Any
     pad_final_image_batch: bool
     image_batch_size: int
-    noise_variance_half: Any
-    noise_table_host: Any
-    image_groups_host: Any
+    noise: NoiseTables
     translation_log_prior: Any
 
 
@@ -139,10 +167,10 @@ def prepare_batch_inputs(plan: BatchInputPlan, batch_data, indices, *, start_idx
     # The batch's dataset images, repeat-padded as batch_data is.
     batch_image_indices = _repeat_pad_batch_axis(np.asarray(indices), batch_size)
     # Each image's own optics-group spectrum; the one shared spectrum otherwise.
-    batch_noise_half = plan.noise_variance_half
-    if plan.noise_table_host is not None:
-        batch_groups = plan.image_groups_host[np.asarray(indices, dtype=np.int64)]
-        batch_noise_half = jnp.asarray(_repeat_pad_batch_axis(plan.noise_table_host[batch_groups], batch_size))
+    batch_noise_half = plan.noise.noise_variance_half
+    if plan.noise.noise_table_host is not None:
+        batch_groups = plan.noise.image_groups_host[np.asarray(indices, dtype=np.int64)]
+        batch_noise_half = jnp.asarray(_repeat_pad_batch_axis(plan.noise.noise_table_host[batch_groups], batch_size))
     real_space_pre_shift_applied = integer_pre_shifts is not None
     if real_space_pre_shift_applied and not relion_cuda_preprocess:
         batch_data = apply_relion_integer_pre_shifts(batch_data, integer_pre_shifts)
