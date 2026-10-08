@@ -860,7 +860,6 @@ def _compute_k_class_significance_batched(
     image_pre_shifts=None,
     half_spectrum_scoring=False,
     projection_padding_factor=1,
-    do_gridding_correction=False,
     square_window=False,
     window_at_box=False,
     use_float64_scoring=False,
