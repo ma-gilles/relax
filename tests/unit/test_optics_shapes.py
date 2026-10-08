@@ -212,7 +212,7 @@ def test_shape_scoring_releases_unused_class_summaries_before_the_next_shape(mon
 
     monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
     owners = _dense_owners(
-        half, optics_shapes.OpticsSpec(noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
+        half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
     )
     merged = half_scoring._score_half_dense(*owners)
 
@@ -328,7 +328,7 @@ def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch, k
         return result
 
     monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
-    owners = list(_dense_owners(half, optics_shapes.OpticsSpec(noise_radial_k=np.ones((2, 17)) * REF_BOX**4)))
+    owners = list(_dense_owners(half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4)))
     owners[4] = dataclasses.replace(owners[4], k_class_enabled=k_class_enabled)
 
     merged = half_scoring._score_half_dense(*owners)
@@ -507,7 +507,7 @@ def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
 
     monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", score)
     owners = _dense_owners(
-        half, optics_shapes.OpticsSpec(noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
+        half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
         class_batch_overrides=overrides,
     )
     half_scoring._score_half_dense(*owners)
@@ -546,7 +546,7 @@ def test_class_pre_shifts_are_rounded_in_the_class_pixels():
         sigma_offset_angstrom=1.0, base_translations=grid, current_translations=grid,
         with_log_prior=False, zero_cold_center=False,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
-    ) == optics_shapes.OpticsSpec()
+    ) == optics_shapes.OpticsSpec.single_shape()
 
 
 @pytest.mark.unit
@@ -590,7 +590,7 @@ def test_single_shape_preparation_does_not_materialize_operands():
         object(), noise_radial=array, previous_translations=array, sigma_offset_angstrom=1.0,
         base_translations=array, current_translations=array, with_log_prior=True, zero_cold_center=True,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
-    ) == optics_shapes.OpticsSpec()
+    ) == optics_shapes.OpticsSpec.single_shape()
 
 
 @pytest.mark.unit

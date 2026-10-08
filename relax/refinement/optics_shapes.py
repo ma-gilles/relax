@@ -64,11 +64,22 @@ class OpticsSpec:
     selection, only projection scale and reference support remain class-specific.
     """
 
-    noise_radial_k: object | None = None
-    coarse_sizing: tuple[float, float | None] | None = None
-    class_translations: tuple[ShapeTranslations, ...] | None = None
-    projection_scale: float = 1.0
-    reference_current_size: int | None = None
+    noise_radial_k: object | None
+    coarse_sizing: tuple[float, float | None] | None
+    class_translations: tuple[ShapeTranslations, ...] | None
+    projection_scale: float
+    reference_current_size: int | None
+
+    @classmethod
+    def single_shape(cls) -> "OpticsSpec":
+        """A half on one image grid: no per-class operands, the reference's own projection."""
+        return cls(
+            noise_radial_k=None,
+            coarse_sizing=None,
+            class_translations=None,
+            projection_scale=1.0,
+            reference_current_size=None,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -140,7 +151,7 @@ def prepare_optics(
     """
 
     if not isinstance(dataset, MultiShapeHalf):
-        return OpticsSpec()
+        return OpticsSpec.single_shape()
 
     noise_radial = np.asarray(noise_radial, dtype=np.float64)
     coarse_sizing = None if coarse_step_deg is None else (float(coarse_step_deg), particle_diameter_ang)
@@ -185,6 +196,9 @@ def prepare_optics(
         noise_radial_k=noise_radial,
         coarse_sizing=coarse_sizing,
         class_translations=tuple(translations),
+        # The selected shape class sets its own (half_scoring's per-class replace).
+        projection_scale=1.0,
+        reference_current_size=None,
     )
 
 

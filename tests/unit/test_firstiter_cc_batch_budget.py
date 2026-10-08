@@ -92,7 +92,7 @@ def _dense_owners(**values):
             relion_x_half_mstep=ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
             precision=scoring_policy.DENSE_PRECISION,
         ),
-        optics_shapes.OpticsSpec(),
+        optics_shapes.OpticsSpec.single_shape(),
     )
     assert not values, f"unmapped dense owner values: {sorted(values)}"
     return owners
