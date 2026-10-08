@@ -52,7 +52,7 @@ from relax.parity.state_swap_probe import (
     state_swap_probe_loop_index,
     validate_state_swap_probe_application,
 )
-from relax.refinement import command_options, particle_loading, startup_noise, startup_references
+from relax.refinement import command_options, particle_loading, run_files, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
     RunReport,
@@ -63,8 +63,7 @@ from relax.refinement.result_files import (
     write_profile_only_summary,
     write_refinement_archive,
 )
-from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files
-from relax.relion import input_particle_table, input_poses, relion_metadata
+from relax.relion import geometry, input_particle_table, input_poses, relion_metadata
 
 logging.basicConfig(
     level=logging.INFO,
@@ -461,11 +460,10 @@ def main(command=None):
     if relax._XLA_RESERVE_LOG_LINE is not None:
         logger.info("%s", relax._XLA_RESERVE_LOG_LINE)
     # An entry point that started the backend without that reserve is refused here, not in the final pass.
-    from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS, PROJECTION_PADDING_FACTOR
 
     xla_memory_reserve.require_projector_texture_reserve(
         xla_memory_reserve.model_box_from_map_headers(xla_memory_reserve.reference_maps_from_argv(sys.argv[1:])),
-        PROJECTION_PADDING_FACTOR,
+        geometry.PROJECTION_PADDING_FACTOR,
     )
 
     # Verify GPU
@@ -497,7 +495,7 @@ def main(command=None):
     args._relion_mask_params = relion_mask_params
     particle_diameter_ang = None if relion_mask_params is None else float(relion_mask_params[0])
     # The loader's resolved edge (--width_mask_edge_px, or a found or sealed optimiser's rlnWidthMaskEdge).
-    width_mask_edge_px = IMAGE_MASK_EDGE_PIXELS if relion_mask_params is None else float(relion_mask_params[1])
+    width_mask_edge_px = geometry.IMAGE_MASK_EDGE_PIXELS if relion_mask_params is None else float(relion_mask_params[1])
     logger.info("Dataset: %d images, image_shape=%s, voxel_size=%.3f A/px", ds.n_units, ds.image_shape, ds.voxel_size)
 
     # ---- Create half-sets ----
@@ -585,7 +583,7 @@ def main(command=None):
                 "--continue does not support particle STARs with several image shapes yet (relax#38); "
                 "restart the run from its input instead"
             )
-        resume_snapshot = read_run_files(
+        resume_snapshot = run_files.read_run_files(
             args.continue_optimiser_star,
             image_names=[str(name) for name in our_names],
             half_rows=[particle_layout.half1_rows, particle_layout.half2_rows],
@@ -1169,9 +1167,9 @@ def main(command=None):
 
     run_file_writer = None
     if int(args.write_iteration_every) > 0:
-        run_file_writer = RunFileWriter(
+        run_file_writer = run_files.RunFileWriter(
             args.output,
-            settings=RunSettings(
+            settings=run_files.RunSettings(
                 output_root=os.path.join(args.output, "run"),
                 random_seed=int(args.seed),
                 nr_iter=int(args.max_iter),
@@ -1180,8 +1178,10 @@ def main(command=None):
                 # Refine3D job's --low_resol_join_halves 40 (pipeline_jobs.cpp:4509) or, for Class3D, the
                 # binary's default -1 (ml_optimiser.cpp:895).
                 width_mask_edge=int(width_mask_edge_px),
-                low_resol_join_halves=RunSettings.low_resol_join_halves if int(args.n_classes) == 1 else -1.0,
+                low_resol_join_halves=40.0 if int(args.n_classes) == 1 else -1.0,
                 adaptive_oversampling=int(args.adaptive_oversampling),
+                # RELION's double --adaptive_fraction default (the scorers use its float32 rounding).
+                adaptive_fraction=0.999,
                 auto_local_healpix_order=int(args.auto_local_healpix_order),
                 strict_highres_exp=-1.0 if args.strict_highres_exp is None else float(args.strict_highres_exp),
                 max_significants=int(args.max_significants),
@@ -1190,6 +1190,7 @@ def main(command=None):
                 offset_range_original_angstrom=float(args.offset_range) * float(ds.voxel_size),
                 offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
                 perturbation_factor=float(args.perturb_factor),
+                padding_factor=float(geometry.RECONSTRUCTION_PADDING_FACTOR),
                 do_solvent_fsc=bool(args.solvent_correct_fsc),
                 solvent_mask_name="None" if args.solvent_mask is None else str(args.solvent_mask),
                 command_line=" ".join(sys.orig_argv),

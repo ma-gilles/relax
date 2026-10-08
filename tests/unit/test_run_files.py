@@ -261,13 +261,41 @@ def _k1_snapshot(half_sizes, rng):
     )
 
 
+def _run_settings(output_root, **fields):
+    """RunSettings of a 25-iteration K=1 run with relion_refine's defaults where the test sets nothing."""
+    return RunSettings(
+        **{
+            "output_root": str(output_root),
+            "random_seed": 17,
+            "nr_iter": 25,
+            "particle_diameter": 200.0,
+            "width_mask_edge": 5,
+            "adaptive_oversampling": 1,
+            "adaptive_fraction": 0.999,
+            "low_resol_join_halves": 40.0,
+            "auto_local_healpix_order": 4,
+            "strict_highres_exp": -1.0,
+            "do_solvent_fsc": False,
+            "solvent_mask_name": "None",
+            "max_significants": -1,
+            "symmetry": "C1",
+            "healpix_order_original": 2,
+            "offset_range_original_angstrom": 0.0,
+            "offset_step_original_angstrom": 0.0,
+            "perturbation_factor": 0.5,
+            "padding_factor": 2.0,
+            "command_line": "",
+            "mode": "relion",
+            **fields,
+        }
+    )
+
+
 def _writer(tmp_path, input_star, half_rows, **kwargs):
     kwargs.setdefault("background", False)
     return RunFileWriter(
         tmp_path / "out",
-        settings=RunSettings(
-            output_root=str(tmp_path / "out" / "run"), random_seed=17, nr_iter=25, particle_diameter=200.0
-        ),
+        settings=_run_settings(tmp_path / "out" / "run"),
         input_star=input_star,
         half_rows=half_rows,
         **kwargs,
@@ -363,9 +391,7 @@ def test_optimiser_star_records_mode_relax_and_relions_mode_writes_nothing(tmp_p
     for mode, recorded in (("relion", None), ("relax", "relax")):
         writer = RunFileWriter(
             tmp_path / mode,
-            settings=RunSettings(
-                output_root=str(tmp_path / mode / "run"), random_seed=17, nr_iter=25, particle_diameter=200.0, mode=mode
-            ),
+            settings=_run_settings(tmp_path / mode / "run", mode=mode),
             input_star=input_star,
             half_rows=half_rows,
             background=False,

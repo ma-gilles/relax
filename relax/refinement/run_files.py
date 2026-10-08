@@ -198,26 +198,26 @@ class RunSettings:
     random_seed: int
     nr_iter: int
     particle_diameter: float
-    width_mask_edge: int = 5
-    adaptive_oversampling: int = 1
-    adaptive_fraction: float = 0.999
-    low_resol_join_halves: float = 40.0
-    auto_local_healpix_order: int = 4
+    width_mask_edge: int
+    adaptive_oversampling: int
+    adaptive_fraction: float
+    low_resol_join_halves: float
+    auto_local_healpix_order: int
     # RELION --strict_highres_exp in Angstrom; -1 when off, as relion_refine records it.
-    strict_highres_exp: float = -1.0
-    do_solvent_fsc: bool = False
-    solvent_mask_name: str = "None"
-    max_significants: int = -1
-    symmetry: str = "C1"
-    healpix_order_original: int = 2
-    offset_range_original_angstrom: float = 0.0
-    offset_step_original_angstrom: float = 0.0
-    perturbation_factor: float = 0.5
-    padding_factor: float = 2.0
-    command_line: str = ""
+    strict_highres_exp: float
+    do_solvent_fsc: bool
+    solvent_mask_name: str
+    max_significants: int
+    symmetry: str
+    healpix_order_original: int
+    offset_range_original_angstrom: float
+    offset_step_original_angstrom: float
+    perturbation_factor: float
+    padding_factor: float
+    command_line: str
     # The command's --mode, recorded beside the consistency options it resolved to (a label; the
     # options are what a continuation must repeat). RELION's mode writes nothing.
-    mode: str = "relion"
+    mode: str
 
 
 class RunFileWriter:
