@@ -32,7 +32,6 @@ from relax.relion.initial_model_io import (
     _experiment_read_order,
     _particle_state_from_star,
     _tomo_particle_state_from_star,
-    _write_model_star,
 )
 from relax.relion.relion_metadata import (
     INITIAL_MODEL_OPTICS_FEATURES,
@@ -622,11 +621,14 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     def record_iteration(current, _iteration, meta):
         _record_native_sampling_post_iteration(sampling_state, current, meta=meta)
 
+    written_iterations: set[int] = set()  # the iterations whose class maps and model.star this run wrote
+
     def artifact_sink(current, iteration, meta):
         if not opts.write_iter_artifacts or not _should_write_iteration_artifacts(
             iteration, int(opts.nr_iter), int(opts.grad_write_iter)
         ):
             return
+        written_iterations.add(int(iteration))
         _write_iteration_artifacts(
             opts.outputname,
             current,
@@ -705,13 +707,15 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     if opts.pilot_controls is not None:
         opts.pilot_controls.check_completed(final_state.iter, opts.nr_iter)
     final_mrc, class_mrcs, align_report = _write_final_outputs(
-        opts.outputname, final_state, sym_name=opts.sym_name, seed=int(opts.random_seed)
+        opts.outputname,
+        final_state,
+        sym_name=opts.sym_name,
+        seed=int(opts.random_seed),
+        written_iterations=frozenset(written_iterations),
     )
     if "refined_rot_tilt_psi" in align_report:
         print("InitialModel symmetry alignment: " + json.dumps(align_report, sort_keys=True), flush=True)
     final_model_star = f"{opts.outputname}_it{final_state.iter:03d}_model.star"
-    if not os.path.exists(final_model_star):
-        _write_model_star(final_model_star, final_state, class_mrcs)
     profile.record("final_artifacts")
     profile.report("driver")
     return NativeInitialModelResult(

@@ -2283,6 +2283,28 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
     assert config.engine_kwargs["healpix_order"] == 0
 
 
+def test_final_outputs_replace_stale_files_of_a_reused_prefix(tmp_path):
+    """A run writes its own final class maps and model.star (RELION's write() at the last iteration,
+    ml_optimiser.cpp:1361 and 3489); files an earlier run left under the same prefix are not its result."""
+    import mrcfile
+
+    state = initialise_denovo_state(ori_size=8, pixel_size=1.5, K=1, nr_iter=3, n_directions=4)
+    state.iter = 3
+    state.current_resolution = 0.05
+    state.Iref[0] = np.arange(8**3, dtype=np.float64).reshape(8, 8, 8)
+    prefix = str(tmp_path / "run")
+    stale_map = tmp_path / "run_it003_class001.mrc"
+    write_relion_mrc(str(stale_map), np.zeros((8, 8, 8), dtype=np.float32), voxel_size=1.5)
+    stale_star = tmp_path / "run_it003_model.star"
+    stale_star.write_text("data_stale\n")
+
+    output._write_final_outputs(prefix, state, sym_name="C1", seed=0)
+
+    with mrcfile.open(stale_map) as written:
+        assert np.any(np.asarray(written.data) != 0)
+    assert "data_stale" not in stale_star.read_text()
+
+
 def test_driver_output_mrc_path_matches_relion_snapshot():
     assert output._initial_model_mrc_from_prefix("ab_initio/run") == "ab_initio/initial_model.mrc"
 

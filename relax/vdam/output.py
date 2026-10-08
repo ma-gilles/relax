@@ -146,9 +146,18 @@ def _json_ready(value):
 
 
 def _write_final_outputs(
-    output_prefix: str, state: InitialModelState, *, sym_name: str, seed: int
+    output_prefix: str,
+    state: InitialModelState,
+    *,
+    sym_name: str,
+    seed: int,
+    written_iterations: frozenset[int] = frozenset(),
 ) -> tuple[str, tuple[str, ...], dict]:
-    """Write the last iteration's class maps and ``initial_model.mrc``.
+    """Write the last iteration's class maps, model.star and ``initial_model.mrc``.
+
+    RELION's write() always writes the last iteration's model (ml_optimiser.cpp:1361, 3489). The class maps
+    and model.star of ``state.iter`` are written here unless this run's iteration sink already wrote them
+    (``written_iterations``); a file an earlier run left under the same prefix is never taken as the result.
 
     ``initial_model.mrc`` is what RELION's InitialModel GUI job writes after relion_refine:
     ``relion_align_symmetry --select_largest_class --apply_sym --sym S`` (:mod:`relax.vdam.align_symmetry`), so for
@@ -156,11 +165,13 @@ def _write_final_outputs(
     """
     iteration = int(state.iter)
     class_mrcs = _class_mrc_paths(output_prefix, iteration, int(state.K))
+    model_star = f"{output_prefix}_it{iteration:03d}_model.star"
     out_dir = Path(output_prefix).parent
     out_dir.mkdir(parents=True, exist_ok=True)
-    for k, class_mrc in enumerate(class_mrcs):
-        if not os.path.exists(class_mrc):
+    if iteration not in written_iterations:
+        for k, class_mrc in enumerate(class_mrcs):
             write_map(class_mrc, state.Iref[k], voxel_size=float(state.pixel_size))
+        _write_model_star(model_star, state, class_mrcs)
     final_mrc = _initial_model_mrc_from_prefix(output_prefix)
     best_class = select_largest_class(state.pdf_class)
     # The alignment reads the map as written (RELION's frame); the frame change is its own inverse.
