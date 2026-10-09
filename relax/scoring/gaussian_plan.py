@@ -124,10 +124,6 @@ def plan_coarse_gaussian(
         stable_fourier_window_shapes=bool(stable_fourier_window_shapes),
     )
     square_score_count = square_layout.physical_square_count
-    score_indices_np = np.asarray(
-        square_layout.score_indices_np,
-        dtype=np.int32,
-    )
     transient_budget = coarse_gaussian_gemm_projected_transient_budget_bytes()
     # The plain GEMM splits the rotation axis until the projector
     # transient fits.
@@ -201,8 +197,8 @@ def plan_coarse_gaussian(
     )
     return CoarseGaussianPlan(
         square_layout=square_layout,
-        score_indices_np=score_indices_np,
-        score_indices=jnp.asarray(score_indices_np, dtype=jnp.int32),
+        score_indices_np=square_layout.score_indices_np,
+        score_indices=jnp.asarray(square_layout.score_indices_np, dtype=jnp.int32),
         score_active_mask=jnp.asarray(square_layout.score_active_mask_np, dtype=jnp.bool_),
         projector_output_size=square_layout.physical_current_size,
         powerclass=relion_cuda_powerclass_highres_xi2_half,
