@@ -407,7 +407,7 @@ def initial_state_from_particles(
         )
     profile.record("raw_images")
     sorted_star = main_star.iloc[bootstrap_order]
-    voltage, Cs, Q0, pixel_size = initial_model_io._particle_optics(sorted_star, optics_star, dataset)
+    optics = initial_model_io._particle_optics(sorted_star, optics_star, dataset)
     profile.record("optics_metadata")
 
     # A comparison source's start-up references replace the bootstrap (VdamInputSource.startup_references).
@@ -420,9 +420,9 @@ def initial_state_from_particles(
             defV=np.asarray(sorted_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
             defAngle=np.asarray(sorted_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),
             phase_shift=initial_model_io._phase_shift(sorted_star),
-            voltage=voltage,
-            Cs=Cs,
-            Q0=Q0,
+            voltage=optics.voltage,
+            Cs=optics.Cs,
+            Q0=optics.Q0,
             pixel_size=pixel_size,
             box_size=box_size,
             nr_classes=int(opts.nr_classes),

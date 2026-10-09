@@ -75,11 +75,10 @@ def test_particle_optics_follow_each_particles_group():
     class _Dataset:
         voxel_size = 4.25
 
-    voltage, cs, q0, pixel = initial_model_io._particle_optics(main, optics, _Dataset())
-    np.testing.assert_allclose(voltage, [200.0, 300.0, 200.0], rtol=1e-12)
-    np.testing.assert_allclose(cs, [1.4, 2.7, 1.4], rtol=1e-12)
-    np.testing.assert_allclose(q0, [0.07, 0.1, 0.07], rtol=1e-12)
-    assert pixel == pytest.approx(4.25, rel=1e-12)
+    particle_optics = initial_model_io._particle_optics(main, optics, _Dataset())
+    np.testing.assert_allclose(particle_optics.voltage, [200.0, 300.0, 200.0], rtol=1e-12)
+    np.testing.assert_allclose(particle_optics.Cs, [1.4, 2.7, 1.4], rtol=1e-12)
+    np.testing.assert_allclose(particle_optics.Q0, [0.07, 0.1, 0.07], rtol=1e-12)
     other_grid = optics.assign(_rlnImagePixelSize=[4.25, 5.44])
     with pytest.raises(ValueError, match="one dataset per image shape"):
         initial_model_io._particle_optics(main, other_grid, _Dataset())

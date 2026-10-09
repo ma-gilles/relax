@@ -189,7 +189,7 @@ def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch
     monkeypatch.setattr(backend, "set_relion_image_mask", lambda **kwargs: seen.update(mask=kwargs))
     estep_setup.configure_relion_image_mask(ds, opts)
     assert seen["mask"]["pixel_size"] == PIXEL
-    assert initial_model_io._particle_optics(sf.df, sf.data_optics, ds)[-1] == pytest.approx(PIXEL, rel=1e-12)
+    assert initial_model_io._native_optics_state(sf.df, sf.data_optics, ds).pixel_size == pytest.approx(PIXEL, rel=1e-12)
     sampling = native_sampling.initial_sampling_state(opts, pixel_size=ds.voxel_size)
     assert sampling.offset_range_angstrom == 6 * PIXEL
     assert sampling.offset_step_angstrom == 2 * PIXEL

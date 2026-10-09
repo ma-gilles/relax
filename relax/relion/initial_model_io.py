@@ -10,7 +10,7 @@ from recovar.data_io.starfile import star_column, write_star_blocks
 from recovar.utils.helpers import R_from_relion, R_to_relion
 
 from relax import sampling
-from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
+from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState, ParticleOptics
 
 
 def _optics_group_indices(main_star) -> np.ndarray:
@@ -25,14 +25,13 @@ def _optics_group_indices(main_star) -> np.ndarray:
     return indices.astype(np.int64, copy=False)
 
 
-def _particle_optics(main_star, optics_star, ds) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """Each particle's voltage, Cs and amplitude contrast (its optics group's), and the model pixel size.
+def _particle_optics(main_star, optics_star, ds) -> ParticleOptics:
+    """Each particle's voltage, Cs and amplitude contrast (its optics group's).
 
     Optics groups may differ in their CTF constants; groups on other pixel sizes or boxes need
     a dataset with one class per image shape (``MultiShapeDataset``, which has ``datasets``).
     """
 
-    pixel_size = float(ds.voxel_size)
     names = ("_rlnVoltage", "_rlnSphericalAberration", "_rlnAmplitudeContrast")
     if optics_star is None:
         missing = [name for name in names if name not in main_star.columns]
@@ -42,7 +41,7 @@ def _particle_optics(main_star, optics_star, ds) -> tuple[np.ndarray, np.ndarray
                 f"missing {', '.join(missing)}"
             )
         values = [np.asarray(main_star[name].astype(float).to_numpy(), dtype=np.float64) for name in names]
-        return values[0], values[1], values[2], pixel_size
+        return ParticleOptics(*values)
 
     for name in ("_rlnImagePixelSize", "_rlnImageSize"):
         several = name in optics_star.columns and np.unique(optics_star[name].astype(float).to_numpy()).size != 1
@@ -61,7 +60,7 @@ def _particle_optics(main_star, optics_star, ds) -> tuple[np.ndarray, np.ndarray
         raise ValueError(f"particles name optics groups missing from the optics table: {', '.join(missing)}")
     rows = np.asarray([row_of[str(label)] for label in particle_labels], dtype=np.int64)
     values = [np.asarray(optics_star[name].astype(float).to_numpy(), dtype=np.float64)[rows] for name in names]
-    return values[0], values[1], values[2], pixel_size
+    return ParticleOptics(*values)
 
 
 def _phase_shift(main_star) -> np.ndarray:
@@ -71,7 +70,7 @@ def _phase_shift(main_star) -> np.ndarray:
 
 
 def _native_optics_state(main_star, optics_star, dataset) -> NativeOpticsState:
-    voltage, Cs, Q0, pixel_size = _particle_optics(main_star, optics_star, dataset)
+    optics = _particle_optics(main_star, optics_star, dataset)
     required = ("_rlnDefocusU", "_rlnDefocusV", "_rlnDefocusAngle")
     missing = [name for name in required if name not in main_star.columns]
     if missing:
@@ -84,10 +83,10 @@ def _native_optics_state(main_star, optics_star, dataset) -> NativeOpticsState:
             grids["image_pixel_size"][rows] = float(class_dataset.voxel_size)
             grids["image_box"][rows] = int(class_dataset.image_shape[0])
     return NativeOpticsState(
-        voltage=voltage,
-        Cs=Cs,
-        Q0=Q0,
-        pixel_size=float(pixel_size),
+        voltage=optics.voltage,
+        Cs=optics.Cs,
+        Q0=optics.Q0,
+        pixel_size=float(dataset.voxel_size),
         **grids,
         defU=np.asarray(main_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
         defV=np.asarray(main_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
