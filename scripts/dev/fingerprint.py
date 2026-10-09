@@ -1048,11 +1048,17 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def write_relion_dir(n_classes, orders, max_iter, optimiser):
         """RELION sampling and model STAR files for the replay directory; orders[i] is the prior written
         after RELION iteration i+1 (None writes no model file for that iteration)."""
+        from relax.sampling import relion_sampling_perturbation_for_iteration
+
         root = Path(tempfile.mkdtemp(dir=tmp_root))
         for it in range(0, max_iter + 2):
+            # The perturbation RELION's seed (the cases' perturb_seed, 17) gives at this iteration, unrounded:
+            # the replay recovers it from the seed and checks the STAR value against it.
+            perturbation = float(relion_sampling_perturbation_for_iteration(0.5, 17, it))
             (root / f"run_it{it:03d}_sampling.star").write_text(
                 "data_sampling_general\n\n_rlnHealpixOrder 2\n_rlnPsiStep 15.0\n_rlnOffsetRange 10.0\n"
-                "_rlnOffsetStep 2.0\n_rlnSamplingPerturbInstance 0.25\n_rlnSamplingPerturbFactor 0.5\n"
+                f"_rlnOffsetStep 2.0\n_rlnSamplingPerturbInstance {perturbation!r}\n"
+                "_rlnSamplingPerturbFactor 0.5\n"
             )
         if optimiser:
             for it in range(1, max_iter + 2):
@@ -1270,7 +1276,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             )
         if star_prior is not None:
             parity["perturb_replay_relion_dir"] = write_relion_dir(n_classes, star_prior, max_iter, star_optimiser)
-            parity["perturb_replay_precision"] = "star"
         if replay_max_iter is not None:
             parity["perturb_replay_max_iter"] = replay_max_iter
         debug_fields = {}
@@ -1335,7 +1340,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 replay_settings = {
                     name: group.pop(name)
                     for group, names in (
-                        (parity, ("perturb_replay_relion_dir", "perturb_replay_precision", "perturb_replay_max_iter")),
+                        (parity, ("perturb_replay_relion_dir", "perturb_replay_max_iter")),
                         (replay_fields, ("replay_iteration_overrides", "final_replay_override")),
                     )
                     for name in names if name in group

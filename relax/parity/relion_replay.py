@@ -545,15 +545,9 @@ def _resolve_replay_random_perturbation(
     replay_dir: str,
     replay_prefix: str = "run",
     explicit_seed: int | None,
-    precision_mode: str,
     restart_state_iteration: int | None = None,
 ) -> tuple[float, str]:
-    """Recover RELION's live perturbation without STAR decimal truncation."""
-    if precision_mode not in {"auto", "seed_exact", "star"}:
-        raise ValueError(f"Unsupported perturb_replay_precision={precision_mode!r}")
-    if precision_mode == "star":
-        return float(star_value), "star"
-
+    """Recover RELION's live perturbation without STAR decimal truncation (the STAR value without a seed)."""
     seed = _replay_perturbation_seed(
         replay_dir,
         relion_iteration,
@@ -561,11 +555,6 @@ def _resolve_replay_random_perturbation(
         replay_prefix=replay_prefix,
     )
     if seed is None:
-        if precision_mode == "seed_exact":
-            raise ValueError(
-                "perturb_replay_precision='seed_exact' requires perturb_seed or "
-                "_rlnRandomSeed in a replay optimiser STAR"
-            )
         return float(star_value), "star-fallback"
 
     exact = relion_sampling_perturbation_for_iteration(

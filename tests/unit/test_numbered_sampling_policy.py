@@ -140,7 +140,7 @@ def test_replay_restart_uses_physical_iteration(tmp_path):
     (tmp_path / "run_it012_optimiser.star").write_text("data_\n\n_rlnRandomSeed 1778628798\n")
     options = _options(stand_in.parity(perturb_factor=0.5), 11)
     replay = RelionReplay(
-        perturb_replay_precision="seed_exact", perturb_replay_restart_state_iterations=(11,),
+        perturb_replay_restart_state_iterations=(11,),
         perturb_replay_relion_dir=str(tmp_path),
     )
     source = RelionReplaySource(replay, options)

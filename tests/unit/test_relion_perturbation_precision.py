@@ -24,7 +24,6 @@ def test_seed_exact_replay_recovers_unrounded_relion_value(tmp_path):
         relion_iteration=2,
         replay_dir=str(tmp_path),
         explicit_seed=None,
-        precision_mode="auto",
     )
     assert source == "seed-exact"
     assert value == 0.4052000939846039
@@ -38,22 +37,9 @@ def test_auto_replay_falls_back_to_star_without_seed(tmp_path):
         relion_iteration=1,
         replay_dir=str(tmp_path),
         explicit_seed=None,
-        precision_mode="auto",
     )
     assert source == "star-fallback"
     assert value == -0.04961
-
-
-def test_seed_exact_requires_seed_provenance(tmp_path):
-    with pytest.raises(ValueError, match="requires perturb_seed"):
-        _resolve_replay_random_perturbation(
-            star_value=-0.04961,
-            perturbation_factor=0.5,
-            relion_iteration=1,
-            replay_dir=str(tmp_path),
-            explicit_seed=None,
-            precision_mode="seed_exact",
-        )
 
 
 def test_seed_reconstruction_checks_star_consistency(tmp_path):
@@ -65,8 +51,7 @@ def test_seed_reconstruction_checks_star_consistency(tmp_path):
             relion_iteration=2,
             replay_dir=str(tmp_path),
             explicit_seed=None,
-            precision_mode="auto",
-        )
+            )
 
 
 def test_seed_exact_replay_supports_explicit_restart_boundary(tmp_path):
@@ -78,22 +63,8 @@ def test_seed_exact_replay_supports_explicit_restart_boundary(tmp_path):
         relion_iteration=12,
         replay_dir=str(tmp_path),
         explicit_seed=None,
-        precision_mode="seed_exact",
         restart_state_iteration=11,
     )
 
     assert value == -0.06873074173927307
     assert source == "seed-exact-restart@11"
-
-
-@pytest.mark.parametrize("mode", ["invalid", "exact"])
-def test_replay_precision_mode_is_typed(tmp_path, mode):
-    with pytest.raises(ValueError, match="Unsupported perturb_replay_precision"):
-        _resolve_replay_random_perturbation(
-            star_value=0.0,
-            perturbation_factor=0.5,
-            relion_iteration=0,
-            replay_dir=str(tmp_path),
-            explicit_seed=None,
-            precision_mode=mode,
-        )

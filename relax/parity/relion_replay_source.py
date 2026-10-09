@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -96,7 +96,6 @@ class RelionReplay:
     perturb_replay_relion_dir: str | None = None
     perturb_replay_relion_prefix: str = "run"
     perturb_replay_max_iter: int | None = None
-    perturb_replay_precision: Literal["auto", "seed_exact", "star"] = "auto"
     perturb_replay_restart_state_iterations: tuple[int, ...] = ()
     replay_iteration_overrides: Any | None = None
     final_replay_override: Any | None = None
@@ -502,7 +501,6 @@ class RelionReplaySource(InputSource):
                 replay_dir=str(replay_dir),
                 replay_prefix=self.replay.perturb_replay_relion_prefix,
                 explicit_seed=parity.perturb_seed,
-                precision_mode=self.replay.perturb_replay_precision,
                 restart_state_iteration=_perturbation_restart_state_iteration(
                     self.replay.perturb_replay_restart_state_iterations, replay_iteration,
                 ),
@@ -621,7 +619,6 @@ class RelionReplaySource(InputSource):
             replay_dir=str(self._star_directory(iteration)),
             replay_prefix=self.replay.perturb_replay_relion_prefix,
             explicit_seed=parity.perturb_seed,
-            precision_mode=str(self.replay.perturb_replay_precision),
             restart_state_iteration=restart_iteration,
         )
         logger.info(
