@@ -691,7 +691,7 @@ MUTATIONS = (
      "the current-size shell cut-off moves by one", True),
     ("noise_rows_doubled", "return jnp.asarray(noise.make_radial_noise(shell_profile, image_shape)).reshape(-1)", "return jnp.asarray(noise.make_radial_noise(shell_profile, image_shape)).reshape(-1) * 2",
      "the shells-to-pixel-row noise expansion is doubled", True),
-    ("noise_summed_count_dropped", 'consistency.noise_shell_count == "summed" else None,', 'consistency.noise_shell_count == "never" else None,',
+    ("noise_summed_count_dropped", 'consistency.noise_shell_count == "summed" else None', 'consistency.noise_shell_count == "never" else None',
      "the summed noise count is never forwarded to the noise update", True),
     ("mode_relax_class_gridding_not_skipped", 'not_honoured["gridding_kernel"] = "Class3D\'s tau2 is the power of the radially corrected reference"', "pass",
      "--mode relax sets the separable gridding window in Class3D, which the loop refuses", True),
