@@ -77,6 +77,31 @@ def write_initial_run_metadata(opts, continuation) -> None:
             f.write("\n")
 
 
+def add_class_prior_report(meta: dict, current: InitialModelState, *, uniform_class_direction_prior: bool) -> None:
+    """Add the iteration's class-prior report to its ``meta`` (written to run_itNNN_recovar_meta.json; nothing in
+    the run reads it): each class's share of the full and of the retained (M-step) posterior mass, and with the
+    uniform class/direction prior the priors the next E-step uses."""
+    full_class_sums = meta.get("class_posterior_sums_full")
+    if full_class_sums is not None:
+        full_class_sums = np.asarray(full_class_sums, dtype=np.float64)
+        class_mass = float(np.sum(full_class_sums))
+        if full_class_sums.shape == (current.K,) and np.isfinite(class_mass) and class_mass > 0.0:
+            meta["class_posterior_fraction_by_class"] = (full_class_sums / class_mass).tolist()
+            meta["class_posterior_fraction_source"] = "full"
+    retained_class_sums = meta.get("class_posterior_sums")
+    if retained_class_sums is not None:
+        retained_class_sums = np.asarray(retained_class_sums, dtype=np.float64)
+        retained_mass = float(np.sum(retained_class_sums))
+        if retained_class_sums.shape == (current.K,) and np.isfinite(retained_mass) and retained_mass > 0.0:
+            meta["class_retained_mass_fraction_by_class"] = (retained_class_sums / retained_mass).tolist()
+    if uniform_class_direction_prior:
+        n_directions = int(np.asarray(current.pdf_direction).shape[1])
+        meta["uniform_class_direction_prior"] = True
+        meta["effective_pdf_class_prior_by_class"] = np.asarray(current.pdf_class, dtype=np.float64).tolist()
+        meta["effective_joint_direction_prior_per_class_direction"] = 1.0 / float(current.K * n_directions)
+        meta["effective_joint_direction_count"] = n_directions
+
+
 def write_iteration_artifacts(
     output_prefix: str,
     state: InitialModelState,
