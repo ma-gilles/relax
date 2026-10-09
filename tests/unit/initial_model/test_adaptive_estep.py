@@ -108,7 +108,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     """
 
     from relax.vdam.bootstrap_iref import initialise_denovo_state
-    from relax.vdam.estep_common import InitialModelEstepConfig
+    from relax.vdam.estep_common import EstepSampling, InitialModelEstepConfig
 
     calls = []
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
@@ -155,19 +155,23 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
         translations=plan.translations,
         coarse_engine=coarse_engine,
         engine_kwargs={},
+        sampling=EstepSampling(
+            healpix_order=1,
+            oversampling_order=1,
+            random_perturbation=plan.random_perturbation,
+            coarse_translations=plan.coarse_translations,
+            coarse_base_translations=plan.coarse_base_translations,
+            translation_step=plan.offset_step_px,
+            particle_diameter_ang=200.0,
+            pass1_healpix_order=1,
+            max_significants=200,
+            coarse_translation_log_prior=translation_prior,
+            adaptive_fraction=None,
+            multi_shape_translations=None,
+        ),
     )
     engine_kwargs = {
-        "healpix_order": 1,
-        "oversampling_order": 1,
-        "random_perturbation": plan.random_perturbation,
-        "coarse_translations": plan.coarse_translations,
-        "coarse_base_translations": plan.coarse_base_translations,
-        "translation_step": plan.offset_step_px,
-        "particle_diameter_ang": 200.0,
-        "pass1_healpix_order": 1,
-        "max_significants": 200,
         "class_rotation_log_prior": prior_relion,
-        "coarse_translation_log_prior": translation_prior,
         "current_size": 8,
         "reconstruction_subtract_projected_reference": True,
         "score_with_masked_images": True,
@@ -208,6 +212,8 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
 
 @pytest.mark.parametrize("pseudo_halfsets", [False, True])
 def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(monkeypatch, pseudo_halfsets):
+    from helpers.vdam import estep_sampling_stub
+
     from relax.vdam.bootstrap_iref import initialise_denovo_state
     from relax.vdam.estep_common import InitialModelEstepConfig
 
@@ -229,6 +235,14 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
         noise_variance=np.ones(64, dtype=np.float32),
         translations=plan.translations,
         engine_kwargs={},
+        sampling=estep_sampling_stub(
+            healpix_order=1,
+            oversampling_order=1,
+            random_perturbation=plan.random_perturbation,
+            coarse_translations=plan.coarse_translations,
+            coarse_base_translations=plan.coarse_base_translations,
+            translation_step=plan.offset_step_px,
+        ),
     )
     result = adaptive_estep.run_adaptive_initial_model_estep(
         _Dataset(),
@@ -241,14 +255,7 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
         mean_variance=None,
         relion_projector_half_by_class=np.zeros((2, 1)),
         relion_projector_r_max=1,
-        engine_kwargs={
-            "healpix_order": 1,
-            "oversampling_order": 1,
-            "random_perturbation": plan.random_perturbation,
-            "coarse_translations": plan.coarse_translations,
-            "coarse_base_translations": plan.coarse_base_translations,
-            "translation_step": plan.offset_step_px,
-        },
+        engine_kwargs={},
     )
     halves = (0, 1) if pseudo_halfsets else (0,)
     assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [(h, k) for h in halves for k in range(2)]

@@ -271,6 +271,7 @@ def _native_expectation_step(
             particle_state.translation_offsets,
             sigma_offset_angstrom=sigma_offset_angstrom,
             pass1_healpix_order=pass1_healpix_order,
+            max_significants=schedules.active_relion_initialmodel_max_significants(state, do_grad=do_grad),
         )
         if optics_group_ids is not None:
             config = replace(
@@ -288,15 +289,11 @@ def _native_expectation_step(
             int(sampling_plan.healpix_order),
         )
         config.engine_kwargs["class_rotation_log_prior"] = class_rotation_log_prior
-        config.engine_kwargs.setdefault(
-            "max_significants",
-            schedules.active_relion_initialmodel_max_significants(state, do_grad=do_grad),
-        )
         config.engine_kwargs["debug_iteration"] = iteration
         result = run_initial_model_estep(
             dataset, state, config, particle_ids=particle_ids, halfset_ids=halfset_ids
         )
-        return result, int(config.image_batch_size), int(config.engine_kwargs["max_significants"])
+        return result, int(config.image_batch_size), config.sampling.max_significants
 
     def _after_estep(
         state,

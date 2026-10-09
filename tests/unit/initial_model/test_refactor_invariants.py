@@ -548,7 +548,7 @@ def test_native_sampling_definition_ownership():
 
 def test_adaptive_estep_definition_ownership():
     adapter_src = inspect.getsource(estep_setup)
-    for name in ("run_adaptive_initial_model_estep", "sparse_pass2_estep_meta", "_pop_sparse_pass2_options"):
+    for name in ("run_adaptive_initial_model_estep", "sparse_pass2_estep_meta"):
         assert inspect.getmodule(getattr(adaptive_estep, name)) is adaptive_estep and f"\ndef {name}(" not in adapter_src
     for name in ("InitialModelEstepConfig", "InitialModelEstepResult", "estep_meta", "select_image_rows"):
         assert inspect.getmodule(getattr(estep_common, name)) is estep_common

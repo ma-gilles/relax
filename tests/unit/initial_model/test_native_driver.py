@@ -1960,7 +1960,7 @@ def test_native_expectation_step_uses_autosampling_state_at_iteration_ten(monkey
         )
 
     def fake_run_dense(dataset, state, config, *, particle_ids, halfset_ids):
-        assert config.engine_kwargs["healpix_order"] == 2
+        assert config.sampling.healpix_order == 2
         return SimpleNamespace(
             accumulators=[],
             meta={
@@ -2077,7 +2077,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
 
     def fake_run_dense(dataset, state, config, *, particle_ids, halfset_ids):
         event_order.append("run_estep")
-        assert config.engine_kwargs["healpix_order"] == 2
+        assert config.sampling.healpix_order == 2
         assert config.translations.shape == (2, 2)
         assert config.relion_projector_half_by_class is prepared_half
         assert config.relion_projector_r_max == 2
@@ -2397,10 +2397,11 @@ def test_dense_estep_config_splits_fine_and_coarse_translation_priors():
         np.zeros((1, 2), dtype=np.float32),
         sigma_offset_angstrom=4.0,
         pass1_healpix_order=plan.healpix_order,
+        max_significants=-1,
     )
 
     fine_prior = np.asarray(config.engine_kwargs["translation_log_prior"], dtype=np.float32)
-    coarse_prior = np.asarray(config.engine_kwargs["coarse_translation_log_prior"], dtype=np.float32)
+    coarse_prior = np.asarray(config.sampling.coarse_translation_log_prior, dtype=np.float32)
     np.testing.assert_allclose(fine_prior, np.asarray([[-0.5, -0.5]], dtype=np.float32), rtol=1e-6)
     np.testing.assert_allclose(coarse_prior, np.asarray([[-0.5]], dtype=np.float32), rtol=1e-6)
 
@@ -2430,10 +2431,11 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
         np.zeros((1, 2), dtype=np.float32),
         sigma_offset_angstrom=10.0,
         pass1_healpix_order=plan.healpix_order,
+        max_significants=-1,
     )
 
-    assert config.engine_kwargs["oversampling_order"] == 0
-    assert config.engine_kwargs["healpix_order"] == 0
+    assert config.sampling.oversampling_order == 0
+    assert config.sampling.healpix_order == 0
 
 
 def test_final_outputs_replace_stale_files_of_a_reused_prefix(tmp_path):

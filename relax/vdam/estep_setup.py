@@ -27,6 +27,7 @@ from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass
 from relax.vdam import native_sampling
 from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (
+    EstepSampling,
     InitialModelEstepConfig,
     InitialModelEstepResult,
 )
@@ -150,6 +151,7 @@ def initial_model_estep_config(
     translation_offsets: np.ndarray,
     sigma_offset_angstrom: float,
     pass1_healpix_order: int,
+    max_significants: int,
 ) -> InitialModelEstepConfig:
     image_pre_shifts = relion_round_away_from_zero(translation_offsets)
     coarse_translations = np.asarray(
@@ -199,35 +201,34 @@ def initial_model_estep_config(
         "image_pre_shifts": image_pre_shifts,
         "translation_prior_centers": relion_sigma_offset_prior_center(translation_offsets),
     }
-    engine_kwargs.update(
+    # The adaptive route rebuilds RELION's fine translations from the
+    # unperturbed host grid (``prepare_adaptive_pass2_grids``).
+    if sampling_plan.coarse_base_translations is None:
+        raise ValueError("the adaptive route needs the sampling plan's host-double coarse grid")
+    sampling = EstepSampling(
         healpix_order=int(sampling_plan.healpix_order),
         oversampling_order=int(sampling_plan.oversampling),
         translation_step=float(sampling_plan.offset_step_px),
         random_perturbation=float(sampling_plan.random_perturbation),
         coarse_translations=coarse_translations,
+        coarse_base_translations=np.asarray(sampling_plan.coarse_base_translations, dtype=np.float64),
+        coarse_translation_log_prior=coarse_translation_log_prior,
         particle_diameter_ang=float(opts.particle_diameter),
         pass1_healpix_order=int(pass1_healpix_order),
-    )
-    # The adaptive route rebuilds RELION's fine translations from the
-    # unperturbed host grid (``prepare_adaptive_pass2_grids``).
-    if sampling_plan.coarse_base_translations is None:
-        raise ValueError("the adaptive route needs the sampling plan's host-double coarse grid")
-    engine_kwargs["coarse_base_translations"] = np.asarray(
-        sampling_plan.coarse_base_translations, dtype=np.float64
-    )
-    if (adaptive_fraction := opts.environment.adaptive_fraction) is not None:
-        engine_kwargs["adaptive_fraction"] = adaptive_fraction
-    if not opts.environment.subtract_projected_reference:
-        engine_kwargs["reconstruction_subtract_projected_reference"] = False
-    if isinstance(dataset, MultiShapeDataset):
+        max_significants=int(max_significants),
+        adaptive_fraction=opts.environment.adaptive_fraction,
         # Each image shape rebuilds its pre-shifts and coarse pdf_offset in its own pixels.
-        engine_kwargs["multi_shape_translations"] = dict(
+        multi_shape_translations=dict(
             offsets_px=np.asarray(translation_offsets, dtype=np.float64),
             coarse_prior_translations=coarse_prior_translations,
             sigma_angstrom=float(sigma_offset_angstrom),
         )
+        if isinstance(dataset, MultiShapeDataset)
+        else None,
+    )
+    if not opts.environment.subtract_projected_reference:
+        engine_kwargs["reconstruction_subtract_projected_reference"] = False
     engine_kwargs["translation_log_prior"] = translation_log_prior
-    engine_kwargs["coarse_translation_log_prior"] = coarse_translation_log_prior
 
     box_size = int(dataset.image_shape[0])
     gpu_memory_gb = (
@@ -248,6 +249,7 @@ def initial_model_estep_config(
         coarse_engine=str(opts.coarse_engine),
         padding_factor=int(opts.padding_factor),
         engine_kwargs=engine_kwargs,
+        sampling=sampling,
     )
 
 

@@ -156,7 +156,7 @@ MUTATIONS = (
      "the uniform-prior report doubles the joint prior", True),
     ("subtract_switch_ignored", "engine_kwargs[\"reconstruction_subtract_projected_reference\"] = False", "pass",
      "RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is ignored", True),
-    ("adaptive_fraction_ignored", "engine_kwargs[\"adaptive_fraction\"] = adaptive_fraction", "pass",
+    ("adaptive_fraction_ignored", "adaptive_fraction=opts.environment.adaptive_fraction,", "adaptive_fraction=None,",
      "RELAX_ADAPTIVE_FRACTION is ignored", True),
     ("float64_scoring_admitted", "if env.get(\"RELAX_USE_FLOAT64_SCORING\", \"\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"}:", "if False:",
      "RELAX_USE_FLOAT64_SCORING is admitted and silently ignored", True),

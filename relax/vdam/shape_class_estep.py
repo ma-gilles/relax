@@ -45,7 +45,6 @@ def run_by_shape_class(
     mean_variance,
     route,
     class_route,
-    options: dict[str, Any],
     image_indices: np.ndarray,
     *,
     engine_call: dict[str, Any],
@@ -65,10 +64,11 @@ def run_by_shape_class(
     ``engine_call`` and ``route_kwargs`` are the single-shape engine call's keywords.
     """
 
-    shape_translations = options["multi_shape_translations"]
+    estep_sampling = config.sampling
+    shape_translations = estep_sampling.multi_shape_translations
     coarse_sizing = (
-        healpix_angular_step(int(options.get("pass1_healpix_order", engine_call["coarse_healpix_order"]))),
-        float(options["particle_diameter_ang"]),
+        healpix_angular_step(estep_sampling.pass1_healpix_order),
+        estep_sampling.particle_diameter_ang,
     )
 
     offsets_ref = np.asarray(shape_translations["offsets_px"], dtype=np.float64)[image_indices]
@@ -105,7 +105,7 @@ def run_by_shape_class(
             rotation_source={
                 "coarse_healpix_order": int(engine_call["coarse_healpix_order"]),
                 "adaptive_oversampling": int(engine_call["oversampling_order"]),
-                "random_perturbation": float(options["random_perturbation"]),
+                "random_perturbation": estep_sampling.random_perturbation,
                 "coarse_device_source": route.pass1_device_source,
             },
             coarse_sizing=coarse_sizing,

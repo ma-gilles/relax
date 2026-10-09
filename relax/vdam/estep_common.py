@@ -150,11 +150,40 @@ TOMO_META_PARTICLE_FIELDS: tuple[tuple[str, type], ...] = (
 ENGINE_DISC_TYPE = "linear_interp"
 
 @dataclass(frozen=True, kw_only=True)
+class EstepSampling:
+    """One E-step's pass controls, from the iteration's sampling plan, state and options (built once by
+    :func:`relax.vdam.estep_setup.initial_model_estep_config`). The adaptive route builds its grids and
+    coarse sizes from them; the engine receives what the route derives, never these fields themselves.
+
+    ``coarse_translations`` ``[T, 2]`` float32 are the pass-1 grid (perturbed), ``coarse_base_translations``
+    float64 RELION's unperturbed host grid, ``coarse_translation_log_prior`` ``[N, T]`` the coarse ``pdf_offset``
+    of every image; ``translation_step`` is in pixels. ``pass1_healpix_order`` is the order before this
+    iteration's sampling update; ``adaptive_fraction`` None leaves the route's 0.999.
+    ``multi_shape_translations`` (optics groups on several image shapes): each particle's offset in
+    reference pixels, the coarse prior grid and the offset sigma, from which each shape rebuilds its own.
+    """
+
+    healpix_order: int
+    oversampling_order: int
+    translation_step: float
+    random_perturbation: float
+    coarse_translations: np.ndarray
+    coarse_base_translations: np.ndarray
+    coarse_translation_log_prior: np.ndarray
+    particle_diameter_ang: float
+    pass1_healpix_order: int
+    max_significants: int
+    adaptive_fraction: float | None
+    multi_shape_translations: dict[str, Any] | None
+
+
+@dataclass(frozen=True, kw_only=True)
 class InitialModelEstepConfig:
     """Configuration for one InitialModel dense K-class E-step."""
 
     noise_variance: Any
     translations: Any
+    sampling: EstepSampling
     image_batch_size: int = 500
     rotation_block_size: int = 5000
     coarse_engine: str = "auto"

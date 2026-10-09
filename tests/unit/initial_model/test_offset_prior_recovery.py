@@ -36,10 +36,11 @@ def test_initialmodel_fine_children_inherit_frozen_relion_parent_prior():
         np.asarray([[4.2, -14.1]], np.float32),
         sigma_offset_angstrom=10,
         pass1_healpix_order=1,
+        max_significants=-1,
     )
     # RELION row114 capture retained by Q donor d1f2f9f934f1.
     expected = np.asarray([[-7.8247542]], np.float32)
-    assert_matches(config.engine_kwargs['coarse_translation_log_prior'], expected)
+    assert_matches(config.sampling.coarse_translation_log_prior, expected)
     assert_matches(config.engine_kwargs['translation_log_prior'], expected[:, [0, 0]])
     assert_matches(config.engine_kwargs['image_pre_shifts'], [[4, -14]])
     assert_matches(config.engine_kwargs['translation_prior_centers'], [[-4, 14]])

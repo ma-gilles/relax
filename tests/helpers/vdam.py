@@ -198,3 +198,24 @@ def initial_model_state_stub(**fields):
         pdf_class=np.ones(1),
     )
     return InitialModelState(**{**stand_ins, **fields})
+
+
+def estep_sampling_stub(**fields):
+    """An E-step ``EstepSampling`` with stand-in values for the pass controls a test does not set."""
+    from relax.vdam.estep_common import EstepSampling
+
+    stand_ins = dict(
+        healpix_order=1,
+        oversampling_order=1,
+        translation_step=2.0,
+        random_perturbation=0.0,
+        coarse_translations=np.zeros((1, 2), dtype=np.float32),
+        coarse_base_translations=np.zeros((1, 2), dtype=np.float64),
+        coarse_translation_log_prior=np.zeros((1, 1), dtype=np.float32),
+        particle_diameter_ang=200.0,
+        pass1_healpix_order=1,
+        max_significants=-1,
+        adaptive_fraction=None,
+        multi_shape_translations=None,
+    )
+    return EstepSampling(**{**stand_ins, **fields})

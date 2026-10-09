@@ -6,7 +6,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.vdam import relative_metrics
+from helpers.vdam import estep_sampling_stub, relative_metrics
 from recovar.utils.helpers import recovar_volume_to_relion
 
 from relax.relion import relion_projector_setup
@@ -115,6 +115,7 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
     config = adapter.InitialModelEstepConfig(
         noise_variance=np.ones(5),
         translations=np.zeros((1, 2)),
+        sampling=estep_sampling_stub(),
     )
     assert not hasattr(config, "projector_setup_backend")
 

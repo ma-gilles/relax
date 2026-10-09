@@ -59,34 +59,6 @@ from relax.vdam.state import InitialModelState
 __all__ = ["AdaptiveRouteGrids", "adaptive_route_grids", "run_adaptive_initial_model_estep"]
 
 
-_SPARSE_PASS2_CONTROL_KEYS = {
-    "adaptive_fraction",
-    "max_significants",
-    "healpix_order",
-    "oversampling_order",
-    "translation_step",
-    "random_perturbation",
-    "coarse_translations",
-    "coarse_translation_log_prior",
-    "particle_diameter_ang",
-    "pass1_healpix_order",
-    "multi_shape_translations",
-}
-
-
-def _pop_sparse_pass2_options(engine_kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Split shared-engine kwargs from pass controls once per E-step.
-
-    Keep absent keys absent: coarse sizing and sampling have distinct fallbacks.
-    Values remain shared with the caller; scoped environment flags are read
-    separately at their execution boundary.
-    """
-
-    cleaned = dict(engine_kwargs)
-    options = {name: cleaned.pop(name) for name in list(cleaned) if name in _SPARSE_PASS2_CONTROL_KEYS}
-    return cleaned, options
-
-
 def resolve_sparse_pass1_current_size(
     state: InitialModelState,
     current_size: int | None,
@@ -287,15 +259,15 @@ def run_adaptive_initial_model_estep(
 ) -> InitialModelEstepResult:
     """Run one VDAM E-step as one adaptive-route pass over the subset, both pseudo-halfsets at once."""
 
-    base_kwargs, options = _pop_sparse_pass2_options(engine_kwargs)
+    estep_sampling = config.sampling
     if relion_projector_half_by_class is None:
         raise NotImplementedError("the adaptive InitialModel route requires the exact RELION projector")
-    healpix_order = int(options["healpix_order"])
-    oversampling_order = int(options["oversampling_order"])
-    random_perturbation = float(options["random_perturbation"])
-    coarse_translations = np.asarray(options["coarse_translations"], dtype=np.float32)
-    translation_step = float(options["translation_step"])
-    coarse_base_translations = base_kwargs.pop("coarse_base_translations")
+    healpix_order = estep_sampling.healpix_order
+    oversampling_order = estep_sampling.oversampling_order
+    random_perturbation = estep_sampling.random_perturbation
+    coarse_translations = estep_sampling.coarse_translations
+    translation_step = estep_sampling.translation_step
+    coarse_base_translations = estep_sampling.coarse_base_translations
     route = adaptive_route_grids(
         healpix_order=healpix_order,
         oversampling_order=oversampling_order,
@@ -313,9 +285,9 @@ def run_adaptive_initial_model_estep(
     n_coarse_rot = int(grids.coarse_rotations.shape[0])
     n_psi = int(sampling.rotation_grid_n_in_planes(healpix_order))
     class_rotation_log_prior = recovar_order_prior(
-        base_kwargs.get("class_rotation_log_prior"), route.relion_of_recovar
+        engine_kwargs.get("class_rotation_log_prior"), route.relion_of_recovar
     )
-    rotation_log_prior = recovar_order_prior(base_kwargs.get("rotation_log_prior"), route.relion_of_recovar)
+    rotation_log_prior = recovar_order_prior(engine_kwargs.get("rotation_log_prior"), route.relion_of_recovar)
     significance_image_batch_size = _safe_coarse_significance_image_batch_size(
         config.image_batch_size,
         n_classes=state.K,
@@ -337,10 +309,10 @@ def run_adaptive_initial_model_estep(
         if group_ids.shape != image_indices.shape or np.any((group_ids != 0) & (group_ids != 1)):
             raise ValueError("pseudo-halfset ids must give each selected particle 0 or 1")
     n_images_total = int(experiment_dataset.n_images)
-    group_kwargs = group_local_kwargs(base_kwargs, image_indices, n_images=n_images_total)
+    group_kwargs = group_local_kwargs(engine_kwargs, image_indices, n_images=n_images_total)
     group_dataset = experiment_dataset.subset(image_indices)
     coarse_translation_log_prior = select_image_rows(
-        options.get("coarse_translation_log_prior"),
+        estep_sampling.coarse_translation_log_prior,
         image_indices,
         n_images=n_images_total,
         name="coarse_translation_log_prior",
@@ -350,7 +322,7 @@ def run_adaptive_initial_model_estep(
         current_size
         if oversampling_order == 0
         else resolve_sparse_pass1_current_size(
-            state, current_size, options["particle_diameter_ang"], options["pass1_healpix_order"]
+            state, current_size, estep_sampling.particle_diameter_ang, estep_sampling.pass1_healpix_order
         )
     )
     multi_shape = isinstance(group_dataset, optics_shapes.MultiShapeHalf)
@@ -398,9 +370,11 @@ def run_adaptive_initial_model_estep(
         coarse_engine=config.coarse_engine,
         class_log_priors=class_log_priors,
         accumulate_noise=True,
-        adaptive_fraction=float(options.get("adaptive_fraction", 0.999)),
+        adaptive_fraction=(
+            0.999 if estep_sampling.adaptive_fraction is None else float(estep_sampling.adaptive_fraction)
+        ),
         # Difference 3: VDAM's resolved cap, applied to the coarse pass only.
-        max_significants=int(options["max_significants"]),
+        max_significants=estep_sampling.max_significants,
         significance_image_batch_size=significance_image_batch_size,
         significance_rotation_block_size=int(config.rotation_block_size),
         significance_pad_final_image_batch=True,
@@ -431,7 +405,7 @@ def run_adaptive_initial_model_estep(
             )
 
         result, shape_offsets = run_by_shape_class(
-            group_dataset, state, config, means, mean_variance, route, class_route, options, image_indices,
+            group_dataset, state, config, means, mean_variance, route, class_route, image_indices,
             engine_call=engine_call, route_kwargs=route_kwargs,
         )
     else:

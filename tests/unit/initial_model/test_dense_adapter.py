@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.vdam import initial_model_state_stub
+from helpers.vdam import estep_sampling_stub, initial_model_state_stub
 
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.vdam.adaptive_estep import _safe_coarse_significance_image_batch_size, resolve_sparse_pass1_current_size
@@ -212,6 +212,7 @@ def _projector_config(n_classes, **overrides):
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_half_by_class=np.zeros((n_classes, 4), dtype=np.complex64),
         relion_projector_r_max=3,
+        sampling=estep_sampling_stub(),
     )
     values.update(overrides)
     return InitialModelEstepConfig(**values)
@@ -444,6 +445,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_half_by_class=half,
         relion_projector_r_max=r_max,
+        sampling=estep_sampling_stub(),
     )
 
     means, mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
@@ -466,6 +468,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_half_by_class=projector_half,
         relion_projector_r_max=2,
+        sampling=estep_sampling_stub(),
     )
 
     means, variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
@@ -529,18 +532,6 @@ def test_sparse_pass2_pass1_current_size_uses_pre_update_healpix_order():
     pass1_current_size = resolve_sparse_pass1_current_size(state, state.current_size, 200.0, 1)
 
     assert pass1_current_size == 26
-
-
-def test_sparse_control_split_preserves_input_and_array_identity():
-    from relax.vdam.adaptive_estep import _pop_sparse_pass2_options
-
-    metadata = np.array([[0.125, 0.25]], dtype=np.float64)
-    supplied = {"coarse_translations": metadata, "image_pre_shifts": metadata}
-    cleaned, options = _pop_sparse_pass2_options(supplied)
-    assert set(supplied) == {"coarse_translations", "image_pre_shifts"}
-    assert set(cleaned) == {"image_pre_shifts"}
-    assert set(options) == {"coarse_translations"}
-    assert cleaned["image_pre_shifts"] is options["coarse_translations"] is metadata
 
 
 def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
