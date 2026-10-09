@@ -537,10 +537,6 @@ def _score_adaptive_k1_dense(
     pass2_grids = sampling.pass2_grids(adaptive_oversampling=adaptive_os, symmetry=symmetry)
     adaptive_em_kwargs = dict(base_em_kwargs)
     adaptive_em_kwargs["sparse_pass2"] = True
-    if half.scale_group_ids is not None:
-        adaptive_em_kwargs["group_ids"] = half.scale_group_ids
-    if execution.relion_x_half_mstep:
-        adaptive_em_kwargs["mstep_relion_x_half"] = True
     logger.info(
         "RELION adaptive K=1 routing through run_dense_k_class_em_adaptive "
         "(oversampling=%d, pass2_backend=sparse, "
@@ -645,6 +641,15 @@ def _score_half_dense_one_shape(
         sampling.current_translations.shape[0],
         current_size_for_batch=sampling.cs_for_engine,
     )
+    if half.image_seed_classes is not None and not variant.k_class_enabled:
+        raise NotImplementedError("a seed iteration runs on the adaptive or first-iteration CC K-class route")
+    if execution.diagnostic_float64_pass2:
+        logger.info(
+            "Diagnostic genuine-float64 adaptive pass 2 at iteration %d; pass 1 and prior boundaries remain f32",
+            int(execution.debug_iteration),
+        )
+    # The engine keywords of every dense route. A keyword at the engine's own default is the same call as an
+    # omitted one (each is read with that default), so every keyword is passed.
     em_kwargs = {
         "score_with_masked_images": True,
         "half_spectrum_scoring": True,
@@ -655,10 +660,20 @@ def _score_half_dense_one_shape(
         "relion_exact_fine_gaussian": scoring_policy.RELION_EXACT_FINE_GAUSSIAN,
         "do_gridding_correction": True,
         "square_window": RELION_FOURIER_WINDOW_SQUARE,
-        "image_batch_size": safe_ibs,
-        "rotation_block_size": safe_rbs,
+        "image_batch_size": (
+            safe_ibs if batching.k_class_image_batch_size_override is None
+            else batching.k_class_image_batch_size_override
+        ),
+        "rotation_block_size": (
+            safe_rbs if batching.k_class_rotation_block_size_override is None
+            else batching.k_class_rotation_block_size_override
+        ),
         "current_size": sampling.cs_for_engine,
-        "rotation_log_prior": priors.rotation_log_prior_k,
+        # A class direction prior replaces the shared one.
+        "rotation_log_prior": (
+            priors.rotation_log_prior_k if priors.class_rotation_log_prior_k is None else None
+        ),
+        "class_rotation_log_prior": priors.class_rotation_log_prior_k,
         "translation_log_prior": priors.translation_log_prior,
         "image_corrections": half.particles.image_corrections,
         "scale_corrections": half.particles.scale_corrections,
@@ -669,46 +684,22 @@ def _score_half_dense_one_shape(
         "translation_prior_centers": priors.trans_prior_center_for_engine,
         "relion_firstiter_score_mode": variant.firstiter_score_mode_this_iter,
         "relion_firstiter_winner_take_all": variant.firstiter_winner_take_all_this_iter,
+        "coarse_engine": sampling.coarse_engine,
+        "symmetry_label": symmetry,
+        "optics_group_ids": half.particles.optics_group_ids,
+        "reconstruction_current_size": sampling.model_current_size_for_engine,
+        "wsum_current_size": sampling.wsum_current_size_for_engine,
+        "preserve_bpref_particle_order": execution.preserve_bpref_particle_order,
+        "source_faithful_spectrum_norm": execution.source_faithful_spectrum_norm,
+        "firstiter_cc_tree_rescore_max_margin": execution.firstiter_cc_tree_rescore_max_margin,
+        "relion_translation_angle_scale": float(execution.relion_translation_angle_scale),
+        "firstiter_cc_support": execution.firstiter_cc_support,
+        "nyquist_column_counting": execution.nyquist_column_counting,
+        "relion_projector_half": None if half.projector is None else half.projector.data,
+        "relion_projector_r_max": None if half.projector is None else half.projector.r_max,
+        "mstep_relion_x_half": execution.relion_x_half_mstep,
+        "relion_half_volume_mstep": False,
     }
-    if sampling.coarse_engine != "auto":
-        em_kwargs["coarse_engine"] = sampling.coarse_engine
-    if symmetry != "C1":
-        em_kwargs["symmetry_label"] = symmetry
-    if half.particles.optics_group_ids is not None:
-        em_kwargs["optics_group_ids"] = half.particles.optics_group_ids
-    if sampling.model_current_size_for_engine is not None:
-        em_kwargs["reconstruction_current_size"] = sampling.model_current_size_for_engine
-    if sampling.wsum_current_size_for_engine is not None:
-        em_kwargs["wsum_current_size"] = sampling.wsum_current_size_for_engine
-    if half.image_seed_classes is not None and not variant.k_class_enabled:
-        raise NotImplementedError("a seed iteration runs on the adaptive or first-iteration CC K-class route")
-    if execution.preserve_bpref_particle_order:
-        em_kwargs["preserve_bpref_particle_order"] = True
-    if execution.source_faithful_spectrum_norm:
-        em_kwargs["source_faithful_spectrum_norm"] = True
-    if execution.firstiter_cc_tree_rescore_max_margin is not None:
-        em_kwargs["firstiter_cc_tree_rescore_max_margin"] = float(execution.firstiter_cc_tree_rescore_max_margin)
-    if float(execution.relion_translation_angle_scale) != 1.0:
-        em_kwargs["relion_translation_angle_scale"] = float(execution.relion_translation_angle_scale)
-    if execution.firstiter_cc_support != "relion":
-        em_kwargs["firstiter_cc_support"] = execution.firstiter_cc_support
-    if execution.nyquist_column_counting != "relion":
-        em_kwargs["nyquist_column_counting"] = execution.nyquist_column_counting
-    if execution.diagnostic_float64_pass2:
-        logger.info(
-            "Diagnostic genuine-float64 adaptive pass 2 at iteration %d; pass 1 and prior boundaries remain f32",
-            int(execution.debug_iteration),
-        )
-    if batching.k_class_image_batch_size_override is not None:
-        em_kwargs["image_batch_size"] = batching.k_class_image_batch_size_override
-    if batching.k_class_rotation_block_size_override is not None:
-        em_kwargs["rotation_block_size"] = batching.k_class_rotation_block_size_override
-    if priors.class_rotation_log_prior_k is not None:
-        em_kwargs["rotation_log_prior"] = None
-        em_kwargs["class_rotation_log_prior"] = priors.class_rotation_log_prior_k
-    if half.projector is not None:
-        em_kwargs["relion_projector_half"] = half.projector.data
-        em_kwargs["relion_projector_r_max"] = half.projector.r_max
     logger.info(
         "Dense half-set projector handoff: supplied_ppref=%s state_oversampling=%d",
         half.projector is not None,
@@ -723,8 +714,6 @@ def _score_half_dense_one_shape(
         # still choose the dense full-volume path.
         if symmetry != "C1" and not execution.relion_x_half_mstep:
             raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
-        em_kwargs["mstep_relion_x_half"] = bool(execution.relion_x_half_mstep)
-        em_kwargs["relion_half_volume_mstep"] = False
         k_class_mstep_full_half_axis_this_score = None
         rot_pmap_for_collapse = None
         trans_pmap_for_collapse = None
@@ -842,7 +831,6 @@ def _score_half_dense_one_shape(
             magnification=dataset_projection_magnification(half.particles.dataset),
             em_kwargs={
                 **em_kwargs,
-                **({"mstep_relion_x_half": True} if execution.relion_x_half_mstep else {}),
                 **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
             },
         )

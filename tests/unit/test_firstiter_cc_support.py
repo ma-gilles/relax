@@ -190,9 +190,8 @@ def test_refinement_hands_the_engine_the_support(monkeypatch, support):
     )
     numbered = engine_calls[:4]
     assert [call["kwargs"]["relion_firstiter_score_mode"] for call in numbered] == ["normalized_cc"] * 2 + ["gaussian"] * 2
-    assert {call["kwargs"].get("firstiter_cc_support", "relion") for call in numbered} == {support}
-    # The default adds no keyword to the engine call.
-    assert all(("firstiter_cc_support" in call["kwargs"]) == (support == "gaussian") for call in numbered)
+    # Every call states the support, the default included.
+    assert {call["kwargs"]["firstiter_cc_support"] for call in numbered} == {support}
 
 
 def test_a_run_without_the_cc_iteration_refuses_the_option():

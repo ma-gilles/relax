@@ -208,10 +208,9 @@ def test_refinement_hands_the_engine_and_the_noise_update_the_rule(monkeypatch, 
         monkeypatch, engine_calls=engine_calls, consistency=RelionConsistencyOptions(nyquist_column_counting=counting)
     )
     assert len(engine_calls) == 6  # two halves, two iterations and the final pass
-    received = {call["kwargs"].get("nyquist_column_counting", "relion") for call in engine_calls}
+    # Every call states the counting, the default included.
+    received = {call["kwargs"]["nyquist_column_counting"] for call in engine_calls}
     assert received == {counting}
-    # The default adds no keyword to the engine call.
-    assert all(("nyquist_column_counting" in call["kwargs"]) == (counting == "once") for call in engine_calls)
     assert noise and {kwargs["nyquist_column_counting"] for _, kwargs in noise} == {counting}
 
 
