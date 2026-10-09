@@ -1,8 +1,9 @@
 """Set-up checks of a refinement run: what refine_single_volume refuses or resolves from its inputs before the
-first iteration (code rule 12: check at the edge, then trust).
+first iteration (code rule 12: check at the edge, then trust), and the run context they resolve.
 """
 
 import logging
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -14,9 +15,19 @@ from relax.helpers.expected_accuracy import (
 from relax.helpers.relion_random import GlibcRand, init_random_generator
 from relax.helpers.resolution import ImageGeometry
 from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
+from relax.refinement.expectation_batches import BatchPlanner
+from relax.refinement.half_inputs import configure_half_image_preprocessing
 from relax.refinement.iteration_planning import RunOptics
+from relax.refinement.iteration_snapshot import SnapshotCapture
 from relax.refinement.mean_helpers import ReconstructionSettings
-from relax.refinement.refinement_options import RefinementOptions, RelionConsistencyOptions, RelionParityOptions
+from relax.refinement.optics_shapes import MultiShapeHalf
+from relax.refinement.refinement_options import (
+    RefinementOptions,
+    RelionConsistencyOptions,
+    RelionParityOptions,
+    require_consistency_route,
+)
+from relax.refinement.tomo_half import TomoHalf
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -239,4 +250,108 @@ def expected_accuracy_inputs_for_run(
         expected_accuracy=options.expected_accuracy,
         optics_group_ids=optics_group_ids,
         gridding_kernel=gridding_kernel,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class RunContext:
+    """What a refinement run resolves once from its datasets and options before the first iteration, and only
+    reads afterwards (the run's options stay the controller's own record).
+
+    ``source_pixel_size_angstrom`` is the datasets' own voxel-size scalar, kept with its input type for host
+    arithmetic (``image_geometry.pixel_size_angstrom`` is its validated Python float). Frozen fields, not
+    deeply immutable: ``perturb_rng`` (the native perturbation's RNG, None with a perturbation seed) advances
+    each time the run draws a perturbation; the other members are not modified.
+    """
+
+    # The dtype of the controller's float64-sensitive host operands (rotation grids, priors), from the precision.
+    scoring_dtype: object
+    volume_shape: tuple
+    # The volume on the reconstruction's padded grid.
+    padded_volume_shape: tuple
+    source_pixel_size_angstrom: object
+    image_geometry: ImageGeometry
+    k_class_enabled: bool
+    # Subtomogram particles (units are particles over their tilt images, offsets are 3D); halves of several
+    # image shapes.
+    tomo_halves: bool
+    multi_shape_halves: bool
+    optics: RunOptics
+    # Opt-in corrections of RELION's inconsistencies, refused on the routes that keep RELION's rules.
+    consistency: RelionConsistencyOptions
+    relion_translation_angle_scale: float
+    reconstruction_settings: ReconstructionSettings
+    snapshot_capture: SnapshotCapture
+    batch_planner: BatchPlanner
+    collect_local_search_profile: bool
+    perturb_rng: object
+
+
+def build_run_context(
+    experiment_datasets,
+    options: RefinementOptions,
+    *,
+    replays_relion_state: bool,
+    observer_collects_local_search_profiles: bool,
+) -> RunContext:
+    """Resolve the run's context from its two half datasets and validated ``options``, refusing unsupported
+    routes, and configure the datasets' image preprocessing (Fourier backend and masks) in place: the datasets'
+    images are prepared before anything reads them.
+
+    ``replays_relion_state`` whether the input source replays a RELION run's state (the consistency options are
+    refused then); ``observer_collects_local_search_profiles`` whether the run's observer asks for the local
+    searches' profiles.
+    """
+    volume_shape = experiment_datasets[0].volume_shape
+    # Keep the input scalar type for host arithmetic; geometry validates its value.
+    source_pixel_size_angstrom = experiment_datasets[0].voxel_size
+    image_geometry = ImageGeometry(
+        image_shape=experiment_datasets[0].image_shape, pixel_size_angstrom=source_pixel_size_angstrom,
+    )
+    multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
+    optics = checked_run_optics(options.parity, image_geometry, multi_shape_halves=multi_shape_halves)
+    tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
+    consistency = require_consistency_route(
+        options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves,
+        replays_relion_state=replays_relion_state,
+    )
+    relion_translation_angle_scale = translation_angle_scale_for_run(
+        optics, n_classes=options.k_class.n_classes, subtomograms=tomo_halves,
+    )
+    reconstruction_settings = reconstruction_settings_for_run(options, image_geometry, volume_shape, consistency)
+    snapshot_capture = SnapshotCapture(
+        n_classes=options.k_class.n_classes, box_size=image_geometry.box_size,
+        voxel_size=image_geometry.pixel_size_angstrom, tau2_fudge=options.parity.tau2_fudge,
+        consistency=consistency.non_default(),
+    )
+    configure_half_image_preprocessing(
+        experiment_datasets,
+        pixel_size_angstrom=source_pixel_size_angstrom,
+        particle_diameter_angstrom=options.schedule.particle_diameter_ang,
+        width_mask_edge_px=options.schedule.width_mask_edge_px,
+        fourier_backend=options.parity.image_fourier_backend,
+        # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
+        source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
+        log=logger,
+    )
+    return RunContext(
+        scoring_dtype=options.precision.rotation_real_dtype,
+        volume_shape=volume_shape,
+        padded_volume_shape=tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape),
+        source_pixel_size_angstrom=source_pixel_size_angstrom,
+        image_geometry=image_geometry,
+        k_class_enabled=options.k_class.n_classes > 1,
+        tomo_halves=tomo_halves,
+        multi_shape_halves=multi_shape_halves,
+        optics=optics,
+        consistency=consistency,
+        relion_translation_angle_scale=relion_translation_angle_scale,
+        reconstruction_settings=reconstruction_settings,
+        snapshot_capture=snapshot_capture,
+        batch_planner=BatchPlanner(
+            requested=options.execution, image_shape=image_geometry.image_shape, volume_shape=volume_shape,
+            n_classes=options.k_class.n_classes, precision=options.precision, log=logger,
+        ),
+        collect_local_search_profile=options.local_search.collects_profile(observer_collects_local_search_profiles),
+        perturb_rng=None if options.parity.perturb_seed is not None else np.random.default_rng(),
     )

@@ -15,8 +15,8 @@ from recovar.core import fourier_transform_utils as ftu
 from relax.helpers.convergence import RefinementState
 from relax.helpers.orientation_priors import DirectionPrior
 from relax.reconstruction import regularization_relion
-from relax.refinement import iteration_loop as iteration_loop_module
 from relax.refinement import iteration_snapshot as iteration_snapshot_module
+from relax.refinement import setup_checks
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
@@ -77,7 +77,7 @@ def test_controller_publishes_each_checkpoint_from_one_run_capture(monkeypatch, 
 
     published = []
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop_module, "SnapshotCapture", "capture")
+    trace.wrap(setup_checks, "SnapshotCapture", "capture")
     trace.wrap(SnapshotCapture, "begin")
     trace.wrap(SnapshotCapture, "finish")
     run_tiny_refinement(
