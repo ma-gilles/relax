@@ -296,6 +296,14 @@ SETS["align_symmetry_relion_c4"] = (
     ["PROVENANCE.json"],
 )
 
+SETS["solvent_fsc_stream_relion_seed2"] = (
+    f"{FX}/relax35_solvent_fsc_stream_20261009", RUN, [],
+    "relax#35 oracle: unregularised half maps, half-1 model.star and --solvent_mask of the first numbered "
+    "iterations of two relion_refine_mpi --solvent_correct_fsc auto-refines (5k/128 SPA and ET subtomograms, "
+    "random_seed 2, mpiscale build): the leader's random-phase stream",
+    ["PROVENANCE.json"],
+)
+
 # Oracles written by a RELION build with the libc particle order (optimiser header
 # "version 5.0.1" without a commit: the MOLBIO module build or the d476e6f dispatch build).
 # relax implements only RELION 5.0.1 f2c1a3's mt19937 order (docs/development/relion_defaults.md).

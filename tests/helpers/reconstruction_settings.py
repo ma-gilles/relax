@@ -16,7 +16,7 @@ def reconstruction_settings(**fields) -> ReconstructionSettings:
             "shell_pair_counting": "relion",
             "solvent_mask": None,
             "solvent_correct_fsc": False,
-            "solvent_fsc_seed": 0,
+            "solvent_phase_stream": None,
             **fields,
         }
     )

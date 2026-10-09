@@ -6776,6 +6776,41 @@
    },
    "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_600/relion_repeat"
   },
+  "solvent_fsc_stream_relion_seed2": {
+   "description": "relax#35 oracle: unregularised half maps, half-1 model.star and --solvent_mask of the first numbered iterations of two relion_refine_mpi --solvent_correct_fsc auto-refines (5k/128 SPA and ET subtomograms, random_seed 2, mpiscale build): the leader's random-phase stream",
+   "files": {
+    "PROVENANCE.json": [2422, "4532c96bef8c052ef7a11601b8c5730146c2da523a4db2f9eef9bad4ed890a8c"],
+    "spa_seed2/run_it001_half1_class001_unfil.mrc": [8389632, "c5e9e5796d87610b4cfb8b0796da60bba56d530be14d1d7c9f07e675c6c54235"],
+    "spa_seed2/run_it001_half1_model.star": [270258, "692e7dc209b9a39cf95757958fa7bd5c0c47a7ef97ada5469962b31bdb1bbe97"],
+    "spa_seed2/run_it001_half2_class001_unfil.mrc": [8389632, "4ebaddf5e30402878df63276258df8bd8735d964e0d7b8f58a14c7cbc0d9bfbc"],
+    "spa_seed2/run_it002_half1_class001_unfil.mrc": [8389632, "f0e4d440b49bfcacb42dfc0b61435594d6fb5dacaee90f4dfe3ba1dcb89c52c5"],
+    "spa_seed2/run_it002_half1_model.star": [270258, "475279fceaf042471dfb3b93ed5554bb3358d55a1cb3318fcfe3af43de541986"],
+    "spa_seed2/run_it002_half2_class001_unfil.mrc": [8389632, "0f5608ba01b227aca4ae37f3f13de7d4ee8d456fd4e91d3a703d1518a11c5e90"],
+    "spa_seed2/run_it003_half1_class001_unfil.mrc": [8389632, "171edd0b75182937b8290505f7a8f9a5c4a01efb16e9d9e112916f93d072e252"],
+    "spa_seed2/run_it003_half1_model.star": [270258, "d56d2e0383ac31bc29d587e6988a1ca6a4d67d466f7d26f52d44f216a84a7a55"],
+    "spa_seed2/run_it003_half2_class001_unfil.mrc": [8389632, "5db06dcd0448d04bad3cdf003a2a0ebee5f99b4969fedbe151825149bffa052a"],
+    "spa_seed2/run_it004_half1_class001_unfil.mrc": [8389632, "79f6a4f17b4b5deff78a79b444c4e419983606a4b72e5f7d362d2bce369ebb2d"],
+    "spa_seed2/run_it004_half1_model.star": [270258, "79c32f80e774820825a5682cb6b1a43b5f762e2ebec2c23c03da5a90386e93b7"],
+    "spa_seed2/run_it004_half2_class001_unfil.mrc": [8389632, "aeb6acff46c858eff680e843810e8f874aefb2aea8502a9cfd5593e9ec1b95a6"],
+    "spa_seed2/solvent_ref_mask.mrc": [8389632, "c705bc740d00cf1cd6d4fed2d3e434ef972d3e71b37484bacdcae1ab33450de4"],
+    "tomo_seed2/run_it001_half1_class001_unfil.mrc": [8389632, "17ac5a2b45e485e1b94d4e6c4949adb27b45570438c2671b336d1fda0e00f880"],
+    "tomo_seed2/run_it001_half1_model.star": [33782, "0db0c8502a0507c6d2256e982b0506bf6aed3593b6e4f52190110a9e064fe7b4"],
+    "tomo_seed2/run_it001_half2_class001_unfil.mrc": [8389632, "2b8b1a842b54626fee14943c7426918a301e699d0a4259db82244adab2d8c9cd"],
+    "tomo_seed2/run_it002_half1_class001_unfil.mrc": [8389632, "eca6bcf5fde48c1e72dac8cd77f88b346e1ee7f8f791ca1527e444c36cc0a6c9"],
+    "tomo_seed2/run_it002_half1_model.star": [34669, "5eb6e7818acec37e12b139abd8d8b6be49c485ee79420e749140df16996132a9"],
+    "tomo_seed2/run_it002_half2_class001_unfil.mrc": [8389632, "4de1263c34c8081eb93a641e4122b790f383eb129f9bec52d078d41f02dcb362"],
+    "tomo_seed2/run_it003_half1_class001_unfil.mrc": [8389632, "919dac2ea8c335b1a4ff3493c2290f08037a599ca3993b1cf7b944db878ca3ac"],
+    "tomo_seed2/run_it003_half1_model.star": [34669, "d6ad1ef097c14d3deed4f8701c0894cca564811f6a0d4032e6b7df94550bbfd4"],
+    "tomo_seed2/run_it003_half2_class001_unfil.mrc": [8389632, "50a36fa99a03097843747c50472bcda1171d0bfccd59fa2575b2c568f93e5e51"],
+    "tomo_seed2/solvent_ref_mask.mrc": [8389632, "ccf771da814507267ffe660e1a9ea48a449e96b33fee050e3b93e0f01dde9f27"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/relax35_solvent_fsc_stream_20261009/PROVENANCE.json"
+    ]
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/relax35_solvent_fsc_stream_20261009"
+  },
   "symmetry_25_ribo_k4_3k_g128_white_noise1_batch50_seed41001": {
    "description": "Symmetry-matrix case 25_ribo_k4_3k_g128_white_noise1_batch50_seed41001: data + RELION reference as pinned by the frozen Q 427a08bd8 run",
    "files": {

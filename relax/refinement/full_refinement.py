@@ -341,6 +341,18 @@ def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir
     return path
 
 
+def _relion_split_draws(input_particles, *, from_input: bool, resumed: bool) -> int:
+    """``SolventOptions.split_draws``: RELION's split draws when relax rebuilt its halves from the input.
+
+    A given half-set table (--relion_half_sets) and a --continue run carry the halves, as RELION's
+    continued run reads them from its data STAR after reseeding: no draws.
+    """
+    if resumed or not from_input:
+        return 0
+    existing = input_particles["rlnRandomSubset"].to_numpy() if "rlnRandomSubset" in input_particles.columns else None
+    return input_particle_table.relion_split_draw_count(existing, n_particles=len(input_particles))
+
+
 def _initial_current_size(voxel_size: float, box_size: int, init_resolution: float) -> int:
     """Twice RELION's --ini_high pixel, ``getPixelFromResolution(1 / ini_high)`` (ml_model.h:441,
     ml_optimiser.cpp:2801): ``2 ROUND(ori_size pixel_size / ini_high)``. The first E-step then adds
@@ -1257,7 +1269,13 @@ def main(command=None):
             firstiter_cc_tree_rescore_max_margin=firstiter_cc_tree_rescore_max_margin,
         ),
         consistency=consistency_options,
-        solvent=SolventOptions(mask_path=args.solvent_mask, correct_fsc=bool(args.solvent_correct_fsc)),
+        solvent=SolventOptions(
+            mask_path=args.solvent_mask,
+            correct_fsc=bool(args.solvent_correct_fsc),
+            split_draws=_relion_split_draws(
+                our_particles, from_input=relion_half_sets_from_input, resumed=resume_snapshot is not None
+            ),
+        ),
         local_search=command_options.resolve_local_search(args),
         k_class=command_options.resolve_k_class(
             args,

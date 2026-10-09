@@ -16,10 +16,6 @@ from relax.refinement.mean_helpers import ReconstructionSettings
 
 logger = logging.getLogger(__name__)
 
-# The random-phase stream of the joined (final) iteration's corrected FSC: numbered iterations use 0, 1, ...
-FINAL_ITERATION_SEED_INDEX = 1_000_000
-
-
 @dataclass(frozen=True)
 class HalfmapPrior:
     variance: object
@@ -93,7 +89,7 @@ def compute_final_halfmap_prior(
             settings,
             current_size=current_size,
             accumulator_shape=accumulator_shape,
-            iteration=FINAL_ITERATION_SEED_INDEX,
+            label="final iteration",
             like=fsc,
             log=logger,
         )

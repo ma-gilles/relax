@@ -110,6 +110,10 @@ class SolventOptions:
     mask_path: str | None = None
     # The K=1 half-set FSC is the masked, phase-randomisation corrected FSC; needs mask_path.
     correct_fsc: bool = False
+    # rand() values RELION's leader stream gave to the random-halves split before its first phase
+    # randomisation (relion_split_draw_count): the input's particle count when relax drew the halves
+    # from the input STAR, else 0. A --continue run reseeds and reads its halves, so 0 there too.
+    split_draws: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)

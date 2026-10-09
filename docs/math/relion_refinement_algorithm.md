@@ -753,8 +753,14 @@ F(i)=\begin{cases}F_m(i) & i<s^\ast+2\\ 0 & F_r(i)>F_m(i)\\ \dfrac{F_m(i)-F_r(i)
 \]
 
 which is zero beyond the current size; without such an \(s^\ast\), \(F=F_u\). The random phases are
-relax's own (seeded by the optimiser seed and the iteration), so the corrected shells agree with RELION
-statistically, not bit for bit.
+RELION's: the MPI leader computes this FSC, and its glibc `rand()` stream is seeded once with
+`--random_seed` and never reseeded (only the followers reseed each iteration), so one stream runs
+through the whole run. It first gives one draw per particle to the random-halves split when the
+input has no `rlnRandomSubset`; then each iteration with an \(s^\ast\) (the joined final iteration
+too) draws `rnd_unif(0, 2π)` in float for every half-transform voxel at \(|k|\ge s^\ast\), in FFTW
+storage order of the map file's array, for \(u_1\) then \(u_2\). A `--continue` run reseeds and
+reads its halves, so its stream restarts. With the same maps the corrected FSC is RELION's to
+rounding (`test_corrected_fsc_replays_relion_leader_stream`, relax#35).
 
 Implementation: [`read_solvent_mask` and `solvent_corrected_fsc`](../../relax/reconstruction/solvent_mask.py);
 the flatten in `_numbered_solvent_mask` and the FSC in `_solvent_corrected_fsc` in

@@ -33,6 +33,12 @@ def test_glibc_rand_matches_libc_for_every_unsigned_seed(seed):
     assert_matches(np.asarray([generator.rand() for _ in range(400)], dtype=np.int64), expected)
     assert_matches(relion_random.glibc_rand_sequence(seed, 400), expected)
     assert_matches(relion_random.glibc_first_rand([seed]), expected[:1])
+    # rand_array continues the same stream as rand(), from any position.
+    chunked = relion_random.GlibcRand(seed)
+    parts = [np.asarray([chunked.rand() for _ in range(7)]), chunked.rand_array(0), chunked.rand_array(150)]
+    parts += [np.asarray([chunked.rand()]), chunked.rand_array(242)]
+    assert_matches(np.concatenate(parts), expected)
+    assert chunked.draws == 400
 
 
 @pytest.mark.parametrize("seed", [-1, 2**31, 2**32 - 1])

@@ -85,6 +85,19 @@ def relion_random_subsets(existing, *, seed: int, n_particles: int) -> np.ndarra
     return np.asarray(subsets, dtype=np.int64)
 
 
+def relion_split_draw_count(existing, *, n_particles: int) -> int:
+    """The ``rand()`` values ``divideParticlesInRandomHalves`` takes after its ``srand(random_seed)``.
+
+    One per particle when it draws the halves (no ``rlnRandomSubset``, or all zero; non-helical,
+    exp_model.cpp:378), none when the input carries them. RELION's MPI leader seeded the same stream
+    just before (ml_optimiser_mpi.cpp:827), so its later draws start after these
+    (relax.reconstruction.solvent_mask).
+    """
+    if existing is None:
+        return int(n_particles)
+    return 0 if np.any(np.asarray(existing, dtype=np.int64) != 0) else int(n_particles)
+
+
 def _post_job_micrograph_name(name: str) -> str:
     """``fn_post`` of RELION's ``decomposePipelineFileName`` (``filename.cpp:614``)."""
     slash = 0

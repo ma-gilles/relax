@@ -230,3 +230,12 @@ def test_model_star_names_the_scale_groups_as_relion(monkeypatch, tmp_path):
     out = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", data=data)
     groups = starfile.read(out / "run_it001_half1_model.star")["model_groups"]
     assert groups["rlnGroupName"].astype(str).tolist() == expected
+
+
+def test_solvent_split_draws_count_the_halves_relax_draws(monkeypatch, tmp_path):
+    # RELION's MPI leader stream gives the random-halves split one rand() per particle before the corrected
+    # FSC's phases, and nothing when the input carries rlnRandomSubset (relax.reconstruction.solvent_mask).
+    drawn = controller_inputs(monkeypatch, tmp_path / "drawn", "refine")["options"].solvent
+    given_data = write_tiny_data_dir(tmp_path / "given_data", extra_columns={"rlnRandomSubset": [1, 2] * 6})
+    given = controller_inputs(monkeypatch, tmp_path / "given", "refine", data=given_data)["options"].solvent
+    assert (drawn.split_draws, given.split_draws) == (12, 0)

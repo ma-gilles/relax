@@ -1280,8 +1280,11 @@ class ReconstructionSettings:
     # RELION --solvent_correct_fsc (MPI relion_refine): the K=1 half-set FSC is the masked,
     # phase-randomisation corrected FSC of the unregularised half maps; needs solvent_mask.
     solvent_correct_fsc: bool
-    # Seed of the corrected FSC's random phases, drawn per iteration.
-    solvent_fsc_seed: int
+    # The corrected FSC's random-phase source: the run's one glibc rand() stream (RELION's MPI leader
+    # stream, seeded once with --random_seed; relax.reconstruction.solvent_mask), advanced by every
+    # iteration that randomises phases. Mutable run state, so outside comparison; None without
+    # solvent_correct_fsc.
+    solvent_phase_stream: object = field(compare=False, repr=False)
     # The run's reconstruction programs (ScoringVariants.reconstruction): no effect on values.
     programs: ReconstructionPrograms
 
@@ -1292,6 +1295,8 @@ class ReconstructionSettings:
             object.__setattr__(self, "particle_diameter_angstrom", float(self.particle_diameter_angstrom))
         if self.solvent_correct_fsc and self.solvent_mask is None:
             raise ValueError("--solvent_correct_fsc needs --solvent_mask (RELION corrects only with a user mask)")
+        if self.solvent_correct_fsc and self.solvent_phase_stream is None:
+            raise ValueError("--solvent_correct_fsc needs the run's random-phase stream")
         if self.solvent_mask is not None and tuple(np.shape(self.solvent_mask)) != tuple(self.volume_shape):
             raise ValueError(
                 f"solvent mask shape {np.shape(self.solvent_mask)} is not the model's {tuple(self.volume_shape)}"
@@ -1377,7 +1382,7 @@ def estimate_split_half_prior(
             settings,
             current_size=current_size,
             accumulator_shape=accumulator_shape,
-            iteration=iteration,
+            label=f"iter-{iteration + 1}",
             like=current_iter_fsc,
             log=log,
         )
@@ -1416,14 +1421,14 @@ def estimate_split_half_prior(
     )
 
 
-def _solvent_corrected_fsc(
-    numerators, denominators, settings, *, current_size, accumulator_shape, iteration, like, log
-):
+def _solvent_corrected_fsc(numerators, denominators, settings, *, current_size, accumulator_shape, label, like, log):
     """RELION's --solvent_correct_fsc curve in place of the backprojector FSC ``like``.
 
     The unregularised half maps are those relax writes as run_itNNN_half*_unfil.mrc
     (``reconstruct_unregularized_k1_halfmaps``), made from this iteration's accumulators after the
     low-resolution join, as RELION reconstructs its BPref copies (ml_optimiser_mpi.cpp:3221-3300).
+    The phases come from ``settings.solvent_phase_stream``, which this call advances; ``label`` names
+    the iteration in the log.
     """
 
     from relax.reconstruction.solvent_mask import solvent_corrected_fsc
@@ -1450,16 +1455,18 @@ def _solvent_corrected_fsc(
         half2,
         np.transpose(np.asarray(settings.solvent_mask, dtype=np.float64), (2, 1, 0)),
         current_size=current_size,
-        rng=np.random.default_rng((int(settings.solvent_fsc_seed), int(iteration))),
+        stream=settings.solvent_phase_stream,
     )
     like = np.asarray(like)
     if fsc.shape != like.shape:
         raise ValueError(f"the corrected FSC has {fsc.shape[0]} shells, the backprojector FSC {like.shape[0]}")
     log.info(
-        "iter-%d solvent-corrected FSC: randomize phases beyond shell %d (%.2f A): %.1fs",
-        iteration + 1,
+        "%s solvent-corrected FSC: randomize phases beyond shell %d (%.2f A), %d phase draws (%d in the run): %.1fs",
+        label,
         details["randomize_at"],
         settings.box_size * settings.voxel_size / max(details["randomize_at"], 1),
+        details["draws"],
+        settings.solvent_phase_stream.draws,
         clock.seconds,
     )
     return jnp.asarray(fsc, dtype=like.dtype)

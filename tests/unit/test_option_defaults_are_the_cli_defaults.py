@@ -18,6 +18,7 @@ FROM_THE_RUN = {
         "optics_group_ids_per_half", "relion_model_pixel_size", "relion_firstiter_ini_high_angstrom",
         "preserve_bpref_particle_order",
     },
+    "solvent": {"split_draws"},
 }
 # Groups built from the data or the run files, not from flags.
 NOT_FLAGS = {"replay", "checkpoint", "expected_accuracy", "precision"}

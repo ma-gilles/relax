@@ -4,7 +4,9 @@ The references here are written from RELION's documented rule with explicit loop
 getFSC labels the FFTW half voxel (kp, ip, jp) with ROUND(sqrt(kp^2 + ip^2 + jp^2)) and keeps shells
 below N/2 + 1 (fftw.cpp:481-512); randomize_at is the first shell i > 0 with unmasked FSC < 0.8; the
 true FSC is the masked FSC below randomize_at + 2 and (masked - random) / (1 - random), or 0 when
-random > masked, above it, then 0 beyond current_size / 2 (ml_optimiser_mpi.cpp:3340-3396).
+random > masked, above it, then 0 beyond current_size / 2 (ml_optimiser_mpi.cpp:3340-3396). The random
+phases are rnd_unif(0, 2 PI) draws of one glibc stream, one per FFTW half voxel at |k| >= randomize_at in
+storage order, half 1 then half 2 (fftw.cpp:436-458). The oracle test replays RELION's own runs.
 """
 
 import math
@@ -12,9 +14,11 @@ import math
 import mrcfile
 import numpy as np
 import pytest
+from helpers.em_fixtures import fixture_dir
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
+from relax.helpers import relion_random
 from relax.reconstruction import solvent_mask
 from relax.refinement.refinement_options import ReconstructionPrograms
 
@@ -41,7 +45,7 @@ def _loop_fsc(map1, map2):
     return num / np.sqrt(d1 * d2)
 
 
-def _loop_randomize(volume, shell, phases):
+def _loop_randomize(volume, shell, generator):
     n = volume.shape[0]
     ft = np.fft.rfftn(volume)
     for k in range(n):
@@ -50,7 +54,9 @@ def _loop_randomize(volume, shell, phases):
             ip = i if i < n // 2 + 1 else i - n
             for j in range(n // 2 + 1):
                 if kp * kp + ip * ip + j * j >= shell * shell:
-                    ft[k, i, j] = abs(ft[k, i, j]) * complex(math.cos(phases[k, i, j]), math.sin(phases[k, i, j]))
+                    mag = abs(ft[k, i, j])
+                    phase = float(relion_random.rnd_unif(generator, 0.0, 2.0 * math.pi))
+                    ft[k, i, j] = complex(mag * math.cos(phase), mag * math.sin(phase))
     return np.fft.irfftn(ft, s=volume.shape, axes=(0, 1, 2))
 
 
@@ -79,18 +85,21 @@ def test_fsc_matches_the_loop_reference():
 @pytest.mark.parametrize("current_size", [12, 8])
 def test_corrected_fsc_matches_the_rule(current_size):
     half1, half2, mask = _maps()
-    got, details = solvent_mask.solvent_corrected_fsc(
-        half1, half2, mask, current_size=current_size, rng=np.random.default_rng(7)
-    )
+    stream = relion_random.GlibcRand(7)
+    stream.rand_array(5)  # a stream already advanced, as after earlier iterations
+    got, details = solvent_mask.solvent_corrected_fsc(half1, half2, mask, current_size=current_size, stream=stream)
 
     unmasked = _loop_fsc(half1, half2)
     randomize_at = next(i for i in range(1, unmasked.size) if unmasked[i] < 0.8)
     assert details["randomize_at"] == randomize_at
     masked = _loop_fsc(half1 * mask, half2 * mask)
-    rng = np.random.default_rng(7)
-    shape = (12, 12, 7)
-    random1 = _loop_randomize(half1, randomize_at, rng.uniform(0.0, 2.0 * np.pi, shape))
-    random2 = _loop_randomize(half2, randomize_at, rng.uniform(0.0, 2.0 * np.pi, shape))
+    generator = relion_random.GlibcRand(7)
+    for _ in range(5):
+        generator.rand()
+    random1 = _loop_randomize(half1, randomize_at, generator)
+    random2 = _loop_randomize(half2, randomize_at, generator)
+    assert details["draws"] == generator.draws - 5 == stream.draws - 5
+    assert stream.rand() == generator.rand()  # the stream continues where RELION's would
     random_masked = _loop_fsc(random1 * mask, random2 * mask)
     expected = np.zeros_like(masked)
     for i in range(masked.size):
@@ -112,8 +121,10 @@ def test_corrected_fsc_matches_the_rule(current_size):
 
 def test_corrected_fsc_without_a_low_shell_is_the_unmasked_fsc():
     half1, _, mask = _maps()
-    got, details = solvent_mask.solvent_corrected_fsc(half1, half1, mask, current_size=12, rng=np.random.default_rng(0))
+    stream = relion_random.GlibcRand(0)
+    got, details = solvent_mask.solvent_corrected_fsc(half1, half1, mask, current_size=12, stream=stream)
     assert details["randomize_at"] == -1
+    assert details["draws"] == stream.draws == 0  # an iteration without randomize_at draws nothing
     np.testing.assert_allclose(got, _loop_fsc(half1, half1), rtol=1e-12)
 
 
@@ -212,3 +223,45 @@ def test_half_spectrum_fsc_depends_on_the_halved_axis():
         np.transpose(half1 * mask, (2, 1, 0)), np.transpose(half2 * mask, (2, 1, 0))
     )
     assert np.abs(file_order - transposed).max() > 1e-6
+
+
+def _read_map(path):
+    with mrcfile.open(path, permissive=True) as handle:
+        return np.asarray(handle.data, dtype=np.float64)
+
+
+@pytest.mark.parametrize(
+    ("case", "iterations", "split_draws"),
+    # The ET input carries rlnRandomSubset; the SPA input does not, so RELION's split drew one rand() per
+    # particle (5000) from the same leader stream first (PROVENANCE.json of the fixture).
+    [("tomo_seed2", (1, 2, 3), 0), ("spa_seed2", (1, 2, 3, 4), 5000)],
+)
+def test_corrected_fsc_replays_relion_leader_stream(case, iterations, split_draws):
+    """RELION's own --solvent_correct_fsc curves, iteration after iteration, from one stream (relax#35).
+
+    The stream is seeded once with random_seed 2, gives the split its draws, and then runs on through the
+    iterations; each iteration's corrected FSC on RELION's unfil halves, in the file's axis order, is that
+    iteration's rlnGoldStandardFsc to RELION's print precision (6 decimals).
+    """
+    import starfile
+
+    root = fixture_dir("solvent_fsc_stream_relion_seed2") / case
+    mask = _read_map(root / "solvent_ref_mask.mrc")
+    stream = relion_random.init_random_generator(2)
+    stream.rand_array(split_draws)
+    randomised = 0
+    for iteration in iterations:
+        stem = root / f"run_it{iteration:03d}"
+        model = starfile.read(f"{stem}_half1_model.star", always_dict=True)
+        current_size = int(model["model_general"]["rlnCurrentImageSize"])
+        expected = model["model_class_1"]["rlnGoldStandardFsc"].to_numpy(float)
+        got, details = solvent_mask.solvent_corrected_fsc(
+            _read_map(f"{stem}_half1_class001_unfil.mrc"),
+            _read_map(f"{stem}_half2_class001_unfil.mrc"),
+            mask,
+            current_size=current_size,
+            stream=stream,
+        )
+        randomised += details["randomize_at"] > 0
+        np.testing.assert_allclose(got[: expected.size], expected, rtol=0.0, atol=1e-6)
+    assert randomised >= 2  # the stream carried across randomising iterations

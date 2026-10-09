@@ -60,6 +60,8 @@ class GlibcRand:
         self._rear = 0
         for _ in range(310):
             self._next()
+        # rand() values returned since srand.
+        self.draws = 0
 
     def _next(self) -> int:
         state = self._state
@@ -70,7 +72,24 @@ class GlibcRand:
         return value >> 1
 
     def rand(self) -> int:
+        self.draws += 1
         return self._next()
+
+    def rand_array(self, count: int) -> np.ndarray:
+        """The next ``count`` values of ``rand()``, int64, as ``count`` calls would return them."""
+
+        if count < 0:
+            raise ValueError(f"count must be non-negative, got {count}")
+        # The ring holds r[i-31..i-1] from the front; r[i] = r[i-31] + r[i-3] (front and rear words).
+        words = [self._state[(self._front + k) % 31] for k in range(31)]
+        append = words.append
+        for i in range(31, 31 + count):
+            append((words[i - 31] + words[i - 3]) & _MASK32)
+        self._state = words[-31:]
+        self._front = 0
+        self._rear = 28
+        self.draws += count
+        return np.asarray(words[31:], dtype=np.int64) >> 1
 
 
 def check_init_random_generator_seeds(seeds) -> None:

@@ -23,6 +23,7 @@ from relax.relion.input_particle_table import (
     relion_particle_order,
     relion_random_subsets,
     relion_scale_group_numbers,
+    relion_split_draw_count,
 )
 
 pytestmark = pytest.mark.unit
@@ -204,6 +205,8 @@ def test_input_random_subsets_are_kept_and_validated():
     assert_matches(
         relion_random_subsets([0, 0, 0, 0], seed=5, n_particles=4), glibc_rand_sequence(5, 4) % 2 + 1
     )
+    # The split's rand() calls, which RELION's MPI leader stream gives before its phase draws.
+    assert [relion_split_draw_count(e, n_particles=4) for e in (None, [0, 0, 0, 0], [1, 2, 2, 1])] == [4, 4, 0]
 
 
 @pytest.mark.parametrize("case", sorted(RELION_START_CASES))

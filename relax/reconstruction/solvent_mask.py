@@ -10,6 +10,14 @@ With ``--solvent_correct_fsc`` (MPI relion_refine only; the non-MPI program igno
 half-set FSC is replaced by the phase-randomisation corrected FSC of the masked unregularised half maps
 (``reconstructUnregularisedMapAndCalculateSolventCorrectedFSC``, ml_optimiser_mpi.cpp:3221-3403), before
 the solvent flatten. See docs/math/relion_refinement_algorithm.md, "Reference mask".
+
+The random phases are RELION's own draws (relax#35). The auto-refine reference is always MPI
+relion_refine (the non-MPI program ignores the flag), and there the correction runs on the leader,
+whose glibc stream is seeded once, ``init_random_generator(random_seed)`` in ``initialiseWorkLoad``
+(ml_optimiser_mpi.cpp:827); only the followers reseed with ``random_seed + iter`` each expectation
+(ml_optimiser_mpi.cpp:1018-1020). The leader's stream therefore runs on across iterations, advanced
+only by the iterations that randomise, and that one stream is the one to match: the caller keeps a
+single :class:`~relax.helpers.relion_random.GlibcRand` for the run.
 """
 
 from __future__ import annotations
@@ -18,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
+from relax.helpers.relion_random import RAND_MAX, GlibcRand
 from relax.helpers.shells import shell_of_radius_sq
 from relax.relion.macros import relion_round
 
@@ -97,24 +106,37 @@ def real_space_fsc(map1, map2) -> np.ndarray:
         return num / np.sqrt(den1 * den2)
 
 
-def randomize_phases_beyond(volume, shell: int, phases) -> np.ndarray:
-    """``volume`` with each rfft voxel at ``|k| >= shell`` given phase ``phases`` (same shape as the rfft)."""
+def randomize_phases_beyond(volume, shell: int, stream: GlibcRand) -> np.ndarray:
+    """``volume`` with each rfft voxel at ``|k| >= shell`` given a random phase from ``stream``.
+
+    RELION ``randomizePhasesBeyond`` (fftw.cpp:436-470): one ``rnd_unif(0, 2 PI)`` per selected voxel of
+    the FFTW half transform in its storage order (z, y, then the halved x axis: C order of the map file's
+    array), ``0 + (float) rand() / (float) (RAND_MAX / (float) (2 PI))`` in float; the magnitude is kept and
+    the phase's cosine and sine are taken in double.
+    """
 
     _, radius_sq = _fftw_shells(volume.shape[0])
     spectrum = np.fft.rfftn(volume)
-    spectrum = np.where(radius_sq >= shell * shell, np.abs(spectrum) * np.exp(1j * phases), spectrum)
+    selected = radius_sq >= shell * shell
+    draws = stream.rand_array(int(np.count_nonzero(selected)))
+    denominator = np.float32(np.float32(RAND_MAX) / np.float32(2.0 * np.pi))
+    phases = (np.float32(0.0) + draws.astype(np.float32) / denominator).astype(np.float64)
+    magnitude = np.abs(spectrum[selected])
+    spectrum[selected] = magnitude * np.cos(phases) + 1j * (magnitude * np.sin(phases))
     return np.fft.irfftn(spectrum, s=volume.shape, axes=(0, 1, 2))
 
 
-def solvent_corrected_fsc(half1, half2, mask, *, current_size: int, rng: np.random.Generator):
+def solvent_corrected_fsc(half1, half2, mask, *, current_size: int, stream: GlibcRand):
     """RELION's solvent-corrected FSC of two unregularised half maps (real space, cubic, float64).
 
     Returns ``(fsc, details)``. ``fsc`` is the masked FSC below ``randomize_at + 2`` and
     ``(masked - random) / (1 - random)`` (0 where ``random > masked``) above it, ``randomize_at``
     being the first shell above 0 whose unmasked FSC is below 0.8; without such a shell it is the
-    unmasked FSC. Shells beyond ``current_size // 2`` are 0. ``rng`` draws the uniform phases in
-    [0, 2 pi) that replace both maps' phases beyond ``randomize_at``; RELION draws its own, so the
-    corrected shells agree with RELION only statistically.
+    unmasked FSC. Shells beyond ``current_size // 2`` are 0. ``stream`` is the run's leader
+    ``rand()`` stream: the phases beyond ``randomize_at`` are drawn for ``half1`` then ``half2``
+    (:func:`randomize_phases_beyond`), and nothing is drawn without a ``randomize_at``. Maps in the
+    file's axis order and the stream at RELION's position give RELION's curve to rounding.
+    ``details["draws"]`` counts the values taken.
     """
 
     half1 = np.asarray(half1, dtype=np.float64)
@@ -127,10 +149,10 @@ def solvent_corrected_fsc(half1, half2, mask, *, current_size: int, rng: np.rand
     below = np.nonzero(unmasked[1:] < _RANDOMIZE_FSC_AT)[0]
     randomize_at = int(below[0]) + 1 if below.size else -1
     random_masked = None
+    first_draw = int(stream.draws)  # the stream advances below
     if randomize_at > 0:
-        spectrum_shape = (half1.shape[0], half1.shape[1], half1.shape[2] // 2 + 1)
-        random1 = randomize_phases_beyond(half1, randomize_at, rng.uniform(0.0, 2.0 * np.pi, spectrum_shape))
-        random2 = randomize_phases_beyond(half2, randomize_at, rng.uniform(0.0, 2.0 * np.pi, spectrum_shape))
+        random1 = randomize_phases_beyond(half1, randomize_at, stream)
+        random2 = randomize_phases_beyond(half2, randomize_at, stream)
         random_masked = real_space_fsc(random1 * mask, random2 * mask)
         shells = np.arange(masked.size)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -139,5 +161,11 @@ def solvent_corrected_fsc(half1, half2, mask, *, current_size: int, rng: np.rand
     else:
         fsc = unmasked.copy()
     fsc[int(current_size) // 2 + 1 :] = 0.0
-    details = {"randomize_at": randomize_at, "unmasked": unmasked, "masked": masked, "random_masked": random_masked}
+    details = {
+        "randomize_at": randomize_at,
+        "unmasked": unmasked,
+        "masked": masked,
+        "random_masked": random_masked,
+        "draws": stream.draws - first_draw,
+    }
     return fsc, details

@@ -11,6 +11,7 @@ from relax.helpers.expected_accuracy import (
     Half1AccuracyInputs,
     prepare_relion_half1_trial_order,
 )
+from relax.helpers.relion_random import GlibcRand, init_random_generator
 from relax.helpers.resolution import ImageGeometry
 from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
 from relax.refinement.iteration_planning import RunOptics
@@ -182,15 +183,25 @@ def reconstruction_settings_for_run(
         ),
         solvent_correct_fsc=options.solvent.correct_fsc,
         programs=options.variants.reconstruction,
-        solvent_fsc_seed=int(
-            (
-                options.parity.perturb_seed
-                if options.parity.optimizer_random_seed is None
-                else options.parity.optimizer_random_seed
-            )
-            or 0
-        ),
+        solvent_phase_stream=_solvent_phase_stream(options) if options.solvent.correct_fsc else None,
     )
+
+
+def _solvent_phase_stream(options: RefinementOptions) -> GlibcRand:
+    """RELION's MPI leader ``rand()`` stream for the corrected FSC's phases, at the run's first draw.
+
+    The auto-refine reference is always MPI relion_refine, whose leader seeds once with
+    ``init_random_generator(random_seed)`` (ml_optimiser_mpi.cpp:827) and never reseeds; the split's
+    draws (``options.solvent.split_draws``) come first. relax.reconstruction.solvent_mask.
+    """
+    seed = (
+        options.parity.perturb_seed
+        if options.parity.optimizer_random_seed is None
+        else options.parity.optimizer_random_seed
+    )
+    stream = init_random_generator(int(seed or 0))
+    stream.rand_array(int(options.solvent.split_draws))
+    return stream
 
 
 def expected_accuracy_inputs_for_run(
