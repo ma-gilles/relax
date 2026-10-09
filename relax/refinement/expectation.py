@@ -7,6 +7,7 @@ import logging
 import os
 from dataclasses import dataclass, field, replace
 from functools import partial
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -34,7 +35,7 @@ from relax.helpers.resolution import ImageGeometry
 from relax.refinement import optics_shapes
 from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
 from relax.refinement.final_sampling import FinalSampling
-from relax.refinement.half_inputs import HalfSet
+from relax.refinement.half_inputs import HalfSet, _sigma_offset_for_half
 from relax.refinement.half_scoring import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -49,14 +50,17 @@ from relax.refinement.half_scoring import (
     _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.iteration_planning import ExpectationWindows
-from relax.refinement.local_sampling import LocalSampling
+from relax.refinement.iteration_planning import ExpectationWindows, IterationCarry
+from relax.refinement.local_sampling import LocalSampling, NumberedSamplingPlan, local_search_centre_half
 from relax.refinement.optics_shapes import OpticsSpec
 from relax.refinement.ports import DenseHalfScored, RunObserver
 from relax.refinement.refinement_options import RefinementOptions
 from relax.refinement.tomo_half import TomoSampling
 from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.sampling import TrialGrid, rotation_grid_size
+
+if TYPE_CHECKING:
+    from relax.refinement.setup_checks import RunContext
 
 logger = logging.getLogger("relax.refinement.iteration_loop")
 
@@ -362,6 +366,54 @@ def run_numbered_halves(
                 "complete target set; refusing to continue with one half missing"
             )
     significance.combine()
+
+
+def numbered_half_inputs(
+    ctx: "RunContext",
+    carry: IterationCarry,
+    plan: NumberedSamplingPlan,
+    options: RefinementOptions,
+    *,
+    halves,
+    reference_model,
+    projectors,
+    follower_setup,
+) -> list[NumberedHalfInputs]:
+    """Each half's scoring inputs of one numbered iteration: its particles (centred for a local search), its
+    reference, tau2, noise and projector, its scale groups and the iteration-start scale-gate curve, its
+    direction log priors and translation prior width.
+
+    Reads from ``carry``: ``state``, ``noise_model``, ``sigma_offset`` and
+    ``previous_data_vs_prior_for_scheduling`` (still the iteration-start curve: RELION's scale XA/AA shell
+    gate reads it, the scheduling curve changes later); from ``ctx``: ``tomo_halves``; from
+    ``follower_setup``: the halves' scale-statistics groups; from ``options``: ``replay.init_angle_priors``.
+    """
+    return [
+        NumberedHalfInputs(
+            data=HalfScoringData(
+                particles=local_search_centre_half(
+                    halves[k], (options.replay.init_angle_priors or (None, None))[k], carry.state
+                ),
+                reference=reference_model.maps[k],
+                mean_variance=reference_model.tau2_per_half[k],
+                noise_variance=carry.noise_model.variance_per_half[k],
+                noise_radial=(
+                    carry.noise_model.radial_per_half[k]
+                    if not ctx.tomo_halves and halves[k].dataset.n_units
+                    else None
+                ),
+                projector=projectors[k],
+                scale_group_ids=follower_setup.scale_stats_group_ids_per_half[k],
+                scale_group_count=follower_setup.scale_stats_group_count_per_half[k],
+                scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
+            ),
+            direction_priors=plan.direction_log_priors[k],
+            sigma_offset_angstrom=_sigma_offset_for_half(
+                carry.sigma_offset.shared_angstrom, carry.sigma_offset.per_half_angstrom, k,
+            ),
+        )
+        for k in (0, 1)
+    ]
 
 
 @dataclass(frozen=True)

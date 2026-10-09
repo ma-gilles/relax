@@ -66,17 +66,16 @@ from relax.refinement.convergence import (
     uses_native_auto_refine,
 )
 from relax.refinement.expectation import (
-    NumberedHalfInputs,
     NumberedHalfRecording,
     SignificanceStatistics,
     finish_numbered_half,
+    numbered_half_inputs,
     prepare_numbered_expectation,
     run_numbered_halves,
     score_numbered_half,
 )
 from relax.refinement.half_inputs import (
     SigmaOffset,
-    _sigma_offset_for_half,
     as_sigma_offset_half_pair,
     best_rotation_matrices,
     copy_optional_float_pair,
@@ -88,7 +87,6 @@ from relax.refinement.half_inputs import (
 )
 from relax.refinement.half_scoring import (
     DenseVariantPolicy,
-    HalfScoringData,
 )
 from relax.refinement.iteration_planning import (
     IterationCarry,
@@ -782,20 +780,6 @@ def refine_single_volume(
             log=logger,
         )
 
-        # The previous iteration's slabs are released before this iteration's are built.
-        projectors = [None, None]
-        # Every dense, local and tomo scorer reads this projector: pass 1 scores RELION's exact
-        # coarse operands on every route, as RELION builds Projector::data every iteration.
-        projectors = build_numbered_projectors(
-            halves, reference_model.maps, ctx.reconstruction_settings,
-            current_size=plan.sampling_plan.windows.model_window_size,
-            n_classes=options.k_class.n_classes, reusable_half1=shared_projector_half1,
-            real_references_by_half=initial_real_references_by_half if iteration == 0 else None, iteration=iteration,
-            log=logger,
-        )
-        # The start-up real maps serve iteration 0's projector only (relax#26).
-        initial_real_references_by_half = [None, None]
-
         # The iteration-start curve RELION's scale XA/AA shell gate reads (the scheduling curve changes later).
         scale_correction_data_vs_prior_this_iter = carry.previous_data_vs_prior_for_scheduling
 
@@ -819,6 +803,17 @@ def refine_single_volume(
             collect_local_search_profile=ctx.collect_local_search_profile,
             local_profile_history=history.local_profile_history, observer=observer,
         )
+        # Every dense, local and tomo scorer reads this projector: pass 1 scores RELION's exact
+        # coarse operands on every route, as RELION builds Projector::data every iteration.
+        projectors = build_numbered_projectors(
+            halves, reference_model.maps, ctx.reconstruction_settings,
+            current_size=plan.sampling_plan.windows.model_window_size,
+            n_classes=options.k_class.n_classes, reusable_half1=shared_projector_half1,
+            real_references_by_half=initial_real_references_by_half if iteration == 0 else None, iteration=iteration,
+            log=logger,
+        )
+        # The start-up real maps serve iteration 0's projector only (relax#26).
+        initial_real_references_by_half = [None, None]
         if ctx.tomo_halves:
             numbered_tomo_sampling = numbered_iteration_tomo_sampling(
                 carry.state, ctx.image_geometry, local_sampling=plan.sampling_plan.local,
@@ -829,33 +824,10 @@ def refine_single_volume(
             )
         else:
             numbered_tomo_sampling = None
-
-        half_inputs = [
-            NumberedHalfInputs(
-                data=HalfScoringData(
-                    particles=local_sampling.local_search_centre_half(
-                        halves[k], (options.replay.init_angle_priors or (None, None))[k], carry.state
-                    ),
-                    reference=reference_model.maps[k],
-                    mean_variance=reference_model.tau2_per_half[k],
-                    noise_variance=carry.noise_model.variance_per_half[k],
-                    noise_radial=(
-                        carry.noise_model.radial_per_half[k]
-                        if not ctx.tomo_halves and halves[k].dataset.n_units
-                        else None
-                    ),
-                    projector=projectors[k],
-                    scale_group_ids=follower_setup.scale_stats_group_ids_per_half[k],
-                    scale_group_count=follower_setup.scale_stats_group_count_per_half[k],
-                    scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
-                ),
-                direction_priors=plan.direction_log_priors[k],
-                sigma_offset_angstrom=_sigma_offset_for_half(
-                    carry.sigma_offset.shared_angstrom, carry.sigma_offset.per_half_angstrom, k,
-                ),
-            )
-            for k in (0, 1)
-        ]
+        half_inputs = numbered_half_inputs(
+            ctx, carry, plan, options, halves=halves, reference_model=reference_model, projectors=projectors,
+            follower_setup=follower_setup,
+        )
         # Each half is scored, then at once published into per_half and recorded (half 0's local accumulators
         # leave the device before half 1 is scored); overlap_halves may run the two on two threads.
         run_numbered_halves(
@@ -878,14 +850,18 @@ def refine_single_volume(
                 ),
                 use_local=use_local, dtype=ctx.scoring_dtype,
             ),
-            half_inputs, diagnostic_half_indices, significance, overlap_halves=options.execution.overlap_halves,
-            log=logger,
+            half_inputs, diagnostic_half_indices, significance,
+            overlap_halves=options.execution.overlap_halves, log=logger,
         )
         # E-step + per-half M-step accumulators are now both populated.
         observer.stage_finished(iteration, "e_step")
-        # Drop the inputs' references to this iteration's projectors and maps, which the M-step and the next
-        # iteration release (code rule 3).
-        half_inputs = None
+        # The Class3D prior reads half 1's projected reference power (none before a previous iteration's).
+        projector_power_spectrum = (
+            None if not has_previous_iteration or projectors[0] is None else projectors[0].power_spectrum
+        )
+        # Release this iteration's projectors now, not when the next iteration builds its own (code rule 3: an
+        # earlier release), and the inputs' references to its maps, which the M-step releases.
+        half_inputs = projectors = shared_projector_half1 = None
 
         Ft_y_0, Ft_y_1 = per_half.Ft_y
         Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf
@@ -944,11 +920,7 @@ def refine_single_volume(
                 halves=halves, iteration=iteration, current_size=current_size,
                 image_current_size=plan.sampling_plan.windows.image_current_size,
                 mstep_accumulator_shape=mstep_accumulator_shape, mstep_full_half_axis=mstep_full_half_axis,
-                projector_power_spectrum=(
-                    None
-                    if not has_previous_iteration or projectors[0] is None
-                    else projectors[0].power_spectrum
-                ),
+                projector_power_spectrum=projector_power_spectrum,
                 class_tau2=source.class_tau2(iteration, options.k_class.n_classes), scoring_dtype=ctx.scoring_dtype,
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                 source_pixel_size_angstrom=ctx.source_pixel_size_angstrom, observer=observer,
@@ -1341,7 +1313,7 @@ def refine_single_volume(
         Ft_ctf_0 = Ft_ctf_1 = None
         unreg_means = mstep = per_half = snapshot = None
         # Pass containers must not retain the previous grids while the next projector is built.
-        numbered_expectation = numbered_tomo_sampling = numbered_variant = None
+        numbered_expectation = numbered_tomo_sampling = numbered_variant = projector_power_spectrum = None
         if options.execution.clear_jax_caches_between_iterations:
             jax.clear_caches()
 

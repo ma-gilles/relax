@@ -195,11 +195,11 @@ def test_actual_numbered_half_binding_does_not_read_unused_radial_noise(monkeypa
     """
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import iteration_loop
+    from relax.refinement import expectation, iteration_loop
 
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop, 'initialize_noise_model', 'noise')
-    trace.wrap(iteration_loop, 'HalfScoringData', 'data')
+    trace.wrap(expectation, 'HalfScoringData', 'data')
     run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False)
     (noise,) = trace.calls('noise')
     data = trace.calls('data')
