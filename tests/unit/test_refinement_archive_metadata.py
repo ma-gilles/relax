@@ -64,6 +64,7 @@ def metadata_inputs(*, n_classes, diagnostics, max_order):
         n_rotations=768,
         n_translations=9,
         random_seed=RandomSeed(17, "explicit CLI"),
+        max_iter=3,
         particle_diameter_ang=24.0 if diagnostics else None,
         restart=(
             RestartProvenance((2,), Path("restart.json"), "restart-hash") if diagnostics

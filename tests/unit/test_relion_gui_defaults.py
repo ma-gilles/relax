@@ -58,16 +58,16 @@ def test_job_type_defaults(n_classes, frozen, expected):
         apply_initial_lowpass=None,
         frozen_boundary_dir=frozen,
     )
-    command_options.resolve_job_defaults(args)
-    assert (args.max_iter, args.image_fourier_backend, args.apply_initial_lowpass) == expected
+    job = command_options.resolve_job_defaults(args)
+    assert (job.max_iter, job.image_fourier_backend, job.apply_initial_lowpass) == expected
 
 
 def test_explicit_values_are_kept():
     args = SimpleNamespace(
         n_classes=1, max_iter=3, image_fourier_backend="host_numpy", apply_initial_lowpass=False, frozen_boundary_dir=None
     )
-    command_options.resolve_job_defaults(args)
-    assert (args.max_iter, args.image_fourier_backend, args.apply_initial_lowpass) == (3, "host_numpy", False)
+    job = command_options.resolve_job_defaults(args)
+    assert (job.max_iter, job.image_fourier_backend, job.apply_initial_lowpass) == (3, "host_numpy", False)
 
 
 def test_seed_defaults_to_the_time_like_relion(monkeypatch):

@@ -377,7 +377,7 @@ def main(command=None):
         logger.info("Persistent JAX compilation cache: %s", cache_directory)
     if int(args.n_classes) == 1:
         apply_k1_refine3d_env_defaults()
-    command_options.resolve_job_defaults(args)
+    job = command_options.resolve_job_defaults(args)
     relion_half_sets_from_input = command_options.resolve_standalone_k1_start(args)
     command_options.validate_sigma_ang(args)
     command_options.validate_strict_highres_exp(args)
@@ -392,7 +392,7 @@ def main(command=None):
         variant=args.state_swap_variant,
         replay_relion_references=args.state_swap_replay_relion_references,
         init_relion_iteration=args.init_relion_iteration,
-        max_iter=args.max_iter,
+        max_iter=job.max_iter,
     )
     replay_process_start_noise_broadcast = _replay_process_start_noise_broadcast(
         args.replay_noise_semantics,
@@ -407,7 +407,7 @@ def main(command=None):
             args.healpix_order,
         )
 
-    frozen_boundary, fixed_diagnostic_source_paths = frozen_boundary_cli.load_cli_boundary(args)
+    frozen_boundary, fixed_diagnostic_source_paths = frozen_boundary_cli.load_cli_boundary(args, job=job)
 
     command_options.validate_skip_align_args(args)
     if args.continue_optimiser_star is not None:
@@ -455,6 +455,7 @@ def main(command=None):
     particle_inputs = particle_loading.load_particle_inputs(
         args,
         relion_half_sets_from_input=relion_half_sets_from_input,
+        image_fourier_backend=job.image_fourier_backend,
         frozen_boundary=frozen_boundary,
         fixed_diagnostic_source_paths=fixed_diagnostic_source_paths,
     )
@@ -572,9 +573,9 @@ def main(command=None):
             resume_snapshot.relion_iteration,
             args.continue_optimiser_star,
         )
-        if int(args.max_iter) < int(resume_snapshot.relion_iteration):
+        if int(job.max_iter) < int(resume_snapshot.relion_iteration):
             raise SystemExit(
-                f"--max_iter {args.max_iter} is the last numbered iteration of the whole run "
+                f"--max_iter {job.max_iter} is the last numbered iteration of the whole run "
                 f"(RELION's --iter); the run files are already at iteration {resume_snapshot.relion_iteration}"
             )
 
@@ -605,6 +606,7 @@ def main(command=None):
         group_particle_source,
         particle_groups,
         random_seed=seed.value,
+        max_iter=job.max_iter,
         relion_half_sets_from_input=relion_half_sets_from_input,
         log=logger,
     )
@@ -637,7 +639,7 @@ def main(command=None):
 
     # RELION's ``initialLowPassFilterReferences`` (ml_optimiser.cpp:3556) low-pass filters mymodel.Iref at
     # start-up, gated only on ``ini_high > 0``; ``--apply-initial-lowpass`` mirrors it at --init_resolution.
-    _apply_ini_lowpass = bool(getattr(args, "apply_initial_lowpass", False))
+    _apply_ini_lowpass = bool(job.apply_initial_lowpass)
     _ini_high_for_lowpass = (
         float(args.init_resolution)
         if _apply_ini_lowpass and float(args.init_resolution) > 0.0
@@ -967,7 +969,7 @@ def main(command=None):
     logger.info("=" * 70)
     logger.info(
         "Starting RELION-parity refinement: max_iter=%d, adaptive_oversampling=%d",
-        args.max_iter,
+        job.max_iter,
         args.adaptive_oversampling,
     )
     logger.info("=" * 70)
@@ -994,7 +996,7 @@ def main(command=None):
     replay_iteration_overrides = None
     if args.perturb_replay_relion_dir is not None:
         if frozen_boundary is not None:
-            replay_iteration_overrides = frozen_boundary_cli.empty_replay_slots(args.max_iter)
+            replay_iteration_overrides = frozen_boundary_cli.empty_replay_slots(job.max_iter)
             logger.info(
                 "Diagnostic frozen restart: local replay slot 0 is empty; "
                 "sealed per-half scoring state suppresses process-start noise broadcast"
@@ -1003,7 +1005,7 @@ def main(command=None):
             replay_iteration_overrides = replay_inputs.numbered_star_replay(
                 args.perturb_replay_relion_dir,
                 replay_target,
-                max_iter=args.max_iter,
+                max_iter=job.max_iter,
                 init_relion_iteration=args.init_relion_iteration,
                 include_normcorr=_resolve_replay_normcorr(args.perturb_replay_relion_dir, args.replay_relion_normcorr),
                 include_k1_state_swap=args.state_swap_target_relion_iteration is not None,
@@ -1020,7 +1022,7 @@ def main(command=None):
         final_replay = replay_inputs.final_only_replay(
             args.final_replay_relion_dir,
             replay_target,
-            max_iter=args.max_iter,
+            max_iter=job.max_iter,
             explicit_source_iteration=args.final_replay_source_iteration,
             fields=args.final_replay_fields,
             init_relion_iteration=args.init_relion_iteration,
@@ -1048,7 +1050,7 @@ def main(command=None):
         )
         if first_state is not None:
             if replay_iteration_overrides is None:
-                replay_iteration_overrides = [None] * (args.max_iter + 1)
+                replay_iteration_overrides = [None] * (job.max_iter + 1)
             replay_iteration_overrides[0] = first_state
             logger.info(
                 "STRICT-PARITY: loaded complete RELION run_it000 cold-start state "
@@ -1099,6 +1101,7 @@ def main(command=None):
             frozen_boundary,
             args,
             random_seed=seed.value,
+            job=job,
             mask_params=relion_mask_params,
             max_significants=max_significants,
             dataset=ds,
@@ -1143,7 +1146,7 @@ def main(command=None):
         variant=args.state_swap_variant,
         replay_relion_references=args.state_swap_replay_relion_references,
         init_relion_iteration=args.init_relion_iteration,
-        max_iter=args.max_iter,
+        max_iter=job.max_iter,
         replay_iteration_overrides=replay_iteration_overrides,
     )
     if state_swap_probe is not None:
@@ -1163,7 +1166,7 @@ def main(command=None):
             settings=run_files.RunSettings(
                 output_root=os.path.join(args.output, "run"),
                 random_seed=seed.value,
-                nr_iter=int(args.max_iter),
+                nr_iter=int(job.max_iter),
                 particle_diameter=float(particle_diameter_ang or 0.0),
                 # RELION writes its live values (ml_optimiser.cpp:1660-1665): the run's mask edge, and the
                 # Refine3D job's --low_resol_join_halves 40 (pipeline_jobs.cpp:4509) or, for Class3D, the
@@ -1211,6 +1214,7 @@ def main(command=None):
         symmetry=SymmetryOptions(point_group=symmetry),
         schedule=command_options.resolve_schedule(
             args,
+            max_iter=job.max_iter,
             initial_sampling=initial_sampling,
             init_current_size=init_current_size,
             ini_high_angstrom=_ini_high_for_lowpass,
@@ -1232,7 +1236,7 @@ def main(command=None):
             relion_optics_pixel_sizes=half_sets.optics_pixel_sizes,
             optics_group_ids_per_half=optics_group_ids_per_half,
             relion_model_pixel_size=relion_model_pixel_size,
-            image_fourier_backend=args.image_fourier_backend,
+            image_fourier_backend=job.image_fourier_backend,
             emulate_relion_firstiter_cc=bool(args.firstiter_cc),
             relion_firstiter_ini_high_angstrom=(
                 relion_firstiter_ini_high_angstrom if args.firstiter_cc else None
@@ -1328,7 +1332,7 @@ def main(command=None):
 
     total_time = time.time() - t_start
     logger.info("=" * 70)
-    logger.info("Refinement complete in %.1fs (%d iterations)", total_time, args.max_iter)
+    logger.info("Refinement complete in %.1fs (%d iterations)", total_time, job.max_iter)
     logger.info("=" * 70)
 
     report = RunReport(
@@ -1347,7 +1351,7 @@ def main(command=None):
         max_significants=max_significants,
         max_significants_resolution=runtime_controls.max_significants_resolution,
         restart=restart_provenance,
-        max_iter=args.max_iter,
+        max_iter=job.max_iter,
         random_seed=seed.value,
         random_seed_source=seed.source,
         n_rotations=n_rotations,
@@ -1376,6 +1380,7 @@ def main(command=None):
         n_rotations=n_rotations,
         n_translations=translations.shape[0],
         random_seed=seed,
+        max_iter=job.max_iter,
         particle_diameter_ang=particle_diameter_ang,
         particle_layout=particle_layout,
         replay_provenance=archive_provenance.replay_archive_metadata(

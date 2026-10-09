@@ -59,7 +59,7 @@ def test_the_command_hands_the_resolved_groups_to_the_controller(monkeypatch, tm
 
 def _schedule(args, frozen_boundary=None, continued_iterations=None, sigma_offset=None):
     return command_options.resolve_schedule(
-        args, initial_sampling=SimpleNamespace(coarse_order=2, max_order=5), init_current_size=24,
+        args, max_iter=command_options.resolve_job_defaults(args).max_iter, initial_sampling=SimpleNamespace(coarse_order=2, max_order=5), init_current_size=24,
         ini_high_angstrom=30.0, init_data_vs_prior="dvp", image_mask=(180.0, 5.0),
         relion_init_sigma_offset_angstrom=sigma_offset, frozen_boundary=frozen_boundary,
         continued_iterations=continued_iterations,

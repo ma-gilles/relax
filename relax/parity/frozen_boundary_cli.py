@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -26,6 +26,9 @@ from relax.parity.frozen_boundary import (
     verify_fixed_diagnostic_boundary_sources,
 )
 from relax.parity.parity_provenance import git_head_or_none, git_worktree_provenance
+
+if TYPE_CHECKING:
+    from relax.refinement.command_options import JobDefaults
 
 logger = logging.getLogger('relax.refinement.full_refinement')
 
@@ -112,8 +115,9 @@ def add_frozen_boundary_arguments(parser) -> None:
     )
 
 
-def load_cli_boundary(args) -> BoundaryInputs:
-    """Admit the requested diagnostic arm before loading the experiment."""
+def load_cli_boundary(args, *, job: "JobDefaults") -> BoundaryInputs:
+    """Admit the requested diagnostic arm before loading the experiment; ``job`` holds the resolved
+    ``--max_iter`` and ``--apply-initial-lowpass``."""
 
     frozen_boundary = None
     fixed_diagnostic_source_paths = None
@@ -122,7 +126,7 @@ def load_cli_boundary(args) -> BoundaryInputs:
             raise SystemExit("frozen-boundary schemas v2/v3 currently support C1 only")
         if args.n_classes != 1:
             raise SystemExit("--frozen-boundary-dir is K=1-only")
-        if int(args.max_iter) != 1 or not bool(args.skip_final_iteration):
+        if int(job.max_iter) != 1 or not bool(args.skip_final_iteration):
             raise SystemExit(
                 "--frozen-boundary-dir requires --max_iter 1 and --skip-final-iteration"
             )
@@ -135,7 +139,7 @@ def load_cli_boundary(args) -> BoundaryInputs:
                 "--frozen-boundary-dir cannot be combined with --init_volume or "
                 "--init_noise_from_npz"
             )
-        if args.init_previous_best_poses_npz is not None or args.apply_initial_lowpass:
+        if args.init_previous_best_poses_npz is not None or job.apply_initial_lowpass:
             raise SystemExit(
                 "--frozen-boundary-dir cannot be combined with pose overrides or "
                 "--apply-initial-lowpass"
@@ -252,6 +256,7 @@ def validate_fixed_boundary_runtime(
     args,
     *,
     random_seed: int,
+    job: "JobDefaults",
     mask_params,
     max_significants: int,
     dataset,
@@ -269,6 +274,7 @@ def validate_fixed_boundary_runtime(
             _fixed_diagnostic_runtime_config(
                 args,
                 random_seed=random_seed,
+                job=job,
                 mask_params=mask_params,
                 max_significants=max_significants,
                 dataset=dataset,
@@ -537,6 +543,7 @@ def _fixed_diagnostic_runtime_config(
     args,
     *,
     random_seed: int,
+    job: "JobDefaults",
     mask_params,
     max_significants: int,
     dataset,
@@ -560,7 +567,7 @@ def _fixed_diagnostic_runtime_config(
     return {
         "adaptive_oversampling": int(args.adaptive_oversampling),
         "diagnostic_arm_id": FROZEN_BOUNDARY_FIXED_DIAGNOSTIC_ARM,
-        "max_iter": int(args.max_iter),
+        "max_iter": int(job.max_iter),
         "skip_final_iteration": bool(args.skip_final_iteration),
         "init_resolution_angstrom": float(args.init_resolution),
         "offset_range_pixels": float(args.offset_range),
@@ -592,7 +599,7 @@ def _fixed_diagnostic_runtime_config(
         "do_scale_correction": False,
         "refs_are_ctf_corrected": True,
         "disc_type": "linear_interp",
-        "image_fourier_backend": str(args.image_fourier_backend),
+        "image_fourier_backend": str(job.image_fourier_backend),
         "local_search_translation_prior_mode": "coarse",
         "declared_relion_command_line": str(args.frozen_boundary_relion_command_line),
         "declared_relion_base_git_commit": str(args.frozen_boundary_relion_git_commit),

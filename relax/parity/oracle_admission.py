@@ -112,7 +112,7 @@ class FollowerRouting(NamedTuple):
 
 
 def admit_follower_routing(
-    args, group_source, particle_groups, *, random_seed: int, relion_half_sets_from_input: bool, log
+    args, group_source, particle_groups, *, random_seed: int, max_iter: int, relion_half_sets_from_input: bool, log
 ) -> FollowerRouting:
     """Admit the followers' dispatch capture against its oracle and build their topology.
 
@@ -140,7 +140,7 @@ def admit_follower_routing(
         oracle_dir=dispatch.oracle_dirs[0] if dispatch.schedule is not None else None,
         random_seed=random_seed,
         init_relion_iteration=args.init_relion_iteration,
-        max_iter=args.max_iter,
+        max_iter=max_iter,
         group_source=group_source.path,
         logger=log,
     )

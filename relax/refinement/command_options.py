@@ -148,19 +148,33 @@ def resolve_initial_sampling(
     )
 
 
-def resolve_job_defaults(args) -> None:
+@dataclasses.dataclass(frozen=True)
+class JobDefaults:
+    """The arguments whose default depends on the job type, resolved (``--max_iter``,
+    ``--image-fourier-backend``, ``--apply-initial-lowpass``)."""
+
+    max_iter: int
+    image_fourier_backend: str
+    apply_initial_lowpass: bool
+
+
+def resolve_job_defaults(args) -> JobDefaults:
     """Resolve the defaults that depend on the job type (Refine3D K=1 or Class3D K>1)."""
     k1 = int(args.n_classes) == 1
-    if args.max_iter is None:
+    max_iter = args.max_iter
+    if max_iter is None:
         # Auto-refine runs to convergence with nr_iter = --auto_iter_max (999);
         # the Class3D GUI runs 25 iterations.
-        args.max_iter = 999 if k1 else 25
-    if args.image_fourier_backend == "auto":
+        max_iter = 999 if k1 else 25
+    image_fourier_backend = args.image_fourier_backend
+    if image_fourier_backend == "auto":
         # RELION's CUDA image preprocessing is the one the resident pass 2's exact
         # BPref operands read, for K=1 and Class3D alike.
-        args.image_fourier_backend = "relion_cuda"
-    if args.apply_initial_lowpass is None:
-        args.apply_initial_lowpass = args.frozen_boundary_dir is None
+        image_fourier_backend = "relion_cuda"
+    apply_initial_lowpass = args.apply_initial_lowpass
+    if apply_initial_lowpass is None:
+        apply_initial_lowpass = args.frozen_boundary_dir is None
+    return JobDefaults(max_iter, image_fourier_backend, apply_initial_lowpass)
 
 
 def validate_strict_highres_exp(args) -> None:
@@ -1520,6 +1534,7 @@ def resolve_local_search(args) -> LocalSearchOptions:
 def resolve_schedule(
     args,
     *,
+    max_iter: int,
     initial_sampling,
     init_current_size,
     ini_high_angstrom,
@@ -1537,7 +1552,7 @@ def resolve_schedule(
     """
     return RefinementSchedule(
         # --max_iter counts from iteration 1 of the whole run, as RELION's --iter.
-        max_iter=int(args.max_iter) - (continued_iterations or 0),
+        max_iter=int(max_iter) - (continued_iterations or 0),
         init_current_size=init_current_size,
         init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
         ini_high_angstrom=ini_high_angstrom,

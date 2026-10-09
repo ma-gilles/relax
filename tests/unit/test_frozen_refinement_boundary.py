@@ -279,8 +279,14 @@ def boundary_cli_inputs(tmp_path):
     ])
 
 
+def _load_cli_boundary(args):
+    from relax.refinement.command_options import resolve_job_defaults
+
+    return frozen_boundary_cli.load_cli_boundary(args, job=resolve_job_defaults(args))
+
+
 def test_cli_boundary_loads_bound_v2_arrays(boundary_cli_inputs):
-    inputs = frozen_boundary_cli.load_cli_boundary(boundary_cli_inputs)
+    inputs = _load_cli_boundary(boundary_cli_inputs)
 
     assert inputs.source_paths is None
     assert inputs.boundary.means[0].dtype == np.complex64
@@ -294,7 +300,7 @@ def test_cli_boundary_preserves_source_failure_cause(boundary_cli_inputs):
 
     Path(boundary_cli_inputs.relion_half_sets).write_text("substituted half identities")
     with pytest.raises(SystemExit, match="source binding.*half-set STAR SHA-256 mismatch") as error:
-        frozen_boundary_cli.load_cli_boundary(boundary_cli_inputs)
+        _load_cli_boundary(boundary_cli_inputs)
     assert isinstance(error.value.__cause__, ValueError)
 
 
@@ -310,12 +316,12 @@ def test_cli_boundary_preserves_source_failure_cause(boundary_cli_inputs):
 def test_cli_boundary_rejects_incompatible_invocations(boundary_cli_inputs, field, value, message):
     setattr(boundary_cli_inputs, field, value)
     with pytest.raises(SystemExit, match=message):
-        frozen_boundary_cli.load_cli_boundary(boundary_cli_inputs)
+        _load_cli_boundary(boundary_cli_inputs)
 
 
 def test_native_cli_has_no_boundary(boundary_cli_inputs):
     boundary_cli_inputs.frozen_boundary_dir = None
-    inputs = frozen_boundary_cli.load_cli_boundary(boundary_cli_inputs)
+    inputs = _load_cli_boundary(boundary_cli_inputs)
     assert inputs.boundary is None
     assert inputs.source_paths is None
 

@@ -313,6 +313,7 @@ def load_particle_inputs(
     args,
     *,
     relion_half_sets_from_input: bool,
+    image_fourier_backend: str,
     frozen_boundary=None,
     fixed_diagnostic_source_paths=None,
 ) -> LoadedParticles:
@@ -403,7 +404,7 @@ def load_particle_inputs(
             ),
         )
     if args.relion_softmask_reduction != "control":
-        if args.image_fourier_backend != "relion_cuda":
+        if image_fourier_backend != "relion_cuda":
             raise ValueError(
                 "--relion-softmask-reduction requires --image-fourier-backend relion_cuda"
             )

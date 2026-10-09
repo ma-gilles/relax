@@ -666,7 +666,7 @@ def test_frozen_boundary_schedule_is_threaded_exactly_to_refinement_loop(monkeyp
     fresh = controller_inputs(monkeypatch, tmp_path / "fresh", "refine")["options"].schedule
     assert (fresh.init_relion_incr_size, fresh.init_fsc, fresh.init_ave_Pmax) == (10, None, None)
     boundary = _StandInBoundary()
-    monkeypatch.setattr(frozen_boundary_cli, "load_cli_boundary", lambda args: (boundary, None))
+    monkeypatch.setattr(frozen_boundary_cli, "load_cli_boundary", lambda args, **_kwargs: (boundary, None))
     monkeypatch.setattr(frozen_boundary_cli, "validate_particle_half_inputs", lambda *a, **k: None)
     monkeypatch.setattr(frozen_boundary_cli, "validate_empty_replay_slots", lambda *a, **k: None)
     schedule = controller_inputs(monkeypatch, tmp_path / "frozen", "refine")["options"].schedule

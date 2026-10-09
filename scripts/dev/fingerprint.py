@@ -721,7 +721,7 @@ MUTATIONS = (
     ("star_offset_range_doubled", '_relion_offset_range = float(_replay_meta["offset_range"]) / pixel_size_angstrom', '_relion_offset_range = 2 * float(_replay_meta["offset_range"]) / pixel_size_angstrom',
      "the STAR replay reads twice the translation range", True),
     # The command entry (the main_* cases).
-    ("main_max_iter_not_continued", "max_iter=int(args.max_iter) - (continued_iterations or 0),", "max_iter=int(args.max_iter),",
+    ("main_max_iter_not_continued", "max_iter=int(max_iter) - (continued_iterations or 0),", "max_iter=int(max_iter),",
      "a continued run counts --max_iter from its own first iteration", True),
     ("main_seed_classes_inverted", "if args.n_classes > 1 and args.init_volume is not None and not resumed",
      "if args.n_classes > 1 and args.init_volume is None and not resumed",
