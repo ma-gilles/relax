@@ -49,11 +49,19 @@ _RELION_PROJECTOR_DUMP_DIR_ENV = "RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class RelionProjectorInputs:
+    """One iteration's scoring projector: each class's RELION half map ``[K, ...]`` and its radius ``r_max``."""
+
+    half_by_class: np.ndarray
+    r_max: int
+
+
 @dataclass
 class IterationProjectorContext:
     """One refresh-to-E-step handoff; never a cache across iterations."""
 
-    prepared: tuple | None = None
+    prepared: RelionProjectorInputs | None = None
     reference: np.ndarray | None = None
     geometry: tuple | None = None
 
@@ -278,7 +286,7 @@ def prepare_relion_projector_class_inputs_and_power(
     state: InitialModelState,
     *,
     padding_factor: int,
-) -> tuple[tuple[np.ndarray, int], np.ndarray]:
+) -> tuple[RelionProjectorInputs, np.ndarray]:
     """Produce scoring operands and tau2 from the identical corrected FFT (RELION's linear interpolator)."""
     half_maps, power, r_max = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
         state.Iref,
@@ -293,7 +301,7 @@ def _finish_relion_projector_class_inputs(
     padding_factor: int,
     projector_half_by_class: np.ndarray,
     projector_r_max: int,
-) -> tuple[np.ndarray, int]:
+) -> RelionProjectorInputs:
     projector_dump_dir = os.environ.get(_RELION_PROJECTOR_DUMP_DIR_ENV, "").strip()
     if projector_dump_dir:
         os.makedirs(projector_dump_dir, exist_ok=True)
@@ -307,7 +315,7 @@ def _finish_relion_projector_class_inputs(
             padding_factor=np.int64(padding_factor),
             iteration=np.int64(state.iter),
         )
-    return projector_half_by_class, int(projector_r_max)
+    return RelionProjectorInputs(projector_half_by_class, int(projector_r_max))
 
 
 def _resolve_class_inputs(

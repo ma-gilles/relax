@@ -2030,7 +2030,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     def fake_prepare_projector(state, *, padding_factor):
         event_order.append("prepare_projector")
         assert padding_factor == 2
-        return prepared_half, 2
+        return estep_setup.RelionProjectorInputs(prepared_half, 2)
 
     def fake_estimate_sampling_accuracy(
         sampling_state,

@@ -125,23 +125,24 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
 
     def candidate_inputs():
         # The E-step's projector, as the iteration's refresh prepares it.
-        (half, r_max), _ = adapter.prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+        prepared, _ = adapter.prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
         return adapter._resolve_class_inputs(
-            state, replace(config, relion_projector_half_by_class=half, relion_projector_r_max=r_max)
+            state,
+            replace(config, relion_projector_half_by_class=prepared.half_by_class, relion_projector_r_max=prepared.r_max),
         )
 
     natives = [native_inputs() for _ in range(2)]
     candidate2 = candidate_inputs()
     monkeypatch.setenv(adapter._RELION_PROJECTOR_DUMP_DIR_ENV, str(tmp_path))
     candidate = candidate_inputs()
-    assert candidate[3] == natives[0][1] == 4
+    assert candidate[3] == natives[0].r_max == 4
     assert candidate[2].dtype == np.complex64
-    _assert_existing_consumer_policy(natives[0][0], candidate[2], candidate2[2], natives[1][0])
+    _assert_existing_consumer_policy(natives[0].half_by_class, candidate[2], candidate2[2], natives[1].half_by_class)
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], candidate[2])
         assert int(dumped["current_size"]) == 8
     inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
-    assert_matches(inputs[0], candidate[2])
+    assert_matches(inputs.half_by_class, candidate[2])
     assert power.shape == (1, 5)
 
 

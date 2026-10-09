@@ -427,7 +427,8 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
-    (half, r_max), _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+    prepared, _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+    half, r_max = prepared.half_by_class, prepared.r_max
     config = InitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),

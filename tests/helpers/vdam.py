@@ -172,8 +172,10 @@ def keep_tau2(state, *, padding_factor):
 class PreparedProjector:
     """A projector context for E-step tests: every ``take`` hands over the same prepared projector."""
 
-    def __init__(self, inputs=(np.zeros((1, 1), dtype=np.complex64), 1)):
-        self.inputs = inputs
+    def __init__(self):
+        from relax.vdam.estep_setup import RelionProjectorInputs
+
+        self.inputs = RelionProjectorInputs(np.zeros((1, 1), dtype=np.complex64), 1)
 
     def take(self, state, *, padding_factor):
         del state, padding_factor
