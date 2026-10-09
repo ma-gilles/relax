@@ -17280,50 +17280,52 @@
     "masked_band_auc": null
    },
    "relax": {
-    "source_sha": "5d94e8ccd",
-    "source_repo": "etoptics' pre-landing snapshot 1133b434 (relax_etoptics_20261003/src_row1_1133b43, natives native_24245c1 checked); landed as relax main 5d94e8cc (+ GPU e2e test d046c0a2) after rebases that did not change the row-1 numerical code; production defaults",
+    "source_sha": "18f1ab6c",
+    "source_repo": "relax main 18f1ab6c (relax#35: RELION's MPI-leader random phases); runs from the frozen candidate 829cb6b9 (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/cand_829cb6b9, natives checked), the same solvent-FSC code before the rebase onto main's refactor commits",
     "resolution_A": null,
     "resolution_definition": "half_fsc_0143",
     "masked_resolution_A": null,
-    "wall_s": 970,
+    "wall_s": 784,
     "wall_definition": "indicative only (team-lead 2026-10-06): median arm wall over seeds 1-8, not a same-node pair",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": null,
     "jobs": [
-     "15072328",
-     "15084935",
-     "15084936"
+     "15270132",
+     "15271220"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "masked GT FSC-AUC, full spectrum, frozen mask etoptics_8c9c_b40_c1 (cryoet_optics_premult_20261004/scripts score_case.py); one run per seed and engine",
     "relion": 0.859862,
-    "relax": 0.858254,
+    "relax": 0.859681,
     "relion_band": [
-     0.859862,
+     0.859783,
      0.871229
     ],
     "relax_per_seed": {
-     "1": 0.858254,
-     "2": 0.856461,
-     "3": 0.868628,
-     "4": 0.867975,
-     "5": 0.870904,
-     "6": 0.862759,
-     "7": 0.863385,
-     "8": 0.868052
+     "1": 0.859681,
+     "2": 0.862754,
+     "3": 0.865205,
+     "4": 0.867682,
+     "5": 0.871302,
+     "6": 0.862896,
+     "7": 0.868084,
+     "8": 0.86781
     },
     "relion_per_seed": {
      "1": [
-      0.859862
+      0.859862,
+      0.859783
      ],
      "2": [
-      0.861816
+      0.861816,
+      0.861975
      ],
      "3": [
-      0.864876
+      0.864876,
+      0.864814
      ],
      "4": [
       0.867821
@@ -17335,15 +17337,16 @@
       0.86275
      ],
      "7": [
-      0.868133
+      0.868133,
+      0.86806
      ],
      "8": [
       0.867779
      ]
     },
     "paired_mean_se": [
-     -0.000981,
-     0.001
+     0.000143,
+     0.00013
     ],
     "no_mask_same_scorer": {
      "relax_ad433cd_s1_7runs": [
@@ -17370,43 +17373,22 @@
       0.863954
      ]
     },
-    "relion_mask_r2_s1_s3": [
-     0.85978,
-     0.86197,
-     0.86481
-    ],
-    "repeats_s1_s2_s7": {
-     "relax": {
-      "1": [
-       0.85825,
-       0.85822,
-       0.85841
-      ],
-      "2": [
-       0.85646,
-       0.85647,
-       0.85671
-      ],
-      "7": [
-       0.86338,
-       0.8634,
-       0.86345
-      ]
-     },
-     "relion": {
-      "1": [
-       0.85986,
-       0.85978
-      ],
-      "2": [
-       0.86182,
-       0.86197
-      ],
-      "7": [
-       0.86813,
-       0.86806
-      ]
-     }
+    "relax_runs_per_seed": {
+     "1": [
+      0.859681,
+      0.859673,
+      0.859752
+     ]
+    },
+    "same_seed_map_fsc_auc": {
+     "1": 0.999964,
+     "2": 0.999286,
+     "3": 0.999346,
+     "4": 0.999992,
+     "5": 0.999967,
+     "6": 0.999989,
+     "7": 0.999985,
+     "8": 0.999999
     }
    },
    "cross_engine": null,
@@ -17422,8 +17404,8 @@
     "timing_controlled": false
    },
    "notes": [
+    "Re-judged 2026-10-09 after relax#35 (team-lead): relax 18f1ab6c draws the corrected FSC's phases from RELION's MPI leader stream (seeded once with --random_seed; this input carries rlnRandomSubset, so the split draws nothing), so relax's corrected FSC equals RELION's on the same half maps (oracle unit test on RELION's seed-2 it1-3 halves, 1e-6). All 8 seeds rerun (job 15270132) and s1 twice more (15271220): masked GT FSC-AUC relax / RELION s1 0.859681/0.859673/0.859752 / 0.859862/0.859783; s2 0.862754 / 0.861816/0.861975; s3 0.865205 / 0.864876/0.864814; s4 0.867682 / 0.867821; s5 0.871302 / 0.871229; s6 0.862896 / 0.862750; s7 0.868084 / 0.868133/0.868060; s8 0.867810 / 0.867779; same-seed merged map FSC-AUC s1 0.999964, s2 0.999286, s3 0.999346, s4 0.999992, s5 0.999967, s6 0.999989, s7 0.999985, s8 0.999999 (before, s1 0.999554). Paired mean relax - RELION (first runs) +1.4e-04 ± 1.3e-04, was -9.8e-04 ± 1.0e-03. Page verdict hit. The s1/s2 deficit of the previous verdict (s2 -0.0054) was the phase-stream difference relax#35 named: previous relax values s1 0.858254, s2 0.856461, s3 0.868628, s4 0.867975, s5 0.870904, s6 0.862759, s7 0.863385, s8 0.868052.",
     "Feature check (etoptics, team-lead 2026-10-06): subtomogram half of row 1 of the feature-gap list (--solvent_mask, --solvent_correct_fsc; relax main 5d94e8cc + d046c0a2).",
-    "Page verdict: miss (worst s2 −0.0054 vs same-seed RELION; s1/s2 below across-seed RELION band 0.859862-0.871229). etoptics' summary, paired relax - RELION over seeds 1-8: -9.8e-04 ± 1.0e-03 (SE = sd/sqrt 8).",
     "Per seed, masked GT FSC-AUC relax / RELION: s1 0.85825 / 0.85986; s2 0.85646 / 0.86182; s3 0.86863 / 0.86488; s4 0.86798 / 0.86782; s5 0.87090 / 0.87123; s6 0.86276 / 0.86275; s7 0.86338 / 0.86813; s8 0.86805 / 0.86778.",
     "Without --solvent_mask, the same fixture on one scorer (benchw 2026-10-06; relax runs on ad433cd and 7d69a95, RELION mpiscale without the mask): seed 1 relax 0.85781-0.85847 (7 runs) vs RELION 0.85762/0.85747; seed 2 0.86165 vs 0.86170/0.86168; seed 3 0.86397 vs 0.86395. Without the mask the programs agree (relax at or above RELION); the seed-1/2 deficit appears only with the mask (seed 2 relax drops from 0.86165 to 0.85646 while RELION rises to 0.86182), so it is specific to the solvent-mask path, not the fixture. Reported to etoptics.",
     "Subtomogram miss: reproducible seed-dependent deviation on the --solvent_mask path (ma-gilles/relax#35); each program reproduces within 2.5e-4; without the mask relax ties RELION at the same seeds. Repeats (etoptics, 2026-10-07; relax on e225adae x2 and 1133b434, RELION mpiscale): s1 relax 0.85825/0.85822/0.85841 vs RELION 0.85986/0.85978; s2 0.85646/0.85647/0.85671 vs 0.86182/0.86197; s7 0.86338/0.86340/0.86345 vs 0.86813/0.86806 (row1/scores_eto_plain_mask_repeats.json, scores_eto_plain_mask_relion_r2.json). Cause (etoptics, relax#35 concluded 2026-10-07, https://github.com/ma-gilles/relax/issues/35#issuecomment-6034401771): the random-phase realization in the solvent-corrected FSC. Relax matches RELION's corrected FSC exactly below randomize_at+2, and RELION's realization lies inside relax's RNG distribution (mean z +0.04 ± 0.14 over 53 iterations). Both programs seed the phases deterministically but with different streams, so per-seed trajectories split near resolution thresholds, in both directions (s3 is +3.8e-3). The paired mean -9.8e-4 ± 1.0e-3 over 8 seeds is not significant; the verdict stays a miss under the page rule. (The one-step job 15167893 was not used: subtomogram replay identity is unsupported in the replay harness.)",
@@ -17461,13 +17443,140 @@
     "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/row1_solvent_mask_rows.py",
     "relion_r2_scores": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/scores_eto_plain_mask_relion_r2.json",
     "repeats_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/scores_eto_plain_mask_repeats.json",
-    "issue": "https://github.com/ma-gilles/relax/issues/35"
+    "issue": "https://github.com/ma-gilles/relax/issues/35",
+    "relax35_rejudge_20261009": {
+     "relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r35_rows/relax",
+     "tasks": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r35_rows/tasks.txt",
+     "scores": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r35_rows/scores",
+     "candidate": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/cand_829cb6b9",
+     "oracle_fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/relax35_solvent_fsc_stream_20261009",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/solvent_rows_r35_20261009.py"
+    }
    },
-   "date": "2026-10-06",
-   "quality_pass": false,
-   "quality_reason": "worst s2 −0.0054 vs same-seed RELION; s1/s2 below across-seed RELION band 0.859862-0.871229; relax#35: RNG-stream difference in the solvent-corrected FSC, not a defect",
+   "date": "2026-10-09",
+   "quality_pass": true,
+   "quality_reason": "worst s4 −1.4e-4 vs same-seed RELION; run ranges compared at s1 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999964) at 6 of 8 seeds, GT differences under 1e-4 are ties; inside across-seed band",
    "feature_reference": "RELION's --solvent_mask (Refine3D/Class3D reference mask) and --solvent_correct_fsc (Refine3D): RELION 5.0.1 + MPI scale-sum patch (relion_patched_mpi_scale_20260926 mpiscale build), relion_refine_mpi 3 ranks x 4 threads, --gpu, one H100 per run (MPI is needed: non-MPI relion_refine ignores --solvent_correct_fsc)",
-   "history": []
+   "history": [
+    {
+     "date": "2026-10-06",
+     "gt": {
+      "metric": "masked GT FSC-AUC, full spectrum, frozen mask etoptics_8c9c_b40_c1 (cryoet_optics_premult_20261004/scripts score_case.py); one run per seed and engine",
+      "relion": 0.859862,
+      "relax": 0.858254,
+      "relion_band": [
+       0.859862,
+       0.871229
+      ],
+      "relax_per_seed": {
+       "1": 0.858254,
+       "2": 0.856461,
+       "3": 0.868628,
+       "4": 0.867975,
+       "5": 0.870904,
+       "6": 0.862759,
+       "7": 0.863385,
+       "8": 0.868052
+      },
+      "relion_per_seed": {
+       "1": [
+        0.859862
+       ],
+       "2": [
+        0.861816
+       ],
+       "3": [
+        0.864876
+       ],
+       "4": [
+        0.867821
+       ],
+       "5": [
+        0.871229
+       ],
+       "6": [
+        0.86275
+       ],
+       "7": [
+        0.868133
+       ],
+       "8": [
+        0.867779
+       ]
+      },
+      "paired_mean_se": [
+       -0.000981,
+       0.001
+      ],
+      "no_mask_same_scorer": {
+       "relax_ad433cd_s1_7runs": [
+        0.857808,
+        0.858207,
+        0.858301,
+        0.858403,
+        0.858467,
+        0.858458,
+        0.858408
+       ],
+       "relax_ad433cd_s2": 0.861652,
+       "relax_ad433cd_s3": 0.863973,
+       "relax_7d69a95_s1": 0.858381,
+       "relion_s1": [
+        0.857622,
+        0.857466
+       ],
+       "relion_s2": [
+        0.861696,
+        0.861678
+       ],
+       "relion_s3": [
+        0.863954
+       ]
+      },
+      "relion_mask_r2_s1_s3": [
+       0.85978,
+       0.86197,
+       0.86481
+      ],
+      "repeats_s1_s2_s7": {
+       "relax": {
+        "1": [
+         0.85825,
+         0.85822,
+         0.85841
+        ],
+        "2": [
+         0.85646,
+         0.85647,
+         0.85671
+        ],
+        "7": [
+         0.86338,
+         0.8634,
+         0.86345
+        ]
+       },
+       "relion": {
+        "1": [
+         0.85986,
+         0.85978
+        ],
+        "2": [
+         0.86182,
+         0.86197
+        ],
+        "7": [
+         0.86813,
+         0.86806
+        ]
+       }
+      }
+     },
+     "quality_pass": false,
+     "quality_reason": "worst s2 −0.0054 vs same-seed RELION; s1/s2 below across-seed RELION band 0.859862-0.871229; relax#35: RNG-stream difference in the solvent-corrected FSC, not a defect",
+     "note": "verdict on relax's own np.random phases (5d94e8cc), before relax#35"
+    }
+   ]
   },
   {
    "id": "noise1_k1_5k128_refine3d_solvent_mask_5d94e8cc",
@@ -17498,8 +17607,8 @@
     "masked_band_auc": null
    },
    "relax": {
-    "source_sha": "5d94e8ccd",
-    "source_repo": "etoptics' pre-landing snapshot 1133b434 (relax_etoptics_20261003/src_row1_1133b43, natives native_24245c1 checked); landed as relax main 5d94e8cc (+ GPU e2e test d046c0a2) after rebases that did not change the row-1 numerical code; production defaults",
+    "source_sha": "18f1ab6c",
+    "source_repo": "relax main 18f1ab6c (relax#35: RELION's MPI-leader random phases); runs from the frozen candidate 829cb6b9 (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/cand_829cb6b9, natives checked), the same solvent-FSC code before the rebase onto main's refactor commits",
     "resolution_A": null,
     "resolution_definition": "half_fsc_0143",
     "masked_resolution_A": null,
@@ -17514,20 +17623,20 @@
    "gt": {
     "metric": "GT FSC-AUC over shells 1-40 of the masked half-map pair (relax scripts/masked_fsc.py score, frozen scoring mask noise1_k1_5k128_c1; the solvent mask is a separate file); one run per seed and engine",
     "relion": 0.977236,
-    "relax": 0.97718,
+    "relax": 0.977243,
     "relion_band": [
      0.973804,
      0.978125
     ],
     "relax_per_seed": {
-     "1": 0.97718,
-     "2": 0.977238,
-     "3": 0.976255,
-     "4": 0.976585,
-     "5": 0.974741,
-     "6": 0.97738,
-     "7": 0.978065,
-     "8": 0.977803
+     "1": 0.977243,
+     "2": 0.977355,
+     "3": 0.976378,
+     "4": 0.976573,
+     "5": 0.973875,
+     "6": 0.977424,
+     "7": 0.978188,
+     "8": 0.977736
     },
     "relion_per_seed": {
      "1": [
@@ -17556,18 +17665,18 @@
      ]
     },
     "paired_mean_se": [
-     8.87e-05,
-     0.00012
+     2.94e-05,
+     1.9e-05
     ],
     "same_seed_map_fsc_auc": {
-     "1": 0.999981,
-     "2": 0.999981,
-     "3": 0.999989,
-     "4": 0.999991,
-     "5": 0.999601,
-     "6": 0.999989,
-     "7": 0.999994,
-     "8": 0.999992
+     "1": 0.999998,
+     "2": 0.999998,
+     "3": 0.999995,
+     "4": 0.999996,
+     "5": 0.999989,
+     "6": 0.999998,
+     "7": 0.999993,
+     "8": 0.999999
     }
    },
    "cross_engine": null,
@@ -17583,6 +17692,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Re-judged 2026-10-09 after relax#35 (team-lead): relax 18f1ab6c draws the corrected FSC's phases from RELION's MPI leader stream (seeded once with --random_seed; the random-halves split's 5000 draws come first on this input), so relax's corrected FSC equals RELION's on the same half maps (oracle unit test, 1e-6). All 8 seeds rerun (job 15270132): GT FSC-AUC relax / RELION s1 0.977243 / 0.977236; s2 0.977355 / 0.977318; s3 0.976378 / 0.976271; s4 0.976573 / 0.976635; s5 0.973875 / 0.973804; s6 0.977424 / 0.977395; s7 0.978188 / 0.978125; s8 0.977736 / 0.977753; same-seed merged map FSC-AUC s1 0.999998, s2 0.999998, s3 0.999995, s4 0.999996, s5 0.999989, s6 0.999998, s7 0.999993, s8 0.999999 (before: s5 0.999601, the others 0.99998-0.99999). Paired mean relax - RELION +2.9e-05 ± 1.9e-05. Page verdict hit. Previous relax values (np.random phases): s1 0.977180, s2 0.977238, s3 0.976255, s4 0.976585, s5 0.974741, s6 0.977380, s7 0.978065, s8 0.977803.",
     "Re-judged 2026-10-08 (team-lead) with the page's reproduced-map tie, no new runs: same-seed merged map FSC-AUC (relax vs RELION, the row's scorer runs) s1 0.999981; s2 0.999981; s3 0.999989; s4 0.999991; s5 0.999601; s6 0.999989; s7 0.999994; s8 0.999992. Reproduced at 7 of 8 seeds; GT gaps there s1 -5.6e-05, s2 -8.0e-05, s3 -1.6e-05, s4 -5.0e-05, s6 -1.5e-05, s7 -6.0e-05, s8 +5.0e-05 are all under 1e-04; s5 (not reproduced) has relax above. Verdict hit.",
     "Feature check (etoptics, team-lead 2026-10-06): row 1 of the feature-gap list, --solvent_mask (reference mask in place of the spherical mask) and --solvent_correct_fsc (high-resolution noise substitution of the gold-standard FSC), landed as relax main 5d94e8cc with the GPU end-to-end test d046c0a2.",
     "Page verdict: miss (worst s2 −8.0e-5 vs same-seed RELION; below same-seed RELION at 6 of 8 seeds (systematic); inside across-seed band). etoptics' summary, paired relax - RELION over seeds 1-8: +8.9e-05 ± 1.2e-04 (SE = sd/sqrt 8); the positive mean comes from seed 5 (+9.4e-04). The seed rule (paired mean within the SE) is the page's rule only for bit-reproducible references; GPU RELION is not one, so the page rule decides.",
@@ -17626,11 +17736,19 @@
     "tie_rejudge_20261008": {
      "scores": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/scores_spa",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/solvent_noise1_tie_row_20261008.py"
+    },
+    "relax35_rejudge_20261009": {
+     "relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r35_rows/relax",
+     "tasks": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r35_rows/tasks.txt",
+     "scores": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r35_rows/scores",
+     "candidate": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/cand_829cb6b9",
+     "oracle_fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/relax35_solvent_fsc_stream_20261009",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/solvent_rows_r35_20261009.py"
     }
    },
-   "date": "2026-10-08",
+   "date": "2026-10-09",
    "quality_pass": true,
-   "quality_reason": "decided by the page's reproduced-map tie rule (relax map reproduces the same-seed RELION map, merged map FSC-AUC >= 0.9999, so GT differences under 1e-4 are ties): worst s2 −8.0e-5 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999981) at 7 of 8 seeds, GT differences under 1e-4 are ties; inside across-seed band",
+   "quality_reason": "worst s4 −6.2e-5 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999989) at 8 of 8 seeds, GT differences under 1e-4 are ties; inside across-seed band",
    "feature_reference": "RELION's --solvent_mask (Refine3D/Class3D reference mask) and --solvent_correct_fsc (Refine3D): RELION 5.0.1 + MPI scale-sum patch (relion_patched_mpi_scale_20260926 mpiscale build), relion_refine_mpi 3 ranks x 4 threads, --gpu, one H100 per run (MPI is needed: non-MPI relion_refine ignores --solvent_correct_fsc)",
    "history": [
     {
@@ -17687,6 +17805,71 @@
      "quality_pass": false,
      "quality_reason": "worst s2 −8.0e-5 vs same-seed RELION; below same-seed RELION at 6 of 8 seeds (systematic); inside across-seed band",
      "note": "verdict before the 2026-10-08 reproduced-map tie re-judge"
+    },
+    {
+     "date": "2026-10-08",
+     "gt": {
+      "metric": "GT FSC-AUC over shells 1-40 of the masked half-map pair (relax scripts/masked_fsc.py score, frozen scoring mask noise1_k1_5k128_c1; the solvent mask is a separate file); one run per seed and engine",
+      "relion": 0.977236,
+      "relax": 0.97718,
+      "relion_band": [
+       0.973804,
+       0.978125
+      ],
+      "relax_per_seed": {
+       "1": 0.97718,
+       "2": 0.977238,
+       "3": 0.976255,
+       "4": 0.976585,
+       "5": 0.974741,
+       "6": 0.97738,
+       "7": 0.978065,
+       "8": 0.977803
+      },
+      "relion_per_seed": {
+       "1": [
+        0.977236
+       ],
+       "2": [
+        0.977318
+       ],
+       "3": [
+        0.976271
+       ],
+       "4": [
+        0.976635
+       ],
+       "5": [
+        0.973804
+       ],
+       "6": [
+        0.977395
+       ],
+       "7": [
+        0.978125
+       ],
+       "8": [
+        0.977753
+       ]
+      },
+      "paired_mean_se": [
+       8.87e-05,
+       0.00012
+      ],
+      "same_seed_map_fsc_auc": {
+       "1": 0.999981,
+       "2": 0.999981,
+       "3": 0.999989,
+       "4": 0.999991,
+       "5": 0.999601,
+       "6": 0.999989,
+       "7": 0.999994,
+       "8": 0.999992
+      }
+     },
+     "quality_pass": true,
+     "quality_reason": "decided by the page's reproduced-map tie rule (relax map reproduces the same-seed RELION map, merged map FSC-AUC >= 0.9999, so GT differences under 1e-4 are ties): worst s2 −8.0e-5 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999981) at 7 of 8 seeds, GT differences under 1e-4 are ties; inside across-seed band",
+     "note": "verdict on relax's own np.random phases (5d94e8cc), before relax#35"
     }
    ]
   },
