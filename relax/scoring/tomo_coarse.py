@@ -706,7 +706,6 @@ def _flush_plan(
     down to a power of two of particles, so the free bytes at plan time give few flush sizes and few programs.
     """
 
-    diff2_bytes, operand_bytes = int(diff2_bytes), int(operand_bytes)
     by_diff2 = max(1, _SIGNIFICANCE_BATCH_BYTES // max(diff2_bytes, 1))
     # The rescore's groups each write a new diff2 while the previous group's is alive: one copy beyond the cut's.
     held = 2 * (diff2_bytes + diff2_bytes // 4 + operand_bytes) + operand_bytes + (_CUT_DIFF2_COPIES + 1) * diff2_bytes
