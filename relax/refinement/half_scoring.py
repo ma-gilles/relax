@@ -1297,6 +1297,19 @@ def _relion_coarse_significant_counts(significant_sample_indices):
     )
 
 
+@dataclass(frozen=True, kw_only=True)
+class LocalPass2Layouts:
+    """Adaptive local pass 2's hypothesis layouts, derived from pass 1's retained parent samples."""
+
+    # The fine (oversampled) hypotheses pass 2 scores.
+    layout: object
+    # RELION's rlnNrOfSignificantSamples: retained pass-1 samples per image (int32), or None when pass 1 did
+    # not return explicit support.
+    significant_counts: np.ndarray | None
+    # The broader support of the diagnostic denominator probe (support.denominator_mode), or None.
+    denominator_layout: object | None
+
+
 def _prepare_local_adaptive_pass2_support(
     parent_layout,
     significant_sample_indices,
@@ -1304,7 +1317,7 @@ def _prepare_local_adaptive_pass2_support(
     support: LocalAdaptivePass2Support,
     parent_order: int,
     fine_layout_dtype,
-):
+) -> LocalPass2Layouts:
     """Derive fine and diagnostic support from retained parent samples."""
 
     pruned_parent_significant_sample_indices = significant_sample_indices
@@ -1321,7 +1334,6 @@ def _prepare_local_adaptive_pass2_support(
             "rlnNrOfSignificantSamples-compatible counts are unavailable"
         )
 
-    parent_mode = "full_parent" if support.full_parent else "pruned_parent"
     if support.full_parent:
         significant_sample_indices = [None] * len(significant_sample_indices)
         logger.info(
@@ -1333,7 +1345,6 @@ def _prepare_local_adaptive_pass2_support(
             significant_sample_indices,
             int(sampling.translations.shape[0]),
         )
-        parent_mode = "significant_rotation_full_translation"
         logger.info(
             "RELION local adaptive pass 2 diagnostic: expanding significant parent rotations to all "
             "parent translations via %s=1",
@@ -1385,7 +1396,11 @@ def _prepare_local_adaptive_pass2_support(
         sampling.translations,
         pass2_layout,
     )
-    return pass2_layout, relion_significant_counts, denominator_layout, parent_mode
+    return LocalPass2Layouts(
+        layout=pass2_layout,
+        significant_counts=relion_significant_counts,
+        denominator_layout=denominator_layout,
+    )
 
 
 def _build_local_adaptive_parent_layout(
@@ -1723,10 +1738,7 @@ def _score_half_local_one_shape(
             max_significants=batching.max_significants,
             return_profile=diagnostics.collect_local_search_profile,
     )
-    pass2_layout = None
-    relion_significant_counts_k = None
-    local_adaptive_pass2_parent_mode = "none"
-    local_adaptive_pass2_denominator_layout = None
+    pass2 = LocalPass2Layouts(layout=None, significant_counts=None, denominator_layout=None)
     local_normalization_log_evidence = None
     if int(sampling.search.oversampling_order) > 0:
         parent_layout, parent_order = _build_local_adaptive_parent_layout(
@@ -1798,12 +1810,7 @@ def _score_half_local_one_shape(
         )
         parent_profile = parent_outputs.profile_summary
         significant_sample_indices = parent_profile["reconstruction_sample_indices_by_image"]
-        (
-            pass2_layout,
-            relion_significant_counts_k,
-            local_adaptive_pass2_denominator_layout,
-            local_adaptive_pass2_parent_mode,
-        ) = _prepare_local_adaptive_pass2_support(
+        pass2 = _prepare_local_adaptive_pass2_support(
             parent_layout,
             significant_sample_indices,
             sampling,
@@ -1824,13 +1831,13 @@ def _score_half_local_one_shape(
         logger.info(
             "RELION local K=1 M-step: using x-half BPref-layout backprojection",
         )
-    if local_adaptive_pass2_denominator_layout is not None:
+    if pass2.denominator_layout is not None:
         logger.info("RELION local adaptive pass 2 diagnostic: running score-only broad-denominator probe")
         denominator_outputs = _run_local_search_iteration(
             local_data,
             replace(
                 local_grid,
-                pass2_layout=local_adaptive_pass2_denominator_layout,
+                pass2_layout=pass2.denominator_layout,
                 rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
                     sampling.search.healpix_order,
                     adaptive_oversampling=0,
@@ -1883,7 +1890,7 @@ def _score_half_local_one_shape(
     )
     local_outputs = _run_local_search_iteration(
         local_data,
-        replace(local_grid, pass2_layout=pass2_layout),
+        replace(local_grid, pass2_layout=pass2.layout),
         replace(
             local_kernel,
             accumulate_noise=local_accumulate_noise,
@@ -1922,8 +1929,11 @@ def _score_half_local_one_shape(
         profile_row = dict(local_profile_k)
         profile_row["iteration"] = np.int32(diagnostics.iteration)
         profile_row["half_index"] = np.int32(half.particles.index)
-        profile_row["local_adaptive_pass2_parent_mode"] = local_adaptive_pass2_parent_mode
-        profile_row["local_adaptive_pass2_full_parent"] = np.bool_(local_adaptive_pass2_parent_mode == "full_parent")
+        parent_mode = (
+            execution.adaptive_pass2.parent_mode if int(sampling.search.oversampling_order) > 0 else "none"
+        )
+        profile_row["local_adaptive_pass2_parent_mode"] = parent_mode
+        profile_row["local_adaptive_pass2_full_parent"] = np.bool_(parent_mode == "full_parent")
         profile_row["diagnostic_score_only"] = np.bool_(execution.score_only)
         diagnostics.local_profile_history.append(profile_row)
         diagnostics.observer.local_search_profile(diagnostics.iteration, half.particles.index, local_profile_k)
@@ -1947,7 +1957,7 @@ def _score_half_local_one_shape(
         return _class_local_half_result(
             local_outputs.class_pass,
             n_classes=n_classes,
-            significant_counts=relion_significant_counts_k,
+            significant_counts=pass2.significant_counts,
             mstep_accumulator_shape=mstep_accumulator_shape,
             pose_dtype=execution.precision.rotation_real_dtype,
         )
@@ -1968,7 +1978,7 @@ def _score_half_local_one_shape(
         best_pose_rotations=best_rots,
         best_pose_rotation_eulers=best_eulers,
         best_pose_translations=best_translations,
-        significant_counts=relion_significant_counts_k,
+        significant_counts=pass2.significant_counts,
         mstep_full_half_axis=0 if local_relion_x_half_mstep else None,
         mstep_accumulator_shape=mstep_accumulator_shape,
     )

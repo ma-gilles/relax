@@ -514,7 +514,12 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
     monkeypatch.setattr(half_scoring, "log_local_adaptive_support", lambda *_args: None)
     monkeypatch.setattr(half_scoring, "log_local_denominator_support", lambda *_args: None)
 
-    pass2_layout, counts, denominator_layout, parent_mode = (
+    policy = LocalAdaptivePass2Support(
+        full_parent=full_parent,
+        rotation_only=rotation_only,
+        denominator_mode=denominator_mode,
+    )
+    pass2 = (
         half_scoring._prepare_local_adaptive_pass2_support(
             "parent_layout",
             retained,
@@ -523,19 +528,15 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
                 search=SimpleNamespace(oversampling_order=1, symmetry="C1"),
                 perturbation=0.25,
             ),
-            LocalAdaptivePass2Support(
-                full_parent=full_parent,
-                rotation_only=rotation_only,
-                denominator_mode=denominator_mode,
-            ),
+            policy,
             2,
             np.float32,
         )
     )
 
-    assert pass2_layout is layout_calls[0][-1]
-    assert_matches(counts, np.array([2, 1], dtype=np.int32))
-    assert parent_mode == expected_parent_mode
+    assert pass2.layout is layout_calls[0][-1]
+    assert_matches(pass2.significant_counts, np.array([2, 1], dtype=np.int32))
+    assert policy.parent_mode == expected_parent_mode
     support = layout_calls[0][1]
     if expected_support_kind == "pruned":
         assert support is retained
@@ -546,10 +547,10 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
         assert support[1] is retained
         assert support[2] == 3
     if denominator_mode is None:
-        assert denominator_layout is None
+        assert pass2.denominator_layout is None
         assert len(layout_calls) == 1
     else:
-        assert denominator_layout is layout_calls[1][-1]
+        assert pass2.denominator_layout is layout_calls[1][-1]
         assert len(layout_calls) == 2
         denominator_support = layout_calls[1][1]
         if denominator_mode == "full_parent":

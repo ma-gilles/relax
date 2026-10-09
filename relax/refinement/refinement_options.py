@@ -466,6 +466,16 @@ class LocalAdaptivePass2Support:
             return self
         return LocalAdaptivePass2Support(full_parent=False, rotation_only=False, denominator_mode=None)
 
+    @property
+    def parent_mode(self) -> str:
+        """The profile's name of this support: ``full_parent``, ``significant_rotation_full_translation``
+        or ``pruned_parent``."""
+        if self.full_parent:
+            return "full_parent"
+        if self.rotation_only:
+            return "significant_rotation_full_translation"
+        return "pruned_parent"
+
 
 @dataclass(frozen=True, kw_only=True)
 class ReconstructionPrograms:
