@@ -227,7 +227,6 @@ class CoarseSignificanceCSR:
     def image_block(self, start: int, stop: int) -> "CoarseSignificanceCSR":
         """Images ``[start, stop)`` as their own CSR; ``ids`` is a view of this one's."""
 
-        start, stop = int(start), int(stop)
         if not 0 <= start <= stop <= self.n_images:
             raise ValueError(f"image block [{start}, {stop}) is outside the CSR's {self.n_images} images")
         offsets = self.offsets[start : stop + 1]

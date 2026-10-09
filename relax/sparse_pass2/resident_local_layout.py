@@ -294,7 +294,6 @@ def expand_local_mask_rows(tables: ResidentLocalTables, start: int, stop: int) -
     engine materializes as an all-true ``local_sample_mask``.
     """
 
-    start, stop = int(start), int(stop)
     n_rows = stop - start
     if tables.row_mask_bits is None:
         return np.ones((n_rows, tables.n_trans), dtype=bool)
