@@ -135,13 +135,13 @@ def build_full_stats(
     plan: OutputPlan,
     *,
     executed_backend: str,
-    gaussian_report: dict,
+    route_report: dict,
     tree_report: dict,
 ) -> dict:
     """The pass's ``full_stats``: its per-image statistics, and the reports of the route it ran.
 
-    ``executed_backend`` names the scorer that ran. ``gaussian_report`` and ``tree_report`` are the entries the
-    Gaussian route and the tree rescore add (empty when the pass did not run them). The class best and runner-up
+    ``executed_backend`` names the scorer that ran. ``route_report`` and ``tree_report`` are the entries the
+    route and the tree rescore add (empty when the pass did not run them). The class best and runner-up
     statistics are present when the plan asked for them. The support audit (an environment diagnostic) adds the
     hash of the supports, and refuses a pass that collected none.
     """
@@ -159,7 +159,7 @@ def build_full_stats(
         "significant_cutoff_counts": outputs.cutoff_count_all,
         "executed_coarse_backend": executed_backend,
     }
-    full_stats.update(gaussian_report)
+    full_stats.update(route_report)
     if _coarse_significance_support_audit_enabled():
         if significant_sample_indices is None:
             raise RuntimeError(

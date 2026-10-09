@@ -123,11 +123,11 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     """Return raw F32 normalization without selecting from a different posterior."""
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
-    from relax.scoring import pass1_plan, significance
+    from relax.scoring import pass1_route, significance
     from relax.sparse_pass2 import sparse_pass2_posterior
 
     install_exact_pass1_mocks(monkeypatch)
-    monkeypatch.setattr(pass1_plan, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
+    monkeypatch.setattr(pass1_route, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
     captured = []
     original = sparse_pass2_posterior.relion_f32_fine_probabilities
 
@@ -190,10 +190,10 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
     from relax.helpers import oversampling
-    from relax.scoring import pass1_plan, pass1_support, significance
+    from relax.scoring import pass1_route, pass1_support, significance
 
     install_exact_pass1_mocks(monkeypatch)
-    monkeypatch.setattr(pass1_plan, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
+    monkeypatch.setattr(pass1_route, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
     support_program = pass1_support.coarse_support_posterior
 
     def run(n_classes, rotation_log_prior, translation_log_prior):
