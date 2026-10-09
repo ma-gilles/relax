@@ -42,12 +42,14 @@ Index conventions
 
 from __future__ import annotations
 
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 
 import numpy as np
 
+from relax.helpers.host_memory import return_freed_heap
 from relax.scoring.compact_candidates import SparseCandidateMask
 
 __all__ = [
@@ -995,6 +997,8 @@ class CandidateTableBlocks:
             self._built[block] = tables
             for old in sorted(self._built)[: -int(self.blocks_kept)]:
                 del self._built[old]
+            # The block's per-class builders ran on a thread pool; their freed temporaries stay in its arenas.
+            return_freed_heap(f"candidate table block {block}", level=logging.DEBUG)
         return self._built[block]
 
     def chunk_tables(self, chunk: CapacityChunk) -> tuple[ResidentCandidateTables, CapacityChunk, int]:

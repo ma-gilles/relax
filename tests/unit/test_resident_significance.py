@@ -774,3 +774,34 @@ def test_coarse_parents_of_only_empty_images_are_parent_zero():
 
     np.testing.assert_array_equal(parents, _parents_by_unique(csr, 3))
     np.testing.assert_array_equal(parents, [0])
+
+
+def test_assembled_class_releases_its_per_batch_ids():
+    """A class compacted over the whole pass hands its per-batch lists to its CSR and they are emptied, so the
+    pass does not hold every class's ids twice (relax#34); the CSR is the concatenation of the batches."""
+
+    from types import SimpleNamespace
+
+    from relax.scoring.pass1_assembly import significant_samples_after_loop
+
+    n_rot, n_trans = 4, 2
+    batches = [
+        (np.array([1, 2], dtype=np.int32), np.zeros(2, dtype=bool), np.array([0, 3, 5], dtype=np.int32), 0),
+        (np.array([0, 1], dtype=np.int32), np.zeros(2, dtype=bool), np.array([7], dtype=np.int32), 2),
+    ]
+    outputs = SimpleNamespace(
+        significant_sample_indices=[[None] * 4, [None] * 4],
+        device_significance_counts=[[b[0] for b in batches], [b[0] for b in batches]],
+        device_significance_polarity=[[b[1] for b in batches], [b[1] for b in batches]],
+        device_significance_ids=[[b[2] for b in batches], [b[2] for b in batches]],
+        device_significance_starts=[[b[3] for b in batches], [b[3] for b in batches]],
+    )
+    plan = SimpleNamespace(n_classes=2, n_images=4, n_rot=n_rot, n_trans=n_trans)
+
+    samples = significant_samples_after_loop(outputs, plan)
+
+    for class_index in range(2):
+        np.testing.assert_array_equal(samples[class_index].csr.ids, [0, 3, 5, 7])
+        np.testing.assert_array_equal(samples[class_index].csr.offsets, [0, 1, 3, 3, 4])
+        assert outputs.device_significance_ids[class_index] == []
+        assert outputs.device_significance_counts[class_index] == []

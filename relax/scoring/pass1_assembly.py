@@ -53,7 +53,8 @@ def significant_samples_after_loop(outputs: Pass1Outputs, plan: OutputPlan):
     without ``collect_significance``, or every batch a dump batch). Otherwise returns a new ``[K]`` list whose class
     entry is a :class:`DeviceCompactedSignificantSamples` over the whole pass when every batch of the class compacted,
     and a copy of its per-image rows with the compacted batches' rows filled in when some batches kept the host mask
-    (a score dump). ``outputs`` is not written.
+    (a score dump). A class compacted over the whole pass hands its per-batch device-compaction lists over to its
+    CSR: they are emptied once the CSR holds the ids, so the pass never keeps every class's ids twice (relax#34).
     """
 
     if not any(outputs.device_significance_counts):
@@ -94,6 +95,13 @@ def significant_samples_after_loop(outputs: Pass1Outputs, plan: OutputPlan):
             store_excluded_per_batch=outputs.device_significance_polarity[class_index],
             ids_per_batch=outputs.device_significance_ids[class_index],
         )
+        for per_batch in (
+            outputs.device_significance_counts,
+            outputs.device_significance_polarity,
+            outputs.device_significance_ids,
+            outputs.device_significance_starts,
+        ):
+            per_batch[class_index].clear()
         samples[class_index] = DeviceCompactedSignificantSamples(
             host_support_rows(coarse_significance_csr),
             csr=coarse_significance_csr,

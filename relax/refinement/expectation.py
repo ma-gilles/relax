@@ -22,6 +22,7 @@ from relax.dense.scoring_policy import local_precision
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
+from relax.helpers.host_memory import return_freed_heap
 from relax.helpers.orientation_priors import (
     DirectionPrior,
     HalfDirectionLogPriors,
@@ -248,8 +249,10 @@ def finish_numbered_half(
 
 
 def _score_and_finish_half(score_half, finish_half, half_inputs, k) -> None:
-    """Score half ``k`` and finish it before anything else runs on that half's thread."""
+    """Score half ``k`` and finish it before anything else runs on that half's thread, then return the heap its
+    passes freed (:func:`~relax.helpers.host_memory.return_freed_heap`)."""
     finish_half(half_inputs[k], score_half(half_inputs[k]))
+    return_freed_heap(f"half {k + 1}'s E-step")
 
 
 def _half_overlap_active(requested: bool, *, diagnostic_half_indices, log) -> bool:
