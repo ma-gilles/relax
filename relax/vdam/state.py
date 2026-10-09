@@ -23,12 +23,12 @@ class InitialModelState:
     """The InitialModel's run state. ``Iref``, ``Igrad1`` and ``Igrad2`` are device (JAX) arrays after the first
     M-step (``m_step._run_m_step_transaction``), though annotated ``np.ndarray``."""
 
-    iter: int = 0
+    iter: int
     nr_iter: int
-    K: int = 1
+    K: int
     box_size: int
     pixel_size: float
-    pseudo_halfsets: bool = True
+    pseudo_halfsets: bool
 
     Iref: np.ndarray
     Igrad1: np.ndarray
