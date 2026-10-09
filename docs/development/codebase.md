@@ -186,9 +186,9 @@ for detailed module contracts. Start with the boundary being changed:
 | Final refinement result files | [`refinement/result_files.py`](../../relax/refinement/result_files.py); reused result schemas, final diagnostic formatting, array layouts, NPZ compression, profiles and final maps. Controllers retain model selection and publication order. |
 | Coarse/sparse scoring | [`scoring/significance.py`](../../relax/scoring/significance.py), [`sparse_pass2/resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py) |
 
-Coarse window metadata is published by `scoring/coarse_publication.py`.
-Pass 1 (the coarse pass) scores, adds the priors and reduces an image batch in one program,
-`scoring.significance.coarse_pass1_blocks` (see [EM status](em_status.md), "Pass 1 as one program per
+Pass 1 (the coarse pass) is a request, a plan and a run (`scoring/significance.py`: `run_pass1`, read first).
+It scores, adds the priors and reduces an image batch in one program,
+`scoring.pass1_program.coarse_pass1_blocks` (see [EM status](em_status.md), "Pass 1 as one program per
 image batch") on RELION's exact coarse operands only: pass 1 needs a CUDA GPU and RELION's CUDA image
 preprocessing, and the generic dense coarse scorer was removed on 2026-10-02 (its arithmetic is the test
 oracle `tests/helpers/generic_coarse_reference.py`). The coarse GEMM scorer is its only Gaussian scorer; the fused, native-texture and
@@ -204,6 +204,27 @@ projection extras and the scripts that read them (`scripts/analyze_em_k1_live_re
 tests) were removed on 2026-10-02; recover them from git history (before the removal commit) if needed.
 Live BPref execution modes are selected by `sparse_pass2/sparse_pass2_policy.py`;
 capture scopes and shadow comparisons stay with the diagnostic owners.
+
+Pass 1 by stage (`relax/scoring`; the open items are in [scoring_rules_status.md](scoring_rules_status.md)):
+
+| Stage | Module | Owns |
+| --- | --- | --- |
+| Request | `pass1_request.py` | `Pass1Request`, the call's options; it refuses what its own fields contradict |
+| Plan | `pass1_plan.py` | `plan_pass1` and `Pass1Plan`: the refusals that need resources, and the stage plans in order |
+| | `pass1_window.py`, `pass1_priors.py` | the scored Fourier rows and weights; the padded rotation blocks, the rotation and translation priors |
+| | `pass1_route.py` | `plan_gaussian_route` and `plan_cc_route`, each returning a `RoutePlan` (decided once from `score_mode`) |
+| | `gaussian_plan.py`, `coarse_layout.py`, `coarse_gaussian_gemm.py` | the Gaussian GEMM's scored rows, resources, layout and projection cache |
+| | `pass1_scores.py`, `pass1_support.py` | `plan_score_program`, `ProgramStatics`; `plan_support` and the float32 and generic support routes |
+| | `tree_rescore.py` | the first-iteration tree top-two rescore (plan, rescore, totals) |
+| Run | `significance.py` | `run_pass1`: the loop `prepare_batch`, publish the waiting batch, `score_batch`; the keyword entry `_compute_k_class_significance_batched` |
+| | `pass1_step.py`, `pass1_batch.py`, `pass1_operands.py` | the two batch steps; image preprocessing; the route's score operands |
+| | `pass1_program.py`, `coarse_projector.py` | the jitted kernels and `run_score_program`; the class-stacked projector and its cache |
+| | `pass1_publish.py`, `pass1_dump.py` | the host read-back into the per-image results; which batches dump |
+| Result | `pass1_results.py`, `pass1_assembly.py` | `Pass1Outputs`, `Pass1Stats`, `Pass1Result`; the supports and the pass's timing log after the last batch |
+
+Checks: `scripts/dev/pass1_fingerprint.py` (the real pass on the CPU stand-in, with deliberate mutations), and the stage
+tests `tests/unit/test_pass1_request.py`, `test_pass1_planning.py` and `test_pass1_run.py`.
+
 
 Import execution APIs directly from their defining modules; helpers must not
 initialize controllers or scoring engines. During structural cleanup preserve
