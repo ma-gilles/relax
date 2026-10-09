@@ -36,12 +36,19 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
 
 from relax.helpers.convergence import RefinementState
 from relax.helpers.orientation_priors import DirectionPrior, initial_direction_priors_from_snapshot
+from relax.helpers.resolution import _zero_shells_past_current_size
+from relax.reconstruction.regularization_relion import update_relion_growth_state_from_fsc
+
+if TYPE_CHECKING:
+    from relax.refinement.iteration_planning import IterationCarry, NumberedIteration
+    from relax.refinement.setup_checks import RunContext
 
 # RefinementState fields that hold per-image arrays rather than scalars; the
 # snapshot carries per-image state separately.
@@ -560,3 +567,83 @@ class SnapshotCapture:
             class_assignments=host_half_pair(class_assignments),
         )
         return IterationSnapshot(**assembly.values)
+
+
+def k1_run_files_snapshot(
+    ctx: RunContext,
+    carry: IterationCarry,
+    this_iteration: NumberedIteration,
+    *,
+    reference_model,
+    halves,
+    mstep,
+    unfiltered_maps,
+    expected,
+    corrections,
+) -> IterationSnapshot:
+    """A K=1 numbered iteration's run-files snapshot (RELION's run_itNNN files, ml_optimiser.cpp:3489).
+
+    The files hold incr_size/has_high_fsc_at_limit after this iteration's FSC update, which the loop applies
+    (idempotently) at the top of the next one. The header is begun before the arrays are captured (the
+    header's state is copied first). ``mstep`` is the iteration's K1Maximization (its FSC and per-half prior
+    shells); ``expected`` its NumberedExpectationResult; ``corrections`` its NormScaleCorrectionReport.
+    """
+    incr_size, has_high_fsc_at_limit = update_relion_growth_state_from_fsc(
+        _zero_shells_past_current_size(
+            mstep.fsc, current_size=this_iteration.current_size, box_size=ctx.image_geometry.box_size,
+            dtype=ctx.scoring_dtype,
+        ),
+        this_iteration.current_size, incr_size=carry.relion_incr_size,
+        has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit,
+    )
+    snapshot = ctx.snapshot_capture.begin(
+        this_iteration.numbered_relion_iteration, carry.state,
+        sigma_offset_angstrom_per_half=carry.sigma_offset.per_half_angstrom,
+        current_size=this_iteration.current_size, incr_size=incr_size, has_high_fsc_at_limit=has_high_fsc_at_limit,
+        random_perturbation=carry.random_perturbation,
+        acc_rot_per_class=carry.published_accuracy.acc_rot_per_class,
+        acc_trans_per_class_angstrom=carry.published_accuracy.acc_trans_per_class_angstrom,
+    )
+    return ctx.snapshot_capture.finish(
+        snapshot, reference_model.maps, unfiltered_maps,
+        [details["prior_shells"] for details in mstep.tau2_update_details_per_half],
+        carry.previous_data_vs_prior_for_scheduling, carry.noise_model.radial_per_half,
+        fsc=mstep.fsc, fsc_for_growth=mstep.fsc, class_weights=None, direction_priors=carry.direction_priors,
+        half_inputs=halves, class_assignments=None, max_posterior=expected.per_half.max_posterior,
+        significant_counts=expected.significance.per_half, avg_norm_correction=corrections.avg_norm_correction_per_half,
+    )
+
+
+def class_run_files_snapshot(
+    ctx: RunContext,
+    carry: IterationCarry,
+    this_iteration: NumberedIteration,
+    *,
+    reference_model,
+    halves,
+    mstep,
+    unfiltered_maps,
+    expected,
+    corrections,
+) -> IterationSnapshot:
+    """A Class3D numbered iteration's run-files snapshot (RELION's run_itNNN files): the carried size-growth
+    state as it is, the class prior shells, weights and assignments; no FSC. Arguments as for
+    :func:`k1_run_files_snapshot` (``mstep`` is the iteration's ClassMaximization).
+    """
+    incr_size, has_high_fsc_at_limit = carry.relion_incr_size, carry.relion_has_high_fsc_at_limit
+    snapshot = ctx.snapshot_capture.begin(
+        this_iteration.numbered_relion_iteration, carry.state,
+        sigma_offset_angstrom_per_half=carry.sigma_offset.per_half_angstrom,
+        current_size=this_iteration.current_size, incr_size=incr_size, has_high_fsc_at_limit=has_high_fsc_at_limit,
+        random_perturbation=carry.random_perturbation,
+        acc_rot_per_class=carry.published_accuracy.acc_rot_per_class,
+        acc_trans_per_class_angstrom=carry.published_accuracy.acc_trans_per_class_angstrom,
+    )
+    return ctx.snapshot_capture.finish(
+        snapshot, reference_model.maps, unfiltered_maps, mstep.tau2_shells,
+        carry.previous_data_vs_prior_for_scheduling, carry.noise_model.radial_per_half,
+        fsc=None, fsc_for_growth=None, class_weights=carry.class_mixture.weights,
+        direction_priors=carry.direction_priors, half_inputs=halves, class_assignments=carry.class_assignments,
+        max_posterior=expected.per_half.max_posterior, significant_counts=expected.significance.per_half,
+        avg_norm_correction=corrections.avg_norm_correction_per_half,
+    )

@@ -523,15 +523,17 @@ def class_seeding(options: RefinementOptions, *, continued: bool, iteration: int
 
 @dataclass(frozen=True, kw_only=True)
 class NumberedIteration:
-    """One numbered iteration's identity and the decisions taken at its top: the loop's 0-based index, RELION's
-    iteration number, whether a completed iteration (or a snapshot) precedes it, its first-iteration policy
-    and its Class3D seeding."""
+    """One numbered iteration's identity and the decisions taken before its expectation: the loop's 0-based
+    index, RELION's iteration number, whether a completed iteration (or a snapshot) precedes it, its
+    first-iteration policy, its Class3D seeding and its current size."""
 
     iteration: int
     numbered_relion_iteration: int
     has_previous_iteration: bool
     first_iteration: FirstIterationPolicy
     seeding: ClassSeeding
+    # The image size the iteration plans its windows from, after the input source's replacements.
+    current_size: int
 
 
 class PublishedAccuracy(NamedTuple):

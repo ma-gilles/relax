@@ -43,7 +43,6 @@ from relax.helpers.orientation_priors import (
     initial_direction_priors_from_snapshot,
 )
 from relax.helpers.resolution import (
-    _zero_shells_past_current_size,
     estimate_class_iteration_resolution,
     estimate_k1_iteration_resolution,
     relion_expectation_coarse_size_order,
@@ -51,13 +50,11 @@ from relax.helpers.resolution import (
 )
 from relax.helpers.timing import Stopwatch
 from relax.parity.relion_replay import _validate_bpref_particle_order_scope
-from relax.reconstruction.regularization_relion import (
-    update_relion_growth_state_from_fsc,
-)
 from relax.refinement import (
     expectation,
     finalization,
     iteration_planning,
+    iteration_snapshot,
     local_sampling,
     maximization,
     ports,
@@ -499,26 +496,20 @@ def refine_single_volume(
             break
         iteration_clock = Stopwatch()
         observer.iteration_started(iteration)
-        this_iteration = iteration_planning.NumberedIteration(
-            iteration=iteration,
-            numbered_relion_iteration=replay_policy._numbered_relion_iteration(
-                options.schedule.init_relion_iteration, iteration
-            ),
-            has_previous_iteration=has_previous_iteration,
-            first_iteration=first_iteration_policy(options, iteration=iteration),
-            seeding=seeding,
+        numbered_relion_iteration = replay_policy._numbered_relion_iteration(
+            options.schedule.init_relion_iteration, iteration
         )
 
         if follower_setup.follower_scale_state is not None:
             _dispatch_relion_follower_scale_for_numbered_iteration(
-                follower_setup, history, iteration=iteration, numbered_relion_iteration=this_iteration.numbered_relion_iteration,
+                follower_setup, history, iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,
                 relion_half_inputs=halves, relion_follower_scale_replay_source=follower_scale_replay,
                 dtype=ctx.scoring_dtype, logger=logger,
             )
 
         # Image support uses the preceding iteration's spectra, before replay
         # and angular sampling select this expectation's grid.
-        if not this_iteration.has_previous_iteration:
+        if not has_previous_iteration:
             image_size_plan = plan_initial_image_size(
                 options, box_size=ctx.image_geometry.box_size, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
                 incr_size=carry.relion_incr_size, has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit,
@@ -563,7 +554,7 @@ def refine_single_volume(
                 )
 
         current_size = resolve_current_size(
-            image_size_plan, options, previous_size=prev_cs if this_iteration.has_previous_iteration else None,
+            image_size_plan, options, previous_size=prev_cs if has_previous_iteration else None,
             incr_size=carry.relion_incr_size, has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit,
             ave_pmax=carry.state.ave_Pmax, iteration=iteration, box_size=ctx.image_geometry.box_size, log=logger,
         )
@@ -645,6 +636,13 @@ def refine_single_volume(
         )
         if checked is not None:
             frozen_initial_scoring_state_sha256 = checked
+        # The iteration's identity, its decisions taken at the top and its current size (final after the ports).
+        this_iteration = iteration_planning.NumberedIteration(
+            iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,
+            has_previous_iteration=has_previous_iteration,
+            first_iteration=first_iteration_policy(options, iteration=iteration), seeding=seeding,
+            current_size=current_size,
+        )
 
         # Half 1's projector of this iteration's references, built for the
         # expected-accuracy estimate and reused by the scoring projector setup
@@ -654,8 +652,8 @@ def refine_single_volume(
         iteration_accuracy, shared_projector_half1 = estimate_iteration_accuracy(
             expected_accuracy_inputs, reference_model.maps[0], best_eulers_deg=halves[0].rotation_eulers,
             class_assignments=carry.class_assignments[0], class_weights=carry.class_mixture.weights,
-            sigma2_noise_native=carry.noise_model.radial_per_half[0], current_size=current_size,
-            accuracy_image_size=strict_e_step_size(current_size, ctx.optics, options),
+            sigma2_noise_native=carry.noise_model.radial_per_half[0], current_size=this_iteration.current_size,
+            accuracy_image_size=strict_e_step_size(this_iteration.current_size, ctx.optics, options),
             image_box_size=ctx.image_geometry.box_size, n_classes=options.k_class.n_classes, iteration=iteration,
             native_sampling_boundary=carry.native_sampling_boundary,
             relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
@@ -681,10 +679,10 @@ def refine_single_volume(
         ))
 
         history.record_scheduling(
-            current_size, carry.state.healpix_order, float(carry.sigma_offset.shared_angstrom),
+            this_iteration.current_size, carry.state.healpix_order, float(carry.sigma_offset.shared_angstrom),
             copy_optional_float_pair(carry.sigma_offset.per_half_angstrom),
         )
-        scoring_current_size = int(current_size)
+        scoring_current_size = int(this_iteration.current_size)
 
         logger.info(
             "=== RELION Iteration %d/%d: current_size=%d, healpix_order=%d, local_search=%s ===",
@@ -831,7 +829,7 @@ def refine_single_volume(
         # (a report names the half that is actually damaged, not the one a join copied it into).
         observer.half_accumulators_ready(
             iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1),
-            settings=ctx.reconstruction_settings, current_size=current_size, accumulator_shape=mstep_accumulator_shape,
+            settings=ctx.reconstruction_settings, current_size=this_iteration.current_size, accumulator_shape=mstep_accumulator_shape,
             k_class_enabled=ctx.k_class_enabled, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
         )
         check_half_accumulators_before_join(
@@ -845,7 +843,7 @@ def refine_single_volume(
         if ctx.k_class_enabled:
             mstep = class_maximization(
                 reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx, options, this_iteration,
-                halves=halves, current_size=current_size,
+                halves=halves, current_size=this_iteration.current_size,
                 image_current_size=plan.sampling_plan.windows.image_current_size,
                 mstep_accumulator_shape=mstep_accumulator_shape, mstep_full_half_axis=mstep_full_half_axis,
                 projector_power_spectrum=projector_power_spectrum,
@@ -857,7 +855,7 @@ def refine_single_volume(
             mstep = k1_maximization(
                 reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx, this_iteration, parity=options.parity,
                 pixel_resolutions=history.pixel_resolutions, current_resolution=carry.state.current_resolution,
-                current_size=current_size, mstep_accumulator_shape=mstep_accumulator_shape,
+                current_size=this_iteration.current_size, mstep_accumulator_shape=mstep_accumulator_shape,
                 mstep_full_half_axes=expected.per_half.mstep_full_half_axis,
             )
             # The accumulators the solve used (joined at low resolution when that is on) replace the scored ones.
@@ -944,7 +942,7 @@ def refine_single_volume(
         observer.maps_reconstructed(ReconstructedIteration(
             iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), reference_model=reference_model,
             noise_model=carry.noise_model, per_half=expected.per_half, trial_grid=plan.trial_grid, sampling_plan=plan.sampling_plan,
-            options=options, unfiltered_maps=unreg_means, fsc=fsc, current_size=current_size, state=carry.state,
+            options=options, unfiltered_maps=unreg_means, fsc=fsc, current_size=this_iteration.current_size, state=carry.state,
             volume_shape=ctx.volume_shape, voxel_size=ctx.source_pixel_size_angstrom,
         ))
 
@@ -971,7 +969,7 @@ def refine_single_volume(
             previous_combined_classes = concatenate_assignments_or_none(carry.previous_class_assignments)
             # K>1: from the shared per-class prior and the combined class accumulators.
             resolution_estimate = estimate_class_iteration_resolution(
-                history.data_vs_prior_trajectory[-1], current_size=current_size, box_size=ctx.image_geometry.box_size,
+                history.data_vs_prior_trajectory[-1], current_size=this_iteration.current_size, box_size=ctx.image_geometry.box_size,
                 voxel_size=ctx.source_pixel_size_angstrom,
                 emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
                 ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
@@ -983,7 +981,7 @@ def refine_single_volume(
             previous_combined_classes = None
             # K=1: data_vs_prior comes from the half-map FSC.
             resolution_estimate = estimate_k1_iteration_resolution(
-                mstep.tau2_update_details["ssnr_shells"], current_size=current_size,
+                mstep.tau2_update_details["ssnr_shells"], current_size=this_iteration.current_size,
                 box_size=ctx.image_geometry.box_size,
                 voxel_size=ctx.source_pixel_size_angstrom,
                 emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
@@ -1043,7 +1041,7 @@ def refine_single_volume(
         )
         if not this_iteration.first_iteration.relion_firstiter_cc:
             observer.noise_updated(
-                iteration, current_size=current_size, image_shape=ctx.image_geometry.image_shape,
+                iteration, current_size=this_iteration.current_size, image_shape=ctx.image_geometry.image_shape,
                 noise_stats_per_half=expected.per_half.noise_stats,
                 previous_noise_radial_per_half=carry.noise_model.radial_per_half,
                 noise_from_res_per_half=noise_update.noise_from_res_per_half,
@@ -1058,7 +1056,7 @@ def refine_single_volume(
         norm_scale_update = numbered_norm_scale_update(
             expected.per_half, halves, firstiter_cc=this_iteration.first_iteration.relion_firstiter_cc, do_norm_correction=not ctx.tomo_halves,
             do_scale_correction=follower_setup.follower_scale_state is None, dtype=ctx.scoring_dtype,
-            iteration=iteration, current_size=current_size,
+            iteration=iteration, current_size=this_iteration.current_size,
         )
         if follower_setup.follower_scale_state is not None and norm_scale_update is None:
             raise RuntimeError(
@@ -1145,51 +1143,19 @@ def refine_single_volume(
         # --- RELION's run_itNNN files (ml_optimiser.cpp:3489) ---
         checkpoint_writer = options.checkpoint.writer
         if checkpoint_writer is not None and checkpoint_writer.due(this_iteration.numbered_relion_iteration):
-            # The files hold incr_size/has_high_fsc_at_limit after this iteration's FSC
-            # update, which the loop applies (idempotently) at the top of the next one.
-            incr_size_after, high_fsc_after = carry.relion_incr_size, carry.relion_has_high_fsc_at_limit
-            if not ctx.k_class_enabled:
-                incr_size_after, high_fsc_after = update_relion_growth_state_from_fsc(
-                    _zero_shells_past_current_size(
-                        fsc, current_size=current_size, box_size=ctx.image_geometry.box_size, dtype=ctx.scoring_dtype,
-                    ),
-                    current_size, incr_size=carry.relion_incr_size,
-                    has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit,
-                )
-            snapshot = ctx.snapshot_capture.begin(
-                this_iteration.numbered_relion_iteration, carry.state,
-                sigma_offset_angstrom_per_half=carry.sigma_offset.per_half_angstrom,
-                current_size=current_size, incr_size=incr_size_after, has_high_fsc_at_limit=high_fsc_after,
-                random_perturbation=carry.random_perturbation,
-                acc_rot_per_class=carry.published_accuracy.acc_rot_per_class,
-                acc_trans_per_class_angstrom=carry.published_accuracy.acc_trans_per_class_angstrom,
-            )
-            snapshot = ctx.snapshot_capture.finish(
-                snapshot,
-                reference_model.maps,
-                unreg_means,
-                (
-                    mstep.tau2_shells
-                    if ctx.k_class_enabled
-                    else [details["prior_shells"] for details in mstep.tau2_update_details_per_half]
-                ),
-                carry.previous_data_vs_prior_for_scheduling,
-                carry.noise_model.radial_per_half,
-                fsc=fsc,
-                fsc_for_growth=None if ctx.k_class_enabled else fsc,
-                class_weights=carry.class_mixture.weights if ctx.k_class_enabled else None,
-                direction_priors=carry.direction_priors,
-                half_inputs=halves,
-                class_assignments=carry.class_assignments if ctx.k_class_enabled else None,
-                max_posterior=expected.per_half.max_posterior,
-                significant_counts=expected.significance.per_half,
-                avg_norm_correction=correction_report.avg_norm_correction_per_half,
+            snapshot = (
+                iteration_snapshot.class_run_files_snapshot
+                if ctx.k_class_enabled
+                else iteration_snapshot.k1_run_files_snapshot
+            )(
+                ctx, carry, this_iteration, reference_model=reference_model, halves=halves, mstep=mstep,
+                unfiltered_maps=unreg_means, expected=expected, corrections=correction_report,
             )
             checkpoint_writer(snapshot)
 
         observer.iteration_finished(FinishedIteration(
             iteration, init_relion_iteration=options.schedule.init_relion_iteration, state=carry.state,
-            current_size=current_size, sigma_offset_angstrom=carry.sigma_offset.shared_angstrom,
+            current_size=this_iteration.current_size, sigma_offset_angstrom=carry.sigma_offset.shared_angstrom,
             random_perturbation=carry.random_perturbation, settings=ctx.reconstruction_settings,
             pixel_size_angstrom=ctx.source_pixel_size_angstrom, ave_pmax=statistics.ave_pmax, fsc=fsc,
             noise_variance=carry.noise_model.average_variance, means=reference_model.maps, unfiltered_means=unreg_means,
@@ -1207,7 +1173,7 @@ def refine_single_volume(
             "RELION Iteration %d: current_size=%d, pixel_res=%.1f, "
             "res=%.2f A, ave_Pmax=%.4f, healpix_order=%d, "
             "converged=%s, time=%.1fs",
-            this_iteration.numbered_relion_iteration, current_size, resolution_estimate.scheduling_shell, res_angstrom,
+            this_iteration.numbered_relion_iteration, this_iteration.current_size, resolution_estimate.scheduling_shell, res_angstrom,
             statistics.ave_pmax,
             carry.state.healpix_order, carry.state.has_converged, elapsed,
         )
