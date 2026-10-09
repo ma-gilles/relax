@@ -35,7 +35,7 @@ from relax.vdam import (
     schedules,
 )
 from relax.vdam.bootstrap_iref import initialise_denovo_state
-from relax.vdam.ports import VdamInputSource, VdamObserver
+from relax.vdam.ports import NoProbe, NoStageProfile, VdamInputSource
 from relax.vdam.state import NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import select_subset_for_iter
 
@@ -764,7 +764,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         random_seed=0,
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
 
     assert estimate is not None
@@ -809,7 +809,7 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
         random_seed=0,
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
 
     assert estimate is not None
@@ -858,7 +858,7 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
             padding_factor=1,
             sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
             tilt_images=images,
-            observer=VdamObserver(),
+            probe=NoProbe(),
         )
 
     with pytest.raises(RuntimeError, match="estimator reached"):
@@ -974,7 +974,7 @@ def test_native_expectation_step_uses_rfloat_metadata_translations(monkeypatch):
             native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=1), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
     expectation_step(state, np.asarray([0]), np.asarray([0], dtype=np.int8))
 
@@ -1668,7 +1668,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         optics,
         opts,
         source=VdamInputSource(),
-        observer=profiling,
+        profile=profiling.stage_profile(),
     )
 
     assert_matches(state.Iref, post_iref)
@@ -1719,7 +1719,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
     )
     monkeypatch.setattr(helpers, "load_relion_volume", lambda _path: post_iref[0].copy())
     overridden, _ = bootstrap_iref.initial_state_from_particles(
-        dataset, main, optics, opts, source=source_for("seed.mrc"), observer=VdamObserver()
+        dataset, main, optics, opts, source=source_for("seed.mrc"), profile=NoStageProfile()
     )
     np.testing.assert_array_equal(overridden.Iref, post_iref)
 
@@ -1770,7 +1770,7 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
             native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
     accumulators, meta = expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
 
@@ -1832,7 +1832,7 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
             native_options.NativeInitialModelOptions(fn_img="particles.star", translation_sigma_angstrom=2.0), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
 
     expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
@@ -2011,7 +2011,7 @@ def test_native_expectation_step_uses_autosampling_state_at_iteration_ten(monkey
         particle_state,
         sampling_state,
         projector_context=PreparedProjector(),
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
     _accumulators, meta = expectation_step(state, np.asarray([0]), np.asarray([0], dtype=np.int8))
 
@@ -2048,7 +2048,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         optics_group_ids,
         experiment_dataset,
         isolate_in_subprocess,
-        observer,
+        probe,
     ):
         assert tilt_images is None  # single particles
         assert optics_group_ids is None  # one optics group
@@ -2148,7 +2148,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         sampling_state,
         optics_state,
         projector_context=SimpleNamespace(take=fake_prepare_projector),
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
     _accumulators, meta = expectation_step(state, np.asarray([1, 0]), np.asarray([0, 1], dtype=np.int8))
 
@@ -2300,7 +2300,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
         random_seed=0,
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
-        observer=dump_observer,
+        probe=dump_observer.expectation_probe(),
     )
     meta = estimate.meta()
 
@@ -2372,7 +2372,7 @@ def test_native_expectation_step_records_sampling_changes_each_gradient_iteratio
         particle_state,
         sampling_state,
         projector_context=PreparedProjector(),
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
     _accumulators, meta = expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
 

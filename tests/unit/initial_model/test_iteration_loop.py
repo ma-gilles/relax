@@ -29,13 +29,13 @@ from relax.vdam.iteration_loop import (
 )
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.native_options import VdamEnvironment
-from relax.vdam.ports import VdamObserver
+from relax.vdam.ports import NoProbe, VdamObserver
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.state import VdamAccumulator
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation, select_subset_for_iter
 
 # The loop tests run real M-steps on float64 states: the float64 diagnostic precision.
-run_vdam_iterations = partial(run_vdam_iterations, update=VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", observer=VdamObserver()))
+run_vdam_iterations = partial(run_vdam_iterations, update=VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", probe=NoProbe()))
 
 pytestmark = pytest.mark.unit
 
@@ -510,7 +510,7 @@ class TestRunVdamIterations:
             expectation_step=estep,
             projector_refresh_fn=keep_tau2,
             projector_padding_factor=2,
-            update=VdamUpdate(padding_factor=2, mstep_compute_dtype="float64", observer=VdamObserver()),
+            update=VdamUpdate(padding_factor=2, mstep_compute_dtype="float64", probe=NoProbe()),
             grad_ini_frac=0.3,
             grad_fin_frac=0.2,
             mu=DEFAULT_GRAD_MU,
@@ -813,7 +813,7 @@ class TestRunVdamIterations:
         observer = vdam_command_observer(
             {"RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR": str(tmp_path), "RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION": "1"}
         )
-        update = VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", observer=observer)
+        update = VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", probe=observer.maximization_probe())
         out = update.update_noise(state, estep_sums(meta), meta, do_grad=False, mu=DEFAULT_GRAD_MU)
 
         dump_path = tmp_path / "initialmodel_noise_update_it001.npz"

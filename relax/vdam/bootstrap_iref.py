@@ -26,7 +26,7 @@ from relax.vdam.native_sampling import n_directions_for_healpix_order
 from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_count
 
 if TYPE_CHECKING:
-    from relax.vdam.ports import VdamInputSource, VdamObserver
+    from relax.vdam.ports import NoStageProfile, VdamInputSource
 
 # RELION's 0.07 digital-frequency low-pass for do_average_unaligned (ml_optimiser.cpp:2513-2518).
 INI_HIGH_DIGITAL_FREQ: float = 0.07
@@ -358,9 +358,9 @@ def initial_state_from_particles(
     opts: NativeInitialModelOptions,
     *,
     source: VdamInputSource,
-    observer: VdamObserver,
+    profile: NoStageProfile,
 ) -> tuple[InitialModelState, np.ndarray]:
-    profile = observer.stage_profile()
+    """``profile`` times the start-up's stages (``VdamObserver.stage_profile``)."""
 
     box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)

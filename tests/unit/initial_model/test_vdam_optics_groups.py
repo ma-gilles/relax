@@ -16,7 +16,7 @@ from relax.vdam import estep_setup, native_sampling
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_meta_updates import update_noise_from_estep
-from relax.vdam.ports import VdamObserver
+from relax.vdam.ports import NoProbe
 
 
 def test_startup_positions_fill_each_group_then_stop():
@@ -207,7 +207,7 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
         padding_factor=1,
         sigma2_fudge=1.0,
         optics_group_ids=groups,
-        observer=VdamObserver(),
+        probe=NoProbe(),
     )
     meta = estimate.meta()
     assert calls == [

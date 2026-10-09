@@ -34,7 +34,7 @@ from relax.vdam.schedules import relion_sampling_cadence
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 
 if TYPE_CHECKING:
-    from relax.vdam.ports import VdamObserver
+    from relax.vdam.ports import ExpectationProbe
 
 if TYPE_CHECKING:
     from relax.refinement.tomo_half import TiltImageAccuracyInputs
@@ -379,7 +379,7 @@ class SamplingAccuracyEstimate:
 
 @dataclass(frozen=True)
 class AccuracyEstimateInputs:
-    """What one expected-accuracy estimate read, for an observer (``VdamObserver.expected_accuracy_estimated``):
+    """What one expected-accuracy estimate read, for the observer (``ExpectationProbe.expected_accuracy_estimated``):
     the state, particle and optics states (``optics_state`` None for subtomograms), the references in RELION's
     layout, every trial's Euler angles, the trials' particle ids, classes and RELION part ids (their random
     seeds), and the estimator's settings."""
@@ -412,7 +412,7 @@ def estimate_native_sampling_accuracy(
     optics_group_ids: np.ndarray | None = None,
     experiment_dataset=None,
     isolate_in_subprocess: bool = False,
-    observer: VdamObserver,
+    probe: ExpectationProbe,
 ) -> SamplingAccuracyEstimate | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
@@ -572,7 +572,7 @@ def estimate_native_sampling_accuracy(
             trial_particle_ids,
             random_seed_particle_ids,
         )
-    observer.expected_accuracy_estimated(
+    probe.expected_accuracy_estimated(
         AccuracyEstimateInputs(
             state=state,
             particle_state=particle_state,

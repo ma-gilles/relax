@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from relax.diagnostics.vdam_noise import dump_noise_failure_meta, dump_noise_update_boundary
-from relax.vdam.ports import NoIterationProfile, NoStageProfile, VdamObserver
+from relax.vdam.ports import NoIterationProfile, NoProbe, NoStageProfile, VdamObserver
 
 EXPECTED_ACCURACY_DUMP_DIR_ENV = "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR"
 EXPECTED_ACCURACY_DUMP_ITERATIONS_ENV = "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS"
@@ -75,36 +75,24 @@ def _iterations(value: str) -> frozenset[int]:
 
 
 @dataclass(frozen=True)
-class VdamDiagnosticObserver(VdamObserver):
-    """The InitialModel's diagnostic dumps; a directory None turns its dump off, an empty iteration set dumps
-    every iteration. ``expected_accuracy_dir`` receives each single-particle expected-accuracy estimate's inputs
-    of ``expected_accuracy_iterations``; ``noise_update_dir`` each VDAM noise update's sums and spectra of
-    ``noise_update_iterations`` (refusing to overwrite a file); ``noise_failure_dir`` the noise sums of the
-    E-step meta when they are not finite. ``profile`` prints the wall times of the start-up stages, of each
-    iteration's stages and of the artifact writes."""
+class NoiseDumps(NoProbe):
+    """The noise dumps, as the model update's probe: ``update_dir`` each VDAM noise update's sums and spectra of
+    ``update_iterations`` (empty: every iteration; refusing to overwrite a file), ``failure_dir`` the E-step meta's
+    noise sums when they are not finite (None: off)."""
 
-    expected_accuracy_dir: str | None = None
-    expected_accuracy_iterations: frozenset[int] = frozenset()
-    noise_update_dir: str | None = None
-    noise_update_iterations: frozenset[int] = frozenset()
-    noise_failure_dir: str | None = None
-    profile: bool = False
-
-    def stage_profile(self) -> NoStageProfile:
-        return StageProfile() if self.profile else NoStageProfile()
-
-    def iteration_profile(self, iteration: int) -> NoIterationProfile:
-        return IterationProfile(iteration) if self.profile else NoIterationProfile()
+    update_dir: str | None
+    update_iterations: frozenset[int]
+    failure_dir: str | None
 
     def noise_updated(self, previous, updated, sums) -> None:
-        if self.noise_update_dir is None:
+        if self.update_dir is None:
             return
-        if self.noise_update_iterations and int(previous.iter) not in self.noise_update_iterations:
+        if self.update_iterations and int(previous.iter) not in self.update_iterations:
             return
         noise = sums.noise
         per_group = noise.wsum_sigma2_noise.ndim == 2
         dump_noise_update_boundary(
-            self.noise_update_dir,
+            self.update_dir,
             previous,
             updated,
             wsum_sigma2_noise=noise.wsum_sigma2_noise,
@@ -115,19 +103,28 @@ class VdamDiagnosticObserver(VdamObserver):
         )
 
     def noise_sums_nonfinite(self, state, meta, summaries) -> str | None:
-        if self.noise_failure_dir is None:
+        if self.failure_dir is None:
             return None
-        return dump_noise_failure_meta(self.noise_failure_dir, state, meta, summaries)
+        return dump_noise_failure_meta(self.failure_dir, state, meta, summaries)
+
+
+@dataclass(frozen=True)
+class ExpectedAccuracyDump(NoProbe):
+    """Each single-particle expected-accuracy estimate's inputs of ``iterations`` (empty: every iteration) in
+    ``directory``, as the E-step's probe."""
+
+    directory: str
+    iterations: frozenset[int]
 
     def expected_accuracy_estimated(self, inputs, accuracy) -> None:
         state, particle_state, optics_state = inputs.state, inputs.particle_state, inputs.optics_state
-        if self.expected_accuracy_dir is None or optics_state is None:
+        if optics_state is None:
             return
-        if self.expected_accuracy_iterations and int(state.iter) not in self.expected_accuracy_iterations:
+        if self.iterations and int(state.iter) not in self.iterations:
             return
         n_trials = int(inputs.trial_particle_ids.size)
         trial_particle_ids = inputs.trial_particle_ids
-        dump_path = Path(self.expected_accuracy_dir)
+        dump_path = Path(self.directory)
         dump_path.mkdir(parents=True, exist_ok=True)
         np.savez(
             dump_path / f"iter{int(state.iter):03d}_expected_accuracy_inputs.npz",
@@ -164,6 +161,37 @@ class VdamDiagnosticObserver(VdamObserver):
             acc_rot=np.asarray(accuracy.acc_rot, dtype=np.float64),
             acc_trans=np.asarray(accuracy.acc_trans_angstrom, dtype=np.float64),
         )
+
+
+
+@dataclass(frozen=True)
+class VdamDiagnosticObserver(VdamObserver):
+    """The InitialModel's diagnostics the environment asks for (a directory None: that dump is off; an empty
+    iteration set: every iteration): the expected-accuracy inputs, the noise dumps (:class:`NoiseDumps`) and, with
+    ``profile``, the wall times of the start-up stages, of each iteration's stages and of the artifact writes."""
+
+    expected_accuracy_dir: str | None = None
+    expected_accuracy_iterations: frozenset[int] = frozenset()
+    noise_update_dir: str | None = None
+    noise_update_iterations: frozenset[int] = frozenset()
+    noise_failure_dir: str | None = None
+    profile: bool = False
+
+    def stage_profile(self) -> NoStageProfile:
+        return StageProfile() if self.profile else NoStageProfile()
+
+    def iteration_profile(self, iteration: int) -> NoIterationProfile:
+        return IterationProfile(iteration) if self.profile else NoIterationProfile()
+
+    def expectation_probe(self):
+        if self.expected_accuracy_dir is None:
+            return NoProbe()
+        return ExpectedAccuracyDump(self.expected_accuracy_dir, self.expected_accuracy_iterations)
+
+    def maximization_probe(self):
+        if self.noise_update_dir is None and self.noise_failure_dir is None:
+            return NoProbe()
+        return NoiseDumps(self.noise_update_dir, self.noise_update_iterations, self.noise_failure_dir)
 
 
 def vdam_command_observer(environ=None) -> VdamObserver:

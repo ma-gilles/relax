@@ -1,16 +1,17 @@
 """The ports through which comparison enters, and observation leaves, an InitialModel run (code rule 15).
 
-A :class:`VdamInputSource` supplies what a comparison run takes from elsewhere instead of what the run
-computes, at the call sites the driver assigns: the start-up references, the M-step of each class, and the
-references after each iteration's M-step. This base class is the native source. The command chooses the source once
-(``relax.parity.vdam_replay``); the algorithm never imports an implementation.
-
-A :class:`VdamObserver` watches the run at named moments and never steers it: dumps, captures and timings.
-This base class observes nothing; the command chooses the observer once
-(``relax.diagnostics.vdam_observers.vdam_command_observer``).
+A :class:`VdamInputSource` supplies what a comparison run takes from elsewhere instead of what the run computes,
+at the call sites the driver assigns: the start-up references, each class's M-step and the references after each
+M-step. A :class:`VdamObserver` watches the run and never steers it: dumps, captures and timings. The base classes
+are the native source and no observation; the command chooses both once (``relax.parity.vdam_replay``,
+``relax.diagnostics.vdam_observers.vdam_command_observer``), and the algorithm never imports an implementation.
+Only the command and the driver hold the observer; a step that calls a hook mid-step takes a narrow probe the
+driver builds from it once per run (:class:`ExpectationProbe`, :class:`MaximizationProbe`), as refinement's steps do.
 """
 
 from __future__ import annotations
+
+from typing import Protocol
 
 from relax.vdam.m_step import vdam_m_step_single_class
 from relax.vdam.state import InitialModelState, VdamAccumulator
@@ -39,49 +40,65 @@ class VdamInputSource:
 
 
 class NoStageProfile:
-    """The stage timer of a run that is not timed: :meth:`record` ends a stage, :meth:`report` the profile."""
+    """The timer of untimed stages: ``record(name)`` ends a stage, ``report(label)`` the profile."""
 
-    def record(self, name: str) -> None:
-        """Stage ``name`` ends now."""
+    def record(self, name: str) -> None: ...
 
-    def report(self, label: str) -> None:
-        """The profile ``label`` is complete."""
+    def report(self, label: str) -> None: ...
 
 
 class NoIterationProfile:
-    """The timer of an untimed VDAM iteration (:meth:`VdamObserver.iteration_profile`)."""
+    """The timer of an untimed iteration: ``stage(name)`` ends a stage, ``before_artifacts(meta)`` precedes the
+    artifact writes, ``finish()`` follows them."""
 
-    def stage(self, name: str) -> None:
-        """Stage ``name`` of the iteration ends now."""
+    def stage(self, name: str) -> None: ...
 
-    def before_artifacts(self, meta: dict) -> None:
-        """The iteration's model is final; its artifacts (written from ``meta``) come next."""
+    def before_artifacts(self, meta: dict) -> None: ...
 
-    def finish(self) -> None:
-        """The iteration's artifacts are written."""
+    def finish(self) -> None: ...
+
+
+class ExpectationProbe(Protocol):
+    """The hook the E-step calls mid-step with the expected-accuracy estimate's inputs
+    (``native_sampling.AccuracyEstimateInputs``) and result. Steps receive this, never the observer."""
+
+    def expected_accuracy_estimated(self, inputs, accuracy) -> None: ...
+
+
+class MaximizationProbe(Protocol):
+    """The hooks the VDAM model update calls mid-step: the noise update made ``updated`` from ``previous`` with the
+    E-step's sums (not called when there was nothing to update), or the sums are not finite and the run stops
+    (returns a dump file for the error message, or None). Steps receive this, never the observer."""
+
+    def noise_updated(self, previous: InitialModelState, updated: InitialModelState, sums) -> None: ...
+
+    def noise_sums_nonfinite(self, state: InitialModelState, meta: dict, summaries) -> str | None: ...
+
+
+class NoProbe:
+    """The no-op :class:`ExpectationProbe` and :class:`MaximizationProbe`."""
+
+    def expected_accuracy_estimated(self, inputs, accuracy) -> None: ...
+
+    def noise_updated(self, previous, updated, sums) -> None: ...
+
+    def noise_sums_nonfinite(self, state, meta, summaries) -> str | None:
+        return None
 
 
 class VdamObserver:
-    """Watches an InitialModel run and never steers it; every hook does nothing by default."""
+    """Watches an InitialModel run and never steers it; observes nothing by default. ``stage_profile()`` times one
+    part of the run (start-up, driver, one iteration's artifacts) and ``iteration_profile(it)`` an iteration's
+    stages, from now; the driver builds the steps' probes once per run."""
 
     def stage_profile(self) -> NoStageProfile:
-        """A timer of the stages of one part of the run (start-up, driver, one iteration's artifacts), started
-        now."""
         return NoStageProfile()
 
     def iteration_profile(self, iteration: int) -> NoIterationProfile:
-        """A timer of VDAM iteration ``iteration``'s stages, started now."""
         return NoIterationProfile()
 
-    def expected_accuracy_estimated(self, inputs, accuracy) -> None:
-        """An expected-accuracy estimate is made: ``inputs`` (``native_sampling.AccuracyEstimateInputs``) is what
-        it read, ``accuracy`` (``helpers.expected_accuracy.ExpectedAccuracy``) what it found."""
+    def expectation_probe(self) -> ExpectationProbe:
+        return NoProbe()
 
-    def noise_updated(self, previous: InitialModelState, updated: InitialModelState, sums) -> None:
-        """VDAM's noise update made ``updated`` from ``previous`` with the E-step's ``sums``
-        (``estep_common.EstepSums``); not called when there was nothing to update."""
-
-    def noise_sums_nonfinite(self, state: InitialModelState, meta: dict, summaries) -> str | None:
-        """The E-step's noise sums are not finite and the run is about to stop; ``summaries`` describe them.
-        Returns the file of a dump the error message should name, or None."""
-        return None
+    def maximization_probe(self) -> MaximizationProbe:
+        return NoProbe()

@@ -11,7 +11,7 @@ from relax.vdam import estep_setup as adapter
 from relax.vdam import iteration_loop as loop
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.native_options import VdamEnvironment
-from relax.vdam.ports import VdamObserver
+from relax.vdam.ports import NoProbe, VdamObserver
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 
 pytestmark = pytest.mark.unit
@@ -148,7 +148,7 @@ def test_loop_callback_is_once_before_estep(monkeypatch, mstep_compute_dtype):
         grad_ini_subset_size=10, grad_fin_subset_size=10, tau2_fudge_arg=4.0,
         grad_em_iters=0, random_seed=29,
         expectation_step=estep,
-        projector_refresh_fn=refresh, update=loop.VdamUpdate(padding_factor=1, mstep_compute_dtype=mstep_compute_dtype, observer=VdamObserver()),
+        projector_refresh_fn=refresh, update=loop.VdamUpdate(padding_factor=1, mstep_compute_dtype=mstep_compute_dtype, probe=NoProbe()),
         grad_ini_frac=0.3,
         grad_fin_frac=0.2,
         mu=DEFAULT_GRAD_MU,

@@ -43,7 +43,7 @@ from relax.vdam.estep_meta_updates import (
 from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.output import add_class_prior_report
-from relax.vdam.ports import VdamObserver
+from relax.vdam.ports import MaximizationProbe, VdamObserver
 from relax.vdam.schedules import (
     VdamPhaseLengths,
     compute_stepsize,
@@ -166,13 +166,13 @@ def _ave_pmax(sums: EstepSums) -> float | None:
 class VdamUpdate:
     """RELION's VDAM model update: the gradient M-step, the noise blend and the data_vs_prior resolution.
 
-    ``single_class_m_step``: each class's M-step, the run's input source's (``VdamInputSource``); ``observer``
-    the run's observer, which sees each noise update.
+    ``single_class_m_step``: each class's M-step, the run's input source's (``VdamInputSource``); ``probe`` the
+    run observer's model-update hooks, which see each noise update.
     """
 
     padding_factor: int
     mstep_compute_dtype: Literal["float32", "float64"]
-    observer: VdamObserver
+    probe: MaximizationProbe
     single_class_m_step: Callable[..., InitialModelState] = vdam_m_step_single_class
 
     def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:
@@ -191,10 +191,10 @@ class VdamUpdate:
         try:
             updated = update_noise_from_estep(current, sums, do_grad=do_grad, mu=mu)
         except NonFiniteNoiseSums as error:
-            dump_path = self.observer.noise_sums_nonfinite(current, meta, error.summaries)
+            dump_path = self.probe.noise_sums_nonfinite(current, meta, error.summaries)
             raise ValueError(str(error) if dump_path is None else f"{error}; dump={dump_path}") from None
         if updated is not current:  # the update returns its input when there is nothing to update
-            self.observer.noise_updated(current, updated, sums)
+            self.probe.noise_updated(current, updated, sums)
         return updated
 
     def update_resolution(self, current: InitialModelState) -> InitialModelState:

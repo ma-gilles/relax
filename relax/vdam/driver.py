@@ -65,7 +65,7 @@ from relax.vdam.native_sampling import (
     record_native_sampling_post_iteration,
 )
 from relax.vdam.output import write_final_outputs, write_iteration_artifacts
-from relax.vdam.ports import VdamInputSource, VdamObserver
+from relax.vdam.ports import ExpectationProbe, VdamInputSource, VdamObserver
 from relax.vdam.schedules import (
     DEFAULT_SIGMA2_FUDGE,
     default_subset_sizes_for_3d_initial_model,
@@ -99,7 +99,7 @@ def _native_expectation_step(
     tilt_images: TiltImageAccuracyInputs | None = None,
     optics_group_ids: np.ndarray | None = None,
     premultiplied_ctf: bool = False,
-    observer: VdamObserver,
+    probe: ExpectationProbe,
 ):
     """VDAM's E-step closure; ``dataset`` is a ``TomoDataset`` for subtomogram particles, with ``tilt_images``.
 
@@ -149,7 +149,7 @@ def _native_expectation_step(
                 optics_group_ids=optics_group_ids,
                 experiment_dataset=accuracy_dataset,
                 isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
-                observer=observer,
+                probe=probe,
             )
             if accuracy_estimate is not None:
                 sampling_state.acc_rot = accuracy_estimate.accuracy.acc_rot
@@ -430,6 +430,8 @@ def run_native_initial_model(
     source = VdamInputSource() if source is None else source
     observer = VdamObserver() if observer is None else observer
     profile = observer.stage_profile()
+    # The steps' mid-step hooks, built once from the run's observer; the steps never see the observer.
+    expectation_probe, maximization_probe = observer.expectation_probe(), observer.maximization_probe()
 
     if int(opts.random_seed) == -1:
         # relion_refine's default --random_seed -1 takes the time (ml_optimiser.cpp:2827).
@@ -551,7 +553,9 @@ def run_native_initial_model(
         state, optics_group_by_particle = (
             initial_state_from_tomo_particles(dataset, main_star, opts)
             if tomo
-            else initial_state_from_particles(dataset, main_star, optics_star, opts, source=source, observer=observer)
+            else initial_state_from_particles(
+                dataset, main_star, optics_star, opts, source=source, profile=observer.stage_profile()
+            )
         )
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:
@@ -619,7 +623,7 @@ def run_native_initial_model(
             relion_ctf.dataset_has_premultiplied_ctf(d, tuple(int(v) for v in d.image_shape))
             for d in shape_datasets(image_dataset)
         ),
-        observer=observer,
+        probe=expectation_probe,
     )
     profile.record("expectation_setup")
 
@@ -713,7 +717,7 @@ def run_native_initial_model(
                 VdamUpdate(
                     padding_factor=int(opts.padding_factor),
                     mstep_compute_dtype=opts.mstep_compute_dtype,
-                    observer=observer,
+                    probe=maximization_probe,
                     single_class_m_step=source.single_class_m_step,
                 )
                 if opts.optimizer == "vdam"
