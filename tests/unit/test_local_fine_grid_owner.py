@@ -315,7 +315,7 @@ def test_controller_passes_the_point_group_to_every_grid_owner(monkeypatch):
     from relax.refinement.refinement_options import SymmetryOptions
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "iteration_trial_grid", "numbered")
+    trace.wrap(local_sampling, "iteration_trial_grid", "numbered")
     trace.wrap(finalization, "prepare_final_sampling", "final")
     trace.wrap(sampling_module, "relion_mstep_source_eulers", "source_eulers")
     # A point group other than C1 requires the x-half M-step, which defaults off without a GPU.

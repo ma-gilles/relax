@@ -521,6 +521,77 @@ def class_seeding(options: RefinementOptions, *, continued: bool, iteration: int
     )
 
 
+class PublishedAccuracy(NamedTuple):
+    """The latest completed expected-accuracy estimate, as the run reports it.
+
+    Its trials (half-1 local rows and particle ids; None before the first estimate) and RELION's per-class
+    ``MlModel::acc_rot``/``acc_trans`` for model.star (zero until the first estimate, ml_model.cpp:68).
+    """
+
+    trial_local_indices: np.ndarray | None
+    trial_particle_ids: np.ndarray | None
+    acc_rot_per_class: np.ndarray
+    acc_trans_per_class_angstrom: np.ndarray
+
+    @classmethod
+    def before_first_estimate(cls, n_classes, acc_rot_per_class=None, acc_trans_per_class_angstrom=None):
+        """No estimate yet in this run: no trials; the continued run's per-class values, else zeros."""
+        if acc_rot_per_class is None:
+            return cls(None, None, np.zeros(n_classes, dtype=np.float64), np.zeros(n_classes, dtype=np.float64))
+        return cls(
+            None,
+            None,
+            np.array(acc_rot_per_class, dtype=np.float64),
+            np.array(acc_trans_per_class_angstrom, dtype=np.float64),
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class IterationCarry:
+    """What a numbered iteration reads from the iterations before it (or from the start-up), and leaves for the
+    ones after it and the final pass.
+
+    The controller replaces it with ``dataclasses.replace`` after each statement that changes a field. Frozen,
+    not deeply immutable: ``state`` (the ``RefinementState``) is updated in place by the input source's
+    ``numbered_state`` and ``swapped_state`` and by the controller's convergence latch and accuracy install,
+    and the ``direction_priors`` list's entries are replaced in place (the input source's ``numbered_state``,
+    the learned priors, the Class3D copy). The reference model, the halves and the history are not carried: the
+    controller holds them, and they are updated in place.
+    """
+
+    # The RefinementState: sampling, accuracy and convergence counters.
+    state: object
+    # The class weights and their log priors (one class for K=1).
+    class_mixture: object
+    # Each half's DirectionPrior.
+    direction_priors: list
+    noise_model: object
+    # The translation prior widths (SigmaOffset).
+    sigma_offset: object
+    # The coarse rotation grid and the base and current translations (CoarseGrids).
+    coarse_grids: object
+    random_perturbation: float
+    # The HEALPix order of the replayed sampling STAR the next expectation sizes its coarse pass from (None:
+    # the run's own sampling), and whether this iteration samples natively (no STAR, no sealed state).
+    replay_saved_healpix_order: int | None
+    native_sampling_boundary: bool
+    # RELION's current-size growth state.
+    relion_incr_size: int
+    relion_has_high_fsc_at_limit: bool
+    # The data-vs-prior curve the next image-size plan and the scale gate read (None before the first).
+    previous_data_vs_prior_for_scheduling: object
+    # Each half's coarse-grid and class assignments of the preceding iteration, for the change statistics.
+    previous_assignments: list
+    previous_class_assignments: list
+    # Each half's best rotations of the preceding iteration (RELION's orientation-change metric).
+    previous_best_rotations: list
+    # This iteration's per-half class and hard assignments (the next accuracy estimate, the final pass, the
+    # result).
+    class_assignments: list
+    hard_assignments: list
+    published_accuracy: PublishedAccuracy
+
+
 @dataclass(frozen=True)
 class CoarseGrids:
     """The exhaustive coarse trial grid: built at start-up, rebuilt by ``refresh_coarse_grids``.

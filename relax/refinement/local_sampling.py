@@ -1,15 +1,31 @@
 """Prepare local-search grids and pass sizes for refinement."""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from relax import sampling
-from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.orientation_priors import relion_local_search_sigmas
+from relax.helpers.convergence import _direction_prior_healpix_order_for_scoring, healpix_angular_step
+from relax.helpers.orientation_priors import relion_direction_log_priors, relion_local_search_sigmas
 from relax.helpers.resolution import relion_local_pass1_current_size
-from relax.refinement.iteration_planning import ExpectationWindows, RunOptics, plan_expectation_windows
+from relax.refinement.iteration_planning import (
+    CoarseGrids,
+    ExpectationWindows,
+    IterationCarry,
+    RunOptics,
+    builds_coarse_pass1_rotations,
+    coarse_pass1_rotations,
+    iteration_trial_grid,
+    plan_expectation_windows,
+)
+
+if TYPE_CHECKING:
+    from relax.refinement.refinement_options import RefinementOptions
+    from relax.refinement.setup_checks import RunContext
 
 # The numbered controller's log: its operations log under its name wherever they live.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -304,3 +320,106 @@ def local_search_centre_half(half, angle_priors, state):
     current = np.asarray(half.rotation_eulers)
     centres = np.where(np.isnan(angle_priors), current, angle_priors).astype(current.dtype)
     return replace(half, rotation_eulers=centres)
+
+
+def _should_use_adaptive_search(state, options: RefinementOptions, *, use_local: bool, n_rotations: int) -> bool:
+    """Keep non-C1 refinement on its supported sparse/x-half route.
+
+    Reads ``state.adaptive_oversampling`` and ``options.symmetry.point_group``.
+
+    Small C1 grids may use the direct dense path. Point-group symmetry cannot:
+    symmetry reduction itself can make a valid grid smaller than that cutoff
+    (O has 12 coarse rotations at HEALPix order 1, I1 fewer), while its
+    scoring and reconstruction still require the adaptive RELION x-half path.
+    Ported from final Q 22efd8065.
+    """
+
+    if int(state.adaptive_oversampling) <= 0 or bool(use_local):
+        return False
+    return int(n_rotations) > 16 or str(options.symmetry.point_group).upper() != "C1"
+
+
+@dataclass(frozen=True, kw_only=True)
+class NumberedSamplingPlan:
+    """A numbered expectation's sampling, planned from the carried grids, state, perturbation and priors.
+
+    ``coarse_grids`` are the carried grids with the iteration's perturbed translations (the controller installs
+    them); ``adaptive_pass1`` the adaptive pass-1 rotations and their device source (None where no pass 1 is
+    built); ``direction_log_priors`` each half's direction log priors at ``direction_prior_healpix_order``;
+    ``use_adaptive`` whether the halves take the two-pass adaptive route.
+    """
+
+    coarse_grids: CoarseGrids
+    trial_grid: sampling.TrialGrid
+    adaptive_pass1: tuple | None
+    sampling_plan: ExpectationSampling
+    direction_prior_healpix_order: int
+    direction_log_priors: list
+    use_adaptive: bool
+
+
+def plan_numbered_sampling(
+    ctx: RunContext,
+    carry: IterationCarry,
+    options: RefinementOptions,
+    *,
+    first_iteration,
+    replayed_sampling_healpix_order: int | None,
+    coarse_size_healpix_order: int,
+    current_size: int,
+    sealed_sampling_state,
+    log,
+) -> NumberedSamplingPlan:
+    """Plan a numbered expectation's sampling: the perturbed trial grid, the adaptive pass-1 rotations, the
+    expectation windows and local sampling, the direction log priors and the adaptive route.
+
+    Reads from ``carry``: ``coarse_grids``, ``state`` (its sampling, local-search and oversampling fields),
+    ``random_perturbation`` (already this iteration's) and ``direction_priors``; from ``ctx``: ``optics`` and
+    ``scoring_dtype``. ``replayed_sampling_healpix_order`` is the order of a replayed sampling (its angular step
+    then scales the perturbation; None: the grid's, when ``parity.perturb_factor`` is on);
+    ``sealed_sampling_state`` a frozen boundary's captured sampling (None natively).
+    """
+    use_local = carry.state.do_local_search
+    # The HEALPix order whose angular step scales the perturbation: a replayed sampling's (RELION's grid
+    # order; the run's may be capped at the exhaustive-grid order), else the grid's; None: none applies.
+    perturbation_order = (
+        replayed_sampling_healpix_order
+        if replayed_sampling_healpix_order is not None
+        else carry.coarse_grids.rotation_grid.healpix_order if options.parity.perturb_factor > 0 else None
+    )
+    trial_grid = iteration_trial_grid(
+        carry.coarse_grids, carry.state, options, carry.random_perturbation, perturbation_order=perturbation_order,
+        sealed_grid=sealed_sampling_state is not None, dtype=ctx.scoring_dtype,
+    )
+    coarse_grids = replace(carry.coarse_grids, translations=trial_grid.translations)
+    adaptive_pass1 = None
+    if builds_coarse_pass1_rotations(carry.state, options, first_iteration, use_local=use_local):
+        adaptive_pass1 = coarse_pass1_rotations(
+            coarse_grids.rotation_grid, carry.random_perturbation, options,
+            perturbation_order=perturbation_order, dtype=ctx.scoring_dtype, log=log,
+        )
+    # First-iteration CC scores the full translation grid before choosing
+    # its single winning pose (ml_optimiser.cpp:9181-9207).
+    sampling_plan = plan_expectation_sampling(
+        trial_grid, coarse_grids, carry.state, options, ctx.optics, current_size=current_size,
+        use_local=use_local, perturbation=carry.random_perturbation,
+        coarse_size_healpix_order=coarse_size_healpix_order,
+    )
+    direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
+        carry.state, use_local=use_local, grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
+        local_search_order=sampling_plan.local.search.healpix_order if use_local else None,
+    )
+    return NumberedSamplingPlan(
+        coarse_grids=coarse_grids,
+        trial_grid=trial_grid,
+        adaptive_pass1=adaptive_pass1,
+        sampling_plan=sampling_plan,
+        direction_prior_healpix_order=direction_prior_healpix_order,
+        direction_log_priors=relion_direction_log_priors(
+            carry.direction_priors, options, use_local=use_local, scoring_healpix_order=direction_prior_healpix_order,
+            sealed_sampling_state=sealed_sampling_state, dtype=ctx.scoring_dtype, log=log,
+        ),
+        use_adaptive=_should_use_adaptive_search(
+            carry.state, options, use_local=use_local, n_rotations=trial_grid.rotations.shape[0],
+        ),
+    )

@@ -9672,7 +9672,7 @@ def test_non_c1_small_rotation_grid_keeps_adaptive_sparse_route():
     """
 
     def choose(*, adaptive_oversampling, use_local, n_rotations, symmetry):
-        return iteration_loop_module._should_use_adaptive_search(
+        return local_sampling._should_use_adaptive_search(
             RefinementState(adaptive_oversampling=adaptive_oversampling),
             stand_in.options(symmetry=SymmetryOptions(point_group=symmetry)),
             use_local=use_local, n_rotations=n_rotations,

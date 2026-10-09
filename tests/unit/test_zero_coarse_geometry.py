@@ -15,7 +15,7 @@ from helpers.run_options import stand_in
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.dense import scoring_policy
-from relax.refinement import expectation, finalization, half_scoring, iteration_loop
+from relax.refinement import expectation, finalization, half_scoring, iteration_loop, local_sampling
 from relax.sampling import DevicePass1Source
 
 pytestmark = pytest.mark.unit
@@ -75,7 +75,7 @@ def _device_rotations_stand_in(monkeypatch):
         source = DevicePass1Source(np.asarray(rotation_grid.rotation_eulers, dtype=np.float64), 0.0, 1.0, False)
         return np.array(rotation_grid.rotations, copy=True), source
 
-    monkeypatch.setattr(iteration_loop, "coarse_pass1_rotations", coarse_rotations)
+    monkeypatch.setattr(local_sampling, "coarse_pass1_rotations", coarse_rotations)
 
 
 # (oversampling, classes, first-iteration CC, first-iteration hard reconstruction, float64 scoring) ->
@@ -101,8 +101,8 @@ def _gate_run(monkeypatch, trace, oversampling, n_classes, cc, hard, float64):
         monkeypatch.setattr(
             scoring_policy, "DENSE_PRECISION", replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
         )
-    trace.wrap(iteration_loop, "iteration_trial_grid", "iteration")
-    trace.wrap(iteration_loop, "coarse_pass1_rotations", "coarse_rotations")
+    trace.wrap(local_sampling, "iteration_trial_grid", "iteration")
+    trace.wrap(local_sampling, "coarse_pass1_rotations", "coarse_rotations")
     run_tiny_refinement(
         monkeypatch, n_classes=n_classes, final_after_max_iter=False, parity=parity,
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
@@ -261,7 +261,7 @@ def test_loop_transports_geometry_separately_from_effective_rotations(monkeypatc
     """The dense sampling carries the generated coarse device rotations only at oversampling 0."""
     _device_rotations_stand_in(monkeypatch)
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "coarse_pass1_rotations", "coarse_rotations")
+    trace.wrap(local_sampling, "coarse_pass1_rotations", "coarse_rotations")
     trace.wrap(expectation, "DenseSamplingSpec", "sampling")
     run_tiny_refinement(
         monkeypatch, final_after_max_iter=False, adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),

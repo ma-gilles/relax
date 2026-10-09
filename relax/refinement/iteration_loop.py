@@ -11,9 +11,8 @@ See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from functools import partial
-from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -32,7 +31,6 @@ from relax.diagnostics.iteration import (
 )
 from relax.diagnostics.reconstruction import check_half_accumulators_before_join
 from relax.helpers.convergence import (
-    _direction_prior_healpix_order_for_scoring,
     _exhaustive_grid_order_for_state,
     _relion_pmax_normalization_mass_per_half,
     check_convergence,
@@ -47,7 +45,6 @@ from relax.helpers.orientation_priors import (
     initial_direction_priors_from_snapshot,
     learn_class_direction_priors,
     learn_k1_direction_priors,
-    relion_direction_log_priors,
 )
 from relax.helpers.resolution import (
     _zero_shells_past_current_size,
@@ -61,7 +58,7 @@ from relax.parity.relion_replay import _validate_bpref_particle_order_scope
 from relax.reconstruction.regularization_relion import (
     update_relion_growth_state_from_fsc,
 )
-from relax.refinement import finalization, ports, setup_checks
+from relax.refinement import finalization, local_sampling, ports, setup_checks
 from relax.refinement.convergence import (
     advance_expectation_sampling,
     reset_follower_counter_once,
@@ -94,15 +91,14 @@ from relax.refinement.half_scoring import (
     HalfScoringData,
 )
 from relax.refinement.iteration_planning import (
+    IterationCarry,
+    PublishedAccuracy,
     adaptive_pass1_size,
     build_initial_coarse_grids,
-    builds_coarse_pass1_rotations,
     class_seeding,
-    coarse_pass1_rotations,
     first_iteration_policy,
     initial_random_perturbation,
     initialize_refinement_state,
-    iteration_trial_grid,
     plan_adaptive_image_size,
     plan_class_image_size,
     plan_halfmap_image_size,
@@ -113,7 +109,6 @@ from relax.refinement.iteration_planning import (
     strict_e_step_size,
 )
 from relax.refinement.iteration_snapshot import direction_priors_from_snapshot
-from relax.refinement.local_sampling import local_search_centre_half, plan_expectation_sampling
 from relax.refinement.maximization import (
     class_maximization,
     copy_first_class_to_every_class,
@@ -188,93 +183,6 @@ from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass
 logger = logging.getLogger(__name__)
 
 
-
-
-def _should_use_adaptive_search(state, options: RefinementOptions, *, use_local: bool, n_rotations: int) -> bool:
-    """Keep non-C1 refinement on its supported sparse/x-half route.
-
-    Reads ``state.adaptive_oversampling`` and ``options.symmetry.point_group``.
-
-    Small C1 grids may use the direct dense path. Point-group symmetry cannot:
-    symmetry reduction itself can make a valid grid smaller than that cutoff
-    (O has 12 coarse rotations at HEALPix order 1, I1 fewer), while its
-    scoring and reconstruction still require the adaptive RELION x-half path.
-    Ported from final Q 22efd8065.
-    """
-
-    if int(state.adaptive_oversampling) <= 0 or bool(use_local):
-        return False
-    return int(n_rotations) > 16 or str(options.symmetry.point_group).upper() != "C1"
-
-
-class PublishedAccuracy(NamedTuple):
-    """The latest completed expected-accuracy estimate, as the run reports it.
-
-    Its trials (half-1 local rows and particle ids; None before the first estimate) and RELION's per-class
-    ``MlModel::acc_rot``/``acc_trans`` for model.star (zero until the first estimate, ml_model.cpp:68).
-    """
-
-    trial_local_indices: np.ndarray | None
-    trial_particle_ids: np.ndarray | None
-    acc_rot_per_class: np.ndarray
-    acc_trans_per_class_angstrom: np.ndarray
-
-    @classmethod
-    def before_first_estimate(cls, n_classes, acc_rot_per_class=None, acc_trans_per_class_angstrom=None):
-        """No estimate yet in this run: no trials; the continued run's per-class values, else zeros."""
-        if acc_rot_per_class is None:
-            return cls(None, None, np.zeros(n_classes, dtype=np.float64), np.zeros(n_classes, dtype=np.float64))
-        return cls(
-            None,
-            None,
-            np.array(acc_rot_per_class, dtype=np.float64),
-            np.array(acc_trans_per_class_angstrom, dtype=np.float64),
-        )
-
-
-@dataclass(frozen=True, kw_only=True)
-class IterationCarry:
-    """What a numbered iteration reads from the iterations before it (or from the start-up), and leaves for the
-    ones after it and the final pass.
-
-    The controller replaces it with ``dataclasses.replace`` after each statement that changes a field. Frozen,
-    not deeply immutable: ``state`` (the ``RefinementState``) is updated in place by the input source's
-    ``numbered_state`` and ``swapped_state`` and by the controller's convergence latch and accuracy install,
-    and the ``direction_priors`` list's entries are replaced in place (the input source's ``numbered_state``,
-    the learned priors, the Class3D copy). The reference model, the halves and the history are not carried: the
-    controller holds them, and they are updated in place.
-    """
-
-    # The RefinementState: sampling, accuracy and convergence counters.
-    state: object
-    # The class weights and their log priors (one class for K=1).
-    class_mixture: object
-    # Each half's DirectionPrior.
-    direction_priors: list
-    noise_model: object
-    sigma_offset: SigmaOffset
-    # The coarse rotation grid and the base and current translations (CoarseGrids).
-    coarse_grids: object
-    random_perturbation: float
-    # The HEALPix order of the replayed sampling STAR the next expectation sizes its coarse pass from (None:
-    # the run's own sampling), and whether this iteration samples natively (no STAR, no sealed state).
-    replay_saved_healpix_order: int | None
-    native_sampling_boundary: bool
-    # RELION's current-size growth state.
-    relion_incr_size: int
-    relion_has_high_fsc_at_limit: bool
-    # The data-vs-prior curve the next image-size plan and the scale gate read (None before the first).
-    previous_data_vs_prior_for_scheduling: object
-    # Each half's coarse-grid and class assignments of the preceding iteration, for the change statistics.
-    previous_assignments: list
-    previous_class_assignments: list
-    # Each half's best rotations of the preceding iteration (RELION's orientation-change metric).
-    previous_best_rotations: list
-    # This iteration's per-half class and hard assignments (the next accuracy estimate, the final pass, the
-    # result).
-    class_assignments: list
-    hard_assignments: list
-    published_accuracy: PublishedAccuracy
 
 
 def _follower_replay_telemetry(source, history) -> ReplayTelemetry:
@@ -822,7 +730,6 @@ def refine_single_volume(
         ))
 
         # --- Local angular search: each image searches around its previous exact rotation at the current order ---
-        adaptive_pass1 = None
         if carry.state.do_local_search:
             # A half without poses is centred at Euler angles (0, 0, 0) with zero offsets.
             for half in halves:
@@ -840,46 +747,17 @@ def refine_single_volume(
                 carry.random_perturbation, options, iteration=iteration, rng=ctx.perturb_rng, log=logger,
             )
         carry = replace(carry, random_perturbation=perturbation)
-        # The HEALPix order whose angular step scales the perturbation: a replayed sampling's (RELION's grid
-        # order; the run's may be capped at the exhaustive-grid order), else the grid's; None: none applies.
-        perturbation_order = (
-            numbered.sampling_healpix_order
-            if numbered.sampling_healpix_order is not None
-            else carry.coarse_grids.rotation_grid.healpix_order if options.parity.perturb_factor > 0 else None
+        plan = local_sampling.plan_numbered_sampling(
+            ctx, carry, options, first_iteration=first_iteration,
+            replayed_sampling_healpix_order=numbered.sampling_healpix_order,
+            coarse_size_healpix_order=coarse_size_healpix_order, current_size=scoring_current_size,
+            sealed_sampling_state=source.sealed_sampling_state, log=logger,
         )
-        trial_grid = iteration_trial_grid(
-            carry.coarse_grids, carry.state, options, carry.random_perturbation, perturbation_order=perturbation_order,
-            sealed_grid=source.sealed_sampling_state is not None, dtype=ctx.scoring_dtype,
-        )
-        carry = replace(carry, coarse_grids=replace(carry.coarse_grids, translations=trial_grid.translations))
-        if builds_coarse_pass1_rotations(carry.state, options, first_iteration, use_local=use_local):
-            adaptive_pass1 = coarse_pass1_rotations(
-                carry.coarse_grids.rotation_grid, carry.random_perturbation, options,
-                perturbation_order=perturbation_order, dtype=ctx.scoring_dtype, log=logger,
-            )
-        # First-iteration CC scores the full translation grid before choosing
-        # its single winning pose (ml_optimiser.cpp:9181-9207).
-        sampling_plan = plan_expectation_sampling(
-            trial_grid, carry.coarse_grids, carry.state, options, ctx.optics, current_size=scoring_current_size,
-            use_local=use_local, perturbation=carry.random_perturbation,
-            coarse_size_healpix_order=coarse_size_healpix_order,
-        )
-        direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
-            carry.state, use_local=use_local, grid_healpix_order=carry.coarse_grids.rotation_grid.healpix_order,
-            local_search_order=sampling_plan.local.search.healpix_order if use_local else None,
-        )
-        coarse_rotation_ids_for_scoring = source.scoring_rotation_ids(trial_grid, use_local=use_local)
-
-        direction_log_priors = relion_direction_log_priors(
-            carry.direction_priors, options, use_local=use_local, scoring_healpix_order=direction_prior_healpix_order,
-            sealed_sampling_state=source.sealed_sampling_state, dtype=ctx.scoring_dtype, log=logger,
-        )
+        carry = replace(carry, coarse_grids=plan.coarse_grids)
+        coarse_rotation_ids_for_scoring = source.scoring_rotation_ids(plan.trial_grid, use_local=use_local)
 
         # --- E-step on each half: one pass (adaptive_oversampling=0) or coarse then fine (>=1) ---
         significance = SignificanceStatistics()
-        use_adaptive = _should_use_adaptive_search(
-            carry.state, options, use_local=use_local, n_rotations=trial_grid.rotations.shape[0],
-        )
         # per_half.coarse_ha holds the coarse-grid assignments (trial_grid.rotations indices on every route).
         per_half = PerHalfOutputs()
         # The assignments outlive the iteration: the result, the next accuracy estimate and the final pass read them.
@@ -892,15 +770,15 @@ def refine_single_volume(
         coarse_image_plan = (
             source.adaptive_coarse_size(
                 plan_adaptive_image_size(
-                    coarse_size_healpix_order, sampling_plan.windows, ctx.optics, options, log=logger,
+                    coarse_size_healpix_order, plan.sampling_plan.windows, ctx.optics, options, log=logger,
                 ),
-                model_size=sampling_plan.windows.model_size,
+                model_size=plan.sampling_plan.windows.model_size,
             )
-            if use_adaptive
+            if plan.use_adaptive
             else None
         )
         coarse_cs = adaptive_pass1_size(
-            coarse_image_plan, sampling_plan.windows, carry.state, options, box_size=ctx.image_geometry.box_size,
+            coarse_image_plan, plan.sampling_plan.windows, carry.state, options, box_size=ctx.image_geometry.box_size,
             log=logger,
         )
 
@@ -910,7 +788,7 @@ def refine_single_volume(
         # coarse operands on every route, as RELION builds Projector::data every iteration.
         projectors = build_numbered_projectors(
             halves, reference_model.maps, ctx.reconstruction_settings,
-            current_size=sampling_plan.windows.model_window_size,
+            current_size=plan.sampling_plan.windows.model_window_size,
             n_classes=options.k_class.n_classes, reusable_half1=shared_projector_half1,
             real_references_by_half=initial_real_references_by_half if iteration == 0 else None, iteration=iteration,
             log=logger,
@@ -926,15 +804,15 @@ def refine_single_volume(
             experiment_datasets=experiment_datasets,
         )
         numbered_variant = _numbered_dense_variant(
-            first_iteration, options.k_class, use_adaptive=use_adaptive, coarse_cs=coarse_cs,
-            fine_window_size=sampling_plan.windows.score_window_size,
+            first_iteration, options.k_class, use_adaptive=plan.use_adaptive, coarse_cs=coarse_cs,
+            fine_window_size=plan.sampling_plan.windows.score_window_size,
         )
         numbered_expectation = prepare_numbered_expectation(
-            trial_grid, sampling_plan.windows, local_sampling=sampling_plan.local, variant=numbered_variant,
-            use_adaptive=use_adaptive, base_translations=carry.coarse_grids.base_translations,
+            plan.trial_grid, plan.sampling_plan.windows, local_sampling=plan.sampling_plan.local, variant=numbered_variant,
+            use_adaptive=plan.use_adaptive, base_translations=carry.coarse_grids.base_translations,
             current_healpix_order=carry.coarse_grids.rotation_grid.healpix_order,
             oversampling_order=carry.state.adaptive_oversampling, translation_step=carry.state.translation_step,
-            random_perturbation=carry.random_perturbation, adaptive_pass1=adaptive_pass1,
+            random_perturbation=carry.random_perturbation, adaptive_pass1=plan.adaptive_pass1,
             coarse_rotation_ids=coarse_rotation_ids_for_scoring,
             coarse_angular_step_deg=None if coarse_image_plan is None else coarse_image_plan.angular_step_deg,
             options=options, iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,
@@ -943,11 +821,11 @@ def refine_single_volume(
         )
         if ctx.tomo_halves:
             numbered_tomo_sampling = numbered_iteration_tomo_sampling(
-                carry.state, ctx.image_geometry, local_sampling=sampling_plan.local,
+                carry.state, ctx.image_geometry, local_sampling=plan.sampling_plan.local,
                 grid_healpix_order=carry.coarse_grids.rotation_grid.healpix_order,
                 random_perturbation=carry.random_perturbation,
-                coarse_size=sampling_plan.local.coarse_image_window_size if use_local else coarse_cs,
-                fine_size=sampling_plan.windows.score_window_size,
+                coarse_size=plan.sampling_plan.local.coarse_image_window_size if use_local else coarse_cs,
+                fine_size=plan.sampling_plan.windows.score_window_size,
             )
         else:
             numbered_tomo_sampling = None
@@ -955,7 +833,7 @@ def refine_single_volume(
         half_inputs = [
             NumberedHalfInputs(
                 data=HalfScoringData(
-                    particles=local_search_centre_half(
+                    particles=local_sampling.local_search_centre_half(
                         halves[k], (options.replay.init_angle_priors or (None, None))[k], carry.state
                     ),
                     reference=reference_model.maps[k],
@@ -971,7 +849,7 @@ def refine_single_volume(
                     scale_group_count=follower_setup.scale_stats_group_count_per_half[k],
                     scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
                 ),
-                direction_priors=direction_log_priors[k],
+                direction_priors=plan.direction_log_priors[k],
                 sigma_offset_angstrom=_sigma_offset_for_half(
                     carry.sigma_offset.shared_angstrom, carry.sigma_offset.per_half_angstrom, k,
                 ),
@@ -995,7 +873,7 @@ def refine_single_volume(
                 finish_numbered_half,
                 recording=NumberedHalfRecording(
                     per_half, significance, profile_history=history.global_profile_history, iteration=iteration,
-                    image_window_size=sampling_plan.windows.image_window_size,
+                    image_window_size=plan.sampling_plan.windows.image_window_size,
                     healpix_order=carry.coarse_grids.rotation_grid.healpix_order, k_class_enabled=ctx.k_class_enabled,
                 ),
                 use_local=use_local, dtype=ctx.scoring_dtype,
@@ -1064,7 +942,7 @@ def refine_single_volume(
             mstep = class_maximization(
                 reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx.reconstruction_settings, options,
                 halves=halves, iteration=iteration, current_size=current_size,
-                image_current_size=sampling_plan.windows.image_current_size,
+                image_current_size=plan.sampling_plan.windows.image_current_size,
                 mstep_accumulator_shape=mstep_accumulator_shape, mstep_full_half_axis=mstep_full_half_axis,
                 projector_power_spectrum=(
                     None
@@ -1098,9 +976,9 @@ def refine_single_volume(
         if all(rot_sum is not None for rot_sum in per_half.rotation_posterior):
             if not ctx.k_class_enabled:
                 learned_priors = learn_k1_direction_priors(
-                    per_half.rotation_posterior, direction_prior_order=direction_prior_healpix_order,
+                    per_half.rotation_posterior, direction_prior_order=plan.direction_prior_healpix_order,
                     expected_rotation_count=rotation_grid_size(
-                        direction_prior_healpix_order, symmetry=options.symmetry.point_group,
+                        plan.direction_prior_healpix_order, symmetry=options.symmetry.point_group,
                     ),
                     dtype=ctx.scoring_dtype, log=logger, symmetry=options.symmetry.point_group,
                 )
@@ -1109,11 +987,11 @@ def refine_single_volume(
                         carry.direction_priors[half_index] = learned
             else:
                 exhaustive_grid_size = rotation_grid_size(
-                    direction_prior_healpix_order,  # a local search's posterior grid (pdf_direction still accumulates)
+                    plan.direction_prior_healpix_order,  # a local search's posterior grid (pdf_direction still accumulates)
                     symmetry=options.symmetry.point_group,
                 )
                 if (
-                    (use_local or trial_grid.rotations.shape[0] == exhaustive_grid_size)
+                    (use_local or plan.trial_grid.rotations.shape[0] == exhaustive_grid_size)
                     and all(
                         rot_sum is not None
                         for rot_sum in per_half.class_rotation_posterior
@@ -1121,7 +999,7 @@ def refine_single_volume(
                 ):
                     learned_priors = learn_class_direction_priors(
                         per_half.class_rotation_posterior, n_classes=options.k_class.n_classes,
-                        healpix_order=direction_prior_healpix_order, dtype=ctx.scoring_dtype,
+                        healpix_order=plan.direction_prior_healpix_order, dtype=ctx.scoring_dtype,
                         symmetry=options.symmetry.point_group,
                     )
                     for half_index, learned in enumerate(learned_priors):
@@ -1185,7 +1063,7 @@ def refine_single_volume(
 
         observer.maps_reconstructed(ReconstructedIteration(
             iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), reference_model=reference_model,
-            noise_model=carry.noise_model, per_half=per_half, trial_grid=trial_grid, sampling_plan=sampling_plan,
+            noise_model=carry.noise_model, per_half=per_half, trial_grid=plan.trial_grid, sampling_plan=plan.sampling_plan,
             options=options, unfiltered_maps=unreg_means, fsc=fsc, current_size=current_size, state=carry.state,
             volume_shape=ctx.volume_shape, voxel_size=ctx.source_pixel_size_angstrom,
         ))
@@ -1245,7 +1123,7 @@ def refine_single_volume(
         # --- Update poses and noise (the previous best poses stay for RELION's change metrics, B3) ---
         pose_update = prepare_particle_pose_update(
             per_half, halves, carry.coarse_grids.translations, previous_rotations=carry.previous_best_rotations,
-            local_sampling=sampling_plan.local if use_local else None, dtype=ctx.scoring_dtype,
+            local_sampling=plan.sampling_plan.local if use_local else None, dtype=ctx.scoring_dtype,
         )
         carry = replace(carry, previous_best_rotations=[poses.rotations for poses in pose_update.current])
         for half, poses in zip(halves, pose_update.current, strict=True):
@@ -1279,7 +1157,7 @@ def refine_single_volume(
             firstiter_cc=first_iteration.relion_firstiter_cc,
             ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
             summed_current_size=(
-                sampling_plan.windows.image_window_size if ctx.consistency.noise_shell_count == "summed" else None
+                plan.sampling_plan.windows.image_window_size if ctx.consistency.noise_shell_count == "summed" else None
             ),
             nyquist_column_counting=ctx.consistency.nyquist_column_counting,
         )
