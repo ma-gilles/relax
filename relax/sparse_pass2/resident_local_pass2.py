@@ -2782,8 +2782,8 @@ def _start_resident_local_chunk(
             Ft_y_total, Ft_ctf_total = list(Ft_y_total), list(Ft_ctf_total)
             class_terms = []
             for k, projector in enumerate(class_projectors):
-                rows_k, n_live_k = class_mstep_rows(k)
-                n_live_k = int(n_live_k)
+                rows_k, n_live_device = class_mstep_rows(k)
+                n_live_k = int(n_live_device)
                 n_live_rows_host += n_live_k
                 Ft_y_total[k], Ft_ctf_total[k], *terms = run_mstep(
                     rows_k, n_live_k, Ft_y_total[k], Ft_ctf_total[k], projector
