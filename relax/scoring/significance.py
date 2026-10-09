@@ -19,7 +19,7 @@ from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_request import Pass1Request
 from relax.scoring.pass1_results import Pass1Outputs, Pass1Result
 from relax.scoring.pass1_step import prepare_batch, score_batch
-from relax.scoring.tree_rescore import TreeRescoreTotals, log_tree_rescore_totals, tree_rescore_report
+from relax.scoring.tree_rescore import TreeRescoreTotals, log_tree_rescore_totals
 
 
 def run_pass1(plan: Pass1Plan) -> Pass1Result:
@@ -81,10 +81,6 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
         significant_sample_indices,
         plan.output_plan,
         executed_backend=plan.route.executed_backend,
-        route_report=plan.route.report,
-        tree_rescore=(
-            tree_rescore_report(tree_rescore_totals, plan.tree_rescore_max_margin) if plan.tree_rescore_enabled else None
-        ),
     )
     if plan.tree_rescore_enabled:
         log_tree_rescore_totals(tree_rescore_totals)

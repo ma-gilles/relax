@@ -121,18 +121,6 @@ class TreeRescoreTotals:
         )
 
 
-def tree_rescore_report(totals: TreeRescoreTotals, max_margin: float) -> dict:
-    """The pass's report of the rescore (``Pass1Stats.tree_rescore``)."""
-
-    return {
-        "max_margin": float(max_margin),
-        "examined_images": int(totals.examined),
-        "ambiguous_images": int(totals.ambiguous),
-        "exact_score_ties": int(totals.exact_ties),
-        "winner_changes": int(totals.winner_changes),
-    }
-
-
 def log_tree_rescore_totals(totals: TreeRescoreTotals) -> None:
     """Log the totals of a pass's rescore."""
 

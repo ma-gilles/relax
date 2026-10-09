@@ -16,7 +16,6 @@ from relax.scoring.coarse_gaussian_gemm import (
     coarse_gaussian_gemm_projected_transient_budget_bytes,
     coarse_gaussian_gemm_projection_cache_budget_bytes,
     coarse_gaussian_gemm_projection_cache_enabled,
-    coarse_gaussian_gemm_projection_cache_stats,
     coarse_gaussian_gemm_projection_row_bytes,
     coarse_gaussian_gemm_resources,
     plan_coarse_gaussian_gemm_projection_cache,
@@ -36,8 +35,7 @@ class CoarseGaussianPlan:
     capacity when the pass asks for stable shapes). ``score_indices_np`` / ``score_indices`` are its rows of the half
     spectrum (int32, on the host and the device), ``score_active_mask`` marks the logical rows among them, and
     ``projector_output_size`` is the physical size the projector crops to. ``powerclass`` is RELION's high-resolution
-    image power kernel. ``resource_estimate`` is the GEMM's memory estimate. ``projection_cache_plan`` is the plan of
-    the cached C64 projections, ``None`` when the pass keeps no cache. ``rotation_block_size`` is the rotation block
+    image power kernel. ``projection_cache_plan`` is the plan of the cached C64 projections, ``None`` when the pass keeps no cache. ``rotation_block_size`` is the rotation block
     the pass runs with: the caller's, fitted down to the projector transient budget, or grown to what the temporaries
     allow when the projections are cached.
     """
@@ -48,7 +46,6 @@ class CoarseGaussianPlan:
     score_active_mask: Any
     projector_output_size: int
     powerclass: Callable
-    resource_estimate: Any
     projection_cache_plan: Any
     rotation_block_size: int
 
@@ -149,7 +146,8 @@ def plan_coarse_gaussian(
             compact_pixel_count=int(square_score_count),
         ),
     )
-    resource_estimate = coarse_gaussian_gemm_resources(
+    # Raises MemoryError when the projected transient would exceed its budget, before any GPU launch.
+    coarse_gaussian_gemm_resources(
         rotation_block_size=int(rotation_block_size),
         image_shape=shape.image_shape,
         compact_pixel_count=int(square_score_count),
@@ -201,26 +199,6 @@ def plan_coarse_gaussian(
         score_active_mask=jnp.asarray(square_layout.score_active_mask_np, dtype=jnp.bool_),
         projector_output_size=square_layout.physical_current_size,
         powerclass=relion_cuda_powerclass_highres_xi2_half,
-        resource_estimate=resource_estimate,
         projection_cache_plan=projection_cache_plan,
         rotation_block_size=int(rotation_block_size),
     )
-
-
-def coarse_gaussian_report(plan: CoarseGaussianPlan) -> dict:
-    """The Gaussian route's entries of the pass's ``route_report``: the GEMM resources and the projection cache.
-
-    The cache entry is present when the plan has a cache (it is built whenever it is planned).
-    """
-
-    report = {
-        "coarse_gaussian_gemm_resources": {
-            field: int(value) for field, value in plan.resource_estimate._asdict().items()
-        },
-    }
-    if plan.projection_cache_plan is not None:
-        report["coarse_gaussian_gemm_projection_cache"] = coarse_gaussian_gemm_projection_cache_stats(
-            plan.projection_cache_plan,
-            enabled=True,
-        )
-    return report
