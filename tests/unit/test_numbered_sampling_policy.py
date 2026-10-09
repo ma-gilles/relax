@@ -114,14 +114,24 @@ def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
     options = _options(stand_in.parity(perturb_factor=0.5), 10)
     meta = {"sealed_v3": sealed, "random_perturbation": 0.25, "perturbation_factor": 0.5, "healpix_order": 3}
 
-    def native():
-        return iteration_planning.resolve_numbered_perturbation(0.125, options, iteration=0, rng=rng, log=LOG)
-
     source = RelionReplaySource(RelionReplay(perturb_replay_relion_dir=str(tmp_path)), options)
     source._sampling_meta = meta  # as numbered_state installs it
-    result = source.random_perturbation(0, native)
+    result = source.random_perturbation(0)
     assert_matches(result, 0.25)
     assert_matches(rng.random(), reference_rng.random())
+
+
+def test_a_source_without_a_replayed_sampling_leaves_the_perturbation_and_grids_to_the_run(tmp_path):
+    """None from the native source and from a replay source with no sampling record or sealed state: the
+    controller then computes the perturbation and builds the first coarse grids itself."""
+    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
+    from relax.refinement.ports import InputSource
+
+    options = _options(stand_in.parity(perturb_factor=0.5), 10)
+    replay = RelionReplaySource(RelionReplay(perturb_replay_relion_dir=str(tmp_path)), options)
+    for source in (InputSource(), replay):
+        assert source.random_perturbation(0) is None
+        assert source.initial_coarse_grids(initialized_healpix_order=2, voxel_size=1.0, symmetry="C1") is None
 
 
 def test_replay_restart_uses_physical_iteration(tmp_path):
@@ -135,7 +145,7 @@ def test_replay_restart_uses_physical_iteration(tmp_path):
     )
     source = RelionReplaySource(replay, options)
     source._sampling_meta = {"random_perturbation": -0.06873, "perturbation_factor": 0.5, "healpix_order": 3}
-    result = source.random_perturbation(0, native=lambda: pytest.fail("native perturbation"))
+    result = source.random_perturbation(0)
     assert_matches(result, -0.06873074173927307)
 
 

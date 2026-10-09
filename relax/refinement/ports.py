@@ -245,9 +245,10 @@ class InputSource:
         """After the initial resolution is set: install a frozen boundary's ``RefinementState`` fields in
         ``state``."""
 
-    def initial_coarse_grids(self, *, initialized_healpix_order: int, voxel_size, symmetry: str, native):
-        """The first iteration's coarse grids (a ``CoarseGrids``); ``native()`` builds the run's own."""
-        return native()
+    def initial_coarse_grids(self, *, initialized_healpix_order: int, voxel_size, symmetry: str):
+        """The first iteration's coarse grids taken from elsewhere (a ``CoarseGrids``), or None: the run builds
+        its own."""
+        return None
 
     def coarse_grids(self, iteration: int, grids, state, *, voxel_size, dtype):
         """Iteration ``iteration``'s coarse grids (a ``CoarseGrids``) before they are refreshed for ``state``'s
@@ -300,10 +301,10 @@ class InputSource:
         the run samples natively). ``iteration`` -1 asks before the first iteration."""
         return None
 
-    def random_perturbation(self, iteration: int, native) -> float:
-        """This iteration's sampling perturbation, after its ``numbered_state``; ``native()`` computes the run's own
-        (and advances its RNG)."""
-        return native()
+    def random_perturbation(self, iteration: int) -> float | None:
+        """This iteration's sampling perturbation taken from elsewhere, after its ``numbered_state``, or None: the
+        run computes its own (and advances its RNG)."""
+        return None
 
     def final_state(
         self, inputs: FinalState, *, means, numbered_iteration_count: int, halves, direction_priors, healpix_order: int,

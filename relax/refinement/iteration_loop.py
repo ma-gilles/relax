@@ -399,14 +399,15 @@ def refine_single_volume(
     coarse_grids = source.initial_coarse_grids(
         initialized_healpix_order=options.schedule.init_healpix_order if resume is None else state.healpix_order,
         voxel_size=source_pixel_size_angstrom, symmetry=options.symmetry.point_group,
-        native=partial(
-            build_initial_coarse_grids, initial_grid_order, translations if resume is None else None,
+    )
+    if coarse_grids is None:
+        coarse_grids = build_initial_coarse_grids(
+            initial_grid_order, translations if resume is None else None,
             translation_range=options.schedule.init_translation_range if resume is None else state.translation_range,
             translation_step=options.schedule.init_translation_step if resume is None else state.translation_step,
             n_classes=options.k_class.n_classes, voxel_size=source_pixel_size_angstrom,
             symmetry=options.symmetry.point_group, dtype=scoring_dtype,
-        ),
-    )
+        )
     # coarse_grids keeps the unperturbed host-RFLOAT base translations: each iteration perturbs a fresh copy.
     collect_local_search_profile = options.local_search.collects_profile(observer.collects_local_search_profiles)
     setup_phase_seconds["sampling_grid"] = setup_clock.seconds
@@ -812,13 +813,13 @@ def refine_single_volume(
             raise RuntimeError("K>1 (Class3D) reached local angular searches without --sigma_ang")
         # --- RELION's SamplingPerturbation of the trial grid (healpix_sampling.cpp:1810-1820, 1909-1934): a rigid
         # rotation applied after oversampling; at OS0 the coarse grid is the trial grid. ---
-        random_perturbation = source.random_perturbation(
-            iteration,
-            native=partial(
-                resolve_numbered_perturbation, random_perturbation, options, iteration=iteration, rng=perturb_rng,
-                log=logger,
-            ),
-        )
+        replayed_perturbation = source.random_perturbation(iteration)
+        if replayed_perturbation is None:
+            random_perturbation = resolve_numbered_perturbation(
+                random_perturbation, options, iteration=iteration, rng=perturb_rng, log=logger,
+            )
+        else:
+            random_perturbation = replayed_perturbation
         # The HEALPix order whose angular step scales the perturbation: a replayed sampling's (RELION's grid
         # order; the run's may be capped at the exhaustive-grid order), else the grid's; None: none applies.
         perturbation_order = (

@@ -255,10 +255,11 @@ class RelionReplaySource(InputSource):
         if self.replay.frozen_refinement_state_fields is not None:
             _restore_diagnostic_frozen_boundary_state(state, self.replay.frozen_refinement_state_fields)
 
-    def initial_coarse_grids(self, *, initialized_healpix_order, voxel_size, symmetry, native):
-        """A sealed sampling state's captured grids, checked against the initialized HEALPix order."""
+    def initial_coarse_grids(self, *, initialized_healpix_order, voxel_size, symmetry):
+        """A sealed sampling state's captured grids, checked against the initialized HEALPix order (None without
+        one: the run's own)."""
         if self.replay.sealed_sampling_state is None:
-            return native()
+            return None
         return build_sealed_initial_coarse_grids(
             self.replay.sealed_sampling_state,
             initialized_healpix_order=initialized_healpix_order,
@@ -594,13 +595,13 @@ class RelionReplaySource(InputSource):
                 logger=logger,
             )
 
-    def random_perturbation(self, iteration, native):
+    def random_perturbation(self, iteration):
         """The perturbation of the sampling this iteration's ``numbered_state`` installed: a sealed sampling
         state's as captured, RELION's sampling STAR's (exact from its seed where the precision allows); otherwise
-        the run's own. Only the run's own advances the run's RNG."""
+        None, and the run computes its own. Only the run's own advances the run's RNG."""
         sampling_meta = self._sampling_meta
         if sampling_meta is None:
-            return native()
+            return None
         if sampling_meta.get("sealed_v3", False):
             perturbation = float(sampling_meta["random_perturbation"])
             logger.info(
