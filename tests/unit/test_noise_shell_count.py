@@ -138,11 +138,14 @@ def test_every_noise_update_branch_hands_the_normalisation_the_size(monkeypatch,
     """K=1 per half, Class3D shared, and both with one spectrum per optics group."""
     calls = record_calls(monkeypatch, noise_relion, "normalize_wsum_to_sigma2_noise")
     rng = np.random.default_rng(0)
-    result = noise_updates.update_posterior_noise_variance(
+    update = (
+        noise_updates.update_class_posterior_noise_variance if k_class
+        else noise_updates.update_k1_posterior_noise_variance
+    )
+    result = update(
         [_stats(rng, n_groups), _stats(rng, n_groups)],
         _model(n_groups),
         SHAPE,
-        k_class_enabled=k_class,
         firstiter_cc=False,
         summed_current_size=summed_current_size,
         ctf_premultiplied=False, nyquist_column_counting="relion",
@@ -153,12 +156,12 @@ def test_every_noise_update_branch_hands_the_normalisation_the_size(monkeypatch,
 
 def test_noise_update_changes_only_the_current_shell():
     rng_a, rng_b = np.random.default_rng(3), np.random.default_rng(3)
-    relion = noise_updates.update_posterior_noise_variance(
-        [_stats(rng_a), _stats(rng_a)], _model(), SHAPE, k_class_enabled=False, firstiter_cc=False,
+    relion = noise_updates.update_k1_posterior_noise_variance(
+        [_stats(rng_a), _stats(rng_a)], _model(), SHAPE, firstiter_cc=False,
         ctf_premultiplied=False, summed_current_size=None, nyquist_column_counting="relion",
     )
-    summed = noise_updates.update_posterior_noise_variance(
-        [_stats(rng_b), _stats(rng_b)], _model(), SHAPE, k_class_enabled=False, firstiter_cc=False,
+    summed = noise_updates.update_k1_posterior_noise_variance(
+        [_stats(rng_b), _stats(rng_b)], _model(), SHAPE, firstiter_cc=False,
         summed_current_size=8,
         ctf_premultiplied=False, nyquist_column_counting="relion",
     )

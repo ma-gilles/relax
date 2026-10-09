@@ -685,28 +685,3 @@ def update_class_posterior_noise_variance(
     noise_variance_per_half = [noise_rows, noise_rows]
     return _noise_update_result(model, noise_variance_per_half, noise_from_res_per_half, noise_from_res)
 
-
-def update_posterior_noise_variance(
-    noise_stats_per_half,
-    model: NoiseModel,
-    image_shape,
-    *,
-    k_class_enabled: bool,
-    firstiter_cc: bool,
-    ctf_premultiplied: bool,
-    summed_current_size,
-    nyquist_column_counting,
-) -> NoiseUpdateResult:
-    """The noise update of the run's mode.
-
-    K-class refinement shares one sigma2_noise across classes
-    (``update_class_posterior_noise_variance``); K=1 keeps independent
-    per-half sigma2_noise (``update_k1_posterior_noise_variance``).
-    """
-
-    update = update_class_posterior_noise_variance if k_class_enabled else update_k1_posterior_noise_variance
-    return update(
-        noise_stats_per_half, model, image_shape,
-        firstiter_cc=firstiter_cc, ctf_premultiplied=ctf_premultiplied,
-        summed_current_size=summed_current_size, nyquist_column_counting=nyquist_column_counting,
-    )

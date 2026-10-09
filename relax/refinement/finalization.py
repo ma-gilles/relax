@@ -83,12 +83,11 @@ def _should_run_final_all_data_iteration(
     max_iter: int,
     force_max_iter_after_convergence: bool,
     after_max_iter: bool,
-    k_class_enabled: bool = False,
 ) -> bool:
     """Return whether to run RELION's final all-data reconstruction pass.
 
-    ``after_max_iter`` (``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``): K=1 runs it after the last numbered
-    iteration without convergence.
+    ``after_max_iter``: run it after the last numbered iteration without convergence (K=1's
+    ``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``; Class3D passes ``class_after_max_iter``'s False).
     """
 
     if force_max_iter_after_convergence:
@@ -100,20 +99,31 @@ def _should_run_final_all_data_iteration(
         and int(iteration) >= int(max_iter)
     ):
         return False
-    if bool(k_class_enabled):
+    return True
+
+
+def class_after_max_iter(state, options: RefinementOptions, *, iteration: int) -> bool:
+    """Class3D never runs the final pass after max_iter exhaustion (only after convergence): False, with a
+    warning where ``final_pass.after_max_iter`` asks for it at exhaustion."""
+    if (
+        not options.schedule.force_max_iter_after_convergence
+        and not state.has_converged
+        and options.final_pass.after_max_iter
+        and int(iteration) >= int(options.schedule.max_iter)
+    ):
         logger.warning(
             "Ignoring %s=1 for K-class after max_iter exhaustion; final all-data "
             "is only valid for K-class after convergence",
             FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
         )
-        return False
-    return True
+    return False
 
 
-def final_pass_due(state, options: RefinementOptions, *, iteration: int, k_class_enabled: bool) -> bool:
+def final_pass_due(state, options: RefinementOptions, *, iteration: int, after_max_iter: bool) -> bool:
     """Whether the run ends with RELION's final all-data pass, after ``iteration`` numbered iterations.
 
-    ``_should_run_final_all_data_iteration`` decides; ``schedule.skip_final_iteration`` skips the pass
+    ``_should_run_final_all_data_iteration`` decides (``after_max_iter``: the mode's admission of a pass
+    without convergence); ``schedule.skip_final_iteration`` skips the pass
     silently, any other skip is logged, and a pass run without convergence (``final_pass.after_max_iter``) is
     logged as the diagnostic it is.
     """
@@ -123,8 +133,7 @@ def final_pass_due(state, options: RefinementOptions, *, iteration: int, k_class
         iteration=iteration,
         max_iter=options.schedule.max_iter,
         force_max_iter_after_convergence=options.schedule.force_max_iter_after_convergence,
-        after_max_iter=options.final_pass.after_max_iter,
-        k_class_enabled=k_class_enabled,
+        after_max_iter=after_max_iter,
     )
     if options.schedule.skip_final_iteration or not should_run_final_iteration:
         if not options.schedule.skip_final_iteration:

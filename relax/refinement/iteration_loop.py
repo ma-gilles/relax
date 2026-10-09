@@ -30,12 +30,13 @@ from relax.diagnostics.iteration import (
 from relax.diagnostics.reconstruction import check_half_accumulators_before_join
 from relax.helpers.convergence import (
     _exhaustive_grid_order_for_state,
-    _relion_pmax_normalization_mass_per_half,
     check_convergence,
     concatenate_assignments,
     concatenate_assignments_or_none,
     expectation_statistics,
     hard_class_change_fraction,
+    relion_class_pmax_normalization_mass_per_half,
+    relion_k1_pmax_normalization_mass_per_half,
 )
 from relax.helpers.expected_accuracy import estimate_iteration_accuracy
 from relax.helpers.iteration_history import RefinementHistory
@@ -97,7 +98,8 @@ from relax.refinement.noise_updates import (
     initialize_noise_model,
     noise_model_from_shells,
     update_c1_sigma_offset_from_posterior,
-    update_posterior_noise_variance,
+    update_class_posterior_noise_variance,
+    update_k1_posterior_noise_variance,
 )
 from relax.refinement.ports import (
     FinalState,
@@ -149,6 +151,22 @@ class _K1Iteration:
     loop chooses one of the two once per run and calls them at the same points (code rule 6)."""
 
     run_files_snapshot = staticmethod(iteration_snapshot.k1_run_files_snapshot)
+    # K=1 keeps each half's own sigma2_noise.
+    update_noise_variance = staticmethod(update_k1_posterior_noise_variance)
+
+    def record_direction_prior(self, history, direction_priors):
+        """K=1 records each half's global prior."""
+        history.record_k1_direction_prior(direction_priors)
+
+    def pmax_normalization_mass(self, per_half):
+        """K=1's optimizer Pmax normalises by the noise particle mass."""
+        return relion_k1_pmax_normalization_mass_per_half(per_half.noise_stats)
+
+    def final_pass_due(self, state, options, iteration):
+        """K=1 may run the final pass after max_iter exhaustion (``final_pass.after_max_iter``)."""
+        return finalization.final_pass_due(
+            state, options, iteration=iteration, after_max_iter=options.final_pass.after_max_iter,
+        )
 
     def plan_image_size(self, ctx, carry, options, history, observer, *, previous_size, resume, iteration):
         """The image size from the half-map FSC history; installs the growth state and the scheduling curve."""
@@ -267,6 +285,23 @@ class _ClassIteration:
     """The Class3D iteration's own controller statements; the methods of ``_K1Iteration``."""
 
     run_files_snapshot = staticmethod(iteration_snapshot.class_run_files_snapshot)
+    # Class3D shares one sigma2_noise across classes.
+    update_noise_variance = staticmethod(update_class_posterior_noise_variance)
+
+    def record_direction_prior(self, history, direction_priors):
+        """Class3D records class 0 of each half's prior."""
+        history.record_first_class_direction_prior(direction_priors)
+
+    def pmax_normalization_mass(self, per_half):
+        """Class3D's optimizer Pmax normalises by the class posterior mass."""
+        return relion_class_pmax_normalization_mass_per_half(per_half.class_posterior)
+
+    def final_pass_due(self, state, options, iteration):
+        """Class3D runs the final pass only after convergence."""
+        return finalization.final_pass_due(
+            state, options, iteration=iteration,
+            after_max_iter=finalization.class_after_max_iter(state, options, iteration=iteration),
+        )
 
     def plan_image_size(self, ctx, carry, options, history, observer, *, previous_size, resume, iteration):
         """The image size from the shared per-class curve; the observer sees the plan (the carry is unchanged)."""
@@ -1057,7 +1092,7 @@ def refine_single_volume(
             carry = replace(
                 carry, class_mixture=copied_mixture, previous_data_vs_prior_for_scheduling=mstep.data_vs_prior,
             )
-        history.record_direction_prior(carry.direction_priors, k_class_enabled=ctx.k_class_enabled)
+        mode.record_direction_prior(history, carry.direction_priors)
 
         # --- Unregularized half-maps, reconstructed only for the run files and the observer ---
         need_unreg_means = (
@@ -1093,7 +1128,7 @@ def refine_single_volume(
         # --- This expectation's particle statistics: joined assignments, posterior maxima, optimizer Pmax ---
         statistics = expectation_statistics(
             expected.per_half, carry.previous_assignments,
-            _relion_pmax_normalization_mass_per_half(expected.per_half, k_class_enabled=ctx.k_class_enabled),
+            mode.pmax_normalization_mass(expected.per_half),
         )
         mode.log_statistics(statistics, expected.per_half)
         history.record_pmax(statistics.ave_pmax, statistics.ave_pmax_mass, statistics.max_posterior.copy())
@@ -1138,11 +1173,10 @@ def refine_single_volume(
         carry = mode.scheduling_curve_after_resolution(ctx, carry, history, resolution_estimate)
 
         # RELION's posterior-weighted noise update: the radial sigma2_noise and the engine's pixel rows.
-        noise_update = update_posterior_noise_variance(
+        noise_update = mode.update_noise_variance(
             expected.per_half.noise_stats,
             carry.noise_model,
             ctx.image_geometry.image_shape,
-            k_class_enabled=ctx.k_class_enabled,
             firstiter_cc=this_iteration.first_iteration.relion_firstiter_cc,
             ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
             summed_current_size=(
@@ -1325,7 +1359,7 @@ def refine_single_volume(
             replay=_follower_replay_telemetry(follower_scale_replay, history), follower_scale=None,
             convergence_state=carry.state, numbered=numbered, history=history, profile_stop=profile_stop,
         )
-    if not finalization.final_pass_due(carry.state, options, iteration=iteration, k_class_enabled=ctx.k_class_enabled):
+    if not mode.final_pass_due(carry.state, options, iteration):
         return RefinementResult(
             maps=mode.numbered_maps(reference_model, carry),
             replay=_follower_replay_telemetry(follower_scale_replay, history),

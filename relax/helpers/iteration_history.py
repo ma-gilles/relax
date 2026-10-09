@@ -120,25 +120,10 @@ class RefinementHistory:
             None if prior_k.values is None else prior_k.values[0] for prior_k in direction_priors
         )
 
-    def record_direction_prior(
-        self, direction_priors, *, k_class_enabled: bool
-    ) -> None:
-        """The one remaining mode decision of the direction-prior history.
-
-        K-class runs record class 0 of each half's prior
-        (``record_first_class_direction_prior``); K=1 records the half's global
-        prior (``record_k1_direction_prior``). Remove this dispatch when the K1
-        and Class3D trajectories call those directly.
-        """
-        if k_class_enabled:
-            self.record_first_class_direction_prior(direction_priors)
-        else:
-            self.record_k1_direction_prior(direction_priors)
-
     def record_rotation_posterior(self, rotation_posterior_per_half) -> None:
         """Record float64 copies of the pre-collapse orientation posterior.
 
-        Kept separate from ``record_direction_prior`` so a direction-prior
+        Kept separate from the direction-prior records so a direction-prior
         mismatch can be localized to posterior aggregation versus collapse.
         Nothing is kept unless ``keep_rotation_posteriors``.
         """

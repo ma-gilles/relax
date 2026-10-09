@@ -509,11 +509,17 @@ def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch, cap
         )
 
     assert should_run() is False
-    assert should_run(after_max_iter=True, k_class_enabled=False) is True
-    assert should_run(after_max_iter=True, k_class_enabled=True) is False
-    assert should_run(has_converged=True, k_class_enabled=True) is True
+    assert should_run(after_max_iter=True) is True
+    assert should_run(has_converged=True) is True
     assert should_run(iteration=4, after_max_iter=True) is False
     assert should_run(after_max_iter=True, force=True) is False
+    # Class3D never admits the pass after exhaustion; it warns where the option asks for it.
+    class_options = stand_in.options(
+        schedule=stand_in.schedule(max_iter=5), final_pass=FinalPassOptions(after_max_iter=True),
+    )
+    caplog.clear()
+    assert finalization.class_after_max_iter(SimpleNamespace(has_converged=False), class_options, iteration=5) is False
+    assert "Ignoring RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER=1 for K-class" in caplog.text
 
 
 def test_kclass_final_reconstruction_does_not_predivide_class_accumulators(monkeypatch):

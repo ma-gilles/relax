@@ -30,7 +30,7 @@ from relax.helpers.types import total_sumw
 
 logger = logging.getLogger(__name__)
 
-def _relion_class_pmax_normalization_mass_per_half(class_posterior_per_half):
+def relion_class_pmax_normalization_mass_per_half(class_posterior_per_half):
     """Class3D per-half normalization mass for :func:`_relion_optimizer_average_pmax`.
 
     Class3D divides half 1's Pmax sum by that half's retained M-step posterior
@@ -43,7 +43,7 @@ def _relion_class_pmax_normalization_mass_per_half(class_posterior_per_half):
     ]
 
 
-def _relion_k1_pmax_normalization_mass_per_half(noise_stats_per_half):
+def relion_k1_pmax_normalization_mass_per_half(noise_stats_per_half):
     """K=1 per-half normalization mass for :func:`_relion_optimizer_average_pmax`.
 
     K=1 divides by the half's noise ``sumw`` particle mass, a float64 host
@@ -55,23 +55,6 @@ def _relion_k1_pmax_normalization_mass_per_half(noise_stats_per_half):
         None if stats is None else total_sumw(stats.sumw)
         for stats in noise_stats_per_half
     ]
-
-
-def _relion_pmax_normalization_mass_per_half(per_half, *, k_class_enabled: bool):
-    """The one remaining mode decision of the Pmax normalization mass.
-
-    Reads from ``per_half`` (the iteration's ``PerHalfOutputs``): ``class_posterior`` for Class3D,
-    ``noise_stats`` for K=1.
-
-    Class3D takes the class posterior mass
-    (:func:`_relion_class_pmax_normalization_mass_per_half`), K=1 the noise
-    particle mass (:func:`_relion_k1_pmax_normalization_mass_per_half`). Remove
-    this dispatch when the K1 and Class3D trajectories call those directly.
-    """
-
-    if k_class_enabled:
-        return _relion_class_pmax_normalization_mass_per_half(per_half.class_posterior)
-    return _relion_k1_pmax_normalization_mass_per_half(per_half.noise_stats)
 
 
 def _relion_optimizer_average_pmax(max_posterior_per_half, normalization_mass_per_half=None):
