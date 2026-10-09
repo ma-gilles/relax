@@ -299,6 +299,76 @@ def test_m_step_matches_relion_fsc_routing_for_ssnr_and_reconstruct(monkeypatch)
     np.testing.assert_allclose(captured["reconstruct_fsc"], state.fsc_halves_class[1])
 
 
+@pytest.mark.parametrize("average_ctf2", [None, "spectrum"])
+def test_oracle_runs_one_m_step_as_the_command_wires_it(monkeypatch, average_ctf2):
+    # The oracle's M-step as `python -m relax.diagnostics.vdam_native_mstep` installs it (the command's input
+    # source), called by the production multi-class M-step with the arguments it passes, on CPU stand-ins for
+    # RELION's primitives: the average CTF^2 must reach updateSSNRarrays as setAverageCTF2's spectrum.
+    from relax.diagnostics import vdam_native_mstep
+    from relax.parity.vdam_replay import vdam_input_source
+
+    ori = 16
+    shells = ori // 2 + 1
+    state = initialise_denovo_state(box_size=ori, pixel_size=1.0, K=1, nr_iter=10, n_directions=12, pseudo_halfsets=True)
+    state.Iref[0] = np.random.default_rng(1).standard_normal((ori, ori, ori))
+    spectrum = None if average_ctf2 is None else np.linspace(0.25, 1.0, shells)
+    calls = []
+
+    class FakeBindings:
+        @staticmethod
+        def vdam_reweight_grad(data, weight, *_args):
+            return np.asarray(data)
+
+        @staticmethod
+        def vdam_first_moment(data, old, *_args, **_kwargs):
+            return np.asarray(old)
+
+        @staticmethod
+        def vdam_second_moment(data_h0, data_h1, old, *_args, **_kwargs):
+            return np.asarray(old)
+
+        @staticmethod
+        def vdam_apply_momenta(data_h0, *_args):
+            return np.asarray(data_h0), np.zeros(shells, dtype=np.float64)
+
+        @staticmethod
+        def vdam_update_ssnr_arrays_from_bpref(weight, fsc, tau2, *args):
+            calls.append(("ssnr", args[-2], args[-1]))
+            return (np.asarray(tau2, dtype=np.float64),) + (np.ones(shells, dtype=np.float64),) * 3
+
+        @staticmethod
+        def vdam_reconstruct_grad(iref_relion, *_args):
+            calls.append(("reconstruct",))
+            return np.asarray(iref_relion)
+
+    monkeypatch.setattr(vdam_native_mstep, "_bindings", lambda: FakeBindings)
+    source = vdam_input_source(
+        reference_template="",
+        native_mstep_replays=[],
+        mstep_compute_dtype="float64",
+        oracle_m_step=vdam_native_mstep.vdam_m_step_single_class_native,
+    )
+    accumulators = [_make_accumulator(k=0, h=h, ori_size=ori, seed=7 + h) for h in (0, 1)]
+    mstep_owner.vdam_m_step(
+        state,
+        accumulators=accumulators,
+        grad_current_stepsize=0.5,
+        tau2_fudge_factor=4.0,
+        padding_factor=1,
+        mstep_compute_dtype="float64",
+        average_ctf2=spectrum,
+        single_class_m_step=source.single_class_m_step,
+    )
+
+    assert [call[0] for call in calls] == ["ssnr", "reconstruct"]
+    _, correct_tau2_by_avgctf2, avgctf2 = calls[0]
+    assert correct_tau2_by_avgctf2 is (spectrum is not None)
+    if spectrum is None:
+        assert avgctf2 is None
+    else:
+        assert_matches(avgctf2, spectrum, strict=True)
+
+
 class TestMstepSingleClass:
     def test_seeded_tau2_prevents_zero_tau_current_window_runaway(self, bind):
         ori = 64

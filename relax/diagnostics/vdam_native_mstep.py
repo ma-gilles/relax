@@ -44,10 +44,15 @@ def native_vdam_m_step_single_class(
     padding_factor: int,
     r_max: int,
     min_resol_shell: float,
+    average_ctf2=None,
     dump_dir: str | None = None,
     dump_prefix: str = "",
 ) -> InitialModelState:
-    """One class's M-step through RELION's primitives; ``dump_dir`` saves each intermediate."""
+    """One class's M-step through RELION's primitives; ``dump_dir`` saves each intermediate.
+
+    ``average_ctf2`` (or None), as the production M-step takes it: the subset's average CTF^2 of
+    CTF-premultiplied images, setAverageCTF2's spectrum, which corrects updateSSNRarrays' tau2.
+    """
 
     bind = _bindings()
     # backprojector.h:335/343 EMA defaults
@@ -188,7 +193,8 @@ def native_vdam_m_step_single_class(
         r_max,
         False,
         False,
-        False,
+        average_ctf2 is not None,
+        None if average_ctf2 is None else np.asarray(average_ctf2, dtype=np.float64),
     )
     new_tau2_class[k] = np.asarray(tau2, dtype=np.float64)
     new_sigma2_class[k] = np.asarray(sigma2, dtype=np.float64)
@@ -261,6 +267,7 @@ def vdam_m_step_single_class_native(
     grad_min_resol_shell: float | None = None,
     padding_factor: int = 1,
     mstep_compute_dtype: str = "float64",
+    average_ctf2=None,
 ) -> InitialModelState:
     """Drop-in for ``vdam_m_step_single_class`` running RELION's primitives (float64 only)."""
 
@@ -288,6 +295,7 @@ def vdam_m_step_single_class_native(
         # The current-size radius, not initZeros(-1) (backprojector.cpp::initZeros).
         r_max=state.current_size // 2,
         min_resol_shell=production._grad_min_resol_shell_from_state(state, grad_min_resol_shell),
+        average_ctf2=average_ctf2,
         dump_dir=dump_dir if do_dump else None,
         dump_prefix=f"c{k}_" if state.K > 1 else "",
     )

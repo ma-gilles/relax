@@ -604,7 +604,6 @@
   "private-import:relax.diagnostics.vdam_native_mstep:relax.relion_bind:_relion_bind_core",
   "private-import:relax.diagnostics.vdam_native_mstep:relax.vdam.m_step:_grad_min_resol_shell_from_state",
   "private-import:relax.diagnostics.vdam_native_mstep:relax.vdam.m_step:_has_relion_reconstruction_weight",
-  "private-import:relax.diagnostics.vdam_native_mstep:relax.vdam.m_step:_validate_mstep_precision_route",
   "private-import:relax.diagnostics.vdam_noise:relax.relion.relion_metadata:_relion_half_plane_shell_counts",
   "private-import:relax.helpers.preprocessing:relax.relion.relion_ctf:_relion_exact_ctf_half_from_source_star",
   "private-import:relax.local.local_layout:relax.helpers.batch_planning:_plan_consecutive_padded_batches",
