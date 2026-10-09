@@ -30,6 +30,7 @@ from relax.vdam.estep_common import (
     EstepSampling,
     InitialModelEstepConfig,
     InitialModelEstepResult,
+    MultiShapeTranslations,
 )
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import NativeSamplingPlan
@@ -218,7 +219,7 @@ def initial_model_estep_config(
         max_significants=int(max_significants),
         adaptive_fraction=opts.environment.adaptive_fraction,
         # Each image shape rebuilds its pre-shifts and coarse pdf_offset in its own pixels.
-        multi_shape_translations=dict(
+        multi_shape_translations=MultiShapeTranslations(
             offsets_px=np.asarray(translation_offsets, dtype=np.float64),
             coarse_prior_translations=coarse_prior_translations,
             sigma_angstrom=float(sigma_offset_angstrom),

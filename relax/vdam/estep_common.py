@@ -150,6 +150,17 @@ TOMO_META_PARTICLE_FIELDS: tuple[tuple[str, type], ...] = (
 ENGINE_DISC_TYPE = "linear_interp"
 
 @dataclass(frozen=True, kw_only=True)
+class MultiShapeTranslations:
+    """What each image shape (optics groups on several shapes) rebuilds its pre-shifts and coarse ``pdf_offset``
+    from, in its own pixels: every particle's offset ``offsets_px`` ``[N, 2]`` (float64, reference pixels), the
+    coarse prior grid ``coarse_prior_translations`` (float32, reference pixels) and the offset sigma in Angstrom."""
+
+    offsets_px: np.ndarray
+    coarse_prior_translations: np.ndarray
+    sigma_angstrom: float
+
+
+@dataclass(frozen=True, kw_only=True)
 class EstepSampling:
     """One E-step's pass controls, from the iteration's sampling plan, state and options (built once by
     :func:`relax.vdam.estep_setup.initial_model_estep_config`). The adaptive route builds its grids and
@@ -174,7 +185,7 @@ class EstepSampling:
     pass1_healpix_order: int
     max_significants: int
     adaptive_fraction: float | None
-    multi_shape_translations: dict[str, Any] | None
+    multi_shape_translations: MultiShapeTranslations | None
 
 
 @dataclass(frozen=True, kw_only=True)
