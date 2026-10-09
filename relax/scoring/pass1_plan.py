@@ -58,7 +58,6 @@ NVTX_DOMAIN_EM = "recovar_em"
 logger = logging.getLogger(__name__)
 
 
-
 def _coarse_rotated_radius_enabled(*, default: bool = False) -> bool:
     """Select canonical clipping when the active projector supports it."""
     token = os.environ.get("RELAX_K1_COARSE_ROTATED_RADIUS", "1" if default else "0")
@@ -137,8 +136,8 @@ def _prepare_coarse_relion_projector(
 ):
     """Upload at the explicit consumer precision, retaining the source slab.
 
-    None preserves legacy direct callers. Double scoring/projection diagnostics
-    retain complex128 projection; production K1/K4 explicitly request float32.
+    ``use_float64_projections=None`` uploads the projector in its own dtype. Double scoring/projection
+    diagnostics keep complex128 projection; production K1/K4 request float32.
     """
     dtype = None
     if use_float64_projections is not None:
@@ -223,7 +222,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         not request.collect_significance or request.score_mode != "gaussian" or request.use_float64_scoring
     ):
         raise ValueError("RELION float32 normalization requires Gaussian float32 significance")
-
 
 
     if request.score_mode not in {"gaussian", "normalized_cc"}:

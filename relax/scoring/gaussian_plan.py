@@ -74,7 +74,7 @@ def _projection_cache_requested(shape: PassShape, relion_projector_half) -> tupl
         try:
             validate_coarse_gaussian_gemm_projection_cache_request(
                 n_rotations=shape.n_rot,
-                # The dtype of the class stack: indexing a device array for it dispatched a slice per pass.
+                # The class stack's own dtype: indexing a device array for it would dispatch a slice per pass.
                 relion_projector_dtype=(
                     relion_projector_half.dtype
                     if hasattr(relion_projector_half, "dtype")

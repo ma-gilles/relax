@@ -160,9 +160,8 @@ def _bucket_pass2_inputs(
                 for plan in plans
             ]
     else:
-        # Group by bucket size, smaller buckets first. The secondary rotation
-        # count key is historical RECOVAR behavior; an explicit order keeps
-        # RELION order stable within each equal padded-size bucket.
+        # Group by bucket size, smaller buckets first, then by rotation count (RECOVAR's bucket order); the
+        # stable sort keeps RELION order within each equal padded-size bucket.
         processing_order = np.lexsort((rotation_counts, bucket_sizes)).astype(np.int64)
 
     unique_bucket_sizes = np.unique(bucket_sizes[processing_order])

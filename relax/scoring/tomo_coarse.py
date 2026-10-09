@@ -1,4 +1,4 @@
-"""Coarse pass (pass 1) of subtomogram particles: each tilt image scored, summed per particle (S4.2).
+"""Coarse pass (pass 1) of subtomogram particles: each tilt image scored, summed per particle.
 
 RELION's GPU path scores a subtomogram one tilt image at a time (the ``img_id`` loop of
 ``getAllSquaredDifferencesCoarse``, acc_ml_optimiser_impl.h:1190-1402). Every image has
@@ -17,7 +17,6 @@ direct square, so the rotations with a sample within the expansion's error bound
 significance cut (or of its smallest diff2) are scored again by the fused direct-square kernel before the
 cut is taken (:mod:`relax.scoring.exact_cut`). :func:`tilt_image_coarse_diff2` (that kernel, one image) is
 the reference the tests compare the GEMM scorer with.
-See PLAN.md "S4.2 implementation ladder" in the cryo-ET coordination directory.
 """
 
 from __future__ import annotations
