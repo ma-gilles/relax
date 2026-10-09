@@ -254,9 +254,8 @@ def dense_batch_policy(**fields):
 def dense_variant_policy(**fields):
     return half_scoring.DenseVariantPolicy(
         **{
-            "firstiter_coarse_current_size": None,
-            "firstiter_fine_current_size": None,
-            "firstiter_log_label": "(non-adaptive site) ",
+            "coarse_window_size": None,
+            "fine_window_size": None,
             "skip_align": False,
             **fields,
         }

@@ -62,11 +62,10 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
             coarse_angular_step_deg=15.,
         )
     variant = refinement_specs.dense_variant_policy(
-        firstiter_score_mode_this_iter='gaussian', firstiter_winner_take_all_this_iter=False,
-        k_class_enabled=n_classes > 1, relion_firstiter_cc_this_iter=False,
-        firstiter_coarse_current_size=2 if adaptive else None,
-        firstiter_fine_current_size=4 if adaptive else None,
-        firstiter_log_label='' if adaptive else '(non-adaptive site) ',
+        score_mode='gaussian', winner_take_all=False,
+        k_class_enabled=n_classes > 1, firstiter_cc=False,
+        coarse_window_size=2 if adaptive else None,
+        fine_window_size=4 if adaptive else None,
     )
     kwargs = dict(
         sampling=sampling, tomo_sampling=None,

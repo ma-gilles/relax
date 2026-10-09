@@ -76,13 +76,12 @@ def _dense_owners(**values):
             k_class_rotation_block_size_override=values.pop("k_class_rotation_block_size_override", None),
         ),
         refinement_specs.dense_variant_policy(
-            firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
-            firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
+            score_mode=values.pop("firstiter_score_mode_this_iter"),
+            winner_take_all=values.pop("firstiter_winner_take_all_this_iter"),
             k_class_enabled=(k_class_enabled := values.pop("k_class_enabled")),
-            relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
-            firstiter_coarse_current_size=values.pop("firstiter_coarse_current_size", None),
-            firstiter_fine_current_size=values.pop("firstiter_fine_current_size", None),
-            firstiter_log_label=values.pop("firstiter_log_label", "(non-adaptive site) "),
+            firstiter_cc=values.pop("relion_firstiter_cc_this_iter"),
+            coarse_window_size=values.pop("firstiter_coarse_current_size", None),
+            fine_window_size=values.pop("firstiter_fine_current_size", None),
         ),
         refinement_specs.dense_execution_policy(
             disc_type=values.pop("disc_type"),
@@ -575,7 +574,6 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
         firstiter_fine_current_size=90,
         bpref_device_signature_active=True,
         debug_iteration=7,
-        firstiter_log_label="test K-class ",
         coarse_rotation_ids=coarse_ids,
     ))
 
@@ -596,7 +594,7 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
     assert result.coarse_ha.shape == (3,)
 
     assert captured["mean"].shape == (n_classes, 4)
-    label = "K=1 " if n_classes == 1 else "test K-class "
+    label = "K=1 " if n_classes == 1 else ""
     assert any(f"STRICT-PARITY {label}routing iter-1" in record.getMessage() for record in caplog.records)
     # The engine receives the clamped copy; the dispatch leaves the caller's dictionary alone.
     assert dispatch["em_kwargs"]["image_batch_size"] == 187

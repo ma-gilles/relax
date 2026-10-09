@@ -384,13 +384,12 @@ def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coa
     """
 
     return DenseVariantPolicy(
-        firstiter_score_mode_this_iter=first_iteration.score_mode,
-        firstiter_winner_take_all_this_iter=first_iteration.winner_take_all,
+        score_mode=first_iteration.score_mode,
+        winner_take_all=first_iteration.winner_take_all,
         k_class_enabled=int(k_class.n_classes) > 1,
-        relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
-        firstiter_coarse_current_size=coarse_cs,
-        firstiter_fine_current_size=fine_window_size if use_adaptive else None,
-        firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
+        firstiter_cc=first_iteration.relion_firstiter_cc,
+        coarse_window_size=coarse_cs,
+        fine_window_size=fine_window_size if use_adaptive else None,
         skip_align=bool(k_class.skip_align),
     )
 
@@ -755,13 +754,13 @@ def score_numbered_half(
         rotations=phase.grid.rotations if phase.use_adaptive or k_class_enabled else None,
         translations=phase.grid.translations,
         cs_for_engine=image_window_size,
-        coarse_cs=phase.variant.firstiter_coarse_current_size if phase.use_adaptive else None,
+        coarse_cs=phase.variant.coarse_window_size if phase.use_adaptive else None,
         model_current_size_for_engine=model_support_size,
         use_adaptive=phase.use_adaptive,
         use_local=use_local,
-        relion_firstiter_cc_this_iter=phase.variant.relion_firstiter_cc_this_iter,
+        relion_firstiter_cc_this_iter=phase.variant.firstiter_cc,
         firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
-        firstiter_winner_take_all_this_iter=phase.variant.firstiter_winner_take_all_this_iter,
+        firstiter_winner_take_all_this_iter=phase.variant.winner_take_all,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
         bpref_device_signature_active=bpref_device_signature_active,
@@ -862,7 +861,7 @@ def score_numbered_half(
             class_log_priors=class_log_priors if k_class_enabled else None,
             class_rotation_log_prior=half.direction_priors.class_rotation_log_prior,
             unit_seed_classes=seed_classes_k,
-            normalized_cc=phase.variant.firstiter_score_mode_this_iter == "normalized_cc",
+            normalized_cc=phase.variant.score_mode == "normalized_cc",
         )
     elif use_local:
         local_optics = optics_shapes.prepare_optics(
@@ -907,7 +906,7 @@ def score_numbered_half(
                 score_only=options.local_search.stop_after_local_search_score_only,
                 # A search local from iteration 1 (--sigma_ang) scores RELION's --firstiter_cc
                 # iteration with the normalized CC, as the subtomogram local path above does.
-                firstiter_cc=phase.variant.firstiter_score_mode_this_iter == "normalized_cc",
+                firstiter_cc=phase.variant.score_mode == "normalized_cc",
             ),
             diagnostics=replace(
                 phase.local_diagnostics, bpref_device_signature_active=bpref_device_signature_active,

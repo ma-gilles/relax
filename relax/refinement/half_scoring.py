@@ -203,15 +203,18 @@ class DenseBatchPolicy:
 
 @dataclass(frozen=True, kw_only=True)
 class DenseVariantPolicy:
-    """Explicit dense, adaptive and first-iteration route selections."""
+    """Explicit dense, adaptive and first-iteration route selections.
 
-    firstiter_score_mode_this_iter: str
-    firstiter_winner_take_all_this_iter: bool
+    ``coarse_window_size`` and ``fine_window_size`` are the adaptive passes' image windows on every
+    iteration (None: the engine's current size; the fine one is None on a non-adaptive pass).
+    """
+
+    score_mode: str
+    winner_take_all: bool
     k_class_enabled: bool
-    relion_firstiter_cc_this_iter: bool
-    firstiter_coarse_current_size: int | None
-    firstiter_fine_current_size: int | None
-    firstiter_log_label: str
+    firstiter_cc: bool
+    coarse_window_size: int | None
+    fine_window_size: int | None
     # RELION --skip_align: classify at each particle's stored pose (relax.classification.given_poses).
     skip_align: bool
 
@@ -256,8 +259,8 @@ def _score_adaptive_kclass_dense(
     """Run the ordinary adaptive K-class engine and return its trial grids."""
 
     adaptive_os = int(sampling.oversampling_order)
-    coarse_current_size = variant.firstiter_coarse_current_size
-    fine_current_size = variant.firstiter_fine_current_size
+    coarse_current_size = variant.coarse_window_size
+    fine_current_size = variant.fine_window_size
     if adaptive_os <= 0:
         coarse_current_size = sampling.cs_for_engine
         fine_current_size = sampling.cs_for_engine
@@ -515,8 +518,8 @@ def _score_adaptive_k1_dense(
     """Run the ordinary adaptive K=1 engine and return its trial grids."""
 
     adaptive_os = int(sampling.oversampling_order)
-    coarse_current_size = variant.firstiter_coarse_current_size
-    fine_current_size = variant.firstiter_fine_current_size
+    coarse_current_size = variant.coarse_window_size
+    fine_current_size = variant.fine_window_size
     if adaptive_os <= 0:
         # The sparse engine supplies group statistics and per-particle BPref
         # launches even for a single pass on the current grid.
@@ -556,7 +559,7 @@ def _score_adaptive_k1_dense(
         sampling.coarse_scoring_rotations is not None
         and adaptive_os == 0
         and execution.relion_x_half_mstep
-        and variant.firstiter_score_mode_this_iter == "gaussian"
+        and variant.score_mode == "gaussian"
         and not execution.diagnostic_float64_pass2
     )
     projected_coarse, projected_fine, projected_mstep = project_pass2_rotations(
@@ -682,8 +685,8 @@ def _score_half_dense_one_shape(
         "scale_correction_data_vs_prior": half.scale_correction_data_vs_prior,
         "image_pre_shifts": priors.translation_search_base,
         "translation_prior_centers": priors.trans_prior_center_for_engine,
-        "relion_firstiter_score_mode": variant.firstiter_score_mode_this_iter,
-        "relion_firstiter_winner_take_all": variant.firstiter_winner_take_all_this_iter,
+        "relion_firstiter_score_mode": variant.score_mode,
+        "relion_firstiter_winner_take_all": variant.winner_take_all,
         "coarse_engine": sampling.coarse_engine,
         "symmetry_label": symmetry,
         "optics_group_ids": half.particles.optics_group_ids,
@@ -726,11 +729,11 @@ def _score_half_dense_one_shape(
         if variant.skip_align:
             k_class_result, given = _score_kclass_at_given_poses(
                 half, sampling, priors, batching, execution, optics, em_kwargs, symmetry,
-                firstiter_cc=variant.relion_firstiter_cc_this_iter,
+                firstiter_cc=variant.firstiter_cc,
             )
             rot_pmap_for_collapse, trans_pmap_for_collapse, n_trans_fine_for_collapse = _given_pose_collapse(given)
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
-        elif variant.relion_firstiter_cc_this_iter:
+        elif variant.firstiter_cc:
             adaptive_os_local = int(sampling.oversampling_order)
             firstiter = _score_kclass_firstiter_cc_pass2(
                 half,
@@ -812,7 +815,7 @@ def _score_half_dense_one_shape(
     trans_pmap_for_collapse = None
     n_trans_fine_for_collapse = None
     fine_rotations_for_pose = None
-    if variant.relion_firstiter_cc_this_iter:
+    if variant.firstiter_cc:
         if symmetry != "C1" and not execution.relion_x_half_mstep:
             raise RuntimeError(
                 f"{symmetry} reconstruction requires RELION x-half BPref accumulation; "
@@ -989,8 +992,8 @@ def _dense_owners_for_shape(
             "translation_step": sampling.translation_step,
             "cs_for_engine": sampling.cs_for_engine,
             "model_current_size_for_engine": sampling.model_current_size_for_engine,
-            "firstiter_coarse_current_size": variant.firstiter_coarse_current_size,
-            "firstiter_fine_current_size": variant.firstiter_fine_current_size,
+            "firstiter_coarse_current_size": variant.coarse_window_size,
+            "firstiter_fine_current_size": variant.fine_window_size,
             "coarse_sizing": optics.coarse_sizing,
         },
         shape_class,
@@ -1040,8 +1043,8 @@ def _dense_owners_for_shape(
         batching=_class_batching(batching, class_index),
         variant=replace(
             variant,
-            firstiter_coarse_current_size=shape_values["firstiter_coarse_current_size"],
-            firstiter_fine_current_size=shape_values["firstiter_fine_current_size"],
+            coarse_window_size=shape_values["firstiter_coarse_current_size"],
+            fine_window_size=shape_values["firstiter_fine_current_size"],
         ),
         optics=replace(
             optics,

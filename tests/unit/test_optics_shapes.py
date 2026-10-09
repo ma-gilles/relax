@@ -177,10 +177,10 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             class_batch_overrides=class_batch_overrides,
         ),
         refinement_specs.dense_variant_policy(
-            firstiter_score_mode_this_iter="gaussian",
-            firstiter_winner_take_all_this_iter=False,
+            score_mode="gaussian",
+            winner_take_all=False,
             k_class_enabled=False,
-            relion_firstiter_cc_this_iter=False,
+            firstiter_cc=False,
         ),
         refinement_specs.dense_execution_policy(
             disc_type="linear_interp",

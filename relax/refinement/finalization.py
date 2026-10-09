@@ -390,13 +390,12 @@ def run_final_all_data(
             class_batch_overrides=None,
         )
         final_dense_variant = DenseVariantPolicy(
-            firstiter_score_mode_this_iter="gaussian",
-            firstiter_winner_take_all_this_iter=False,
+            score_mode="gaussian",
+            winner_take_all=False,
             k_class_enabled=k_class_enabled,
-            relion_firstiter_cc_this_iter=False,
-            firstiter_coarse_current_size=final_adaptive_pass1_current_size,
-            firstiter_fine_current_size=final_adaptive_pass2_current_size,
-            firstiter_log_label="final all-data ",
+            firstiter_cc=False,
+            coarse_window_size=final_adaptive_pass1_current_size,
+            fine_window_size=final_adaptive_pass2_current_size,
             skip_align=bool(options.k_class.skip_align),
         )
         final_dense_execution = DenseExecutionPolicy(

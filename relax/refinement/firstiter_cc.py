@@ -71,18 +71,21 @@ def _score_kclass_firstiter_cc_pass2(
 
     The K-class and K=1 adaptive scoring branches share this dispatcher, with the images' projection scale
     and magnification and their engine keywords. A K-class half scores its class stack on its coarse rotation
-    ids and logs under ``variant.firstiter_log_label``; a K=1 half scores its one reference as a one-class
+    ids; a K=1 half scores its one reference as a one-class
     stack on every coarse rotation. ``em_kwargs`` are the dense route's engine keywords; this dispatch reads
     only their batch sizes (``image_batch_size``, ``rotation_block_size``) and gives the engine a copy with
     clamped batch sizes; the caller's dictionary is not changed. The coarse/fine sizes are
-    ``variant.firstiter_*_current_size`` (None: the engine's ``current_size``). The oversampling order used is
+    ``variant.coarse_window_size`` and ``fine_window_size`` (None: the engine's ``current_size``). The oversampling order used is
     ``sampling.oversampling_order``.
     """
 
     mean = half.reference if variant.k_class_enabled else jnp.asarray(half.reference)[None, :]
     # The coarse rotations a K-class half scores (None: all of them).
     coarse_ids = sampling.coarse_rotation_ids if variant.k_class_enabled else None
-    log_label = variant.firstiter_log_label if variant.k_class_enabled else "K=1 "
+    if not variant.k_class_enabled:
+        log_label = "K=1 "
+    else:
+        log_label = "" if variant.fine_window_size is not None else "(non-adaptive site) "
     point_group = canonicalize_rotational_symmetry(sampling.symmetry)
     adaptive_os_local = int(sampling.oversampling_order)
     (
@@ -139,13 +142,13 @@ def _score_kclass_firstiter_cc_pass2(
             n_classes=n_classes,
             image_shape=half.particles.dataset.image_shape,
             coarse_current_size=(
-                variant.firstiter_coarse_current_size
-                if variant.firstiter_coarse_current_size is not None
+                variant.coarse_window_size
+                if variant.coarse_window_size is not None
                 else sampling.cs_for_engine
             ),
             fine_current_size=(
-                variant.firstiter_fine_current_size
-                if variant.firstiter_fine_current_size is not None
+                variant.fine_window_size
+                if variant.fine_window_size is not None
                 else sampling.cs_for_engine
             ),
             safe_batch_sizes=batching.safe_batch_sizes,
@@ -235,8 +238,8 @@ def _score_kclass_firstiter_cc_pass2(
         coarse_translation_phase_source=(
             coarse_translation_phase_source if n_classes == 1 else None
         ),
-        coarse_current_size=variant.firstiter_coarse_current_size,
-        fine_current_size=variant.firstiter_fine_current_size,
+        coarse_current_size=variant.coarse_window_size,
+        fine_current_size=variant.fine_window_size,
         **firstiter_em_kwargs,
     )
     return FirstIterCCPass2(

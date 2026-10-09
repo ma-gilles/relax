@@ -902,10 +902,10 @@ def _symmetric_dense_owners(half_scoring, values):
             max_significants=values.pop("max_significants"),
         ),
         refinement_specs.dense_variant_policy(
-            firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
-            firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
+            score_mode=values.pop("firstiter_score_mode_this_iter"),
+            winner_take_all=values.pop("firstiter_winner_take_all_this_iter"),
             k_class_enabled=(k_class_enabled := values.pop("k_class_enabled")),
-            relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
+            firstiter_cc=values.pop("relion_firstiter_cc_this_iter"),
         ),
         refinement_specs.dense_execution_policy(
             disc_type=values.pop("disc_type"),
