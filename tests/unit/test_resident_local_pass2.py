@@ -1081,3 +1081,16 @@ def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_l
     assert rel_l2(whole.Ft_y, lone.Ft_y) < 1e-6
     assert rel_l2(whole.Ft_ctf, lone.Ft_ctf) < 1e-6
     assert rel_l2(whole.noise_stats.wsum_sigma2_noise, lone.noise_stats.wsum_sigma2_noise) < 1e-6
+
+
+def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):
+    """A 16 GB card's box-448 final pass had a 3.63 GiB chunk budget and a fixed 4 GiB projector call (relax#49);
+    the call now takes at most half the budget. Large budgets keep the 4 GiB cap."""
+
+    monkeypatch.delenv(rlp._PROJECTION_CALL_MAX_BYTES_ENV, raising=False)
+    gib = 1024**3
+    row = 1_500_000  # bytes per projected row at box 448, full radius
+    assert rlp._projection_block_rows(row, None) == 4 * gib // row
+    assert rlp._projection_block_rows(row, 40 * gib) == 4 * gib // row
+    assert rlp._projection_block_rows(row, int(3.63 * gib)) == int(0.5 * 3.63 * gib) // row
+    assert rlp._projection_block_rows(10 * gib, int(3.63 * gib)) == 1

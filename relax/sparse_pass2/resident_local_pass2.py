@@ -174,6 +174,24 @@ _PROJECTION_CALL_MAX_BYTES_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MA
 _DEFAULT_PROJECTION_CALL_MAX_BYTES = 4 * 1024**3
 
 
+# The share of the chunk budget one projector call may take; the rest is the chunk's rows, tiles and M-step block.
+_PROJECTION_CALL_BUDGET_SHARE = 0.5
+
+
+def _projection_block_rows(projection_row_bytes: int, chunk_budget_bytes: int | None) -> int:
+    """Rows per projector call: the per-call cap, lowered to ``_PROJECTION_CALL_BUDGET_SHARE`` of the chunk budget.
+
+    The fixed 4 GiB call was most of the smallest chunk at a 16 GB card's full-box final pass (box 448: 4.28 GiB
+    against a 3.63 GiB budget, relax#49). Fewer rows per call change only how the calls group the rows; each row's
+    projection is the same. Large cards keep the cap.
+    """
+
+    max_bytes = _projection_call_transient_max_bytes()
+    if chunk_budget_bytes is not None:
+        max_bytes = min(max_bytes, int(_PROJECTION_CALL_BUDGET_SHARE * int(chunk_budget_bytes)))
+    return max(1, int(max_bytes) // int(projection_row_bytes))
+
+
 def _projection_call_transient_max_bytes() -> int:
     """Bytes one projector call may hold (:func:`relax.sparse_pass2.resident_pass2.projection_call_row_bytes`)."""
 
@@ -998,7 +1016,7 @@ def compute_local_search_resident(
             n_recon_pixels=n_recon_windowed,
             complex_bytes=projector_slab_bytes,
         )
-        projection_block_rows = max(1, _projection_call_transient_max_bytes() // projection_row_bytes)
+        projection_block_rows = _projection_block_rows(projection_row_bytes, chunk_budget_bytes)
         tile_pixels = rp.chunk_translated_tile_pixels(
             unshifted_operands=operand_route["unshifted"],
             n_score_pixels=n_windowed,
@@ -1720,8 +1738,8 @@ def _run_resident_parent_probe(
         n_recon_pixels=0,
         complex_bytes=int(np.dtype(relion_projector_half.dtype).itemsize),
     )
-    projection_block_rows = max(1, _projection_call_transient_max_bytes() // projection_row_bytes)
     budget = rp.resident_chunk_budget_bytes()
+    projection_block_rows = _projection_block_rows(projection_row_bytes, budget)
     row_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER))
     image_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _PROBE_IMAGE_CAPACITY_LADDER))
 
