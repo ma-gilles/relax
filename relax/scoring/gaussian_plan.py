@@ -23,7 +23,6 @@ from relax.scoring.coarse_gaussian_gemm import (
     validate_coarse_gaussian_gemm_projection_cache_request,
 )
 from relax.scoring.coarse_layout import CoarseGaussianSquareLayout, plan_coarse_gaussian_square_layout
-from relax.scoring.coarse_publication import coarse_square_layout_metadata
 from relax.scoring.pass1_results import PassShape
 
 logger = logging.getLogger(__name__)
@@ -208,17 +207,13 @@ def plan_coarse_gaussian(
     )
 
 
-def coarse_gaussian_report(plan: CoarseGaussianPlan, *, stable_fourier_window_shapes: bool) -> dict:
-    """The Gaussian route's entries of the pass's ``full_stats``: the square layout, the GEMM resources and the cache.
+def coarse_gaussian_report(plan: CoarseGaussianPlan) -> dict:
+    """The Gaussian route's entries of the pass's ``full_stats``: the GEMM resources and the projection cache.
 
     The cache entry is present when the plan has a cache (it is built whenever it is planned).
     """
 
     report = {
-        "coarse_gaussian_square_layout": coarse_square_layout_metadata(
-            plan.square_layout,
-            stable_fourier_window_shapes=stable_fourier_window_shapes,
-        ),
         "coarse_gaussian_gemm_resources": {
             field: int(value) for field, value in plan.resource_estimate._asdict().items()
         },

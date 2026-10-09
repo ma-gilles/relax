@@ -98,9 +98,7 @@ def plan_gaussian_route(
         compact_rows=CompactRows(gaussian_plan.score_indices_np, gaussian_plan.projector_output_size),
         projection_cache_plan=gaussian_plan.projection_cache_plan,
         tree_rescore_plan=None,
-        report=coarse_gaussian_report(
-            gaussian_plan, stable_fourier_window_shapes=request.stable_fourier_window_shapes
-        ),
+        report=coarse_gaussian_report(gaussian_plan),
     )
 
 
