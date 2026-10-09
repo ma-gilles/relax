@@ -132,7 +132,7 @@ def test_timing_only_dump_does_not_require_full_parity_env(tmp_path, monkeypatch
 
 
 def test_run_full_refinement_timing_summary_deltas(tmp_path):
-    from relax.diagnostics.parity_dump import _collect_timing_rows, _summarize_timing_rows
+    from relax.diagnostics.parity_dump import collect_timing_rows, summarize_timing_rows
 
     timing = tmp_path / "timing"
     timing.mkdir()
@@ -149,8 +149,8 @@ def test_run_full_refinement_timing_summary_deltas(tmp_path):
         stage_seconds_convergence=np.float64(10.0),
     )
 
-    rows = _collect_timing_rows(timing)
-    summary = _summarize_timing_rows(rows)
+    rows = collect_timing_rows(timing)
+    summary = summarize_timing_rows(rows)
 
     assert summary["n_rows"] == 1
     assert summary["sum_wall_time_s"] == pytest.approx(10.0)

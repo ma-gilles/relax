@@ -4,7 +4,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from relax.diagnostics.coarse_gaussian_diagnostics import _significance_debug_dump_matches
+from relax.diagnostics.coarse_gaussian_diagnostics import significance_debug_dump_matches
 from relax.helpers.batch_fetch import original_image_indices
 from relax.helpers.env_flags import parse_env_int_set
 
@@ -28,7 +28,7 @@ def select_dump_targets(experiment_dataset, indices, *, collect_significance, cu
     ``exp_Mweight_diff2`` without keeping the whole ``[batch, n_classes, n_rot * n_trans]`` score cache.
     """
 
-    enabled = collect_significance and _significance_debug_dump_matches(
+    enabled = collect_significance and significance_debug_dump_matches(
         current_size=current_size,
         debug_iteration=debug_iteration,
     )

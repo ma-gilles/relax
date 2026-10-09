@@ -12,7 +12,7 @@ import numpy as np
 from relax.scoring.significant_samples import significant_sample_ids
 
 
-def _build_coarse_significance_support_audit(
+def build_coarse_significance_support_audit(
     significant_sample_indices,
     *,
     samples_per_class: int,

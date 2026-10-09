@@ -396,7 +396,7 @@ def _read_timing_npz(npz_path: Path) -> dict:
     return row
 
 
-def _collect_timing_rows(timing_dir):
+def collect_timing_rows(timing_dir):
     if timing_dir is None:
         return []
     timing_path = Path(timing_dir)
@@ -424,7 +424,7 @@ def _stage_deltas_from_cumulative(stages: dict[str, float]) -> dict[str, float]:
     return deltas
 
 
-def _summarize_timing_rows(rows):
+def summarize_timing_rows(rows):
     summary = {
         "n_rows": len(rows),
         "sum_wall_time_s": float(

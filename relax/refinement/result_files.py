@@ -530,7 +530,7 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
     """The fields the ledger and the profile-only summary share: environment, inputs, sampling and provenance.
 
     ``fields`` is the result's ``archive_fields()``."""
-    timing_rows = parity_dump._collect_timing_rows(report.timing_dir)
+    timing_rows = parity_dump.collect_timing_rows(report.timing_dir)
     return {
         "git_commit": git_head_or_none(),
         "python_version": platform.python_version(),
@@ -556,7 +556,7 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
         "max_significants": int(report.max_significants),
         "max_significants_resolution": dataclasses.asdict(report.max_significants_resolution),
         "timing_rows": timing_rows,
-        "timing_summary": parity_dump._summarize_timing_rows(timing_rows),
+        "timing_summary": parity_dump.summarize_timing_rows(timing_rows),
         "perturb_replay_restart_state_iterations": list(report.restart.iterations),
         "perturb_replay_restart_provenance_path": (
             str(report.restart.path)

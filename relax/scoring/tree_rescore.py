@@ -17,7 +17,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics.coarse_gaussian_diagnostics import _maybe_dump_tree_rescore_batch
+from relax.diagnostics.coarse_gaussian_diagnostics import maybe_dump_tree_rescore_batch
 from relax.relion.relion_coarse_operands import select_relion_coarse_rescore_winner_slots
 
 logger = logging.getLogger(__name__)
@@ -328,7 +328,7 @@ def rescore_ambiguous_images(
         score_dtype=tree_score_dtype,
         **({"symmetry_label": plan.geometry.symmetry_label} if plan.geometry.symmetry_label != "C1" else {}),
     )
-    _maybe_dump_tree_rescore_batch(
+    maybe_dump_tree_rescore_batch(
         experiment_dataset=experiment_dataset,
         indices=indices,
         ambiguous_rows=ambiguous_rows,

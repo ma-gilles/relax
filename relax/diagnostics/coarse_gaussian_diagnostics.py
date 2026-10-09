@@ -74,7 +74,7 @@ def _maybe_stop_after_significance_dump(
     raise SignificanceDumpComplete(dump_path=dump_path)
 
 
-def _significance_debug_dump_matches(*, current_size, debug_iteration) -> bool:
+def significance_debug_dump_matches(*, current_size, debug_iteration) -> bool:
     """Return whether significance capture applies at this scoring boundary."""
 
     if not os.environ.get("RELAX_SIGNIFICANCE_DUMP_DIR"):
@@ -94,7 +94,7 @@ def _significance_debug_dump_matches(*, current_size, debug_iteration) -> bool:
     return True
 
 
-def _maybe_dump_tree_rescore_batch(
+def maybe_dump_tree_rescore_batch(
     *,
     experiment_dataset,
     indices,
@@ -122,7 +122,7 @@ def _maybe_dump_tree_rescore_batch(
 ):
     """Persist exact bounded-rescore operands for selected pass-1 particles."""
 
-    if not _significance_debug_dump_matches(
+    if not significance_debug_dump_matches(
         current_size=current_size,
         debug_iteration=debug_iteration,
     ):
@@ -186,7 +186,7 @@ def _maybe_dump_tree_rescore_batch(
         )
 
 
-def _maybe_dump_k_class_significance_batch(
+def maybe_dump_k_class_significance_batch(
     *,
     experiment_dataset,
     indices,
@@ -233,7 +233,7 @@ def _maybe_dump_k_class_significance_batch(
     ``n_classes`` scalar so the user can decode the joint candidate space.
     """
 
-    if not _significance_debug_dump_matches(
+    if not significance_debug_dump_matches(
         current_size=current_size,
         debug_iteration=debug_iteration,
     ):

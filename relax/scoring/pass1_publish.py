@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics.coarse_gaussian_diagnostics import _maybe_dump_k_class_significance_batch
+from relax.diagnostics.coarse_gaussian_diagnostics import maybe_dump_k_class_significance_batch
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
 from relax.scoring.significant_samples import compact_significant_sample_indices_from_mask
 from relax.sparse_pass2.resident_significance import compact_batch_significance_classes
@@ -176,7 +176,7 @@ def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, 
                 for blocks in batch.dump_target_with_prior_blocks_per_class
             ]
             target_local_positions_for_dump = batch.dump_target_local_positions
-        _maybe_dump_k_class_significance_batch(
+        maybe_dump_k_class_significance_batch(
             experiment_dataset=dump.experiment_dataset,
             indices=batch.indices,
             n_classes=plan.n_classes,

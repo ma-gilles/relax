@@ -52,7 +52,7 @@ class ScoreDumpContext:
     """What the score dump of a pass reads besides the batch: the call's own inputs, fixed for the pass.
 
     ``RELAX_SIGNIFICANCE_DUMP_*`` writes the scores and operands of chosen images
-    (:func:`relax.diagnostics.coarse_gaussian_diagnostics._maybe_dump_k_class_significance_batch`). The dump only
+    (:func:`relax.diagnostics.coarse_gaussian_diagnostics.maybe_dump_k_class_significance_batch`). The dump only
     observes; nothing here steers the pass. ``score_indices`` are the scored rows of the half spectrum of the pass's
     own score (the Gaussian GEMM's square rows, or the normalized CC's), on the device.
     """

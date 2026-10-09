@@ -3,7 +3,7 @@
 import logging
 import time
 
-from relax.diagnostics.coarse_score_diagnostics import _build_coarse_significance_support_audit
+from relax.diagnostics.coarse_score_diagnostics import build_coarse_significance_support_audit
 from relax.helpers.env_flags import parse_env_strict_flag
 from relax.scoring.pass1_results import OutputPlan, Pass1Outputs
 from relax.sparse_pass2.resident_significance import (
@@ -159,7 +159,7 @@ def build_full_stats(
                 "collect_significance=True",
             )
         full_stats["coarse_significance_support_audit"] = (
-            _build_coarse_significance_support_audit(
+            build_coarse_significance_support_audit(
                 significant_sample_indices,
                 samples_per_class=plan.n_rot * plan.n_trans,
                 include_ids=_coarse_significance_support_audit_ids_enabled(),

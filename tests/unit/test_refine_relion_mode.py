@@ -6665,7 +6665,7 @@ class TestRelionModeSmokeTest:
         """K-class significance pass writes per-image .npz dumps when env vars target an image.
 
         Regression for codex_k2_dump_20260508_064420_5026: prior to wiring
-        ``_maybe_dump_k_class_significance_batch`` into the K-class branch, the
+        ``maybe_dump_k_class_significance_batch`` into the K-class branch, the
         InitialModel K=2 sparse pass-2 emitted no significance debug files even
         with ``RELAX_SIGNIFICANCE_DUMP_DIR`` and the matching original-index
         target set.

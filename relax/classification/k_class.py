@@ -721,7 +721,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
 ) -> _DenseKClassScoreProbeResult:
     """Score RELION firstiter-CC K-class coarse poses in one shared pass."""
 
-    from relax.diagnostics.coarse_gaussian_diagnostics import _significance_debug_dump_matches
+    from relax.diagnostics.coarse_gaussian_diagnostics import significance_debug_dump_matches
     from relax.helpers.projection import compact_relion_projector_half_for_centered_indices
     from relax.scoring.pass1_plan import global_pass1_relion_projector_texture_enabled
     from relax.scoring.significance import _compute_k_class_significance_batched
@@ -821,7 +821,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         firstiter_cc_support=engine_kwargs.get("firstiter_cc_support", "relion"),
         nyquist_column_counting=engine_kwargs.get("nyquist_column_counting", "relion"),
         tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
-        collect_significance=_significance_debug_dump_matches(
+        collect_significance=significance_debug_dump_matches(
             current_size=engine_kwargs.get("current_size"),
             debug_iteration=engine_kwargs.get("debug_iteration"),
         ),
