@@ -17,6 +17,12 @@ def test_initialmodel_fine_children_inherit_frozen_relion_parent_prior():
         random_perturbation=0,
         coarse_translations=np.asarray([[99, 0]], np.float32),
         coarse_prior_translations=np.asarray([[0, -6]], np.float32),
+        healpix_order=1,
+        oversampling=1,
+        offset_range_px=6.0,
+        offset_step_px=2.0,
+        offset_range_angstrom=6.0,
+        offset_step_angstrom=2.0,
     )
     # The protocol also accepts externally materialized plans. Supplying the
     # parent explicitly isolates adapter behavior from sampling construction.

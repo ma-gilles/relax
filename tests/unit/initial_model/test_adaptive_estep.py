@@ -31,7 +31,12 @@ def test_route_translations_match_the_vdam_sampling_plan(order, oversampling, pe
         oversampling=oversampling,
         random_perturbation=perturbation,
     )
-    plan = native_sampling.build_sampling_plan(opts, iteration=3, defer_fine_rotations=True)
+    plan = native_sampling.build_sampling_plan(
+        opts,
+        sampling_state=native_sampling.initial_sampling_state(opts, pixel_size=1.0),
+        iteration=3,
+        defer_fine_rotations=True,
+    )
     route = adaptive_estep.adaptive_route_grids(
         healpix_order=order,
         oversampling_order=oversampling,
@@ -107,7 +112,12 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
 
     calls = []
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
-    plan = native_sampling.build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
+    plan = native_sampling.build_sampling_plan(
+        opts,
+        sampling_state=native_sampling.initial_sampling_state(opts, pixel_size=1.0),
+        iteration=2,
+        defer_fine_rotations=True,
+    )
     key = adaptive_estep.relion_order_of_recovar_rotations(1)
     prior_relion = np.arange(n_classes * key.size, dtype=np.float32).reshape(n_classes, key.size)
     # One coarse translation prior row per image of the whole dataset.
@@ -206,7 +216,12 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
 
     monkeypatch.setattr(adaptive_estep, "run_dense_k_class_em_adaptive", forbidden)
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
-    plan = native_sampling.build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
+    plan = native_sampling.build_sampling_plan(
+        opts,
+        sampling_state=native_sampling.initial_sampling_state(opts, pixel_size=1.0),
+        iteration=2,
+        defer_fine_rotations=True,
+    )
     state = initialise_denovo_state(
         box_size=8, pixel_size=1.0, K=2, nr_iter=4, n_directions=4, pseudo_halfsets=pseudo_halfsets
     )

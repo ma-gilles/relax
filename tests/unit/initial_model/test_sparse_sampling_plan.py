@@ -25,13 +25,22 @@ def test_deferred_plan_preserves_geometry(monkeypatch, order, oversampling, pert
         oversampling=oversampling,
         random_perturbation=perturbation,
     )
-    dense = native_sampling.build_sampling_plan(opts, iteration=3)
+    dense = native_sampling.build_sampling_plan(
+        opts,
+        sampling_state=native_sampling.initial_sampling_state(opts, pixel_size=1.0),
+        iteration=3,
+    )
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Unused full fine grid was materialized")
 
     monkeypatch.setattr(sampling, "get_oversampled_relion_hidden_rotation_grid_from_samples", forbidden)
-    sparse = native_sampling.build_sampling_plan(opts, iteration=3, defer_fine_rotations=True)
+    sparse = native_sampling.build_sampling_plan(
+        opts,
+        sampling_state=native_sampling.initial_sampling_state(opts, pixel_size=1.0),
+        iteration=3,
+        defer_fine_rotations=True,
+    )
     assert sparse.n_rotations == dense.n_rotations == len(dense.rotations)
     if oversampling:
         assert sparse.rotations is None
@@ -51,7 +60,11 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
         oversampling=1,
         random_perturbation=0.25,
     )
-    dense = native_sampling.build_sampling_plan(opts, iteration=3)
+    dense = native_sampling.build_sampling_plan(
+        opts,
+        sampling_state=native_sampling.initial_sampling_state(opts, pixel_size=1.0),
+        iteration=3,
+    )
     expected_count = len(dense.rotations)
     calls = []
 

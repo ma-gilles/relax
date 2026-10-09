@@ -28,7 +28,7 @@ from relax.helpers.expected_accuracy import (
     estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
 )
 from relax.relion.optics_aberrations import expected_accuracy_optics
-from relax.vdam.native_options import InitialModelDefaults, NativeInitialModelOptions
+from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.schedules import relion_sampling_cadence
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 
@@ -65,12 +65,12 @@ class NativeSamplingPlan:
     rotations: np.ndarray | None
     translations: np.ndarray
     random_perturbation: float
-    healpix_order: int = InitialModelDefaults.healpix_order
-    oversampling: int = InitialModelDefaults.oversampling
-    offset_range_px: float = InitialModelDefaults.offset_range_px
-    offset_step_px: float = InitialModelDefaults.offset_step_px
-    offset_range_angstrom: float = InitialModelDefaults.offset_range_px
-    offset_step_angstrom: float = InitialModelDefaults.offset_step_px
+    healpix_order: int
+    oversampling: int
+    offset_range_px: float
+    offset_step_px: float
+    offset_range_angstrom: float
+    offset_step_angstrom: float
     coarse_translations: np.ndarray | None = None
     coarse_prior_translations: np.ndarray | None = None
     metadata_translations: np.ndarray | None = None
@@ -645,34 +645,25 @@ def build_sampling_plan(
     opts: NativeInitialModelOptions,
     *,
     iteration: int = 1,
-    sampling_state: NativeSamplingState | None = None,
+    sampling_state: NativeSamplingState,
     defer_fine_rotations: bool = False,
 ) -> NativeSamplingPlan:
-    if sampling_state is None:
-        healpix_order = opts.healpix_order
-        oversampling = opts.oversampling
-        offset_range_px = offset_range_angstrom = opts.offset_range_px
-        offset_step_px = offset_step_angstrom = opts.offset_step_px
-    else:
-        healpix_order = sampling_state.healpix_order
-        oversampling = sampling_state.adaptive_oversampling
-        offset_range_px = sampling_state.offset_range_px
-        offset_step_px = sampling_state.offset_step_px
-        offset_range_angstrom = sampling_state.offset_range_angstrom
-        offset_step_angstrom = sampling_state.offset_step_angstrom
+    healpix_order = sampling_state.healpix_order
+    oversampling = sampling_state.adaptive_oversampling
+    offset_range_px = sampling_state.offset_range_px
+    offset_step_px = sampling_state.offset_step_px
+    offset_range_angstrom = sampling_state.offset_range_angstrom
+    offset_step_angstrom = sampling_state.offset_step_angstrom
     if oversampling < 0:
         raise ValueError("oversampling must be >= 0")
 
     random_perturbation = _random_perturbation_for_iteration(opts, iteration)
     perturbed = abs(random_perturbation) > 1e-12
 
-    source_units_per_pixel = (
-        float(sampling_state.pixel_size) if sampling_state is not None else 1.0
-    )
     metadata_coarse_translations = sampling.get_relion_translation_grid(
         max_pixel=offset_range_px,
         pixel_offset=offset_step_px,
-        source_units_per_pixel=source_units_per_pixel,
+        source_units_per_pixel=float(sampling_state.pixel_size),
     )
     coarse_translations = metadata_coarse_translations.astype(np.float32)
     coarse_pass1_translations = (

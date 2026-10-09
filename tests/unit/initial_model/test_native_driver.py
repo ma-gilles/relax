@@ -902,7 +902,10 @@ def test_sampling_plan_oversamples_relion_grid():
         random_perturbation=0.0,
     )
 
-    plan = native_sampling.build_sampling_plan(opts)
+    plan = native_sampling.build_sampling_plan(
+        opts,
+        sampling_state=native_sampling.initial_sampling_state(opts, pixel_size=1.0),
+    )
 
     assert plan.rotations.shape == (4608, 3, 3)
     assert plan.translations.shape == (116, 2)
@@ -923,6 +926,12 @@ def test_native_expectation_step_uses_rfloat_metadata_translations(monkeypatch):
             coarse_base_translations=np.asarray([[0.0, 0.0], [metadata_translation, 0.0]], dtype=np.float64),
             metadata_translations=np.asarray([[0.0, 0.0], [metadata_translation, 0.0]], dtype=np.float64),
             random_perturbation=0.0,
+            healpix_order=1,
+            oversampling=1,
+            offset_range_px=6.0,
+            offset_step_px=2.0,
+            offset_range_angstrom=6.0,
+            offset_step_angstrom=2.0,
         )
 
     def fake_run_dense(dataset, state, config, *, particle_ids, halfset_ids):
@@ -1706,6 +1715,12 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
             translations=np.zeros((iteration + 1, 2), dtype=np.float32),
             coarse_base_translations=np.zeros((iteration + 1, 2), dtype=np.float64),
             random_perturbation=0.125,
+            healpix_order=1,
+            oversampling=1,
+            offset_range_px=6.0,
+            offset_step_px=2.0,
+            offset_range_angstrom=6.0,
+            offset_step_angstrom=2.0,
         )
 
     def fake_run_dense(dataset, state, config, *, particle_ids, halfset_ids):
@@ -1755,6 +1770,12 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
             translations=np.asarray([[0.0, 0.0], [2.0, -1.0], [4.0, 0.0]], dtype=np.float32),
             coarse_base_translations=np.asarray([[0.0, 0.0], [2.0, -1.0], [4.0, 0.0]], dtype=np.float64),
             random_perturbation=0.0,
+            healpix_order=1,
+            oversampling=1,
+            offset_range_px=6.0,
+            offset_step_px=2.0,
+            offset_range_angstrom=6.0,
+            offset_step_angstrom=2.0,
         )
 
     def fake_run_dense(dataset, state, config, *, particle_ids, halfset_ids):
@@ -2345,6 +2366,12 @@ def test_dense_estep_config_splits_fine_and_coarse_translation_priors():
         coarse_base_translations=np.asarray([[99.0, 0.0]], dtype=np.float64),
         coarse_prior_translations=np.asarray([[1.0, 0.0]], dtype=np.float32),
         translation_parent=np.asarray([0, 0], dtype=np.int64),
+        healpix_order=1,
+        oversampling=1,
+        offset_range_px=6.0,
+        offset_step_px=2.0,
+        offset_range_angstrom=6.0,
+        offset_step_angstrom=2.0,
     )
 
     config = estep_setup.initial_model_estep_config(
@@ -2375,6 +2402,9 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
         offset_step_px=2.0,
         coarse_translations=np.asarray([[0.0, 0.0], [2.0, 0.0]], dtype=np.float32),
         coarse_base_translations=np.asarray([[0.0, 0.0], [2.0, 0.0]], dtype=np.float64),
+        offset_range_px=6.0,
+        offset_range_angstrom=6.0,
+        offset_step_angstrom=2.0,
     )
 
     config = estep_setup.initial_model_estep_config(

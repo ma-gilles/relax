@@ -21,7 +21,7 @@ from relax.vdam.estep_meta_updates import update_probabilities_from_estep
 from relax.vdam.estep_setup import noise_variance_from_sigma2
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
-from relax.vdam.native_sampling import build_sampling_plan
+from relax.vdam.native_sampling import build_sampling_plan, initial_sampling_state
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.sgd import (
     GAMMA,
@@ -314,7 +314,13 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
         return np.zeros((12, 3), dtype=np.float64)
 
     monkeypatch.setattr(sampling, "_get_relion_rotation_grid_eulers_float64", coarse_eulers)
-    grids = [build_sampling_plan(opts[name], iteration=iteration) for name in opts for iteration in (1, 3)]
+    grids = [
+        build_sampling_plan(
+            opts[name], sampling_state=initial_sampling_state(opts[name], pixel_size=1.0), iteration=iteration
+        )
+        for name in opts
+        for iteration in (1, 3)
+    ]
     # RELION's native hidden-variable order (its source angles; the matrices are their host inverses).
     assert requested_orders == [(1, "relion")] * 4
     for grid in grids:
