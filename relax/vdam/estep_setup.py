@@ -17,6 +17,10 @@ import numpy as np
 from recovar.reconstruction.noise import make_radial_noise
 from recovar.utils.helpers import get_gpu_memory_total
 
+# Importing relax.cuda.kernels registers RELION's CUDA image preprocessing with recovar's relion_cuda image
+# backend (relax split seam S2), which configure_relion_image_mask can select. relax.helpers.preprocessing, which
+# the adaptive E-step imports, does the same; this module names the registration it relies on.
+from relax.cuda import kernels as _relion_cuda_preprocessor_registration  # noqa: F401
 from relax.helpers.orientation_priors import (
     relion_round_away_from_zero,
     relion_sigma_offset_prior_center,
@@ -86,10 +90,6 @@ def configure_relion_image_mask(dataset, opts: NativeInitialModelOptions) -> Non
         particle_diameter_ang=float(opts.particle_diameter),
         width_mask_edge_px=float(opts.width_mask_edge_px),
     )
-    from relax.cuda import (
-        kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor)
-    )
-
     backend.set_relion_fourier_backend(opts.image_fourier_backend)
 
 
