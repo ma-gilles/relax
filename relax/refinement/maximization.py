@@ -113,9 +113,10 @@ class MStepOperands:
     """What a numbered M-step solves from: the two halves' accumulators as the expectation published them
     (``numerators`` and ``denominators``, each a pair; their ``accumulator_shape``, the resolved
     ``full_half_axis`` the Class3D join reads and each half's own ``full_half_axes`` the K=1 prior reads), and
-    what the Class3D prior reads besides: the ``halves``, the expectation windows' ``image_current_size`` and
-    half 1's projected reference power (None before a previous iteration's). The record holds the arrays the
-    loop holds until its end-of-iteration boundary."""
+    what the Class3D prior reads besides: the ``halves``, the expectation windows' ``image_current_size``,
+    half 1's projected reference power (None before a previous iteration's) and each half's E-step
+    ``noise_stats``, whose ``sumw`` is RELION's ``sumw_group``. The record holds the arrays the loop holds
+    until its end-of-iteration boundary."""
 
     numerators: tuple
     denominators: tuple
@@ -125,18 +126,19 @@ class MStepOperands:
     halves: tuple
     image_current_size: int
     projector_power_spectrum: object
+    noise_stats: tuple
 
 
 def mstep_operands(per_half, *, padded_volume_shape, halves, image_current_size, projector_power_spectrum) -> MStepOperands:
     """The M-step's operands from the expectation's published ``per_half``: its accumulators, their resolved
     accumulator shape (the padded volume when the scorers set none) and full-half axis (the last axis when
-    none), each half's own axes, and the Class3D prior's other inputs."""
+    none), each half's own axes, its E-step noise statistics, and the Class3D prior's other inputs."""
     return MStepOperands(
         numerators=tuple(per_half.Ft_y), denominators=tuple(per_half.Ft_ctf),
         accumulator_shape=score_outputs.resolve_mstep_accumulator_shape(per_half.mstep_accumulator_shape, padded_volume_shape),
         full_half_axis=score_outputs.resolve_mstep_full_half_axis(per_half.mstep_full_half_axis, default_axis=-1),
         full_half_axes=per_half.mstep_full_half_axis, halves=halves, image_current_size=image_current_size,
-        projector_power_spectrum=projector_power_spectrum,
+        projector_power_spectrum=projector_power_spectrum, noise_stats=tuple(per_half.noise_stats),
     )
 
 
@@ -179,6 +181,7 @@ def class_maximization(
         ctx.reconstruction_settings,
         half_denominators=(Ft_ctf_0, Ft_ctf_1),
         halves=operands.halves,
+        noise_stats_per_half=operands.noise_stats,
         n_classes=options.k_class.n_classes,
         iteration=this_iteration.iteration,
         current_size=this_iteration.current_size,

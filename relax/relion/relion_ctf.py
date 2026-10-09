@@ -316,20 +316,25 @@ def premultiplied_ctf2_shell_sums(experiment_dataset, image_indices, image_shape
     return sums
 
 
-def premultiplied_average_ctf2(parts, box_size: int):
-    """RELION's ``setAverageCTF2`` (ml_optimiser.cpp:5697-5740), or ``None`` without premultiplied images.
+def premultiplied_average_ctf2(parts, box_size: int, sumw: float):
+    """RELION's ``setAverageCTF2`` (ml_optimiser.cpp:4885-4926), or ``None`` without premultiplied images.
 
-    ``avgctf2[ires] = sum_images max(0.001, scale) * sum_{shell} Fctf / (N * Npix_per_shell[ires])``
-    over every image of ``parts``, the numerator only over CTF-premultiplied images and the
-    denominator over all of them (each image's weights sum to one, so ``sumw_group`` counts
-    images). Each part is ``(dataset, scales, window, group_scale)``: a STAR-backed dataset
-    on one image grid, its per-image scale corrections of this iteration's E-step (``None``:
-    1), its image current size and its scale difference ``s_g``. A part's shell sums
-    (``Mresol_fine`` of its own window) add onto the model shells ``ROUND(i / s_g)``, as
-    storeWeightedSums adds ``thr_wsum_ctf2`` into ``sumw_ctf2`` (acc_ml_optimiser_impl.h:
-    3612-3626); ``box_size`` is the model's ``ori_size``. RELION uses it without split halves
-    and with tau2 not fixed (Class3D and InitialModel): it divides ``invtau2`` by ``avgctf2``
-    in ``BackProjector::updateSSNRarrays`` (backprojector.cpp:1143-1145), which scales
+    ``avgctf2[ires] = sum_images max(0.001, scale) * sum_{shell} Fctf / (sumw * Npix_per_shell[ires])``,
+    the numerator over the CTF-premultiplied images of ``parts`` and the denominator RELION's
+    ``sum_igroup wsum_model.sumw_group[igroup] * Npix_per_shell`` (ml_optimiser.cpp:4909-4912).
+    ``sumw`` is that sum: each image adds the posterior weights of its significant fine samples
+    (``thr_sumw_group += p_weights[n]``, acc_ml_optimiser_impl.h:2842), which keep the top
+    ``adaptive_fraction`` of its mass (:2522), so it is below the image count at soft posteriors.
+    The SPA callers pass the E-step's noise ``sumw``, the same sums the noise update divides by;
+    tilt-series callers pass their tilt-image count until relax#63 checks RELION's per-particle sum.
+    Each part is ``(dataset, scales, window, group_scale)``: a STAR-backed dataset on one image
+    grid, its per-image scale corrections of this iteration's E-step (``None``: 1), its image
+    current size and its scale difference ``s_g``. A part's shell sums (``Mresol_fine`` of its
+    own window) add onto the model shells ``ROUND(i / s_g)``, as storeWeightedSums adds
+    ``thr_wsum_ctf2`` into ``sumw_ctf2`` (acc_ml_optimiser_impl.h:3590-3626); ``box_size`` is the
+    model's ``ori_size``. RELION uses it without split halves and with tau2 not fixed (Class3D
+    and InitialModel): it divides ``invtau2`` by ``avgctf2`` in
+    ``BackProjector::updateSSNRarrays`` (backprojector.cpp:1143-1145), which scales
     ``data_vs_prior`` by ``avgctf2``.
     """
 
@@ -337,11 +342,9 @@ def premultiplied_average_ctf2(parts, box_size: int):
 
     n_shells = int(box_size) // 2 + 1
     numerator = np.zeros(n_shells, dtype=np.float64)
-    n_images = 0
     found = False
     for dataset, scales, window, group_scale in parts:
         count = int(dataset.n_units)
-        n_images += count
         image_shape = tuple(int(v) for v in dataset.image_shape)
         flags = premultiplied_ctf_rows(dataset, np.arange(count), image_shape)
         if flags is None:
@@ -353,11 +356,13 @@ def premultiplied_average_ctf2(parts, box_size: int):
         numerator = add_group_shells_to_reference(numerator, np.maximum(0.001, weights[indices]) @ sums, group_scale)
     if not found:
         return None
+    if not float(sumw) > 0.0:
+        raise ValueError(f"the average CTF^2 of premultiplied images needs the E-step's sumw, got {sumw}")
     npix = np.bincount(
         (labels := _fftw_shell_labels(int(box_size), int(box_size), centered_rows=False))[labels >= 0],
         minlength=n_shells,
     )[:n_shells].astype(np.float64)
-    denominator = n_images * npix
+    denominator = float(sumw) * npix
     return np.where(denominator > 0, numerator / np.where(denominator > 0, denominator, 1.0), numerator)
 
 

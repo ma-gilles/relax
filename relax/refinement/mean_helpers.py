@@ -23,6 +23,7 @@ from relax.helpers.resolution import (
     shell_index_to_resolution_angstrom,
 )
 from relax.helpers.timing import Stopwatch
+from relax.helpers.types import total_sumw
 from relax.helpers.xla_memory_reserve import device_fits
 from relax.reconstruction import regularization_relion
 from relax.reconstruction.volume_solver import _finish_host_staged_reconstruction, _reconstruct_volume_eager
@@ -346,6 +347,7 @@ def estimate_class_priors(
     *,
     half_denominators,
     halves,
+    noise_stats_per_half,
     n_classes,
     iteration,
     current_size,
@@ -380,9 +382,11 @@ def estimate_class_priors(
     kclass_tau2_source = class_tau2.source
     probe = NoProbe() if probe is None else probe
     # CTF-premultiplied images: RELION's average CTF^2 correction of data_vs_prior
-    # (setAverageCTF2; Class3D has no split halves and does not fix tau2). It averages over
-    # images, so a subtomogram half counts its tilt images, each with its particle's scale,
-    # and a half with several image shapes counts each shape class on its own grid.
+    # (setAverageCTF2; Class3D has no split halves and does not fix tau2). Its numerator sums
+    # over images, so a subtomogram half counts its tilt images, each with its particle's scale,
+    # and a half with several image shapes counts each shape class on its own grid. Its
+    # denominator is the E-step's significant weight (sumw_group), the noise update's sumw;
+    # tilt-series halves keep their tilt-image count until relax#63 checks RELION's.
     ctf2_parts = []
     for half in halves:
         dataset, scales = half.dataset, half.scale_corrections
@@ -392,7 +396,11 @@ def estimate_class_priors(
         ctf2_parts += average_ctf2_parts(
             dataset, scales, current_size=current_size, image_current_size=image_current_size
         )
-    average_ctf2 = relion_ctf.premultiplied_average_ctf2(ctf2_parts, settings.box_size)
+    if any(isinstance(half.dataset, TomoHalf) for half in halves):
+        sumw = float(sum(int(part[0].n_units) for part in ctf2_parts))
+    else:
+        sumw = sum(total_sumw(stats.sumw) for stats in noise_stats_per_half if stats is not None)
+    average_ctf2 = relion_ctf.premultiplied_average_ctf2(ctf2_parts, settings.box_size, sumw)
     for class_idx in range(n_classes):
         log.info(
             "Class3D tau2 update start: iter=%d class=%d/%d current_size=%d source=%s spectrum=%s",

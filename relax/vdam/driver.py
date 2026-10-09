@@ -204,15 +204,16 @@ def _native_expectation_step(
             )
             effective_image_batch_size = int(opts.image_batch_size)
             if premultiplied_ctf:
-                # setAverageCTF2 over this iteration's images: every tilt image counts once.
+                # setAverageCTF2: every tilt image counts once, also in the denominator until relax#63.
+                subset_images = dataset.subset(ids).images
                 result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
                     average_ctf2_parts(
-                        dataset.subset(ids).images,
+                        subset_images,
                         None,
                         current_size=int(state.effective_current_size),
                         image_current_size=int(state.effective_current_size),
                     ),
-                    int(state.box_size),
+                    int(state.box_size), float(subset_images.n_units),
                 )
         else:
             result = _spa_estep(
@@ -230,7 +231,7 @@ def _native_expectation_step(
             result, effective_image_batch_size, max_significants = result
             if premultiplied_ctf:
                 # The subset's average CTF^2 corrects the M-step's SSNR (setAverageCTF2 over
-                # this iteration's images, ml_optimiser.cpp:5697-5740).
+                # this iteration's images and their sumw_group, ml_optimiser.cpp:4885-4926).
                 result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
                     average_ctf2_parts(
                         dataset.subset(np.asarray(particle_ids, dtype=np.int64)),
@@ -238,7 +239,7 @@ def _native_expectation_step(
                         current_size=int(state.effective_current_size),
                         image_current_size=int(state.effective_current_size),
                     ),
-                    int(state.box_size),
+                    int(state.box_size), float(np.sum(result.meta["noise_sumw"])),
                 )
         result.meta.update(
             random_perturbation=float(sampling_plan.random_perturbation),

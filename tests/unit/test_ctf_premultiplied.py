@@ -110,7 +110,7 @@ def test_premultiplied_questions_refuse_a_dataset_whose_optics_are_unknown():
     with pytest.raises(ValueError, match="not a STAR-backed dataset"):
         relion_ctf.dataset_has_premultiplied_ctf(dataset, (BOX, BOX))
     with pytest.raises(ValueError, match="not a STAR-backed dataset"):
-        relion_ctf.premultiplied_average_ctf2([(dataset, None, BOX, 1.0)], BOX)
+        relion_ctf.premultiplied_average_ctf2([(dataset, None, BOX, 1.0)], BOX, 4.0)
     with pytest.raises(AttributeError, match="particles_file"):
         relion_ctf.dataset_has_premultiplied_ctf(SimpleNamespace(image_shape=(BOX, BOX)), (BOX, BOX))
 
@@ -120,7 +120,7 @@ def test_a_dataset_built_in_memory_has_no_optics_table_unless_it_flags_premultip
     in_memory = SimpleNamespace(particles_file=None, image_shape=(BOX, BOX), n_units=4, premultiplied_ctf=False)
     assert relion_ctf.premultiplied_ctf_rows(in_memory, np.arange(4), (BOX, BOX)) is None
     assert not relion_ctf.dataset_has_premultiplied_ctf(in_memory, (BOX, BOX))
-    assert relion_ctf.premultiplied_average_ctf2([(in_memory, None, BOX, 1.0)], BOX) is None
+    assert relion_ctf.premultiplied_average_ctf2([(in_memory, None, BOX, 1.0)], BOX, 4.0) is None
     in_memory.premultiplied_ctf = True
     with pytest.raises(ValueError, match="built in memory .* CTF-premultiplied"):
         relion_ctf.dataset_has_premultiplied_ctf(in_memory, (BOX, BOX))
@@ -269,7 +269,9 @@ def _relion_npix_per_shell(ori_size):
 @pytest.mark.unit
 @pytest.mark.parametrize("window", [BOX, 10])
 def test_average_ctf2_is_relions_set_average_ctf2(star_dataset, window):
-    """ml_optimiser.cpp:5697-5740 with the storeWeightedSums sumw_ctf2 term, written out literally."""
+    """setAverageCTF2 (ml_optimiser.cpp:4885-4926) with the storeWeightedSums sumw_ctf2 term, written out
+    literally. The denominator is sumw_group, the images' significant posterior mass (relax#60): below
+    the image count when the fine pass keeps only the top adaptive_fraction of each image's mass."""
 
     star_dataset.n_units = len(PARTICLES)
     scales = np.asarray([1.2, 0.0005, 0.9, 1.1])
@@ -283,14 +285,20 @@ def test_average_ctf2_is_relions_set_average_ctf2(star_dataset, window):
     npix = _relion_npix_per_shell(BOX)
     expected = np.zeros(BOX // 2 + 1)
     expected[: window // 2 + 1] = numerator
-    expected = expected / (4 * npix)
+    sumw = 4 * 0.999  # four images, each keeping 0.999 of its mass
+    expected = expected / (sumw * npix)
 
     sums = relion_ctf.premultiplied_ctf2_shell_sums(star_dataset, np.arange(4), (BOX, BOX), window)
     for p in range(4):
         assert_matches(sums[p], _relion_sumw_ctf2(fctf[p], window), rtol=1e-12)
-    average = relion_ctf.premultiplied_average_ctf2([(star_dataset, scales, window, 1.0)], BOX)
+    average = relion_ctf.premultiplied_average_ctf2([(star_dataset, scales, window, 1.0)], BOX, sumw)
     assert_matches(average, expected, rtol=1e-12)
     assert np.all(average[: window // 2 + 1] > 0)
+    # Counting images instead of their weight (before relax#60) is off by the kept mass.
+    by_count = relion_ctf.premultiplied_average_ctf2([(star_dataset, scales, window, 1.0)], BOX, 4.0)
+    assert_matches(by_count[: window // 2 + 1] / average[: window // 2 + 1], 0.999, rtol=1e-12)
+    with pytest.raises(ValueError, match="needs the E-step's sumw"):
+        relion_ctf.premultiplied_average_ctf2([(star_dataset, scales, window, 1.0)], BOX, 0.0)
 
 
 @pytest.mark.unit
@@ -301,7 +309,7 @@ def test_average_ctf2_is_none_without_premultiplied_images(tmp_path, monkeypatch
         image_shape=(BOX, BOX),
         n_units=len(PARTICLES),
     )
-    assert relion_ctf.premultiplied_average_ctf2([(ordinary, None, BOX, 1.0)], BOX) is None
+    assert relion_ctf.premultiplied_average_ctf2([(ordinary, None, BOX, 1.0)], BOX, 4.0) is None
 
 
 def _shape_class_half(star, scale_b):
@@ -347,11 +355,11 @@ def test_average_ctf2_of_several_image_shapes_is_relions_remapped_sumw_ctf2(tmp_
             i_resam = int(np.floor(i / scale_b + 0.5))
             if i_resam < expected.size:
                 expected[i_resam] += value
-    expected /= 4 * _relion_npix_per_shell(BOX)
+    expected /= 3.5 * _relion_npix_per_shell(BOX)
 
     parts = average_ctf2_parts(half, half_scales, current_size=current_size, image_current_size=current_size)
     assert [part[2] for part in parts] == [current_size, window_b]
-    average = relion_ctf.premultiplied_average_ctf2(parts, BOX)
+    average = relion_ctf.premultiplied_average_ctf2(parts, BOX, 3.5)
     assert_matches(average, expected, rtol=1e-12)
     assert datasets_store_premultiplied_ctf([half])
     # The half itself has no single source STAR: asking it directly is refused, not answered "no".
