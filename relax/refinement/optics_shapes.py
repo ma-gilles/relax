@@ -202,7 +202,7 @@ def prepare_optics(
     )
 
 
-def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
+def make_shape_classes(datasets_and_indices, *, model_box_size, ref_pixel):
     """``ShapeClass`` records from ``(dataset, half positions)`` pairs.
 
     A class at scale ``s >= sqrt(2)`` is refused. There, RELION's fine kernels project
@@ -213,14 +213,14 @@ def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
 
     classes = []
     for dataset, indices in datasets_and_indices:
-        box = int(dataset.image_shape[0])
+        box_size = int(dataset.image_shape[0])
         pixel = float(dataset.voxel_size)
-        scale = optics_scale.scale_difference(box, pixel, ref_box, ref_pixel)
+        scale = optics_scale.scale_difference(box_size, pixel, model_box_size, ref_pixel)
         if scale >= math.sqrt(2.0):
             raise NotImplementedError(
-                f"an optics group of {box} px at {pixel} A spans {scale:.3f} times the reference field of view "
-                f"({ref_box} px at {ref_pixel} A). From sqrt(2) on, RELION's fine and weighted-sum kernels project "
-                "the pixel (maxR, i) for every image row i beyond the model radius, and shift the image at that "
+                f"an optics group of {box_size} px at {pixel} A spans {scale:.3f} times the reference field of view "
+                f"({model_box_size} px at {ref_pixel} A). From sqrt(2) on, RELION's fine and weighted-sum kernels "
+                "project the pixel (maxR, i) for every image row i beyond the model radius, and shift the image at that "
                 "pixel too (acc/cuda/cuda_kernels/diff2.cuh:494-530, wavg.cuh:81-86), a RELION defect relax will "
                 "reproduce with the S4.2 scorer changes. Until then, list the optics group with the largest "
                 "box x pixel size first."
@@ -229,7 +229,7 @@ def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
             ShapeClass(
                 dataset=dataset,
                 image_indices=np.asarray(indices, dtype=np.int64),
-                box_size=box,
+                box_size=box_size,
                 pixel_size=pixel,
                 scale=scale,
                 translation_factor=float(ref_pixel) / pixel,
@@ -318,7 +318,7 @@ class MultiShapeDataset:
             positions = np.flatnonzero(self._class_of_row[rows] == c)
             if positions.size:
                 pairs.append((dataset.subset(self._local_of_row[rows[positions]]), positions))
-        classes = make_shape_classes(pairs, ref_box=self.grid_size, ref_pixel=self.voxel_size)
+        classes = make_shape_classes(pairs, model_box_size=self.grid_size, ref_pixel=self.voxel_size)
         return MultiShapeHalf(
             classes,
             image_shape=self.image_shape,
@@ -654,18 +654,18 @@ def _class_coarse_size(coarse_sizing, shape_class: ShapeClass, class_current_siz
     return size if size < shape_class.box_size else None
 
 
-def class_noise_table(noise_radial_ref, shape_class: ShapeClass, ref_box: int):
+def class_noise_table(noise_radial_ref, shape_class: ShapeClass, model_box_size: int):
     """The class's per-pixel noise rows, read from the reference-shell spectra.
 
     ``noise_radial_ref`` is ``[G, n_ref]`` in RECOVAR's native units on the reference
-    grid (RELION sigma2 times ``ref_box**4``); the class grid's native unit is RELION
+    grid (RELION sigma2 times ``model_box_size**4``); the class grid's native unit is RELION
     sigma2 times ``box_g**4``.
     """
 
     from recovar.reconstruction import noise
 
     radial = np.atleast_2d(np.asarray(noise_radial_ref, dtype=np.float64))
-    to_class = (float(shape_class.box_size) / float(ref_box)) ** 4
+    to_class = (float(shape_class.box_size) / float(model_box_size)) ** 4
     n_shells = shape_class.box_size // 2 + 1
     shape = (shape_class.box_size, shape_class.box_size)
     beyond = optics_scale.reference_shell_of_group_shell(n_shells, shape_class.scale) >= radial.shape[-1]
@@ -680,12 +680,12 @@ def class_noise_table(noise_radial_ref, shape_class: ShapeClass, ref_box: int):
     return np.stack(rows)
 
 
-def noise_sums_to_reference(values, shape_class: ShapeClass, ref_box: int):
+def noise_sums_to_reference(values, shape_class: ShapeClass, model_box_size: int):
     """Class per-shell sums ``[G, n_g]`` in class native units onto ``[G, n_ref]`` reference shells."""
 
     values = np.atleast_2d(np.asarray(values, dtype=np.float64))
-    to_reference = (float(ref_box) / float(shape_class.box_size)) ** 4
-    n_ref = ref_box // 2 + 1
+    to_reference = (float(model_box_size) / float(shape_class.box_size)) ** 4
+    n_ref = model_box_size // 2 + 1
     return np.stack(
         [
             optics_scale.add_group_shells_to_reference(np.zeros(n_ref), row * to_reference, shape_class.scale)
@@ -711,18 +711,18 @@ def place_by_index(parts, classes, n_half):
     return out
 
 
-def _to_reference_units(value, shape_class: ShapeClass, ref_box: int, power: int):
+def _to_reference_units(value, shape_class: ShapeClass, model_box_size: int, power: int):
     """A class's backprojected sum in the reference class's native units.
 
     A class's native image Fourier values carry ``box_g**2`` and its noise ``box_g**4``
     (RELION's normalised values times those), so its data sum (image / noise) carries
     ``box_g**-2`` and its weight sum (1 / noise) ``box_g**-4``; RELION adds both in its own
-    normalisation. Rescaled by ``(box_g / ref_box) ** power`` they add to the reference
+    normalisation. Rescaled by ``(box_g / model_box_size) ** power`` they add to the reference
     class's sums, as the noise sums do (``noise_sums_to_reference``).
     """
-    if value is None or shape_class.box_size == ref_box:
+    if value is None or shape_class.box_size == model_box_size:
         return value
-    return value * ((float(shape_class.box_size) / float(ref_box)) ** power)
+    return value * ((float(shape_class.box_size) / float(model_box_size)) ** power)
 
 
 def _common_centered_cubes(values):
@@ -763,7 +763,7 @@ def _sum(values):
     return total
 
 
-def _merge_noise_stats(stats, classes, n_half, ref_box):
+def _merge_noise_stats(stats, classes, n_half, model_box_size):
     from relax.helpers.types import make_noise_stats
 
     if all(stat is None for stat in stats):
@@ -774,10 +774,10 @@ def _merge_noise_stats(stats, classes, n_half, ref_box):
         raise NotImplementedError("split noise diagnostics are not merged across shape classes")
     return make_noise_stats(
         wsum_sigma2_noise=_sum(
-            [noise_sums_to_reference(s.wsum_sigma2_noise, c, ref_box) for s, c in zip(stats, classes)]
+            [noise_sums_to_reference(s.wsum_sigma2_noise, c, model_box_size) for s, c in zip(stats, classes)]
         ),
         wsum_img_power=_sum(
-            [noise_sums_to_reference(s.wsum_img_power, c, ref_box) for s, c in zip(stats, classes)]
+            [noise_sums_to_reference(s.wsum_img_power, c, model_box_size) for s, c in zip(stats, classes)]
         ),
         wsum_sigma2_offset=float(sum(float(s.wsum_sigma2_offset) for s in stats)),
         sumw=_sum([np.asarray(s.sumw, dtype=np.float64) for s in stats]),
@@ -785,7 +785,7 @@ def _merge_noise_stats(stats, classes, n_half, ref_box):
         # corrections and their average are compared across all particles, so every class's
         # residuals go to the reference box's units.
         wsum_norm_correction=place_by_index(
-            [_to_reference_units(s.wsum_norm_correction, c, ref_box, -4) for s, c in zip(stats, classes)],
+            [_to_reference_units(s.wsum_norm_correction, c, model_box_size, -4) for s, c in zip(stats, classes)],
             classes,
             n_half,
         ),
@@ -806,7 +806,7 @@ def _require_one_backprojector_layout(results) -> None:
             raise ValueError("shape classes returned different backprojector layouts")
 
 
-def merge_class_results(results, classes, n_half, ref_box):
+def merge_class_results(results, classes, n_half, model_box_size):
     """One ``HalfScoreResult`` for the half from its shape classes' results."""
 
     from relax.dense.score_outputs import HalfScoreResult
@@ -825,10 +825,10 @@ def merge_class_results(results, classes, n_half, ref_box):
     ]
     return HalfScoreResult(
         ha=per_image("ha"),
-        Ft_y=_sum([_to_reference_units(r.Ft_y, c, ref_box, 2) for r, c in zip(results, classes)]),
-        Ft_ctf=_sum([_to_reference_units(r.Ft_ctf, c, ref_box, 4) for r, c in zip(results, classes)]),
+        Ft_y=_sum([_to_reference_units(r.Ft_y, c, model_box_size, 2) for r, c in zip(results, classes)]),
+        Ft_ctf=_sum([_to_reference_units(r.Ft_ctf, c, model_box_size, 4) for r, c in zip(results, classes)]),
         em_stats=em_stats,
-        noise_stats=_merge_noise_stats([result.noise_stats for result in results], classes, n_half, ref_box),
+        noise_stats=_merge_noise_stats([result.noise_stats for result in results], classes, n_half, model_box_size),
         best_pose_rotations=per_image("best_pose_rotations"),
         best_pose_rotation_eulers=per_image("best_pose_rotation_eulers"),
         best_pose_translations=(
@@ -843,11 +843,11 @@ def merge_class_results(results, classes, n_half, ref_box):
         profile_summary=first.profile_summary,
         mstep_full_half_axis=first.mstep_full_half_axis,
         mstep_accumulator_shape=first.mstep_accumulator_shape,
-        classes=_merge_class_scores([result.classes for result in results], classes, n_half, ref_box),
+        classes=_merge_class_scores([result.classes for result in results], classes, n_half, model_box_size),
     )
 
 
-def _merge_class_scores(summaries, classes, n_half, ref_box):
+def _merge_class_scores(summaries, classes, n_half, model_box_size):
     """Merge class assignments, posterior sums and noise into one half's result."""
 
     from relax.dense.score_outputs import ClassScoreSummary
@@ -863,7 +863,7 @@ def _merge_class_scores(summaries, classes, n_half, ref_box):
         if any(stats is None for stats in per_class) or len({len(stats) for stats in per_class}) != 1:
             raise ValueError("per-class noise statistics are missing for some shape classes")
         noise_stats = [
-            _merge_noise_stats([stats[c] for stats in per_class], classes, n_half, ref_box)
+            _merge_noise_stats([stats[c] for stats in per_class], classes, n_half, model_box_size)
             for c in range(len(per_class[0]))
         ]
     return ClassScoreSummary(
@@ -895,7 +895,7 @@ def _merge_relion_stats(stats, classes, n_half):
     )
 
 
-def merge_k_class_engine_results(results, classes, n_half, ref_box):
+def merge_k_class_engine_results(results, classes, n_half, model_box_size):
     """One ``KClassEMResult`` for the half from its shape classes' engine results.
 
     The shape classes share the pose grids, so pose and rotation indices carry over;
@@ -933,7 +933,10 @@ def merge_k_class_engine_results(results, classes, n_half, ref_box):
     def accumulators(name, power):
         return _sum(
             _common_centered_cubes(
-                [_to_reference_units(np.asarray(getattr(r, name)), c, ref_box, power) for r, c in zip(results, classes)]
+                [
+                    _to_reference_units(np.asarray(getattr(r, name)), c, model_box_size, power)
+                    for r, c in zip(results, classes)
+                ]
             )
         )
 
@@ -944,7 +947,8 @@ def merge_k_class_engine_results(results, classes, n_half, ref_box):
         if any(value is None for value in noise):
             raise ValueError("per-class noise statistics are missing for some shape classes")
         noise_stats = tuple(
-            _merge_noise_stats([value[c] for value in noise], classes, n_half, ref_box) for c in range(len(noise[0]))
+            _merge_noise_stats([value[c] for value in noise], classes, n_half, model_box_size)
+            for c in range(len(noise[0]))
         )
     best_translations = per_class_tuple("per_class_best_pose_translations", to_reference_pixels)
     joint_translations = [
@@ -969,7 +973,9 @@ def merge_k_class_engine_results(results, classes, n_half, ref_box):
             for c in range(len(first.per_class_stats))
         ),
         noise_stats=noise_stats,
-        aggregate_noise_stats=_merge_noise_stats([r.aggregate_noise_stats for r in results], classes, n_half, ref_box),
+        aggregate_noise_stats=_merge_noise_stats(
+            [r.aggregate_noise_stats for r in results], classes, n_half, model_box_size
+        ),
         per_class_best_pose_rotations=per_class_tuple("per_class_best_pose_rotations"),
         per_class_best_pose_translations=best_translations,
         per_class_best_pose_rotation_ids=per_class_tuple("per_class_best_pose_rotation_ids"),
@@ -993,8 +999,8 @@ def require_exact_local_parent_windows(kwargs) -> None:
     """
 
     half = kwargs["experiment_dataset"]
-    ref_box = int(half.image_shape[0])
-    reference_size = kwargs.get("cs_for_engine") or ref_box
+    model_box_size = int(half.image_shape[0])
+    reference_size = kwargs.get("cs_for_engine") or model_box_size
     for shape_class in half.classes:
         window = class_kwargs(kwargs, shape_class, half.n_units).get("local_pass1_current_size") or shape_class.box_size
         if optics_scale.coarse_rows_wrap_inside(window, int(reference_size) // 2, shape_class.scale):

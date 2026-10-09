@@ -29,7 +29,7 @@ def _half(groups):
         (SimpleNamespace(image_shape=(128, 128), voxel_size=pixel), np.flatnonzero(groups == g))
         for g, pixel in enumerate((MODEL_PIXEL, OWN_PIXEL))
     ]
-    classes = optics_shapes.make_shape_classes(pairs, ref_box=128, ref_pixel=MODEL_PIXEL)
+    classes = optics_shapes.make_shape_classes(pairs, model_box_size=128, ref_pixel=MODEL_PIXEL)
     return optics_shapes.MultiShapeHalf(
         classes, image_shape=(128, 128), volume_shape=(128,) * 3, voxel_size=MODEL_PIXEL
     )

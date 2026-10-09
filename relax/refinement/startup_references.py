@@ -283,7 +283,7 @@ def relion_start_tau2_and_data_vs_prior(
     (averaged over optics groups when it has one row per group) and the particle count: each
     auto-refine half model counts its own particles (K=1); a Class3D model counts all of them,
     with the class's start-up ``pdf_class`` (1/K). ``reference_real`` is in RECOVAR's frame and
-    ``initial_noise_radial`` is RELION sigma2 times ``grid_size**4``.
+    ``initial_noise_radial`` is RELION sigma2 times ``box_size**4``.
     """
 
     tau2, data_vs_prior = _relion_start_shells(

@@ -86,7 +86,7 @@ def _multi_shape_half(kwargs, groups_of_images, boxes_and_pixels):
     for c, (box, pixel) in enumerate(boxes_and_pixels):
         positions = np.flatnonzero(groups_of_images == c)
         pairs.append((SimpleNamespace(image_shape=(box, box), voxel_size=pixel, CTF_params=ctf[positions]), positions))
-    classes = make_shape_classes(pairs, ref_box=N, ref_pixel=4.0)
+    classes = make_shape_classes(pairs, model_box_size=N, ref_pixel=4.0)
     return MultiShapeHalf(classes, image_shape=(N, N), volume_shape=SHAPE, voxel_size=4.0)
 
 

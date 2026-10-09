@@ -685,9 +685,9 @@ def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumu
 
     if current_size is None or accumulator_volume_shape is None or not tau_is_1d:
         return None
-    box = int(vol_shape[0])
+    box_size = int(vol_shape[0])
     logical = int(current_size)
-    if logical <= 0 or logical > box:
+    if logical <= 0 or logical > box_size:
         return None
     logical_shape = tuple(
         int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=logical)
@@ -695,9 +695,9 @@ def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumu
     if logical_shape != tuple(int(v) for v in accumulator_volume_shape):
         return None
     physical_shape = tuple(
-        int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=box)
+        int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=box_size)
     )
-    return box, physical_shape
+    return box_size, physical_shape
 
 
 def _stable_unregularized_class(vol_shape, padding_factor, accumulator_volume_shape, tau, current_size):

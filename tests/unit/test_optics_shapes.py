@@ -29,7 +29,7 @@ def _half():
     ds_a = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     ds_b = SimpleNamespace(image_shape=(28, 28), volume_shape=(28,) * 3, voxel_size=4.0 * 32 / 24)
     classes = optics_shapes.make_shape_classes(
-        [(ds_a, np.array([0, 3, 4])), (ds_b, np.array([1, 2]))], ref_box=REF_BOX, ref_pixel=REF_PIX
+        [(ds_a, np.array([0, 3, 4])), (ds_b, np.array([1, 2]))], model_box_size=REF_BOX, ref_pixel=REF_PIX
     )
     return optics_shapes.MultiShapeHalf(classes, image_shape=(32, 32), volume_shape=(32, 32, 32), voxel_size=4.0)
 
@@ -474,7 +474,7 @@ def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
     ds_a = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     ds_b = SimpleNamespace(image_shape=(40, 40), volume_shape=(40,) * 3, voxel_size=4.0)  # larger box
     classes = optics_shapes.make_shape_classes(
-        [(ds_a, np.array([0, 2])), (ds_b, np.array([1]))], ref_box=REF_BOX, ref_pixel=REF_PIX
+        [(ds_a, np.array([0, 2])), (ds_b, np.array([1]))], model_box_size=REF_BOX, ref_pixel=REF_PIX
     )
     half = optics_shapes.MultiShapeHalf(classes, image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     seen = []
@@ -666,14 +666,14 @@ def test_a_group_spanning_sqrt2_times_the_reference_is_refused():
     ds_ref = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     ds_wide = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0 * 1.5)
     with pytest.raises(NotImplementedError, match="largest box x pixel size first"):
-        optics_shapes.make_shape_classes([(ds_ref, np.array([0])), (ds_wide, np.array([1]))], ref_box=REF_BOX, ref_pixel=REF_PIX)
+        optics_shapes.make_shape_classes([(ds_ref, np.array([0])), (ds_wide, np.array([1]))], model_box_size=REF_BOX, ref_pixel=REF_PIX)
 
 
 @pytest.mark.unit
 def test_local_parent_pass_refuses_the_wrapped_coarse_band():
     ds_a = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     ds_b = SimpleNamespace(image_shape=(40, 40), volume_shape=(40,) * 3, voxel_size=4.0)  # s = 1.25
-    classes = optics_shapes.make_shape_classes([(ds_a, np.array([0])), (ds_b, np.array([1]))], ref_box=REF_BOX, ref_pixel=REF_PIX)
+    classes = optics_shapes.make_shape_classes([(ds_a, np.array([0])), (ds_b, np.array([1]))], model_box_size=REF_BOX, ref_pixel=REF_PIX)
     half = optics_shapes.MultiShapeHalf(classes, image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     # r_max 10; pass-1 18 -> class window 24: 12 lies between 10 and 1.25 * sqrt(101).
     with pytest.raises(NotImplementedError, match="fused coarse scorer"):
