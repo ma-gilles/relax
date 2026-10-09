@@ -121,6 +121,9 @@ _FALSE_ENV_VALUES = {"0", "false", "no", "off"}
 
 _APPROX_ACC_ROT_CONVERGENCE_ENV = "RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE"
 
+# RELION's initial last-iteration offset change (ml_optimiser.cpp:1040, 2147): the first angular-sampling update
+# before a measurement reads it as min(1.3 * range, 5 * 999).
+CURRENT_CHANGES_INIT_OFFSETS = 999.0  # angstroms
 # RELION's "smallest changes thus far" sentinel values (ml_optimiser.cpp:1042-1044)
 SMALLEST_CHANGES_INIT_ORIENTATIONS = 999.0  # degrees
 SMALLEST_CHANGES_INIT_OFFSETS = 999.0  # angstroms
@@ -524,7 +527,7 @@ class RefinementState:
     # even when z is included). Set on `update_refinement_state` when the
     # caller provides per-image rotation matrices and translations.
     current_changes_optimal_orientations: float = float("inf")
-    current_changes_optimal_offsets_angstrom: float = float("inf")
+    current_changes_optimal_offsets_angstrom: float = CURRENT_CHANGES_INIT_OFFSETS
     current_changes_optimal_classes: float = float("inf")
     # Sticky "smallest thus far" trackers (ml_optimiser.cpp:9282-9285).
     smallest_changes_optimal_orientations: float = SMALLEST_CHANGES_INIT_ORIENTATIONS
@@ -1122,15 +1125,6 @@ def _finite_positive(value: float) -> bool:
     return bool(np.isfinite(value) and value > 0.0)
 
 
-def _translation_change_for_range_angstrom(state: RefinementState, voxel_size: float) -> float:
-    """Return RELION's offset-change statistic in Angstroms for range update."""
-    if _finite_positive(state.current_changes_optimal_offsets_angstrom):
-        return float(state.current_changes_optimal_offsets_angstrom)
-    if _finite_positive(state.changes_optimal_offsets):
-        return float(state.changes_optimal_offsets) * voxel_size
-    return float("inf")
-
-
 def _relion_next_translation_sampling_pixels(state: RefinementState) -> tuple[float, float]:
     """Return RELION auto-refine translation ``(range_px, step_px)``.
 
@@ -1154,15 +1148,10 @@ def _relion_next_translation_sampling_pixels(state: RefinementState) -> tuple[fl
         # RELION's width guard below will coarsen it to range/4 when needed.
         new_step_ang = 0.0
 
-    offset_change_ang = _translation_change_for_range_angstrom(state, voxel_size)
-    if _finite_positive(offset_change_ang):
-        # Five times the last offset changes: RELION's 3x branch is data_dim == 3 only, and 2D-stack
-        # subtomograms have data_dim 2 (ml_optimiser.cpp:9836-9838; the S1 RELION run's ranges are 5x).
-        new_range_ang = 5.0 * offset_change_ang
-        if _finite_positive(old_range_ang):
-            new_range_ang = min(new_range_ang, 1.3 * old_range_ang)
-    else:
-        new_range_ang = old_range_ang
+    # Five times the last offset changes, as they are (0 included: then the 1.5-step floor below), at most 30%
+    # more than the old range. RELION's 3x branch is data_dim == 3 only, and 2D-stack subtomograms have data_dim 2
+    # (ml_optimiser.cpp:9836-9841; the S1 RELION run's ranges are 5x).
+    new_range_ang = min(1.3 * old_range_ang, 5.0 * float(state.current_changes_optimal_offsets_angstrom))
 
     if _finite_positive(new_step_ang):
         new_range_ang = max(new_range_ang, 1.5 * new_step_ang)
@@ -1189,7 +1178,7 @@ def refine_angular_sampling(state: RefinementState) -> RefinementState:
     Follows RELION's ``updateAngularSampling()`` logic:
     - HEALPix order += 1
     - Translation step = min(1.5, 0.75 * acc_trans) * 2^adaptive_oversampling
-    - Translation range = 5 * changes_optimal_offsets (capped at 1.3x previous)
+    - Translation range = 5 * current_changes_optimal_offsets_angstrom (capped at 1.3x previous)
 
     Also activates local search when the new order reaches the configured
     RELION auto-local HEALPix threshold.
@@ -1259,10 +1248,8 @@ def refine_angular_sampling(state: RefinementState) -> RefinementState:
         do_local_search=do_local,
         sigma_rot=sigma_rad,
         sigma_psi=sigma_rad,
-        # RELION-exact reset (B4):
-        current_changes_optimal_orientations=float("inf"),
-        current_changes_optimal_offsets_angstrom=float("inf"),
-        current_changes_optimal_classes=float("inf"),
+        # RELION-exact reset (B4): the smallest-changes baselines only; the last iteration's changes stay
+        # (ml_optimiser.cpp:9914-9921 resets no current_changes_optimal_*).
         smallest_changes_optimal_orientations=SMALLEST_CHANGES_INIT_ORIENTATIONS,
         smallest_changes_optimal_offsets_angstrom=SMALLEST_CHANGES_INIT_OFFSETS,
         smallest_changes_optimal_classes=SMALLEST_CHANGES_INIT_CLASSES,

@@ -1574,3 +1574,45 @@ def test_class3d_keeps_global_searches_at_any_healpix_order():
     assert not replace(class3d, iteration=1).do_local_search
     assert not refine_angular_sampling(replace(class3d, healpix_order=3)).do_local_search
     assert refine_angular_sampling(RefinementState(healpix_order=3, auto_local_healpix_order=4)).do_local_search
+
+
+def _relion_offset_update(changes_ang, old_range_ang, acc_trans, oversampling):
+    """RELION's updateAngularSampling translation rule (ml_optimiser.cpp:9830-9851), single-particle data."""
+    new_step = min(1.5, 0.75 * acc_trans) * 2.0**oversampling
+    new_range = min(1.3 * old_range_ang, 5.0 * changes_ang)
+    new_range = max(new_range, 1.5 * new_step)
+    if new_range > 4.0 * new_step:
+        new_range /= 2.0
+    if new_range > 4.0 * new_step:
+        new_step = new_range / 4.0
+    return new_range, new_step
+
+
+@pytest.mark.parametrize("changes", [0.0, 0.05, 0.9, 3.0, 999.0])
+def test_translation_update_reads_the_offset_change_as_relion_does(changes):
+    """The range is 5x the last offset change as it is, 0 included (relax#59), capped at 1.3x the old range and
+    floored at 1.5 steps; 999 is RELION's value before the first measurement."""
+    from relax.helpers.convergence import RefinementState, _relion_next_translation_sampling_pixels
+
+    pixel, old_range_px, old_step_px = 1.7, 6.0, 2.0
+    state = RefinementState(
+        adaptive_oversampling=1, translation_range=old_range_px, translation_step=old_step_px, voxel_size_angstrom=pixel
+    )
+    state.acc_trans = 0.8
+    state.current_changes_optimal_offsets_angstrom = changes
+    range_px, step_px = _relion_next_translation_sampling_pixels(state)
+
+    want_range, want_step = _relion_offset_update(changes, old_range_px * pixel, 0.8, 1)
+    assert want_step <= old_step_px * pixel  # the cases stay inside RELION's own rule (no coarser step)
+    assert_matches(np.array([range_px * pixel, step_px * pixel]), np.array([want_range, want_step]), rtol=1e-12)
+
+
+def test_a_new_state_starts_from_relions_offset_change_and_keeps_it_through_a_sampling_refinement():
+    from relax.helpers.convergence import CURRENT_CHANGES_INIT_OFFSETS, RefinementState, refine_angular_sampling
+
+    assert RefinementState().current_changes_optimal_offsets_angstrom == CURRENT_CHANGES_INIT_OFFSETS == 999.0
+    state = RefinementState(translation_range=4.0, translation_step=1.0, voxel_size_angstrom=1.0)
+    state.acc_trans = 1.0
+    state.current_changes_optimal_offsets_angstrom = 0.0
+    refined = refine_angular_sampling(state)
+    assert refined.current_changes_optimal_offsets_angstrom == 0.0
