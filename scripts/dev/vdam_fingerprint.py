@@ -24,9 +24,14 @@ upstream changes every later array of the run. The comparison is exact because b
 arithmetic on the same CPU; it is a check for move-only commits, not a merge gate for numerical changes.
 Printed lines are log rows (rule 2): their digits are masked, so a timing report shows as its template.
 
-NOT covered (use the GPU test tiers): the real E-step engine and its numbers; subtomograms (``--ios``);
-optics groups on several image shapes; the diagnostic optimiser continuation; RELION's CUDA image
-preprocessing; GPU operation order, peak memory and array lifetimes.
+Subtomograms (``--ios``) run on a simulated RELION 5 project (12 particles, seven tilts, two tomograms) with the
+tilt pass (``tomo_half.score_tomo_half`` and the pass-2 result builders of ``k_class``) replaced by a stand-in
+seeded the same way; optics groups on two image shapes run each shape class's engine call through the same
+stand-in as single particles.
+
+NOT covered (use the GPU test tiers): the real E-step engines (single-particle and tilt pass) and their numbers;
+the diagnostic optimiser continuation; RELION's CUDA image preprocessing; GPU operation order, peak memory and
+array lifetimes.
 """
 
 from __future__ import annotations
@@ -58,8 +63,8 @@ from fingerprint import (  # noqa: E402
 REFUSED_CASES = frozenset({"k1_refused_float64_scoring", "k1_refused_nan_tau2_fudge", "k1_refused_sgd_oversampling"})
 
 NOT_COVERED = (
-    "the real E-step engine and its numbers (a stand-in seeded by its operands replaces run_dense_k_class_em_adaptive)",
-    "subtomogram InitialModel (--ios) and optics groups on several image shapes",
+    "the real E-step engines and their numbers (stand-ins seeded by their operands replace "
+    "run_dense_k_class_em_adaptive and the subtomogram tilt pass, tomo_half.score_tomo_half)",
     "the diagnostic optimiser continuation (--diagnostic-continue-optimiser) and iteration reference replay",
     "RELION's CUDA image preprocessing (the cases use --image-fourier-backend host_numpy)",
     "GPU operation order, peak memory and array lifetimes",
@@ -99,6 +104,10 @@ def _cases() -> dict[str, tuple[str, dict]]:
     add("k1_seed_zero", "K=1 with random seed 0 (no particle shuffle)", ["--random-seed", "0"])
     add("k1_pad2", "K=1 with padding factor 2", ["--padding-factor", "2"])
     add("k1_optics_groups", "K=1 on two optics groups (per-group noise)", optics_groups=2)
+    add("k1_two_shapes", "K=1 on two optics groups of different image shapes (24 px at 2 A, 20 px at 2.4 A)",
+        shapes=[(24, 2.0), (20, 2.4)])
+    add("k1_tomo", "K=1 subtomograms (--ios): 12 simulated particles of 24 px at 4 A over seven tilts in two tomograms",
+        ["--particle-diameter", "60"], tomo=True)
     add("k1_profile", "K=1 with the stage profile (RECOVAR_INITIAL_MODEL_PROFILE)",
         env={"RECOVAR_INITIAL_MODEL_PROFILE": "1"})
     add("k1_clear_caches", "K=1 clearing the JAX caches every iteration", env={"RELAX_CLEAR_JAX_CACHES_PER_ITER": "1"})
@@ -168,6 +177,12 @@ MUTATIONS = (
     ("optics_group_noise", "wsum_g = noise_relion.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)",
      "wsum_g = noise_relion.normalize_wsum_to_sigma2_noise(wsum_rows[0], power_rows[0], float(sumw_rows[0]), shape, apply_floors=False)",
      "every optics group's noise is updated from group 1's sums", True),
+    ("tomo_offset_winner", "np.asarray(fine_px, dtype=np.float64)[pose % int(fine_px.shape[0])]",
+     "np.asarray(fine_px, dtype=np.float64)[(pose + 1) % int(fine_px.shape[0])]",
+     "a subtomogram's new 3D offset takes the next fine translation, not its winner", True),
+    ("shape_offset_sigma", "sigma_angstrom = shape_translations.sigma_angstrom",
+     "sigma_angstrom = 2 * shape_translations.sigma_angstrom",
+     "each image shape's coarse offset prior uses twice the offset sigma", True),
 )
 
 
@@ -181,6 +196,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     import logging
     import threading
     import traceback
+    from types import SimpleNamespace
 
     sys.dont_write_bytecode = True
     sys.path[:0] = [source, os.path.join(source, "tests")]
@@ -195,8 +211,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     from helpers.fake_adaptive_engine import adaptive_result
 
     import relax
+    from relax.classification import k_class
     from relax.commands import initial_model as command
-    from relax.vdam import adaptive_estep, driver
+    from relax.refinement import tomo_half
+    from relax.vdam import adaptive_estep, driver, shape_class_estep
 
     assert relax.__file__.startswith(source), relax.__file__
 
@@ -252,9 +270,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         n_fine = int(np.asarray(fine_rotations).shape[0])
         n_trans = int(np.asarray(fine_translations).shape[0])
         groups = int(kwargs.get("reconstruction_group_count") or 1)
-        # The pass's BackProjector cube at the current size (the layout the resident engine returns).
+        # The pass's BackProjector cube at the current size (the layout the resident engine returns); a shape
+        # class backprojects on the reference model grid, at the reference current size.
         padding = int(kwargs.get("reconstruction_padding_factor", 1))
-        edge = 2 * (int(padding * (int(kwargs["current_size"]) // 2) + 0.5) + 1) + 1
+        bpref_size = int(kwargs.get("reconstruction_volume_current_size", kwargs["current_size"]))
+        edge = 2 * (int(padding * (bpref_size // 2) + 0.5) + 1) + 1
         shape = (n_classes, groups, edge**3) if groups > 1 else (n_classes, edge**3)
         n_shells = int(experiment_dataset.image_shape[0]) // 2 + 1
         optics = kwargs.get("optics_group_ids")
@@ -305,25 +325,124 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             best_pose_rotations=jnp.asarray(np.linalg.qr(rng.standard_normal((n_images, 3, 3)))[0], dtype=jnp.float32),
         )
 
-    def write_tiny_dataset(root, *, n_images=24, box=24, optics_groups=1, seed=5):
-        """A RELION particle STAR with its stack, as a data directory."""
+    def stand_in_tomo_scoring(half, *, noise_variance, relion_projector_half, relion_projector_r_max, sampling,
+                              rotation_log_prior, old_offsets_px, sigma_offset_angst, adaptive_fraction,
+                              max_significants, unit_groups, padding_factor, reconstruction_group_ids,
+                              reconstruction_group_count, **kwargs):
+        """CPU stand-in for the subtomogram pass (tomo_half.score_tomo_half and the pass-2 result builders):
+        the E-step result seeded by every operand it receives, as for single particles."""
+        from relax.refinement.tomo_half import tomo_translation_grids
+
+        scalars = dict(kwargs, relion_projector_r_max=relion_projector_r_max, sampling=repr(sampling),
+                       sigma_offset_angst=sigma_offset_angst, adaptive_fraction=adaptive_fraction,
+                       max_significants=max_significants, padding_factor=padding_factor,
+                       reconstruction_group_count=reconstruction_group_count, n_units=int(half.n_units))
+        seed = digest_operands(noise_variance, relion_projector_half, rotation_log_prior, old_offsets_px,
+                               unit_groups, reconstruction_group_ids, scalars)
+        record("call", "tomo_engine", f"seed={seed:016x}", "kwargs=" + ",".join(sorted(scalars)))
+        rng = np.random.default_rng(seed)
+        prior = np.asarray(rotation_log_prior)
+        n_classes = 1 if prior.ndim == 1 else int(prior.shape[0])
+        n_rot = int(prior.shape[-1])
+        n_units = int(half.n_units)
+        _, _, fine_px, _ = tomo_translation_grids(sampling, float(half.voxel_size))
+        edge = 2 * (int(padding_factor * (int(sampling.fine_size) // 2) + 0.5) + 1) + 1
+        shape = (n_classes, int(reconstruction_group_count), edge**3)
+        n_shells = int(round(np.sqrt(np.asarray(noise_variance).shape[-1]))) // 2 + 1
+        n_groups = int(np.max(np.asarray(unit_groups))) + 1
+        units = SimpleNamespace(n_units=n_units, image_shape=(2 * (n_shells - 1),) * 2, volume_shape=(1, 1, 1))
+        result = adaptive_result(
+            units, np.zeros((n_classes, 1)), np.zeros((n_rot, 3, 3)), {},
+            Ft_y=jnp.asarray((rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)),
+            Ft_ctf=jnp.asarray((1.0 + rng.random(shape)).astype(np.complex64)),
+            max_posterior=0.2 + 0.8 * rng.random(n_units),
+            pose_assignments=rng.integers(0, n_rot * int(fine_px.shape[0]), size=n_units),
+            significant_counts=rng.integers(1, 5, size=n_units),
+            sigma2_offset=float(rng.random()),
+        )
+        per_class = tuple(
+            stats._replace(rotation_posterior_sums=jnp.asarray(rng.random(n_rot) * (k + 1), dtype=jnp.float32))
+            for k, stats in enumerate(result.per_class_stats)
+        )
+        resp = rng.random((n_classes, n_units))
+        sums = (resp / resp.sum(axis=0, keepdims=True)).sum(axis=1)
+        noise = result.aggregate_noise_stats._replace(
+            wsum_sigma2_noise=jnp.asarray(1.0 + rng.random((n_groups, n_shells)), dtype=jnp.float32),
+            wsum_img_power=jnp.asarray(2.0 + rng.random((n_groups, n_shells)), dtype=jnp.float32),
+            sumw=jnp.asarray(1.0 + rng.random(n_groups), dtype=jnp.float32),
+        ) if n_groups > 1 else result.aggregate_noise_stats._replace(
+            wsum_sigma2_noise=jnp.asarray(1.0 + rng.random(n_shells), dtype=jnp.float32),
+            wsum_img_power=jnp.asarray(2.0 + rng.random(n_shells), dtype=jnp.float32),
+            sumw=float(n_units),
+        )
+        result = result._replace(
+            per_class_stats=per_class, stats=per_class[0],
+            class_assignments=jnp.asarray(rng.integers(0, n_classes, size=n_units), dtype=jnp.int32),
+            class_posterior_sums=jnp.asarray(sums, dtype=jnp.float32),
+            class_mstep_posterior_sums=jnp.asarray(sums * (0.8 + 0.2 * rng.random(n_classes)), dtype=jnp.float32),
+            aggregate_noise_stats=noise,
+            best_pose_rotations=jnp.asarray(np.linalg.qr(rng.standard_normal((n_units, 3, 3)))[0], dtype=jnp.float32),
+        )
+        return SimpleNamespace(significant_counts=np.asarray(result.significant_counts), pass2=result)
+
+    def stand_in_pass2_result(pass2, **kwargs):
+        """The pass-2 result builders' stand-in: the scoring stand-in already returned the result."""
+        record("call", "tomo_result", "kwargs=" + ",".join(sorted(kwargs)))
+        return pass2
+
+    def write_tiny_tomo_project(root, *, n_particles=12, box=24, voxel=4.0, seed=3):
+        """A simulated RELION 5 subtomogram project (2D stacks, two tomograms, seven tilts), as an optimisation set."""
+        from recovar.simulation import relion_tomo
+
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        x = (np.arange(box) - box / 2) * voxel
+        zz, yy, xx = np.meshgrid(x, x, x, indexing="ij")
+        volume = np.exp(-((xx - 12) ** 2 + yy**2 + zz**2) / 200) + 0.5 * np.exp(-(xx**2 + (yy + 16) ** 2 + zz**2) / 100)
+        with mrcfile.new(root / "vol0000.mrc") as mrc:
+            mrc.set_data(volume.astype(np.float32))
+            mrc.voxel_size = voxel
+        with contextlib.redirect_stdout(io.StringIO()):
+            relion_tomo.generate_relion5_tomo_dataset(
+                str(root / "project"), str(root / "vol"), voxel, n_particles=n_particles, grid_size=box,
+                n_tomograms=2, max_tilt=30.0, tilt_step=10.0, tomogram_size=(512, 512, 128),
+                hidden_tilt_fraction=0.3, snr=0.05, seed=seed,
+            )
+        return root / "project" / "optimisation_set.star"
+
+    def write_tiny_dataset(root, *, n_images=24, box=24, optics_groups=1, shapes=None, seed=5):
+        """A RELION particle STAR with its stack, as a data directory. ``shapes`` ``[(box, pixel), ...]``, one per
+        optics group: the groups' images on several shapes (one stack each), the first on the model grid."""
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
         rng = np.random.default_rng(seed)
         pixel = 2.0
-        with mrcfile.new(root / "particles.mrcs") as stack:
-            stack.set_data(rng.standard_normal((n_images, box, box)).astype(np.float32))
-            stack.voxel_size = pixel
+        if shapes is None:
+            shapes = [(box, pixel)] * optics_groups
+            with mrcfile.new(root / "particles.mrcs") as stack:
+                stack.set_data(rng.standard_normal((n_images, box, box)).astype(np.float32))
+                stack.voxel_size = pixel
+        optics_groups = len(shapes)
         groups = np.arange(1, optics_groups + 1)
         optics = pd.DataFrame({
             "rlnOpticsGroup": groups, "rlnOpticsGroupName": [f"opticsGroup{g}" for g in groups],
             "rlnAmplitudeContrast": np.full(optics_groups, 0.07), "rlnSphericalAberration": np.full(optics_groups, 2.7),
-            "rlnVoltage": np.full(optics_groups, 300.0), "rlnImagePixelSize": np.full(optics_groups, pixel),
-            "rlnImageSize": np.full(optics_groups, box), "rlnImageDimensionality": np.full(optics_groups, 2),
+            "rlnVoltage": np.full(optics_groups, 300.0),
+            "rlnImagePixelSize": [float(p) for _, p in shapes],
+            "rlnImageSize": [int(b) for b, _ in shapes], "rlnImageDimensionality": np.full(optics_groups, 2),
         })
         rows = np.arange(n_images)
+        image_names = [f"{i + 1}@particles.mrcs" for i in rows]
+        if len(set(shapes)) > 1:
+            for g, (group_box, group_pixel) in enumerate(shapes):
+                members = rows[rows % optics_groups == g]
+                with mrcfile.new(root / f"particles_g{g + 1}.mrcs") as stack:
+                    stack.set_data(rng.standard_normal((members.size, group_box, group_box)).astype(np.float32))
+                    stack.voxel_size = group_pixel
+                for k, i in enumerate(members):
+                    image_names[i] = f"{k + 1}@particles_g{g + 1}.mrcs"
         particles = pd.DataFrame({
-            "rlnImageName": [f"{i + 1}@particles.mrcs" for i in rows],
+            "rlnImageName": image_names,
             "rlnMicrographName": [f"mic{i % 3}" for i in rows],
             "rlnDefocusU": 15000.0 + 100.0 * rows, "rlnDefocusV": 15100.0 + 100.0 * rows,
             "rlnDefocusAngle": np.full(n_images, 10.0), "rlnPhaseShift": np.zeros(n_images),
@@ -367,12 +486,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         return [module for module_name, module in sorted(sys.modules.items())
                 if module_name.startswith("relax") and callable(getattr(module, name, None))]
 
-    def run_case(arguments, *, env=None, optics_groups=1):
+    def run_case(arguments, *, env=None, optics_groups=1, shapes=None, tomo=False):
         case_root = Path(tempfile.mkdtemp(dir=tmp_root, prefix="case"))
-        star = write_tiny_dataset(case_root / "data", optics_groups=optics_groups)
+        if tomo:
+            inputs = ["--ios", str(write_tiny_tomo_project(case_root / "data"))]
+        else:
+            inputs = ["--i", str(write_tiny_dataset(case_root / "data", optics_groups=optics_groups, shapes=shapes))]
         outdir = case_root / "out"
         # Six iterations: with four or five, RELION's tau2-fudge schedule is NaN in iteration 1.
-        argv = ["--i", str(star), "--o", str(outdir / "run"), "--nr-iter", "6", "--grad-write-iter", "1",
+        argv = [*inputs, "--o", str(outdir / "run"), "--nr-iter", "6", "--grad-write-iter", "1",
                 "--random-seed", "7", "--particle-diameter", "40", "--image-batch-size", "8",
                 "--bootstrap-min-particles", "8", "--sigma2-min-particles", "8",
                 "--image-fourier-backend", "host_numpy", "--no-jax-compilation-cache", "--no-require-custom-cuda", *arguments]
@@ -386,6 +508,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             setattr(owner, name, replacement)
 
         patch(adaptive_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
+        patch(shape_class_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
+        patch(tomo_half, "score_tomo_half", stand_in_tomo_scoring)
+        patch(k_class, "single_class_pass2_em_result", stand_in_pass2_result)
+        patch(k_class, "_class_segmented_em_result", stand_in_pass2_result)
         original_run = driver.run_native_initial_model
 
         def run_and_keep(opts, **keywords):
@@ -439,7 +565,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     for name in names:
         _, keywords = CASES[name]
         results[name] = run_case(keywords["arguments"], env=keywords.get("env"),
-                                 optics_groups=keywords.get("optics_groups", 1))
+                                 optics_groups=keywords.get("optics_groups", 1), shapes=keywords.get("shapes"),
+                                 tomo=keywords.get("tomo", False))
         print(f"{name}: {results[name]['status']['']}", flush=True)
     fingerprint = {"schema": 1, "source": scrub(source), "cases": results}
     Path(out_path).write_text(json.dumps(fingerprint, sort_keys=True))

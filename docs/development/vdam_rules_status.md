@@ -80,10 +80,11 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
 
 ## Known coverage limits
 
-- `vdam_fingerprint` stands in for the E-step engine (seeded by its operands). Not covered on a CPU:
-  subtomograms (`--ios`), optics groups on several image shapes, the diagnostic optimiser continuation,
-  RELION's CUDA image preprocessing; the GPU tiers (`vdam_k1_50k` in medium) cover the real engine on
-  the default route only.
+- `vdam_fingerprint` stands in for the E-step engines (seeded by their operands): the single-particle
+  engine, every shape class's call of it (case `k1_two_shapes`) and the subtomogram tilt pass (case
+  `k1_tomo`, a simulated RELION 5 project). Not covered on a CPU: the engines' numbers, the diagnostic
+  optimiser continuation, RELION's CUDA image preprocessing; the GPU tiers (`vdam_k1_50k` in medium) cover
+  the real engine on the default route only.
 - `scripts/dev/refactor_cpu_unit_list.txt` holds 15 of the 85 files of `tests/unit/initial_model` and 6 of
   `tests/unit/ppca_initial_model`; the gate of this series ran both directories in full on the base and
   the head as an extra step.
