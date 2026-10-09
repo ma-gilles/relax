@@ -34,7 +34,7 @@ from relax.helpers.half_spectrum import (
 )
 from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
 from relax.helpers.projection import compute_projections_block as _compute_projections_block
-from relax.scoring.scoring import _update_logsumexp
+from relax.scoring.scoring import update_logsumexp
 
 pytestmark = pytest.mark.unit
 
@@ -620,7 +620,7 @@ class TestStreamingLogsumexp:
         max_s = jnp.full(n_images, -jnp.inf)
         sum_exp = jnp.zeros(n_images)
         for block in blocks:
-            max_s, sum_exp = _update_logsumexp(max_s, sum_exp, block)
+            max_s, sum_exp = update_logsumexp(max_s, sum_exp, block)
         log_Z_streaming = max_s + jnp.log(sum_exp)
 
         np.testing.assert_allclose(

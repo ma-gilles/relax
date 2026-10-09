@@ -91,7 +91,7 @@ def _dense_candidate_mask_from_spec(mask: SparseCandidateMask) -> np.ndarray:
     raise ValueError(f"Unknown sparse candidate mask mode {mask.mode!r}")
 
 
-def _candidate_mask_to_dense(candidate_mask) -> np.ndarray:
+def candidate_mask_to_dense(candidate_mask) -> np.ndarray:
     if isinstance(candidate_mask, SparseCandidateMask):
         return _dense_candidate_mask_from_spec(candidate_mask)
     return np.asarray(candidate_mask, dtype=bool)
@@ -148,7 +148,7 @@ def compact_candidate_indices_in_source_order(candidate_mask):
             offsets = np.repeat(coarse_starts[parents] - row_starts, row_counts)
             trans = coarse_translations[offsets + np.arange(rows.size, dtype=np.int64)]
             return rows, trans
-    return np.nonzero(_candidate_mask_to_dense(candidate_mask))
+    return np.nonzero(candidate_mask_to_dense(candidate_mask))
 
 
 def build_compact_pair_index_arrays(

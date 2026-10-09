@@ -41,8 +41,8 @@ def _program_scores(projected, shifted, pixel_weight, initial_diff2, score_kind)
         jnp.zeros(N_IMAGES, dtype=jnp.float32),
         jnp.zeros(N_IMAGES, dtype=jnp.int32),
     )
-    state, values, _ = pass1_program._coarse_pass1_blocks(
-        pass1_program._pass1_initial_state(zeros, N_CLASSES),
+    state, values, _ = pass1_program.coarse_pass1_blocks(
+        pass1_program.pass1_initial_state(zeros, N_CLASSES),
         jnp.asarray(projected, dtype=jnp.complex64),
         jnp.asarray(shifted, dtype=jnp.complex64),
         jnp.asarray(pixel_weight, dtype=jnp.float32),

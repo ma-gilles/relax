@@ -105,7 +105,7 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
         return volume.at[0].add(jnp.sum(rows))
 
     monkeypatch.setattr(cuda_kernels, "relion_translate_score_f32", translate)
-    monkeypatch.setattr(scoring, "_relion_coarse_gaussian_gemm_scores_jit", score)
+    monkeypatch.setattr(scoring, "relion_coarse_gaussian_gemm_scores_jit", score)
     monkeypatch.setattr(resident_pass2, "_resident_block_weighted_sums_kernel", weighted_rows)
     monkeypatch.setattr(sparse_pass2_adjoint, "_accumulate_adjoint_block_chunked", adjoint)
 

@@ -18,7 +18,7 @@ pytest.importorskip("jax")
 import jax.numpy as jnp
 from test_resident_significance import _csr_from_supports, _encoded_supports, _supports
 
-from relax.scoring.compact_candidates import _candidate_mask_to_dense
+from relax.scoring.compact_candidates import candidate_mask_to_dense
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.sparse_pass2 import resident_pass2 as rp
 from relax.sparse_pass2.resident_candidates import (
@@ -90,7 +90,7 @@ def test_wide_tables_expand_to_the_compact_dense_mask(n_coarse_trans):
     np.testing.assert_array_equal(csr_tables.parent_trans_bits, host_tables.parent_trans_bits)
     np.testing.assert_array_equal(csr_tables.mask_mode, host_tables.mask_mode)
     for image, mask in enumerate(per_image_inputs["candidate_mask"]):
-        compact_dense = _candidate_mask_to_dense(mask)
+        compact_dense = candidate_mask_to_dense(mask)
         np.testing.assert_array_equal(
             expand_mask_rows(host_tables, image, fine_parent), compact_dense, err_msg=f"image {image}"
         )
@@ -118,7 +118,7 @@ def test_wide_chunk_masks_expand_to_the_compact_dense_mask(n_coarse_trans):
             stop = int(tables.row_offsets[image + 1]) - chunk.row_start
             np.testing.assert_array_equal(
                 chunk_mask[start:stop],
-                _candidate_mask_to_dense(per_image_inputs["candidate_mask"][image]),
+                candidate_mask_to_dense(per_image_inputs["candidate_mask"][image]),
                 err_msg=f"image {image}",
             )
 

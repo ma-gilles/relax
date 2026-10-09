@@ -48,7 +48,7 @@ from fingerprint import (  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NOT_COVERED = (
-    "the tree rescore's kernel (relax.scoring.scoring._relion_coarse_normalized_cc_rescore) and its CUDA gates: the "
+    "the tree rescore's kernel (relax.scoring.scoring.relion_coarse_normalized_cc_rescore) and its CUDA gates: the "
     "cases replace them by a deterministic stand-in, so the selection around the kernel is covered and its arithmetic is not",
     "RELION's CUDA image preprocessing, translation kernel and texture projector (stand-ins replace them: unit CTFs, "
     "a coded projector, translation as repetition, no high-resolution image power)",
@@ -258,7 +258,7 @@ MUTATIONS = (
     ("stable_windows", "stable_fourier_window_shapes=bool(stable_fourier_window_shapes),",
      "stable_fourier_window_shapes=False,",
      "the quantized physical window is ignored", True),
-    ("projection_cache_disabled", "requested = _coarse_gaussian_gemm_projection_cache_enabled(default=True)",
+    ("projection_cache_disabled", "requested = coarse_gaussian_gemm_projection_cache_enabled(default=True)",
      "requested = False",
      "the projection cache is never requested", True),
     ("generic_route_ignored", "relion_f32_coarse_support_enabled = exact_gaussian and _k1_relion_f32_coarse_support_enabled(default=True)",
@@ -418,7 +418,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             return base * jnp.asarray([1.0, 1.25], dtype=jnp.float32)[None, :] - 0.5 * kw["rotation_matrices"][..., 0, 1]
 
         patch.setattr(
-            scoring_module, "_relion_coarse_normalized_cc_rescore",
+            scoring_module, "relion_coarse_normalized_cc_rescore",
             recorded("tree_rescore", rescore, lambda shifted, *_, **kw: (f"candidates={shifted.shape[0]}",
                                                                           f"projector={tuple(kw['projector_full'].shape)}")),
         )

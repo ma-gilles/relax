@@ -11,8 +11,8 @@ def clear_pass1_programs(request) -> None:
     """
 
     def clear():
-        pass1_program._coarse_pass1_blocks.clear_cache()
-        pass1_program._coarse_pass1_block.clear_cache()
+        pass1_program.coarse_pass1_blocks.clear_cache()
+        pass1_program.coarse_pass1_block.clear_cache()
 
     clear()
     request.addfinalizer(clear)

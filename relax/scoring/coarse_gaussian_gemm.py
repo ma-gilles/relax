@@ -21,7 +21,7 @@ _COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV = (
 )
 
 
-_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV = (
+COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV = (
     "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE"
 )
 
@@ -48,13 +48,13 @@ _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ALIAS_EVIDENCE_JOB = 13_332_001
 _K1_RELION_F32_COARSE_SUPPORT_ENV = "RECOVAR_K1_RELION_F32_COARSE_SUPPORT"
 
 
-def _coarse_gaussian_gemm_projection_cache_enabled(
+def coarse_gaussian_gemm_projection_cache_enabled(
     *,
     default: bool = False,
 ) -> bool:
     """Resolve the explicit call-scoped coarse-projection cache toggle."""
 
-    return parse_env_strict_flag(_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV, default=default)
+    return parse_env_strict_flag(COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV, default=default)
 
 
 class CoarseGaussianGemmResources(NamedTuple):
@@ -67,7 +67,7 @@ class CoarseGaussianGemmResources(NamedTuple):
     projected_transient_budget_bytes: int
 
 
-def _coarse_gaussian_gemm_projected_transient_budget_bytes(
+def coarse_gaussian_gemm_projected_transient_budget_bytes(
     *,
     default_gb: float = 2.0,
 ) -> int:
@@ -95,7 +95,7 @@ def _coarse_gaussian_gemm_projected_transient_budget_bytes(
 _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEVICE_FRACTION = 0.2
 
 
-def _coarse_gaussian_gemm_projection_cache_budget_bytes(
+def coarse_gaussian_gemm_projection_cache_budget_bytes(
     *,
     default_gb: float | None = None,
 ) -> int:
@@ -135,8 +135,8 @@ def _coarse_gaussian_gemm_projection_cache_budget_bytes(
     return int(budget_gb * 1024**3)
 
 
-def _coarse_gaussian_gemm_projection_row_bytes(*, image_shape, compact_pixel_count: int) -> int:
-    """Projector transient per rotation row, as ``_coarse_gaussian_gemm_resources`` counts it."""
+def coarse_gaussian_gemm_projection_row_bytes(*, image_shape, compact_pixel_count: int) -> int:
+    """Projector transient per rotation row, as ``coarse_gaussian_gemm_resources`` counts it."""
 
     image_height, image_width = (int(value) for value in image_shape)
     full_count = image_height * (image_width // 2 + 1)
@@ -148,7 +148,7 @@ def _coarse_gaussian_gemm_projection_row_bytes(*, image_shape, compact_pixel_cou
     )
 
 
-def _coarse_gaussian_gemm_fit_rotation_block_size(
+def coarse_gaussian_gemm_fit_rotation_block_size(
     requested_rows: int,
     *,
     image_shape,
@@ -168,7 +168,7 @@ def _coarse_gaussian_gemm_fit_rotation_block_size(
     requested = operator.index(requested_rows)
     if requested <= 0:
         raise ValueError("requested rotation block must be positive")
-    row_bytes = _coarse_gaussian_gemm_projection_row_bytes(
+    row_bytes = coarse_gaussian_gemm_projection_row_bytes(
         image_shape=image_shape,
         compact_pixel_count=compact_pixel_count,
     )
@@ -180,7 +180,7 @@ def _coarse_gaussian_gemm_fit_rotation_block_size(
     return max(1, fit)
 
 
-def _coarse_gaussian_gemm_cached_block_rows(
+def coarse_gaussian_gemm_cached_block_rows(
     n_rotations: int,
     *,
     image_batch_size: int,
@@ -210,7 +210,7 @@ def _coarse_gaussian_gemm_cached_block_rows(
     return -(-balanced // row_alignment) * row_alignment
 
 
-def _coarse_gaussian_gemm_resources(
+def coarse_gaussian_gemm_resources(
     *,
     rotation_block_size: int,
     image_shape,
@@ -253,7 +253,7 @@ def _coarse_gaussian_gemm_resources(
     return resources
 
 
-def _validate_coarse_gaussian_gemm_projection_cache_request(
+def validate_coarse_gaussian_gemm_projection_cache_request(
     *,
     n_rotations: int,
     relion_projector_dtype,
@@ -264,7 +264,7 @@ def _validate_coarse_gaussian_gemm_projection_cache_request(
     returns, one table per class, so any class count is served unchanged.
     """
 
-    prefix = f"{_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV}=1 requires"
+    prefix = f"{COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV}=1 requires"
     if int(n_rotations) <= 0 or int(n_rotations) % int(
         _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ROW_ALIGNMENT
     ):
@@ -282,7 +282,7 @@ def _validate_coarse_gaussian_gemm_projection_cache_request(
         )
 
 
-def _plan_coarse_gaussian_gemm_projection_cache(
+def plan_coarse_gaussian_gemm_projection_cache(
     *,
     n_classes: int = 1,
     n_rotations: int,
@@ -317,7 +317,7 @@ def _plan_coarse_gaussian_gemm_projection_cache(
     )
 
 
-def _coarse_gaussian_gemm_projection_cache_stats(plan, *, enabled: bool):
+def coarse_gaussian_gemm_projection_cache_stats(plan, *, enabled: bool):
     """Describe conservative admission and narrowly scoped alias evidence."""
 
     h100_alias_evidence_applies = bool(

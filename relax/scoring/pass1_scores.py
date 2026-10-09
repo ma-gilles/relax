@@ -9,12 +9,12 @@ import numpy as np
 
 from relax.scoring.coarse_projector import CoarseProjector
 from relax.scoring.pass1_program import (
-    _class_block_state,
-    _coarse_pass1_block,
-    _coarse_pass1_blocks,
-    _merge_class_block_state,
-    _pass1_batch_constants,
-    _pass1_initial_state,
+    class_block_state,
+    coarse_pass1_block,
+    coarse_pass1_blocks,
+    merge_class_block_state,
+    pass1_batch_constants,
+    pass1_initial_state,
 )
 
 
@@ -118,7 +118,7 @@ def run_score_program(
 ) -> BatchScores:
     """Score one batch: ``program_inputs`` are its ``(shifted, pixel_weight, initial_diff2)``.
 
-    Pass 1 of the coarse GEMM scorers is one program per batch (``_coarse_pass1_blocks``): over the cached
+    Pass 1 of the coarse GEMM scorers is one program per batch (``coarse_pass1_blocks``): over the cached
     projections in one call, or one call per class and rotation block on its projection when the cache does not fit
     and for --firstiter_cc. The program also returns the ``RELAX_SIGNIFICANCE_DUMP_*`` targets' scores (``dump_rows``,
     batch rows or ``None``) and the class runner-up. ``translation_log_prior`` is the batch's prior on the device
@@ -126,7 +126,7 @@ def run_score_program(
     """
 
     batch_size = int(program_inputs[0].shape[0])
-    neg_inf_f, zeros_f64, zeros_i32 = _pass1_batch_constants(batch_size, bool(jax.config.jax_enable_x64))
+    neg_inf_f, zeros_f64, zeros_i32 = pass1_batch_constants(batch_size, bool(jax.config.jax_enable_x64))
     static = dict(
         n_trans=plan.n_trans,
         image_shape=plan.image_shape,
@@ -138,9 +138,9 @@ def run_score_program(
         track_class_second=plan.track_class_second,
         return_values=plan.return_values,
     )
-    state = _pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), plan.n_classes)
+    state = pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), plan.n_classes)
     if plan.projection_cache is not None and plan.score_kind != "normalized_cc":
-        state, values, dumps = _coarse_pass1_blocks(
+        state, values, dumps = coarse_pass1_blocks(
             state,
             plan.projection_cache,
             *program_inputs,
@@ -160,8 +160,8 @@ def run_score_program(
                 reference, _ = plan.projector.block_once(class_index, rots_b, rotation_start=r0)
             else:
                 reference, _ = plan.projector.compact_rows(class_index, rots_b, return_abs2=True)
-            block_state, block_values, block_dump = _coarse_pass1_block(
-                _class_block_state(state, class_index),
+            block_state, block_values, block_dump = coarse_pass1_block(
+                class_block_state(state, class_index),
                 reference,
                 *program_inputs,
                 actual_batch_size,
@@ -174,7 +174,7 @@ def run_score_program(
                 block_rows=block_rows,
                 **static,
             )
-            state = _merge_class_block_state(state, block_state, class_index)
+            state = merge_class_block_state(state, block_state, class_index)
             values.append(block_values)
             dumps.append(block_dump)
     support_values = jnp.concatenate(values, axis=1) if plan.return_values else None

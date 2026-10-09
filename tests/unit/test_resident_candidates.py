@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-from relax.scoring.compact_candidates import _candidate_mask_to_dense
+from relax.scoring.compact_candidates import candidate_mask_to_dense
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.sparse_pass2.resident_candidates import (
@@ -139,7 +139,7 @@ def test_expand_mask_rows_matches_candidate_mask_to_dense_for_every_mode(fixture
     tables = fixture_tables
     n_images = len(fixture_inputs["oversampled_rot_indices"])
     for image in range(n_images):
-        expected_dense = _candidate_mask_to_dense(fixture_inputs["candidate_mask"][image])
+        expected_dense = candidate_mask_to_dense(fixture_inputs["candidate_mask"][image])
         got_dense = expand_mask_rows(tables, image, FINE_TRANS_PARENT)
         assert_matches(got_dense, expected_dense)
 

@@ -2871,14 +2871,14 @@ def test_global_pass1_relion_projector_texture_defaults_to_texture(monkeypatch):
 
     monkeypatch.delenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", raising=False)
     monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "1")
-    assert pass1_plan._global_pass1_relion_projector_texture_enabled()
+    assert pass1_plan.global_pass1_relion_projector_texture_enabled()
 
     monkeypatch.setenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "1")
-    assert pass1_plan._global_pass1_relion_projector_texture_enabled()
+    assert pass1_plan.global_pass1_relion_projector_texture_enabled()
 
     monkeypatch.setenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "invalid")
     with pytest.raises(ValueError, match="RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"):
-        pass1_plan._global_pass1_relion_projector_texture_enabled()
+        pass1_plan.global_pass1_relion_projector_texture_enabled()
 
 
 def test_texture_centered_crop_masks_current_image_disk():
@@ -6606,7 +6606,7 @@ class TestRelionModeSmokeTest:
         # The pass-1 program (pass1_program) and the scorer module each bind the scorer.
         clear_pass1_programs(request)
         for module in (scoring_module, pass1_program):
-            monkeypatch.setattr(module, "_relion_coarse_normalized_cc_gemm_scores_jit", fake_cc_gemm_scores)
+            monkeypatch.setattr(module, "relion_coarse_normalized_cc_gemm_scores_jit", fake_cc_gemm_scores)
         monkeypatch.setattr(
             em_cuda_kernels,
             "relion_translate_score_f32",
@@ -6614,7 +6614,7 @@ class TestRelionModeSmokeTest:
         )
         monkeypatch.setattr(
             scoring_module,
-            "_relion_coarse_normalized_cc_rescore",
+            "relion_coarse_normalized_cc_rescore",
             fake_tree_rescore,
         )
 

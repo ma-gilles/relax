@@ -42,7 +42,7 @@ from relax.scoring.pass1_support import (
 )
 from relax.scoring.pass1_window import coarse_kernel_window, plan_scoring_window
 from relax.scoring.scoring import (
-    _coarse_gemm_float64_requested,
+    coarse_gemm_float64_requested,
 )
 from relax.scoring.tree_rescore import (
     TreeRescoreGeometry,
@@ -119,7 +119,7 @@ def _coarse_pad_final_image_batch_enabled(*, default: bool = True) -> bool:
     )
 
 
-def _global_pass1_relion_projector_texture_enabled() -> bool:
+def global_pass1_relion_projector_texture_enabled() -> bool:
     """Whether dense/global pass-1 significance uses texture arithmetic.
 
     Coarse significance defaults to RELION's texture projector.  Set the
@@ -294,7 +294,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         coarse_kernel_window(score_size, request.relion_projector_r_max, request.rotations) if use_relion_projector else None
     )
     coarse_texture_interp = (
-        _global_pass1_relion_projector_texture_enabled()
+        global_pass1_relion_projector_texture_enabled()
         if request.relion_projector_texture_interp is None
         else bool(request.relion_projector_texture_interp)
     )
@@ -310,8 +310,8 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         request.tree_rescore_max_margin is not None and request.score_mode == "normalized_cc"
     )
     # Pass 1 scores RELION's exact coarse operands only: the Gaussian passes with the coarse GEMMs
-    # (_relion_coarse_gaussian_gemm_scores_jit), the --firstiter_cc passes with RELION's coarse CC
-    # (_relion_coarse_normalized_cc_gemm_scores_jit). The generic dense scorer was removed on
+    # (relion_coarse_gaussian_gemm_scores_jit), the --firstiter_cc passes with RELION's coarse CC
+    # (relion_coarse_normalized_cc_gemm_scores_jit). The generic dense scorer was removed on
     # 2026-10-02; like pass 2, pass 1 needs a CUDA GPU and RELION's CUDA image preprocessing.
     _require_exact_pass1_operands(
         use_relion_projector=use_relion_projector,
@@ -344,7 +344,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     # --firstiter_cc on RELION's exact coarse operands: the tree rescore's per-image
     # FFT, RFLOAT CTF and corr_img operands, translated with RELION's sincosf for
     # every translation and scored by the coarse GEMMs
-    # (_relion_coarse_normalized_cc_gemm_scores_jit).
+    # (relion_coarse_normalized_cc_gemm_scores_jit).
     exact_cc_enabled = request.score_mode == "normalized_cc"
     exact_cc_score_indices = None
     exact_cc_translation_angles = None
@@ -521,7 +521,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         n_trans=int(n_trans),
         image_shape=tuple(int(value) for value in image_shape),
         volume_shape=tuple(int(value) for value in volume_shape),
-        float64=_coarse_gemm_float64_requested(),
+        float64=coarse_gemm_float64_requested(),
         score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
         exact_weight_order=relion_exact_coarse_weight_order,
         return_class_best=bool(request.return_class_best),

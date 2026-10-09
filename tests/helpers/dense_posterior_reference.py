@@ -20,7 +20,7 @@ from relax.helpers.fourier_window import make_fourier_window_spec
 from relax.helpers.half_spectrum import make_half_image_weights
 from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
 from relax.helpers.projection import compute_projections_block as _compute_projections_block
-from relax.scoring.scoring import _update_logsumexp
+from relax.scoring.scoring import update_logsumexp
 
 
 @dataclass(frozen=True)
@@ -188,7 +188,7 @@ def compute_e_step_weights(
                 mask = jnp.arange(rotation_block_size) < block.actual_rot
                 scores = jnp.where(mask[None, :, None], scores, -jnp.inf)
 
-            max_s, sum_exp = _update_logsumexp(max_s, sum_exp, scores)
+            max_s, sum_exp = update_logsumexp(max_s, sum_exp, scores)
 
         log_Z = max_s + jnp.log(sum_exp)
 

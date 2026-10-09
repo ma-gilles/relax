@@ -475,7 +475,7 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
     """Keep actual fine-CC inputs and compare fine and GEMM scores at both winners."""
     from relax.dense.gemm_experiment import native_relion_callbacks
     from relax.dense.gemm_experiment_kernels import cc_score_tile
-    from relax.scoring.scoring import _relion_coarse_gemm_terms
+    from relax.scoring.scoring import relion_coarse_gemm_terms
     from relax.sparse_pass2.resident_pass2 import _relion_native_fine_units_in_place
     from relax.sparse_pass2.sparse_pass2_scoring import (
         _relion_cuda_fine_normalized_cc_score,
@@ -533,7 +533,7 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
         jnp.ones((n_images,), bool), jnp.ones((len(unique_rot),), bool),
         jnp.ones((n_trans,), bool), translation_side="image",
     )
-    gemm_cross, gemm_power, _, _ = _relion_coarse_gemm_terms(
+    gemm_cross, gemm_power, _, _ = relion_coarse_gemm_terms(
         projection, shifted, batch.score_weight[:n_images], n_images,
         n_images=n_images, n_trans=n_trans, wide=jnp.float32,
     )

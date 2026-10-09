@@ -31,7 +31,7 @@ from recovar.core.configs import ForwardModelConfig
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.half_spectrum import make_scoring_half_image_weights
 from relax.helpers.preprocessing import half_translation_phase_table
-from relax.scoring.compact_candidates import _candidate_mask_to_dense
+from relax.scoring.compact_candidates import candidate_mask_to_dense
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.sparse_pass2 import sparse_pass2_scoring as spb
@@ -312,7 +312,7 @@ def test_resident_scores_match_the_relion_conversion_on_the_same_raw_costs(
                 stop = int(tables.row_offsets[image + 1]) - chunk.row_start
                 if stop == start:
                     continue
-                mask = _candidate_mask_to_dense(
+                mask = candidate_mask_to_dense(
                     case["per_image_inputs"]["candidate_mask"][image]
                 )
                 rows_raw = raw[start:stop]

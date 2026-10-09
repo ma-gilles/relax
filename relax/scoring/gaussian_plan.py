@@ -10,17 +10,17 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.scoring.coarse_gaussian_gemm import (
-    _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV,
-    _coarse_gaussian_gemm_cached_block_rows,
-    _coarse_gaussian_gemm_fit_rotation_block_size,
-    _coarse_gaussian_gemm_projected_transient_budget_bytes,
-    _coarse_gaussian_gemm_projection_cache_budget_bytes,
-    _coarse_gaussian_gemm_projection_cache_enabled,
-    _coarse_gaussian_gemm_projection_cache_stats,
-    _coarse_gaussian_gemm_projection_row_bytes,
-    _coarse_gaussian_gemm_resources,
-    _plan_coarse_gaussian_gemm_projection_cache,
-    _validate_coarse_gaussian_gemm_projection_cache_request,
+    COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV,
+    coarse_gaussian_gemm_cached_block_rows,
+    coarse_gaussian_gemm_fit_rotation_block_size,
+    coarse_gaussian_gemm_projected_transient_budget_bytes,
+    coarse_gaussian_gemm_projection_cache_budget_bytes,
+    coarse_gaussian_gemm_projection_cache_enabled,
+    coarse_gaussian_gemm_projection_cache_stats,
+    coarse_gaussian_gemm_projection_row_bytes,
+    coarse_gaussian_gemm_resources,
+    plan_coarse_gaussian_gemm_projection_cache,
+    validate_coarse_gaussian_gemm_projection_cache_request,
 )
 from relax.scoring.coarse_layout import CoarseGaussianSquareLayout, plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_publication import coarse_square_layout_metadata
@@ -68,11 +68,11 @@ def _projection_cache_requested(shape: PassShape, relion_projector_half) -> tupl
     An explicit request fails closed; the default cache quietly stands down wherever its contract does not hold.
     """
 
-    requested = _coarse_gaussian_gemm_projection_cache_enabled(default=True)
-    explicit = _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV in os.environ
+    requested = coarse_gaussian_gemm_projection_cache_enabled(default=True)
+    explicit = COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV in os.environ
     if requested:
         try:
-            _validate_coarse_gaussian_gemm_projection_cache_request(
+            validate_coarse_gaussian_gemm_projection_cache_request(
                 n_rotations=shape.n_rot,
                 # The dtype of the class stack: indexing a device array for it dispatched a slice per pass.
                 relion_projector_dtype=(
@@ -128,10 +128,10 @@ def plan_coarse_gaussian(
         square_layout.score_indices_np,
         dtype=np.int32,
     )
-    transient_budget = _coarse_gaussian_gemm_projected_transient_budget_bytes()
+    transient_budget = coarse_gaussian_gemm_projected_transient_budget_bytes()
     # The plain GEMM splits the rotation axis until the projector
     # transient fits.
-    fitted_block_size = _coarse_gaussian_gemm_fit_rotation_block_size(
+    fitted_block_size = coarse_gaussian_gemm_fit_rotation_block_size(
         int(rotation_block_size),
         image_shape=shape.image_shape,
         compact_pixel_count=int(square_score_count),
@@ -149,12 +149,12 @@ def plan_coarse_gaussian(
     transient_budget = max(
         transient_budget,
         int(rotation_block_size)
-        * _coarse_gaussian_gemm_projection_row_bytes(
+        * coarse_gaussian_gemm_projection_row_bytes(
             image_shape=shape.image_shape,
             compact_pixel_count=int(square_score_count),
         ),
     )
-    resource_estimate = _coarse_gaussian_gemm_resources(
+    resource_estimate = coarse_gaussian_gemm_resources(
         rotation_block_size=int(rotation_block_size),
         image_shape=shape.image_shape,
         compact_pixel_count=int(square_score_count),
@@ -162,12 +162,12 @@ def plan_coarse_gaussian(
     )
     projection_cache_plan = None
     if cache_requested:
-        projection_cache_plan = _plan_coarse_gaussian_gemm_projection_cache(
+        projection_cache_plan = plan_coarse_gaussian_gemm_projection_cache(
             n_classes=shape.n_classes,
             n_rotations=shape.n_rot,
             compact_pixel_count=int(square_score_count),
             image_shape=shape.image_shape,
-            budget_bytes=_coarse_gaussian_gemm_projection_cache_budget_bytes(),
+            budget_bytes=coarse_gaussian_gemm_projection_cache_budget_bytes(),
         )
         if not (projection_cache_plan.admitted or cache_explicit):
             logger.info(
@@ -180,12 +180,12 @@ def plan_coarse_gaussian(
         # GEMM block grows to what its own temporaries allow (usually every
         # rotation): each image batch runs one score, prior and reduction
         # program per class and block instead of one per 5,000 rows.
-        rotation_block_size = _coarse_gaussian_gemm_cached_block_rows(
+        rotation_block_size = coarse_gaussian_gemm_cached_block_rows(
             shape.n_rot,
             image_batch_size=int(image_batch_size),
             n_translations=int(shape.n_trans),
             compact_pixel_count=int(square_score_count),
-            budget_bytes=_coarse_gaussian_gemm_projected_transient_budget_bytes(),
+            budget_bytes=coarse_gaussian_gemm_projected_transient_budget_bytes(),
         )
     logger.info(
         "Coarse pass on RELION's exact operands (coarse GEMMs): classes=%d rotations=%d "
@@ -228,7 +228,7 @@ def coarse_gaussian_report(plan: CoarseGaussianPlan, *, stable_fourier_window_sh
         },
     }
     if plan.projection_cache_plan is not None:
-        report["coarse_gaussian_gemm_projection_cache"] = _coarse_gaussian_gemm_projection_cache_stats(
+        report["coarse_gaussian_gemm_projection_cache"] = coarse_gaussian_gemm_projection_cache_stats(
             plan.projection_cache_plan,
             enabled=True,
         )

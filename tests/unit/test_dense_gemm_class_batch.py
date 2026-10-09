@@ -138,13 +138,13 @@ def test_class_score_tile_uses_flattened_projection_axis(monkeypatch):
     phases = jnp.ones((u, p), jnp.complex64)
     priors = jnp.zeros((k, b, q), jnp.float32)
     observed = []
-    original = kernels._relion_coarse_gemm_terms
+    original = kernels.relion_coarse_gemm_terms
 
     def capture(projection, *args, **kwargs):
         observed.append(projection.shape)
         return original(projection, *args, **kwargs)
 
-    monkeypatch.setattr(kernels, "_relion_coarse_gemm_terms", capture)
+    monkeypatch.setattr(kernels, "relion_coarse_gemm_terms", capture)
     actual = class_score_tile(
         projections, images, weights, jnp.zeros(b, jnp.float32), phases,
         priors, jnp.zeros((b, u), jnp.float32), jnp.ones(b, bool),

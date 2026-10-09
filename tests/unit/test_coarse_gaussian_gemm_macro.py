@@ -101,7 +101,7 @@ def _relion_coarse_gaussian_gemm_scores(
                 "coarse GEMM actual_image_count must be in "
                 f"[0, {n_images}], got {actual_count}",
             )
-    return scoring._relion_coarse_gaussian_gemm_scores_jit(
+    return scoring.relion_coarse_gaussian_gemm_scores_jit(
         projected_reference,
         projected_reference_abs2,
         shifted_corrected,
@@ -112,7 +112,7 @@ def _relion_coarse_gaussian_gemm_scores(
         n_trans=n_trans,
         image_shape=tuple(int(value) for value in image_shape),
         volume_shape=tuple(int(value) for value in volume_shape),
-        float64=scoring._coarse_gemm_float64_requested(),
+        float64=scoring.coarse_gemm_float64_requested(),
     )
 
 
@@ -145,7 +145,7 @@ def _direct_scores(projected, shifted, weight, initial):
     [
         (
             'RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE',
-            coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_enabled,
+            coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_enabled,
         ),
     ],
 )
@@ -189,7 +189,7 @@ def test_coarse_gaussian_gemm_projection_cache_rejects_unqualified_contracts(
     message,
 ):
     with pytest.raises((ValueError, TypeError), match=message):
-        coarse_gaussian_gemm._validate_coarse_gaussian_gemm_projection_cache_request(
+        coarse_gaussian_gemm.validate_coarse_gaussian_gemm_projection_cache_request(
             **_projection_cache_request_kwargs(**updates),
         )
 
@@ -200,10 +200,10 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB"
     monkeypatch.delenv(variable, raising=False)
     # Off-GPU the default budget is 4 GB; on a GPU it is a fifth of its memory.
-    budget_bytes = coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_budget_bytes(
+    budget_bytes = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes(
         default_gb=4.0,
     )
-    plan = coarse_gaussian_gemm._plan_coarse_gaussian_gemm_projection_cache(
+    plan = coarse_gaussian_gemm.plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=36_864,
         compact_pixel_count=5_100,
         image_shape=(128, 128),
@@ -221,7 +221,7 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     assert plan.predicted_peak_bytes == 3_502_817_280
     assert not plan.destination_alias_proven
     assert plan.admitted
-    stats = coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_stats(
+    stats = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_stats(
         plan,
         enabled=True,
     )
@@ -232,12 +232,12 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     assert stats["h100_alias_evidence_used_for_admission"] is False
 
     monkeypatch.setenv(variable, "3.0")
-    rejected = coarse_gaussian_gemm._plan_coarse_gaussian_gemm_projection_cache(
+    rejected = coarse_gaussian_gemm.plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=36_864,
         compact_pixel_count=5_100,
         image_shape=(128, 128),
         budget_bytes=(
-            coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_budget_bytes()
+            coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes()
         ),
     )
     assert not rejected.admitted
@@ -252,13 +252,13 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
         rng.normal(size=(n_rotations, n_pixels))
         + 1j * rng.normal(size=(n_rotations, n_pixels))
     ).astype(np.complex64)
-    plan = coarse_gaussian_gemm._plan_coarse_gaussian_gemm_projection_cache(
+    plan = coarse_gaussian_gemm.plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=n_rotations,
         compact_pixel_count=n_pixels,
         image_shape=(4, 4),
         budget_bytes=1_000_000,
     )
-    stats = coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_stats(
+    stats = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_stats(
         plan,
         enabled=True,
     )
@@ -277,13 +277,13 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
     )
     assert build_calls == [(0, 0, 16)]
 
-    # The pass-1 program reads its blocks from this one table (_coarse_pass1_blocks).
+    # The pass-1 program reads its blocks from this one table (coarse_pass1_blocks).
     assert_matches(np.asarray(cache)[0], projected)
     assert build_calls == [(0, 0, 16)]
 
 
 def test_coarse_gaussian_gemm_resource_gate_records_full_transient_and_host_sync():
-    resources = coarse_gaussian_gemm._coarse_gaussian_gemm_resources(
+    resources = coarse_gaussian_gemm.coarse_gaussian_gemm_resources(
         rotation_block_size=17,
         image_shape=(128, 128),
         compact_pixel_count=64 * 33,
@@ -298,7 +298,7 @@ def test_coarse_gaussian_gemm_resource_gate_records_full_transient_and_host_sync
         + resources.compact_projection_abs2_bytes
     )
     with pytest.raises(MemoryError, match="predicted projection transient"):
-        coarse_gaussian_gemm._coarse_gaussian_gemm_resources(
+        coarse_gaussian_gemm.coarse_gaussian_gemm_resources(
             rotation_block_size=17,
             image_shape=(128, 128),
             compact_pixel_count=64 * 33,
@@ -655,7 +655,7 @@ def test_coarse_gaussian_gemm_macro_is_shared_by_em_and_initial_model():
         in k_class.run_dense_k_class_em_adaptive.__code__.co_names
     )
     assert (
-        scoring._relion_coarse_gaussian_gemm_scores_jit._fun.__globals__[
+        scoring.relion_coarse_gaussian_gemm_scores_jit._fun.__globals__[
             "_e_step_block_scores_windowed"
         ]
         is scoring._e_step_block_scores_windowed
@@ -739,7 +739,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
         )
 
     clear_pass1_programs(request)
-    monkeypatch.setattr(pass1_program, "_relion_coarse_gaussian_gemm_scores_jit", controlled_scores)
+    monkeypatch.setattr(pass1_program, "relion_coarse_gaussian_gemm_scores_jit", controlled_scores)
 
     dataset = ExactPass1Dataset()
     rotations = np.tile(np.eye(3, dtype=np.float32), (16, 1, 1))
@@ -940,9 +940,9 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         t1 = jnp.where(live & (image_id == 1) & ((class_index == 0) & (rotation_index == 0))[None, :], -0.05, t1)
         return jnp.stack([t0, t1], axis=-1).astype(jnp.float32)
 
-    # The one-program pass 1 (pass1_program._coarse_pass1_blocks) traces its scorer.
+    # The one-program pass 1 (pass1_program.coarse_pass1_blocks) traces its scorer.
     clear_pass1_programs(request)
-    monkeypatch.setattr(pass1_program, "_relion_coarse_gaussian_gemm_scores_jit", traced_designed_scores)
+    monkeypatch.setattr(pass1_program, "relion_coarse_gaussian_gemm_scores_jit", traced_designed_scores)
     jax.clear_caches()
 
     original_pad = pass1_batch._pad_significance_preprocess_inputs
@@ -1235,18 +1235,18 @@ def test_coarse_gaussian_gemm_projection_cache_default_budget_is_a_fifth_of_gpu_
 
     monkeypatch.delenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB", raising=False)
     monkeypatch.setattr(coarse_gaussian_gemm.jax, "local_devices", lambda: [_Gpu()])
-    assert coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_budget_bytes() == 16 * 1024**3
+    assert coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes() == 16 * 1024**3
 
 
 def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget():
     # 10097 10k K=1 auto-refine, HEALPix 3 global pass (bigbox gate 14474702): a 36,864-row
     # block of 256-px texture projections needs 9.9 GB against the 2 GiB budget.
     budget = 2 * 1024**3
-    rows = coarse_gaussian_gemm._coarse_gaussian_gemm_fit_rotation_block_size(
+    rows = coarse_gaussian_gemm.coarse_gaussian_gemm_fit_rotation_block_size(
         36_864, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=budget
     )
     assert 16 <= rows < 36_864 and rows % 16 == 0
-    resources = coarse_gaussian_gemm._coarse_gaussian_gemm_resources(
+    resources = coarse_gaussian_gemm.coarse_gaussian_gemm_resources(
         rotation_block_size=rows,
         image_shape=(256, 256),
         compact_pixel_count=420,
@@ -1254,10 +1254,10 @@ def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget
     )
     assert resources.predicted_peak_projection_bytes <= budget
     # A block that already fits is unchanged, and the split never drops below one row.
-    assert coarse_gaussian_gemm._coarse_gaussian_gemm_fit_rotation_block_size(
+    assert coarse_gaussian_gemm.coarse_gaussian_gemm_fit_rotation_block_size(
         64, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=budget
     ) == 64
-    assert coarse_gaussian_gemm._coarse_gaussian_gemm_fit_rotation_block_size(
+    assert coarse_gaussian_gemm.coarse_gaussian_gemm_fit_rotation_block_size(
         64, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=1
     ) == 1
 
@@ -1265,14 +1265,14 @@ def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget
 def test_coarse_gaussian_gemm_cached_block_rows_fit_and_balance():
     budget = 2 * 1024**3
     # noise1 50k/256 late pass 1: every rotation fits in two balanced blocks or fewer.
-    rows = coarse_gaussian_gemm._coarse_gaussian_gemm_cached_block_rows(
+    rows = coarse_gaussian_gemm.coarse_gaussian_gemm_cached_block_rows(
         36_864, image_batch_size=60, n_translations=45, compact_pixel_count=1_512, budget_bytes=budget
     )
     assert rows % 16 == 0 and rows * 4 * (6 * 1_512 + 3 * 60 * 45) <= budget
     blocks = -(-36_864 // rows)
     assert blocks * rows - 36_864 < 16 * blocks
     # A small grid is one block.
-    assert coarse_gaussian_gemm._coarse_gaussian_gemm_cached_block_rows(
+    assert coarse_gaussian_gemm.coarse_gaussian_gemm_cached_block_rows(
         4_608, image_batch_size=60, n_translations=45, compact_pixel_count=1_512, budget_bytes=budget
     ) == 4_608
 
@@ -1298,7 +1298,7 @@ def _pass1_case(seed=20261002):
         (jnp.asarray(case["class_prior"][k]), jnp.asarray(case["rotation_prior"][k, r0 : r0 + block]))
         for k, r0, _, _ in case["blocks"]
     )
-    case["state"] = pass1_program._pass1_initial_state(
+    case["state"] = pass1_program.pass1_initial_state(
         (
             jnp.full(n_images, -jnp.inf, dtype=jnp.float32),
             jnp.zeros(n_images, dtype=jnp.float32),
@@ -1335,7 +1335,7 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
 
     case = _pass1_case()
     n_classes, n_rot, n_images, n_trans = case["n_classes"], case["n_rot"], case["n_images"], case["n_trans"]
-    state, values, dumps = pass1_program._coarse_pass1_blocks(
+    state, values, dumps = pass1_program.coarse_pass1_blocks(
         case["state"],
         case["cache"],
         case["shifted"],
@@ -1396,7 +1396,7 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
 def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
     """A pass whose cache does not fit folds one block per call on that block's projection.
 
-    Folding the blocks one call at a time through _coarse_pass1_block (runtime class index
+    Folding the blocks one call at a time through coarse_pass1_block (runtime class index
     and rotation start), each with its projected rows (zero past the block's rotations, as a
     padded rotation block projects), gives the one-call values and state, for the Gaussian
     GEMM scores and RELION's normalized CC.
@@ -1405,7 +1405,7 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
     case = _pass1_case(seed=7)
     static = _pass1_static(case, score_kind, False)
     common = (case["shifted"], case["weight"], case["initial"], 2)
-    whole_state, whole_values, _ = pass1_program._coarse_pass1_blocks(
+    whole_state, whole_values, _ = pass1_program.coarse_pass1_blocks(
         case["state"], case["cache"], *common, case["prior_terms"], case["translation_prior"],
         blocks=case["blocks"], **static,
     )
@@ -1413,12 +1413,12 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
     for block, terms in zip(case["blocks"], case["prior_terms"]):
         class_index, r0, rows, block_rows = block
         reference = jnp.pad(case["cache"][class_index, r0 : r0 + rows], ((0, block_rows - rows), (0, 0)))
-        block_state, block_values, _ = pass1_program._coarse_pass1_block(
-            pass1_program._class_block_state(state, class_index), reference, *common, terms,
+        block_state, block_values, _ = pass1_program.coarse_pass1_block(
+            pass1_program.class_block_state(state, class_index), reference, *common, terms,
             case["translation_prior"], jnp.int32(class_index), jnp.int32(r0), rows=rows, block_rows=block_rows,
             **static,
         )
-        state = pass1_program._merge_class_block_state(state, block_state, class_index)
+        state = pass1_program.merge_class_block_state(state, block_state, class_index)
         values.append(block_values)
     # Separate programs may pick different GEMM algorithms for the same block shapes: on an A100 the
     # CC values of a per-block fold and one call differed by 2.6e-6 relative (2026-10-02).
@@ -1433,7 +1433,7 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
         cc = np.stack(
             [
                 np.asarray(
-                    scoring._relion_coarse_normalized_cc_gemm_scores_jit(
+                    scoring.relion_coarse_normalized_cc_gemm_scores_jit(
                         case["cache"][k], case["shifted"], case["weight"], 2, n_images=case["n_images"],
                         n_trans=case["n_trans"],
                     )
@@ -1460,9 +1460,9 @@ def test_coarse_pass1_dump_rows_are_the_target_rows_scores():
         case["state"], case["cache"], case["shifted"], case["weight"], case["initial"], 2,
         case["prior_terms"], case["translation_prior"],
     )
-    plain_state, plain_values, _ = pass1_program._coarse_pass1_blocks(*args, blocks=case["blocks"], **static)
+    plain_state, plain_values, _ = pass1_program.coarse_pass1_blocks(*args, blocks=case["blocks"], **static)
     targets = np.asarray([2, 0])
-    state, values, dumps = pass1_program._coarse_pass1_blocks(
+    state, values, dumps = pass1_program.coarse_pass1_blocks(
         *args, jnp.asarray(targets, dtype=jnp.int32), blocks=case["blocks"], **static
     )
     for got, want in zip(jax.tree_util.tree_leaves((state, values)), jax.tree_util.tree_leaves((plain_state, plain_values))):

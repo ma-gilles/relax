@@ -1,7 +1,7 @@
 """The pass-1 score program of one image batch: the block scores, the priors and the running reductions.
 
-One program per batch over the cached projections (``_coarse_pass1_blocks``), or one call per class and rotation block
-(``_coarse_pass1_block``) when the cache does not fit and for ``--firstiter_cc``. ``_pass1_block_update`` is the
+One program per batch over the cached projections (``coarse_pass1_blocks``), or one call per class and rotation block
+(``coarse_pass1_block``) when the cache does not fit and for ``--firstiter_cc``. ``_pass1_block_update`` is the
 shared body. These are the jitted, state-passing kernels; :mod:`relax.scoring.significance` drives them.
 """
 
@@ -11,14 +11,14 @@ import jax
 import jax.numpy as jnp
 
 from relax.scoring.scoring import (
-    _relion_coarse_gaussian_gemm_scores_jit,
-    _relion_coarse_normalized_cc_gemm_scores_jit,
-    _update_logsumexp,
+    relion_coarse_gaussian_gemm_scores_jit,
+    relion_coarse_normalized_cc_gemm_scores_jit,
+    update_logsumexp,
 )
 
 
 @lru_cache(maxsize=8)
-def _pass1_batch_constants(batch_size: int, enable_x64: bool):
+def pass1_batch_constants(batch_size: int, enable_x64: bool):
     """The coarse pass's per-batch initial values, built once per batch size.
 
     ``-inf`` at the default float dtype, float64 zeros and int32 zeros: the
@@ -56,8 +56,8 @@ def _add_coarse_prior_terms(scores, class_log_prior, rotation_log_prior_block, t
     return scores
 
 
-def _pass1_initial_state(batch_constants, n_classes: int):
-    """The running pass-1 reductions of one image batch before its first block (``_coarse_pass1_blocks``).
+def pass1_initial_state(batch_constants, n_classes: int):
+    """The running pass-1 reductions of one image batch before its first block (``coarse_pass1_blocks``).
 
     ``batch_constants`` are the batch's ``(-inf, 0.0, 0)`` rows. The raw score
     maximum starts at float32 ``-inf``.
@@ -106,8 +106,8 @@ def _pass1_block_update(
     entries of ``class_index`` only; the runner-up (``track_class_second``, with
     ``return_class_best``) is the best pose of the class other than its best one; ``class_index`` and ``rotation_start`` may be traced.
     ``score_kind`` is ``"gaussian"`` (the GEMM scores of the projected or cached rows,
-    :func:`_relion_coarse_gaussian_gemm_scores_jit`, with ``initial_diff2``) or
-    ``"normalized_cc"`` (RELION's coarse CC, :func:`_relion_coarse_normalized_cc_gemm_scores_jit`;
+    :func:`relion_coarse_gaussian_gemm_scores_jit`, with ``initial_diff2``) or
+    ``"normalized_cc"`` (RELION's coarse CC, :func:`relion_coarse_normalized_cc_gemm_scores_jit`;
     no priors, as RELION's ``--firstiter_cc`` scores have none). The padded tail rows are
     ``-inf``; the Gaussian scores get the class, rotation and translation priors
     (:func:`_add_coarse_prior_terms`). Returns the new state, the block's ``[B, rows * T]``
@@ -127,7 +127,7 @@ def _pass1_block_update(
     best_score, best_argmax, best_class = best
     batch_size = int(shifted_corrected.shape[0])
     if score_kind == "gaussian":
-        scores = _relion_coarse_gaussian_gemm_scores_jit(
+        scores = relion_coarse_gaussian_gemm_scores_jit(
             reference,
             None,
             shifted_corrected,
@@ -141,7 +141,7 @@ def _pass1_block_update(
             float64=float64,
         )
     elif score_kind == "normalized_cc":
-        scores = _relion_coarse_normalized_cc_gemm_scores_jit(
+        scores = relion_coarse_normalized_cc_gemm_scores_jit(
             jnp.asarray(reference, dtype=jnp.complex64),
             shifted_corrected,
             pixel_weight,
@@ -164,8 +164,8 @@ def _pass1_block_update(
     dump = None
     if dump_rows is not None:
         dump = (pre_prior_scores[dump_rows, :rows, :], scores[dump_rows, :rows, :])
-    class_max, class_sum = _update_logsumexp(class_max, class_sum, scores)
-    global_max, global_sum = _update_logsumexp(global_max, global_sum, scores)
+    class_max, class_sum = update_logsumexp(class_max, class_sum, scores)
+    global_max, global_sum = update_logsumexp(global_max, global_sum, scores)
     flat_scores = scores.reshape(batch_size, -1)
     block_best = jnp.max(flat_scores, axis=1)
     block_argmax = jnp.argmax(flat_scores, axis=1)
@@ -205,8 +205,8 @@ def _pass1_block_update(
     return state, values, dump
 
 
-def _class_block_state(state, class_index: int):
-    """``state`` (:func:`_pass1_initial_state`) narrowed to class ``class_index``'s entries."""
+def class_block_state(state, class_index: int):
+    """``state`` (:func:`pass1_initial_state`) narrowed to class ``class_index``'s entries."""
 
     global_terms, (class_max, class_sum), best, class_poses, raw_score_max = state
     return (
@@ -218,7 +218,7 @@ def _class_block_state(state, class_index: int):
     )
 
 
-def _merge_class_block_state(state, block_state, class_index: int):
+def merge_class_block_state(state, block_state, class_index: int):
     """``state`` with class ``class_index``'s entries and the shared entries from ``block_state``."""
 
     _, (class_max, class_sum), _, class_poses, _ = state
@@ -250,7 +250,7 @@ _PASS1_STATIC = (
 
 
 @partial(jax.jit, static_argnames=("blocks",) + _PASS1_STATIC)
-def _coarse_pass1_blocks(
+def coarse_pass1_blocks(
     state,
     projection_cache,
     shifted_corrected,
@@ -280,7 +280,7 @@ def _coarse_pass1_blocks(
     values. ``blocks`` holds static ``(class_index, rotation_start, rows, block_rows)``
     entries whose rows are read from the ``[K, R, P]`` cached projection table;
     ``prior_terms[i]`` is block ``i``'s class prior and rotation-prior block (``None``
-    without a rotation prior). ``state`` is :func:`_pass1_initial_state`: ``((global
+    without a rotation prior). ``state`` is :func:`pass1_initial_state`: ``((global
     max, sum), (class maxima, sums), (best score, pose, class), (class best scores,
     poses, runner-up scores, poses), raw score maximum)``. Returns the new state, one ``[B, rows * T]``
     support-value block per entry and, with ``dump_rows``, each entry's dump scores
@@ -296,7 +296,7 @@ def _coarse_pass1_blocks(
         if rows < block_rows:
             reference = jnp.pad(reference, ((0, block_rows - rows), (0, 0)))
         block_state, block_values, block_dump = _pass1_block_update(
-            _class_block_state(state, class_index),
+            class_block_state(state, class_index),
             reference,
             shifted_corrected,
             pixel_weight,
@@ -319,14 +319,14 @@ def _coarse_pass1_blocks(
             track_class_second=track_class_second,
             return_values=return_values,
         )
-        state = _merge_class_block_state(state, block_state, class_index)
+        state = merge_class_block_state(state, block_state, class_index)
         values.append(block_values)
         dumps.append(block_dump)
     return state, tuple(values), None if dump_rows is None else tuple(dumps)
 
 
 @partial(jax.jit, static_argnames=("rows", "block_rows") + _PASS1_STATIC)
-def _coarse_pass1_block(
+def coarse_pass1_block(
     block_state,
     reference,
     shifted_corrected,

@@ -9,7 +9,7 @@ from relax.helpers.oversampling import relion_cuda_f32_coarse_log_weights, relio
 
 
 @partial(jax.jit, static_argnames=("adaptive_fraction", "max_significants", "tie_score_ulps"))
-def _posterior_statistics(values, raw_max, source_blocks, *, adaptive_fraction, max_significants, tie_score_ulps):
+def posterior_statistics(values, raw_max, source_blocks, *, adaptive_fraction, max_significants, tie_score_ulps):
     probabilities, mask, count, cutoff, total, threshold = relion_cuda_f32_coarse_posterior(
         values,
         adaptive_fraction=adaptive_fraction,

@@ -692,7 +692,7 @@ def _resident_cuda_fixture_program(
         normalizer_logz,
         tile_normalizer,
     )
-    from relax.scoring.scoring import _relion_coarse_gaussian_gemm_scores_jit
+    from relax.scoring.scoring import relion_coarse_gaussian_gemm_scores_jit
     from relax.sparse_pass2.resident_pass2 import _resident_block_weighted_sums_kernel
     from relax.sparse_pass2.sparse_pass2_adjoint import _accumulate_adjoint_block_chunked
     from relax.sparse_pass2.sparse_pass2_budget import _max_adjoint_block_bytes_for_pass
@@ -727,7 +727,7 @@ def _resident_cuda_fixture_program(
             start = index * qsize
             rotations = jax.lax.dynamic_slice_in_dim(grid.score_rotations, start, qsize, axis=0)
             projections = project(reference, rotations)
-            raw_scores = _relion_coarse_gaussian_gemm_scores_jit(
+            raw_scores = relion_coarse_gaussian_gemm_scores_jit(
                 projections, None, shifted, batch.score_weight, batch.initial_diff2,
                 actual_images, n_images=image_capacity, n_trans=n_translations,
                 image_shape=image_shape, volume_shape=bp_shape, float64=False,

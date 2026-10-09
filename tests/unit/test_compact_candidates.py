@@ -33,7 +33,7 @@ def test_coarse_row_expansion_matches_independent_dense_mask(monkeypatch, mode, 
     )
     expected = np.nonzero(np.asarray(mask))
     monkeypatch.setattr(
-        compact_candidates, "_candidate_mask_to_dense",
+        compact_candidates, "candidate_mask_to_dense",
         lambda _: pytest.fail("compact enumeration expanded the dense fine-row mask"),
     )
     actual = compact_candidate_indices_in_source_order(mask)

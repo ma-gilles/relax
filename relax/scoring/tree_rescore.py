@@ -2,7 +2,7 @@
 
 RELION's coarse tree can pick a winner whose normalized CC is within float32 noise of the runner-up's. For each image
 whose best and second-best coarse poses differ by at most ``max_margin``, the two candidates are scored again by
-RELION's direct texture projection (``_relion_coarse_normalized_cc_rescore``), and the better one becomes the winner.
+RELION's direct texture projection (``relion_coarse_normalized_cc_rescore``), and the better one becomes the winner.
 Only K=1 on a CUDA backend runs it.
 
 :func:`require_tree_rescore_call` refuses a call that cannot run it, :func:`plan_tree_rescore` builds what is fixed for the pass; :func:`rescore_ambiguous_images`
@@ -265,7 +265,7 @@ def rescore_ambiguous_images(
     and ``debug_iteration`` only name the candidates of a ``RELAX_SIGNIFICANCE_DUMP_*`` dump.
     """
 
-    from relax.scoring.scoring import _relion_coarse_normalized_cc_rescore
+    from relax.scoring.scoring import relion_coarse_normalized_cc_rescore
 
     tree_score_dtype = np.float32
     best_scores_np = np.asarray(state.class_best_score, dtype=tree_score_dtype)
@@ -304,7 +304,7 @@ def rescore_ambiguous_images(
         corr_img[jnp.asarray(ambiguous_rows, dtype=jnp.int32), None, :],
         unshifted_candidates.shape,
     )
-    rescored_candidates = _relion_coarse_normalized_cc_rescore(
+    rescored_candidates = relion_coarse_normalized_cc_rescore(
         unshifted_candidates,
         score_weight_candidates,
         None,

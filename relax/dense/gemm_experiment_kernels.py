@@ -1,7 +1,7 @@
 """Float32 dense GEMM tiles for the opt-in resident K1 experiment.
 
 The score convention is the absolute RELION coarse Gaussian convention in
-``relax.scoring.scoring._relion_coarse_gaussian_gemm_scores_jit``.  Inputs are
+``relax.scoring.scoring.relion_coarse_gaussian_gemm_scores_jit``.  Inputs are
 already assembled by the canonical RELION operand path.  This module only
 changes the placement and tiling of the translation phase.
 See ``docs/math/dense_gemm_experiment.md`` for the score and memory contract.
@@ -14,7 +14,7 @@ import jax.numpy as jnp
 
 from relax.scoring.scoring import (
     _relion_coarse_cc_atomic_score_from_components,
-    _relion_coarse_gemm_terms,
+    relion_coarse_gemm_terms,
 )
 
 
@@ -55,7 +55,7 @@ def score_tile(
     u = phase.shape[0]
     if translation_side == "image":
         shifted = score_image[:, None, :] * phase[None, :, :]
-        cross_buq, calculated_power, image_energy, _ = _relion_coarse_gemm_terms(
+        cross_buq, calculated_power, image_energy, _ = relion_coarse_gemm_terms(
             projection,
             shifted,
             pixel_weight,
@@ -129,7 +129,7 @@ def cc_score_tile(
     q, u = projection.shape[0], phase.shape[0]
     if translation_side == "image":
         shifted = score_image[:, None, :] * phase[None, :, :]
-        cross_buq, calculated_power, _, _ = _relion_coarse_gemm_terms(
+        cross_buq, calculated_power, _, _ = relion_coarse_gemm_terms(
             projection,
             shifted,
             pixel_weight,

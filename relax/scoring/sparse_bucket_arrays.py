@@ -39,7 +39,7 @@ def _pass2_bucket_rotation_size(count: int, rotation_block_size_for_quantization
     return size
 from relax.scoring.compact_candidates import (
     SparseCandidateMask,
-    _candidate_mask_to_dense,
+    candidate_mask_to_dense,
 )
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 
@@ -1211,7 +1211,7 @@ def _build_bucket_arrays(
                 padded_mstep_rotations[row, :cnt] = per_image_inputs["oversampled_mstep_rots"][image_idx]
         padded_log_prior[row, :cnt] = per_image_inputs["log_prior"][image_idx]
         if include_dense_score_fields:
-            padded_candidate_mask[row, :cnt, :] = _candidate_mask_to_dense(
+            padded_candidate_mask[row, :cnt, :] = candidate_mask_to_dense(
                 per_image_inputs["candidate_mask"][image_idx]
             )
             padded_parent_map[row, :cnt] = per_image_inputs["parent_map"][image_idx]

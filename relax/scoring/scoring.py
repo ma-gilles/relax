@@ -81,7 +81,7 @@ def _relion_coarse_normalized_cc_rescore_jax(
     return _relion_coarse_cc_atomic_score_from_components(numerator, norm)
 
 
-def _relion_coarse_normalized_cc_rescore(
+def relion_coarse_normalized_cc_rescore(
     shifted_candidates,
     score_weight_candidates,
     projection_candidates,
@@ -287,7 +287,7 @@ def _e_step_block_scores_windowed(
     return -0.5 * residuals
 
 
-def _coarse_gemm_float64_requested() -> bool:
+def coarse_gemm_float64_requested() -> bool:
     """Whether ``RELAX_COARSE_GEMM_FLOAT64=1`` asks for binary64 coarse GEMMs."""
 
     token = os.environ.get("RELAX_COARSE_GEMM_FLOAT64", "0").strip()
@@ -296,7 +296,7 @@ def _coarse_gemm_float64_requested() -> bool:
     return token == "1"
 
 
-def _relion_coarse_gemm_terms(
+def relion_coarse_gemm_terms(
     projected_reference,
     shifted_corrected,
     pixel_weight,
@@ -370,7 +370,7 @@ def _relion_coarse_gemm_terms(
     jax.jit,
     static_argnames=("n_images", "n_trans", "image_shape", "volume_shape", "float64", "translation_major"),
 )
-def _relion_coarse_gaussian_gemm_scores_jit(
+def relion_coarse_gaussian_gemm_scores_jit(
     projected_reference,
     projected_reference_abs2,
     shifted_corrected,
@@ -389,7 +389,7 @@ def _relion_coarse_gaussian_gemm_scores_jit(
 
     RELION's direct square ``d0 + 0.5 sum_k w_k |p_k - y_k|^2`` expands into
     ``d0 + 0.5 A + 0.5 C - X`` over the terms of
-    :func:`_relion_coarse_gemm_terms`. ``RELAX_COARSE_GEMM_FLOAT64=1``
+    :func:`relion_coarse_gemm_terms`. ``RELAX_COARSE_GEMM_FLOAT64=1``
     promotes the stored operands to binary64 instead, for measuring the
     expansion's cancellation; float32 is the production arithmetic.
     Scores are ``[B, R, T]``, or ``[B, T, R]`` (the GEMM's own layout, the same
@@ -399,7 +399,7 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     del projected_reference_abs2, image_shape, volume_shape
     out_dtype = pixel_weight.dtype
     wide = jnp.float64 if float64 else out_dtype
-    cross, model_energy, image_energy, active = _relion_coarse_gemm_terms(
+    cross, model_energy, image_energy, active = relion_coarse_gemm_terms(
         projected_reference,
         shifted_corrected,
         pixel_weight,
@@ -428,7 +428,7 @@ def _relion_coarse_gaussian_gemm_scores_jit(
 
 
 @partial(jax.jit, static_argnames=("n_images", "n_trans"))
-def _relion_coarse_normalized_cc_gemm_scores_jit(
+def relion_coarse_normalized_cc_gemm_scores_jit(
     projected_reference,
     shifted_corrected,
     pixel_weight,
@@ -441,13 +441,13 @@ def _relion_coarse_normalized_cc_gemm_scores_jit(
 
     ``cuda_kernel_diff2_CC_coarse`` weights both its numerator and its norm by
     ``corr_img``; with ``pixel_weight = corr_img * half_weights`` they are the
-    cross term ``X`` and model energy ``A`` of :func:`_relion_coarse_gemm_terms`,
+    cross term ``X`` and model energy ``A`` of :func:`relion_coarse_gemm_terms`,
     and the score is ``X / sqrt(A)`` through RELION's 128 atomic additions
     (:func:`_relion_coarse_cc_atomic_score_from_components`). Returns
     ``[B, R, T]`` float32 scores; padded images score zero.
     """
 
-    cross, model_energy, _image_energy, active = _relion_coarse_gemm_terms(
+    cross, model_energy, _image_energy, active = relion_coarse_gemm_terms(
         projected_reference,
         shifted_corrected,
         pixel_weight,
@@ -464,7 +464,7 @@ def _relion_coarse_normalized_cc_gemm_scores_jit(
 
 
 @partial(jax.jit, static_argnums=())
-def _update_logsumexp(max_s, sum_exp, scores_block):
+def update_logsumexp(max_s, sum_exp, scores_block):
     """Streaming logsumexp update from one score block.
 
     Robust to all-(-inf) score blocks (K-class adaptive 2-pass with an

@@ -609,7 +609,7 @@ def coarse_winner_cells(
 
 
 def expand_mask_rows(tables: ResidentCandidateTables, image: int, fine_translation_parent) -> np.ndarray:
-    """Reference (numpy) dense mask for one image; matches ``_candidate_mask_to_dense`` exactly.
+    """Reference (numpy) dense mask for one image; matches ``candidate_mask_to_dense`` exactly.
 
     Returns a ``bool[n_rows_i, len(fine_translation_parent)]`` array. This is
     the ground truth :func:`expand_mask_jnp` and the eventual device gather

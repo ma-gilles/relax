@@ -13,7 +13,7 @@ import jax.numpy as jnp
 from test_sparse_pass2_bucketed_parity import IMAGE_SHAPE, IMAGE_SIZE, MockDataset
 
 from relax.helpers import projection as projection_helpers
-from relax.scoring.scoring import _update_logsumexp
+from relax.scoring.scoring import update_logsumexp
 
 pytestmark = pytest.mark.unit
 
@@ -53,7 +53,7 @@ def test_logsumexp_initial_block_handles_underflow_without_nan():
     init_max = jnp.full((2,), -jnp.inf)
     init_sum = jnp.zeros((2,), dtype=jnp.float64)
 
-    max_s, sum_exp = _update_logsumexp(init_max, init_sum, scores)
+    max_s, sum_exp = update_logsumexp(init_max, init_sum, scores)
     assert_matches(np.asarray(max_s), np.array([-1517.0, -933.0]))
     assert np.all(np.isfinite(np.asarray(sum_exp)))
 

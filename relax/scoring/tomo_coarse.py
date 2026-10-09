@@ -296,13 +296,13 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
     """Coarse diff2 ``[N, T, R]`` (translation-major) of ``N`` tilt images with their own projections ``[N, R, P]``
     and phases ``[N, T, 2]``.
 
-    Each image is scored by the SPA coarse GEMM scorer (:func:`relax.scoring.scoring._relion_coarse_gaussian_gemm_scores_jit`,
+    Each image is scored by the SPA coarse GEMM scorer (:func:`relax.scoring.scoring.relion_coarse_gaussian_gemm_scores_jit`,
     RELION's ``d0 + 0.5 sum w |p - y|^2`` as two real-packed float32 GEMMs) on its shifted pixels from RELION's
     score translation; a zero-weight padded image scores zero.
     """
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.scoring.scoring import _relion_coarse_gaussian_gemm_scores_jit
+    from relax.scoring.scoring import relion_coarse_gaussian_gemm_scores_jit
 
     n_images, n_trans = (int(n) for n in translation_angles.shape[:2])
     # Every image's translations in one launch, each with its own phases.
@@ -311,7 +311,7 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
     ).reshape(n_images, n_trans, -1)
 
     def one(reference, shifted, weight, initial):
-        scores = _relion_coarse_gaussian_gemm_scores_jit(
+        scores = relion_coarse_gaussian_gemm_scores_jit(
             reference,
             None,
             shifted[None],
@@ -822,7 +822,7 @@ def particle_coarse_significance(
     """
 
     from relax.helpers.oversampling import relion_cuda_f32_coarse_log_weights
-    from relax.scoring.coarse_publication import _posterior_statistics
+    from relax.scoring.coarse_publication import posterior_statistics
 
     # RELION's left-to-right float32 order pdf_orientation + pdf_offset + min_diff2 - diff2
     # (cuda_kernel_weights_exponent_coarse). Adding the priors to the absolute scores first and the
@@ -838,7 +838,7 @@ def particle_coarse_significance(
     ).reshape(n_particles, -1)
     # The log weights already carry min_diff2: no further offset.
     raw_max = jnp.zeros(n_particles, jnp.float32)
-    statistics = _posterior_statistics(
+    statistics = posterior_statistics(
         values,
         raw_max,
         None,
@@ -1439,13 +1439,13 @@ def _add_tilt_image_cc_diff2(running_diff2, projections, shifted, pixel_weight):
 
     ``cuda_kernel_diff2_CC_coarse`` has each of its 128 threads atomically add
     ``-X / (128 sqrt(A))`` to the particle's diff2, which already holds the earlier images' terms;
-    ``X`` and ``A`` are the SPA coarse CC GEMM terms (scoring._relion_coarse_gemm_terms).
+    ``X`` and ``A`` are the SPA coarse CC GEMM terms (scoring.relion_coarse_gemm_terms).
     """
 
-    from relax.scoring.scoring import _relion_coarse_gemm_terms
+    from relax.scoring.scoring import relion_coarse_gemm_terms
 
     n_trans = int(shifted.shape[0])
-    cross, model_energy, _, _ = _relion_coarse_gemm_terms(
+    cross, model_energy, _, _ = relion_coarse_gemm_terms(
         projections, shifted[None], pixel_weight[None], 1, n_images=1, n_trans=n_trans, wide=jnp.float32
     )
     contribution = jnp.asarray(cross[0].T, dtype=jnp.float32) / (
