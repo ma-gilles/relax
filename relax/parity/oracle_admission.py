@@ -23,7 +23,9 @@ class VerifiedDispatchSchedule(NamedTuple):
     oracle_dirs: list[Path]
 
 
-def load_verified_dispatch_schedule(args, particles, *, strict_replay: bool) -> VerifiedDispatchSchedule:
+def load_verified_dispatch_schedule(
+    args, particles, *, strict_replay: bool, relion_half_sets_from_input: bool
+) -> VerifiedDispatchSchedule:
     """Admit a CLI dispatch capture only against its oracle and particle order.
 
     Verify directory manifests before discovering the consumed optimiser and
@@ -73,7 +75,9 @@ def load_verified_dispatch_schedule(args, particles, *, strict_replay: bool) -> 
                     f"{label} must belong to a verified RELION oracle directory: {resolved_path}"
                 )
 
-            discovered_optimiser = find_relion_optimiser_star(args)
+            discovered_optimiser = find_relion_optimiser_star(
+                args, relion_half_sets_from_input=relion_half_sets_from_input
+            )
             if discovered_optimiser is not None:
                 _require_manifested_oracle_file(
                     discovered_optimiser,
@@ -107,7 +111,9 @@ class FollowerRouting(NamedTuple):
     topology: object
 
 
-def admit_follower_routing(args, group_source, particle_groups, *, random_seed: int, log) -> FollowerRouting:
+def admit_follower_routing(
+    args, group_source, particle_groups, *, random_seed: int, relion_half_sets_from_input: bool, log
+) -> FollowerRouting:
     """Admit the followers' dispatch capture against its oracle and build their topology.
 
     A capture is strict K>1 replay state only: it is admitted when the run replays or starts from a RELION
@@ -119,7 +125,12 @@ def admit_follower_routing(args, group_source, particle_groups, *, random_seed: 
         args.n_classes > 1
         and (args.perturb_replay_relion_dir is not None or args.relion_init_dir is not None)
     )
-    dispatch = load_verified_dispatch_schedule(args, group_source.particles, strict_replay=strict_replay)
+    dispatch = load_verified_dispatch_schedule(
+        args,
+        group_source.particles,
+        strict_replay=strict_replay,
+        relion_half_sets_from_input=relion_half_sets_from_input,
+    )
     topology = prepare_follower_topology(
         args.relion_scale_followers,
         dispatch.schedule,

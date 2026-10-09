@@ -62,14 +62,14 @@ def dispatch_inputs(tmp_path):
     args = SimpleNamespace(
         relion_dispatch_schedule=schedule_path, perturb_replay_relion_dir=oracle,
         relion_init_dir=None, relion_optimiser=None, n_classes=4,
-        relion_half_sets=None, data_dir=tmp_path, relion_half_sets_from_input=False,
+        relion_half_sets=None, data_dir=tmp_path,
     )
     return args, particles, oracle
 
 
 def test_no_dispatch_reads_no_oracle_or_particle_metadata():
     admitted = oracle_admission.load_verified_dispatch_schedule(
-        SimpleNamespace(relion_dispatch_schedule=None), object(), strict_replay=False,
+        SimpleNamespace(relion_dispatch_schedule=None), object(), strict_replay=False, relion_half_sets_from_input=False,
     )
     assert admitted.schedule is None
     assert admitted.oracle_dirs == []
@@ -82,7 +82,7 @@ def test_dispatch_refuses_non_replay_before_loading(monkeypatch):
     monkeypatch.setattr(relion_worker_scale, "load_relion_dispatch_schedule", forbidden)
     with pytest.raises(SystemExit, match="strict K>1 RELION replay/init state only"):
         oracle_admission.load_verified_dispatch_schedule(
-            SimpleNamespace(relion_dispatch_schedule="absent.npz"), object(), strict_replay=False,
+            SimpleNamespace(relion_dispatch_schedule="absent.npz"), object(), strict_replay=False, relion_half_sets_from_input=False,
         )
 
 
@@ -99,7 +99,7 @@ def test_verified_dispatch_keeps_particle_identity_and_root_order(dispatch_input
         copy = tmp_path / "relocated"
         shutil.copytree(oracle, copy)
         args.relion_init_dir = copy
-    admitted = oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True)
+    admitted = oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True, relion_half_sets_from_input=False)
     expected_roots = [oracle.resolve()]
     if other_root == "relocated":
         expected_roots.append(args.relion_init_dir.resolve())
@@ -147,7 +147,7 @@ def test_dispatch_refuses_unbound_consumed_inputs(dispatch_inputs, tmp_path, dam
         particles = particles.copy()
         particles.loc[0, "rlnGroupNumber"] = 99
     with pytest.raises(SystemExit, match=message) as failure:
-        oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True)
+        oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True, relion_half_sets_from_input=False)
     assert isinstance(failure.value.__cause__, ValueError)
 
 
@@ -164,13 +164,13 @@ def test_dispatch_verifies_all_roots_before_discovering_inputs(dispatch_inputs, 
         events.append(("verify", root))
         verify(schedule, root)
 
-    def record_discover(request):
+    def record_discover(request, **kwargs):
         events.append(("discover", request))
-        return discover(request)
+        return discover(request, **kwargs)
 
     monkeypatch.setattr(relion_worker_scale, "verify_relion_dispatch_schedule_oracle", record_verify)
     monkeypatch.setattr(oracle_admission, "find_relion_optimiser_star", record_discover)
-    oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True)
+    oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True, relion_half_sets_from_input=False)
     assert events == [("verify", oracle.resolve()), ("verify", copy.resolve()), ("discover", args)]
 
 
@@ -182,7 +182,7 @@ def test_dispatch_preserves_exception_scope(monkeypatch, failure, wrapped):
     monkeypatch.setattr(relion_worker_scale, "load_relion_dispatch_schedule", fail)
     with pytest.raises(SystemExit if wrapped else RuntimeError) as caught:
         oracle_admission.load_verified_dispatch_schedule(
-            SimpleNamespace(relion_dispatch_schedule="capture.npz"), object(), strict_replay=True,
+            SimpleNamespace(relion_dispatch_schedule="capture.npz"), object(), strict_replay=True, relion_half_sets_from_input=False,
         )
     if wrapped:
         assert caught.value.__cause__ is failure
@@ -277,7 +277,7 @@ def test_follower_routing_hands_the_admitted_capture_and_its_oracle_to_the_topol
     groups = object()
     routing = oracle_admission.admit_follower_routing(
         args, SimpleNamespace(particles=particles, path=oracle / "run_it000_data.star"), groups,
-        random_seed=9, log=LOG,
+        random_seed=9, relion_half_sets_from_input=False, log=LOG,
     )
     _, schedule, routed_groups, kwargs = calls[0]
     assert schedule is routing.schedule and schedule is not None and routing.topology is topology

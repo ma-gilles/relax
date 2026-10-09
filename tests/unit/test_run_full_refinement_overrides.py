@@ -553,7 +553,10 @@ def test_fixed_arm_rejects_explicit_optimiser_and_internal_resolver_uses_sealed_
 
     boundary = SimpleNamespace(fixed_diagnostic_arm=True)
     assert boundary.fixed_diagnostic_arm
-    assert command_options.relion_optimiser_star(args, sealed_optimiser=sealed) == sealed.resolve()
+    assert (
+        command_options.relion_optimiser_star(args, relion_half_sets_from_input=False, sealed_optimiser=sealed)
+        == sealed.resolve()
+    )
 
 
 def test_fixed_arm_rejects_mask_cli_values_that_differ_from_sealed_optimiser(tmp_path):
@@ -567,12 +570,14 @@ def test_fixed_arm_rejects_mask_cli_values_that_differ_from_sealed_optimiser(tmp
         _apply_relion_image_mask(
             None,
             SimpleNamespace(particle_diameter_ang=279.0, width_mask_edge_px=5.0),
+            relion_half_sets_from_input=False,
             sealed_optimiser_star=sealed,
         )
     with pytest.raises(ValueError, match="mask-edge width differs"):
         _apply_relion_image_mask(
             None,
             SimpleNamespace(particle_diameter_ang=None, width_mask_edge_px=4.0),
+            relion_half_sets_from_input=False,
             sealed_optimiser_star=sealed,
         )
 

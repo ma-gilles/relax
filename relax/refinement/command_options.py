@@ -191,8 +191,10 @@ def validate_sigma_ang(args) -> None:
         raise SystemExit("--sigma_ang has no effect with --skip_align, which searches no orientations")
 
 
-def resolve_standalone_k1_start(args) -> None:
-    """Default a fresh K=1 start with no RELION output to RELION's particle table from the input.
+def resolve_standalone_k1_start(args) -> bool:
+    """Whether the run builds RELION's particle table from the input (``--relion-half-sets-from-input``).
+
+    Unset, a fresh K=1 start with no RELION output defaults to it.
 
     Standalone means relion_refine's own inputs: the particle table rebuilt from
     ``<data_dir>/particles.star`` and the seed (half sets, groups, order). A run
@@ -205,16 +207,16 @@ def resolve_standalone_k1_start(args) -> None:
         and args.frozen_boundary_dir is None
         and args.perturb_replay_relion_dir is None
     )
-    if args.relion_half_sets_from_input is None:
-        args.relion_half_sets_from_input = bool(
-            fresh_k1 and args.relion_half_sets is None and args.relion_init_dir is None
-        )
-    validate_input_half_sets(args)
+    from_input = args.relion_half_sets_from_input
+    if from_input is None:
+        from_input = bool(fresh_k1 and args.relion_half_sets is None and args.relion_init_dir is None)
+    validate_input_half_sets(args, from_input=from_input)
+    return from_input
 
 
-def validate_input_half_sets(args) -> None:
+def validate_input_half_sets(args, *, from_input: bool) -> None:
     """Reject an input-derived RELION particle table where RELION would not build one this way."""
-    if not getattr(args, "relion_half_sets_from_input", False):
+    if not from_input:
         return
     problems = []
     if args.relion_half_sets is not None:
@@ -1210,7 +1212,7 @@ def resolve_consistency_options(
     return options
 
 
-def relion_optimiser_star(args, *, sealed_optimiser=None):
+def relion_optimiser_star(args, *, relion_half_sets_from_input: bool, sealed_optimiser=None):
     """The one RELION optimiser STAR a run reads, or None.
 
     Its mask, ``ini_high``, ``max_significants`` and CTF flag come from it, and (``optimiser_seed_source``)
@@ -1219,7 +1221,7 @@ def relion_optimiser_star(args, *, sealed_optimiser=None):
     """
     if sealed_optimiser is not None:
         return Path(sealed_optimiser).resolve()
-    return find_relion_optimiser_star(args)
+    return find_relion_optimiser_star(args, relion_half_sets_from_input=relion_half_sets_from_input)
 
 
 def optimiser_seed_source(args, optimiser_star, *, sealed: bool):
@@ -1234,7 +1236,7 @@ def optimiser_seed_source(args, optimiser_star, *, sealed: bool):
     return optimiser_star if sealed or named else None
 
 
-def find_relion_optimiser_star(args):
+def find_relion_optimiser_star(args, *, relion_half_sets_from_input: bool):
     """Locate a RELION run_optimiser.star to source mask + max_significants from.
 
     Searches an explicit ``--relion_optimiser`` arg first, then sibling
@@ -1244,7 +1246,8 @@ def find_relion_optimiser_star(args):
     Picks the latest ``run_it{NNN}_optimiser.star`` if no plain
     ``run_optimiser.star`` is present in a candidate directory.
 
-    With ``--relion-half-sets-from-input`` the run starts from relion_refine's
+    With ``--relion-half-sets-from-input`` (``relion_half_sets_from_input``, as
+    :func:`resolve_standalone_k1_start` resolved it) the run starts from relion_refine's
     inputs alone, so only an explicit ``--relion_optimiser`` is used: a RELION
     output found next to the data must not supply the mask, ``ini_high``,
     ``max_significants`` or CTF flag. A Class3D (K>1) run given no RELION
@@ -1256,7 +1259,7 @@ def find_relion_optimiser_star(args):
         p = Path(explicit).resolve()
         if p.exists():
             return p
-    if getattr(args, "relion_half_sets_from_input", False):
+    if relion_half_sets_from_input:
         return None
     class3d_standalone = int(getattr(args, "n_classes", 1)) > 1 and not any(
         getattr(args, name, None)

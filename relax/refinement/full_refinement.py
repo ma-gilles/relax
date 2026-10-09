@@ -103,7 +103,7 @@ def _k1_relion_live_initial_noise_enabled(
     )
 
 
-def _refuse_live_initial_noise(args, *, frozen_boundary, half_sets, mask_params) -> None:
+def _refuse_live_initial_noise(args, *, frozen_boundary, half_sets, relion_half_sets, mask_params) -> None:
     """Refuse the fresh-K=1 live-noise diagnostic outside a strict fresh K=1 cold start, naming every reason."""
     invalid_reasons = []
     if int(args.n_classes) != 1:
@@ -116,7 +116,7 @@ def _refuse_live_initial_noise(args, *, frozen_boundary, half_sets, mask_params)
         invalid_reasons.append("perturb replay must be absent")
     if args.relion_init_dir is None:
         invalid_reasons.append("relion_init_dir is required")
-    if half_sets.relion_particles is None or args.relion_half_sets is None:
+    if half_sets.relion_particles is None or relion_half_sets is None:
         invalid_reasons.append("RELION half-set data are required")
     if mask_params is None:
         invalid_reasons.append("RELION particle-diameter mask parameters are required")
@@ -378,7 +378,7 @@ def main(command=None):
     if int(args.n_classes) == 1:
         apply_k1_refine3d_env_defaults()
     command_options.resolve_job_defaults(args)
-    command_options.resolve_standalone_k1_start(args)
+    relion_half_sets_from_input = command_options.resolve_standalone_k1_start(args)
     command_options.validate_sigma_ang(args)
     command_options.validate_strict_highres_exp(args)
     if (
@@ -420,6 +420,7 @@ def main(command=None):
         raise ValueError("fixed diagnostic arm lacks sealed source paths")
     optimiser_star = command_options.relion_optimiser_star(
         args,
+        relion_half_sets_from_input=relion_half_sets_from_input,
         sealed_optimiser=fixed_diagnostic_source_paths["completed_optimiser"] if fixed_diagnostic_arm else None,
     )
     seed = command_options.resolve_seed(args, optimiser_star, sealed=fixed_diagnostic_arm)
@@ -453,6 +454,7 @@ def main(command=None):
 
     particle_inputs = particle_loading.load_particle_inputs(
         args,
+        relion_half_sets_from_input=relion_half_sets_from_input,
         frozen_boundary=frozen_boundary,
         fixed_diagnostic_source_paths=fixed_diagnostic_source_paths,
     )
@@ -499,8 +501,10 @@ def main(command=None):
     )
     relion_model_pixel_size = None
 
-    if args.relion_half_sets_from_input:
-        args.relion_half_sets = str(
+    # The RELION particle table the run splits its halves from: --relion_half_sets, or the one rebuilt here.
+    relion_half_sets = args.relion_half_sets
+    if relion_half_sets_from_input:
+        relion_half_sets = str(
             _write_relion_start_particle_table(
                 our_star,
                 os.path.join(args.data_dir, "particles.star"),
@@ -511,16 +515,16 @@ def main(command=None):
         logger.info(
             "RELION start-up particle table rebuilt from the input STAR with seed %d: %s",
             seed.value,
-            args.relion_half_sets,
+            relion_half_sets,
         )
 
-    use_fresh_auto_refine_order = args.relion_half_sets is not None and _use_fresh_auto_refine_particle_order(
+    use_fresh_auto_refine_order = relion_half_sets is not None and _use_fresh_auto_refine_particle_order(
         args, frozen_boundary
     )
     half_sets = particle_loading.split_half_sets(
         our_star,
         ds,
-        halfset_path=args.relion_half_sets,
+        halfset_path=relion_half_sets,
         n_classes=int(args.n_classes),
         seed=seed.value,
         init_relion_iteration=args.init_relion_iteration,
@@ -590,14 +594,19 @@ def main(command=None):
         particle_layout.half1_rows,
         particle_layout.half2_rows,
         halfset_particles=relion_particles,
-        halfset_source=args.relion_half_sets,
+        halfset_source=relion_half_sets,
         replay_dirs=(args.perturb_replay_relion_dir, args.relion_init_dir),
         init_relion_iteration=args.init_relion_iteration,
     )
     group_particle_source = prepared_particle_groups.source
     particle_groups = prepared_particle_groups.layout
     follower_routing = oracle_admission.admit_follower_routing(
-        args, group_particle_source, particle_groups, random_seed=seed.value, log=logger
+        args,
+        group_particle_source,
+        particle_groups,
+        random_seed=seed.value,
+        relion_half_sets_from_input=relion_half_sets_from_input,
+        log=logger,
     )
     relion_dispatch_schedule = follower_routing.schedule
     follower_topology = follower_routing.topology
@@ -787,7 +796,7 @@ def main(command=None):
         if initial_noise.pixel_variance.ndim == 2:
             optics_group_ids_per_half, _ = _per_image_optics_groups(our_particles, particle_layout)
     else:
-        if args.n_classes == 1 and args.relion_half_sets is None:
+        if args.n_classes == 1 and relion_half_sets is None:
             raise ValueError(
                 "RELION start-up noise needs K=1 half sets (Class3D uses the input order), the "
                 "particle-diameter mask and the optics pixel size, and no frozen or loaded noise"
@@ -833,7 +842,7 @@ def main(command=None):
     relion_live_initial_noise_variance = None
     if use_relion_live_initial_noise:
         _refuse_live_initial_noise(args, frozen_boundary=frozen_boundary, half_sets=half_sets,
-                                   mask_params=relion_mask_params)
+                                   relion_half_sets=relion_half_sets, mask_params=relion_mask_params)
         relion_live_initial_sigma2, relion_live_initial_noise_variance = startup_noise_inputs.live_initial_noise(
             ds, half_sets, mask_params=relion_mask_params, log=logger,
         )
@@ -1112,7 +1121,7 @@ def main(command=None):
         requested_source=args.initial_pose_source,
         n_classes=args.n_classes,
         init_relion_iteration=args.init_relion_iteration,
-        has_relion_half_sets=args.relion_half_sets is not None,
+        has_relion_half_sets=relion_half_sets is not None,
         diagnostic_single_half=args.diagnostic_single_half,
         frozen_boundary=frozen_boundary,
         poses_npz_path=args.init_previous_best_poses_npz,

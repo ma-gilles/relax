@@ -243,7 +243,7 @@ def test_seed_source_ignores_incidental_data_dir_relion_discovery(tmp_path):
         relion_half_sets=None,
     )
 
-    discovered = command_options.relion_optimiser_star(args)
+    discovered = command_options.relion_optimiser_star(args, relion_half_sets_from_input=False)
     assert discovered == (relion_dir / "run_optimiser.star").resolve()
     assert command_options.optimiser_seed_source(args, discovered, sealed=False) is None
 

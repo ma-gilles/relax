@@ -54,10 +54,12 @@ def test_relion_softmask_reduction_routes_both_native_diagnostic_modes(monkeypat
     os.makedirs(tmp_path / "out")
     with pytest.raises(ValueError, match="requires --image-fourier-backend relion_cuda"):
         particle_loading.load_particle_inputs(
-            command_options.parse_refinement_args([*arguments, "--image-fourier-backend", "host_numpy"])
+            command_options.parse_refinement_args([*arguments, "--image-fourier-backend", "host_numpy"]),
+            relion_half_sets_from_input=False,
         )
     particle_loading.load_particle_inputs(
-        command_options.parse_refinement_args([*arguments, "--image-fourier-backend", "relion_cuda"])
+        command_options.parse_refinement_args([*arguments, "--image-fourier-backend", "relion_cuda"]),
+        relion_half_sets_from_input=False,
     )
     assert lanes == ([True] if mode == "native_lane" else [])
     atomic = os.environ.pop("RECOVAR_RELION_NATIVE_ATOMIC_SOFTMASK_REDUCTION", None)

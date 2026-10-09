@@ -149,7 +149,7 @@ def test_command_particle_loading_preserves_images_identity_and_precision(
     loaded = particle_loading.load_particle_inputs(_loading_args(
         tmp_path, preread_images=mode == "preread",
         scratch_dir=str(scratch_dir) if mode == "scratch" else "",
-    ))
+    ), relion_half_sets_from_input=False)
     dataset = loaded.dataset
     assert not loaded.tomographic and loaded.shape_class_rows is None
     assert loaded.double_preprocessing is double_preprocessing
@@ -182,7 +182,7 @@ def test_command_particle_loading_keeps_shape_rows_and_group_mask_geometry(tmp_p
         mrc.set_data(cropped)
     starfile.write(tables, star_path, overwrite=True)
 
-    loaded = particle_loading.load_particle_inputs(_loading_args(tmp_path))
+    loaded = particle_loading.load_particle_inputs(_loading_args(tmp_path), relion_half_sets_from_input=False)
     dataset = loaded.dataset
     assert not loaded.tomographic and len(loaded.shape_class_rows) == 2
     assert dataset.n_units == expected.shape[0]
@@ -234,7 +234,11 @@ def test_command_refuses_unsupported_input_state_before_loading(
         relion_init_dir="seeded" if unsupported == "initial_state" else None,
     )
     with pytest.raises(SystemExit, match="subtomogram particles|optics groups on several image shapes"):
-        particle_loading.load_particle_inputs(args, frozen_boundary=object() if unsupported == "frozen" else None)
+        particle_loading.load_particle_inputs(
+            args,
+            relion_half_sets_from_input=False,
+            frozen_boundary=object() if unsupported == "frozen" else None,
+        )
 
 
 def test_default_scratch_and_preread_read_identical_bytes(tmp_path):

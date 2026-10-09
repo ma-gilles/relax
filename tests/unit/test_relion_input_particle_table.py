@@ -231,15 +231,15 @@ def test_from_input_flag_rejects_combinations_relion_would_not_build():
 
     from relax.refinement.command_options import validate_input_half_sets
 
-    base = dict(relion_half_sets_from_input=True, relion_half_sets=None, n_classes=1, seed=11, frozen_boundary_dir=None)
-    validate_input_half_sets(SimpleNamespace(**base))
+    base = dict(relion_half_sets=None, n_classes=1, seed=11, frozen_boundary_dir=None)
+    validate_input_half_sets(SimpleNamespace(**base), from_input=True)
     for change, message in (
         ({"relion_half_sets": "run_data.star"}, "replaces --relion_half_sets"),
         ({"n_classes": 4}, "K=1"),
         ({"frozen_boundary_dir": "boundary"}, "frozen boundary"),
     ):
         with pytest.raises(SystemExit, match=message):
-            validate_input_half_sets(SimpleNamespace(**{**base, **change}))
+            validate_input_half_sets(SimpleNamespace(**{**base, **change}), from_input=True)
 
 
 def test_fresh_k1_start_without_relion_output_resolves_to_standalone():
@@ -264,8 +264,7 @@ def test_fresh_k1_start_without_relion_output_resolves_to_standalone():
                 **change,
             }
         )
-        resolve_standalone_k1_start(args)
-        return args.relion_half_sets_from_input
+        return resolve_standalone_k1_start(args)
 
     assert resolve() is True
     assert resolve(relion_half_sets="run_it000_data.star") is False
@@ -288,12 +287,11 @@ def test_from_input_flag_does_not_discover_relion_optimiser_outputs(tmp_path):
     discovered.parent.mkdir()
     discovered.write_text("data_optimiser_general\n")
     base = dict(relion_optimiser=None, relion_init_dir=None, perturb_replay_relion_dir=None, relion_half_sets=None)
-    args = SimpleNamespace(data_dir=str(tmp_path), relion_half_sets_from_input=False, **base)
-    assert find_relion_optimiser_star(args) == discovered.resolve()
-    args.relion_half_sets_from_input = True
-    assert find_relion_optimiser_star(args) is None
+    args = SimpleNamespace(data_dir=str(tmp_path), **base)
+    assert find_relion_optimiser_star(args, relion_half_sets_from_input=False) == discovered.resolve()
+    assert find_relion_optimiser_star(args, relion_half_sets_from_input=True) is None
     args.relion_optimiser = str(discovered)
-    assert find_relion_optimiser_star(args) == discovered.resolve()
+    assert find_relion_optimiser_star(args, relion_half_sets_from_input=True) == discovered.resolve()
 
 
 def test_class3d_without_relion_state_does_not_discover_relion_optimiser_outputs(tmp_path):
@@ -305,13 +303,13 @@ def test_class3d_without_relion_state_does_not_discover_relion_optimiser_outputs
     discovered.parent.mkdir()
     discovered.write_text("data_optimiser_general\n")
     base = dict(relion_optimiser=None, relion_init_dir=None, perturb_replay_relion_dir=None, relion_half_sets=None)
-    args = SimpleNamespace(data_dir=str(tmp_path), relion_half_sets_from_input=False, n_classes=4, **base)
-    assert find_relion_optimiser_star(args) is None
+    args = SimpleNamespace(data_dir=str(tmp_path), n_classes=4, **base)
+    assert find_relion_optimiser_star(args, relion_half_sets_from_input=False) is None
     args.perturb_replay_relion_dir = str(discovered.parent)
-    assert find_relion_optimiser_star(args) == discovered.resolve()
+    assert find_relion_optimiser_star(args, relion_half_sets_from_input=False) == discovered.resolve()
     args.perturb_replay_relion_dir = None
     args.relion_optimiser = str(discovered)
-    assert find_relion_optimiser_star(args) == discovered.resolve()
+    assert find_relion_optimiser_star(args, relion_half_sets_from_input=False) == discovered.resolve()
 
 
 def test_written_table_round_trips_input_values(tmp_path):

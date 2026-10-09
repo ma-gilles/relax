@@ -91,8 +91,10 @@ def test_mask_diameter_falls_back_to_the_gui_default(monkeypatch):
             applied.update(kwargs)
 
     ds = SimpleNamespace(image_source=SimpleNamespace(backend=Backend()), voxel_size=2.0)
-    monkeypatch.setattr(command_options, "find_relion_optimiser_star", lambda args: None)
-    params = particle_loading._apply_relion_image_mask(ds, SimpleNamespace(particle_diameter_ang=None, width_mask_edge_px=5.0))
+    monkeypatch.setattr(command_options, "find_relion_optimiser_star", lambda args, **_kwargs: None)
+    params = particle_loading._apply_relion_image_mask(
+        ds, SimpleNamespace(particle_diameter_ang=None, width_mask_edge_px=5.0), relion_half_sets_from_input=False
+    )
     assert params == (200.0, 5.0)
     assert applied["particle_diameter_ang"] == 200.0
 

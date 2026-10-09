@@ -230,7 +230,7 @@ def split_half_sets(
     )
 
 
-def _apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
+def _apply_relion_image_mask(ds, args, *, relion_half_sets_from_input: bool, sealed_optimiser_star=None):
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
     if sealed_optimiser_star is not None:
         optimiser_star = Path(sealed_optimiser_star).resolve()
@@ -257,7 +257,9 @@ def _apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
         params = (float(args.particle_diameter_ang), float(args.width_mask_edge_px))
         optimiser_star = "explicit CLI"
     else:
-        optimiser_star = command_options.find_relion_optimiser_star(args)
+        optimiser_star = command_options.find_relion_optimiser_star(
+            args, relion_half_sets_from_input=relion_half_sets_from_input
+        )
         params = None if optimiser_star is None else relion_metadata._load_relion_mask_params(optimiser_star)
         if params is None:
             params = (command_options.RELION_GUI_PARTICLE_DIAMETER_ANG, float(args.width_mask_edge_px))
@@ -310,6 +312,7 @@ def _apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
 def load_particle_inputs(
     args,
     *,
+    relion_half_sets_from_input: bool,
     frozen_boundary=None,
     fixed_diagnostic_source_paths=None,
 ) -> LoadedParticles:
@@ -392,6 +395,7 @@ def load_particle_inputs(
         relion_mask_params = _apply_relion_image_mask(
             class_dataset,
             args,
+            relion_half_sets_from_input=relion_half_sets_from_input,
             sealed_optimiser_star=(
                 None
                 if frozen_boundary is None or not frozen_boundary.fixed_diagnostic_arm
