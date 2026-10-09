@@ -170,10 +170,8 @@ def compute_bootstrap_iref(
     do_zero_mask: bool,
     do_ctf_correction: bool,
     random_seed: int,
-    padding_factor: int = 1,
-    current_size: int = -1,
-    minimum_nr_particles: int = 1000,
-    particle_seed_ids: np.ndarray | None = None,
+    padding_factor: int,
+    minimum_nr_particles: int,
     particle_positions: np.ndarray | None = None,
     image_gamma_offsets=None,
 ):
@@ -193,9 +191,8 @@ def compute_bootstrap_iref(
 
     from relax.relion.relion_ctf import relion_ctf_fftw_half
 
-    if current_size <= 0:
-        # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not A).
-        current_size = compute_ini_high_shell(box_size)
+    # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not A).
+    current_size = compute_ini_high_shell(box_size)
     todo = min(max(int(minimum_nr_particles), int(nr_classes) * 5), int(images.shape[0]))
     ctf_images = None
     if do_ctf_correction:
@@ -238,7 +235,6 @@ def compute_bootstrap_iref(
         random_seed=int(random_seed),
         padding_factor=int(padding_factor),
         minimum_nr_particles=int(minimum_nr_particles),
-        particle_seed_ids=particle_seed_ids,
         particle_positions=particle_positions,
         current_size=int(current_size),
     )
@@ -431,7 +427,6 @@ def initial_state_from_particles(
             do_ctf_correction=bool(opts.do_ctf_correction),
             random_seed=int(opts.random_seed),
             padding_factor=int(opts.padding_factor),
-            current_size=-1,
             minimum_nr_particles=int(bootstrap_positions.size),
             particle_positions=bootstrap_positions,
             image_gamma_offsets=None if group_pixel_sizes is not None else _bootstrap_gamma_offsets(

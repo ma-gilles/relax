@@ -114,7 +114,7 @@ def test_bootstrap_and_postprocess_match(size, padding, do_ctf, classes, n, curr
 def test_production_bootstrap_with_relax_ctf_matches():
     """bootstrap_iref's entry points, with relax's own CTF, against the binding (RECOVAR frame).
 
-    The entry point takes RELION's bootstrap size ROUND(0.07 ori_size) when none is given.
+    The entry point takes RELION's bootstrap size ROUND(0.07 ori_size).
     """
 
     from recovar.utils.helpers import relion_volume_to_recovar
