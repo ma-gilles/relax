@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.dense.score_outputs import _combine_optional_half_accumulators
-from relax.helpers.orientation_priors import DirectionPrior
+from relax.helpers.orientation_priors import DirectionPrior, learn_class_direction_priors, learn_k1_direction_priors
 from relax.helpers.resolution import _firstiter_cc_ini_high_tapered
 from relax.helpers.timing import Stopwatch
 from relax.refinement.mean_helpers import (
@@ -35,6 +35,7 @@ from relax.refinement.mean_helpers import (
 from relax.refinement.ports import ClassTau2, RunObserver
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR, REFERENCE_FILTER_EDGE_SHELLS
+from relax.sampling import rotation_grid_size
 
 # The M-steps log as part of the controller's iteration.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -378,4 +379,47 @@ def k1_maximization(
         # Diagnostics follow the half-1 model.star, matching the parity report.
         split_prior.details_per_half[0],
         split_prior.details_per_half,
+    )
+
+
+def k1_learned_direction_priors(
+    rotation_posterior_per_half, *, direction_prior_order: int, symmetry: str, dtype, log,
+) -> tuple[DirectionPrior | None, DirectionPrior | None]:
+    """Each K=1 half's next direction prior, collapsed from its rotation posterior sums at
+    ``direction_prior_order``; None for a half that keeps its prior (a rejected half, or no half when either
+    half has no posterior sums)."""
+    if any(rot_sum is None for rot_sum in rotation_posterior_per_half):
+        return None, None
+    return learn_k1_direction_priors(
+        rotation_posterior_per_half, direction_prior_order=direction_prior_order,
+        expected_rotation_count=rotation_grid_size(direction_prior_order, symmetry=symmetry),
+        dtype=dtype, log=log, symmetry=symmetry,
+    )
+
+
+def class_learned_direction_priors(
+    rotation_posterior_per_half,
+    class_rotation_posterior_per_half,
+    *,
+    n_classes: int,
+    direction_prior_order: int,
+    symmetry: str,
+    use_local: bool,
+    n_trial_rotations: int,
+    dtype,
+) -> tuple[DirectionPrior | None, DirectionPrior | None]:
+    """Both Class3D halves' next direction prior, one shared prior from the two halves' class rotation
+    posteriors at ``direction_prior_order``; (None, None) when the halves keep theirs: a half without posterior
+    sums, or a global search whose trial grid is not the exhaustive grid of that order (a local search's
+    posterior grid is the direction-prior grid, where pdf_direction still accumulates)."""
+    if any(rot_sum is None for rot_sum in rotation_posterior_per_half):
+        return None, None
+    exhaustive_grid_size = rotation_grid_size(direction_prior_order, symmetry=symmetry)
+    if not (use_local or n_trial_rotations == exhaustive_grid_size) or any(
+        rot_sum is None for rot_sum in class_rotation_posterior_per_half
+    ):
+        return None, None
+    return learn_class_direction_priors(
+        class_rotation_posterior_per_half, n_classes=n_classes, healpix_order=direction_prior_order, dtype=dtype,
+        symmetry=symmetry,
     )

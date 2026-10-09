@@ -280,7 +280,7 @@ def run_tiny_refinement(
     install_fake_adaptive_engine(monkeypatch, calls, Ft_y=random_half_map, noise_fields=engine_noise_fields)
 
     def identity_rotation_grid(order, dtype=None, *, symmetry="C1"):
-        n_rotations = iteration_loop.rotation_grid_size(order, symmetry=symmetry)
+        n_rotations = sampling.rotation_grid_size(order, symmetry=symmetry)
         return sampling.RotationGrid(
             rotations=np.repeat(np.eye(3, dtype=np.float32)[None], n_rotations, axis=0),
             rotation_eulers=np.zeros((n_rotations, 3), dtype=np.float32),

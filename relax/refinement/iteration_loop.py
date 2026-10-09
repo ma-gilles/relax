@@ -43,8 +43,6 @@ from relax.helpers.expected_accuracy import estimate_iteration_accuracy
 from relax.helpers.iteration_history import RefinementHistory
 from relax.helpers.orientation_priors import (
     initial_direction_priors_from_snapshot,
-    learn_class_direction_priors,
-    learn_k1_direction_priors,
 )
 from relax.helpers.resolution import (
     _zero_shells_past_current_size,
@@ -58,7 +56,7 @@ from relax.parity.relion_replay import _validate_bpref_particle_order_scope
 from relax.reconstruction.regularization_relion import (
     update_relion_growth_state_from_fsc,
 )
-from relax.refinement import finalization, local_sampling, ports, setup_checks
+from relax.refinement import finalization, local_sampling, maximization, ports, setup_checks
 from relax.refinement.convergence import (
     advance_expectation_sampling,
     reset_follower_counter_once,
@@ -172,9 +170,6 @@ from relax.relion.relion_worker_scale import (
     _finalize_relion_follower_scale_replay_telemetry,
     _update_relion_follower_corrections,
     setup_relion_follower_scale_state,
-)
-from relax.sampling import (
-    rotation_grid_size,
 )
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 
@@ -945,37 +940,22 @@ def refine_single_volume(
         history.significant_counts.append(significance.recorded)
 
         history.record_rotation_posterior(per_half.rotation_posterior)
-        if all(rot_sum is not None for rot_sum in per_half.rotation_posterior):
-            if not ctx.k_class_enabled:
-                learned_priors = learn_k1_direction_priors(
-                    per_half.rotation_posterior, direction_prior_order=plan.direction_prior_healpix_order,
-                    expected_rotation_count=rotation_grid_size(
-                        plan.direction_prior_healpix_order, symmetry=options.symmetry.point_group,
-                    ),
-                    dtype=ctx.scoring_dtype, log=logger, symmetry=options.symmetry.point_group,
-                )
-                for half_index, learned in enumerate(learned_priors):
-                    if learned is not None:
-                        carry.direction_priors[half_index] = learned
-            else:
-                exhaustive_grid_size = rotation_grid_size(
-                    plan.direction_prior_healpix_order,  # a local search's posterior grid (pdf_direction still accumulates)
-                    symmetry=options.symmetry.point_group,
-                )
-                if (
-                    (use_local or plan.trial_grid.rotations.shape[0] == exhaustive_grid_size)
-                    and all(
-                        rot_sum is not None
-                        for rot_sum in per_half.class_rotation_posterior
-                    )
-                ):
-                    learned_priors = learn_class_direction_priors(
-                        per_half.class_rotation_posterior, n_classes=options.k_class.n_classes,
-                        healpix_order=plan.direction_prior_healpix_order, dtype=ctx.scoring_dtype,
-                        symmetry=options.symmetry.point_group,
-                    )
-                    for half_index, learned in enumerate(learned_priors):
-                        carry.direction_priors[half_index] = learned
+        # pdf_direction: each half's next direction prior from this iteration's posteriors (None: kept).
+        learned_priors = (
+            maximization.class_learned_direction_priors(
+                per_half.rotation_posterior, per_half.class_rotation_posterior, n_classes=options.k_class.n_classes,
+                direction_prior_order=plan.direction_prior_healpix_order, symmetry=options.symmetry.point_group,
+                use_local=use_local, n_trial_rotations=plan.trial_grid.rotations.shape[0], dtype=ctx.scoring_dtype,
+            )
+            if ctx.k_class_enabled
+            else maximization.k1_learned_direction_priors(
+                per_half.rotation_posterior, direction_prior_order=plan.direction_prior_healpix_order,
+                symmetry=options.symmetry.point_group, dtype=ctx.scoring_dtype, log=logger,
+            )
+        )
+        for half_index, learned in enumerate(learned_priors):
+            if learned is not None:
+                carry.direction_priors[half_index] = learned
         if seeding.single_class_iteration:
             mstep, copied_mixture = copy_first_class_to_every_class(
                 reference_model, carry.direction_priors, mstep, carry.class_mixture,

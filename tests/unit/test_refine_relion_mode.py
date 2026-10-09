@@ -107,6 +107,7 @@ from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
 from relax.refinement import finalization, half_scoring, local_sampling, local_search_iteration
+from relax.refinement import maximization as maximization_module
 from relax.refinement import mean_helpers as mean_helpers_module
 from relax.refinement.iteration_loop import (
     _normalize_noise_variance_per_half,
@@ -5376,7 +5377,7 @@ class TestRelionModeSmokeTest:
             force_convergence_after_first_iter,
         )
         install_fake_adaptive_engine(monkeypatch, engine_calls)
-        monkeypatch.setattr(iteration_loop_module, "rotation_grid_size", fake_rotation_grid_size)
+        monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
         monkeypatch.setattr(
             sampling_module,
             "relion_scoring_rotation_grid",
@@ -5641,7 +5642,7 @@ class TestRelionModeSmokeTest:
                 best_log_score_per_image=jnp.zeros(experiment_dataset.n_units, dtype=jnp.float32),
                 max_posterior_per_image=jnp.ones(experiment_dataset.n_units, dtype=jnp.float32),
                 rotation_posterior_sums=jnp.ones(
-                    iteration_loop_module.rotation_grid_size(healpix_order),
+                    maximization_module.rotation_grid_size(healpix_order),
                     dtype=jnp.float32,
                 ),
             )
@@ -5666,7 +5667,7 @@ class TestRelionModeSmokeTest:
             force_converged_local_after_first_iter,
         )
         install_fake_adaptive_engine(monkeypatch, engine_calls)
-        monkeypatch.setattr(iteration_loop_module, "rotation_grid_size", fake_rotation_grid_size)
+        monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
         monkeypatch.setattr(
             sampling_module,
             "relion_scoring_rotation_grid",
@@ -7777,7 +7778,6 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
     monkeypatch,
 ):
     """Adaptive local search expands RELION coarse parents without materializing the full fine grid."""
-    import relax.refinement.iteration_loop as refine_mod
 
     order_sizes = {4: 4, 5: 9}
     grid_calls = []
@@ -7855,7 +7855,7 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
             best_pose_details,
         )
 
-    monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
+    monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda order, **kw: False)
     monkeypatch.setattr(
         sampling_module,
@@ -7916,7 +7916,6 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
     monkeypatch,
 ):
     """Selected-only fine local grids must carry the RELION perturbation metadata."""
-    import relax.refinement.iteration_loop as refine_mod
 
     order_sizes = {4: 4, 5: 9}
     perturb_calls = []
@@ -8020,7 +8019,7 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
             best_pose_details,
         )
 
-    monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
+    monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda order, **kw: False)
     monkeypatch.setattr(
         sampling_module,
@@ -8090,7 +8089,6 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
     monkeypatch,
 ):
     """Local-search priors use RELION's pdf_offset units, not pre-shift pixels."""
-    import relax.refinement.iteration_loop as refine_mod
 
     order_sizes = {4: 4, 5: 9}
     prev_h1 = np.array([[0.5, -0.25], [1.0, 0.75]], dtype=np.float32)
@@ -8154,7 +8152,7 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
             experiment_dataset.n_units, best_pose_details,
         )
 
-    monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
+    monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda order, **kw: False)
     monkeypatch.setattr(
         sampling_module,
@@ -8210,7 +8208,6 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
     translations,
     monkeypatch,
 ):
-    import relax.refinement.iteration_loop as refine_mod
 
     order_sizes = {4: 4, 5: 9}
     prev_h1 = np.zeros((half_datasets[0].n_units, 2), dtype=np.float32)
@@ -8276,7 +8273,7 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
             experiment_dataset.n_units, best_pose_details,
         )
 
-    monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
+    monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda order, **kw: False)
     monkeypatch.setattr(
         sampling_module,
@@ -8334,7 +8331,6 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
     monkeypatch,
 ):
     """RELION os0 local search keeps all fine candidates in storeWeightedSums."""
-    import relax.refinement.iteration_loop as refine_mod
 
     order_sizes = {4: 4}
     reconstruct_flags = []
@@ -8373,7 +8369,7 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
             ),
         )
 
-    monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
+    monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(
         sampling_module,
         "relion_scoring_rotation_grid",
@@ -8415,7 +8411,6 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
     monkeypatch,
     tmp_path,
 ):
-    import relax.refinement.iteration_loop as refine_mod
 
     order_sizes = {4: 4, 5: 9}
     prev_h1 = np.zeros((half_datasets[0].n_units, 2), dtype=np.float32)
@@ -8487,7 +8482,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
             experiment_dataset.n_units, best_pose_details,
         )
 
-    monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
+    monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(
         sampling_module,
         "relion_scoring_rotation_grid",
@@ -9135,7 +9130,6 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
     monkeypatch,
 ):
     """Oversampled local-search assignments must be decoded on the fine grid."""
-    import relax.refinement.iteration_loop as refine_mod
 
     order_sizes = {4: 4, 5: 9}
     fine_idx = order_sizes[5] - 1
@@ -9217,7 +9211,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
             best_pose_details,
         )
 
-    monkeypatch.setattr(refine_mod, "rotation_grid_size", fake_rotation_grid_size)
+    monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(
         sampling_module,
         "relion_scoring_rotation_grid",

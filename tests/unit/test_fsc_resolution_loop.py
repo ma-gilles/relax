@@ -18,7 +18,6 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 from helpers.run_options import stand_in
 
-from relax.refinement import iteration_loop as iteration_loop_module
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.startup_references import StartupHandoff
@@ -214,7 +213,7 @@ def generated_relion_rotation_grid(monkeypatch):
 
     def fake_scoring_rotation_grid(order, dtype=None, *, symmetry="C1"):
         del dtype
-        n_rotations = iteration_loop_module.rotation_grid_size(order, symmetry=symmetry)
+        n_rotations = sampling_module.rotation_grid_size(order, symmetry=symmetry)
         rotations = np.repeat(np.eye(3, dtype=np.float32)[None], n_rotations, axis=0)
         eulers = np.zeros((n_rotations, 3), dtype=np.float32)
         return sampling_module.RotationGrid(rotations=rotations, rotation_eulers=eulers, healpix_order=order, symmetry=symmetry)
