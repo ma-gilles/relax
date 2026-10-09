@@ -121,3 +121,18 @@ def test_continuing_class3d_before_its_seed_iteration_warns(monkeypatch, tmp_pat
             "--continue", first / "run_it001_optimiser.star",
         )
     assert any("does not seed random classes" in record.getMessage() for record in caplog.records)
+
+
+def test_a_continuation_logs_the_run_files_iteration_numbers(monkeypatch, tmp_path, caplog):
+    """The iteration lines of a continued run carry RELION's numbered iteration, as its run files do."""
+    import logging
+
+    data = write_tiny_data_dir(tmp_path / "data", n_images=16)
+    first = _run(monkeypatch, tmp_path, "refine", data, "first", "--max_iter", "2")
+    with caplog.at_level(logging.INFO, logger="relax.refinement.iteration_loop"):
+        _run(monkeypatch, tmp_path, "refine", data, "continued", "--max_iter", "3",
+             "--continue", first / "run_it002_optimiser.star")
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(message.startswith("=== RELION Iteration 3/3:") for message in messages)
+    assert any(message.startswith("RELION Iteration 3:") for message in messages)
+    assert not any(message.startswith(("=== RELION Iteration 1/", "RELION Iteration 1:")) for message in messages)

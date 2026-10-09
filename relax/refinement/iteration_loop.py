@@ -789,8 +789,9 @@ def refine_single_volume(
         scoring_current_size = int(current_size)
 
         logger.info(
-            "=== RELION Iteration %d/%d: current_size=%d, healpix_order=%d, local_search=%s ===", iteration + 1,
-            options.schedule.max_iter, scoring_current_size, state.healpix_order, state.do_local_search,
+            "=== RELION Iteration %d/%d: current_size=%d, healpix_order=%d, local_search=%s ===",
+            numbered_relion_iteration, int(options.schedule.init_relion_iteration) + int(options.schedule.max_iter),
+            scoring_current_size, state.healpix_order, state.do_local_search,
         )
 
         # --- Rotation grid at the state's order: from order 5 the base grid stays at order 4 (the full order-5
@@ -1399,7 +1400,8 @@ def refine_single_volume(
             "RELION Iteration %d: current_size=%d, pixel_res=%.1f, "
             "res=%.2f A, ave_Pmax=%.4f, healpix_order=%d, "
             "converged=%s, time=%.1fs",
-            iteration + 1, current_size, resolution_estimate.scheduling_shell, res_angstrom, statistics.ave_pmax,
+            numbered_relion_iteration, current_size, resolution_estimate.scheduling_shell, res_angstrom,
+            statistics.ave_pmax,
             state.healpix_order, state.has_converged, elapsed,
         )
 
