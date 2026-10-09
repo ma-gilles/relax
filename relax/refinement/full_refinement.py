@@ -675,7 +675,10 @@ def main(command=None):
                 "for the post-iter1 low-pass",
                 relion_firstiter_ini_high_angstrom,
             )
-    _use_initial_projector_real, firstiter_cc_tree_rescore_max_margin = command_options.resolve_firstiter_controls(
+    _use_initial_projector_real = command_options.resolve_initial_projector_real_reference(
+        firstiter_cc=bool(args.firstiter_cc), n_classes=int(args.n_classes)
+    )
+    firstiter_cc_tree_rescore_max_margin = command_options.resolve_firstiter_cc_tree_rescore_margin(
         firstiter_cc=bool(args.firstiter_cc),
         n_classes=int(args.n_classes),
         tree_rescore_max_margin=args.firstiter_cc_tree_rescore_max_margin,

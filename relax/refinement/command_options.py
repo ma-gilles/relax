@@ -43,22 +43,16 @@ RELION_GUI_PARTICLE_DIAMETER_ANG = 200.0
 _INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV = "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE"
 
 
-def resolve_firstiter_controls(
+def resolve_initial_projector_real_reference(
     *,
     firstiter_cc: bool,
     n_classes: int,
-    tree_rescore_max_margin: str = "auto",
     environ: MutableMapping[str, str] | None = None,
-) -> tuple[bool, float | None]:
-    """Resolve the narrow K=1 firstiter-CC parity defaults.
+) -> bool:
+    """Whether the initial projector takes the real reference (``RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE``).
 
-    Returns whether the initial projector takes the real reference and the coarse-tree
-    top-2 rescore margin (``RelionParityOptions.firstiter_cc_tree_rescore_max_margin``).
-    RELION Class3D also uses first-iteration CC, but the exact coarse-tree
-    replay currently supports only K=1.  Keep K>1 and non-firstiter callers
-    unchanged. ``tree_rescore_max_margin`` (``--firstiter_cc_tree_rescore_max_margin``)
-    is ``auto`` (``FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN`` for K=1 with --firstiter_cc, else off), ``off``
-    or a margin.
+    On by default for K=1 with --firstiter_cc (the narrow K=1 first-iteration CC parity default), off
+    otherwise; the environment variable overrides either way.
     """
 
     environment = os.environ if environ is None else environ
@@ -77,7 +71,24 @@ def resolve_firstiter_controls(
             f"{_INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV} must be a boolean token, "
             f"got {initial_projector_token!r}"
         )
+    return use_initial_projector_real
 
+
+def resolve_firstiter_cc_tree_rescore_margin(
+    *,
+    firstiter_cc: bool,
+    n_classes: int,
+    tree_rescore_max_margin: str,
+) -> float | None:
+    """The coarse-tree top-2 rescore margin (``RelionParityOptions.firstiter_cc_tree_rescore_max_margin``).
+
+    RELION Class3D also uses first-iteration CC, but the exact coarse-tree replay currently supports only
+    K=1. ``tree_rescore_max_margin`` (``--firstiter_cc_tree_rescore_max_margin``) is ``auto``
+    (``FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN`` for K=1 with --firstiter_cc, else off), ``off`` or a
+    margin.
+    """
+
+    use_k1_defaults = bool(firstiter_cc) and int(n_classes) == 1
     token = str(tree_rescore_max_margin).strip().lower()
     if token == "auto":
         margin = FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN if use_k1_defaults else None
@@ -93,7 +104,7 @@ def resolve_firstiter_controls(
                 "--firstiter_cc_tree_rescore_max_margin must be auto, off or a finite non-negative float, "
                 f"got {tree_rescore_max_margin!r}"
             )
-    return use_initial_projector_real, margin
+    return margin
 
 
 

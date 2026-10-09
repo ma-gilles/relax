@@ -21,7 +21,7 @@ them: the numbered iteration builds the scoring projector on every route (the
 `oversampling.prepare_adaptive_pass2_grids` with deferred fine rotations, and
 pass 1 scores RELION's exact coarse operands only.
 
-The first-CC margin now resolves in `command_options.resolve_firstiter_controls`,
+The first-CC margin now resolves in `command_options.resolve_firstiter_cc_tree_rescore_margin`,
 then enters the existing parity settings at the original command boundary.
 Numbered expectation and final dense execution consume those settings; the
 batch planner reads the same value. `None` disables rescoring; `0.0` is enabled.
