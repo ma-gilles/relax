@@ -139,7 +139,7 @@ def test_numbered_k1_halfmaps_preserve_operands_and_operation_order(monkeypatch,
     monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", solve)
     result = mean_helpers.reconstruct_numbered_k1_halfmaps(
         numerators, denominators, priors, settings, retained_first_numerator=retained,
-        relion_firstiter_cc_this_iter=first_cc, observer=record.observer, **COMMON,
+        relion_firstiter_cc_this_iter=first_cc, probe=record.observer, **COMMON,
     )
     slot_events = ["capture"] + ["filter"] * first_cc + ["mask", "flatten"] * flatten_solvent
     assert record.events == ["solve"] * 2 + slot_events * 2
@@ -167,7 +167,7 @@ def test_numbered_class_maps_preserve_operands_and_operation_order(monkeypatch, 
     monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", solve)
     result = mean_helpers.reconstruct_numbered_class_maps(
         numerators, denominators, priors, settings, n_classes=n_classes,
-        relion_firstiter_cc_this_iter=first_cc, observer=record.observer, **COMMON,
+        relion_firstiter_cc_this_iter=first_cc, probe=record.observer, **COMMON,
     )
     # Both slots hold one stack: each is captured, then the stack is filtered and flattened once, in place.
     postprocess_events = ["filter"] * n_classes * first_cc + (["mask"] + ["flatten_class"] * n_classes) * flatten_solvent

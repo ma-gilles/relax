@@ -21,6 +21,13 @@ from relax.refinement.iteration_planning import RunOptics
 from relax.refinement.iteration_snapshot import SnapshotCapture
 from relax.refinement.mean_helpers import ReconstructionSettings
 from relax.refinement.optics_shapes import MultiShapeHalf
+from relax.refinement.ports import (
+    ExpectationProbe,
+    MaximizationProbe,
+    ObserverExpectationProbe,
+    ObserverMaximizationProbe,
+    RunObserver,
+)
 from relax.refinement.refinement_options import (
     RefinementOptions,
     RelionConsistencyOptions,
@@ -285,6 +292,9 @@ class RunContext:
     batch_planner: BatchPlanner
     collect_local_search_profile: bool
     perturb_rng: object
+    # The run observer's mid-step hooks, the only part of it a step sees (relax.refinement.ports).
+    expectation_probe: ExpectationProbe
+    maximization_probe: MaximizationProbe
 
 
 def build_run_context(
@@ -292,15 +302,15 @@ def build_run_context(
     options: RefinementOptions,
     *,
     replays_relion_state: bool,
-    observer_collects_local_search_profiles: bool,
+    observer: RunObserver,
 ) -> RunContext:
     """Resolve the run's context from its two half datasets and validated ``options``, refusing unsupported
     routes, and configure the datasets' image preprocessing (Fourier backend and masks) in place: the datasets'
     images are prepared before anything reads them.
 
     ``replays_relion_state`` whether the input source replays a RELION run's state (the consistency options are
-    refused then); ``observer_collects_local_search_profiles`` whether the run's observer asks for the local
-    searches' profiles.
+    refused then); ``observer`` is the run's observer: the context keeps its mid-step hooks as probes and
+    whether it asks for the local searches' profiles.
     """
     volume_shape = experiment_datasets[0].volume_shape
     # Keep the input scalar type for host arithmetic; geometry validates its value.
@@ -352,6 +362,8 @@ def build_run_context(
             requested=options.execution, image_shape=image_geometry.image_shape, volume_shape=volume_shape,
             n_classes=options.k_class.n_classes, precision=options.precision, log=logger,
         ),
-        collect_local_search_profile=options.local_search.collects_profile(observer_collects_local_search_profiles),
+        collect_local_search_profile=options.local_search.collects_profile(observer.collects_local_search_profiles),
         perturb_rng=None if options.parity.perturb_seed is not None else np.random.default_rng(),
+        expectation_probe=ObserverExpectationProbe(observer),
+        maximization_probe=ObserverMaximizationProbe(observer),
     )

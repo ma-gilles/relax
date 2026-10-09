@@ -29,7 +29,7 @@ def preparation_inputs(*, local=False, adaptive=False):
         adaptive_pass1=None, coarse_rotation_ids=np.arange(4, dtype=np.int64),
         coarse_angular_step_deg=np.float64(15.0), options=scoring['options'],
         iteration=5, numbered_relion_iteration=17,
-        collect_local_search_profile=True, local_profile_history=[], observer=scoring['observer'],
+        collect_local_search_profile=True, local_profile_history=[], probe=scoring['probe'],
     )
     return phase.grid, ExpectationWindows(model_size=4, image_current_size=2, image_box_size=4), inputs
 
@@ -99,7 +99,7 @@ def test_local_phase_borrows_sampling_and_carries_only_observation_policy(order)
     assert diagnostics.local_profile_history is inputs['local_profile_history']
     assert diagnostics.iteration == 5
     assert diagnostics.debug_iteration == 17
-    assert diagnostics.observer is inputs['observer']
+    assert diagnostics.probe is inputs['probe']
     assert diagnostics.collect_local_search_profile is True
 
 

@@ -58,7 +58,7 @@ from relax.refinement.mean_helpers import (
     weighted_class_merge,
 )
 from relax.refinement.optics_shapes import image_translation_factors
-from relax.refinement.ports import FinalHalfScored, InputSource, RunObserver
+from relax.refinement.ports import ExpectationProbe, FinalHalfScored, InputSource
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
@@ -191,7 +191,7 @@ def run_final_all_data(
     iteration,
     collect_local_search_profile,
     relion_translation_angle_scale,
-    observer: RunObserver,
+    probe: ExpectationProbe,
 ) -> RefinementResult:
     """Score the converged halves at full size and reconstruct the final maps.
 
@@ -362,7 +362,7 @@ def run_final_all_data(
             iteration=iteration + 1,
             debug_iteration=final_sampling.settings.relion_iteration,
             bpref_device_signature_active=False,
-            observer=observer,
+            probe=probe,
             collect_local_search_profile=collect_local_search_profile,
             local_profile_history=history.local_profile_history,
         )
@@ -574,7 +574,7 @@ def run_final_all_data(
             half.index + 1,
             final_half_clock.seconds,
         )
-        observer.final_half_scored(FinalHalfScored(
+        probe.final_half_scored(FinalHalfScored(
             half, final_sampling, final_inputs,
             translation_search_base=translation_search_base, reference=final_join_means[half.index],
             reference_model=reference_model, noise_variance=noise_model.variance_per_half[half.index],

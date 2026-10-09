@@ -54,7 +54,7 @@ from relax.refinement.half_scoring import (
 from relax.refinement.iteration_planning import ExpectationWindows, IterationCarry
 from relax.refinement.local_sampling import LocalSampling, NumberedSamplingPlan, local_search_centre_half
 from relax.refinement.optics_shapes import OpticsSpec
-from relax.refinement.ports import DenseHalfScored, RunObserver
+from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.refinement_options import RefinementOptions
 from relax.refinement.tomo_half import TomoSampling
 from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
@@ -522,7 +522,7 @@ def prepare_numbered_expectation(
     numbered_relion_iteration: int,
     collect_local_search_profile: bool,
     local_profile_history: list,
-    observer: RunObserver,
+    probe: ExpectationProbe,
 ) -> NumberedExpectation:
     """Bind the numbered grid to dense/local support and local diagnostic policy.
 
@@ -537,7 +537,7 @@ def prepare_numbered_expectation(
             debug_iteration=numbered_relion_iteration,
             # The half's activation is known only when it is scored (score_numbered_half sets it).
             bpref_device_signature_active=False,
-            observer=observer,
+            probe=probe,
             collect_local_search_profile=collect_local_search_profile,
             local_profile_history=local_profile_history,
         )
@@ -603,7 +603,7 @@ def score_numbered_half(
     relion_translation_angle_scale: float,
     iteration: int,
     numbered_relion_iteration: int,
-    observer: RunObserver,
+    probe: ExpectationProbe,
 ) -> HalfScoreResult:
     """Build half-specific priors/batches and accumulate an empty, SPA or tomography half.
 
@@ -887,7 +887,7 @@ def score_numbered_half(
         score_result = dense_result
 
         if not phase.use_adaptive:
-            observer.dense_half_scored(DenseHalfScored(
+            probe.dense_half_scored(DenseHalfScored(
                 iteration, k, grid=phase.grid, sampling=dense_sampling, direction_priors=half.direction_priors,
                 translation_log_prior=translation_log_prior, particles=particle_half,
                 translation_search_base=translation_search_base, previous_translations=previous_translations_k,

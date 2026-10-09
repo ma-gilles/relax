@@ -31,7 +31,7 @@ from relax.helpers.timing import Stopwatch
 from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, device_fits
 from relax.reconstruction import regularization_relion
 from relax.refinement.optics_shapes import average_ctf2_parts
-from relax.refinement.ports import ClassPriorEstimated, RunObserver
+from relax.refinement.ports import ClassPriorEstimated, MaximizationProbe, NoProbe
 from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.refinement.tomo_half import TomoHalf
 from relax.relion import relion_ctf
@@ -558,7 +558,7 @@ def estimate_class_priors(
     class_tau2,
     scoring_dtype,
     log,
-    observer: RunObserver | None = None,
+    probe: MaximizationProbe | None = None,
 ) -> ClassPriorAggregation:
     """Prepare and aggregate numbered Class3D priors from the previous Iref.
 
@@ -580,7 +580,7 @@ def estimate_class_priors(
     kclass_tau2_frame_scale = float(settings.box_size) ** 4
     # The prior shells an input source supplies (``ports.ClassTau2``), or None: the previous references'.
     kclass_tau2_source = class_tau2.source
-    observer = RunObserver() if observer is None else observer
+    probe = NoProbe() if probe is None else probe
     # CTF-premultiplied images: RELION's average CTF^2 correction of data_vs_prior
     # (setAverageCTF2; Class3D has no split halves and does not fix tau2). It averages over
     # images, so a subtomogram half counts its tilt images, each with its particle's scale,
@@ -626,7 +626,7 @@ def estimate_class_priors(
         mean_signal_variance_shells_per_class.append(class_prior.shells)
         data_vs_prior_per_class.append(class_prior.data_vs_prior)
         tau2_update_details_per_class.append(class_prior.details)
-        observer.class_prior_estimated(ClassPriorEstimated(
+        probe.class_prior_estimated(ClassPriorEstimated(
             iteration, class_idx, class_prior, numerators=combined_numerators, denominators=combined_denominators,
             half_denominators=half_denominators, references=previous_half_maps, settings=settings,
             current_size=current_size, source=kclass_tau2_source, accumulator_shape=accumulator_shape,
@@ -1661,7 +1661,7 @@ def reconstruct_numbered_k1_halfmaps(
     accumulator_volume_shape,
     relion_firstiter_cc_this_iter,
     retained_first_numerator=None,
-    observer: RunObserver | None = None,
+    probe: MaximizationProbe | None = None,
 ) -> list:
     """Solve two independent numbered K1 maps, then postprocess each half.
 
@@ -1672,7 +1672,7 @@ def reconstruct_numbered_k1_halfmaps(
     turn. The flatten host-stages box-scale results and consumes its mask.
     Return ready maps for installation.
     """
-    observer = RunObserver() if observer is None else observer
+    probe = NoProbe() if probe is None else probe
     means = _reconstruct_k1_maps(
         numerators_by_half,
         denominators_by_half,
@@ -1683,7 +1683,7 @@ def reconstruct_numbered_k1_halfmaps(
         retained_first_numerator=retained_first_numerator,
     )
     for k in range(2):
-        observer.map_solved(iteration, k, means[k], settings=settings, current_size=current_size, n_classes=1)
+        probe.map_solved(iteration, k, means[k], settings=settings, current_size=current_size, n_classes=1)
         # RELION filters Iref inside maximizationOtherParameters, then calls
         # solventFlatten from the outer iteration loop.  These operations do
         # not commute: masking in real space after the Fourier low-pass adds a
@@ -1719,7 +1719,7 @@ def reconstruct_numbered_class_maps(
     current_size,
     accumulator_volume_shape,
     relion_firstiter_cc_this_iter,
-    observer: RunObserver | None = None,
+    probe: MaximizationProbe | None = None,
 ) -> list:
     """Solve one numbered Class3D reference stack from combined partitions.
 
@@ -1732,7 +1732,7 @@ def reconstruct_numbered_class_maps(
     with one mask. Both slots hold the same stack and the steps are the same,
     so they run once, in place.
     """
-    observer = RunObserver() if observer is None else observer
+    probe = NoProbe() if probe is None else probe
     shared_classes = _reconstruct_class_maps(
         combined_numerators,
         combined_denominators,
@@ -1744,7 +1744,7 @@ def reconstruct_numbered_class_maps(
         accumulator_volume_shape=accumulator_volume_shape,
     )
     for k in range(2):
-        observer.map_solved(
+        probe.map_solved(
             iteration, k, shared_classes, settings=settings, current_size=current_size, n_classes=n_classes
         )
     # As for K1, the low-pass precedes the solvent flatten and does not commute with it.

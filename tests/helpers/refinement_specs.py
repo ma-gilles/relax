@@ -5,7 +5,7 @@ import dataclasses
 from relax.dense import scoring_policy
 from relax.refinement import half_scoring, local_sampling, local_search_iteration, optics_shapes
 from relax.refinement.half_inputs import HalfSet
-from relax.refinement.ports import RunObserver
+from relax.refinement.ports import NoProbe
 from relax.refinement.projector_preparation import PreparedProjector
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
 from relax.sparse_pass2 import local_search_records
@@ -217,7 +217,7 @@ def local_half_owners(**values):
             collect_local_search_profile=values.pop("collect_local_search_profile"),
             local_profile_history=values.pop("local_profile_history"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
-            observer=values.pop("observer", RunObserver()),
+            probe=values.pop("probe", NoProbe()),
         ),
         optics_shapes.OpticsSpec(
             noise_radial_k=values.pop("noise_radial_k", None),

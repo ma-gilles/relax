@@ -22,7 +22,7 @@ from relax.refinement.half_scoring import (
     LocalDiagnosticPolicy,
 )
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
-from relax.refinement.ports import RunObserver
+from relax.refinement.ports import NoProbe
 from relax.refinement.tomo_half import TomoSampling
 from relax.sampling import TrialGrid
 
@@ -81,10 +81,10 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         local_diagnostics=LocalDiagnosticPolicy(iteration=0, debug_iteration=1,
                                                 collect_local_search_profile=False,
                                                 local_profile_history=[], bpref_device_signature_active=False,
-                                                observer=RunObserver()) if local else None,
+                                                probe=NoProbe()) if local else None,
         replay_prior_translations=None, initial_class_assignments=None, single_class_iteration=False,
         scoring_dtype=np.float32, relion_translation_angle_scale=1.,
-        iteration=0, numbered_relion_iteration=1, observer=RunObserver(),
+        iteration=0, numbered_relion_iteration=1, probe=NoProbe(),
     )
     phase = expectation.NumberedExpectation(
         grid=grid, sampling=kwargs.pop('sampling'), variant=kwargs.pop('variant'),

@@ -21,7 +21,7 @@ or time, never a number of the run.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol
 
 
 @dataclass
@@ -404,3 +404,84 @@ class RunObserver:
 
     def final_half_scored(self, scored: FinalHalfScored) -> None:
         """One half of the final all-data pass was scored."""
+
+
+class ExpectationProbe(Protocol):
+    """The observer hooks an expectation calls mid-step, with data that exists only inside it (a half's scored
+    result before its accumulators leave the device, a local search's profile): the hooks of
+    :class:`RunObserver` of the same names. Steps receive this, never the observer."""
+
+    def dense_half_scored(self, scored: DenseHalfScored) -> None: ...
+
+    def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None: ...
+
+    def final_half_scored(self, scored: FinalHalfScored) -> None: ...
+
+
+class MaximizationProbe(Protocol):
+    """The observer hooks an M-step calls mid-step (the joined K=1 accumulators before the prior reads them, a
+    class's prior, each map before its low-pass and mask): the hooks of :class:`RunObserver` of the same
+    names. Steps receive this, never the observer."""
+
+    def k1_accumulators_joined(
+        self, iteration: int, *, numerators, denominators, settings, current_size: int, accumulator_shape,
+        pixel_size_angstrom,
+    ) -> None: ...
+
+    def class_prior_estimated(self, estimated: ClassPriorEstimated) -> None: ...
+
+    def map_solved(self, iteration: int, half_index: int, mean, *, settings, current_size: int, n_classes: int) -> None: ...
+
+
+class NoProbe:
+    """The no-op :class:`ExpectationProbe` and :class:`MaximizationProbe`: a step called without an observer."""
+
+    def dense_half_scored(self, scored) -> None:
+        pass
+
+    def local_search_profile(self, iteration, half_index, profile) -> None:
+        pass
+
+    def final_half_scored(self, scored) -> None:
+        pass
+
+    def k1_accumulators_joined(self, iteration, **values) -> None:
+        pass
+
+    def class_prior_estimated(self, estimated) -> None:
+        pass
+
+    def map_solved(self, iteration, half_index, mean, **values) -> None:
+        pass
+
+
+@dataclass(frozen=True)
+class ObserverExpectationProbe:
+    """The run observer's expectation hooks, as an :class:`ExpectationProbe` (built once per run)."""
+
+    observer: RunObserver
+
+    def dense_half_scored(self, scored: DenseHalfScored) -> None:
+        self.observer.dense_half_scored(scored)
+
+    def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None:
+        self.observer.local_search_profile(iteration, half_index, profile)
+
+    def final_half_scored(self, scored: FinalHalfScored) -> None:
+        self.observer.final_half_scored(scored)
+
+
+@dataclass(frozen=True)
+class ObserverMaximizationProbe:
+    """The run observer's M-step hooks, as a :class:`MaximizationProbe` (built once per run)."""
+
+    observer: RunObserver
+
+    def k1_accumulators_joined(self, iteration: int, **values) -> None:
+        self.observer.k1_accumulators_joined(iteration, **values)
+
+    def class_prior_estimated(self, estimated: ClassPriorEstimated) -> None:
+        self.observer.class_prior_estimated(estimated)
+
+    def map_solved(self, iteration: int, half_index: int, mean, **values) -> None:
+        self.observer.map_solved(iteration, half_index, mean, **values)

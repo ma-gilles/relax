@@ -32,7 +32,7 @@ from relax.refinement.mean_helpers import (
     taper_first_cc_class_prior,
     taper_first_cc_k1_prior,
 )
-from relax.refinement.ports import ClassTau2, RunObserver
+from relax.refinement.ports import ClassTau2, MaximizationProbe
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR, REFERENCE_FILTER_EDGE_SHELLS
 from relax.sampling import rotation_grid_size
@@ -122,7 +122,7 @@ def class_maximization(
     scoring_dtype,
     relion_firstiter_cc_this_iter: bool,
     source_pixel_size_angstrom,
-    observer: RunObserver,
+    probe: MaximizationProbe,
 ) -> ClassMaximization:
     """RELION's Class3D M-step: one prior and one Wiener solve per class from the combined halves.
 
@@ -163,7 +163,7 @@ def class_maximization(
         class_tau2=class_tau2,
         scoring_dtype=scoring_dtype,
         log=logger,
-        observer=observer,
+        probe=probe,
     )
     tau2_update_details = _stack_class_tau2_update_details(class_priors.details_per_class)
     logger.info(
@@ -192,7 +192,7 @@ def class_maximization(
         current_size=current_size,
         accumulator_volume_shape=mstep_accumulator_shape,
         relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-        observer=observer,
+        probe=probe,
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",
@@ -262,14 +262,14 @@ def k1_maximization(
     scoring_dtype,
     relion_firstiter_cc_this_iter: bool,
     source_pixel_size_angstrom,
-    observer: RunObserver,
+    probe: MaximizationProbe,
 ) -> K1Maximization:
     """RELION's split-half auto-refine M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct).
 
     In order: join the half accumulators at low resolution when requested, copy the previous references
     to host and release them, estimate the split-half prior from this iteration's FSC, replace
     ``reference_model``'s tau2 and maps; after a first-iteration CC pass, taper the reported tau2; then
-    park the tau2 volumes on the host. ``observer`` sees the joined accumulators before the prior reads them.
+    park the tau2 volumes on the host. ``probe`` sees the joined accumulators before the prior reads them.
     """
     Ft_y_0, Ft_y_1 = Ft_y_per_half
     Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
@@ -292,7 +292,7 @@ def k1_maximization(
             return_retained_first_numerator=True,
         )
     previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
-    observer.k1_accumulators_joined(
+    probe.k1_accumulators_joined(
         iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), settings=reconstruction_settings,
         current_size=current_size, accumulator_shape=mstep_accumulator_shape,
         pixel_size_angstrom=source_pixel_size_angstrom,
@@ -329,7 +329,7 @@ def k1_maximization(
         accumulator_volume_shape=mstep_accumulator_shape,
         relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
         retained_first_numerator=retained_Ft_y_0_device,
-        observer=observer,
+        probe=probe,
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",

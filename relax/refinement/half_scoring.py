@@ -54,7 +54,7 @@ from relax.refinement.optics_shapes import (
     reconstruction_image_radius,
     reference_grid_kwargs,
 )
-from relax.refinement.ports import RunObserver
+from relax.refinement.ports import ExpectationProbe
 from relax.refinement.projector_preparation import PreparedProjector
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
 from relax.relion.geometry import (
@@ -1156,14 +1156,14 @@ class LocalExecutionPolicy:
 
 @dataclass(frozen=True, kw_only=True)
 class LocalDiagnosticPolicy:
-    """Profiling, debug capture and score-only controls; ``observer`` receives each collected profile."""
+    """Profiling, debug capture and score-only controls; ``probe`` receives each collected profile."""
 
     iteration: int
     collect_local_search_profile: bool
     local_profile_history: object
     debug_iteration: int | None
     bpref_device_signature_active: bool
-    observer: RunObserver
+    probe: ExpectationProbe
 
 
 def _score_half_dense_in_bpref_scope(
@@ -1839,7 +1839,7 @@ def _score_half_local_one_shape(
         profile_row["local_adaptive_pass2_full_parent"] = np.bool_(parent_mode == "full_parent")
         profile_row["diagnostic_score_only"] = np.bool_(execution.score_only)
         diagnostics.local_profile_history.append(profile_row)
-        diagnostics.observer.local_search_profile(diagnostics.iteration, half.particles.index, local_profile_k)
+        diagnostics.probe.local_search_profile(diagnostics.iteration, half.particles.index, local_profile_k)
     # Must match the current-size BPref grid allocated by the local engine above; downstream
     # join/reconstruct calls infer layout from this shape.
     mstep_accumulator_shape = (

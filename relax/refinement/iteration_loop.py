@@ -260,7 +260,7 @@ def refine_single_volume(
 
     ctx = setup_checks.build_run_context(
         experiment_datasets, options, replays_relion_state=source.replays_relion_state(),
-        observer_collects_local_search_profiles=observer.collects_local_search_profiles,
+        observer=observer,
     )
     _validate_bpref_particle_order_scope(
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
@@ -796,7 +796,7 @@ def refine_single_volume(
             coarse_angular_step_deg=None if coarse_image_plan is None else coarse_image_plan.angular_step_deg,
             options=options, iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,
             collect_local_search_profile=ctx.collect_local_search_profile,
-            local_profile_history=history.local_profile_history, observer=observer,
+            local_profile_history=history.local_profile_history, probe=ctx.expectation_probe,
         )
         # Every dense, local and tomo scorer reads this projector: pass 1 scores RELION's exact
         # coarse operands on every route, as RELION builds Projector::data every iteration.
@@ -834,7 +834,7 @@ def refine_single_volume(
                 replay_prior_translations=_replay_prior_translations, initial_class_assignments=seeding.seed_classes,
                 single_class_iteration=seeding.single_class_iteration, scoring_dtype=ctx.scoring_dtype,
                 relion_translation_angle_scale=ctx.relion_translation_angle_scale, iteration=iteration,
-                numbered_relion_iteration=numbered_relion_iteration, observer=observer,
+                numbered_relion_iteration=numbered_relion_iteration, probe=ctx.expectation_probe,
             ),
             partial(
                 finish_numbered_half,
@@ -918,7 +918,7 @@ def refine_single_volume(
                 projector_power_spectrum=projector_power_spectrum,
                 class_tau2=source.class_tau2(iteration, options.k_class.n_classes), scoring_dtype=ctx.scoring_dtype,
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
-                source_pixel_size_angstrom=ctx.source_pixel_size_angstrom, observer=observer,
+                source_pixel_size_angstrom=ctx.source_pixel_size_angstrom, probe=ctx.maximization_probe,
             )
             history.data_vs_prior_trajectory.append(mstep.data_vs_prior)
             carry = replace(carry, previous_data_vs_prior_for_scheduling=mstep.data_vs_prior)
@@ -930,7 +930,7 @@ def refine_single_volume(
                 iteration=iteration, current_size=current_size, mstep_accumulator_shape=mstep_accumulator_shape,
                 mstep_full_half_axes=per_half.mstep_full_half_axis, scoring_dtype=ctx.scoring_dtype,
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
-                source_pixel_size_angstrom=ctx.source_pixel_size_angstrom, observer=observer,
+                source_pixel_size_angstrom=ctx.source_pixel_size_angstrom, probe=ctx.maximization_probe,
             )
             # The accumulators the solve used (joined at low resolution when that is on) replace the scored ones.
             Ft_y_0, Ft_y_1 = mstep.Ft_y_per_half
@@ -1389,7 +1389,7 @@ def refine_single_volume(
         class_mixture=carry.class_mixture, class_assignments=carry.class_assignments,
         previous_data_vs_prior_for_scheduling=carry.previous_data_vs_prior_for_scheduling, iteration=iteration,
         collect_local_search_profile=ctx.collect_local_search_profile,
-        relion_translation_angle_scale=ctx.relion_translation_angle_scale, observer=observer,
+        relion_translation_angle_scale=ctx.relion_translation_angle_scale, probe=ctx.expectation_probe,
     )
     return replace(final_result, numbered=numbered, replay=_follower_replay_telemetry(follower_scale_replay, history))
 
