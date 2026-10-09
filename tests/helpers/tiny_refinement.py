@@ -262,6 +262,7 @@ def run_tiny_refinement(
     import relax.sampling as sampling
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement import iteration_loop
+    from relax.refinement.ports import RunObserver
     from relax.refinement.refinement_options import (
         FinalPassOptions,
         KClassOptions,
@@ -338,7 +339,7 @@ def run_tiny_refinement(
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
         jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32),
         options=options,
-        observer=observer,
+        observer=RunObserver() if observer is None else observer,
         # The input source the command chooses for these options.
         source=RelionReplaySource.for_run(relion_replay, options),
     )

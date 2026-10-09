@@ -62,7 +62,7 @@ from relax.parity.relion_replay import _validate_bpref_particle_order_scope
 from relax.reconstruction.regularization_relion import (
     update_relion_growth_state_from_fsc,
 )
-from relax.refinement import finalization
+from relax.refinement import finalization, ports
 from relax.refinement.convergence import (
     advance_expectation_sampling,
     reset_follower_counter_once,
@@ -148,10 +148,8 @@ from relax.refinement.optics_shapes import MultiShapeHalf
 from relax.refinement.ports import (
     FinalState,
     FinishedIteration,
-    InputSource,
     NumberedState,
     ReconstructedIteration,
-    RunObserver,
     ScoringArrays,
     ScoringState,
 )
@@ -284,8 +282,8 @@ def refine_single_volume(
     init_noise_variance: jnp.ndarray,
     translations: jnp.ndarray | None,
     options: RefinementOptions,
-    observer: RunObserver | None = None,
-    source: InputSource | None = None,
+    observer: ports.RunObserver,
+    source: ports.InputSource,
 ) -> RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
 
@@ -309,9 +307,9 @@ def refine_single_volume(
     options : `RefinementOptions` struct that bundles the schedule / adaptive / parity
         / local-search / K-class / replay / debug / batching kwarg groups, built by the command.
     observer : the run's ``RunObserver`` (``relax.refinement.ports``): dumps and captures that watch the run
-        and never change it. Defaults to one that does nothing.
+        and never change it (``RunObserver()``: one that does nothing).
     source : the run's ``InputSource`` (``relax.refinement.ports``): what a comparison run takes from
-        elsewhere (a RELION run) instead of computing it. Defaults to the native source.
+        elsewhere (a RELION run) instead of computing it (``InputSource()``: the native computation).
 
     Returns
     -------
@@ -322,11 +320,6 @@ def refine_single_volume(
     not run) and ``profile_stop`` for a local-search diagnostic stop. ``archive_fields()`` is the flat
     mapping the archive and reports read.
     """
-    if observer is None:
-        observer = RunObserver()
-    if source is None:
-        source = InputSource()
-
     options = with_validated_sampling_schedule(options)
     require_process_precision(options)
     # The dtype of the controller's float64-sensitive host operands (rotation grids, priors), from the precision.

@@ -96,8 +96,9 @@ def test_local_search_probe_switches_pass_to_refinement_loop(monkeypatch, tmp_pa
 
 def test_the_intermediates_dump_reaches_the_refinement_loop_as_its_observer(monkeypatch, tmp_path):
     from relax.diagnostics.observers import IntermediatesObserver
+    from relax.refinement.ports import RunObserver
 
-    assert controller_inputs(monkeypatch, tmp_path, "refine")["observer"] is None
+    assert type(controller_inputs(monkeypatch, tmp_path, "refine")["observer"]) is RunObserver
     for extra, skip in (((), False), (("--save_intermediates_skip_unregularized",), True)):
         dump = tmp_path / f"dump_{skip}"
         observer = controller_inputs(

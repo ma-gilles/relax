@@ -1199,6 +1199,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 arrays = (StartupHandoff(init_volume, mean_variance), noise_variance)
             else:
                 arrays = (init_volume, noise_variance, mean_variance)
+            # The controller takes its observer and source explicitly: the do-nothing and native ones by default.
+            from relax.refinement.ports import InputSource, RunObserver
+
+            observer.setdefault("observer", RunObserver())
+            source.setdefault("source", InputSource())
             result = iteration_loop.refine_single_volume(
                 halves,
                 *arrays,

@@ -20,6 +20,7 @@ from helpers.run_options import stand_in
 
 from relax.refinement import iteration_loop as iteration_loop_module
 from relax.refinement.iteration_loop import refine_single_volume
+from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.startup_references import StartupHandoff
 
 pytestmark = pytest.mark.unit
@@ -245,6 +246,7 @@ class TestOracleMode:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         # On the tiny 8px mock dataset these values all saturate at full resolution.
@@ -264,6 +266,7 @@ class TestOracleMode:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         # On the tiny 8px mock dataset all oracle/full-resolution requests clamp to 8.
@@ -285,6 +288,7 @@ class TestOracleMode:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         # Final mean should be finite
@@ -316,6 +320,7 @@ class TestResolutionProgression:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         sizes = result.history.current_sizes
@@ -336,6 +341,7 @@ class TestResolutionProgression:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert len(result.history.fsc_history) == 3
@@ -361,6 +367,7 @@ class TestResolutionProgression:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         for t in result.history.wall_times:
@@ -388,6 +395,7 @@ class TestOneIterationWithWindowing:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(relion_current_sizes=[4], adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert np.all(np.isfinite(np.array(result.maps.mean)))
@@ -406,6 +414,7 @@ class TestOneIterationWithWindowing:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(relion_current_sizes=[128], adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert np.all(np.isfinite(np.array(result.maps.mean)))
@@ -424,6 +433,7 @@ class TestOneIterationWithWindowing:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(relion_current_sizes=[32], adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         _assert_relion_hard_assignments_in_range(result, translations.shape[0])

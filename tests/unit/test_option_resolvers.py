@@ -127,8 +127,9 @@ def test_a_frozen_boundary_replays_its_state_and_its_sealed_sampling_on_the_fixe
 
 def test_the_intermediates_observer_comes_from_its_flags(tmp_path):
     from relax.diagnostics.observers import IntermediatesObserver, command_observer
+    from relax.refinement.ports import RunObserver
 
-    assert command_observer(_args()) is None
+    assert type(command_observer(_args())) is RunObserver
     observer = command_observer(_args("--save_intermediates_dir", str(tmp_path / "dump"), "--save_intermediates_skip_unregularized"))
     assert isinstance(observer, IntermediatesObserver) and (tmp_path / "dump").is_dir()
     assert observer.directory == str(tmp_path / "dump") and observer.skip_unregularized

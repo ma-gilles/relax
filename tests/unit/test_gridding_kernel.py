@@ -26,6 +26,7 @@ from relax.refinement import (
     mean_helpers,
     projector_preparation,
 )
+from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
     KClassOptions,
     ReconstructionPrograms,
@@ -412,6 +413,7 @@ def _refine_stubs(halves, **options):
         None,
         None,
         options=stand_in.options(consistency=RelionConsistencyOptions(gridding_kernel="separable"), **options),
+        observer=RunObserver(), source=InputSource(),
     )
 
 

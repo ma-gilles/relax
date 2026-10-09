@@ -28,6 +28,7 @@ from relax.helpers.orientation_priors import (
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
+from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.refinement.startup_references import StartupHandoff
 
@@ -1262,6 +1263,7 @@ def test_last_numbered_state_does_not_trigger_post_cap_final_all_data(
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     assert result.convergence_state.has_converged is False
@@ -3225,6 +3227,7 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
                     init_previous_best_rotation_eulers=[np.zeros((dataset.n_units, 3)) for dataset in half_datasets],
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
     assert len(old_projectors) == 2
     assert events == [
@@ -3265,6 +3268,7 @@ def test_numbered_projector_preparation_skips_empty_half(
                 adaptive=stand_in.adaptive(adaptive_oversampling=0, coarse_engine="gemm_dense"),
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
 
@@ -4423,7 +4427,8 @@ def _refine_replaying(*args, options, relion_replay=None, **kwargs):
     from relax.parity.relion_replay_source import RelionReplaySource
 
     return refine_single_volume(
-        *args, options=options, source=RelionReplaySource.for_run(relion_replay, options), **kwargs,
+        *args, options=options, source=RelionReplaySource.for_run(relion_replay, options),
+        **{"observer": RunObserver(), **kwargs},
     )
 
 @pytest.fixture(autouse=True)
@@ -4496,6 +4501,7 @@ class TestRelionModeSmokeTest:
                     adaptive=stand_in.adaptive(adaptive_oversampling=1),
                     parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
                 ),
+                observer=RunObserver(), source=InputSource(),
             )
 
 
@@ -4582,6 +4588,7 @@ class TestRelionModeSmokeTest:
                     use_per_half_mean_variance=False,
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert len(reconstruction_tau) == 2
@@ -4947,6 +4954,7 @@ class TestRelionModeSmokeTest:
                 ),
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         # Basic saved result structure
@@ -4984,6 +4992,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is False
@@ -5032,6 +5041,7 @@ class TestRelionModeSmokeTest:
                     relion_firstiter_ini_high_angstrom=30.0,
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         expected_resolution = shell_index_to_resolution_angstrom(1, IMAGE_SHAPE[0], half_datasets[0].voxel_size)
@@ -5110,6 +5120,7 @@ class TestRelionModeSmokeTest:
                     optimizer_random_seed=17,
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is True
@@ -5196,6 +5207,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is True
@@ -5286,6 +5298,7 @@ class TestRelionModeSmokeTest:
                 parity=stand_in.parity(low_resol_join_halves_angstrom=join_angstrom),
                 **k_class,
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.final_all_data_ran is True
@@ -5398,6 +5411,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is True
@@ -5448,6 +5462,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is True
@@ -5692,6 +5707,7 @@ class TestRelionModeSmokeTest:
                 local_search=LocalSearchOptions(auto_local_healpix_order=4),
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is True
@@ -5753,6 +5769,7 @@ class TestRelionModeSmokeTest:
                     n_classes=2,
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is True
@@ -5810,6 +5827,7 @@ class TestRelionModeSmokeTest:
                     n_classes=n_classes,
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is True
@@ -5861,6 +5879,7 @@ class TestRelionModeSmokeTest:
                 ),
                 final_pass=FinalPassOptions(after_max_iter=True),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is False
@@ -5989,6 +6008,7 @@ class TestRelionModeSmokeTest:
                     n_classes=2,
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert result.convergence_state.has_converged is True
@@ -6022,6 +6042,7 @@ class TestRelionModeSmokeTest:
                 ),
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         # Final mean should be finite
@@ -6059,6 +6080,7 @@ class TestRelionModeSmokeTest:
                     n_classes=2,
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert np.all(np.isfinite(np.asarray(result.maps.mean)))
@@ -6120,6 +6142,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=1),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert len(engine_calls) == 2
@@ -6171,6 +6194,7 @@ class TestRelionModeSmokeTest:
                     execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=20),
                     adaptive=stand_in.adaptive(adaptive_oversampling=1),
                 ),
+                observer=RunObserver(), source=InputSource(),
             )
 
         assert recorded["particle_diameter"] == pytest.approx(200.0)
@@ -6747,6 +6771,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 local_search=LocalSearchOptions(auto_local_healpix_order=3),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         state = result.convergence_state
@@ -6831,6 +6856,7 @@ class TestRelionModeSmokeTest:
                 parity=stand_in.parity(use_per_half_mean_variance=per_half),
             ),
             observer=IntermediatesObserver(tmp_path),
+            source=InputSource(),
         )
 
         assert called["tau2"] >= 1
@@ -6895,6 +6921,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert len(tau2_fsc_inputs) == 2
@@ -7059,6 +7086,7 @@ class TestRelionModeSmokeTest:
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
             ),
             observer=IntermediatesObserver(out_dir),
+            source=InputSource(),
         )
 
         assert len(result.history.current_sizes) == 1
@@ -7119,6 +7147,7 @@ class TestRelionModeSmokeTest:
                     adaptive=stand_in.adaptive(adaptive_oversampling=0),
                     parity=parity,
                 ),
+                observer=RunObserver(), source=InputSource(),
             )
         assert captured["execution"].relion_translation_angle_scale == expected_scale
 
@@ -7160,6 +7189,7 @@ class TestRelionModeSmokeTest:
                 k_class=k_class,
             ),
             observer=IntermediatesObserver(out_dir, skip_unregularized=True),
+            source=InputSource(),
         )
 
         for half, dataset in enumerate(half_datasets, start=1):
@@ -7203,6 +7233,7 @@ class TestRelionModeSmokeTest:
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
             ),
             observer=IntermediatesObserver(out_dir, skip_unregularized=True),
+            source=InputSource(),
         )
 
         assert len(result.history.current_sizes) == 1
@@ -7240,6 +7271,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert len(result.history.current_sizes) == 2
@@ -7266,6 +7298,7 @@ class TestRelionModeSmokeTest:
                 ),
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         n_iters = len(result.history.current_sizes)
@@ -7314,6 +7347,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=len(rotations_many)),
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         expected_per_half = [
@@ -7361,6 +7395,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=len(rotations_many)),
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert len(captured_noise) == 2
@@ -7505,6 +7540,7 @@ class TestRelionModeSmokeTest:
                 adaptive=stand_in.adaptive(relion_current_sizes=[8], adaptive_oversampling=oversampling),
                 parity=stand_in.parity(preserve_bpref_particle_order=preserve_order),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert call_idx["value"] == 2
@@ -7554,6 +7590,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=20),
                 adaptive=stand_in.adaptive(relion_current_sizes=[8], adaptive_oversampling=0),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert np.asarray(result.maps.mean).shape == (VOLUME_SIZE,)
@@ -7701,6 +7738,7 @@ class TestRelionModeSmokeTest:
                     n_classes=2,
                 ),
             ),
+            observer=RunObserver(), source=InputSource(),
         )
 
         assert call_idx["value"] == 2
@@ -7852,6 +7890,7 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
             replay=ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     assert not any(kind == "rot" and order == 5 for kind, order in grid_calls)
@@ -8026,6 +8065,7 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
             parity=stand_in.parity(perturb_factor=0.5),
             replay=ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     assert any(
@@ -8154,6 +8194,7 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
                 init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()],
             ),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     assert len(local_prior_translations) == 4
@@ -8279,6 +8320,7 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
             parity=stand_in.parity(perturb_factor=0.5, perturb_seed=0),
             local_search=LocalSearchOptions(local_search_translation_prior_mode="coarse"),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     assert recorded_translation_reference_grids
@@ -8360,6 +8402,7 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=stand_in.adaptive(adaptive_oversampling=0),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     # Both halves search locally in both iterations: iteration 1's pose-less halves are centred at (0, 0, 0), as
@@ -8698,6 +8741,7 @@ def test_relion_mode_writes_absolute_translations_from_previous_offset(
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
             replay=ReplayState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     expected_h1 = relion_translation_search_base(prev_h1) + chosen_trans[None, :]
@@ -8845,7 +8889,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             ),
         ),
         relion_replay=RelionReplay(replay_iteration_overrides=[{"class_tau2": class_tau2}]),
-        observer=ClassDumpObserver(tmp_path) if capture_dump else None,
+        observer=ClassDumpObserver(tmp_path) if capture_dump else RunObserver(),
     )
 
     assert len(result.history.tau2_radial_trajectory) == 1
@@ -8871,7 +8915,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 n_classes=n_classes,
             ),
         ),
-        observer=ClassDumpObserver(tmp_path) if capture_dump else None,
+        observer=ClassDumpObserver(tmp_path) if capture_dump else RunObserver(),
     )
     assert len(init_result.history.tau2_radial_trajectory) == 1
     np.testing.assert_allclose(init_result.history.tau2_radial_trajectory[0], iref_tau2, rtol=0.0, atol=1e-5)
@@ -8901,7 +8945,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         relion_replay=RelionReplay(
             replay_iteration_overrides=[{"class_tau2": class_tau2}, {"class_tau2": same_iter_tau2}],
         ),
-        observer=ClassDumpObserver(tmp_path) if capture_dump else None,
+        observer=ClassDumpObserver(tmp_path) if capture_dump else RunObserver(),
     )
 
     assert len(replay_result.history.tau2_radial_trajectory) == 1
@@ -8930,7 +8974,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         relion_replay=RelionReplay(
             replay_iteration_overrides=[{"class_tau2": class_tau2}, {"class_tau2": same_iter_tau2}],
         ),
-        observer=ClassDumpObserver(tmp_path) if capture_dump else None,
+        observer=ClassDumpObserver(tmp_path) if capture_dump else RunObserver(),
     )
 
     assert len(same_iter_replay_result.history.tau2_radial_trajectory) == 1
@@ -9048,6 +9092,7 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
             replay=ReplayState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
             k_class=KClassOptions(n_classes=2),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     expected_h1 = relion_translation_search_base(prev_h1) + selected_by_half[0]
@@ -9209,6 +9254,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
             replay=ReplayState(init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2]),
             parity=stand_in.parity(perturb_factor=0.0),
         ),
+        observer=RunObserver(), source=InputSource(),
     )
 
     expected_rotation = _selected_rotation_matrices(

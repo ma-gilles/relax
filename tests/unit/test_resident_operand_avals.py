@@ -23,6 +23,7 @@ import jax
 import jax.numpy as jnp
 
 from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
+from relax.refinement.ports import InputSource, RunObserver
 from relax.sparse_pass2.resident_operands import (
     ResidentHalfOperands,
     resident_half_operand_avals,
@@ -694,4 +695,5 @@ def test_the_backend_pairing_is_enforced_before_pass_2(monkeypatch, backend_name
             options=stand_in.options(parity=stand_in.parity(
                 preserve_bpref_particle_order=True, image_fourier_backend=backend_name,
             )),
+            observer=RunObserver(), source=InputSource(),
         )

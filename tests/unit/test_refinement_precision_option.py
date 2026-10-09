@@ -8,6 +8,7 @@ from helpers.run_options import stand_in
 
 from relax.dense import scoring_policy
 from relax.helpers.dtype_policy import DensePrecisionPolicy
+from relax.refinement.ports import InputSource, RunObserver
 
 pytestmark = pytest.mark.unit
 
@@ -26,4 +27,4 @@ def test_refinement_refuses_a_precision_the_engines_do_not_read():
     process = scoring_policy.DENSE_PRECISION
     other = replace(process, use_float64_scoring=not process.use_float64_scoring)
     with pytest.raises(ValueError, match="differs from the process's dense precision"):
-        iteration_loop.refine_single_volume(*([None] * 4), options=stand_in.options(precision=other))
+        iteration_loop.refine_single_volume(*([None] * 4), options=stand_in.options(precision=other), observer=RunObserver(), source=InputSource())

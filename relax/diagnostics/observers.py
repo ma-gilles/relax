@@ -304,16 +304,18 @@ def observers_from_environment() -> list[RunObserver]:
     return found
 
 
-def combine(observers: list[RunObserver]) -> RunObserver | None:
-    """One observer for ``observers``: None for none, the observer itself for one, else a group."""
+def combine(observers: list[RunObserver]) -> RunObserver:
+    """One observer for ``observers``: the do-nothing ``RunObserver()`` for none, the observer itself for one,
+    else a group."""
 
     if not observers:
-        return None
+        return RunObserver()
     return observers[0] if len(observers) == 1 else ObserverGroup(observers)
 
 
-def command_observer(args) -> RunObserver | None:
-    """The observer a refinement command line (and the environment it runs in) asks for, or None."""
+def command_observer(args) -> RunObserver:
+    """The observer a refinement command line (and the environment it runs in) asks for (``RunObserver()``:
+    none)."""
 
     observers = []
     if args.save_intermediates_dir is not None:

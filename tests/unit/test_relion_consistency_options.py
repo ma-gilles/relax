@@ -14,6 +14,7 @@ from helpers.tiny_refinement import run_tiny_refinement
 
 from relax.parity.relion_replay_source import RelionReplay
 from relax.refinement import command_options, iteration_loop, iteration_snapshot
+from relax.refinement.ports import RunObserver
 from relax.refinement.refinement_options import (
     CheckpointOptions,
     RelionConsistencyOptions,
@@ -82,6 +83,7 @@ def _refine_stubs(halves, name, value, relion_replay=None, **groups):
     options = stand_in.options(consistency=RelionConsistencyOptions(**{name: value}), **groups)
     return iteration_loop.refine_single_volume(
         halves, None, None, None, options=options, source=RelionReplaySource.for_run(relion_replay, options),
+        observer=RunObserver(),
     )
 
 

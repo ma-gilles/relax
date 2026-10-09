@@ -51,7 +51,7 @@ def _args(*arguments):
 def test_the_command_builds_the_observers_its_flags_and_environment_ask_for(monkeypatch, tmp_path):
     for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR"):
         monkeypatch.delenv(name, raising=False)
-    assert observers.command_observer(_args()) is None
+    assert type(observers.command_observer(_args())) is RunObserver
     monkeypatch.setenv("RELAX_PARITY_TIMING_DIR", str(tmp_path / "timing"))
     assert isinstance(observers.command_observer(_args()), observers.ParityDumpObserver)
     group = observers.command_observer(_args("--save_intermediates_dir", str(tmp_path / "dump")))
