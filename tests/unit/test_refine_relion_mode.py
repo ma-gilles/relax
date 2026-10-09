@@ -6534,6 +6534,7 @@ class TestRelionModeSmokeTest:
         expected_ties,
         expected_changes,
         request,
+        caplog,
     ):
         """The direct-texture replay replaces every bounded native winner."""
 
@@ -6650,13 +6651,13 @@ class TestRelionModeSmokeTest:
             expected_ties = dataset.n_units
         if expected_changes == "all":
             expected_changes = dataset.n_units
-        assert stats.tree_rescore == {
-            "max_margin": 4e-6,
-            "examined_images": dataset.n_units,
-            "ambiguous_images": dataset.n_units,
-            "exact_score_ties": expected_ties,
-            "winner_changes": expected_changes,
-        }
+        # The rescore's counts are logged once, at the end of the pass.
+        (completed,) = [
+            record
+            for record in caplog.records
+            if record.name == "relax.scoring.tree_rescore" and "rescore complete" in record.getMessage()
+        ]
+        assert completed.args == (dataset.n_units, dataset.n_units, expected_ties, expected_changes)
 
     def test_k_class_significance_dump_emits_target_files(
         self,

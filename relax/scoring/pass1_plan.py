@@ -158,9 +158,9 @@ class Pass1Plan:
 
     ``experiment_dataset`` yields the ``n_images`` images in batches of ``image_batch_size``; ``current_size``,
     ``debug_iteration`` and ``collect_significance`` are the request's. ``route`` is what the score route decided (its
-    operand plan, support route, tree rescore plan, backend name and report). The stage plans: ``batch_input_plan``
+    operand plan, support route, tree rescore plan and backend name). The stage plans: ``batch_input_plan``
     (preprocessing), ``score_program_plan``, ``support_plan``, ``output_plan`` (the results and how they are allocated
-    and published) and ``dump_context`` (the score dump); ``tree_rescore_max_margin`` is the rescore's margin.
+    and published) and ``dump_context`` (the score dump).
     """
 
     experiment_dataset: Any
@@ -173,7 +173,6 @@ class Pass1Plan:
     batch_input_plan: Any
     score_program_plan: Any
     support_plan: Any
-    tree_rescore_max_margin: Any
     output_plan: Any
     dump_context: Any
 
@@ -419,7 +418,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         batch_input_plan=batch_input_plan,
         score_program_plan=score_program_plan,
         support_plan=support_plan,
-        tree_rescore_max_margin=request.tree_rescore_max_margin,
         output_plan=output_plan,
         dump_context=dump_context,
     )

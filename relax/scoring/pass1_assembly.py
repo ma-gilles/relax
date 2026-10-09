@@ -135,15 +135,12 @@ def build_stats(
     plan: OutputPlan,
     *,
     executed_backend: str,
-    route_report: dict,
-    tree_rescore: dict | None,
 ) -> Pass1Stats:
-    """The pass's :class:`Pass1Stats`: its per-image statistics, and the reports of the route it ran.
+    """The pass's :class:`Pass1Stats`: its per-image statistics.
 
-    ``executed_backend`` names the scorer that ran. ``route_report`` and ``tree_rescore`` are the entries the route and
-    the tree rescore add (empty and ``None`` when the pass did not run them). The class best and runner-up statistics
-    are present when the plan asked for them. The support audit (an environment diagnostic) adds the hash of the
-    supports, and refuses a pass that collected none.
+    ``executed_backend`` names the scorer that ran. The class best and runner-up statistics are present when the plan
+    asked for them. The support audit (an environment diagnostic) adds the hash of the supports, and refuses a pass that
+    collected none.
     """
 
     support_audit = None
@@ -182,6 +179,4 @@ def build_stats(
         class_second_best_offset_free_log_score_per_image=outputs.class_second_best_offset_free_log_score,
         class_second_hard_assignments=outputs.class_second_hard_assignment,
         coarse_significance_support_audit=support_audit,
-        route_report=route_report,
-        tree_rescore=tree_rescore,
     )

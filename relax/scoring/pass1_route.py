@@ -14,7 +14,7 @@ import numpy as np
 
 from relax.relion.relion_coarse_operands import k1_relion_f32_coarse_support_enabled
 from relax.scoring.coarse_projector import CompactRows
-from relax.scoring.gaussian_plan import coarse_gaussian_report, plan_coarse_gaussian
+from relax.scoring.gaussian_plan import plan_coarse_gaussian
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
 from relax.scoring.pass1_request import Pass1Request
 from relax.scoring.pass1_results import PassShape
@@ -33,8 +33,7 @@ class RoutePlan:
     pass forms its support on RELION's float32 route (the Gaussian route only). ``rotation_block_size`` is the rotations
     per block the pass runs with. ``compact_rows`` are the rows the projector returns (``None``: the full crop).
     ``projection_cache_plan`` is the plan of the cached projections (``None``: the pass keeps no cache) and
-    ``tree_rescore_plan`` the plan of the tree rescore (``None`` unless the pass rescores). ``report`` is the route's
-    entries of ``Pass1Stats.route_report``.
+    ``tree_rescore_plan`` the plan of the tree rescore (``None`` unless the pass rescores).
     """
 
     operand_plan: Any
@@ -45,7 +44,6 @@ class RoutePlan:
     compact_rows: CompactRows | None
     projection_cache_plan: Any
     tree_rescore_plan: Any
-    report: dict
 
 
 def plan_gaussian_route(
@@ -98,7 +96,6 @@ def plan_gaussian_route(
         compact_rows=CompactRows(gaussian_plan.score_indices_np, gaussian_plan.projector_output_size),
         projection_cache_plan=gaussian_plan.projection_cache_plan,
         tree_rescore_plan=None,
-        report=coarse_gaussian_report(gaussian_plan),
     )
 
 
@@ -193,5 +190,4 @@ def plan_cc_route(
         ),
         projection_cache_plan=None,
         tree_rescore_plan=tree_rescore_plan,
-        report={},
     )

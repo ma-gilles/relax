@@ -510,8 +510,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def full_stats_dict(stats, class_assignment):
         """The pass's statistics as one dict whichever tree runs: a base returns that dict, a head ``Pass1Stats``.
 
-        The head's record is flattened back to the base's keys (its route report merged in, an entry left out when the
-        pass did not produce it, the class winners taken from the result's own ``class_assignment``).
+        The head's record is flattened back to the base's keys (an entry left out when the pass did not produce it, the
+        class winners taken from the result's own ``class_assignment``). The base's route and tree-rescore entries, which
+        the head no longer returns, show as differences of the result.
         """
         if isinstance(stats, dict):
             return stats
@@ -521,7 +522,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         flat["class_assignments"] = class_assignment
         flat["significant_cutoff_counts"] = stats.significant_cutoff_counts
         flat["executed_coarse_backend"] = stats.executed_coarse_backend
-        flat.update(stats.route_report)
         for name in (
             "coarse_significance_support_audit", "relion_f32_sum_weight", "relion_f32_max_posterior",
             "class_best_log_score_per_image", "class_best_offset_free_log_score_per_image", "class_hard_assignments",
@@ -529,8 +529,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             "class_second_hard_assignments"):
             if getattr(stats, name) is not None:
                 flat[name] = getattr(stats, name)
-        if stats.tree_rescore is not None:
-            flat["firstiter_cc_tree_top2_rescore"] = stats.tree_rescore
         return flat
 
     def result_fields(result):

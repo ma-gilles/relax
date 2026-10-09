@@ -241,8 +241,6 @@ class Pass1Stats:
     (``return_class_second``) scores and poses (``[K, N]``; the ``offset_free`` scores are the native scores before the
     common image offset, which adding before a float32 cast can erase class and pose margins), and
     ``coarse_significance_support_audit`` (the diagnostic hash of the supports, ``RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT``).
-    ``route_report`` holds the Gaussian route's entries (its GEMM resources and projection cache; empty for the
-    normalized CC) and ``tree_rescore`` the counts of the top-two rescore (``None`` unless the pass rescored).
     """
 
     normalization_log_z: np.ndarray
@@ -262,8 +260,6 @@ class Pass1Stats:
     class_second_best_offset_free_log_score_per_image: np.ndarray | None
     class_second_hard_assignments: np.ndarray | None
     coarse_significance_support_audit: dict | None
-    route_report: dict
-    tree_rescore: dict | None
 
 
 class Pass1Result(NamedTuple):

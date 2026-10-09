@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers import score_diagnostics
+from helpers.coarse_cache_evidence import projection_cache_stats
 from helpers.exact_pass1_harness import ExactPass1Dataset, mock_unit_ctf_and_zero_highres_power
 from helpers.float_compare import assert_matches
 from helpers.pass1_programs import clear_pass1_programs
@@ -16,6 +17,8 @@ from helpers.pass1_programs import clear_pass1_programs
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion import relion_ctf
 from relax.scoring import coarse_gaussian_gemm, pass1_batch, pass1_program, scoring, significance
+from relax.scoring.pass1_plan import plan_pass1
+from relax.scoring.pass1_request import Pass1Request
 from relax.scoring.pass1_scores import ProgramStatics
 from relax.scoring.significant_samples import significant_sample_ids
 
@@ -222,10 +225,7 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     assert plan.predicted_peak_bytes == 3_502_817_280
     assert not plan.destination_alias_proven
     assert plan.admitted
-    stats = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_stats(
-        plan,
-        enabled=True,
-    )
+    stats = projection_cache_stats(plan, enabled=True)
     assert stats["conservative_predicted_peak_bytes"] == 3_502_817_280
     assert stats["h100_alias_evidence_applies_to_plan"] is True
     assert stats["h100_observed_donated_insert_alias"] is True
@@ -259,10 +259,7 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
         image_shape=(4, 4),
         budget_bytes=1_000_000,
     )
-    stats = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_stats(
-        plan,
-        enabled=True,
-    )
+    stats = projection_cache_stats(plan, enabled=True)
     assert stats["h100_alias_evidence_applies_to_plan"] is False
     assert stats["h100_observed_donated_insert_alias"] is None
     assert stats["h100_observed_alias_peak_bytes"] is None
@@ -779,7 +776,8 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
 
     projection_calls.clear()
     monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "1")
-    cached = run()
+    plan = plan_pass1(Pass1Request(dataset, jnp.ones(dataset.image_size, dtype=jnp.float32), rotations, translations, **common))
+    cached = significance.run_pass1(plan)
     assert len(projection_calls) == 1
     assert_matches(projection_calls[0][0], np.arange(1, 17))
     assert projection_calls[0][1] is False
@@ -795,12 +793,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
         assert_matches(getattr(cached[5], key), getattr(uncached[5], key))
     assert_matches(cached[2], uncached[2])
     assert_matches(cached[3], uncached[3])
-    cache_stats = cached[5].route_report["coarse_gaussian_gemm_projection_cache"]
-    assert cache_stats["enabled"] is True
-    assert cache_stats["cache_shape"] == (1, 16, 12)
-    assert cache_stats["stores_projection_abs2"] is False
-    assert cache_stats["h100_alias_evidence_applies_to_plan"] is False
-    assert cache_stats["h100_observed_donated_insert_alias"] is None
+    assert plan.route.projection_cache_plan.cache_shape == (1, 16, 12)
 
 
 
@@ -1120,10 +1113,6 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
                 np.asarray(expected_support[class_index][image_index], dtype=np.int64),
             )
     assert any(np.any(tail) for _, _, tail in projection_calls)
-    resources = clean[5].route_report["coarse_gaussian_gemm_resources"]
-    assert resources["predicted_peak_projection_bytes"] <= resources[
-        "projected_transient_budget_bytes"
-    ]
 
     # RELAX_SIGNIFICANCE_DUMP_* reads the pass-1 program's target-row scores: each target's
     # designed scores of every class and rotation, before and after the priors.
