@@ -106,7 +106,7 @@ def _load_input_star_previous_best_poses(
     whereas ``--relion_half_sets`` may be in a different row order.  Bind the
     two tables by full RELION image identity and fail closed if the supplied
     split is stale, incomplete, or inconsistent with the half-local layout.
-    Translations are returned in pixels, matching ``ReplayState`` and RELION's
+    Translations are returned in pixels, matching ``StartState`` and RELION's
     previous-best-pose convention. Norm corrections are float64 and 1 when
     the input STAR has no ``rlnNormCorrection``, as in relion_refine.
     """

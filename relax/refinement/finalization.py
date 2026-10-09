@@ -422,7 +422,7 @@ def run_final_all_data(
         )
     final_outs = PerHalfOutputs()
     for half, projector in zip(halves, final_projectors, strict=True):
-        half = local_search_centre_half(half, (options.replay.init_angle_priors or (None, None))[half.index], carry.state)
+        half = local_search_centre_half(half, (options.start.init_angle_priors or (None, None))[half.index], carry.state)
         bpref_diagnostics.clear_bpref_contribution_dump_context()
         final_half_clock = Stopwatch()
         logger.info(

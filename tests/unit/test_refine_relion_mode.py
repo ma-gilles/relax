@@ -123,7 +123,7 @@ from relax.refinement.refinement_options import (
     FinalPassOptions,
     KClassOptions,
     LocalSearchOptions,
-    ReplayState,
+    StartState,
     SymmetryOptions,
 )
 from relax.relion import relion_ctf
@@ -3229,7 +3229,7 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
                 adaptive=stand_in.adaptive(adaptive_oversampling=0, coarse_engine="gemm_dense"),
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0, optimizer_random_seed=17),
-                replay=ReplayState(
+                start=StartState(
                     init_previous_best_rotation_eulers=[np.zeros((dataset.n_units, 3)) for dataset in half_datasets],
                 ),
             ),
@@ -7891,7 +7891,7 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
-            replay=ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]),
+            start=StartState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]),
         ),
         observer=RunObserver(), source=InputSource(),
     )
@@ -8065,7 +8065,7 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
             parity=stand_in.parity(perturb_factor=0.5),
-            replay=ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]),
+            start=StartState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]),
         ),
         observer=RunObserver(), source=InputSource(),
     )
@@ -8190,7 +8190,7 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
-            replay=ReplayState(
+            start=StartState(
                 init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2],
                 init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()],
             ),
@@ -8313,7 +8313,7 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
-            replay=ReplayState(
+            start=StartState(
                 init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2],
                 init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()],
             ),
@@ -8536,7 +8536,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
             ),
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
-            replay=ReplayState(
+            start=StartState(
                 init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2],
                 init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()],
             ),
@@ -8660,9 +8660,9 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
             "local_search": True,
             "healpix_order": 4,
             "previous_best_rotation_eulers": [prev_h1, prev_h2],
-        }]), ReplayState())
+        }]), StartState())
         if replay_source == "iteration_override"
-        else (None, ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]))
+        else (None, StartState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]))
     )
 
     _refine_replaying(
@@ -8680,7 +8680,7 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
             ),
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=512),
             adaptive=stand_in.adaptive(adaptive_oversampling=0),
-            replay=replay,
+            start=replay,
         ),
         relion_replay=relion_replay,
     )
@@ -8737,7 +8737,7 @@ def test_relion_mode_writes_absolute_translations_from_previous_offset(
             ),
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
-            replay=ReplayState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
+            start=StartState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
         ),
         observer=RunObserver(), source=InputSource(),
     )
@@ -9087,7 +9087,7 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
             ),
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=stand_in.adaptive(adaptive_oversampling=0),
-            replay=ReplayState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
+            start=StartState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
             k_class=KClassOptions(n_classes=2),
         ),
         observer=RunObserver(), source=InputSource(),
@@ -9248,7 +9248,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=stand_in.adaptive(adaptive_oversampling=1),
-            replay=ReplayState(init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2]),
+            start=StartState(init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2]),
             parity=stand_in.parity(perturb_factor=0.0),
         ),
         observer=RunObserver(), source=InputSource(),

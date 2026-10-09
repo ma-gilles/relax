@@ -986,8 +986,8 @@ def main(command=None):
         FinalPassOptions,
         RefinementOptions,
         RelionParityOptions,
-        ReplayState,
         SolventOptions,
+        StartState,
         SymmetryOptions,
     )
 
@@ -1294,7 +1294,7 @@ def main(command=None):
             resumed=resume_snapshot is not None,
         ),
         checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
-        replay=ReplayState(
+        start=StartState(
             init_group_ids=list(particle_groups.group_ids_per_half),
             init_group_count=particle_groups.n_groups,
             init_relion_optics_group_count=particle_groups.n_optics_groups,

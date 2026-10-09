@@ -21,7 +21,7 @@ FROM_THE_RUN = {
     "solvent": {"split_draws"},
 }
 # Groups built from the data or the run files, not from flags.
-NOT_FLAGS = {"replay", "checkpoint", "expected_accuracy", "precision"}
+NOT_FLAGS = {"start", "checkpoint", "expected_accuracy", "precision"}
 
 
 def test_every_record_default_is_what_relax_refine_passes_without_flags(monkeypatch, tmp_path):

@@ -1469,7 +1469,7 @@ def main():
         RefinementOptions,
         RefinementSchedule,
         RelionParityOptions,
-        ReplayState,
+        StartState,
         SymmetryOptions,
     )
     from relax.refinement.startup_references import StartupHandoff
@@ -2493,7 +2493,7 @@ def main():
             # The comparison runs without the K=1 coarse-tree top-2 rescore (the command's --firstiter_cc default).
             firstiter_cc_tree_rescore_max_margin=None,
         ),
-        replay=ReplayState(
+        start=StartState(
             init_image_corrections=[corr_h1, corr_h2],
             init_scale_corrections=[scale_corr_h1, scale_corr_h2],
             init_group_ids=[group_ids_h1, group_ids_h2],

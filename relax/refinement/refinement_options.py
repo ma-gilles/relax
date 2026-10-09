@@ -611,11 +611,11 @@ class SymmetryOptions:
 
 
 @dataclass(frozen=True, kw_only=True)
-class ReplayState:
-    """The run's initial particle state (poses, corrections, groups, priors) and the
+class StartState:
+    """The state a run starts from: the particles' poses, corrections, groups and priors, and the
     follower-scale and frozen-boundary seed state.
 
-    What a run replays from RELION per iteration is not here: it is the replay input source's
+    What a run replays from RELION per iteration is the replay input source's
     (``relax.parity.relion_replay_source.RelionReplay``, code rule 15).
     """
 
@@ -694,7 +694,7 @@ class RefinementOptions:
     parity: RelionParityOptions = field(default_factory=RelionParityOptions)
     local_search: LocalSearchOptions = field(default_factory=LocalSearchOptions)
     k_class: KClassOptions = field(default_factory=KClassOptions)
-    replay: ReplayState = field(default_factory=ReplayState)
+    start: StartState = field(default_factory=StartState)
     debug: EngineDebugOptions = field(default_factory=EngineDebugOptions)
     execution: ExecutionOptions = field(default_factory=ExecutionOptions)
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)

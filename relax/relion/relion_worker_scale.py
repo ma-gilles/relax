@@ -1491,7 +1491,6 @@ def setup_relion_follower_scale_state(
     strict follower topology is active, seeding each half's per-particle
     scale from the newly constructed follower state.
     """
-    replay = options.replay
     schedule = options.schedule
 
     follower_count = 0 if topology is None else int(topology.n_followers or 0)
@@ -1524,7 +1523,7 @@ def setup_relion_follower_scale_state(
         physical_group_count = int(relion_half_inputs[0].group_count or 0)
         if physical_group_count < 1:
             raise ValueError("RELION follower-local scale emulation requires a positive group count")
-        optics_group_count = int(replay.init_relion_optics_group_count or 0)
+        optics_group_count = int(options.start.init_relion_optics_group_count or 0)
         if optics_group_count < 1:
             raise ValueError("RELION follower-local scale emulation requires a positive optics-group count")
         scale_reduction_mode = topology.reduction_mode

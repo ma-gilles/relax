@@ -486,7 +486,7 @@ def refine_single_volume(
         allow_state_swap_fresh_bpref_particle_order=source.swaps_state,
         continues_own_run=options.checkpoint.resume is not None,
     )
-    class_mixture = mean_helpers._initialize_class_log_priors(options.k_class.n_classes, options.replay.init_direction_prior)
+    class_mixture = mean_helpers._initialize_class_log_priors(options.k_class.n_classes, options.start.init_direction_prior)
 
     setup_phase_seconds["mask_and_image_cache"] = setup_clock.seconds
 
@@ -535,11 +535,11 @@ def refine_single_volume(
     previous_assignments = [None, None]
     halves = half_inputs.initialize_halfsets(
         experiment_datasets, optics_group_ids=optics_group_ids_per_half,
-        previous_best_translations=options.replay.init_previous_best_translations,
-        previous_best_rotation_eulers=options.replay.init_previous_best_rotation_eulers,
-        image_corrections=options.replay.init_image_corrections,
-        scale_corrections=options.replay.init_scale_corrections, group_ids=options.replay.init_group_ids,
-        group_count=options.replay.init_group_count,
+        previous_best_translations=options.start.init_previous_best_translations,
+        previous_best_rotation_eulers=options.start.init_previous_best_rotation_eulers,
+        image_corrections=options.start.init_image_corrections,
+        scale_corrections=options.start.init_scale_corrections, group_ids=options.start.init_group_ids,
+        group_count=options.start.init_group_count,
     )
     if int(options.schedule.init_relion_incr_size) <= 0:
         raise ValueError("init_relion_incr_size must be positive")
@@ -583,7 +583,7 @@ def refine_single_volume(
             else False
         )
         direction_priors = orientation_priors.initial_direction_priors_from_snapshot(
-            options.replay.init_direction_prior, n_classes=options.k_class.n_classes, dtype=ctx.scoring_dtype,
+            options.start.init_direction_prior, n_classes=options.k_class.n_classes, dtype=ctx.scoring_dtype,
             log=logger,
             symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
         )
@@ -615,7 +615,7 @@ def refine_single_volume(
         relion_incr_size = int(resume.incr_size)
         relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
         direction_priors = iteration_snapshot.direction_priors_from_snapshot(
-            resume, options.replay.init_direction_prior, n_classes=options.k_class.n_classes,
+            resume, options.start.init_direction_prior, n_classes=options.k_class.n_classes,
             grid_healpix_order=coarse_grids.rotation_grid.healpix_order, symmetry=options.symmetry.point_group,
             dtype=ctx.scoring_dtype, log=logger,
         )

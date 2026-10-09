@@ -499,7 +499,7 @@ def numbered_half_inputs(
         NumberedHalfInputs(
             data=HalfScoringData(
                 particles=local_sampling.local_search_centre_half(
-                    halves[k], (options.replay.init_angle_priors or (None, None))[k], carry.state
+                    halves[k], (options.start.init_angle_priors or (None, None))[k], carry.state
                 ),
                 reference=reference_model.maps[k],
                 mean_variance=reference_model.half_tau2(k),

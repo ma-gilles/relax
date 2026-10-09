@@ -109,6 +109,8 @@ MOVED_INPUTS = (
     ("/batching<RefinementBatching>/", "/execution<ExecutionOptions>/"),
     ("/overlap<HalfOverlapOptions>/", "/execution<ExecutionOptions>/"),
     ("/debug<EngineDebugOptions>/environment<DiagnosticEnvironment>/", "/execution<ExecutionOptions>/"),
+    # The run's start state is named for what it holds (PLAN d4, O N1).
+    ("/replay<ReplayState>/", "/start<StartState>/"),
 )
 # Record fields renamed, as (old path piece, new path piece) of a leaf in any section (results, files, checkpoints,
 # controller inputs): a leaf only in A whose renamed path is a leaf only in B with the same value is counted with
@@ -1233,9 +1235,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             )
         if replay_fields:
             # The replay slots and the final-only replay are a ReplayState's on a source older than the replay
-            # input source's settings (RelionReplay); run_case moves them there below otherwise.
-            replay_state_fields = {f.name for f in dataclasses.fields(refinement_options.ReplayState)}
-            extra["replay"] = refinement_options.ReplayState(
+            # input source's settings (RelionReplay); run_case moves them there below otherwise. The record is
+            # StartState (options.start) since PLAN d4, O N1.
+            group, start_state = (
+                ("start", refinement_options.StartState) if hasattr(refinement_options, "StartState")
+                else ("replay", refinement_options.ReplayState)
+            )
+            replay_state_fields = {f.name for f in dataclasses.fields(start_state)}
+            extra[group] = start_state(
                 **{name: value for name, value in replay_fields.items() if name in replay_state_fields}
             )
         if star_prior is not None:

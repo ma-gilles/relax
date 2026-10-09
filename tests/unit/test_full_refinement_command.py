@@ -162,11 +162,11 @@ def test_native_group_ids_are_available_to_k_class_refinement(monkeypatch, tmp_p
     trace = CallTrace(monkeypatch).wrap(
         full_refinement.input_particle_table, "prepare_particle_group_layout", "groups",
     )
-    replay = controller_inputs(monkeypatch, tmp_path, "class3d", "--n_classes", "2", n_classes=2)["options"].replay
+    start = controller_inputs(monkeypatch, tmp_path, "class3d", "--n_classes", "2", n_classes=2)["options"].start
     (groups,) = trace.calls("groups")
     layout = groups.result.layout
-    assert replay.init_group_ids == list(layout.group_ids_per_half)
-    assert replay.init_group_count == layout.n_groups and replay.init_relion_optics_group_count == layout.n_optics_groups
+    assert start.init_group_ids == list(layout.group_ids_per_half)
+    assert start.init_group_count == layout.n_groups and start.init_relion_optics_group_count == layout.n_optics_groups
 
 
 def test_init_noise_from_npz_replaces_the_startup_estimate(monkeypatch, tmp_path):
