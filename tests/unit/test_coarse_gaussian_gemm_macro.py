@@ -828,7 +828,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
     monkeypatch.setattr(
         relion_ctf,
-        "_relion_exact_ctf_half_from_source_star",
+        "relion_exact_ctf_half_from_source_star",
         lambda _dataset, indices, image_shape, *, pixel_indices=None: jnp.ones(
             (
                 len(indices),
@@ -839,7 +839,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     )
     monkeypatch.setattr(
         relion_ctf,
-        "_relion_exact_ctf_half_from_source_star_host",
+        "relion_exact_ctf_half_from_source_star_host",
         lambda _dataset, indices, image_shape, *, pixel_indices=None: np.ones(
             (
                 len(indices),

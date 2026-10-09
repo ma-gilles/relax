@@ -147,15 +147,15 @@ def read_relion_model_pixel_size(path: str | Path) -> float:
     """Read the model pixel size from a RELION reference MRC header.
 
     RELION divides the float32 cell length by the grid size in RFLOAT (rwMRC.h:239), as
-    ``relion_metadata._read_relion_mrc_model_pixel_size`` does; ``mrcfile.voxel_size`` divides in float32.
+    ``relion_metadata.read_relion_mrc_model_pixel_size`` does; ``mrcfile.voxel_size`` divides in float32.
     """
 
-    from relax.relion.relion_metadata import _read_relion_mrc_model_pixel_size
+    from relax.relion.relion_metadata import read_relion_mrc_model_pixel_size
 
     source = Path(path).expanduser().resolve()
     if not source.is_file():
         raise ValueError(f"RELION model reference does not exist: {source}")
-    pixel_size = _read_relion_mrc_model_pixel_size(source)
+    pixel_size = read_relion_mrc_model_pixel_size(source)
     if not np.isfinite(pixel_size) or pixel_size <= 0.0:
         raise ValueError(
             f"RELION model reference has invalid pixel size {pixel_size}: {source}"

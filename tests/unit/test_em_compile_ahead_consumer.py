@@ -261,7 +261,7 @@ def test_the_mismatch_report_names_an_operand_that_was_not_produced():
 
 
 def test_the_rfloat_ctf_operand_is_float64_as_the_admission_check_assumes():
-    """`_relion_exact_ctf_half_from_source_star` places binary64 and the window
+    """`relion_exact_ctf_half_from_source_star` places binary64 and the window
     slice does not cast it, so the admission check's 8 bytes is exact rather
     than conservative. A change to either side shows up here."""
 

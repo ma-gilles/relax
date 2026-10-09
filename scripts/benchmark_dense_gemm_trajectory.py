@@ -278,8 +278,8 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     )
     from relax.helpers.preprocessing import prepare_batch_preprocess_operands
     from relax.relion.relion_coarse_operands import (
-        _assemble_relion_exact_coarse_gaussian_operands,
-        _process_relion_exact_coarse_half_image,
+        assemble_relion_exact_coarse_gaussian_operands,
+        process_relion_exact_coarse_half_image,
     )
     from relax.sparse_pass2.resident_operands import prepare_resident_half_operands
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_powerclass_highres_xi2_half
@@ -304,14 +304,14 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     if preprocess_kwargs is None:
         raise RuntimeError("real fixture requires canonical RELION CUDA image preprocessing")
     raw_device = jnp.asarray(batch_data)
-    processed = _process_relion_exact_coarse_half_image(
+    processed = process_relion_exact_coarse_half_image(
         dataset, raw_device, True, relion_preprocess_kwargs=preprocess_kwargs,
     )
     score_indices = geometry["score_indices"]
     score_half_weights = make_scoring_half_image_weights(
         dataset.image_shape, relion_half_sum=True, exclude_relion_redundant_x0=True,
     )
-    exact = _assemble_relion_exact_coarse_gaussian_operands(
+    exact = assemble_relion_exact_coarse_gaussian_operands(
         dataset, processed, local_indices,
         batch_scale_np=batch_scale,
         batch_size=len(local_indices), score_indices=score_indices,
@@ -387,7 +387,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
 
 def load_fixture_execution_state(data_dir, model_dir, *, rotations, translations, rotation_tile, translation_tile):
     """Resolve frozen STAR identities, native image backend and fixed grid."""
-    from relax.relion.relion_metadata import _load_relion_mask_params
+    from relax.relion.relion_metadata import load_relion_mask_params
 
     data_star = model_dir / "run_it001_data.star"
     dataset = load_dataset(
@@ -407,7 +407,7 @@ def load_fixture_execution_state(data_dir, model_dir, *, rotations, translations
     if sum(map(len, half_rows)) != dataset.n_units:
         raise ValueError("checkpoint halfsets do not cover every particle")
     dataset.halfset_indices = half_rows
-    mask = _load_relion_mask_params(model_dir / "run_it001_optimiser.star")
+    mask = load_relion_mask_params(model_dir / "run_it001_optimiser.star")
     if mask is None or float(mask[0]) <= 0:
         raise ValueError("numbered RELION checkpoint has no scoring mask")
     backend = dataset.image_source.backend

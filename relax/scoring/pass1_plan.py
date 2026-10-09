@@ -21,8 +21,8 @@ from relax.helpers.env_flags import (
 )
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion.relion_coarse_operands import (
-    _infer_relion_coarse_healpix_order,
-    _k1_relion_f32_coarse_support_enabled,
+    infer_relion_coarse_healpix_order,
+    k1_relion_f32_coarse_support_enabled,
 )
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.gaussian_plan import coarse_gaussian_report, plan_coarse_gaussian
@@ -264,7 +264,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
                 f"coarse_rotation_ids must have shape ({n_rot},), got {coarse_rotation_ids.shape}",
             )
     if coarse_healpix_order is None:
-        coarse_healpix_order = _infer_relion_coarse_healpix_order(n_rot, **({"symmetry_label": request.symmetry_label} if request.symmetry_label != "C1" else {}))
+        coarse_healpix_order = infer_relion_coarse_healpix_order(n_rot, **({"symmetry_label": request.symmetry_label} if request.symmetry_label != "C1" else {}))
     elif int(coarse_healpix_order) < 0:
         raise ValueError(f"coarse_healpix_order must be non-negative, got {coarse_healpix_order}")
 
@@ -340,7 +340,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
             stable_fourier_window_shapes=request.stable_fourier_window_shapes,
         )
         rotation_block_size = gaussian_plan.rotation_block_size
-    relion_f32_coarse_support_enabled = exact_gaussian and _k1_relion_f32_coarse_support_enabled(default=True)
+    relion_f32_coarse_support_enabled = exact_gaussian and k1_relion_f32_coarse_support_enabled(default=True)
     # --firstiter_cc on RELION's exact coarse operands: the tree rescore's per-image
     # FFT, RFLOAT CTF and corr_img operands, translated with RELION's sincosf for
     # every translation and scored by the coarse GEMMs

@@ -261,7 +261,7 @@ MUTATIONS = (
     ("projection_cache_disabled", "requested = coarse_gaussian_gemm_projection_cache_enabled(default=True)",
      "requested = False",
      "the projection cache is never requested", True),
-    ("generic_route_ignored", "relion_f32_coarse_support_enabled = exact_gaussian and _k1_relion_f32_coarse_support_enabled(default=True)",
+    ("generic_route_ignored", "relion_f32_coarse_support_enabled = exact_gaussian and k1_relion_f32_coarse_support_enabled(default=True)",
      "relion_f32_coarse_support_enabled = exact_gaussian",
      "RECOVAR_K1_RELION_F32_COARSE_SUPPORT is ignored", True),
     ("rotated_radius_disk", "mask_current_image_disk=not self.rotated_radius,", "mask_current_image_disk=True,",
@@ -371,8 +371,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                      lambda images, angles, *_: (f"images={images.shape[0]}", f"translations={angles.shape[0]}")),
         )
         patch.setattr(
-            relion_ctf, "_relion_exact_ctf_half_from_source_star",
-            recorded("ctf_rows", relion_ctf._relion_exact_ctf_half_from_source_star,
+            relion_ctf, "relion_exact_ctf_half_from_source_star",
+            recorded("ctf_rows", relion_ctf.relion_exact_ctf_half_from_source_star,
                      lambda _dataset, indices, *_, **kw: (f"images={len(indices)}",)),
         )
 

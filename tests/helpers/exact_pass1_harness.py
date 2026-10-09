@@ -122,7 +122,7 @@ def mock_unit_ctf_and_zero_highres_power(monkeypatch):
 
     monkeypatch.setattr(
         relion_ctf,
-        "_relion_exact_ctf_half_from_source_star",
+        "relion_exact_ctf_half_from_source_star",
         lambda _dataset, indices, image_shape, *, pixel_indices=None: jnp.ones(
             (
                 len(indices),
@@ -133,7 +133,7 @@ def mock_unit_ctf_and_zero_highres_power(monkeypatch):
     )
     monkeypatch.setattr(
         relion_ctf,
-        "_relion_exact_ctf_half_from_source_star_host",
+        "relion_exact_ctf_half_from_source_star_host",
         lambda _dataset, indices, image_shape, *, pixel_indices=None: np.ones(
             (
                 len(indices),

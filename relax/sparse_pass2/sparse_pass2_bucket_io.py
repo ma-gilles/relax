@@ -399,7 +399,7 @@ def prepare_unshifted_bucket_operands(
         batch = apply_relion_integer_pre_shifts(batch, integer_pre_shifts)
 
     ctf_half_rfloat = (
-        relion_ctf._relion_exact_ctf_half_from_source_star(
+        relion_ctf.relion_exact_ctf_half_from_source_star(
             experiment_dataset,
             image_indices,
             image_shape,

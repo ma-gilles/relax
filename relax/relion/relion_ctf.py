@@ -209,7 +209,7 @@ def premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape) -> np
     """
 
     try:
-        _, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
+        _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
     except ValueError:
         return None
     flags = _premultiplied_particles(cache)
@@ -225,7 +225,7 @@ def dataset_has_premultiplied_ctf(experiment_dataset, image_shape) -> bool:
     """Whether any optics group of the dataset's source STAR stores CTF-premultiplied images."""
 
     try:
-        _, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
+        _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
     except ValueError:
         return False
     return bool(_premultiplied_particles(cache).any())
@@ -279,7 +279,7 @@ def premultiplied_ctf2_shell_sums(experiment_dataset, image_indices, image_shape
         block = image_indices[begin : begin + int(chunk)]
         # RECOVAR's frame holds -Fctf (relion_ctf._evaluate_exact_ctf_rows).
         rows = -np.asarray(
-            _relion_exact_ctf_half_from_source_star_host(experiment_dataset, block, image_shape, pixel_indices=pixels),
+            relion_exact_ctf_half_from_source_star_host(experiment_dataset, block, image_shape, pixel_indices=pixels),
             dtype=np.float64,
         )
         sums[begin : begin + block.size, shells[starts]] = np.add.reduceat(rows, starts, axis=1)
@@ -377,7 +377,7 @@ def _relion_ctf_batch_params(cache, original_indices: np.ndarray) -> np.ndarray:
     )
 
 
-def _exact_ctf_source_cache(experiment_dataset, image_shape):
+def exact_ctf_source_cache(experiment_dataset, image_shape):
     """The source STAR, its parsed tables and the per-particle CTF row block."""
 
     source_path = _relion_exact_ctf_source_star(experiment_dataset)
@@ -682,7 +682,7 @@ def relion_fftw_ctf_rows(experiment_dataset, image_indices, image_shape, *, squa
     """
 
     image_h, image_w = (int(v) for v in image_shape)
-    _, cache = _exact_ctf_source_cache(experiment_dataset, (image_h, image_w))
+    _, cache = exact_ctf_source_cache(experiment_dataset, (image_h, image_w))
     original = np.asarray(
         original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64)), dtype=np.int64
     )
@@ -699,7 +699,7 @@ def relion_fftw_ctf_rows(experiment_dataset, image_indices, image_shape, *, squa
     return out
 
 
-def _relion_exact_ctf_half_from_source_star_host(
+def relion_exact_ctf_half_from_source_star_host(
     experiment_dataset,
     image_indices,
     image_shape,
@@ -717,7 +717,7 @@ def _relion_exact_ctf_half_from_source_star_host(
     their order and duplicates are preserved without changing source precision.
     """
 
-    source_path, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
+    source_path, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
     original_indices = original_image_indices(
         experiment_dataset,
         np.asarray(image_indices, dtype=np.int64),
@@ -751,7 +751,7 @@ def _relion_exact_ctf_half_from_source_star_host(
     return _exact_ctf_result_store(cache_key, original_indices, pixel_indices, assembled)
 
 
-def _relion_exact_ctf_half_from_source_star(
+def relion_exact_ctf_half_from_source_star(
     experiment_dataset,
     image_indices,
     image_shape,
@@ -779,7 +779,7 @@ def _relion_exact_ctf_half_from_source_star(
             raise ValueError("CTF pixel indices must be a one-dimensional integer array")
         if np.any(pixel_indices < 0) or np.any(pixel_indices >= width):
             raise ValueError("CTF pixel indices are outside the full half-spectrum")
-    _, cache = _exact_ctf_source_cache(experiment_dataset, image_shape)
+    _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
     original_indices = np.asarray(
         original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64)), dtype=np.int64
     )

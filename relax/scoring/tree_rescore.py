@@ -18,7 +18,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.diagnostics.coarse_gaussian_diagnostics import _maybe_dump_tree_rescore_batch
-from relax.relion.relion_coarse_operands import _select_relion_coarse_rescore_winner_slots
+from relax.relion.relion_coarse_operands import select_relion_coarse_rescore_winner_slots
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +319,7 @@ def rescore_ambiguous_images(
         numerator_weight_candidates=score_weight_candidates,
     )
     rescored_scores_np = np.asarray(rescored_candidates, dtype=tree_score_dtype)
-    rescored_winner_slot, exact_ties = _select_relion_coarse_rescore_winner_slots(
+    rescored_winner_slot, exact_ties = select_relion_coarse_rescore_winner_slots(
         rescored_scores_np,
         candidate_pose_ids,
         n_trans=plan.geometry.n_trans,

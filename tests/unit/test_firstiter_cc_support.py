@@ -130,15 +130,15 @@ def test_image_power_is_summed_on_the_support_the_score_counts():
 
 def test_coarse_image_power_takes_the_weights():
     """Xi2 of pass 1 (the exact coarse operands)."""
-    from relax.relion.relion_coarse_operands import _relion_cc_inverse_power_from_processed
+    from relax.relion.relion_coarse_operands import relion_cc_inverse_power_from_processed
 
     rng = np.random.default_rng(1)
     processed = rng.normal(size=(2, 8 * 5)) + 1j * rng.normal(size=(2, 8 * 5))
     window = _rectangle(8, 6)
     weights = np.isin(window, _gaussian_support(8, 6)).astype(np.float64)
     power = np.abs(processed) ** 2
-    relion = _relion_cc_inverse_power_from_processed(processed, window)
-    gaussian = _relion_cc_inverse_power_from_processed(processed, window, weights)
+    relion = relion_cc_inverse_power_from_processed(processed, window)
+    gaussian = relion_cc_inverse_power_from_processed(processed, window, weights)
     assert_matches(np.asarray(relion)[:, 0], 1.0 / power[:, window].sum(axis=1), rtol=1e-12)
     assert_matches(np.asarray(gaussian)[:, 0], 1.0 / (power[:, window] * weights).sum(axis=1), rtol=1e-12)
 

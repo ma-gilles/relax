@@ -155,7 +155,7 @@ def resolve_particle_poses(
     from recovar import utils
 
     from relax.local.local_layout import _selected_rotation_matrices
-    from relax.relion.relion_metadata import _relion_metadata_translations
+    from relax.relion.relion_metadata import relion_metadata_translations
     from relax.sampling import build_local_search_grid_metadata
 
     if best_pose_rotations is not None:
@@ -196,7 +196,7 @@ def resolve_particle_poses(
         rotations=rotations,
         eulers_deg=eulers,
         relative_translations_pixels=translations,
-        translations_pixels=_relion_metadata_translations(
+        translations_pixels=relion_metadata_translations(
             previous_translations, translations, own_pixel_factors=own_pixel_factors, dtype=dtype,
         ),
     )

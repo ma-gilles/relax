@@ -23,11 +23,11 @@ from helpers.float_compare import assert_matches
 from relax.relion.relion_coarse_operands import (
     _relion_cc_coarse_operand_program,
     _relion_cc_coarse_operands,
-    _relion_cc_inverse_power_from_processed,
     _relion_exact_coarse_operand_program,
-    _relion_exact_coarse_operands,
-    _repeat_pad_batch_axis,
     assemble_relion_cc_coarse_operands,
+    relion_cc_inverse_power_from_processed,
+    relion_exact_coarse_operands,
+    repeat_pad_batch_axis,
 )
 
 IMAGE_SIZE = 16
@@ -85,7 +85,7 @@ def test_exact_program_matches_the_eager_assembly(
         use_float64_scoring=use_float64_scoring,
         scale_corrections_enabled=scale_corrections_enabled,
     )
-    eager = _relion_exact_coarse_operands(
+    eager = relion_exact_coarse_operands(
         ctf, scale, processed, indices, mask, noise, half_weights, **kwargs
     )
     program = _relion_exact_coarse_operand_program(
@@ -121,16 +121,16 @@ def test_exact_program_holds_on_a_repeat_padded_last_batch():
         scale_corrections_enabled=True,
     )
 
-    padded_ctf = jnp.asarray(_repeat_pad_batch_axis(ctf, PADDED_BATCH))
-    padded_scale = jnp.asarray(_repeat_pad_batch_axis(scale, PADDED_BATCH))
-    padded_processed = jnp.asarray(_repeat_pad_batch_axis(processed, PADDED_BATCH))
+    padded_ctf = jnp.asarray(repeat_pad_batch_axis(ctf, PADDED_BATCH))
+    padded_scale = jnp.asarray(repeat_pad_batch_axis(scale, PADDED_BATCH))
+    padded_processed = jnp.asarray(repeat_pad_batch_axis(processed, PADDED_BATCH))
     assert padded_ctf.shape == (PADDED_BATCH, N_SCORE)
 
-    unpadded = _relion_exact_coarse_operands(
+    unpadded = relion_exact_coarse_operands(
         jnp.asarray(ctf), jnp.asarray(scale), jnp.asarray(processed),
         indices, mask, noise, half_weights, **kwargs
     )
-    padded_eager = _relion_exact_coarse_operands(
+    padded_eager = relion_exact_coarse_operands(
         padded_ctf, padded_scale, padded_processed,
         indices, mask, noise, half_weights, **kwargs
     )
@@ -165,7 +165,7 @@ def test_cc_program_matches_the_eager_assembly(
     ctf = ctf.at[:, ::11].set(0.0)
     scale = jnp.asarray(rng.uniform(0.8, 1.2, ACTUAL_BATCH), dtype=jnp.float32)
     window = _score_indices(rng) if with_window else None
-    inverse_power = _relion_cc_inverse_power_from_processed(processed, window)
+    inverse_power = relion_cc_inverse_power_from_processed(processed, window)
     phase = (
         jnp.asarray(
             np.exp(1j * rng.uniform(-np.pi, np.pi, (ACTUAL_BATCH, N_HALF))),
@@ -202,7 +202,7 @@ def test_cc_entry_point_runs_the_program():
     )
     ctf = jnp.asarray(rng.uniform(0.3, 1.5, (ACTUAL_BATCH, N_HALF)), dtype=jnp.float64)
     scale = jnp.asarray(rng.uniform(0.8, 1.2, ACTUAL_BATCH), dtype=jnp.float32)
-    inverse_power = _relion_cc_inverse_power_from_processed(processed, None)
+    inverse_power = relion_cc_inverse_power_from_processed(processed, None)
 
     eager = _relion_cc_coarse_operands(
         processed, ctf, inverse_power, scale, None, None, scale_corrections_enabled=True
@@ -231,7 +231,7 @@ def test_each_assembly_is_one_program_per_batch_shape():
         rng.normal(size=(ACTUAL_BATCH, N_HALF)) + 1j * rng.normal(size=(ACTUAL_BATCH, N_HALF)),
         dtype=jnp.complex64,
     )
-    inverse_power = _relion_cc_inverse_power_from_processed(processed, None)
+    inverse_power = relion_cc_inverse_power_from_processed(processed, None)
     cc_args = (processed, ctf, inverse_power, scale, None, None)
     cc_eager = jax.make_jaxpr(
         lambda *a: _relion_cc_coarse_operands(*a, scale_corrections_enabled=True)

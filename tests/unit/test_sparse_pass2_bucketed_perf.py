@@ -1722,7 +1722,7 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
     ctf_half = np.linspace(0.5, 1.5, n_half, dtype=np.float64)[None, :]
     monkeypatch.setattr(
         relion_ctf,
-        "_relion_exact_ctf_half_from_source_star",
+        "relion_exact_ctf_half_from_source_star",
         lambda *args, **kwargs: ctf_half,
     )
     calls = []

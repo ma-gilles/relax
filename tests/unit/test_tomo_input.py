@@ -172,7 +172,7 @@ def test_exact_ctf_matches_simulated_tomo_ctf(project, monkeypatch):
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     dataset = SimpleNamespace(particles_file=str(flat))
     indices = np.arange(len(rows), dtype=np.int64)
-    got = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
+    got = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
 
     # The simulator's CTF parameters for the same rows, in recovar's CTF layout.
     ctf_params = np.zeros((len(rows), 11))
@@ -434,7 +434,7 @@ def test_exact_ctf_of_aberrated_tilts_matches_the_simulator(aberrated_project, m
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     relion_ctf.clear_exact_ctf_result_cache()
     dataset = SimpleNamespace(particles_file=str(flat))
-    got = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.arange(len(rows)), (GRID, GRID))
+    got = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.arange(len(rows)), (GRID, GRID))
     group = np.asarray(star_column(rows, "rlnOpticsGroup"), dtype=np.int64)
     params = np.zeros((len(rows), 11))
     for column, label in (
@@ -492,7 +492,7 @@ def test_uncached_fftw_ctf_rows_are_the_exact_rows(aberrated_project, monkeypatc
     relion_ctf.clear_exact_ctf_result_cache()
     dataset = SimpleNamespace(particles_file=str(flat))
     indices = np.arange(len(rows))[::-1]
-    cached = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
+    cached = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
     squared = relion_ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID))
     assert_matches(-np.fft.fftshift(squared, axes=1).reshape(len(rows), -1), cached)
     plain = relion_ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID), square_premultiplied=False)

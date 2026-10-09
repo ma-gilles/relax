@@ -565,9 +565,9 @@ def test_sparse_pass2_rejects_c1_sized_parent_grid_for_i1():
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_symmetry_reduced_coarse_tie_break_uses_relion_direction_major_order(label):
     from relax.relion.relion_coarse_operands import (
-        _infer_relion_coarse_healpix_order,
         _relion_coarse_pose_tie_break_keys,
-        _select_relion_coarse_rescore_winner_slots,
+        infer_relion_coarse_healpix_order,
+        select_relion_coarse_rescore_winner_slots,
     )
     from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
 
@@ -576,7 +576,7 @@ def test_symmetry_reduced_coarse_tie_break_uses_relion_direction_major_order(lab
     n_directions = n_rotations // rotation_grid_n_in_planes(order)
     candidate_pose_ids = np.asarray([[1, n_directions]], dtype=np.int64)
 
-    assert _infer_relion_coarse_healpix_order(n_rotations, label) == order
+    assert infer_relion_coarse_healpix_order(n_rotations, label) == order
     keys = _relion_coarse_pose_tie_break_keys(
         candidate_pose_ids,
         n_trans=1,
@@ -587,7 +587,7 @@ def test_symmetry_reduced_coarse_tie_break_uses_relion_direction_major_order(lab
         keys,
         np.asarray([[rotation_grid_n_in_planes(order), 1]], dtype=np.int64),
     )
-    slots, tie_count = _select_relion_coarse_rescore_winner_slots(
+    slots, tie_count = select_relion_coarse_rescore_winner_slots(
         np.asarray([[0.5, 0.5]], dtype=np.float32),
         candidate_pose_ids,
         n_trans=1,

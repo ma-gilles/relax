@@ -219,7 +219,7 @@ def _resident_native_case(monkeypatch, image_size, current_size, with_scale):
     ctf_rfloat = np.linspace(0.2, 1.1, n_images * n_half, dtype=np.float64).reshape(n_images, n_half)
     monkeypatch.setattr(
         relion_ctf,
-        "_relion_exact_ctf_half_from_source_star",
+        "relion_exact_ctf_half_from_source_star",
         lambda _dataset, indices, _shape: jnp.asarray(ctf_rfloat[np.asarray(indices)]),
     )
     # Repeat instead of translate: the CUDA translations are not on CPU, and

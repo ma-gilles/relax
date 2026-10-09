@@ -234,7 +234,7 @@ def _apply_relion_image_mask(ds, args, *, relion_half_sets_from_input: bool, sea
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
     if sealed_optimiser_star is not None:
         optimiser_star = Path(sealed_optimiser_star).resolve()
-        params = relion_metadata._load_relion_mask_params(optimiser_star)
+        params = relion_metadata.load_relion_mask_params(optimiser_star)
         if params is None:
             raise ValueError(
                 f"sealed fixed-arm optimiser lacks RELION mask parameters: {optimiser_star}"
@@ -260,7 +260,7 @@ def _apply_relion_image_mask(ds, args, *, relion_half_sets_from_input: bool, sea
         optimiser_star = command_options.find_relion_optimiser_star(
             args, relion_half_sets_from_input=relion_half_sets_from_input
         )
-        params = None if optimiser_star is None else relion_metadata._load_relion_mask_params(optimiser_star)
+        params = None if optimiser_star is None else relion_metadata.load_relion_mask_params(optimiser_star)
         if params is None:
             params = (command_options.RELION_GUI_PARTICLE_DIAMETER_ANG, float(args.width_mask_edge_px))
             optimiser_star = "RELION GUI default"

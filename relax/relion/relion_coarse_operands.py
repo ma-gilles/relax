@@ -20,7 +20,7 @@ from relax.scoring.coarse_gaussian_gemm import (
 )
 
 
-def _repeat_pad_batch_axis(value, target_size: int):
+def repeat_pad_batch_axis(value, target_size: int):
     """Pad a non-empty image batch by repeating row zero.
 
     Repeating a real row keeps normalized-CC and exact CUDA preprocessing
@@ -38,7 +38,7 @@ def _repeat_pad_batch_axis(value, target_size: int):
     )
 
 
-def _k1_relion_f32_coarse_support_enabled(*, default: bool = False) -> bool:
+def k1_relion_f32_coarse_support_enabled(*, default: bool = False) -> bool:
     """Return whether the RELION CUDA float32 coarse support is active."""
 
     return parse_env_strict_flag(_K1_RELION_F32_COARSE_SUPPORT_ENV, default=default)
@@ -46,7 +46,7 @@ def _k1_relion_f32_coarse_support_enabled(*, default: bool = False) -> bool:
 
 
 
-def _relion_exact_coarse_operands(
+def relion_exact_coarse_operands(
     ctf_half_rfloat,
     batch_scale_exact,
     processed_direct,
@@ -62,7 +62,7 @@ def _relion_exact_coarse_operands(
     """Assemble the exact-source coarse operands of one image batch.
 
     The statements of the exact assembly in
-    :func:`_assemble_relion_exact_coarse_gaussian_operands`, less the host CTF
+    :func:`assemble_relion_exact_coarse_gaussian_operands`, less the host CTF
     read, the translate FFI call, the reshape of its result and ``powerClass``.
     Neither returned operand depends on the FFI output, so both are produced
     before the call instead of straddling it.
@@ -125,7 +125,7 @@ def _relion_exact_coarse_operands(
 
 
 _relion_exact_coarse_operand_program = jax.jit(
-    _relion_exact_coarse_operands,
+    relion_exact_coarse_operands,
     static_argnames=(
         "image_shape",
         "use_float64_scoring",
@@ -245,7 +245,7 @@ class RelionExactCoarseGaussianOperands(NamedTuple):
     translation_angles: jax.Array
 
 
-def _process_relion_exact_coarse_half_image(
+def process_relion_exact_coarse_half_image(
     experiment_dataset,
     batch_data,
     score_with_masked_images: bool,
@@ -307,7 +307,7 @@ def relion_coarse_translate(
     return shifted
 
 
-def _assemble_relion_exact_coarse_gaussian_operands(
+def assemble_relion_exact_coarse_gaussian_operands(
     experiment_dataset,
     processed_direct,
     indices,
@@ -339,7 +339,7 @@ def _assemble_relion_exact_coarse_gaussian_operands(
     """
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
+    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
     from relax.sparse_pass2.sparse_pass2_bucket_io import (
         _relion_translation_angles_f32,
         _relion_translation_angles_f64,
@@ -351,9 +351,9 @@ def _assemble_relion_exact_coarse_gaussian_operands(
     translate_fn = em_cuda_kernels.relion_translate_score_f64 if use_float64_scoring else em_cuda_kernels.relion_translate_score_f32
 
     # The padded rows of a short last batch repeat its first image's CTF row.
-    ctf_half_rfloat = _relion_exact_ctf_half_from_source_star(
+    ctf_half_rfloat = relion_exact_ctf_half_from_source_star(
         experiment_dataset,
-        _repeat_pad_batch_axis(np.asarray(indices), batch_size),
+        repeat_pad_batch_axis(np.asarray(indices), batch_size),
         image_shape,
         pixel_indices=score_indices_np,
     )
@@ -398,7 +398,7 @@ def _assemble_relion_exact_coarse_gaussian_operands(
     )
 
 
-def _relion_cc_inverse_power_from_processed(processed_half, score_indices=None, power_weights=None):
+def relion_cc_inverse_power_from_processed(processed_half, score_indices=None, power_weights=None):
     """Return RELION firstiter-CC ``1/sum(norm(Fimg))`` in binary64.
 
     ``power_weights`` (one per summed pixel) restricts the sum to the pixels the score counts;
@@ -425,7 +425,7 @@ def _relion_cc_inverse_power_from_processed(processed_half, score_indices=None, 
     )
 
 
-def _infer_relion_coarse_healpix_order(
+def infer_relion_coarse_healpix_order(
     n_rotations: int,
     symmetry_label: str = "C1",
 ) -> int | None:
@@ -491,7 +491,7 @@ def _relion_coarse_pose_tie_break_keys(
 
 
 
-def _select_relion_coarse_rescore_winner_slots(
+def select_relion_coarse_rescore_winner_slots(
     scores,
     candidate_pose_ids,
     *,

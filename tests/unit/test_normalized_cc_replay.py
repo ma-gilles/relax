@@ -17,7 +17,7 @@ from oracles.normalized_cc_replay import (
     replay_normalized_cc_candidates,
 )
 
-from relax.relion.relion_coarse_operands import _relion_cc_inverse_power_from_processed
+from relax.relion.relion_coarse_operands import relion_cc_inverse_power_from_processed
 
 pytestmark = pytest.mark.unit
 
@@ -298,7 +298,7 @@ def test_jax_relion_coarse_rescore_preserves_double_accelerator_precision():
 def test_relion_coarse_exact_tie_uses_direction_major_flat_order():
     from relax.relion.relion_coarse_operands import (
         _relion_coarse_pose_tie_break_keys,
-        _select_relion_coarse_rescore_winner_slots,
+        select_relion_coarse_rescore_winner_slots,
     )
 
     candidate_pose_ids = np.asarray([[955081, 977030]], dtype=np.int64)
@@ -311,7 +311,7 @@ def test_relion_coarse_exact_tie_uses_direction_major_flat_order():
         keys,
         np.asarray([[943626, 928339]], dtype=np.int64),
     )
-    slots, tie_count = _select_relion_coarse_rescore_winner_slots(
+    slots, tie_count = select_relion_coarse_rescore_winner_slots(
         np.asarray([[0.27847832441329956, 0.27847832441329956]], dtype=np.float32),
         candidate_pose_ids,
         n_trans=29,
@@ -324,7 +324,7 @@ def test_relion_coarse_exact_tie_uses_direction_major_flat_order():
 def test_relion_coarse_tie_order_maps_subset_rotation_ids():
     from relax.relion.relion_coarse_operands import (
         _relion_coarse_pose_tie_break_keys,
-        _select_relion_coarse_rescore_winner_slots,
+        select_relion_coarse_rescore_winner_slots,
     )
 
     canonical_rotation_ids = np.asarray([32933, 33690], dtype=np.int64)
@@ -339,7 +339,7 @@ def test_relion_coarse_tie_order_maps_subset_rotation_ids():
         keys,
         np.asarray([[943626, 928339]], dtype=np.int64),
     )
-    slots, tie_count = _select_relion_coarse_rescore_winner_slots(
+    slots, tie_count = select_relion_coarse_rescore_winner_slots(
         np.asarray([[0.27847832441329956, 0.27847832441329956]], dtype=np.float32),
         local_candidate_pose_ids,
         n_trans=29,
@@ -513,7 +513,7 @@ def test_relion_cc_inverse_power_uses_selected_per_image_fourier_array():
     )
     selected = np.asarray([2, 0], dtype=np.int32)
     observed = np.asarray(
-        _relion_cc_inverse_power_from_processed(
+        relion_cc_inverse_power_from_processed(
             jnp.asarray(processed),
             selected,
         )

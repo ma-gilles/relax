@@ -167,14 +167,14 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
     from relax.scoring import pass1_operands, significance
 
     args, kwargs = _significance_call(monkeypatch, n_classes=1)
-    original = pass1_operands._process_relion_exact_coarse_half_image
+    original = pass1_operands.process_relion_exact_coarse_half_image
     seen = []
 
     def record(experiment_dataset, batch, *rest, **batch_kwargs):
         seen.append(int(np.asarray(batch).shape[0]))
         return original(experiment_dataset, batch, *rest, **batch_kwargs)
 
-    monkeypatch.setattr(pass1_operands, "_process_relion_exact_coarse_half_image", record)
+    monkeypatch.setattr(pass1_operands, "process_relion_exact_coarse_half_image", record)
 
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     significance._compute_k_class_significance_batched(*args, **kwargs)
@@ -322,7 +322,7 @@ def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
     zero, and broadcasts against the padded per-image scale.
     """
 
-    from relax.relion.relion_coarse_operands import _repeat_pad_batch_axis
+    from relax.relion.relion_coarse_operands import repeat_pad_batch_axis
     from relax.sparse_pass2.sparse_pass2_scoring import (
         _relion_cuda_pixel_correction_from_rfloat_ctf,
     )
@@ -330,7 +330,7 @@ def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
     actual, padded_size, pixels = 216, 250, 12
     rng = np.random.default_rng(20260920)
     ctf = jnp.asarray(rng.uniform(0.5, 1.5, (actual, pixels)), dtype=jnp.float32)
-    padded = jnp.asarray(_repeat_pad_batch_axis(ctf, padded_size))
+    padded = jnp.asarray(repeat_pad_batch_axis(ctf, padded_size))
 
     assert padded.shape == (padded_size, pixels)
     assert_matches(np.asarray(padded[:actual]), np.asarray(ctf))

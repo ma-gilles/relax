@@ -16,7 +16,7 @@ from relax.helpers.shells import shell_of_radius_sq
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.refinement.tomo_half import TomoDataset
 from relax.relion import relion_metadata
-from relax.relion.initial_noise import _radial_power_spectrum, compute_avg_unaligned_and_sigma2
+from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2, radial_power_spectrum
 
 
 class StartupNoise(NamedTuple):
@@ -46,11 +46,11 @@ def auto_refine_noise_order(our_particles, relion_particles):
     continues into half 2; it is not a half-1-only calculation.
     """
 
-    our_row_by_identity = relion_metadata._particle_identity_rows(
+    our_row_by_identity = relion_metadata.particle_identity_rows(
         our_particles,
         label="RECOVAR input STAR",
     )
-    relion_row_by_identity = relion_metadata._particle_identity_rows(
+    relion_row_by_identity = relion_metadata.particle_identity_rows(
         relion_particles,
         label="RELION data STAR",
     )
@@ -105,7 +105,7 @@ def class3d_noise_order(our_particles):
 def whole_transform_power_spectrum(image_real: np.ndarray, n_shells: int) -> np.ndarray:
     """Per-shell mean ``|FFT(image)|²`` over the whole transform: every Hermitian pair counted once.
 
-    RELION's start-up spectrum (``relax.relion.initial_noise._radial_power_spectrum``) averages every
+    RELION's start-up spectrum (``relax.relion.initial_noise.radial_power_spectrum``) averages every
     stored pixel of the FFTW half, which counts the pairs whose two members are both stored (the
     ``kx = 0`` column and an even image's Nyquist column) twice. Same scale: ``1 / (H W)``.
     """
@@ -119,7 +119,7 @@ def whole_transform_power_spectrum(image_real: np.ndarray, n_shells: int) -> np.
     return total / np.maximum(np.bincount(shell[keep], minlength=n_shells), 1)
 
 
-_POWER_SPECTRUM = {"relion": _radial_power_spectrum, "once": whole_transform_power_spectrum}
+_POWER_SPECTRUM = {"relion": radial_power_spectrum, "once": whole_transform_power_spectrum}
 
 
 def estimate_startup_sigma2(

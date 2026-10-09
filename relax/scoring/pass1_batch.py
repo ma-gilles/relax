@@ -8,7 +8,7 @@ import numpy as np
 
 from relax.helpers.image_shifts import apply_relion_integer_pre_shifts
 from relax.helpers.preprocessing import prepare_batch_preprocess_operands
-from relax.relion.relion_coarse_operands import _repeat_pad_batch_axis
+from relax.relion.relion_coarse_operands import repeat_pad_batch_axis
 
 
 def batch_image_count(batch_data) -> int:
@@ -43,13 +43,13 @@ def _pad_significance_preprocess_inputs(
     padded_kwargs = None
     if relion_preprocess_kwargs is not None:
         padded_kwargs = {
-            key: jnp.asarray(_repeat_pad_batch_axis(value, target_size))
+            key: jnp.asarray(repeat_pad_batch_axis(value, target_size))
             for key, value in relion_preprocess_kwargs.items()
         }
     return (
-        _repeat_pad_batch_axis(batch_data, target_size),
-        (None if integer_pre_shifts is None else _repeat_pad_batch_axis(integer_pre_shifts, target_size)),
-        _repeat_pad_batch_axis(batch_scale, target_size),
+        repeat_pad_batch_axis(batch_data, target_size),
+        (None if integer_pre_shifts is None else repeat_pad_batch_axis(integer_pre_shifts, target_size)),
+        repeat_pad_batch_axis(batch_scale, target_size),
         padded_kwargs,
     )
 
@@ -165,12 +165,12 @@ def prepare_batch_inputs(plan: BatchInputPlan, batch_data, indices, *, start_idx
         )
     batch_size = batch_image_count(batch_data)
     # The batch's dataset images, repeat-padded as batch_data is.
-    batch_image_indices = _repeat_pad_batch_axis(np.asarray(indices), batch_size)
+    batch_image_indices = repeat_pad_batch_axis(np.asarray(indices), batch_size)
     # Each image's own optics-group spectrum; the one shared spectrum otherwise.
     batch_noise_half = plan.noise.noise_variance_half
     if plan.noise.noise_table_host is not None:
         batch_groups = plan.noise.image_groups_host[np.asarray(indices, dtype=np.int64)]
-        batch_noise_half = jnp.asarray(_repeat_pad_batch_axis(plan.noise.noise_table_host[batch_groups], batch_size))
+        batch_noise_half = jnp.asarray(repeat_pad_batch_axis(plan.noise.noise_table_host[batch_groups], batch_size))
     real_space_pre_shift_applied = integer_pre_shifts is not None
     if real_space_pre_shift_applied and not relion_cuda_preprocess:
         batch_data = apply_relion_integer_pre_shifts(batch_data, integer_pre_shifts)
@@ -182,7 +182,7 @@ def prepare_batch_inputs(plan: BatchInputPlan, batch_data, indices, *, start_idx
     else:
         batch_translation_log_prior_np = np.asarray(plan.translation_log_prior[start_idx:end_idx])
         if batch_size > actual_batch_size:
-            batch_translation_log_prior_np = _repeat_pad_batch_axis(
+            batch_translation_log_prior_np = repeat_pad_batch_axis(
                 batch_translation_log_prior_np,
                 batch_size,
             )

@@ -46,7 +46,7 @@ def _softmask_outside_map(image: np.ndarray, radius: float, cosine_width: float)
     return out.astype(image.dtype)
 
 
-def _radial_power_spectrum(image_real: np.ndarray, n_shells: int) -> np.ndarray:
+def radial_power_spectrum(image_real: np.ndarray, n_shells: int) -> np.ndarray:
     """Per-shell mean ``|FFT(image)|²`` (ml_optimiser.cpp:3108-3117); RELION-normalised by ``H*W``."""
     H, W = image_real.shape[-2:]
     F = np.fft.rfft2(image_real, norm=None) / (H * W)
@@ -163,7 +163,7 @@ def compute_avg_unaligned_and_sigma2(
     minimum_nr_particles: int = 1000,
     group_pixel_sizes=None,
     model_pixel_size: float | None = None,
-    power_spectrum=_radial_power_spectrum,
+    power_spectrum=radial_power_spectrum,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """``calculateSumOfPowerSpectra`` + ``setSigmaNoiseEstimates`` (per-group cap defaults to RELION's 1000).
 

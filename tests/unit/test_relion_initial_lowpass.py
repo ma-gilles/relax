@@ -10,7 +10,7 @@ from relax.refinement.mean_helpers import (
 )
 from relax.relion.reference_initialization import initial_low_pass_filter_references
 from relax.relion.relion_metadata import (
-    _read_relion_mrc_model_pixel_size,
+    read_relion_mrc_model_pixel_size,
 )
 
 pytestmark = pytest.mark.unit
@@ -30,7 +30,7 @@ def test_model_pixel_size_uses_binary64_header_division(tmp_path):
         handle.header.mz = 12
 
     expected = 17.0 / 12.0
-    assert _read_relion_mrc_model_pixel_size(path) == expected
+    assert read_relion_mrc_model_pixel_size(path) == expected
     with mrcfile.open(path, permissive=False) as handle:
         assert float(handle.voxel_size.x) != expected
 

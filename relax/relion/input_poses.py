@@ -111,11 +111,11 @@ def _load_input_star_previous_best_poses(
     the input STAR has no ``rlnNormCorrection``, as in relion_refine.
     """
 
-    input_rows = relion_metadata._particle_identity_rows(
+    input_rows = relion_metadata.particle_identity_rows(
         input_particles,
         label="RECOVAR input STAR",
     )
-    halfset_rows = relion_metadata._particle_identity_rows(
+    halfset_rows = relion_metadata.particle_identity_rows(
         relion_halfset_particles,
         label="RELION half-set STAR",
     )
@@ -324,7 +324,7 @@ def _initial_corrections_from_norm(norm_corrections_per_half):
     return image_corrections, scale_corrections
 
 
-def _add_initial_pose_source_argument(parser: argparse.ArgumentParser) -> None:
+def add_initial_pose_source_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--initial-pose-source",
         choices=("auto", "input-star", "none"),

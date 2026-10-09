@@ -113,7 +113,7 @@ def test_generic_ctf_fails_closed_on_premultiplied_data(star_dataset):
 def test_exact_ctf_rows_hold_relion_fctf_squared_for_premultiplied_groups(star_dataset):
     relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
     order = np.asarray([2, 0, 3, 1])
-    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(star_dataset, order, (BOX, BOX))
+    rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(star_dataset, order, (BOX, BOX))
 
     groups = {group: (voltage, cs, q0, pixel, flag) for group, voltage, cs, q0, pixel, flag in OPTICS}
     expected = []
@@ -205,7 +205,7 @@ def test_dense_preprocessing_scores_premultiplied_batches_with_the_exact_rows(st
     order = np.asarray([2, 0, 3, 1])
     rows = np.asarray(_dense_batch_ctf_half(star_dataset, np.zeros((4, 9)), config, np.float32, order))
     assert rows.dtype == np.float32 and not generic_calls
-    expected = relion_ctf._relion_exact_ctf_half_from_source_star_host(star_dataset, order, (BOX, BOX))
+    expected = relion_ctf.relion_exact_ctf_half_from_source_star_host(star_dataset, order, (BOX, BOX))
     assert_matches(rows, expected, rtol=1e-6)  # the float32 cast
 
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
@@ -248,7 +248,7 @@ def test_average_ctf2_is_relions_set_average_ctf2(star_dataset, window):
 
     star_dataset.n_units = len(PARTICLES)
     scales = np.asarray([1.2, 0.0005, 0.9, 1.1])
-    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(star_dataset, np.arange(4), (BOX, BOX))
+    rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(star_dataset, np.arange(4), (BOX, BOX))
     # RECOVAR frame -> RELION's FFTW Fctf (relion_ctf._evaluate_exact_ctf_rows).
     fctf = -np.fft.ifftshift(np.asarray(rows).reshape(4, BOX, BOX // 2 + 1), axes=1)
     premultiplied = [group == 2 for *_, group in PARTICLES]

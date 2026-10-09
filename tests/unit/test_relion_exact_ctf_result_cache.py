@@ -1,6 +1,6 @@
 """The assembled exact-CTF operand memo must return the same bytes, or nothing.
 
-`_relion_exact_ctf_half_from_source_star_host` already caches each image's CTF
+`relion_exact_ctf_half_from_source_star_host` already caches each image's CTF
 row; what repeats every iteration is the stack that turns those rows into one
 operand. Pass 2 asks for a whole half and the coarse pass for one image batch of
 planned columns, both with inputs that do not change between iterations, so the
@@ -61,7 +61,7 @@ def prepared_cache(monkeypatch):
 
 
 def _call(indices, pixel_indices=None):
-    return relion_ctf._relion_exact_ctf_half_from_source_star_host(
+    return relion_ctf.relion_exact_ctf_half_from_source_star_host(
         None,
         np.asarray(indices, dtype=np.int64),
         IMAGE_SHAPE,

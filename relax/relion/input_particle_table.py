@@ -340,8 +340,8 @@ def prepare_particle_group_layout(
         group_particles = group_particles.assign(rlnGroupNumber=relion_scale_group_numbers(group_particles))
         source = "RELION scale groups numbered from the RECOVAR input particles STAR"
 
-    our_rows = relion_metadata._particle_identity_rows(our_particles, label="RECOVAR input STAR")
-    group_rows = relion_metadata._particle_identity_rows(group_particles, label=source)
+    our_rows = relion_metadata.particle_identity_rows(our_particles, label="RECOVAR input STAR")
+    group_rows = relion_metadata.particle_identity_rows(group_particles, label=source)
     if set(our_rows) != set(group_rows):
         missing = len(set(our_rows) - set(group_rows))
         extra = len(set(group_rows) - set(our_rows))
@@ -482,11 +482,11 @@ def _map_relion_half_rows(
     """
     from relax.relion import relion_metadata
 
-    our_row_by_identity = relion_metadata._particle_identity_rows(
+    our_row_by_identity = relion_metadata.particle_identity_rows(
         our_particles,
         label="RECOVAR input STAR",
     )
-    relion_row_by_identity = relion_metadata._particle_identity_rows(
+    relion_row_by_identity = relion_metadata.particle_identity_rows(
         relion_particles,
         label="RELION data STAR",
     )

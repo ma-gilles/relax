@@ -8,7 +8,7 @@ from relax.helpers.oversampling import (
     relion_cuda_f32_coarse_log_weights,
     relion_cuda_f32_coarse_posterior,
 )
-from relax.relion.relion_coarse_operands import _k1_relion_f32_coarse_support_enabled
+from relax.relion.relion_coarse_operands import k1_relion_f32_coarse_support_enabled
 from relax.scoring.coarse_gaussian_gemm import _K1_RELION_F32_COARSE_SUPPORT_ENV
 
 
@@ -195,9 +195,9 @@ def test_relion_cuda_f32_tail_target_preserves_text_to_float_semantics():
 
 def test_relion_f32_coarse_support_gate_honors_scoped_default(monkeypatch):
     monkeypatch.delenv(_K1_RELION_F32_COARSE_SUPPORT_ENV, raising=False)
-    assert not _k1_relion_f32_coarse_support_enabled()
-    assert _k1_relion_f32_coarse_support_enabled(default=True)
+    assert not k1_relion_f32_coarse_support_enabled()
+    assert k1_relion_f32_coarse_support_enabled(default=True)
     monkeypatch.setenv(_K1_RELION_F32_COARSE_SUPPORT_ENV, "0")
-    assert not _k1_relion_f32_coarse_support_enabled(default=True)
+    assert not k1_relion_f32_coarse_support_enabled(default=True)
     monkeypatch.setenv(_K1_RELION_F32_COARSE_SUPPORT_ENV, "1")
-    assert _k1_relion_f32_coarse_support_enabled()
+    assert k1_relion_f32_coarse_support_enabled()

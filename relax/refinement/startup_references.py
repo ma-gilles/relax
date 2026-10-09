@@ -116,7 +116,7 @@ def load_k1_reference(
     from recovar.utils.helpers import load_relion_volume
 
     init_vol_real = load_relion_volume(path).astype(real_dtype)
-    model_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(path)
+    model_pixel_size = relion_metadata.read_relion_mrc_model_pixel_size(path)
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise SystemExit(f"Initial RELION reference has invalid voxel size {model_pixel_size}: {path}")
     assert init_vol_real.shape == volume_shape, f"Volume shape mismatch: {init_vol_real.shape} vs {volume_shape}"
@@ -172,11 +172,11 @@ def load_class_references(
     """
     from recovar.utils.helpers import load_relion_volume
 
-    model_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(paths[0])
+    model_pixel_size = relion_metadata.read_relion_mrc_model_pixel_size(paths[0])
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise SystemExit(f"Initial RELION reference has invalid voxel size {model_pixel_size}: {paths[0]}")
     for p in paths[1:]:
-        header_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(p)
+        header_pixel_size = relion_metadata.read_relion_mrc_model_pixel_size(p)
         if abs(header_pixel_size - model_pixel_size) > 0.001:
             raise SystemExit(
                 f"Class references have different pixel sizes in their headers: {model_pixel_size} A "

@@ -607,18 +607,18 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     )
 
     pixel_indices = np.asarray([11, 0, 4, 4], dtype=np.int32)
-    compact_result = relion_ctf._relion_exact_ctf_half_from_source_star_host(
+    compact_result = relion_ctf.relion_exact_ctf_half_from_source_star_host(
         dataset,
         np.asarray([0, 0], dtype=np.int32),
         (4, 4),
         pixel_indices=pixel_indices,
     )
-    host_result = relion_ctf._relion_exact_ctf_half_from_source_star_host(
+    host_result = relion_ctf.relion_exact_ctf_half_from_source_star_host(
         dataset,
         np.asarray([0], dtype=np.int32),
         (4, 4),
     )
-    device_result = relion_ctf._relion_exact_ctf_half_from_source_star(
+    device_result = relion_ctf.relion_exact_ctf_half_from_source_star(
         dataset,
         np.asarray([0], dtype=np.int32),
         (4, 4),
@@ -640,7 +640,7 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     with pytest.raises(ValueError, match="read-only"):
         compact_result[:] = 99.0
     assert_matches(
-        relion_ctf._relion_exact_ctf_half_from_source_star_host(
+        relion_ctf.relion_exact_ctf_half_from_source_star_host(
             dataset,
             np.asarray([0], dtype=np.int32),
             (4, 4),
@@ -1161,7 +1161,7 @@ def test_exact_ctf_compact_indices_reject_invalid_host_geometry(monkeypatch, tmp
     )
     dataset = SimpleNamespace(original_image_indices_from_local=lambda indices: indices)
     with pytest.raises(ValueError):
-        relion_ctf._relion_exact_ctf_half_from_source_star_host(
+        relion_ctf.relion_exact_ctf_half_from_source_star_host(
             dataset,
             np.asarray([0]),
             (4, 4),
@@ -1190,7 +1190,7 @@ def test_exact_ctf_compact_indices_never_materialize_device_inputs(monkeypatch, 
     dataset = SimpleNamespace(original_image_indices_from_local=lambda indices: indices)
     for indices in (DeviceOnly(), jnp.asarray([0], dtype=jnp.int32)):
         with pytest.raises(TypeError, match="host NumPy array"):
-            relion_ctf._relion_exact_ctf_half_from_source_star_host(
+            relion_ctf.relion_exact_ctf_half_from_source_star_host(
                 dataset,
                 np.asarray([0]),
                 (4, 4),

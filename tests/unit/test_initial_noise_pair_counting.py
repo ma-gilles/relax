@@ -57,7 +57,7 @@ def test_image_spectrum_follows_the_counting_rule(counting, size):
 
 
 def test_default_spectrum_is_relions():
-    assert startup_noise._POWER_SPECTRUM["relion"] is initial_noise._radial_power_spectrum
+    assert startup_noise._POWER_SPECTRUM["relion"] is initial_noise.radial_power_spectrum
     images = [_image(8, seed) for seed in range(3)]
     kwargs = dict(
         box_size=8, pixel_size=1.0, particle_diameter_ang=8.0, width_mask_edge_px=2, do_zero_mask=False,

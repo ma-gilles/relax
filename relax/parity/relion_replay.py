@@ -2211,7 +2211,7 @@ def _build_replay_iteration_overrides(
         m1 = _sf.read(str(model_paths[0]))
         m2 = _sf.read(str(model_paths[1]))
 
-        replay_identity_rows = relion_metadata._particle_identity_rows(
+        replay_identity_rows = relion_metadata.particle_identity_rows(
             parts,
             label=f"RELION replay STAR {data_star}",
         )

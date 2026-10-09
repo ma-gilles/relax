@@ -12,11 +12,11 @@ import numpy as np
 
 from relax.helpers.image_shifts import tiled_half_image_phase_factors
 from relax.relion.relion_coarse_operands import (
-    _assemble_relion_exact_coarse_gaussian_operands,
-    _process_relion_exact_coarse_half_image,
-    _relion_cc_inverse_power_from_processed,
-    _repeat_pad_batch_axis,
     assemble_relion_cc_coarse_operands,
+    assemble_relion_exact_coarse_gaussian_operands,
+    process_relion_exact_coarse_half_image,
+    relion_cc_inverse_power_from_processed,
+    repeat_pad_batch_axis,
 )
 from relax.scoring.gaussian_plan import CoarseGaussianPlan
 from relax.scoring.pass1_batch import BatchInputs
@@ -85,7 +85,7 @@ class GaussianOperandPlan:
 
         from relax.helpers.half_spectrum import redundant_nyquist_column_pixels
 
-        processed_direct = _process_relion_exact_coarse_half_image(
+        processed_direct = process_relion_exact_coarse_half_image(
             self.experiment_dataset,
             batch.batch_data,
             self.score_with_masked_images,
@@ -100,7 +100,7 @@ class GaussianOperandPlan:
                 jnp.zeros((), dtype=processed_direct.dtype),
                 processed_direct,
             )
-        operands = _assemble_relion_exact_coarse_gaussian_operands(
+        operands = assemble_relion_exact_coarse_gaussian_operands(
             self.experiment_dataset,
             processed_direct,
             indices,
@@ -163,9 +163,9 @@ class CcOperandPlan:
         """The normalized-CC operands of ``batch``, whose images are the dataset images ``indices``."""
 
         from relax.cuda import kernels as em_cuda_kernels
-        from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
+        from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
 
-        processed = _process_relion_exact_coarse_half_image(
+        processed = process_relion_exact_coarse_half_image(
             self.experiment_dataset,
             batch.batch_data,
             self.score_with_masked_images,
@@ -177,18 +177,18 @@ class CcOperandPlan:
             shifts = np.asarray(self.image_pre_shifts)[np.asarray(indices)]
             phase_factors = tiled_half_image_phase_factors(
                 self.image_shape,
-                jnp.asarray(_repeat_pad_batch_axis(shifts, batch.batch_size)),
+                jnp.asarray(repeat_pad_batch_axis(shifts, batch.batch_size)),
                 1,
             )
         # The padded rows of a short last batch repeat its first image's CTF row.
         operands = assemble_relion_cc_coarse_operands(
             processed,
-            _relion_exact_ctf_half_from_source_star(
+            relion_exact_ctf_half_from_source_star(
                 self.experiment_dataset,
-                _repeat_pad_batch_axis(np.asarray(indices), batch.batch_size),
+                repeat_pad_batch_axis(np.asarray(indices), batch.batch_size),
                 self.image_shape,
             ),
-            _relion_cc_inverse_power_from_processed(
+            relion_cc_inverse_power_from_processed(
                 processed,
                 self.window_indices,
                 self.support_power_weights,

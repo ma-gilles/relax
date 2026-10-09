@@ -65,14 +65,14 @@ def test_device_cache_matches_the_host_gather_with_evictions(monkeypatch, tmp_pa
 
     monkeypatch.setitem(relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE, (str(star), (size, size)), _cache(n_particles, size))
     host = [
-        relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, r, (size, size), pixel_indices=p)
+        relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, r, (size, size), pixel_indices=p)
         for r, p in requests
     ]
 
     cache = _cache(n_particles, size)
     monkeypatch.setitem(relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE, (str(star), (size, size)), cache)
     for (request, pixel_indices), expected in zip(requests, host):
-        actual = relion_ctf._relion_exact_ctf_half_from_source_star(
+        actual = relion_ctf.relion_exact_ctf_half_from_source_star(
             dataset, request, (size, size), pixel_indices=pixel_indices
         )
         assert actual.dtype == np.float64

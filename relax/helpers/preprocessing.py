@@ -113,9 +113,9 @@ def _dense_batch_ctf_half(experiment_dataset, ctf_params, config, ctf_real_dtype
     from relax.relion.optics_aberrations import dataset_needs_exact_ctf
 
     if image_indices is not None and dataset_needs_exact_ctf(experiment_dataset):
-        from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
+        from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
 
-        rows = _relion_exact_ctf_half_from_source_star(experiment_dataset, image_indices, config.image_shape)
+        rows = relion_exact_ctf_half_from_source_star(experiment_dataset, image_indices, config.image_shape)
         return rows.astype(jnp.float32 if ctf_real_dtype is None else ctf_real_dtype)
     if ctf_real_dtype is not None:
         ctf_params = jnp.asarray(ctf_params, dtype=ctf_real_dtype)

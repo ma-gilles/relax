@@ -195,7 +195,7 @@ def test_exact_ctf_rows_carry_the_even_zernike_gamma_offset(tmp_path):
         pytest.skip("the RELION binding predates the optics bindings")
     star = _write_star(tmp_path / "particles.star", tilt=None, odd=None, even=EVEN)
     dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
-    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0, 1]), (BOX, BOX))
+    rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0, 1]), (BOX, BOX))
     gamma = oa.zernike_phase_fftw_half(oa.parse_relion_vector(EVEN), oa.even_index_to_mn, BOX, PIXEL, BOX)
     expected = [
         _relion_ctf_reference(20000.0, 19000.0, 40.0, 200.0, 2.0, 0.1, BOX, PIXEL, gamma),  # group 2
@@ -215,7 +215,7 @@ def test_exact_ctf_rows_carry_the_magnification(tmp_path):
         pytest.skip("the RELION binding predates the optics bindings")
     star = _write_star(tmp_path / "particles.star", tilt=None, odd=None, even=EVEN, mag=MAG)
     dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
-    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0]), (BOX, BOX))
+    rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0]), (BOX, BOX))
     gamma = oa.zernike_phase_fftw_half(oa.parse_relion_vector(EVEN), oa.even_index_to_mn, BOX, PIXEL, BOX, MAG)
     expected = _relion_ctf_reference(20000.0, 19000.0, 40.0, 200.0, 2.0, 0.1, BOX, PIXEL, gamma, mag=MAG)
     assert_matches(rows[0], -np.fft.fftshift(expected, axes=0).reshape(-1), rtol=1e-12)
@@ -309,7 +309,7 @@ def test_relax_ctf_rows_match_relion_observation_model(tmp_path, even, mag):
         pytest.skip("the RELION binding predates the optics bindings")
     star = _write_star(tmp_path / "particles.star", tilt=None, odd=None, even=even, mag=mag, mag_both=True)
     dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
-    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0, 1, 2]), (BOX, BOX))
+    rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([0, 1, 2]), (BOX, BOX))
     params = np.asarray([[20000.0, 19000.0, 40.0, 0.0, 1.0, 0.0, g] for g in (2, 1, 2)])
     relion = np.asarray(relion_bind.optics_ctf_images_batch(str(star), params, BOX, BOX, False, 1))
     assert_matches(rows, np.stack([-np.fft.fftshift(r, axes=0).reshape(-1) for r in relion]), rtol=1e-12)

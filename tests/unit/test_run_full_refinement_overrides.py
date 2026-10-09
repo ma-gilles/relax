@@ -69,8 +69,8 @@ from relax.relion.initial_noise import (
 )
 from relax.relion.input_particle_table import prepare_relion_halfset_layout
 from relax.relion.relion_metadata import (
-    _parse_relion_cli_ini_high,
     _parse_relion_tau2_fudge,
+    parse_relion_cli_ini_high,
 )
 
 FIXTURE = fixture_root("k1_5k128_relion_os0")
@@ -766,12 +766,12 @@ def _read_relion_sigma(model_star: Path) -> float:
 
 def test_parse_relion_cli_ini_high_reads_positive_cli_value():
     text = "# --i particles.star --firstiter_cc --ini_high 30 --ctf\n"
-    assert _parse_relion_cli_ini_high(text) == pytest.approx(30.0)
+    assert parse_relion_cli_ini_high(text) == pytest.approx(30.0)
 
 
 def test_parse_relion_cli_ini_high_is_none_when_absent_or_disabled():
-    assert _parse_relion_cli_ini_high("# --i particles.star --firstiter_cc --ctf\n") is None
-    assert _parse_relion_cli_ini_high("# --i particles.star --firstiter_cc --ini_high -1 --ctf\n") is None
+    assert parse_relion_cli_ini_high("# --i particles.star --firstiter_cc --ctf\n") is None
+    assert parse_relion_cli_ini_high("# --i particles.star --firstiter_cc --ini_high -1 --ctf\n") is None
 
 
 @pytest.mark.parametrize(

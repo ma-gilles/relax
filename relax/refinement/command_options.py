@@ -397,7 +397,7 @@ def parse_refinement_args(argv=None):
         description="RELION-equivalent 3D auto-refine (relax refine, K=1) and 3D classification "
         "(relax class3d, K>1). See docs/user_guide.md."
     )
-    input_poses._add_initial_pose_source_argument(parser)
+    input_poses.add_initial_pose_source_argument(parser)
     parser.add_argument(
         "--sym", default="C1", type=canonicalize_rotational_symmetry,
         help="RELION proper rotational point group: Cn, Dn, T, O, or I/I1/I2/I3/I4.",
@@ -1362,7 +1362,7 @@ def resolve_relion_runtime_controls(
                 optimiser_star,
             )
         optimiser_text = Path(optimiser_star).read_text(errors="ignore")
-        relion_firstiter_ini_high_angstrom = relion_metadata._parse_relion_cli_ini_high(optimiser_text)
+        relion_firstiter_ini_high_angstrom = relion_metadata.parse_relion_cli_ini_high(optimiser_text)
         if firstiter_cc:
             if relion_firstiter_ini_high_angstrom is None:
                 log.info(
@@ -1383,7 +1383,7 @@ def resolve_relion_runtime_controls(
             "maximum_significants_arg"
         )
         if optimiser_max_significants is None:
-            optimiser_max_significants = relion_metadata._load_relion_max_significants(optimiser_star)
+            optimiser_max_significants = relion_metadata.load_relion_max_significants(optimiser_star)
             relion_optimiser_metadata = dict(relion_optimiser_metadata)
             relion_optimiser_metadata["maximum_significants_arg"] = (
                 optimiser_max_significants

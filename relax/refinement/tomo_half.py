@@ -173,10 +173,10 @@ def tilt_left_matrices(images, image_projections, image_rows) -> np.ndarray:
     from recovar.data_io.starfile import star_column
 
     from relax.relion import optics_aberrations
-    from relax.relion.relion_ctf import _exact_ctf_source_cache
+    from relax.relion.relion_ctf import exact_ctf_source_cache
 
     image_projections = np.asarray(image_projections, dtype=np.float64)
-    _, cache = _exact_ctf_source_cache(images, tuple(int(n) for n in images.image_shape))
+    _, cache = exact_ctf_source_cache(images, tuple(int(n) for n in images.image_shape))
     labels = {str(label).lstrip("_") for row in cache["optics"].values() for label in row.keys()}
     if not any(label.startswith("rlnMagMat") for label in labels):
         return image_projections

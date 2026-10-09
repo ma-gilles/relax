@@ -65,7 +65,7 @@ from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.tomo_half import local_tomo_sampling, score_tomo_half_in_loop
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
-from relax.relion.relion_metadata import _relion_metadata_translations
+from relax.relion.relion_metadata import relion_metadata_translations
 
 # The numbered controller's log: the final pass logs under its name.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -552,7 +552,7 @@ def run_final_all_data(
                     optics=final_inputs.optics,
                 )
         if final_result.best_pose_translations is not None:
-            final_result.best_pose_translations = _relion_metadata_translations(
+            final_result.best_pose_translations = relion_metadata_translations(
                 half.translations,
                 final_result.best_pose_translations,
                 own_pixel_factors=image_translation_factors(half.dataset),

@@ -1,6 +1,6 @@
 """The cached RELION CTF batch gather must not depend on how it is cached.
 
-`_relion_exact_ctf_half_from_source_star_host` used to hold one NumPy row per
+`relion_exact_ctf_half_from_source_star_host` used to hold one NumPy row per
 particle in a dict and rebuild each batch with a Python loop, one small gather
 per image. On a K=1 100k/256 run that loop was 38.5 s of self time, 9.4% of the
 whole run, so the rows moved into a single block gathered in one indexing
@@ -52,7 +52,7 @@ def test_cached_ctf_batch_preserves_order_and_duplicates(populated_cache):
     dataset, rows = populated_cache
     indices = np.asarray([3, 0, 3, 1], dtype=np.int64)
 
-    out = relion_ctf._relion_exact_ctf_half_from_source_star_host(
+    out = relion_ctf.relion_exact_ctf_half_from_source_star_host(
         dataset, indices, (4, 4),
     )
 
@@ -68,7 +68,7 @@ def test_cached_ctf_batch_selects_requested_pixels(populated_cache):
     # Unsorted, with a repeat: column order and duplication must be preserved.
     pixel_indices = np.asarray([7, 0, 7, 11], dtype=np.int64)
 
-    out = relion_ctf._relion_exact_ctf_half_from_source_star_host(
+    out = relion_ctf.relion_exact_ctf_half_from_source_star_host(
         dataset, indices, (4, 4), pixel_indices=pixel_indices,
     )
 
@@ -93,7 +93,7 @@ def test_cached_ctf_batch_fails_closed_on_an_unevaluated_row(populated_cache, mo
     )
 
     with pytest.raises(Exception):
-        relion_ctf._relion_exact_ctf_half_from_source_star_host(
+        relion_ctf.relion_exact_ctf_half_from_source_star_host(
             dataset, np.asarray([1], dtype=np.int64), (4, 4),
         )
 
@@ -133,7 +133,7 @@ def test_exact_ctf_takes_relion_defaults_for_absent_ctf_columns(monkeypatch, tmp
          "slots": np.full(2, -1, dtype=np.int64), "rows": None, "n_cached": 0},
     )
 
-    relion_ctf._relion_exact_ctf_half_from_source_star_host(
+    relion_ctf.relion_exact_ctf_half_from_source_star_host(
         SimpleNamespace(particles_file=str(star)), np.asarray([0, 1], dtype=np.int64), (4, 4)
     )
 

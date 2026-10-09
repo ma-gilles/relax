@@ -13,7 +13,7 @@ from relax.helpers.orientation_priors import relion_translation_search_base
 from relax.helpers.shells import shell_index
 
 
-def _relion_metadata_translations(
+def relion_metadata_translations(
     previous_best_translations,
     selected_relative_translations,
     *,
@@ -62,7 +62,7 @@ def _relion_half_plane_shell_counts(image_shape):
     return np.bincount(shells[keep], minlength=n_shells).astype(np.float64)
 
 
-def _radial_profile_from_noise_variance(noise_variance, image_shape):
+def radial_profile_from_noise_variance(noise_variance, image_shape):
     """Average an image-shaped noise vector into integer radial shells."""
     n_shells = image_shape[0] // 2 + 1
     radial_dist = np.clip(
@@ -261,7 +261,7 @@ def _relion_star_list_value(text: str, label: str, cast=str):
     return cast(tokens[0])
 
 
-def _load_relion_mask_params(optimiser_star_path):
+def load_relion_mask_params(optimiser_star_path):
     """Extract RELION image-mask parameters from an optimiser STAR file.
 
     Each value is the whole token RELION wrote: ``%12.6f``, ``%12.5f`` for a negative value and ``e``
@@ -284,7 +284,7 @@ def _load_relion_mask_params(optimiser_star_path):
 
 
 
-def _load_relion_max_significants(optimiser_star_path):
+def load_relion_max_significants(optimiser_star_path):
     """Extract RELION's saved maximum-significant-poses argument from an optimiser STAR."""
     text = Path(optimiser_star_path).read_text(errors="ignore")
 
@@ -297,7 +297,7 @@ def _load_relion_max_significants(optimiser_star_path):
 
 
 
-def _parse_relion_cli_ini_high(text):
+def parse_relion_cli_ini_high(text):
     """Extract a positive RELION ``--ini_high`` value from an optimiser STAR header."""
     cli_line = ""
     for line in str(text).splitlines():
@@ -351,7 +351,7 @@ def read_relion_reference_star(ref_star_path):
     return paths, distribution
 
 
-def _read_relion_mrc_model_pixel_size(path):
+def read_relion_mrc_model_pixel_size(path):
     """Read RELION's binary64 sampling rate from MRC cell length/grid size.
 
     ``mrcfile.voxel_size`` performs the division in float32.  RELION retains
@@ -416,7 +416,7 @@ def _relion_image_identity(name, *, label: str) -> tuple[int, str]:
 
 
 
-def _particle_identity_rows(particles, *, label: str) -> dict[tuple[int, str], int]:
+def particle_identity_rows(particles, *, label: str) -> dict[tuple[int, str], int]:
     if "rlnTomoParticleName" in particles.columns:
         # A subtomogram particle's rlnImageName is its whole 2D stack; its name identifies it.
         identities = [(0, str(name)) for name in np.asarray(particles["rlnTomoParticleName"]).reshape(-1)]

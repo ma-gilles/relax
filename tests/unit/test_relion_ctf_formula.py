@@ -133,7 +133,7 @@ def test_exact_ctf_rows_are_relions_in_recovar_frame(tmp_path, monkeypatch):
         "1@s.mrcs 21000 20000 30 0 1.0 0 1\n2@s.mrcs 15000 15800 110 20 0.9 80 2\n"
     )
     dataset = SimpleNamespace(particles_file=str(star))
-    rows = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([1, 0]), (box, box))
+    rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([1, 0]), (box, box))
     params = np.asarray(
         [
             [15000.0, 15800.0, 110.0, 200.0, 2.0, 0.1, 80.0, 0.9, 20.0],

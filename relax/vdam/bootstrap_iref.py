@@ -256,7 +256,7 @@ def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
 
     if not dataset_needs_exact_ctf(dataset):
         return None
-    _, cache = relion_ctf._exact_ctf_source_cache(dataset, (int(box_size), int(box_size)))
+    _, cache = relion_ctf.exact_ctf_source_cache(dataset, (int(box_size), int(box_size)))
     original = np.asarray(relion_ctf.original_image_indices(dataset, np.asarray(image_indices, dtype=np.int64)))
     groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[original]
     gamma_by_group = {}

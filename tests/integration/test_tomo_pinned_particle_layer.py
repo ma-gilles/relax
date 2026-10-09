@@ -128,7 +128,7 @@ def pinned():
         dataset=load_dataset(str(flat), datadir=str(project_dir.resolve()), lazy=True, dtype=np.complex128),
         ctf=lambda imgs: (
             -np.fft.ifftshift(
-                relion_ctf._relion_exact_ctf_half_from_source_star_host(
+                relion_ctf.relion_exact_ctf_half_from_source_star_host(
                     SimpleNamespace(particles_file=str(flat)), imgs, (n, n)
                 ).reshape(-1, n, n // 2 + 1),
                 axes=1,

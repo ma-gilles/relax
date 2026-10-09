@@ -6558,7 +6558,7 @@ class TestRelionModeSmokeTest:
         monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
         monkeypatch.setattr(
             relion_ctf,
-            "_relion_exact_ctf_half_from_source_star",
+            "relion_exact_ctf_half_from_source_star",
             lambda _dataset, indices, image_shape: jnp.ones(
                 (
                     len(indices),

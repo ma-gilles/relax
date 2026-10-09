@@ -92,7 +92,7 @@ def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
     Tomograms with identical frame lists share a group.
     """
     from relax.helpers.batch_fetch import fetch_indexed_batch
-    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
+    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
 
     offsets = np.asarray(tomo.unit_image_offsets, dtype=np.int64)
     projections = np.asarray(tomo.image_projections, dtype=np.float64)
@@ -138,7 +138,7 @@ def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
         if not np.array_equal(np.asarray(fetched), rows):
             raise RuntimeError("the dataset returned the tilt images in another order")
         half = dataset.process_images_half(jnp.asarray(images), apply_image_mask=False).reshape(rows.size, -1)
-        ctf = _relion_exact_ctf_half_from_source_star(dataset, rows, image_shape)
+        ctf = relion_exact_ctf_half_from_source_star(dataset, rows, image_shape)
         return np.asarray(images), half.astype(jnp.complex64), jnp.asarray(ctf, jnp.float32)
 
     return TiltParticles(

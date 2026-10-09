@@ -170,9 +170,9 @@ def optics_group_odd_coefficients(optics_row, *, has_odd: bool, has_tilt: bool) 
 
 
 def _source_tables(experiment_dataset, image_shape):
-    from relax.relion.relion_ctf import _exact_ctf_source_cache
+    from relax.relion.relion_ctf import exact_ctf_source_cache
 
-    return _exact_ctf_source_cache(experiment_dataset, image_shape)
+    return exact_ctf_source_cache(experiment_dataset, image_shape)
 
 
 def _odd_phase_tables(experiment_dataset, image_shape):
@@ -468,13 +468,13 @@ def expected_accuracy_optics(experiment_dataset, trial_local_indices):
     optics table (:func:`dataset_needs_exact_ctf`).
     """
 
-    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star_host
+    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star_host
 
     if not dataset_needs_exact_ctf(experiment_dataset):
         return None
     size, width = (int(s) for s in experiment_dataset.image_shape)
     rows = np.asarray(
-        _relion_exact_ctf_half_from_source_star_host(
+        relion_exact_ctf_half_from_source_star_host(
             experiment_dataset, np.asarray(trial_local_indices, dtype=np.int64), (size, width)
         ),
         dtype=np.float64,

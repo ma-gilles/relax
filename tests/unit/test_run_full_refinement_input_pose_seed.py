@@ -12,11 +12,11 @@ import starfile
 from helpers.float_compare import assert_matches
 
 from relax.relion.input_poses import (
-    _add_initial_pose_source_argument,
     _initial_corrections_from_norm,
     _load_input_star_class3d_translations,
     _load_input_star_previous_best_poses,
     _resolve_input_star_pose_seed,
+    add_initial_pose_source_argument,
     prepare_initial_poses,
 )
 
@@ -347,7 +347,7 @@ def test_input_star_norm_corrections_reject_nonpositive_or_nonfinite(bad_value):
 
 def test_initial_pose_source_cli_defaults_to_fresh_k1_halfset_auto():
     parser = argparse.ArgumentParser()
-    _add_initial_pose_source_argument(parser)
+    add_initial_pose_source_argument(parser)
 
     assert parser.parse_args([]).initial_pose_source == "auto"
     assert parser.parse_args(["--initial-pose-source", "input-star"]).initial_pose_source == "input-star"

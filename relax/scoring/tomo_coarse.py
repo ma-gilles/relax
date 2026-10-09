@@ -119,10 +119,10 @@ def tilt_image_coarse_operands(
     from relax.helpers.optics_noise import noise_rows
     from relax.helpers.preprocessing import prepare_batch_preprocess_operands
     from relax.relion.relion_coarse_operands import (
-        _process_relion_exact_coarse_half_image,
-        _relion_exact_coarse_operands,
+        process_relion_exact_coarse_half_image,
+        relion_exact_coarse_operands,
     )
-    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star_host
+    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star_host
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_powerclass_highres_xi2_half
 
     image_indices = np.asarray(image_indices, dtype=np.int64)
@@ -137,17 +137,17 @@ def tilt_image_coarse_operands(
     if not relion_cuda:
         raise RuntimeError("the subtomogram coarse pass needs the RELION CUDA image preprocessing")
     # The image indices demodulate odd aberrations, as RELION does for every tilt image (ml_optimiser.cpp:6418).
-    processed = _process_relion_exact_coarse_half_image(
+    processed = process_relion_exact_coarse_half_image(
         experiment_dataset,
         batch_data,
         score_with_masked_images,
         relion_preprocess_kwargs=preprocess_kwargs,
         image_indices=image_indices,
     )
-    ctf = _relion_exact_ctf_half_from_source_star_host(
+    ctf = relion_exact_ctf_half_from_source_star_host(
         experiment_dataset, image_indices, layout.image_shape, pixel_indices=layout.score_indices_np
     )
-    unshifted, pixel_weight = _relion_exact_coarse_operands(
+    unshifted, pixel_weight = relion_exact_coarse_operands(
         jnp.asarray(ctf, dtype=jnp.float64),
         jnp.asarray(batch_scale, dtype=jnp.float32),
         processed,
@@ -1398,11 +1398,11 @@ def tilt_image_cc_coarse_operands(experiment_dataset, image_indices, window_indi
     from relax.helpers.batch_fetch import fetch_indexed_batch
     from relax.helpers.preprocessing import prepare_batch_preprocess_operands
     from relax.relion.relion_coarse_operands import (
-        _process_relion_exact_coarse_half_image,
-        _relion_cc_inverse_power_from_processed,
         assemble_relion_cc_coarse_operands,
+        process_relion_exact_coarse_half_image,
+        relion_cc_inverse_power_from_processed,
     )
-    from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
+    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
 
     image_indices = np.asarray(image_indices, dtype=np.int64)
     batch_data, _ctf_params, fetched = fetch_indexed_batch(experiment_dataset, image_indices)
@@ -1414,14 +1414,14 @@ def tilt_image_cc_coarse_operands(experiment_dataset, image_indices, window_indi
     )
     if not relion_cuda:
         raise RuntimeError("the subtomogram coarse pass needs the RELION CUDA image preprocessing")
-    processed = _process_relion_exact_coarse_half_image(
+    processed = process_relion_exact_coarse_half_image(
         experiment_dataset, batch_data, True, relion_preprocess_kwargs=preprocess_kwargs, image_indices=image_indices
     )
     window = jnp.asarray(window_indices, dtype=jnp.int32)
     operands = assemble_relion_cc_coarse_operands(
         processed,
-        _relion_exact_ctf_half_from_source_star(experiment_dataset, image_indices, experiment_dataset.image_shape),
-        _relion_cc_inverse_power_from_processed(processed, window),
+        relion_exact_ctf_half_from_source_star(experiment_dataset, image_indices, experiment_dataset.image_shape),
+        relion_cc_inverse_power_from_processed(processed, window),
         jnp.asarray(batch_scale, dtype=jnp.float32),
         phase_factors=None,
         window_indices=window,

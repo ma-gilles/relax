@@ -33,7 +33,7 @@ def _k2_inputs(monkeypatch):
     args = _driver_fixture_args(seed=20260929)
     dataset = args.pop("experiment_dataset")
     _install_native_preprocessing(dataset)
-    monkeypatch.setattr(relion_ctf, "_relion_exact_ctf_half_from_source_star", _variable_ctf_rows)
+    monkeypatch.setattr(relion_ctf, "relion_exact_ctf_half_from_source_star", _variable_ctf_rows)
     for name in (
         "volume",
         "noise_variance",

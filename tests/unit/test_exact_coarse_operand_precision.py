@@ -38,7 +38,7 @@ def test_exact_coarse_assembly_precision_and_padding(
     # The assembler asks for the padded batch's indices (row 0 repeated).
     monkeypatch.setattr(
         relion_ctf,
-        "_relion_exact_ctf_half_from_source_star",
+        "relion_exact_ctf_half_from_source_star",
         lambda _dataset, indices, _shape, *, pixel_indices: jnp.asarray(ctf[np.asarray(indices)][:, pixel_indices]),
     )
     seen = []
@@ -63,7 +63,7 @@ def test_exact_coarse_assembly_precision_and_padding(
         assert images.shape == (batch_size, 12)
         return jnp.zeros(images.shape[0], dtype=real_dtype)
 
-    result = relion_coarse_operands._assemble_relion_exact_coarse_gaussian_operands(
+    result = relion_coarse_operands.assemble_relion_exact_coarse_gaussian_operands(
         object(),
         source_images,
         np.arange(2),
