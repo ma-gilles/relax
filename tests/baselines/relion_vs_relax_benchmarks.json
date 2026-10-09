@@ -14533,8 +14533,8 @@
     "masked_band_auc": null
    },
    "relax": {
-    "source_sha": "d046c0a2120fa19a6fd624fc0b05a8fc68575c8a",
-    "source_repo": "speed and two of the five seed-42 runs: relax main 1c57fb73 (2026-10-06 benchmark freeze, frozen snapshot relax_bench_refresh_20261003/cand_1c57fb7, contains b92be02); the other three runs: etoptics' b92be02 patch 473f291 on afa5028; production defaults",
+    "source_sha": "a4aa751c",
+    "source_repo": "relax main a4aa751c (verdict runs; magnification/scale projection-matrix precision fix 411ed2c1 + local-row provenance a4aa751c); earlier source: speed and two of the five seed-42 runs: relax main 1c57fb73 (2026-10-06 benchmark freeze, frozen snapshot relax_bench_refresh_20261003/cand_1c57fb7, contains b92be02); the other three runs: etoptics' b92be02 patch 473f291 on afa5028; production defaults",
     "resolution_A": null,
     "resolution_definition": "half_fsc_0143",
     "masked_resolution_A": 4.317,
@@ -15009,8 +15009,8 @@
     ]
    },
    "relax": {
-    "source_sha": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
-    "source_repo": "relax main 1c57fb73 (2026-10-06 benchmark freeze, frozen snapshot relax_bench_refresh_20261003/cand_1c57fb7, contains b92be02), production defaults; every seed rerun on it",
+    "source_sha": "a4aa751c",
+    "source_repo": "relax main a4aa751c (verdict runs; magnification/scale projection-matrix precision fix 411ed2c1 + local-row provenance a4aa751c); earlier source: relax main 1c57fb73 (2026-10-06 benchmark freeze, frozen snapshot relax_bench_refresh_20261003/cand_1c57fb7, contains b92be02), production defaults; every seed rerun on it",
     "resolution_A": 15.542857,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
@@ -16455,8 +16455,8 @@
     ]
    },
    "relax": {
-    "source_sha": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
-    "source_repo": "relax main f6c8299 (frozen snapshot relax_bench_refresh_20261003/cand_f6c8299, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot), production defaults",
+    "source_sha": "364dba796607f53614d6eedbe7ac598046ea4761",
+    "source_repo": "relax main 364dba79 (contains #52 6b500e7f, 411ed2c1 + a4aa751c, #56/#58), frozen at relax_scorew_20261008/cand_364dba79 (natives of landw's medium_fwd_364dba79 build, checked)",
     "resolution_A": null,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
@@ -16466,7 +16466,7 @@
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14956563"
+     "15279717"
     ],
     "masked_band_auc": null,
     "quality_jobs": [
@@ -16478,15 +16478,15 @@
    "gt": {
     "metric": "mean per-class GT FSC-AUC (plain mean over the 2 GT classes), masked with the frozen mask multioptics_k2_c1 (classes matched to GT by Hungarian on unmasked AUC; tools/score_class3d.py); RELION reference = patched GPU RELION (relax#12 fix)",
     "relion": 0.463361,
-    "relax": 0.466423,
+    "relax": 0.463704,
     "relion_band": [
      0.423856,
      0.466109
     ],
     "relax_per_seed": {
-     "1": 0.466423,
-     "2": 0.470061,
-     "3": 0.425485
+     "1": 0.463704,
+     "2": 0.46488,
+     "3": 0.42421
     },
     "relion_per_seed": {
      "1": [
@@ -16501,24 +16501,24 @@
     },
     "relax_runs_per_seed": {
      "1": [
-      0.466423
+      0.463704
      ],
      "2": [
-      0.470061
+      0.46488
      ],
      "3": [
-      0.425485
+      0.42421
      ]
     },
     "class_accuracy_relax_per_seed": {
      "1": [
-      0.7137
+      0.7127
      ],
      "2": [
-      0.7347
+      0.7275
      ],
      "3": [
-      0.7044
+      0.7065
      ]
     },
     "class_accuracy_relion_per_seed": {
@@ -16534,13 +16534,13 @@
     },
     "unmasked_relax_per_seed": {
      "1": [
-      0.465876
+      0.46323
      ],
      "2": [
-      0.469476
+      0.464335
      ],
      "3": [
-      0.425052
+      0.423747
      ]
     },
     "unmasked_relion_per_seed": {
@@ -16556,9 +16556,9 @@
      ]
     },
     "relax_seed_provenance": {
-     "1": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
-     "2": "a7683d504b7d6e795f6a2826f3b16e945fcfdfca",
-     "3": "a7683d504b7d6e795f6a2826f3b16e945fcfdfca"
+     "1": "364dba796607f53614d6eedbe7ac598046ea4761",
+     "2": "364dba796607f53614d6eedbe7ac598046ea4761",
+     "3": "364dba796607f53614d6eedbe7ac598046ea4761"
     },
     "relion_cpu_per_seed_history": {
      "1": [
@@ -16590,8 +16590,8 @@
      "3": 0.403926
     },
     "paired_mean_se_vs_patched_gpu": [
-     0.00288,
-     0.00068
+     -0.000177,
+     0.00053
     ]
    },
    "cross_engine": "same-seed masked relax-vs-RELION CPU FSC-AUC per GT class: seed 1 0.9700/0.9756; seed 2 0.9891/0.9887; seed 3 0.9723/0.9718",
@@ -16607,6 +16607,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Rerun 2026-10-09 on relax main 364dba79 (team-lead, fix-applicability audit: own-pixel offset rounding #52 6b500e7f and the per-path projection-matrix rule 411ed2c1 act on the 112 px / 5.44 A shape class, s = 1.12; #56/#58/#60 do not act here: exact 4.25 A header, no premultiplied CTF, s > 1). Three relax seeds (job 15279717, walls 364-374 s on one H100 each, three runs per node, not quoted): masked mean GT FSC-AUC relax / patched GPU RELION s1 0.463704 / 0.463361; s2 0.464880 / 0.466109; s3 0.424210 / 0.423856; paired -1.8e-04 ± 5.3e-04 (was +0.00288 ± 0.00068). Page verdict hit. Previous relax values s1 0.466423, s2 0.470061, s3 0.425485. Class accuracy relax 0.7127/0.7275/0.7065.",
     "Reference (team-lead 2026-10-08): patched GPU RELION with the relax#12 coarse-plan fix. Qualification (https://github.com/ma-gilles/relax/issues/12#issuecomment-6064299986): on the 112-px group legacy CPU and the patched accelerated path make different but equally accurate choices against the GT poses (median angle error 6.32 vs 6.36 deg, 71.8% vs 71.0% within 10 deg); relax reproduces the accelerated path (0.08% of group-2 poses differ).",
     "Against patched GPU RELION (masked mean GT FSC-AUC per seed, relax / RELION): s1 0.466423 / 0.463361; s2 0.470061 / 0.466109; s3 0.425485 / 0.423856; paired +0.00288 ± 0.00068. Page verdict: hit (worst s3 +0.0016 vs same-seed RELION; inside or above across-seed band). Class accuracy RELION 0.7135/0.7288/0.7073.",
     "History columns: stock CPU RELION (the row's earlier reference) 0.461239/0.469442/0.425192; stock GPU RELION (relax#12 in pass 1) 0.389240/0.402495/0.403926. Patched GPU RELION walls 683-810 s per seed (one H100, job 15228307).",
@@ -16665,11 +16666,18 @@
      "build": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_patched_coarsemag_bpd_20261006",
      "qualification": "https://github.com/ma-gilles/relax/issues/12#issuecomment-6064299986",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/mshape_patched_gpu_rows_20261008.py"
+    },
+    "rerun_364dba79_20261009": {
+     "runs": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r54_364dba79/relax",
+     "tasks": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r54_364dba79/tasks.txt",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r54_364dba79/score_cfg.json",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r54_364dba79/SCORE.json",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/mshape_c3d_364dba79_row_20261009.py"
     }
    },
-   "date": "2026-10-08",
+   "date": "2026-10-09",
    "quality_pass": true,
-   "quality_reason": "worst s3 +0.0016 vs same-seed RELION; inside or above across-seed band; against patched GPU RELION (relax#12 fix)",
+   "quality_reason": "worst s2 −0.0012 vs same-seed RELION; inside across-seed band; against patched GPU RELION (relax#12 fix); relax main 364dba79",
    "feature_reference": "several image shapes (two optics groups, 128 px / 112 px) in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips the scale difference, relax#12) for accuracy, 3 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (cold pairs in one 2-GPU job, seed 1 quoted)",
    "time_check": {
     "a": "relax: Slurm job 14956563 (della-h20g3), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14868236. Not the same job or node: the refresh reran relax only.",
@@ -16830,6 +16838,131 @@
       "Accuracy reference caveat (team-lead 2026-10-03, etw): stock RELION 5.0.1's CPU path phase-shifts trial translations with the model box (ori_size) instead of the optics group's own box (ml_optimiser.cpp:7006, :7034, :7394; ma-gilles/relax#13), so for a group on another box the applied shift is box_g / ori_size times the nominal offset. relax applies the physical shift, as RELION's GPU path does; no patched RELION build is used. Iteration-1 diagnostic (one reference, --firstiter_cc, seed 1; relative L2 difference of the unmasked class-1 map, ||relax - RELION|| / ||RELION||, relax ab91c0f vs stock CPU RELION): 2.0e-3 as is; 2.6e-4 when relax emulates the defect (one uncommitted diagnostic line, recorded in the run's PROVENANCE.txt); 3.3e-4 for the same-shape control fixture multioptics_k2same_10k128_20260930. The row keeps stock CPU RELION as its accuracy reference."
      ],
      "note": "judged against stock CPU RELION before the patched GPU reference (2026-10-08)"
+    },
+    {
+     "date": "2026-10-08",
+     "gt": {
+      "metric": "mean per-class GT FSC-AUC (plain mean over the 2 GT classes), masked with the frozen mask multioptics_k2_c1 (classes matched to GT by Hungarian on unmasked AUC; tools/score_class3d.py); RELION reference = patched GPU RELION (relax#12 fix)",
+      "relion": 0.463361,
+      "relax": 0.466423,
+      "relion_band": [
+       0.423856,
+       0.466109
+      ],
+      "relax_per_seed": {
+       "1": 0.466423,
+       "2": 0.470061,
+       "3": 0.425485
+      },
+      "relion_per_seed": {
+       "1": [
+        0.463361
+       ],
+       "2": [
+        0.466109
+       ],
+       "3": [
+        0.423856
+       ]
+      },
+      "relax_runs_per_seed": {
+       "1": [
+        0.466423
+       ],
+       "2": [
+        0.470061
+       ],
+       "3": [
+        0.425485
+       ]
+      },
+      "class_accuracy_relax_per_seed": {
+       "1": [
+        0.7137
+       ],
+       "2": [
+        0.7347
+       ],
+       "3": [
+        0.7044
+       ]
+      },
+      "class_accuracy_relion_per_seed": {
+       "1": [
+        0.7135
+       ],
+       "2": [
+        0.7288
+       ],
+       "3": [
+        0.7073
+       ]
+      },
+      "unmasked_relax_per_seed": {
+       "1": [
+        0.465876
+       ],
+       "2": [
+        0.469476
+       ],
+       "3": [
+        0.425052
+       ]
+      },
+      "unmasked_relion_per_seed": {
+       "1": [
+        0.460735,
+        0.460735
+       ],
+       "2": [
+        0.468956
+       ],
+       "3": [
+        0.424638
+       ]
+      },
+      "relax_seed_provenance": {
+       "1": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
+       "2": "a7683d504b7d6e795f6a2826f3b16e945fcfdfca",
+       "3": "a7683d504b7d6e795f6a2826f3b16e945fcfdfca"
+      },
+      "relion_cpu_per_seed_history": {
+       "1": [
+        0.461239,
+        0.461239
+       ],
+       "2": [
+        0.469442
+       ],
+       "3": [
+        0.425192
+       ]
+      },
+      "class_accuracy_relion_cpu_history": {
+       "1": [
+        0.7105,
+        0.7105
+       ],
+       "2": [
+        0.7382
+       ],
+       "3": [
+        0.7188
+       ]
+      },
+      "relion_stock_gpu_per_seed_history": {
+       "1": 0.38924,
+       "2": 0.402495,
+       "3": 0.403926
+      },
+      "paired_mean_se_vs_patched_gpu": [
+       0.00288,
+       0.00068
+      ]
+     },
+     "quality_pass": true,
+     "quality_reason": "worst s3 +0.0016 vs same-seed RELION; inside or above across-seed band; against patched GPU RELION (relax#12 fix)",
+     "note": "verdict on relax f6c8299 (s1) / a7683d50 (s2, s3), before #52 6b500e7f and 411ed2c1"
     }
    ]
   },
