@@ -15,7 +15,7 @@ from relax.vdam import bootstrap_reconstruction as br
 from relax.vdam import estep_setup, native_sampling
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
-from relax.vdam.estep_meta_updates import update_noise_from_estep
+from relax.vdam.model_update import update_noise_from_estep
 from relax.vdam.ports import NoProbe
 
 

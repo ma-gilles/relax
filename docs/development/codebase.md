@@ -332,7 +332,7 @@ the trials' optics-table CTFs in the expected accuracy).
 RELION's per-particle `rlnLogLikeliContribution` in InitialModel's data.star (October 3, 2026), which
 VDAM had copied from its input STAR, raises controller to 1,942 (+10: dLL from the E-step's log
 evidence), E-step to 2,148 (+27: the evidence through the E-step meta and
-`estep_meta_updates.relion_log_likelihood_contributions`) and input/output to 1,382 (+1: the writer).
+`particle_update.relion_log_likelihood_contributions`) and input/output to 1,382 (+1: the writer).
 
 Optics groups on several image shapes in InitialModel (October 5, 2026; RELION S3b), measured against
 main 7d7f3c92: controller 1,952 -> 1,977 lines (+25; budget 1,958 -> 1,977: one dataset per image shape,

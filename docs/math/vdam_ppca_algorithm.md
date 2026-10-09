@@ -649,7 +649,7 @@ to abandon its native schedule.
 Current VDAM updates noise and pose/class distributions with subset smoothing;
 the usual EMA coefficient is 0.9 on subsets and zero on full-data updates.
 The current owner is
-[estep_meta_updates.py](../../relax/vdam/estep_meta_updates.py).
+[model_update.py](../../relax/vdam/model_update.py).
 PPCA needs expected residual energy, not only the residual at its posterior
 mean. For pixel `p` at a pose,
 

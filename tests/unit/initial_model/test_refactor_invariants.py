@@ -29,10 +29,10 @@ from relax.vdam import (
     adaptive_estep,
     driver,
     estep_common,
-    estep_meta_updates,
     estep_setup,
     iteration_loop,
     m_step,
+    model_update,
     native_options,
     native_sampling,
     output,
@@ -123,7 +123,7 @@ def test_initial_model_estep_reuses_shared_dense_em_engine():
 
 def test_ensure_field_helper_preserves_metadata_array_identity():
     """``_ensure_field`` preserves existing arrays in particle metadata updates."""
-    from relax.vdam.estep_meta_updates import _ensure_field
+    from relax.vdam.particle_update import _ensure_field
 
     out = _ensure_field(None, (3, 2), np.float32, fill=7.0)
     assert out.shape == (3, 2)
@@ -328,11 +328,11 @@ LOC_BUDGETS = {
     # (1846 counted lines at integration, with the shared projector setup). The reviewed
     # uniform-prior metadata adds 36 lines to the upstream 1900-line ceiling.
     # Subtomogram InitialModel's E-step adapter tomo_estep.py (+134, 2026-10-01): a real raise, no headroom.
-    # +4: estep_meta_updates keeps the coarse cut's rlnNrOfSignificantSamples per particle (2026-10-01).
+    # +4: particle_update (then estep_meta_updates) keeps the coarse cut's rlnNrOfSignificantSamples per particle (2026-10-01).
     # Several optics groups (2026-10-01): per-group noise rows, ids and the per-group noise update (+47).
     # +139: layout.py's allowance, with the file merged into estep_common.py (2026-10-08, e3).
     "estep": (2287, (
-        "estep_setup.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
+        "estep_setup.py", "estep_common.py", "model_update.py", "particle_update.py", "adaptive_estep.py",
         "tomo_estep.py",
     )),
     # Optics groups on several image shapes (RELION S3b, 2026-10-05): the per-shape-class orchestration of the
@@ -475,17 +475,17 @@ def test_iteration_loop_updates_definition_ownership():
     from conftest import repo_python_command, repo_subprocess_env
 
     for owner, names in (
-        (estep_meta_updates, ("update_noise_from_estep", "update_probabilities_from_estep")),
+        (model_update, ("update_noise_from_estep", "update_probabilities_from_estep")),
         (subset_schedule, ("select_subset_for_iter", "restore_subset_order_for_continuation")),
     ):
         for name in names:
             assert inspect.getmodule(getattr(owner, name)) is owner
             assert getattr(iteration_loop, name, getattr(owner, name)) is getattr(owner, name)
-    assert iteration_loop.update_noise_from_estep is estep_meta_updates.update_noise_from_estep
+    assert iteration_loop.update_noise_from_estep is model_update.update_noise_from_estep
     assert iteration_loop.select_subset_for_iter is subset_schedule.select_subset_for_iter
     code = """\
 import sys
-import relax.vdam.estep_meta_updates, relax.vdam.subset_schedule
+import relax.vdam.model_update, relax.vdam.subset_schedule
 assert "relax.vdam.iteration_loop" not in sys.modules
 """
     result = subprocess.run(repo_python_command("-c", code), env=repo_subprocess_env(), capture_output=True,

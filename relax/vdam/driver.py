@@ -45,7 +45,7 @@ from relax.relion.relion_metadata import (
     refuse_unsupported_optics,
 )
 from relax.sparse_pass2.resident_pass2 import stable_window_class_history
-from relax.vdam import estep_meta_updates, estep_setup, native_sampling, output, schedules
+from relax.vdam import estep_setup, native_sampling, output, particle_update, schedules
 from relax.vdam.bootstrap_iref import (
     initial_state_from_particles,
     initial_state_from_tomo_particles,
@@ -340,8 +340,8 @@ def _native_expectation_step(
             orientational_prior_mode=int(sampling_state.orientational_prior_mode),
             uniform_local_orientation_prior=bool(sampling_state.uniform_local_orientation_prior),
         )
-        estep_meta_updates.add_log_likelihood_contributions(result.meta, state, optics_state, optics_group_ids, tilt_images)
-        estep_meta_updates.update_particle_state_from_estep_meta(
+        particle_update.add_log_likelihood_contributions(result.meta, state, optics_state, optics_group_ids, tilt_images)
+        particle_update.update_particle_state_from_estep_meta(
             particle_state,
             result.meta,
             (

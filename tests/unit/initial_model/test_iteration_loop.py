@@ -19,7 +19,6 @@ from relax.diagnostics.vdam_observers import VdamDiagnosticObserver
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
-from relax.vdam.estep_meta_updates import update_noise_from_estep, update_probabilities_from_estep
 from relax.vdam.iteration_loop import (
     VdamUpdate,
     _ave_pmax,
@@ -28,6 +27,7 @@ from relax.vdam.iteration_loop import (
     update_image_size_and_resolution_pointers,
 )
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
+from relax.vdam.model_update import update_noise_from_estep, update_probabilities_from_estep
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.ports import NoProbe, VdamObserver
 from relax.vdam.schedules import DEFAULT_GRAD_MU

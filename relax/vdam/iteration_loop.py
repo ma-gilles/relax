@@ -34,13 +34,13 @@ from relax.reconstruction import regularization_relion
 from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
 from relax.relion.macros import relion_round
 from relax.vdam.estep_common import EstepSums, estep_sums
-from relax.vdam.estep_meta_updates import (
+from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
+from relax.vdam.model_update import (
     NonFiniteNoiseSums,
     update_noise_from_estep,
     update_probabilities_from_estep,
     with_uniform_class_direction_priors,
 )
-from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.output import add_class_prior_report
 from relax.vdam.ports import MaximizationProbe, VdamObserver

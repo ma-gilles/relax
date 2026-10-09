@@ -745,7 +745,7 @@ the same momentum rule. InitialModel sparse pass 2 uses fine rotation ids for
 direction posterior updates via `_initial_model_pass2_layout`; standard local
 refinement may instead track parent coarse rotations.
 
-`estep_meta_updates.py::update_particle_state_from_estep_meta` also updates:
+`particle_update.py::update_particle_state_from_estep_meta` also updates:
 
 - STAR origin offsets from best translation assignments,
 - `_rlnClassNumber` from best class assignments,

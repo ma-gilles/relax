@@ -9,7 +9,7 @@ from helpers.float_compare import assert_matches
 from recovar.utils.helpers import R_from_relion, R_to_relion
 
 from relax.relion import initial_model_io
-from relax.vdam import adaptive_estep, estep_meta_updates, native_sampling
+from relax.vdam import adaptive_estep, native_sampling, particle_update
 from relax.vdam.estep_common import SPA_META_PARTICLE_FIELDS
 from relax.vdam.state import NativeParticleState
 
@@ -24,7 +24,7 @@ def test_subset_source_validity_and_mixed_legacy_rows():
     value = state()
     value.best_pose_rotations = np.zeros((3, 3, 3), np.float32)
     eulers = np.array([[159.3271497477632, 126.91279408422895, 85.75518260708287], [-2.0, 30.0, 7.0]])
-    estep_meta_updates.update_particle_state_from_estep_meta(
+    particle_update.update_particle_state_from_estep_meta(
         value,
         dict(
             selected_particle_ids=np.array([2, 0]),
@@ -41,14 +41,14 @@ def test_subset_source_validity_and_mixed_legacy_rows():
         got[1], R_to_relion(value.best_pose_rotations[[0]].astype(np.float64), degrees=True)[0]
     )
     # A matrix-only replacement invalidates that row, never a different particle.
-    estep_meta_updates.update_particle_state_from_estep_meta(
+    particle_update.update_particle_state_from_estep_meta(
         value,
         dict(selected_particle_ids=np.array([0]), best_pose_rotations=np.eye(3, dtype=np.float32)[None]),
         np.zeros((1, 2)),
     )
     assert_matches(value.best_pose_eulers_valid, [False, False, True])
     assert_matches(value.best_pose_eulers_deg[2], eulers[0])
-    estep_meta_updates.update_particle_state_from_estep_meta(
+    particle_update.update_particle_state_from_estep_meta(
         value,
         dict(selected_particle_ids=np.array([2]), best_pose_rotations=np.eye(3, dtype=np.float32)[None]),
         np.zeros((1, 2)),
@@ -149,7 +149,7 @@ def test_engine_rows_keep_identity_and_validity():
     assert_matches(meta["best_pose_eulers_valid"], [True, True])
     assert_matches(meta["best_pose_eulers_deg"], source)
     value = state()
-    estep_meta_updates.update_particle_state_from_estep_meta(value, meta, np.zeros((1, 2)))
+    particle_update.update_particle_state_from_estep_meta(value, meta, np.zeros((1, 2)))
     assert_matches(value.best_pose_eulers_valid, [True, False, True])
     assert_matches(value.best_pose_eulers_deg[2], source[0])
     # Without source rows the meta carries none, and the particles keep no valid source pose.

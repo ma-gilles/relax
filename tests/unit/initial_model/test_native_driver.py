@@ -27,11 +27,11 @@ from relax.refinement.tomo_half import TiltImageAccuracyInputs
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.vdam import (
     bootstrap_iref,
-    estep_meta_updates,
     estep_setup,
     native_options,
     native_sampling,
     output,
+    particle_update,
     schedules,
 )
 from relax.vdam.bootstrap_iref import initialise_denovo_state
@@ -1894,7 +1894,7 @@ def test_update_particle_state_preserves_best_pose_metadata():
         axis=0,
     )
 
-    estep_meta_updates.update_particle_state_from_estep_meta(
+    particle_update.update_particle_state_from_estep_meta(
         particle_state,
         {
             "selected_particle_ids": np.asarray([2, 0], dtype=np.int64),
@@ -1913,7 +1913,7 @@ def test_update_particle_state_preserves_best_pose_metadata():
     )
     assert_matches(particle_state.visited, [True, False, True])
 
-    estep_meta_updates.update_particle_state_from_estep_meta(
+    particle_update.update_particle_state_from_estep_meta(
         particle_state,
         {
             "selected_particle_ids": np.asarray([1], dtype=np.int64),
@@ -2805,7 +2805,7 @@ def test_cli_gpu_allows_explicit_deterministic_cuda(monkeypatch):
 def test_log_likelihood_contribution_is_relions_dll():
     # ml_optimiser.cpp:9029-9058: dLL = log(sum_weight) - min_diff2 - logsigma2, logsigma2 summed over the current-size
     # Mresol_fine pixels with ires > 0 (each FFTW half-grid pixel once), once per image of the particle.
-    from relax.vdam.estep_meta_updates import relion_log_likelihood_contributions
+    from relax.vdam.particle_update import relion_log_likelihood_contributions
 
     ori, cs = 16, 10
     sigma2 = np.stack([np.linspace(1.0, 2.0, ori // 2 + 1), np.linspace(3.0, 4.0, ori // 2 + 1)])
@@ -2827,7 +2827,7 @@ def test_log_likelihood_contribution_of_a_group_on_another_grid():
     # each ires reading the model shell ROUND(remap_image_sizes * ires) (ml_optimiser.cpp:9046-9055).
     import math
 
-    from relax.vdam.estep_meta_updates import relion_log_likelihood_contributions
+    from relax.vdam.particle_update import relion_log_likelihood_contributions
 
     ori, ori_pixel, cs = 128, 4.25, 38
     box, pixel = 112, 5.44
