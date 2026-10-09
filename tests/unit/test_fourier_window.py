@@ -111,6 +111,8 @@ def _constant_half_noise_variance(noise_variance):
 
 
 class MockDataset:
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, rng):
         self.image_shape = IMAGE_SHAPE
         self.image_size = IMAGE_SIZE

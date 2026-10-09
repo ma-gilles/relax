@@ -130,6 +130,41 @@ def image_translation_factors(dataset):
     return factors
 
 
+def shape_datasets(dataset) -> tuple:
+    """The loaded datasets behind a half or a particle set: one per image shape.
+
+    A ``MultiShapeHalf`` or ``MultiShapeDataset`` has no single source STAR, so questions
+    about its optics table (CTF-premultiplied groups) go to these.
+    """
+
+    if isinstance(dataset, MultiShapeHalf):
+        return tuple(shape_class.dataset for shape_class in dataset.classes)
+    if isinstance(dataset, MultiShapeDataset):
+        return dataset.datasets
+    return (dataset,)
+
+
+def average_ctf2_parts(half, scales, *, current_size, image_current_size) -> list:
+    """One half's ``relion_ctf.premultiplied_average_ctf2`` parts.
+
+    A half on one grid is one part at ``image_current_size``. A ``MultiShapeHalf`` gives
+    one part per shape class, with the class's scale corrections, its own image current
+    size (``updateImageSizeAndResolutionPointers``) and its scale ``s_g`` for the shell remap.
+    """
+
+    if not isinstance(half, MultiShapeHalf):
+        return [(half, scales, int(image_current_size), 1.0)]
+    return [
+        (
+            shape_class.dataset,
+            None if scales is None else np.asarray(scales).reshape(-1)[shape_class.image_indices],
+            optics_scale.group_current_size(current_size, shape_class.box_size, shape_class.scale),
+            shape_class.scale,
+        )
+        for shape_class in half.classes
+    ]
+
+
 def prepare_optics(
     dataset,
     *,
@@ -319,6 +354,15 @@ class MultiShapeDataset:
 
     def __getattr__(self, name):
         raise AttributeError(f"a dataset with several image shapes has no single {name!r}; use its classes")
+
+    def class_rows(self, rows):
+        """``(dataset, local rows)``: the shape class holding all these particle rows, and their rows in it."""
+
+        rows = np.asarray(rows, dtype=np.int64).reshape(-1)
+        classes = np.unique(self._class_of_row[rows])
+        if classes.size != 1:
+            raise ValueError(f"these particle rows span shape classes {classes.tolist()}")
+        return self.datasets[int(classes[0])], self._local_of_row[rows]
 
     def with_model_pixel_size(self, model_pixel_size):
         """The same particles scaled against RELION's model pixel size (the reference map header's)."""

@@ -105,6 +105,8 @@ def _identity_ctf(params, image_shape, voxel_size, *, half_image=False):
 
 
 class _TinyData:
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, images):
         self.image_shape = IMAGE_SHAPE
         self.volume_shape = VOLUME_SHAPE

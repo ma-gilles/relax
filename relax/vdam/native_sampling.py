@@ -29,6 +29,7 @@ from relax.helpers.expected_accuracy import (
     estimate_relion_expected_accuracy_from_prepared_inputs,
     estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
 )
+from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.relion.optics_aberrations import expected_accuracy_optics
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.schedules import relion_sampling_cadence
@@ -448,6 +449,14 @@ def estimate_native_sampling_accuracy(
             raise ValueError(f"the expected-accuracy trials of one optics group have several {name} values")
         return float(unique[0])
 
+    def trial_optics(rows):
+        """The trials' optics operands, read from the dataset that holds them (a shape class's for several shapes)."""
+        if experiment_dataset is None:
+            return None
+        if isinstance(experiment_dataset, MultiShapeDataset):
+            return expected_accuracy_optics(*experiment_dataset.class_rows(rows))
+        return expected_accuracy_optics(experiment_dataset, rows)
+
     def estimate(trials, sigma2_noise_relion):
         """The estimate over the trials at positions ``trials`` (one optics group's)."""
         ids = trial_particle_ids[trials]
@@ -461,7 +470,7 @@ def estimate_native_sampling_accuracy(
                 spherical_aberration=group_constant(optics_state.Cs, ids, "Cs"),
                 amplitude_contrast=group_constant(optics_state.Q0, ids, "amplitude contrast"),
                 pixel_size=float(optics_state.pixel_size),
-                optics=None if experiment_dataset is None else expected_accuracy_optics(experiment_dataset, ids),
+                optics=trial_optics(ids),
             )
         else:
             # The per-particle defocus arrays are unused; the group's images give the constants.
@@ -491,7 +500,7 @@ def estimate_native_sampling_accuracy(
                 pixel_size=float(state.pixel_size),
                 tilt_images=tilt_images,
                 # The trials' tilt images' exact CTF rows and the magnification's factor, when optics need them.
-                optics=None if experiment_dataset is None else expected_accuracy_optics(experiment_dataset, images),
+                optics=trial_optics(images),
             )
         grid_kwargs = dict(current_image_size=current_image_size)
         if optics_state is not None and optics_state.image_pixel_size is not None:

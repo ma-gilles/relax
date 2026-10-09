@@ -20,6 +20,8 @@ class ExactPass1Dataset:
     an ``N x N`` image (``N = box``, 4 by default).
     """
 
+    particles_file = None  # built in memory: no RELION optics table
+
     padding = 0
     voxel_size = 1.0
     dtype = jnp.complex64

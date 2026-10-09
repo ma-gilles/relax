@@ -29,6 +29,7 @@ from relax.helpers.resolution import (
 from relax.helpers.timing import Stopwatch
 from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, device_fits
 from relax.reconstruction import regularization_relion
+from relax.refinement.optics_shapes import average_ctf2_parts
 from relax.refinement.ports import ClassPriorEstimated, RunObserver
 from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.refinement.tomo_half import TomoHalf
@@ -581,18 +582,18 @@ def estimate_class_priors(
     observer = RunObserver() if observer is None else observer
     # CTF-premultiplied images: RELION's average CTF^2 correction of data_vs_prior
     # (setAverageCTF2; Class3D has no split halves and does not fix tau2). It averages over
-    # images, so a subtomogram half counts its tilt images, each with its particle's scale.
-    ctf2_datasets = [half.dataset for half in halves]
-    ctf2_scales = [half.scale_corrections for half in halves]
-    if isinstance(ctf2_datasets[0], TomoHalf):
-        ctf2_scales = [
-            None if scales is None else np.repeat(np.asarray(scales), np.diff(dataset.unit_image_offsets))
-            for dataset, scales in zip(ctf2_datasets, ctf2_scales)
-        ]
-        ctf2_datasets = [dataset.images for dataset in ctf2_datasets]
-    average_ctf2 = relion_ctf.premultiplied_average_ctf2(
-        ctf2_datasets, ctf2_scales, image_current_size, settings.box_size
-    )
+    # images, so a subtomogram half counts its tilt images, each with its particle's scale,
+    # and a half with several image shapes counts each shape class on its own grid.
+    ctf2_parts = []
+    for half in halves:
+        dataset, scales = half.dataset, half.scale_corrections
+        if isinstance(dataset, TomoHalf):
+            scales = None if scales is None else np.repeat(np.asarray(scales), np.diff(dataset.unit_image_offsets))
+            dataset = dataset.images
+        ctf2_parts += average_ctf2_parts(
+            dataset, scales, current_size=current_size, image_current_size=image_current_size
+        )
+    average_ctf2 = relion_ctf.premultiplied_average_ctf2(ctf2_parts, settings.box_size)
     for class_idx in range(n_classes):
         log.info(
             "Class3D tau2 update start: iter=%d class=%d/%d current_size=%d source=%s spectrum=%s",

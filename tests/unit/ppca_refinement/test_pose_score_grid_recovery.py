@@ -334,6 +334,8 @@ def test_healpix_grid_projected_q0_score_recovers_rotation_and_translation_phase
 
 
 class _FakeHalfImageDataset:
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, images_half, image_shape, volume_shape):
         self._images_half = np.asarray(images_half, dtype=np.complex64)
         self.image_shape = tuple(image_shape)

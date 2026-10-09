@@ -4056,6 +4056,8 @@ def _raw_real_process_half(batch, apply_image_mask=False):
 class MockDataset:
     """Minimal mock of CryoEMDataset for unit testing."""
 
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, n_images, rng):
         self.image_shape = IMAGE_SHAPE
         self.image_size = IMAGE_SIZE

@@ -450,6 +450,7 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
     calls = []
 
     class TinyDataset:
+        particles_file = None  # built in memory: no RELION optics table
         image_shape = (256, 256)
 
     def fake_grids(*args, **kwargs):
@@ -612,6 +613,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
     captured = {}
 
     class TinyDataset:
+        particles_file = None  # built in memory: no RELION optics table
         image_shape = (256, 256)
 
     def fake_grids(*args, **kwargs):

@@ -253,6 +253,8 @@ def _compute_jax_projections_block(volume, rotations, image_shape, volume_shape,
 class MockDataset:
     """Minimal dataset for equivalence tests."""
 
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, rng):
         self.image_shape = IMAGE_SHAPE
         self.image_size = IMAGE_SIZE

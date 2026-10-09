@@ -302,6 +302,8 @@ class MockDataset:
     compute_relion_prior and estimate_noise_level_no_masks.
     """
 
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, n_images=10, seed=42):
         self.image_shape = IMAGE_SHAPE
         self.image_size = IMAGE_SIZE

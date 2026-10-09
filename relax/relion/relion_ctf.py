@@ -134,20 +134,49 @@ def clear_exact_ctf_result_cache() -> None:
     _EXACT_CTF_RESULT_BYTES = 0
 
 
-def _relion_exact_ctf_source_star(experiment_dataset) -> Path:
-    """Resolve the immutable source STAR for exact RELION CTF evaluation."""
+def dataset_optics_source_star(experiment_dataset) -> Path | None:
+    """The dataset's RELION source STAR, or ``None`` for a dataset built in memory.
+
+    The optics table (CTF-premultiplied, aberrated or magnified groups) is read from this
+    STAR. ``particles_file=None`` declares a dataset built from arrays, which has no
+    optics table: ``None``, unless the dataset flags its images CTF-premultiplied
+    (``premultiplied_ctf``), which only the STAR's exact CTF rows can serve, so that
+    raises. A dataset that names a non-STAR source raises, as its optics are unknown;
+    an object that cannot name a source at all (``MultiShapeHalf``: ask its shape
+    classes' datasets) raises AttributeError.
+    """
 
     source_star = os.environ.get("RELAX_K1_RELION_EXACT_CTF_STAR", "").strip()
-    if not source_star:
-        dataset_source = getattr(experiment_dataset, "particles_file", None)
-        if dataset_source and Path(dataset_source).suffix.lower() == ".star":
-            source_star = str(dataset_source)
-    if not source_star:
+    if source_star:
+        return Path(source_star).expanduser().resolve()
+    dataset_source = experiment_dataset.particles_file
+    if dataset_source is None:
+        if getattr(experiment_dataset, "premultiplied_ctf", False):
+            raise ValueError(
+                f"{type(experiment_dataset).__name__} is built in memory (particles_file=None) with CTF-premultiplied "
+                "images; RELION's premultiplied operands are evaluated from a particle STAR's optics table"
+            )
+        return None
+    if Path(dataset_source).suffix.lower() != ".star":
         raise ValueError(
-            "exact RELION operands require a STAR-backed dataset or "
-            "RELAX_K1_RELION_EXACT_CTF_STAR"
+            f"{type(experiment_dataset).__name__} is not a STAR-backed dataset (particles_file={dataset_source!r}): its RELION "
+            "optics table, and so its CTF-premultiplied, aberrated or magnified optics groups, are unknown; load it "
+            "from a particle STAR or set RELAX_K1_RELION_EXACT_CTF_STAR"
         )
-    return Path(source_star).expanduser().resolve()
+    return Path(dataset_source).expanduser().resolve()
+
+
+def _relion_exact_ctf_source_star(experiment_dataset) -> Path:
+    """The source STAR exact RELION CTF evaluation reads (:func:`dataset_optics_source_star`); a dataset
+    built in memory has none and raises."""
+
+    source_star = dataset_optics_source_star(experiment_dataset)
+    if source_star is None:
+        raise ValueError(
+            f"exact RELION CTF operands need a STAR-backed dataset; {type(experiment_dataset).__name__} is built in "
+            "memory (particles_file=None)"
+        )
+    return source_star
 
 
 def _relion_ctf_threads() -> int:
@@ -204,14 +233,13 @@ def premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape) -> np
     rows of this module already hold RELION's ``Fctf = CTF^2``
     (:func:`_evaluate_exact_ctf_rows`); the backprojection operands then differ
     as well (:func:`relax.sparse_pass2.sparse_pass2_bucket_io.premultiplied_bpref_weights`).
-    ``None`` keeps every ordinary dataset on its unchanged programs. A dataset
-    without a source STAR has no optics table and so no premultiplied images.
+    ``None`` keeps every ordinary dataset on its unchanged programs, as it does a dataset
+    built in memory; a dataset whose optics are unknown raises (:func:`dataset_optics_source_star`).
     """
 
-    try:
-        _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
-    except ValueError:
+    if dataset_optics_source_star(experiment_dataset) is None:
         return None
+    _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
     flags = _premultiplied_particles(cache)
     if not flags.any():
         return None
@@ -222,12 +250,14 @@ def premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape) -> np
 
 
 def dataset_has_premultiplied_ctf(experiment_dataset, image_shape) -> bool:
-    """Whether any optics group of the dataset's source STAR stores CTF-premultiplied images."""
+    """Whether any optics group of the dataset's source STAR stores CTF-premultiplied images.
 
-    try:
-        _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
-    except ValueError:
+    A dataset built in memory has none; one whose optics are unknown raises (:func:`dataset_optics_source_star`).
+    """
+
+    if dataset_optics_source_star(experiment_dataset) is None:
         return False
+    _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
     return bool(_premultiplied_particles(cache).any())
 
 
@@ -286,25 +316,30 @@ def premultiplied_ctf2_shell_sums(experiment_dataset, image_indices, image_shape
     return sums
 
 
-def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: int, box_size: int):
+def premultiplied_average_ctf2(parts, box_size: int):
     """RELION's ``setAverageCTF2`` (ml_optimiser.cpp:5697-5740), or ``None`` without premultiplied images.
 
     ``avgctf2[ires] = sum_images max(0.001, scale) * sum_{shell} Fctf / (N * Npix_per_shell[ires])``
-    over every image of ``experiment_datasets`` (one per half), the numerator only over
-    CTF-premultiplied images and the denominator over all of them (each image's weights
-    sum to one, so ``sumw_group`` counts images). ``scale_corrections`` holds each
-    half's per-image scale correction of this iteration's E-step (``None``: 1).
-    ``window`` is the E-step's image current size, ``box_size`` the model's box. RELION
-    uses it without split halves and with tau2 not fixed (Class3D and InitialModel):
-    it divides ``invtau2`` by ``avgctf2`` in ``BackProjector::updateSSNRarrays``
-    (backprojector.cpp:1277-1279), which scales ``data_vs_prior`` by ``avgctf2``.
+    over every image of ``parts``, the numerator only over CTF-premultiplied images and the
+    denominator over all of them (each image's weights sum to one, so ``sumw_group`` counts
+    images). Each part is ``(dataset, scales, window, group_scale)``: a STAR-backed dataset
+    on one image grid, its per-image scale corrections of this iteration's E-step (``None``:
+    1), its image current size and its scale difference ``s_g``. A part's shell sums
+    (``Mresol_fine`` of its own window) add onto the model shells ``ROUND(i / s_g)``, as
+    storeWeightedSums adds ``thr_wsum_ctf2`` into ``sumw_ctf2`` (acc_ml_optimiser_impl.h:
+    3612-3626); ``box_size`` is the model's ``ori_size``. RELION uses it without split halves
+    and with tau2 not fixed (Class3D and InitialModel): it divides ``invtau2`` by ``avgctf2``
+    in ``BackProjector::updateSSNRarrays`` (backprojector.cpp:1143-1145), which scales
+    ``data_vs_prior`` by ``avgctf2``.
     """
+
+    from relax.helpers.optics_scale import add_group_shells_to_reference
 
     n_shells = int(box_size) // 2 + 1
     numerator = np.zeros(n_shells, dtype=np.float64)
     n_images = 0
     found = False
-    for dataset, scales in zip(experiment_datasets, scale_corrections):
+    for dataset, scales, window, group_scale in parts:
         count = int(dataset.n_units)
         n_images += count
         image_shape = tuple(int(v) for v in dataset.image_shape)
@@ -314,9 +349,8 @@ def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: i
         found = True
         indices = np.flatnonzero(flags)
         weights = np.ones(count) if scales is None else np.asarray(scales, dtype=np.float64).reshape(-1)
-        sums = premultiplied_ctf2_shell_sums(dataset, indices, image_shape, window)
-        term = np.maximum(0.001, weights[indices]) @ sums
-        numerator[: min(n_shells, term.size)] += term[:n_shells]
+        sums = premultiplied_ctf2_shell_sums(dataset, indices, image_shape, int(window))
+        numerator = add_group_shells_to_reference(numerator, np.maximum(0.001, weights[indices]) @ sums, group_scale)
     if not found:
         return None
     npix = np.bincount(

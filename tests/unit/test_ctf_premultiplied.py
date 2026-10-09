@@ -98,7 +98,32 @@ def test_premultiplied_rows_follow_the_optics_group_flag(star_dataset, tmp_path,
     )
     assert relion_ctf.premultiplied_ctf_rows(ordinary, np.arange(4), (BOX, BOX)) is None
     assert not relion_ctf.refuse_generic_ctf_for_optics(ordinary)
-    assert relion_ctf.premultiplied_ctf_rows(SimpleNamespace(particles_file=None), np.arange(4), (BOX, BOX)) is None
+
+
+@pytest.mark.unit
+def test_premultiplied_questions_refuse_a_dataset_whose_optics_are_unknown():
+    """A non-STAR source leaves the optics table unknown: raise rather than answer "not premultiplied"."""
+
+    dataset = SimpleNamespace(particles_file="particles.mrcs", image_shape=(BOX, BOX), n_units=4)
+    with pytest.raises(ValueError, match="SimpleNamespace is not a STAR-backed dataset .* CTF-premultiplied"):
+        relion_ctf.premultiplied_ctf_rows(dataset, np.arange(4), (BOX, BOX))
+    with pytest.raises(ValueError, match="not a STAR-backed dataset"):
+        relion_ctf.dataset_has_premultiplied_ctf(dataset, (BOX, BOX))
+    with pytest.raises(ValueError, match="not a STAR-backed dataset"):
+        relion_ctf.premultiplied_average_ctf2([(dataset, None, BOX, 1.0)], BOX)
+    with pytest.raises(AttributeError, match="particles_file"):
+        relion_ctf.dataset_has_premultiplied_ctf(SimpleNamespace(image_shape=(BOX, BOX)), (BOX, BOX))
+
+
+@pytest.mark.unit
+def test_a_dataset_built_in_memory_has_no_optics_table_unless_it_flags_premultiplied_images():
+    in_memory = SimpleNamespace(particles_file=None, image_shape=(BOX, BOX), n_units=4, premultiplied_ctf=False)
+    assert relion_ctf.premultiplied_ctf_rows(in_memory, np.arange(4), (BOX, BOX)) is None
+    assert not relion_ctf.dataset_has_premultiplied_ctf(in_memory, (BOX, BOX))
+    assert relion_ctf.premultiplied_average_ctf2([(in_memory, None, BOX, 1.0)], BOX) is None
+    in_memory.premultiplied_ctf = True
+    with pytest.raises(ValueError, match="built in memory .* CTF-premultiplied"):
+        relion_ctf.dataset_has_premultiplied_ctf(in_memory, (BOX, BOX))
 
 
 @pytest.mark.unit
@@ -263,7 +288,7 @@ def test_average_ctf2_is_relions_set_average_ctf2(star_dataset, window):
     sums = relion_ctf.premultiplied_ctf2_shell_sums(star_dataset, np.arange(4), (BOX, BOX), window)
     for p in range(4):
         assert_matches(sums[p], _relion_sumw_ctf2(fctf[p], window), rtol=1e-12)
-    average = relion_ctf.premultiplied_average_ctf2([star_dataset], [scales], window, BOX)
+    average = relion_ctf.premultiplied_average_ctf2([(star_dataset, scales, window, 1.0)], BOX)
     assert_matches(average, expected, rtol=1e-12)
     assert np.all(average[: window // 2 + 1] > 0)
 
@@ -276,4 +301,59 @@ def test_average_ctf2_is_none_without_premultiplied_images(tmp_path, monkeypatch
         image_shape=(BOX, BOX),
         n_units=len(PARTICLES),
     )
-    assert relion_ctf.premultiplied_average_ctf2([ordinary], [None], BOX, BOX) is None
+    assert relion_ctf.premultiplied_average_ctf2([(ordinary, None, BOX, 1.0)], BOX) is None
+
+
+def _shape_class_half(star, scale_b):
+    """A two-shape half over the four STAR rows: class A rows (0, 3) on the model grid, class B rows (2, 1) at s_g."""
+
+    from relax.refinement.optics_shapes import MultiShapeHalf, ShapeClass
+
+    def dataset(rows):
+        return SimpleNamespace(
+            particles_file=str(star), image_shape=(BOX, BOX), n_units=len(rows), dataset_indices=np.asarray(rows)
+        )
+
+    classes = (
+        ShapeClass(dataset([0, 3]), np.asarray([0, 3]), BOX, 2.0, 1.0, 1.0),
+        ShapeClass(dataset([2, 1]), np.asarray([1, 2]), BOX, 2.0 * scale_b, scale_b, 1.0 / scale_b),
+    )
+    return MultiShapeHalf(classes, image_shape=(BOX, BOX), volume_shape=(BOX,) * 3, voxel_size=2.0)
+
+
+@pytest.mark.unit
+def test_average_ctf2_of_several_image_shapes_is_relions_remapped_sumw_ctf2(tmp_path, monkeypatch):
+    """Each shape class sums Fctf on its own image current size, then storeWeightedSums adds
+    shell i onto model shell ROUND(i / s_g) (acc_ml_optimiser_impl.h:3612-3626)."""
+
+    from relax.refinement.noise_updates import datasets_store_premultiplied_ctf
+    from relax.refinement.optics_shapes import average_ctf2_parts
+
+    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    star = _write_star(tmp_path / "particles.star")
+    scale_b, current_size = 0.8, 12
+    half = _shape_class_half(star, scale_b)
+    half_scales = np.asarray([1.2, 0.0005, 0.9, 1.1])  # in the half's image order
+
+    full = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
+    rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(full, np.arange(4), (BOX, BOX))
+    fctf = -np.fft.ifftshift(np.asarray(rows).reshape(4, BOX, BOX // 2 + 1), axes=1)
+    window_b = 2 * int(np.ceil(0.5 * scale_b * current_size))  # 10; its shells 0-5 land on 0, 1, 3, 4, 5, 6
+    expected = np.zeros(BOX // 2 + 1)
+    # Class B holds the premultiplied STAR rows 2 and 1, at the half's images 1 and 2.
+    for star_row, image in ((2, 1), (1, 2)):
+        term = max(0.001, half_scales[image]) * _relion_sumw_ctf2(fctf[star_row], window_b)
+        for i, value in enumerate(term):
+            i_resam = int(np.floor(i / scale_b + 0.5))
+            if i_resam < expected.size:
+                expected[i_resam] += value
+    expected /= 4 * _relion_npix_per_shell(BOX)
+
+    parts = average_ctf2_parts(half, half_scales, current_size=current_size, image_current_size=current_size)
+    assert [part[2] for part in parts] == [current_size, window_b]
+    average = relion_ctf.premultiplied_average_ctf2(parts, BOX)
+    assert_matches(average, expected, rtol=1e-12)
+    assert datasets_store_premultiplied_ctf([half])
+    # The half itself has no single source STAR: asking it directly is refused, not answered "no".
+    with pytest.raises(AttributeError, match="several image shapes"):
+        relion_ctf.dataset_has_premultiplied_ctf(half, (BOX, BOX))

@@ -25,6 +25,8 @@ def _identity_ctf(params, image_shape, voxel_size, *, half_image=False):
 
 
 class _TinyPPCAData:
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self):
         rng = np.random.default_rng(14)
         self.image_shape = IMAGE_SHAPE

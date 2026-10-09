@@ -1646,7 +1646,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
             "_rlnAmplitudeContrast": ["0.07"],
         }
     )
-    dataset = SimpleNamespace(grid_size=8, voxel_size=2.0, n_images=2)
+    dataset = SimpleNamespace(grid_size=8, voxel_size=2.0, n_images=2, particles_file=None)
     opts = native_options.NativeInitialModelOptions(
         fn_img="particles.star",
         nr_classes=1,

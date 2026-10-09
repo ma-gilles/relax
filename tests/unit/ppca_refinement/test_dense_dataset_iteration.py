@@ -52,6 +52,8 @@ def _make_half_fourier_volume(seed):
 
 
 class _TinyPPCAData:
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, images, *, image_offset=0):
         self.image_shape = IMAGE_SHAPE
         self.volume_shape = VOLUME_SHAPE

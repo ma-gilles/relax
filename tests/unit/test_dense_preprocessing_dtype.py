@@ -13,6 +13,8 @@ class _Float64CtfConfig:
 
 
 class _Complex64HalfDataset:
+    particles_file = None  # built in memory: no RELION optics table
+
     def process_images_half(self, batch, apply_image_mask=False):
         return jnp.ones((batch.shape[0], 40), dtype=jnp.complex64)
 
@@ -100,6 +102,8 @@ def test_dense_preprocessing_forwards_relion_cuda_operands():
     captured = {}
 
     class _StrictHalfDataset:
+        particles_file = None  # built in memory: no RELION optics table
+
         def process_images_half(self, batch, apply_image_mask=False, **kwargs):
             captured.update(apply_image_mask=apply_image_mask, **kwargs)
             return jnp.ones((batch.shape[0], 40), dtype=jnp.complex64)

@@ -169,6 +169,12 @@ def optics_group_odd_coefficients(optics_row, *, has_odd: bool, has_tilt: bool) 
     return coefficients
 
 
+def _optics_source_star(experiment_dataset):
+    from relax.relion.relion_ctf import dataset_optics_source_star
+
+    return dataset_optics_source_star(experiment_dataset)
+
+
 def _source_tables(experiment_dataset, image_shape):
     from relax.relion.relion_ctf import exact_ctf_source_cache
 
@@ -178,10 +184,9 @@ def _source_tables(experiment_dataset, image_shape):
 def _odd_phase_tables(experiment_dataset, image_shape):
     """Per optics group: the demodulation factor ``exp(-i phase)`` in RECOVAR's centered half layout, or None."""
 
-    try:
-        source_path, cache = _source_tables(experiment_dataset, image_shape)
-    except ValueError:
+    if _optics_source_star(experiment_dataset) is None:
         return None
+    source_path, cache = _source_tables(experiment_dataset, image_shape)
     key = (str(source_path), tuple(int(s) for s in image_shape))
     tables = _ODD_PHASE_CACHE.get(key)
     if tables is not None:
@@ -249,11 +254,7 @@ def odd_demodulation_rows(experiment_dataset, image_indices, n_rows=None):
     :func:`demodulate_odd_aberrations`.
     """
 
-    from relax.relion.relion_ctf import _relion_exact_ctf_source_star
-
-    try:
-        _relion_exact_ctf_source_star(experiment_dataset)
-    except ValueError:
+    if _optics_source_star(experiment_dataset) is None:
         return None
     image_shape = tuple(int(s) for s in experiment_dataset.image_shape)
     found = _odd_demodulation_table(experiment_dataset, image_shape)
@@ -281,12 +282,8 @@ def demodulate_odd_aberrations(experiment_dataset, processed_half, image_indices
     input dtype. Datasets without odd aberrations return the input unchanged.
     """
 
-    from relax.relion.relion_ctf import _relion_exact_ctf_source_star
-
-    try:
-        _relion_exact_ctf_source_star(experiment_dataset)
-    except ValueError:
-        return processed_half  # no source STAR, so no optics table
+    if _optics_source_star(experiment_dataset) is None:
+        return processed_half  # built in memory: no optics table
     image_shape = tuple(int(s) for s in experiment_dataset.image_shape)
     found = _odd_demodulation_table(experiment_dataset, image_shape)
     if found is None:
@@ -331,11 +328,8 @@ def dataset_optics_mag_matrices(experiment_dataset) -> dict | None:
     from recovar.data_io.starfile import star_column
 
     from relax.helpers.batch_fetch import original_image_indices
-    from relax.relion.relion_ctf import _relion_exact_ctf_source_star
 
-    try:
-        _relion_exact_ctf_source_star(experiment_dataset)
-    except ValueError:
+    if _optics_source_star(experiment_dataset) is None:
         return None
     _, cache = _source_tables(experiment_dataset, tuple(int(s) for s in experiment_dataset.image_shape))
     labels = {str(label).lstrip("_") for row in cache["optics"].values() for label in row.keys()}
@@ -377,11 +371,9 @@ def dataset_needs_exact_ctf(experiment_dataset) -> bool:
     The generic CTF evaluator knows none of these optics-table features.
     """
 
-    from relax.relion.relion_ctf import _relion_exact_ctf_source_star, dataset_has_premultiplied_ctf
+    from relax.relion.relion_ctf import dataset_has_premultiplied_ctf
 
-    try:
-        _relion_exact_ctf_source_star(experiment_dataset)
-    except ValueError:
+    if _optics_source_star(experiment_dataset) is None:
         return False
     image_shape = tuple(int(s) for s in experiment_dataset.image_shape)
     if dataset_has_premultiplied_ctf(experiment_dataset, image_shape):

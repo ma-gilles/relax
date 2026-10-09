@@ -103,6 +103,8 @@ class MockDataset:
     noise estimation, prior computation, and pose updates.
     """
 
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, n_images, rng):
         self.image_shape = IMAGE_SHAPE
         self.image_size = IMAGE_SIZE

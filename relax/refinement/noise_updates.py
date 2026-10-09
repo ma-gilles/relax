@@ -488,16 +488,17 @@ class NoiseUpdateResult:
 def datasets_store_premultiplied_ctf(experiment_datasets) -> bool:
     """Whether some optics group stores CTF-premultiplied images (RELION's ``hasCtfPremultiplied``).
 
-    A subtomogram half is asked through its flat per-tilt dataset (``half.images``).
+    A subtomogram half is asked through its flat per-tilt dataset (``half.images``), a half
+    with several image shapes through its shape classes' datasets.
     """
+    from relax.refinement.optics_shapes import shape_datasets
     from relax.refinement.tomo_half import TomoHalf
     from relax.relion import relion_ctf
 
     return any(
-        relion_ctf.dataset_has_premultiplied_ctf(
-            dataset.images if isinstance(dataset, TomoHalf) else dataset, tuple(int(v) for v in dataset.image_shape)
-        )
-        for dataset in experiment_datasets
+        relion_ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))
+        for half in experiment_datasets
+        for dataset in shape_datasets(half.images if isinstance(half, TomoHalf) else half)
     )
 
 

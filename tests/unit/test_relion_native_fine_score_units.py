@@ -118,6 +118,8 @@ class _Captured(Exception):
 
 
 class _NativeUnitsDataset:
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, image_size, n_images=2, seed=20260923):
         self.image_shape = (image_size, image_size)
         self.image_size = image_size * image_size

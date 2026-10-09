@@ -44,6 +44,8 @@ def _identity_process_half(batch, apply_image_mask=False):
 class MockHalfSet:
     """The subset of the dataset API the refinement loop reads, over random Hermitian images."""
 
+    particles_file = None  # built in memory: no RELION optics table
+
     def __init__(self, n_images, rng):
         self.image_shape = IMAGE_SHAPE
         self.image_size = IMAGE_SIZE

@@ -98,6 +98,8 @@ def test_variable_radial_noise_model_via_dataset_1d_broadcast():
 
     # Create a mock dataset class with the method we fixed
     class MockDataset:
+        particles_file = None  # built in memory: no RELION optics table
+
         def __init__(self):
             self.CTF_params = ctf_params
             self.image_shape = (grid_size, grid_size)
