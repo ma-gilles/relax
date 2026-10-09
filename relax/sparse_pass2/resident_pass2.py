@@ -103,7 +103,11 @@ from relax.helpers.half_volume_mstep import (
 )
 from relax.helpers.optics_noise import noise_rows, pixel_rows
 from relax.helpers.preprocessing import half_translation_phase_table
-from relax.helpers.projection import compute_noise_block, compute_noise_block_per_optics_group
+from relax.helpers.projection import (
+    compute_noise_block,
+    compute_noise_block_per_optics_group,
+    relion_kernel_zero_rows,
+)
 from relax.helpers.projection import (
     relion_scale_correction_pixel_mask as _relion_scale_correction_pixel_mask,
 )
@@ -2394,6 +2398,42 @@ def _pass_window_union(
     )
 
 
+def _sgd_residual_rows(recon_window_indices, *, image_shape, projector_output_size, r_max, rotations):
+    """The reconstruction pixels of VDAM's subtracted reference that the projection cache zeroes, or None.
+
+    RELION's fine diff2 and wavg kernels zero the rows past the model radius of an image
+    window wider than the model sphere (:func:`relax.helpers.projection.relion_kernel_zero_rows`),
+    and the cache holds those projections. The SGD backprojection kernel projects every row
+    of the reference it subtracts (BP.cuh:476-492): for an optics group on a coarser grid
+    (scale s > 1) those rows hold pixels inside the rotated sphere. Returns
+    ``(positions, pixels)``, their positions in the reconstruction window and their centred
+    half-image indices, or None when the window has none (every single-grid pass).
+
+    Only rows that can reach the sphere count: a pixel of row label ``y`` lies at rotated radius
+    at least ``sigma_min * |y|`` (``sigma_min`` the smallest singular value of the pass's
+    projection ``rotations``), and the kernel projects it only when ``int(radius^2) <= r_max^2``.
+    A window one row wider at ``s = 1 + 1e-8`` (a real-data header pixel) then has none.
+    """
+
+    if projector_output_size is None or r_max is None or int(r_max) <= 0:
+        return None
+    zero = relion_kernel_zero_rows(int(image_shape[0]), int(projector_output_size), int(r_max), "fine")
+    if zero is None:
+        return None
+    n = int(image_shape[0])
+    label = np.arange(n) - n // 2
+    if int(projector_output_size) == n:
+        label[0] = n // 2  # the full window's positive Nyquist row (relion_kernel_zero_rows)
+    sigma_min = float(np.linalg.svd(np.asarray(rotations, dtype=np.float64), compute_uv=False).min())
+    reachable = (sigma_min * label) ** 2 < float(r_max) ** 2 + 1.0
+    zero = np.asarray(zero) & np.repeat(reachable, n // 2 + 1)
+    recon = np.asarray(recon_window_indices, dtype=np.int64)
+    positions = np.flatnonzero(zero[recon])
+    if positions.size == 0:
+        return None
+    return positions.astype(np.int32), recon[positions].astype(np.int32)
+
+
 def center_pad_relion_projector_half(half, *, logical_r_max: int, physical_size: int, padding_factor: int):
     """Center-pad a logical RELION projector slab, ghost planes included, to the physical class.
 
@@ -3463,6 +3503,22 @@ def _resident_pass2(
         }
         capacity_logical_output_size = int(projection_kwargs["projector_output_size"])
         projection_kwargs["projector_output_size"] = physical_size
+    residual_sgd_rows = (
+        _sgd_residual_rows(
+            recon_window_indices,
+            image_shape=image_shape,
+            projector_output_size=(
+                projection_kwargs.get("projector_output_size")
+                if capacity_logical_output_size is None
+                else capacity_logical_output_size
+            ),
+            r_max=relion_projector_r_max,
+            rotations=np.asarray(fine_rotations_override, dtype=np.float64),
+        )
+        if mstep_subtract_ctf_projection and use_relion_projector
+        else None
+    )
+    residual_sgd_cache = residual_sgd_take = None
 
     fine_grid = jnp.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)
     # The cache's rotations, class-major: every class's fine grid, or the cached slots' rotations.
@@ -3655,6 +3711,12 @@ def _resident_pass2(
                 cache_projection_bytes / float(1024**3),
                 len(union_cache),
             )
+    if residual_sgd_rows is not None and (stream_projections or union_indices is None):
+        raise NotImplementedError(
+            "VDAM's subtracted reference on an image window wider than the model sphere (an optics "
+            "group on a coarser grid) is projected with the SGD kernel's rows only beside the union "
+            "projection cache; this pass streams its projections or keeps three caches"
+        )
     stream_keeps_chunk_operands = tilt is None and (stream_projections or operands_yield_to_cache)
     if stream_projections:
         # Streamed chunks project their own rows' rotations by projection id.
@@ -3734,6 +3796,51 @@ def _resident_pass2(
             cache_projection_bytes / float(1024**3),
             transient_projection_bytes / float(1024**3),
         )
+        if residual_sgd_rows is not None:
+            # VDAM subtracts the SGD kernel's projection, which keeps the rows the
+            # cache zeroes; those pixels' rows are cached beside it (_sgd_residual_rows).
+            sgd_positions, sgd_pixels = residual_sgd_rows
+            sgd_pixels_device = jnp.asarray(sgd_pixels)
+            sgd_window_union = (
+                _pass_window_union(
+                    sgd_pixels.astype(np.int64),
+                    image_shape=image_shape,
+                    projector_output_size=int(projection_kwargs["projector_output_size"]),
+                    capacity_logical_output_size=capacity_logical_output_size,
+                )
+                if projection_kwargs.get("projector_output_size") is not None
+                else None
+            )
+            sgd_projection_kwargs = {**projection_kwargs, "relion_kernel": "sgd"}
+
+            def project_sgd_rows(class_index, start, stop):
+                return _compute_sparse_pass2_windowed_projections_block(
+                    class_means_for_proj[class_index],
+                    class_cache_rotations(class_index)[start:stop],
+                    image_shape,
+                    proj_volume_shape,
+                    disc_type,
+                    score_indices=sgd_pixels_device,
+                    recon_indices=None,
+                    max_projected_rotations=rows_per_call,
+                    output_complex_dtype=precision_policy.score_complex_dtype,
+                    relion_projector_half=projection_halves[class_index],
+                    relion_projector_r_max=projection_r_max,
+                    projection_padding_factor=projection_padding_factor,
+                    window_union=sgd_window_union,
+                    **capacity_projection_kwargs,
+                    **sgd_projection_kwargs,
+                )[0]
+
+            residual_sgd_cache = build_projection_cache_in_place(
+                project_sgd_rows,
+                n_classes=n_classes,
+                n_rows_per_class=cache_rows_per_class,
+                n_pixels=int(sgd_pixels.size),
+                rows_per_call=rows_per_call,
+                dtype=precision_policy.score_complex_dtype,
+            )
+            residual_sgd_take = jnp.asarray(sgd_positions)
     else:
         cache_t0 = time.time()
         if n_classes == 1:
@@ -4555,6 +4662,8 @@ def _resident_pass2(
             union_native_fft_size=(
                 native_fft_size if (union_score_take is not None and relion_native_fine_units) else 0
             ),
+            residual_sgd_cache=residual_sgd_cache,
+            residual_sgd_take=residual_sgd_take,
             deferred=deferred,
             lone_block_rows=lone_block_rows(chunk.row_capacity, row_ladder) if alone else None,
         )
@@ -6090,6 +6199,8 @@ def _make_chunk_stage_tables(
     window_logical=None,
     union_score_take=None,
     union_recon_take=None,
+    residual_sgd_cache=None,
+    residual_sgd_take=None,
 ) -> _ChunkStageTables:
     """Assemble the iteration-global tables every chunk of a half reads.
 
@@ -6123,6 +6234,8 @@ def _make_chunk_stage_tables(
         window_logical=window_logical,
         union_score_take=union_score_take,
         union_recon_take=union_recon_take,
+        residual_sgd_cache=residual_sgd_cache,
+        residual_sgd_take=residual_sgd_take,
     )
 
 
@@ -7156,6 +7269,12 @@ class _ChunkStageTables(NamedTuple):
     # layout.
     union_score_take: jax.Array | None = None
     union_recon_take: jax.Array | None = None
+    # VDAM's subtracted reference on an image window wider than the model sphere
+    # (_sgd_residual_rows): the union rows' projections at the reconstruction
+    # pixels the fine and wavg kernels zero, [projection, P_sgd], and those pixels'
+    # positions in the reconstruction window. None when no such pixel exists.
+    residual_sgd_cache: jax.Array | None = None
+    residual_sgd_take: jax.Array | None = None
 
 
 class _ChunkPosterior(NamedTuple):
@@ -7549,7 +7668,14 @@ def _cached_block_projections(tables: _ChunkStageTables, block_fine_rot):
         # it (_place_windowed_projection_block).
         recon = cache_rows(tables.projection_score_cache, block_fine_rot)[:, tables.union_recon_take]
         recon_abs2 = (jnp.abs(recon) ** 2).astype(jnp.real(recon).dtype)
-        return recon, recon_abs2, tables.mstep_grid[block_fine_rot]
+        if tables.residual_sgd_take is None:
+            return recon, recon_abs2, tables.mstep_grid[block_fine_rot]
+        # VDAM's subtracted reference: the SGD kernel's projection, which keeps
+        # the rows the fine and wavg kernels zero (_sgd_residual_rows).
+        residual = recon.at[:, tables.residual_sgd_take].set(
+            cache_rows(tables.residual_sgd_cache, block_fine_rot).astype(recon.dtype)
+        )
+        return recon, recon_abs2, tables.mstep_grid[block_fine_rot], residual
     return (
         tables.projection_recon_cache[block_fine_rot],
         tables.projection_recon_abs2_cache[block_fine_rot],
@@ -7576,12 +7702,15 @@ def _resident_mstep_block(
     calls this one copy, so the only differences between them are how the
     block's rows are sliced (static Python slice versus ``dynamic_slice``) and
     where its projections come from. ``block_projections`` is the block's
-    ``(projection, |projection|^2, M-step rotations)``: the global pass passes
-    ``_cached_block_projections(tables, block_fine_rot)``, local search passes
-    a slice of the projections it computed for this chunk.
+    ``(projection, |projection|^2, M-step rotations)``, with VDAM's residual
+    projection as a fourth entry when it differs (``_sgd_residual_rows``): the
+    global pass passes ``_cached_block_projections(tables, block_fine_rot)``,
+    local search passes a slice of the projections it computed for this chunk.
     """
 
-    proj, proj_abs2, block_mstep_rotations = block_projections
+    proj, proj_abs2, block_mstep_rotations = block_projections[:3]
+    # The SGD residual's projection when it differs from the Wavg one (_cached_block_projections).
+    residual_proj = block_projections[3] if len(block_projections) > 3 else proj
     if tables.window_logical is None:
         logical_recon_pixels = jnp.asarray(spec.n_recon_pixels, dtype=jnp.int32)
         logical_rect_pixels = jnp.asarray(spec.n_rect, dtype=jnp.int32)
@@ -7636,7 +7765,7 @@ def _resident_mstep_block(
         bpref_ctf_probs = jnp.where(recon_live, bpref_ctf_probs, jnp.zeros((), bpref_ctf_probs.dtype))
 
     if spec.mstep_subtract_ctf_projection:
-        summed = _resident_block_residual(summed, _probs_sum_t, proj, bpref_ctf2_over_nv, block_row_image)
+        summed = _resident_block_residual(summed, _probs_sum_t, residual_proj, bpref_ctf2_over_nv, block_row_image)
 
     # RELION Wavg triplet in the flat-row layout, then its rotation atomics.
     # The host tail picks the sequential RELION reducer when the pass carries
@@ -8555,6 +8684,8 @@ def _run_resident_chunk(
     union_score_take=None,
     union_recon_take=None,
     union_native_fft_size=0,
+    residual_sgd_cache=None,
+    residual_sgd_take=None,
     deferred=False,
     lone_block_rows=None,
 ):
@@ -8568,6 +8699,8 @@ def _run_resident_chunk(
     ``union_score_take`` / ``union_recon_take`` / ``union_native_fft_size``
     describe a union projection cache (see ``_ChunkStageTables``); they are
     None / 0 for the three-cache layout and for streamed chunks.
+    ``residual_sgd_cache`` / ``residual_sgd_take`` are VDAM's subtracted-reference
+    rows of that cache (``_sgd_residual_rows``), None when it has none.
 
     ``submitted_keys``, when given, collects the ``(program name, spec)`` keys
     this chunk submits, so the driver can say how many of them the compile-ahead
@@ -8771,6 +8904,8 @@ def _run_resident_chunk(
         window_logical=window_logical,
         union_score_take=union_score_take,
         union_recon_take=union_recon_take,
+        residual_sgd_cache=residual_sgd_cache,
+        residual_sgd_take=residual_sgd_take,
     )
     spec = _make_chunk_program_spec(
         row_capacity=chunk.row_capacity,

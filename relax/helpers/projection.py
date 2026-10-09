@@ -281,7 +281,7 @@ def _validate_centered_relion_projector_pixel_indices(
         )
 
 
-RELION_KERNELS = ("coarse", "fine")
+RELION_KERNELS = ("coarse", "fine", "sgd")
 
 
 def relion_kernel_zero_rows(box_size: int, projector_output_size: int, r_max, relion_kernel: str = "fine"):
@@ -295,7 +295,10 @@ def relion_kernel_zero_rows(box_size: int, projector_output_size: int, r_max, re
       (acc/cuda/cuda_kernels/diff2.cuh:86-90);
     - the fine diff2 and weighted-sum kernels keep ``y = i - imgY`` only for
       ``i >= imgY - maxR`` and move every other row beyond ``maxR`` to
-      ``x = maxR`` (diff2.cuh:688-694, wavg.cuh:81-86).
+      ``x = maxR`` (diff2.cuh:688-694, wavg.cuh:81-86);
+    - VDAM's SGD backprojection kernel, which projects the reference it subtracts,
+      relabels only ``y = i - imgY`` for ``i > imgY / 2`` and projects every row
+      (BP.cuh:476-492, ``cuda_kernel_backproject3D_SGD``): "sgd" zeroes no row.
 
     This changes nothing for an image window within the model sphere
     (``imgY / 2 <= r_max``). For an image on a coarser grid than the reference
@@ -318,6 +321,8 @@ def relion_kernel_zero_rows(box_size: int, projector_output_size: int, r_max, re
 
     if relion_kernel not in RELION_KERNELS:
         raise ValueError(f"relion_kernel must be one of {RELION_KERNELS}, got {relion_kernel!r}")
+    if relion_kernel == "sgd":
+        return None
     size = int(projector_output_size)
     if isinstance(r_max, (int, np.integer)):
         if int(r_max) <= 0 or size // 2 <= int(r_max):
@@ -837,10 +842,11 @@ def compute_relion_projector_projections_block(
     fallback (the texture path is float32-only hardware interpolation, unrelated
     to this quirk); see ``recovar.core.relion_project`` module docstring.
 
-    ``relion_kernel`` ("fine" or "coarse") names the RELION kernel whose row rule
+    ``relion_kernel`` ("fine", "coarse" or "sgd") names the RELION kernel whose row rule
     applies when the image window is wider than the model sphere, as for an
     image on a coarser grid than the reference (:func:`relion_kernel_zero_rows`).
-    Callers emulating RELION's coarse diff2 kernel pass "coarse".
+    Callers emulating RELION's coarse diff2 kernel pass "coarse"; VDAM's subtracted
+    reference (the SGD backprojection kernel) passes "sgd".
     """
 
     box_size = int(image_shape[0])

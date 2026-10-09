@@ -21,8 +21,11 @@ def _acc_kernel_coordinate(i, x, img_y, max_r, kernel):
 
     Coarse diff2 wraps at maxR (acc/cuda/cuda_kernels/diff2.cuh:86-90); fine diff2 and wavg
     keep the negative rows from imgY - maxR and move the others to x = maxR
-    (diff2.cuh:688-694, wavg.cuh:81-86).
+    (diff2.cuh:688-694, wavg.cuh:81-86); the SGD backprojection kernel wraps at imgY / 2
+    and projects every row (BP.cuh:476-492).
     """
+    if kernel == "sgd":
+        return x, (i - img_y if i > img_y // 2 else i)
     if i <= max_r:
         return x, i
     if kernel == "coarse" or i >= img_y - max_r:
@@ -193,3 +196,85 @@ def test_coarse_projection_band_refuses_routes_that_cannot_relabel():
             projector, rotations, (18, 18), r_max=8, padding_factor=1, centered_rows=False,
             projector_output_size=18, relion_texture_interp=False, relion_kernel="coarse",
         )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("scale, r_max", [(1.12, 19), (1.3, 8)])
+def test_sgd_kernel_projects_every_row_inside_the_sphere(scale, r_max):
+    """VDAM's subtracted reference (RELION's SGD backprojection kernel) has no zero rows: the rows the
+    fine kernel zeroes hold pixels inside the rotated sphere, which it projects."""
+    from relax.helpers.projection import project_relion_projector_half_spectrum_centered_rows
+
+    window = 2 * int(np.ceil(0.5 * scale * 2 * r_max))
+    assert relion_kernel_zero_rows(window, window, r_max, "sgd") is None
+    rng = np.random.default_rng(1)
+    projector = jnp.asarray(rng.standard_normal((2 * r_max + 3, 2 * r_max + 3, r_max + 2)) + 0j, dtype=jnp.complex128)
+    rotations = jnp.asarray(Rotation.random(3, random_state=7).as_matrix() / scale)
+    kwargs = dict(r_max=r_max, padding_factor=1, centered_rows=True, projector_output_size=window, relion_texture_interp=False)
+    sgd, _ = compute_relion_projector_projections_block(projector, rotations, (window, window), relion_kernel="sgd", **kwargs)
+    fine, _ = compute_relion_projector_projections_block(projector, rotations, (window, window), **kwargs)
+    plain = project_relion_projector_half_spectrum_centered_rows(projector, rotations, (window, window), r_max, 1, window, False)
+    sgd, fine, plain = (np.asarray(a).reshape(3, window, window // 2 + 1) for a in (sgd, fine, plain))
+    label = np.arange(window) - window // 2
+    label[0] = window // 2
+    beyond = np.abs(label) > r_max
+    assert_matches(sgd, plain)
+    assert_matches(sgd[:, ~beyond], fine[:, ~beyond])
+    assert not fine[:, beyond].any() and np.abs(sgd[:, beyond]).max() > 0
+    # Every pixel the SGD kernel projects is one RELION's kernel keeps inside the sphere.
+    for matrix, rows in zip(np.asarray(rotations), sgd):
+        for row, centred in enumerate(label):
+            for x in range(window // 2 + 1):
+                xk, yk = _acc_kernel_coordinate(centred % window, x, window, r_max, "sgd")
+                if rows[row, x] != 0:
+                    assert _acc_kernel_keeps(xk, yk, matrix, r_max, 1), (centred, x)
+
+
+@pytest.mark.unit
+def test_sgd_residual_rows_are_the_reconstruction_pixels_the_fine_rule_zeroes():
+    from relax.sparse_pass2.resident_pass2 import _sgd_residual_rows
+
+    box, window, r_max = 112, 44, 19
+    half_width = box // 2 + 1
+    label = np.arange(box) - box // 2
+    rows, cols = np.divmod(np.arange(box * half_width), half_width)
+    radius = np.hypot(label[rows], cols)
+    recon = np.flatnonzero(np.rint(radius) < window // 2 + 1)
+    rotations = Rotation.random(5, random_state=4).as_matrix() / 1.12
+    kwargs = dict(image_shape=(box, box), r_max=r_max, rotations=rotations)
+    positions, pixels = _sgd_residual_rows(recon, projector_output_size=window, **kwargs)
+    assert np.array_equal(pixels, recon[positions])
+    # Rows 20-21 reach the sphere at s = 1.12 (20 / 1.12 = 17.9); row 22 (19.6) does not.
+    assert np.array_equal(positions, np.flatnonzero((np.abs(label[rows[recon]]) > r_max) & (np.abs(label[rows[recon]]) <= 21)))
+    # A window within the model sphere (every single-grid pass) has none.
+    assert _sgd_residual_rows(recon, projector_output_size=2 * r_max, **kwargs) is None
+    # A window one row wider from a scale a hair above 1 (a real-data header pixel) has none either.
+    near_one = Rotation.random(5, random_state=4).as_matrix() / (1.0 + 1.7e-8)
+    assert _sgd_residual_rows(recon, image_shape=(box, box), projector_output_size=2 * r_max + 2, r_max=r_max, rotations=near_one) is None
+
+
+@pytest.mark.unit
+def test_cached_block_projections_give_the_residual_its_sgd_rows():
+    """The M-step keeps the cached (fine-rule) rows for the Wavg terms and takes the SGD rows for the residual."""
+    from relax.sparse_pass2.resident_pass2 import _cached_block_projections, _ChunkStageTables
+
+    rng = np.random.default_rng(2)
+    union = jnp.asarray(rng.standard_normal((6, 5)) + 1j * rng.standard_normal((6, 5)), dtype=jnp.complex64)
+    sgd = jnp.asarray(rng.standard_normal((6, 2)) + 1j * rng.standard_normal((6, 2)), dtype=jnp.complex64)
+    fields = {name: None for name in _ChunkStageTables._fields}
+    fields.update(
+        projection_score_cache=union,
+        mstep_grid=jnp.asarray(rng.standard_normal((6, 3, 3)), dtype=jnp.float32),
+        union_recon_take=jnp.asarray([4, 1, 3, 0], jnp.int32),
+    )
+    rows = jnp.asarray([5, 2, 2], jnp.int32)
+    plain = _cached_block_projections(_ChunkStageTables(**fields), rows)
+    assert len(plain) == 3
+    fields.update(residual_sgd_cache=sgd, residual_sgd_take=jnp.asarray([1, 3], jnp.int32))
+    recon, recon_abs2, rotations, residual = _cached_block_projections(_ChunkStageTables(**fields), rows)
+    assert_matches(recon, plain[0])
+    assert_matches(recon_abs2, plain[1])
+    assert_matches(rotations, plain[2])
+    expected = np.asarray(plain[0]).copy()
+    expected[:, [1, 3]] = np.asarray(sgd)[np.asarray(rows)]
+    assert_matches(residual, expected)
