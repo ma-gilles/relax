@@ -14,6 +14,7 @@ from relax.refinement.command_options import resolve_initial_sampling
 from relax.refinement.refinement_options import RestartProvenance
 from relax.refinement.result_files import _savez_deflate_fast, build_archive_metadata
 from relax.relion.input_poses import PoseProvenance
+from relax.relion.relion_metadata import MaxSignificantsResolution
 
 pytestmark = pytest.mark.unit
 
@@ -51,9 +52,13 @@ def metadata_inputs(*, n_classes, diagnostics, max_order):
             path=Path("poses.star") if diagnostics else None,
             sha256="poses-hash" if diagnostics else None,
         ),
-        max_significants_resolution=dict(
+        max_significants_resolution=MaxSignificantsResolution(
             maximum_significants_argument=211 if diagnostics else None,
-            source="explicit CLI" if diagnostics else "RELION default", do_grad=diagnostics,
+            active_max_significants=211 if diagnostics else -1,
+            source="explicit CLI" if diagnostics else "RELION default",
+            gradient_refine=False,
+            do_grad=diagnostics,
+            target_iteration=1,
         ),
         n_images=5,
         n_rotations=768,

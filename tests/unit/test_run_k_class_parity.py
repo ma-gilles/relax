@@ -1,4 +1,5 @@
 import argparse
+import dataclasses
 import sys
 from types import SimpleNamespace
 
@@ -547,7 +548,7 @@ def test_k_class_replay_resolves_saved_gradient_sentinel_to_active_k4_cap():
         n_classes=4,
     )
 
-    assert resolved == {
+    assert dataclasses.asdict(resolved) == {
         "maximum_significants_argument": -1,
         "active_max_significants": 400,
         "source": "relion_gradient_runtime_default",
@@ -575,6 +576,6 @@ def test_k_class_replay_max_significants_override_can_force_uncapped():
         n_classes=4,
     )
 
-    assert resolved["active_max_significants"] == -1
-    assert resolved["source"] == "cli_override"
-    assert resolved["do_grad"] is True
+    assert resolved.active_max_significants == -1
+    assert resolved.source == "cli_override"
+    assert resolved.do_grad is True

@@ -6,6 +6,7 @@ what it writes, instead of reading its source.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 
@@ -48,7 +49,7 @@ def test_the_controller_gets_the_active_max_significants(monkeypatch, tmp_path):
     inputs = controller_inputs(monkeypatch, tmp_path, "refine", "--max_significants", "9")
     (controls,) = trace.calls("controls")
     assert controls.kwargs["max_significants"] == 9
-    active = controls.result.max_significants_resolution["active_max_significants"]
+    active = controls.result.max_significants_resolution.active_max_significants
     assert inputs["options"].adaptive.max_significants == active
 
 
@@ -58,7 +59,7 @@ def test_the_benchmark_ledger_records_the_max_significants_resolution(monkeypatc
     run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", "--max_significants", "9",
                   "--benchmark_ledger_json", ledger)
     resolution = trace.calls("controls")[0].result.max_significants_resolution
-    assert json.loads(ledger.read_text())["max_significants_resolution"] == json.loads(json.dumps(resolution))
+    assert json.loads(ledger.read_text())["max_significants_resolution"] == dataclasses.asdict(resolution)
 
 
 @pytest.mark.parametrize(

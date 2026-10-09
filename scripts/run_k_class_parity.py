@@ -10,6 +10,7 @@ script.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import os
@@ -18,6 +19,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # This is an EM entry point, so it opts in to recovar's EM-scoped XLA defaults
 # (currently --xla_gpu_autotune_level=0; see recovar/jax_config.py and
@@ -27,6 +29,9 @@ from pathlib import Path
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from relax.relion.relion_metadata import MaxSignificantsResolution
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -421,7 +426,7 @@ def _resolve_replay_max_significants(
     do_firstiter_cc: bool,
     n_classes: int,
     reference_dimension: int = 3,
-) -> dict[str, object]:
+) -> MaxSignificantsResolution:
     """Resolve the active cap rather than trusting RELION's saved argument."""
 
     from relax.relion.relion_metadata import resolve_relion_runtime_max_significants
@@ -1395,9 +1400,9 @@ def main() -> None:
     )
     print(
         "  max_significants: "
-        f"saved_arg={max_significants['maximum_significants_argument']}, "
-        f"active={max_significants['active_max_significants']}, "
-        f"source={max_significants['source']}, do_grad={max_significants['do_grad']}"
+        f"saved_arg={max_significants.maximum_significants_argument}, "
+        f"active={max_significants.active_max_significants}, "
+        f"source={max_significants.source}, do_grad={max_significants.do_grad}"
     )
     if firstiter_cc_mode["effective_mode"] == "force" and not firstiter_cc_mode["relion_requested"]:
         print(
@@ -1713,7 +1718,7 @@ def main() -> None:
         args.disc_type,
         coarse_engine=args.coarse_engine,
         adaptive_fraction=args.significance_adaptive_fraction,
-        max_significants=int(max_significants["active_max_significants"]),
+        max_significants=int(max_significants.active_max_significants),
         coarse_current_size=coarse_engine_current_size,
         fine_current_size=current_size,
         current_size=current_size,
@@ -1745,7 +1750,7 @@ def main() -> None:
             translations.astype(np.float32),
             class_log_priors=class_log_priors,
             adaptive_fraction=args.significance_adaptive_fraction,
-            max_significants=int(max_significants["active_max_significants"]),
+            max_significants=int(max_significants.active_max_significants),
             image_batch_size=significance_support_batch_plan.image_batch_size,
             rotation_block_size=significance_support_batch_plan.rotation_block_size,
             current_size=coarse_engine_current_size if args.adaptive_2pass else current_size,
@@ -1857,7 +1862,7 @@ def main() -> None:
             translations.astype(np.float32),
             class_log_priors=class_log_priors,
             adaptive_fraction=args.significance_adaptive_fraction,
-            max_significants=int(max_significants["active_max_significants"]),
+            max_significants=int(max_significants.active_max_significants),
             image_batch_size=significance_support_batch_plan.image_batch_size,
             rotation_block_size=significance_support_batch_plan.rotation_block_size,
             current_size=current_size,
@@ -2087,7 +2092,7 @@ def main() -> None:
             args.relion_native_lane_softmask_reduction
         ),
         "relion_optimiser_cli": relion_cli_flags,
-        "max_significants": max_significants,
+        "max_significants": dataclasses.asdict(max_significants),
         "firstiter_cc_mode": firstiter_cc_mode,
         "firstiter_cc_pass2_only_best_coarse": bool(
             firstiter_cc_mode["emulate"]

@@ -6,12 +6,13 @@ run. This module owns CLI configuration; numerical refinement options remain in
 """
 
 import argparse
+import dataclasses
 import logging
 import math
 import os
 from collections.abc import MutableMapping
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
 from relax.helpers.particle_io import add_particle_read_arguments
@@ -32,6 +33,9 @@ from relax.refinement.refinement_options import (
     relax_mode_consistency,
 )
 from relax.relion import input_poses
+
+if TYPE_CHECKING:
+    from relax.relion.relion_metadata import MaxSignificantsResolution
 
 logger = logging.getLogger(__name__)
 
@@ -1269,7 +1273,7 @@ class RelionRuntimeControls(NamedTuple):
 
     do_ctf_correction: bool | None
     firstiter_ini_high_angstrom: float | None
-    max_significants_resolution: dict
+    max_significants_resolution: "MaxSignificantsResolution"
 
 
 def resolve_relion_runtime_controls(
@@ -1338,16 +1342,14 @@ def resolve_relion_runtime_controls(
             n_classes=n_classes,
             reference_dimension=3,
         )
-        max_significants = int(
-            max_significants_resolution["active_max_significants"]
-        )
+        max_significants = int(max_significants_resolution.active_max_significants)
         log.info(
             "RELION max_significants: saved_arg=%s active=%d source=%s "
             "do_grad=%s (from %s)",
-            max_significants_resolution["maximum_significants_argument"],
+            max_significants_resolution.maximum_significants_argument,
             max_significants,
-            max_significants_resolution["source"],
-            max_significants_resolution["do_grad"],
+            max_significants_resolution.source,
+            max_significants_resolution.do_grad,
             optimiser_star,
         )
     if max_significants is None:
@@ -1355,26 +1357,28 @@ def resolve_relion_runtime_controls(
 
         # Without a RELION optimiser STAR, use relion_refine's own --maxsig default of -1
         # (ml_optimiser.cpp:1109) and its runtime resolution (ml_optimiser.cpp:3692-3699).
-        max_significants_resolution = resolve_relion_runtime_max_significants(
-            override=None,
-            optimiser_metadata={"maximum_significants_arg": -1},
-            target_iteration=target_iteration,
-            do_firstiter_cc=firstiter_cc,
-            n_classes=n_classes,
-            reference_dimension=3,
+        max_significants_resolution = dataclasses.replace(
+            resolve_relion_runtime_max_significants(
+                override=None,
+                optimiser_metadata={"maximum_significants_arg": -1},
+                target_iteration=target_iteration,
+                do_firstiter_cc=firstiter_cc,
+                n_classes=n_classes,
+                reference_dimension=3,
+            ),
+            source="relion_cli_default",
         )
-        max_significants_resolution["source"] = "relion_cli_default"
-        max_significants = int(max_significants_resolution["active_max_significants"])
+        max_significants = int(max_significants_resolution.active_max_significants)
         log.info("RELION max_significants: --maxsig default -1 -> active %d", max_significants)
     elif max_significants_resolution is None:
-        max_significants_resolution = {
-            "maximum_significants_argument": None,
-            "active_max_significants": int(max_significants),
-            "source": "cli_override",
-            "gradient_refine": False,
-            "do_grad": False,
-            "target_iteration": target_iteration,
-        }
+        max_significants_resolution = relion_metadata.MaxSignificantsResolution(
+            maximum_significants_argument=None,
+            active_max_significants=int(max_significants),
+            source="cli_override",
+            gradient_refine=False,
+            do_grad=False,
+            target_iteration=target_iteration,
+        )
 
     return RelionRuntimeControls(
         expected_accuracy_do_ctf_correction,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import shutil
@@ -200,7 +201,7 @@ def test_runtime_controls_without_optimiser(classes, override, expected, source)
     )
     assert controls.do_ctf_correction is None
     assert controls.firstiter_ini_high_angstrom is None
-    assert controls.max_significants_resolution == {
+    assert dataclasses.asdict(controls.max_significants_resolution) == {
         "maximum_significants_argument": -1 if override is None else None,
         "active_max_significants": expected, "source": source,
         "gradient_refine": False, "do_grad": False, "target_iteration": 8,
@@ -235,11 +236,11 @@ def test_runtime_controls_read_saved_metadata_and_active_precedence(
     else:
         assert_matches(controls.firstiter_ini_high_angstrom, float(ini_high))
     resolution = controls.max_significants_resolution
-    assert resolution["active_max_significants"] == expected
-    assert resolution["source"] == source
-    assert resolution["maximum_significants_argument"] == saved
-    assert resolution["target_iteration"] == 2
-    assert resolution["gradient_refine"] == gradient
+    assert resolution.active_max_significants == expected
+    assert resolution.source == source
+    assert resolution.maximum_significants_argument == saved
+    assert resolution.target_iteration == 2
+    assert resolution.gradient_refine == gradient
 
 
 def test_runtime_controls_preserve_legacy_saved_cap_and_missing_gradient_failure(tmp_path):
@@ -249,7 +250,7 @@ def test_runtime_controls_preserve_legacy_saved_cap_and_missing_gradient_failure
         path, max_significants=None, target_iteration=1,
         firstiter_cc=True, n_classes=4, log=LOG,
     )
-    assert controls.max_significants_resolution["active_max_significants"] == 23
+    assert controls.max_significants_resolution.active_max_significants == 23
     path.write_text("data_optimiser_general\n_rlnDoGradientRefine 1\n")
     with pytest.raises(ValueError, match="requires rlnNumberOfIterations"):
         command_options.resolve_relion_runtime_controls(
@@ -293,7 +294,7 @@ def test_runtime_controls_of_a_saved_optimiser_without_caps_leave_the_cap_off(di
         oracle / "run_optimiser.star", max_significants=None, target_iteration=1,
         firstiter_cc=False, n_classes=4, log=LOG,
     )
-    assert controls.max_significants_resolution["active_max_significants"] == -1
+    assert controls.max_significants_resolution.active_max_significants == -1
     assert controls.do_ctf_correction is None
     assert controls.firstiter_ini_high_angstrom is None
 

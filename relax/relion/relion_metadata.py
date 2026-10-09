@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -490,6 +491,24 @@ def relion_active_max_significants(
     return per_class * n_classes
 
 
+@dataclass(frozen=True, kw_only=True)
+class MaxSignificantsResolution:
+    """The cap on significant samples one RELION iteration uses, and where it came from.
+
+    The benchmark ledger and the parity summaries store it as a dict with these keys, in this order.
+    """
+
+    # The optimiser's saved --maxsig argument (None: none saved or no optimiser).
+    maximum_significants_argument: int | None
+    # The cap the iteration uses (-1: uncapped).
+    active_max_significants: int
+    # cli_override, relion_optimiser_argument, relion_gradient_runtime_default or relion_cli_default.
+    source: str
+    gradient_refine: bool
+    do_grad: bool
+    target_iteration: int
+
+
 def resolve_relion_runtime_max_significants(
     *,
     override: int | None,
@@ -498,7 +517,7 @@ def resolve_relion_runtime_max_significants(
     do_firstiter_cc: bool,
     n_classes: int,
     reference_dimension: int = 3,
-) -> dict[str, object]:
+) -> MaxSignificantsResolution:
     """Resolve an optimiser argument into the cap used by one RELION iteration.
 
     An explicit override is an active-value override, so ``-1`` can still be
@@ -546,16 +565,14 @@ def resolve_relion_runtime_max_significants(
             else "relion_optimiser_argument"
         )
 
-    return {
-        "maximum_significants_argument": (
-            None if saved_argument is None else int(saved_argument)
-        ),
-        "active_max_significants": int(active),
-        "source": source,
-        "gradient_refine": bool(gradient_refine),
-        "do_grad": bool(do_grad),
-        "target_iteration": int(target_iteration),
-    }
+    return MaxSignificantsResolution(
+        maximum_significants_argument=None if saved_argument is None else int(saved_argument),
+        active_max_significants=int(active),
+        source=source,
+        gradient_refine=bool(gradient_refine),
+        do_grad=bool(do_grad),
+        target_iteration=int(target_iteration),
+    )
 
 
 # The optics features relax implements, and the job types they are qualified for.

@@ -635,7 +635,7 @@ def main(command=None):
         n_classes=int(args.n_classes),
         log=logger,
     )
-    args.max_significants = runtime_controls.max_significants_resolution["active_max_significants"]
+    args.max_significants = runtime_controls.max_significants_resolution.active_max_significants
     expected_accuracy_do_ctf_correction = runtime_controls.do_ctf_correction
     relion_firstiter_ini_high_angstrom = runtime_controls.firstiter_ini_high_angstrom
 

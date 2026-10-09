@@ -5,6 +5,7 @@ this module owns stored metadata, array layouts, compression and map export. See
 docs/math/relion_refinement_algorithm.md, section 9.
 """
 
+import dataclasses
 import json
 import logging
 import os
@@ -31,6 +32,7 @@ from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import InitialSampling, RestartProvenance
     from relax.relion.input_poses import PoseProvenance
+    from relax.relion.relion_metadata import MaxSignificantsResolution
 
 
 logger = logging.getLogger("relax.refinement.full_refinement")
@@ -238,14 +240,14 @@ def build_archive_metadata(
         "max_significants": args.max_significants,
         "max_significants_argument": (
             np.nan
-            if max_significants_resolution["maximum_significants_argument"] is None
-            else int(max_significants_resolution["maximum_significants_argument"])
+            if max_significants_resolution.maximum_significants_argument is None
+            else int(max_significants_resolution.maximum_significants_argument)
         ),
         "max_significants_source": np.asarray(
-            str(max_significants_resolution["source"])
+            str(max_significants_resolution.source)
         ),
         "max_significants_do_grad": np.bool_(
-            bool(max_significants_resolution["do_grad"])
+            bool(max_significants_resolution.do_grad)
         ),
         "offset_sigma_angstrom": args.offset_sigma_angstrom,
         "tau2_fudge": np.float64(effective_tau2_fudge),
@@ -505,7 +507,7 @@ class RunReport:
     sigma_ang: float | None
     adaptive_oversampling: int
     max_significants: int
-    max_significants_resolution: dict
+    max_significants_resolution: "MaxSignificantsResolution"
     restart: "RestartProvenance"
     # Sampling and seed, which the benchmark ledger records.
     max_iter: int
@@ -550,7 +552,7 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
         "sigma_ang": None if report.sigma_ang is None else float(report.sigma_ang),
         "adaptive_oversampling": int(report.adaptive_oversampling),
         "max_significants": int(report.max_significants),
-        "max_significants_resolution": report.max_significants_resolution,
+        "max_significants_resolution": dataclasses.asdict(report.max_significants_resolution),
         "timing_rows": timing_rows,
         "timing_summary": parity_dump._summarize_timing_rows(timing_rows),
         "perturb_replay_restart_state_iterations": list(report.restart.iterations),
