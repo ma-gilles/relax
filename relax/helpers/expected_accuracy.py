@@ -1001,7 +1001,7 @@ def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_lo
         else random_seed_particle_ids,
         dtype=np.int64,
     ).reshape(-1)
-    per_class = []
+    per_class, class_positions = [], []
     for shape_class in half.classes:
         positions = shape_class.image_indices
         local_of_position = np.full(n_particles, -1, dtype=np.int64)
@@ -1009,6 +1009,7 @@ def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_lo
         class_trials = local_of_position[trial_local[local_of_position[trial_local] >= 0]]
         if class_trials.size == 0:
             continue
+        class_positions.append(np.flatnonzero(local_of_position[trial_local] >= 0))
         rest = np.setdiff1d(np.arange(positions.size), class_trials, assume_unique=True)
         per_class.append(
             estimate_relion_expected_accuracy(
@@ -1036,7 +1037,7 @@ def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_lo
         return dataclasses.replace(
             per_class[0], trial_local_indices=trial_local.copy(), trial_particle_ids=particle_ids[trial_local]
         )
-    return _combine_group_expected_accuracies(per_class, trial_local, particle_ids[trial_local])
+    return _combine_group_expected_accuracies(per_class, class_positions, trial_local, particle_ids[trial_local])
 
 
 def _estimate_tomo_half(
@@ -1111,8 +1112,9 @@ def _estimate_tomo_half(
     )
     model_box_size = int(volume_shape[0])
     zeros = np.zeros(n_particles, dtype=np.float64)
-    per_group = []
+    per_group, group_positions = [], []
     for group in np.unique(groups[trial_local]):
+        group_positions.append(np.flatnonzero(groups[trial_local] == group))
         group_trials = trial_local[groups[trial_local] == group]
         images = np.concatenate(
             [np.arange(half.unit_image_offsets[u], half.unit_image_offsets[u + 1]) for u in group_trials]
@@ -1148,4 +1150,4 @@ def _estimate_tomo_half(
                 optics=expected_accuracy_optics(half.images, images),
             )
         )
-    return _combine_group_expected_accuracies(per_group, trial_local, particle_ids[trial_local])
+    return _combine_group_expected_accuracies(per_group, group_positions, trial_local, particle_ids[trial_local])
