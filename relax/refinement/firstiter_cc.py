@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import jax.numpy as jnp
 import numpy as np
 
 from relax.classification.k_class import run_dense_k_class_em_adaptive
@@ -22,6 +23,7 @@ from relax.helpers.oversampling import build_adaptive_pass2_grids, project_pass2
 from relax.sampling import (
     apply_relion_translation_perturbation,
 )
+from relax.symmetry import canonicalize_rotational_symmetry
 
 if TYPE_CHECKING:
     from relax.refinement.half_scoring import (
@@ -57,13 +59,9 @@ def _score_kclass_firstiter_cc_pass2(
     variant: DenseVariantPolicy,
     execution: DenseExecutionPolicy,
     *,
-    mean,
-    coarse_rotation_ids,
     projection_scale: float,
     magnification,
     em_kwargs: dict,
-    log_label: str,
-    symmetry: str,
 ) -> FirstIterCCPass2:
     """RELION iter-1 ``--firstiter_cc`` adaptive two-pass dispatch.
 
@@ -71,14 +69,19 @@ def _score_kclass_firstiter_cc_pass2(
     scoring through the global coarse winner subset. The winner-take-all
     policy applies to M-step support as well as reported Pmax.
 
-    The K-class and K=1 adaptive scoring branches share this dispatcher; each passes the reference
-    ``mean`` it scores (one class or several), its coarse rotation ids (None: all), the images' projection
-    scale and magnification and its ``log_label``. The engine receives a clamped copy of ``em_kwargs``;
-    the caller's dictionary is not changed. Coarse/fine size overrides
-    (``variant.firstiter_*_current_size``) are forwarded only when supplied. The oversampling order used
-    is ``sampling.oversampling_order``.
+    The K-class and K=1 adaptive scoring branches share this dispatcher, with the images' projection scale
+    and magnification and their engine keywords. A K-class half scores its class stack on its coarse rotation
+    ids and logs under ``variant.firstiter_log_label``; a K=1 half scores its one reference as a one-class
+    stack on every coarse rotation. The engine receives a clamped copy of ``em_kwargs``; the caller's
+    dictionary is not changed. Coarse/fine size overrides (``variant.firstiter_*_current_size``) are
+    forwarded only when supplied. The oversampling order used is ``sampling.oversampling_order``.
     """
 
+    mean = half.reference if variant.k_class_enabled else jnp.asarray(half.reference)[None, :]
+    # The coarse rotations a K-class half scores (None: all of them).
+    coarse_ids = sampling.coarse_rotation_ids if variant.k_class_enabled else None
+    log_label = variant.firstiter_log_label if variant.k_class_enabled else "K=1 "
+    point_group = canonicalize_rotational_symmetry(sampling.symmetry)
     adaptive_os_local = int(sampling.oversampling_order)
     (
         coarse_rot,
@@ -98,11 +101,11 @@ def _score_kclass_firstiter_cc_pass2(
         sampling.random_perturbation,
         return_mstep_rotations=True,
         **(
-            {"coarse_rotation_ids": coarse_rotation_ids}
-            if coarse_rotation_ids is not None
+            {"coarse_rotation_ids": coarse_ids}
+            if coarse_ids is not None
             else {}
         ),
-        symmetry=symmetry,
+        symmetry=point_group,
     )
     coarse_rot, fine_rot, fine_mstep_rot = project_pass2_rotations(
         coarse_rot,
@@ -113,8 +116,8 @@ def _score_kclass_firstiter_cc_pass2(
         coarse_healpix_order=int(sampling.current_healpix_order),
         adaptive_oversampling=adaptive_os_local,
         random_perturbation=sampling.random_perturbation,
-        coarse_rotation_ids=coarse_rotation_ids,
-        symmetry=symmetry,
+        coarse_rotation_ids=coarse_ids,
+        symmetry=point_group,
         coarse_device_source=sampling.effective_device_source,
         grid_device_source=sampling.effective_device_source,
     )
@@ -126,9 +129,9 @@ def _score_kclass_firstiter_cc_pass2(
     n_classes = int(np.shape(mean)[0]) if np.ndim(mean) >= 2 else 1
     firstiter_significance_image_batch_size = None
     firstiter_significance_rotation_block_size = None
-    if symmetry != "C1" and em_kwargs.get("coarse_engine") != "gemm_dense":
+    if point_group != "C1" and em_kwargs.get("coarse_engine") != "gemm_dense":
         if not em_kwargs.get("mstep_relion_x_half", False):
-            raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
+            raise RuntimeError(f"{point_group} requires sparse RELION x-half BPref reconstruction")
     if batching.safe_batch_sizes is not None:
         batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
             coarse_rotations=coarse_rot,
@@ -233,7 +236,7 @@ def _score_kclass_firstiter_cc_pass2(
         significance_image_batch_size=firstiter_significance_image_batch_size,
         significance_rotation_block_size=firstiter_significance_rotation_block_size,
         coarse_healpix_order=int(sampling.current_healpix_order),
-        coarse_rotation_ids=coarse_rotation_ids,
+        coarse_rotation_ids=coarse_ids,
         oversampling_order=int(adaptive_os_local),
         fine_mstep_rotations_override=(
             fine_mstep_rot

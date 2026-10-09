@@ -779,16 +779,12 @@ def _score_half_dense_one_shape(
                 batching,
                 variant,
                 execution,
-                mean=half.reference,
-                coarse_rotation_ids=sampling.coarse_rotation_ids,
                 projection_scale=optics.projection_scale,
                 magnification=magnification,
                 em_kwargs={
                     **em_kwargs,
                     **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
                 },
-                log_label=variant.firstiter_log_label,
-                symmetry=symmetry,
             )
             k_class_result = firstiter.result
             rot_pmap_for_collapse = firstiter.rotation_parent_map
@@ -870,8 +866,6 @@ def _score_half_dense_one_shape(
             batching,
             variant,
             execution,
-            mean=jnp.asarray(half.reference)[None, :],
-            coarse_rotation_ids=None,
             # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
             projection_scale=optics.projection_scale,
             magnification=dataset_projection_magnification(half.particles.dataset),
@@ -880,8 +874,6 @@ def _score_half_dense_one_shape(
                 **({"mstep_relion_x_half": True} if execution.relion_x_half_mstep else {}),
                 **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
             },
-            log_label="K=1 ",
-            symmetry=symmetry,
         )
         k1_adaptive_result = firstiter.result
         rot_pmap_for_collapse = firstiter.rotation_parent_map

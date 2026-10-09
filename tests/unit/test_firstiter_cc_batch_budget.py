@@ -1,6 +1,7 @@
 import ast
 import dataclasses
 import inspect
+import logging
 from types import SimpleNamespace
 
 import jax.numpy as jnp
@@ -154,13 +155,9 @@ def _firstiter_cc_dispatch(
         batching,
         variant,
         execution,
-        mean=mean,
-        coarse_rotation_ids=None,
         projection_scale=projection_scale,
         magnification=None,
         em_kwargs=em_kwargs,
-        log_label="",
-        symmetry="C1",
     )
 
 
@@ -168,7 +165,7 @@ def test_firstiter_cc_core_keeps_owner_dependencies_visible():
     function = firstiter_cc._score_kclass_firstiter_cc_pass2
     assert tuple(inspect.signature(function).parameters) == (
         "half", "sampling", "priors", "batching", "variant", "execution",
-        "mean", "coarse_rotation_ids", "projection_scale", "magnification", "em_kwargs", "log_label", "symmetry",
+        "projection_scale", "magnification", "em_kwargs",
     )
 
     tree = ast.parse(inspect.getsource(function))
@@ -439,7 +436,7 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
 
 @pytest.mark.parametrize("n_classes", [1, 4], ids=["k1", "k4"])
 @pytest.mark.parametrize("separate_coarse", [False, True])
-def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n_classes, separate_coarse):
+def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, caplog, n_classes, separate_coarse):
     captured = {}
     dispatch = {}
     original_dispatch = half_scoring._score_kclass_firstiter_cc_pass2
@@ -447,6 +444,8 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     def capture_dispatch(*owners, **values):
         dispatch.update(values)
         return original_dispatch(*owners, **values)
+
+    caplog.set_level(logging.INFO, logger="relax.dense.half_scoring")
     calls = []
 
     class TinyDataset:
@@ -498,6 +497,7 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
 
     def fake_adaptive(*args, **kwargs):
         captured.update(kwargs)
+        captured["mean"] = args[1]
         n_images = 3
         n_fine_rot = 4608
         stats = make_relion_stats(
@@ -593,16 +593,16 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     assert result.ha.shape == (3,)
     assert result.coarse_ha.shape == (3,)
 
-    assert dispatch["mean"].shape == (n_classes, 4)
-    assert dispatch["log_label"] == ("K=1 " if n_classes == 1 else "test K-class ")
+    assert captured["mean"].shape == (n_classes, 4)
+    label = "K=1 " if n_classes == 1 else "test K-class "
+    assert any(f"STRICT-PARITY {label}routing iter-1" in record.getMessage() for record in caplog.records)
     # The engine receives the clamped copy; the dispatch leaves the caller's dictionary alone.
     assert dispatch["em_kwargs"]["image_batch_size"] == 187
     if n_classes == 1:
-        assert dispatch["coarse_rotation_ids"] is None
         assert captured["coarse_rotation_ids"] is None
     else:
-        assert dispatch["mean"] is means
-        assert dispatch["coarse_rotation_ids"] is coarse_ids
+        assert captured["mean"] is means
+        assert captured["coarse_rotation_ids"] is coarse_ids
         assert captured["coarse_rotation_ids"] is coarse_ids
 
 
