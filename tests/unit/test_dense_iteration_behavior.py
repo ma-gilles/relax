@@ -511,8 +511,8 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
         "build_local_adaptive_pass2_hypothesis_layout",
         fake_layout,
     )
-    monkeypatch.setattr(half_scoring, "log_local_adaptive_support", lambda *_args: None)
-    monkeypatch.setattr(half_scoring, "log_local_denominator_support", lambda *_args: None)
+    monkeypatch.setattr(local_debug, "log_local_adaptive_support", lambda *_args: None)
+    monkeypatch.setattr(local_debug, "log_local_denominator_support", lambda *_args: None)
 
     policy = LocalAdaptivePass2Support(
         full_parent=full_parent,
