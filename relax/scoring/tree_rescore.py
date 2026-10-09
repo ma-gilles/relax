@@ -324,15 +324,14 @@ def rescore_ambiguous_images(
     rescored_winner_score = rescored_scores_np[row_ids, rescored_winner_slot]
     rescored_runner_score = rescored_scores_np[row_ids, rescored_runner_slot]
     winner_changes = int(np.count_nonzero(rescored_winner_pose != best_pose_np))
-    applied_rows = np.arange(ambiguous_rows.size, dtype=np.int32)
-    rows_jax = jnp.asarray(ambiguous_rows[applied_rows], dtype=jnp.int32)
+    rows_jax = jnp.asarray(ambiguous_rows, dtype=jnp.int32)
     replaced = TreeRescoreState(
-        best_argmax=state.best_argmax.at[rows_jax].set(rescored_winner_pose[applied_rows]),
-        best_score=state.best_score.at[rows_jax].set(rescored_winner_score[applied_rows]),
-        class_best_argmax=state.class_best_argmax.at[rows_jax].set(rescored_winner_pose[applied_rows]),
-        class_best_score=state.class_best_score.at[rows_jax].set(rescored_winner_score[applied_rows]),
-        class_second_argmax=state.class_second_argmax.at[rows_jax].set(rescored_runner_pose[applied_rows]),
-        class_second_score=state.class_second_score.at[rows_jax].set(rescored_runner_score[applied_rows]),
+        best_argmax=state.best_argmax.at[rows_jax].set(rescored_winner_pose),
+        best_score=state.best_score.at[rows_jax].set(rescored_winner_score),
+        class_best_argmax=state.class_best_argmax.at[rows_jax].set(rescored_winner_pose),
+        class_best_score=state.class_best_score.at[rows_jax].set(rescored_winner_score),
+        class_second_argmax=state.class_second_argmax.at[rows_jax].set(rescored_runner_pose),
+        class_second_score=state.class_second_score.at[rows_jax].set(rescored_runner_score),
     )
     return TreeRescoreBatch(
         replaced,
