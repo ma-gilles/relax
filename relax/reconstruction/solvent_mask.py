@@ -40,21 +40,21 @@ def _fourier_resize(volume, new_size: int) -> np.ndarray:
     return np.fft.ifftn(np.fft.ifftshift(out)).real * (new_size / size) ** 3
 
 
-def _centered_window(volume, box: int) -> np.ndarray:
+def _centered_window(volume, box_size: int) -> np.ndarray:
     """Crop or zero-pad a cubic map about its centre voxel ``N // 2`` (RELION's Xmipp-origin window)."""
 
     size = volume.shape[0]
-    out = np.zeros((box,) * 3, dtype=volume.dtype)
-    lo = min(size // 2, box // 2)
-    hi = min(size - size // 2, box - box // 2)
+    out = np.zeros((box_size,) * 3, dtype=volume.dtype)
+    lo = min(size // 2, box_size // 2)
+    hi = min(size - size // 2, box_size - box_size // 2)
     src = slice(size // 2 - lo, size // 2 + hi)
-    dst = slice(box // 2 - lo, box // 2 + hi)
+    dst = slice(box_size // 2 - lo, box_size // 2 + hi)
     out[dst, dst, dst] = volume[src, src, src]
     return out
 
 
-def read_solvent_mask(path, *, box: int, pixel_size: float) -> np.ndarray:
-    """The user mask on the model grid, float64 ``[box, box, box]`` in the MRC file's (z, y, x) order."""
+def read_solvent_mask(path, *, box_size: int, pixel_size: float) -> np.ndarray:
+    """The user mask on the model grid, a float64 cube of side ``box_size`` in the MRC file's (z, y, x) order."""
 
     import mrcfile
 
@@ -67,8 +67,8 @@ def read_solvent_mask(path, *, box: int, pixel_size: float) -> np.ndarray:
         new_size = relion_round(float(mask.shape[0] * mask_pixel / float(pixel_size)))
         new_size += new_size % 2
         mask = _fourier_resize(mask, new_size)
-    if mask.shape[0] != int(box):
-        mask = _centered_window(mask, int(box))
+    if mask.shape[0] != box_size:
+        mask = _centered_window(mask, box_size)
     return np.clip(mask, 0.0, 1.0)
 
 

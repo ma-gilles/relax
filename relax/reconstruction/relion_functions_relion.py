@@ -114,7 +114,7 @@ def _pad_volume_for_projection_host(
     for the input volume, regardless of RELAX_USE_FLOAT64_PROJECTIONS.
     """
 
-    N = int(volume_shape[0])
+    box_size = int(volume_shape[0])
     padded_shape = tuple(int(s) * int(padding_factor) for s in volume_shape)
     vol_ft_flat = np.asarray(vol_ft_flat)
     real_dtype = np.float64 if vol_ft_flat.dtype == np.complex128 else np.float32
@@ -125,8 +125,8 @@ def _pad_volume_for_projection_host(
     # identically on the complex array either way.
     vol_real = _get_idft3_np(vol_ft_flat.reshape(volume_shape))
     if do_gridding_correction:
-        vol_real = _gridding_correct_trilinear_np(vol_real, N, int(padding_factor))
-    pad_amount = N * (int(padding_factor) - 1)
+        vol_real = _gridding_correct_trilinear_np(vol_real, box_size, int(padding_factor))
+    pad_amount = box_size * (int(padding_factor) - 1)
     pad_before = pad_amount // 2
     pad_after = pad_amount - pad_before
     vol_real_padded = np.pad(vol_real, [(pad_before, pad_after)] * 3, mode="constant")
@@ -201,13 +201,13 @@ def pad_volume_for_projection(
             current_size=current_size,
         )
 
-    N = volume_shape[0]
+    box_size = volume_shape[0]
     vol_ft = jnp.asarray(vol_ft_flat)
     input_dtype = vol_ft.dtype
     vol_real = fourier_transform_utils.get_idft3(vol_ft.reshape(volume_shape))
     if do_gridding_correction:
-        vol_real = _gridding_correct_trilinear(vol_real, N, padding_factor)
-    pad_amount = N * (padding_factor - 1)
+        vol_real = _gridding_correct_trilinear(vol_real, box_size, padding_factor)
+    pad_amount = box_size * (padding_factor - 1)
     vol_real_padded = padding.pad_volume_spatial_domain(vol_real, pad_amount)
     vol_ft_padded = fourier_transform_utils.get_dft3(vol_real_padded)
 

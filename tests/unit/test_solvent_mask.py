@@ -128,12 +128,12 @@ def test_mask_is_clipped_and_windowed_about_the_centre(tmp_path):
     data[4, 4, 4] = 1.7
     data[0, 0, 0] = -0.3
     _write(tmp_path / "m.mrc", data, 2.0)
-    same = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box=8, pixel_size=2.0)
+    same = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box_size=8, pixel_size=2.0)
     assert_matches([same.min(), same.max(), same[4, 4, 4]], [0.0, 1.0, 1.0])
-    padded = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box=12, pixel_size=2.0)
+    padded = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box_size=12, pixel_size=2.0)
     assert padded.shape == (12, 12, 12)
     assert_matches([padded[6, 6, 6], padded.sum()], [1.0, 1.0])
-    cropped = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box=6, pixel_size=2.0)
+    cropped = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box_size=6, pixel_size=2.0)
     assert cropped.shape == (6, 6, 6)
     assert_matches(cropped[3, 3, 3], 1.0)
 
@@ -143,14 +143,14 @@ def test_mask_on_another_pixel_size_is_resampled(tmp_path):
     blob = np.exp(-0.5 * (grid**2).sum(0) / 3.0**2)  # sigma 6 A
     _write(tmp_path / "m.mrc", blob, 2.0)
     # RELION: rescale to ROUND(16 * 2.0 / 4.0) = 8 voxels, then window to the 16 box.
-    resampled = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box=16, pixel_size=4.0)
+    resampled = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box_size=16, pixel_size=4.0)
     assert resampled.shape == (16, 16, 16)
     assert 0.0 <= resampled.min() and resampled.max() <= 1.0
     # The blob keeps its size in Angstrom: sigma 1.5 voxels at 4 A.
     assert resampled[8, 8, 8] == pytest.approx(1.0, abs=0.02)
     assert resampled[8, 8, 10] == pytest.approx(math.exp(-0.5 * (2 / 1.5) ** 2), abs=0.02)
     # Within 0.001 A no resampling happens.
-    same = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box=16, pixel_size=2.0005)
+    same = solvent_mask.read_solvent_mask(tmp_path / "m.mrc", box_size=16, pixel_size=2.0005)
     assert_matches(same, blob.astype(np.float32))
 
 

@@ -92,7 +92,7 @@ def _internal_solvent_mask(path, box_size, pixel_size_angstrom):
         return None
     from relax.reconstruction.solvent_mask import read_solvent_mask
 
-    mask = read_solvent_mask(path, box=int(box_size), pixel_size=float(pixel_size_angstrom))
+    mask = read_solvent_mask(path, box_size=box_size, pixel_size=float(pixel_size_angstrom))
     return np.ascontiguousarray(np.transpose(mask, (2, 1, 0)))
 
 

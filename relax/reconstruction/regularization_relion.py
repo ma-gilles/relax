@@ -1798,7 +1798,7 @@ def join_halves_at_low_resolution(
     .. code-block:: text
 
         myres = max(low_resol_join_halves_angstrom, current_resolution_angstrom)
-        lowres_r_max = ceil(grid_size * voxel_size / myres)
+        lowres_r_max = ceil(box_size * voxel_size / myres)
 
     matching ``ml_optimiser_mpi.cpp:3122-3123``:
 
