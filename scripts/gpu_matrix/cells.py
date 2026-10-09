@@ -472,6 +472,20 @@ CELLS["class3d_k3_10073_10k380_local"] = {
     "box": 380,
 }
 
+# The same with --sigma_ang 10: at sigma 3 an image's local rows peak near 850 per image (iteration 2), far under the
+# 16384-row class; sigma 10 (about 11x the rows) puts single images past it (the Class3D local lone row blocks).
+CELLS["class3d_k3_10073_10k380_local_s10"] = {
+    "module": "relax.commands.class3d",
+    "args": [
+        *("--n_classes", "3", "--data_dir", "{fx:e10073_10k380}", "--output", "{out}"),
+        *("--init_volume", "{fx:e10073_10k380}/reference_init_relion.mrc", "--tau2_fudge", "4", "--max_iter", "25"),
+        *("--init_resolution", "60", "--initial-pose-source", "input-star", "--healpix_order", "4", "--sigma_ang", "10"),
+        *("--offset_range", "3", "--offset_step", "1", "--particle_diameter_ang", "250", "--no-firstiter_cc"),
+        *("--adaptive_oversampling", "1", "--seed", "29"),
+    ],
+    "box": 380,
+}
+
 # Robustness cell 16 (etw, relax_onengine_20260926/cell16_vdam_box380_20261007/cell16.sbatch): VDAM InitialModel K=1,
 # 200 iterations, on the cell-15 10073 subset at box 380.
 CELLS["vdam_k1_10073_10k380_s29"] = {
