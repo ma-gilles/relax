@@ -836,27 +836,28 @@ def refine_single_volume(
             (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), iteration=iteration,
             init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
         )
+        operands = maximization.MStepOperands(
+            numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1),
+            accumulator_shape=mstep_accumulator_shape, full_half_axis=mstep_full_half_axis,
+            full_half_axes=expected.per_half.mstep_full_half_axis, halves=halves,
+            image_current_size=plan.sampling_plan.windows.image_current_size,
+            projector_power_spectrum=projector_power_spectrum,
+        )
 
         # --- RELION-exact M-step: K=1 on the split-half auto-refine path (compareTwoHalves -> updateSSNRarrays
         # -> reconstruct); Class3D joins the halves per class, carries the previous Iref power spectrum forward
         # as tau2 and solves once per class. mstep is the mode's record (ClassMaximization or K1Maximization). ---
         if ctx.k_class_enabled:
             mstep = class_maximization(
-                reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx, options, this_iteration,
-                halves=halves, current_size=this_iteration.current_size,
-                image_current_size=plan.sampling_plan.windows.image_current_size,
-                mstep_accumulator_shape=mstep_accumulator_shape, mstep_full_half_axis=mstep_full_half_axis,
-                projector_power_spectrum=projector_power_spectrum,
+                reference_model, operands, ctx, options, this_iteration,
                 class_tau2=source.class_tau2(iteration, options.k_class.n_classes),
             )
             history.data_vs_prior_trajectory.append(mstep.data_vs_prior)
             carry = replace(carry, previous_data_vs_prior_for_scheduling=mstep.data_vs_prior)
         else:
             mstep = k1_maximization(
-                reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx, this_iteration, parity=options.parity,
+                reference_model, operands, ctx, this_iteration, parity=options.parity,
                 pixel_resolutions=history.pixel_resolutions, current_resolution=carry.state.current_resolution,
-                current_size=this_iteration.current_size, mstep_accumulator_shape=mstep_accumulator_shape,
-                mstep_full_half_axes=expected.per_half.mstep_full_half_axis,
             )
             # The accumulators the solve used (joined at low resolution when that is on) replace the scored ones.
             Ft_y_0, Ft_y_1 = mstep.Ft_y_per_half
@@ -1187,7 +1188,7 @@ def refine_single_volume(
         Ft_ctf_0 = Ft_ctf_1 = None
         unreg_means = mstep = snapshot = None
         # Pass containers must not retain the previous grids while the next projector is built.
-        expected = projector_power_spectrum = None
+        expected = projector_power_spectrum = operands = None
         if options.execution.clear_jax_caches_between_iterations:
             jax.clear_caches()
 

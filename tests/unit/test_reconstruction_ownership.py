@@ -91,7 +91,7 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
     )
 
     (settings,) = trace.calls("settings")
-    assert [call.args[3].reconstruction_settings for call in trace.calls("maximization")] == [settings.result] * 2
+    assert [call.args[2].reconstruction_settings for call in trace.calls("maximization")] == [settings.result] * 2
     assert all(call.inside == ("maximization",) for call in trace.calls("operation"))
     in_operation = [call.label for call in trace.calls_seen if "operation" in call.inside]
     flatten_steps = ["mask", "mask_builder", "flatten"]

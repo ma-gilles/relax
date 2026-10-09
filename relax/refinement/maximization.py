@@ -6,6 +6,7 @@ history and installs them; each M-step writes the reference model in place, as i
 """
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
 import jax.numpy as jnp
@@ -107,20 +108,32 @@ def copy_first_class_to_every_class(
     return copied, class_mixture
 
 
+@dataclass(frozen=True, kw_only=True)
+class MStepOperands:
+    """What a numbered M-step solves from: the two halves' accumulators as the expectation published them
+    (``numerators`` and ``denominators``, each a pair; their ``accumulator_shape``, the resolved
+    ``full_half_axis`` the Class3D join reads and each half's own ``full_half_axes`` the K=1 prior reads), and
+    what the Class3D prior reads besides: the ``halves``, the expectation windows' ``image_current_size`` and
+    half 1's projected reference power (None before a previous iteration's). The record holds the arrays the
+    loop holds until its end-of-iteration boundary."""
+
+    numerators: tuple
+    denominators: tuple
+    accumulator_shape: tuple
+    full_half_axis: int
+    full_half_axes: list
+    halves: tuple
+    image_current_size: int
+    projector_power_spectrum: object
+
+
 def class_maximization(
     reference_model,
-    Ft_y_per_half,
-    Ft_ctf_per_half,
+    operands: MStepOperands,
     ctx: "RunContext",
     options: RefinementOptions,
     this_iteration: NumberedIteration,
     *,
-    halves,
-    current_size,
-    image_current_size,
-    mstep_accumulator_shape,
-    mstep_full_half_axis,
-    projector_power_spectrum,
     class_tau2: ClassTau2,
 ) -> ClassMaximization:
     """RELION's Class3D M-step: one prior and one Wiener solve per class from the combined halves.
@@ -135,8 +148,8 @@ def class_maximization(
     pixel size and M-step probe; from ``this_iteration``: its index and first-iteration CC.
     """
     parity = options.parity
-    Ft_y_0, Ft_y_1 = Ft_y_per_half
-    Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
+    Ft_y_0, Ft_y_1 = operands.numerators
+    Ft_ctf_0, Ft_ctf_1 = operands.denominators
     Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
     Ft_ctf_combined = _combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
     # K-class 256px maps are large enough that materializing both
@@ -152,14 +165,14 @@ def class_maximization(
         Ft_ctf_combined,
         ctx.reconstruction_settings,
         half_denominators=(Ft_ctf_0, Ft_ctf_1),
-        halves=halves,
+        halves=operands.halves,
         n_classes=options.k_class.n_classes,
         iteration=this_iteration.iteration,
-        current_size=current_size,
-        image_current_size=image_current_size,
-        accumulator_shape=mstep_accumulator_shape,
-        full_half_axis=mstep_full_half_axis,
-        projector_power_spectrum=projector_power_spectrum,
+        current_size=this_iteration.current_size,
+        image_current_size=operands.image_current_size,
+        accumulator_shape=operands.accumulator_shape,
+        full_half_axis=operands.full_half_axis,
+        projector_power_spectrum=operands.projector_power_spectrum,
         class_tau2=class_tau2,
         scoring_dtype=ctx.scoring_dtype,
         log=logger,
@@ -189,8 +202,8 @@ def class_maximization(
         ctx.reconstruction_settings,
         n_classes=options.k_class.n_classes,
         iteration=this_iteration.iteration,
-        current_size=current_size,
-        accumulator_volume_shape=mstep_accumulator_shape,
+        current_size=this_iteration.current_size,
+        accumulator_volume_shape=operands.accumulator_shape,
         relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
         probe=ctx.maximization_probe,
     )
@@ -248,17 +261,13 @@ class K1Maximization(NamedTuple):
 
 def k1_maximization(
     reference_model,
-    Ft_y_per_half,
-    Ft_ctf_per_half,
+    operands: MStepOperands,
     ctx: "RunContext",
     this_iteration: NumberedIteration,
     *,
     parity,
     pixel_resolutions,
     current_resolution,
-    current_size,
-    mstep_accumulator_shape,
-    mstep_full_half_axes,
 ) -> K1Maximization:
     """RELION's split-half auto-refine M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct).
 
@@ -269,8 +278,8 @@ def k1_maximization(
     reads them. Reads from ``ctx``: the reconstruction settings, scoring dtype and pixel size; from
     ``this_iteration``: its index and first-iteration CC.
     """
-    Ft_y_0, Ft_y_1 = Ft_y_per_half
-    Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
+    Ft_y_0, Ft_y_1 = operands.numerators
+    Ft_ctf_0, Ft_ctf_1 = operands.denominators
     retained_Ft_y_0_device = None
     # RELION's --low_resol_join_halves averages the low-resolution shells of
     # the K=1 half accumulators before the Wiener solve; see
@@ -279,7 +288,7 @@ def k1_maximization(
         Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1, retained_Ft_y_0_device = join_half_accumulators_at_low_resolution(
             (Ft_y_0, Ft_y_1),
             (Ft_ctf_0, Ft_ctf_1),
-            accumulator_volume_shape=mstep_accumulator_shape,
+            accumulator_volume_shape=operands.accumulator_shape,
             box_size=ctx.reconstruction_settings.box_size,
             voxel_size=ctx.source_pixel_size_angstrom,
             padding_factor=RECONSTRUCTION_PADDING_FACTOR,
@@ -292,16 +301,16 @@ def k1_maximization(
     previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
     ctx.maximization_probe.k1_accumulators_joined(
         this_iteration.iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), settings=ctx.reconstruction_settings,
-        current_size=current_size, accumulator_shape=mstep_accumulator_shape,
+        current_size=this_iteration.current_size, accumulator_shape=operands.accumulator_shape,
         pixel_size_angstrom=ctx.source_pixel_size_angstrom,
     )
     split_prior = estimate_split_half_prior(
         (Ft_y_0, Ft_y_1),
         (Ft_ctf_0, Ft_ctf_1),
         ctx.reconstruction_settings,
-        current_size=current_size,
-        accumulator_shape=mstep_accumulator_shape,
-        full_half_axes=mstep_full_half_axes,
+        current_size=this_iteration.current_size,
+        accumulator_shape=operands.accumulator_shape,
+        full_half_axes=operands.full_half_axes,
         iteration=this_iteration.iteration,
         scoring_dtype=ctx.scoring_dtype,
         log=logger,
@@ -323,8 +332,8 @@ def k1_maximization(
         split_prior.shells_per_half,
         ctx.reconstruction_settings,
         iteration=this_iteration.iteration,
-        current_size=current_size,
-        accumulator_volume_shape=mstep_accumulator_shape,
+        current_size=this_iteration.current_size,
+        accumulator_volume_shape=operands.accumulator_shape,
         relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
         retained_first_numerator=retained_Ft_y_0_device,
         probe=ctx.maximization_probe,

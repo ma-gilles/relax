@@ -100,7 +100,7 @@ def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_st
         assert phase.result.sampling.cs_for_engine == 4
         assert phase.result.sampling.model_current_size_for_engine == windows.model_size
         assert plan.result.size == 4
-        assert mstep.kwargs["image_current_size"] == windows.image_current_size > 4
+        assert mstep.args[1].image_current_size == windows.image_current_size > 4
     # The engine scores at the cap and sums the noise, Wavg and powerClass terms at the full current size.
     assert engine_calls
     for call in engine_calls:
