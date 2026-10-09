@@ -175,6 +175,63 @@ def test_alias_locals(tmp_path):
     assert keys(smell_check.check_alias_locals(repo)) == {"alias-local:relax.algo:f:size=options.size"}
 
 
+def test_private_imports(tmp_path):
+    repo = make_repo(
+        tmp_path,
+        {
+            "relax/helper.py": "def _hidden():\n    return 1\n\n\ndef _seen():\n    return 2\n\n\ndef public():\n    return _hidden()\n",
+            "relax/pkg/__init__.py": "",
+            "relax/pkg/inner.py": "def _deep():\n    return 3\n",
+            "relax/algo.py": """
+            import relax.helper as h
+            import relax.pkg.inner
+            from relax import helper
+            from relax.helper import _hidden, public, __doc__
+            from relax.pkg import inner as alias
+            import numpy as np
+
+            def f():
+                return (
+                    _hidden() + public() + h._seen() + helper._hidden() + relax.pkg.inner._deep()
+                    + alias._deep() + np._private + h.__name__
+                )
+        """,
+        },
+    )
+    assert keys(smell_check.check_private_imports(repo)) == {
+        "private-import:relax.algo:relax.helper:_hidden",
+        "private-import:relax.algo:relax.helper:_seen",
+        "private-import:relax.algo:relax.pkg.inner:_deep",
+    }
+
+
+def test_single_use_imports_over_threshold(tmp_path, monkeypatch):
+    monkeypatch.setattr(smell_check, "SINGLE_USE_IMPORT_THRESHOLD", 2)
+    repo = make_repo(
+        tmp_path,
+        {
+            "relax/helper.py": "a = b = c = d = 1\n",
+            "relax/algo.py": """
+            from __future__ import annotations
+            from os.path import join
+            from numpy import asarray
+            from relax.helper import a, b, c as see, d
+
+            __all__ = ["d"]
+
+            def f():
+                return join(asarray(a), b, b, see)
+        """,
+            "relax/few.py": "from relax.helper import a, b\n\n\ndef g():\n    return a + b\n",
+        },
+    )
+    assert keys(smell_check.check_single_use_imports(repo)) == {
+        "single-use-import:relax.algo:asarray",
+        "single-use-import:relax.algo:a",
+        "single-use-import:relax.algo:see",
+    }
+
+
 def test_baseline_makes_finding_not_new(tmp_path, capsys):
     make_repo(tmp_path, {"relax/algo.py": "def f(x):\n    x = int(x)\n    return x\n"})
     (tmp_path / "scripts/dev").mkdir(parents=True)

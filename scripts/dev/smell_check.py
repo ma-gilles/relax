@@ -54,6 +54,8 @@ NEAR_MIN_STATEMENTS = 5
 NEAR_JACCARD = 0.8
 NEAR_SHINGLE = 5
 NEAR_COMMON_SHINGLE = 200
+# Check 11: a module is reported when more than this many of its from-imported names are used once.
+SINGLE_USE_IMPORT_THRESHOLD = 20
 
 FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 SCOPE_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
@@ -678,6 +680,91 @@ def check_alias_locals(repo: Repo) -> list[Finding]:
     return out
 
 
+def _is_private(name: str) -> bool:
+    return name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
+
+
+def check_private_imports(repo: Repo) -> list[Finding]:
+    """A ``_private`` name stays in its module: no relax module imports one from another relax module
+    (``from relax.x import _y``) or reads one through a module it imported (``import relax.x as m``,
+    ``from relax import x``, ``import relax.x``, then ``m._y``, ``x._y``, ``relax.x._y``); make the name public
+    or move its user.
+
+    A module alias is matched by name over the whole file, so a local that shadows it could be misread; relax
+    code does not rebind module aliases."""
+    known = repo.modules
+    out = []
+    for rel in repo.files("relax"):
+        mod, tree = module_name(rel), repo.trees[rel]
+        found = {}
+        aliases = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                src = resolve_import(rel, node)
+                if not (src == "relax" or src.startswith("relax.")):
+                    continue
+                for a in node.names:
+                    if f"{src}.{a.name}" in known:
+                        aliases[a.asname or a.name] = f"{src}.{a.name}"
+                    if src != mod and _is_private(a.name):
+                        found.setdefault((src, a.name), node.lineno)
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.asname and a.name in known:
+                        aliases[a.asname] = a.name
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Attribute) and _is_private(node.attr)):
+                continue
+            base = ast.unparse(node.value)
+            src = aliases.get(base, base if base in known else None)
+            if src is not None and src != mod:
+                found.setdefault((src, node.attr), node.lineno)
+        for (src, name), line in found.items():
+            out.append(Finding("private-import", f"private-import:{mod}:{src}:{name}", rel, line, f"uses {src}.{name}"))
+    return out
+
+
+def check_single_use_imports(repo: Repo) -> list[Finding]:
+    """Import a name where it pays: a relax module with more than ``SINGLE_USE_IMPORT_THRESHOLD`` names it
+    from-imports (relax or third-party; not the standard library or ``__future__``) and uses exactly once has
+    grown a wide, shallow interface; split the module or call through the owning module.
+
+    One finding per (module, name), only for modules over the threshold, so a key does not change when an
+    unrelated import is added or removed; the count is in each finding's message. A use is a ``Name`` load
+    anywhere in the file; a name imported only to re-export (zero uses) is not single-use."""
+    out = []
+    for rel in repo.files("relax"):
+        mod, tree = module_name(rel), repo.trees[rel]
+        imported = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            src = resolve_import(rel, node)
+            if src.split(".")[0] in sys.stdlib_module_names or src == "__future__":
+                continue
+            for a in node.names:
+                if a.name != "*":
+                    imported.setdefault(a.asname or a.name, (src, node.lineno))
+        uses = collections.Counter(
+            n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        )
+        single = sorted(name for name in imported if uses[name] == 1)
+        if len(single) <= SINGLE_USE_IMPORT_THRESHOLD:
+            continue
+        for name in single:
+            src, line = imported[name]
+            out.append(
+                Finding(
+                    "single-use-import",
+                    f"single-use-import:{mod}:{name}",
+                    rel,
+                    line,
+                    f"{name} (from {src}) is used once; {len(single)} single-use imports in {mod}",
+                )
+            )
+    return out
+
+
 CHECKS = {
     "self-cast": check_self_cast,
     "record-fields": check_record_fields,
@@ -688,6 +775,8 @@ CHECKS = {
     "diagnostics-import": check_diagnostics_imports,
     "strip-literal": check_strip_literal,
     "alias-local": check_alias_locals,
+    "private-import": check_private_imports,
+    "single-use-import": check_single_use_imports,
 }
 # The finding ids each check may emit, in report order.
 CHECK_IDS = (
@@ -702,6 +791,8 @@ CHECK_IDS = (
     "diagnostics-import",
     "strip-literal",
     "alias-local",
+    "private-import",
+    "single-use-import",
 )
 
 
