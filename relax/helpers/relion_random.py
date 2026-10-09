@@ -98,7 +98,6 @@ def init_random_generator(seed: int) -> GlibcRand:
 def glibc_rand_sequence(seed: int, count: int) -> np.ndarray:
     """The first ``count`` values of glibc ``rand()`` after ``srand(seed)``, ``seed`` an ``unsigned int``."""
 
-    count = int(count)
     if count < 0:
         raise ValueError(f"count must be non-negative, got {count}")
     generator = GlibcRand(seed)
