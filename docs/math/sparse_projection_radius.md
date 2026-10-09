@@ -111,10 +111,14 @@ RELION's integer-truncated \(r^2\) (relax/cuda/relion_scoring.cuh:464).
 
 Optics groups with different `rlnMagMat` (relax#48) are split into shape classes like groups on
 other grids ([`optics_shape_class_rows`](../../relax/refinement/optics_shapes.py)), so each class
-applies one matrix and the mask above reads that class's \(A=M_3^{-1}A_{\mathrm{proj}}R/s\). A
-class on another grid with anisotropic magnification keeps \(\text{max\_r}=r_{\max}+1/2\) when
-\(s\le 1\): its recon window holds its rounded support, which lies inside that radius. A class with
-\(s>1\) and anisotropic magnification is refused.
+applies one matrix and the mask above reads that class's \(A=s\,M_3^{-1}A_{\mathrm{proj}}R\). A class
+on another grid (image radius \(r_{\max}s\)) keeps its own rounded support in its recon window, so the
+image clip only has to cover that window: \(r_{\max}+1/2\) for \(s\le 1\) and \(r_{\max}s+1\) above
+(relax#53; \(s\) can be \(1+2\times10^{-8}\) when the reference header's pixel size is not the STAR's).
+The clip records the relation \(\text{image radius}=r_{\max}\,s+\text{offset}\), so the
+stable-window adjoint's runtime image radius gives back its reference radius
+(`ReferenceSphereClip.runtime_reference_radius`). RELION's \(s\ge\sqrt2\) kernel defect stays refused
+(relax#2).
 
 Implementation: [`ReferenceSphereClip`, `mstep_adjoint_max_r` and `rotated_radius_mask`](../../relax/helpers/adjoint.py),
 selected by `dataset_magnification_is_anisotropic` in the resident and local engines. Regression:

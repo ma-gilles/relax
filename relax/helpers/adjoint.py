@@ -25,17 +25,26 @@ class ReferenceSphereClip(NamedTuple):
       ``r_max * s`` is RELION's rule pixel for pixel. ``reference_radius`` is None.
     - Anisotropic magnification (``A = inv(M3) Aproj R``, ``M`` with unequal singular
       values): ``|A^-1 k| = |M k|`` varies with the direction of ``k``, so no image radius
-      reproduces the rotated cut. The adjoint then keeps the rounded image support
-      (``image_radius = r_max + 1/2``) and masks each row's pixels by ``|A^-1 k| <= r_max``
-      (``reference_radius``); see docs/math/sparse_projection_radius.md.
+      reproduces the rotated cut. The adjoint then keeps an image radius that covers the
+      pass's window (``image_radius = reference_radius * scale + image_offset``) and masks
+      each row's pixels by ``|A^-1 k| <= r_max`` (``reference_radius``); see
+      docs/math/sparse_projection_radius.md.
 
     The reference padding is not implied by the image shape and the radius, and is given
-    explicitly.
+    explicitly. ``scale`` and ``image_offset`` let a runtime image radius (a smaller logical
+    size inside a capacity class) give back its reference radius.
     """
 
     image_radius: float
     upsampling: int
     reference_radius: float | None = None
+    scale: float = 1.0
+    image_offset: float = 0.5
+
+    def runtime_reference_radius(self, runtime_image_radius):
+        """The reference radius of a runtime image radius under this clip's relation."""
+
+        return (runtime_image_radius - self.image_offset) / self.scale
 
 
 # Relative singular-value spread below which a magnification matrix is a scaled rotation.
@@ -62,24 +71,21 @@ def mstep_adjoint_max_r(volume_current_size, image_radius, padding_factor, *, an
     """The adjoint ``max_r``: r_max on one grid, a :class:`ReferenceSphereClip` otherwise.
 
     ``anisotropic_magnification`` (:func:`magnification_is_anisotropic` of the images' optics
-    groups) selects the rotated-radius mask, keeping the rounded image support ``r_max + 1/2``
-    (the runtime-radius adjoint reads the reference radius back as ``image radius - 1/2``).
-    An optics group on another grid (``image_radius = r_max * s``) with anisotropic
-    magnification (relax#48) takes the same clip when ``s <= 1``: its reconstruction window
-    holds its rounded image support (``reference_sphere_clip`` windows), which lies inside
-    ``r_max + 1/2``, and the mask applies RELION's ``|A^-1 k| <= r_max`` with the group's
-    scale and magnification in ``A``. A group whose field of view is larger (``s > 1``)
-    has image pixels beyond ``r_max + 1/2`` inside the rotated sphere and is refused.
+    groups) selects the rotated-radius mask. On the reference grid the image clip keeps the
+    rounded image support ``r_max + 1/2``. An optics group on another grid has
+    ``image_radius = r_max * s`` (``s`` its scale difference, relax#48 and relax#53): its
+    reconstruction window holds its own rounded image support (``reference_sphere_clip``
+    windows), so the image clip only has to cover that window, ``r_max + 1/2`` for
+    ``s <= 1`` and ``r_max * s + 1`` above, and the mask applies RELION's
+    ``|A^-1 k| <= r_max`` with the group's scale and magnification in ``A``.
     """
 
     r_max = float(int(volume_current_size) // 2)
     if anisotropic_magnification:
-        if image_radius is not None and float(image_radius) > r_max:
-            raise NotImplementedError(
-                "anisotropic magnification on an optics group whose field of view is larger than the "
-                "reference's (scale > 1) is not supported; list that group first"
-            )
-        return ReferenceSphereClip(r_max + 0.5, int(padding_factor), r_max)
+        scale = 1.0 if image_radius is None or r_max == 0.0 else float(image_radius) / r_max
+        if scale <= 1.0:
+            return ReferenceSphereClip(r_max + 0.5, int(padding_factor), r_max)
+        return ReferenceSphereClip(r_max * scale + 1.0, int(padding_factor), r_max, scale, 1.0)
     if image_radius is None:
         return r_max
     return ReferenceSphereClip(float(image_radius), int(padding_factor))
@@ -138,8 +144,10 @@ def adjoint_slice_volume_windowed(
     if isinstance(max_r, ReferenceSphereClip) and max_r.reference_radius is not None:
         if not relion_x_half:
             raise NotImplementedError("the rotated-radius mask reads the RELION x-half window layout")
-        # A runtime radius is the logical image radius r_max + 1/2 of a larger physical class.
-        reference_radius = max_r.reference_radius if runtime_max_r is None else runtime_max_r - 0.5
+        # A runtime radius is the logical image radius of a larger physical class.
+        reference_radius = (
+            max_r.reference_radius if runtime_max_r is None else max_r.runtime_reference_radius(runtime_max_r)
+        )
         mask = rotated_radius_mask(window_indices, rotations_block, image_shape, reference_radius)
         windowed_half = windowed_half * mask.astype(windowed_half.real.dtype)
     return core.adjoint_slice_volume_indexed(

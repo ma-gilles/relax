@@ -78,12 +78,15 @@ def test_anisotropic_clip_keeps_the_rounded_image_support_and_the_reference_radi
     assert_matches(kwargs["max_r"], 18.5)
     # Without magnification nothing changes.
     assert_matches(adjoint.mstep_adjoint_max_r(36, None, 2), 18.0)
-    # An optics group on a finer or equal field of view (scale <= 1, relax#48) keeps the same clip;
-    # its window holds the group's rounded support, and the mask uses the group's matrix.
+    # An optics group on another grid (relax#48, relax#53): scale <= 1 keeps the same clip, scale = 1
+    # exactly is the reference grid's clip, and scale > 1 covers its window at r_max * s + 1.
+    assert adjoint.mstep_adjoint_max_r(36, 18.0, 2, anisotropic_magnification=True) == clip
     on_finer_grid = adjoint.mstep_adjoint_max_r(36, 18.0 * 0.971, 2, anisotropic_magnification=True)
-    assert_matches([on_finer_grid.image_radius, on_finer_grid.reference_radius], [18.5, 18.0])
-    with pytest.raises(NotImplementedError, match="scale > 1"):
-        adjoint.mstep_adjoint_max_r(36, 20.0, 2, anisotropic_magnification=True)
+    assert on_finer_grid == clip
+    wider = adjoint.mstep_adjoint_max_r(36, 18.0 * 1.1, 2, anisotropic_magnification=True)
+    assert_matches([wider.image_radius, wider.reference_radius, wider.scale], [18.0 * 1.1 + 1.0, 18.0, 1.1])
+    # A runtime image radius gives back its reference radius under the same relation.
+    assert_matches([clip.runtime_reference_radius(13.5), wider.runtime_reference_radius(12 * 1.1 + 1.0)], [13.0, 12.0])
 
 
 @pytest.mark.parametrize("mag", [SYMMETRIC, ASYMMETRIC], ids=["symmetric", "asymmetric"])
@@ -104,11 +107,51 @@ def test_mask_and_image_clip_are_relions_support(mag):
     assert np.any(expected & ~exact_image[None, :]) and np.any(exact_image[None, :] & ~expected)
 
 
+def _group_support(x, y, r_max, scale):
+    """The window of an optics group on another grid: its rounded image support at ``r_max * s``."""
+
+    return np.rint(np.sqrt(x * x + y * y)) <= np.floor(r_max * scale + 0.5)
+
+
+@pytest.mark.parametrize("scale", [1.0, 1.0 + 2e-8, 1.1], ids=["s1", "s1+2e-8", "s1.1"])
+@pytest.mark.parametrize("mag", [SYMMETRIC, ASYMMETRIC], ids=["symmetric", "asymmetric"])
+def test_group_on_a_wider_grid_keeps_relions_support(mag, scale):
+    """relax#53: a group whose field of view is ``s >= 1`` times the reference's, with anisotropic
+    magnification. Its window holds its rounded support; the image clip must keep every window pixel
+    and the mask must apply ``|A^-1 k| <= r_max`` with ``A = s inv(M3) R`` (applyScaleDifference)."""
+
+    box, r_max = 64, 18
+    relion = scale * _relion_matrices(mag, 25)
+    pixels, x, y = _fftw_half_pixels(box)
+    window = _group_support(x, y, r_max, scale)
+    clip = adjoint.mstep_adjoint_max_r(2 * r_max, r_max * scale, 2, anisotropic_magnification=True)
+    image_kept = (x * x + y * y) <= clip.image_radius**2
+    assert np.all(image_kept[window])  # the image clip never cuts the window
+    mask = np.asarray(
+        adjoint.rotated_radius_mask(pixels, np.asarray(_relax_matrices(relion), np.float64), (box, box), r_max)
+    )
+    relax_kept = (window & image_kept)[None, :] & (mask > 0)
+    k = np.stack([x, y, np.zeros_like(x)], axis=-1).astype(np.float64)
+    rotated = np.einsum("nij,pj->npi", np.linalg.inv(relion), k)
+    expected = window[None, :] & (np.sum(rotated * rotated, axis=-1) <= r_max * r_max)
+    assert np.array_equal(relax_kept, expected)
+    if scale == 1.0:
+        # s = 1 exactly is the reference grid's clip.
+        assert clip == adjoint.mstep_adjoint_max_r(2 * r_max, None, 2, anisotropic_magnification=True)
+
+
 @pytest.mark.gpu
 @pytest.mark.requires_relion_bind
-@pytest.mark.parametrize("mag", [None, SYMMETRIC, ASYMMETRIC], ids=["none", "symmetric", "asymmetric"])
-def test_gpu_adjoint_weight_matches_relion_backprojector(mag):
-    """Total BPref weight (one per kept pixel under trilinear splatting) against RELION's BackProjector."""
+@pytest.mark.parametrize(
+    ("mag", "scale"),
+    [(None, 1.0), (SYMMETRIC, 1.0), (ASYMMETRIC, 1.0), (ASYMMETRIC, 1.0 + 2e-8), (ASYMMETRIC, 1.1)],
+    ids=["none", "symmetric", "asymmetric", "asymmetric-s1+2e-8", "asymmetric-s1.1"],
+)
+def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
+    """Total BPref weight (one per kept pixel under trilinear splatting) against RELION's BackProjector.
+
+    ``scale`` puts the images on a grid ``s`` times the reference's field of view (relax#53): RELION's
+    matrix is ``s A`` and the image weights reach the group's rounded support at ``r_max * s``."""
 
     import jax.numpy as jnp
     from relax.relion_bind._relion_bind_core import get_backprojector_data
@@ -117,9 +160,9 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag):
 
     box, current_size, padding = 64, 36, 2
     r_max = current_size // 2
-    relion = _relion_matrices(np.eye(2) if mag is None else mag, 40, seed=3)
+    relion = scale * _relion_matrices(np.eye(2) if mag is None else mag, 40, seed=3)
     pixels, x, y = _fftw_half_pixels(box)
-    support = np.rint(np.sqrt(x * x + y * y)) <= r_max  # RELION's nonzero weights
+    support = _group_support(x, y, r_max, scale)  # RELION's nonzero weights
     weights = support.astype(np.float64).reshape(box, box // 2 + 1)
     _data, relion_weight = get_backprojector_data(
         np.broadcast_to(weights, (len(relion),) + weights.shape).astype(np.complex128),
@@ -131,7 +174,9 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag):
     )
 
     window = pixels[support]
-    clip = adjoint.mstep_adjoint_max_r(current_size, None, padding, anisotropic_magnification=mag is not None)
+    clip = adjoint.mstep_adjoint_max_r(
+        current_size, None if scale == 1.0 else r_max * scale, padding, anisotropic_magnification=mag is not None
+    )
     volume_shape = relion_backprojector_volume_shape((box, box, box), padding, current_size=current_size)
     from relax.helpers.half_volume_mstep import half_volume_accumulator_shape
 
@@ -160,3 +205,44 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag):
         # The image clip alone (the engine before anisotropic magnification was handled) is far off.
         image_clip = np.sum((rotated_r2 <= r_max**2) & (np.sum(k * k, axis=-1) <= r_max**2)[None, :])
         assert abs(float(image_clip) - relion_total) > 4 * max(boundary, 1)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("scale", [1.0, 1.1], ids=["s1", "s1.1"])
+def test_gpu_runtime_radius_reads_back_the_reference_radius(scale):
+    """The stable-window adjoint (a capacity clip and a traced logical image radius) keeps the same
+    pixels as the static clip of the logical size, on the reference grid and on a wider one (relax#53)."""
+
+    import jax.numpy as jnp
+
+    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+
+    box, current_size, capacity_size, padding = 64, 36, 48, 2
+    r_max = current_size // 2
+    relion = scale * _relion_matrices(ASYMMETRIC, 30, seed=5)
+    pixels, x, y = _fftw_half_pixels(box)
+    window = pixels[_group_support(x, y, r_max, scale)]
+    rows = jnp.ones((len(relion), window.size), jnp.float32)
+    matrices = jnp.asarray(_relax_matrices(relion), jnp.float32)
+    radius = None if scale == 1.0 else scale
+
+    def weight(size, clip, runtime=None):
+        shape = relion_backprojector_volume_shape((box, box, box), padding, current_size=size)
+        volume = jnp.zeros(int(np.prod(half_volume_accumulator_shape(shape))), jnp.float32)
+        return float(
+            jnp.sum(
+                adjoint.adjoint_slice_volume_windowed(
+                    rows, jnp.asarray(window, jnp.int32), matrices, volume, (box, box), tuple(shape),
+                    "linear_interp", True, True, clip, True, runtime_max_r=runtime,
+                )
+            )
+        )
+
+    def clip_at(size):
+        return adjoint.mstep_adjoint_max_r(
+            size, None if radius is None else (size // 2) * radius, padding, anisotropic_magnification=True
+        )
+
+    static = weight(current_size, clip_at(current_size))
+    runtime = weight(capacity_size, clip_at(capacity_size), jnp.float32(clip_at(current_size).image_radius))
+    assert runtime == pytest.approx(static, rel=1e-6)
