@@ -61,14 +61,10 @@ def shared_tau2_per_half(tau2) -> list:
     return [tau2, tau2]
 
 
-def initialize_reference_model(
-    half_maps, initial_mean_variance, *, use_per_half_mean_variance, k_class_enabled, dtype, log
-):
-    """Attach shared/per-half tau2 to the already normalized references; a per-half pair's mean is in the
+def initialize_reference_model(half_maps, initial_mean_variance, *, use_per_half_mean_variance, dtype, log):
+    """K=1: attach shared/per-half tau2 to the already normalized references; a per-half pair's mean is in the
     scoring ``dtype``."""
     if use_per_half_mean_variance:
-        if k_class_enabled:
-            raise ValueError("per-half scoring tau2 is supported only for K=1")
         if initial_mean_variance.ndim != 2 or initial_mean_variance.shape[0] != 2:
             raise ValueError("per-half scoring tau2 requires init_mean_variance with leading half axis 2")
         mean_variance_per_half = [
@@ -86,13 +82,31 @@ def initialize_reference_model(
     return ReferenceModel(maps=half_maps, tau2=mean_variance, tau2_per_half=mean_variance_per_half)
 
 
-def reference_model_from_snapshot(snapshot, volume_shape, *, k_class_enabled, dtype):
-    """Restore checkpoint references and the continuation's shared tau2 layout."""
+def initialize_class_reference_model(half_maps, initial_mean_variance, *, use_per_half_mean_variance):
+    """Class3D: the already normalized class stacks with the one shared tau2 (per-half tau2 is refused)."""
+    if use_per_half_mean_variance:
+        raise ValueError("per-half scoring tau2 is supported only for K=1")
+    return ReferenceModel(
+        maps=half_maps, tau2=initial_mean_variance, tau2_per_half=shared_tau2_per_half(initial_mean_variance),
+    )
+
+
+def reference_model_from_snapshot(snapshot, volume_shape, *, dtype):
+    """K=1: restore the checkpoint's half maps and the continuation's shared tau2 layout."""
     from relax.refinement.iteration_snapshot import tau2_mean_variance
 
     maps = [jnp.asarray(mean) for mean in snapshot.means]
-    if k_class_enabled:
-        maps[1] = maps[0]
+    tau2 = tau2_mean_variance(snapshot, volume_shape, dtype=dtype)
+    return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=shared_tau2_per_half(tau2))
+
+
+def class_reference_model_from_snapshot(snapshot, volume_shape, *, dtype):
+    """Class3D: restore the checkpoint's class stack, one array both halves score against, and the shared
+    tau2."""
+    from relax.refinement.iteration_snapshot import tau2_mean_variance
+
+    maps = [jnp.asarray(mean) for mean in snapshot.means]
+    maps[1] = maps[0]
     tau2 = tau2_mean_variance(snapshot, volume_shape, dtype=dtype)
     return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=shared_tau2_per_half(tau2))
 

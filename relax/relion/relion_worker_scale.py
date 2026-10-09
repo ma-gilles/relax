@@ -1452,13 +1452,33 @@ class FollowerScaleOutputs:
         }
 
 
+def k1_follower_scale_state(
+    options: RefinementOptions,
+    *,
+    topology: PreparedFollowerTopology | None,
+    relion_half_inputs,
+    experiment_datasets,
+) -> RelionFollowerScaleSetup:
+    """K=1's follower-scale state: the inert default. A follower topology is refused (follower-local scale
+    emulation is strict K-class state) after the start check every topology passes."""
+    follower_count = 0 if topology is None else int(topology.n_followers or 0)
+    if follower_count > 0:
+        validate_relion_follower_scale_start(
+            n_followers=follower_count,
+            init_relion_iteration=options.schedule.init_relion_iteration,
+        )
+        raise ValueError("RELION follower-local scale emulation is strict K-class state only")
+    return setup_relion_follower_scale_state(
+        options, topology=topology, relion_half_inputs=relion_half_inputs, experiment_datasets=experiment_datasets,
+    )
+
+
 def setup_relion_follower_scale_state(
     options: RefinementOptions,
     *,
     topology: PreparedFollowerTopology | None,
     relion_half_inputs,
     experiment_datasets,
-    k_class_enabled: bool,
     restart_state_iterations=(),
 ) -> RelionFollowerScaleSetup:
     """Build (or return the inert default for) RELION's per-follower
@@ -1494,8 +1514,6 @@ def setup_relion_follower_scale_state(
             "RELION follower-scale replay requires active strict follower-scale topology"
         )
     if follower_count > 0:
-        if not k_class_enabled:
-            raise ValueError("RELION follower-local scale emulation is strict K-class state only")
         if relion_half_inputs[0].group_ids is None:
             raise ValueError("RELION follower-local scale emulation requires physical group IDs")
         if owners_by_iteration is None:

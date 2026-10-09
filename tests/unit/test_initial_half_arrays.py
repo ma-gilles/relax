@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement.mean_helpers import initialize_reference_model
+from relax.refinement.mean_helpers import initialize_class_reference_model, initialize_reference_model
 from relax.refinement.projector_preparation import (
     prepare_initial_real_references,
 )
@@ -80,8 +80,10 @@ def test_incompatible_real_reference_fails_without_broadcast(value, classes):
 @pytest.mark.parametrize("classes", [False, True])
 def test_shared_tau2_keeps_original_object(classes):
     initial = jnp.asarray([1.0, 3.0], dtype=jnp.float32)
-    model = initialize_reference_model(
-        [None, None], initial, use_per_half_mean_variance=False, k_class_enabled=classes, dtype=np.float32, log=LOG
+    model = (
+        initialize_class_reference_model([None, None], initial, use_per_half_mean_variance=False)
+        if classes
+        else initialize_reference_model([None, None], initial, use_per_half_mean_variance=False, dtype=np.float32, log=LOG)
     )
     shared, halves = model.tau2, model.tau2_per_half
     assert shared is initial
@@ -93,7 +95,7 @@ def test_half_tau2_values_and_existing_promoted_average(dtype):
     source = np.array([[1, 2**24, 3], [2**-20, -(2**24), 5]], dtype=dtype)
     initial = jnp.asarray(source)
     model = initialize_reference_model(
-        [None, None], initial, use_per_half_mean_variance=True, k_class_enabled=False, dtype=np.float32, log=LOG
+        [None, None], initial, use_per_half_mean_variance=True, dtype=np.float32, log=LOG
     )
     shared, halves = model.tau2, model.tau2_per_half
     expected = ((source[0].astype(np.float64) + source[1].astype(np.float64)) * 0.5).astype(np.float32)
@@ -110,4 +112,7 @@ def test_half_tau2_values_and_existing_promoted_average(dtype):
 )
 def test_half_tau2_rejects_unsupported_inputs(shape, kclass, message):
     with pytest.raises(ValueError, match=message):
-        initialize_reference_model([None, None], jnp.ones(shape), use_per_half_mean_variance=True, k_class_enabled=kclass, dtype=np.float32, log=LOG)
+        if kclass:
+            initialize_class_reference_model([None, None], jnp.ones(shape), use_per_half_mean_variance=True)
+        else:
+            initialize_reference_model([None, None], jnp.ones(shape), use_per_half_mean_variance=True, dtype=np.float32, log=LOG)

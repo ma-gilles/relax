@@ -12,6 +12,7 @@ See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 
 import logging
 from dataclasses import replace
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -84,6 +85,8 @@ from relax.refinement.mean_helpers import (
     _normalize_initial_means,
     align_k1_volume_signs,
     class_mixture_from_weights,
+    class_reference_model_from_snapshot,
+    initialize_class_reference_model,
     initialize_reference_model,
     merged_half_map,
     reconstruct_unregularized_class_means,
@@ -137,6 +140,7 @@ from relax.relion.relion_worker_scale import (
     _dispatch_relion_follower_scale_for_numbered_iteration,
     _finalize_relion_follower_scale_replay_telemetry,
     _update_relion_follower_corrections,
+    k1_follower_scale_state,
     setup_relion_follower_scale_state,
 )
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
@@ -146,6 +150,15 @@ logger = logging.getLogger(__name__)
 
 
 
+class _ClassStart(NamedTuple):
+    """A continued run's class state from its snapshot: each half's assignments, the previous ones the first
+    change statistic reads, and the class mixture."""
+
+    class_assignments: list
+    previous_class_assignments: list
+    class_mixture: object
+
+
 class _K1Iteration:
     """The K=1 auto-refine iteration's own controller statements. ``_ClassIteration`` has the same methods; the
     loop chooses one of the two once per run and calls them at the same points (code rule 6)."""
@@ -153,6 +166,28 @@ class _K1Iteration:
     run_files_snapshot = staticmethod(iteration_snapshot.k1_run_files_snapshot)
     # K=1 keeps each half's own sigma2_noise.
     update_noise_variance = staticmethod(update_k1_posterior_noise_variance)
+
+    def follower_scale_setup(self, options, source, halves, experiment_datasets):
+        """K=1 runs no follower-scale emulation (a follower topology is refused)."""
+        return k1_follower_scale_state(
+            options, topology=source.follower_topology, relion_half_inputs=halves,
+            experiment_datasets=experiment_datasets,
+        )
+
+    def initial_reference_model(self, ctx, options, init_volume, init_mean_variance):
+        """Each half's flat start-up reference with the shared or per-half tau2."""
+        return initialize_reference_model(
+            _normalize_initial_means(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
+            use_per_half_mean_variance=options.parity.use_per_half_mean_variance, dtype=ctx.scoring_dtype,
+            log=logger,
+        )
+
+    def snapshot_reference_model(self, ctx, resume):
+        return reference_model_from_snapshot(resume, ctx.volume_shape, dtype=ctx.scoring_dtype)
+
+    def class_start_from_snapshot(self, resume, class_mixture):
+        """One class: no assignments, the start-up class mixture."""
+        return _ClassStart([None, None], [None, None], class_mixture)
 
     def record_direction_prior(self, history, direction_priors):
         """K=1 records each half's global prior."""
@@ -287,6 +322,37 @@ class _ClassIteration:
     run_files_snapshot = staticmethod(iteration_snapshot.class_run_files_snapshot)
     # Class3D shares one sigma2_noise across classes.
     update_noise_variance = staticmethod(update_class_posterior_noise_variance)
+
+    def follower_scale_setup(self, options, source, halves, experiment_datasets):
+        """RELION's per-follower group-scale emulation where the input source has a follower topology."""
+        return setup_relion_follower_scale_state(
+            options,
+            topology=source.follower_topology,
+            relion_half_inputs=halves,
+            experiment_datasets=experiment_datasets,
+            # The STAR replay's restart iterations (a strict Class3D replay restarts its follower scales with them).
+            restart_state_iterations=(
+                () if source.relion_replay is None else source.relion_replay.perturb_replay_restart_state_iterations
+            ),
+        )
+
+    def initial_reference_model(self, ctx, options, init_volume, init_mean_variance):
+        """Each half's start-up class stack with the shared tau2."""
+        return initialize_class_reference_model(
+            _normalize_initial_means(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
+            use_per_half_mean_variance=options.parity.use_per_half_mean_variance,
+        )
+
+    def snapshot_reference_model(self, ctx, resume):
+        return class_reference_model_from_snapshot(resume, ctx.volume_shape, dtype=ctx.scoring_dtype)
+
+    def class_start_from_snapshot(self, resume, class_mixture):
+        """The snapshot's class assignments (also the previous ones) and class weights."""
+        class_assignments = [None if c is None else np.asarray(c) for c in resume.class_assignments]
+        return _ClassStart(
+            class_assignments, [None if c is None else c.copy() for c in class_assignments],
+            class_mixture_from_weights(np.asarray(resume.class_weights, dtype=np.float64)),
+        )
 
     def record_direction_prior(self, history, direction_priors):
         """Class3D records class 0 of each half's prior."""
@@ -501,6 +567,8 @@ def refine_single_volume(
         experiment_datasets, options, replays_relion_state=source.replays_relion_state(),
         observer=observer,
     )
+    # The run's one mode decision: the K=1 or the Class3D run's own set-up and iteration statements.
+    mode = _ClassIteration() if ctx.k_class_enabled else _K1Iteration()
     _validate_bpref_particle_order_scope(
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
         n_classes=options.k_class.n_classes,
@@ -578,17 +646,7 @@ def refine_single_volume(
         optics_group_ids=optics_group_ids_per_half[0], gridding_kernel=ctx.consistency.gridding_kernel,
     )
 
-    follower_setup = setup_relion_follower_scale_state(
-        options,
-        topology=source.follower_topology,
-        relion_half_inputs=halves,
-        experiment_datasets=experiment_datasets,
-        k_class_enabled=ctx.k_class_enabled,
-        # The STAR replay's restart iterations (a strict Class3D replay restarts its follower scales with them).
-        restart_state_iterations=(
-            () if source.relion_replay is None else source.relion_replay.perturb_replay_restart_state_iterations
-        ),
-    )
+    follower_setup = mode.follower_scale_setup(options, source, halves, experiment_datasets)
     # The replayed run's follower-scale replay (None without one).
     follower_scale_replay = None if source.follower_topology is None else source.follower_topology.replay
 
@@ -596,11 +654,7 @@ def refine_single_volume(
         # --- A fresh run starts from the caller's references, noise and replayed particle state ---
         # Each half stores its references in the loop's layout: an explicit leading
         # class axis for K classes, one flat reference for K=1.
-        reference_model = initialize_reference_model(
-            _normalize_initial_means(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
-            use_per_half_mean_variance=options.parity.use_per_half_mean_variance, k_class_enabled=ctx.k_class_enabled,
-            dtype=ctx.scoring_dtype, log=logger,
-        )
+        reference_model = mode.initial_reference_model(ctx, options, init_volume, init_mean_variance)
         # Per-shell radial profiles of the input pixel-array noise variances, for the
         # diagnostic log ("noise update per shell: old=... new=...").
         noise_model = initialize_noise_model(
@@ -641,9 +695,7 @@ def refine_single_volume(
         # uninterrupted run (see relax/refinement/iteration_snapshot.py). It reads none of
         # the start-up arrays: they are released before the snapshot's model is built.
         del init_volume, init_mean_variance, initial_noise_variance_per_half
-        reference_model = reference_model_from_snapshot(
-            resume, ctx.volume_shape, k_class_enabled=ctx.k_class_enabled, dtype=ctx.scoring_dtype,
-        )
+        reference_model = mode.snapshot_reference_model(ctx, resume)
         noise_model = noise_model_from_shells(resume.noise_shells, ctx.image_geometry.image_shape)
         for half, eulers, translations, images, scales in zip(
             halves, resume.rotation_eulers, resume.translations,
@@ -653,12 +705,10 @@ def refine_single_volume(
             half.translations = translations
             half.image_corrections = images
             half.scale_corrections = scales
-        class_assignments = [None, None]
-        previous_class_assignments = [None, None]
-        if ctx.k_class_enabled:
-            class_assignments = [None if c is None else np.asarray(c) for c in resume.class_assignments]
-            previous_class_assignments = [None if c is None else c.copy() for c in class_assignments]
-            class_mixture = class_mixture_from_weights(np.asarray(resume.class_weights, dtype=np.float64))
+        class_start = mode.class_start_from_snapshot(resume, class_mixture)
+        class_assignments = class_start.class_assignments
+        previous_class_assignments = class_start.previous_class_assignments
+        class_mixture = class_start.class_mixture
         previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=ctx.scoring_dtype)
         sigma_offset = sigma_offset_from_halves(as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
         relion_incr_size = int(resume.incr_size)
@@ -729,8 +779,6 @@ def refine_single_volume(
     )
     # Set when a local-search diagnostic stops the run after its first local search.
     profile_stop = None
-    # The run's one mode decision: the K=1 or the Class3D iteration's own statements.
-    mode = _ClassIteration() if ctx.k_class_enabled else _K1Iteration()
     while (
         options.schedule.force_max_iter_after_convergence or not carry.state.has_converged
     ) and iteration < options.schedule.max_iter:
