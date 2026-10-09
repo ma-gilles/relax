@@ -30,7 +30,7 @@ from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import HalfPair, initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.refinement.refinement_options import OpticsGeometry, ReconstructionPrograms
 from relax.refinement.startup_references import StartupHandoff
 
 pytest.importorskip("jax")
@@ -7124,10 +7124,10 @@ class TestRelionModeSmokeTest:
         monkeypatch.setattr(finalization, "_score_half_dense_in_bpref_scope", capture)
         monkeypatch.setattr(expectation_module, "_score_half_dense_in_bpref_scope", capture)
         model_pixel = float(half_datasets[0].voxel_size)
-        parity = (
-            stand_in.parity()
+        geometry = (
+            OpticsGeometry()
             if optics_pixel is None
-            else stand_in.parity(
+            else OpticsGeometry(
                 relion_optics_image_sizes=[IMAGE_SHAPE[0]],
                 relion_optics_pixel_sizes=[optics_pixel * model_pixel],
                 relion_model_pixel_size=model_pixel,
@@ -7148,7 +7148,7 @@ class TestRelionModeSmokeTest:
                     ),
                     execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                     adaptive=stand_in.adaptive(adaptive_oversampling=0),
-                    parity=parity,
+                    optics_geometry=geometry,
                 ),
                 observer=RunObserver(), source=InputSource(),
             )

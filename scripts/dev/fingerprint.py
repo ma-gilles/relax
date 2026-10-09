@@ -111,6 +111,14 @@ MOVED_INPUTS = (
     ("/debug<EngineDebugOptions>/environment<DiagnosticEnvironment>/", "/execution<ExecutionOptions>/"),
     # The run's start state is named for what it holds (PLAN d4, O N1).
     ("/replay<ReplayState>/", "/start<StartState>/"),
+    # The data's optics geometry is its own group, not a parity knob (PLAN d4, O N2).
+    *(
+        (f"/parity<RelionParityOptions>/{name}", f"/optics_geometry<OpticsGeometry>/{name}")
+        for name in (
+            "relion_optics_image_sizes", "relion_optics_pixel_sizes", "optics_group_ids_per_half",
+            "relion_model_pixel_size",
+        )
+    ),
     # The start state's seeds leave the schedule (PLAN d4, O S1).
     *(
         (f"/schedule<RefinementSchedule>/{name}", f"/start<StartState>/{name}")

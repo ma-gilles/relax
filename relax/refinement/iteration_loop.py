@@ -525,7 +525,7 @@ def refine_single_volume(
     del init_reference_real
     initial_noise_variance_per_half = noise_updates.noise_rows_per_half(init_noise_variance)
     optics_group_ids_per_half = setup_checks.checked_optics_group_ids(
-        options.parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
+        options.optics_geometry.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
     )
     setup_phase_seconds["initial_arrays"] = setup_clock.seconds
 

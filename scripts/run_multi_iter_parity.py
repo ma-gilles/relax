@@ -1466,6 +1466,7 @@ def main():
         ExecutionOptions,
         FinalPassOptions,
         LocalSearchOptions,
+        OpticsGeometry,
         RefinementOptions,
         RefinementSchedule,
         RelionParityOptions,
@@ -2465,13 +2466,15 @@ def main():
             adaptive_oversampling=oversampling, max_significants=max_significants,
             coarse_engine=args.coarse_engine,
         ),
-        parity=RelionParityOptions(
-            tau2_fudge=1.0,
-            perturb_factor=0.5,
+        optics_geometry=OpticsGeometry(
             optics_group_ids_per_half=optics_group_ids_per_half,
             relion_optics_image_sizes=relion_optics_image_sizes,
             relion_optics_pixel_sizes=relion_optics_pixel_sizes,
             relion_model_pixel_size=relion_model_pixel_size,
+        ),
+        parity=RelionParityOptions(
+            tau2_fudge=1.0,
+            perturb_factor=0.5,
             perturb_seed=optimizer_random_seed,
             emulate_relion_firstiter_cc=do_firstiter_cc,
             relion_firstiter_ini_high_angstrom=relion_ini_high if args.iter == 0 else None,

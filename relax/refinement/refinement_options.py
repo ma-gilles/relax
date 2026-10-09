@@ -110,6 +110,21 @@ class SolventOptions:
 
 
 @dataclass(frozen=True, kw_only=True)
+class OpticsGeometry:
+    """The data's optics geometry, read from the input particles and the reference: an input of the algorithm,
+    not a knob."""
+
+    # Each optics group's image size and pixel size (None: one group at the datasets' own).
+    relion_optics_image_sizes: Any | None = None
+    relion_optics_pixel_sizes: Any | None = None
+    # Each half's per-image optics-group row (0 .. G-1) of a per-group noise table
+    # (relax.helpers.optics_noise); required when the initial noise has G > 1 rows.
+    optics_group_ids_per_half: Any | None = None
+    # The reference maps' pixel size (None: the image pixel size).
+    relion_model_pixel_size: float | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
 class RelionParityOptions:
     """Knobs that pin RELION numerical behavior."""
 
@@ -118,12 +133,6 @@ class RelionParityOptions:
     tau2_fudge: float = 1.0
     perturb_factor: float = 0.5
     perturb_seed: int | None = None
-    relion_optics_image_sizes: Any | None = None
-    relion_optics_pixel_sizes: Any | None = None
-    # Each half's per-image optics-group row (0 .. G-1) of a per-group noise table
-    # (relax.helpers.optics_noise); required when the initial noise has G > 1 rows.
-    optics_group_ids_per_half: Any | None = None
-    relion_model_pixel_size: float | None = None
     # --firstiter_cc (on by default, as the RELION GUI).
     emulate_relion_firstiter_cc: bool = True
     relion_firstiter_ini_high_angstrom: float | None = None
@@ -696,6 +705,7 @@ class RefinementOptions:
     schedule: RefinementSchedule
     adaptive: AdaptiveOptions = field(default_factory=AdaptiveOptions)
     parity: RelionParityOptions = field(default_factory=RelionParityOptions)
+    optics_geometry: OpticsGeometry = field(default_factory=OpticsGeometry)
     local_search: LocalSearchOptions = field(default_factory=LocalSearchOptions)
     k_class: KClassOptions = field(default_factory=KClassOptions)
     start: StartState = field(default_factory=StartState)

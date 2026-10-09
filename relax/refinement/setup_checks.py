@@ -30,9 +30,9 @@ from relax.refinement.ports import (
     RunObserver,
 )
 from relax.refinement.refinement_options import (
+    OpticsGeometry,
     RefinementOptions,
     RelionConsistencyOptions,
-    RelionParityOptions,
     require_consistency_route,
 )
 from relax.refinement.tomo_half import TomoHalf
@@ -83,7 +83,7 @@ def checked_optics_group_ids(optics_group_ids_per_half, noise_variance_per_half,
         return [None, None]
     if optics_group_ids_per_half is None or len(optics_group_ids_per_half) != 2:
         raise ValueError(
-            f"a {n_groups}-optics-group noise table needs parity.optics_group_ids_per_half for both halves"
+            f"a {n_groups}-optics-group noise table needs optics_geometry.optics_group_ids_per_half for both halves"
         )
     ids = []
     for half, (values, dataset) in enumerate(zip(optics_group_ids_per_half, experiment_datasets)):
@@ -111,28 +111,28 @@ def _internal_solvent_mask(path, box_size, pixel_size_angstrom):
     return np.ascontiguousarray(np.transpose(mask, (2, 1, 0)))
 
 
-def checked_run_optics(parity: RelionParityOptions, image_geometry: ImageGeometry, *, multi_shape_halves: bool) -> RunOptics:
-    """The run's optics geometry, from ``parity``'s RELION optics arrays and model pixel size.
+def checked_run_optics(geometry: OpticsGeometry, image_geometry: ImageGeometry, *, multi_shape_halves: bool) -> RunOptics:
+    """The run's optics geometry, from the options' RELION optics arrays and model pixel size.
 
     Refuses optics image and pixel sizes given one without the other, empty or of different lengths, and a model
-    pixel size that is not positive and finite; without ``parity.relion_model_pixel_size`` the model pixel size
+    pixel size that is not positive and finite; without ``relion_model_pixel_size`` the model pixel size
     is the image pixel size.
     """
-    if (parity.relion_optics_image_sizes is None) != (parity.relion_optics_pixel_sizes is None):
+    if (geometry.relion_optics_image_sizes is None) != (geometry.relion_optics_pixel_sizes is None):
         raise ValueError(
             "relion_optics_image_sizes and relion_optics_pixel_sizes must be supplied together",
         )
     optics_image_sizes = None
     optics_pixel_sizes = None
-    if parity.relion_optics_image_sizes is not None:
-        optics_image_sizes = np.asarray(parity.relion_optics_image_sizes, dtype=np.int64).reshape(-1)
-        optics_pixel_sizes = np.asarray(parity.relion_optics_pixel_sizes, dtype=np.float64).reshape(-1)
+    if geometry.relion_optics_image_sizes is not None:
+        optics_image_sizes = np.asarray(geometry.relion_optics_image_sizes, dtype=np.int64).reshape(-1)
+        optics_pixel_sizes = np.asarray(geometry.relion_optics_pixel_sizes, dtype=np.float64).reshape(-1)
         if optics_image_sizes.shape != optics_pixel_sizes.shape or optics_image_sizes.size == 0:
             raise ValueError("RELION optics image geometry arrays must be non-empty and aligned")
     model_pixel_size = (
         image_geometry.pixel_size_angstrom
-        if parity.relion_model_pixel_size is None
-        else float(parity.relion_model_pixel_size)
+        if geometry.relion_model_pixel_size is None
+        else float(geometry.relion_model_pixel_size)
     )
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise ValueError(f"RELION model pixel size must be positive, got {model_pixel_size}")
@@ -341,7 +341,7 @@ def build_run_context(
         image_shape=experiment_datasets[0].image_shape, pixel_size_angstrom=source_pixel_size_angstrom,
     )
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
-    optics = checked_run_optics(options.parity, image_geometry, multi_shape_halves=multi_shape_halves)
+    optics = checked_run_optics(options.optics_geometry, image_geometry, multi_shape_halves=multi_shape_halves)
     tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
     consistency = require_consistency_route(
         options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves,

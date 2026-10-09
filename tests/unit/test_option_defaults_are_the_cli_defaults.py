@@ -12,16 +12,15 @@ pytestmark = pytest.mark.unit
 
 # Fields whose value the command takes from the data, the seed or the start-up state, not from a flag default.
 FROM_THE_RUN = {
-    "schedule": {"init_current_size", "particle_diameter_ang", "ini_high_angstrom", "init_data_vs_prior"},
+    "schedule": {"init_current_size", "particle_diameter_ang"},
     "parity": {
-        "perturb_seed", "optimizer_random_seed", "relion_optics_image_sizes", "relion_optics_pixel_sizes",
-        "optics_group_ids_per_half", "relion_model_pixel_size", "relion_firstiter_ini_high_angstrom",
+        "perturb_seed", "optimizer_random_seed", "relion_firstiter_ini_high_angstrom",
         "preserve_bpref_particle_order",
     },
     "solvent": {"split_draws"},
 }
 # Groups built from the data or the run files, not from flags.
-NOT_FLAGS = {"start", "checkpoint", "expected_accuracy", "precision"}
+NOT_FLAGS = {"start", "optics_geometry", "checkpoint", "expected_accuracy", "precision"}
 
 
 def test_every_record_default_is_what_relax_refine_passes_without_flags(monkeypatch, tmp_path):
