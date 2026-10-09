@@ -245,6 +245,58 @@ def single_working_set_bytes(pool_limit_bytes: int | None = None) -> int | None:
     return None if limit is None else int(SINGLE_WORKING_SET_LIMIT_SHARE * limit)
 
 
+def device_can_place(n_bytes: int) -> bool | None:
+    """Whether the running GPU allocator can hand out one block of ``n_bytes`` now: one probe allocation, released at
+    once. ``None`` off GPU.
+
+    The allocator's own statistics cannot answer it: jax 0.9's ``largest_free_block_bytes`` reads 0 with or without
+    preallocation, and a fragmented pool can refuse a block much smaller than its free total (relax#49).
+    """
+
+    import jax
+    import jax.numpy as jnp
+
+    if jax.default_backend() != "gpu":
+        return None
+    try:
+        probe = jnp.zeros((max(int(n_bytes), 1),), dtype=jnp.uint8)
+        probe.block_until_ready()
+    except Exception as exc:  # jax's XlaRuntimeError; anything else is not a placement answer
+        if "RESOURCE_EXHAUSTED" in str(exc):
+            return False
+        raise
+    probe.delete()
+    return True
+
+
+def device_fits(working_set_bytes: int, *, pool_limit_bytes: int | None = None) -> bool:
+    """Whether one device working set may run on the device now; the one rule every host or CPU-backend route of a
+    box-scale step asks (relax#49).
+
+    It must be within the single working set the pool limit allows (:func:`single_working_set_bytes`, the relax#40
+    share; the limit is ``pool_limit_bytes`` when given, else the running backend's), twice it must be within what
+    the allocator can still hand out (limit less bytes in use: a fragmentation margin of two), and the allocator must
+    place it as one block now (:func:`device_can_place`). The live checks run only on a GPU backend. True when
+    nothing is known (off GPU).
+    """
+
+    import jax
+
+    working_set = int(working_set_bytes)
+    limit = _backend_pool_limit_bytes() if pool_limit_bytes is None else int(pool_limit_bytes)
+    if limit is None:
+        return True
+    if working_set > single_working_set_bytes(limit):
+        return False
+    if jax.default_backend() != "gpu":
+        return True
+    stats = jax.devices()[0].memory_stats() or {}
+    if stats.get("bytes_limit"):
+        if 2 * working_set > int(stats["bytes_limit"]) - int(stats.get("bytes_in_use", 0)):
+            return False
+    return device_can_place(working_set) is not False
+
+
 def require_projector_texture_reserve(
     model_box: int | None,
     padding_factor: int,

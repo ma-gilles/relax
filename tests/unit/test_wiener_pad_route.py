@@ -90,15 +90,77 @@ def test_sign_overlap_cpu_route_matches_the_device_route(monkeypatch, negate):
     assert_matches(np.asarray(results[True][0]), np.asarray(results[False][0]))
 
 
-def test_sign_overlap_moves_to_the_cpu_when_twice_its_working_set_exceeds_the_headroom(monkeypatch):
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+def _fake_gpu(monkeypatch, *, limit_gib, in_use_gib, largest_block_gib):
+    """The running backend as a GPU whose allocator reports these readings and places blocks up to
+    ``largest_block_gib`` (the probe allocation's answer)."""
+    import jax
 
-    monkeypatch.setattr(mean_helpers, "_device_allocator_limit_bytes", lambda: int(10.14 * GIB))
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: None)
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: None)
-    # Box 448: 3 maps of 0.67 GiB; at the end of a 16 GB K=1 M-step 1.8 GiB was free.
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: int(1.8 * GIB))
-    assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is True
-    # EMPIAR-10202 (box 800) on an 80 GB H100 with 30 GiB free stays on the device route: twice 11.4 GiB is 22.9 GiB.
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: int(30 * GIB))
+    from relax.helpers import xla_memory_reserve
+
+    stats = {"bytes_limit": int(limit_gib * GIB), "bytes_in_use": int(in_use_gib * GIB)}
+
+    class Device:
+        platform = "gpu"
+
+        def memory_stats(self):
+            return stats
+
+    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(jax, "devices", lambda *a: [Device()])
+    monkeypatch.setattr(xla_memory_reserve, "_backend_pool_limit_bytes", lambda: stats["bytes_limit"])
+    monkeypatch.setattr(xla_memory_reserve, "device_can_place", lambda n: n <= largest_block_gib * GIB)
+
+
+def test_device_fits_is_the_share_the_headroom_and_a_placement(monkeypatch):
+    from relax.helpers.xla_memory_reserve import device_fits
+
+    # A 16 GB card at box 448 after a K=1 M-step: limit 10.19 GiB, 8.4 GiB in use.
+    _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=8.4, largest_block_gib=1.5)
+    assert device_fits(int(0.5 * GIB)) is True
+    assert device_fits(int(1.0 * GIB)) is False  # twice it exceeds the 1.79 GiB headroom
+    _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=4.0, largest_block_gib=1.5)
+    assert device_fits(int(2.01 * GIB)) is False  # the allocator cannot place it (the fragmented-pool failure)
+    assert device_fits(int(2.6 * GIB)) is False  # above a quarter of the limit
+    _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=4.0, largest_block_gib=3.0)
+    assert device_fits(int(2.01 * GIB)) is True
+
+
+def test_sign_overlap_and_pad_on_an_h100_at_box_800_stay_on_the_device(monkeypatch):
+    """EMPIAR-10202 on an 80 GB H100 (texture-reserve limit 61.5 GiB): the overlap's 11.4 GiB fits with 30 GiB free;
+    box 448 on a 16 GB card that cannot place 2 GiB goes to the CPU."""
+
+    _fake_gpu(monkeypatch, limit_gib=61.5, in_use_gib=31.5, largest_block_gib=30.0)
     assert mean_helpers._sign_overlap_exceeds_device_headroom((800,) * 3) is False
+    _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=5.2, largest_block_gib=1.5)
+    assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is True
+    _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=3.0, largest_block_gib=4.0)
+    assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is False
+
+
+@pytest.mark.gpu
+def test_device_can_place_answers_on_the_device():
+    """The probe on a real allocator: a small block places; a block larger than the pool limit does not."""
+    import jax
+
+    from relax.helpers.xla_memory_reserve import device_can_place
+
+    if jax.default_backend() != "gpu":
+        pytest.skip("needs a GPU")
+    limit = jax.devices()[0].memory_stats()["bytes_limit"]
+    assert device_can_place(1 << 20) is True
+    assert device_can_place(int(limit) + (1 << 30)) is False
+
+
+def test_low_resolution_join_goes_to_the_host_when_its_copies_do_not_fit(monkeypatch):
+    from relax.reconstruction import regularization_relion
+
+    monkeypatch.delenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", raising=False)
+    seen = []
+    monkeypatch.setattr(regularization_relion, "device_fits", lambda nbytes: seen.append(nbytes) or False)
+    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 10, itemsize=8) is True
+    assert seen == [2 * 1000 * 8]  # both joined copies of the half pair
+    monkeypatch.setattr(regularization_relion, "device_fits", lambda nbytes: True)
+    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 10) is False
+    # A full join (every voxel) never takes the host path; physically large grids always do.
+    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 1000) is False
+    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(300_000_000, 10) is True

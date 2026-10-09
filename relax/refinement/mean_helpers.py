@@ -27,7 +27,7 @@ from relax.helpers.resolution import (
     shell_index_to_resolution_angstrom,
 )
 from relax.helpers.timing import Stopwatch
-from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, single_working_set_bytes
+from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, device_fits
 from relax.reconstruction import regularization_relion
 from relax.refinement.ports import ClassPriorEstimated, RunObserver
 from relax.refinement.refinement_options import ReconstructionPrograms
@@ -1216,24 +1216,10 @@ _SIGN_OVERLAP_MAPS = 3.0
 
 
 def _sign_overlap_exceeds_device_headroom(volume_shape) -> bool:
-    """Whether twice the sign overlap's working set exceeds what the device can hand out now (a fragmentation margin
-    of two, read at the call). Off GPU, or when nothing is known, it is False."""
+    """Whether the sign overlap's working set (``_SIGN_OVERLAP_MAPS`` complex64 maps, one program request: 2.01 GiB at
+    box 448 failed in a fragmented 16 GB pool, relax#49) does not fit the device now (``device_fits``)."""
 
-    from relax.sparse_pass2.sparse_pass2_budget import (
-        _device_free_memory_bytes,
-        _jax_allocator_free_memory_bytes,
-        _jax_allocator_pool_free_bytes,
-        device_available_bytes,
-    )
-
-    if _device_allocator_limit_bytes() is None:
-        return False
-    available = device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
-    )
-    if available is None:
-        return False
-    return 2.0 * _SIGN_OVERLAP_MAPS * int(np.prod(volume_shape)) * 8 > available
+    return not device_fits(_SIGN_OVERLAP_MAPS * int(np.prod(volume_shape)) * 8)
 
 
 def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, volume_shape):
@@ -1248,6 +1234,7 @@ def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, v
     if _sign_overlap_exceeds_device_headroom(shape):
         # The same program on the CPU backend: at the end of a box-448 K=1 M-step on a 16 GB card the device held
         # both halves' accumulators and unregularized maps, and the program's 2.01 GiB could not be placed (relax#49).
+        logger.info("K=1 sign overlap on the CPU backend: shape=%s", shape)
         cpu = jax.devices("cpu")[0]
         with jax.default_device(cpu):
             overlap = float(
@@ -1963,16 +1950,16 @@ def _device_allocator_limit_bytes() -> int | None:
 def _relion_pad_exceeds_device_working_set(reconstruction_shape, *, allocator_limit_bytes: int | None = None) -> bool:
     """Whether the Wiener solve and pad into the FFTW half of ``reconstruction_shape`` should run on the CPU.
 
-    When the pad's device working set (``_DEVICE_PAD_HALVES`` packed complex64 halves) exceeds the single working
-    set the allocator's limit allows (``xla_memory_reserve.single_working_set_bytes``; the limit is
-    ``allocator_limit_bytes``, read from the device when None). Off GPU it is False.
+    When the pad's device working set (``_DEVICE_PAD_HALVES`` packed complex64 halves) does not fit the device
+    (``xla_memory_reserve.device_fits``; the limit is ``allocator_limit_bytes``, read from the device when None).
+    Off GPU it is False.
     """
 
     limit = _device_allocator_limit_bytes() if allocator_limit_bytes is None else int(allocator_limit_bytes)
     if limit is None:
         return False
     half_bytes = int(np.prod(fourier_transform_utils.volume_shape_to_half_volume_shape(reconstruction_shape))) * 8
-    return _DEVICE_PAD_HALVES * half_bytes > single_working_set_bytes(limit)
+    return not device_fits(int(_DEVICE_PAD_HALVES * half_bytes), pool_limit_bytes=limit)
 
 
 def _large_relion_host_irfft_enabled(
@@ -1982,9 +1969,9 @@ def _large_relion_host_irfft_enabled(
 
     ``forced`` (``ReconstructionPrograms.host_irfft``) decides when not None. Otherwise automatically when the
     transform's int32 size product overflows, or when its device working set (``_DEVICE_IRFFT_HALVES`` packed
-    complex64 halves) exceeds the single working set the allocator's limit allows
-    (``xla_memory_reserve.single_working_set_bytes``; the limit is ``allocator_limit_bytes``, read from the device
-    when None): a cuFFT work area that cannot be found aborts the process instead of raising.
+    complex64 halves) does not fit the device (``xla_memory_reserve.device_fits``; the limit is
+    ``allocator_limit_bytes``, read from the device when None): a cuFFT work area that cannot be found aborts the
+    process instead of raising.
     """
 
     if forced is not None:
@@ -1996,12 +1983,12 @@ def _large_relion_host_irfft_enabled(
         return False
     half_bytes = int(np.prod(fourier_transform_utils.volume_shape_to_half_volume_shape(volume_shape))) * 8
     working_set = _DEVICE_IRFFT_HALVES * half_bytes
-    if working_set <= single_working_set_bytes(limit):
+    if device_fits(int(working_set), pool_limit_bytes=limit):
         return False
     logger.info(
-        "RELION padded inverse FFT on the host: its device working set %.2f GiB exceeds %.0f%% of the %.2f GiB "
-        "allocator limit (relax#40)",
-        working_set / 2**30, 100 * SINGLE_WORKING_SET_LIMIT_SHARE, limit / 2**30,
+        "RELION padded inverse FFT on the host: its device working set %.2f GiB does not fit the %.2f GiB allocator "
+        "(device_fits: %.0f%% of the limit, the allocator's headroom and largest block; relax#40)",
+        working_set / 2**30, limit / 2**30, 100 * SINGLE_WORKING_SET_LIMIT_SHARE,
     )
     return True
 

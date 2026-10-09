@@ -19,6 +19,7 @@ from recovar.reconstruction.regularization import (  # noqa: F401  (staying help
 
 from relax.helpers.env_flags import parse_env_auto_flag
 from relax.helpers.shells import shell_of_radius
+from relax.helpers.xla_memory_reserve import device_fits
 from relax.relion.macros import relion_round, relion_round_array
 
 _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS = 200_000_000
@@ -110,7 +111,14 @@ def _low_resolution_join_flat_indices(volume_shape, half_layout, lowres_r2_max):
     return np.concatenate(flat_chunks).astype(np.int32, copy=False)
 
 
-def _low_resolution_join_host_fallback_enabled_for_size(values_size, join_size):
+def _low_resolution_join_host_fallback_enabled_for_size(values_size, join_size, *, itemsize: int = 8):
+    """Whether the low-resolution half join runs on the host.
+
+    Physically large accumulators (the host-staged reconstruction's grids) always do. Otherwise the device join
+    holds both joined copies of a half pair (``2 * values_size * itemsize`` bytes), and it runs on the host when
+    that does not fit the device (``xla_memory_reserve.device_fits``): at box 448 on a 16 GB card the 710 MiB
+    scatter could not be placed in a fragmented pool (relax#49).
+    """
     forced = parse_env_auto_flag("RELAX_LOWRES_JOIN_HOST_FALLBACK", logger=logger)
     if forced is not None:
         return forced
@@ -122,11 +130,13 @@ def _low_resolution_join_host_fallback_enabled_for_size(values_size, join_size):
             _LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS,
         )
     )
-    return int(values_size) >= threshold
+    return int(values_size) >= threshold or not device_fits(2 * int(values_size) * int(itemsize))
 
 
 def _low_resolution_join_host_fallback_enabled(values_0, flat_indices):
-    return _low_resolution_join_host_fallback_enabled_for_size(np.size(values_0), np.size(flat_indices))
+    return _low_resolution_join_host_fallback_enabled_for_size(
+        np.size(values_0), np.size(flat_indices), itemsize=np.dtype(values_0.dtype).itemsize
+    )
 
 
 def delete_device_array(value):
