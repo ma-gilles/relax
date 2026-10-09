@@ -33,11 +33,11 @@ import numpy as np
 from relax import sampling
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
+from relax.helpers import oversampling
 from relax.helpers.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
 from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.oversampling import adaptive_fine_rows, prepare_adaptive_pass2_grids
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.helpers.resolution import compute_coarse_image_size
 from relax.refinement import optics_shapes
@@ -140,11 +140,11 @@ class AdaptiveRouteGrids(NamedTuple):
     """One iteration's coarse and fine trial grids in the adaptive route's order."""
 
     pass1_rotations: np.ndarray
-    grids: object  # relax.helpers.oversampling.AdaptivePass2Grids
+    grids: oversampling.AdaptivePass2Grids
     fine_source_eulers: np.ndarray | None
     relion_of_recovar: np.ndarray
-    fill_fine_rows: object = None  # relax.helpers.oversampling.DeferredFineRows when the fine rows are deferred
-    pass1_device_source: object = None  # relax.sampling.DevicePass1Source of device-built pass1_rotations
+    fill_fine_rows: oversampling.DeferredFineRows | None = None  # set when the fine rows are deferred
+    pass1_device_source: sampling.DevicePass1Source | None = None  # of device-built pass1_rotations
 
 
 def adaptive_route_grids(
@@ -188,7 +188,7 @@ def adaptive_route_grids(
     coarse_translations = sampling.apply_relion_translation_perturbation(
         base, float(random_perturbation), float(translation_step)
     ).astype(np.float32)
-    grids = prepare_adaptive_pass2_grids(
+    grids = oversampling.prepare_adaptive_pass2_grids(
         pass1_rotations if int(oversampling_order) > 0 else host_rotations,
         coarse_translations,
         base,
@@ -199,7 +199,7 @@ def adaptive_route_grids(
         coarse_rotation_ids=None,
         defer_fine_rotations=int(oversampling_order) > 0,
     )
-    fine_source_eulers, fill = adaptive_fine_rows(grids, order, int(oversampling_order), float(random_perturbation))
+    fine_source_eulers, fill = oversampling.adaptive_fine_rows(grids, order, int(oversampling_order), float(random_perturbation))
     if fine_source_eulers is not None and fine_source_eulers.shape[0] != grids.fine_rotations.shape[0]:
         raise RuntimeError("fine source Euler rows do not match the fine rotation grid")
     return AdaptiveRouteGrids(
