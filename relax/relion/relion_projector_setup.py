@@ -241,7 +241,6 @@ def _build_projector_window(
     working_set_bytes = single_working_set_bytes() if to_host else None
     if chunk_bytes is None:
         chunk_bytes = _host_build_chunk_bytes(working_set_bytes) if to_host else _CHUNK_BYTES
-    chunk_bytes = int(chunk_bytes)
     xy_bytes = n * size * n_x * 2 * jnp.dtype(reference.dtype).itemsize
     xy_on_host = working_set_bytes is not None and xy_bytes > working_set_bytes
 
