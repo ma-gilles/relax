@@ -18,6 +18,7 @@ from recovar.utils.helpers import R_from_relion, write_relion_mrc
 import relax.vdam.driver as driver
 from relax import healpix_sampling, sampling
 from relax.commands import initial_model
+from relax.helpers.expected_accuracy import ExpectedAccuracy
 from relax.helpers.orientation_priors import relion_round_away_from_zero
 from relax.helpers.particle_io import ParticleReadPolicy
 from relax.parity import vdam_replay
@@ -751,7 +752,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         phase_shift=np.zeros(3),
     )
 
-    meta = native_sampling.estimate_native_sampling_accuracy(
+    estimate = native_sampling.estimate_native_sampling_accuracy(
         native_sampling.initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
         state,
         particle_state,
@@ -762,7 +763,8 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
     )
 
-    assert meta is not None
+    assert estimate is not None
+    meta = estimate.meta()
     assert meta["estimated_acc_trans_angstrom"] == 1.25
     assert_matches(captured["particle_ids"], np.asarray([2, 0], dtype=np.int64))
     assert_matches(
@@ -794,7 +796,7 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
         defU=np.full(3, 10000.0), defV=np.full(3, 10000.0), defAngle=np.zeros(3), phase_shift=np.zeros(3),
     )
 
-    meta = native_sampling.estimate_native_sampling_accuracy(
+    estimate = native_sampling.estimate_native_sampling_accuracy(
         native_sampling.initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
         state,
         particle_state,
@@ -805,7 +807,8 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
     )
 
-    assert meta is not None
+    assert estimate is not None
+    meta = estimate.meta()
     assert meta["estimated_acc_rot"] == 2.5
     assert_matches(captured["eulers"], np.zeros((2, 3)))
 
@@ -2041,9 +2044,20 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
                 "sigma2_fudge": sigma2_fudge,
             }
         )
-        sampling_state.acc_rot = 3.666
-        sampling_state.acc_trans_angstrom = 2.125
-        return {"estimated_acc_rot": 3.666, "estimated_acc_trans_angstrom": 2.125}
+        return native_sampling.SamplingAccuracyEstimate(
+            accuracy=ExpectedAccuracy(
+                acc_rot=3.666,
+                acc_trans_angstrom=2.125,
+                acc_rot_per_class=np.asarray([3.666]),
+                acc_trans_per_class_angstrom=np.asarray([2.125]),
+                class_counts=np.asarray([2]),
+                trial_local_indices=np.asarray([1, 0]),
+                trial_particle_ids=np.asarray([1, 0]),
+            ),
+            n_trials=2,
+            sigma2_fudge=sigma2_fudge,
+            seed_part_ids=np.asarray([1, 0]),
+        )
 
     def fake_build_sampling_plan(opts, *, iteration, sampling_state=None, defer_fine_rotations=False):
         assert sampling_state is not None
@@ -2250,7 +2264,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
 
     monkeypatch.setenv("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", str(tmp_path))
     monkeypatch.setenv("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS", "80,90")
-    meta = native_sampling.estimate_native_sampling_accuracy(
+    estimate = native_sampling.estimate_native_sampling_accuracy(
         native_sampling.initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star"),
             pixel_size=2.125,
@@ -2263,6 +2277,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
     )
+    meta = estimate.meta()
 
     assert captured["sigma2_fudge"] == pytest.approx(1.0)
     assert captured["sigma2_fudge"] != pytest.approx(state.tau2_fudge_factor)

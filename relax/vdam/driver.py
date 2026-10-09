@@ -111,7 +111,7 @@ def _native_expectation_step(
         do_grad = bool(opts.stochastic_all_iterations) or schedules.native_initialmodel_do_grad(
             state, iteration, grad_em_iters=int(opts.grad_em_iters)
         )
-        accuracy_meta = None
+        accuracy_estimate = None
         prepared_projector_inputs = projector_context.take(state, padding_factor=int(opts.padding_factor))
         pass1_healpix_order = int(sampling_state.healpix_order)
         skip_expected_accuracy = opts.environment.skip_expected_accuracy
@@ -125,7 +125,7 @@ def _native_expectation_step(
             # RELION expectationSetup constructs the production PPref
             # before calculateExpectedAngularErrors and reuses that PPref
             # for scoring: the projector refresh built it before this estimate.
-            accuracy_meta = estimate_native_sampling_accuracy(
+            accuracy_estimate = estimate_native_sampling_accuracy(
                 sampling_state,
                 state,
                 particle_state,
@@ -139,6 +139,9 @@ def _native_expectation_step(
                 experiment_dataset=accuracy_dataset,
                 isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
             )
+            if accuracy_estimate is not None:
+                sampling_state.acc_rot = accuracy_estimate.accuracy.acc_rot
+                sampling_state.acc_trans_angstrom = accuracy_estimate.accuracy.acc_trans_angstrom
         sampling_updated = (
             prepare_native_sampling_for_iteration(sampling_state, state, iteration=iteration, do_grad=do_grad)
             if opts.fixed_healpix_order is None
@@ -239,7 +242,7 @@ def _native_expectation_step(
             state,
             result,
             sampling_plan=sampling_plan,
-            accuracy_meta=accuracy_meta,
+            accuracy_estimate=accuracy_estimate,
             sampling_updated=sampling_updated,
             iteration=iteration,
             previous_translations=previous_translations,
@@ -300,18 +303,18 @@ def _native_expectation_step(
         result,
         *,
         sampling_plan,
-        accuracy_meta,
+        accuracy_estimate,
         sampling_updated,
         iteration,
         previous_translations,
         previous_rotations,
         previous_classes,
     ):
-        result.meta["sampling_accuracy_estimated"] = accuracy_meta is not None
+        result.meta["sampling_accuracy_estimated"] = accuracy_estimate is not None
         result.meta["sampling_accuracy_skipped_by_diagnostic"] = bool(opts.environment.skip_expected_accuracy)
         result.meta["sampling_accuracy_isolated_by_diagnostic"] = bool(opts.environment.isolate_expected_accuracy)
-        if accuracy_meta is not None:
-            result.meta.update(accuracy_meta)
+        if accuracy_estimate is not None:
+            result.meta.update(accuracy_estimate.meta())
         result.meta.update(
             sampling_updated=bool(sampling_updated),
             effective_offset_step_angstrom=float(sampling_state.effective_offset_step_angstrom),

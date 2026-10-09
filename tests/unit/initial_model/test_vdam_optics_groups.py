@@ -196,7 +196,7 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
             native_sampling.NativeInitialModelOptions(fn_img="x", outputname="y"), pixel_size=2.0
         )
     )
-    meta = native_sampling.estimate_native_sampling_accuracy(
+    estimate = native_sampling.estimate_native_sampling_accuracy(
         sampling_state,
         state,
         _Particles(n),
@@ -207,6 +207,7 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
         sigma2_fudge=1.0,
         optics_group_ids=groups,
     )
+    meta = estimate.meta()
     assert calls == [
         ([0, 3, 5, 6], pytest.approx(1.0, rel=1e-12), pytest.approx(300.0, rel=1e-12)),
         ([1, 2, 4, 7], pytest.approx(3.0, rel=1e-12), pytest.approx(200.0, rel=1e-12)),

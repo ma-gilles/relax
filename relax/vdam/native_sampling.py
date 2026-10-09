@@ -23,6 +23,7 @@ from relax.helpers.convergence import (
     relion_mpi_hidden_variable_change_is_small,
 )
 from relax.helpers.expected_accuracy import (
+    ExpectedAccuracy,
     _combine_group_expected_accuracies,
     estimate_relion_expected_accuracy_from_prepared_inputs,
     estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
@@ -345,6 +346,31 @@ def _best_eulers_from_particle_state(
     return result if np.all(resolved) else None
 
 
+@dataclass(frozen=True)
+class SamplingAccuracyEstimate:
+    """One ``calculateExpectedAngularErrors`` estimate over the subset's first trials: the accuracy, the trial
+    count, the sigma2 fudge and the trials' RELION part ids (their random seeds). The driver installs
+    ``accuracy.acc_rot`` and ``accuracy.acc_trans_angstrom`` on the sampling state; :meth:`meta` is the report."""
+
+    accuracy: ExpectedAccuracy
+    n_trials: int
+    sigma2_fudge: float
+    seed_part_ids: np.ndarray
+
+    def meta(self) -> dict[str, object]:
+        """The iteration meta's ``estimated_acc_*`` keys."""
+        return {
+            "estimated_acc_rot": self.accuracy.acc_rot,
+            "estimated_acc_trans_angstrom": self.accuracy.acc_trans_angstrom,
+            "estimated_acc_rot_class": self.accuracy.acc_rot_per_class,
+            "estimated_acc_trans_class": self.accuracy.acc_trans_per_class_angstrom,
+            "estimated_acc_class_counts": self.accuracy.class_counts,
+            "estimated_acc_n_trials": self.n_trials,
+            "estimated_acc_sigma2_fudge": self.sigma2_fudge,
+            "estimated_acc_seed_part_ids": self.seed_part_ids,
+        }
+
+
 def estimate_native_sampling_accuracy(
     sampling_state: NativeSamplingState,
     state: InitialModelState,
@@ -359,7 +385,7 @@ def estimate_native_sampling_accuracy(
     optics_group_ids: np.ndarray | None = None,
     experiment_dataset=None,
     isolate_in_subprocess: bool = False,
-) -> dict[str, object] | None:
+) -> SamplingAccuracyEstimate | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
     Subtomogram particles pass ``tilt_images`` (:func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`
@@ -547,18 +573,12 @@ def estimate_native_sampling_accuracy(
             acc_rot=np.asarray(accuracy.acc_rot, dtype=np.float64),
             acc_trans=np.asarray(accuracy.acc_trans_angstrom, dtype=np.float64),
         )
-    sampling_state.acc_rot = accuracy.acc_rot
-    sampling_state.acc_trans_angstrom = accuracy.acc_trans_angstrom
-    return {
-        "estimated_acc_rot": accuracy.acc_rot,
-        "estimated_acc_trans_angstrom": accuracy.acc_trans_angstrom,
-        "estimated_acc_rot_class": accuracy.acc_rot_per_class,
-        "estimated_acc_trans_class": accuracy.acc_trans_per_class_angstrom,
-        "estimated_acc_class_counts": accuracy.class_counts,
-        "estimated_acc_n_trials": int(n_trials),
-        "estimated_acc_sigma2_fudge": float(sigma2_fudge),
-        "estimated_acc_seed_part_ids": random_seed_particle_ids,
-    }
+    return SamplingAccuracyEstimate(
+        accuracy=accuracy,
+        n_trials=int(n_trials),
+        sigma2_fudge=float(sigma2_fudge),
+        seed_part_ids=random_seed_particle_ids,
+    )
 
 
 def record_native_sampling_assignment_changes(
