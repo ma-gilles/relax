@@ -1736,9 +1736,9 @@ def main() -> None:
 
     significant_summary = None
     significant_sample_indices = None
-    significant_full_stats = None
+    significant_stats = None
     bpref_significant_sample_indices = None
-    bpref_full_stats = None
+    bpref_stats = None
     bpref_significant_summary = None
     need_significant_support = args.significant_mstep or args.relion_bpref_mstep
     if need_significant_support:
@@ -1769,8 +1769,8 @@ def main() -> None:
         )
         n_sig_all = significance.n_sig_all
         significant_sample_indices = significance.significant_sample_indices
-        significant_full_stats = significance.full_stats
-        normalization_log_z = significant_full_stats["normalization_log_z"]
+        significant_stats = significance.stats
+        normalization_log_z = significant_stats.normalization_log_z
         significant_mstep_applied = bool(args.significant_mstep and not args.adaptive_2pass)
         if args.significant_mstep and args.adaptive_2pass:
             print(
@@ -1843,7 +1843,7 @@ def main() -> None:
             f"p95={significant_summary['abs_p95']:.3g}, max={significant_summary['abs_max']:.3g}"
         )
         bpref_significant_sample_indices = significant_sample_indices
-        bpref_full_stats = significant_full_stats
+        bpref_stats = significant_stats
 
     if args.relion_bpref_mstep and args.adaptive_2pass:
         # The adaptive significant-sample diagnostic above intentionally uses
@@ -1881,7 +1881,7 @@ def main() -> None:
         )
         bpref_n_sig_all = bpref_significance.n_sig_all
         bpref_significant_sample_indices = bpref_significance.significant_sample_indices
-        bpref_full_stats = bpref_significance.full_stats
+        bpref_stats = bpref_significance.stats
         bpref_significant_summary = {
             "adaptive_fraction": float(args.significance_adaptive_fraction),
             "elapsed_s": float(time.time() - bpref_sig_t0),
@@ -1978,7 +1978,7 @@ def main() -> None:
     if args.relion_bpref_mstep:
         bpref_t0 = time.time()
         try:
-            if bpref_significant_sample_indices is None or bpref_full_stats is None:
+            if bpref_significant_sample_indices is None or bpref_stats is None:
                 raise RuntimeError("RELION BPref diagnostic requires significant support")
             bpref_maps, relion_bpref_class_summary = _relion_bpref_maps_from_sparse_support(
                 ds,
@@ -1986,7 +1986,7 @@ def main() -> None:
                 noise_variance,
                 translations.astype(np.float32),
                 bpref_significant_sample_indices,
-                bpref_full_stats["normalization_log_z"],
+                bpref_stats.normalization_log_z,
                 nside_level=healpix_order,
                 disc_type=args.disc_type,
                 current_size=current_size,

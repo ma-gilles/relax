@@ -122,7 +122,7 @@ class TreeRescoreTotals:
 
 
 def tree_rescore_report(totals: TreeRescoreTotals, max_margin: float) -> dict:
-    """The pass's report of the rescore (the ``firstiter_cc_tree_top2_rescore`` entry of ``full_stats``)."""
+    """The pass's report of the rescore (``Pass1Stats.tree_rescore``)."""
 
     return {
         "max_margin": float(max_margin),

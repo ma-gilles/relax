@@ -29,12 +29,12 @@ class RoutePlan:
     """What a route decides before the pass's first batch, for the stages that follow it.
 
     ``operand_plan`` prepares every batch's score operands. ``score_kind`` is the kernels' static ``"gaussian"`` or
-    ``"normalized_cc"`` and ``executed_backend`` names the scorer in ``full_stats``. ``float32_support`` says that the
+    ``"normalized_cc"`` and ``executed_backend`` names the scorer in the pass's stats. ``float32_support`` says that the
     pass forms its support on RELION's float32 route (the Gaussian route only). ``rotation_block_size`` is the rotations
     per block the pass runs with. ``compact_rows`` are the rows the projector returns (``None``: the full crop).
     ``projection_cache_plan`` is the plan of the cached projections (``None``: the pass keeps no cache) and
     ``tree_rescore_plan`` the plan of the tree rescore (``None`` unless the pass rescores). ``report`` is the route's
-    entries of ``full_stats``.
+    entries of ``Pass1Stats.route_report``.
     """
 
     operand_plan: Any

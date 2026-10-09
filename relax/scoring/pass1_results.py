@@ -227,14 +227,52 @@ class Pass1Outputs:
         )
 
 
+@dataclass(frozen=True)
+class Pass1Stats:
+    """The per-image statistics of one pass 1 (``N`` images, ``K`` classes) and what its route reports.
+
+    ``normalization_log_z`` and ``normalization_log_evidence`` are float64 ``[N]``; ``log_evidence_per_image``,
+    ``best_log_score_per_image`` and ``max_posterior_per_image`` have the score dtype; ``class_log_evidence_per_image`` is
+    float64 ``[K, N]``. ``significant_cutoff_counts`` is RELION's cutoff rank per image, before ties expand the support
+    (int32 ``[N]``), and ``executed_coarse_backend`` names the scorer that ran. A field below is ``None`` unless the call
+    asked for it: ``relion_f32_sum_weight`` and ``relion_f32_max_posterior`` (float32 ``[N]``, RELION's maximum-shifted
+    denominator and row maximum; the oversampling-zero second pass reuses them numerically, and a call with
+    ``return_relion_f32_normalization`` always has them), the class best (``return_class_best``) and runner-up
+    (``return_class_second``) scores and poses (``[K, N]``; the ``offset_free`` scores are the native scores before the
+    common image offset, which adding before a float32 cast can erase class and pose margins), and
+    ``coarse_significance_support_audit`` (the diagnostic hash of the supports, ``RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT``).
+    ``route_report`` holds the Gaussian route's entries (its GEMM resources and projection cache; empty for the
+    normalized CC) and ``tree_rescore`` the counts of the top-two rescore (``None`` unless the pass rescored).
+    """
+
+    normalization_log_z: np.ndarray
+    normalization_log_evidence: np.ndarray
+    log_evidence_per_image: np.ndarray
+    best_log_score_per_image: np.ndarray
+    max_posterior_per_image: np.ndarray
+    class_log_evidence_per_image: np.ndarray
+    significant_cutoff_counts: np.ndarray
+    executed_coarse_backend: str
+    relion_f32_sum_weight: np.ndarray | None
+    relion_f32_max_posterior: np.ndarray | None
+    class_best_log_score_per_image: np.ndarray | None
+    class_best_offset_free_log_score_per_image: np.ndarray | None
+    class_hard_assignments: np.ndarray | None
+    class_second_best_log_score_per_image: np.ndarray | None
+    class_second_best_offset_free_log_score_per_image: np.ndarray | None
+    class_second_hard_assignments: np.ndarray | None
+    coarse_significance_support_audit: dict | None
+    route_report: dict
+    tree_rescore: dict | None
+
+
 class Pass1Result(NamedTuple):
     """What pass 1 returns to its callers; the six positions of the tuple it returned before, now named.
 
     ``sig_rot_any`` is the bool ``[K, R]`` of rotations with a significant sample for some image, ``n_sig_all`` the
     significant samples per image (ties included), ``hard_assignment`` and ``class_assignment`` the best joint pose and
     class per image, and ``significant_sample_indices`` the per-class supports (``None`` without
-    ``collect_significance``). ``full_stats`` is the dict of the pass's statistics and reports
-    (:func:`relax.scoring.pass1_assembly.build_full_stats`).
+    ``collect_significance``). ``stats`` is the pass's :class:`Pass1Stats`.
     """
 
     sig_rot_any: np.ndarray
@@ -242,4 +280,4 @@ class Pass1Result(NamedTuple):
     hard_assignment: np.ndarray
     class_assignment: np.ndarray
     significant_sample_indices: Any
-    full_stats: dict
+    stats: Pass1Stats

@@ -208,7 +208,7 @@ def plan_coarse_gaussian(
 
 
 def coarse_gaussian_report(plan: CoarseGaussianPlan) -> dict:
-    """The Gaussian route's entries of the pass's ``full_stats``: the GEMM resources and the projection cache.
+    """The Gaussian route's entries of the pass's ``route_report``: the GEMM resources and the projection cache.
 
     The cache entry is present when the plan has a cache (it is built whenever it is planned).
     """
