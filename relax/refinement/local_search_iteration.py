@@ -32,8 +32,10 @@ from relax.sparse_pass2.resident_local_pass2 import compute_local_search_residen
 logger = logging.getLogger("relax.local.local_search_iteration")
 
 
-@dataclass
-class _LocalSearchIterationResult:
+@dataclass(frozen=True, kw_only=True)
+class LocalSearchResult:
+    """One K=1 local pass: the half's accumulators, statistics and best poses (unscaled, unmagnified)."""
+
     Ft_y: object
     Ft_ctf: object
     hard_assignment: object
@@ -43,9 +45,17 @@ class _LocalSearchIterationResult:
     best_pose_rotations: object | None = None
     best_pose_translations: object | None = None
     best_pose_eulers_deg: np.ndarray | None = None
-    # Class3D fine pass: the engine's class-segmented output (``ResidentKClassPass2Output``); the
-    # K=1 fields above are then None.
-    class_pass: object | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalClassSearchResult:
+    """One Class3D local fine pass: the engine's class-segmented output and its statistics."""
+
+    # The resident engine's ``ResidentKClassPass2Output`` (per-class accumulators, sums and best poses).
+    class_pass: object
+    relion_stats: RelionStats
+    noise_stats: NoiseStats | None
+    profile_summary: dict | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -150,8 +160,11 @@ def _run_local_search_iteration(
     grid: LocalSearchGridSpec,
     kernel: LocalSearchKernelPolicy,
     support: LocalSearchSupportPolicy,
-) -> _LocalSearchIterationResult:
+) -> LocalSearchResult | LocalClassSearchResult:
     """Run local search on the device-resident engine and return named halfset statistics and pose fields.
+
+    A Class3D fine pass (several classes, not score-only) returns :class:`LocalClassSearchResult`, every
+    other pass :class:`LocalSearchResult`.
 
     Optional fields are None when their corresponding return flags are disabled.
     Arrays retain the engine's layouts and identities; profile metadata is copied
@@ -324,22 +337,24 @@ def _run_local_search_iteration(
                     for rotations in engine_outputs.per_class_best_pose_rotations
                 )
             )
-        return _LocalSearchIterationResult(
-            Ft_y=None,
-            Ft_ctf=None,
-            hard_assignment=None,
+        return LocalClassSearchResult(
+            class_pass=engine_outputs,
             relion_stats=engine_outputs.stats,
             noise_stats=engine_outputs.noise_stats,
             profile_summary=engine_outputs.profile if support.return_profile else None,
-            class_pass=engine_outputs,
         )
-    result = _LocalSearchIterationResult(
+    profile_summary = engine_outputs.profile if support.return_profile else None
+    if support.return_profile and profile_summary is not None:
+        profile_summary = dict(profile_summary)
+        profile_summary["metadata_build_time_s"] = np.float64(metadata_build_time)
+        profile_summary["selector_time_s"] = np.float64(selector_time)
+    return LocalSearchResult(
         Ft_y=engine_outputs.Ft_y,
         Ft_ctf=engine_outputs.Ft_ctf,
         hard_assignment=engine_outputs.hard_assignments,
         relion_stats=engine_outputs.stats,
         noise_stats=engine_outputs.noise_stats,
-        profile_summary=engine_outputs.profile if support.return_profile else None,
+        profile_summary=profile_summary,
         best_pose_rotations=(
             engine_outputs.best_pose_rotations
             if (kernel.projection_scale == 1.0 and magnification is None) or engine_outputs.best_pose_rotations is None
@@ -348,10 +363,3 @@ def _run_local_search_iteration(
         best_pose_translations=engine_outputs.best_pose_translations,
         best_pose_eulers_deg=engine_outputs.best_pose_eulers_deg,
     )
-
-    if support.return_profile and result.profile_summary is not None:
-        result.profile_summary = dict(result.profile_summary)
-        result.profile_summary["metadata_build_time_s"] = np.float64(metadata_build_time)
-        result.profile_summary["selector_time_s"] = np.float64(selector_time)
-
-    return result

@@ -49,6 +49,7 @@ from relax.refinement.firstiter_cc import _score_kclass_firstiter_cc_pass2
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.local_search_iteration import (
+    LocalClassSearchResult,
     LocalSearchData,
     LocalSearchGridSpec,
     LocalSearchKernelPolicy,
@@ -1884,13 +1885,6 @@ def _score_half_local_one_shape(
             score_only=execution.score_only,
         ),
     )
-    Ft_y_k = local_outputs.Ft_y
-    Ft_ctf_k = local_outputs.Ft_ctf
-    ha_k = local_outputs.hard_assignment
-    best_rots_k = local_outputs.best_pose_rotations
-    best_trans_k = local_outputs.best_pose_translations
-    em_stats_k = local_outputs.relion_stats
-    noise_stats_k = local_outputs.noise_stats
     if diagnostics.collect_local_search_profile:
         local_profile_k = local_outputs.profile_summary
         profile_row = dict(local_profile_k)
@@ -1920,28 +1914,28 @@ def _score_half_local_one_shape(
         if local_relion_x_half_mstep
         else None
     )
-    if local_outputs.class_pass is not None:
+    if isinstance(local_outputs, LocalClassSearchResult):
         return _class_local_half_result(
-            local_outputs.class_pass,
+            local_outputs,
             n_classes=n_classes,
             significant_counts=pass2.significant_counts,
             mstep_accumulator_shape=mstep_accumulator_shape,
             pose_dtype=execution.precision.rotation_real_dtype,
         )
     pose_dtype = execution.precision.rotation_real_dtype
-    best_rots = np.asarray(best_rots_k, dtype=pose_dtype)
+    best_rots = np.asarray(local_outputs.best_pose_rotations, dtype=pose_dtype)
     best_eulers = (
         np.asarray(local_outputs.best_pose_eulers_deg, dtype=np.float64)
         if local_outputs.best_pose_eulers_deg is not None
-        else utils.R_to_relion(np.asarray(best_rots_k), degrees=True).astype(pose_dtype)
+        else utils.R_to_relion(np.asarray(local_outputs.best_pose_rotations), degrees=True).astype(pose_dtype)
     )
-    best_translations = np.asarray(best_trans_k, dtype=pose_dtype)
+    best_translations = np.asarray(local_outputs.best_pose_translations, dtype=pose_dtype)
     return HalfScoreResult(
-        ha=ha_k,
-        Ft_y=Ft_y_k,
-        Ft_ctf=Ft_ctf_k,
-        em_stats=em_stats_k,
-        noise_stats=noise_stats_k,
+        ha=local_outputs.hard_assignment,
+        Ft_y=local_outputs.Ft_y,
+        Ft_ctf=local_outputs.Ft_ctf,
+        em_stats=local_outputs.relion_stats,
+        noise_stats=local_outputs.noise_stats,
         best_pose_rotations=best_rots,
         best_pose_rotation_eulers=best_eulers,
         best_pose_translations=best_translations,
@@ -1951,17 +1945,19 @@ def _score_half_local_one_shape(
     )
 
 
-def _class_local_half_result(class_pass, *, n_classes: int, significant_counts, mstep_accumulator_shape, pose_dtype):
+def _class_local_half_result(
+    outputs: LocalClassSearchResult, *, n_classes: int, significant_counts, mstep_accumulator_shape, pose_dtype
+):
     """A Class3D local pass as the half's K-class result, as the subtomogram K-class pass adapts its own.
 
-    ``class_pass`` is the resident local engine's ``ResidentKClassPass2Output``; its class rotation sums
-    are over the layout's posterior grid, which is the direction-prior grid of the local search.
+    ``outputs.class_pass`` is the resident local engine's ``ResidentKClassPass2Output``; its class rotation
+    sums are over the layout's posterior grid, which is the direction-prior grid of the local search.
     """
 
     from relax.classification.k_class import _class_segmented_em_result
 
     k_class_result = _class_segmented_em_result(
-        class_pass,
+        outputs.class_pass,
         n_classes=n_classes,
         class_posterior_sums_from_noise=True,
         return_profile=False,
@@ -1971,7 +1967,7 @@ def _class_local_half_result(class_pass, *, n_classes: int, significant_counts, 
     )
     score_result = class_em_to_half_result(
         k_class_result,
-        effective_rotations=np.zeros((int(np.shape(class_pass.class_rotation_posterior_sums)[1]), 0)),
+        effective_rotations=np.zeros((int(np.shape(outputs.class_pass.class_rotation_posterior_sums)[1]), 0)),
         rot_pmap_for_collapse=None,
         adaptive_os_local=0,
         require_best_pose_details=True,

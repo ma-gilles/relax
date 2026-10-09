@@ -15,7 +15,7 @@ from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics import local_debug
 from relax.helpers.convergence import _native_final_perturbation_healpix_order
 from relax.refinement import half_scoring
-from relax.refinement.local_search_iteration import _LocalSearchIterationResult
+from relax.refinement.local_search_iteration import LocalSearchResult
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
 from relax.relion import relion_normalization
 
@@ -268,7 +268,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         )
         captured["support"] = support
         current_size_shape = (19, 19, 19)
-        outputs = _LocalSearchIterationResult(
+        outputs = LocalSearchResult(
             Ft_y=np.zeros(int(np.prod(current_size_shape)), dtype=np.complex64),
             Ft_ctf=np.zeros(int(np.prod(current_size_shape)), dtype=np.float32),
             hard_assignment=np.array([0], dtype=np.int32),
@@ -372,7 +372,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         )
         calls.append(call)
         if support.score_only:
-            return _LocalSearchIterationResult(
+            return LocalSearchResult(
                 Ft_y="parent_ft_y",
                 Ft_ctf="parent_ft_ctf",
                 hard_assignment=np.zeros(2, dtype=np.int32),
@@ -384,7 +384,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
                     ),
                 },
             )
-        return _LocalSearchIterationResult(
+        return LocalSearchResult(
             Ft_y="fine_ft_y",
             Ft_ctf="fine_ft_ctf",
             hard_assignment=np.array([4, 5], dtype=np.int32),

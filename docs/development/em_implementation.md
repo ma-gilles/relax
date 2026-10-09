@@ -105,8 +105,9 @@ at the refinement boundary. The exact local-search stage is implemented in
 [`local_search_iteration`](../../relax/refinement/local_search_iteration.py).
 That module builds local pose neighborhoods, asks
 [`batch_planning`](../../relax/helpers/batch_planning.py) for
-batch sizes, calls the selected kernel and returns `_LocalSearchIterationResult`
-with named accumulators, pose fields, statistics and optional class summaries.
+batch sizes, calls the selected kernel and returns `LocalSearchResult` (named accumulators,
+pose fields and statistics) or, for a Class3D fine pass, `LocalClassSearchResult` (the
+engine's class-segmented output).
 The controller reads those fields directly.
 The resident pass-2 operands in
 [`sparse_pass2_scoring`](../../relax/sparse_pass2/sparse_pass2_scoring.py)

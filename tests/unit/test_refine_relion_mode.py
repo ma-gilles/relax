@@ -112,7 +112,7 @@ from relax.refinement.iteration_loop import (
     _normalize_noise_variance_per_half,
     refine_single_volume,
 )
-from relax.refinement.local_search_iteration import _LocalSearchIterationResult
+from relax.refinement.local_search_iteration import LocalSearchResult
 from relax.refinement.mean_helpers import (
     _align_fourier_volume_sign_to_reference,
 )
@@ -1279,7 +1279,7 @@ def _mock_local_search_result(
     best_pose_details=(),
 ):
     best_rotations, best_translations = best_pose_details or (None, None)
-    return _LocalSearchIterationResult(
+    return LocalSearchResult(
         Ft_y=base_outputs[0],
         Ft_ctf=base_outputs[1],
         hard_assignment=base_outputs[2],
@@ -3437,7 +3437,7 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
         reference_translations,
         atol=1e-6,
     )
-    assert isinstance(outputs, _LocalSearchIterationResult)
+    assert isinstance(outputs, LocalSearchResult)
     assert outputs.noise_stats is not None
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
@@ -3561,7 +3561,7 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
     ))
 
     np.testing.assert_allclose(captured["normalization_log_evidence"], normalization_log_evidence)
-    assert isinstance(outputs, _LocalSearchIterationResult)
+    assert isinstance(outputs, LocalSearchResult)
     assert outputs.noise_stats is None
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
@@ -3624,7 +3624,7 @@ def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkey
     ))
 
     assert captured["stats_use_reconstruction_probs"] is True
-    assert isinstance(outputs, _LocalSearchIterationResult)
+    assert isinstance(outputs, LocalSearchResult)
     assert outputs.noise_stats is None
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
@@ -3755,7 +3755,7 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
     assert captured["rotation_grid_random_perturbation"] == 0.0
     assert captured["rotation_grid_angular_sampling_deg"] is None
     np.testing.assert_allclose(captured["scored_rotations"], perturbed_rotations)
-    assert isinstance(outputs, _LocalSearchIterationResult)
+    assert isinstance(outputs, LocalSearchResult)
     assert outputs.noise_stats is not None
     assert outputs.profile_summary is None
     assert outputs.best_pose_rotations is None
@@ -8355,7 +8355,7 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
         reconstruct_flags.append(kwargs["reconstruct_significant_only"])
         n_shells = experiment_dataset.image_shape[0] // 2 + 1
         recon_vol_size = _mock_reconstruction_accumulator_size(experiment_dataset, kwargs)
-        return _LocalSearchIterationResult(
+        return LocalSearchResult(
             Ft_y=jnp.zeros(recon_vol_size, dtype=jnp.complex64),
             Ft_ctf=jnp.ones(recon_vol_size, dtype=jnp.complex64),
             hard_assignment=np.zeros(experiment_dataset.n_units, dtype=np.int32),
