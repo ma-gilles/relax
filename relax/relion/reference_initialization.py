@@ -7,6 +7,9 @@ import numpy as np
 from relax.helpers.shells import shell_of_radius_sq
 from relax.relion.geometry import REFERENCE_FILTER_EDGE_SHELLS
 
+# Elements of the start-up low-pass mask built at once (128 MiB of float64).
+_MASK_SLAB_ELEMENTS = 1 << 24
+
 
 def initial_low_pass_filter_references(
     Iref: np.ndarray,
@@ -23,18 +26,30 @@ def initial_low_pass_filter_references(
     N = Iref.shape[1]
     kz = np.fft.fftfreq(N, d=1.0) * N
     kx = np.arange(N // 2 + 1, dtype=np.float64)
-    r = np.sqrt(kz[:, None, None] ** 2 + kz[None, :, None] ** 2 + kx[None, None, :] ** 2)
-    mask = np.zeros_like(r)
-    mask[r < radius] = 1.0
-    edge = (r >= radius) & (r <= radius_p)
-    if edge_width > 0:
-        mask[edge] = 0.5 - 0.5 * np.cos(np.pi * (radius_p - r[edge]) / edge_width)
 
+    def mask_rows(z0, z1):
+        r = np.sqrt(kz[z0:z1, None, None] ** 2 + kz[None, :, None] ** 2 + kx[None, None, :] ** 2)
+        mask = np.zeros_like(r)
+        mask[r < radius] = 1.0
+        edge = (r >= radius) & (r <= radius_p)
+        if edge_width > 0:
+            mask[edge] = 0.5 - 0.5 * np.cos(np.pi * (radius_p - r[edge]) / edge_width)
+        return mask
+
+    # The products run in place, in the order of ``F / size * mask * size`` and with the mask built a slab of
+    # rows at a time, so each value is rounded as before; the inverse transform writes into ``out`` (relax#39:
+    # the out-of-place temporaries of a box-800 start-up).
+    rows = max(1, _MASK_SLAB_ELEMENTS // (N * (N // 2 + 1)))
     out = np.zeros_like(Iref)
     for k in range(Iref.shape[0]):
         vol = Iref[k]
-        F = np.fft.rfftn(vol, axes=(0, 1, 2), norm=None) / vol.size
-        out[k] = np.fft.irfftn(F * mask * vol.size, s=vol.shape, axes=(0, 1, 2), norm=None)
+        F = np.fft.rfftn(vol, axes=(0, 1, 2), norm=None)
+        F /= vol.size
+        for z0 in range(0, N, rows):
+            F[z0 : z0 + rows] *= mask_rows(z0, min(N, z0 + rows))
+        F *= vol.size
+        np.fft.irfftn(F, s=vol.shape, axes=(0, 1, 2), norm=None, out=out[k])
+        del F
     return out
 
 
