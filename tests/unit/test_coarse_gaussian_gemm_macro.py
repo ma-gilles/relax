@@ -791,12 +791,11 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
         "best_log_score_per_image",
         "max_posterior_per_image",
         "class_log_evidence_per_image",
-        "class_assignments",
     ):
-        assert_matches(cached[5][key], uncached[5][key])
+        assert_matches(getattr(cached[5], key), getattr(uncached[5], key))
     assert_matches(cached[2], uncached[2])
     assert_matches(cached[3], uncached[3])
-    cache_stats = cached[5]["coarse_gaussian_gemm_projection_cache"]
+    cache_stats = cached[5].route_report["coarse_gaussian_gemm_projection_cache"]
     assert cache_stats["enabled"] is True
     assert cache_stats["cache_shape"] == (1, 16, 12)
     assert cache_stats["stores_projection_abs2"] is False
@@ -1121,7 +1120,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
                 np.asarray(expected_support[class_index][image_index], dtype=np.int64),
             )
     assert any(np.any(tail) for _, _, tail in projection_calls)
-    resources = clean[5]["coarse_gaussian_gemm_resources"]
+    resources = clean[5].route_report["coarse_gaussian_gemm_resources"]
     assert resources["predicted_peak_projection_bytes"] <= resources[
         "projected_transient_budget_bytes"
     ]

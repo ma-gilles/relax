@@ -57,16 +57,12 @@ device scoring (`defer_publish`).
    The dump and the audit are imported by `pass1_publish.py`, `pass1_dump.py`, `pass1_assembly.py` and
    `tree_rescore.py` (the allowlist of `tests/unit/test_refinement_port_imports.py` names the four edges; the two
    edges of `significance.py` it replaced are gone).
-4. **`full_stats` is a dict (rules 8, 10).** The six-tuple is now `Pass1Result` (named fields, same positions); the
-   statistics stay a dict whose keys `k_class.py`, `scripts/run_k_class_parity.py`, `global_winner_summary.py` and
-   `_full_stats_from_subset` read.
-5. **Layer leak (rule 11).** Pass 1 imports `relax/sparse_pass2` modules (private names among them:
-   `_relion_cuda_powerclass_highres_xi2_half`, `_relion_translation_angles_f32`, `_relion_f32_fine_posterior`,
-   `_relion_cuda_fine_full_to_compact_lookup`).
+4. **Layer leak (rule 11).** Pass 1 imports `relax/sparse_pass2` modules (private names among them:
+   `_relion_f32_fine_posterior`, `_relion_cuda_fine_full_to_compact_lookup`).
 
 ## Noticed, not changed (a refactor does not fix behaviour)
 
-- With the tail-batch padding on (the default), `_maybe_dump_tree_rescore_batch` indexes the padded ambiguous rows into
+- With the tail-batch padding on (the default), `maybe_dump_tree_rescore_batch` indexes the padded ambiguous rows into
   the unpadded batch indices and raises an `IndexError` when a tree-rescore dump is requested for a half whose last
   batch is short. A diagnostic only; the fingerprint's dump case uses a half without a tail.
 

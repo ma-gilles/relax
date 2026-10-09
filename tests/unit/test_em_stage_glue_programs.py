@@ -75,9 +75,12 @@ def _assert_significance_results_match(candidate, control):
                 assert actual is expected
             else:
                 assert_matches(np.asarray(actual), np.asarray(expected))
-    assert set(candidate[5]) == set(control[5])
-    for key, expected in control[5].items():
-        actual = candidate[5][key]
+    candidate_stats, control_stats = vars(candidate[5]), vars(control[5])
+    assert {key for key, value in candidate_stats.items() if value is not None} == {
+        key for key, value in control_stats.items() if value is not None
+    }
+    for key, expected in control_stats.items():
+        actual = candidate_stats[key]
         if isinstance(expected, np.ndarray):
             assert_matches(actual, expected)
             assert actual.dtype == expected.dtype
@@ -91,7 +94,7 @@ def _assert_significance_results_match(candidate, control):
 #
 # Measured on a claimed A100 at this commit, this fixture compares 77 float
 # entries, its null control (the identical configuration twice in one process)
-# moves 0, and the padded path moves 6, all of them in four ``full_stats``
+# moves 0, and the padded path moves 6, all of them in four ``Pass1Stats``
 # reporting fields and none by more than one float32 ulp (1.2e-7 relative).
 # Those fields are float64 accumulators over float32 posteriors, so their band
 # is the float32 one, not the float64 default.
@@ -118,11 +121,14 @@ def _assert_significance_results_within_null_band(candidate, control):
                 assert actual is expected, f"class[{c}][{i}]"
                 continue
             compare(actual, expected, f"class[{c}][{i}]", reporting=False)
-    assert set(candidate[5]) == set(control[5])
-    for key, expected in control[5].items():
-        actual = candidate[5][key]
+    candidate_stats, control_stats = vars(candidate[5]), vars(control[5])
+    assert {key for key, value in candidate_stats.items() if value is not None} == {
+        key for key, value in control_stats.items() if value is not None
+    }
+    for key, expected in control_stats.items():
+        actual = candidate_stats[key]
         if isinstance(expected, np.ndarray):
-            compare(actual, expected, f"full_stats[{key!r}]", reporting=True)
+            compare(actual, expected, f"stats.{key}", reporting=True)
 
 
 def _run_padding_pair(monkeypatch):

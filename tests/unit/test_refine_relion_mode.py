@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 from helpers.pass1_programs import clear_pass1_programs
+from helpers.pass1_stats import make_pass1_stats
 from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import unconverged_accuracy
 
@@ -3965,6 +3966,7 @@ def _sparse_big_jit_local_case(rng):
 
 def _assert_significance_stats_allclose(actual, expected):
     """Compare every statistic."""
+    actual, expected = vars(actual), vars(expected)
     assert actual.keys() == expected.keys()
     for key in actual.keys():
         actual_value = np.asarray(actual[key])
@@ -6617,7 +6619,7 @@ class TestRelionModeSmokeTest:
             fake_tree_rescore,
         )
 
-        *_, full_stats = _compute_k_class_significance_batched(
+        *_, stats = _compute_k_class_significance_batched(
             dataset,
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             rotations,
@@ -6638,17 +6640,17 @@ class TestRelionModeSmokeTest:
             tree_rescore_max_margin=4e-6,
         )
 
-        assert full_stats["executed_coarse_backend"] == "exact_cc_gemm"
+        assert stats.executed_coarse_backend == "exact_cc_gemm"
         assert_matches(
-            np.asarray(full_stats["class_hard_assignments"]),
+            np.asarray(stats.class_hard_assignments),
             np.full((1, dataset.n_units), expected_pose, dtype=np.int32),
         )
-        assert "class_second_hard_assignments" not in full_stats
+        assert stats.class_second_hard_assignments is None
         if expected_ties == "all":
             expected_ties = dataset.n_units
         if expected_changes == "all":
             expected_changes = dataset.n_units
-        assert full_stats["firstiter_cc_tree_top2_rescore"] == {
+        assert stats.tree_rescore == {
             "max_margin": 4e-6,
             "examined_images": dataset.n_units,
             "ambiguous_images": dataset.n_units,
@@ -6727,7 +6729,7 @@ class TestRelionModeSmokeTest:
         monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
         monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "0")
 
-        *_, full_stats = _compute_k_class_significance_batched(
+        *_, stats = _compute_k_class_significance_batched(
             dataset,
             noise,
             rotations,
@@ -6745,7 +6747,7 @@ class TestRelionModeSmokeTest:
         )
 
         assert not list(dump_dir.glob("*.npz"))
-        assert full_stats["class_hard_assignments"].shape == (2, dataset.n_units)
+        assert stats.class_hard_assignments.shape == (2, dataset.n_units)
 
     def test_relion_mode_convergence_state(
         self,
@@ -9418,12 +9420,11 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
             None,
             expected_classes.copy(),
             None,
-            {
-                "class_log_evidence_per_image": coarse_log_evidence.copy(),
-                "class_hard_assignments": coarse_hard.copy(),
-                "class_best_log_score_per_image": coarse_best_scores.copy(),
-                "class_assignments": expected_classes.copy(),
-            },
+            make_pass1_stats(
+                class_log_evidence_per_image=coarse_log_evidence.copy(),
+                class_hard_assignments=coarse_hard.copy(),
+                class_best_log_score_per_image=coarse_best_scores.copy(),
+            ),
         )
 
     monkeypatch.setattr(

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
+from helpers.pass1_stats import make_pass1_stats
 
 from relax.helpers.orientation_priors import DirectionPrior
 from relax.helpers.resolution import ImageGeometry
@@ -101,8 +102,8 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
         coarse_calls.append(kwargs)
         return Pass1Result(None, np.ones(1, dtype=np.int32), coarse_pose, np.zeros(1, dtype=np.int32),
                 [[np.asarray([0], dtype=np.int32)] for _ in range(n_classes)],
-                {"significant_cutoff_counts": np.ones(1, dtype=np.int32),
-                 "relion_f32_sum_weight": coarse_sum, "relion_f32_max_posterior": coarse_pmax})
+                make_pass1_stats(significant_cutoff_counts=np.ones(1, dtype=np.int32),
+                                 relion_f32_sum_weight=coarse_sum, relion_f32_max_posterior=coarse_pmax))
 
     result = _assemble_result(
         class_log_evidence=np.zeros((n_classes, 1)), new_means=None,
@@ -180,9 +181,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch):
             np.zeros(1, dtype=np.int32),
             np.zeros(1, dtype=np.int32),
             [[np.asarray([0], dtype=np.int32)]],
-            {
-                "significant_cutoff_counts": np.full(1, 5, dtype=np.int32),
-            },
+            make_pass1_stats(significant_cutoff_counts=np.full(1, 5, dtype=np.int32)),
         )
 
     sparse_result = _assemble_result(
@@ -733,18 +732,17 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
             None,
             np.asarray([1, 0, 1], dtype=np.int32),
             None,
-            {
-                "class_log_evidence_per_image": np.asarray(
+            make_pass1_stats(
+                class_log_evidence_per_image=np.asarray(
                     [[0.0, 2.0, 1.0], [1.0, 0.0, 3.0]],
                     dtype=np.float64,
                 ),
-                "class_hard_assignments": np.asarray([[4, 5, 6], [7, 8, 9]], dtype=np.int32),
-                "class_best_log_score_per_image": np.asarray(
+                class_hard_assignments=np.asarray([[4, 5, 6], [7, 8, 9]], dtype=np.int32),
+                class_best_log_score_per_image=np.asarray(
                     [[10.0, 20.0, 30.0], [11.0, 21.0, 31.0]],
                     dtype=np.float32,
                 ),
-                "class_assignments": np.asarray([1, 0, 1], dtype=np.int32),
-            },
+            ),
         )
 
     monkeypatch.setattr(significance_module, "_compute_k_class_significance_batched", fake_compute_significance)
@@ -1540,15 +1538,14 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
             None,
             np.zeros(TinyDataset.n_units, dtype=np.int32),
             None,
-            {
-                "class_log_evidence_per_image": np.zeros((1, TinyDataset.n_units)),
-                "class_hard_assignments": np.zeros((1, TinyDataset.n_units), dtype=np.int32),
-                "class_best_log_score_per_image": np.zeros(
+            make_pass1_stats(
+                class_log_evidence_per_image=np.zeros((1, TinyDataset.n_units)),
+                class_hard_assignments=np.zeros((1, TinyDataset.n_units), dtype=np.int32),
+                class_best_log_score_per_image=np.zeros(
                     (1, TinyDataset.n_units),
                     dtype=np.float32,
                 ),
-                "class_assignments": np.zeros(TinyDataset.n_units, dtype=np.int32),
-            },
+            ),
         )
 
     monkeypatch.setattr(

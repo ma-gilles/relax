@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 
-from relax.scoring.pass1_assembly import build_full_stats, log_batch_timing, significant_samples_after_loop
+from relax.scoring.pass1_assembly import build_stats, log_batch_timing, significant_samples_after_loop
 from relax.scoring.pass1_plan import Pass1Plan, plan_pass1
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_request import Pass1Request
@@ -76,16 +76,14 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
 
     significant_sample_indices = significant_samples_after_loop(outputs, plan.output_plan)
 
-    full_stats = build_full_stats(
+    stats = build_stats(
         outputs,
         significant_sample_indices,
         plan.output_plan,
         executed_backend=plan.route.executed_backend,
         route_report=plan.route.report,
-        tree_report=(
-            {"firstiter_cc_tree_top2_rescore": tree_rescore_report(tree_rescore_totals, plan.tree_rescore_max_margin)}
-            if plan.tree_rescore_enabled
-            else {}
+        tree_rescore=(
+            tree_rescore_report(tree_rescore_totals, plan.tree_rescore_max_margin) if plan.tree_rescore_enabled else None
         ),
     )
     if plan.tree_rescore_enabled:
@@ -96,7 +94,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
         hard_assignment=outputs.hard_assignment,
         class_assignment=outputs.class_assignment,
         significant_sample_indices=significant_sample_indices,
-        full_stats=full_stats,
+        stats=stats,
     )
 
 

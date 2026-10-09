@@ -170,9 +170,9 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         "significant_cutoff_counts",
         "class_log_evidence_per_image",
     ):
-        assert_matches(candidate[5][key], control[5][key])
-    assert "relion_f32_sum_weight" not in control[5]
-    assert "relion_f32_max_posterior" not in control[5]
+        assert_matches(getattr(candidate[5], key), getattr(control[5], key))
+    assert control[5].relion_f32_sum_weight is None
+    assert control[5].relion_f32_max_posterior is None
     expected_sums, expected_maxima = [], []
     for batch_index, (scores, result) in enumerate(captured):
         assert scores.shape[1] == n_classes * 5 * 2  # Exclude padded rotations.
@@ -180,9 +180,9 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         actual_rows = min(2, 3 - batch_index * 2)
         expected_sums.extend(np.asarray(result[4])[:actual_rows])
         expected_maxima.extend(np.asarray(result[0]).max(axis=1)[:actual_rows])
-    assert_matches(candidate[5]["relion_f32_sum_weight"], expected_sums)
-    assert_matches(candidate[5]["relion_f32_max_posterior"], expected_maxima)
-    assert candidate[5]["relion_f32_sum_weight"].dtype == np.float32
+    assert_matches(candidate[5].relion_f32_sum_weight, expected_sums)
+    assert_matches(candidate[5].relion_f32_max_posterior, expected_maxima)
+    assert candidate[5].relion_f32_sum_weight.dtype == np.float32
 
 
 def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):

@@ -507,14 +507,40 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             args.append("linear_interp")
         return function(*args, **kwargs)
 
+    def full_stats_dict(stats, class_assignment):
+        """The pass's statistics as one dict whichever tree runs: a base returns that dict, a head ``Pass1Stats``.
+
+        The head's record is flattened back to the base's keys (its route report merged in, an entry left out when the
+        pass did not produce it, the class winners taken from the result's own ``class_assignment``).
+        """
+        if isinstance(stats, dict):
+            return stats
+        flat = {name: getattr(stats, name) for name in (
+            "normalization_log_z", "normalization_log_evidence", "log_evidence_per_image", "best_log_score_per_image",
+            "max_posterior_per_image", "class_log_evidence_per_image")}
+        flat["class_assignments"] = class_assignment
+        flat["significant_cutoff_counts"] = stats.significant_cutoff_counts
+        flat["executed_coarse_backend"] = stats.executed_coarse_backend
+        flat.update(stats.route_report)
+        for name in (
+            "coarse_significance_support_audit", "relion_f32_sum_weight", "relion_f32_max_posterior",
+            "class_best_log_score_per_image", "class_best_offset_free_log_score_per_image", "class_hard_assignments",
+            "class_second_best_log_score_per_image", "class_second_best_offset_free_log_score_per_image",
+            "class_second_hard_assignments"):
+            if getattr(stats, name) is not None:
+                flat[name] = getattr(stats, name)
+        if stats.tree_rescore is not None:
+            flat["firstiter_cc_tree_top2_rescore"] = stats.tree_rescore
+        return flat
+
     def result_fields(result):
         """The six results as named leaves (``significant_samples`` also with its device CSR)."""
-        sig_rot_any, n_sig, hard, class_assignment, samples, full_stats = result
+        sig_rot_any, n_sig, hard, class_assignment, samples, stats = result
         return {
             "sig_rot_any": sig_rot_any, "n_significant": n_sig, "hard_assignment": hard, "class_assignment": class_assignment,
             "significant_samples": None if samples is None else [list(by_image) for by_image in samples],
             "significant_samples_csr": None if samples is None else [getattr(by_image, "csr", None) for by_image in samples],
-            "full_stats": full_stats,
+            "full_stats": full_stats_dict(stats, class_assignment),
         }
 
     def require_finite(fields):

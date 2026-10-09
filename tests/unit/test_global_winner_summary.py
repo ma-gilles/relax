@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.pass1_stats import make_pass1_stats
 
 from relax.diagnostics.global_winner_summary import (
     MAX_SUPPORTED_BYTES,
@@ -44,7 +45,8 @@ def _recovar_env(monkeypatch, path: Path, *, n_images: int = 4, iteration: int =
         monkeypatch.setenv(key, value)
 
 
-def _full_stats(n_images: int = 4):
+def _inputs(n_images: int = 4):
+    """The pass-1 statistics and class winners the summary reads, as the keyword arguments of its entry point."""
     scores = np.asarray(
         [
             [4.0, 1.0, 1.0, 1.0],
@@ -56,15 +58,17 @@ def _full_stats(n_images: int = 4):
     )[:, :n_images]
     best_poses = np.tile(np.arange(n_images, dtype=np.int32), (4, 1))
     return {
-        "class_best_log_score_per_image": scores,
-        "class_second_best_log_score_per_image": scores - np.float32(0.5),
-        "class_best_offset_free_log_score_per_image": scores.copy(),
-        "class_second_best_offset_free_log_score_per_image": scores - np.float32(0.5),
-        "class_hard_assignments": best_poses,
-        "class_second_hard_assignments": (best_poses + 1) % 6,
-        "class_log_evidence_per_image": scores.astype(np.float64) + 0.25,
+        "stats": make_pass1_stats(
+            class_best_log_score_per_image=scores,
+            class_second_best_log_score_per_image=scores - np.float32(0.5),
+            class_best_offset_free_log_score_per_image=scores.copy(),
+            class_second_best_offset_free_log_score_per_image=scores - np.float32(0.5),
+            class_hard_assignments=best_poses,
+            class_second_hard_assignments=(best_poses + 1) % 6,
+            class_log_evidence_per_image=scores.astype(np.float64) + 0.25,
+            normalization_log_z=np.arange(n_images, dtype=np.float64) + 10.0,
+        ),
         "class_assignments": np.argmax(scores, axis=0).astype(np.int32),
-        "normalization_log_z": np.arange(n_images, dtype=np.float64) + 10.0,
     }
 
 
@@ -89,7 +93,7 @@ def test_recovar_summary_round_trip_and_semantics(monkeypatch, tmp_path):
     _recovar_env(monkeypatch, path)
     output = maybe_dump_global_winner_summary(
         experiment_dataset=_dataset(np.arange(4, dtype=np.int64)),
-        full_stats=_full_stats(),
+        **_inputs(),
         n_classes=4,
         n_rotations=3,
         n_translations=2,
@@ -111,7 +115,7 @@ def test_recovar_summary_uses_original_image_mapping_not_dataset_indices(monkeyp
     original_indices = np.asarray([17, 3, 29, 11], dtype=np.int64)
     maybe_dump_global_winner_summary(
         experiment_dataset=_dataset(original_indices, dataset_indices=[0, 1, 2, 3]),
-        full_stats=_full_stats(),
+        **_inputs(),
         n_classes=4,
         n_rotations=3,
         n_translations=2,
@@ -124,15 +128,16 @@ def test_recovar_summary_uses_original_image_mapping_not_dataset_indices(monkeyp
 def test_recovar_summary_uses_offset_free_scores_when_absolute_float32_scores_tie(monkeypatch, tmp_path):
     path = tmp_path / "recovar_tie.npz"
     _recovar_env(monkeypatch, path)
-    full_stats = _full_stats()
-    full_stats["class_best_log_score_per_image"][:, 0] = np.float32(-1_000_000.0)
-    full_stats["class_second_best_log_score_per_image"][:, 0] = np.float32(-1_000_000.0)
-    full_stats["class_best_offset_free_log_score_per_image"][:, 0] = [1.0, 1.125, 0.75, 0.5]
-    full_stats["class_second_best_offset_free_log_score_per_image"][:, 0] = [0.5, 1.0, 0.5, 0.25]
-    full_stats["class_assignments"][0] = 1
+    inputs = _inputs()
+    stats = inputs["stats"]
+    stats.class_best_log_score_per_image[:, 0] = np.float32(-1_000_000.0)
+    stats.class_second_best_log_score_per_image[:, 0] = np.float32(-1_000_000.0)
+    stats.class_best_offset_free_log_score_per_image[:, 0] = [1.0, 1.125, 0.75, 0.5]
+    stats.class_second_best_offset_free_log_score_per_image[:, 0] = [0.5, 1.0, 0.5, 0.25]
+    inputs["class_assignments"][0] = 1
     maybe_dump_global_winner_summary(
         experiment_dataset=_dataset(np.arange(4)),
-        full_stats=full_stats,
+        **inputs,
         n_classes=4,
         n_rotations=3,
         n_translations=2,
@@ -154,7 +159,7 @@ def test_recovar_summary_rejects_duplicate_or_missing_original_identity(monkeypa
     with pytest.raises(RuntimeError, match="original identit|one original identity"):
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(indices),
-            full_stats=_full_stats(),
+            **_inputs(),
             n_classes=4,
             n_rotations=3,
             n_translations=2,
@@ -168,7 +173,7 @@ def test_recovar_summary_rejects_unexpected_k_or_n(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="shape"):
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
-            full_stats=_full_stats(),
+            **_inputs(),
             n_classes=4,
             n_rotations=3,
             n_translations=2,
@@ -178,7 +183,7 @@ def test_recovar_summary_rejects_unexpected_k_or_n(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="K=4"):
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
-            full_stats=_full_stats(),
+            **_inputs(),
             n_classes=4,
             n_rotations=3,
             n_translations=2,
@@ -201,7 +206,7 @@ def test_recovar_writer_enforces_configured_artifact_cap(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="exceeding cap"):
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
-            full_stats=_full_stats(),
+            **_inputs(),
             n_classes=4,
             n_rotations=3,
             n_translations=2,
@@ -547,7 +552,7 @@ def test_analysis_reports_repeat_normalization_sign_and_ulp(monkeypatch, tmp_pat
         monkeypatch.setenv("RELAX_GLOBAL_WINNER_SUMMARY_RUN_ID", label)
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
-            full_stats=_full_stats(),
+            **_inputs(),
             n_classes=4,
             n_rotations=3,
             n_translations=2,
@@ -586,7 +591,7 @@ def test_analysis_accepts_exact_paired_per_arm_dispatch_contexts(monkeypatch, tm
         monkeypatch.setenv("RELAX_GLOBAL_WINNER_SUMMARY_RUN_ID", label)
         maybe_dump_global_winner_summary(
             experiment_dataset=_dataset(np.arange(4)),
-            full_stats=_full_stats(),
+            **_inputs(),
             n_classes=4,
             n_rotations=3,
             n_translations=2,
@@ -618,7 +623,7 @@ def test_analysis_rejects_unpaired_dispatch_context(monkeypatch, tmp_path):
     _recovar_env(monkeypatch, path)
     maybe_dump_global_winner_summary(
         experiment_dataset=_dataset(np.arange(4)),
-        full_stats=_full_stats(),
+        **_inputs(),
         n_classes=4,
         n_rotations=3,
         n_translations=2,
@@ -640,7 +645,7 @@ def test_analysis_rejects_pose_topology_mismatch(monkeypatch, tmp_path):
     _recovar_env(monkeypatch, path)
     maybe_dump_global_winner_summary(
         experiment_dataset=_dataset(np.arange(4)),
-        full_stats=_full_stats(),
+        **_inputs(),
         n_classes=4,
         n_rotations=3,
         n_translations=2,

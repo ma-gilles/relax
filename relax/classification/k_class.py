@@ -787,7 +787,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     # RELION's iter-1 firstiter_cc path performs WTA on raw normalized-CC
     # scores before the non-firstiter prior-weighting branch is reached.
     firstiter_class_log_priors = np.zeros(n_classes, dtype=np.float64)
-    full_stats = _compute_k_class_significance_batched(
+    pass1_result = _compute_k_class_significance_batched(
         experiment_dataset,
         noise_variance,
         rotations,
@@ -833,22 +833,23 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         translation_phase_source=engine_kwargs.get("translation_phase_source"),
         **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(engine_kwargs),
-    ).full_stats
+    )
     from relax.diagnostics.global_winner_summary import maybe_dump_global_winner_summary
 
     maybe_dump_global_winner_summary(
         experiment_dataset=experiment_dataset,
-        full_stats=full_stats,
+        stats=pass1_result.stats,
+        class_assignments=pass1_result.class_assignment,
         n_classes=n_classes,
         n_rotations=n_rot,
         n_translations=int(np.asarray(translations).shape[0]),
         iteration=engine_kwargs.get("debug_iteration"),
     )
-    class_log_evidence = np.asarray(full_stats["class_log_evidence_per_image"], dtype=np.float64)
-    per_class_hard = np.asarray(full_stats["class_hard_assignments"], dtype=np.int32)
+    class_log_evidence = np.asarray(pass1_result.stats.class_log_evidence_per_image, dtype=np.float64)
+    per_class_hard = np.asarray(pass1_result.stats.class_hard_assignments, dtype=np.int32)
     score_dtype = _score_dtype_from_kwargs(engine_kwargs)
-    class_best_log_score = np.asarray(full_stats["class_best_log_score_per_image"], dtype=score_dtype)
-    class_assignments = np.asarray(full_stats["class_assignments"], dtype=np.int32)
+    class_best_log_score = np.asarray(pass1_result.stats.class_best_log_score_per_image, dtype=score_dtype)
+    class_assignments = np.asarray(pass1_result.class_assignment, dtype=np.int32)
     per_class_stats = tuple(
         make_relion_stats(
             log_evidence_per_image=np.asarray(class_log_evidence[class_index], dtype=score_dtype),
@@ -864,7 +865,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         per_class_hard_assignments=per_class_hard,
         per_class_stats=per_class_stats,
         class_assignments=class_assignments,
-        coarse_score_backend=full_stats.get("executed_coarse_backend"),
+        coarse_score_backend=pass1_result.stats.executed_coarse_backend,
     )
 
 
@@ -1844,21 +1845,16 @@ def run_dense_k_class_em_adaptive(
                 **_translation_angle_scale_kwargs(engine_kwargs),
             )
         sig_sample_indices_by_class = pass1_result.significant_sample_indices
-        _full_coarse_stats = pass1_result.full_stats
         if image_seed_classes is not None:
             sig_sample_indices_by_class = seed_iteration_supports(
                 sig_sample_indices_by_class[0], image_seed_classes, n_classes
             )
-        if _full_coarse_stats is None or "significant_cutoff_counts" not in _full_coarse_stats:
-            raise RuntimeError("K-class significance did not return RELION cutoff-rank counts")
         significant_counts_for_result = np.asarray(
-            _full_coarse_stats["significant_cutoff_counts"],
+            pass1_result.stats.significant_cutoff_counts,
             dtype=np.int32,
         )
-        coarse_actual_backend = _full_coarse_stats.get("executed_coarse_backend")
-        coarse_significance_support_audit = _full_coarse_stats.get(
-            "coarse_significance_support_audit",
-        )
+        coarse_actual_backend = pass1_result.stats.executed_coarse_backend
+        coarse_significance_support_audit = pass1_result.stats.coarse_significance_support_audit
     if coarse_engine == "gemm_hybrid" and coarse_actual_backend not in {"gemm_macro", "exact_cc_gemm"}:
         raise RuntimeError(f"gemm_hybrid selected but coarse scorer executed {coarse_actual_backend!r}")
     pass1_s = time.time() - pass1_t0
@@ -1918,8 +1914,8 @@ def run_dense_k_class_em_adaptive(
     mask_t0 = time.time()
     pass2_kwargs = dict(engine_kwargs)
     if reuse_zero_oversampling_coarse_state:
-        pass2_kwargs["relion_f32_normalization_sum_weight"] = _full_coarse_stats["relion_f32_sum_weight"]
-        pass2_kwargs["relion_coarse_max_posterior"] = _full_coarse_stats["relion_f32_max_posterior"]
+        pass2_kwargs["relion_f32_normalization_sum_weight"] = pass1_result.stats.relion_f32_sum_weight
+        pass2_kwargs["relion_coarse_max_posterior"] = pass1_result.stats.relion_f32_max_posterior
         pass2_kwargs["relion_coarse_hard_assignment"] = pass1_result.hard_assignment
     if pass2_use_float64_scoring is not None:
         pass2_kwargs["use_float64_scoring"] = bool(pass2_use_float64_scoring)
