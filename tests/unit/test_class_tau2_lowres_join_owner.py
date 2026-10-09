@@ -236,6 +236,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             low_resolution_angstrom=40.0,
             pixel_resolutions=[2],
             current_resolution=float("inf"),
+            preserve_inputs=True,
         )
 
         assert result is sentinel
@@ -246,6 +247,8 @@ class TestJoinHalfAccumulatorsAtLowResolution:
         assert kwargs == {
             "current_resolution_angstrom": shell_index_to_resolution_angstrom(2, GRID_SIZE, 1.5),
             "padding_factor": PADDING_FACTOR,
+            "preserve_inputs": True,
+            "return_retained_first_numerator": False,
         }
 
     @pytest.mark.parametrize(
@@ -279,6 +282,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             low_resolution_angstrom=40.0,
             pixel_resolutions=pixel_resolutions,
             current_resolution=current_resolution,
+            preserve_inputs=True,
         )
         assert len(result) == 4
         for got, want in zip(result, expected):

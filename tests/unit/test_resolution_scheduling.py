@@ -425,6 +425,7 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
         low_resolution_angstrom=40.0,
         pixel_resolutions=[],
         current_resolution=state.current_resolution,
+        preserve_inputs=True,
     )
     joined0 = np.asarray(joined0).reshape(volume_shape)
     joined1 = np.asarray(joined1).reshape(volume_shape)

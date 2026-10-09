@@ -268,7 +268,7 @@ def join_half_accumulators_at_low_resolution(
     low_resolution_angstrom,
     pixel_resolutions,
     current_resolution,
-    preserve_inputs=True,
+    preserve_inputs: bool,
     return_retained_first_numerator=False,
 ):
     """Apply RELION's ``--low_resol_join_halves`` to K=1 half accumulators before the Wiener solve.
@@ -280,7 +280,9 @@ def join_half_accumulators_at_low_resolution(
     The join radius is capped by the previous iteration's resolution so shells
     beyond the map's actual resolution are never joined. The regular and final
     all-data passes call this with their own accumulators. Returns the four
-    joined arrays in input order; refinement state is not mutated.
+    joined arrays in input order (``preserve_inputs`` False: host inputs may be updated in place), and a
+    fifth value with ``return_retained_first_numerator``, as
+    :func:`regularization_relion.join_halves_at_low_resolution` does; refinement state is not mutated.
     """
 
     previous_resolution_angstrom = _previous_resolution_angstrom_for_half_join(
@@ -300,8 +302,8 @@ def join_half_accumulators_at_low_resolution(
         low_resolution_angstrom,
         current_resolution_angstrom=previous_resolution_angstrom,
         padding_factor=padding_factor,
-        **({"preserve_inputs": False} if not preserve_inputs else {}),
-        **({"return_retained_first_numerator": True} if return_retained_first_numerator else {}),
+        preserve_inputs=preserve_inputs,
+        return_retained_first_numerator=return_retained_first_numerator,
     )
 
 
