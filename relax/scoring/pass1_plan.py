@@ -450,19 +450,13 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     # This is an exact index remapping and avoids a large transient scatter for
     # global rotation blocks.
     projector_compact_rows = None
-    if use_relion_projector and coarse_texture_interp:
-        if exact_gaussian:
-            projector_compact_rows = CompactRows(gaussian_plan.score_indices_np, gaussian_plan.projector_output_size)
-        elif window.use_window:
-            projector_compact_rows = CompactRows(window_spec.score_indices_np, score_size)
-    projector_returns_compact = projector_compact_rows is not None
+    if exact_gaussian:
+        projector_compact_rows = CompactRows(gaussian_plan.score_indices_np, gaussian_plan.projector_output_size)
+    elif window.use_window:
+        projector_compact_rows = CompactRows(window_spec.score_indices_np, score_size)
 
-    coarse_rotated_radius = _coarse_rotated_radius_enabled(
-        default=bool(use_relion_projector and coarse_texture_interp and projector_returns_compact),
-    )
-    if coarse_rotated_radius and not (
-        use_relion_projector and coarse_texture_interp and projector_returns_compact
-    ):
+    coarse_rotated_radius = _coarse_rotated_radius_enabled(default=projector_compact_rows is not None)
+    if coarse_rotated_radius and projector_compact_rows is None:
         raise ValueError("rotated coarse radius requires the compact RELION texture projector")
 
     coarse_projector = CoarseProjector(
