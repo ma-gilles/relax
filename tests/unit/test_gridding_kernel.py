@@ -410,7 +410,6 @@ def _refine_stubs(halves, **options):
         None,
         None,
         None,
-        None,
         options=stand_in.options(consistency=RelionConsistencyOptions(gridding_kernel="separable"), **options),
     )
 

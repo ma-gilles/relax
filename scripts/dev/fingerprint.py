@@ -51,6 +51,7 @@ import ast
 import dataclasses
 import difflib
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -1179,11 +1180,18 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             elif replay_module is not None:
                 # A source whose replay source still read the replay settings from the options.
                 source["source"] = replay_module.RelionReplaySource.from_options(options)
+            mean_variance = jnp.ones(fixtures.VOLUME_SIZE, dtype=jnp.float32) * 100.0
+            noise_variance = jnp.ones(fixtures.IMAGE_SIZE, dtype=jnp.float32)
+            if "startup" in inspect.signature(iteration_loop.refine_single_volume).parameters:
+                # The start-up arrays in their single-use holder (relax#26).
+                from relax.refinement.startup_references import StartupHandoff
+
+                arrays = (StartupHandoff(init_volume, mean_variance), noise_variance)
+            else:
+                arrays = (init_volume, noise_variance, mean_variance)
             result = iteration_loop.refine_single_volume(
                 halves,
-                init_volume,
-                jnp.ones(fixtures.IMAGE_SIZE, dtype=jnp.float32),
-                jnp.ones(fixtures.VOLUME_SIZE, dtype=jnp.float32) * 100.0,
+                *arrays,
                 translations,
                 options=options,
                 **observer,

@@ -26,4 +26,4 @@ def test_refinement_refuses_a_precision_the_engines_do_not_read():
     process = scoring_policy.DENSE_PRECISION
     other = replace(process, use_float64_scoring=not process.use_float64_scoring)
     with pytest.raises(ValueError, match="differs from the process's dense precision"):
-        iteration_loop.refine_single_volume(*([None] * 5), options=stand_in.options(precision=other))
+        iteration_loop.refine_single_volume(*([None] * 4), options=stand_in.options(precision=other))

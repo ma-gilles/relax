@@ -266,6 +266,7 @@ def run_tiny_refinement(
         FinalPassOptions,
         KClassOptions,
     )
+    from relax.refinement.startup_references import StartupHandoff
 
     calls = [] if engine_calls is None else engine_calls
 
@@ -330,9 +331,11 @@ def run_tiny_refinement(
     )
     return iteration_loop.refine_single_volume(
         halves,
-        _hermitian_volume(VOLUME_SHAPE, seed=42) if init_volume is None else init_volume,
+        StartupHandoff(
+            _hermitian_volume(VOLUME_SHAPE, seed=42) if init_volume is None else init_volume,
+            jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
+        ),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-        jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
         jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32),
         options=options,
         observer=observer,

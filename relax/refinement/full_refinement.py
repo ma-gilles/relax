@@ -1205,13 +1205,16 @@ def main(command=None):
         )
     continued_iterations = 0 if resume_snapshot is None else int(resume_snapshot.relion_iteration)
 
-    # The start-up tau2 is a box-scale volume (float64 at start-up: 4.1 GB at box 800).
-    # Hand it over as a host array and drop the device copy, so this frame does not
-    # hold it on the device for the whole refinement (census, bigbox 14468686). The
-    # host array and init_vol_ft stay alive until the refinement returns: this frame
-    # names them and CPython keeps a call's arguments referenced for its duration.
-    initial_mean_variance_host = np.asarray(jax.device_get(mean_variance))
-    del mean_variance
+    # The start-up volume, tau2 and projector maps are box-scale (12.3 GB at box 800). The tau2 goes over as a
+    # host array, so this frame does not hold it on the device (census, bigbox 14468686). They go to the loop in a
+    # single-use holder and this frame drops its names: the loop takes them once and frees them after the
+    # start-up, where a plain argument stayed referenced until the call returned (relax#26).
+    startup = startup_references.StartupHandoff(
+        references.fourier,
+        np.asarray(jax.device_get(mean_variance)),
+        None if resume_snapshot is not None else references.real_for_projector,
+    )
+    del mean_variance, references
     run_options = RefinementOptions(
         symmetry=SymmetryOptions(point_group=symmetry),
         schedule=command_options.resolve_schedule(
@@ -1256,7 +1259,6 @@ def main(command=None):
         ),
         checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
         replay=ReplayState(
-            init_reference_real=None if resume_snapshot is not None else references.real_for_projector,
             init_group_ids=list(particle_groups.group_ids_per_half),
             init_group_count=particle_groups.n_groups,
             init_relion_optics_group_count=particle_groups.n_optics_groups,
@@ -1296,11 +1298,10 @@ def main(command=None):
     with stable_window_class_history():
         result = refine_single_volume(
             experiment_datasets=experiment_datasets,
-            init_volume=references.fourier,
+            startup=startup,
             init_noise_variance=(
                 noise_variance if optics_group_ids_per_half is None else [noise_variance, noise_variance]
             ),
-            init_mean_variance=initial_mean_variance_host,
             translations=translations_jnp,
             options=run_options,
             observer=observers.command_observer(args),
@@ -1320,8 +1321,8 @@ def main(command=None):
                 run_options,
             ),
         )
-    # The options (with their replay slots and start-up arrays) live no longer than the refinement, as before.
-    del run_options
+    # The options (with their replay slots) live no longer than the refinement, as before.
+    del run_options, startup
 
     if run_file_writer is not None:
         run_file_writer.wait()  # the last iteration's files, written in the background

@@ -690,7 +690,7 @@ def test_the_backend_pairing_is_enforced_before_pass_2(monkeypatch, backend_name
     monkeypatch.setattr(iteration_loop, "initialize_refinement_state", unexpected_state)
     with pytest.raises(ValueError, match="require RELION CUDA image preprocessing"):
         iteration_loop.refine_single_volume(
-            [dataset, dataset], None, None, None, None,
+            [dataset, dataset], None, None, None,
             options=stand_in.options(parity=stand_in.parity(
                 preserve_bpref_particle_order=True, image_fourier_backend=backend_name,
             )),

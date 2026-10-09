@@ -179,6 +179,7 @@ from relax.refinement.setup_checks import (
     reconstruction_settings_for_run,
     translation_angle_scale_for_run,
 )
+from relax.refinement.startup_references import StartupHandoff
 from relax.refinement.tomo_half import TomoHalf, numbered_iteration_tomo_sampling
 from relax.relion.geometry import (
     RECONSTRUCTION_PADDING_FACTOR,
@@ -279,9 +280,8 @@ def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coa
 
 def refine_single_volume(
     experiment_datasets: list[cryoem_dataset.CryoEMDataset],
-    init_volume: list[jnp.ndarray] | jnp.ndarray,
+    startup: StartupHandoff,
     init_noise_variance: jnp.ndarray,
-    init_mean_variance: jnp.ndarray,
     translations: jnp.ndarray | None,
     options: RefinementOptions,
     observer: RunObserver | None = None,
@@ -299,12 +299,11 @@ def refine_single_volume(
     ----------
     experiment_datasets : list of 2 dataset objects
         Half-set datasets (same format as run_halfset_em_iteration expects).
-    init_volume : list of 2 jnp.ndarray, shape (volume_size,) or jnp.ndarray, shape (volume_size,)
-        Initial volume in Fourier space for each half-set.
+    startup : ``StartupHandoff`` (``relax.refinement.startup_references``) holding the initial Fourier volume
+        (one per half-set, or shared), the initial signal prior (tau^2, shape (volume_size,)) and the first
+        projector's real maps (or None). The loop takes them once, so they are freed after the start-up (relax#26).
     init_noise_variance : jnp.ndarray, shape (2,image_size)
         Initial per-pixel noise variance for each half-set.
-    init_mean_variance : jnp.ndarray, shape (volume_size,)
-        Initial signal prior (tau^2).
     translations : jnp.ndarray, shape (n_trans, 2)
         Translation grid.
     options : `RefinementOptions` struct that bundles the schedule / adaptive / parity
@@ -394,6 +393,7 @@ def refine_single_volume(
 
     state = initialize_refinement_state(
         options, image_geometry, subtomogram=tomo_halves, dtype=scoring_dtype, source=source,
+        hands_reference_real=startup.hands_reference_real,
     )
     resume = options.checkpoint.resume
     setup_phase_seconds["state_init"] = setup_clock.seconds
@@ -425,10 +425,12 @@ def refine_single_volume(
         n_classes=options.k_class.n_classes, precision=options.precision, log=logger,
     )
 
+    init_volume, init_mean_variance, init_reference_real = startup.take()
     initial_real_references_by_half = prepare_initial_real_references(
-        options.replay.init_reference_real, volume_shape=volume_shape, n_classes=options.k_class.n_classes,
+        init_reference_real, volume_shape=volume_shape, n_classes=options.k_class.n_classes,
         init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
     )
+    del init_reference_real
     initial_noise_variance_per_half = _normalize_noise_variance_per_half(init_noise_variance)
     optics_group_ids_per_half = checked_optics_group_ids(
         options.parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
@@ -896,6 +898,8 @@ def refine_single_volume(
             real_references_by_half=initial_real_references_by_half if iteration == 0 else None, iteration=iteration,
             log=logger,
         )
+        # The start-up real maps serve iteration 0's projector only (relax#26).
+        initial_real_references_by_half = [None, None]
 
         # The iteration-start curve RELION's scale XA/AA shell gate reads (the scheduling curve changes later).
         scale_correction_data_vs_prior_this_iter = previous_data_vs_prior_for_scheduling

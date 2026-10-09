@@ -46,6 +46,28 @@ class StartupReferences:
     model_pixel_size: float | None = None
 
 
+class StartupHandoff:
+    """The start-up arrays handed to ``refine_single_volume``, which takes them once.
+
+    ``volume``: the loop's start-up Fourier volume (``StartupReferences.fourier``). ``mean_variance``: the start-up
+    tau2. ``reference_real``: the float64 real maps of the first projector (``real_for_projector``), or None.
+    A caller's argument stays referenced until the call returns (relax#26), so at box 800 the three arrays (12.3 GB)
+    lived for the whole refinement; :meth:`take` hands them over and drops the holder's references, so they are
+    freed once the loop has built its models and first projector.
+    """
+
+    def __init__(self, volume, mean_variance, reference_real=None):
+        self._arrays = (volume, mean_variance, reference_real)
+        self.hands_reference_real = reference_real is not None
+
+    def take(self):
+        """``(volume, mean_variance, reference_real)``; the holder keeps none of them. A second take raises."""
+        if self._arrays is None:
+            raise RuntimeError("the start-up arrays were already taken")
+        arrays, self._arrays = self._arrays, None
+        return arrays
+
+
 def _initial_lowpass_real(volume_real, volume_shape, voxel_size, ini_high):
     from relax.relion.reference_initialization import initial_low_pass_filter_references
 

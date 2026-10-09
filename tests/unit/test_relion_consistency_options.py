@@ -81,7 +81,7 @@ def _refine_stubs(halves, name, value, relion_replay=None, **groups):
 
     options = stand_in.options(consistency=RelionConsistencyOptions(**{name: value}), **groups)
     return iteration_loop.refine_single_volume(
-        halves, None, None, None, None, options=options, source=RelionReplaySource.for_run(relion_replay, options),
+        halves, None, None, None, options=options, source=RelionReplaySource.for_run(relion_replay, options),
     )
 
 

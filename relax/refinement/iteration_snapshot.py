@@ -220,7 +220,7 @@ def host_half_pair(values, dtype=None):
 
 def validate_resume_snapshot(
     snapshot: IterationSnapshot, *, init_relion_iteration, n_classes, box_size, options, replays_relion_trajectory=False,
-    starts_from_frozen_boundary=False, swaps_state=False,
+    starts_from_frozen_boundary=False, swaps_state=False, hands_reference_real=False,
 ):
     """Refuse a continuation the loop cannot start exactly from ``snapshot``.
 
@@ -247,7 +247,7 @@ def validate_resume_snapshot(
         problems.append("state-swap probes need a replayed trajectory")
     if options.adaptive.relion_current_sizes is not None or options.adaptive.relion_healpix_orders is not None:
         problems.append("sampling oracles do not apply to a continuation")
-    if options.replay.init_reference_real is not None:
+    if hands_reference_real:
         problems.append("a continuation projects its Fourier references, not initial real maps")
     written_with = {
         key[len("consistency_") :]: str(value) for key, value in snapshot.extra.items() if key.startswith("consistency_")

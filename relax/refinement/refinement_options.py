@@ -594,7 +594,7 @@ class SymmetryOptions:
 
 @dataclass(frozen=True, kw_only=True)
 class ReplayState:
-    """The run's initial particle state (poses, corrections, groups, priors, the start-up reference) and the
+    """The run's initial particle state (poses, corrections, groups, priors) and the
     follower-scale and frozen-boundary seed state.
 
     What a run replays from RELION per iteration is not here: it is the replay input source's
@@ -610,7 +610,6 @@ class ReplayState:
     init_previous_best_rotation_eulers: Any | None = None
     # Per half, [N, 3] degrees: the input STAR's rlnAngle{Rot,Tilt,Psi}Prior, NaN where absent (None: no column).
     init_angle_priors: Any | None = None
-    init_reference_real: Any | None = None
     init_relion_optics_group_count: Any | None = None
 
 

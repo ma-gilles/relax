@@ -333,6 +333,7 @@ def initialize_refinement_state(
     subtomogram: bool,
     dtype,
     source: InputSource,
+    hands_reference_real: bool = False,
 ) -> RefinementState:
     """Resolve startup sampling/convergence state before initial grid construction.
 
@@ -398,6 +399,7 @@ def initialize_refinement_state(
             replays_relion_trajectory=source.replays_relion_trajectory,
             starts_from_frozen_boundary=source.starts_from_frozen_boundary,
             swaps_state=source.swaps_state,
+            hands_reference_real=hands_reference_real,
         )
         state = resume.refinement_state(state)
     return state

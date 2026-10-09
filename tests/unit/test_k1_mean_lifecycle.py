@@ -1,5 +1,6 @@
 """Focused lifetime guards for K=1 references between EM iterations."""
 
+import gc
 import weakref
 
 import jax.numpy as jnp
@@ -139,8 +140,9 @@ def test_production_runner_leaves_cold_start_host_owned_until_normalization(monk
     from helpers.tiny_main import controller_inputs
 
     inputs = controller_inputs(monkeypatch, tmp_path, "refine")
-    assert type(inputs["init_volume"]) is np.ndarray
-    assert type(inputs["init_mean_variance"]) is np.ndarray
+    volume, mean_variance, _ = inputs["startup"].take()
+    assert type(volume) is np.ndarray
+    assert type(mean_variance) is np.ndarray
 
 
 def test_normalize_initial_means_reuses_immutable_shared_reference():
@@ -168,3 +170,48 @@ def test_reference_owner_keeps_no_extra_map_alias_after_k1_release(complex_dtype
     assert all(reference() is None for reference in references)
     for value in previous:
         assert_matches(value, expected)
+
+
+def test_startup_handoff_gives_its_arrays_once_and_keeps_none():
+    """``take`` hands over the start-up arrays and drops the holder's references; a second take raises."""
+    from relax.refinement.startup_references import StartupHandoff
+
+    volume, prior, real = np.ones(8, np.complex64), np.ones(8), np.ones((2, 2, 2))
+    startup = StartupHandoff(volume, prior, real)
+    assert startup.hands_reference_real
+
+    taken = startup.take()
+    assert all(got is want for got, want in zip(taken, (volume, prior, real), strict=True))
+    held = weakref.ref(volume)
+    del volume, taken
+    assert held() is None
+    with pytest.raises(RuntimeError, match="already taken"):
+        startup.take()
+    assert not StartupHandoff(None, None).hands_reference_real
+
+
+def test_command_keeps_no_startup_array_once_the_controller_takes_them(monkeypatch, tmp_path):
+    """main hands the start-up volume, tau2 and projector maps over in a holder and names none of them, so the
+    controller frees them after the start-up instead of at return (relax#26: 12.3 GB at EMPIAR-10202's box 800)."""
+    from helpers.tiny_main import _run_main, _stand_in_device, main_frame_arrays, write_tiny_data_dir
+
+    seen = {}
+
+    class Reached(Exception):
+        pass
+
+    def controller(*, startup, **kwargs):
+        taken = [weakref.ref(array) for array in startup.take() if array is not None]
+        main_frame_arrays()  # refreshes main's frame snapshot of its locals (Python 3.11)
+        gc.collect()
+        seen["alive"] = [ref() is not None for ref in taken]
+        raise Reached
+
+    _stand_in_device(monkeypatch)
+    monkeypatch.setattr(iteration_loop, "refine_single_volume", controller)
+    data = write_tiny_data_dir(tmp_path / "data")
+    with pytest.raises(Reached):
+        _run_main(monkeypatch, "refine", data, tmp_path / "out", [])
+
+    # The volume, the tau2 and (K=1 --firstiter_cc default) the first projector's real maps: all freed.
+    assert seen["alive"] == [False, False, False]

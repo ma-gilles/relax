@@ -212,7 +212,7 @@ def test_controller_installs_arrays_before_reporting_and_drops_temporary_owner(m
     trace = CallTrace(monkeypatch)
     inputs = _relion_init_run(monkeypatch, tmp_path, n_classes, trace=trace, prepare_prior=prior, read_controls=controls)
     assert trace.labels() == ["read_initial_model", "prepare_noise", "log_noise_source", "prepare_prior", "read_controls"]
-    assert_matches(np.asarray(inputs["init_mean_variance"]), np.asarray(trace.calls("prepare_prior")[0].result))
+    assert_matches(np.asarray(inputs["startup"].take()[1]), np.asarray(trace.calls("prepare_prior")[0].result))
     assert_matches(np.asarray(inputs["init_noise_variance"]), np.full(256, 2.0, np.float32))
     assert_matches(inputs["options"].parity.tau2_fudge, 1.75)
     assert_matches(inputs["options"].schedule.init_translation_sigma_angstrom, 0.42)

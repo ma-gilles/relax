@@ -132,7 +132,7 @@ def test_refinement_entry_validates_options_before_reading_data(monkeypatch, use
         adaptive=stand_in.adaptive(relion_healpix_orders=[3, 3, 4]),
     )
     with pytest.raises(RuntimeError, match="dataset boundary reached"):
-        iteration_loop.refine_single_volume(StopAtDataset(), None, None, None, None, options=options)
+        iteration_loop.refine_single_volume(StopAtDataset(), None, None, None, options=options)
     assert validated_options[0].adaptive.relion_healpix_orders == (None if use_defaults else (3, 3, 4))
 
 
@@ -141,4 +141,4 @@ def test_invalid_sampling_schedule_never_starts_refinement():
 
     options = stand_in.options(adaptive=stand_in.adaptive(relion_current_sizes=[]))
     with pytest.raises(ValueError, match="relion_current_sizes must be non-empty"):
-        iteration_loop.refine_single_volume(*([None] * 5), options=options)
+        iteration_loop.refine_single_volume(*([None] * 4), options=options)

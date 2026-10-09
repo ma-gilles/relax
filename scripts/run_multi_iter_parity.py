@@ -1472,6 +1472,7 @@ def main():
         ReplayState,
         SymmetryOptions,
     )
+    from relax.refinement.startup_references import StartupHandoff
     from relax.relion.relion_metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
@@ -2493,7 +2494,6 @@ def main():
             firstiter_cc_tree_rescore_max_margin=None,
         ),
         replay=ReplayState(
-            init_reference_real=initial_reference_real_for_projector,
             init_image_corrections=[corr_h1, corr_h2],
             init_scale_corrections=[scale_corr_h1, scale_corr_h2],
             init_group_ids=[group_ids_h1, group_ids_h2],
@@ -2518,9 +2518,12 @@ def main():
     with stable_window_class_history():
         result = refine_single_volume(
             experiment_datasets=[ds_half1, ds_half2],
-            init_volume=[jnp.asarray(vol_ft_h1), jnp.asarray(vol_ft_h2)],
+            startup=StartupHandoff(
+                [jnp.asarray(vol_ft_h1), jnp.asarray(vol_ft_h2)],
+                mean_variance.reshape(-1),
+                initial_reference_real_for_projector,
+            ),
             init_noise_variance=noise_variance,
-            init_mean_variance=mean_variance.reshape(-1),
             translations=None,
             options=run_options,
             observer=observers.combine(
