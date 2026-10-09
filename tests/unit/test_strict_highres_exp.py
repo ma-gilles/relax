@@ -10,7 +10,7 @@ from helpers.run_options import stand_in
 
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement import iteration_planning
-from relax.refinement.command_options import validate_strict_highres_exp
+from relax.refinement.command_options import parse_refinement_args, validate_strict_highres_exp
 from relax.refinement.iteration_planning import ExpectationWindows, relion_strict_highres_image_size
 
 pytestmark = pytest.mark.unit
@@ -66,15 +66,20 @@ def test_off_windows_are_unchanged():
     assert windows.engine_model_window_size == windows.model_window_size
 
 
-def test_only_class3d_and_no_accuracy_current_size():
+def test_only_class3d():
     validate_strict_highres_exp(SimpleNamespace(strict_highres_exp=None, n_classes=1))
-    validate_strict_highres_exp(SimpleNamespace(strict_highres_exp=12.0, n_classes=2, accuracy_current_size=False))
+    validate_strict_highres_exp(SimpleNamespace(strict_highres_exp=12.0, n_classes=2))
     with pytest.raises(SystemExit, match="Class3D"):
-        validate_strict_highres_exp(SimpleNamespace(strict_highres_exp=12.0, n_classes=1, accuracy_current_size=False))
-    with pytest.raises(SystemExit, match="accuracy_current_size"):
-        validate_strict_highres_exp(SimpleNamespace(strict_highres_exp=12.0, n_classes=2, accuracy_current_size=True))
+        validate_strict_highres_exp(SimpleNamespace(strict_highres_exp=12.0, n_classes=1))
     with pytest.raises(SystemExit, match="positive"):
-        validate_strict_highres_exp(SimpleNamespace(strict_highres_exp=0.0, n_classes=2, accuracy_current_size=False))
+        validate_strict_highres_exp(SimpleNamespace(strict_highres_exp=0.0, n_classes=2))
+
+
+def test_accuracy_current_size_is_an_unrecognized_argument(capsys):
+    """RELION's --accuracy_current_size is not implemented; the command does not define it."""
+    with pytest.raises(SystemExit):
+        parse_refinement_args(["--data_dir", "d", "--output", "o", "--accuracy_current_size"])
+    assert "unrecognized arguments: --accuracy_current_size" in capsys.readouterr().err
 
 
 def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_step(monkeypatch):

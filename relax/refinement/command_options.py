@@ -178,7 +178,7 @@ def resolve_job_defaults(args) -> JobDefaults:
 
 
 def validate_strict_highres_exp(args) -> None:
-    """Admit RELION's --strict_highres_exp: a positive limit, Class3D (K>1), no --accuracy_current_size yet.
+    """Admit RELION's --strict_highres_exp: a positive limit, Class3D (K>1).
 
     RELION's GUI offers it for Class2D and Class3D only (pipeline_jobs.cpp:3706); auto-refine's final all-data
     pass would also need the cap, which relax does not implement, so K=1 refuses it.
@@ -189,11 +189,6 @@ def validate_strict_highres_exp(args) -> None:
         raise SystemExit(f"--strict_highres_exp must be positive, got {args.strict_highres_exp}")
     if int(args.n_classes) == 1:
         raise SystemExit("--strict_highres_exp is supported for Class3D (K>1) only")
-    if getattr(args, "accuracy_current_size", False):
-        raise SystemExit(
-            "--accuracy_current_size is not supported yet: relax computes the expected accuracy at the "
-            "--strict_highres_exp size, as relion_refine does without that flag"
-        )
 
 
 def validate_sigma_ang(args) -> None:
@@ -465,12 +460,6 @@ def parse_refinement_args(argv=None):
         help="RELION --strict_highres_exp (GUI 'Limit resolution E-step to'): resolution in Angstrom that limits "
         "both passes of the expectation step to the image size 2*ROUND(box*pixel/limit), capped at the current "
         "size; the maximization keeps the current size. Default: off.",
-    )
-    parser.add_argument(
-        "--accuracy_current_size",
-        action="store_true",
-        help="RELION --accuracy_current_size (expected accuracy at the current size despite "
-        "--strict_highres_exp). Not supported yet: refused.",
     )
     parser.add_argument(
         "--sigma_ang",
