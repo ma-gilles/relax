@@ -13,11 +13,11 @@ here in the commit that closes it; record a decision in the "Decided" section. "
 | `_compute_k_class_significance_batched` | 1,819 lines, 46 parameters, 283 locals | 9 lines, 4 parameters and the options of `Pass1Request` |
 | Planning (`plan_pass1`) and the loop (`run_pass1`) | inside that function | 240 and 76 lines, one parameter each; the route, the program and support plans and the batch's two steps are functions of their own modules |
 | `significance.py` | 2,660 lines | 111 lines |
-| `_publish_batch` | 264 lines, nested; captures 51 enclosing variables, unpacks a 34-field tuple | `pass1_publish.publish_batch`, explicit inputs, `BatchOutputs` record |
+| `_publish_batch` | 264 lines, nested; captures 51 enclosing variables, unpacks a 34-field tuple | `pass1_publish.publish_batch` (12 lines), explicit inputs, `BatchOutputs` record, five functions by what each writes |
 | Largest function of `relax/scoring` | 1,819 lines | 466 lines (`tomo_coarse.particle_coarse_supports`) |
 | Largest parameter list of `relax/scoring` | 46 | 23 (`particle_coarse_supports`); pass 1's widest is `_pass1_block_update` with 14 (nine static settings are one `ProgramStatics`) |
 | Parameters never read | `disc_type`, `do_gridding_correction`; `means` read only for `n_classes` | deleted |
-| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 9,024 / 7,693: the cost of 19 new modules (headers, records, docstrings); 124 / 80 above the line-count ceilings the owner set on 2026-10-09 (8,901 / 7,613), inside their 5% slack |
+| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 8,961 / 7,629: the cost of 19 new modules (headers, records, docstrings); 60 / 16 above the line-count ceilings the owner set on 2026-10-09 (8,901 / 7,613), inside their 5% slack |
 | Ceilings | `docs/development/scoring_structure_metrics.json` (the totals on that date) | the span, parameter and large-argument ceilings are at the measured values; the very-large-argument count is 1 |
 
 ## Coverage
@@ -75,8 +75,9 @@ device scoring (`defer_publish`).
 
 Retiring the generic Gaussian support route (the first question) would also delete the generic route's RELION
 normalization branch (`_coarse_max_posterior_for_host`, two `SupportResult` and `BatchOutputs` fields, their publish
-branch and one private import from `relax/sparse_pass2`): about 45 of the 124 lines by which the package is over its
-line-count ceiling. The rest is the two modules added in this round (`pass1_route.py`, `pass1_step.py`).
+branch and one private import from `relax/sparse_pass2`): about 45 of the 60 lines by which the package is over its
+line-count ceiling. The rest is the headers of the modules added in the last two rounds (`pass1_route.py`,
+`pass1_step.py`).
 
 ## Decided
 
