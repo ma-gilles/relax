@@ -323,8 +323,6 @@ def run_final_all_data(
         )
         final_local_execution = LocalExecutionPolicy(
             disc_type="linear_interp",
-            disable_adjoint_y=options.debug.disable_adjoint_y,
-            disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             # As the numbered local pass and the final dense pass: RELION's high-shell norm and sigma2 terms are
             # the same powerClass sums in the final iteration (ml_optimiser.cpp:10848-10856).
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
@@ -380,8 +378,6 @@ def run_final_all_data(
         )
         final_dense_execution = DenseExecutionPolicy(
             disc_type="linear_interp",
-            disable_adjoint_y=options.debug.disable_adjoint_y,
-            disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             return_best_pose_details=not k_class_enabled,
             # Unlike the numbered pass, the final pass keeps the BPREF signature off and RELION's CC support:
             # the two pass builders differ here, and no parity run has checked which one RELION follows.

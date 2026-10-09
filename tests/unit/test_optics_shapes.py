@@ -184,8 +184,6 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
         ),
         refinement_specs.dense_execution_policy(
             disc_type="linear_interp",
-            disable_adjoint_y=False,
-            disable_adjoint_ctf=False,
             relion_x_half_mstep=ScoringVariants.from_environ().k1_relion_x_half_mstep,
             precision=scoring_policy.DENSE_PRECISION,
         ),
@@ -419,8 +417,6 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         local_search_translation_prior_mode="current",
         replay_prior_translations=None,
         max_significants=-1,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         iteration=0,
         collect_local_search_profile=False,
         diagnostic_score_only=False,

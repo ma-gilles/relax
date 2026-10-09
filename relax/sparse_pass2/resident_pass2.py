@@ -442,10 +442,6 @@ def require_resident_production_configuration(**kwargs) -> None:
         f"(winner_take_all={bool(kwargs['relion_firstiter_winner_take_all'])!r}, "
         f"score_mode={score_mode!r})",
     )
-    _require(
-        not (bool(kwargs["disable_adjoint_y"]) or bool(kwargs["disable_adjoint_ctf"])),
-        "score-only passes have no M-step to make resident",
-    )
     _require(not bool(kwargs["return_score_log_z_only"]), "score-logZ-only passes are score-only")
     _require(bool(kwargs["accumulate_noise"]), "the production pass accumulates noise statistics")
     # The K=1 adaptive route always hands the M-step call an
@@ -2527,8 +2523,6 @@ def _resident_pass2(
     normalization_score_mode=None,
     return_score_log_z=False,
     return_score_log_z_only=False,
-    disable_adjoint_y=False,
-    disable_adjoint_ctf=False,
     rotation_block_size_for_quantization=5000,
     fine_source_eulers_override=None,
     return_source_eulers=False,
@@ -2806,8 +2800,6 @@ def _resident_pass2(
         relion_firstiter_score_mode=relion_firstiter_score_mode,
         use_float64_scoring=use_float64_scoring,
         relion_firstiter_winner_take_all=relion_firstiter_winner_take_all,
-        disable_adjoint_y=disable_adjoint_y,
-        disable_adjoint_ctf=disable_adjoint_ctf,
         return_score_log_z_only=return_score_log_z_only,
         accumulate_noise=accumulate_noise,
         mstep_subtract_ctf_projection=mstep_subtract_ctf_projection,
@@ -4940,8 +4932,6 @@ def compute_pass2_stats_resident(
     normalization_score_mode=None,
     return_score_log_z=False,
     return_score_log_z_only=False,
-    disable_adjoint_y=False,
-    disable_adjoint_ctf=False,
     rotation_block_size_for_quantization=5000,
     fine_source_eulers_override=None,
     return_source_eulers=False,

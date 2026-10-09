@@ -53,8 +53,6 @@ def _production_gate_kwargs(**overrides):
         relion_firstiter_score_mode="gaussian",
         use_float64_scoring=False,
         relion_firstiter_winner_take_all=False,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         return_score_log_z_only=False,
         accumulate_noise=True,
         mstep_subtract_ctf_projection=False,
@@ -87,7 +85,6 @@ def test_production_configuration_is_accepted():
         ({"relion_x_half_mstep": False}, "x-half M-step"),
         ({"use_float64_scoring": True}, "float64 scoring"),
         ({"relion_firstiter_winner_take_all": True}, "winner-take-all"),
-        ({"disable_adjoint_y": True, "disable_adjoint_ctf": True}, "score-only"),
         ({"accumulate_noise": False}, "noise statistics"),
         ({"normalization_log_z": np.zeros(3)}, "externally supplied log-Z"),
         (

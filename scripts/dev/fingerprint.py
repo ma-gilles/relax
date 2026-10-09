@@ -1284,7 +1284,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         if frozen:
             debug_fields["assert_initial_scoring_state_immutable"] = True
         observer = {}
-        if dump and "save_intermediates_dir" in {f.name for f in dataclasses.fields(refinement_options.EngineDebugOptions)}:
+        debug_class = getattr(refinement_options, "EngineDebugOptions", None)
+        if dump and debug_class is not None and "save_intermediates_dir" in {f.name for f in dataclasses.fields(debug_class)}:
             # A source older than the observer port (code rule 15): the intermediates are a debug option.
             debug_fields["save_intermediates_dir"] = dump_dir
         elif dump:
@@ -1323,7 +1324,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 if "assert_scoring_state_unchanged" in {f.name for f in dataclasses.fields(replay_class)}:
                     source_fields["assert_scoring_state_unchanged"] = True
         if debug_fields:
-            extra["debug"] = refinement_options.EngineDebugOptions(**debug_fields)
+            extra["debug"] = debug_class(**debug_fields)
         if perturb is not None:
             parity["perturb_factor"] = perturb
         if cc:

@@ -895,8 +895,6 @@ def score_numbered_half(
             ),
             execution=LocalExecutionPolicy(
                 disc_type="linear_interp",
-                disable_adjoint_y=options.debug.disable_adjoint_y,
-                disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
                 source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                 relion_translation_angle_scale=(relion_translation_angle_scale),
                 nyquist_column_counting=options.consistency.nyquist_column_counting,
@@ -959,8 +957,6 @@ def score_numbered_half(
         dense_variant = phase.variant
         dense_execution = DenseExecutionPolicy(
             disc_type="linear_interp",
-            disable_adjoint_y=options.debug.disable_adjoint_y,
-            disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             return_best_pose_details=True,
             bpref_device_signature_active=bpref_device_signature_active,
             debug_iteration=numbered_relion_iteration,

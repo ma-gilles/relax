@@ -967,7 +967,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
         trans_prior_center_for_engine=np.zeros((dataset.n_units, 2), dtype=np.float32),
         current_sigma_offset_angstrom=1.0, disc_type="linear_interp", cs_for_engine=None,
         local_pass1_current_size=4, image_corrections_k=None, scale_corrections_k=None,
-        translation_search_base=None, disable_adjoint_y=False, disable_adjoint_ctf=False, max_significants=None,
+        translation_search_base=None, max_significants=None,
         iteration=3, local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=0,
         diagnostic_score_only=score_only, local_search_translation_prior_mode="coarse",

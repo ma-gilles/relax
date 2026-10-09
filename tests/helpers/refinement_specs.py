@@ -187,8 +187,6 @@ def local_half_owners(**values):
         ),
         half_scoring.LocalExecutionPolicy(
             disc_type=values.pop("disc_type"),
-            disable_adjoint_y=values.pop("disable_adjoint_y"),
-            disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
             nyquist_column_counting=values.pop("nyquist_column_counting", "relion"),

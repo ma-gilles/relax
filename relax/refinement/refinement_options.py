@@ -563,14 +563,6 @@ class ScoringVariants:
 
 
 @dataclass(frozen=True, kw_only=True)
-class EngineDebugOptions:
-    """Adjoint ablation controls."""
-
-    disable_adjoint_y: bool = False
-    disable_adjoint_ctf: bool = False
-
-
-@dataclass(frozen=True, kw_only=True)
 class KClassOptions:
     """K-class refinement controls."""
 
@@ -705,7 +697,6 @@ class RefinementOptions:
     local_search: LocalSearchOptions = field(default_factory=LocalSearchOptions)
     k_class: KClassOptions = field(default_factory=KClassOptions)
     start: StartState = field(default_factory=StartState)
-    debug: EngineDebugOptions = field(default_factory=EngineDebugOptions)
     execution: ExecutionOptions = field(default_factory=ExecutionOptions)
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)
     checkpoint: CheckpointOptions = field(default_factory=CheckpointOptions)

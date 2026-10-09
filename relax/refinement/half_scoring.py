@@ -229,8 +229,6 @@ class DenseExecutionPolicy:
     """Interpolation, ablation and dense diagnostic settings."""
 
     disc_type: str
-    disable_adjoint_y: bool
-    disable_adjoint_ctf: bool
     return_best_pose_details: bool
     bpref_device_signature_active: bool
     debug_iteration: int | None
@@ -714,8 +712,6 @@ def _score_half_dense_one_shape(
         int(sampling.oversampling_order),
     )
     if variant.k_class_enabled:
-        if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
-            raise NotImplementedError("K-class refine does not support adjoint ablation flags")
         magnification = dataset_projection_magnification(half.particles.dataset)
         # K-class uses RELION's x-half BackProjector accumulator layout by
         # default, matching the K=1 parity path. The explicit selector can
@@ -813,8 +809,6 @@ def _score_half_dense_one_shape(
         score_result.mstep_accumulator_shape = getattr(k_class_result, "mstep_accumulator_shape", None)
         return score_result
 
-    if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
-        raise NotImplementedError("K=1 adaptive oversampling does not support adjoint ablation flags")
     adaptive_os_local = int(sampling.oversampling_order)
     rot_pmap_for_collapse = None
     trans_pmap_for_collapse = None
@@ -1148,8 +1142,6 @@ class LocalExecutionPolicy:
     """Interpolation and reconstruction controls."""
 
     disc_type: str
-    disable_adjoint_y: bool
-    disable_adjoint_ctf: bool
     source_faithful_spectrum_norm: bool
     relion_translation_angle_scale: float
     # RelionConsistencyOptions.nyquist_column_counting (see DenseExecutionPolicy).
@@ -1692,8 +1684,8 @@ def _score_half_local_one_shape(
             firstiter_cc=execution.firstiter_cc,
     )
     local_support = LocalSearchSupportPolicy(
-            disable_adjoint_y=execution.disable_adjoint_y,
-            disable_adjoint_ctf=execution.disable_adjoint_ctf,
+            disable_adjoint_y=False,
+            disable_adjoint_ctf=False,
             adaptive_fraction=RELION_ADAPTIVE_FRACTION,
             max_significants=batching.max_significants,
             return_profile=diagnostics.collect_local_search_profile,
@@ -1843,8 +1835,6 @@ def _score_half_local_one_shape(
     # this os0 path.
     local_reconstruct_significant_only = int(sampling.search.oversampling_order) > 0
     local_accumulate_noise = not execution.score_only
-    local_disable_adjoint_y = bool(execution.disable_adjoint_y or execution.score_only)
-    local_disable_adjoint_ctf = bool(execution.disable_adjoint_ctf or execution.score_only)
     logger.info(
         "RELION local fine pass 2: supplied-PPref interpolation follows "
         "RELAX_RELION_PROJECTOR_TEXTURE_INTERP (default texture)"
@@ -1869,8 +1859,9 @@ def _score_half_local_one_shape(
         replace(
             local_support,
             mstep_relion_x_half=local_relion_x_half_mstep,
-            disable_adjoint_y=local_disable_adjoint_y,
-            disable_adjoint_ctf=local_disable_adjoint_ctf,
+            # A score-only pass has no M-step.
+            disable_adjoint_y=execution.score_only,
+            disable_adjoint_ctf=execution.score_only,
             reconstruct_significant_only=local_reconstruct_significant_only,
             return_best_pose_details=True,
             normalization_log_evidence=local_normalization_log_evidence,

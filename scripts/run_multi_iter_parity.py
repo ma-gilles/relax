@@ -1350,16 +1350,6 @@ def main():
         help="Optional override for RELION --ini_high. Defaults to the optimiser flag value, or 30 A.",
     )
     parser.add_argument(
-        "--disable_adjoint_y",
-        action="store_true",
-        help="Experimental ablation: disable weighted-image adjoint accumulation.",
-    )
-    parser.add_argument(
-        "--disable_adjoint_ctf",
-        action="store_true",
-        help="Experimental ablation: disable CTF adjoint accumulation.",
-    )
-    parser.add_argument(
         "--benchmark_ledger_json",
         type=str,
         default=None,
@@ -1450,7 +1440,6 @@ def main():
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
-        EngineDebugOptions,
         ExecutionOptions,
         FinalPassOptions,
         LocalSearchOptions,
@@ -2422,7 +2411,6 @@ def main():
     print(f"  Local translation prior mode: {args.local_search_translation_prior_mode}")
     print(f"  Emulate RELION iter-1 CC: {do_firstiter_cc}")
     print(f"  RELION ini_high: {relion_ini_high}")
-    print(f"  Adjoint ablations: disable_y={args.disable_adjoint_y}, disable_ctf={args.disable_adjoint_ctf}")
 
     # ---- Run ----
     print(f"\nRunning {args.max_iter} iterations...")
@@ -2488,10 +2476,6 @@ def main():
             init_fsc=fsc,
             init_ave_Pmax=ave_Pmax,
             init_has_high_fsc_at_limit=has_high_fsc_at_limit,
-        ),
-        debug=EngineDebugOptions(
-            disable_adjoint_y=args.disable_adjoint_y,
-            disable_adjoint_ctf=args.disable_adjoint_ctf,
         ),
         local_search=LocalSearchOptions(
             local_search_profile_mode=args.local_search_profile,
@@ -2564,8 +2548,6 @@ def main():
             "elapsed_s": float(elapsed),
             "timing_only": True,
             "local_search_profile_mode": args.local_search_profile,
-            "disable_adjoint_y": bool(args.disable_adjoint_y),
-            "disable_adjoint_ctf": bool(args.disable_adjoint_ctf),
             "compile_count_from_log": _count_compile_lines(args.compile_log),
             "wall_times_trajectory": wall_times,
             "current_sizes": [int(x) for x in history.current_sizes],
@@ -2599,8 +2581,6 @@ def main():
         "firstiter_cc_effective": np.bool_(do_firstiter_cc),
         "relion_ini_high_angstrom": np.float64(relion_ini_high),
         "relion_noise_state": np.array(relion_noise_state_label(args.restart_broadcast_noise_state)),
-        "disable_adjoint_y": np.bool_(args.disable_adjoint_y),
-        "disable_adjoint_ctf": np.bool_(args.disable_adjoint_ctf),
         "final_all_data_ran": np.bool_(fields.get("final_all_data_ran", False)),
     }
     if fields.get("ave_Pmax_trajectory"):
@@ -3004,8 +2984,6 @@ def main():
         ),
         "elapsed_s": float(elapsed),
         "local_search_profile_mode": args.local_search_profile,
-        "disable_adjoint_y": bool(args.disable_adjoint_y),
-        "disable_adjoint_ctf": bool(args.disable_adjoint_ctf),
         "compile_count_from_log": _count_compile_lines(args.compile_log),
         "wall_times_trajectory": wall_times,
         "current_sizes": [int(x) for x in history.current_sizes],

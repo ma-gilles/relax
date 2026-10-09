@@ -707,8 +707,6 @@ def test_non_c1_zero_oversampling_reconstruction_fails_before_scoring(
         ),
         k_class_enabled=n_classes > 1,
         relion_firstiter_cc_this_iter=False,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
         max_significants=-1,
         symmetry="I1",
@@ -850,8 +848,6 @@ def _k1_symmetric_dense_half_kwargs(**overrides):
         class_log_priors=None,
         k_class_enabled=False,
         relion_firstiter_cc_this_iter=False,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
         max_significants=-1,
         symmetry="O",
@@ -909,8 +905,6 @@ def _symmetric_dense_owners(half_scoring, values):
         ),
         refinement_specs.dense_execution_policy(
             disc_type=values.pop("disc_type"),
-            disable_adjoint_y=values.pop("disable_adjoint_y"),
-            disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             relion_x_half_mstep=values.pop("relion_x_half_mstep")
             if "relion_x_half_mstep" in values
             else ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
@@ -975,8 +969,6 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         image_corrections_k=None,
         scale_corrections_k=None,
         translation_search_base=None,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         max_significants=-1,
         iteration=0,
         local_search_random_perturbation=0.0,
