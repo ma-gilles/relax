@@ -866,7 +866,7 @@ def _batch_scoring_rotations(
     """A coarse batch's scorer matrices on the device, ``[P_pad, S, R_pad, 3, 3]`` float32.
 
     Every tilt image has its own matrices, ``make_eulers_3D`` with its left matrix
-    (:func:`relax.sampling._relion_adaptive_pass1_rotations`). A global search builds the whole
+    (:func:`relax.sampling.relion_adaptive_pass1_rotations`). A global search builds the whole
     batch's images in one call; a local search builds each particle's own rotations. A particle's
     rotations beyond its own count repeat its last one, and padded slots and particles are zero.
     """
@@ -944,7 +944,7 @@ def particle_coarse_supports(
     RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1190-1402): every tilt image is
     scored with its own device matrices (``make_eulers_3D`` with the image's left matrix ``image_left``,
     its ``Aproj`` with the optics group's magnification, :func:`relax.refinement.tomo_half.tilt_left_matrices`;
-    :func:`relax.sampling._relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts of ``Aproj``
+    :func:`relax.sampling.relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts of ``Aproj``
     (``image_projections``) plus
     the rounded old offset (:func:`relax.refinement.tomo_particles.tilt_translation_angles`) and its own
     CTF and noise; the images' diff2 is summed in ``img_id`` order and the particle's weights are cut
@@ -965,7 +965,7 @@ def particle_coarse_supports(
 
     from relax.helpers.projection import relion_projector_half_to_texture_full
     from relax.refinement import tomo_particles
-    from relax.sampling import _relion_adaptive_pass1_rotations
+    from relax.sampling import relion_adaptive_pass1_rotations
 
     class_projectors = tuple(projector_half) if isinstance(projector_half, (tuple, list)) else (projector_half,)
     n_classes = len(class_projectors)
@@ -1151,7 +1151,7 @@ def particle_coarse_supports(
             angular_sampling_deg,
             r_pad=int(r_pad_all),
             slots=slots,
-            pass1_rotations=_relion_adaptive_pass1_rotations,
+            pass1_rotations=relion_adaptive_pass1_rotations,
         )
         unshifted, weight, initial, angles = operands
         return _exact_rows_diff2(
@@ -1296,7 +1296,7 @@ def particle_coarse_supports(
             p_pad=p_pad,
             slots=slots,
             r_pad=r_pad,
-            pass1_rotations=_relion_adaptive_pass1_rotations,
+            pass1_rotations=relion_adaptive_pass1_rotations,
         )
         for p, unit in enumerate(units):
             images = np.arange(offsets[unit], offsets[unit + 1])
@@ -1489,7 +1489,7 @@ def particle_coarse_cc_winners(
     from relax.helpers.half_spectrum import make_scoring_half_image_weights
     from relax.helpers.projection import compute_relion_projector_projections_block
     from relax.refinement import tomo_particles
-    from relax.sampling import _relion_adaptive_pass1_rotations
+    from relax.sampling import relion_adaptive_pass1_rotations
 
     image_shape = tuple(int(n) for n in experiment_dataset.image_shape)
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)
@@ -1536,7 +1536,7 @@ def particle_coarse_cc_winners(
         )
         left, _applies = tomo_particles.relion_left_matrices(image_left[images])
         rotations = np.asarray(
-            _relion_adaptive_pass1_rotations(
+            relion_adaptive_pass1_rotations(
                 coarse_eulers_deg, random_perturbation, angular_sampling_deg, left_matrices=left
             ),
             dtype=np.float32,

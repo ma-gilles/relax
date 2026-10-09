@@ -137,7 +137,7 @@ def test_k_class_replay_adaptive_coarse_rotations_use_relion_device_builder(monk
         calls.append((np.asarray(eulers), perturbation, angular_sampling))
         return expected
 
-    monkeypatch.setattr(sampling, "_relion_adaptive_pass1_rotations", fake_builder)
+    monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", fake_builder)
     actual, source = _adaptive_coarse_scoring_rotations(
         source_eulers,
         host,
@@ -158,7 +158,7 @@ def test_k_class_replay_nonadaptive_coarse_rotations_keep_host_panel(monkeypatch
 
     monkeypatch.setattr(
         sampling,
-        "_relion_adaptive_pass1_rotations",
+        "relion_adaptive_pass1_rotations",
         lambda *_args: pytest.fail("device builder must not run for a nonadaptive replay"),
     )
     host = np.eye(3, dtype=np.float32)[None]

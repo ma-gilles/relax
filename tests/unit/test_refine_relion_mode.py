@@ -324,7 +324,7 @@ def test_relion_scoring_rotation_grid_honors_explicit_float64_dtype(monkeypatch)
     """``relion_scoring_rotation_grid``'s working operands follow ``dtype``.
 
     Regression for the bug the coarse pass-1 grid shared with the already-fixed
-    ``_relion_adaptive_pass1_rotations``/``_relion_mstep_rotations_from_eulers``:
+    ``relion_adaptive_pass1_rotations``/``_relion_mstep_rotations_from_eulers``:
     an unconditional ``.astype(np.float32)`` on the scorer rotation matrices
     even when the caller runs float64 scoring, though RELION's own
     ``ACC_DOUBLE_PRECISION`` build never narrows this matrix.
@@ -6818,7 +6818,7 @@ class TestRelionModeSmokeTest:
         scoring_rotations = []
         scoring_grids = []
         monkeypatch.setattr(
-            iteration_planning_module, "_relion_adaptive_pass1_rotations",
+            iteration_planning_module, "relion_adaptive_pass1_rotations",
             lambda eulers, *args, **kwargs: euler_angles_to_matrix(eulers).astype(np.float32),
         )
         score_half = finalization._score_half_dense_in_bpref_scope

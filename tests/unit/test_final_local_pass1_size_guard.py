@@ -82,7 +82,7 @@ def test_eager_grid_uses_explicit_dtype(preparation, monkeypatch, perturbation):
         observed.append(kwargs)
         return fine, object(), mstep
 
-    monkeypatch.setattr(local_sampling.sampling, "_exact_local_fine_grid", exact_grid)
+    monkeypatch.setattr(local_sampling.sampling, "exact_local_fine_grid", exact_grid)
     result = local_sampling.prepare_final_local_sampling(**inputs)
     assert result.rotations is fine
     assert result.mstep_rotations is mstep

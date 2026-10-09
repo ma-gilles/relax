@@ -280,7 +280,7 @@ class RelionReplaySource(InputSource):
         current_translations = grids.translations
         # Translation params may have changed under replay without an
         # hp_order bump. Regenerate the translation grid to match RELION.
-        _new_t_source = sampling._relion_base_translation_grid(
+        _new_t_source = sampling.relion_base_translation_grid(
             state.translation_range,
             state.translation_step,
             n_classes=self.options.k_class.n_classes,
@@ -757,11 +757,11 @@ def _log_replayed_translation_grid_change(settings, *, replay_dir, replay_prefix
     numbered = read_relion_sampling_metadata(numbered_path)
     numbered_range = numbered["offset_range"] / settings.pixel_size_angstrom
     numbered_step = numbered["offset_step"] / settings.pixel_size_angstrom
-    numbered_grid = sampling._relion_base_translation_grid(
+    numbered_grid = sampling.relion_base_translation_grid(
         numbered_range, numbered_step,
         n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
     ).astype(np.float32)
-    final_grid = sampling._relion_base_translation_grid(
+    final_grid = sampling.relion_base_translation_grid(
         settings.translation_range, settings.translation_step,
         n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
     ).astype(np.float32)

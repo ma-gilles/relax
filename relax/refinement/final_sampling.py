@@ -61,7 +61,7 @@ def advance_final_perturbation(previous_perturbation: float, options: Refinement
     parity = options.parity
     if not parity.perturb_factor > 0:
         return None
-    perturbation, seed = sampling._advance_relion_perturbation(
+    perturbation, seed = sampling.advance_relion_perturbation_for_iteration(
         previous_perturbation,
         perturb_factor=parity.perturb_factor,
         perturb_seed=parity.perturb_seed,
@@ -146,7 +146,7 @@ def prepare_final_sampling(
         ),
     )
     base_translations = jnp.asarray(
-        sampling._relion_base_translation_grid(
+        sampling.relion_base_translation_grid(
             settings.translation_range, settings.translation_step,
             n_classes=options.k_class.n_classes, voxel_size=settings.pixel_size_angstrom,
         ),
@@ -155,9 +155,9 @@ def prepare_final_sampling(
     if settings.perturbation is None:
         grid = sampling.TrialGrid(rotations, eulers, None, base_translations)
     else:
-        grid = sampling._perturbed_trial_grid(
+        grid = sampling.perturbed_trial_grid(
             rotation_eulers=eulers,
-            mstep_source_eulers=sampling._relion_mstep_source_eulers(
+            mstep_source_eulers=sampling.relion_mstep_source_eulers(
                 eulers, settings.perturbation_order, symmetry=symmetry,
             ),
             base_translations=base_translations,

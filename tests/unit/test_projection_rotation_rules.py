@@ -145,7 +145,7 @@ def test_device_rows_are_relions_float32_left_kernel(scale):
         False,
     )
     plain = np.asarray(
-        sampling._relion_adaptive_pass1_rotations(
+        sampling.relion_adaptive_pass1_rotations(
             source.source_eulers_deg, source.random_perturbation, source.angular_sampling_deg
         )
     )

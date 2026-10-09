@@ -757,7 +757,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
 
     from relax import sampling
 
-    monkeypatch.setattr(sampling, "_relion_adaptive_pass1_rotations", pass1_rotations)
+    monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", pass1_rotations)
     from relax.helpers import projection
 
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
@@ -905,16 +905,16 @@ def test_undecided_scorer_rotations_are_the_rotation_kernels_per_particle(gpu_de
     import jax
 
     from relax.cuda.kernels import custom_cuda_requested
-    from relax.sampling import _relion_adaptive_pass1_rotations
+    from relax.sampling import relion_adaptive_pass1_rotations
 
     if jax.default_backend() != "gpu" or not custom_cuda_requested():
         pytest.skip("needs the custom CUDA rotation kernel")
 
     def pass1_rotations(*args, **kwargs):
-        return np.asarray(_relion_adaptive_pass1_rotations(*args, **kwargs))
+        return np.asarray(relion_adaptive_pass1_rotations(*args, **kwargs))
 
     monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATION_CALL_BYTES", 2000)
-    _check_undecided_scorer_rotations(_relion_adaptive_pass1_rotations, local, 0.37, reference=pass1_rotations)
+    _check_undecided_scorer_rotations(relion_adaptive_pass1_rotations, local, 0.37, reference=pass1_rotations)
 
 
 def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbation, reference=None):
@@ -1030,7 +1030,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
     from relax import sampling
     from relax.helpers import projection
 
-    monkeypatch.setattr(sampling, "_relion_adaptive_pass1_rotations", pass1_rotations)
+    monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", pass1_rotations)
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
     monkeypatch.setattr(tomo_coarse, "_coarse_gemm_slot_block", fake_block)
     monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", fake_direct)

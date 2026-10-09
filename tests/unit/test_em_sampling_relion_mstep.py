@@ -8,10 +8,10 @@ from helpers.float_compare import assert_matches
 import relax.sampling as sampling_module
 from relax.healpix_sampling import euler_angles_to_matrix
 from relax.sampling import (
-    _relion_adaptive_pass1_rotations,
     _relion_mstep_rotations_from_eulers,
     apply_relion_rotation_perturbation_to_eulers,
     get_oversampled_rotation_grid_from_samples,
+    relion_adaptive_pass1_rotations,
     relion_sampling_perturbation_for_iteration,
 )
 
@@ -28,7 +28,7 @@ def test_adaptive_pass1_routes_source_eulers_and_host_right_matrix_to_cuda_build
         return sentinel
 
     monkeypatch.setattr(sampling_module, "_relion_device_scoring_rotations_f32", fake_builder)
-    result = _relion_adaptive_pass1_rotations(
+    result = relion_adaptive_pass1_rotations(
         source_eulers,
         random_perturbation=-0.455874443054,
         angular_sampling_deg=7.5,
@@ -62,7 +62,7 @@ def test_adaptive_pass1_omits_right_matrix_without_perturbation(monkeypatch):
         return np.zeros((len(eulers_deg), 3, 3), dtype=np.float32)
 
     monkeypatch.setattr(sampling_module, "_relion_device_scoring_rotations_f32", fake_builder)
-    _relion_adaptive_pass1_rotations(_UNPERTURBED_FINE_EULERS_F64[:1], 0.0, 7.5)
+    relion_adaptive_pass1_rotations(_UNPERTURBED_FINE_EULERS_F64[:1], 0.0, 7.5)
     assert seen == [None]
 
 
@@ -86,7 +86,7 @@ def test_adaptive_pass1_float64_routes_to_double_precision_builder(monkeypatch):
         return sentinel
 
     monkeypatch.setattr(sampling_module, "_relion_device_scoring_rotations_f64", fake_f64_builder)
-    result = _relion_adaptive_pass1_rotations(
+    result = relion_adaptive_pass1_rotations(
         source_eulers,
         random_perturbation=-0.455874443054,
         angular_sampling_deg=7.5,

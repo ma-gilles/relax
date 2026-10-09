@@ -1,7 +1,7 @@
 """RELION SamplingPerturbation of a trial grid and its M-step source angles have one rule each.
 
 Both the regular iterations and the final all-data pass of the refinement
-controller use ``_relion_mstep_source_eulers`` and ``_perturbed_trial_grid``.
+controller use ``relion_mstep_source_eulers`` and ``perturbed_trial_grid``.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def _fake_canonical_grid(monkeypatch):
 
 def test_mstep_source_uses_the_canonical_grid_at_matching_size():
     eulers = np.zeros((N_ROT, 3), dtype=np.float32)
-    source = sampling_module._relion_mstep_source_eulers(eulers, ORDER)
+    source = sampling_module.relion_mstep_source_eulers(eulers, ORDER)
     expected = _canonical_eulers(ORDER)
     assert source.dtype == np.float64
     assert_matches(source, expected)
@@ -46,7 +46,7 @@ def test_mstep_source_uses_the_canonical_grid_at_matching_size():
 
 def test_mstep_source_falls_back_to_the_grid_angles_when_sizes_differ():
     eulers = np.arange(15, dtype=np.float32).reshape(5, 3)
-    source = sampling_module._relion_mstep_source_eulers(eulers, ORDER)
+    source = sampling_module.relion_mstep_source_eulers(eulers, ORDER)
     assert source.dtype == np.float64 and source.tolist() == eulers.astype(np.float64).tolist()
 
 
@@ -55,7 +55,7 @@ def test_sealed_grid_supplies_its_own_angles(monkeypatch):
     monkeypatch.setattr(
         sampling_module, "_get_relion_rotation_grid_eulers_float64", lambda order, *, symmetry='C1': pytest.fail("canonical grid must not be built")
     )
-    source = sampling_module._relion_mstep_source_eulers(eulers, ORDER, use_grid_eulers=True)
+    source = sampling_module.relion_mstep_source_eulers(eulers, ORDER, use_grid_eulers=True)
     assert source.dtype == np.float64 and source.tolist() == eulers.astype(np.float64).tolist()
 
 
@@ -64,7 +64,7 @@ def test_perturbed_trial_grid_matches_the_separate_relion_calls(dtype):
     eulers = _canonical_eulers(ORDER).astype(np.float32)
     base_translations = np.asarray([[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
     angsamp = relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
-    grid = sampling_module._perturbed_trial_grid(
+    grid = sampling_module.perturbed_trial_grid(
         rotation_eulers=eulers,
         mstep_source_eulers=_canonical_eulers(ORDER),
         base_translations=base_translations,
@@ -99,7 +99,7 @@ def test_perturbed_trial_grid_records_call_order(monkeypatch):
 
     monkeypatch.setattr(sampling_module, "apply_relion_rotation_perturbation_to_eulers", fake_rot)
     monkeypatch.setattr(sampling_module, "apply_relion_translation_perturbation", fake_trans)
-    grid = sampling_module._perturbed_trial_grid(
+    grid = sampling_module.perturbed_trial_grid(
         rotation_eulers=np.zeros((4, 3)),
         mstep_source_eulers=np.ones((4, 3)),
         base_translations=np.zeros((2, 2)),
@@ -134,7 +134,7 @@ def test_point_group_mstep_source_uses_the_reduced_grid_rfloat_angles(monkeypatc
     monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", fake)
     expected = _reduced_source_eulers(ORDER, "C4")
     scoring_eulers = expected.astype(np.float32)
-    source = sampling_module._relion_mstep_source_eulers(scoring_eulers, ORDER, symmetry="C4")
+    source = sampling_module.relion_mstep_source_eulers(scoring_eulers, ORDER, symmetry="C4")
     assert calls == [(ORDER, "C4")]
     assert source.dtype == np.float64
     assert_matches(source, expected)
@@ -150,6 +150,6 @@ def test_point_group_label_is_canonicalized_and_c1_is_passed_explicitly(monkeypa
 
     monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", fake)
     eulers = np.zeros((N_ROT, 3), dtype=np.float32)
-    sampling_module._relion_mstep_source_eulers(eulers, ORDER, symmetry="c1")
-    sampling_module._relion_mstep_source_eulers(eulers, ORDER)
+    sampling_module.relion_mstep_source_eulers(eulers, ORDER, symmetry="c1")
+    sampling_module.relion_mstep_source_eulers(eulers, ORDER)
     assert calls == [(ORDER, {"symmetry": "C1"}), (ORDER, {"symmetry": "C1"})]

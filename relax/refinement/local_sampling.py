@@ -93,7 +93,7 @@ def prepare_numbered_local_sampling(
         if search.oversampling_order == 0 and _precompute_exact_local_fine_grid_enabled(
             search.healpix_order, symmetry=search.symmetry,
         ):
-            rotations, rotation_eulers, mstep_rotations = sampling._exact_local_fine_grid(
+            rotations, rotation_eulers, mstep_rotations = sampling.exact_local_fine_grid(
                 healpix_order=search.healpix_order,
                 angular_sampling_deg=angular_step_deg,
                 random_perturbation=float(perturbation),
@@ -131,7 +131,7 @@ def prepare_numbered_local_sampling(
     else:
         rotations = grid.rotations
         rotation_eulers = None
-        mstep_rotations = sampling._local_search_mstep_rotations(
+        mstep_rotations = sampling.local_search_mstep_rotations(
             grid.mstep_rotations, grid.rotation_eulers, search.healpix_order, symmetry=search.symmetry,
         )
         deferred_perturbation = 0.0
@@ -189,7 +189,7 @@ def prepare_final_local_sampling(
         coarse_angular_step_deg = None
 
     if search.oversampling_order == 0 and _precompute_exact_local_fine_grid_enabled(search.healpix_order, symmetry=search.symmetry):
-        fine_rotations, _, fine_mstep_rotations = sampling._exact_local_fine_grid(
+        fine_rotations, _, fine_mstep_rotations = sampling.exact_local_fine_grid(
             healpix_order=search.healpix_order,
             angular_sampling_deg=angular_step_deg,
             random_perturbation=perturbation,

@@ -92,7 +92,7 @@ def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
     reference_rng = np.random.default_rng(23)
     current = expected = 0.125
     for iteration in range(3):
-        expected, _ = sampling._advance_relion_perturbation(
+        expected, _ = sampling.advance_relion_perturbation_for_iteration(
             expected, perturb_factor=0.5, perturb_seed=seed,
             relion_iteration=11 + iteration, rng=reference_rng,
         )
@@ -140,7 +140,7 @@ def test_replay_restart_uses_physical_iteration(tmp_path):
 
 
 def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypatch):
-    monkeypatch.setattr(sampling, "_advance_relion_perturbation", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
+    monkeypatch.setattr(sampling, "advance_relion_perturbation_for_iteration", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
     result = iteration_planning.resolve_numbered_perturbation(
         0.25, _options(stand_in.parity(perturb_factor=0.0), 10), iteration=2, rng=None, log=LOG,
     )

@@ -237,7 +237,7 @@ def test_mstep_source_eulers_never_build_a_grid_of_another_size(monkeypatch):
     monkeypatch.setattr(
         sampling, "_get_relion_rotation_grid_eulers_float64", lambda *a, **k: pytest.fail("built the full grid")
     )
-    out = sampling._relion_mstep_source_eulers(eulers, 9)
+    out = sampling.relion_mstep_source_eulers(eulers, 9)
     assert out.shape == (10, 3)
 
 

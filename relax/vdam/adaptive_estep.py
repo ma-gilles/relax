@@ -158,7 +158,7 @@ def adaptive_route_grids(
     """Build RELION's two-pass grids as auto-refine builds them (``prepare_adaptive_pass2_grids``).
 
     Pass 1 scores RELION's device-built coarse matrices
-    (``AccProjectorPlan::setup``, :func:`relax.sampling._relion_adaptive_pass1_rotations`);
+    (``AccProjectorPlan::setup``, :func:`relax.sampling.relion_adaptive_pass1_rotations`);
     the fine and M-step rotations are host-generated from the unperturbed source
     Euler rows, and the translations are oversampled from the host-double base grid
     before the SamplingPerturbation shift. The host coarse matrices (pass 1 off the GPU, and
@@ -174,7 +174,7 @@ def adaptive_route_grids(
         sampling.apply_relion_rotation_perturbation_to_eulers(source_eulers, float(random_perturbation), angular_sampling)[0],
         dtype=np.float32,
     )
-    device_rotations = sampling._relion_adaptive_pass1_rotations(
+    device_rotations = sampling.relion_adaptive_pass1_rotations(
         source_eulers, float(random_perturbation), angular_sampling
     )
     pass1_rotations = host_rotations if device_rotations is None else np.asarray(device_rotations)

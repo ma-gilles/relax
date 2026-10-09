@@ -497,7 +497,7 @@ def advance_relion_perturbation_from_seed(prev_random_perturbation, perturbation
     return _wrap_relion_perturbation(new, pf)
 
 
-def _advance_relion_perturbation(random_perturbation, *, perturb_factor, perturb_seed, relion_iteration, rng):
+def advance_relion_perturbation_for_iteration(random_perturbation, *, perturb_factor, perturb_seed, relion_iteration, rng):
     """Advance RELION's SamplingPerturbation to ``relion_iteration``.
 
     With an explicit seed RELION draws the iteration's perturbation from
@@ -696,7 +696,7 @@ def _relion_device_scoring_rotations_f64(
     return a @ right_f64 if do_right else a
 
 
-def _relion_adaptive_pass1_rotations(
+def relion_adaptive_pass1_rotations(
     source_eulers_deg: np.ndarray,
     random_perturbation: float,
     angular_sampling_deg: float,
@@ -733,7 +733,7 @@ def _relion_adaptive_pass1_rotations(
 
 
 class DevicePass1Source(NamedTuple):
-    """The inputs of RELION's device-built pass-1 rows (:func:`_relion_adaptive_pass1_rotations`)."""
+    """The inputs of RELION's device-built pass-1 rows (:func:`relion_adaptive_pass1_rotations`)."""
 
     source_eulers_deg: np.ndarray
     random_perturbation: float
@@ -787,13 +787,13 @@ def relion_device_projection_rotations(source: DevicePass1Source, rows, scale: f
     if source.use_float64:
         rows64 = np.asarray(rows, dtype=np.float64)
         return projection_rotations(rows64, scale, magnification, dtype=np.float64)
-    plain = _relion_adaptive_pass1_rotations(
+    plain = relion_adaptive_pass1_rotations(
         source.source_eulers_deg, source.random_perturbation, source.angular_sampling_deg
     )
     require_same_rows(plain, rows, "device pass-1 rows")
     left = relion_projection_left_matrix(scale, magnification)
     return np.asarray(
-        _relion_adaptive_pass1_rotations(
+        relion_adaptive_pass1_rotations(
             source.source_eulers_deg,
             source.random_perturbation,
             source.angular_sampling_deg,
@@ -871,7 +871,7 @@ def apply_relion_rotation_perturbation_to_eulers(
     ``generateEulerMatrices(..., inverse=true)`` and cast those matrices to
     XFLOAT before copying them to the device. Use the same host-double
     reconstruction here. Adaptive coarse scoring has a distinct matrix
-    path exposed by :func:`_relion_adaptive_pass1_rotations`.
+    path exposed by :func:`relion_adaptive_pass1_rotations`.
 
     ``dtype`` controls the returned rotation-matrix and Euler precision (default
     float32, matching RELION's single-precision ACC build's XFLOAT cast).
@@ -1417,7 +1417,7 @@ class TrialGrid(NamedTuple):
     translations: jnp.ndarray
 
 
-def _relion_mstep_source_eulers(rotation_eulers, healpix_order, *, use_grid_eulers: bool = False, symmetry: str = "C1"):
+def relion_mstep_source_eulers(rotation_eulers, healpix_order, *, use_grid_eulers: bool = False, symmetry: str = "C1"):
     """Euler angles that seed the exact RELION M-step rotations of a scoring grid.
 
     RELION derives its M-step matrices from the sampling grid's native RFLOAT
@@ -1437,7 +1437,7 @@ def _relion_mstep_source_eulers(rotation_eulers, healpix_order, *, use_grid_eule
     return _get_relion_rotation_grid_eulers_float64(healpix_order, symmetry=symmetry)
 
 
-def _perturbed_trial_grid(
+def perturbed_trial_grid(
     *,
     rotation_eulers,
     mstep_source_eulers,
@@ -1479,13 +1479,13 @@ def _perturbed_trial_grid(
     return TrialGrid(rotations, rotation_eulers, mstep_rotations, translations)
 
 
-def _relion_base_translation_grid(translation_range, translation_step, *, n_classes, voxel_size):
+def relion_base_translation_grid(translation_range, translation_step, *, n_classes, voxel_size):
     """Unperturbed RELION translation grid in pixels as a host float64 array.
 
     ``voxel_size`` (Angstrom) supplies the source units of the K=1 exact
     enumeration; a non-positive value falls back to pixel units.  The grid is
     kept in host double precision so every SamplingPerturbation starts from
-    the unrounded coordinates (see ``_perturbed_trial_grid``).
+    the unrounded coordinates (see ``perturbed_trial_grid``).
     """
 
     return _translation_grid_for_class_count(
@@ -1496,7 +1496,7 @@ def _relion_base_translation_grid(translation_range, translation_step, *, n_clas
     ).astype(np.float64, copy=False)
 
 
-def _exact_local_fine_grid(*, healpix_order, angular_sampling_deg, random_perturbation, dtype=np.float32, symmetry="C1"):
+def exact_local_fine_grid(*, healpix_order, angular_sampling_deg, random_perturbation, dtype=np.float32, symmetry="C1"):
     """Materialize RELION's fine local-search grid once, with its SamplingPerturbation.
 
     RELION rotates every fine orientation by the iteration's perturbation
@@ -1526,7 +1526,7 @@ def _exact_local_fine_grid(*, healpix_order, angular_sampling_deg, random_pertur
     return rotations, rotation_eulers, mstep_rotations
 
 
-def _local_search_mstep_rotations(effective_mstep_rotations, rotation_eulers, healpix_order, *, symmetry="C1"):
+def local_search_mstep_rotations(effective_mstep_rotations, rotation_eulers, healpix_order, *, symmetry="C1"):
     """Exact M-step rotations of a local search that reuses the scoring grid.
 
     The perturbed trial grid already carries its M-step matrices; a grid
@@ -1537,7 +1537,7 @@ def _local_search_mstep_rotations(effective_mstep_rotations, rotation_eulers, he
     if effective_mstep_rotations is not None:
         return effective_mstep_rotations
     mstep_rotations, _ = apply_relion_rotation_perturbation_to_eulers(
-        _relion_mstep_source_eulers(rotation_eulers, healpix_order, symmetry=symmetry),
+        relion_mstep_source_eulers(rotation_eulers, healpix_order, symmetry=symmetry),
         0.0,
         relion_angular_sampling_deg(healpix_order, adaptive_oversampling=0),
     )

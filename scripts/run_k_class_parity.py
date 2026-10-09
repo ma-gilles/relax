@@ -247,9 +247,9 @@ def _adaptive_coarse_scoring_rotations(
     if not adaptive_2pass:
         return host, "host_inverse"
 
-    from relax.sampling import _relion_adaptive_pass1_rotations
+    from relax.sampling import relion_adaptive_pass1_rotations
 
-    device = _relion_adaptive_pass1_rotations(
+    device = relion_adaptive_pass1_rotations(
         np.asarray(source_eulers_deg, dtype=np.float32),
         float(random_perturbation),
         float(angular_sampling_deg),

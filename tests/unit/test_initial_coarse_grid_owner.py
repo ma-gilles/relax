@@ -84,15 +84,15 @@ def _initial_grids(**overrides):
 
 @pytest.mark.parametrize("n_classes", [1, 4])
 def test_base_translation_grid_is_host_float64_in_source_units(n_classes):
-    grid = sampling_module._relion_base_translation_grid(4.25, 1.416667, n_classes=n_classes, voxel_size=2.0)
+    grid = sampling_module.relion_base_translation_grid(4.25, 1.416667, n_classes=n_classes, voxel_size=2.0)
     expected = _translation_grid_for_class_count(4.25, 1.416667, n_classes=n_classes, source_units_per_pixel=2.0)
     assert isinstance(grid, np.ndarray) and grid.dtype == np.float64
     assert _same(grid, expected.astype(np.float64))
 
 
 def test_base_translation_grid_falls_back_to_pixel_units_without_a_voxel_size():
-    fallback = sampling_module._relion_base_translation_grid(5.0, 1.0, n_classes=1, voxel_size=0.0)
-    pixel_units = sampling_module._relion_base_translation_grid(5.0, 1.0, n_classes=1, voxel_size=1.0)
+    fallback = sampling_module.relion_base_translation_grid(5.0, 1.0, n_classes=1, voxel_size=0.0)
+    pixel_units = sampling_module.relion_base_translation_grid(5.0, 1.0, n_classes=1, voxel_size=1.0)
     assert _same(fallback, pixel_units)
 
 
@@ -122,7 +122,7 @@ def test_relion_translation_grid_pairs_with_the_canonical_rotation_grid(monkeypa
     rotations = _rotation_grid_rotations.rotations
     eulers = _rotation_grid_rotations.rotation_eulers
     assert _same(grids.rotation_grid.rotations, rotations) and _same(grids.rotation_grid.rotation_eulers, eulers)
-    expected = sampling_module._relion_base_translation_grid(4.25, 1.416667, n_classes=4, voxel_size=2.0)
+    expected = sampling_module.relion_base_translation_grid(4.25, 1.416667, n_classes=4, voxel_size=2.0)
     assert _same(grids.base_translations, expected)
     assert isinstance(grids.translations, jnp.ndarray)
     assert _same(grids.translations, jnp.asarray(expected, dtype=_dense_global_scoring_dtype()))

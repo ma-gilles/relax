@@ -33,7 +33,7 @@ from relax.reconstruction.regularization_relion import (
 )
 from relax.refinement.iteration_snapshot import validate_resume_snapshot
 from relax.refinement.ports import InputSource
-from relax.sampling import _relion_adaptive_pass1_rotations
+from relax.sampling import relion_adaptive_pass1_rotations
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions
@@ -86,7 +86,7 @@ def resolve_numbered_perturbation(
     if not parity.perturb_factor > 0:
         return previous_perturbation
     relion_iteration = init_relion_iteration + iteration + 1
-    perturbation, seed = sampling._advance_relion_perturbation(
+    perturbation, seed = sampling.advance_relion_perturbation_for_iteration(
         previous_perturbation,
         perturb_factor=parity.perturb_factor,
         perturb_seed=parity.perturb_seed,
@@ -553,7 +553,7 @@ def build_initial_coarse_grids(
         symmetry=symmetry,
     )
     if translations is None:
-        translations = sampling._relion_base_translation_grid(
+        translations = sampling.relion_base_translation_grid(
             translation_range,
             translation_step,
             n_classes=n_classes,
@@ -608,7 +608,7 @@ def refresh_coarse_grids(
             )
 
         # Regenerate translation grid based on updated parameters
-        base_translations = sampling._relion_base_translation_grid(
+        base_translations = sampling.relion_base_translation_grid(
             state.translation_range,
             state.translation_step,
             n_classes=options.k_class.n_classes,
@@ -656,9 +656,9 @@ def iteration_trial_grid(
             translations=grids.translations,
         )
     angsamp_deg = sampling.relion_angular_sampling_deg(perturbation_order, adaptive_oversampling=0)
-    return sampling._perturbed_trial_grid(
+    return sampling.perturbed_trial_grid(
         rotation_eulers=rotation_eulers,
-        mstep_source_eulers=sampling._relion_mstep_source_eulers(
+        mstep_source_eulers=sampling.relion_mstep_source_eulers(
             rotation_eulers,
             perturbation_order,
             use_grid_eulers=sealed_grid,
@@ -717,7 +717,7 @@ def coarse_pass1_rotations(
         angular_sampling_deg=sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),
         use_float64=options.precision.use_float64_scoring,
     )
-    adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
+    adaptive_pass1_rotations = relion_adaptive_pass1_rotations(
         source.source_eulers_deg,
         source.random_perturbation,
         source.angular_sampling_deg,

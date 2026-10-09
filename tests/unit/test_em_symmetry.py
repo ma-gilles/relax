@@ -1005,7 +1005,7 @@ def test_point_group_mstep_source_angles_are_the_relion_binary64_rows(label):
     _ = _rotation_grid_.rotations
     scoring_eulers = _rotation_grid_.rotation_eulers
     exact = sampling._get_relion_rotation_grid_eulers_float64(order, symmetry=label)
-    source = sampling._relion_mstep_source_eulers(scoring_eulers, order, symmetry=label)
+    source = sampling.relion_mstep_source_eulers(scoring_eulers, order, symmetry=label)
     assert source.dtype == np.float64 and source.shape == exact.shape
     assert_matches(source, exact, strict=True)
     assert not matches(source, scoring_eulers.astype(np.float64))

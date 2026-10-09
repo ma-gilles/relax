@@ -652,7 +652,7 @@ MUTATIONS = (
      "the accuracy estimate's shared projector is built two pixels small", True),
     ("accuracy_status", 'exact_accuracy_status_this_iter = "ok"', 'exact_accuracy_status_this_iter = "okay"',
      "a successful accuracy estimate reports another status", True),
-    ("coarse_translation_range", "base_translations = sampling._relion_base_translation_grid(\nstate.translation_range,", "base_translations = sampling._relion_base_translation_grid(\nstate.translation_range * 2,",
+    ("coarse_translation_range", "base_translations = sampling.relion_base_translation_grid(\nstate.translation_range,", "base_translations = sampling.relion_base_translation_grid(\nstate.translation_range * 2,",
      "a rebuilt coarse translation grid has twice the range", True),
     ("replay_translations_reversed", "base_translations = _new_t_source", "base_translations = _new_t_source[::-1]",
      "a translation grid rebuilt under replay is installed reversed", True),
@@ -963,15 +963,17 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 return out
 
             patch(owner, "prepare_scoring_projector", projector_spy)
-        for owner in relax_modules_with("_relion_adaptive_pass1_rotations"):
-            original_pass1 = owner._relion_adaptive_pass1_rotations
+        # The trace row keeps the name the function had before d6 made it public, so both trees record one label.
+        for pass1_name in ("relion_adaptive_pass1_rotations", "_relion_adaptive_pass1_rotations"):
+            for owner in relax_modules_with(pass1_name):
+                original_pass1 = getattr(owner, pass1_name)
 
-            def pass1_spy(*args, _original=original_pass1, **kwargs):
-                out = _original(*args, **kwargs)
-                record("call", "_relion_adaptive_pass1_rotations", json.dumps(flatten([list(args), kwargs, out]), sort_keys=True))
-                return out
+                def pass1_spy(*args, _original=original_pass1, **kwargs):
+                    out = _original(*args, **kwargs)
+                    record("call", "_relion_adaptive_pass1_rotations", json.dumps(flatten([list(args), kwargs, out]), sort_keys=True))
+                    return out
 
-            patch(owner, "_relion_adaptive_pass1_rotations", pass1_spy)
+                patch(owner, pass1_name, pass1_spy)
         for owner in relax_modules_with("update_refinement_state"):
             original_update = owner.update_refinement_state
 
