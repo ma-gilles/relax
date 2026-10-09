@@ -27,7 +27,7 @@ from relax.helpers.orientation_priors import (
     _combined_class_direction_prior_from_halves,
 )
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement.half_inputs import initialize_halfsets
+from relax.refinement.half_inputs import HalfPair, initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import ReconstructionPrograms
@@ -1146,8 +1146,8 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
     monkeypatch.setattr(finalization, "run_final_all_data", capture)
     result = _refine_replaying(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32)),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32)),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=0, init_current_size=16, init_healpix_order=2),
@@ -1204,8 +1204,8 @@ def test_final_all_data_runs_with_cold_start_only_override(
 
     result = _refine_replaying(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -1261,8 +1261,8 @@ def test_last_numbered_state_does_not_trigger_post_cap_final_all_data(
 
     result = refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -3220,7 +3220,7 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
     )
     with pytest.raises(LifetimeChecked):
         refine_single_volume(
-            half_datasets, StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0), jnp.ones(IMAGE_SIZE, dtype=jnp.float32), translations,
+            half_datasets, StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0), HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)), translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
                     max_iter=2, init_current_size=4, init_healpix_order=2,
@@ -3265,7 +3265,7 @@ def test_numbered_projector_preparation_skips_empty_half(
     monkeypatch.setattr(expectation_module, "score_numbered_half", score)
     with pytest.raises(PreparationChecked):
         refine_single_volume(
-            half_datasets, StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0), jnp.ones(IMAGE_SIZE, dtype=jnp.float32), translations,
+            half_datasets, StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0), HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)), translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
                     max_iter=1, init_current_size=4, init_healpix_order=2,
@@ -4493,8 +4493,8 @@ class TestRelionModeSmokeTest:
         monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", check_first_engine_call)
         with pytest.raises(PriorChecked):
             refine_single_volume(
-                half_datasets, StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-                jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+                half_datasets, StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+                HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
                  translations,
                 options=stand_in.options(
                     schedule=stand_in.schedule(
@@ -4573,8 +4573,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -4946,8 +4946,8 @@ class TestRelionModeSmokeTest:
         """RELION-parity refinement completes 2 iterations on a tiny dataset."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -4988,8 +4988,8 @@ class TestRelionModeSmokeTest:
         """RELION does not run final all-data iteration just because max_iter ended."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5034,8 +5034,8 @@ class TestRelionModeSmokeTest:
 
         refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5112,8 +5112,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5203,8 +5203,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5293,8 +5293,8 @@ class TestRelionModeSmokeTest:
             )
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5407,8 +5407,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5458,8 +5458,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5512,8 +5512,8 @@ class TestRelionModeSmokeTest:
 
         result = _refine_replaying(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5702,8 +5702,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=4),
@@ -5762,8 +5762,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5820,8 +5820,8 @@ class TestRelionModeSmokeTest:
         n_classes = 4
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -5871,8 +5871,8 @@ class TestRelionModeSmokeTest:
         n_classes = 4
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
@@ -6000,8 +6000,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=4, init_healpix_order=1, max_healpix_order=1),
@@ -6034,8 +6034,8 @@ class TestRelionModeSmokeTest:
         """RELION mode produces finite volumes and valid assignments."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -6069,8 +6069,8 @@ class TestRelionModeSmokeTest:
         """Dense non-adaptive RELION loop supports an explicit class axis."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -6132,8 +6132,8 @@ class TestRelionModeSmokeTest:
         monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -6184,8 +6184,8 @@ class TestRelionModeSmokeTest:
         with pytest.raises(_Recorded):
             refine_single_volume(
                 half_datasets,
-                StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-                jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+                StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+                HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
                 translations,
                 options=stand_in.options(
                     schedule=stand_in.schedule(
@@ -6762,8 +6762,8 @@ class TestRelionModeSmokeTest:
         """Convergence state is a RefinementState with correct fields."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -6844,8 +6844,8 @@ class TestRelionModeSmokeTest:
         grid_size = int(np.sqrt(IMAGE_SIZE))
         refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, initial_tau2),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), initial_tau2),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -6911,8 +6911,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7076,8 +7076,8 @@ class TestRelionModeSmokeTest:
         out_dir = tmp_path / "intermediates"
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7137,8 +7137,8 @@ class TestRelionModeSmokeTest:
         with pytest.raises(_Captured):
             refine_single_volume(
                 half_datasets,
-                StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-                jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+                StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+                HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
                 translations,
                 options=stand_in.options(
                     schedule=stand_in.schedule(
@@ -7178,8 +7178,8 @@ class TestRelionModeSmokeTest:
         )
         refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7223,8 +7223,8 @@ class TestRelionModeSmokeTest:
         out_dir = tmp_path / "intermediates"
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7262,8 +7262,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7290,8 +7290,8 @@ class TestRelionModeSmokeTest:
         """RELION-specific trajectories have correct lengths."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7338,8 +7338,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7385,8 +7385,8 @@ class TestRelionModeSmokeTest:
 
         refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            np.stack([half1_noise, half2_noise]),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair(half1_noise, half2_noise),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7530,8 +7530,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7581,8 +7581,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7725,8 +7725,8 @@ class TestRelionModeSmokeTest:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(
@@ -7884,8 +7884,8 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
 
     refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
@@ -8057,8 +8057,8 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
 
     refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
@@ -8183,8 +8183,8 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
 
     refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
@@ -8306,8 +8306,8 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
 
     refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
@@ -8393,8 +8393,8 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
 
     refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=2, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
@@ -8523,8 +8523,8 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
 
     _refine_replaying(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(
@@ -8667,8 +8667,8 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
 
     _refine_replaying(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(
@@ -8724,8 +8724,8 @@ def test_relion_mode_writes_absolute_translations_from_previous_offset(
 
     result = refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(
@@ -8869,8 +8869,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
 
     result = _refine_replaying(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32)),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32)),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         jnp.array([[0.0, 0.0]], dtype=jnp.float32),
         options=stand_in.options(
             schedule=stand_in.schedule(
@@ -8896,8 +8896,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
     init_tau2_volume = jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32) * 3.0
     init_result = _refine_replaying(
         half_datasets,
-        StartupHandoff(init_volume, init_tau2_volume),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), init_tau2_volume),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         jnp.array([[0.0, 0.0]], dtype=jnp.float32),
         options=stand_in.options(
             schedule=stand_in.schedule(
@@ -8923,8 +8923,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
     monkeypatch.setenv("RELAX_KCLASS_REPLAY_TAU2", "1")
     replay_result = _refine_replaying(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32)),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32)),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         jnp.array([[0.0, 0.0]], dtype=jnp.float32),
         options=stand_in.options(
             schedule=stand_in.schedule(
@@ -8952,8 +8952,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
 
     same_iter_replay_result = _refine_replaying(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32)),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32)),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         jnp.array([[0.0, 0.0]], dtype=jnp.float32),
         options=stand_in.options(
             schedule=stand_in.schedule(
@@ -9074,8 +9074,8 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
 
     result = refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         jnp.array([[0.0, 0.0]], dtype=jnp.float32),
         options=stand_in.options(
             schedule=stand_in.schedule(
@@ -9241,8 +9241,8 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
 
     result = refine_single_volume(
         half_datasets,
-        StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+        StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+        HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
         translations,
         options=stand_in.options(
             schedule=stand_in.schedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),

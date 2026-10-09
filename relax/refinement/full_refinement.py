@@ -53,6 +53,7 @@ from relax.parity.state_swap_probe import (
     validate_state_swap_probe_application,
 )
 from relax.refinement import command_options, particle_loading, run_files, startup_noise, startup_references
+from relax.refinement.half_inputs import HalfPair
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
     RunReport,
@@ -822,7 +823,7 @@ def main(command=None):
     elif resume_snapshot is not None:
         # The run files own the noise; the loop installs each half's own spectrum.
         initial_noise = startup_noise.continued_noise(resume_snapshot.noise_shells, ds.image_shape)
-        if initial_noise.pixel_variance.ndim == 2:
+        if initial_noise.pixel_variance.half1.ndim == 2:
             optics_group_ids_per_half, _ = _per_image_optics_groups(our_particles, particle_layout)
     else:
         if args.n_classes == 1 and relion_half_sets is None:
@@ -842,14 +843,14 @@ def main(command=None):
         logger.info(
             "RELION start-up noise from the images: %d shells, scoring dtype=%s",
             initial_noise.radial.size,
-            initial_noise.pixel_variance.dtype,
+            initial_noise.pixel_variance.half1.dtype,
         )
-        if initial_noise.pixel_variance.ndim == 2:
+        if initial_noise.pixel_variance.half1.ndim == 2:
             # One spectrum per optics group; every image scores with its own group's.
             optics_group_ids_per_half, group_sizes = _per_image_optics_groups(our_particles, particle_layout)
             logger.info(
                 "Per-optics-group noise: %d groups, images per group %s",
-                initial_noise.pixel_variance.shape[0],
+                initial_noise.pixel_variance.half1.shape[0],
                 group_sizes.tolist(),
             )
     initial_noise_radial = None if initial_noise is None else initial_noise.radial
@@ -1234,7 +1235,10 @@ def main(command=None):
     startup = startup_references.StartupHandoff(
         references.fourier,
         np.asarray(jax.device_get(mean_variance)),
-        None if resume_snapshot is not None else references.real_for_projector,
+        (
+            None if resume_snapshot is not None or references.real_for_projector is None
+            else HalfPair.shared(references.real_for_projector)
+        ),
     )
     del mean_variance, references
     run_options = RefinementOptions(
@@ -1331,9 +1335,7 @@ def main(command=None):
         result = refine_single_volume(
             experiment_datasets=experiment_datasets,
             startup=startup,
-            init_noise_variance=(
-                noise_variance if optics_group_ids_per_half is None else [noise_variance, noise_variance]
-            ),
+            init_noise_variance=noise_variance,
             translations=translations_jnp,
             options=run_options,
             observer=observers.command_observer(args),

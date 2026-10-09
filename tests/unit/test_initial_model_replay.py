@@ -7,6 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.parity import initial_model_replay as replay
+from relax.refinement.half_inputs import HalfPair
 
 
 def _write_model(path, *, n_classes=1, sigma2=None, prior_dtype=np.float64, prior_column="rlnReferenceTau2", fudge="_rlnTau2FudgeFactor 1.75"):
@@ -66,7 +67,8 @@ def test_noise_frames_override_precedence_and_half1_broadcast(tmp_path, n_classe
     assert noise.frame_scale == frame_scale
     assert_matches(noise.sigma2_per_model[0], expected)
     assert noise.sigma2_per_model[0].dtype == np.float64
-    variance = noise.variance if source == "shared" else noise.variance[0]
+    variance = noise.variance.half1
+    assert (noise.variance.half2 is variance) == (source == "shared")
     assert_matches(variance, _radial_pixels(expected * frame_scale, (8, 8)))
     assert np.asarray(variance).dtype == np.float64
     if source == "half-specific":
@@ -170,7 +172,7 @@ def _relion_init_run(monkeypatch, tmp_path, n_classes, trace=None, **stand_ins):
     monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", overrides)
     defaults = dict(
         read_initial_model=lambda directory, *, n_classes: "model",
-        prepare_noise=lambda model, **kwargs: replay.NoiseReplay(np.full(256, 2.0, np.float32), [np.ones(9)], 16**4),
+        prepare_noise=lambda model, **kwargs: replay.NoiseReplay(HalfPair.shared(np.full(256, 2.0, np.float32)), [np.ones(9)], 16**4),
         log_noise_source=lambda noise, *, log: None,
         prepare_prior=lambda model, **kwargs: np.full(4096 if n_classes == 1 else (n_classes, 4096), 3.0),
         read_controls=lambda model, *, log: replay.InitialModelControls(1.75, 0.42),
@@ -213,7 +215,7 @@ def test_controller_installs_arrays_before_reporting_and_drops_temporary_owner(m
     inputs = _relion_init_run(monkeypatch, tmp_path, n_classes, trace=trace, prepare_prior=prior, read_controls=controls)
     assert trace.labels() == ["read_initial_model", "prepare_noise", "log_noise_source", "prepare_prior", "read_controls"]
     assert_matches(np.asarray(inputs["startup"].take()[1]), np.asarray(trace.calls("prepare_prior")[0].result))
-    assert_matches(np.asarray(inputs["init_noise_variance"]), np.full(256, 2.0, np.float32))
+    assert_matches(np.asarray(inputs["init_noise_variance"].half1), np.full(256, 2.0, np.float32))
     assert_matches(inputs["options"].parity.tau2_fudge, 1.75)
     assert_matches(inputs["options"].schedule.init_translation_sigma_angstrom, 0.42)
 

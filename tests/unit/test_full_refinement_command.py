@@ -185,7 +185,7 @@ def test_init_noise_from_npz_replaces_the_startup_estimate(monkeypatch, tmp_path
 
     radial = iteration_history._load_init_noise_radial_npz(str(archive), "last")["noise_radial"]
     expected = recon_noise.make_radial_noise(radial, loaded["experiment_datasets"][0].image_shape)
-    assert_matches(np.asarray(loaded["init_noise_variance"]), np.asarray(expected))
+    assert_matches(np.asarray(loaded["init_noise_variance"].half1), np.asarray(expected))
 
 
 def test_the_command_writes_its_archive_maps_and_history(monkeypatch, tmp_path):

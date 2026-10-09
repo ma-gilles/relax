@@ -78,7 +78,7 @@ class _K1Iteration:
     def initial_reference_model(self, ctx, options, init_volume, init_mean_variance):
         """Each half's flat start-up reference with the shared or per-half tau2."""
         return mean_helpers.initialize_reference_model(
-            mean_helpers._normalize_initial_means(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
+            mean_helpers.initial_half_references(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
             use_per_half_mean_variance=options.parity.use_per_half_mean_variance, dtype=ctx.scoring_dtype,
             log=logger,
         )
@@ -240,7 +240,7 @@ class _ClassIteration:
     def initial_reference_model(self, ctx, options, init_volume, init_mean_variance):
         """Each half's start-up class stack with the shared tau2."""
         return mean_helpers.initialize_class_reference_model(
-            mean_helpers._normalize_initial_means(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
+            mean_helpers.initial_half_references(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
             use_per_half_mean_variance=options.parity.use_per_half_mean_variance,
         )
 
@@ -416,7 +416,7 @@ def _follower_replay_telemetry(source, history) -> refinement_result.ReplayTelem
 def refine_single_volume(
     experiment_datasets: list[cryoem_dataset.CryoEMDataset],
     startup: startup_references.StartupHandoff,
-    init_noise_variance: jnp.ndarray,
+    init_noise_variance: half_inputs.HalfPair,
     translations: jnp.ndarray | None,
     options: refinement_options.RefinementOptions,
     observer: ports.RunObserver,
@@ -435,10 +435,11 @@ def refine_single_volume(
     experiment_datasets : list of 2 dataset objects
         Half-set datasets (same format as run_halfset_em_iteration expects).
     startup : ``StartupHandoff`` (``relax.refinement.startup_references``) holding the initial Fourier volume
-        (one per half-set, or shared), the initial signal prior (tau^2, shape (volume_size,)) and the first
-        projector's real maps (or None). The loop takes them once, so they are freed after the start-up (relax#26).
-    init_noise_variance : jnp.ndarray, shape (2,image_size)
-        Initial per-pixel noise variance for each half-set.
+        (a ``HalfPair``), the initial signal prior (tau^2, shape (volume_size,)) and the first projector's real
+        maps (a ``HalfPair`` or None). The loop takes them once, so they are freed after the start-up (relax#26).
+    init_noise_variance : ``HalfPair`` (``relax.refinement.half_inputs``)
+        Each half-set's initial per-pixel noise variance: a flat image vector, or ``[G, P]`` rows for G > 1
+        optics groups.
     translations : jnp.ndarray, shape (n_trans, 2)
         Translation grid.
     options : `RefinementOptions` struct that bundles the schedule / adaptive / parity
@@ -522,7 +523,7 @@ def refine_single_volume(
         init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
     )
     del init_reference_real
-    initial_noise_variance_per_half = noise_updates._normalize_noise_variance_per_half(init_noise_variance)
+    initial_noise_variance_per_half = noise_updates.noise_rows_per_half(init_noise_variance)
     optics_group_ids_per_half = setup_checks.checked_optics_group_ids(
         options.parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
     )

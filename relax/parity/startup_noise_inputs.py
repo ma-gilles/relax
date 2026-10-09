@@ -9,16 +9,19 @@ from __future__ import annotations
 
 import numpy as np
 
+from relax.refinement.half_inputs import HalfPair
 from relax.refinement.startup_noise import StartupNoise, estimate_startup_sigma2, scoring_noise_from_sigma2
 
 
 def frozen_boundary_noise(frozen_boundary, image_shape) -> StartupNoise:
-    """A frozen boundary's noise: each half's scoring pixel variance (a list), their mean radial curve."""
+    """A frozen boundary's noise: each half's scoring pixel variance, their mean radial curve."""
     from relax.parity import frozen_boundary_cli
 
     return StartupNoise(
         radial=np.mean(np.stack(frozen_boundary.noise_radial_per_half, axis=0), axis=0),
-        pixel_variance=frozen_boundary_cli.expand_boundary_noise(frozen_boundary.noise_radial_per_half, image_shape),
+        pixel_variance=HalfPair(
+            *frozen_boundary_cli.expand_boundary_noise(frozen_boundary.noise_radial_per_half, image_shape)
+        ),
     )
 
 
@@ -38,7 +41,9 @@ def archived_noise(path, iteration, image_shape, *, log) -> StartupNoise:
         float(np.median(np.asarray(radial))),
         float(np.max(np.asarray(radial))),
     )
-    return StartupNoise(radial=radial, pixel_variance=recon_noise.make_radial_noise(radial, image_shape))
+    return StartupNoise(
+        radial=radial, pixel_variance=HalfPair.shared(recon_noise.make_radial_noise(radial, image_shape)),
+    )
 
 
 def live_initial_noise(dataset, half_sets, *, mask_params, log):

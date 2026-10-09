@@ -141,15 +141,17 @@ def test_production_runner_leaves_cold_start_host_owned_until_normalization(monk
 
     inputs = controller_inputs(monkeypatch, tmp_path, "refine")
     volume, mean_variance, _ = inputs["startup"].take()
-    assert type(volume) is np.ndarray
+    assert volume.half2 is volume.half1 and type(volume.half1) is np.ndarray
     assert type(mean_variance) is np.ndarray
 
 
-def test_normalize_initial_means_reuses_immutable_shared_reference():
+def test_initial_half_references_reuse_immutable_shared_reference():
     import jax.numpy as jnp
 
+    from relax.refinement.half_inputs import HalfPair
+
     shared = jnp.arange(64, dtype=jnp.complex64)
-    got = mean_helpers._normalize_initial_means(shared, n_classes=1)
+    got = mean_helpers.initial_half_references(HalfPair.shared(shared), n_classes=1)
 
     assert got[0] is got[1]
     assert_matches(np.asarray(got[0]), np.asarray(shared))
@@ -201,7 +203,9 @@ def test_command_keeps_no_startup_array_once_the_controller_takes_them(monkeypat
         pass
 
     def controller(*, startup, **kwargs):
-        taken = [weakref.ref(array) for array in startup.take() if array is not None]
+        volume, mean_variance, reference_real = startup.take()
+        taken = [weakref.ref(array) for array in (volume.half1, mean_variance, reference_real.half1)]
+        del volume, mean_variance, reference_real
         main_frame_arrays()  # refreshes main's frame snapshot of its locals (Python 3.11)
         gc.collect()
         seen["alive"] = [ref() is not None for ref in taken]

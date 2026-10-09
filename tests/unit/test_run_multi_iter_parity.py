@@ -1027,8 +1027,8 @@ def test_replay_reads_every_optics_groups_noise():
     rows = model_noise_variance(both, n)
     assert rows.shape == (2, n * n)
     assert_matches(rows[1], np.asarray(recon_noise.make_radial_noise(both[1] * n**4, (n, n))).reshape(-1))
-    assert noise_pair_for_loop([rows[0], rows[0]]).shape == (2, n * n)
+    assert noise_pair_for_loop([rows[0], rows[0]]).half1.shape == (n * n,)
     pair = noise_pair_for_loop([rows, rows])
-    assert isinstance(pair, list) and pair[0].shape == (2, n * n)
+    assert pair.half1.shape == pair.half2.shape == (2, n * n)
     with pytest.raises(ValueError, match="numbered 1..G"):
         read_model_sigma2_noise({"model_optics_group_2": two}, context="test")

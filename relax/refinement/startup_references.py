@@ -21,6 +21,7 @@ import numpy as np
 from recovar import utils as recovar_utils
 from recovar.core import fourier_transform_utils as ftu
 
+from relax.refinement.half_inputs import HalfPair
 from relax.relion import relion_metadata
 from relax.relion.geometry import REFERENCE_FILTER_EDGE_SHELLS
 
@@ -29,8 +30,8 @@ from relax.relion.geometry import REFERENCE_FILTER_EDGE_SHELLS
 class StartupReferences:
     """The references a run starts from.
 
-    ``fourier``: the loop's start-up volume, ``(V,)`` for K=1, ``(K, V)`` for Class3D, ``(2, V)`` (one per half)
-    from a frozen boundary. ``prior_source``: the Fourier volume the start-up tau2 is bootstrapped from (the
+    ``fourier``: the loop's start-up volume as a ``HalfPair``: ``(V,)`` for K=1 or ``(K, V)`` for Class3D,
+    shared by the halves, or each half's own from a frozen boundary. ``prior_source``: the Fourier volume the start-up tau2 is bootstrapped from (the
     reference or class 1); None from a frozen boundary, which owns its tau2. ``real_for_projector``: the
     real-space maps handed to the first projector (float64) when that handoff is on, else None.
     ``reference_real`` (K=1) and
@@ -39,7 +40,7 @@ class StartupReferences:
     boundary).
     """
 
-    fourier: np.ndarray
+    fourier: HalfPair
     prior_source: np.ndarray | None
     real_for_projector: np.ndarray | None = None
     reference_real: np.ndarray | None = None
@@ -50,8 +51,9 @@ class StartupReferences:
 class StartupHandoff:
     """The start-up arrays handed to ``refine_single_volume``, which takes them once.
 
-    ``volume``: the loop's start-up Fourier volume (``StartupReferences.fourier``). ``mean_variance``: the start-up
-    tau2. ``reference_real``: the float64 real maps of the first projector (``real_for_projector``), or None.
+    ``volume``: the loop's start-up Fourier volume, a ``HalfPair`` (``StartupReferences.fourier``).
+    ``mean_variance``: the start-up tau2. ``reference_real``: the float64 real maps of the first projector as a
+    ``HalfPair`` (of ``real_for_projector``), or None.
     A caller's argument stays referenced until the call returns (relax#26), so at box 800 the three arrays (12.3 GB)
     lived for the whole refinement; :meth:`take` hands them over and drops the holder's references, so they are
     freed once the loop has built its models and first projector.
@@ -84,7 +86,7 @@ def _initial_lowpass_real(volume_real, volume_shape, voxel_size, ini_high):
 
 def frozen_boundary_references(frozen_boundary) -> StartupReferences:
     """The per-half Fourier references a frozen boundary owns; its tau2 is its own, so nothing is bootstrapped."""
-    return StartupReferences(fourier=np.stack(frozen_boundary.means, axis=0), prior_source=None)
+    return StartupReferences(fourier=HalfPair(*frozen_boundary.means), prior_source=None)
 
 
 def _startup_map(volume_real, *, volume_shape, pixel_size, ini_high: float | None, real_dtype, complex_dtype):
@@ -146,7 +148,7 @@ def load_k1_reference(
         model_pixel_size,
     )
     return StartupReferences(
-        fourier=init_vol_ft,
+        fourier=HalfPair.shared(init_vol_ft),
         prior_source=init_vol_ft,
         real_for_projector=reference_real if real_for_projector else None,
         reference_real=reference_real,
@@ -210,9 +212,9 @@ def load_class_references(
             "Applied RELION initialLowPassFilterReferences to %d init references: ini_high=%.2f A, fmask_edge=%d shells",
             len(paths), ini_high, REFERENCE_FILTER_EDGE_SHELLS,
         )
-    # Stack to (K, V); refine_single_volume._normalize_initial_means handles the per-half broadcast.
+    # Stack to (K, V): the halves share the one class stack.
     return StartupReferences(
-        fourier=np.stack(per_class_ft, axis=0),
+        fourier=HalfPair.shared(np.stack(per_class_ft, axis=0)),
         # The K-class start-up prior uses class 1 as the representative (a single spectrum).
         prior_source=per_class_ft[0],
         real_for_projector=np.stack(per_class_real_for_projector, axis=0) if real_for_projector else None,

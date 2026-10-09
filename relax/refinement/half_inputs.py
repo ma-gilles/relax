@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from recovar import utils
@@ -9,6 +10,24 @@ from recovar import utils
 from relax.helpers.convergence import concatenate_pose_stacks_or_none
 
 logger = logging.getLogger(__name__)
+
+
+class HalfPair(NamedTuple):
+    """One value for each half-set. What builds the pair says whether the halves share one value
+    (``HalfPair.shared``) or each has its own: an array's shape never decides it."""
+
+    half1: object
+    half2: object
+
+    @classmethod
+    def shared(cls, value) -> "HalfPair":
+        """Both halves refer to the one ``value``."""
+        return cls(value, value)
+
+    def map(self, convert) -> "HalfPair":
+        """``convert`` of each half's value; halves sharing one value share its one result."""
+        first = convert(self.half1)
+        return HalfPair(first, first if self.half2 is self.half1 else convert(self.half2))
 
 
 def optional_half_arrays(values, *, dtype=None):

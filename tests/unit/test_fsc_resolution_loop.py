@@ -18,6 +18,7 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 from helpers.run_options import stand_in
 
+from relax.refinement.half_inputs import HalfPair
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.startup_references import StartupHandoff
@@ -239,8 +240,8 @@ class TestOracleMode:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=3),
@@ -259,8 +260,8 @@ class TestOracleMode:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=3, init_current_size=32),
@@ -281,8 +282,8 @@ class TestOracleMode:
 
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2),
@@ -313,8 +314,8 @@ class TestResolutionProgression:
         """After multiple iterations, current_size should not drop to minimum."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=3, init_current_size=32),
@@ -334,8 +335,8 @@ class TestResolutionProgression:
         """FSC history has one entry per iteration."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=3, init_current_size=32),
@@ -360,8 +361,8 @@ class TestResolutionProgression:
         """Wall times should be positive."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=2, init_current_size=32),
@@ -388,8 +389,8 @@ class TestOneIterationWithWindowing:
         # For 8x8 images, current_size=4 means r_max=2 (very few frequencies)
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=1),
@@ -407,8 +408,8 @@ class TestOneIterationWithWindowing:
         # current_size=128 for 8x8 images means no windowing
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=1),
@@ -426,8 +427,8 @@ class TestOneIterationWithWindowing:
         """Hard assignments are in valid range after one iteration."""
         result = refine_single_volume(
             half_datasets,
-            StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
             translations,
             options=stand_in.options(
                 schedule=stand_in.schedule(max_iter=1),

@@ -13,6 +13,7 @@ import numpy as np
 from recovar import utils
 
 from relax.helpers.shells import shell_of_radius_sq
+from relax.refinement.half_inputs import HalfPair
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.refinement.tomo_half import TomoDataset
 from relax.relion import relion_metadata
@@ -20,10 +21,11 @@ from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2, radial_
 
 
 class StartupNoise(NamedTuple):
-    """RECOVAR-frame radial noise and the corresponding scoring pixel variance."""
+    """RECOVAR-frame radial noise and the corresponding scoring pixel variance of each half (a flat image
+    vector, or ``[G, P]`` rows for G > 1 optics groups)."""
 
     radial: np.ndarray
-    pixel_variance: np.ndarray
+    pixel_variance: HalfPair
 
 
 def continued_noise(noise_shells, image_shape) -> StartupNoise:
@@ -33,7 +35,7 @@ def continued_noise(noise_shells, image_shape) -> StartupNoise:
 
     return StartupNoise(
         radial=np.mean(np.stack(noise_shells, axis=0), axis=0),
-        pixel_variance=np.asarray(noise_pixel_rows(noise_shells[0], image_shape)),
+        pixel_variance=HalfPair.shared(np.asarray(noise_pixel_rows(noise_shells[0], image_shape))),
     )
 
 
@@ -276,8 +278,8 @@ def prepare_startup_noise(
         for sigma2_group in sigma2
     ])
     if n_optics_groups == 1:
-        return StartupNoise(radial=radial[0], pixel_variance=noise[0])
-    return StartupNoise(radial=radial, pixel_variance=noise)
+        return StartupNoise(radial=radial[0], pixel_variance=HalfPair.shared(noise[0]))
+    return StartupNoise(radial=radial, pixel_variance=HalfPair.shared(noise))
 
 
 def scoring_noise_from_sigma2(

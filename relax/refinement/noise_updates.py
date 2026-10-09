@@ -239,8 +239,18 @@ def update_c1_sigma_offset_from_posterior(
     )
 
 
+def noise_rows_per_half(noise_variance) -> list:
+    """Each half's noise from the run's ``HalfPair``: a flat image vector, or ``[G, P]`` rows for G > 1 optics
+    groups."""
+    per_half = [_flat_noise_rows(noise_k) for noise_k in noise_variance]
+    sizes = [tuple(noise_k.shape) for noise_k in per_half]
+    if len(set(sizes)) != 1:
+        raise ValueError(f"Per-half noise arrays must have the same shape; got {sizes}")
+    return per_half
+
+
 def _normalize_noise_variance_per_half(init_noise_variance):
-    """Return a list of the two halves' flattened noise-variance arrays.
+    """Return a list of the two halves' flattened noise-variance arrays, for a replayed state's noise.
 
     RELION stores and updates ``sigma2_noise`` separately for each half-model.
     Legacy RECOVAR callers pass one shared image-shaped array; keep that path

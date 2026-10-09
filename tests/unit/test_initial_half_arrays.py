@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.refinement.half_inputs import HalfPair
 from relax.refinement.mean_helpers import initialize_class_reference_model, initialize_reference_model
 from relax.refinement.projector_preparation import (
     prepare_initial_real_references,
@@ -29,7 +30,8 @@ def test_real_reference_half_class_layout_and_aliases(classes, dtype, layout):
         value = (source.copy(), -source)
         expected = list(value)
     result = prepare_initial_real_references(
-        value, volume_shape=SHAPE, n_classes=classes, init_relion_iteration=0, log=LOG
+        HalfPair.shared(value) if layout == "shared" else HalfPair(*value),
+        volume_shape=SHAPE, n_classes=classes, init_relion_iteration=0, log=LOG,
     )
     for actual, wanted in zip(result, expected):
         assert actual.dtype == np.float64
@@ -50,9 +52,9 @@ def test_absent_real_reference_keeps_fourier_fallback(caplog):
 
 @pytest.mark.parametrize("classes", [1, 2])
 def test_a_half_stacked_array_is_refused(classes):
-    # The producers hand one shared map or stack, or a two-item (half 1, half 2) list; a half axis on an array
+    # The producers hand a HalfPair of one shared map or stack, or of each half's own; a half axis on an array
     # is not a layout any of them makes.
-    value = np.zeros((2,) + ((classes,) if classes > 1 else ()) + SHAPE)
+    value = HalfPair.shared(np.zeros((2,) + ((classes,) if classes > 1 else ()) + SHAPE))
     with pytest.raises(ValueError, match="init_reference_real must be"):
         prepare_initial_real_references(value, volume_shape=SHAPE, n_classes=classes, init_relion_iteration=0, log=LOG)
 
@@ -60,7 +62,7 @@ def test_a_half_stacked_array_is_refused(classes):
 def test_real_reference_handoff_rejects_resumed_run():
     # A mid-trajectory replay (--init_relion_iteration 10 --firstiter_cc) used to take the
     # handoff and score its first iteration against the low-passed start-up map.
-    value = np.ones(SHAPE, dtype=np.float64)
+    value = HalfPair.shared(np.ones(SHAPE, dtype=np.float64))
     with pytest.raises(ValueError, match="--firstiter_cc"):
         prepare_initial_real_references(value, volume_shape=SHAPE, n_classes=1, init_relion_iteration=10, log=LOG)
 
@@ -71,7 +73,13 @@ def test_resumed_run_without_handoff_keeps_fourier_fallback():
     assert result == [None, None]
 
 
-@pytest.mark.parametrize("value,classes", [(np.zeros(27), 1), (np.zeros(SHAPE), 4), ([np.zeros(SHAPE)] * 2, 2)])
+@pytest.mark.parametrize(
+    "value,classes",
+    [
+        (HalfPair.shared(np.zeros(27)), 1), (HalfPair.shared(np.zeros(SHAPE)), 4),
+        (HalfPair(np.zeros(SHAPE), np.zeros(SHAPE)), 2),
+    ],
+)
 def test_incompatible_real_reference_fails_without_broadcast(value, classes):
     with pytest.raises(ValueError, match="init_reference_real must be"):
         prepare_initial_real_references(value, volume_shape=SHAPE, n_classes=classes, init_relion_iteration=0, log=LOG)

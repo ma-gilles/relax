@@ -98,6 +98,11 @@ CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
 # Option fields moved to another group, as (old path piece, new path piece) of a controller-input leaf: a leaf only in
 # A whose renamed path is a leaf only in B with the same value is a moved input, accepted.
 MOVED_INPUTS = (
+    # The start-up volume, real references and noise are HalfPairs (PLAN d4, M-B8): the value the halves
+    # shared is now half 1's (half 2's and the pair's length are added inputs).
+    ("/init_noise_variance", "/init_noise_variance[0]"),
+    ("/startup<StartupHandoff>/_arrays[0]", "/startup<StartupHandoff>/_arrays[0][0]"),
+    ("/startup<StartupHandoff>/_arrays[2]", "/startup<StartupHandoff>/_arrays[2][0]"),
     # The expected-accuracy inputs steer sampling: an algorithm group, not debug (code rule 9; main after a4396d82).
     ("/debug<EngineDebugOptions>/expected_accuracy<", "/expected_accuracy<"),
     # The execution knobs are one record (PLAN d1, O D4).
@@ -1332,6 +1337,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 # The start-up arrays in their single-use holder (relax#26).
                 from relax.refinement.startup_references import StartupHandoff
 
+                half_pair = getattr(importlib.import_module("relax.refinement.half_inputs"), "HalfPair", None)
+                if half_pair is not None:
+                    # The start-up volume and noise as typed pairs, shared by the halves.
+                    init_volume, noise_variance = half_pair.shared(init_volume), half_pair.shared(noise_variance)
                 arrays = (StartupHandoff(init_volume, mean_variance), noise_variance)
             else:
                 arrays = (init_volume, noise_variance, mean_variance)

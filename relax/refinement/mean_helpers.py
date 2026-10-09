@@ -197,10 +197,11 @@ def _snapshot_and_release_previous_k1_means(means):
     return previous_means
 
 
-def _normalize_initial_means(init_volume, n_classes: int):
-    """Normalize initial references to the refine loop's half/class layout."""
+def initial_half_references(init_volume, n_classes: int) -> list:
+    """Each half's start-up reference in the loop's class layout, from the start-up ``HalfPair``: a flat
+    reference for K=1, a ``(K, V)`` stack for Class3D (one flat reference is repeated for every class)."""
 
-    def _as_class_array(value):
+    def as_class_array(value):
         arr = jnp.asarray(value)
         if n_classes == 1:
             if arr.ndim == 1:
@@ -213,22 +214,12 @@ def _normalize_initial_means(init_volume, n_classes: int):
             if arr.ndim == 2 and int(arr.shape[0]) == n_classes:
                 return arr
         raise ValueError(
-            "init_volume must be a flat reference, a per-class reference array, "
-            "or a pair of per-half references compatible with n_classes="
-            f"{n_classes}; got shape {tuple(arr.shape)}",
+            "a half's init_volume must be a flat reference or a per-class reference array compatible with "
+            f"n_classes={n_classes}; got shape {tuple(arr.shape)}",
         )
 
-    if isinstance(init_volume, (list, tuple)) and len(init_volume) == 2:
-        return [_as_class_array(init_volume[0]), _as_class_array(init_volume[1])]
-
-    arr = jnp.asarray(init_volume)
-    if n_classes == 1 and arr.ndim == 2 and int(arr.shape[0]) == 2:
-        return [arr[0], arr[1]]
-    if n_classes > 1 and arr.ndim == 3 and int(arr.shape[0]) == 2 and int(arr.shape[1]) == n_classes:
-        return [arr[0], arr[1]]
-    shared = _as_class_array(arr)
     # Half-map updates replace list entries; immutable initial buffers can be shared.
-    return [shared, shared]
+    return list(init_volume.map(as_class_array))
 
 
 def _class_weights_from_posterior(class_posterior_per_half, n_classes: int, previous_weights: np.ndarray) -> np.ndarray:

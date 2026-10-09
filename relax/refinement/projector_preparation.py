@@ -39,7 +39,8 @@ class ProjectorReuse:
 
 
 def prepare_initial_real_references(init_reference_real, *, volume_shape, n_classes, init_relion_iteration, log):
-    """Normalize direct real references to half/class axes without Fourier conversion.
+    """Each half's direct real references on a class axis, without Fourier conversion, from the handoff's
+    ``HalfPair`` (or None).
 
     Preserve float64 source values, shared-half identity and per-half views.
     A missing handoff stays [None, None] for the existing Fourier fallback.
@@ -67,19 +68,12 @@ def prepare_initial_real_references(init_reference_real, *, volume_shape, n_clas
             if array.shape == expected_class_shape:
                 return array
             raise ValueError(
-                "init_reference_real must be a shared real volume, a per-class "
-                f"array, or a two-half collection; got {array.shape}, expected "
+                "a half's init_reference_real must be a real volume or a per-class "
+                f"array; got {array.shape}, expected "
                 f"{expected_volume_shape} or {expected_class_shape}",
             )
 
-        if isinstance(init_reference_real, (list, tuple)) and len(init_reference_real) == 2:
-            initial_real_references_by_half = [
-                _as_class_real_references(init_reference_real[0]),
-                _as_class_real_references(init_reference_real[1]),
-            ]
-        else:
-            shared_real = _as_class_real_references(init_reference_real)
-            initial_real_references_by_half = [shared_real, shared_real]
+        initial_real_references_by_half = list(init_reference_real.map(_as_class_real_references))
         log.info(
             "RELION initial projector: preserving direct float64 real-reference handoff"
         )

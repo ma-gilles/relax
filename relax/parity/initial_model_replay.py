@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
+from relax.refinement.half_inputs import HalfPair
 from relax.relion import relion_metadata
 from relax.relion.initial_noise import (
     read_relion_single_optics_sigma2_noise,
@@ -36,9 +37,9 @@ class InitialModelReplay:
 
 
 class NoiseReplay(NamedTuple):
-    """Scoring variance and the RELION-frame spectra used to report its source."""
+    """Each half's scoring variance and the RELION-frame spectra used to report its source."""
 
-    variance: jnp.ndarray | list[jnp.ndarray]
+    variance: HalfPair
     sigma2_per_model: list[np.ndarray]
     frame_scale: int
 
@@ -121,12 +122,12 @@ def prepare_noise(
     if len(sigma2_per_model) == 1:
         sigma2 = sigma2_per_model[0]
         noise_radial = jnp.asarray(sigma2 * frame_scale)
-        variance = recon_noise.make_radial_noise(noise_radial, image_shape)
+        variance = HalfPair.shared(recon_noise.make_radial_noise(noise_radial, image_shape))
     else:
-        variance = [
+        variance = HalfPair(*(
             recon_noise.make_radial_noise(jnp.asarray(sigma2 * frame_scale), image_shape)
             for sigma2 in sigma2_per_model
-        ]
+        ))
     return NoiseReplay(variance, sigma2_per_model, frame_scale)
 
 

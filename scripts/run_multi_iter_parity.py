@@ -34,6 +34,7 @@ from relax.helpers.iteration_history import add_significant_count_artifacts
 from relax.parity.parity_provenance import (
     assert_parity_ancestors_or_exit as _print_provenance_banner_and_assert_parity_ancestors,
 )
+from relax.refinement.half_inputs import HalfPair
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
@@ -833,12 +834,11 @@ def model_noise_variance(sigma2, grid_size: int):
 
 
 def noise_pair_for_loop(pair):
-    """The two halves' noise as the EM loop takes it: stacked flat vectors, or a list of ``[G, P]`` rows."""
+    """The two halves' noise as the EM loop takes it: each half's flat vector or ``[G, P]`` rows."""
 
     import jax.numpy as jnp
 
-    first = np.asarray(pair[0])
-    return jnp.stack([jnp.asarray(x) for x in pair], axis=0) if first.ndim == 1 else [jnp.asarray(x) for x in pair]
+    return HalfPair(*(jnp.asarray(x) for x in pair))
 
 
 def initial_scoring_noise_pair(noise_half1, noise_half2, *, restart_broadcast: bool):
@@ -1787,7 +1787,7 @@ def main():
             pixel_size=pixel_size,
             ini_high_angstrom=relion_ini_high,
         )
-        initial_reference_real_for_projector = [filtered_real, filtered_real]
+        initial_reference_real_for_projector = HalfPair.shared(filtered_real)
         filtered_for_fourier = filtered_real.astype(_init_volume_dtype, copy=False)
         vol_ft = np.asarray(ftu.get_dft3(jnp.asarray(filtered_for_fourier))).reshape(-1)
         vol_ft_h1 = vol_ft
@@ -2519,7 +2519,7 @@ def main():
         result = refine_single_volume(
             experiment_datasets=[ds_half1, ds_half2],
             startup=StartupHandoff(
-                [jnp.asarray(vol_ft_h1), jnp.asarray(vol_ft_h2)],
+                HalfPair(jnp.asarray(vol_ft_h1), jnp.asarray(vol_ft_h2)),
                 mean_variance.reshape(-1),
                 initial_reference_real_for_projector,
             ),

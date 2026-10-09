@@ -10,6 +10,7 @@ from helpers.float_compare import assert_matches
 
 from relax.refinement import command_options, startup_noise
 from relax.refinement import full_refinement as driver
+from relax.refinement.half_inputs import HalfPair
 
 pytestmark = pytest.mark.unit
 
@@ -68,6 +69,8 @@ def test_startup_noise_preserves_order_and_float32_boundary(monkeypatch):
         dataset, source_rows=rows,
         optics_group_ids=optics, mask_params=(12., 3),
         optics_pixel_sizes=np.array([1.25]), output_dtype=np.float32, pair_counting="relion")
+    assert noise.half2 is noise.half1
+    noise = noise.half1
     assert len(calls) == 1
     assert radial.dtype == np.float64 and noise.dtype == np.float32
     assert_matches(radial, sigma[0] * 8**4)
@@ -81,7 +84,7 @@ def test_startup_noise_float64_output_for_double_scoring(monkeypatch):
     _radial, noise = startup_noise.prepare_startup_noise(
         SimpleNamespace(grid_size=8),         source_rows=np.arange(3), optics_group_ids=np.ones(3), mask_params=(12., 3),
         optics_pixel_sizes=np.array([1.25]), output_dtype=np.float64, pair_counting="relion")
-    assert noise.dtype == np.float64
+    assert noise.half1.dtype == np.float64
 
 
 
@@ -111,7 +114,7 @@ def test_class3d_startup_noise_has_one_spectrum_per_optics_group(monkeypatch):
     radial, noise = startup_noise.prepare_startup_noise(SimpleNamespace(grid_size=8),
                 source_rows=np.arange(3), optics_group_ids=np.array([1, 2, 1]), mask_params=(12., 3),
         optics_pixel_sizes=np.array([1.25, 1.25]), output_dtype=np.float32, pair_counting="relion")
-    assert radial.shape[0] == 2 and noise.shape[0] == 2
+    assert radial.shape[0] == 2 and noise.half1.shape[0] == 2
 
 
 def test_class3d_startup_noise_takes_unsplit_order(monkeypatch):
@@ -176,7 +179,7 @@ def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch, t
         arguments += ["--relion_init_dir", tmp_path / "model"]
         for name, function in dict(
             read_initial_model=lambda directory, *, n_classes: "model",
-            prepare_noise=lambda model, **kwargs: initial_model_replay.NoiseReplay(replayed_noise, [np.ones(9)], 16**4),
+            prepare_noise=lambda model, **kwargs: initial_model_replay.NoiseReplay(HalfPair.shared(replayed_noise), [np.ones(9)], 16**4),
             log_noise_source=lambda noise, *, log: None,
             prepare_prior=lambda model, **kwargs: np.full(4096, 3.0),
             read_controls=lambda model, *, log: initial_model_replay.InitialModelControls(1.0, 10.0),
@@ -191,4 +194,4 @@ def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch, t
         assert estimates[0].kwargs["pair_counting"] == pair_counting  # the command's option reaches the estimate
         assert_matches(np.asarray(inputs["init_noise_variance"]), np.asarray(estimates[0].result.pixel_variance))
     elif source == "model":
-        assert_matches(np.asarray(inputs["init_noise_variance"]), replayed_noise)
+        assert_matches(np.asarray(inputs["init_noise_variance"].half1), replayed_noise)
