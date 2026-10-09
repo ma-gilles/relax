@@ -2,9 +2,8 @@
 
 The iteration controller owns scheduling, state transitions, result-container
 lifetime and device offloading. These adapters choose existing engine routes,
-prepare per-half arguments and populate caller-owned result slots. Diagnostic
-BPref scopes surround the same calls as before; no array copies are introduced
-by the ownership boundary.
+prepare per-half arguments and populate caller-owned result slots. A diagnostic
+BPref scope surrounds each half's scoring call.
 """
 
 import logging
@@ -99,10 +98,6 @@ def _expand_significant_samples_to_full_parent_translations(
         )
         expanded.append(expanded_samples.astype(np.int64, copy=False))
     return expanded
-
-
-
-
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -619,12 +614,7 @@ def _score_half_dense_one_shape(
     execution: DenseExecutionPolicy,
     optics: OpticsSpec,
 ) -> HalfScoreResult:
-    """Dense (non-local-search) E+M scoring for one half-set.
-
-    The signature exposes per-half data, sampling, priors, batching, route
-    selection, execution controls and optics adaptations as cohesive owners.
-    Stable fields are read through those owners; only values changed by route
-    planning become local variables.
+    """Dense (non-local-search) E+M scoring for one half-set: its statistics, class summaries and poses.
 
     ``half.particles.optics_group_ids`` gives each image's row of a
     per-optics-group ``noise_variance_k`` table
@@ -637,23 +627,6 @@ def _score_half_dense_one_shape(
     matrices are divided by the scale and the backprojector keeps the reference
     model size; reported poses stay unscaled.
 
-    Used by both the single-pass (``else``) and adaptive-2-pass
-    (``elif use_adaptive``) branches of the half-set loop. The two modes
-    differ in four places, all controlled by explicit policy fields:
-
-    1. ``k_class_image_batch_size_override`` /
-       ``k_class_rotation_block_size_override`` — adaptive overrides
-       em_kwargs ibs/rbs to K-class values before firstiter_cc check.
-    2. ``significance_*_override`` — adaptive pass 1 may use a smaller
-       Fourier window than pass 2, so it needs its own memory-sized batches.
-    3. ``firstiter_coarse_current_size`` / ``firstiter_fine_current_size``
-       — adaptive passes ``coarse_cs`` / ``cs_for_engine`` through to the
-       adaptive 2-pass engine; single-pass omits them.
-    4. ``firstiter_log_label`` — single-pass uses
-       ``"(non-adaptive site) "`` for the routing log message.
-
-    Returns common statistics, class summaries and explicit poses together.
-    The controller records them at its existing half-update boundary.
     ``batching.safe_batch_sizes`` plans against memory available at invocation.
     """
 
@@ -964,7 +937,6 @@ def _score_half_dense_one_shape(
         mstep_full_half_axis=k1_adaptive_result.mstep_full_half_axis,
         mstep_accumulator_shape=getattr(k1_adaptive_result, "mstep_accumulator_shape", None),
     )
-
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1551,16 +1523,9 @@ def _score_half_local_one_shape(
 ) -> HalfScoreResult:
     """Local-search E+M scoring for one half-set.
 
-    Stable inputs remain under their data, sampling, prior, batching,
-    execution, diagnostic and optics owners. Only route-derived values become
-    locals inside this function.
-
     Routes through ``_run_local_search_iteration``. Local searches are K=1 only: Class3D keeps
     global searches, as RELION switches to local searches from the HEALPix order
     only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
-
-    Caller handles ``noise_stats_per_half[k]``, ``pose_rotations[k] = None``,
-    and ``coarse_ha[k] = ha_k`` from the returned ``HalfScoreResult``.
     """
 
     # RELION's convertAllSquaredDifferencesToWeights uses mymodel.pdf_direction
@@ -1631,8 +1596,7 @@ def _score_half_local_one_shape(
             int(sampling.translations.shape[0]),
             int(sampling.translations.shape[0]) * 4 ** int(sampling.search.oversampling_order),
         )
-    # Shared owners for one typed pass. Parent, denominator and final execution
-    # derive their intentional differences with ``replace`` below.
+    # One pass's operands; the parent, denominator and final passes ``replace`` the fields they change.
     local_data = LocalSearchData(
             experiment_dataset=half.particles.dataset,
             mean=half.reference,

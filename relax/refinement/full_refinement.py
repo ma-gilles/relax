@@ -1347,7 +1347,7 @@ def main(command=None):
                 run_options,
             ),
         )
-    # The options (with their replay slots) live no longer than the refinement, as before.
+    # The options (with their replay slots) live no longer than the refinement.
     del run_options, startup
 
     if run_file_writer is not None:

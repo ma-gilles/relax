@@ -1,4 +1,4 @@
-"""Subtomogram particles (RELION 5 2D stacks) as the units of a refinement half (S4.2).
+"""Subtomogram particles (RELION 5 2D stacks) as the units of a refinement half.
 
 RELION refines a subtomogram particle as one unit over its tilt images: every image is scored with
 its own projection matrix, CTF and noise, the images' diff2 is summed per particle, and the particle
@@ -1073,7 +1073,6 @@ def tilt_image_accuracy_inputs(half: TomoHalf) -> TiltImageAccuracyInputs:
         spherical_aberration=optics_column("rlnSphericalAberration"),
         amplitude_contrast=optics_column("rlnAmplitudeContrast"),
     )
-
 
 
 @dataclasses.dataclass(frozen=True)

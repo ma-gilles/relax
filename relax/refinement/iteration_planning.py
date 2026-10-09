@@ -224,7 +224,7 @@ def _optics_image_current_size(current_size: int, optics: RunOptics) -> int:
     unique_sizes = np.unique(remapped)
     if unique_sizes.size != 1:
         raise NotImplementedError(
-            "K=1 parity currently requires all optics groups to share one remapped "
+            "RELION parity requires all optics groups to share one remapped "
             f"image current size; got {remapped.tolist()}",
         )
     return int(unique_sizes[0])
@@ -607,7 +607,6 @@ def refresh_coarse_grids(
                 current_rotation_grid.healpix_order,
             )
 
-        # Regenerate translation grid based on updated parameters
         base_translations = sampling.relion_base_translation_grid(
             state.translation_range,
             state.translation_step,

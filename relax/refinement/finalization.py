@@ -71,7 +71,6 @@ from relax.relion.relion_metadata import relion_metadata_translations
 logger = logging.getLogger("relax.refinement.iteration_loop")
 
 
-
 def _should_run_final_all_data_iteration(
     *,
     logger,
@@ -406,8 +405,8 @@ def run_final_all_data(
             disable_adjoint_y=options.debug.disable_adjoint_y,
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             return_best_pose_details=not k_class_enabled,
-            # Unlike the numbered pass, the final pass keeps the BPREF signature off and RELION's CC support
-            # (REVIEW_DEEP #2: builder drift, a separate parity-checked item).
+            # Unlike the numbered pass, the final pass keeps the BPREF signature off and RELION's CC support:
+            # the two pass builders differ here, and no parity run has checked which one RELION follows.
             bpref_device_signature_active=False,
             debug_iteration=final_sampling.settings.relion_iteration,
             diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(

@@ -82,7 +82,6 @@ def auto_refine_noise_order(our_particles, relion_particles):
     return source_rows, optics_group_ids
 
 
-
 def class3d_noise_order(our_particles):
     """Return RELION Class3D's startup-noise source rows and optics labels.
 
@@ -99,7 +98,6 @@ def class3d_noise_order(our_particles):
     else:
         optics_group_ids = np.ones(source_rows.size, dtype=np.int64)
     return source_rows, optics_group_ids
-
 
 
 def whole_transform_power_spectrum(image_real: np.ndarray, n_shells: int) -> np.ndarray:
@@ -232,7 +230,6 @@ def estimate_startup_sigma2(
     return sigma2_per_group
 
 
-
 def prepare_startup_noise(
     dataset, *, source_rows, optics_group_ids, mask_params,
     optics_pixel_sizes, output_dtype, pair_counting,
@@ -281,7 +278,6 @@ def prepare_startup_noise(
     if n_optics_groups == 1:
         return StartupNoise(radial=radial[0], pixel_variance=noise[0])
     return StartupNoise(radial=radial, pixel_variance=noise)
-
 
 
 def scoring_noise_from_sigma2(

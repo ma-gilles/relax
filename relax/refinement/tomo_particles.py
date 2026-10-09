@@ -1,4 +1,4 @@
-"""Subtomogram particles as groups of tilt images (RELION 5 2D-stack tomography, S4).
+"""Subtomogram particles as groups of tilt images (RELION 5 2D-stack tomography).
 
 A particle is its visible tilt images. They share one pose hypothesis (rotation ``R``,
 3D shift ``t``), one class and one half set; every image has its own projection matrix
@@ -16,8 +16,6 @@ and optics group. Line numbers refer to RELION f2c1a38 (``git show HEAD:src/<fil
   sums once per particle (:2840-2846); noise and norm sums per image divided by the
   particle's image count (:3490-3491, :3512-3516), scale sums added as they are (:3474-3479);
   every image backprojected with the particle's weights (image loop from :2959).
-
-See PLAN.md "S4 design" in the cryo-ET coordination directory.
 """
 
 from __future__ import annotations

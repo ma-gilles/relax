@@ -416,13 +416,10 @@ class SnapshotCapture:
         significant_counts,
         avg_norm_correction,
     ) -> IterationSnapshot:
-        """Complete a checkpoint in the layout of the run's mode.
+        """Complete a checkpoint in the layout of the run's mode (``finish_class`` or ``finish_k1``).
 
-        This is the one remaining mode decision of checkpoint capture, to be
-        removed when the K=1 and Class3D trajectories call ``finish_k1`` and
-        ``finish_class`` directly. Each form takes its own mode's operands: the
-        caller passes ``None`` for the two FSC curves in Class3D and for the
-        two class operands in K=1, and those are not forwarded.
+        Each form takes its own mode's operands: the caller passes ``None`` for the two FSC curves in
+        Class3D and for the two class operands in K=1, and those are not forwarded.
         """
         if int(self.n_classes) > 1:
             return self.finish_class(

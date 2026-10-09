@@ -1,14 +1,14 @@
 """What ``refine_single_volume`` and ``run_final_all_data`` return: named records, one per concept.
 
-A run's result is a :class:`RefinementResult`. Its records hold the same objects the old flat result dict
-held, and no others besides the ``RefinementHistory`` the dict's trajectory entries were read from (rule 3:
-the history's other lists are host curves and owner lists of the same run, kilobytes). Every record is
+A run's result is a :class:`RefinementResult`. Its records hold the objects of the archive mapping and the
+``RefinementHistory`` its trajectory entries are read from (rule 3: the history's other lists are host curves
+and owner lists of the same run, kilobytes). Every record is
 frozen; that freezes the bindings only: no consumer may mutate the arrays, lists or the convergence state a
 record refers to.
 
 :meth:`RefinementResult.archive_fields` is the saved-format and report mapping (code rule 2): it returns
-exactly the flat dict each return site of the controller used to return, the same keys in the same order
-with the same values, absent keys absent per return path. The archive and report writers read it at their
+the flat dict of saved keys of the return site that built the result, in the saved order, with the keys a
+return path does not produce absent. The archive and report writers read it at their
 boundary; other consumers read the records' attributes.
 
 Lifetime: one run. The result is built at a return site of the controller and lives as long as its caller

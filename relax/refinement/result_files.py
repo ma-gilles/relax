@@ -407,18 +407,15 @@ def write_refinement_archive(
     save_dict["git_status_porcelain"] = np.asarray(git_provenance["status_porcelain"])
     save_dict["git_untracked_file_hashes"] = np.asarray(git_provenance["untracked_file_hashes"])
 
-    # Save final merged volume (Fourier space)
     save_dict["final_mean_ft"] = np.asarray(fields["mean"])
     setup_phase_seconds = _setup_phase_seconds(fields)
     if setup_phase_seconds:
         save_dict["setup_phase_names"] = np.asarray(list(setup_phase_seconds.keys()))
         save_dict["setup_phase_cumulative_s"] = np.asarray(list(setup_phase_seconds.values()), dtype=np.float64)
 
-    # Save per-half-set means
     for k in range(2):
         save_dict[f"half{k}_mean_ft"] = np.asarray(fields["means"][k])
 
-    # Save hard assignments
     for k in range(2):
         if fields["hard_assignments"][k] is not None:
             save_dict[f"hard_assignments_half{k}"] = np.asarray(fields["hard_assignments"][k])
@@ -475,9 +472,7 @@ def write_final_maps(
                     )
                     logger.info("Unfiltered half-%d volume saved", k + 1)
         else:
-            # K-class: maps.means[k] has shape (K, V); maps.class_means
-            # has shape (K, V) for the merged final iter; maps.mean is the
-            # class-weighted merged volume.
+            # K-class: one merged map per class (maps.class_means, shape (K, V)).
             class_means_arr = np.asarray(maps.class_means)
             for c in range(n_classes):
                 vol_real = _ft_to_real_volume(class_means_arr[c])

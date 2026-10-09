@@ -112,7 +112,6 @@ def resolve_firstiter_cc_tree_rescore_margin(
     return margin
 
 
-
 def resolve_initial_sampling(
     healpix_order: int,
     adaptive_oversampling: int,
@@ -361,7 +360,7 @@ def _continued_run_seed(args) -> int:
 
 
 def validate_tomo_args(args, frozen_boundary, double_image_preprocessing):
-    """Refuse options the subtomogram (2D-stack) path does not implement yet (S4.2)."""
+    """Refuse options the subtomogram (2D-stack) path does not implement."""
 
     if getattr(args, "skip_align", False):
         raise SystemExit("--skip_align is not implemented for subtomogram particles yet")

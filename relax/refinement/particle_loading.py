@@ -335,7 +335,7 @@ def load_particle_inputs(
     )
     shape_class_rows = None if tomo_run else optics_shape_class_rows(os.path.join(args.data_dir, "particles.star"))
     if tomo_run:
-        # RELION 5 subtomogram 2D stacks (S4.2): the units are the particles, each over its tilt images.
+        # RELION 5 subtomogram 2D stacks: the units are the particles, each over its tilt images.
         command_options.validate_tomo_args(args, frozen_boundary, _double_image_preprocessing)
         flat_star = os.path.join(args.output, "particles_2d.star")
         ds = load_tomo_dataset(

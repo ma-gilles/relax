@@ -212,15 +212,14 @@ def update_c1_sigma_offset_from_posterior(
     state_fallback_offsets_angstrom: float,
     offset_dims: int = 2,
 ) -> SigmaOffsetUpdateResult:
-    """The one remaining mode decision of the ``sigma_offset`` update.
+    """The ``sigma_offset`` update of the run's mode.
 
     Reads from ``per_half`` (the iteration's ``PerHalfOutputs``): ``noise_stats`` and, for Class3D,
     ``noise_stats_per_class``; from ``sigma_offset`` (the current ``SigmaOffset``): ``per_half_angstrom``.
 
     Class3D shares one pooled value between the halves and reports per-class
     values (``update_class_sigma_offset_from_posterior``); K=1 updates each
-    half-model on its own (``update_k1_sigma_offset_from_posterior``). Remove
-    this dispatch when the K1 and Class3D trajectories call those directly.
+    half-model on its own (``update_k1_sigma_offset_from_posterior``).
     """
 
     if n_classes > 1:
@@ -286,14 +285,12 @@ def _flat_noise_rows(noise_k):
     return noise_k.reshape(-1)
 
 
-
 def _mean_noise_variance(noise_variance_per_half):
     """Average per-half image noise for diagnostics and compatibility outputs."""
     return jnp.mean(
         jnp.stack([_flat_noise_rows(noise_k) for noise_k in noise_variance_per_half], axis=0),
         axis=0,
     )
-
 
 
 def _noise_radial_history(noise_variance_per_half, image_shape, *, dtype):
@@ -313,7 +310,6 @@ def _noise_radial_history(noise_variance_per_half, image_shape, *, dtype):
     per_half = [radial(noise_k) for noise_k in noise_variance_per_half]
     mean = jnp.asarray(np.mean(np.stack(per_half, axis=0), axis=0), dtype=dtype)
     return per_half, mean
-
 
 
 def _combined_noise_stats(noise_stats_per_half):
@@ -364,7 +360,6 @@ def _combined_noise_stats(noise_stats_per_half):
         wsum_noise_xa=wsum_noise_xa,
         array_dtype=jnp.float64,
     )
-
 
 
 def _per_optics_group_sigma2_noise(
@@ -701,12 +696,11 @@ def update_posterior_noise_variance(
     summed_current_size,
     nyquist_column_counting,
 ) -> NoiseUpdateResult:
-    """The one remaining mode decision of the noise update.
+    """The noise update of the run's mode.
 
     K-class refinement shares one sigma2_noise across classes
     (``update_class_posterior_noise_variance``); K=1 keeps independent
-    per-half sigma2_noise (``update_k1_posterior_noise_variance``). Remove
-    this dispatch when the K1 and Class3D trajectories call those directly.
+    per-half sigma2_noise (``update_k1_posterior_noise_variance``).
     """
 
     update = update_class_posterior_noise_variance if k_class_enabled else update_k1_posterior_noise_variance
