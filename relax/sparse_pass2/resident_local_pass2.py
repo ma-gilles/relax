@@ -1061,10 +1061,12 @@ def compute_local_search_resident(
             projection_transient_bytes=projection_block_rows * projection_row_bytes,
             fixed_bytes=accumulator_bytes,
             max_image_rows=rp.max_image_rows(tables.row_offsets),
-            # An image past the largest row class runs alone in row blocks of that class (single-class passes,
-            # _start_resident_local_chunk), as the global pass runs it (relax#49 follow-up).
+            # An image past the largest row class runs alone in row blocks of that class
+            # (_start_resident_local_chunk), as the global pass runs it (relax#49 follow-up).
             lone_row_bytes=(
-                rp.lone_chunk_row_bytes(int(n_fine_trans)) if tables.n_classes == 1 and not firstiter_cc else None
+                rp.lone_chunk_row_bytes(int(n_fine_trans), class_rows=tables.n_classes > 1)
+                if not firstiter_cc
+                else None
             ),
             **tile_pixels,
         )
@@ -2318,7 +2320,8 @@ def _start_resident_local_chunk(
     time, keeping only their ``[C_R, T]`` scores (:func:`~relax.sparse_pass2.resident_scoring.score_resident_chunk_in_row_blocks`,
     shared with the global pass), the posterior is formed over all of them at once, and each M-step block projects
     its own rows. Each row's projection and score are those of the one-call chunk; only the grouping of the
-    projector calls changes.
+    projector calls changes. In a Class3D pass each block's rows project with their own class's reference (the
+    lone image's rows are class-major, so a block spans few classes) and each class's M-step blocks with its own.
     """
 
     if lone_block_rows is not None:
@@ -2326,11 +2329,6 @@ def _start_resident_local_chunk(
             raise ResidentConfigurationUnsupported(
                 "an image past the largest local row class runs in row blocks, which the first-iteration "
                 "cross-correlation pass does not implement"
-            )
-        if class_projectors is not None:
-            raise ResidentConfigurationUnsupported(
-                "an image past the largest local row class runs in row blocks, which the Class3D local pass does "
-                "not implement"
             )
         if int(lone_block_rows) % int(mstep_block_rows) or int(chunk.row_capacity) % int(lone_block_rows):
             raise ValueError(
@@ -2446,7 +2444,21 @@ def _start_resident_local_chunk(
     )
     chunk_rotations = jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype)
 
-    def project_rows(rotations, n_valid_rows):
+    def project_rows(rotations, n_valid_rows, projector=None):
+        """Rows projected with the pass's reference, or with one Class3D class's ``projector``."""
+
+        if projector is not None:
+            return project_resident_live_rows(
+                projector.mean,
+                rotations,
+                image_shape,
+                volume_shape,
+                disc_type,
+                n_valid_rows=n_valid_rows,
+                relion_projector_half=projector.slab,
+                relion_projector_capacity_texture=projector.texture,
+                **projection_options,
+            )
         return project_resident_live_rows(
             mean,
             rotations,
@@ -2458,6 +2470,27 @@ def _start_resident_local_chunk(
             relion_projector_capacity_texture=relion_projector_capacity_texture,
             **projection_options,
         )
+
+    def project_score_block(start, stop):
+        """Score-window projections of chunk rows ``start:stop``, each row with its own class's reference."""
+
+        n_valid = max(0, min(int(chunk.n_valid_rows), stop) - start)
+        if class_projectors is None:
+            return project_rows(chunk_rotations[start:stop], n_valid)[0]
+        if n_valid == 0:
+            return jnp.zeros((stop - start, int(n_score_pixels)), dtype=precision_policy.score_complex_dtype)
+        (score_block, _, _), _ = _project_class_rows(
+            {"rotations": np.asarray(host_chunk["rotations"])[start:stop],
+             "row_class": np.asarray(host_chunk["row_class"])[start:stop]},
+            class_projectors,
+            image_shape=image_shape,
+            volume_shape=volume_shape,
+            disc_type=disc_type,
+            n_valid_rows=n_valid,
+            rotation_dtype=precision_policy.score_real_dtype,
+            projection_options=projection_options,
+        )
+        return score_block
 
     if lone_block_rows is not None:
         score_proj = recon_proj = recon_abs2 = None
@@ -2525,12 +2558,9 @@ def _start_resident_local_chunk(
         if lone_block_rows is not None:
 
             def block_reference(start):
-                stop = min(start + int(lone_block_rows), int(chunk.row_capacity))
                 # The projection window union covers both windows, so the block projects both; the planned
                 # largest-class chunk counts both.
-                return project_rows(
-                    chunk_rotations[start:stop], max(0, min(int(chunk.n_valid_rows), stop) - start)
-                )[0]
+                return project_score_block(start, min(start + int(lone_block_rows), int(chunk.row_capacity)))
 
             scored = score_resident_chunk_in_row_blocks(
                 block_reference,
@@ -2643,24 +2673,23 @@ def _start_resident_local_chunk(
             cuda_backproject=cuda_backproject,
         )
         # A class's M-step reads only its own rows' weights: the block walk's last block runs past the
-        # live rows, so the other classes' rows there must carry zero posterior, not theirs.
-        class_mstep_rows = []
-        for k in range(n_classes):
+        # live rows, so the other classes' rows there must carry zero posterior, not theirs. Each class's
+        # order is formed when its M-step runs, so one class's copy of the posterior lives at a time.
+        def class_mstep_rows(k):
             in_class = class_layout.row_class == k
-            class_mstep_rows.append(
-                _live_rows_first(
-                    jnp.where(in_class[:, None], row_posterior, jnp.float32(0.0)),
-                    row_is_valid & in_class,
-                    row_image_local,
-                    kernel_row_image_ids,
-                )
+            return _live_rows_first(
+                jnp.where(in_class[:, None], row_posterior, jnp.float32(0.0)),
+                row_is_valid & in_class,
+                row_image_local,
+                kernel_row_image_ids,
             )
-        mstep_rows, n_live_rows = class_mstep_rows[0]
+
+        mstep_rows = n_live_rows = None
 
     def finish(Ft_y_total, Ft_ctf_total, stats):
         """The chunk's M-step and statistics, added into the running accumulators."""
 
-        n_live_rows_host = int(n_live_rows)
+        n_live_rows_host = int(n_live_rows) if class_projectors is None else 0  # Class3D: summed over classes below
 
         # P3-G (default on): the three chunk-wide arrays go to the M-step entry
         # point whole and the block program gathers its rows inside the jit.
@@ -2669,15 +2698,18 @@ def _start_resident_local_chunk(
         # EMPIAR-10097 run that path took 2964 s against 2868 s (job 14550046).
         block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=True)
 
-        def run_mstep(rows, n_live, Ft_y, Ft_ctf):
+        def run_mstep(rows, n_live, Ft_y, Ft_ctf, projector=None):
             if lone_block_rows is not None:
                 # Each M-step block projects its own (live-first) rows: the lone image's projections never all
-                # live at once.
+                # live at once. A Class3D class's blocks hold its own rows (the others carry zero posterior), so
+                # they project with that class's reference.
                 chunk_projections = None
 
                 def block_projections(start, stop):
                     block_rows = rows.row_ids[start:stop]
-                    _, recon_block, abs2_block, _ = project_rows(chunk_rotations[block_rows], int(stop - start))
+                    _, recon_block, abs2_block, _ = project_rows(
+                        chunk_rotations[block_rows], int(stop - start), projector
+                    )
                     return recon_block, abs2_block, mstep_rotations[block_rows]
 
             elif block_row_program:
@@ -2735,8 +2767,14 @@ def _start_resident_local_chunk(
         else:
             Ft_y_total, Ft_ctf_total = list(Ft_y_total), list(Ft_ctf_total)
             class_terms = []
-            for k, (rows_k, n_live_k) in enumerate(class_mstep_rows):
-                Ft_y_total[k], Ft_ctf_total[k], *terms = run_mstep(rows_k, int(n_live_k), Ft_y_total[k], Ft_ctf_total[k])
+            for k, projector in enumerate(class_projectors):
+                rows_k, n_live_k = class_mstep_rows(k)
+                n_live_k = int(n_live_k)
+                n_live_rows_host += n_live_k
+                Ft_y_total[k], Ft_ctf_total[k], *terms = run_mstep(
+                    rows_k, n_live_k, Ft_y_total[k], Ft_ctf_total[k], projector
+                )
+                del rows_k
                 class_terms.append(terms)
             wavg_triplet_pixels, block_noise_shells, a2_per_image, xa_per_image, class_fields = _sum_class_mstep_terms(
                 class_terms,

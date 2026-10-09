@@ -1025,13 +1025,18 @@ def max_image_rows(row_offsets) -> int:
 _LONE_CHUNK_CELL_BYTES = 4 * 7 + 1
 
 
-def lone_chunk_row_bytes(n_fine_trans: int) -> int:
+def lone_chunk_row_bytes(n_fine_trans: int, *, class_rows: bool = False) -> int:
     """Device bytes each row of a lone overflow chunk keeps beyond its block (:func:`_run_lone_resident_chunk`).
 
     A row's projections live only while its block is scored or reconstructed;
     its ``T`` posterior cells and its row tables live for the whole chunk.
+    ``class_rows`` is the Class3D local pass's: one class's masked posterior
+    (``T`` float32 cells) while that class's M-step order is formed, and the
+    row's class and sub-segment ids.
     """
 
+    if class_rows:
+        return int(n_fine_trans) * (_LONE_CHUNK_CELL_BYTES + 4) + 64 + 8
     return int(n_fine_trans) * _LONE_CHUNK_CELL_BYTES + 64
 
 

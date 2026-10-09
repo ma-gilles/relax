@@ -1083,6 +1083,68 @@ def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_l
     assert rel_l2(whole.noise_stats.wsum_sigma2_noise, lone.noise_stats.wsum_sigma2_noise) < 1e-6
 
 
+@requires_resident_gpu
+def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_local_env):
+    """A Class3D local image past the largest row class runs alone in row blocks too: each block's rows project
+    with their own class's reference (a block spans the class boundary of the image's class-major rows), the
+    joint and per-class posteriors are formed over all rows at once, and each class's M-step blocks project with
+    that class's reference. The discrete outputs agree exactly and each class's accumulators within the
+    driver's repeat band, as for the single-class lone chunk."""
+
+    case = _case()
+    other_ft = _hermitian_volume(VOLUME_SHAPE, seed=29)
+    other_half, _ = _relion_projector(
+        np.asarray(ftu.get_idft3(np.asarray(other_ft).reshape(VOLUME_SHAPE)).real, dtype=np.float64),
+        IMAGE_SHAPE[0],
+    )
+    two = dict(
+        case,
+        volume=jnp.stack([case["volume"], jnp.asarray(other_ft)]),
+        projector_half=jnp.stack([case["projector_half"], other_half]),
+    )
+    whole = _run(two, monkeypatch=monkeypatch, n_classes=2).class_pass
+
+    block_classes = []
+    real_project = rlp._project_class_rows
+
+    def spy(host_chunk, *args, **kwargs):
+        block_classes.append(set(np.asarray(host_chunk["row_class"])[: int(kwargs["n_valid_rows"])].tolist()))
+        return real_project(host_chunk, *args, **kwargs)
+
+    monkeypatch.setattr(rlp, "_project_class_rows", spy)
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "8")
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
+    lone = _run(two, monkeypatch=monkeypatch, n_classes=2).class_pass
+
+    assert any(len(c) == 2 for c in block_classes), "no lone row block spanned the class boundary"
+
+    def rel_l2(a, b):
+        a = np.asarray(a, dtype=np.complex128)
+        b = np.asarray(b, dtype=np.complex128)
+        den = float(np.linalg.norm(a))
+        return float(np.linalg.norm(a - b) / den) if den else 0.0
+
+    for k in range(2):
+        assert_matches(np.asarray(whole.per_class_hard_assignments[k]), np.asarray(lone.per_class_hard_assignments[k]))
+        assert_matches(
+            np.asarray(whole.per_class_best_pose_rotations[k]), np.asarray(lone.per_class_best_pose_rotations[k])
+        )
+        assert np.max(
+            np.abs(np.asarray(whole.class_log_evidence_per_image[k]) - np.asarray(lone.class_log_evidence_per_image[k]))
+        ) < 1e-4
+        assert rel_l2(whole.Ft_y[k], lone.Ft_y[k]) < 1e-6
+        assert rel_l2(whole.Ft_ctf[k], lone.Ft_ctf[k]) < 1e-6
+    assert rel_l2(whole.noise_stats.wsum_sigma2_noise, lone.noise_stats.wsum_sigma2_noise) < 1e-6
+    assert np.max(np.abs(np.asarray(whole.stats.log_evidence_per_image) - np.asarray(lone.stats.log_evidence_per_image))) < 1e-4
+
+
+def test_class3d_lone_rows_count_the_class_posterior_copy():
+    """The Class3D local lone chunk counts one class's masked posterior copy and the class ids per row."""
+
+    plain = rp.lone_chunk_row_bytes(84)
+    assert rp.lone_chunk_row_bytes(84, class_rows=True) == plain + 84 * 4 + 8
+
+
 def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):
     """A 16 GB card's box-448 final pass had a 3.63 GiB chunk budget and a fixed 4 GiB projector call (relax#49);
     the call now takes at most half the budget. Large budgets keep the 4 GiB cap."""
