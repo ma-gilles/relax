@@ -83,7 +83,7 @@ def compute_final_halfmap_prior(
     if settings.solvent_correct_fsc:
         # RELION corrects the joined iteration's FSC too (ml_optimiser_mpi.cpp:4028, iter -1); its
         # final resolution is then "already with masking".
-        fsc = mean_helpers._solvent_corrected_fsc(
+        fsc = mean_helpers.solvent_corrected_fsc(
             numerators,
             denominators,
             settings,

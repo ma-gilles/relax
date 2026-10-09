@@ -1376,7 +1376,7 @@ def estimate_split_half_prior(
         fsc_clock.seconds,
     )
     if settings.solvent_correct_fsc:
-        current_iter_fsc = _solvent_corrected_fsc(
+        current_iter_fsc = solvent_corrected_fsc(
             numerators,
             denominators,
             settings,
@@ -1421,7 +1421,7 @@ def estimate_split_half_prior(
     )
 
 
-def _solvent_corrected_fsc(numerators, denominators, settings, *, current_size, accumulator_shape, label, like, log):
+def solvent_corrected_fsc(numerators, denominators, settings, *, current_size, accumulator_shape, label, like, log):
     """RELION's --solvent_correct_fsc curve in place of the backprojector FSC ``like``.
 
     The unregularised half maps are those relax writes as run_itNNN_half*_unfil.mrc

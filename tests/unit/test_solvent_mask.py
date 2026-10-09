@@ -215,7 +215,7 @@ def test_mask_file_reaches_the_internal_frame(tmp_path):
 
 def test_half_spectrum_fsc_depends_on_the_halved_axis():
     # RELION halves the FFTW spectrum along the map file's x axis; relax's internal frame is the file's
-    # transpose, so the corrected FSC is computed after transposing back (mean_helpers._solvent_corrected_fsc).
+    # transpose, so the corrected FSC is computed after transposing back (mean_helpers.solvent_corrected_fsc).
     half1, half2, mask = _maps()
     mask = mask * (1.0 + 0.3 * np.indices(mask.shape)[0] / mask.shape[0])  # break the mask's symmetry
     file_order = solvent_mask.real_space_fsc(half1 * mask, half2 * mask)

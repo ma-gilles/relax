@@ -83,7 +83,9 @@ class OpticsSpec:
 
 
 @dataclasses.dataclass(frozen=True)
-class _RowLayout:
+class RowLayout:
+    """The original dataset index of each of a half's local image rows."""
+
     rows: np.ndarray
 
     def original_image_indices_for_local(self, local):
@@ -110,7 +112,7 @@ class MultiShapeHalf:
         if not np.array_equal(np.sort(order), np.arange(self.n_units)):
             raise ValueError("shape classes must partition the half's images")
         # Particle-STAR row of each image, as a loaded dataset's index layout reports it.
-        self._index_layout = None if rows is None else _RowLayout(np.asarray(rows, dtype=np.int64))
+        self._index_layout = None if rows is None else RowLayout(np.asarray(rows, dtype=np.int64))
 
     def __getattr__(self, name):
         raise AttributeError(f"a half with several image shapes has no single {name!r}; use its shape classes")

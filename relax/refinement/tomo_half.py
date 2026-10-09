@@ -19,7 +19,7 @@ import numpy as np
 
 from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.refinement import tomo_particles
-from relax.refinement.optics_shapes import _RowLayout
+from relax.refinement.optics_shapes import RowLayout
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -259,7 +259,7 @@ class TomoHalf:
         ):
             raise ValueError("a tomo half needs one dataset image and one Aproj per tilt image")
         # Particle-STAR row of each unit, as a loaded dataset's index layout reports it.
-        self._index_layout = _RowLayout(np.asarray(rows, dtype=np.int64))
+        self._index_layout = RowLayout(np.asarray(rows, dtype=np.int64))
 
     def image_particle(self) -> np.ndarray:
         """Unit of every tilt image."""
