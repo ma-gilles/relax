@@ -96,6 +96,7 @@ from relax.relion.relion_projector_setup import (
     prepare_local_class_projector_slabs,
     prepare_local_projector_slab,
 )
+from relax.sparse_pass2 import local_search_records
 from relax.sparse_pass2 import resident_pass2 as rp
 from relax.sparse_pass2.resident_candidates import chunk_segment_offsets
 from relax.sparse_pass2.resident_local_layout import (
@@ -414,60 +415,24 @@ def _cap_row_capacity_ladder(
 
 
 def compute_local_search_resident(
-    experiment_dataset,
-    mean,
-    noise_variance,
+    data: local_search_records.LocalSearchData,
     local_layout,
-    disc_type,
+    kernel: local_search_records.LocalSearchKernelPolicy,
+    support: local_search_records.LocalSearchSupportPolicy,
     *,
-    current_size,
-    reconstruction_current_size=None,
-    wsum_current_size=None,
-    accumulate_noise=False,
-    projection_padding_factor=1,
-    reconstruction_padding_factor=1,
-    half_spectrum_scoring=False,
-    relion_exact_score_translation=False,
-    projection_relion_texture_interp=None,
-    projection_relion_acc_double_floorf_quirk=False,
-    projection_relion_kernel="fine",
-    relion_projector_half=None,
-    relion_projector_r_max=None,
-    use_float64_scoring=False,
-    use_float64_projections=False,
-    square_window=False,
-    image_corrections=None,
-    scale_corrections=None,
-    group_ids=None,
-    scale_correction_group_count=None,
-    scale_correction_data_vs_prior=None,
-    image_pre_shifts=None,
-    mstep_relion_x_half=False,
-    disable_adjoint_y=False,
-    disable_adjoint_ctf=False,
-    reconstruct_significant_only=False,
-    adaptive_fraction=0.999,
-    max_significants=-1,
-    return_best_pose_details=False,
-    return_reconstruction_sample_indices=False,
-    return_profile=False,
-    stats_use_reconstruction_probs=True,
-    relion_translation_angle_scale=1.0,
-    translation_prior_centers=None,
-    normalization_log_evidence=None,
-    source_faithful_spectrum_norm=False,
-    score_only=False,
-    optics_group_ids=None,
-    reconstruction_volume_current_size=None,
-    symmetry_label="C1",
-    reconstruction_image_radius=None,
-    nyquist_column_counting="relion",
-    firstiter_cc=False,
+    translation_prior_centers,
+    symmetry_label: str,
 ) -> LocalEMResult:
     """Run one K=1 local-search fine pass 2 on the device-resident stages.
 
-    ``noise_variance`` may be ``[G, P]`` rows of G optics groups with
-    ``optics_group_ids`` giving each image's row, and ``reconstruction_volume_current_size``
+    ``data`` holds the half's images, reference and per-image corrections, ``local_layout`` the
+    per-image candidate rows (:mod:`relax.local.local_layout`), ``kernel`` the window, projector and
+    optics choices and ``support`` the posterior support and what is returned
+    (:mod:`relax.sparse_pass2.local_search_records`). ``translation_prior_centers`` is each image's
+    translation-prior centre, or None.
+
+    ``data.noise_variance`` may be ``[G, P]`` rows of G optics groups with
+    ``data.optics_group_ids`` giving each image's row, and ``kernel.reconstruction_volume_current_size``
     keeps the backprojector on the reference model size for images on another grid,
     as in the global resident pass.
 
@@ -480,14 +445,14 @@ def compute_local_search_resident(
     the three arithmetic differences that are deliberate and for why the
     pass-1 parent probe is not routed here.
 
-    ``nyquist_column_counting`` is the consistency option of the per-image sums
+    ``kernel.nyquist_column_counting`` is the consistency option of the per-image sums
     (docs/math/relion_consistency_options.md): it changes the scoring weights and the image
     the noise statistics read, for the fine pass and its parent probe alike.
 
-    ``wsum_current_size`` is the weighted sums' image size when the fine pass scores below it
-    (``--strict_highres_exp``), as in :func:`resident_pass2._resident_pass2`; None is ``current_size``.
+    ``kernel.wsum_current_size`` is the weighted sums' image size when the fine pass scores below it
+    (``--strict_highres_exp``), as in :func:`resident_pass2._resident_pass2`; None is ``kernel.current_size``.
 
-    ``firstiter_cc`` is RELION's ``--firstiter_cc`` iteration of a search that is local from its
+    ``kernel.firstiter_cc`` is RELION's ``--firstiter_cc`` iteration of a search that is local from its
     first iteration (``--sigma_ang``): both the parent probe and the fine pass score the
     normalized CC and keep only each image's best hidden variable (ml_optimiser.cpp:9266-9292),
     as the global ``--firstiter_cc`` pass does (resident_pass2 ``_resident_chunk_posterior_firstiter_cc``).
@@ -498,18 +463,19 @@ def compute_local_search_resident(
     from relax.cuda import kernels as em_cuda_kernels
 
     overall_t0 = time.time()
-    image_shape = experiment_dataset.image_shape
-    volume_shape = experiment_dataset.volume_shape
+    image_shape = data.experiment_dataset.image_shape
+    volume_shape = data.experiment_dataset.volume_shape
     # Anisotropic magnification: the M-step clips on RELION's rotated radius (adjoint.ReferenceSphereClip).
-    anisotropic_magnification = dataset_magnification_is_anisotropic(experiment_dataset)
+    anisotropic_magnification = dataset_magnification_is_anisotropic(data.experiment_dataset)
 
-    if current_size is None:
-        # The resident drivers score RELION's window at every size, the box included
-        # (window_at_box below), so the full box is an explicit current size here.
-        current_size = int(experiment_dataset.image_shape[0])
-    wsum_current_size = current_size if wsum_current_size is None else int(wsum_current_size)
-    score_mode = "normalized_cc" if firstiter_cc else "gaussian"
-    if firstiter_cc and local_layout.n_classes > 1:
+    # The resident drivers score RELION's window at every size, the box included
+    # (window_at_box below), so the full box is an explicit current size here.
+    current_size = (
+        int(data.experiment_dataset.image_shape[0]) if kernel.current_size is None else kernel.current_size
+    )
+    wsum_current_size = current_size if kernel.wsum_current_size is None else int(kernel.wsum_current_size)
+    score_mode = "normalized_cc" if kernel.firstiter_cc else "gaussian"
+    if kernel.firstiter_cc and local_layout.n_classes > 1:
         raise ResidentConfigurationUnsupported(
             "the local --firstiter_cc iteration is K=1: RELION's Class3D CC iteration scores one reference"
         )
@@ -524,16 +490,16 @@ def compute_local_search_resident(
         ) = _pass2_window_setup(
             image_shape,
             current_size=current_size,
-            reconstruction_current_size=reconstruction_current_size,
-            half_spectrum_scoring=half_spectrum_scoring,
-            square_window=square_window,
+            reconstruction_current_size=kernel.reconstruction_current_size,
+            half_spectrum_scoring=kernel.half_spectrum_scoring,
+            square_window=kernel.square_window,
             relion_firstiter_score_mode=score_mode,
-            use_exact_relion_gaussian=not firstiter_cc,
-            use_float64_scoring=use_float64_scoring,
+            use_exact_relion_gaussian=not kernel.firstiter_cc,
+            use_float64_scoring=kernel.use_float64_scoring,
             # RELION's window at every size, including the box (a shape class reaches its
             # box before the reference does): the resident driver never scores a full half.
             window_at_box=True,
-            reference_sphere_clip=reconstruction_image_radius is not None or anisotropic_magnification,
+            reference_sphere_clip=kernel.reconstruction_image_radius is not None or anisotropic_magnification,
         )
     except NotImplementedError as exc:
         # Reported before any device work, like require_resident_local_configuration.
@@ -545,37 +511,37 @@ def compute_local_search_resident(
     # deterministic float64 norm reduction. It does not switch on RELION's
     # exact BPref operands here, because the exact local engine never enables
     # those on its production path.
-    resolved_spectrum_norm = bool(source_faithful_spectrum_norm)
-    scale_groups_available = group_ids is not None
+    resolved_spectrum_norm = bool(kernel.source_faithful_spectrum_norm)
+    scale_groups_available = data.group_ids is not None
     relion_wavg_atomic_scale_aa = bool(
-        accumulate_noise
+        kernel.accumulate_noise
         and scale_groups_available
         and parse_env_flag(_RELION_WAVG_ATOMIC_SCALE_AA_ENV, default=True)
     )
     relion_wavg_atomic_direct_noise, relion_wavg_atomic_direct_norm = _relion_wavg_direct_modes(
-        accumulate_noise=bool(accumulate_noise),
+        accumulate_noise=bool(kernel.accumulate_noise),
         scale_groups_available=scale_groups_available,
         scale_aa_enabled=bool(relion_wavg_atomic_scale_aa),
         direct_noise_only_default=True,
     )
     require_resident_local_configuration(
-        score_only=score_only,
-        disable_adjoint_y=disable_adjoint_y,
-        disable_adjoint_ctf=disable_adjoint_ctf,
-        mstep_relion_x_half=mstep_relion_x_half,
-        accumulate_noise=accumulate_noise,
-        reconstruct_significant_only=reconstruct_significant_only,
-        max_significants=max_significants,
-        stats_use_reconstruction_probs=stats_use_reconstruction_probs,
-        use_float64_scoring=use_float64_scoring,
-        use_float64_projections=use_float64_projections,
-        relion_exact_score_translation=relion_exact_score_translation,
-        half_spectrum_scoring=half_spectrum_scoring,
-        relion_projector_half=relion_projector_half,
-        relion_projector_r_max=relion_projector_r_max,
-        normalization_log_evidence=normalization_log_evidence,
-        return_reconstruction_sample_indices=return_reconstruction_sample_indices,
-        group_ids=group_ids,
+        score_only=support.score_only,
+        disable_adjoint_y=support.disable_adjoint_y,
+        disable_adjoint_ctf=support.disable_adjoint_ctf,
+        mstep_relion_x_half=support.mstep_relion_x_half,
+        accumulate_noise=kernel.accumulate_noise,
+        reconstruct_significant_only=support.reconstruct_significant_only,
+        max_significants=support.applied_max_significants,
+        stats_use_reconstruction_probs=support.stats_use_reconstruction_probs,
+        use_float64_scoring=kernel.use_float64_scoring,
+        use_float64_projections=kernel.use_float64_projections,
+        relion_exact_score_translation=kernel.relion_exact_score_translation,
+        half_spectrum_scoring=kernel.half_spectrum_scoring,
+        relion_projector_half=kernel.relion_projector_half,
+        relion_projector_r_max=kernel.relion_projector_r_max,
+        normalization_log_evidence=support.normalization_log_evidence,
+        return_reconstruction_sample_indices=support.return_reconstruction_sample_indices,
+        group_ids=data.group_ids,
         use_window=budget_window_spec.use_window,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
         relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
@@ -589,7 +555,7 @@ def compute_local_search_resident(
     # ---- candidate rows ---------------------------------------------------
     # Read after the configuration checks, so a pass the driver refuses touches
     # nothing of the dataset beyond its shapes.
-    n_images = int(experiment_dataset.n_units)
+    n_images = int(data.experiment_dataset.n_units)
     table_t0 = time.time()
     tables = tables_from_local_layout(
         local_layout, rotation_dtype=precision_policy.score_real_dtype
@@ -607,13 +573,13 @@ def compute_local_search_resident(
 
     # ---- window, weights and lookups --------------------------------------
     window_setup = _sparse_pass2_window_setup(
-        experiment_dataset,
-        disc_type=disc_type,
+        data.experiment_dataset,
+        disc_type=kernel.disc_type,
         image_shape=image_shape,
         current_size=current_size,
         n_half=n_half,
         mstep_current_size=mstep_current_size,
-        square_window=square_window,
+        square_window=kernel.square_window,
         window_spec_kwargs=window_spec_kwargs,
         use_relion_x_half_mstep=True,
         log_label="Resident local pass-2",
@@ -631,10 +597,10 @@ def compute_local_search_resident(
     half_weights, half_weights_windowed = _pass2_half_weights(
         image_shape,
         window_spec,
-        half_spectrum_scoring=half_spectrum_scoring,
+        half_spectrum_scoring=kernel.half_spectrum_scoring,
         relion_firstiter_score_mode=score_mode,
-        use_float64_scoring=use_float64_scoring,
-        nyquist_column_counting=nyquist_column_counting,
+        use_float64_scoring=kernel.use_float64_scoring,
+        nyquist_column_counting=kernel.nyquist_column_counting,
     )
     del half_weights
     relion_score_full_to_compact = jnp.asarray(
@@ -649,14 +615,14 @@ def compute_local_search_resident(
     # where the exact engine picks the f32 kernel. That is a different
     # computation and twice the memory on the largest per-chunk array.
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
-        noise_variance, image_shape
+        data.noise_variance, image_shape
     ).squeeze().astype(precision_policy.score_real_dtype)
     n_optics_groups = 1 if noise_variance_half.ndim == 1 else int(noise_variance_half.shape[0])
     optics_groups_np = None
     if n_optics_groups > 1:
-        if optics_group_ids is None:
+        if data.optics_group_ids is None:
             raise ValueError("a per-optics-group noise table needs optics_group_ids")
-        optics_groups_np = np.asarray(optics_group_ids, dtype=np.int32).reshape(-1)
+        optics_groups_np = np.asarray(data.optics_group_ids, dtype=np.int32).reshape(-1)
         if optics_groups_np.shape != (n_images,) or np.any(optics_groups_np < 0) or np.any(
             optics_groups_np >= n_optics_groups
         ):
@@ -669,7 +635,7 @@ def compute_local_search_resident(
         image_shape,
         enabled=True,
         dtype=np.float32,
-        angle_scale=relion_translation_angle_scale,
+        angle_scale=kernel.relion_translation_angle_scale,
     )
     if relion_score_translation_angles is None:
         raise ValueError("the resident local scorer requires RELION translation angles")
@@ -699,18 +665,18 @@ def compute_local_search_resident(
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
     # Class3D masks each class's scale sums by its own data_vs_prior_class
     # (acc_ml_optimiser_impl.h:4893-4912): ``[K, n_shells]``, or one curve for every class.
-    scale_dvp_by_class = [scale_correction_data_vs_prior] * tables.n_classes
+    scale_dvp_by_class = [data.scale_correction_data_vs_prior] * tables.n_classes
     if (
         tables.n_classes > 1
-        and scale_correction_data_vs_prior is not None
-        and np.ndim(scale_correction_data_vs_prior) == 2
+        and data.scale_correction_data_vs_prior is not None
+        and np.ndim(data.scale_correction_data_vs_prior) == 2
     ):
-        if int(np.shape(scale_correction_data_vs_prior)[0]) != tables.n_classes:
+        if int(np.shape(data.scale_correction_data_vs_prior)[0]) != tables.n_classes:
             raise ValueError(
                 f"scale_correction_data_vs_prior must be one curve or ({tables.n_classes}, n_shells), "
-                f"got {np.shape(scale_correction_data_vs_prior)}"
+                f"got {np.shape(data.scale_correction_data_vs_prior)}"
             )
-        scale_dvp_by_class = [np.asarray(scale_correction_data_vs_prior)[k] for k in range(tables.n_classes)]
+        scale_dvp_by_class = [np.asarray(data.scale_correction_data_vs_prior)[k] for k in range(tables.n_classes)]
     scale_correction_pixel_mask = _relion_scale_correction_pixel_mask(
         scale_dvp_by_class[0],
         shell_indices_noise,
@@ -736,24 +702,24 @@ def compute_local_search_resident(
             )
         class_scale_masks_rect = jnp.asarray(class_masks_np)
     group_ids_np, n_scale_groups = prepare_scale_correction_groups(
-        group_ids, scale_correction_group_count, n_images=n_images
+        data.group_ids, data.scale_correction_group_count, n_images=n_images
     )
 
     # ---- accumulator layout (identical to the exact engine's x-half BPref) -
     volume_current_size = (
         mstep_current_size
-        if reconstruction_volume_current_size is None
-        else int(reconstruction_volume_current_size)
+        if kernel.reconstruction_volume_current_size is None
+        else int(kernel.reconstruction_volume_current_size)
     )
     recon_volume_shape = relion_backprojector_volume_shape(
         volume_shape,
-        reconstruction_padding_factor,
+        kernel.reconstruction_padding_factor,
         current_size=volume_current_size,
     )
     recon_accum_shape = half_volume_accumulator_shape(recon_volume_shape)
     recon_volume_size = int(np.prod(recon_accum_shape))
     recon_y_accum_dtype, recon_ctf_accum_dtype = relion_x_half_mstep_accumulator_dtypes(
-        experiment_dataset.dtype,
+        data.experiment_dataset.dtype,
         use_relion_x_half_mstep=True,
     )
     # ---- projection setup -------------------------------------------------
@@ -769,7 +735,7 @@ def compute_local_search_resident(
     # a different computation and a differently timed one than its control.
     # Do exactly what the exact local engine does.
     relion_projector_half = cast_relion_projector_for_execution(
-        relion_projector_half, use_float64_projections=use_float64_projections
+        kernel.relion_projector_half, use_float64_projections=kernel.use_float64_projections
     )
     class_slabs = None
     if tables.n_classes == 1:
@@ -786,7 +752,7 @@ def compute_local_search_resident(
         "(the exact local engine's execution precision)",
         relion_projector_half.dtype,
         tuple(relion_projector_half.shape),
-        relion_projector_r_max,
+        kernel.relion_projector_r_max,
     )
     projection_kwargs = _projection_kwargs_for_relion_score_window(
         window_spec.projection_kwargs(return_abs2=False),
@@ -796,13 +762,13 @@ def compute_local_search_resident(
     # The exact local engine passes all four of these to the same projector;
     # ``relion_texture_interp=None`` means "resolve as strict parity does",
     # which is RELION's CUDA texture interpolator.
-    projection_kwargs["relion_texture_interp"] = projection_relion_texture_interp
+    projection_kwargs["relion_texture_interp"] = kernel.projection_relion_texture_interp
     projection_kwargs["relion_acc_double_floorf_quirk"] = bool(
-        projection_relion_acc_double_floorf_quirk
+        kernel.projection_relion_acc_double_floorf_quirk
     )
     projection_kwargs["force_jax"] = False
     projection_kwargs["mask_current_image_disk"] = False
-    projection_kwargs["relion_kernel"] = projection_relion_kernel
+    projection_kwargs["relion_kernel"] = kernel.projection_relion_kernel
     # The pixels the projector computes for a chunk's rows: the two windows,
     # not the full half spectrum (10202 box 800: ~155k of 320,800 px per row).
     window_union = (
@@ -825,8 +791,8 @@ def compute_local_search_resident(
     # texture once per iteration.
     capacity_texture = _open_capacity_texture(
         relion_projector_half,
-        relion_projector_r_max=relion_projector_r_max,
-        projection_padding_factor=projection_padding_factor,
+        relion_projector_r_max=kernel.relion_projector_r_max,
+        projection_padding_factor=kernel.projection_padding_factor,
         projection_kwargs=projection_kwargs,
     )
     class_textures = [capacity_texture]
@@ -835,8 +801,8 @@ def compute_local_search_resident(
             class_textures += [
                 _open_capacity_texture(
                     slab,
-                    relion_projector_r_max=relion_projector_r_max,
-                    projection_padding_factor=projection_padding_factor,
+                    relion_projector_r_max=kernel.relion_projector_r_max,
+                    projection_padding_factor=kernel.projection_padding_factor,
                     projection_kwargs=projection_kwargs,
                 )
                 for slab in class_slabs[1:]
@@ -851,7 +817,7 @@ def compute_local_search_resident(
         if class_slabs is not None:
             class_projectors = tuple(
                 _ClassProjector(
-                    mean=mean[k],
+                    mean=data.mean[k],
                     slab=slab if texture is None else jax.ShapeDtypeStruct(slab.shape, slab.dtype),
                     texture=texture,
                 )
@@ -865,11 +831,11 @@ def compute_local_search_resident(
             config=config,
             n_trans=n_fine_trans,
             score_with_masked_images=True,
-            half_spectrum_scoring=half_spectrum_scoring,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            image_pre_shifts=image_pre_shifts,
-            use_float64_scoring=use_float64_scoring,
+            half_spectrum_scoring=kernel.half_spectrum_scoring,
+            image_corrections=data.image_corrections,
+            scale_corrections=data.scale_corrections,
+            image_pre_shifts=data.image_pre_shifts,
+            use_float64_scoring=kernel.use_float64_scoring,
             score_only=False,
             score_mode=score_mode,
             window_indices=window_indices,
@@ -879,24 +845,24 @@ def compute_local_search_resident(
             return_windowed_shifted=windowed_prepare,
             # The --firstiter_cc iteration takes RELION's exact normalized-CC operands, as the
             # global K=1 CC pass does (k_class: relion_exact_fine_normalized_cc for one class).
-            relion_exact_normalized_cc_operands=bool(firstiter_cc),
+            relion_exact_normalized_cc_operands=bool(kernel.firstiter_cc),
             # The exact local engine runs its production path with the plain
             # ``CTF^2 / sigma2`` operand order, not RELION's RFLOAT-square order,
             # so keep that here rather than silently switching operand families.
             # Datasets whose CTF needs the optics table (CTF-premultiplied images,
             # even Zernike terms, magnification) take the exact family, the only one
             # built from relax's exact RELION CTF rows, as the global pass 2 does.
-            relion_exact_bpref_operands=dataset_needs_exact_ctf(experiment_dataset),
+            relion_exact_bpref_operands=dataset_needs_exact_ctf(data.experiment_dataset),
             noise_optics_groups=optics_groups_np,
         )
-        if nyquist_column_counting != "relion":
-            bucket_io_kwargs["nyquist_column_counting"] = nyquist_column_counting
-        if score_only:
+        if kernel.nyquist_column_counting != "relion":
+            bucket_io_kwargs["nyquist_column_counting"] = kernel.nyquist_column_counting
+        if support.score_only:
             # RELION's pass 1 (the local adaptive parent probe): score, posterior and
             # significance only, no M-step and no accumulators. See _run_resident_parent_probe.
             return _run_resident_parent_probe(
                 tables=tables,
-                experiment_dataset=experiment_dataset,
+                experiment_dataset=data.experiment_dataset,
                 bucket_io_kwargs=dict(bucket_io_kwargs, score_only=True),
                 fine_translation_prior_2d=np.asarray(
                     tables.translation_log_prior, dtype=precision_policy.score_real_dtype
@@ -905,27 +871,29 @@ def compute_local_search_resident(
                 full_to_compact=relion_score_full_to_compact,
                 translation_angles=relion_score_translation_angles,
                 n_score_pixels=int(n_windowed),
-                mean=mean,
+                mean=data.mean,
                 volume_shape=volume_shape,
-                disc_type=disc_type,
+                disc_type=kernel.disc_type,
                 projection_kwargs=projection_kwargs,
-                projection_padding_factor=projection_padding_factor,
+                projection_padding_factor=kernel.projection_padding_factor,
                 relion_projector_half=relion_projector_half,
-                relion_projector_r_max=relion_projector_r_max,
+                relion_projector_r_max=kernel.relion_projector_r_max,
                 relion_projector_capacity_texture=capacity_texture,
                 class_projectors=class_projectors,
                 precision_policy=precision_policy,
                 n_fine_trans=n_fine_trans,
-                adaptive_fraction=float(adaptive_fraction),
+                adaptive_fraction=float(support.adaptive_fraction),
                 windowed_prepare=windowed_prepare,
                 window_indices=window_indices,
                 image_shape=image_shape,
                 current_size=current_size,
                 source_faithful_spectrum_norm=resolved_spectrum_norm,
-                return_profile=return_profile,
+                return_profile=support.return_profile,
                 overall_t0=overall_t0,
-                max_significants=-1 if max_significants is None else int(max_significants),
-                firstiter_cc=bool(firstiter_cc),
+                max_significants=(
+                    -1 if support.applied_max_significants is None else int(support.applied_max_significants)
+                ),
+                firstiter_cc=bool(kernel.firstiter_cc),
                 window_union=(
                     projection_window_union(
                         window_indices,
@@ -960,7 +928,7 @@ def compute_local_search_resident(
         # The --firstiter_cc iteration scores the translated corrected score tile, which only
         # the pre-shifted family prepares (resident_pass2 refuses unshifted operands for it too).
         operand_route = {
-            "unshifted": (not firstiter_cc) and _unshifted_operands_route(
+            "unshifted": (not kernel.firstiter_cc) and _unshifted_operands_route(
                 bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
             )
         }
@@ -1001,7 +969,7 @@ def compute_local_search_resident(
             n_recon_pixels=n_recon_windowed,
             n_rect_pixels=n_rect,
             n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
-            normalized_cc=bool(firstiter_cc),
+            normalized_cc=bool(kernel.firstiter_cc),
             masked_scoring=True,
         )
         image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
@@ -1135,8 +1103,8 @@ def compute_local_search_resident(
 
         scale_corrections_np = (
             None
-            if scale_corrections is None
-            else np.asarray(scale_corrections, dtype=precision_policy.score_real_dtype)
+            if data.scale_corrections is None
+            else np.asarray(data.scale_corrections, dtype=precision_policy.score_real_dtype)
         )
         translation_prior_centers_np = None
         if translation_prior_centers is not None:
@@ -1173,28 +1141,28 @@ def compute_local_search_resident(
                 chunk,
                 tables=tables,
                 posterior_bins=row_posterior_bin,
-                experiment_dataset=experiment_dataset,
+                experiment_dataset=data.experiment_dataset,
                 bucket_io_kwargs=bucket_io_kwargs,
                 fine_translation_prior_2d=fine_translation_prior_2d,
                 half_weights=half_weights_windowed,
                 full_to_compact=relion_score_full_to_compact,
                 translation_angles=relion_score_translation_angles,
                 n_score_pixels=int(n_windowed),
-                mean=mean,
+                mean=data.mean,
                 volume_shape=volume_shape,
-                disc_type=disc_type,
+                disc_type=kernel.disc_type,
                 projection_kwargs=projection_kwargs,
                 projection_block_rows=projection_block_rows,
-                projection_padding_factor=projection_padding_factor,
+                projection_padding_factor=kernel.projection_padding_factor,
                 relion_projector_half=relion_projector_half,
-                relion_projector_r_max=relion_projector_r_max,
+                relion_projector_r_max=kernel.relion_projector_r_max,
                 precision_policy=precision_policy,
                 n_fine_trans=n_fine_trans,
                 n_recon_windowed=n_recon_windowed,
                 n_rect=n_rect,
                 mstep_block_rows=mstep_block_rows,
-                adaptive_fraction=float(adaptive_fraction),
-                keep_all_weights=not bool(reconstruct_significant_only),
+                adaptive_fraction=float(support.adaptive_fraction),
+                keep_all_weights=not bool(support.reconstruct_significant_only),
                 windowed_prepare=windowed_prepare,
                 window_indices=window_indices,
                 recon_window_indices=recon_window_indices,
@@ -1207,7 +1175,7 @@ def compute_local_search_resident(
                 wsum_current_size=wsum_current_size,
                 mstep_current_size=volume_current_size,
                 mstep_max_r=mstep_adjoint_max_r(
-                    volume_current_size, reconstruction_image_radius, reconstruction_padding_factor,
+                    volume_current_size, kernel.reconstruction_image_radius, kernel.reconstruction_padding_factor,
                     anisotropic_magnification=anisotropic_magnification,
                 ),
                 recon_volume_shape=recon_volume_shape,
@@ -1219,14 +1187,14 @@ def compute_local_search_resident(
                 scale_corrections_np=scale_corrections_np,
                 translation_prior_centers_np=translation_prior_centers_np,
                 fine_translations=fine_translations,
-                voxel_size=experiment_dataset.voxel_size,
-                accumulate_noise=accumulate_noise,
+                voxel_size=data.experiment_dataset.voxel_size,
+                accumulate_noise=kernel.accumulate_noise,
                 source_faithful_spectrum_norm=resolved_spectrum_norm,
                 stats_config=stats_config,
                 image_tables=image_tables,
                 cuda_backproject=em_cuda_kernels,
                 operand_route=operand_route,
-                firstiter_cc=bool(firstiter_cc),
+                firstiter_cc=bool(kernel.firstiter_cc),
                 relion_projector_capacity_texture=capacity_texture,
                 class_projectors=class_projectors,
                 class_scale_masks_rect=class_scale_masks_rect,
@@ -1320,7 +1288,7 @@ def compute_local_search_resident(
     )
 
     best_pose_rotations = best_pose_translations = best_pose_rotation_ids = None
-    if return_best_pose_details:
+    if support.return_best_pose_details:
         best_pose_rotations = np.asarray(tables.rotations)[best_row]
         best_pose_translations = np.asarray(tables.translation_grid)[best_translation]
         best_pose_rotation_ids = tables.row_rotation_id[best_row].astype(np.int64)
@@ -1329,7 +1297,7 @@ def compute_local_search_resident(
     )
 
     profile = None
-    if return_profile:
+    if support.return_profile:
         profile = {
             "resident_local_chunks": np.int32(len(chunks)),
             "resident_local_rows": np.int64(tables.n_rows),

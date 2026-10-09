@@ -82,3 +82,10 @@ class LocalSearchSupportPolicy:
     stats_use_reconstruction_probs: bool = False
     score_only: bool = False
     return_profile: bool
+
+    @property
+    def applied_max_significants(self) -> int | None:
+        """RELION's ``maximum_significants`` cap on this pass's support: ``max_significants`` when the pass
+        applies it (``apply_max_significants_to_support``, the pass-1 parent probe), else -1 (no cap)."""
+
+        return self.max_significants if self.apply_max_significants_to_support else -1

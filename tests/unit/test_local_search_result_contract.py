@@ -18,10 +18,9 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
     profile = {"reconstruction_sample_indices_by_image": (np.array([1]), np.array([2]))}
     stats = object()
 
-    def run_local(*args, **kwargs):
-        assert kwargs["return_reconstruction_sample_indices"] is True
-        assert kwargs["return_profile"] == return_profile
-        assert "return_significant_counts" not in kwargs
+    def run_local(data, layout, kernel, support, **kwargs):
+        assert support.return_reconstruction_sample_indices is True
+        assert support.return_profile == return_profile
         return LocalEMResult(
             Ft_y=np.zeros(8, dtype=np.complex64),
             Ft_ctf=np.ones(8, dtype=np.float32),
@@ -77,7 +76,7 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
     scale, rp, step = 1.12, 0.29753, 15.0
     seen = {}
 
-    def run_local(dataset, mean, noise, layout, *args, **kwargs):
+    def run_local(data, layout, *args, **kwargs):
         seen["layout"] = layout
         return LocalEMResult(
             Ft_y=np.zeros(8, dtype=np.complex64),

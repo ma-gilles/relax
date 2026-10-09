@@ -3368,15 +3368,12 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
             translation_log_priors=np.zeros((1, np.asarray(translations).shape[0]), dtype=dtype),
         )
 
-    def fake_resident_local_search(*args, **kwargs):
-        _ = args
-        captured["reconstruct_significant_only"] = kwargs.get("reconstruct_significant_only")
-        captured["adaptive_fraction"] = kwargs.get("adaptive_fraction")
-        captured["max_significants"] = kwargs.get("max_significants")
-        captured["use_float64_scoring"] = kwargs.get("use_float64_scoring")
-        captured["relion_exact_score_translation"] = kwargs.get(
-            "relion_exact_score_translation"
-        )
+    def fake_resident_local_search(data, layout, kernel, support, **kwargs):
+        captured["reconstruct_significant_only"] = support.reconstruct_significant_only
+        captured["adaptive_fraction"] = support.adaptive_fraction
+        captured["max_significants"] = support.applied_max_significants
+        captured["use_float64_scoring"] = kernel.use_float64_scoring
+        captured["relion_exact_score_translation"] = kernel.relion_exact_score_translation
         output = LocalEMResult(
             Ft_y=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
             Ft_ctf=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
@@ -3455,11 +3452,9 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
     class DispatchCaptured(Exception):
         pass
 
-    def capture_dispatch(*args, **kwargs):
-        captured["layout"] = args[3]
-        captured["relion_exact_score_translation"] = kwargs.get(
-            "relion_exact_score_translation"
-        )
+    def capture_dispatch(data, layout, kernel, support, **kwargs):
+        captured["layout"] = layout
+        captured["relion_exact_score_translation"] = kernel.relion_exact_score_translation
         raise DispatchCaptured
 
     monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", capture_dispatch)
@@ -3524,9 +3519,8 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
     captured = {}
     normalization_log_evidence = np.array([1.25, 2.5], dtype=np.float64)
 
-    def fake_resident_local_search(*args, **kwargs):
-        _ = args
-        captured.update(kwargs)
+    def fake_resident_local_search(data, layout, kernel, support, **kwargs):
+        captured["normalization_log_evidence"] = support.normalization_log_evidence
         return LocalEMResult(
             Ft_y=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
             Ft_ctf=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
@@ -3586,9 +3580,8 @@ def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkey
     )
     captured = {}
 
-    def fake_resident_local_search(*args, **kwargs):
-        _ = args
-        captured["stats_use_reconstruction_probs"] = kwargs["stats_use_reconstruction_probs"]
+    def fake_resident_local_search(data, layout, kernel, support, **kwargs):
+        captured["stats_use_reconstruction_probs"] = support.stats_use_reconstruction_probs
         return LocalEMResult(
             Ft_y=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
             Ft_ctf=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
@@ -3683,10 +3676,9 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
             translation_log_priors=np.zeros((1, np.asarray(translations).shape[0]), dtype=dtype),
         )
 
-    def fake_resident_local_search(*args, **kwargs):
-        _ = args
-        captured["max_significants"] = kwargs.get("max_significants")
-        captured["use_float64_scoring"] = kwargs.get("use_float64_scoring")
+    def fake_resident_local_search(data, layout, kernel, support, **kwargs):
+        captured["max_significants"] = support.applied_max_significants
+        captured["use_float64_scoring"] = kernel.use_float64_scoring
         return LocalEMResult(
             Ft_y=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
             Ft_ctf=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
@@ -3780,9 +3772,13 @@ def test_run_local_search_iteration_plumbs_score_only_to_the_resident_probe(monk
     )
     captured = {}
 
-    def fake_run_local_em_exact(*args, **kwargs):
-        _ = args
-        captured.update(kwargs)
+    def fake_run_local_em_exact(data, layout, kernel, support, **kwargs):
+        captured.update(
+            score_only=support.score_only,
+            disable_adjoint_y=support.disable_adjoint_y,
+            disable_adjoint_ctf=support.disable_adjoint_ctf,
+            accumulate_noise=kernel.accumulate_noise,
+        )
         return LocalEMResult(
             Ft_y=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
             Ft_ctf=jnp.zeros(mock_dataset.volume_size, dtype=mock_dataset.dtype),
@@ -3793,7 +3789,7 @@ def test_run_local_search_iteration_plumbs_score_only_to_the_resident_probe(monk
                 max_posterior_per_image=jnp.ones(mock_dataset.n_units, dtype=jnp.float32),
                 rotation_posterior_sums=jnp.zeros(3, dtype=jnp.float32),
             ),
-            profile={"score_only": kwargs["score_only"]},
+            profile={"score_only": support.score_only},
         )
 
     monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_run_local_em_exact)

@@ -282,20 +282,24 @@ def test_dispatch_routes_the_fine_pass_and_the_parent_probe(monkeypatch, route):
         "parent_probe": {"score_only": True, "disable_adjoint_y": True, "disable_adjoint_ctf": True},
     }[route]
     arguments, _ = _dispatched_arguments(monkeypatch, **run)
-    assert arguments["score_only"] is (route == "parent_probe")
+    assert arguments["support"].score_only is (route == "parent_probe")
 
 
 def test_dispatch_call_keywords_are_resident_parameters(monkeypatch):
-    """Every keyword the dispatcher passes must be a resident-driver parameter.
+    """Every argument the dispatcher passes must be a resident-driver parameter.
 
     A refactor narrowed the resident signature while the dispatcher kept
     passing ``do_gridding_correction``; the resulting TypeError only surfaced
     on GPU. The resident driver requires the RELION PPref projector, for which
     the exact local engine applies no gridding correction either. Binding the
-    call to the driver's signature fails on any unknown keyword.
+    call to the driver's signature fails on any unknown keyword. The support
+    choices travel in the support record.
     """
-    _, keywords = _dispatched_arguments(monkeypatch)
-    assert {"max_significants", "stats_use_reconstruction_probs"} <= keywords
+    arguments, keywords = _dispatched_arguments(monkeypatch)
+    assert keywords == {"translation_prior_centers", "symmetry_label"}
+    assert set(arguments) == {"data", "local_layout", "kernel", "support", *keywords}
+    assert arguments["support"].applied_max_significants == -1
+    assert arguments["support"].stats_use_reconstruction_probs is True
 
 
 @pytest.mark.parametrize(
@@ -965,8 +969,12 @@ def test_local_firstiter_cc_refuses_a_class3d_pass():
 
     with pytest.raises(rlp.ResidentConfigurationUnsupported, match="firstiter_cc iteration is K=1"):
         rlp.compute_local_search_resident(
-            MockDataset(n_images=2, seed=1), None, None, SimpleNamespace(n_classes=2), "linear_interp",
-            current_size=CURRENT_SIZE, firstiter_cc=True,
+            SimpleNamespace(experiment_dataset=MockDataset(n_images=2, seed=1)),
+            SimpleNamespace(n_classes=2),
+            SimpleNamespace(current_size=CURRENT_SIZE, wsum_current_size=None, firstiter_cc=True),
+            None,
+            translation_prior_centers=None,
+            symmetry_label="C1",
         )
 
 
