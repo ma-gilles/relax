@@ -15,7 +15,7 @@ here in the commit that closes it; record a decision in the "Decided" section. "
 | `significance.py` | 2,660 lines | 218 lines |
 | `_publish_batch` | 264 lines, nested; captures 51 enclosing variables, unpacks a 34-field tuple | `pass1_publish.publish_batch`, explicit inputs, `BatchOutputs` record |
 | Largest function of `relax/scoring` | 1,819 lines | 466 lines (`tomo_coarse.particle_coarse_supports`) |
-| Largest parameter list of `relax/scoring` | 46 | 23 (`particle_coarse_supports`); pass 1's widest is `_pass1_block_update` with 22 |
+| Largest parameter list of `relax/scoring` | 46 | 23 (`particle_coarse_supports`); pass 1's widest is `_pass1_block_update` with 14 (nine static settings are one `ProgramStatics`) |
 | Parameters never read | `disc_type`, `do_gridding_correction`; `means` read only for `n_classes` | deleted |
 | `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 8,901 / 7,613: the cost of 17 new modules (headers, records, docstrings) |
 | Ceilings | `docs/development/scoring_structure_metrics.json` (the totals on that date) | the two line-count ceilings are exceeded (see "Waiting for the owner") |
@@ -60,8 +60,6 @@ device scoring (`defer_publish`).
 5. **Layer leak (rule 11).** Pass 1 imports `relax/sparse_pass2` modules (private names among them:
    `_relion_cuda_powerclass_highres_xi2_half`, `_relion_translation_angles_f32`, `_relion_f32_fine_posterior`,
    `_relion_cuda_fine_full_to_compact_lookup`).
-6. **The score-program kernels take 22, 22 and 19 parameters** (`pass1_program.py`): nine static settings travel as
-   keywords through three functions.
 
 ## Noticed, not changed (a refactor does not fix behaviour)
 
