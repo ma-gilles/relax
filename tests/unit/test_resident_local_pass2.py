@@ -1115,7 +1115,9 @@ def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _re
         return real_project(host_chunk, *args, **kwargs)
 
     monkeypatch.setattr(rlp, "_project_class_rows", spy)
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "8")
+    # 12-row blocks: each class's rows per image are a multiple of the 8 oversampled children, so 8-row
+    # blocks would never straddle the class boundary.
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "12")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
     lone = _run(two, monkeypatch=monkeypatch, n_classes=2).class_pass
 
