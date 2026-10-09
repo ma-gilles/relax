@@ -206,7 +206,7 @@ def run_tomo_initial_model_estep(
     )
     # vdam_m_step reads the list halfset-major (accumulators[k], accumulators[K + k]).
     accumulators = sorted(accumulators, key=lambda accum: (accum.halfset_idx, accum.class_idx))
-    meta = sparse_pass2_estep_meta({0: result}, {0: particle_ids})
+    meta = sparse_pass2_estep_meta(result, particle_ids)
     # Rotation ids index the RECOVAR-order fine grid; the source Euler rows carry the pose.
     meta.pop("best_pose_rotation_ids", None)
     # The particles' offsets are 3D; RELION writes the rounded old offset plus the winning shift.

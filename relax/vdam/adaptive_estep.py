@@ -32,6 +32,7 @@ import numpy as np
 
 from relax import sampling
 from relax.classification.k_class import run_dense_k_class_em_adaptive
+from relax.classification.k_class_results import KClassEMResult
 from relax.helpers.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
@@ -112,59 +113,37 @@ def resolve_sparse_pass1_current_size(
     return None if int(coarse_size) >= int(state.box_size) else int(coarse_size)
 
 
-def sparse_pass2_estep_meta(
-    halfset_results: dict[int, Any],
-    selected_particle_ids_by_halfset: dict[int, np.ndarray],
-) -> dict[str, Any]:
-    """Meta merger for the pseudo-halfset results of one E-step."""
+def sparse_pass2_estep_meta(result: KClassEMResult, image_ids: np.ndarray) -> dict[str, Any]:
+    """The E-step meta of one engine result over the images ``image_ids`` (both pseudo-halfsets in one pass)."""
 
-    meta = estep_meta(halfset_results)
-    source_euler_rows = []
-    source_euler_valid = []
-    selected_particle_ids: list[np.ndarray] = []
-    max_posterior: list[np.ndarray] = []
-    log_evidence: list[np.ndarray] = []
-    field_lists: dict[str, list[np.ndarray]] = {attr: [] for attr, _ in _PARTICLE_RESULT_FIELDS}
+    meta = estep_meta({0: result})
+    image_ids = np.asarray(image_ids, dtype=np.int64)
+    source = result.best_pose_eulers_deg
+    if source is not None:
+        source = np.asarray(source)
+        if source.dtype != np.float64 or source.shape != (image_ids.size, 3) or not np.all(np.isfinite(source)):
+            raise ValueError("source Euler rows must match their pseudo-halfset particle IDs")
+    stats = result.stats
+    # log(sum_weight) - min_diff2 per image, the first two terms of RELION's dLL.
+    evidence = result.uncast_log_evidence_per_image
+    if evidence is None and stats is not None:
+        evidence = stats.log_evidence_per_image
+    max_posterior = None if stats is None else stats.max_posterior_per_image
+    if max_posterior is not None:
+        meta["halfset_0_pmax_mean"] = float(np.mean(np.asarray(max_posterior))) if image_ids.size else 0.0
 
-    for halfset_idx, result in sorted(halfset_results.items()):
-        image_ids = np.asarray(selected_particle_ids_by_halfset[int(halfset_idx)], dtype=np.int64)
-        selected_particle_ids.append(image_ids)
-        source = getattr(result, "best_pose_eulers_deg", None)
-        if source is not None:
-            source = np.asarray(source)
-            if source.dtype != np.float64 or source.shape != (image_ids.size, 3) or not np.all(np.isfinite(source)):
-                raise ValueError("source Euler rows must match their pseudo-halfset particle IDs")
-        source_euler_rows.append(np.zeros((image_ids.size, 3), dtype=np.float64) if source is None else source)
-        source_euler_valid.append(np.full(image_ids.size, source is not None, dtype=bool))
-        for attr, dtype in _PARTICLE_RESULT_FIELDS:
-            value = getattr(result, attr, None)
-            if value is not None:
-                field_lists[attr].append(np.asarray(value, dtype=dtype))
-        stats = getattr(result, "stats", None)
-        # log(sum_weight) - min_diff2 per image, the first two terms of RELION's dLL.
-        evidence = getattr(result, "uncast_log_evidence_per_image", None)
-        if evidence is None and stats is not None:
-            evidence = getattr(stats, "log_evidence_per_image", None)
-        if evidence is not None:
-            log_evidence.append(np.asarray(evidence, dtype=np.float64))
-        if stats is not None and getattr(stats, "max_posterior_per_image", None) is not None:
-            max_posterior.append(np.asarray(stats.max_posterior_per_image, dtype=np.float32))
-            meta[f"halfset_{halfset_idx}_pmax_mean"] = (
-                float(np.mean(np.asarray(stats.max_posterior_per_image))) if image_ids.size else 0.0
-            )
-
-    def _merge(arrays: list[np.ndarray], key: str, dtype) -> None:
-        if arrays:
-            meta[key] = np.concatenate(arrays).astype(dtype, copy=False)
-
-    if any(np.any(valid) for valid in source_euler_valid):
-        meta["best_pose_eulers_deg"] = np.concatenate(source_euler_rows)
-        meta["best_pose_eulers_valid"] = np.concatenate(source_euler_valid)
-    _merge(selected_particle_ids, "selected_particle_ids", np.int64)
+    if source is not None and image_ids.size:
+        meta["best_pose_eulers_deg"] = source.copy()
+        meta["best_pose_eulers_valid"] = np.ones(image_ids.size, dtype=bool)
+    meta["selected_particle_ids"] = image_ids.copy()
     for attr, dtype in _PARTICLE_RESULT_FIELDS:
-        _merge(field_lists[attr], attr, dtype)
-    _merge(max_posterior, "max_posterior_per_image", np.float32)
-    _merge(log_evidence, "log_evidence_per_image", np.float64)
+        value = getattr(result, attr)
+        if value is not None:
+            meta[attr] = np.array(value, dtype=dtype)
+    if max_posterior is not None:
+        meta["max_posterior_per_image"] = np.array(max_posterior, dtype=np.float32)
+    if evidence is not None:
+        meta["log_evidence_per_image"] = np.array(evidence, dtype=np.float64)
     meta["sparse_pass2"] = True
     return meta
 
@@ -481,10 +460,7 @@ def run_adaptive_initial_model_estep(
     # vdam_m_step reads the list by position, halfset-major (m_step.py: accumulators[k]
     # and accumulators[K + k]); the grouped adapter emits it class-major.
     accumulators = sorted(accumulators, key=lambda accum: (accum.halfset_idx, accum.class_idx))
-    halfset_results = {0: result}
-    selected = {0: image_indices}
-
-    meta = sparse_pass2_estep_meta(halfset_results, selected)
+    meta = sparse_pass2_estep_meta(result, image_indices)
     # The route's rotation ids index its RECOVAR-order fine grid; VDAM reads rotation
     # ids as RELION-order rows. The source Euler rows and matrices carry the pose.
     meta.pop("best_pose_rotation_ids", None)
