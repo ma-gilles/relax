@@ -25,16 +25,12 @@ from relax.dense.score_outputs import (
     class_em_to_half_result,
 )
 from relax.dense.scoring_policy import (
-    _K1_RELION_X_HALF_MSTEP_ENV,
-    _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
-    _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
-    _LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV,
     RELION_ACC_DOUBLE_FLOORF_QUIRK,
     RELION_ADAPTIVE_FRACTION,
     RELION_FOURIER_WINDOW_SQUARE,
 )
+from relax.diagnostics import local_debug
 from relax.diagnostics import parity_dump as _parity_dump
-from relax.diagnostics.local_debug import log_local_adaptive_support, log_local_denominator_support
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
@@ -1298,7 +1294,7 @@ def _prepare_local_adaptive_pass2_support(
         significant_sample_indices = [None] * len(significant_sample_indices)
         logger.info(
             "RELION local adaptive pass 2: expanding all parent samples; set %s=0 for pruned-parent support",
-            _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
+            scoring_policy._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
         )
     elif support.rotation_only:
         significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
@@ -1308,7 +1304,7 @@ def _prepare_local_adaptive_pass2_support(
         logger.info(
             "RELION local adaptive pass 2 diagnostic: expanding significant parent rotations to all "
             "parent translations via %s=1",
-            _LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV,
+            scoring_policy._LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV,
         )
 
     layout_kwargs = dict(
@@ -1343,13 +1339,13 @@ def _prepare_local_adaptive_pass2_support(
             parent_order,
             **layout_kwargs,
         )
-        log_local_denominator_support(
+        local_debug.log_local_denominator_support(
             logger,
             denominator_layout,
             support.denominator_mode,
-            _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
+            scoring_policy._LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
         )
-    log_local_adaptive_support(
+    local_debug.log_local_adaptive_support(
         logger,
         parent_layout,
         significant_sample_indices,
@@ -1784,7 +1780,7 @@ def _score_half_local_one_shape(
     if sampling.search.symmetry != "C1" and not execution.score_only and not local_relion_x_half_mstep:
         raise RuntimeError(
             f"{sampling.search.symmetry} exact-local reconstruction requires RELION x-half BPref "
-            f"accumulation; {_K1_RELION_X_HALF_MSTEP_ENV}=0, CPU-only execution, or disabled custom CUDA "
+            f"accumulation; {scoring_policy._K1_RELION_X_HALF_MSTEP_ENV}=0, CPU-only execution, or disabled custom CUDA "
             "is unsupported for non-C1 symmetry"
         )
     if local_relion_x_half_mstep:
