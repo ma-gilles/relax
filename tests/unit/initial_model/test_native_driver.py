@@ -2826,3 +2826,36 @@ def test_log_likelihood_contribution_is_relions_dll():
         np.array([5.0, 6.0, 7.0]), sigma2_noise=sigma2, groups=[0, 1, 1], n_images=[1, 1, 3], box_size=ori, current_size=cs
     )
     np.testing.assert_allclose(got, [5.0 - expected[0], 6.0 - expected[1], 7.0 - 3 * expected[1]], rtol=1e-12)
+
+
+def test_log_likelihood_contribution_of_a_group_on_another_grid():
+    # A group on another image shape sums over its own Mresol_fine at its remapped current size,
+    # each ires reading the model shell ROUND(remap_image_sizes * ires) (ml_optimiser.cpp:9046-9055).
+    import math
+
+    from relax.vdam.estep_meta_updates import relion_log_likelihood_contributions
+
+    ori, ori_pixel, cs = 128, 4.25, 38
+    box, pixel = 112, 5.44
+    scale = box * pixel / (ori * ori_pixel)
+    remap = (ori * ori_pixel) / (box * pixel)
+    group_cs = min(box, 2 * math.ceil(0.5 * scale * cs))
+    sigma2 = np.stack([np.linspace(1.0, 2.0, ori // 2 + 1), np.linspace(3.0, 4.0, ori // 2 + 1)])
+    expected = 0.0
+    for ip in range(group_cs // 2 + 1 - group_cs, group_cs // 2 + 1):
+        for jp in range(group_cs // 2 + 1):
+            ires = int(np.floor(np.hypot(ip, jp) + 0.5))
+            if ires < group_cs // 2 + 1 and not (jp == 0 and ip < 0) and ires > 0:
+                remapped = int(remap * ires + 0.5)
+                if remapped < ori // 2 + 1:
+                    expected += np.log(2.0 * np.pi * sigma2[1, remapped])
+    got = relion_log_likelihood_contributions(
+        np.array([5.0]), sigma2_noise=sigma2, groups=[1], n_images=[1], box_size=ori, current_size=cs,
+        group_grids={1: (box, scale, remap)},
+    )
+    np.testing.assert_allclose(got, [5.0 - expected], rtol=1e-12)
+    # Without the group's grid the model box's pixels give another sum.
+    plain = relion_log_likelihood_contributions(
+        np.array([5.0]), sigma2_noise=sigma2, groups=[1], n_images=[1], box_size=ori, current_size=cs
+    )
+    assert abs(plain[0] - got[0]) > 1.0

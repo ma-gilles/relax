@@ -309,17 +309,75 @@ def update_particle_state_from_estep_meta(
         particle_state.significant_counts[ids] = np.asarray(nsig, dtype=np.int32).reshape(-1)
 
 
-def relion_log_likelihood_contributions(log_evidence, *, sigma2_noise, groups, n_images, box_size: int, current_size: int):
+def add_log_likelihood_contributions(meta: dict, state, optics_state, optics_group_ids, tilt_images) -> None:
+    """Add RELION's per-particle dLL to the E-step's ``meta`` when it carries the log evidence."""
+
+    if (evidence := meta.get("log_evidence_per_image")) is None:
+        return
+    ids = np.asarray(meta["selected_particle_ids"], dtype=np.int64)
+    meta["log_likelihood_contribution"] = relion_log_likelihood_contributions(
+        evidence,
+        sigma2_noise=state.sigma2_noise,
+        groups=np.zeros(ids.size, np.int64) if optics_group_ids is None else np.asarray(optics_group_ids)[ids],
+        n_images=np.ones(ids.size) if tilt_images is None else np.diff(tilt_images.image_offsets)[ids],
+        box_size=int(state.box_size),
+        current_size=int(state.effective_current_size),
+        group_grids=optics_group_grids(optics_state, optics_group_ids, state.box_size),
+    )
+
+
+def optics_group_grids(optics_state, optics_group_ids, model_box):
+    """Each optics group's ``(box, scale, remap)`` on several image shapes, else None (one grid).
+
+    ``remap`` is RELION's ``remap_image_sizes``, ``(ori_size * model pixel) / (box * pixel)``
+    (ml_optimiser.cpp:9046), computed in its operand order: ``ROUND(remap * ires)`` meets exact
+    ties (14 * 544 / 609.28 = 12.5 for 128 x 4.25 A against 112 x 5.44 A).
+    """
+
+    if optics_state is None or optics_state.image_box is None or optics_group_ids is None:
+        return None
+    from relax.helpers.optics_scale import scale_difference
+
+    groups = np.asarray(optics_group_ids)
+    grids = {}
+    for group in np.unique(groups):
+        rows = groups == group
+        box = int(np.unique(np.asarray(optics_state.image_box)[rows]).item())
+        pixel = float(np.unique(np.asarray(optics_state.image_pixel_size)[rows]).item())
+        model_pixel = float(optics_state.pixel_size)
+        remap = (float(int(model_box)) * model_pixel) / (float(box) * pixel)
+        grids[int(group)] = (box, scale_difference(box, pixel, int(model_box), model_pixel), remap)
+    return grids
+
+
+def relion_log_likelihood_contributions(
+    log_evidence, *, sigma2_noise, groups, n_images, box_size: int, current_size: int, group_grids=None
+):
     """RELION's per-particle dLL, ``log(sum_weight) - min_diff2 - logsigma2`` (ml_optimiser.cpp:9029-9058).
 
     ``log_evidence`` is the E-step's ``log(sum_weight) - min_diff2`` per particle; ``logsigma2`` sums
     ``log(2 pi sigma2_noise[group][ires])`` over the current-size ``Mresol_fine`` pixels with ``ires > 0``
     once per image of the particle (``n_images``: 1, or a subtomogram's tilt images).
+
+    ``group_grids`` (optics groups on several image shapes) maps a group to its ``(box, scale, remap)``:
+    its ``Mresol_fine`` is its own image's at its remapped current size (``scale``, the group's
+    ``remap_sizes``), and each ``ires`` reads the model shell ``ROUND(remap * ires)``
+    (``remap_image_sizes``, ml_optimiser.cpp:9046-9055).
     """
+    from relax.helpers.optics_scale import group_current_size
     from relax.relion.relion_ctf import _fftw_shell_labels
 
     shells = _fftw_shell_labels(int(box_size), int(current_size), centered_rows=False)
     sigma2 = np.atleast_2d(np.asarray(sigma2_noise, dtype=np.float64))
     shells = shells[(shells > 0) & (shells < sigma2.shape[1])]
     logsigma2 = np.log(2.0 * np.pi * sigma2[:, shells]).sum(axis=1)
+    for group, (box, scale, remap) in (group_grids or {}).items():
+        if int(box) == int(box_size) and float(scale) == 1.0 and float(remap) == 1.0:
+            continue  # the model's own grid: the shared sum above
+        ires = _fftw_shell_labels(int(box), group_current_size(current_size, box, scale), centered_rows=False)
+        ires = ires[ires > 0]
+        # RELION's ROUND of a positive value: (int)(x + 0.5).
+        remapped = np.floor(float(remap) * ires + 0.5).astype(np.int64)
+        remapped = remapped[remapped < sigma2.shape[1]]
+        logsigma2[group] = np.log(2.0 * np.pi * sigma2[group, remapped]).sum()
     return np.asarray(log_evidence, np.float64) - np.asarray(n_images, np.float64) * logsigma2[np.asarray(groups, np.int64)]
