@@ -372,13 +372,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     track_class_second = request.return_class_second or tree_rescore_enabled
     tree_rescore_plan = None
     if tree_rescore_enabled:
-        require_tree_rescore_call(
-            n_classes=n_classes,
-            return_class_best=request.return_class_best,
-            use_relion_projector=use_relion_projector,
-            coarse_texture_interp=coarse_texture_interp,
-            half_spectrum_scoring=request.half_spectrum_scoring,
-        )
+        require_tree_rescore_call(n_classes=n_classes, return_class_best=request.return_class_best)
         tree_rescore_plan = plan_tree_rescore(
             max_margin=request.tree_rescore_max_margin,
             relion_projector_half=relion_projector_half,
