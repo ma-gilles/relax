@@ -27,6 +27,7 @@ from relax.vdam.adaptive_estep import (
     sparse_pass2_estep_meta,
 )
 from relax.vdam.estep_common import (
+    TOMO_META_PARTICLE_FIELDS,
     InitialModelEstepResult,
     add_accumulator_weight_meta,
     arrays_to_accumulators,
@@ -206,12 +207,9 @@ def run_tomo_initial_model_estep(
     )
     # vdam_m_step reads the list halfset-major (accumulators[k], accumulators[K + k]).
     accumulators = sorted(accumulators, key=lambda accum: (accum.halfset_idx, accum.class_idx))
-    meta = sparse_pass2_estep_meta(result, particle_ids)
-    # Rotation ids index the RECOVAR-order fine grid; the source Euler rows carry the pose.
-    meta.pop("best_pose_rotation_ids", None)
+    meta = sparse_pass2_estep_meta(result, particle_ids, particle_fields=TOMO_META_PARTICLE_FIELDS)
     # The particles' offsets are 3D; RELION writes the rounded old offset plus the winning shift.
-    meta.pop("best_pose_translations", None)
-    pose = np.asarray(meta.pop("pose_assignments"), dtype=np.int64)
+    pose = np.asarray(result.pose_assignments, dtype=np.int64)
     meta["tomo_offsets_px"] = (
         tomo_particles.relion_gpu_old_offsets(old) + np.asarray(fine_px, dtype=np.float64)[pose % int(fine_px.shape[0])]
     )

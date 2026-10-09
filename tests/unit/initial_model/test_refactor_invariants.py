@@ -140,16 +140,17 @@ def test_ensure_field_helper_preserves_metadata_array_identity():
 
 
 def test_sparse_pass2_result_fields_is_tuple_of_typed_attrs():
-    """``_PARTICLE_RESULT_FIELDS`` is the single source of truth for which
-    estep meta attributes get concatenated across sparse pass-2 batches.
+    """``SPA_META_PARTICLE_FIELDS`` and ``TOMO_META_PARTICLE_FIELDS`` are the single source of truth for which
+    engine-result attributes each E-step route copies into its meta.
     """
-    from relax.vdam.estep_common import _PARTICLE_RESULT_FIELDS
+    from relax.vdam.estep_common import SPA_META_PARTICLE_FIELDS, TOMO_META_PARTICLE_FIELDS
 
-    assert isinstance(_PARTICLE_RESULT_FIELDS, tuple)
-    assert all(isinstance(item, tuple) and len(item) == 2 for item in _PARTICLE_RESULT_FIELDS)
-    for attr, dtype in _PARTICLE_RESULT_FIELDS:
-        assert isinstance(attr, str), f"expected attr name str, got {attr!r}"
-        assert isinstance(dtype, type), f"expected dtype to be a type, got {dtype!r}"
+    for fields in (SPA_META_PARTICLE_FIELDS, TOMO_META_PARTICLE_FIELDS):
+        assert isinstance(fields, tuple)
+        assert all(isinstance(item, tuple) and len(item) == 2 for item in fields)
+        for attr, dtype in fields:
+            assert isinstance(attr, str), f"expected attr name str, got {attr!r}"
+            assert isinstance(dtype, type), f"expected dtype to be a type, got {dtype!r}"
 
 
 # ---------------------------------------------------------------------------

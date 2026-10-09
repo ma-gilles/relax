@@ -995,7 +995,6 @@
   "private-import:relax.sparse_pass2.sparse_pass2_window:relax.sparse_pass2.sparse_pass2_scoring:_RELION_FINE_DIFF2_FUSED_FFI_ENV",
   "private-import:relax.vdam.adaptive_estep:relax.sampling:_get_relion_rotation_grid_eulers_float64",
   "private-import:relax.vdam.adaptive_estep:relax.sampling:_relion_adaptive_pass1_rotations",
-  "private-import:relax.vdam.adaptive_estep:relax.vdam.estep_common:_PARTICLE_RESULT_FIELDS",
   "private-import:relax.vdam.bootstrap_iref:relax.helpers.expected_accuracy:_trial_ctf_images",
   "private-import:relax.vdam.bootstrap_iref:relax.relion.initial_model_io:_experiment_read_order",
   "private-import:relax.vdam.bootstrap_iref:relax.relion.initial_model_io:_optics_group_indices",

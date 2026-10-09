@@ -130,13 +130,21 @@ def relion_x_public_output_to_bpref(
         _bp_slab(weight_cube.transpose(2, 1, 0), radius, center),
     )
 
-_PARTICLE_RESULT_FIELDS: tuple[tuple[str, type], ...] = (
+# The engine result's per-image fields an E-step copies into its meta, with their meta dtypes. Neither route
+# copies best_pose_rotation_ids: they index the route's RECOVAR-order fine grid, while VDAM reads rotation ids as
+# RELION-order rows (the source Euler rows and the matrices carry the pose).
+SPA_META_PARTICLE_FIELDS: tuple[tuple[str, type], ...] = (
     ("pose_assignments", np.int32),
     ("class_assignments", np.int32),
     ("best_pose_rotations", np.float32),
     ("best_pose_translations", np.float32),
-    ("best_pose_rotation_ids", np.int32),
     ("significant_counts", np.int32),
+)
+# Subtomograms: the 2D winning translation and pose id become the particle's 3D offset (tomo_offsets_px), and
+# the significant counts are the tilt pass's own.
+TOMO_META_PARTICLE_FIELDS: tuple[tuple[str, type], ...] = (
+    ("class_assignments", np.int32),
+    ("best_pose_rotations", np.float32),
 )
 # The engine's interpolation for every InitialModel E-step call.
 ENGINE_DISC_TYPE = "linear_interp"

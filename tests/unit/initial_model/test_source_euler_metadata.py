@@ -10,6 +10,7 @@ from recovar.utils.helpers import R_from_relion, R_to_relion
 
 from relax.relion import initial_model_io
 from relax.vdam import adaptive_estep, estep_meta_updates, native_sampling
+from relax.vdam.estep_common import SPA_META_PARTICLE_FIELDS
 from relax.vdam.state import NativeParticleState
 
 pytestmark = pytest.mark.unit
@@ -136,7 +137,9 @@ def _engine_result(**fields):
 
 def test_engine_rows_keep_identity_and_validity():
     source = np.array([[2.0 + 2**-40, 30.0, 4.0], [1.0, 2.0, 3.0]])
-    meta = adaptive_estep.sparse_pass2_estep_meta(_engine_result(best_pose_eulers_deg=source), np.array([2, 0]))
+    meta = adaptive_estep.sparse_pass2_estep_meta(
+        _engine_result(best_pose_eulers_deg=source), np.array([2, 0]), particle_fields=SPA_META_PARTICLE_FIELDS
+    )
     assert_matches(meta["selected_particle_ids"], [2, 0])
     assert_matches(meta["best_pose_eulers_valid"], [True, True])
     assert_matches(meta["best_pose_eulers_deg"], source)
@@ -145,7 +148,9 @@ def test_engine_rows_keep_identity_and_validity():
     assert_matches(value.best_pose_eulers_valid, [True, False, True])
     assert_matches(value.best_pose_eulers_deg[2], source[0])
     # Without source rows the meta carries none, and the particles keep no valid source pose.
-    meta = adaptive_estep.sparse_pass2_estep_meta(_engine_result(), np.array([1, 0]))
+    meta = adaptive_estep.sparse_pass2_estep_meta(
+        _engine_result(), np.array([1, 0]), particle_fields=SPA_META_PARTICLE_FIELDS
+    )
     assert "best_pose_eulers_deg" not in meta and "best_pose_eulers_valid" not in meta
     assert_matches(meta["selected_particle_ids"], [1, 0])
 

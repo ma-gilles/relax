@@ -147,7 +147,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
         return [SimpleNamespace(class_idx=k, halfset_idx=h) for k in range(n_classes) for h in range(2)]
 
     monkeypatch.setattr(adaptive_estep, "arrays_to_accumulators", fake_accumulators)
-    monkeypatch.setattr(adaptive_estep, "sparse_pass2_estep_meta", lambda results, selected: {})
+    monkeypatch.setattr(adaptive_estep, "sparse_pass2_estep_meta", lambda result, image_ids, particle_fields: {})
     monkeypatch.setattr(adaptive_estep, "add_accumulator_weight_meta", lambda meta, acc, K: None)
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=n_classes, nr_iter=4, n_directions=4, pseudo_halfsets=True)
     config = InitialModelEstepConfig(

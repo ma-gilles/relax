@@ -43,8 +43,8 @@ from relax.helpers.resolution import compute_coarse_image_size
 from relax.refinement import optics_shapes
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.vdam.estep_common import (
-    _PARTICLE_RESULT_FIELDS,
     ENGINE_DISC_TYPE,
+    SPA_META_PARTICLE_FIELDS,
     InitialModelEstepConfig,
     InitialModelEstepResult,
     add_accumulator_weight_meta,
@@ -113,8 +113,15 @@ def resolve_sparse_pass1_current_size(
     return None if int(coarse_size) >= int(state.box_size) else int(coarse_size)
 
 
-def sparse_pass2_estep_meta(result: KClassEMResult, image_ids: np.ndarray) -> dict[str, Any]:
-    """The E-step meta of one engine result over the images ``image_ids`` (both pseudo-halfsets in one pass)."""
+def sparse_pass2_estep_meta(
+    result: KClassEMResult,
+    image_ids: np.ndarray,
+    *,
+    particle_fields: tuple[tuple[str, type], ...],
+) -> dict[str, Any]:
+    """The E-step meta of one engine result over the images ``image_ids`` (both pseudo-halfsets in one pass);
+    ``particle_fields`` are the result's per-image fields the route copies, with their meta dtypes
+    (``estep_common.SPA_META_PARTICLE_FIELDS``, ``TOMO_META_PARTICLE_FIELDS``)."""
 
     meta = estep_meta({0: result})
     image_ids = np.asarray(image_ids, dtype=np.int64)
@@ -136,7 +143,7 @@ def sparse_pass2_estep_meta(result: KClassEMResult, image_ids: np.ndarray) -> di
         meta["best_pose_eulers_deg"] = source.copy()
         meta["best_pose_eulers_valid"] = np.ones(image_ids.size, dtype=bool)
     meta["selected_particle_ids"] = image_ids.copy()
-    for attr, dtype in _PARTICLE_RESULT_FIELDS:
+    for attr, dtype in particle_fields:
         value = getattr(result, attr)
         if value is not None:
             meta[attr] = np.array(value, dtype=dtype)
@@ -460,10 +467,7 @@ def run_adaptive_initial_model_estep(
     # vdam_m_step reads the list by position, halfset-major (m_step.py: accumulators[k]
     # and accumulators[K + k]); the grouped adapter emits it class-major.
     accumulators = sorted(accumulators, key=lambda accum: (accum.halfset_idx, accum.class_idx))
-    meta = sparse_pass2_estep_meta(result, image_indices)
-    # The route's rotation ids index its RECOVAR-order fine grid; VDAM reads rotation
-    # ids as RELION-order rows. The source Euler rows and matrices carry the pose.
-    meta.pop("best_pose_rotation_ids", None)
+    meta = sparse_pass2_estep_meta(result, image_indices, particle_fields=SPA_META_PARTICLE_FIELDS)
     add_accumulator_weight_meta(meta, accumulators, state.K)
     meta["pass2_engine"] = "adaptive"
     if shape_offsets is not None:
