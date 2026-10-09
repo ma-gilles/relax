@@ -1148,6 +1148,56 @@ def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _re
     assert np.max(np.abs(np.asarray(whole.stats.log_evidence_per_image) - np.asarray(lone.stats.log_evidence_per_image))) < 1e-4
 
 
+def test_lone_block_rows_divide_a_chunk_rounded_to_a_smaller_class():
+    """A one-row-class re-plan rounds an overflow image to a multiple of the class it chose: the lone blocks
+    are the largest class that divides those rows (EMPIAR-10073 Class3D local, 6144 rows under 1024/4096)."""
+
+    assert rp.lone_block_rows(6144, (1024, 4096)) == 1024
+    assert rp.lone_block_rows(8192, (1024, 4096)) == 4096
+    assert rp.lone_block_rows(24, (8, 16)) == 8
+    with pytest.raises(ValueError, match="divides"):
+        rp.lone_block_rows(100, (64, 256))
+
+
+@requires_resident_gpu
+def test_lone_overflow_chunk_from_a_smaller_class_replan_matches_the_one_call_chunk(monkeypatch, _resident_local_env):
+    """The pass's chunks planned with only the smaller row class (as plan_pass_chunks' re-plan does) give an
+    overflow chunk that the largest class does not divide; it runs in blocks of the class that does."""
+
+    case = _case()
+    whole = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+    real_plan = rlp.plan_local_capacity_chunks
+
+    def smaller_class_plan(tables, *, row_capacity_ladder, image_capacity_ladder):
+        return real_plan(tables, row_capacity_ladder=(8,), image_capacity_ladder=image_capacity_ladder)
+
+    monkeypatch.setattr(rlp, "plan_local_capacity_chunks", smaller_class_plan)
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "8,16")
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
+    sizes = []
+    real_start = rlp._start_resident_local_chunk
+
+    def spy(chunk, **kwargs):
+        if kwargs.get("lone_block_rows") is not None:
+            sizes.append((int(chunk.row_capacity), int(kwargs["lone_block_rows"])))
+        return real_start(chunk, **kwargs)
+
+    monkeypatch.setattr(rlp, "_start_resident_local_chunk", spy)
+    lone = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+
+    assert any(rows % 16 for rows, _ in sizes), f"no overflow chunk off the 16-row class: {sizes}"
+    assert all(block == 8 for rows, block in sizes if rows % 16)
+    assert_matches(np.asarray(whole.hard_assignment), np.asarray(lone.hard_assignment))
+
+    def rel_l2(a, b):
+        a = np.asarray(a, dtype=np.complex128)
+        b = np.asarray(b, dtype=np.complex128)
+        return float(np.linalg.norm(a - b) / np.linalg.norm(a))
+
+    assert rel_l2(whole.Ft_y, lone.Ft_y) < 1e-6
+    assert rel_l2(whole.Ft_ctf, lone.Ft_ctf) < 1e-6
+
+
 def test_cc_row_block_scorer_matches_the_one_call_cc_chunk():
     """The --firstiter_cc lone scorer and the one-call CC chunk scorer share one block core: scoring the same
     projections a block at a time gives the one-call chunk's scores and candidates (padding blocks included)."""

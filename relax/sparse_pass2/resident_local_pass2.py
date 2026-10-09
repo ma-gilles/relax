@@ -1185,10 +1185,13 @@ def compute_local_search_resident(
         pending = None
         pending_alone = False
         n_lone_chunks = 0
+        lone_block_sizes = set()
         for chunk in chunks:
             alone = rp.chunk_runs_alone(chunk, row_ladder)
-            lone_block_rows = max(int(v) for v in row_ladder) if alone else None
+            lone_block_rows = rp.lone_block_rows(chunk.row_capacity, row_ladder) if alone else None
             n_lone_chunks += int(alone)
+            if alone:
+                lone_block_sizes.add(lone_block_rows)
             if pending is not None and (alone or pending_alone):
                 Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
                 pending = None
@@ -1267,9 +1270,9 @@ def compute_local_search_resident(
         loop_s = time.time() - loop_t0
         if n_lone_chunks:
             logger.info(
-                "Resident local pass-2 ran %d lone overflow image(s) in row blocks of %d rows",
+                "Resident local pass-2 ran %d lone overflow image(s) in row blocks of %s rows",
                 n_lone_chunks,
-                max(int(v) for v in row_ladder),
+                "/".join(str(v) for v in sorted(lone_block_sizes, reverse=True)),
             )
     finally:
         for texture in class_textures:

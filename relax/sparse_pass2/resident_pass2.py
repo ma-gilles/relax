@@ -1052,6 +1052,22 @@ def chunk_runs_alone(chunk, row_capacity_ladder) -> bool:
     return int(chunk.row_capacity) > max(int(v) for v in row_capacity_ladder)
 
 
+def lone_block_rows(row_capacity: int, row_capacity_ladder) -> int:
+    """Row block of a one-image overflow chunk: the largest row class that divides its rows.
+
+    :func:`~relax.sparse_pass2.resident_candidates.plan_pass_chunks`' one-row-class re-plan rounds an overflow
+    image up to a multiple of the class it chose, which need not be the largest (6144 rows under a 1024/4096
+    ladder, EMPIAR-10073 Class3D local at --sigma_ang 10). Every block then has one shape and no padding rows.
+    """
+
+    dividing = [int(v) for v in row_capacity_ladder if int(row_capacity) % int(v) == 0]
+    if not dividing:
+        raise ValueError(
+            f"no row class of {tuple(row_capacity_ladder)} divides the lone chunk's {row_capacity} rows"
+        )
+    return max(dividing)
+
+
 def resident_image_capacity_start(
     ladder: tuple,
     *,
@@ -4540,7 +4556,7 @@ def _resident_pass2(
                 native_fft_size if (union_score_take is not None and relion_native_fine_units) else 0
             ),
             deferred=deferred,
-            lone_block_rows=max(int(v) for v in row_ladder),
+            lone_block_rows=lone_block_rows(chunk.row_capacity, row_ladder) if alone else None,
         )
         if not deferred:
             Ft_y_total, Ft_ctf_total, stats = result
@@ -8544,9 +8560,10 @@ def _run_resident_chunk(
 ):
     """Run every resident stage for one capacity chunk.
 
-    ``lone_block_rows`` is the plan's largest row class: a chunk past it is one
-    image's overflow chunk, which runs alone and is scored and reconstructed in
-    blocks of that many rows (:func:`_run_lone_resident_chunk`).
+    ``lone_block_rows`` is set for one image's overflow chunk (a chunk past the
+    plan's largest row class, :func:`chunk_runs_alone`), which runs alone and is
+    scored and reconstructed in blocks of that many rows
+    (:func:`_run_lone_resident_chunk`, :func:`lone_block_rows`).
 
     ``union_score_take`` / ``union_recon_take`` / ``union_native_fft_size``
     describe a union projection cache (see ``_ChunkStageTables``); they are
@@ -8582,7 +8599,7 @@ def _run_resident_chunk(
         tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot,
         slot_of_projection=slot_of_projection,
     )
-    lone = lone_block_rows is not None and chunk.row_capacity > int(lone_block_rows)
+    lone = lone_block_rows is not None
     if stream_projection_fn is not None and not lone:
         (
             rows,
