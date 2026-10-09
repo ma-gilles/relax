@@ -22,7 +22,6 @@ from relax.diagnostics.vdam_mstep_replay import (
     INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
     _maybe_replay_iteration_references,
 )
-from relax.diagnostics.vdam_tomo_continuation import tomo_checkpoint_particle_state
 from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
@@ -32,6 +31,7 @@ from relax.relion.initial_model_io import (
     _experiment_read_order,
     _particle_state_from_star,
     _tomo_particle_state_from_star,
+    tomo_checkpoint_particle_state,
 )
 from relax.relion.relion_metadata import (
     INITIAL_MODEL_OPTICS_FEATURES,

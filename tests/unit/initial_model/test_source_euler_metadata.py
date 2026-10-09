@@ -8,7 +8,6 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar.utils.helpers import R_from_relion, R_to_relion
 
-from relax.diagnostics import vdam_tomo_continuation
 from relax.relion import initial_model_io
 from relax.vdam import adaptive_estep, estep_meta_updates, native_sampling
 from relax.vdam.state import NativeParticleState
@@ -103,7 +102,7 @@ def test_subtomogram_checkpoint_state_reads_class_and_pmax():
             _rlnClassNumber=[0, 1], _rlnMaxValueProbDistribution=[0.0, 0.75],
         )
     )
-    value = vdam_tomo_continuation.tomo_checkpoint_particle_state(frame, pixel_size=4.25)
+    value = initial_model_io.tomo_checkpoint_particle_state(frame, pixel_size=4.25)
     assert value.visited.tolist() == [False, True] and value.class_assignments.tolist() == [0, 0]
     assert_matches(value.max_posterior, np.array([0.0, 0.75], np.float32))
     assert initial_model_io._tomo_particle_state_from_star(frame, pixel_size=4.25).visited is None
