@@ -282,7 +282,6 @@ def test_dispatch_routes_the_fine_pass_and_the_parent_probe(monkeypatch, route):
         "parent_probe": {"score_only": True, "disable_adjoint_y": True, "disable_adjoint_ctf": True},
     }[route]
     arguments, _ = _dispatched_arguments(monkeypatch, **run)
-    assert arguments.get("class_log_priors") is None
     assert arguments["score_only"] is (route == "parent_probe")
 
 
@@ -302,7 +301,6 @@ def test_dispatch_call_keywords_are_resident_parameters(monkeypatch):
 @pytest.mark.parametrize(
     ("override", "expected"),
     [
-        ({"class_log_priors": np.zeros(2)}, "K-class"),
         ({"mstep_relion_x_half": False}, "x-half M-step"),
         ({"accumulate_noise": False}, "noise statistics"),
         ({"use_float64_scoring": True}, "float64"),
@@ -319,7 +317,6 @@ def test_dispatch_call_keywords_are_resident_parameters(monkeypatch):
 )
 def test_gate_names_the_missing_piece(override, expected):
     kwargs = dict(
-        class_log_priors=None,
         score_only=False,
         disable_adjoint_y=False,
         disable_adjoint_ctf=False,
@@ -334,8 +331,6 @@ def test_gate_names_the_missing_piece(override, expected):
         half_spectrum_scoring=True,
         relion_projector_half=object(),
         relion_projector_r_max=4,
-        mstep_subtract_ctf_projection=False,
-        normalization_log_z=None,
         normalization_log_evidence=None,
         return_reconstruction_sample_indices=False,
         group_ids=np.zeros(3, dtype=np.int32),
@@ -350,7 +345,6 @@ def test_gate_names_the_missing_piece(override, expected):
 
 
 _PROBE_KWARGS = dict(
-    class_log_priors=None,
     score_only=True,
     disable_adjoint_y=True,
     disable_adjoint_ctf=True,
@@ -365,8 +359,6 @@ _PROBE_KWARGS = dict(
     half_spectrum_scoring=True,
     relion_projector_half=object(),
     relion_projector_r_max=4,
-    mstep_subtract_ctf_projection=False,
-    normalization_log_z=None,
     normalization_log_evidence=None,
     return_reconstruction_sample_indices=True,
     group_ids=None,
@@ -386,7 +378,6 @@ def test_parent_probe_configuration_is_accepted_without_the_mstep_pieces():
 @pytest.mark.parametrize(
     ("override", "expected"),
     [
-        ({"class_log_priors": np.zeros(2)}, "K-class"),
         ({"return_reconstruction_sample_indices": False}, "returns its significant samples"),
         ({"max_significants": 500}, "maximum_significants cap on the pass-1 support"),
         ({"use_float64_scoring": True}, "float64"),
@@ -967,13 +958,15 @@ def test_cc_block_rows_divide_every_capacity():
 
 
 def test_local_firstiter_cc_refuses_a_class3d_pass():
-    """RELION's --firstiter_cc iteration scores one reference; a local Class3D CC pass is refused
-    before any device work."""
+    """RELION's --firstiter_cc iteration scores one reference; a local Class3D CC pass (a layout with
+    two classes) is refused before any device work."""
+
+    from types import SimpleNamespace
 
     with pytest.raises(rlp.ResidentConfigurationUnsupported, match="firstiter_cc iteration is K=1"):
         rlp.compute_local_search_resident(
-            MockDataset(n_images=2, seed=1), None, None, None, "linear_interp",
-            current_size=CURRENT_SIZE, class_log_priors=np.zeros(2), firstiter_cc=True,
+            MockDataset(n_images=2, seed=1), None, None, SimpleNamespace(n_classes=2), "linear_interp",
+            current_size=CURRENT_SIZE, firstiter_cc=True,
         )
 
 

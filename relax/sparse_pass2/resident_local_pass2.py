@@ -236,7 +236,6 @@ def _require(condition: bool, message: str) -> None:
 def require_resident_local_configuration(**kwargs) -> None:
     """Raise unless this is the K=1 local fine pass 2, or its pass-1 parent probe, in production shape."""
 
-    _require(kwargs["class_log_priors"] is None, "K-class local search keeps its own engine")
     if bool(kwargs["score_only"]):
         _require_parent_probe_configuration(**kwargs)
         return
@@ -275,12 +274,7 @@ def require_resident_local_configuration(**kwargs) -> None:
         "the resident row projection uses the RELION PPref projector",
     )
     _require(
-        not bool(kwargs["mstep_subtract_ctf_projection"]),
-        "subtracting the projected reference in the M-step is a diagnostic mode",
-    )
-    _require(
-        kwargs["normalization_log_z"] is None
-        and kwargs["normalization_log_evidence"] is None,
+        kwargs["normalization_log_evidence"] is None,
         "an externally supplied normalizer belongs to the broad-denominator probe",
     )
     _require(
@@ -379,8 +373,7 @@ def _require_parent_probe_configuration(**kwargs) -> None:
         "the resident row projection uses the RELION PPref projector",
     )
     _require(
-        kwargs["normalization_log_z"] is None
-        and kwargs["normalization_log_evidence"] is None,
+        kwargs["normalization_log_evidence"] is None,
         "an externally supplied normalizer belongs to the broad-denominator probe",
     )
     _require(bool(kwargs["use_window"]), "the probe scores RELION's current-size window")
@@ -433,14 +426,11 @@ def compute_local_search_resident(
     accumulate_noise=False,
     projection_padding_factor=1,
     reconstruction_padding_factor=1,
-    score_with_masked_images=True,
     half_spectrum_scoring=False,
     relion_exact_score_translation=False,
     projection_relion_texture_interp=None,
     projection_relion_acc_double_floorf_quirk=False,
     projection_relion_kernel="fine",
-    projection_force_jax=False,
-    projection_mask_current_image_disk=False,
     relion_projector_half=None,
     relion_projector_r_max=None,
     use_float64_scoring=False,
@@ -452,7 +442,6 @@ def compute_local_search_resident(
     scale_correction_group_count=None,
     scale_correction_data_vs_prior=None,
     image_pre_shifts=None,
-    mstep_subtract_ctf_projection=False,
     mstep_relion_x_half=False,
     disable_adjoint_y=False,
     disable_adjoint_ctf=False,
@@ -460,17 +449,13 @@ def compute_local_search_resident(
     adaptive_fraction=0.999,
     max_significants=-1,
     return_best_pose_details=False,
-    return_significant_counts=False,
     return_reconstruction_sample_indices=False,
     return_profile=False,
     stats_use_reconstruction_probs=True,
     relion_translation_angle_scale=1.0,
     translation_prior_centers=None,
-    normalization_log_z=None,
     normalization_log_evidence=None,
-    include_unweighted_norm_high_shell=True,
     source_faithful_spectrum_norm=False,
-    class_log_priors=None,
     score_only=False,
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
@@ -524,7 +509,7 @@ def compute_local_search_resident(
         current_size = int(experiment_dataset.image_shape[0])
     wsum_current_size = current_size if wsum_current_size is None else int(wsum_current_size)
     score_mode = "normalized_cc" if firstiter_cc else "gaussian"
-    if firstiter_cc and class_log_priors is not None:
+    if firstiter_cc and local_layout.n_classes > 1:
         raise ResidentConfigurationUnsupported(
             "the local --firstiter_cc iteration is K=1: RELION's Class3D CC iteration scores one reference"
         )
@@ -574,7 +559,6 @@ def compute_local_search_resident(
         direct_noise_only_default=True,
     )
     require_resident_local_configuration(
-        class_log_priors=class_log_priors,
         score_only=score_only,
         disable_adjoint_y=disable_adjoint_y,
         disable_adjoint_ctf=disable_adjoint_ctf,
@@ -589,8 +573,6 @@ def compute_local_search_resident(
         half_spectrum_scoring=half_spectrum_scoring,
         relion_projector_half=relion_projector_half,
         relion_projector_r_max=relion_projector_r_max,
-        mstep_subtract_ctf_projection=mstep_subtract_ctf_projection,
-        normalization_log_z=normalization_log_z,
         normalization_log_evidence=normalization_log_evidence,
         return_reconstruction_sample_indices=return_reconstruction_sample_indices,
         group_ids=group_ids,
@@ -617,10 +599,6 @@ def compute_local_search_resident(
             f"the local layout covers {tables.n_images} images but the half has {n_images}"
         )
     n_fine_trans = tables.n_trans
-    if firstiter_cc and tables.n_classes > 1:
-        raise ResidentConfigurationUnsupported(
-            "the local --firstiter_cc iteration is K=1: RELION's Class3D CC iteration scores one reference"
-        )
     fine_translations = np.asarray(
         tables.translation_grid, dtype=precision_policy.score_real_dtype
     )
@@ -822,8 +800,8 @@ def compute_local_search_resident(
     projection_kwargs["relion_acc_double_floorf_quirk"] = bool(
         projection_relion_acc_double_floorf_quirk
     )
-    projection_kwargs["force_jax"] = bool(projection_force_jax)
-    projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
+    projection_kwargs["force_jax"] = False
+    projection_kwargs["mask_current_image_disk"] = False
     projection_kwargs["relion_kernel"] = projection_relion_kernel
     # The pixels the projector computes for a chunk's rows: the two windows,
     # not the full half spectrum (10202 box 800: ~155k of 320,800 px per row).
@@ -886,7 +864,7 @@ def compute_local_search_resident(
             fine_translations=fine_translations,
             config=config,
             n_trans=n_fine_trans,
-            score_with_masked_images=score_with_masked_images,
+            score_with_masked_images=True,
             half_spectrum_scoring=half_spectrum_scoring,
             image_corrections=image_corrections,
             scale_corrections=scale_corrections,
@@ -944,7 +922,6 @@ def compute_local_search_resident(
                 image_shape=image_shape,
                 current_size=current_size,
                 source_faithful_spectrum_norm=resolved_spectrum_norm,
-                return_significant_counts=return_significant_counts,
                 return_profile=return_profile,
                 overall_t0=overall_t0,
                 max_significants=-1 if max_significants is None else int(max_significants),
@@ -1025,7 +1002,7 @@ def compute_local_search_resident(
             n_rect_pixels=n_rect,
             n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
             normalized_cc=bool(firstiter_cc),
-            masked_scoring=bool(score_with_masked_images),
+            masked_scoring=True,
         )
         image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
         if not (operand_route["unshifted"] and chunk_budget_bytes is not None):
@@ -1130,7 +1107,7 @@ def compute_local_search_resident(
             n_coarse_rot=_posterior_bin_capacity(posterior_bin_ids.size, n_classes=tables.n_classes),
             n_scale_groups=n_scale_groups,
             current_size=wsum_current_size,
-            include_unweighted_high_shell=include_unweighted_norm_high_shell,
+            include_unweighted_high_shell=True,
             use_exact_relion_gaussian=True,
             relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
             relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
@@ -1172,9 +1149,6 @@ def compute_local_search_resident(
             )
 
         # ---- chunk loop --------------------------------------------------------
-        significant_counts = (
-            np.zeros(n_images, dtype=np.int32) if return_significant_counts else None
-        )
         loop_t0 = time.time()
         # The chunks are software-pipelined: chunk k+1's operands, projections,
         # scores and posterior are enqueued before chunk k's M-step reads its live
@@ -1251,7 +1225,6 @@ def compute_local_search_resident(
                 stats_config=stats_config,
                 image_tables=image_tables,
                 cuda_backproject=em_cuda_kernels,
-                significant_counts=significant_counts,
                 operand_route=operand_route,
                 firstiter_cc=bool(firstiter_cc),
                 relion_projector_capacity_texture=capacity_texture,
@@ -1384,7 +1357,6 @@ def compute_local_search_resident(
         best_pose_rotation_ids=best_pose_rotation_ids,
         noise_stats=noise_stats,
         profile=profile,
-        significant_counts=significant_counts,
         best_pose_eulers_deg=best_pose_eulers_deg,
     )
 
@@ -1690,7 +1662,6 @@ def _run_resident_parent_probe(
     image_shape,
     current_size,
     source_faithful_spectrum_norm,
-    return_significant_counts,
     return_profile,
     overall_t0,
     max_significants=-1,
@@ -1784,7 +1755,6 @@ def _run_resident_parent_probe(
     )
 
     sample_ids_by_image: list[np.ndarray] = [np.zeros(0, dtype=np.int64)] * tables.n_images
-    significant_counts = np.zeros(tables.n_images, dtype=np.int32) if return_significant_counts else None
     log_evidence = np.zeros(tables.n_images, dtype=np.float64)
     best_log_score = np.zeros(tables.n_images, dtype=np.float64)
     max_posterior = np.zeros(tables.n_images, dtype=np.float64)
@@ -1949,8 +1919,6 @@ def _run_resident_parent_probe(
             weights_np = weights_np[: chunk.n_valid_rows]
             row_bounds = np.append(image_row_start, chunk.n_valid_rows)
             mask_np = _cap_significant_samples(mask_np, weights_np, row_bounds, max_significants)
-            n_sig_np = np.array(n_sig_np, copy=True)
-            n_sig_np[:chunk.n_valid_images] = np.add.reduceat(mask_np.sum(axis=1), image_row_start)
         rows, cols = np.nonzero(mask_np)
         posterior_ids = host_chunk["row_posterior_id"][:chunk.n_valid_rows].astype(np.int64)
         sample_ids = posterior_ids[rows] * np.int64(t) + cols.astype(np.int64)
@@ -1972,8 +1940,6 @@ def _run_resident_parent_probe(
         log_evidence[sl] = np.asarray(log_z_np, dtype=np.float64)[:chunk.n_valid_images] - min_diff2_np
         best_log_score[sl] = np.asarray(best_log_np, dtype=np.float64)[:chunk.n_valid_images] - min_diff2_np
         max_posterior[sl] = np.asarray(max_post_np)[:chunk.n_valid_images]
-        if significant_counts is not None:
-            significant_counts[sl] = np.asarray(n_sig_np, dtype=np.int32)[:chunk.n_valid_images]
 
     loop_t0 = time.time()
     pending = None
@@ -2016,7 +1982,6 @@ def _run_resident_parent_probe(
         hard_assignments=hard_assignments,
         stats=stats,
         profile=profile,
-        significant_counts=significant_counts,
     )
 
 
@@ -2283,7 +2248,6 @@ def _start_resident_local_chunk(
     stats_config,
     image_tables,
     cuda_backproject,
-    significant_counts,
     operand_route,
     firstiter_cc=False,
     relion_projector_capacity_texture=None,
@@ -2655,10 +2619,6 @@ def _start_resident_local_chunk(
             chunk.row_capacity, int(n_fine_trans)
         )
     mark("posterior", row_posterior, log_z_out, best_cell_index)
-    if significant_counts is not None:
-        significant_counts[chunk.image_start : chunk.image_stop] = np.asarray(
-            jax.device_get(n_significant)[:chunk.n_valid_images], dtype=np.int32
-        )
 
     mstep_rotations = jnp.asarray(
         host_chunk["mstep_rotations"], dtype=precision_policy.score_real_dtype
