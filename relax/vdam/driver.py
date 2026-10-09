@@ -65,7 +65,7 @@ from relax.vdam.native_sampling import (
     record_native_sampling_post_iteration,
 )
 from relax.vdam.output import write_final_outputs, write_iteration_artifacts
-from relax.vdam.ports import VdamInputSource
+from relax.vdam.ports import VdamInputSource, VdamObserver
 from relax.vdam.schedules import (
     DEFAULT_SIGMA2_FUDGE,
     default_subset_sizes_for_3d_initial_model,
@@ -99,6 +99,7 @@ def _native_expectation_step(
     tilt_images: TiltImageAccuracyInputs | None = None,
     optics_group_ids: np.ndarray | None = None,
     premultiplied_ctf: bool = False,
+    observer: VdamObserver,
 ):
     """VDAM's E-step closure; ``dataset`` is a ``TomoDataset`` for subtomogram particles, with ``tilt_images``.
 
@@ -148,6 +149,7 @@ def _native_expectation_step(
                 optics_group_ids=optics_group_ids,
                 experiment_dataset=accuracy_dataset,
                 isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
+                observer=observer,
             )
             if accuracy_estimate is not None:
                 sampling_state.acc_rot = accuracy_estimate.accuracy.acc_rot
@@ -414,14 +416,19 @@ def _refuse_unsupported_multi_shape(opts: NativeInitialModelOptions, datasets) -
 
 
 def run_native_initial_model(
-    opts: NativeInitialModelOptions, *, source: VdamInputSource | None = None
+    opts: NativeInitialModelOptions,
+    *,
+    source: VdamInputSource | None = None,
+    observer: VdamObserver | None = None,
 ) -> NativeInitialModelResult:
     """Run native recovar InitialModel refinement.
 
-    ``source`` (None: the native :class:`VdamInputSource`) is the run's input source, which the command chose.
+    ``source`` (None: the native :class:`VdamInputSource`) is the run's input source and ``observer`` (None:
+    :class:`VdamObserver`, which observes nothing) its observer, both chosen by the command.
     """
 
     source = VdamInputSource() if source is None else source
+    observer = VdamObserver() if observer is None else observer
     profile = output.StageProfile(opts.environment.profile)
 
     if int(opts.random_seed) == -1:
@@ -612,6 +619,7 @@ def run_native_initial_model(
             relion_ctf.dataset_has_premultiplied_ctf(d, tuple(int(v) for v in d.image_shape))
             for d in shape_datasets(image_dataset)
         ),
+        observer=observer,
     )
     profile.record("expectation_setup")
 

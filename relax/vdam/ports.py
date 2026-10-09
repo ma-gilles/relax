@@ -1,9 +1,13 @@
-"""The port through which comparison enters an InitialModel run (code rule 15).
+"""The ports through which comparison enters, and observation leaves, an InitialModel run (code rule 15).
 
 A :class:`VdamInputSource` supplies what a comparison run takes from elsewhere instead of what the run
 computes, at the call sites the driver assigns: the start-up references, the M-step of each class, and the
 references after each iteration's M-step. This base class is the native source. The command chooses the source once
 (``relax.parity.vdam_replay``); the algorithm never imports an implementation.
+
+A :class:`VdamObserver` watches the run at named moments and never steers it: dumps, captures and timings.
+This base class observes nothing; the command chooses the observer once
+(``relax.diagnostics.vdam_observers.vdam_command_observer``).
 """
 
 from __future__ import annotations
@@ -32,3 +36,11 @@ class VdamInputSource:
         A replaying source returns a copy with other references and records what it read in ``meta``.
         """
         return state
+
+
+class VdamObserver:
+    """Watches an InitialModel run and never steers it; every hook does nothing by default."""
+
+    def expected_accuracy_estimated(self, inputs, accuracy) -> None:
+        """An expected-accuracy estimate is made: ``inputs`` (``native_sampling.AccuracyEstimateInputs``) is what
+        it read, ``accuracy`` (``helpers.expected_accuracy.ExpectedAccuracy``) what it found."""

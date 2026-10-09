@@ -57,7 +57,7 @@ def test_cli_forwards_explicit_precision_and_defaults_to_float32(monkeypatch, dt
     monkeypatch.setattr(
         driver,
         "run_native_initial_model",
-        lambda opts, source: calls.append(opts) or SimpleNamespace(final_mrc="a.mrc", final_model_star="a.star"),
+        lambda opts, source, observer: calls.append(opts) or SimpleNamespace(final_mrc="a.mrc", final_model_star="a.star"),
     )
     argv = ["--no-require-custom-cuda", "--no-jax-compilation-cache", "--gpu", "", "--i", "missing.star"]
     if dtype is not None:
@@ -200,7 +200,7 @@ def test_oracle_m_step_admits_native_replays(monkeypatch, env):
     monkeypatch.setattr(
         driver,
         "run_native_initial_model",
-        lambda opts, source: calls.append(source) or SimpleNamespace(final_mrc="a.mrc", final_model_star="a.star"),
+        lambda opts, source, observer: calls.append(source) or SimpleNamespace(final_mrc="a.mrc", final_model_star="a.star"),
     )
 
     def oracle(*args, **kwargs):

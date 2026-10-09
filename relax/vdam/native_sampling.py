@@ -8,9 +8,7 @@ the angular sampling is refined.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -34,6 +32,9 @@ from relax.relion.optics_aberrations import expected_accuracy_optics
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.schedules import relion_sampling_cadence
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
+
+if TYPE_CHECKING:
+    from relax.vdam.ports import VdamObserver
 
 if TYPE_CHECKING:
     from relax.refinement.tomo_half import TiltImageAccuracyInputs
@@ -376,6 +377,27 @@ class SamplingAccuracyEstimate:
         }
 
 
+@dataclass(frozen=True)
+class AccuracyEstimateInputs:
+    """What one expected-accuracy estimate read, for an observer (``VdamObserver.expected_accuracy_estimated``):
+    the state, particle and optics states (``optics_state`` None for subtomograms), the references in RELION's
+    layout, every trial's Euler angles, the trials' particle ids, classes and RELION part ids (their random
+    seeds), and the estimator's settings."""
+
+    state: InitialModelState
+    particle_state: NativeParticleState
+    optics_state: NativeOpticsState | None
+    references_relion: np.ndarray
+    eulers: np.ndarray
+    trial_particle_ids: np.ndarray
+    class_ids: np.ndarray
+    current_image_size: int
+    padding_factor: int
+    sigma2_fudge: float
+    random_seed: int
+    random_seed_particle_ids: np.ndarray
+
+
 def estimate_native_sampling_accuracy(
     sampling_state: NativeSamplingState,
     state: InitialModelState,
@@ -390,6 +412,7 @@ def estimate_native_sampling_accuracy(
     optics_group_ids: np.ndarray | None = None,
     experiment_dataset=None,
     isolate_in_subprocess: bool = False,
+    observer: VdamObserver,
 ) -> SamplingAccuracyEstimate | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
@@ -549,54 +572,23 @@ def estimate_native_sampling_accuracy(
             trial_particle_ids,
             random_seed_particle_ids,
         )
-    dump_dir = os.environ.get("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", "").strip()
-    dump_iterations = os.environ.get(
-        "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS",
-        "",
-    ).strip()
-    selected_dump_iterations = {
-        int(value.strip()) for value in dump_iterations.split(",") if value.strip()
-    }
-    if dump_dir and optics_state is not None and (
-        not selected_dump_iterations or int(state.iter) in selected_dump_iterations
-    ):
-        dump_path = Path(dump_dir)
-        dump_path.mkdir(parents=True, exist_ok=True)
-        np.savez(
-            dump_path / f"iter{int(state.iter):03d}_expected_accuracy_inputs.npz",
-            refs_relion=refs_relion,
+    observer.expected_accuracy_estimated(
+        AccuracyEstimateInputs(
+            state=state,
+            particle_state=particle_state,
+            optics_state=optics_state,
+            references_relion=refs_relion,
             eulers=eulers,
-            source_eulers_valid=(
-                np.zeros(n_trials, dtype=bool)
-                if particle_state.best_pose_eulers_valid is None
-                else np.asarray(particle_state.best_pose_eulers_valid)[trial_particle_ids]
-            ),
-            source_eulers_deg=(
-                np.zeros((n_trials, 3), dtype=np.float64)
-                if particle_state.best_pose_eulers_deg is None
-                else np.asarray(particle_state.best_pose_eulers_deg)[trial_particle_ids]
-            ),
             trial_particle_ids=trial_particle_ids,
             class_ids=class_ids,
-            pdf_class=np.asarray(state.pdf_class, dtype=np.float64),
-            sigma2_noise=np.asarray(state.sigma2_noise[0], dtype=np.float64),
-            defU=np.asarray(optics_state.defU, dtype=np.float64),
-            defV=np.asarray(optics_state.defV, dtype=np.float64),
-            defAngle=np.asarray(optics_state.defAngle, dtype=np.float64),
-            phase_shift=np.asarray(optics_state.phase_shift, dtype=np.float64),
-            voltage=np.asarray(optics_state.voltage, dtype=np.float64),
-            Cs=np.asarray(optics_state.Cs, dtype=np.float64),
-            Q0=np.asarray(optics_state.Q0, dtype=np.float64),
-            pixel_size=np.asarray(float(optics_state.pixel_size), dtype=np.float64),
-            ori_size=np.asarray(int(state.box_size), dtype=np.int64),
-            current_image_size=np.asarray(current_image_size, dtype=np.int64),
-            padding_factor=np.asarray(int(padding_factor), dtype=np.int64),
-            sigma2_fudge=np.asarray(float(sigma2_fudge), dtype=np.float64),
-            random_seed=np.asarray(int(random_seed), dtype=np.int64),
+            current_image_size=current_image_size,
+            padding_factor=padding_factor,
+            sigma2_fudge=sigma2_fudge,
+            random_seed=random_seed,
             random_seed_particle_ids=random_seed_particle_ids,
-            acc_rot=np.asarray(accuracy.acc_rot, dtype=np.float64),
-            acc_trans=np.asarray(accuracy.acc_trans_angstrom, dtype=np.float64),
-        )
+        ),
+        accuracy,
+    )
     return SamplingAccuracyEstimate(
         accuracy=accuracy,
         n_trials=int(n_trials),
@@ -872,6 +864,3 @@ def class_rotation_log_prior_for_sampling(
         n_rot = int(sampling.rotation_grid_size(int(healpix_order)))
         return np.full((int(state.K), n_rot), np.log(1.0 / float(n_rot)), dtype=np.float32)
     return _class_direction_rotation_log_prior(state, int(healpix_order))
-
-
-

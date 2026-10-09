@@ -34,8 +34,6 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    - `estep_setup._finish_relion_projector_class_inputs`: `RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR`
      (called through the projector context, which has no options);
    - `estep_common.arrays_to_accumulators`: `RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR`;
-   - `native_sampling.estimate_native_sampling_accuracy`: the expected-accuracy dump directory and
-     iterations;
    - `output.write_initial_run_metadata`: records the CUDA allocator and JAX cache variables as provenance.
    Moving them into `VdamEnvironment` costs plumbing through the projector context and the accuracy
    helpers. Not an exception: `RELAX_USE_FLOAT64_SCORING`, read once by `VdamEnvironment` only to refuse it;
@@ -43,7 +41,9 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    `VdamInputSource.startup_references`), `RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE` and the native M-step replay
    variables, read once by the command,
    which builds the run's input source (`relax.vdam.ports.VdamInputSource`, `relax.parity.vdam_replay`) and
-   refuses the native replays unless the M-step oracle (`relax.diagnostics.vdam_native_mstep`) runs.
+   refuses the native replays unless the M-step oracle (`relax.diagnostics.vdam_native_mstep`) runs; and the
+   dumps the command's observer writes (`relax.vdam.ports.VdamObserver`,
+   `relax.diagnostics.vdam_observers.vdam_command_observer`): the expected-accuracy inputs.
 2. **`do_grad` twice (rule 7).** The loop decides it before the schedule update; the E-step closure
    recomputes it with `schedules.native_initialmodel_do_grad` from the same `state` (same value: the
    iteration and `has_converged` do not change in between). Passing it needs the E-step callback contract

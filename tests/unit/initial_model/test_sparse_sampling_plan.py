@@ -11,6 +11,7 @@ from helpers.vdam import PreparedProjector
 from relax import sampling
 from relax.vdam import driver, native_options, native_sampling
 from relax.vdam.bootstrap_iref import initialise_denovo_state
+from relax.vdam.ports import VdamObserver
 from relax.vdam.state import NativeParticleState
 
 pytestmark = pytest.mark.unit
@@ -94,6 +95,7 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
             opts, pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
+        observer=VdamObserver(),
     )
     args = (state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
     _, meta = expectation(*args)

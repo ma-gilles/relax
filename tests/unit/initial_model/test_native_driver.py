@@ -18,6 +18,7 @@ from recovar.utils.helpers import R_from_relion, write_relion_mrc
 import relax.vdam.driver as driver
 from relax import healpix_sampling, sampling
 from relax.commands import initial_model
+from relax.diagnostics.vdam_observers import vdam_command_observer
 from relax.helpers.expected_accuracy import ExpectedAccuracy
 from relax.helpers.orientation_priors import relion_round_away_from_zero
 from relax.helpers.particle_io import ParticleReadPolicy
@@ -34,7 +35,7 @@ from relax.vdam import (
     schedules,
 )
 from relax.vdam.bootstrap_iref import initialise_denovo_state
-from relax.vdam.ports import VdamInputSource
+from relax.vdam.ports import VdamInputSource, VdamObserver
 from relax.vdam.state import NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import select_subset_for_iter
 
@@ -763,6 +764,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         random_seed=0,
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+        observer=VdamObserver(),
     )
 
     assert estimate is not None
@@ -807,6 +809,7 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
         random_seed=0,
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+        observer=VdamObserver(),
     )
 
     assert estimate is not None
@@ -855,6 +858,7 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
             padding_factor=1,
             sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
             tilt_images=images,
+            observer=VdamObserver(),
         )
 
     with pytest.raises(RuntimeError, match="estimator reached"):
@@ -970,6 +974,7 @@ def test_native_expectation_step_uses_rfloat_metadata_translations(monkeypatch):
             native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=1), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
+        observer=VdamObserver(),
     )
     expectation_step(state, np.asarray([0]), np.asarray([0], dtype=np.int8))
 
@@ -1762,6 +1767,7 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
             native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
+        observer=VdamObserver(),
     )
     accumulators, meta = expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
 
@@ -1823,6 +1829,7 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
             native_options.NativeInitialModelOptions(fn_img="particles.star", translation_sigma_angstrom=2.0), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
+        observer=VdamObserver(),
     )
 
     expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
@@ -2001,6 +2008,7 @@ def test_native_expectation_step_uses_autosampling_state_at_iteration_ten(monkey
         particle_state,
         sampling_state,
         projector_context=PreparedProjector(),
+        observer=VdamObserver(),
     )
     _accumulators, meta = expectation_step(state, np.asarray([0]), np.asarray([0], dtype=np.int8))
 
@@ -2037,6 +2045,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         optics_group_ids,
         experiment_dataset,
         isolate_in_subprocess,
+        observer,
     ):
         assert tilt_images is None  # single particles
         assert optics_group_ids is None  # one optics group
@@ -2136,6 +2145,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         sampling_state,
         optics_state,
         projector_context=SimpleNamespace(take=fake_prepare_projector),
+        observer=VdamObserver(),
     )
     _accumulators, meta = expectation_step(state, np.asarray([1, 0]), np.asarray([0, 1], dtype=np.int8))
 
@@ -2270,8 +2280,11 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
         phase_shift=np.zeros(2),
     )
 
-    monkeypatch.setenv("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS", "80,90")
+    # The command's observer for these two variables: the dump of iterations 80 and 90.
+    dump_observer = vdam_command_observer(
+        {"RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR": str(tmp_path),
+         "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS": "80,90"}
+    )
     estimate = native_sampling.estimate_native_sampling_accuracy(
         native_sampling.initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star"),
@@ -2284,6 +2297,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
         random_seed=0,
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+        observer=dump_observer,
     )
     meta = estimate.meta()
 
@@ -2355,6 +2369,7 @@ def test_native_expectation_step_records_sampling_changes_each_gradient_iteratio
         particle_state,
         sampling_state,
         projector_context=PreparedProjector(),
+        observer=VdamObserver(),
     )
     _accumulators, meta = expectation_step(state, np.asarray([0, 1]), np.asarray([0, 1], dtype=np.int8))
 
@@ -2688,7 +2703,7 @@ def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, mo
 def test_cli_non_dry_run_calls_native_driver(monkeypatch, capsys):
     calls = {}
 
-    def fake_run_native(opts, source):
+    def fake_run_native(opts, source, observer):
         calls["opts"] = opts
         return SimpleNamespace(final_mrc="out/initial_model.mrc", final_model_star="out/run_it003_model.star")
 
@@ -2753,7 +2768,7 @@ def test_cli_gpu_defaults_to_async_relion_cuda_image_backend(monkeypatch):
     calls = {}
     monkeypatch.delenv("CUDA_LAUNCH_BLOCKING", raising=False)
 
-    def fake_run_native(opts, source):
+    def fake_run_native(opts, source, observer):
         calls["opts"] = opts
         return SimpleNamespace(final_mrc="out/initial_model.mrc", final_model_star="out/run_it001_model.star")
 
@@ -2768,7 +2783,7 @@ def test_cli_gpu_allows_explicit_deterministic_cuda(monkeypatch):
     calls = {}
     monkeypatch.delenv("CUDA_LAUNCH_BLOCKING", raising=False)
 
-    def fake_run_native(opts, source):
+    def fake_run_native(opts, source, observer):
         calls["opts"] = opts
         return SimpleNamespace(final_mrc="out/initial_model.mrc", final_model_star="out/run_it001_model.star")
 

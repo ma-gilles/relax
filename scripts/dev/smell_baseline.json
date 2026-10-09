@@ -438,8 +438,6 @@
   "env-read:relax.sparse_pass2.sparse_pass2_policy:_projection_cache_enabled_for_pass:_SPARSE_PASS2_PROJECTION_CACHE_ENV",
   "env-read:relax.vdam.dense_adapter:_finish_relion_projector_class_inputs:_RELION_PROJECTOR_DUMP_DIR_ENV",
   "env-read:relax.vdam.estep_common:arrays_to_accumulators:RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR",
-  "env-read:relax.vdam.native_sampling:estimate_native_sampling_accuracy:RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR",
-  "env-read:relax.vdam.native_sampling:estimate_native_sampling_accuracy:RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS",
   "env-read:relax.vdam.output:write_initial_run_metadata:JAX_COMPILATION_CACHE_DIR",
   "env-read:relax.vdam.output:write_initial_run_metadata:JAX_COMPILATION_CACHE_DIR#2",
   "env-read:relax.vdam.output:write_initial_run_metadata:JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",

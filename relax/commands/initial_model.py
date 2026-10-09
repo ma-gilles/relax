@@ -593,6 +593,7 @@ def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
     if args.require_custom_cuda:
         _require_custom_cuda_runtime()
 
+    from relax.diagnostics.vdam_observers import vdam_command_observer
     from relax.parity.vdam_replay import (
         INITIAL_IREF_OVERRIDE_ENV,
         INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
@@ -609,7 +610,9 @@ def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
         mstep_compute_dtype=options_dict["mstep_compute_dtype"],
         oracle_m_step=oracle_m_step,
     )
-    result = run_native_initial_model(NativeInitialModelOptions(**options_dict), source=source)
+    result = run_native_initial_model(
+        NativeInitialModelOptions(**options_dict), source=source, observer=vdam_command_observer()
+    )
     print(f"recovar InitialModel complete: {result.final_mrc}")
     print(f"Final model STAR: {result.final_model_star}")
     return 0
