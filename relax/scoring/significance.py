@@ -81,7 +81,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
         significant_sample_indices,
         plan.output_plan,
         executed_backend=plan.executed_backend,
-        gaussian_report=plan.gaussian_report,
+        route_report=plan.route_report,
         tree_report=(
             {"firstiter_cc_tree_top2_rescore": tree_rescore_report(tree_rescore_totals, plan.tree_rescore_max_margin)}
             if plan.tree_rescore_enabled
