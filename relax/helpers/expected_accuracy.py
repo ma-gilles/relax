@@ -26,6 +26,9 @@ class ExpectedAccuracy:
     class_counts: np.ndarray
     trial_local_indices: np.ndarray
     trial_particle_ids: np.ndarray
+    # Each trial's terms of the class sums (``[K, n_trials]``, NaN for a skipped class), in trial order.
+    trial_rot_per_class: np.ndarray
+    trial_trans_per_class_angstrom: np.ndarray
 
 
 # relion_refine's --sigma2_fudge default (ml_optimiser.cpp:1308). The refinement
@@ -386,6 +389,8 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
         class_counts=np.asarray(out.class_counts, dtype=np.int64),
         trial_local_indices=trial_local.copy(),
         trial_particle_ids=trial_particles.copy(),
+        trial_rot_per_class=np.asarray(out.trial_rot_class, dtype=np.float64),
+        trial_trans_per_class_angstrom=np.asarray(out.trial_trans_class, dtype=np.float64),
     )
 
 
@@ -706,24 +711,47 @@ def _constant_selected(values: np.ndarray, indices: np.ndarray, name: str) -> fl
     return float(selected[0])
 
 
-def _combine_group_expected_accuracies(per_group, trial_local, trial_particle_ids) -> ExpectedAccuracy:
-    """Recombine per-optics-group accuracies: count-weighted class means, then the best class."""
+def _combine_group_expected_accuracies(per_group, group_positions, trial_local, trial_particle_ids) -> ExpectedAccuracy:
+    """Recombine per-optics-group accuracies as RELION's single trial loop sums them, then the best class.
 
-    counts = np.stack([result.class_counts for result in per_group]).astype(np.float64)
-    total = counts.sum(axis=0)
-    rot = np.full(total.shape, 999.0)
-    trans = np.full(total.shape, 999.0)
-    has = total > 0
-    rot[has] = sum(c * r.acc_rot_per_class for c, r in zip(counts, per_group))[has] / total[has]
-    trans[has] = sum(c * r.acc_trans_per_class_angstrom for c, r in zip(counts, per_group))[has] / total[has]
+    ``group_positions[g]`` are the positions in ``trial_local`` of group ``g``'s trials, in the order its estimate
+    scored them. RELION adds every trial's ``ang_error`` and ``my_pixel_size * sh_error`` to one class sum in trial
+    order and divides by the trial count (ml_optimiser.cpp:9327-9652); averaging per group and recombining by counts
+    rounds differently, and the last bits decide RELION's "no coarser offset step" test (ml_optimiser.cpp:9906).
+    """
+
+    n_trials = int(np.asarray(trial_local).size)
+    n_classes = int(per_group[0].acc_rot_per_class.size)
+    rot_terms = np.full((n_classes, n_trials), np.nan)
+    trans_terms = np.full((n_classes, n_trials), np.nan)
+    for result, positions in zip(per_group, group_positions, strict=True):
+        positions = np.asarray(positions, dtype=np.int64)
+        rot_terms[:, positions] = result.trial_rot_per_class[:, : positions.size]
+        trans_terms[:, positions] = result.trial_trans_per_class_angstrom[:, : positions.size]
+    rot = np.full(n_classes, 999.0)
+    trans = np.full(n_classes, 999.0)
+    counts = np.zeros(n_classes, dtype=np.int64)
+    for k in range(n_classes):
+        if n_trials == 0 or np.isnan(rot_terms[k]).any():
+            continue  # a class RELION skips (pdf_class < 0.01) has no terms in any group
+        rot_sum = 0.0
+        trans_sum = 0.0
+        for trial in range(n_trials):
+            rot_sum += float(rot_terms[k, trial])
+            trans_sum += float(trans_terms[k, trial])
+        rot[k] = rot_sum / float(n_trials)
+        trans[k] = trans_sum / float(n_trials)
+        counts[k] = n_trials
     return ExpectedAccuracy(
         acc_rot=float(np.min(rot)),
         acc_trans_angstrom=float(np.min(trans)),
         acc_rot_per_class=rot,
         acc_trans_per_class_angstrom=trans,
-        class_counts=total.astype(np.int64),
+        class_counts=counts,
         trial_local_indices=np.asarray(trial_local).copy(),
         trial_particle_ids=np.asarray(trial_particle_ids).copy(),
+        trial_rot_per_class=rot_terms,
+        trial_trans_per_class_angstrom=trans_terms,
     )
 
 
@@ -871,9 +899,10 @@ def estimate_relion_expected_accuracy(
         groups = np.asarray(optics_group_ids, dtype=np.int64).reshape(-1)
         if groups.shape != (n_particles,):
             raise ValueError(f"optics_group_ids must have shape ({n_particles},), got {groups.shape}")
-        per_group = []
+        per_group, group_positions = [], []
         for group in np.unique(groups[trial_local]):
             in_group = groups == group
+            group_positions.append(np.flatnonzero(in_group[trial_local]))
             per_group.append(
                 estimate_relion_expected_accuracy(
                     reference_fourier=reference_fourier,
@@ -901,7 +930,7 @@ def estimate_relion_expected_accuracy(
                     gridding_kernel=gridding_kernel,
                 )
             )
-        return _combine_group_expected_accuracies(per_group, trial_local, trial_particle_ids)
+        return _combine_group_expected_accuracies(per_group, group_positions, trial_local, trial_particle_ids)
     voltage = _constant_selected(ctf[:, CTFParamIndex.VOLT], trial_local, "voltage")
     cs = _constant_selected(ctf[:, CTFParamIndex.CS], trial_local, "spherical aberration")
     amplitude_contrast = _constant_selected(ctf[:, CTFParamIndex.W], trial_local, "amplitude contrast")

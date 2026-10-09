@@ -53,13 +53,20 @@ _EQUAL_ACCURACY = 1e-6
 
 @dataclass(frozen=True)
 class ExpectedErrors:
-    """Per-class and overall accuracies as ``calculateExpectedAngularErrors`` sets them."""
+    """Per-class and overall accuracies as ``calculateExpectedAngularErrors`` sets them.
+
+    ``trial_rot_class`` and ``trial_trans_class`` (``[K, n_trials]``, NaN for a skipped class) are each trial's
+    terms of the class sums, ``ang_error`` and ``my_pixel_size * sh_error`` (ml_optimiser.cpp:9642-9645), so a
+    caller that scores trials in parts can add them in RELION's trial order.
+    """
 
     acc_rot: float
     acc_trans: float
     acc_rot_class: np.ndarray
     acc_trans_class: np.ndarray
     class_counts: np.ndarray
+    trial_rot_class: np.ndarray
+    trial_trans_class: np.ndarray
 
 
 def _matmul3(left, right):
@@ -546,6 +553,8 @@ def expected_angular_errors(
     acc_rot_class = np.full(n_classes, 999.0)
     acc_trans_class = np.full(n_classes, 999.0)
     class_counts = np.zeros(n_classes, dtype=np.int64)
+    trial_rot_class = np.full((n_classes, n_trials), np.nan)
+    trial_trans_class = np.full((n_classes, n_trials), np.nan)
     acc_rot, acc_trans = 999.0, 999.0
     # Trials are independent; a chunk bounds the per-step image arrays.
     n_pixels = capacity * (capacity // 2 + 1)
@@ -580,15 +589,19 @@ def expected_angular_errors(
         rot_sum = 0.0
         trans_sum = 0.0
         for trial in range(n_trials):
-            rot_sum += errors[0][trial]
-            trans_sum += float(pixel_size) * errors[1][trial]
+            trial_rot_class[k, trial] = errors[0][trial]
+            trial_trans_class[k, trial] = float(pixel_size) * errors[1][trial]
+            rot_sum += trial_rot_class[k, trial]
+            trans_sum += trial_trans_class[k, trial]
         if n_trials > 0:
             acc_rot_class[k] = rot_sum / float(n_trials)
             acc_trans_class[k] = trans_sum / float(n_trials)
             class_counts[k] = n_trials
             acc_rot = min(acc_rot, acc_rot_class[k])
             acc_trans = min(acc_trans, acc_trans_class[k])
-    return ExpectedErrors(float(acc_rot), float(acc_trans), acc_rot_class, acc_trans_class, class_counts)
+    return ExpectedErrors(
+        float(acc_rot), float(acc_trans), acc_rot_class, acc_trans_class, class_counts, trial_rot_class, trial_trans_class
+    )
 
 
 __all__ = ["PVALUE", "ExpectedErrors", "expected_angular_errors"]

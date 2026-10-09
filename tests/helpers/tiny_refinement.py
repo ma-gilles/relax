@@ -419,4 +419,6 @@ def unconverged_accuracy(n_classes: int = 1):
         class_counts=np.zeros(n_classes, dtype=np.int64),
         trial_local_indices=np.zeros(0, dtype=np.int64),
         trial_particle_ids=np.zeros(0, dtype=np.int64),
+        trial_rot_per_class=np.zeros((n_classes, 0)),
+        trial_trans_per_class_angstrom=np.zeros((n_classes, 0)),
     )

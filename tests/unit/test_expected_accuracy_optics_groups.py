@@ -145,3 +145,58 @@ def test_class_on_another_grid_takes_the_scale_difference():
     )
     assert int(wider.class_counts[0]) == 8
     assert wider.acc_rot <= estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs).acc_rot
+
+
+def _group_result(terms_rot, terms_trans):
+    from relax.helpers.expected_accuracy import ExpectedAccuracy
+
+    rot, trans = np.atleast_2d(terms_rot), np.atleast_2d(terms_trans)
+    n = rot.shape[1]
+    return ExpectedAccuracy(
+        acc_rot=float(rot.mean()), acc_trans_angstrom=float(trans.mean()),
+        acc_rot_per_class=rot.mean(axis=1), acc_trans_per_class_angstrom=trans.mean(axis=1),
+        class_counts=np.full(rot.shape[0], n), trial_local_indices=np.arange(n), trial_particle_ids=np.arange(n),
+        trial_rot_per_class=rot, trial_trans_per_class_angstrom=trans,
+    )
+
+
+@pytest.mark.parametrize("split_seed", [0, 1, 2])
+def test_groups_recombine_as_relions_single_trial_loop(split_seed):
+    """Per-group estimates add their trial terms in RELION's trial order and divide by the trial count
+    (ml_optimiser.cpp:9327-9652), so the result is bitwise RELION's, whatever the groups' sizes; count-weighted group
+    means rounded differently and flipped RELION's "no coarser offset step" test on et15 s2 (iteration 60)."""
+    from relax.helpers.expected_accuracy import _combine_group_expected_accuracies
+
+    rng = np.random.default_rng(split_seed)
+    n_trials = 100
+    rot = rng.uniform(0.2, 0.4, size=(2, n_trials))
+    trans = np.where(rng.random((2, n_trials)) < 0.5, 8.5 * 0.1, 8.5 * 0.2)
+    groups = rng.integers(0, 4, size=n_trials)
+    positions = [np.flatnonzero(groups == g) for g in np.unique(groups)]
+    combined = _combine_group_expected_accuracies(
+        [_group_result(rot[:, p], trans[:, p]) for p in positions], positions, np.arange(n_trials), np.arange(n_trials)
+    )
+
+    for k in range(2):
+        rot_sum = trans_sum = 0.0
+        for trial in range(n_trials):
+            rot_sum += rot[k, trial]
+            trans_sum += trans[k, trial]
+        assert combined.acc_rot_per_class[k] == rot_sum / n_trials
+        assert combined.acc_trans_per_class_angstrom[k] == trans_sum / n_trials
+    assert combined.acc_trans_angstrom == min(combined.acc_trans_per_class_angstrom)
+    np.testing.assert_array_equal(combined.class_counts, [n_trials, n_trials])
+
+
+def test_identical_trial_terms_give_the_same_bits_for_every_group_split():
+    """Every trial at 0.85 A (RELION's 0.1-pixel shift step at 8.5 A) averages to the same bits however the 100 trials
+    split into groups; RELION's sum does not depend on the split either."""
+    from relax.helpers.expected_accuracy import _combine_group_expected_accuracies
+
+    values = []
+    for sizes in ([100], [27, 23, 26, 24], [40, 10, 49, 1]):
+        bounds = np.cumsum([0, *sizes])
+        positions = [np.arange(bounds[i], bounds[i + 1]) for i in range(len(sizes))]
+        results = [_group_result(np.full((1, p.size), 0.3), np.full((1, p.size), 8.5 * 0.1)) for p in positions]
+        values.append(_combine_group_expected_accuracies(results, positions, np.arange(100), np.arange(100)).acc_trans_angstrom)
+    assert values[0] == values[1] == values[2]

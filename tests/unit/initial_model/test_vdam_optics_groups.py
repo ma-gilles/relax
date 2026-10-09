@@ -189,6 +189,8 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
             class_counts=np.array([trials.size]),
             trial_local_indices=trials,
             trial_particle_ids=trials,
+            trial_rot_per_class=np.full((1, trials.size), rot),
+            trial_trans_per_class_angstrom=np.full((1, trials.size), rot),
         )
 
     monkeypatch.setattr(native_sampling, "estimate_relion_expected_accuracy_from_prepared_inputs", fake_estimator)

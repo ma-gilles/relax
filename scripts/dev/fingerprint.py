@@ -1013,7 +1013,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         rng = np.random.default_rng(seed)
         n_classes = int(np.asarray(operands["class_weights"]).size)
         trials = np.asarray(self.trial_order_local, dtype=np.int64)[:2]
-        return expected_accuracy.ExpectedAccuracy(
+        fields = dict(
             acc_rot=float(1.0 + rng.random()),
             acc_trans_angstrom=float(0.5 + rng.random()),
             acc_rot_per_class=1.0 + rng.random(n_classes),
@@ -1022,6 +1022,13 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             trial_local_indices=trials,
             trial_particle_ids=trials + 1,
         )
+        names = {field.name for field in dataclasses.fields(expected_accuracy.ExpectedAccuracy)}
+        if "trial_rot_per_class" in names:  # trees since the per-trial accuracy terms
+            fields.update(
+                trial_rot_per_class=np.repeat(fields["acc_rot_per_class"][:, None], trials.size, axis=1),
+                trial_trans_per_class_angstrom=np.repeat(fields["acc_trans_per_class_angstrom"][:, None], trials.size, axis=1),
+            )
+        return expected_accuracy.ExpectedAccuracy(**fields)
 
     def one_prior(n_classes, order, seed):
         """A direction prior with zeros and unequal class mass: (n_pix,) for K=1, (K, n_pix) for K>1."""

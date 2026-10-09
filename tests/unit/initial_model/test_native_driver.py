@@ -730,7 +730,9 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
     def fake_expected_accuracy(**kwargs):
         captured["eulers"] = np.asarray(kwargs["eulers_deg"]).copy()
         captured["particle_ids"] = np.asarray(kwargs["particle_ids"]).copy()
-        return relion_expected_accuracy.ExpectedErrors(2.5, 1.25, np.asarray([2.5]), np.asarray([1.25]), np.asarray([2]))
+        return relion_expected_accuracy.ExpectedErrors(
+            2.5, 1.25, np.asarray([2.5]), np.asarray([1.25]), np.asarray([2]), np.full((1, 2), 2.5), np.full((1, 2), 1.25)
+        )
 
     monkeypatch.setattr(relion_expected_accuracy, "expected_angular_errors", fake_expected_accuracy)
     main = pd.DataFrame(
@@ -787,7 +789,9 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
 
     def fake_expected_accuracy(**kwargs):
         captured["eulers"] = np.asarray(kwargs["eulers_deg"]).copy()
-        return relion_expected_accuracy.ExpectedErrors(2.5, 1.25, np.asarray([2.5]), np.asarray([1.25]), np.asarray([2]))
+        return relion_expected_accuracy.ExpectedErrors(
+            2.5, 1.25, np.asarray([2.5]), np.asarray([1.25]), np.asarray([2]), np.full((1, 2), 2.5), np.full((1, 2), 1.25)
+        )
 
     monkeypatch.setattr(relion_expected_accuracy, "expected_angular_errors", fake_expected_accuracy)
     main = pd.DataFrame({"_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"]})
@@ -2073,6 +2077,8 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
                 class_counts=np.asarray([2]),
                 trial_local_indices=np.asarray([1, 0]),
                 trial_particle_ids=np.asarray([1, 0]),
+                trial_rot_per_class=np.full((1, 2), 3.666),
+                trial_trans_per_class_angstrom=np.full((1, 2), 2.125),
             ),
             n_trials=2,
             sigma2_fudge=sigma2_fudge,
@@ -2247,7 +2253,8 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
         captured["sigma2_fudge"] = kwargs["sigma2_fudge"]
         captured["random_seed_particle_ids"] = np.asarray(kwargs["random_seed_particle_ids"]).copy()
         return relion_expected_accuracy.ExpectedErrors(
-            1.823, 1.717, np.asarray([1.823]), np.asarray([1.717]), np.asarray([2])
+            1.823, 1.717, np.asarray([1.823]), np.asarray([1.717]), np.asarray([2]), np.full((1, 2), 1.823),
+            np.full((1, 2), 1.717),
         )
 
     monkeypatch.setattr(relion_expected_accuracy, "expected_angular_errors", fake_expected_accuracy)
