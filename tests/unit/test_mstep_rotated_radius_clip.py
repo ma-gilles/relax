@@ -140,18 +140,53 @@ def test_group_on_a_wider_grid_keeps_relions_support(mag, scale):
         assert clip == adjoint.mstep_adjoint_max_r(2 * r_max, None, 2, anisotropic_magnification=True)
 
 
+# Diamond's 1.36 A against a 1.4 A model (cell C, relax#60), the reference grid, and a coarser grid.
+ISOTROPIC_SCALES = [1.36 / 1.4, 1.0, 1.12]
+
+
+@pytest.mark.parametrize("scale", ISOTROPIC_SCALES, ids=["s0.9714", "s1", "s1.12"])
+def test_isotropic_group_clip_keeps_relions_support(scale):
+    """relax#60: a group on another grid without anisotropic magnification. recovar's kernel compares
+    the image radius ``|k|`` and the rotated radius ``|A^-1 k| = |k| / s`` with one ``max_r``; the clip
+    must keep exactly RELION's ``|k| / s <= r_max`` inside the group's window, for ``s`` on both sides of 1."""
+
+    box, r_max = 64, 18
+    _pixels, x, y = _fftw_half_pixels(box)
+    window = _group_support(x, y, r_max, scale)
+    radius2 = (x * x + y * y).astype(np.float64)
+
+    def kernel_kept(clip_radius):
+        return window & (radius2 <= clip_radius**2) & (radius2 / scale**2 <= clip_radius**2)
+
+    clip = adjoint.mstep_adjoint_max_r(2 * r_max, r_max * scale, 2)
+    expected = window & (radius2 / scale**2 <= r_max * r_max)
+    assert np.array_equal(kernel_kept(clip.image_radius), expected)
+    if scale < 1.0:
+        # The image radius r_max * s (before relax#60) also cut the rotated radius there: the edge ring is lost.
+        assert np.sum(expected & ~kernel_kept(r_max * scale)) > 0
+
+
 @pytest.mark.gpu
 @pytest.mark.requires_relion_bind
 @pytest.mark.parametrize(
     ("mag", "scale"),
-    [(None, 1.0), (SYMMETRIC, 1.0), (ASYMMETRIC, 1.0), (ASYMMETRIC, 1.0 + 2e-8), (ASYMMETRIC, 1.1)],
-    ids=["none", "symmetric", "asymmetric", "asymmetric-s1+2e-8", "asymmetric-s1.1"],
+    [
+        (None, 1.0),
+        (None, 1.36 / 1.4),
+        (None, 1.12),
+        (SYMMETRIC, 1.0),
+        (ASYMMETRIC, 1.0),
+        (ASYMMETRIC, 1.0 + 2e-8),
+        (ASYMMETRIC, 1.1),
+    ],
+    ids=["none", "none-s0.9714", "none-s1.12", "symmetric", "asymmetric", "asymmetric-s1+2e-8", "asymmetric-s1.1"],
 )
 def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
     """Total BPref weight (one per kept pixel under trilinear splatting) against RELION's BackProjector.
 
-    ``scale`` puts the images on a grid ``s`` times the reference's field of view (relax#53): RELION's
-    matrix is ``s A`` and the image weights reach the group's rounded support at ``r_max * s``."""
+    ``scale`` puts the images on a grid ``s`` times the reference's field of view (relax#53, and relax#60
+    without magnification): RELION's matrix is ``s A`` and the image weights reach the group's rounded
+    support at ``r_max * s``."""
 
     import jax.numpy as jnp
     from relax.relion_bind._relion_bind_core import get_backprojector_data
@@ -180,20 +215,23 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
     volume_shape = relion_backprojector_volume_shape((box, box, box), padding, current_size=current_size)
     from relax.helpers.half_volume_mstep import half_volume_accumulator_shape
 
-    volume = jnp.zeros(int(np.prod(half_volume_accumulator_shape(volume_shape))), jnp.float32)
-    relax_weight = adjoint.adjoint_slice_volume_windowed(
-        jnp.ones((len(relion), window.size), jnp.float32),
-        jnp.asarray(window, jnp.int32),
-        jnp.asarray(_relax_matrices(relion), jnp.float32),
-        volume,
-        (box, box),
-        tuple(volume_shape),
-        "linear_interp",
-        True,
-        True,
-        clip,
-        True,
-    )
+    def adjoint_weight(max_r):
+        volume = jnp.zeros(int(np.prod(half_volume_accumulator_shape(volume_shape))), jnp.float32)
+        return adjoint.adjoint_slice_volume_windowed(
+            jnp.ones((len(relion), window.size), jnp.float32),
+            jnp.asarray(window, jnp.int32),
+            jnp.asarray(_relax_matrices(relion), jnp.float32),
+            volume,
+            (box, box),
+            tuple(volume_shape),
+            "linear_interp",
+            True,
+            True,
+            max_r,
+            True,
+        )
+
+    relax_weight = adjoint_weight(clip)
     # RELION's CPU BackProjector tests the rotated radius in double, relax's kernel (like RELION's GPU) in
     # float: pixels whose rotated radius is r_max to rounding may go either way.
     k = np.stack([x, y, np.zeros_like(x)], axis=-1)[support].astype(np.float64)
@@ -201,6 +239,10 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
     boundary = int(np.sum(np.abs(rotated_r2 - r_max**2) < 1e-4 * r_max**2))
     relax_total, relion_total = float(jnp.sum(relax_weight)), float(np.sum(relion_weight))
     assert abs(relax_total - relion_total) <= boundary + 1e-6 * relion_total
+    if mag is None and scale < 1.0:
+        # The image radius r_max * s (before relax#60) loses the edge ring RELION keeps.
+        before = float(jnp.sum(adjoint_weight(adjoint.ReferenceSphereClip(r_max * scale, padding))))
+        assert relion_total - before > 4 * max(boundary, 1)
     if mag is not None:
         # The image clip alone (the engine before anisotropic magnification was handled) is far off.
         image_clip = np.sum((rotated_r2 <= r_max**2) & (np.sum(k * k, axis=-1) <= r_max**2)[None, :])
@@ -208,10 +250,15 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("scale", [1.0, 1.1], ids=["s1", "s1.1"])
-def test_gpu_runtime_radius_reads_back_the_reference_radius(scale):
+@pytest.mark.parametrize(
+    ("scale", "anisotropic"),
+    [(1.0, True), (1.1, True), (1.36 / 1.4, False), (1.12, False)],
+    ids=["s1", "s1.1", "isotropic-s0.9714", "isotropic-s1.12"],
+)
+def test_gpu_runtime_radius_reads_back_the_reference_radius(scale, anisotropic):
     """The stable-window adjoint (a capacity clip and a traced logical image radius) keeps the same
-    pixels as the static clip of the logical size, on the reference grid and on a wider one (relax#53)."""
+    pixels as the static clip of the logical size, on the reference grid and on other ones (relax#53,
+    relax#60)."""
 
     import jax.numpy as jnp
 
@@ -219,7 +266,7 @@ def test_gpu_runtime_radius_reads_back_the_reference_radius(scale):
 
     box, current_size, capacity_size, padding = 64, 36, 48, 2
     r_max = current_size // 2
-    relion = scale * _relion_matrices(ASYMMETRIC, 30, seed=5)
+    relion = scale * _relion_matrices(ASYMMETRIC if anisotropic else np.eye(2), 30, seed=5)
     pixels, x, y = _fftw_half_pixels(box)
     window = pixels[_group_support(x, y, r_max, scale)]
     rows = jnp.ones((len(relion), window.size), jnp.float32)
@@ -240,7 +287,7 @@ def test_gpu_runtime_radius_reads_back_the_reference_radius(scale):
 
     def clip_at(size):
         return adjoint.mstep_adjoint_max_r(
-            size, None if radius is None else (size // 2) * radius, padding, anisotropic_magnification=True
+            size, None if radius is None else (size // 2) * radius, padding, anisotropic_magnification=anisotropic
         )
 
     static = weight(current_size, clip_at(current_size))

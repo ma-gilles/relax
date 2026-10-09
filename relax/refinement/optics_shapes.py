@@ -514,7 +514,8 @@ def reconstruction_image_radius(reference_current_size, scale: float):
     RELION's backprojector keeps rotated samples inside the reference model's
     ``r_max = current_size / 2`` (BackProjector::backproject, ``max_r2``); an image pixel
     at radius ``|k|`` lands at reference radius ``|k| / s``, so the image-side bound is
-    ``r_max * s``. None keeps the engines' own bound (one grid).
+    ``r_max * s``. None keeps the engines' own bound (one grid). The M-step clip
+    (:func:`relax.helpers.adjoint.mstep_adjoint_max_r`) turns it into the kernel's radius.
     """
     if reference_current_size is None:
         return None

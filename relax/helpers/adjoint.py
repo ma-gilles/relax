@@ -21,8 +21,12 @@ class ReferenceSphereClip(NamedTuple):
     clips the image radius (and repeats the cut on the rotated radius), so two cases arise:
 
     - The projection matrix is ``s^-1`` times an orthogonal matrix (one grid, or an optics
-      group on another pixel size or box): ``|A^-1 k| = |k| / s``, so the image clip at
-      ``r_max * s`` is RELION's rule pixel for pixel. ``reference_radius`` is None.
+      group on another pixel size or box): ``|A^-1 k| = |k| / s``. recovar's kernel compares
+      the image radius and the rotated radius with the same ``max_r``, so the clip is
+      ``r_max * max(s, 1)``: for ``s >= 1`` the image cut ``|k| <= r_max * s`` is RELION's rule,
+      for ``s < 1`` the rotated cut ``|k| / s <= r_max`` is (an image radius of ``r_max * s``
+      there would cut the rotated radius at ``r_max * s`` too, relax#60).
+      ``reference_radius`` is None.
     - Anisotropic magnification (``A = inv(M3) Aproj R``, ``M`` with unequal singular
       values): ``|A^-1 k| = |M k|`` varies with the direction of ``k``, so no image radius
       reproduces the rotated cut. The adjoint then keeps an image radius that covers the
@@ -78,6 +82,11 @@ def mstep_adjoint_max_r(volume_current_size, image_radius, padding_factor, *, an
     windows), so the image clip only has to cover that window, ``r_max + 1/2`` for
     ``s <= 1`` and ``r_max * s + 1`` above, and the mask applies RELION's
     ``|A^-1 k| <= r_max`` with the group's scale and magnification in ``A``.
+
+    Without anisotropic magnification such a group's clip is ``r_max * max(s, 1)``: the kernel
+    applies its one radius to the image and to the rotated (reference) radius, and RELION's
+    rule ``|k| / s <= r_max`` is the image cut for ``s >= 1`` and the rotated cut for ``s < 1``
+    (relax#60).
     """
 
     r_max = float(int(volume_current_size) // 2)
@@ -88,7 +97,7 @@ def mstep_adjoint_max_r(volume_current_size, image_radius, padding_factor, *, an
         return ReferenceSphereClip(r_max * scale + 1.0, int(padding_factor), r_max, scale, 1.0)
     if image_radius is None:
         return r_max
-    return ReferenceSphereClip(float(image_radius), int(padding_factor))
+    return ReferenceSphereClip(max(float(image_radius), r_max), int(padding_factor))
 
 
 def _recovar_clip_kwargs(max_r):

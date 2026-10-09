@@ -92,10 +92,15 @@ sphere, \(|A^{-1}(x,y,0)^T|\le r_{\max}\) (acc/cuda/cuda_kernels/BP.cuh:322,
 `BackProjector::backproject2Dto3D`). recovar's adjoint kernel clips the image radius
 \(|k|\le \text{max\_r}\) and repeats the cut on the rotated radius.
 
-The image clip alone is RELION's rule when \(A^{-1}\) restricted to the image plane is a
-multiple of an isometry. That covers one grid, optics groups on another pixel size or box
-(\(A=R/s\), image radius \(r_{\max}s\), `ReferenceSphereClip` with no reference radius) and
-unmagnified tilt images (\(A=A_{\mathrm{proj}}R\)). With an anisotropic magnification
+A single radius is RELION's rule when \(A^{-1}\) restricted to the image plane is a
+multiple of an isometry. That covers one grid, unmagnified tilt images (\(A=A_{\mathrm{proj}}R\))
+and optics groups on another pixel size or box (\(A=R/s\), rotated radius \(|k|/s\),
+`ReferenceSphereClip` with no reference radius). The kernel compares both the image radius and the
+rotated radius with its one \(\text{max\_r}\), so a group's clip is \(r_{\max}\max(s,1)\). For
+\(s\ge 1\) the image cut \(|k|\le r_{\max}s\) is the rule; for \(s<1\) the rotated cut
+\(|k|/s\le r_{\max}\) is. The image radius \(r_{\max}s\) at \(s<1\) cut the rotated radius at
+\(r_{\max}s\) as well and dropped the pixels \(r_{\max}s^2<|k|\le r_{\max}s\): 12 of 289 at
+\(s=0.9714\), \(r_{\max}=14\), which lowered the edge shell's data-vs-prior ratio by 10% (relax#60). With an anisotropic magnification
 \(A=M_3^{-1}A_{\mathrm{proj}}R\) (`ObservationModel::applyAnisoMag`), the rotated radius is
 \(|Mk|\). It ranges over \([\sigma_{\min}(M),\sigma_{\max}(M)]\,|k|\), so no image radius
 reproduces the rule. In a band around \(r_{\max}\), pixels outside the image radius are
