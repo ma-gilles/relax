@@ -36,13 +36,12 @@ def _run_expectation(run_half):
     from types import SimpleNamespace
 
     from relax.refinement.expectation import run_numbered_halves
-    from relax.refinement.ports import RunObserver
 
     combined = []
     # Each half's inputs are its index; the score is run_half and nothing is finished.
     run_numbered_halves(
         run_half, lambda half, result: None, (0, 1), (0, 1), SimpleNamespace(combine=lambda: combined.append(1)),
-        overlap_halves=False, iteration=0, observer=RunObserver(), log=logging.getLogger(__name__),
+        overlap_halves=False, log=logging.getLogger(__name__),
     )
     return combined
 

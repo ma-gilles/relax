@@ -265,7 +265,6 @@ def test_each_half_is_finished_by_its_own_thread_right_after_it_is_scored(overla
     from types import SimpleNamespace
 
     from relax.refinement.expectation import run_numbered_halves
-    from relax.refinement.ports import RunObserver
 
     events = []
 
@@ -279,7 +278,7 @@ def test_each_half_is_finished_by_its_own_thread_right_after_it_is_scored(overla
     combined = []
     run_numbered_halves(
         score, finish, ("half 0", "half 1"), (0, 1), SimpleNamespace(combine=lambda: combined.append(1)),
-        overlap_halves=overlap, iteration=0, observer=RunObserver(), log=LOG,
+        overlap_halves=overlap, log=LOG,
     )
     assert combined == [1]
     for k in (0, 1):

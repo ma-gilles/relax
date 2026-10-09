@@ -971,8 +971,10 @@ def refine_single_volume(
                 use_local=use_local, dtype=scoring_dtype,
             ),
             half_inputs, diagnostic_half_indices, significance, overlap_halves=options.execution.overlap_halves,
-            iteration=iteration, observer=observer, log=logger,
+            log=logger,
         )
+        # E-step + per-half M-step accumulators are now both populated.
+        observer.stage_finished(iteration, "e_step")
         # Drop the inputs' references to this iteration's projectors and maps, which the M-step and the next
         # iteration release (code rule 3).
         half_inputs = None
