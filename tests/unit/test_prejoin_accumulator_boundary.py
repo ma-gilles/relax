@@ -4,12 +4,12 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.diagnostics import observers
 from relax.diagnostics import reconstruction as diagnostics
 from relax.refinement import iteration_loop, maximization
-from relax.refinement.mean_helpers import ReconstructionSettings
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture
 def settings():
-    return ReconstructionSettings(
+    return reconstruction_settings(
         box_size=8, voxel_size=1.5, volume_shape=(8, 8, 8),
         padding_factor=2, projection_padding_factor=1, minres_map=5,
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0,

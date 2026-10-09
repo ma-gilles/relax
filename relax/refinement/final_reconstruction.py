@@ -171,7 +171,6 @@ def reconstruct_final_class_maps(
     accumulator_shape: tuple,
 ) -> FinalMaps:
     """Reconstruct class maps and their posterior-weighted merged map."""
-    mean_helpers._require_radial_gridding_for_classes(settings)
     class_means = jnp.stack(
         [
             settings.reconstruct(

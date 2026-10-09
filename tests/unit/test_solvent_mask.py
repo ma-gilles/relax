@@ -13,6 +13,7 @@ import mrcfile
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.reconstruction import solvent_mask
 from relax.refinement.refinement_options import ReconstructionPrograms
@@ -154,7 +155,6 @@ def test_mask_on_another_pixel_size_is_resampled(tmp_path):
 
 
 def _settings(**kwargs):
-    from relax.refinement.mean_helpers import ReconstructionSettings
 
     base = dict(
         box_size=8,
@@ -169,7 +169,7 @@ def _settings(**kwargs):
         particle_diameter_angstrom=12.0,
         first_iteration_lowpass_angstrom=None,
     )
-    return ReconstructionSettings(**{**base, **kwargs}, programs=ReconstructionPrograms.from_environ())
+    return reconstruction_settings(**{**base, **kwargs}, programs=ReconstructionPrograms.from_environ())
 
 
 def test_user_mask_replaces_the_diameter_sphere():

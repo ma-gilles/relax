@@ -5,10 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.diagnostics import reconstruction as dumps
 from relax.refinement.iteration_planning import ClassImageSize
-from relax.refinement.mean_helpers import ClassPriorEstimate, ReconstructionSettings
+from relax.refinement.mean_helpers import ClassPriorEstimate
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -124,7 +125,7 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
         data_vs_prior=values["data_vs_prior_k"],
         details={"sigma2_shells": 1.0 / (2**3 * values["shell_stats_k"]["avg_weight_shells"]), **values["shell_stats_k"]},
     )
-    settings = ReconstructionSettings(
+    settings = reconstruction_settings(
         box_size=values["grid_size"], voxel_size=values["voxel_size"],
         volume_shape=(16, 16, 16), padding_factor=values["PADDING_FACTOR"],
         projection_padding_factor=2, minres_map=5, width_mask_edge=5, fmask_edge=2,

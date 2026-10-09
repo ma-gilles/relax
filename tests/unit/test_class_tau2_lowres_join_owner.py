@@ -15,6 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.helpers.resolution import shell_index_to_resolution_angstrom
 from relax.reconstruction import regularization_relion
@@ -68,7 +69,7 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diamete
     log = Mock()
     result = mean_helpers.estimate_split_half_prior(
         numerators, denominators,
-        mean_helpers.ReconstructionSettings(
+        reconstruction_settings(
             box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
             padding_factor=2, projection_padding_factor=2, minres_map=5,
             width_mask_edge=5, fmask_edge=2,
@@ -128,7 +129,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
     monkeypatch.setattr(mean_helpers, "_class_tau2_from_iref_power_spectrum", estimate)
     monkeypatch.setattr(regularization_relion, "_compute_relion_weight_shell_stats", weights)
     monkeypatch.setattr(mean_helpers, "_class_tau2_update_details", normalize)
-    settings = mean_helpers.ReconstructionSettings(
+    settings = reconstruction_settings(
         box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
         padding_factor=PADDING_FACTOR, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2,
@@ -327,7 +328,7 @@ class TestClassTau2FromIrefPowerSpectrum:
 class TestClassTau2UpdateDetails:
     @staticmethod
     def _settings(tau2_fudge):
-        return mean_helpers.ReconstructionSettings(
+        return reconstruction_settings(
             box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
             padding_factor=PADDING_FACTOR, projection_padding_factor=2,
             minres_map=5, width_mask_edge=5, fmask_edge=2,

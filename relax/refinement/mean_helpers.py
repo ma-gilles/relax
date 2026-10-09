@@ -784,8 +784,6 @@ def _reconstruct_volume_eager(
     defaults; the parameters remain for scripts/replay_bpref_contribution_bundle.py and
     scripts/run_k_class_parity.py, which set them.
     """
-    if gridding_kernel not in _RECOVAR_GRIDDING_CORRECT:
-        raise ValueError(f"gridding_kernel must be 'radial' or 'separable', got {gridding_kernel!r}")
     gridding_correct = _RECOVAR_GRIDDING_CORRECT[gridding_kernel]
     from recovar.reconstruction import relion_functions
 
@@ -1175,7 +1173,7 @@ def _reconstruct_volume_eager(
 
 
 def _apply_relion_initial_lowpass_filter(
-    volume_ft_flat, volume_shape, voxel_size, ini_high_angstrom, filter_edgewidth=5
+    volume_ft_flat, volume_shape, voxel_size, ini_high_angstrom, filter_edgewidth
 ):
     """Apply RELION's ``initialLowPassFilterReferences`` to a full Fourier volume."""
     if ini_high_angstrom is None or float(ini_high_angstrom) <= 0.0:
@@ -1267,21 +1265,21 @@ class ReconstructionSettings:
     particle_diameter_angstrom: float | None
     first_iteration_lowpass_angstrom: float | None
     # Real-space gridding-correction window of every reconstruction ("radial" is RELION's);
-    # "separable" is K=1 only and the class operations refuse it.
-    gridding_kernel: str = "radial"
+    # "separable" is K=1 only (RelionConsistencyOptions; require_consistency_route refuses it for Class3D).
+    gridding_kernel: str
     # How the 3-D shell statistics behind tau2, data-vs-prior and the half-map FSC count Hermitian
     # pairs: "relion" counts those of the stored half's zero plane twice, "once" every pair once.
     # The 1/1000 weight floor inside the reconstruction (RECOVAR) keeps RELION's counting.
-    shell_pair_counting: str = "relion"
+    shell_pair_counting: str
     # RELION --solvent_mask: the user reference mask on the model grid in the internal (z, y, x)
     # frame (relax.reconstruction.solvent_mask.read_solvent_mask, transposed); it replaces the
     # particle-diameter sphere of the solvent flatten. None keeps the sphere.
-    solvent_mask: object = field(default=None, compare=False, repr=False)
+    solvent_mask: object = field(compare=False, repr=False)
     # RELION --solvent_correct_fsc (MPI relion_refine): the K=1 half-set FSC is the masked,
     # phase-randomisation corrected FSC of the unregularised half maps; needs solvent_mask.
-    solvent_correct_fsc: bool = False
+    solvent_correct_fsc: bool
     # Seed of the corrected FSC's random phases, drawn per iteration.
-    solvent_fsc_seed: int = 0
+    solvent_fsc_seed: int
     # The run's reconstruction programs (ScoringVariants.reconstruction): no effect on values.
     programs: ReconstructionPrograms
 
@@ -1318,15 +1316,6 @@ class ReconstructionSettings:
             gridding_kernel=self.gridding_kernel,
             programs=self.programs,
             **solve_options,
-        )
-
-
-def _require_radial_gridding_for_classes(settings: ReconstructionSettings) -> None:
-    """Class3D keeps RELION's radial window: its tau2 is the power of the radially corrected reference."""
-
-    if settings.gridding_kernel != "radial":
-        raise NotImplementedError(
-            f"gridding_kernel={settings.gridding_kernel!r} is K=1 only; class reconstructions keep the radial window"
         )
 
 
@@ -1529,7 +1518,6 @@ def _reconstruct_class_maps(
 ):
     """Reconstruct the shared Class3D stack from combined accumulators."""
 
-    _require_radial_gridding_for_classes(settings)
     clock = Stopwatch()
     cs_int = int(current_size) if current_size is not None else None
     shared_class_maps = []
@@ -1883,7 +1871,6 @@ def reconstruct_unregularized_class_means(
 ) -> list:
     """Reconstruct the shared K-class stack from combined accumulators."""
 
-    _require_radial_gridding_for_classes(settings)
     unreg_shared = jnp.stack(
         [
             settings.reconstruct(

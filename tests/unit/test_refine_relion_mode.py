@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 from helpers.pass1_programs import clear_pass1_programs
+from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import unconverged_accuracy
 
 from relax.helpers import oversampling as oversampling_grids
@@ -6940,7 +6941,7 @@ class TestRelionModeSmokeTest:
             mean_helpers_module.mask, "raised_cosine_mask", fake_raised_cosine_mask,
         )
 
-        settings = mean_helpers_module.ReconstructionSettings(
+        settings = reconstruction_settings(
             box_size=8,
             voxel_size=np.float32(2.125),
             volume_shape=VOLUME_SHAPE,
@@ -6998,7 +6999,7 @@ class TestRelionModeSmokeTest:
             ],
             axis=0,
         )
-        settings = mean_helpers_module.ReconstructionSettings(
+        settings = reconstruction_settings(
             box_size=8,
             voxel_size=1.0,
             volume_shape=VOLUME_SHAPE,
@@ -9594,7 +9595,7 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
         mean_helpers_module.reconstruct_unregularized_class_means(
             jnp.asarray(unregularized),
             jnp.ones_like(jnp.asarray(unregularized).real),
-            mean_helpers_module.ReconstructionSettings(
+            reconstruction_settings(
                 box_size=2, voxel_size=1.0, volume_shape=(2, 1, 1),
                 padding_factor=1, projection_padding_factor=1, minres_map=1,
                 width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0,

@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import record_calls, run_tiny_refinement
 
 from relax.helpers import half_volume_mstep
@@ -569,7 +570,7 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
         )
 
     monkeypatch.setattr(mean_helpers, "estimate_class_prior", estimate)
-    settings = mean_helpers.ReconstructionSettings(
+    settings = reconstruction_settings(
         box_size=8, voxel_size=1.0, volume_shape=(8, 8, 8), padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None, shell_pair_counting=counting, programs=ReconstructionPrograms.from_environ(),

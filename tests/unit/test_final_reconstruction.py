@@ -5,10 +5,10 @@ import weakref
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers import reconstruction_settings as settings_builder
 from helpers.float_compare import assert_matches
 
 from relax.refinement import final_reconstruction
-from relax.refinement.mean_helpers import ReconstructionSettings
 from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.relion.geometry import (
     IMAGE_MASK_EDGE_PIXELS,
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 
 def reconstruction_settings(*, tau2_fudge=1.0):
-    return ReconstructionSettings(
+    return settings_builder.reconstruction_settings(
         box_size=4,
         voxel_size=1.5,
         volume_shape=(4, 4, 4),

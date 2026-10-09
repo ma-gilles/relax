@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.refinement import mean_helpers
 from relax.refinement.refinement_options import ReconstructionPrograms
@@ -49,7 +50,7 @@ def test_flatten_class_stack_matches_each_class_flattened_alone():
 
 def test_lowpass_class_stack_matches_each_class_filtered_alone():
     stack = _class_stack(2)
-    settings = mean_helpers.ReconstructionSettings(
+    settings = reconstruction_settings(
         box_size=VOLUME_SHAPE[0],
         voxel_size=2.0,
         volume_shape=VOLUME_SHAPE,

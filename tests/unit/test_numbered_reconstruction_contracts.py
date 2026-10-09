@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.refinement import mean_helpers
 from relax.refinement.ports import RunObserver
@@ -26,7 +27,7 @@ def _settings(first_cc, flatten_solvent):
     # and only the per-iteration first-CC flag turns the filter off. The
     # settings turn float32 scalars into Python floats, so both operations
     # compute the mask radius in double precision.
-    return mean_helpers.ReconstructionSettings(
+    return reconstruction_settings(
         box_size=2, voxel_size=np.float32(1.3), volume_shape=(2, 2, 2),
         padding_factor=2, projection_padding_factor=1, minres_map=0,
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1,

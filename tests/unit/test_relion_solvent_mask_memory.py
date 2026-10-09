@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.refinement.refinement_options import ReconstructionPrograms
 
@@ -241,7 +242,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         lambda _shape: True,
     )
 
-    settings = mean_helpers.ReconstructionSettings(
+    settings = reconstruction_settings(
         box_size=4,
         voxel_size=np.float32(1.0),
         volume_shape=volume_shape,

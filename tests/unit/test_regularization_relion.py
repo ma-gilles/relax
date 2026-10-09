@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 
 pytest.importorskip("jax")
 import jax.numpy as jnp  # noqa: E402
@@ -817,7 +818,6 @@ def test_host_tau2_weight_sum_matches_the_converted_sum(monkeypatch):
 def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
     """The final pass sums the merged accumulators after the prior, so the prior must not touch them."""
     from relax.refinement import final_reconstruction
-    from relax.refinement.mean_helpers import ReconstructionSettings
 
     shape = (8, 8, 8)
     padded = tuple(2 * s for s in shape)
@@ -830,7 +830,7 @@ def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
     denominators = [(0.25 + rng.random(np.prod(half))).astype(np.float32) for _ in range(2)]
     before = [array.copy() for array in numerators + denominators]
     monkeypatch.setattr(regularization_relion, "_shell_stats_on_host", lambda n_voxels: True)
-    settings = ReconstructionSettings(
+    settings = reconstruction_settings(
         box_size=8, voxel_size=2.0, volume_shape=shape, padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=2, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),

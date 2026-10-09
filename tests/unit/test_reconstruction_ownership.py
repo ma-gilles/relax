@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
@@ -159,7 +160,7 @@ class TestReconstructionOwnership:
         n_shells = VOLUME_SHAPE[0] // 2 + 1
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
-        settings = mean_helpers_module.ReconstructionSettings(
+        settings = reconstruction_settings(
             box_size=8,
             voxel_size=1.0,
             volume_shape=VOLUME_SHAPE,
@@ -459,7 +460,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     monkeypatch.setattr(
         mean_helpers_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
-    settings = mean_helpers_module.ReconstructionSettings(
+    settings = reconstruction_settings(
         box_size=4,
         voxel_size=1.0,
         volume_shape=(4, 4, 4),

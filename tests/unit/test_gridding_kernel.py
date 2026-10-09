@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.reconstruction_settings import reconstruction_settings
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
@@ -277,9 +278,10 @@ def test_reconstruction_default_is_relions_radial_window():
     assert np.max(np.abs(separable - default)) > 1e-4 * np.max(np.abs(separable))
 
 
-def test_reconstruction_rejects_an_unknown_kernel():
+def test_an_unknown_kernel_is_refused_where_it_enters():
+    """The kernel is checked once, in the options (the reconstruction trusts it)."""
     with pytest.raises(ValueError, match="gridding_kernel"):
-        _reconstruct(gridding_kernel="square")
+        RelionConsistencyOptions(gridding_kernel="square")
 
 
 @pytest.mark.parametrize("kernel", ["radial", "separable"])
@@ -292,7 +294,7 @@ def test_forward_and_reconstruction_use_the_same_window(kernel):
 
 
 def _settings(**fields):
-    return mean_helpers.ReconstructionSettings(
+    return reconstruction_settings(
         box_size=8,
         voxel_size=1.0,
         volume_shape=(8, 8, 8),
@@ -335,21 +337,20 @@ def test_every_k1_reconstruction_hands_the_solve_the_kernel(monkeypatch, kernel)
     assert [kwargs["gridding_kernel"] for kwargs in calls] == [kernel] * 9
 
 
-def test_class_reconstructions_refuse_separable():
-    settings = _settings(gridding_kernel="separable")
-    with pytest.raises(NotImplementedError, match="K=1 only"):
-        mean_helpers.reconstruct_numbered_class_maps(
-            None, None, None, settings,
-            n_classes=2, iteration=0, current_size=8, accumulator_volume_shape=None,
-            relion_firstiter_cc_this_iter=False,
+def test_class_runs_refuse_separable_before_any_reconstruction():
+    """Class3D keeps RELION's radial window (its tau2 is the power of the radially corrected reference): the
+    loop's consistency route refuses the separable one before the first M-step, so the class reconstructions
+    need not check it."""
+    from relax.refinement.refinement_options import require_consistency_route
+
+    separable = RelionConsistencyOptions(gridding_kernel="separable")
+    with pytest.raises(NotImplementedError, match="K=1 single-particle refinement only"):
+        require_consistency_route(
+            stand_in.options(k_class=KClassOptions(n_classes=2), consistency=separable),
+            subtomograms=False, several_image_shapes=False,
         )
-    with pytest.raises(NotImplementedError, match="K=1 only"):
-        mean_helpers.reconstruct_unregularized_class_means(None, None, settings, 2)
-    with pytest.raises(NotImplementedError, match="K=1 only"):
-        final_reconstruction.reconstruct_final_class_maps(
-            None, None, None, class_weights=None, n_classes=2, settings=settings, current_size=8,
-            accumulator_shape=None,
-        )
+    k1 = stand_in.options(consistency=separable)
+    assert require_consistency_route(k1, subtomograms=False, several_image_shapes=False) is k1.consistency
 
 
 # --- the controller ----------------------------------------------------------------------------
