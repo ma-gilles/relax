@@ -203,7 +203,8 @@ class DenseBatchPolicy:
     k_class_rotation_block_size_override: int | None
     significance_image_batch_size_override: int | None
     significance_rotation_block_size_override: int | None
-    class_batch_overrides: tuple[dict, ...] | None
+    # Multi-shape halves: each shape class's own batch sizes (expectation_batches.ShapeClassBatchSizes).
+    class_batch_overrides: tuple | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -989,6 +990,21 @@ class DenseShapeOwners:
     optics: OpticsSpec
 
 
+def _class_batching(batching: DenseBatchPolicy, class_index: int) -> DenseBatchPolicy:
+    """The batch policy of one shape class: its own planned sizes when the half has them."""
+    if batching.class_batch_overrides is None:
+        return replace(batching, class_batch_overrides=None)
+    sizes = batching.class_batch_overrides[class_index]
+    return replace(
+        batching,
+        class_batch_overrides=None,
+        k_class_image_batch_size_override=sizes.k_class_image_batch_size,
+        k_class_rotation_block_size_override=sizes.k_class_rotation_block_size,
+        significance_image_batch_size_override=sizes.significance_image_batch_size,
+        significance_rotation_block_size_override=sizes.significance_rotation_block_size,
+    )
+
+
 def _dense_owners_for_shape(
     half: HalfScoringData,
     sampling: DenseSamplingSpec,
@@ -1035,7 +1051,6 @@ def _dense_owners_for_shape(
         if translations.log_prior is not None:
             shape_values["translation_log_prior"] = translations.log_prior
 
-    batch_overrides = {} if batching.class_batch_overrides is None else batching.class_batch_overrides[class_index]
     return DenseShapeOwners(
         half=replace(
             half,
@@ -1070,7 +1085,7 @@ def _dense_owners_for_shape(
             translation_search_base=shape_values["translation_search_base"],
             trans_prior_center_for_engine=shape_values["trans_prior_center_for_engine"],
         ),
-        batching=replace(batching, class_batch_overrides=None, **batch_overrides),
+        batching=_class_batching(batching, class_index),
         variant=replace(
             variant,
             firstiter_coarse_current_size=shape_values["firstiter_coarse_current_size"],

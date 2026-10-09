@@ -491,12 +491,12 @@ def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
     expected_sizes = [optics_shapes.class_adaptive_sizes(c, 20, 12, sizing) for c in classes]
     assert seen == [((32, 32),) + expected_sizes[0], ((40, 40),) + expected_sizes[1]]
     assert expected_sizes[1][0] == 26  # 2 ceil(0.5 * 1.25 * 20)
-    assert overrides[1] == {
-        "k_class_image_batch_size_override": 25,
-        "k_class_rotation_block_size_override": 50,
-        "significance_image_batch_size_override": 75,
-        "significance_rotation_block_size_override": 100,
-    }
+    assert overrides[1] == expectation_batches.ShapeClassBatchSizes(
+        k_class_image_batch_size=25,
+        k_class_rotation_block_size=50,
+        significance_image_batch_size=75,
+        significance_rotation_block_size=100,
+    )
 
     # Each class's call receives its own plan.
     received = []

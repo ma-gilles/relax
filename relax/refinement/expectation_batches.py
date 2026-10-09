@@ -100,7 +100,19 @@ class BatchPlanner:
         return plan.image_batch_size, plan.rotation_block_size
 
 
-def _class_adaptive_batch_overrides(half, *, plan, cs_for_engine, coarse_cs, coarse_sizing):
+@dataclass(frozen=True, kw_only=True)
+class ShapeClassBatchSizes:
+    """One shape class's adaptive dense batch sizes, planned from the class's own box and sizes."""
+
+    k_class_image_batch_size: int
+    k_class_rotation_block_size: int
+    significance_image_batch_size: int
+    significance_rotation_block_size: int
+
+
+def _class_adaptive_batch_overrides(
+    half, *, plan, cs_for_engine, coarse_cs, coarse_sizing
+) -> tuple[ShapeClassBatchSizes, ...]:
     """Adaptive dense batch sizes planned per shape class, from the class's own box and sizes."""
 
     overrides = []
@@ -110,12 +122,12 @@ def _class_adaptive_batch_overrides(half, *, plan, cs_for_engine, coarse_cs, coa
         )
         class_plan = plan(image_shape=shape_class.dataset.image_shape, cs_for_engine=class_cs, coarse_cs=class_coarse)
         overrides.append(
-            {
-                "k_class_image_batch_size_override": class_plan.pass2_image_batch_size,
-                "k_class_rotation_block_size_override": class_plan.pass2_rotation_block_size,
-                "significance_image_batch_size_override": class_plan.significance_image_batch_size,
-                "significance_rotation_block_size_override": class_plan.significance_rotation_block_size,
-            }
+            ShapeClassBatchSizes(
+                k_class_image_batch_size=class_plan.pass2_image_batch_size,
+                k_class_rotation_block_size=class_plan.pass2_rotation_block_size,
+                significance_image_batch_size=class_plan.significance_image_batch_size,
+                significance_rotation_block_size=class_plan.significance_rotation_block_size,
+            )
         )
     return tuple(overrides)
 
@@ -130,7 +142,7 @@ class HalfBatchPlan:
     fine_rotation_block_size: int
     coarse_image_batch_size: int | None
     coarse_rotation_block_size: int | None
-    class_overrides: tuple | None
+    class_overrides: tuple[ShapeClassBatchSizes, ...] | None
 
 
 def prepare_half_batches(
