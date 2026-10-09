@@ -346,3 +346,26 @@ def test_diff_accepts_only_a_log_only_difference(tmp_path, capsys, case_b, exit_
         assert accepted_line in out
     else:
         assert "only log rows differ" not in out
+
+
+def test_vdam_result_and_checkpoint_fields_whose_default_was_removed_are_redefaulted_but_a_changed_value_is_not():
+    from scripts.dev import vdam_fingerprint
+
+    diff = vdam_fingerprint.HARNESS.diff_fingerprints
+    key = "<NativeInitialModelResult>/state<InitialModelState>/K"
+    checkpoint = "run_it000_model.star<InitialModelState>/K"
+    a = _fingerprint(k1=dict(_case({key: "1 =default"}), checkpoints={checkpoint: "1 =default"}))
+    b = _fingerprint(k1=dict(_case({key: "1"}), checkpoints={checkpoint: "1"}))
+    counts, lines = diff(a, b)
+    assert counts == {"outputs": 0, "added": 0, "retired": 0, "moved": 0, "redefaulted": 2, "trace": 0, "log": 0}
+    assert fingerprint.accepted(counts)
+    assert f"REDEFAULTED k1 result {key}: 1 =default -> 1" in lines
+    assert lines[-1].startswith("controller inputs redefaulted (2); accepted")
+    # A changed value is an output difference, with or without the mark; the refinement harness keeps result
+    # leaves strict.
+    b = _fingerprint(k1=dict(_case({key: "2"}), checkpoints={checkpoint: "2 =default"}))
+    counts, _ = diff(a, b)
+    assert counts["redefaulted"] == 0 and counts["outputs"] == 2 and not fingerprint.accepted(counts)
+    b = _fingerprint(k1=_case({key: "1"}))
+    counts, _ = fingerprint.diff_fingerprints(_fingerprint(k1=_case({key: "1 =default"})), b)
+    assert counts["redefaulted"] == 0 and counts["outputs"] == 1

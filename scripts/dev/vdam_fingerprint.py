@@ -36,6 +36,7 @@ array lifetimes.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -583,7 +584,9 @@ HARNESS = fingerprint_cli.Harness(
     mutations=MUTATIONS,
     not_covered=NOT_COVERED,
     worker=_worker,
-    diff_fingerprints=diff_fingerprints,
+    # The result is the run's final model state, a record like the checkpoints: a mark-only change of its
+    # leaves (a state field's default removed, same value) is redefaulted, as for checkpoints.
+    diff_fingerprints=functools.partial(diff_fingerprints, redefaulted_sections=("result", "checkpoints")),
     accepted=accepted,
     case_errors=lambda fingerprint: case_errors(fingerprint, REFUSED_CASES),
     differing_cases=differing_cases,

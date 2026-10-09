@@ -319,11 +319,18 @@ def _changed_rows(rows_a: list[str], rows_b: list[str]) -> list[str]:
     ]
 
 
-def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple[dict[str, int], list[str]]:
+def diff_fingerprints(
+    a: dict,
+    b: dict,
+    *,
+    shown_per_section: int = 12,
+    redefaulted_sections: tuple[str, ...] = ("checkpoints",),
+) -> tuple[dict[str, int], list[str]]:
     """``(differences per class of DIFFERENCE_CLASSES, report lines)`` between two fingerprints written by ``run``.
 
     ``outputs`` counts missing cases and changed status, result, file and checkpoint leaves; ``trace`` the
-    removed or added trace rows that are not log records; ``log`` those that are.
+    removed or added trace rows that are not log records; ``log`` those that are. ``redefaulted`` counts
+    controller inputs, and leaves of ``redefaulted_sections``, whose only difference is the ``=default`` mark.
     """
     lines = []
     counts = dict.fromkeys(DIFFERENCE_CLASSES, 0)
@@ -353,11 +360,12 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
                 lines.append(f"MOVED {name} {section} {key} -> {moved_pairs[key]}")
             changed = [key for key in changed if key not in moved_pairs and key not in moved_pairs.values()]
             # The same value under a field whose declared default changed: only the =default mark differs. A
-            # controller input (an option record's default aligned) or a checkpoint leaf (a checkpoint record's
-            # default removed); a result leaf whose mark changes is still an output difference.
+            # controller input (an option record's default aligned) or a leaf of redefaulted_sections (a recorded
+            # record's default removed: checkpoints here; VDAM's result, its final state, too); a mark change
+            # elsewhere is still an output difference.
             redefaulted = [
                 key for key in changed
-                if key in flat_a and key in flat_b and (CONTROLLER_INPUT.match(key) or section == "checkpoints")
+                if key in flat_a and key in flat_b and (CONTROLLER_INPUT.match(key) or section in redefaulted_sections)
                 and _unmarked(flat_a[key]) == _unmarked(flat_b[key])
             ]
             counts["redefaulted"] += len(redefaulted)
@@ -433,7 +441,7 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
     if counts["redefaulted"] and not counts["outputs"] and not counts["trace"]:
         lines.append(
             f"controller inputs redefaulted ({counts['redefaulted']}); accepted: same values, the fields' declared "
-            "defaults changed (option inputs or checkpoint fields)"
+            f"defaults changed (option inputs or fields of {', '.join(redefaulted_sections)})"
         )
     return counts, lines
 
