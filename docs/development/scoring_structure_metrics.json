@@ -24,12 +24,12 @@
     "recorded_date": "2026-10-08",
     "source_commit": "6610f54da8f2abe3e3934b79ef1be05156c68623",
     "totals": {
-      "maximum_function_line_span": 1819,
-      "maximum_parameter_count": 46,
-      "large_argument_function_count": 20,
-      "very_large_argument_function_count": 4,
-      "physical_lines": 7632,
-      "nonblank_noncomment_lines": 6619
+      "maximum_function_line_span": 466,
+      "maximum_parameter_count": 23,
+      "large_argument_function_count": 19,
+      "very_large_argument_function_count": 3,
+      "physical_lines": 8901,
+      "nonblank_noncomment_lines": 7613
     }
   }
 }
