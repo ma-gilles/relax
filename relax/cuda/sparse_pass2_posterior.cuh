@@ -5,7 +5,7 @@
 //
 //   SparsePass2LogZF64      <-> _logsumexp_pass2_bucket_score_only
 //   SparsePass2PosteriorF32 <-> _normalize_pass2_bucket_with_log_z followed by
-//                               _relion_f32_fine_posterior
+//                               relion_f32_fine_probabilities
 //
 // Every per-element formula is copied from the XLA path.  Order-independent
 // reductions (max, argmax with smallest index, mask counts) are exact.  The

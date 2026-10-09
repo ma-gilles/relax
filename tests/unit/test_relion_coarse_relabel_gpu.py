@@ -23,7 +23,7 @@ def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
     )
     from relax.relion.relion_coarse_operands import relion_coarse_translate
     from relax.scoring.tomo_coarse import coarse_score_layout
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
     rng = np.random.default_rng(7)
     padding_factor = 2
@@ -42,7 +42,7 @@ def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
     images = (rng.normal(0.0, 1.0, (2, n_pixels)) + 1j * rng.normal(0.0, 1.0, (2, n_pixels))).astype(np.complex64)
     weight = (rng.uniform(0.1, 2.0, images.shape) * np.asarray(layout.score_active_mask)[None]).astype(np.float32)
     initial = np.zeros(2, dtype=np.float32)
-    angles = jnp.asarray(_relion_translation_angles_f32(rng.uniform(-3.0, 3.0, (9, 2)), image_shape), dtype=jnp.float32)
+    angles = jnp.asarray(relion_translation_angles_f32(rng.uniform(-3.0, 3.0, (9, 2)), image_shape), dtype=jnp.float32)
     fused = em_cuda_kernels.relion_coarse_diff2_projector_f32(
         relion_projector_half_to_texture_full(jnp.asarray(projector_half)).astype(jnp.complex64),
         jnp.asarray(rotations),

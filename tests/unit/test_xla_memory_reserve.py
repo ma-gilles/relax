@@ -241,7 +241,7 @@ def test_refine_command_reserves_before_the_jax_backend_starts(tmp_path, launch)
     smi = fake_bin / "nvidia-smi"
     smi.write_text("#!/bin/sh\necho '0, GPU-fake, 81559'\n")
     smi.chmod(0o755)
-    report = "import os, relax; print(os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']); print(relax._XLA_RESERVE_LOG_LINE)"
+    report = "import os, relax; print(os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION']); print(relax.XLA_RESERVE_LOG_LINE)"
     if launch == "console":
         command = [sys.executable, "-c", f"import sys; sys.argv = ['relax', 'refine', '--data_dir', {str(data_dir)!r}]; {report}"]
     else:

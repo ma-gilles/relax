@@ -539,21 +539,21 @@ class ScoringVariants:
         from relax.dense import scoring_policy as sp
 
         log = logging.getLogger(__name__)
-        k1 = parse_env_optional_flag(sp._K1_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K=1 RELION x-half M-step default")
+        k1 = parse_env_optional_flag(sp.K1_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K=1 RELION x-half M-step default")
         k_class = parse_env_optional_flag(
-            sp._K_CLASS_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K-class RELION x-half M-step default"
+            sp.K_CLASS_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K-class RELION x-half M-step default"
         )
         full_parent = parse_env_optional_flag(
-            sp._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, logger=log, fallback="RELION pruned-parent local pass-2 default"
+            sp.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, logger=log, fallback="RELION pruned-parent local pass-2 default"
         )
         return cls(
-            k1_relion_x_half_mstep=sp._k1_relion_x_half_mstep_default_available() if k1 is None else k1,
+            k1_relion_x_half_mstep=sp.k1_relion_x_half_mstep_default_available() if k1 is None else k1,
             k_class_relion_x_half_mstep=True if k_class is None else k_class,
             local_adaptive_pass2=LocalAdaptivePass2Support(
                 full_parent=bool(full_parent),
-                rotation_only=parse_env_flag_or_false(sp._LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV, logger=log),
+                rotation_only=parse_env_flag_or_false(sp.LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV, logger=log),
                 denominator_mode=parse_env_choice(
-                    sp._LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
+                    sp.LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
                     sp.LOCAL_ADAPTIVE_PASS2_DENOMINATOR_MODES,
                     logger=log,
                     expected="rotation_only or full_parent",

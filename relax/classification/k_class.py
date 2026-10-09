@@ -16,10 +16,10 @@ from relax.classification.k_class_inputs import (
     _as_class_means,
     _class_log_priors,
     _select_class_value,
-    _select_projector_half_for_class,
     _select_required_class_value,
     seed_iteration_first_class,
     seed_iteration_supports,
+    select_projector_half_for_class,
 )
 from relax.classification.k_class_results import (
     KClassEMResult,
@@ -220,7 +220,7 @@ def _infer_healpix_order_from_rotation_count(
     )
 
 
-def _rotation_prior_with_class_log_prior(
+def rotation_prior_with_class_log_prior(
     rotation_log_prior, class_log_prior: float, n_rot: int, *, dtype: np.dtype = np.float32
 ):
     if rotation_log_prior is None:
@@ -229,7 +229,7 @@ def _rotation_prior_with_class_log_prior(
     return prior + np.asarray(float(class_log_prior), dtype=dtype)
 
 
-def _sparse_pose_ids_to_fine_grid(hard_assignment, best_rotation_ids, n_fine_trans: int) -> np.ndarray:
+def sparse_pose_ids_to_fine_grid(hard_assignment, best_rotation_ids, n_fine_trans: int) -> np.ndarray:
     trans_ids = np.asarray(hard_assignment, dtype=np.int64) % int(n_fine_trans)
     rot_ids = np.asarray(best_rotation_ids, dtype=np.int64)
     return (rot_ids * int(n_fine_trans) + trans_ids).astype(np.int32, copy=False)
@@ -296,7 +296,7 @@ def _run_sparse_k_class_adaptive_pass2(
             )
         else:
             rot_prior = base_engine_kwargs.get("rotation_log_prior")
-        return _rotation_prior_with_class_log_prior(
+        return rotation_prior_with_class_log_prior(
             rot_prior,
             float(class_log_priors[class_index]),
             n_rot_coarse,
@@ -458,7 +458,7 @@ def _run_sparse_k_class_adaptive_pass2(
             None if common["dense_gemm_full_grid"] else common["relion_firstiter_score_mode"]
         ),
         return_score_log_z=True,
-        relion_projector_half=_select_projector_half_for_class(relion_projector_half_by_class, 0, n_classes),
+        relion_projector_half=select_projector_half_for_class(relion_projector_half_by_class, 0, n_classes),
         relion_projector_r_max=relion_projector_r_max,
         **common,
     )
@@ -499,7 +499,7 @@ def single_class_pass2_em_result(
         new_means=None,
         Ft_y=[_as_host_accumulator(result.Ft_y)],
         Ft_ctf=[_as_host_accumulator(result.Ft_ctf)],
-        per_class_hard_assignments=_sparse_pose_ids_to_fine_grid(
+        per_class_hard_assignments=sparse_pose_ids_to_fine_grid(
             result.hard_assignment, result.best_rotation_indices, n_fine_trans
         )[None],
         per_class_stats=(result.relion_stats,),
@@ -758,7 +758,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
             score_include_dc=True,
         )
         if score_window.score_indices_np is not None:
-            score_projector_half = _select_projector_half_for_class(
+            score_projector_half = select_projector_half_for_class(
                 score_projector_half,
                 0,
                 1,
@@ -1252,7 +1252,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             optics_group_ids=_subset_image_axis_engine_kwargs(
                 {"optics_group_ids": pass2_kwargs.get("optics_group_ids")}, image_indices, n_images
             )["optics_group_ids"],
-            relion_projector_half=_select_projector_half_for_class(
+            relion_projector_half=select_projector_half_for_class(
                 relion_projector_half_by_class,
                 class_index,
                 n_classes,
@@ -1266,7 +1266,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
                 result.relion_stats.log_evidence_per_image, dtype=class_log_evidence.dtype
             )
         hard_full = np.zeros(n_images, dtype=np.int32)
-        hard_full[image_indices] = _sparse_pose_ids_to_fine_grid(
+        hard_full[image_indices] = sparse_pose_ids_to_fine_grid(
             result.hard_assignment, result.best_rotation_indices, n_fine_trans
         )
         results.append_class(

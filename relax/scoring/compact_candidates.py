@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from relax.helpers.shape_buckets import pow2_ceil
-from relax.local.local_layout import _exact_bucket_rotation_size
+from relax.local.local_layout import exact_bucket_rotation_size
 
 
 class SparseCandidateMask:
@@ -176,7 +176,7 @@ def build_compact_pair_index_arrays(
     )
     required_capacity = int(pair_counts.max(initial=0))
     if pair_bucket_size is None:
-        pair_bucket_size = _exact_bucket_rotation_size(
+        pair_bucket_size = exact_bucket_rotation_size(
             required_capacity,
             pair_block_size_for_quantization,
         )
@@ -254,7 +254,7 @@ def build_compact_fine_job_plan_from_pair_arrays(
         raise ValueError("compact fine-job reference lookup batch axis is misaligned")
     valid_job_count = int(np.sum(job_counts, dtype=np.int64))
     if job_bucket_size is None:
-        job_bucket_size = _exact_bucket_rotation_size(
+        job_bucket_size = exact_bucket_rotation_size(
             valid_job_count,
             job_block_size_for_quantization,
         )

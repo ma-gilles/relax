@@ -850,7 +850,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     )
     monkeypatch.setattr(
         sparse_pass2_scoring,
-        "_relion_cuda_powerclass_highres_xi2_half",
+        "relion_cuda_powerclass_highres_xi2_half",
         lambda processed, **_kwargs: jnp.zeros(processed.shape[0], dtype=jnp.float32),
     )
     monkeypatch.setattr(
@@ -1177,7 +1177,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         ones = jnp.ones(scores.shape[0], dtype=jnp.float32)
         return jnp.zeros_like(scores), None, None, None, ones, None
 
-    monkeypatch.setattr(sparse_pass2_posterior, "_relion_f32_fine_posterior", capture_fine_posterior)
+    monkeypatch.setattr(sparse_pass2_posterior, "relion_f32_fine_probabilities", capture_fine_posterior)
     monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_DIR")
     run_with_priors(
         dataset,

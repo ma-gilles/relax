@@ -144,7 +144,7 @@ def mock_unit_ctf_and_zero_highres_power(monkeypatch):
     )
     monkeypatch.setattr(
         sparse_pass2_scoring,
-        "_relion_cuda_powerclass_highres_xi2_half",
+        "relion_cuda_powerclass_highres_xi2_half",
         lambda processed, **_kwargs: jnp.zeros(
             processed.shape[0],
             dtype=jnp.float32,

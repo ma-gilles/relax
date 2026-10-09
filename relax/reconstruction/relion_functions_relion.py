@@ -278,7 +278,7 @@ def _regularize_large_relion_half_filter_impl(
     return regularized_filter.reshape(Ft_ctf.shape)
 
 
-_regularize_large_relion_half_filter_donate_ctf = jax.jit(
+regularize_large_relion_half_filter_donate_ctf = jax.jit(
     _regularize_large_relion_half_filter_impl,
     static_argnums=(2, 3, 5, 6, 7, 8, 9),
     donate_argnums=(0,),
@@ -322,7 +322,7 @@ def _divide_large_relion_half_numerator_impl(
     return divided.astype(jnp.complex64).reshape(F_ty.shape)
 
 
-_divide_large_relion_half_numerator_donate_numerator = jax.jit(
+divide_large_relion_half_numerator_donate_numerator = jax.jit(
     _divide_large_relion_half_numerator_impl,
     static_argnums=(2, 3, 4),
     donate_argnums=(0,),
@@ -373,7 +373,7 @@ def _finish_large_relion_postprocess_from_unpadded_real_impl(
 
 
 @functools.partial(jax.jit, static_argnums=[1, 2, 3, 4, 5, 6, 7, 9, 10])
-def _finish_large_relion_postprocess_from_unpadded_real(
+def finish_large_relion_postprocess_from_unpadded_real(
     vol,
     og_volume_shape,
     volume_upsampling_factor,
@@ -408,7 +408,7 @@ def _finish_large_relion_postprocess_from_unpadded_real(
 
 
 @functools.partial(jax.jit, static_argnums=[1, 2, 3, 4, 5, 6, 7, 9, 10])
-def _finish_large_relion_postprocess_from_fftw_half(
+def finish_large_relion_postprocess_from_fftw_half(
     vol_half,
     og_volume_shape,
     volume_upsampling_factor,

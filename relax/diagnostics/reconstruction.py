@@ -146,7 +146,7 @@ def write_class_mstep(
     frame_scale,
 ):
     """Capture a class prior and its reconstruction operands in the M-step NPZ."""
-    reconstruct_floor_stats_k = regularization_relion._compute_relion_weight_shell_stats(
+    reconstruct_floor_stats_k = regularization_relion.compute_relion_weight_shell_stats(
         denominators[class_index],
         settings.volume_shape,
         padding_factor=settings.padding_factor,

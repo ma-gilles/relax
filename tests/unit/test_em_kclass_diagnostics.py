@@ -33,27 +33,27 @@ def test_kclass_mstep_defaults_to_relion_x_half_with_full_volume_escape_hatch(mo
 def test_k1_relion_x_half_mstep_defaults_on_with_escape_hatch(monkeypatch):
     """K=1 adaptive RELION mode should use x-half BPref layout by default."""
 
-    monkeypatch.delenv(scoring_policy._K1_RELION_X_HALF_MSTEP_ENV, raising=False)
-    monkeypatch.setattr(scoring_policy, "_k1_relion_x_half_mstep_default_available", lambda: True)
+    monkeypatch.delenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, raising=False)
+    monkeypatch.setattr(scoring_policy, "k1_relion_x_half_mstep_default_available", lambda: True)
     assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
 
-    monkeypatch.setenv(scoring_policy._K1_RELION_X_HALF_MSTEP_ENV, "0")
+    monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "0")
     assert ScoringVariants.from_environ().k1_relion_x_half_mstep is False
 
-    monkeypatch.setenv(scoring_policy._K1_RELION_X_HALF_MSTEP_ENV, "1")
+    monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "1")
     assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
 
-    monkeypatch.setenv(scoring_policy._K1_RELION_X_HALF_MSTEP_ENV, "invalid")
+    monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "invalid")
     assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
 
 def test_k1_relion_x_half_mstep_default_disables_when_cuda_unavailable(monkeypatch):
     """The default must not request CUDA-only x-half adjoints on CPU tests."""
 
-    monkeypatch.delenv(scoring_policy._K1_RELION_X_HALF_MSTEP_ENV, raising=False)
-    monkeypatch.setattr(scoring_policy, "_k1_relion_x_half_mstep_default_available", lambda: False)
+    monkeypatch.delenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, raising=False)
+    monkeypatch.setattr(scoring_policy, "k1_relion_x_half_mstep_default_available", lambda: False)
     assert ScoringVariants.from_environ().k1_relion_x_half_mstep is False
 
-    monkeypatch.setenv(scoring_policy._K1_RELION_X_HALF_MSTEP_ENV, "1")
+    monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "1")
     assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
 
 

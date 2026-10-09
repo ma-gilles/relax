@@ -767,7 +767,7 @@ def _first_class_k_class_output(pass2, n_classes: int, sampling: TomoSampling, p
     so their evidence and best scores are ``-inf``, their poses ``-1`` and their accumulators and sums zero.
     """
 
-    from relax.classification.k_class import _sparse_pose_ids_to_fine_grid
+    from relax.classification.k_class import sparse_pose_ids_to_fine_grid
     from relax.sparse_pass2.resident_pass2 import ResidentKClassPass2Output
 
     _, _, fine_px, _ = tomo_translation_grids(sampling, pixel_size)
@@ -782,7 +782,7 @@ def _first_class_k_class_output(pass2, n_classes: int, sampling: TomoSampling, p
         return None if first is None else (first,) + tuple(np.zeros_like(np.asarray(first)) for _ in range(others))
 
     rotation_ids = np.asarray(pass2.best_rotation_indices, dtype=np.int64)
-    hard = _sparse_pose_ids_to_fine_grid(pass2.hard_assignment, rotation_ids, int(fine_px.shape[0]))
+    hard = sparse_pose_ids_to_fine_grid(pass2.hard_assignment, rotation_ids, int(fine_px.shape[0]))
     rotation_sums = np.asarray(stats.rotation_posterior_sums, dtype=np.float64)
     return ResidentKClassPass2Output(
         Ft_y=(pass2.Ft_y,) + tuple(np.zeros_like(np.asarray(pass2.Ft_y)) for _ in range(others)),
@@ -838,7 +838,7 @@ def score_tomo_half_in_loop(
     Class3D (K>1, a global search): ``volume`` and ``relion_projector_half`` keep the loop's class axis,
     ``class_log_priors`` are the classes' ``log pdf_class`` and ``class_rotation_log_prior`` their
     direction priors ``[K, R]`` (or None: the shared ``rotation_log_prior``), folded as the SPA K-class
-    pass folds them (``k_class._rotation_prior_with_class_log_prior``). Class outputs use the same SPA result adaptation
+    pass folds them (``k_class.rotation_prior_with_class_log_prior``). Class outputs use the same SPA result adaptation
     (``_class_segmented_em_result``, ``class_em_to_half_result``). ``unit_seed_classes`` are the particles' classes in RELION's
     first iteration from one reference (:func:`score_tomo_half`). ``normalized_cc`` is the
     ``--firstiter_cc`` iteration (:func:`score_tomo_half`).
@@ -904,7 +904,7 @@ def score_tomo_half_in_loop(
         if prior.shape != (n_rot,):
             raise ValueError(f"a global tomo pass needs one rotation log prior per coarse rotation, got {prior.shape}")
         if n_classes > 1:
-            from relax.classification.k_class import _rotation_prior_with_class_log_prior
+            from relax.classification.k_class import rotation_prior_with_class_log_prior
 
             class_priors = (
                 [prior] * n_classes
@@ -913,7 +913,7 @@ def score_tomo_half_in_loop(
             )
             prior = np.stack(
                 [
-                    _rotation_prior_with_class_log_prior(class_prior, float(log_pdf), n_rot)
+                    rotation_prior_with_class_log_prior(class_prior, float(log_pdf), n_rot)
                     for class_prior, log_pdf in zip(class_priors, np.asarray(class_log_priors).reshape(-1))
                 ]
             )

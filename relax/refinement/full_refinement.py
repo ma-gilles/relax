@@ -446,8 +446,8 @@ def main(command=None):
         timing_dir_path = None
 
     # relax/__init__.py sized the XLA pool for the projector texture before the backend started.
-    if relax._XLA_RESERVE_LOG_LINE is not None:
-        logger.info("%s", relax._XLA_RESERVE_LOG_LINE)
+    if relax.XLA_RESERVE_LOG_LINE is not None:
+        logger.info("%s", relax.XLA_RESERVE_LOG_LINE)
     # An entry point that started the backend without that reserve is refused here, not in the final pass.
 
     xla_memory_reserve.require_projector_texture_reserve(

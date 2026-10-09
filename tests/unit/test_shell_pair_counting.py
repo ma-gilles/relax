@@ -166,7 +166,7 @@ def test_weight_shell_statistics_follow_the_counting_rule_on_both_layouts(
     expected_sum, expected_count = _stored_half_stats(x_half, grid, shell_rounding, counting)
 
     for layout, weight in _public_layouts(x_half, monkeypatch).items():
-        stats = rr._compute_relion_weight_shell_stats(
+        stats = rr.compute_relion_weight_shell_stats(
             weight,
             volume_shape,
             padding_factor=padding_factor,
@@ -211,7 +211,7 @@ def test_packed_half_on_relions_own_axis_follows_the_counting_rule(counting, red
     volume_shape, padding_factor, accumulator_volume_shape, r_max = grid
     x_half = _x_half(_grid_size(grid), seed=7)
     expected_sum, expected_count = _stored_half_stats(x_half, grid, "round", counting)
-    stats = rr._compute_relion_weight_shell_stats(
+    stats = rr.compute_relion_weight_shell_stats(
         x_half.reshape(-1),
         volume_shape,
         padding_factor=padding_factor,
@@ -232,12 +232,12 @@ def test_default_counting_is_relions_and_an_unknown_rule_is_refused():
         padding_factor=padding_factor, r_max=r_max, full_half_axis=RELION_X_AXIS,
         accumulator_volume_shape=accumulator_volume_shape,
     )
-    default = rr._compute_relion_weight_shell_stats(weight, volume_shape, **kwargs)
-    relion = rr._compute_relion_weight_shell_stats(weight, volume_shape, shell_pair_counting="relion", **kwargs)
+    default = rr.compute_relion_weight_shell_stats(weight, volume_shape, **kwargs)
+    relion = rr.compute_relion_weight_shell_stats(weight, volume_shape, shell_pair_counting="relion", **kwargs)
     for key in ("shell_sum", "shell_count", "avg_weight_shells"):
         assert_matches(np.asarray(default[key]), np.asarray(relion[key]))
     with pytest.raises(ValueError, match="shell_pair_counting"):
-        rr._compute_relion_weight_shell_stats(weight, volume_shape, shell_pair_counting="twice", **kwargs)
+        rr.compute_relion_weight_shell_stats(weight, volume_shape, shell_pair_counting="twice", **kwargs)
 
 
 @pytest.mark.parametrize("counting", COUNTINGS)
@@ -529,7 +529,7 @@ def test_k1_refinement_hands_every_shell_statistic_the_counting(monkeypatch, cou
     """Numbered iterations (half-map FSC, per-half tau2) and the final all-data pass."""
     fsc_calls = record_calls(monkeypatch, rr, "compute_relion_fsc_from_backprojector")
     tau2_calls = record_calls(monkeypatch, rr, "compute_relion_tau2_from_weights")
-    stats_calls = record_calls(monkeypatch, rr, "_compute_relion_weight_shell_stats")
+    stats_calls = record_calls(monkeypatch, rr, "compute_relion_weight_shell_stats")
 
     result = run_tiny_refinement(monkeypatch, consistency=RelionConsistencyOptions(shell_pair_counting=counting))
 
@@ -544,7 +544,7 @@ def test_class3d_refinement_hands_every_shell_statistic_the_counting(monkeypatch
     """Class tau2 from the reference power, the weight statistics and data-vs-prior."""
     power_calls = record_calls(monkeypatch, rr, "compute_relion_tau2_from_iref_power_spectrum")
     dvp_calls = record_calls(monkeypatch, rr, "compute_data_vs_prior")
-    stats_calls = record_calls(monkeypatch, rr, "_compute_relion_weight_shell_stats")
+    stats_calls = record_calls(monkeypatch, rr, "compute_relion_weight_shell_stats")
 
     run_tiny_refinement(
         monkeypatch, n_classes=2, consistency=RelionConsistencyOptions(shell_pair_counting=counting)

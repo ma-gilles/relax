@@ -493,7 +493,7 @@ def estimate_class_prior(
             ),
             shell_pair_counting=settings.shell_pair_counting,
         )
-    weight_shells = regularization_relion._compute_relion_weight_shell_stats(
+    weight_shells = regularization_relion.compute_relion_weight_shell_stats(
         denominators[class_index],
         settings.volume_shape,
         padding_factor=settings.padding_factor,
@@ -954,7 +954,7 @@ def _reconstruct_volume_eager(
             tuple(stage_a_filter.shape),
             stage_a_filter.dtype,
         )
-        regularized_filter_device = relion_functions_relion._regularize_large_relion_half_filter_donate_ctf(
+        regularized_filter_device = relion_functions_relion.regularize_large_relion_half_filter_donate_ctf(
             stage_a_filter,
             tau,
             vol_shape,
@@ -1013,7 +1013,7 @@ def _reconstruct_volume_eager(
                     tuple(stage_a_numerator.shape),
                     stage_a_numerator.dtype,
                 )
-        wiener_half_device = relion_functions_relion._divide_large_relion_half_numerator_donate_numerator(
+        wiener_half_device = relion_functions_relion.divide_large_relion_half_numerator_donate_numerator(
             stage_a_numerator,
             regularized_filter_device,
             padding_factor,
@@ -1132,7 +1132,7 @@ def _reconstruct_volume_eager(
             workers=programs.host_fft_workers,
         )
         del fftw_half_host
-        result = relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real(
+        result = relion_functions_relion.finish_large_relion_postprocess_from_unpadded_real(
             unpadded_real_host,
             vol_shape,
             padding_factor,
@@ -1148,7 +1148,7 @@ def _reconstruct_volume_eager(
         # The device CTF row caches yield if the device cannot hand out the transform's working set now, as a
         # pass's accumulators make them yield (relax#40).
         relion_ctf.ensure_device_headroom(int(_DEVICE_IRFFT_HALVES * packed_half_bytes))
-        result = relion_functions_relion._finish_large_relion_postprocess_from_fftw_half(
+        result = relion_functions_relion.finish_large_relion_postprocess_from_fftw_half(
             fftw_half_host,
             vol_shape,
             padding_factor,

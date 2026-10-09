@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 # cutoff when posterior weights are accumulated in float64.
 RELION_ADAPTIVE_FRACTION = float(np.float32("0.999"))
 
-_LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_FULL_PARENT"
-_LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY"
-_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT"
-_K1_RELION_X_HALF_MSTEP_ENV = "RELAX_K1_RELION_X_HALF_MSTEP"
-_K_CLASS_RELION_X_HALF_MSTEP_ENV = "RELAX_K_CLASS_RELION_X_HALF_MSTEP"
+LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_FULL_PARENT"
+LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY"
+LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT"
+K1_RELION_X_HALF_MSTEP_ENV = "RELAX_K1_RELION_X_HALF_MSTEP"
+K_CLASS_RELION_X_HALF_MSTEP_ENV = "RELAX_K_CLASS_RELION_X_HALF_MSTEP"
 # RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT's tokens (refinement_options.ScoringVariants reads it).
 LOCAL_ADAPTIVE_PASS2_DENOMINATOR_MODES = {
     **dict.fromkeys(("0", "false", "no", "off", "none", "default", "pruned", "pruned_parent")),
@@ -84,7 +84,7 @@ def _jax_cpu_forced_from_env() -> bool:
     return bool(requested) and all(token == "cpu" for token in requested)
 
 
-def _k1_relion_x_half_mstep_default_available() -> bool:
+def k1_relion_x_half_mstep_default_available() -> bool:
     """Return whether the default K=1 x-half M-step can use custom CUDA."""
 
     from recovar.utils.cuda_env import custom_cuda_disabled_from_env

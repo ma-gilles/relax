@@ -264,9 +264,9 @@ class TestReconstructionOwnership:
             return host_boundary
 
         monkeypatch.setattr(relion_functions, "_large_grid_postprocess_single_precision_enabled", lambda _voxels: True)
-        monkeypatch.setattr(relion_functions_relion, "_regularize_large_relion_half_filter_donate_ctf", fake_regularize)
-        monkeypatch.setattr(relion_functions_relion, "_divide_large_relion_half_numerator_donate_numerator", fake_divide)
-        monkeypatch.setattr(relion_functions_relion, "_finish_large_relion_postprocess_from_fftw_half", fake_finish)
+        monkeypatch.setattr(relion_functions_relion, "regularize_large_relion_half_filter_donate_ctf", fake_regularize)
+        monkeypatch.setattr(relion_functions_relion, "divide_large_relion_half_numerator_donate_numerator", fake_divide)
+        monkeypatch.setattr(relion_functions_relion, "finish_large_relion_postprocess_from_fftw_half", fake_finish)
         monkeypatch.setattr(mean_helpers_module.jax, "device_get", fake_device_get)
         caplog.set_level("INFO", logger=mean_helpers_module.__name__)
         volume_shape = (2, 2, 2)
@@ -336,9 +336,9 @@ class TestReconstructionOwnership:
             return sentinel
 
         monkeypatch.setattr(relion_functions, "_large_grid_postprocess_single_precision_enabled", lambda _voxels: True)
-        monkeypatch.setattr(relion_functions_relion, "_regularize_large_relion_half_filter_donate_ctf", fake_regularize)
-        monkeypatch.setattr(relion_functions_relion, "_divide_large_relion_half_numerator_donate_numerator", fake_divide)
-        monkeypatch.setattr(relion_functions_relion, "_finish_large_relion_postprocess_from_fftw_half", fake_finish)
+        monkeypatch.setattr(relion_functions_relion, "regularize_large_relion_half_filter_donate_ctf", fake_regularize)
+        monkeypatch.setattr(relion_functions_relion, "divide_large_relion_half_numerator_donate_numerator", fake_divide)
+        monkeypatch.setattr(relion_functions_relion, "finish_large_relion_postprocess_from_fftw_half", fake_finish)
         caplog.set_level("INFO", logger=mean_helpers_module.__name__)
         half0 = mean_helpers_module._reconstruct_volume_eager(
             host_ctf,

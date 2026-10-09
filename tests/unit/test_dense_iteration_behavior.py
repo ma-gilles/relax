@@ -280,7 +280,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         return outputs
 
     monkeypatch.delenv("RELAX_K1_RELION_X_HALF_MSTEP", raising=False)
-    monkeypatch.setattr(scoring_policy, "_k1_relion_x_half_mstep_default_available", lambda: True)
+    monkeypatch.setattr(scoring_policy, "k1_relion_x_half_mstep_default_available", lambda: True)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
     result = half_scoring._score_half_local(*local_half_owners(
@@ -578,15 +578,15 @@ def test_native_final_perturbation_uses_active_local_order_but_preserves_global_
 
 
 def test_local_adaptive_pass2_defaults_to_relion_pruned_parent(monkeypatch):
-    monkeypatch.delenv(scoring_policy._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, raising=False)
+    monkeypatch.delenv(scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, raising=False)
 
     def full_parent():
         return ScoringVariants.from_environ().local_adaptive_pass2.full_parent
 
     assert full_parent() is False
 
-    monkeypatch.setenv(scoring_policy._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, "1")
+    monkeypatch.setenv(scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, "1")
     assert full_parent() is True
 
-    monkeypatch.setenv(scoring_policy._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, "0")
+    monkeypatch.setenv(scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, "0")
     assert full_parent() is False

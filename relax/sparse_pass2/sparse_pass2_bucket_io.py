@@ -109,7 +109,7 @@ def _relion_translation_angles_f64(translations, image_shape, *, angle_scale: fl
     return -2.0 * np.pi * (translations_f64 * angle_scale) / float(box_size)
 
 
-def _relion_translation_angles_f32(translations, image_shape, *, angle_scale=1.0):
+def relion_translation_angles_f32(translations, image_shape, *, angle_scale=1.0):
     """Return RELION fine-score ``(tx, ty)`` radians with host rounding."""
 
     return np.asarray(

@@ -419,14 +419,14 @@ def test_relion_weight_shell_stats_floor_bins_reconstruct_support():
     full_shape = tuple(s * padding_factor for s in shape)
     weight = np.ones(np.prod(full_shape), dtype=np.float32)
 
-    stats_floor = regularization_relion._compute_relion_weight_shell_stats(
+    stats_floor = regularization_relion.compute_relion_weight_shell_stats(
         weight,
         shape,
         padding_factor=padding_factor,
         r_max=r_max,
         shell_rounding="floor",
     )
-    stats_round = regularization_relion._compute_relion_weight_shell_stats(
+    stats_round = regularization_relion.compute_relion_weight_shell_stats(
         weight,
         shape,
         padding_factor=padding_factor,
@@ -458,7 +458,7 @@ def test_relion_weight_shell_stats_rounds_half_integer_radii_up():
     weight[center[0], center[1], center[2] + 1] = 2.0  # radius / padding = 0.5
     weight[center[0], center[1], center[2] + 5] = 3.0  # radius / padding = 2.5
 
-    stats = regularization_relion._compute_relion_weight_shell_stats(
+    stats = regularization_relion.compute_relion_weight_shell_stats(
         weight,
         shape,
         padding_factor=padding_factor,
@@ -479,7 +479,7 @@ def test_relion_weight_shell_stats_large_grid_cpu_path_matches_device_path(monke
     rng = np.random.default_rng(10)
     weight = (0.25 + rng.random(np.prod(full_shape))).astype(np.float32)
 
-    device_stats = regularization_relion._compute_relion_weight_shell_stats(
+    device_stats = regularization_relion.compute_relion_weight_shell_stats(
         weight,
         shape,
         padding_factor=padding_factor,
@@ -487,7 +487,7 @@ def test_relion_weight_shell_stats_large_grid_cpu_path_matches_device_path(monke
         shell_rounding="round",
     )
     monkeypatch.setattr(regularization_relion, "_RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS", 1)
-    cpu_stats = regularization_relion._compute_relion_weight_shell_stats(
+    cpu_stats = regularization_relion.compute_relion_weight_shell_stats(
         weight,
         shape,
         padding_factor=padding_factor,
@@ -795,13 +795,13 @@ def test_host_tau2_weight_sum_matches_the_converted_sum(monkeypatch):
     fsc = np.linspace(0.95, 0.25, shape[0] // 2 + 1)
     monkeypatch.setattr(regularization_relion, "_shell_stats_on_host", lambda n_voxels: True)
     seen = []
-    shell_stats = regularization_relion._compute_relion_weight_shell_stats
+    shell_stats = regularization_relion.compute_relion_weight_shell_stats
 
     def recording(weight, *args, **kwargs):
         seen.append(np.array(weight, copy=True))
         return shell_stats(weight, *args, **kwargs)
 
-    monkeypatch.setattr(regularization_relion, "_compute_relion_weight_shell_stats", recording)
+    monkeypatch.setattr(regularization_relion, "compute_relion_weight_shell_stats", recording)
     kwargs = dict(padding_factor=padding_factor, r_max=3, output_dtype=np.float64)
     for combination, expected in (
         ("sum", weight0.astype(np.float64) + weight1.astype(np.float64)),

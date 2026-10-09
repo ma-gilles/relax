@@ -39,7 +39,7 @@ def _select_class_value(value, class_index: int, n_classes: int):
     return value
 
 
-def _select_projector_half_for_class(value, class_index: int, n_classes: int):
+def select_projector_half_for_class(value, class_index: int, n_classes: int):
     """Select one RELION projector before transferring it to the device.
 
     Production projector slabs are NumPy arrays.  Preserve a host view for

@@ -109,7 +109,7 @@ def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monk
     monkeypatch.setattr(batches.sparse_pass2_budget, "_device_free_memory_bytes", lambda: 8_000_000_000)
     monkeypatch.setattr(batches, "host_relion_projector_texture_enabled", lambda *a, **k: True)
     monkeypatch.setattr(pass1_plan, "global_pass1_relion_projector_texture_enabled", lambda: True)
-    monkeypatch.setattr(batches.firstiter_bpref, "_relion_firstiter_compact_batch_planning_decision",
+    monkeypatch.setattr(batches.firstiter_bpref, "relion_firstiter_compact_batch_planning_decision",
                         lambda **k: SimpleNamespace(enabled=True, deferred_firstiter_bpref=True))
     policy = prepare(
         planner, use_adaptive=True, relion_firstiter_cc_this_iter=True,

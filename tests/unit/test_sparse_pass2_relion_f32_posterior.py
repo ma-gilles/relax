@@ -7,7 +7,10 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.sparse_pass2.sparse_pass2_posterior import _relion_f32_fine_posterior, _relion_f32_fine_reconstruction_probs
+from relax.sparse_pass2.sparse_pass2_posterior import (
+    _relion_f32_fine_reconstruction_probs,
+    relion_f32_fine_probabilities,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -98,7 +101,7 @@ def test_relion_f32_fine_posterior_exposes_full_joint_normalization():
     )
     full = tuple(
         np.asarray(value)
-        for value in _relion_f32_fine_posterior(
+        for value in relion_f32_fine_probabilities(
             scores,
             adaptive_fraction=0.8,
         )
@@ -124,7 +127,7 @@ def test_relion_f32_fine_posterior_reuses_external_coarse_sum_and_keeps_support(
     )
     ordinary = tuple(
         np.asarray(value)
-        for value in _relion_f32_fine_posterior(
+        for value in relion_f32_fine_probabilities(
             scores,
             adaptive_fraction=0.8,
         )
@@ -132,7 +135,7 @@ def test_relion_f32_fine_posterior_reuses_external_coarse_sum_and_keeps_support(
     coarse_sum_weight = ordinary[4] * np.float32(2.0)
     reused = tuple(
         np.asarray(value)
-        for value in _relion_f32_fine_posterior(
+        for value in relion_f32_fine_probabilities(
             scores,
             adaptive_fraction=0.8,
             normalization_sum_weight=jnp.asarray(coarse_sum_weight),

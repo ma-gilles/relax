@@ -1294,7 +1294,7 @@ def _prepare_local_adaptive_pass2_support(
         significant_sample_indices = [None] * len(significant_sample_indices)
         logger.info(
             "RELION local adaptive pass 2: expanding all parent samples; set %s=0 for pruned-parent support",
-            scoring_policy._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
+            scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
         )
     elif support.rotation_only:
         significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
@@ -1304,7 +1304,7 @@ def _prepare_local_adaptive_pass2_support(
         logger.info(
             "RELION local adaptive pass 2 diagnostic: expanding significant parent rotations to all "
             "parent translations via %s=1",
-            scoring_policy._LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV,
+            scoring_policy.LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV,
         )
 
     layout_kwargs = dict(
@@ -1343,7 +1343,7 @@ def _prepare_local_adaptive_pass2_support(
             logger,
             denominator_layout,
             support.denominator_mode,
-            scoring_policy._LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
+            scoring_policy.LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
         )
     local_debug.log_local_adaptive_support(
         logger,
@@ -1780,7 +1780,7 @@ def _score_half_local_one_shape(
     if sampling.search.symmetry != "C1" and not execution.score_only and not local_relion_x_half_mstep:
         raise RuntimeError(
             f"{sampling.search.symmetry} exact-local reconstruction requires RELION x-half BPref "
-            f"accumulation; {scoring_policy._K1_RELION_X_HALF_MSTEP_ENV}=0, CPU-only execution, or disabled custom CUDA "
+            f"accumulation; {scoring_policy.K1_RELION_X_HALF_MSTEP_ENV}=0, CPU-only execution, or disabled custom CUDA "
             "is unsupported for non-C1 symmetry"
         )
     if local_relion_x_half_mstep:

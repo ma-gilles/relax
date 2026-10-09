@@ -168,7 +168,7 @@ class _RelionFirstiterCompactBatchPlanningDecision(NamedTuple):
     deferred_firstiter_bpref: bool
     direct_peak_bytes: int
 
-def _relion_firstiter_compact_batch_planning_decision(
+def relion_firstiter_compact_batch_planning_decision(
     *,
     source_faithful_spectrum_norm: bool,
     winner_take_all: bool,

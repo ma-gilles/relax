@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from relax.classification.k_class_inputs import _select_projector_half_for_class
+from relax.classification.k_class_inputs import select_projector_half_for_class
 from relax.helpers.batch_planning import (
     RELION_EM_COMPACT_K1_FIXED_BASE_GB,
     estimate_relion_em_batch_sizes,
@@ -182,7 +182,7 @@ def prepare_half_batches(
     significance_rotation_block_size = None
     safe_batch_sizes_for_half = planner
     significance_safe_batch_sizes_for_half = planner
-    projector_half = _select_projector_half_for_class(
+    projector_half = select_projector_half_for_class(
         None if projector is None else projector.data, 0, n_classes,
     )
     compact_precision = not (
@@ -203,7 +203,7 @@ def prepare_half_batches(
         recon_shape = relion_backprojector_volume_shape(
             volume_shape, RECONSTRUCTION_PADDING_FACTOR, current_size=model_size,
         )
-        decision = firstiter_bpref._relion_firstiter_compact_batch_planning_decision(
+        decision = firstiter_bpref.relion_firstiter_compact_batch_planning_decision(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             winner_take_all=firstiter_winner_take_all_this_iter,
             preserve_bpref_particle_order=preserve_bpref_particle_order,

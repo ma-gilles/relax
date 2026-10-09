@@ -52,7 +52,7 @@ from relax.sparse_pass2.sparse_pass2_adjoint import _accumulate_adjoint_block_ch
 from relax.sparse_pass2.sparse_pass2_bucket_io import (
     _half_translation_phase_table_for_indices,
     _prepare_bucket_io,
-    _relion_translation_angles_f32,
+    relion_translation_angles_f32,
 )
 from relax.sparse_pass2.sparse_pass2_budget import (
     _max_projected_rotations_per_call_for_pass,
@@ -1562,7 +1562,7 @@ def test_prepare_bucket_io_routes_direct_score_translation_through_relion_cuda(
         dtype=np.float32,
     )
     translation_angles = jnp.asarray(
-        _relion_translation_angles_f32(fine_translations, IMAGE_SHAPE),
+        relion_translation_angles_f32(fine_translations, IMAGE_SHAPE),
         dtype=jnp.float32,
     )
     calls = []

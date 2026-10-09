@@ -160,7 +160,7 @@ def _resolve_exact_local_bucket_radix(explicit: int | None = None) -> int:
     return bucket_radix
 
 
-def _exact_bucket_rotation_size(
+def exact_bucket_rotation_size(
     local_rotation_count: int,
     rotation_block_size: int,
     *,
@@ -835,7 +835,7 @@ def _rotation_eulers_from_grid_metadata(
     ).astype(dtype, copy=False)
 
 
-def _selected_rotation_matrices(
+def selected_rotation_matrices(
     rotation_ids: np.ndarray,
     rotation_grid_rotations: np.ndarray | None,
     grid_metadata,
@@ -929,7 +929,7 @@ def local_layout_host_rotations(layout: LocalHypothesisLayout, *, mstep: bool) -
     if layout.id_rows_source is None:
         raise ValueError("local rows record no builder arguments to rebuild them from")
     healpix_order, random_perturbation, angular_sampling_deg = layout.id_rows_source
-    builder = _selected_mstep_rotation_matrices if mstep else _selected_rotation_matrices
+    builder = _selected_mstep_rotation_matrices if mstep else selected_rotation_matrices
     return builder(
         layout.rotation_ids_flat,
         None,
@@ -1082,7 +1082,7 @@ def build_local_hypothesis_layout(
     rotations_flat = (
         rotations_flat_override
         if rotations_flat_override is not None
-        else _selected_rotation_matrices(
+        else selected_rotation_matrices(
             rotation_ids_flat,
             rotation_grid_rotations,
             grid_metadata,
@@ -1774,7 +1774,7 @@ def plan_local_hypothesis_buckets(
     resolved_large_bucket_quantum = _exact_local_large_bucket_quantum(rotation_block_size, large_bucket_quantum)
     bucket_sizes = np.asarray(
         [
-            _exact_bucket_rotation_size(
+            exact_bucket_rotation_size(
                 int(count),
                 rotation_block_size,
                 large_bucket_quantum=resolved_large_bucket_quantum,

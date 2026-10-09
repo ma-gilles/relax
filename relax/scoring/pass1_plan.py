@@ -349,14 +349,14 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     exact_cc_score_indices = None
     exact_cc_translation_angles = None
     if exact_cc_enabled:
-        from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+        from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
         exact_cc_score_indices = jnp.asarray(
             np.arange(n_half) if window_spec.score_indices_np is None else window_spec.score_indices_np,
             dtype=jnp.int32,
         )
         exact_cc_translation_angles = jnp.asarray(
-            _relion_translation_angles_f32(
+            relion_translation_angles_f32(
                 translations_source,
                 image_shape,
                 angle_scale=request.relion_translation_angle_scale,

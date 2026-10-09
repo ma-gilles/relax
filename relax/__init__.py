@@ -165,7 +165,7 @@ _reject_renamed_environment()
 _reject_shadowed_recovar()
 _configure_initial_model_cuda_allocator()
 _configure_em_xla_defaults()
-_XLA_RESERVE_LOG_LINE = _reserve_refinement_projector_memory()
+XLA_RESERVE_LOG_LINE = _reserve_refinement_projector_memory()
 
 try:
     # recovar's package import applies the XLA configuration (including the EM defaults marker set above);

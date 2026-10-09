@@ -129,14 +129,14 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     install_exact_pass1_mocks(monkeypatch)
     monkeypatch.setattr(pass1_plan, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
     captured = []
-    original = sparse_pass2_posterior._relion_f32_fine_posterior
+    original = sparse_pass2_posterior.relion_f32_fine_probabilities
 
     def record(scores, **kwargs):
         result = original(scores, **kwargs)
         captured.append((np.asarray(scores), result))
         return result
 
-    monkeypatch.setattr(sparse_pass2_posterior, "_relion_f32_fine_posterior", record)
+    monkeypatch.setattr(sparse_pass2_posterior, "relion_f32_fine_probabilities", record)
     args, projector = _exact_pass1_call(n_classes)
     kwargs = dict(
         **projector,

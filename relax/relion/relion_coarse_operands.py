@@ -341,13 +341,13 @@ def assemble_relion_exact_coarse_gaussian_operands(
     from relax.cuda import kernels as em_cuda_kernels
     from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
     from relax.sparse_pass2.sparse_pass2_bucket_io import (
-        _relion_translation_angles_f32,
         _relion_translation_angles_f64,
+        relion_translation_angles_f32,
     )
 
     real_dtype = jnp.float64 if use_float64_scoring else jnp.float32
     complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
-    angle_fn = _relion_translation_angles_f64 if use_float64_scoring else _relion_translation_angles_f32
+    angle_fn = _relion_translation_angles_f64 if use_float64_scoring else relion_translation_angles_f32
     translate_fn = em_cuda_kernels.relion_translate_score_f64 if use_float64_scoring else em_cuda_kernels.relion_translate_score_f32
 
     # The padded rows of a short last batch repeat its first image's CTF row.

@@ -41,7 +41,7 @@ def _normalize_pass2_bucket_with_log_z(scores, log_z):
 
 
 @partial(jax.jit, static_argnames=("adaptive_fraction", "keep_all"))
-def _relion_f32_fine_posterior(
+def relion_f32_fine_probabilities(
     scores,
     *,
     adaptive_fraction: float,
@@ -158,9 +158,9 @@ def _relion_f32_fine_reconstruction_probs(
     normalization_sum_weight=None,
     keep_all: bool = False,
 ):
-    """Return the legacy pruned view of :func:`_relion_f32_fine_posterior`."""
+    """Return the legacy pruned view of :func:`relion_f32_fine_probabilities`."""
 
-    full = _relion_f32_fine_posterior(
+    full = relion_f32_fine_probabilities(
         scores,
         adaptive_fraction=adaptive_fraction,
         normalization_sum_weight=normalization_sum_weight,

@@ -200,7 +200,7 @@ def plan_tree_rescore(
 
     from relax.helpers.fourier_window import relion_fftw_order_for_square_score_window
     from relax.helpers.projection import relion_projector_half_to_texture_full
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
     if (
         jax.default_backend() != "gpu"
@@ -225,7 +225,7 @@ def plan_tree_rescore(
         dtype=jnp.int32,
     )
     translation_angles = jnp.asarray(
-        _relion_translation_angles_f32(
+        relion_translation_angles_f32(
             translations_source,
             image_shape,
             angle_scale=relion_translation_angle_scale,

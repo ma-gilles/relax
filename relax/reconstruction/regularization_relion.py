@@ -461,7 +461,7 @@ def _padded_shell_sums_device(
     n_shells,
     pair_once=False,
 ):
-    """The padded-grid shell sums of :func:`_compute_relion_weight_shell_stats` on the device.
+    """The padded-grid shell sums of :func:`compute_relion_weight_shell_stats` on the device.
 
     One program per grid: eager, the radial grid, masks and bincounts were
     about thirty single-primitive programs compiled again at every new
@@ -522,7 +522,7 @@ def _real_float64(weight):
     return weight.real.astype(jnp.float64)
 
 
-def _compute_relion_weight_shell_stats(
+def compute_relion_weight_shell_stats(
     weight,
     volume_shape,
     *,
@@ -850,7 +850,7 @@ def compute_relion_tau2_from_weights(
         dense double-precision refinement path passes float64.
     shell_pair_counting : {"relion", "once"}
         How the shell average of the weight counts Hermitian pairs
-        (:func:`_compute_relion_weight_shell_stats`).
+        (:func:`compute_relion_weight_shell_stats`).
     """
     prior_dtype = jnp.dtype(output_dtype)
     if prior_dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
@@ -888,7 +888,7 @@ def compute_relion_tau2_from_weights(
         H_comb = H0 + H1
         if weight_combination == "average":
             H_comb = H_comb / jnp.asarray(2.0, dtype=prior_dtype)
-    shell_stats = _compute_relion_weight_shell_stats(
+    shell_stats = compute_relion_weight_shell_stats(
         H_comb,
         volume_shape,
         padding_factor=padding_factor,
@@ -1548,14 +1548,14 @@ def compute_data_vs_prior(
         truncation during growth updates.
     shell_pair_counting : {"relion", "once"}
         How the shell average of the weight counts Hermitian pairs
-        (:func:`_compute_relion_weight_shell_stats`).
+        (:func:`compute_relion_weight_shell_stats`).
 
     Returns
     -------
     jnp.ndarray, shape (n_shells,)
         Per-shell data_vs_prior ratio.
     """
-    avg_weight = _compute_relion_weight_shell_stats(
+    avg_weight = compute_relion_weight_shell_stats(
         Ft_ctf,
         volume_shape,
         padding_factor=padding_factor,

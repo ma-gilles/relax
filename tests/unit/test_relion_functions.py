@@ -146,7 +146,7 @@ def test_relion_weight_shell_stats_uses_relion_half_up_rounding(monkeypatch, lay
         weight = np.zeros(padded_shape, dtype=np.float32)
         weight[4, 4, 5] = 1.0  # centered full-grid x index 5 is Fourier coordinate +1.
 
-    stats = regularization_relion._compute_relion_weight_shell_stats(
+    stats = regularization_relion.compute_relion_weight_shell_stats(
         jnp.asarray(weight).reshape(-1),
         volume_shape,
         padding_factor=padding_factor,
@@ -2031,10 +2031,10 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
     for compiled in (
         rf.post_process_from_filter_v2,
         rf._post_process_from_filter_v2_donate_numerator,
-        relion_functions_relion._regularize_large_relion_half_filter_donate_ctf,
-        relion_functions_relion._divide_large_relion_half_numerator_donate_numerator,
-        relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real,
-        relion_functions_relion._finish_large_relion_postprocess_from_fftw_half,
+        relion_functions_relion.regularize_large_relion_half_filter_donate_ctf,
+        relion_functions_relion.divide_large_relion_half_numerator_donate_numerator,
+        relion_functions_relion.finish_large_relion_postprocess_from_unpadded_real,
+        relion_functions_relion.finish_large_relion_postprocess_from_fftw_half,
     ):
         clear_cache = getattr(compiled, "clear_cache", None)
         if callable(clear_cache):
@@ -2110,10 +2110,10 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
     for compiled in (
         rf.post_process_from_filter_v2,
         rf._post_process_from_filter_v2_donate_numerator,
-        relion_functions_relion._regularize_large_relion_half_filter_donate_ctf,
-        relion_functions_relion._divide_large_relion_half_numerator_donate_numerator,
-        relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real,
-        relion_functions_relion._finish_large_relion_postprocess_from_fftw_half,
+        relion_functions_relion.regularize_large_relion_half_filter_donate_ctf,
+        relion_functions_relion.divide_large_relion_half_numerator_donate_numerator,
+        relion_functions_relion.finish_large_relion_postprocess_from_unpadded_real,
+        relion_functions_relion.finish_large_relion_postprocess_from_fftw_half,
     ):
         clear_cache = getattr(compiled, "clear_cache", None)
         if callable(clear_cache):
@@ -2171,8 +2171,8 @@ def test_host_unpadded_tail_matches_existing_fftw_half_finish():
     from relax.refinement import mean_helpers
 
     for compiled in (
-        relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real,
-        relion_functions_relion._finish_large_relion_postprocess_from_fftw_half,
+        relion_functions_relion.finish_large_relion_postprocess_from_unpadded_real,
+        relion_functions_relion.finish_large_relion_postprocess_from_fftw_half,
     ):
         clear_cache = getattr(compiled, "clear_cache", None)
         if callable(clear_cache):
@@ -2194,7 +2194,7 @@ def test_host_unpadded_tail_matches_existing_fftw_half_finish():
     )
 
     existing = np.asarray(
-        relion_functions_relion._finish_large_relion_postprocess_from_fftw_half(
+        relion_functions_relion.finish_large_relion_postprocess_from_fftw_half(
             jnp.asarray(fftw_half),
             volume_shape,
             2,
@@ -2208,7 +2208,7 @@ def test_host_unpadded_tail_matches_existing_fftw_half_finish():
         workers=1,
     )
     host = np.asarray(
-        relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real(
+        relion_functions_relion.finish_large_relion_postprocess_from_unpadded_real(
             unpadded_real,
             volume_shape,
             2,
@@ -2219,8 +2219,8 @@ def test_host_unpadded_tail_matches_existing_fftw_half_finish():
     assert_matches(host, existing)
 
     for compiled in (
-        relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real,
-        relion_functions_relion._finish_large_relion_postprocess_from_fftw_half,
+        relion_functions_relion.finish_large_relion_postprocess_from_unpadded_real,
+        relion_functions_relion.finish_large_relion_postprocess_from_fftw_half,
     ):
         clear_cache = getattr(compiled, "clear_cache", None)
         if callable(clear_cache):
@@ -2248,7 +2248,7 @@ def test_host_route_matches_the_device_inverse_fft_on_the_gpu(gpu_device):
     )
     with jax.default_device(gpu_device):
         device = np.asarray(
-            relion_functions_relion._finish_large_relion_postprocess_from_fftw_half(
+            relion_functions_relion.finish_large_relion_postprocess_from_fftw_half(
                 jnp.asarray(fftw_half), volume_shape, 2, **common
             )
         )
@@ -2256,7 +2256,7 @@ def test_host_route_matches_the_device_inverse_fft_on_the_gpu(gpu_device):
             fftw_half.copy(), reconstruction_shape, volume_shape, workers=1
         )
         host = np.asarray(
-            relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real(
+            relion_functions_relion.finish_large_relion_postprocess_from_unpadded_real(
                 unpadded_real, volume_shape, 2, **common
             )
         )
@@ -2325,7 +2325,7 @@ def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
     for compiled in (
         rf.post_process_from_filter_v2,
         rf._post_process_from_filter_v2_donate_numerator,
-        relion_functions_relion._finish_large_relion_postprocess_from_fftw_half,
+        relion_functions_relion.finish_large_relion_postprocess_from_fftw_half,
     ):
         clear_cache = getattr(compiled, "clear_cache", None)
         if callable(clear_cache):
@@ -2426,7 +2426,7 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_stage)
     monkeypatch.setattr(
         relion_functions_relion,
-        "_finish_large_relion_postprocess_from_fftw_half",
+        "finish_large_relion_postprocess_from_fftw_half",
         fake_finish,
     )
     caplog.set_level("INFO", logger=mean_helpers.__name__)
@@ -2593,7 +2593,7 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_stage)
     monkeypatch.setattr(
         relion_functions_relion,
-        "_finish_large_relion_postprocess_from_fftw_half",
+        "finish_large_relion_postprocess_from_fftw_half",
         fake_finish,
     )
     caplog.set_level("INFO", logger=mean_helpers.__name__)
@@ -2660,7 +2660,7 @@ def test_large_device_accumulator_does_not_enter_host_staged_split(monkeypatch):
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_monolithic)
     monkeypatch.setattr(
         relion_functions_relion,
-        "_finish_large_relion_postprocess_from_fftw_half",
+        "finish_large_relion_postprocess_from_fftw_half",
         reject_split,
     )
     returned = mean_helpers._reconstruct_volume_eager(
@@ -2719,7 +2719,7 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_monolithic)
     monkeypatch.setattr(
         relion_functions_relion,
-        "_finish_large_relion_postprocess_from_fftw_half",
+        "finish_large_relion_postprocess_from_fftw_half",
         reject_split,
     )
     caplog.set_level("INFO", logger=mean_helpers.__name__)
@@ -2824,7 +2824,7 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_stage)
     monkeypatch.setattr(
         relion_functions_relion,
-        "_finish_large_relion_postprocess_from_fftw_half",
+        "finish_large_relion_postprocess_from_fftw_half",
         fake_finish,
     )
 
@@ -2924,7 +2924,7 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
     monkeypatch.setattr(mean_helpers, "_host_irfft_and_center_crop", fake_host_irfft)
     monkeypatch.setattr(
         relion_functions_relion,
-        "_finish_large_relion_postprocess_from_unpadded_real",
+        "finish_large_relion_postprocess_from_unpadded_real",
         fake_finish,
     )
     monkeypatch.setattr(
@@ -3005,8 +3005,8 @@ def test_large_wiener_split_stage_matches_monolith(monkeypatch, current_size):
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
     compiled_functions = (
         rf.post_process_from_filter_v2,
-        relion_functions_relion._regularize_large_relion_half_filter_donate_ctf,
-        relion_functions_relion._divide_large_relion_half_numerator_donate_numerator,
+        relion_functions_relion.regularize_large_relion_half_filter_donate_ctf,
+        relion_functions_relion.divide_large_relion_half_numerator_donate_numerator,
     )
     for compiled in compiled_functions:
         clear_cache = getattr(compiled, "clear_cache", None)
@@ -3046,7 +3046,7 @@ def test_large_wiener_split_stage_matches_monolith(monkeypatch, current_size):
         )
     )
     ctf_device = jnp.asarray(ft_ctf.copy())
-    regularized = relion_functions_relion._regularize_large_relion_half_filter_donate_ctf(
+    regularized = relion_functions_relion.regularize_large_relion_half_filter_donate_ctf(
         ctf_device,
         jnp.asarray(tau),
         volume_shape,
@@ -3060,7 +3060,7 @@ def test_large_wiener_split_stage_matches_monolith(monkeypatch, current_size):
     )
     regularized.block_until_ready()
     numerator_device = jnp.asarray(f_ty.copy())
-    actual = relion_functions_relion._divide_large_relion_half_numerator_donate_numerator(
+    actual = relion_functions_relion.divide_large_relion_half_numerator_donate_numerator(
         numerator_device,
         regularized,
         2,
@@ -3092,7 +3092,7 @@ def test_large_wiener_split_stage_aliases_inputs_without_divide_temporary(monkey
 
     with jax.default_device(gpu_device):
         regularize_memory = (
-            relion_functions_relion._regularize_large_relion_half_filter_donate_ctf.lower(
+            relion_functions_relion.regularize_large_relion_half_filter_donate_ctf.lower(
                 jax.ShapeDtypeStruct((half_size,), jnp.float32),
                 jax.ShapeDtypeStruct((volume_shape[0] // 2 + 1,), jnp.float64),
                 volume_shape,
@@ -3108,7 +3108,7 @@ def test_large_wiener_split_stage_aliases_inputs_without_divide_temporary(monkey
             .memory_analysis()
         )
         divide_memory = (
-            relion_functions_relion._divide_large_relion_half_numerator_donate_numerator.lower(
+            relion_functions_relion.divide_large_relion_half_numerator_donate_numerator.lower(
                 jax.ShapeDtypeStruct((half_size,), jnp.complex64),
                 jax.ShapeDtypeStruct((half_size,), jnp.float32),
                 2,

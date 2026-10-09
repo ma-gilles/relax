@@ -191,7 +191,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     from relax.relion.optics_aberrations import projection_rotations
     from relax.relion.relion_metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
     from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
     from relax.sparse_pass2.sparse_pass2_window import _pass2_window_setup, _sparse_pass2_window_setup
 
     sampling_path = model_dir / "run_it001_sampling.star"
@@ -248,7 +248,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     )
     score_indices = jnp.asarray(score_layout.score_indices_np, dtype=jnp.int32)
     score_mask = jnp.asarray(score_layout.score_active_mask_np)
-    angles = _relion_translation_angles_f32(
+    angles = relion_translation_angles_f32(
         trans_all[translation_ids], dataset.image_shape, angle_scale=1.0,
     )
     score_phase = native_phase_table(angles, score_indices, dataset.image_shape)
@@ -282,7 +282,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
         process_relion_exact_coarse_half_image,
     )
     from relax.sparse_pass2.resident_operands import prepare_resident_half_operands
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_powerclass_highres_xi2_half
+    from relax.sparse_pass2.sparse_pass2_scoring import relion_cuda_powerclass_highres_xi2_half
     from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
 
     local_indices = np.asarray(local_indices, dtype=np.int32)
@@ -320,7 +320,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
         translations_source=geometry["translation_values"],
         image_shape=dataset.image_shape, noise_variance_half=checkpoint.noise_half[half_index],
         scale_corrections_enabled=True, half_weights=score_half_weights,
-        powerclass=_relion_cuda_powerclass_highres_xi2_half,
+        powerclass=relion_cuda_powerclass_highres_xi2_half,
         current_size=checkpoint.current_size, use_float64_scoring=False,
     )
 

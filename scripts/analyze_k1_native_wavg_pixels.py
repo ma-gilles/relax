@@ -193,9 +193,9 @@ def _translate_native_preprocess_hybrid(
     import jax.numpy as jnp
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
-    translation_angles = _relion_translation_angles_f32(
+    translation_angles = relion_translation_angles_f32(
         np.asarray(fine_translations, dtype=np.float32),
         (image_size, image_size),
     )
@@ -527,7 +527,7 @@ def main() -> None:
         native_input_comparisons = None
         ppref_metadata = None
         if has_native_inputs:
-            from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+            from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
             orientation_num = int(native_scalar["orientation_num"])
             translation_num = int(native_scalar["translation_num"])
@@ -542,7 +542,7 @@ def main() -> None:
                 orientation_num,
                 translation_num,
             )
-            expected_translation_angles = _relion_translation_angles_f32(
+            expected_translation_angles = relion_translation_angles_f32(
                 fine_translations,
                 (128, 128),
             )

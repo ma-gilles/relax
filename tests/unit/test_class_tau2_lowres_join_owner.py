@@ -127,7 +127,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
         return prior, details
 
     monkeypatch.setattr(mean_helpers, "_class_tau2_from_iref_power_spectrum", estimate)
-    monkeypatch.setattr(regularization_relion, "_compute_relion_weight_shell_stats", weights)
+    monkeypatch.setattr(regularization_relion, "compute_relion_weight_shell_stats", weights)
     monkeypatch.setattr(mean_helpers, "_class_tau2_update_details", normalize)
     settings = reconstruction_settings(
         box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
@@ -345,7 +345,7 @@ class TestClassTau2UpdateDetails:
         rng = np.random.default_rng(3)
         ft_ctf = jnp.asarray(rng.uniform(0.5, 2.0, int(np.prod(ACCUMULATOR_SHAPE))) + 0j, dtype=jnp.complex64)
         tau2_shells = jnp.asarray(rng.uniform(0.1, 1.0, N_SHELLS), dtype=jnp.float32)
-        shell_stats = regularization_relion._compute_relion_weight_shell_stats(
+        shell_stats = regularization_relion.compute_relion_weight_shell_stats(
             ft_ctf,
             VOLUME_SHAPE,
             padding_factor=PADDING_FACTOR,

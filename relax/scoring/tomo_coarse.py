@@ -123,7 +123,7 @@ def tilt_image_coarse_operands(
         relion_exact_coarse_operands,
     )
     from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star_host
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_powerclass_highres_xi2_half
+    from relax.sparse_pass2.sparse_pass2_scoring import relion_cuda_powerclass_highres_xi2_half
 
     image_indices = np.asarray(image_indices, dtype=np.int64)
     # One vectorized host read (the dataset's batch iterator collates image by image, 15x slower).
@@ -159,7 +159,7 @@ def tilt_image_coarse_operands(
         use_float64_scoring=False,
         scale_corrections_enabled=scale_corrections is not None,
     )
-    initial = _relion_cuda_powerclass_highres_xi2_half(
+    initial = relion_cuda_powerclass_highres_xi2_half(
         processed, image_shape=layout.image_shape, current_size=layout.current_size
     )
     return unshifted, pixel_weight, jnp.asarray(initial, dtype=jnp.float32)

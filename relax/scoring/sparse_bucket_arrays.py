@@ -15,7 +15,7 @@ import numpy as np
 from relax.helpers.batch_planning import plan_consecutive_padded_batches
 from relax.helpers.env_flags import parse_env_binary_flag, parse_env_flag
 from relax.helpers.shape_buckets import pow2_ceil, pow2_floor, power_of_two_bucket
-from relax.local.local_layout import _exact_bucket_rotation_size
+from relax.local.local_layout import exact_bucket_rotation_size
 
 _LARGE_BUCKET_POW2_ENV = "RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2"
 _LARGE_BUCKET_POW2_THRESHOLD = 1024
@@ -33,7 +33,7 @@ def _pass2_bucket_rotation_size(count: int, rotation_block_size_for_quantization
     reuse and atomic interleaving, not the candidate set.
     """
 
-    size = int(_exact_bucket_rotation_size(int(count), rotation_block_size_for_quantization))
+    size = int(exact_bucket_rotation_size(int(count), rotation_block_size_for_quantization))
     if size > _LARGE_BUCKET_POW2_THRESHOLD and parse_env_flag(_LARGE_BUCKET_POW2_ENV, default=False):
         return int(power_of_two_bucket(size))
     return size

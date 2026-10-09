@@ -154,7 +154,7 @@ def resolve_particle_poses(
     """
     from recovar import utils
 
-    from relax.local.local_layout import _selected_rotation_matrices
+    from relax.local.local_layout import selected_rotation_matrices
     from relax.relion.relion_metadata import relion_metadata_translations
     from relax.sampling import build_local_search_grid_metadata
 
@@ -174,7 +174,7 @@ def resolve_particle_poses(
                 grid_metadata = build_local_search_grid_metadata(
                     local_sampling.search.healpix_order, symmetry=local_sampling.search.symmetry,
                 )
-                rotations = _selected_rotation_matrices(
+                rotations = selected_rotation_matrices(
                     rotation_ids,
                     None,
                     grid_metadata,

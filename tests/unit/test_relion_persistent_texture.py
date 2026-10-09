@@ -647,7 +647,7 @@ def test_projector_class_selection_preserves_host_view(monkeypatch, classes, dty
     def forbidden_upload(*args, **kwargs):
         raise AssertionError("class selection uploaded the host projector")
     monkeypatch.setattr(k_class_inputs.jnp, "asarray", forbidden_upload)
-    result = k_class_inputs._select_projector_half_for_class(source, classes - 1, classes)
+    result = k_class_inputs.select_projector_half_for_class(source, classes - 1, classes)
     assert isinstance(result, np.ndarray) and result.dtype == dtype
     assert result.shape == (7, 7, 4) and result.flags.c_contiguous
     assert np.shares_memory(source, result)

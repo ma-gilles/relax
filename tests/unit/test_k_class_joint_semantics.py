@@ -17,8 +17,8 @@ from relax.classification import k_class_results
 from relax.classification.k_class import (
     _run_sparse_firstiter_global_winner_subset_pass2,
     _run_sparse_k_class_adaptive_pass2,
-    _sparse_pose_ids_to_fine_grid,
     run_dense_k_class_em_adaptive,
+    sparse_pose_ids_to_fine_grid,
 )
 from relax.classification.k_class_results import (
     _assemble_result,
@@ -39,7 +39,7 @@ from relax.helpers.types import (
 from relax.refinement.noise_updates import update_class_sigma_offset_from_posterior
 from relax.relion.relion_metadata import read_relion_direction_priors
 from relax.scoring.pass1_results import Pass1Result
-from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
 
 def _stats(log_evidence, best_score, pmax, n_rot=3):
@@ -263,7 +263,7 @@ def test_k_class_result_publishes_the_winning_class_fine_pose():
     """Best-pose decode: each image takes its best-scoring class's fine pose.
 
     The sparse pass reports a translation index and a fine rotation id per image;
-    ``_sparse_pose_ids_to_fine_grid`` makes the flat fine pose id, and the assembled
+    ``sparse_pose_ids_to_fine_grid`` makes the flat fine pose id, and the assembled
     result publishes the winning class's pose id, rotation, translation and rotation id.
     """
 
@@ -280,7 +280,7 @@ def test_k_class_result_publishes_the_winning_class_fine_pose():
     trans_ids = (np.asarray([0, 1]), np.asarray([1, 0]))
     rot_ids = (np.asarray([0, 1]), np.asarray([2, 1]))
     best_scores = (np.asarray([10.0, 20.0]), np.asarray([30.0, 15.0]))
-    hard = [_sparse_pose_ids_to_fine_grid(trans_ids[k], rot_ids[k], n_trans) for k in range(2)]
+    hard = [sparse_pose_ids_to_fine_grid(trans_ids[k], rot_ids[k], n_trans) for k in range(2)]
     assert_matches(np.stack(hard), np.asarray([[0, 3], [5, 2]], dtype=np.int32))
 
     result = _assemble_result(
@@ -1230,7 +1230,7 @@ def test_firstiter_adaptive_translation_angle_preserves_relion_host_precision():
     # The translations keep host double precision: a float32 round trip moves
     # them far outside the float64 band.
     assert not matches(fine_trans, fine_trans.astype(np.float32).astype(np.float64))
-    source_angles = _relion_translation_angles_f32(
+    source_angles = relion_translation_angles_f32(
         fine_trans,
         (128, 128),
     )

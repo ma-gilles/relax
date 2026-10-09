@@ -107,7 +107,7 @@ def plan_coarse_gaussian(
     if shape.n_trans > 128:
         raise ValueError(f"the coarse GEMM scorer supports at most 128 translations, got {shape.n_trans}")
     from relax.sparse_pass2.sparse_pass2_scoring import (
-        _relion_cuda_powerclass_highres_xi2_half,
+        relion_cuda_powerclass_highres_xi2_half,
     )
 
     if not _custom_cuda_ready():
@@ -205,7 +205,7 @@ def plan_coarse_gaussian(
         score_indices=jnp.asarray(score_indices_np, dtype=jnp.int32),
         score_active_mask=jnp.asarray(square_layout.score_active_mask_np, dtype=jnp.bool_),
         projector_output_size=square_layout.physical_current_size,
-        powerclass=_relion_cuda_powerclass_highres_xi2_half,
+        powerclass=relion_cuda_powerclass_highres_xi2_half,
         resource_estimate=resource_estimate,
         projection_cache_plan=projection_cache_plan,
         rotation_block_size=int(rotation_block_size),

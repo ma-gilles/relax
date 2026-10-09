@@ -3,7 +3,7 @@ import numpy as np
 import jax.numpy as jnp
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
 from relax.sparse_pass2.sparse_pass2_scoring import (
-    _relion_cuda_powerclass_highres_xi2_half, _relion_powerclass_noise_terms,
+    relion_cuda_powerclass_highres_xi2_half, _relion_powerclass_noise_terms,
 )
 from relax.helpers.fourier_window import make_fourier_window_indices_np
 from helpers.float_compare import assert_matches
@@ -40,7 +40,7 @@ def test_full_box_wavg_rectangle_resolves_unwindowed_current_size_sentinel():
     )
     assert np.count_nonzero(rectangle.shell_indices >= 0) == rounded_indices.size
 
-    high_shell = _relion_cuda_powerclass_highres_xi2_half(
+    high_shell = relion_cuda_powerclass_highres_xi2_half(
         jnp.ones((2, n_half), dtype=jnp.complex64),
         image_shape=image_shape,
         current_size=image_shape[0],

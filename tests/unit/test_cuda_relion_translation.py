@@ -15,7 +15,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_relion_translation_angles_match_captured_float32_values():
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
     translations = np.asarray(
         [
@@ -24,7 +24,7 @@ def test_relion_translation_angles_match_captured_float32_values():
         ],
         dtype=np.float32,
     )
-    angles = _relion_translation_angles_f32(translations, (256, 256))
+    angles = relion_translation_angles_f32(translations, (256, 256))
 
     assert_matches(
         angles,
@@ -40,12 +40,12 @@ def test_relion_translation_angles_match_captured_float32_values():
 
 def test_relion_translation_angle_scale_changes_only_final_angle_operand():
     """Final-Q aa0eccbfd4: the model/optics scale multiplies only the angle operand."""
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
     translations = np.asarray([[0.25, -1.75]], dtype=np.float64)
     baseline_translations = translations.copy()
     angle_scale = np.float64("0.99999976470593788")
-    angles = _relion_translation_angles_f32(
+    angles = relion_translation_angles_f32(
         translations,
         (384, 384),
         angle_scale=angle_scale,
@@ -89,8 +89,8 @@ def test_relion_k1_translation_angle_scale_rejects_heterogeneous_optics():
 def test_unit_translation_angle_scale_keeps_every_angle_producer_unchanged():
     """Equal pixel sizes must leave the RELION angle operands untouched."""
     from relax.sparse_pass2.sparse_pass2_bucket_io import (
-        _relion_translation_angles_f32,
         _relion_translation_angles_f64,
+        relion_translation_angles_f32,
     )
 
     rng = np.random.default_rng(20260922)
@@ -101,7 +101,7 @@ def test_unit_translation_angle_scale_keeps_every_angle_producer_unchanged():
         reference,
     )
     assert_matches(
-        _relion_translation_angles_f32(translations, (256, 256), angle_scale=1.0),
+        relion_translation_angles_f32(translations, (256, 256), angle_scale=1.0),
         reference.astype(np.float32),
     )
     with pytest.raises(ValueError, match="positive and finite"):

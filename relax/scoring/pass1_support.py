@@ -136,13 +136,13 @@ def generic_support(plan: SupportPlan, scores: BatchScores, global_log_z, actual
     weights = jnp.exp(scores.support_values - global_log_z[:, None])
     normalization_sum_weight = normalization_max_posterior = None
     if plan.return_relion_f32_normalization:
-        from relax.sparse_pass2.sparse_pass2_posterior import _relion_f32_fine_posterior
+        from relax.sparse_pass2.sparse_pass2_posterior import relion_f32_fine_probabilities
 
         # Retain the existing coarse selector and all of its outputs.
         # The symbolic fine pass needs the numeric maximum-shifted
         # denominator, not exp(logZ) or a second normalized support.
         # See docs/math/zero_oversampling.md.
-        normalization_probs, _, _, _, normalization_sum, _ = _relion_f32_fine_posterior(
+        normalization_probs, _, _, _, normalization_sum, _ = relion_f32_fine_probabilities(
             scores.support_values,
             adaptive_fraction=plan.adaptive_fraction,
             keep_all=True,

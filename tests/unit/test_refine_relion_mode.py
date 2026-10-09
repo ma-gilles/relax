@@ -96,12 +96,12 @@ from relax.helpers.types import LocalEMResult, NoiseStats, RelionStats
 from relax.local.local_layout import (
     EXACT_LOCAL_BUCKET_RADIX_ENV,
     LocalHypothesisLayout,
-    _exact_bucket_rotation_size,
-    _selected_rotation_matrices,
     bucket_local_hypothesis_layout,
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
+    exact_bucket_rotation_size,
+    selected_rotation_matrices,
 )
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
@@ -2416,7 +2416,7 @@ def test_selected_rotation_matrices_match_full_perturbed_grid():
     )
     rotation_ids = np.array([0, 3, 17, rotation_grid_size(healpix_order) - 1], dtype=np.int32)
 
-    selected_rotations = _selected_rotation_matrices(
+    selected_rotations = selected_rotation_matrices(
         rotation_ids,
         None,
         grid_metadata,
@@ -2473,12 +2473,12 @@ def test_exact_local_fine_grid_precompute_auto_policy():
 def test_exact_local_bucket_radix_can_collapse_adjacent_power_two_shapes(monkeypatch):
     monkeypatch.setenv(EXACT_LOCAL_BUCKET_RADIX_ENV, "4")
 
-    assert _exact_bucket_rotation_size(32, 5000) == 64
-    assert _exact_bucket_rotation_size(64, 5000) == 64
-    assert _exact_bucket_rotation_size(128, 5000) == 256
-    assert _exact_bucket_rotation_size(256, 5000) == 256
-    assert _exact_bucket_rotation_size(512, 5000) == 1024
-    assert _exact_bucket_rotation_size(1024, 5000) == 1024
+    assert exact_bucket_rotation_size(32, 5000) == 64
+    assert exact_bucket_rotation_size(64, 5000) == 64
+    assert exact_bucket_rotation_size(128, 5000) == 256
+    assert exact_bucket_rotation_size(256, 5000) == 256
+    assert exact_bucket_rotation_size(512, 5000) == 1024
+    assert exact_bucket_rotation_size(1024, 5000) == 1024
 
 
 def test_bucket_local_hypothesis_layout_coarsens_large_exact_neighborhoods_without_4096_floor():
@@ -8770,7 +8770,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
     from relax.diagnostics.observers import ClassDumpObserver
 
     floor_calls = []
-    shell_stats = regularization_relion._compute_relion_weight_shell_stats
+    shell_stats = regularization_relion.compute_relion_weight_shell_stats
 
     def record_shell_stats(*args, **kwargs):
         result = shell_stats(*args, **kwargs)
@@ -8778,7 +8778,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             floor_calls.append(result)
         return result
 
-    monkeypatch.setattr(regularization_relion, "_compute_relion_weight_shell_stats", record_shell_stats)
+    monkeypatch.setattr(regularization_relion, "compute_relion_weight_shell_stats", record_shell_stats)
 
     half_datasets = [MockDataset(1, rng), MockDataset(1, rng)]
     n_classes = 2
@@ -9200,7 +9200,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         )
         best_pose_details = ()
         if kwargs.get("return_best_pose_details"):
-            fine_rot = _selected_rotation_matrices(
+            fine_rot = selected_rotation_matrices(
                 np.array([fine_idx], dtype=np.int32),
                 None,
                 build_local_search_grid_metadata(int(healpix_order)),
@@ -9257,7 +9257,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         observer=RunObserver(), source=InputSource(),
     )
 
-    expected_rotation = _selected_rotation_matrices(
+    expected_rotation = selected_rotation_matrices(
         np.array([fine_idx], dtype=np.int32),
         None,
         build_local_search_grid_metadata(5),
@@ -9582,17 +9582,17 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
     )
     monkeypatch.setattr(
         relion_functions_relion,
-        "_divide_large_relion_half_numerator_donate_numerator",
+        "divide_large_relion_half_numerator_donate_numerator",
         reject_donating_stage,
     )
     monkeypatch.setattr(
         relion_functions_relion,
-        "_regularize_large_relion_half_filter_donate_ctf",
+        "regularize_large_relion_half_filter_donate_ctf",
         reject_donating_stage,
     )
     monkeypatch.setattr(
         relion_functions_relion,
-        "_finish_large_relion_postprocess_from_fftw_half",
+        "finish_large_relion_postprocess_from_fftw_half",
         fake_finish,
     )
     monkeypatch.setattr(

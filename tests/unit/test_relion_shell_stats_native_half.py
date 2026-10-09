@@ -120,7 +120,7 @@ def _native_half_route(x_half_weight, grid_shape, monkeypatch):
 
 def _production_shell_stats(weight, grid, shell_rounding):
     volume_shape, padding_factor, accumulator_volume_shape, r_max = grid
-    stats = regularization_relion._compute_relion_weight_shell_stats(
+    stats = regularization_relion.compute_relion_weight_shell_stats(
         weight,
         volume_shape,
         padding_factor=padding_factor,
@@ -240,7 +240,7 @@ def test_recovar_native_half_accumulator_counts_every_stored_entry(grid_name, re
         x_half_weight, volume_shape, grid_shape, padding_factor, r_max, "round"
     )
 
-    stats = regularization_relion._compute_relion_weight_shell_stats(
+    stats = regularization_relion.compute_relion_weight_shell_stats(
         x_half_weight,
         volume_shape,
         padding_factor=padding_factor,

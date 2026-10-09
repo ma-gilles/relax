@@ -658,7 +658,7 @@ def _relion_powerclass_operands(processed_score_half, *, image_shape, current_si
 
 
 @partial(jax.jit, static_argnames=("image_shape", "current_size"))
-def _relion_cuda_powerclass_highres_xi2_half(
+def relion_cuda_powerclass_highres_xi2_half(
     processed_score_half,
     *,
     image_shape,
@@ -869,7 +869,7 @@ def _relion_powerclass_noise_terms(
     )
     relion_highres_xi2_half = None
     if wants_xi2:
-        relion_highres_xi2_half = _relion_cuda_powerclass_highres_xi2_half(
+        relion_highres_xi2_half = relion_cuda_powerclass_highres_xi2_half(
             processed_score_half_for_noise,
             image_shape=image_shape,
             **size_kwargs,

@@ -196,7 +196,7 @@ def _box800_plan(**overrides):
 
 def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64):
     sparse = firstiter_bpref
-    return sparse._relion_firstiter_compact_batch_planning_decision(
+    return sparse.relion_firstiter_compact_batch_planning_decision(
         source_faithful_spectrum_norm=True,
         winner_take_all=True,
         preserve_bpref_particle_order=True,

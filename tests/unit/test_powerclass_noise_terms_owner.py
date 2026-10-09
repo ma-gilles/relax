@@ -12,7 +12,7 @@ pytestmark = pytest.mark.unit
 
 def _with_fakes(monkeypatch):
     calls = []
-    monkeypatch.setattr(sparse_pass2_scoring, "_relion_cuda_powerclass_highres_xi2_half", lambda x, **kw: calls.append("xi2") or "xi2")
+    monkeypatch.setattr(sparse_pass2_scoring, "relion_cuda_powerclass_highres_xi2_half", lambda x, **kw: calls.append("xi2") or "xi2")
     monkeypatch.setattr(sparse_pass2_scoring, "_relion_cuda_powerclass_spectrum_highres_norm_units", lambda x, **kw: calls.append("spectrum") or "spectrum")
     monkeypatch.setattr(sparse_pass2_scoring, "_relion_powerclass_highres_xi2_half_to_norm_units", lambda v, shape: calls.append("convert") or ("norm", v))
     return calls
@@ -58,7 +58,7 @@ def test_noise_terms_key_on_the_box_and_take_the_current_size_at_runtime():
             accumulate_noise=True,
             source_faithful_spectrum_norm=True,
         )
-        static_xi2 = scoring._relion_cuda_powerclass_highres_xi2_half(
+        static_xi2 = scoring.relion_cuda_powerclass_highres_xi2_half(
             images, image_shape=image_shape, current_size=current_size
         )
         static_norm = scoring._relion_cuda_powerclass_spectrum_highres_norm_units(

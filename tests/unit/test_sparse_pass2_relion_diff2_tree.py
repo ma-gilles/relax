@@ -18,9 +18,9 @@ from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_diff2_to_scores,
     _relion_cuda_fine_full_to_compact_lookup,
     _relion_cuda_fine_pixel_weights,
-    _relion_cuda_powerclass_highres_xi2_half,
     _score_pass2_bucket_relion_gpu_diff2,
     _score_pass2_bucket_relion_gpu_diff2_raw,
+    relion_cuda_powerclass_highres_xi2_half,
 )
 
 pytestmark = pytest.mark.unit
@@ -202,7 +202,7 @@ def test_relion_cuda_powerclass_highres_matches_128_lane_block_trees():
     current_size = 14
     expected = _numpy_cuda_powerclass_highres_half(centered, current_size)
     actual = np.asarray(
-        _relion_cuda_powerclass_highres_xi2_half(
+        relion_cuda_powerclass_highres_xi2_half(
             jnp.asarray(centered.reshape(2, -1)),
             image_shape=(height, height),
             current_size=current_size,
@@ -224,7 +224,7 @@ def test_relion_cuda_powerclass_highres_preserves_acc_double_precision():
     current_size = 14
     expected = _numpy_cuda_powerclass_highres_half_double(centered, current_size)
     actual = np.asarray(
-        _relion_cuda_powerclass_highres_xi2_half(
+        relion_cuda_powerclass_highres_xi2_half(
             jnp.asarray(centered.reshape(2, -1)),
             image_shape=(height, height),
             current_size=current_size,
