@@ -6552,7 +6552,7 @@
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
-    "version": "RELION 5.0.1 build_patched relion_refine --grad --denovo_3dref (InitialModel, non-MPI)",
+    "version": "RELION 5.0.1 + MPI scale-sum patch + double-precision device back-projection accumulation (relion_patched_bpdouble_20260930, relion-5.0.1-mpiscale-bpdouble, b252392), relion_refine --grad --denovo_3dref non-MPI --j 12, one H100; walls of the relax pair are the earlier same-node build_patched pairs",
     "resolution_A": null,
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
@@ -6626,10 +6626,10 @@
    "gt": {
     "metric": "population-weighted masked FSC-AUC against the reference (relax scripts/score_initialmodel_maps.py at relax main d046c0a2, every kept arm rescored)",
     "relax": 0.492585,
-    "relion": 0.490088,
+    "relion": 0.492388,
     "relion_band": [
-     0.490088,
-     0.53387
+     0.492388,
+     0.52694
     ],
     "relax_per_seed": {
      "29": 0.492585,
@@ -6638,16 +6638,13 @@
     },
     "relion_per_seed": {
      "29": [
-      0.492002,
-      0.490088
+      0.492388
      ],
      "41": [
-      0.509787,
-      0.518458
+      0.497693
      ],
      "53": [
-      0.526853,
-      0.53387
+      0.52694
      ]
     },
     "relax_seed_provenance": {
@@ -6669,6 +6666,20 @@
      "rf_relion_s53": 0.53387,
      "rf_relax_s53": 0.536522,
      "fz_relax_s29_d046c0a": 0.492585
+    },
+    "relion_build_patched_per_seed_history": {
+     "29": [
+      0.492002,
+      0.490088
+     ],
+     "41": [
+      0.509787,
+      0.518458
+     ],
+     "53": [
+      0.526853,
+      0.53387
+     ]
     }
    },
    "cross_engine": null,
@@ -6684,6 +6695,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Re-referenced 2026-10-09 (team-lead): the RELION runs behind the previous verdict used relion/build_patched, the old f2c1a38 debug-dump build with float32 device back-projection (relax#4), whose atomic adds drop sub-half-ulp increments; the SGD (--grad) kernel accumulates through the same float32 model (cuda_kernel_backproject3D_SGD), so the page build is the reference. New RELION runs (job 15282496), one per seed, the row's command: masked weighted FSC-AUC relax / page RELION s29 0.492585 / 0.492388; s41 0.520769 / 0.497693; s53 0.536522 / 0.526940 (build_patched: s29 0.492002/0.490088; s41 0.509787/0.518458; s53 0.526853/0.533870). Page verdict hit.",
     "Benchmark freeze 2026-10-07 (relax main d046c0a2, job 15144698): seed 29 rerun cold, 443 s against the row's RELION 927.0 s (0.48x; ddf88c8b: 0.81x); RELION wall reused from the row's earlier separate job (same GPU model, RELION build unchanged), not a same-node pair. Quality: every kept arm rescored on the freeze scorer; seed 29 relax 0.49258 vs RELION 0.49200/0.49009; other seeds keep their ddf88c8b runs. Page verdict: hit (worst s29 +0.0025 vs same-seed RELION; inside or above across-seed band).",
     "Refresh 2026-09-27 on relax main ddf88c8: same-node cold pair (job 14547793), both arms started together; the row quotes seed 29.",
     "seed 29: masked reference FSC-AUC relax 0.3311 / RELION 0.3265 (unmasked 0.3301 / 0.3257); same-seed RELION runs of this command (masked) 0.3265-0.3340 over 2; relax-vs-RELION X-AUC 0.9737 (masked 0.9856); this RELION vs earlier RELION runs X-AUC relion_s29 0.9632; populations relax [0.873, 0.127] / RELION [0.874, 0.126]; walls relax 754 s / RELION 927 s",
@@ -6736,13 +6748,19 @@
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/short_d046c0a/out/rf_vdam_pdb_k2_d046c0a.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_d046c0a",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/freeze2_rows_d046c0a.py"
+    },
+    "bpdouble_rereference_20261009": {
+     "runs": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/b_row20",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/cfg_row20_row21_row29.json",
+     "scores": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/scores_b/row20.json",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/rerefs_bpdouble_rows_20261009.py"
     }
    },
    "mask": {
     "dataset": "pdb_k2_5k128_c1",
     "sha256": "aca84f352343539e736efb667d15b7a7716627c039480f45270faa10ef9cce7f"
    },
-   "date": "2026-10-07",
+   "date": "2026-10-09",
    "time_check": {
     "a": "relax: job 15144698 (della-h21g1), one H100 + 12 CPUs, 2026-10-07; RELION: RELION wall reused from the row's earlier separate job (same GPU model, RELION build unchanged), not a same-node pair",
     "b": "relax main d046c0a2 production defaults (no RELAX_* variables, JAX default allocator)",
@@ -6750,7 +6768,7 @@
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
    },
    "quality_pass": true,
-   "quality_reason": "worst s29 +0.0025 vs same-seed RELION; inside or above across-seed band",
+   "quality_reason": "worst s29 +2.0e-4 vs same-seed RELION; inside or above across-seed band; against page-build (bpdouble) RELION",
    "history": [
     {
      "date": "2026-09-25",
@@ -6827,6 +6845,60 @@
       "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
      },
      "note": "values before the 2026-10-07 benchmark freeze (relax ddf88c8b, earlier scorer)"
+    },
+    {
+     "date": "2026-10-07",
+     "gt": {
+      "metric": "population-weighted masked FSC-AUC against the reference (relax scripts/score_initialmodel_maps.py at relax main d046c0a2, every kept arm rescored)",
+      "relax": 0.492585,
+      "relion": 0.490088,
+      "relion_band": [
+       0.490088,
+       0.53387
+      ],
+      "relax_per_seed": {
+       "29": 0.492585,
+       "41": 0.520769,
+       "53": 0.536522
+      },
+      "relion_per_seed": {
+       "29": [
+        0.492002,
+        0.490088
+       ],
+       "41": [
+        0.509787,
+        0.518458
+       ],
+       "53": [
+        0.526853,
+        0.53387
+       ]
+      },
+      "relax_seed_provenance": {
+       "29": "d046c0a2120fa19a6fd624fc0b05a8fc68575c8a",
+       "41": "ddf88c8b",
+       "53": "ddf88c8b"
+      },
+      "all_arms_rescored": {
+       "relion_s29": 0.492002,
+       "relax_s29": 0.477744,
+       "relion_s41": 0.509787,
+       "relax_s41": 0.494396,
+       "relion_s53": 0.526853,
+       "relax_s53": 0.514532,
+       "rf_relion_s29": 0.490088,
+       "rf_relax_s29": 0.489223,
+       "rf_relion_s41": 0.518458,
+       "rf_relax_s41": 0.520769,
+       "rf_relion_s53": 0.53387,
+       "rf_relax_s53": 0.536522,
+       "fz_relax_s29_d046c0a": 0.492585
+      }
+     },
+     "quality_pass": true,
+     "quality_reason": "worst s29 +0.0025 vs same-seed RELION; inside or above across-seed band",
+     "note": "verdict against build_patched RELION (float32 device BP), before the 2026-10-09 page-build re-reference"
     }
    ],
    "benchmark": false,
@@ -9243,7 +9315,7 @@
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
-    "version": "RELION 5.0.1 build_patched relion_refine --grad --denovo_3dref (InitialModel, non-MPI)",
+    "version": "RELION 5.0.1 + MPI scale-sum patch + double-precision device back-projection accumulation (relion_patched_bpdouble_20260930, relion-5.0.1-mpiscale-bpdouble, b252392), relion_refine --grad --denovo_3dref non-MPI --j 12, one H100; walls of the relax pair are the earlier same-node build_patched pairs",
     "resolution_A": null,
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
@@ -9321,9 +9393,9 @@
    "gt": {
     "metric": "population-weighted masked FSC-AUC against the reference (relax scripts/score_initialmodel_maps.py at relax main d046c0a2, every kept arm rescored)",
     "relax": 0.057842,
-    "relion": 0.057896,
+    "relion": 0.057842,
     "relion_band": [
-     0.034669,
+     0.034591,
      0.062079
     ],
     "relax_per_seed": {
@@ -9333,22 +9405,13 @@
     },
     "relion_per_seed": {
      "29": [
-      0.057896,
-      0.057907,
-      0.057908,
-      0.057907,
-      0.057911,
-      0.057913
+      0.057842
      ],
      "41": [
-      0.034816,
-      0.034758,
-      0.034669
+      0.034591
      ],
      "53": [
-      0.062079,
-      0.062078,
-      0.062074
+      0.062079
      ]
     },
     "relax_seed_provenance": {
@@ -9391,6 +9454,26 @@
       0.062078,
       0.062078
      ]
+    },
+    "relion_build_patched_per_seed_history": {
+     "29": [
+      0.057896,
+      0.057907,
+      0.057908,
+      0.057907,
+      0.057911,
+      0.057913
+     ],
+     "41": [
+      0.034816,
+      0.034758,
+      0.034669
+     ],
+     "53": [
+      0.062079,
+      0.062078,
+      0.062074
+     ]
     }
    },
    "cross_engine": null,
@@ -9406,6 +9489,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Re-referenced 2026-10-09 (team-lead): the RELION runs behind the previous verdict used relion/build_patched, the old f2c1a38 debug-dump build with float32 device back-projection (relax#4), whose atomic adds drop sub-half-ulp increments; the SGD (--grad) kernel accumulates through the same float32 model (cuda_kernel_backproject3D_SGD), so the page build is the reference. New RELION runs (job 15282496), one per seed, the row's command: masked weighted FSC-AUC relax / page RELION s29 0.057842 / 0.057842; s41 0.034790 / 0.034591; s53 0.062078 / 0.062079 (build_patched: s29 0.057896/0.057907/0.057908/0.057907/0.057911/0.057913; s41 0.034816/0.034758/0.034669; s53 0.062079/0.062078/0.062074). Page verdict hit.",
     "Repeats 2026-10-08 (scorew, team-lead red-row re-judge): two more same-command runs of both programs at s41 and s53 (b61b1916 / build_patched, job 15241689): s41 relax 0.034790/0.034807/0.034706 vs RELION 0.034816/0.034758/0.034669; s53 relax 0.062078/0.062078/0.062078 vs RELION 0.062079/0.062078/0.062074; run ranges overlap at both seeds; verdict hit (worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band).",
     "Re-judged 2026-10-08 by majority of seeds (team-lead; page rule as on the other VDAM rows): s29 relax 0.057842 vs RELION 0.057896/0.057907/0.057908/0.057907/0.057911/0.057913; s41 relax 0.034790 vs RELION 0.034816/0.034758/0.034669; s53 relax 0.062078 vs RELION 0.062079/0.062078/0.062074; verdict hit (worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band). Seeds 41 and 53: etvdam job 15211368, both programs on one H100 node, the row command with only --random_seed changed, relax on the b61b1916 freeze snapshot (cand_b61b191 with cand_d046c0a's env and natives), RELION the row's build_patched relion_refine. Seed 29: relax keeps the 073740f0 freeze run; RELION adds etvdam's two same-build repeats. Relax repeats at a4396d8 (seed 29, not pooled: different commit) score 0.057843/0.057845/0.057842.",
     "Same-seed map FSC-AUC for the reproduced-map tie: the minimum over matched classes of the masked class-map FSC-AUC (definition of the existing K>1 tie rows, cryoet et13/et16 Class3D): s41 0.998836, s53 0.999987. s41 is not reproduced by that definition because one class with 0.1% of the particles scores 0.998836; the population-weighted masked values are s41 0.999999, s53 0.999999 (not used, for consistency with the existing rows; team-lead 2026-10-08).",
@@ -9467,6 +9551,12 @@
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/e10076_k4_seeds_20261008/out/e10076_10k_k4_seeds.json",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/e10076_k4_seeds_row_v3.py",
      "repeats_20261008": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/redrows/e10076"
+    },
+    "bpdouble_rereference_20261009": {
+     "runs": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/b_row29",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/cfg_row20_row21_row29.json",
+     "scores": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/scores_b/row29.json",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/rerefs_bpdouble_rows_20261009.py"
     }
    },
    "mask": {
@@ -9481,7 +9571,7 @@
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
    },
    "quality_pass": true,
-   "quality_reason": "worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band",
+   "quality_reason": "worst s53 −1.0e-6 vs same-seed RELION; inside across-seed band; against page-build (bpdouble) RELION",
    "benchmark": false,
    "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)",
    "history": [
@@ -9778,6 +9868,87 @@
      "quality_pass": false,
      "quality_reason": "worst s29 −5.4e-5 vs same-seed RELION; s29 below across-seed RELION band 0.057896-0.057908",
      "note": "verdict before the 2026-10-08 multi-seed re-judge (seed 29 only)"
+    },
+    {
+     "date": "2026-10-09",
+     "gt": {
+      "metric": "population-weighted masked FSC-AUC against the reference (relax scripts/score_initialmodel_maps.py at relax main d046c0a2, every kept arm rescored)",
+      "relax": 0.057842,
+      "relion": 0.057896,
+      "relion_band": [
+       0.034669,
+       0.062079
+      ],
+      "relax_per_seed": {
+       "29": 0.057842,
+       "41": 0.03479,
+       "53": 0.062078
+      },
+      "relion_per_seed": {
+       "29": [
+        0.057896,
+        0.057907,
+        0.057908,
+        0.057907,
+        0.057911,
+        0.057913
+       ],
+       "41": [
+        0.034816,
+        0.034758,
+        0.034669
+       ],
+       "53": [
+        0.062079,
+        0.062078,
+        0.062074
+       ]
+      },
+      "relax_seed_provenance": {
+       "29": "073740f0ea23989c46c72797c39a83c4b26a6772",
+       "41": "b61b1916 (etvdam job 15211368)",
+       "53": "b61b1916 (etvdam job 15211368)"
+      },
+      "all_arms_rescored": {
+       "rf_relion_s29": 0.057896,
+       "relion_s29_pair": 0.057907,
+       "relion_s29_a": 0.057908,
+       "relion_s29_b": 0.057907,
+       "fz_relax_s29_d046c0a": 0.05784,
+       "fz3_relax_s29_b61b191": 0.057825,
+       "fz4_relax_s29_073740f": 0.057842
+      },
+      "seeds_rescored_20261008": {
+       "ev_relax_s41_b61b191": 0.03479,
+       "ev_relax_s53_b61b191": 0.062078,
+       "ev_relion_s41": 0.034816,
+       "ev_relion_s53": 0.062079,
+       "ev_relion_s29_r1": 0.057911,
+       "ev_relion_s29_r2": 0.057913,
+       "ev_relax_s29_a4396d8_r1": 0.057843,
+       "ev_relax_s29_a4396d8_r2": 0.057845,
+       "ev_relax_s29_a4396d8_r3": 0.057842
+      },
+      "same_seed_map_fsc_auc": {
+       "41": 0.998836,
+       "53": 0.999987
+      },
+      "relax_runs_per_seed": {
+       "41": [
+        0.03479,
+        0.034807,
+        0.034706
+       ],
+       "53": [
+        0.062078,
+        0.062078,
+        0.062078
+       ]
+      }
+     },
+     "quality_pass": true,
+     "quality_reason": "worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band",
+     "note": "verdict against build_patched RELION (float32 device BP), before the 2026-10-09 page-build re-reference"
     }
    ]
   },
@@ -10037,7 +10208,7 @@
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
-    "version": "RELION 5.0.1 patched build f2c1a3 (sha256 a9a96134...), mpirun -n 3 relion_refine_mpi --j 4, one H100",
+    "version": "RELION 5.0.1 + MPI scale-sum patch + double-precision device back-projection accumulation (relion_patched_bpdouble_20260930, relion-5.0.1-mpiscale-bpdouble, b252392), relion_refine_mpi 3 ranks x 4 threads (--j 4), one H100 per seed; wall unchanged from the build_patched record",
     "resolution_A": 8.635,
     "resolution_definition": "half_fsc_0143",
     "relion_reported_resolution_A": 8.635,
@@ -10072,17 +10243,16 @@
    },
    "gt": {
     "metric": "unmasked GT FSC-AUC, shells 1-63 (em_work/cryoet_s42_20260925/compare_s1_standalone.py)",
-    "relion": 0.938103,
+    "relion": 0.938085,
     "relax": 0.938078,
     "relion_band": [
-     0.938103,
-     0.940933
+     0.938085,
+     0.940934
     ],
     "relion_band_runs": [
-     "relion_ref seed 20260925",
-     "repeat seed 20260926",
-     "repeat seed 20260927",
-     "repeat seed 20260928"
+     "bpdouble seed 20260925 (job 15282497)",
+     "bpdouble seed 20260926 (job 15282497)",
+     "bpdouble seed 20260927 (job 15282497)"
     ],
     "relax_band": [
      0.938078,
@@ -10094,19 +10264,31 @@
      "5290007 seed 20260927 (14633970)"
     ],
     "same_seed_gap": {
-     "20260925": -2.44e-05,
-     "20260926": -5.67e-07,
-     "20260927": -1.04e-06
+     "20260925": -7e-06,
+     "20260926": -2e-06,
+     "20260927": 2e-06
     },
     "same_seed_map_fsc_auc": {
-     "20260925": 0.999984,
-     "20260926": 0.999982,
+     "20260925": 0.999981,
+     "20260926": 0.999923,
      "20260927": 0.999997
     },
     "relax_seed_provenance": {
      "20260925": "52900077b8e73fb69b79a246d249ff2b7f9abe5e",
      "20260926": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
      "20260927": "52900077b8e73fb69b79a246d249ff2b7f9abe5e"
+    },
+    "relion_build_patched_history": {
+     "band": [
+      0.938103,
+      0.940933
+     ],
+     "runs": [
+      "relion_ref seed 20260925",
+      "repeat seed 20260926",
+      "repeat seed 20260927",
+      "repeat seed 20260928"
+     ]
     }
    },
    "cross_engine": "unmasked relax-vs-RELION map FSC-AUC 0.99993-0.999997 against the same-seed RELION run for all three seeds (0.972-0.989 against other-seed RELION runs; RELION-vs-RELION 0.972-0.989)",
@@ -10122,6 +10304,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Re-referenced 2026-10-09 (team-lead): the RELION runs behind the previous verdict used relion/build_patched, the old f2c1a38 debug-dump build with float32 device back-projection (relax#4), whose atomic adds drop sub-half-ulp increments; the SGD (--grad) kernel accumulates through the same float32 model (cuda_kernel_backproject3D_SGD), so the page build is the reference. New RELION runs (job 15282497, 4746-4776 s): unmasked GT FSC-AUC relax / page RELION / build_patched s20260925 0.938078 / 0.938085 / 0.938103; s20260926 0.940932 / 0.940934 / 0.940933; s20260927 0.940554 / 0.940552 / 0.940555; same-seed map FSC-AUC 0.999981, 0.999923, 0.999997 (s20260926 uses relax's 5290007 run). Page verdict hit; on this single-optics fixture bpdouble and build_patched agree to 2.6e-5.",
     "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
     "Refresh 2026-10-04, seed 20260926 (the wall seed; relax only): unmasked GT FSC-AUC 0.940932 vs same-seed RELION 0.940933 (-5.7e-07; was -2.5e-05); relax-vs-RELION map FSC-AUC 0.999982 (was 0.999925); wall 1113 s (was 1767 s) against RELION 4747 s. The row's quoted accuracy values (seed 20260925) and seed 20260927 are the earlier 5290007 runs.",
     "First cryo-ET row: relax's RELION 5 tomo refinement port (S4.2: 3D offsets, tilt-summed diff2) run standalone from the fixture's particles/tomograms/optimisation-set STAR files with the fixture's RELION command (--ios, --ini_high 40, healpix 2, auto local healpix 4, offset range 5 step 1).",
@@ -10160,9 +10343,15 @@
      "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_s1_depthfix_1200_128_tomo_autorefine_343399e/s20260926",
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo_s1/compare.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+    },
+    "bpdouble_rereference_20261009": {
+     "runs": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/c_row31",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/score_row31.json",
+     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/rerefs_20261009/score_row31.py",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/rerefs_bpdouble_rows_20261009.py"
     }
    },
-   "date": "2026-10-04",
+   "date": "2026-10-09",
    "history": [
     {
      "date": "2026-09-28",
@@ -10196,11 +10385,56 @@
       "c": "both walls end to end including start-up and compilation; relax with an empty JAX compilation cache, RELION has no compile cache",
       "d": "both NVIDIA H100 80GB HBM3 on della cryoem nodes (RELION della-h20g3, relax della-h21g4; relion_repeats/EXIT.txt, PROVENANCE.txt)"
      }
+    },
+    {
+     "date": "2026-10-04",
+     "gt": {
+      "metric": "unmasked GT FSC-AUC, shells 1-63 (em_work/cryoet_s42_20260925/compare_s1_standalone.py)",
+      "relion": 0.938103,
+      "relax": 0.938078,
+      "relion_band": [
+       0.938103,
+       0.940933
+      ],
+      "relion_band_runs": [
+       "relion_ref seed 20260925",
+       "repeat seed 20260926",
+       "repeat seed 20260927",
+       "repeat seed 20260928"
+      ],
+      "relax_band": [
+       0.938078,
+       0.940932
+      ],
+      "relax_band_runs": [
+       "5290007 seed 20260925 (14633970)",
+       "5290007 seed 20260926 (14633970)",
+       "5290007 seed 20260927 (14633970)"
+      ],
+      "same_seed_gap": {
+       "20260925": -2.44e-05,
+       "20260926": -5.67e-07,
+       "20260927": -1.04e-06
+      },
+      "same_seed_map_fsc_auc": {
+       "20260925": 0.999984,
+       "20260926": 0.999982,
+       "20260927": 0.999997
+      },
+      "relax_seed_provenance": {
+       "20260925": "52900077b8e73fb69b79a246d249ff2b7f9abe5e",
+       "20260926": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
+       "20260927": "52900077b8e73fb69b79a246d249ff2b7f9abe5e"
+      }
+     },
+     "quality_pass": true,
+     "quality_reason": "worst s20260925 −2.4e-5 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999982) at 3 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band (GT FSC-AUC); only seed 20260926 rerun, seeds 20260925/20260927 as recorded",
+     "note": "verdict against build_patched RELION MPI (float32 device BP), before the 2026-10-09 page-build re-reference"
     }
    ],
    "mask": null,
    "quality_pass": true,
-   "quality_reason": "worst s20260925 −2.4e-5 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999982) at 3 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band (GT FSC-AUC); only seed 20260926 rerun, seeds 20260925/20260927 as recorded",
+   "quality_reason": "worst s20260925 −7.0e-6 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999923) at 3 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band; against page-build (bpdouble) MPI RELION",
    "time_check": {
     "a": "RELION 1 H100, mpirun -n 3 relion_refine_mpi --j 4 (seed 20260926, step 14434240.2, 12 CPUs); relax 1 H100, 12 CPUs (job 14695215); separate jobs",
     "b": "relax production defaults at f6c8299b: no RELAX_* variable set, no --scratch_dir (relax refine could not stage subtomogram stacks before d312985, relax#15), no diagnostic, capture, replay or dump options",
