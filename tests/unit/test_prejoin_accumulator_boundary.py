@@ -1,5 +1,6 @@
 """The accumulator captures and the finite guard see the native halves, in order, before the join."""
 
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
@@ -53,9 +54,10 @@ def test_prejoin_capture_routing(iteration, target, k_class_enabled, captured, s
 
     monkeypatch.setattr(observers, 'write_bpref_accumulators', save)
     observer = observers.BpRefAccumulatorObserver(prejoin_dir='/capture', target_iteration=target)
+    observer.run_started(SimpleNamespace(k_class_enabled=k_class_enabled))
     observer.half_accumulators_ready(
         iteration, numerators=numerators, denominators=denominators, settings=settings, current_size=6,
-        accumulator_shape=(16, 16, 16), k_class_enabled=k_class_enabled, pixel_size_angstrom=raw_pixel_size,
+        accumulator_shape=(16, 16, 16), pixel_size_angstrom=raw_pixel_size,
     )
     assert events == (['capture'] if captured else [])
 

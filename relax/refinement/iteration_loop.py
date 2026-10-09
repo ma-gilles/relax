@@ -567,6 +567,7 @@ def refine_single_volume(
         experiment_datasets, options, replays_relion_state=source.replays_relion_state(),
         observer=observer,
     )
+    observer.run_started(ctx)
     # The run's one mode decision: the K=1 or the Class3D run's own set-up and iteration statements.
     mode = _ClassIteration() if ctx.k_class_enabled else _K1Iteration()
     _validate_bpref_particle_order_scope(
@@ -1102,7 +1103,7 @@ def refine_single_volume(
         observer.half_accumulators_ready(
             iteration, numerators=numerators, denominators=denominators,
             settings=ctx.reconstruction_settings, current_size=this_iteration.current_size, accumulator_shape=mstep_accumulator_shape,
-            k_class_enabled=ctx.k_class_enabled, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
+            pixel_size_angstrom=ctx.source_pixel_size_angstrom,
         )
         check_half_accumulators_before_join(
             numerators, denominators, iteration=iteration,

@@ -350,6 +350,10 @@ class RunObserver:
         """Whether this numbered iteration should also reconstruct its unregularized maps for the observer."""
         return False
 
+    def run_started(self, context) -> None:
+        """The run's context is resolved (a ``relax.refinement.setup_checks.RunContext``: its mode, geometry
+        and settings), before the start-up state is built."""
+
     def iteration_started(self, iteration: int) -> None:
         """A numbered iteration starts (after the convergence check that could have ended the loop)."""
 
@@ -362,7 +366,7 @@ class RunObserver:
 
     def half_accumulators_ready(
         self, iteration: int, *, numerators, denominators, settings, current_size: int, accumulator_shape,
-        k_class_enabled: bool, pixel_size_angstrom,
+        pixel_size_angstrom,
     ) -> None:
         """A numbered iteration's two half accumulators are complete, before any check or cross-half join."""
 

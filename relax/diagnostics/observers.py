@@ -156,9 +156,13 @@ class BpRefAccumulatorObserver(RunObserver):
             Ft_ctf_0=denominators[0], Ft_ctf_1=denominators[1],
         )
 
+    def run_started(self, context):
+        # The prejoin capture is K=1's; the run's mode is read once from its context.
+        self.k_class_enabled = context.k_class_enabled
+
     def half_accumulators_ready(self, iteration, *, numerators, denominators, settings, current_size,
-                                accumulator_shape, k_class_enabled, pixel_size_angstrom):
-        if not k_class_enabled:
+                                accumulator_shape, pixel_size_angstrom):
+        if not self.k_class_enabled:
             self._write(self.prejoin_dir, "prejoin", iteration, numerators, denominators, settings, current_size,
                         accumulator_shape, pixel_size_angstrom)
 
@@ -226,6 +230,10 @@ class ObserverGroup(RunObserver):
 
     def wants_unfiltered_maps(self, numbered_relion_iteration):
         return any([o.wants_unfiltered_maps(numbered_relion_iteration) for o in self.observers])
+
+    def run_started(self, context):
+        for o in self.observers:
+            o.run_started(context)
 
     def iteration_started(self, iteration):
         for o in self.observers:
