@@ -11,14 +11,14 @@ here in the commit that closes it; record a decision in the "Decided" section. "
 | Measure | Before (main 6610f54d) | Now |
 | --- | --- | --- |
 | `_compute_k_class_significance_batched` | 1,819 lines, 46 parameters, 283 locals | 9 lines, 4 parameters and the options of `Pass1Request` |
-| Planning (`plan_pass1`) and the loop (`run_pass1`) | inside that function | 404 and 173 lines, one parameter each |
-| `significance.py` | 2,660 lines | 218 lines |
+| Planning (`plan_pass1`) and the loop (`run_pass1`) | inside that function | 240 and 76 lines, one parameter each; the route, the program and support plans and the batch's two steps are functions of their own modules |
+| `significance.py` | 2,660 lines | 111 lines |
 | `_publish_batch` | 264 lines, nested; captures 51 enclosing variables, unpacks a 34-field tuple | `pass1_publish.publish_batch`, explicit inputs, `BatchOutputs` record |
 | Largest function of `relax/scoring` | 1,819 lines | 466 lines (`tomo_coarse.particle_coarse_supports`) |
 | Largest parameter list of `relax/scoring` | 46 | 23 (`particle_coarse_supports`); pass 1's widest is `_pass1_block_update` with 14 (nine static settings are one `ProgramStatics`) |
 | Parameters never read | `disc_type`, `do_gridding_correction`; `means` read only for `n_classes` | deleted |
-| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 8,901 / 7,613: the cost of 17 new modules (headers, records, docstrings) |
-| Ceilings | `docs/development/scoring_structure_metrics.json` (the totals on that date) | the two line-count ceilings are exceeded (see "Waiting for the owner") |
+| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 9,024 / 7,693: the cost of 19 new modules (headers, records, docstrings); 124 / 80 above the line-count ceilings the owner set on 2026-10-09 (8,901 / 7,613), inside their 5% slack |
+| Ceilings | `docs/development/scoring_structure_metrics.json` (the totals on that date) | the span, parameter and large-argument ceilings are at the measured values; the very-large-argument count is 1 |
 
 ## Coverage
 
@@ -39,17 +39,20 @@ device scoring (`defer_publish`).
 
 ## Open items
 
-1. **The planner is one 404-line function (rules 6, 10, 11).** `plan_pass1` decides the route once and builds each
-   stage's plan, but it is still a sequence of 15 steps with the options read as `request.<field>` (ten rebound or
-   formatted fields keep a local name). Split it by contract into the Gaussian and the normalized-CC route planners, and
-   resolve the options once at the boundary: the callers (`k_class.py`, `scripts/run_k_class_parity.py`, tests) still pass
-   keywords that `_compute_k_class_significance_batched` turns into a `Pass1Request`; they would build the request.
+1. **The planner is still a sequence of steps (rules 6, 10, 11).** `plan_pass1` (240 lines) decides the route once
+   (`plan_gaussian_route` and `plan_cc_route` in `pass1_route.py`, one `RoutePlan`) and delegates the program and support
+   plans (`plan_score_program`, `plan_support`), but its first ten steps (the refusals, the request's fields, the window)
+   are inline, and `coarse_rotation_ids` and the healpix order are validated for every route although only the
+   normalized-CC tree rescore reads them. The callers (`k_class.py`, `scripts/run_k_class_parity.py`, about 30 tests)
+   still pass keywords that `_compute_k_class_significance_batched` turns into a `Pass1Request`; that entry is the seam
+   they patch and the fingerprint calls, so it stays until they build the request.
 2. **The environment steers pass 1 below the boundary (rule 5).** Read in `pass1_plan.py`:
-   `RECOVAR_K1_RELION_F32_COARSE_SUPPORT` (selects the generic support route), `RELAX_K1_COARSE_ROTATED_RADIUS`,
-   `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (also the field `pad_final_image_batch`: two owners),
-   `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect is a refusal), the projection-cache variables
-   (`gaussian_plan.py`: they change `rotation_block_size`), and `RELAX_COARSE_GEMM_FLOAT64` (`pass1_plan.py`, read once
-   per pass); in `pass1_assembly.py` the support-audit variables; in `pass1_dump.py` the dump target list.
+   `RELAX_K1_COARSE_ROTATED_RADIUS`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (also the field `pad_final_image_batch`: two
+   owners), `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect is a refusal) and
+   `RELAX_COARSE_GEMM_FLOAT64` (read once per pass, then passed to `plan_score_program`); in `pass1_route.py`
+   `RECOVAR_K1_RELION_F32_COARSE_SUPPORT` (selects the generic support route); the projection-cache variables
+   (`gaussian_plan.py`: they change `rotation_block_size`); in `pass1_assembly.py` the support-audit variables; in
+   `pass1_dump.py` the dump target list.
 3. **A diagnostic steers execution (rule 9).** A dump batch switches off device compaction and deferred publishing.
    The dump and the audit are imported by `pass1_publish.py`, `pass1_dump.py`, `pass1_assembly.py` and
    `tree_rescore.py` (the allowlist of `tests/unit/test_refinement_port_imports.py` names the four edges; the two
@@ -73,10 +76,19 @@ device scoring (`defer_publish`).
   as a production capability, kept as a named option, or moved to `tests/oracles` as an independent reference.
 - Whether the legacy source-pixel disk (`RELAX_K1_COARSE_ROTATED_RADIUS=0`) stays an option.
 - Whether dumps and the support audit become a `RunObserver` hook within this refactor.
-- Whether the two line-count ceilings of `scoring_structure_metrics.json` are raised by hand (the split added 17 modules
-  and 1,269 lines of headers, records and docstrings; the largest function fell from 1,819 to 466 lines and the widest
-  parameter list from 46 to 23), or the package is trimmed to fit.
+
+Retiring the generic Gaussian support route (the first question) would also delete the generic route's RELION
+normalization branch (`_coarse_max_posterior_for_host`, two `SupportResult` and `BatchOutputs` fields, their publish
+branch and one private import from `relax/sparse_pass2`): about 45 of the 124 lines by which the package is over its
+line-count ceiling. The rest is the two modules added in this round (`pass1_route.py`, `pass1_step.py`).
 
 ## Decided
 
-Nothing yet.
+- 2026-10-09 (the owner, on PR #54): the two line-count ceilings of `scoring_structure_metrics.json` were raised by hand
+  to the measured values (2066614d), and the span, parameter and large-argument ceilings lowered to the measured values.
+  Later slices lower a ceiling with `report_refinement_structure.py --lower-ceilings` and never raise one.
+- 2026-10-09 (the PR #54 post-merge review; every later commit follows it): pass-1 modules import no other module's
+  `_private` name (`smell_check` private-import: make the name public, or move its user); they keep no read-only alias
+  of a request field and no record field nothing reads (`4b416d8e`); a module with more than 20 names it imports and uses
+  once is split or calls through the owning module (single-use-import, a warning). A slice runs `scripts/dev/smell_check.py`
+  and the full unit list, not only the pass-1 tests, before it is pushed; the findings it introduces are not baselined.
