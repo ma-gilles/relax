@@ -112,6 +112,7 @@ from relax.sparse_pass2.resident_scoring import (
     project_resident_live_rows,
     resident_row_projection_bytes,
     score_resident_chunk_in_row_blocks,
+    score_resident_chunk_normalized_cc_in_row_blocks,
     score_resident_projected_chunk,
     score_resident_projected_chunk_normalized_cc,
 )
@@ -1063,11 +1064,7 @@ def compute_local_search_resident(
             max_image_rows=rp.max_image_rows(tables.row_offsets),
             # An image past the largest row class runs alone in row blocks of that class
             # (_start_resident_local_chunk), as the global pass runs it (relax#49 follow-up).
-            lone_row_bytes=(
-                rp.lone_chunk_row_bytes(int(n_fine_trans), class_rows=tables.n_classes > 1)
-                if not firstiter_cc
-                else None
-            ),
+            lone_row_bytes=rp.lone_chunk_row_bytes(int(n_fine_trans), class_rows=tables.n_classes > 1),
             **tile_pixels,
         )
         row_ladder = memory_plan.row_capacity_ladder
@@ -2322,14 +2319,11 @@ def _start_resident_local_chunk(
     its own rows. Each row's projection and score are those of the one-call chunk; only the grouping of the
     projector calls changes. In a Class3D pass each block's rows project with their own class's reference (the
     lone image's rows are class-major, so a block spans few classes) and each class's M-step blocks with its own.
+    The ``--firstiter_cc`` iteration scores the blocks with the normalized-CC block core
+    (:func:`~relax.sparse_pass2.resident_scoring.score_resident_chunk_normalized_cc_in_row_blocks`).
     """
 
     if lone_block_rows is not None:
-        if firstiter_cc:
-            raise ResidentConfigurationUnsupported(
-                "an image past the largest local row class runs in row blocks, which the first-iteration "
-                "cross-correlation pass does not implement"
-            )
         if int(lone_block_rows) % int(mstep_block_rows) or int(chunk.row_capacity) % int(lone_block_rows):
             raise ValueError(
                 f"lone row blocks of {lone_block_rows} must divide the chunk's {chunk.row_capacity} rows and be a "
@@ -2515,20 +2509,40 @@ def _start_resident_local_chunk(
     segment_offsets = jnp.asarray(segment_offsets_np, dtype=jnp.int32)
     if firstiter_cc:
         # --- stages 3-4, --firstiter_cc: normalized CC, winner takes all ---
-        scored = score_resident_projected_chunk_normalized_cc(
-            score_proj,
-            row_image_local,
-            row_mask_bits,
-            n_valid_rows_device,
-            recon["score_shifted_cc"],
-            recon["corr_img_score"],
-            recon["cc_half_batch_norm"],
-            half_weights=half_weights,
-            full_to_compact=full_to_compact,
-            row_capacity=chunk.row_capacity,
-            n_fine_trans=int(n_fine_trans),
-            block_rows=_cc_block_rows(chunk.row_capacity),
-        )
+        if lone_block_rows is not None:
+
+            def cc_block_reference(start):
+                return project_score_block(start, min(start + int(lone_block_rows), int(chunk.row_capacity)))
+
+            scored = score_resident_chunk_normalized_cc_in_row_blocks(
+                cc_block_reference,
+                row_image_local,
+                row_mask_bits,
+                int(chunk.n_valid_rows),
+                recon["score_shifted_cc"],
+                recon["corr_img_score"],
+                recon["cc_half_batch_norm"],
+                block_rows=int(lone_block_rows),
+                half_weights=half_weights,
+                full_to_compact=full_to_compact,
+                row_capacity=chunk.row_capacity,
+                n_fine_trans=int(n_fine_trans),
+            )
+        else:
+            scored = score_resident_projected_chunk_normalized_cc(
+                score_proj,
+                row_image_local,
+                row_mask_bits,
+                n_valid_rows_device,
+                recon["score_shifted_cc"],
+                recon["corr_img_score"],
+                recon["cc_half_batch_norm"],
+                half_weights=half_weights,
+                full_to_compact=full_to_compact,
+                row_capacity=chunk.row_capacity,
+                n_fine_trans=int(n_fine_trans),
+                block_rows=_cc_block_rows(chunk.row_capacity),
+            )
         del score_proj
         mark("score", scored.scores)
         (

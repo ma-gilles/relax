@@ -1042,30 +1042,33 @@ def test_local_firstiter_cc_probe_keeps_the_fine_pass_winner(monkeypatch, _resid
 
 
 @requires_resident_gpu
-def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_local_env):
+@pytest.mark.parametrize("firstiter_cc", [False, True], ids=["gaussian", "firstiter_cc"])
+def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_local_env, firstiter_cc):
     """An image past the largest local row class runs alone in row blocks (relax#49 follow-up): its rows are
     projected and scored a block at a time (the scorer the global pass's lone chunk uses), the posterior is
     formed over all of them, and each M-step block projects its own rows. Each row's projection and score are
     those of the one-call chunk, so the discrete outputs agree exactly and the accumulators within the driver's
-    repeat band (the x-half BPref and Wavg atomics are not bit-reproducible in either arm)."""
+    repeat band (the x-half BPref and Wavg atomics are not bit-reproducible in either arm). The --firstiter_cc
+    iteration scores its blocks with the normalized-CC block core the one-call CC chunk uses."""
 
     from relax.sparse_pass2 import resident_scoring
 
     case = _case()
-    whole = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+    whole = _run(case, monkeypatch=monkeypatch, production_shapes=True, firstiter_cc=firstiter_cc)
 
     blocked_calls = []
-    real_blocked = rlp.score_resident_chunk_in_row_blocks
+    name = "score_resident_chunk_normalized_cc_in_row_blocks" if firstiter_cc else "score_resident_chunk_in_row_blocks"
+    real_blocked = getattr(rlp, name)
 
     def spy(*args, **kwargs):
         blocked_calls.append(int(kwargs["row_capacity"]))
         return real_blocked(*args, **kwargs)
 
-    monkeypatch.setattr(rlp, "score_resident_chunk_in_row_blocks", spy)
-    assert real_blocked is resident_scoring.score_resident_chunk_in_row_blocks
+    monkeypatch.setattr(rlp, name, spy)
+    assert real_blocked is getattr(resident_scoring, name)
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "8")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
-    lone = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+    lone = _run(case, monkeypatch=monkeypatch, production_shapes=True, firstiter_cc=firstiter_cc)
 
     assert blocked_calls, "the 8-row ladder made no lone chunk"
     assert_matches(np.asarray(whole.hard_assignment), np.asarray(lone.hard_assignment))
@@ -1136,6 +1139,38 @@ def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _re
         assert rel_l2(whole.Ft_ctf[k], lone.Ft_ctf[k]) < 1e-6
     assert rel_l2(whole.noise_stats.wsum_sigma2_noise, lone.noise_stats.wsum_sigma2_noise) < 1e-6
     assert np.max(np.abs(np.asarray(whole.stats.log_evidence_per_image) - np.asarray(lone.stats.log_evidence_per_image))) < 1e-4
+
+
+def test_cc_row_block_scorer_matches_the_one_call_cc_chunk():
+    """The --firstiter_cc lone scorer and the one-call CC chunk scorer share one block core: scoring the same
+    projections a block at a time gives the one-call chunk's scores and candidates (padding blocks included)."""
+
+    from relax.sparse_pass2 import resident_scoring as rs
+
+    rng = np.random.default_rng(11)
+    n_images, n_trans, n_pix, rows, n_valid = 2, 5, 24, 32, 21
+    reference = jnp.asarray(rng.normal(size=(rows, n_pix)) + 1j * rng.normal(size=(rows, n_pix)), jnp.complex64)
+    row_image = jnp.asarray(np.minimum(np.arange(rows) // 11, n_images - 1), jnp.int32)
+    mask_bits = jnp.asarray(rng.integers(0, 256, size=(rows, 1)), jnp.uint8)
+    shifted = jnp.asarray(
+        rng.normal(size=(n_images, n_trans, n_pix)) + 1j * rng.normal(size=(n_images, n_trans, n_pix)), jnp.complex64
+    )
+    weight = jnp.asarray(rng.uniform(0.5, 1.5, size=(n_images, n_pix)), jnp.float32)
+    half_norm = jnp.asarray(rng.uniform(1.0, 2.0, size=n_images), jnp.float32)
+    common = dict(half_weights=jnp.ones(n_pix, jnp.float32), full_to_compact=jnp.arange(n_pix, dtype=jnp.int32))
+    one_call = rs.score_resident_projected_chunk_normalized_cc(
+        reference, row_image, mask_bits, jnp.int32(n_valid), shifted, weight, half_norm,
+        row_capacity=rows, n_fine_trans=n_trans, block_rows=8, **common,
+    )
+    blocked = rs.score_resident_chunk_normalized_cc_in_row_blocks(
+        lambda start: reference[start : start + 8], row_image, mask_bits, n_valid, shifted, weight, half_norm,
+        block_rows=8, row_capacity=rows, n_fine_trans=n_trans, **common,
+    )
+    a, b = np.asarray(one_call.scores), np.asarray(blocked.scores)
+    assert a.dtype == b.dtype
+    np.testing.assert_array_equal(np.isfinite(a), np.isfinite(b))
+    np.testing.assert_allclose(b[np.isfinite(b)], a[np.isfinite(a)], rtol=1e-6, atol=0)
+    np.testing.assert_allclose(np.asarray(blocked.min_diff2), np.asarray(one_call.min_diff2), rtol=1e-7)
 
 
 def test_class3d_lone_rows_count_the_class_posterior_copy():

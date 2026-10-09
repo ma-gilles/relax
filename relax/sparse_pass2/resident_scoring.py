@@ -951,22 +951,56 @@ def _normalized_cc_row_scores(
     def block_scores(start):
         images = jax.lax.dynamic_slice_in_dim(row_image_local, start, block_rows)
         rows = jax.lax.dynamic_slice_in_dim(row_projection_index, start, block_rows)
-        return _relion_cuda_fine_normalized_cc_score(
-            projection_rows[rows][:, None, :],
-            score_shifted_cc[images],
-            cc_score_weight[images][:, None, :],
-            half_weights,
-            full_to_compact,
+        return _normalized_cc_block_scores(
+            projection_rows[rows], images, score_shifted_cc, cc_score_weight,
+            half_weights=half_weights, full_to_compact=full_to_compact,
         )
 
     starts = jnp.arange(0, row_capacity, block_rows, dtype=jnp.int32)
     scores = jax.lax.map(block_scores, starts).reshape(row_capacity, n_fine_trans)
+    return _normalized_cc_chunk_scores(scores, candidate_mask, cc_half_batch_norm)
+
+
+@jax.jit
+def _normalized_cc_block_scores(
+    block_projections,  # complex [B, N] the block rows' score projections
+    block_images,  # int32 [B] chunk-local image id of each block row
+    score_shifted_cc,
+    cc_score_weight,
+    *,
+    half_weights,
+    full_to_compact,
+):
+    """One row block's ``[B, T]`` normalized-CC scores: the block core every CC chunk scorer shares."""
+
+    return _relion_cuda_fine_normalized_cc_score(
+        block_projections[:, None, :],
+        score_shifted_cc[block_images],
+        cc_score_weight[block_images][:, None, :],
+        half_weights,
+        full_to_compact,
+    )
+
+
+@jax.jit
+def _normalized_cc_chunk_scores(scores, candidate_mask, cc_half_batch_norm):
+    """A chunk's ``[C_R, T]`` normalized-CC block scores masked to its candidates, as the chunk's scores."""
+
     scores = jnp.where(candidate_mask & jnp.isfinite(scores), scores, -jnp.inf)
     return ResidentChunkScores(
         raw_diff2=jnp.where(jnp.isfinite(scores), -scores, jnp.inf),
         scores=scores,
         min_diff2=jnp.asarray(cc_half_batch_norm),
     )
+
+
+def _local_cc_candidate_mask(row_mask_bits, n_valid_rows, *, row_capacity: int, n_fine_trans: int):
+    """A local chunk's ``[C_R, T]`` CC candidates: the layout's per-row packing, valid rows only."""
+
+    row_is_valid = jnp.arange(row_capacity, dtype=jnp.int32) < jnp.asarray(n_valid_rows, dtype=jnp.int32)
+    candidate_mask = expand_local_chunk_mask_jnp(row_mask_bits, n_trans=n_fine_trans)
+    valid = row_is_valid[:, None] if candidate_mask is None else candidate_mask & row_is_valid[:, None]
+    return jnp.broadcast_to(valid, (row_capacity, n_fine_trans))
 
 
 @partial(
@@ -1045,14 +1079,11 @@ def score_resident_projected_chunk_normalized_cc(
     only the best hidden variable (ml_optimiser.cpp:9266-9292).
     """
 
-    row_is_valid = jnp.arange(row_capacity, dtype=jnp.int32) < jnp.asarray(n_valid_rows, dtype=jnp.int32)
-    candidate_mask = expand_local_chunk_mask_jnp(row_mask_bits, n_trans=n_fine_trans)
-    valid = row_is_valid[:, None] if candidate_mask is None else candidate_mask & row_is_valid[:, None]
     return _normalized_cc_row_scores(
         reference,
         row_image_local,
         jnp.arange(row_capacity, dtype=jnp.int32),
-        jnp.broadcast_to(valid, (row_capacity, n_fine_trans)),
+        _local_cc_candidate_mask(row_mask_bits, n_valid_rows, row_capacity=row_capacity, n_fine_trans=n_fine_trans),
         score_shifted_cc,
         cc_score_weight,
         cc_half_batch_norm,
@@ -1062,6 +1093,54 @@ def score_resident_projected_chunk_normalized_cc(
         n_fine_trans=n_fine_trans,
         block_rows=block_rows,
     )
+
+
+def score_resident_chunk_normalized_cc_in_row_blocks(
+    block_reference,  # callable: row start -> complex [<= block_rows, N] the block's score projections
+    row_image_local,  # int32 [C_R] chunk-local image id of each row
+    row_mask_bits,  # uint8 [C_R, ceil(T/8)] little-endian, or None for full support
+    n_valid_rows: int,  # host int: the rows past it are padding
+    score_shifted_cc,  # complex [C_B, T, N] translated corrected score tile
+    cc_score_weight,  # real [C_B, N] the CC pixel weight
+    cc_half_batch_norm,  # real [C_B] 0.5 * |image|^2
+    *,
+    block_rows: int,
+    half_weights,  # real [N]
+    full_to_compact,  # int32 [P]
+    row_capacity: int,
+    n_fine_trans: int,
+):
+    """:func:`score_resident_projected_chunk_normalized_cc` for a chunk whose rows' projections do not fit at once.
+
+    The normalized-CC twin of :func:`score_resident_chunk_in_row_blocks`: each block of ``block_rows`` rows is
+    projected (``block_reference``), scored by the same block core (:func:`_normalized_cc_block_scores`) and
+    dropped; the ``[C_R, T]`` scores are then masked once, as for a chunk scored in one call. A row's score does
+    not depend on the other rows of its block, so the scores are those of the one-call chunk.
+    """
+
+    row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
+    blocks = []
+    for start in range(0, int(row_capacity), int(block_rows)):
+        stop = min(start + int(block_rows), int(row_capacity))
+        if start >= int(n_valid_rows):
+            # Padded rows only: the candidate mask drops them.
+            blocks.append(jnp.full((stop - start, int(n_fine_trans)), -jnp.inf, dtype=jnp.float32))
+            continue
+        blocks.append(
+            _normalized_cc_block_scores(
+                block_reference(start)[: stop - start],
+                row_image_local[start:stop],
+                score_shifted_cc,
+                cc_score_weight,
+                half_weights=half_weights,
+                full_to_compact=full_to_compact,
+            )
+        )
+    scores = jnp.concatenate(blocks, axis=0)
+    candidate_mask = _local_cc_candidate_mask(
+        row_mask_bits, int(n_valid_rows), row_capacity=int(row_capacity), n_fine_trans=int(n_fine_trans)
+    )
+    return _normalized_cc_chunk_scores(scores, candidate_mask, cc_half_batch_norm)
 
 
 @partial(
