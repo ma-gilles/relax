@@ -72,9 +72,11 @@ def _score_kclass_firstiter_cc_pass2(
     The K-class and K=1 adaptive scoring branches share this dispatcher, with the images' projection scale
     and magnification and their engine keywords. A K-class half scores its class stack on its coarse rotation
     ids and logs under ``variant.firstiter_log_label``; a K=1 half scores its one reference as a one-class
-    stack on every coarse rotation. The engine receives a clamped copy of ``em_kwargs``; the caller's
-    dictionary is not changed. Coarse/fine size overrides (``variant.firstiter_*_current_size``) are
-    forwarded only when supplied. The oversampling order used is ``sampling.oversampling_order``.
+    stack on every coarse rotation. ``em_kwargs`` are the dense route's engine keywords; this dispatch reads
+    only their batch sizes (``image_batch_size``, ``rotation_block_size``) and gives the engine a copy with
+    clamped batch sizes; the caller's dictionary is not changed. The coarse/fine sizes are
+    ``variant.firstiter_*_current_size`` (None: the engine's ``current_size``). The oversampling order used is
+    ``sampling.oversampling_order``.
     """
 
     mean = half.reference if variant.k_class_enabled else jnp.asarray(half.reference)[None, :]
@@ -100,11 +102,7 @@ def _score_kclass_firstiter_cc_pass2(
         float(sampling.translation_step),
         sampling.random_perturbation,
         return_mstep_rotations=True,
-        **(
-            {"coarse_rotation_ids": coarse_ids}
-            if coarse_ids is not None
-            else {}
-        ),
+        coarse_rotation_ids=coarse_ids,
         symmetry=point_group,
     )
     coarse_rot, fine_rot, fine_mstep_rot = project_pass2_rotations(
@@ -129,8 +127,8 @@ def _score_kclass_firstiter_cc_pass2(
     n_classes = int(np.shape(mean)[0]) if np.ndim(mean) >= 2 else 1
     firstiter_significance_image_batch_size = None
     firstiter_significance_rotation_block_size = None
-    if point_group != "C1" and em_kwargs.get("coarse_engine") != "gemm_dense":
-        if not em_kwargs.get("mstep_relion_x_half", False):
+    if point_group != "C1" and sampling.coarse_engine != "gemm_dense":
+        if not execution.relion_x_half_mstep:
             raise RuntimeError(f"{point_group} requires sparse RELION x-half BPref reconstruction")
     if batching.safe_batch_sizes is not None:
         batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
@@ -143,19 +141,17 @@ def _score_kclass_firstiter_cc_pass2(
             coarse_current_size=(
                 variant.firstiter_coarse_current_size
                 if variant.firstiter_coarse_current_size is not None
-                else em_kwargs.get("current_size")
+                else sampling.cs_for_engine
             ),
             fine_current_size=(
                 variant.firstiter_fine_current_size
                 if variant.firstiter_fine_current_size is not None
-                else em_kwargs.get("current_size")
+                else sampling.cs_for_engine
             ),
             safe_batch_sizes=batching.safe_batch_sizes,
             significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
         )
-        requested_firstiter_image_batch_size = int(
-            em_kwargs.get("image_batch_size", batching.image_batch_size)
-        )
+        requested_firstiter_image_batch_size = int(em_kwargs["image_batch_size"])
         firstiter_image_batch_size = min(
             requested_firstiter_image_batch_size,
             safe_firstiter_cc_image_batch_size(
@@ -164,7 +160,7 @@ def _score_kclass_firstiter_cc_pass2(
             ),
         )
         firstiter_rotation_block_size = min(
-            int(em_kwargs.get("rotation_block_size", batch_plan.pass2_rotation_block_size)),
+            int(em_kwargs["rotation_block_size"]),
             safe_dense_k_class_rotation_block_size(
                 fine_trans.shape[0],
                 firstiter_image_batch_size,
@@ -182,9 +178,7 @@ def _score_kclass_firstiter_cc_pass2(
             firstiter_rotation_block_size,
         )
     else:
-        requested_firstiter_image_batch_size = int(
-            em_kwargs.get("image_batch_size", batching.image_batch_size)
-        )
+        requested_firstiter_image_batch_size = int(em_kwargs["image_batch_size"])
         firstiter_image_batch_size = min(
             requested_firstiter_image_batch_size,
             safe_firstiter_cc_image_batch_size(
@@ -192,7 +186,7 @@ def _score_kclass_firstiter_cc_pass2(
                 half.particles.dataset.image_shape,
             ),
         )
-        firstiter_rotation_block_size = int(em_kwargs.get("rotation_block_size", 5000))
+        firstiter_rotation_block_size = int(em_kwargs["rotation_block_size"])
         if firstiter_image_batch_size != requested_firstiter_image_batch_size:
             logger.info(
                 "STRICT-PARITY: clamping iter-1 winner-take-all image_batch_size from %d to %d",
@@ -208,13 +202,8 @@ def _score_kclass_firstiter_cc_pass2(
         "(oversampling=%d, relion_x_half_mstep=%s, best_coarse_subset=True)",
         log_label,
         adaptive_os_local,
-        bool(firstiter_em_kwargs.get("mstep_relion_x_half", False)),
+        execution.relion_x_half_mstep,
     )
-    extra: dict = {}
-    if variant.firstiter_coarse_current_size is not None:
-        extra["coarse_current_size"] = variant.firstiter_coarse_current_size
-    if variant.firstiter_fine_current_size is not None:
-        extra["fine_current_size"] = variant.firstiter_fine_current_size
     k_class_result = run_dense_k_class_em_adaptive(
         half.particles.dataset,
         mean,
@@ -246,7 +235,8 @@ def _score_kclass_firstiter_cc_pass2(
         coarse_translation_phase_source=(
             coarse_translation_phase_source if n_classes == 1 else None
         ),
-        **extra,
+        coarse_current_size=variant.firstiter_coarse_current_size,
+        fine_current_size=variant.firstiter_fine_current_size,
         **firstiter_em_kwargs,
     )
     return FirstIterCCPass2(
