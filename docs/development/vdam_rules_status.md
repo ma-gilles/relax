@@ -16,7 +16,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
 | 1 numbers, 2 interfaces | Met: every move was fingerprint-identical (`scripts/dev/vdam_fingerprint.py`, 23 cases) and passed the GPU tiers. Three intended changes in failure paths, each its own commit with differences confined to its case: retired switches and `RELAX_USE_FLOAT64_SCORING` now refuse instead of being ignored, and a VDAM schedule with a NaN tau2 fudge (4 or 5 iterations) refuses (item 7). `run_native_options.json` keeps its format. |
 | 3 lifetimes | Met: no buffer changed owner. `EstepSums` holds host sums only (kilobytes); the accumulators stay a list released after the M-step. |
 | 4 JAX | Met: no jit region in the package. Recorded: `m_step._DEVICE_SOLVENT_MASK`, a module-global device mask kept for the same host mask object (one box-sized array for the process lifetime). |
-| 5 decide once | Met for the switches the controller and the E-step configuration read: `NativeInitialModelOptions.environment` (`VdamEnvironment`: profile, cache clearing, the two expected-accuracy switches, `adaptive_fraction`, `subtract_projected_reference`; read when the options are built). Exceptions: item 1. |
+| 5 decide once | Met for the switches the controller and the E-step configuration read: `NativeInitialModelOptions.environment` (`VdamEnvironment`: cache clearing, the two expected-accuracy switches, `adaptive_fraction`, `subtract_projected_reference`; read when the options are built). Exceptions: item 1. |
 | 6 contracts | Met: the optimizer is decided once (`VdamUpdate` or `MomentumSgdUpdate`, built by the driver). The SPA/subtomogram split of the E-step closure is one `if tomo:` with a block each (accepted, as refinement's final reconstruction). `mstep_compute_dtype` and `uniform_class_direction_prior` are variants of one operation. |
 | 7 one owner | Met, with one exception: `do_grad` is computed by the loop and again by the E-step closure from the same state (item 2). |
 | 8 config/state/results | Met for the model update: the E-step's operands are a frozen `EstepSums`; the driver returns `NativeInitialModelResult`. Exception: the E-step callback still returns `(accumulators, meta)`, with `meta` both its transport and its report (item 3). |
@@ -44,7 +44,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    refuses the native replays unless the M-step oracle (`relax.diagnostics.vdam_native_mstep`) runs; and the
    dumps the command's observer writes (`relax.vdam.ports.VdamObserver`,
    `relax.diagnostics.vdam_observers.vdam_command_observer`): the expected-accuracy inputs, the noise-update
-   boundary and the non-finite noise sums.
+   boundary, the non-finite noise sums and the stage profiles (`RECOVAR_INITIAL_MODEL_PROFILE`).
 2. **`do_grad` twice (rule 7).** The loop decides it before the schedule update; the E-step closure
    recomputes it with `schedules.native_initialmodel_do_grad` from the same `state` (same value: the
    iteration and `has_converged` do not change in between). Passing it needs the E-step callback contract

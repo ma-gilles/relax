@@ -23,7 +23,6 @@ the engine.
 from __future__ import annotations
 
 import hashlib
-import time
 from dataclasses import dataclass, replace
 from typing import Callable, Literal, Sequence
 
@@ -255,11 +254,12 @@ def run_vdam_iterations(
     stochastic_all_iterations: bool = False,
     uniform_class_direction_prior: bool,
     environment: VdamEnvironment,
+    observer: VdamObserver,
 ) -> InitialModelState:
     """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``with_sigma2_noise``.
 
     ``update`` is the optimizer's model update (:class:`VdamUpdate` or :class:`MomentumSgdUpdate`), chosen
-    once by the caller. ``projector_refresh_fn(state, padding_factor=...)`` runs before every E-step:
+    once by the caller; ``observer`` the run's observer, which times each iteration's stages. ``projector_refresh_fn(state, padding_factor=...)`` runs before every E-step:
     RELION's ``MlModel::setFourierTransformMaps(!fix_tau)``, the projector and tau2 from its power
     spectrum (:meth:`relax.vdam.estep_setup.IterationProjectorContext.refresh`). ``record_iteration`` updates the caller's own run state from the completed
     iteration (the sampling controller's counters) before ``iter_artifact_sink`` writes its outputs.
@@ -285,19 +285,9 @@ def run_vdam_iterations(
                 "and no greater than state.nr_iter"
             )
     current = with_uniform_class_direction_priors(state) if uniform_class_direction_prior else state
-    profile_iterations = environment.profile
 
     for it in range(start_iteration + 1, final_iteration + 1):
-        iteration_started = time.perf_counter()
-        stage_started = iteration_started
-        iteration_profile: dict[str, float] = {}
-
-        def _record_stage(name: str) -> None:
-            nonlocal stage_started
-            now = time.perf_counter()
-            iteration_profile[f"{name}_time_s"] = float(now - stage_started)
-            stage_started = now
-
+        profile = observer.iteration_profile(it)
         do_grad = bool(stochastic_all_iterations) or (
             ((state.nr_iter - it) >= grad_em_iters) and not current.has_converged
         )
@@ -318,8 +308,7 @@ def run_vdam_iterations(
             if batch_size >= int(nr_particles):
                 raise ValueError("stochastic_all_iterations batch must be smaller than the particle count")
             current = replace(current, subset_size=batch_size)
-        if profile_iterations:
-            _record_stage("schedule")
+        profile.stage("schedule")
 
         current = select_subset_for_iter(
             current,
@@ -330,8 +319,7 @@ def run_vdam_iterations(
             do_grad=do_grad,
             particle_order=particle_order,
         )
-        if profile_iterations:
-            _record_stage("subset")
+        profile.stage("subset")
 
         current = update_image_size_and_resolution_pointers(current, pilot_controls)
         if fourier_radius_schedule is not None:
@@ -345,8 +333,7 @@ def run_vdam_iterations(
                 current_resolution=float(radius) / (float(state.pixel_size) * float(state.box_size)),
             )
         current = projector_refresh_fn(current, padding_factor=projector_padding_factor)
-        if profile_iterations:
-            _record_stage("projector_refresh")
+        profile.stage("projector_refresh")
 
         # E-step: caller-supplied closure over the data loader + dense kernels
         accumulators, meta = expectation_step(
@@ -360,13 +347,11 @@ def run_vdam_iterations(
             meta["subset_particle_ids_sha256"] = hashlib.sha256(subset_ids.tobytes()).hexdigest()
             meta["subset_halfset_ids_sha256"] = hashlib.sha256(subset_halfsets.tobytes()).hexdigest()
             meta["effective_estep_fourier_radius"] = int(current.current_size) // 2
-        if profile_iterations:
-            _record_stage("expectation")
+        profile.stage("expectation")
 
         sums = estep_sums(meta)
         current = update.maximize(current, accumulators, sums, meta)
-        if profile_iterations:
-            _record_stage("mstep")
+        profile.stage("mstep")
         current = update_probabilities_from_estep(
             current,
             sums,
@@ -401,8 +386,7 @@ def run_vdam_iterations(
             current = post_mstep_update(current, it, meta)
 
         current = update.update_resolution(current)
-        if profile_iterations:
-            _record_stage("state_update")
+        profile.stage("state_update")
         meta.update(
             {
                 "current_size": int(current.current_size),
@@ -412,19 +396,13 @@ def run_vdam_iterations(
                 "subset_size": int(current.subset_size),
             }
         )
-        if profile_iterations:
-            iteration_profile["pre_artifact_time_s"] = float(time.perf_counter() - iteration_started)
-            meta["vdam_iteration_profile_summary"] = iteration_profile
-            stage_started = time.perf_counter()
+        profile.before_artifacts(meta)
         if record_iteration is not None:
             record_iteration(current, it, meta)
         iter_artifact_sink(current, it, meta)
         if pilot_controls is not None and pilot_controls.stop_requested():
             break
-        if profile_iterations:
-            _record_stage("artifact")
-            iteration_profile["total_time_s"] = float(time.perf_counter() - iteration_started)
-            print(f"VDAM iteration {it} profile: {iteration_profile}", flush=True)
+        profile.finish()
 
         # Release scratch buffers to avoid CUFFT_ALLOC_FAILED at 50k×256² (forces next-iter recompile).
         if environment.clear_jax_caches_per_iteration:

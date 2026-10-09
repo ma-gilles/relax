@@ -396,6 +396,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
             grad_fin_frac=0.2,
             mu=DEFAULT_GRAD_MU,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
         histories[optimizer] = history
     assert len(histories["vdam"]) == len(histories["momentum_sgd"]) == 3

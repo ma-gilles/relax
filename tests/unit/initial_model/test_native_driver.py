@@ -1604,8 +1604,8 @@ def test_random_perturbation_sequence_matches_relion_initialmodel_fixture():
 
 
 def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys):
-    monkeypatch.delenv("RELAX_INITIAL_IREF_OVERRIDE", raising=False)
-    monkeypatch.setenv("RECOVAR_INITIAL_MODEL_PROFILE", "1")
+    # The command's observer for RECOVAR_INITIAL_MODEL_PROFILE prints the start-up profile.
+    profiling = vdam_command_observer({"RECOVAR_INITIAL_MODEL_PROFILE": "1"})
     raw_iref = np.full((1, 8, 8, 8), 2.0, dtype=np.float64)
     post_iref = np.full((1, 8, 8, 8), 3.0, dtype=np.float64)
     calls = []
@@ -1668,6 +1668,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         optics,
         opts,
         source=VdamInputSource(),
+        observer=profiling,
     )
 
     assert_matches(state.Iref, post_iref)
@@ -1717,7 +1718,9 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         lambda **_kwargs: pytest.fail("Override must bypass the bootstrap"),
     )
     monkeypatch.setattr(helpers, "load_relion_volume", lambda _path: post_iref[0].copy())
-    overridden, _ = bootstrap_iref.initial_state_from_particles(dataset, main, optics, opts, source=source_for("seed.mrc"))
+    overridden, _ = bootstrap_iref.initial_state_from_particles(
+        dataset, main, optics, opts, source=source_for("seed.mrc"), observer=VdamObserver()
+    )
     np.testing.assert_array_equal(overridden.Iref, post_iref)
 
 
@@ -2580,7 +2583,7 @@ def test_iteration_zero_artifacts_use_the_normal_iteration_writer(monkeypatch, t
         optics_star=None,
         dataset=SimpleNamespace(voxel_size=1.5, n_images=2),
         particle_state=particle_state,
-        profile_stages=True,
+        profile=vdam_command_observer({"RECOVAR_INITIAL_MODEL_PROFILE": "1"}).stage_profile(),
     )
 
     assert (tmp_path / "run_it000_class001.mrc").read_bytes() == b"iteration-zero-map"

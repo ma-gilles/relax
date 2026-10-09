@@ -31,9 +31,6 @@ class VdamEnvironment:
     """The InitialModel's switches of the process environment, read once when the options are built.
 
     :meth:`from_environ` reads them; the default instance has every switch off.
-    ``profile`` (RECOVAR_INITIAL_MODEL_PROFILE, any value) prints the wall times of the start-up stages, of
-    each iteration's stages (the E-step as one stage: its coarse and fine passes are not timed apart) and of
-    the artifact writes;
     ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: 1, true or TRUE) releases JAX's
     buffers after each iteration (CUFFT_ALLOC_FAILED at 50k x 256^2); ``skip_expected_accuracy`` and
     ``isolate_expected_accuracy`` (RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY and
@@ -43,7 +40,6 @@ class VdamEnvironment:
     RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE has any value: back-project the images, not the residuals).
     """
 
-    profile: bool = False
     clear_jax_caches_per_iteration: bool = False
     skip_expected_accuracy: bool = False
     isolate_expected_accuracy: bool = False
@@ -61,8 +57,7 @@ class VdamEnvironment:
                 raise ValueError(f"{name} must be 0 or 1")
             return value == "1"
 
-        return cls(bool(env.get("RECOVAR_INITIAL_MODEL_PROFILE")),
-                   env.get("RELAX_CLEAR_JAX_CACHES_PER_ITER", "") in ("1", "true", "TRUE"),
+        return cls(env.get("RELAX_CLEAR_JAX_CACHES_PER_ITER", "") in ("1", "true", "TRUE"),
                    strict("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"),
                    strict("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"),
                    float(adaptive_fraction) if (adaptive_fraction := env.get("RELAX_ADAPTIVE_FRACTION")) else None,

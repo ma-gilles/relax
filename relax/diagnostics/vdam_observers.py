@@ -1,26 +1,72 @@
 """The InitialModel (VDAM) run observers the command chooses (code rule 15; the port is
 ``relax.vdam.ports.VdamObserver``).
 
-``VdamDumpObserver`` writes the diagnostic dumps the environment asks for. ``vdam_command_observer`` reads the
+``VdamDiagnosticObserver`` writes the diagnostic dumps and prints the stage profiles the environment asks for. ``vdam_command_observer`` reads the
 variables once, when the command builds the run; the algorithm's modules never import this module.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from relax.diagnostics.vdam_noise import dump_noise_failure_meta, dump_noise_update_boundary
-from relax.vdam.ports import VdamObserver
+from relax.vdam.ports import NoIterationProfile, NoStageProfile, VdamObserver
 
 EXPECTED_ACCURACY_DUMP_DIR_ENV = "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR"
 EXPECTED_ACCURACY_DUMP_ITERATIONS_ENV = "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS"
 NOISE_UPDATE_DUMP_DIR_ENV = "RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR"
 NOISE_UPDATE_DUMP_ITERATION_ENV = "RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION"
 NOISE_FAILURE_DUMP_DIR_ENV = "RELAX_INITIALMODEL_NOISE_FAILURE_DUMP_DIR"
+PROFILE_ENV = "RECOVAR_INITIAL_MODEL_PROFILE"
+
+
+class StageProfile(NoStageProfile):
+    """Elapsed stage times since the previous stage, printed as one JSON line by :meth:`report`."""
+
+    def __init__(self):
+        self.started = self.stage_started = time.perf_counter()
+        self.values = {}
+
+    def record(self, name):
+        now = time.perf_counter()
+        self.values[f"{name}_time_s"] = float(now - self.stage_started)
+        self.stage_started = now
+
+    def report(self, label):
+        self.values["total_time_s"] = float(time.perf_counter() - self.started)
+        print(f"VDAM {label} profile: {json.dumps(self.values, sort_keys=True)}", flush=True)
+
+
+class IterationProfile(NoIterationProfile):
+    """One VDAM iteration's stage times (the E-step as one stage: its coarse and fine passes are not timed
+    apart): the times up to the artifacts go into the iteration's meta (``vdam_iteration_profile_summary``), and
+    the whole profile, with the artifact writes, is printed when the iteration ends."""
+
+    def __init__(self, iteration):
+        self.iteration = iteration
+        self.started = self.stage_started = time.perf_counter()
+        self.values: dict[str, float] = {}
+
+    def stage(self, name):
+        now = time.perf_counter()
+        self.values[f"{name}_time_s"] = float(now - self.stage_started)
+        self.stage_started = now
+
+    def before_artifacts(self, meta):
+        self.values["pre_artifact_time_s"] = float(time.perf_counter() - self.started)
+        meta["vdam_iteration_profile_summary"] = self.values
+        self.stage_started = time.perf_counter()
+
+    def finish(self):
+        self.stage("artifact")
+        self.values["total_time_s"] = float(time.perf_counter() - self.started)
+        print(f"VDAM iteration {self.iteration} profile: {self.values}", flush=True)
 
 
 def _iterations(value: str) -> frozenset[int]:
@@ -29,18 +75,26 @@ def _iterations(value: str) -> frozenset[int]:
 
 
 @dataclass(frozen=True)
-class VdamDumpObserver(VdamObserver):
+class VdamDiagnosticObserver(VdamObserver):
     """The InitialModel's diagnostic dumps; a directory None turns its dump off, an empty iteration set dumps
     every iteration. ``expected_accuracy_dir`` receives each single-particle expected-accuracy estimate's inputs
     of ``expected_accuracy_iterations``; ``noise_update_dir`` each VDAM noise update's sums and spectra of
     ``noise_update_iterations`` (refusing to overwrite a file); ``noise_failure_dir`` the noise sums of the
-    E-step meta when they are not finite."""
+    E-step meta when they are not finite. ``profile`` prints the wall times of the start-up stages, of each
+    iteration's stages and of the artifact writes."""
 
     expected_accuracy_dir: str | None = None
     expected_accuracy_iterations: frozenset[int] = frozenset()
     noise_update_dir: str | None = None
     noise_update_iterations: frozenset[int] = frozenset()
     noise_failure_dir: str | None = None
+    profile: bool = False
+
+    def stage_profile(self) -> NoStageProfile:
+        return StageProfile() if self.profile else NoStageProfile()
+
+    def iteration_profile(self, iteration: int) -> NoIterationProfile:
+        return IterationProfile(iteration) if self.profile else NoIterationProfile()
 
     def noise_updated(self, previous, updated, sums) -> None:
         if self.noise_update_dir is None:
@@ -116,13 +170,14 @@ def vdam_command_observer(environ=None) -> VdamObserver:
     """The observer the environment of a ``relax initial_model`` command asks for (``VdamObserver()``: none)."""
 
     env = os.environ if environ is None else environ
-    dumps = VdamDumpObserver(
+    dumps = VdamDiagnosticObserver(
         expected_accuracy_dir=env.get(EXPECTED_ACCURACY_DUMP_DIR_ENV, "").strip() or None,
         expected_accuracy_iterations=_iterations(env.get(EXPECTED_ACCURACY_DUMP_ITERATIONS_ENV, "").strip()),
         noise_update_dir=env.get(NOISE_UPDATE_DUMP_DIR_ENV) or None,
         noise_update_iterations=_iterations(env.get(NOISE_UPDATE_DUMP_ITERATION_ENV) or ""),
         noise_failure_dir=env.get(NOISE_FAILURE_DUMP_DIR_ENV) or None,
+        profile=bool(env.get(PROFILE_ENV)),
     )
-    if dumps == VdamDumpObserver():
+    if dumps == VdamDiagnosticObserver():
         return VdamObserver()
     return dumps

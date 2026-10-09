@@ -154,6 +154,7 @@ def test_loop_callback_is_once_before_estep(monkeypatch, mstep_compute_dtype):
         mu=DEFAULT_GRAD_MU,
         uniform_class_direction_prior=False,
         environment=VdamEnvironment(),
+        observer=VdamObserver(),
     )
     expected = ["refresh", "estep"] * 2
     assert [event[1] for event in events] == expected

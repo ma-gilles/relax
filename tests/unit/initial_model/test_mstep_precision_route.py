@@ -313,6 +313,7 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
         mu=DEFAULT_GRAD_MU,
         uniform_class_direction_prior=False,
         environment=VdamEnvironment(),
+        observer=VdamObserver(),
     )
     assert calls == [1, 2]
 

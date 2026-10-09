@@ -512,7 +512,7 @@ def test_initial_model_serialization_owners_and_driver_imports():
     driver_src = inspect.getsource(driver)
     for owner, names in (
         (initial_model_io, STAR_ADAPTER),
-        (output, ("write_iteration_artifacts", "write_final_outputs", "StageProfile")),
+        (output, ("write_iteration_artifacts", "write_final_outputs")),
         (state, ("NativeOpticsState", "NativeParticleState")),
     ):
         for name in names:

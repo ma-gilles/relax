@@ -1,12 +1,12 @@
-"""InitialModel artifact paths, startup metadata, timing and output cadence."""
+"""InitialModel artifact paths, startup metadata and output cadence."""
 
 from __future__ import annotations
 
 import json
 import os
-import time
 from dataclasses import asdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from recovar.utils.helpers import recovar_volume_to_relion
@@ -15,6 +15,9 @@ from relax.helpers.map_io import write_map
 from relax.relion.initial_model_io import _write_data_star, _write_model_star
 from relax.vdam.align_symmetry import align_symmetry, select_largest_class
 from relax.vdam.state import InitialModelState, NativeParticleState
+
+if TYPE_CHECKING:
+    from relax.vdam.ports import NoStageProfile
 
 
 def _initial_model_mrc_from_prefix(outputname: str) -> str:
@@ -30,26 +33,6 @@ def _initial_model_mrc_from_prefix(outputname: str) -> str:
 
 def _class_mrc_paths(output_prefix: str, iteration: int, K: int) -> tuple[str, ...]:
     return tuple(f"{output_prefix}_it{iteration:03d}_class{k + 1:03d}.mrc" for k in range(K))
-
-
-class StageProfile:
-    """Optional elapsed-stage report for InitialModel startup and artifact I/O."""
-
-    def __init__(self, enabled: bool):
-        self.enabled = bool(enabled)
-        self.started = self.stage_started = time.perf_counter()
-        self.values = {}
-
-    def record(self, name):
-        if self.enabled:
-            now = time.perf_counter()
-            self.values[f"{name}_time_s"] = float(now - self.stage_started)
-            self.stage_started = now
-
-    def report(self, label):
-        if self.enabled:
-            self.values["total_time_s"] = float(time.perf_counter() - self.started)
-            print(f"VDAM {label} profile: {json.dumps(self.values, sort_keys=True)}", flush=True)
 
 
 def write_initial_run_metadata(opts, continuation) -> None:
@@ -104,9 +87,8 @@ def write_iteration_artifacts(
     optics_star,
     dataset,
     particle_state: NativeParticleState,
-    profile_stages: bool,
+    profile: NoStageProfile,
 ) -> None:
-    profile = StageProfile(profile_stages)
 
     out_dir = Path(output_prefix).parent
     out_dir.mkdir(parents=True, exist_ok=True)

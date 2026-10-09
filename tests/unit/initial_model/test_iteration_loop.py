@@ -15,6 +15,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.vdam import keep_tau2, projector_power_refresh
 
+from relax.diagnostics.vdam_observers import VdamDiagnosticObserver
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
@@ -158,6 +159,7 @@ def test_vdam_iteration_loop_can_execute_exactly_one_absolute_restart_iteration(
         mu=DEFAULT_GRAD_MU,
         uniform_class_direction_prior=False,
         environment=VdamEnvironment(),
+        observer=VdamObserver(),
     )
 
     assert seen == [181]
@@ -194,6 +196,7 @@ def test_vdam_iteration_loop_restart_rejects_state_iteration_mismatch():
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
 
 
@@ -341,6 +344,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
 
         assert seen_current_sizes == [28, 60]
@@ -382,6 +386,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
 
         assert seen == [(1, 200), (2, 200)]
@@ -415,6 +420,7 @@ class TestRunVdamIterations:
                 mu=DEFAULT_GRAD_MU,
                 uniform_class_direction_prior=False,
                 environment=VdamEnvironment(),
+                observer=VdamObserver(),
             )
 
     def test_iteration_loop_refreshes_tau2_before_estep(self, monkeypatch):
@@ -464,6 +470,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
 
         assert seen["refresh_current_size"] == 16
@@ -509,6 +516,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
 
         assert seen["padding_factor"] == 2
@@ -545,7 +553,8 @@ class TestRunVdamIterations:
             expectation_step=lambda current, particle_ids, halfset_ids: ([], {}),
             iter_artifact_sink=sink,
             projector_refresh_fn=keep_tau2,
-            environment=VdamEnvironment(profile=True),
+            environment=VdamEnvironment(),
+            observer=VdamDiagnosticObserver(profile=True),
             grad_ini_frac=0.3,
             grad_fin_frac=0.2,
             mu=DEFAULT_GRAD_MU,
@@ -653,6 +662,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
 
         assert seen["meta_seen"] is True
@@ -860,6 +870,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
 
         assert len(seen_noise) == 2
@@ -1249,6 +1260,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
         assert final.iter == nr_iter
         assert len(iter_log) == nr_iter
@@ -1301,6 +1313,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
         # Last 2 iters drop gradient mode -> pseudo_halfsets becomes False
         # select_subset_for_iter copies do_grad's value to pseudo field
@@ -1347,6 +1360,7 @@ class TestRunVdamIterations:
             mu=DEFAULT_GRAD_MU,
             uniform_class_direction_prior=False,
             environment=VdamEnvironment(),
+            observer=VdamObserver(),
         )
         # 6 iters should have subset_size entries
         assert len(iter_log) == 6

@@ -429,7 +429,7 @@ def run_native_initial_model(
 
     source = VdamInputSource() if source is None else source
     observer = VdamObserver() if observer is None else observer
-    profile = output.StageProfile(opts.environment.profile)
+    profile = observer.stage_profile()
 
     if int(opts.random_seed) == -1:
         # relion_refine's default --random_seed -1 takes the time (ml_optimiser.cpp:2827).
@@ -551,7 +551,7 @@ def run_native_initial_model(
         state, optics_group_by_particle = (
             initial_state_from_tomo_particles(dataset, main_star, opts)
             if tomo
-            else initial_state_from_particles(dataset, main_star, optics_star, opts, source=source)
+            else initial_state_from_particles(dataset, main_star, optics_star, opts, source=source, observer=observer)
         )
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:
@@ -640,7 +640,7 @@ def run_native_initial_model(
                 optics_star=optics_star,
                 dataset=dataset,
                 particle_state=particle_state,
-                profile_stages=opts.environment.profile,
+                profile=observer.stage_profile(),
             )
     profile.record("initial_artifacts")
 
@@ -664,7 +664,7 @@ def run_native_initial_model(
             optics_star=optics_star,
             dataset=dataset,
             particle_state=particle_state,
-            profile_stages=opts.environment.profile,
+            profile=observer.stage_profile(),
         )
 
     solvent_mask = None
@@ -726,6 +726,7 @@ def run_native_initial_model(
             stochastic_all_iterations=bool(opts.stochastic_all_iterations),
             uniform_class_direction_prior=bool(opts.uniform_class_direction_prior),
             environment=opts.environment,
+            observer=observer,
         )
     profile.record("iterations")
     if opts.pilot_controls is not None:

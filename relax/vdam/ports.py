@@ -38,8 +38,40 @@ class VdamInputSource:
         return state
 
 
+class NoStageProfile:
+    """The stage timer of a run that is not timed: :meth:`record` ends a stage, :meth:`report` the profile."""
+
+    def record(self, name: str) -> None:
+        """Stage ``name`` ends now."""
+
+    def report(self, label: str) -> None:
+        """The profile ``label`` is complete."""
+
+
+class NoIterationProfile:
+    """The timer of an untimed VDAM iteration (:meth:`VdamObserver.iteration_profile`)."""
+
+    def stage(self, name: str) -> None:
+        """Stage ``name`` of the iteration ends now."""
+
+    def before_artifacts(self, meta: dict) -> None:
+        """The iteration's model is final; its artifacts (written from ``meta``) come next."""
+
+    def finish(self) -> None:
+        """The iteration's artifacts are written."""
+
+
 class VdamObserver:
     """Watches an InitialModel run and never steers it; every hook does nothing by default."""
+
+    def stage_profile(self) -> NoStageProfile:
+        """A timer of the stages of one part of the run (start-up, driver, one iteration's artifacts), started
+        now."""
+        return NoStageProfile()
+
+    def iteration_profile(self, iteration: int) -> NoIterationProfile:
+        """A timer of VDAM iteration ``iteration``'s stages, started now."""
+        return NoIterationProfile()
 
     def expected_accuracy_estimated(self, inputs, accuracy) -> None:
         """An expected-accuracy estimate is made: ``inputs`` (``native_sampling.AccuracyEstimateInputs``) is what
