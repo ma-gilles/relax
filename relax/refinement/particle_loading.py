@@ -232,8 +232,6 @@ def split_half_sets(
 
 def _apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
-    explicit_particle_diameter = args.particle_diameter_ang
-    explicit_width_mask_edge = args.width_mask_edge_px
     if sealed_optimiser_star is not None:
         optimiser_star = Path(sealed_optimiser_star).resolve()
         params = relion_metadata._load_relion_mask_params(optimiser_star)
@@ -243,26 +241,26 @@ def _apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
             )
         sealed_particle_diameter, sealed_width_mask_edge = params
         if (
-            explicit_particle_diameter is not None
-            and float(explicit_particle_diameter) != sealed_particle_diameter
+            args.particle_diameter_ang is not None
+            and float(args.particle_diameter_ang) != sealed_particle_diameter
         ):
             raise ValueError(
                 "fixed diagnostic particle diameter differs from sealed optimiser: "
-                f"cli={explicit_particle_diameter} sealed={sealed_particle_diameter}"
+                f"cli={args.particle_diameter_ang} sealed={sealed_particle_diameter}"
             )
-        if float(explicit_width_mask_edge) != sealed_width_mask_edge:
+        if float(args.width_mask_edge_px) != sealed_width_mask_edge:
             raise ValueError(
                 "fixed diagnostic mask-edge width differs from sealed optimiser: "
-                f"cli={explicit_width_mask_edge} sealed={sealed_width_mask_edge}"
+                f"cli={args.width_mask_edge_px} sealed={sealed_width_mask_edge}"
             )
-    elif explicit_particle_diameter is not None:
-        params = (float(explicit_particle_diameter), float(explicit_width_mask_edge))
+    elif args.particle_diameter_ang is not None:
+        params = (float(args.particle_diameter_ang), float(args.width_mask_edge_px))
         optimiser_star = "explicit CLI"
     else:
         optimiser_star = command_options.find_relion_optimiser_star(args)
         params = None if optimiser_star is None else relion_metadata._load_relion_mask_params(optimiser_star)
         if params is None:
-            params = (command_options.RELION_GUI_PARTICLE_DIAMETER_ANG, float(explicit_width_mask_edge))
+            params = (command_options.RELION_GUI_PARTICLE_DIAMETER_ANG, float(args.width_mask_edge_px))
             optimiser_star = "RELION GUI default"
 
     particle_diameter_ang, width_mask_edge_px = params
