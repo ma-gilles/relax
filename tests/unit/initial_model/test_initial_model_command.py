@@ -251,7 +251,7 @@ def test_module_entrypoint_keeps_default_allocator_without_override():
 def test_non_dry_run_calls_native_driver(monkeypatch, capsys):
     calls = {}
 
-    def fake_run(options):
+    def fake_run(options, source):
         calls["options"] = options
         return SimpleNamespace(final_mrc="out/initial_model.mrc", final_model_star="out/run_it003_model.star")
 

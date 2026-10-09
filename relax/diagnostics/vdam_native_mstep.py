@@ -297,12 +297,9 @@ def main(argv=None) -> int:
     """``relax initial_model`` with this oracle as the M-step (replays and dumps enabled)."""
 
     from relax.commands import initial_model
-    from relax.vdam import m_step
 
-    # The oracle reads the replay variables itself; the production guard refuses them.
-    m_step._validate_mstep_precision_route = lambda dtype: None
-    m_step.vdam_m_step_single_class = vdam_m_step_single_class_native
-    return initial_model.main(sys.argv[1:] if argv is None else argv)
+    # The oracle reads the replay variables itself; only a run with an oracle M-step admits them.
+    return initial_model.main(sys.argv[1:] if argv is None else argv, oracle_m_step=vdam_m_step_single_class_native)
 
 
 if __name__ == "__main__":

@@ -17,9 +17,9 @@ from recovar.utils.helpers import R_from_relion, write_relion_mrc
 import relax.vdam.driver as driver
 from relax import healpix_sampling, sampling
 from relax.commands import initial_model
-from relax.diagnostics import vdam_mstep_replay
 from relax.helpers.orientation_priors import relion_round_away_from_zero
 from relax.helpers.particle_io import ParticleReadPolicy
+from relax.parity import vdam_replay
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.vdam import (
     bootstrap_iref,
@@ -388,13 +388,10 @@ def test_iteration_reference_replay_expands_iteration_and_class(monkeypatch, tmp
         write_relion_mrc(path, volume, voxel_size=1.5)
         paths.append(path)
         expected.append(volume)
-    monkeypatch.setenv(
-        vdam_mstep_replay.INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
-        str(tmp_path / "run_it{iteration:03d}_class{k:03d}.mrc"),
-    )
+    source = vdam_replay.VdamReplaySource(reference_template=str(tmp_path / "run_it{iteration:03d}_class{k:03d}.mrc"))
     meta = {}
 
-    replayed = vdam_mstep_replay._maybe_replay_iteration_references(state, iteration=3, meta=meta)
+    replayed = source.iteration_references(state, iteration=3, meta=meta)
 
     assert_matches(replayed.Iref, np.asarray(expected))
     assert_matches(state.Iref, 0.0)
@@ -410,10 +407,10 @@ def test_iteration_reference_replay_rejects_wrong_class_count(monkeypatch):
         nr_iter=10,
         n_directions=12,
     )
-    monkeypatch.setenv(vdam_mstep_replay.INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "one-map.mrc")
+    source = vdam_replay.VdamReplaySource(reference_template="one-map.mrc")
 
     with pytest.raises(ValueError, match="expects one path for K=1 or K=2"):
-        vdam_mstep_replay._maybe_replay_iteration_references(state, iteration=1, meta={})
+        source.iteration_references(state, iteration=1, meta={})
 
 
 def test_experiment_read_order_uses_micrograph_lexicographic_order():
@@ -2630,7 +2627,7 @@ def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, mo
 def test_cli_non_dry_run_calls_native_driver(monkeypatch, capsys):
     calls = {}
 
-    def fake_run_native(opts):
+    def fake_run_native(opts, source):
         calls["opts"] = opts
         return SimpleNamespace(final_mrc="out/initial_model.mrc", final_model_star="out/run_it003_model.star")
 
@@ -2695,7 +2692,7 @@ def test_cli_gpu_defaults_to_async_relion_cuda_image_backend(monkeypatch):
     calls = {}
     monkeypatch.delenv("CUDA_LAUNCH_BLOCKING", raising=False)
 
-    def fake_run_native(opts):
+    def fake_run_native(opts, source):
         calls["opts"] = opts
         return SimpleNamespace(final_mrc="out/initial_model.mrc", final_model_star="out/run_it001_model.star")
 
@@ -2710,7 +2707,7 @@ def test_cli_gpu_allows_explicit_deterministic_cuda(monkeypatch):
     calls = {}
     monkeypatch.delenv("CUDA_LAUNCH_BLOCKING", raising=False)
 
-    def fake_run_native(opts):
+    def fake_run_native(opts, source):
         calls["opts"] = opts
         return SimpleNamespace(final_mrc="out/initial_model.mrc", final_model_star="out/run_it001_model.star")
 

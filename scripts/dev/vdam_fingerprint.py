@@ -388,8 +388,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         patch(adaptive_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
         original_run = driver.run_native_initial_model
 
-        def run_and_keep(opts):
-            result = original_run(opts)
+        def run_and_keep(opts, **keywords):
+            result = original_run(opts, **keywords)
             captured["result"] = result
             return result
 

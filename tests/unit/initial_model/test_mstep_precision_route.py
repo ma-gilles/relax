@@ -12,6 +12,7 @@ from helpers.vdam import keep_tau2
 
 from relax.commands import initial_model as initial_model_command
 from relax.diagnostics import vdam_mstep_replay
+from relax.parity import vdam_replay
 from relax.relion import initial_model_io
 from relax.vdam import driver, estep_setup, iteration_loop, m_step, native_options
 from relax.vdam.bootstrap_iref import initialise_denovo_state
@@ -40,7 +41,7 @@ REPLAYS = [
 
 @pytest.fixture(autouse=True)
 def clean_diagnostics(monkeypatch):
-    for name in REPLAYS + [driver.INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV]:
+    for name in REPLAYS + [vdam_replay.INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -56,7 +57,7 @@ def test_cli_forwards_explicit_precision_and_defaults_to_float32(monkeypatch, dt
     monkeypatch.setattr(
         driver,
         "run_native_initial_model",
-        lambda opts: calls.append(opts) or SimpleNamespace(final_mrc="a.mrc", final_model_star="a.star"),
+        lambda opts, source: calls.append(opts) or SimpleNamespace(final_mrc="a.mrc", final_model_star="a.star"),
     )
     argv = ["--no-require-custom-cuda", "--no-jax-compilation-cache", "--gpu", "", "--i", "missing.star"]
     if dtype is not None:
@@ -151,12 +152,15 @@ def test_driver_invalid_precision_rejected_before_io():
         )
 
 
+# The command builds the run's input source from the environment before the driver reads any input.
+COMMAND_ARGV = ["--no-require-custom-cuda", "--no-jax-compilation-cache", "--gpu", "", "--i", "missing.star"]
+
+
 def test_driver_reference_replay_rejected_before_io(monkeypatch):
-    monkeypatch.setenv(driver.INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "missing_{iteration}.mrc")
+    monkeypatch.setenv(vdam_replay.INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "missing_{iteration}.mrc")
+    monkeypatch.setattr(driver, "run_native_initial_model", lambda *a, **k: pytest.fail("driver called"))
     with pytest.raises(ValueError, match="reference replay"):
-        driver.run_native_initial_model(
-            native_options.NativeInitialModelOptions(fn_img="missing.star", mstep_compute_dtype="float32")
-        )
+        initial_model_command.main(COMMAND_ARGV + ["--mstep-compute-dtype", "float32"])
 
 
 def _accum(state, k=0):
@@ -179,15 +183,31 @@ def _call(state, **kwargs):
 
 @pytest.mark.parametrize("env", REPLAYS[:-1])
 def test_production_refuses_native_replays_before_consumption(monkeypatch, env):
-    # The driver checks the M-step's precision route once per run, before any input is read.
+    # Only a run with the M-step oracle takes the native replays; the command refuses them before any input is read.
     monkeypatch.setenv(env, "missing")
     monkeypatch.setattr(
         vdam_mstep_replay, "_maybe_replay_native_bpref_accumulators", lambda *a, **k: pytest.fail("consumed replay")
     )
+    monkeypatch.setattr(driver, "run_native_initial_model", lambda *a, **k: pytest.fail("driver called"))
     with pytest.raises(ValueError, match=env):
-        driver.run_native_initial_model(
-            native_options.NativeInitialModelOptions(fn_img="missing.star", mstep_compute_dtype="float32")
-        )
+        initial_model_command.main(COMMAND_ARGV + ["--mstep-compute-dtype", "float32"])
+
+
+@pytest.mark.parametrize("env", REPLAYS[:-1])
+def test_oracle_m_step_admits_native_replays(monkeypatch, env):
+    monkeypatch.setenv(env, "missing")
+    calls = []
+    monkeypatch.setattr(
+        driver,
+        "run_native_initial_model",
+        lambda opts, source: calls.append(source) or SimpleNamespace(final_mrc="a.mrc", final_model_star="a.star"),
+    )
+
+    def oracle(*args, **kwargs):
+        return "oracle"
+
+    assert initial_model_command.main(COMMAND_ARGV + ["--mstep-compute-dtype", "float64"], oracle_m_step=oracle) == 0
+    assert calls[0].single_class_m_step(None, 0, None, None) == "oracle"
 
 
 def test_mstep_dump_variable_does_not_divert_production(monkeypatch, tmp_path):
@@ -272,7 +292,6 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
         calls.append(current.iter)
         return current
 
-    monkeypatch.setattr(m_step, "vdam_m_step_single_class", step)
     iteration_loop.run_vdam_iterations(
         state,
         nr_particles=20,
@@ -287,7 +306,7 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
             {"max_posterior_per_image": np.ones(len(ids)), "class_posterior_sums": np.asarray([float(len(ids))])},
         ),
         projector_refresh_fn=keep_tau2,
-        update=iteration_loop.VdamUpdate(padding_factor=1, mstep_compute_dtype="float32"),
+        update=iteration_loop.VdamUpdate(padding_factor=1, mstep_compute_dtype="float32", single_class_m_step=step),
         grad_ini_frac=0.3,
         grad_fin_frac=0.2,
         mu=DEFAULT_GRAD_MU,

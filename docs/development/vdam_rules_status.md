@@ -37,13 +37,12 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    - `native_sampling._estimate_native_sampling_accuracy`: the expected-accuracy dump directory and
      iterations;
    - `bootstrap_iref`: `RELAX_INITIAL_IREF_OVERRIDE` (replaces the start-up reference with RELION's);
-   - `driver`: `RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE`, owned and read by
-     `relax.diagnostics.vdam_mstep_replay`; the driver only refuses it with a float32 M-step;
-   - `m_step._validate_mstep_precision_route`: refuses the native parity replay variables,
-     which belong to `relax.diagnostics.vdam_native_mstep`;
    - `output._write_initial_run_metadata`: records the CUDA allocator and JAX cache variables as provenance.
    Moving them into `VdamEnvironment` costs plumbing through the projector context and the accuracy
-   helpers. Not an exception: `RELAX_USE_FLOAT64_SCORING`, read once by `VdamEnvironment` only to refuse it.
+   helpers. Not an exception: `RELAX_USE_FLOAT64_SCORING`, read once by `VdamEnvironment` only to refuse it;
+   `RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE` and the native M-step replay variables, read once by the command,
+   which builds the run's input source (`relax.vdam.ports.VdamInputSource`, `relax.parity.vdam_replay`) and
+   refuses the native replays unless the M-step oracle (`relax.diagnostics.vdam_native_mstep`) runs.
 2. **`do_grad` twice (rule 7).** The loop decides it before the schedule update; the E-step closure
    recomputes it with `schedules._native_initialmodel_do_grad` from the same `state` (same value: the
    iteration and `has_converged` do not change in between). Passing it needs the E-step callback contract
@@ -60,8 +59,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    `grad_em_iters`, `tau2_fudge_arg`, `grad_stepsize`, `mu`), one concept of run lifetime. Other wide
    functions: `compute_bootstrap_iref` (22), `run_tomo_initial_model_estep` (16, engine boundary),
    `bootstrap_references` (16), `compute_subset_size` (13, RELION's arguments one for one).
-5. **Layers (rule 11).** Production imports private diagnostics (`driver` imports
-   `diagnostics.vdam_mstep_replay._maybe_replay_iteration_references`; `estep_meta_updates` imports
+5. **Layers (rule 11).** Production imports a diagnostic (`estep_meta_updates` imports
    `diagnostics.vdam_noise`), refinement internals (`refinement.optics_shapes`, `refinement.tomo_half`,
    `sparse_pass2.resident_pass2.stable_window_class_history`) and private names of
    `relion.initial_model_io`. `relax.vdam.sgd` imports `relax.vdam.state`, and the loop imports

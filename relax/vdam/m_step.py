@@ -2,15 +2,15 @@
 
 Runs RELION's moment/reconstruction transaction in JAX, in float32 by default
 (float64 is the diagnostic reference); the native per-primitive route remains
-for dumps and replays. The single-class M-step (the per-class transaction, its precision-route
-validation, RELION's reconstruction-weight and resolution-shell rules) follows the multi-class
+for dumps and replays. The single-class M-step (the per-class transaction, RELION's reconstruction-weight and
+resolution-shell rules) follows the multi-class
 driver; RELION's own step-by-step M-step with its dumps and replays is the oracle in
 ``diagnostics.vdam_native_mstep``.
 """
 
 from __future__ import annotations
 
-import os
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Literal, Optional
 
@@ -100,11 +100,13 @@ def vdam_m_step(
     padding_factor: int,
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
+    single_class_m_step: Callable[..., InitialModelState],
 ) -> InitialModelState:
     """Full VDAM M-step over K classes.
 
     ``accumulators`` holds ``2K`` entries when ``pseudo_halfsets`` is active
-    (halfset 0 of each class first, then halfset 1), else ``K``.
+    (halfset 0 of each class first, then halfset 1), else ``K``. ``single_class_m_step`` is each class's
+    step: :func:`vdam_m_step_single_class`, or the M-step oracle (``relax.vdam.ports.VdamInputSource``).
     """
     K = state.K
     expected = half_slot_count(K, state.pseudo_halfsets)
@@ -113,7 +115,7 @@ def vdam_m_step(
 
     out = state
     for k in range(K):
-        out = vdam_m_step_single_class(
+        out = single_class_m_step(
             out,
             k=k,
             accum_h0=accumulators[half_slot_index(k, 0, K, state.pseudo_halfsets)],
@@ -163,17 +165,6 @@ def _prepare_mstep_state_precision(state, mstep_compute_dtype):
     )
 
 
-def _validate_mstep_precision_route(mstep_compute_dtype: Literal["float32", "float64"]) -> None:
-    """Reject an unknown precision and the native parity replays, which only the diagnostics runner takes."""
-    if mstep_compute_dtype not in {"float32", "float64"}:
-        raise ValueError(f"Unknown mstep_compute_dtype: {mstep_compute_dtype!r}")
-    requested = [name for name in NATIVE_PARITY_REPLAY_ENVS if os.environ.get(name, "").strip()]
-    if requested:
-        raise ValueError(
-            f"{requested} replay RELION's M-step; run python -m relax.diagnostics.vdam_native_mstep instead"
-        )
-
-
 def _validate_mstep_state_precision(state: InitialModelState) -> None:
     for name, dtype in _MSTEP_F32_STATE_DTYPES.items():
         value = getattr(state, name)
@@ -181,16 +172,6 @@ def _validate_mstep_state_precision(state: InitialModelState) -> None:
         value_dtype = value.dtype if hasattr(value, "dtype") else np.asarray(value).dtype
         if np.dtype(value_dtype) != np.dtype(dtype):
             raise ValueError(f"float32 M-step requires state.{name} dtype {np.dtype(dtype)}")
-
-
-# The native replays of RELION's M-step intermediates (relax.diagnostics.vdam_mstep_replay).
-NATIVE_PARITY_REPLAY_ENVS = (
-    "RELAX_VDAM_NATIVE_SECOND_MOMENT_REPLAY_BIN",
-    "RELAX_VDAM_NATIVE_FIRST_MOMENT_REPLAY_BIN",
-    "RELAX_VDAM_NATIVE_BPREF_DATA_REPLAY_BIN",
-    "RELAX_VDAM_NATIVE_BPREF_WEIGHT_REPLAY_BIN",
-    "RELAX_VDAM_NATIVE_IREF_INPUT_REPLAY_BIN",
-)
 
 
 def validate_mstep_inputs(state: InitialModelState, k: int, accum_h1) -> None:
@@ -348,7 +329,7 @@ def vdam_m_step_single_class(
     Pseudo-halfsets: FSC/noise-power is derived from the halfset-data difference
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.
     ``average_ctf2``: the E-step's CTF-premultiplied average CTF^2 (SSNR tau2 correction), or None.
-    The precision route (dtype, no native replay variables) is checked once per run by the driver.
+    The options refuse an unknown precision; the command refuses the native replay variables without the oracle.
     """
     if mstep_compute_dtype == "float32":
         _validate_mstep_state_precision(state)

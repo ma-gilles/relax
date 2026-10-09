@@ -143,6 +143,8 @@ class NativeInitialModelOptions(InitialModelDefaults):
 
     def validate_run(self) -> None:
         """Check supported settings before loading particles or creating run state."""
+        if self.mstep_compute_dtype not in {"float32", "float64"}:
+            raise ValueError(f"Unknown mstep_compute_dtype: {self.mstep_compute_dtype!r}")
         if self.nr_classes < 1:
             raise ValueError("nr_classes must be >= 1")
         if self.nr_iter < 1:

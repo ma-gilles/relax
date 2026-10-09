@@ -295,7 +295,7 @@ LOC_BUDGETS = {
     # scratch and mask setup: 1952 -> 1977 lines on main 7d7f3c92 (+25; ceiling +19).
     "controller": (1977, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
-        "schedules.py", "subset_schedule.py",
+        "schedules.py", "subset_schedule.py", "ports.py",
     )),
     # bootstrap_reconstruction.py (419 lines, 2026-09-29) is relax's own port of the
     # bootstrap RELION's C++ ran through relax.relion_bind (vdam_bootstrap_iref and
@@ -493,7 +493,7 @@ assert "relax.vdam.iteration_loop" not in sys.modules
 
 def test_mstep_single_class_definition_ownership():
     # The single-class M-step lives with the multi-class driver in m_step (2026-10-08, e3).
-    for name in ("vdam_m_step", "vdam_m_step_single_class", "_run_m_step_transaction", "_validate_mstep_precision_route"):
+    for name in ("vdam_m_step", "vdam_m_step_single_class", "_run_m_step_transaction"):
         assert inspect.getmodule(getattr(m_step, name)) is m_step
     assert inspect.getmodule(vdam_mstep_replay._maybe_replay_native_bpref_accumulators) is vdam_mstep_replay
     assert not hasattr(m_step, "_maybe_replay_native_bpref_accumulators")

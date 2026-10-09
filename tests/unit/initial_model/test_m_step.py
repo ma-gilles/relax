@@ -39,7 +39,7 @@ from relax.vdam.state import VdamAccumulator
 
 # These tests pin the M-step against RELION's float64 C++ primitives, so they run
 # the float64 diagnostic precision; production runs in float32.
-vdam_m_step = partial(vdam_m_step, mstep_compute_dtype="float64")
+vdam_m_step = partial(vdam_m_step, mstep_compute_dtype="float64", single_class_m_step=vdam_m_step_single_class)
 vdam_m_step_single_class = partial(vdam_m_step_single_class, mstep_compute_dtype="float64")
 pytestmark = pytest.mark.unit
 

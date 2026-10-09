@@ -565,7 +565,9 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
+    """``relax initial_model``. ``oracle_m_step``: RELION's own single-class M-step
+    (``relax.diagnostics.vdam_native_mstep``), which replaces relax's and alone takes the native M-step replays."""
     _assert_expected_repo_imports()
     use_float32_matmuls()
     parser = make_parser()
@@ -591,10 +593,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.require_custom_cuda:
         _require_custom_cuda_runtime()
 
+    from relax.parity.vdam_replay import (
+        INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
+        NATIVE_MSTEP_REPLAY_ENVS,
+        vdam_input_source,
+    )
     from relax.vdam.driver import run_native_initial_model
     from relax.vdam.native_options import NativeInitialModelOptions
 
-    result = run_native_initial_model(NativeInitialModelOptions(**options_dict))
+    source = vdam_input_source(
+        reference_template=os.environ.get(INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "").strip(),
+        native_mstep_replays=[name for name in NATIVE_MSTEP_REPLAY_ENVS if os.environ.get(name, "").strip()],
+        mstep_compute_dtype=options_dict["mstep_compute_dtype"],
+        oracle_m_step=oracle_m_step,
+    )
+    result = run_native_initial_model(NativeInitialModelOptions(**options_dict), source=source)
     print(f"recovar InitialModel complete: {result.final_mrc}")
     print(f"Final model STAR: {result.final_model_star}")
     return 0

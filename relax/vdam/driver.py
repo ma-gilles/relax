@@ -18,10 +18,6 @@ import numpy as np
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import read_star
 
-from relax.diagnostics.vdam_mstep_replay import (
-    INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
-    _maybe_replay_iteration_references,
-)
 from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
@@ -59,6 +55,7 @@ from relax.vdam.native_sampling import (
     _record_native_sampling_post_iteration,
 )
 from relax.vdam.output import _write_final_outputs, _write_iteration_artifacts
+from relax.vdam.ports import VdamInputSource
 from relax.vdam.schedules import (
     DEFAULT_SIGMA2_FUDGE,
     default_subset_sizes_for_3d_initial_model,
@@ -400,22 +397,21 @@ def _refuse_unsupported_multi_shape(opts: NativeInitialModelOptions, datasets) -
         )
 
 
-def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialModelResult:
-    """Run native recovar InitialModel refinement."""
+def run_native_initial_model(
+    opts: NativeInitialModelOptions, *, source: VdamInputSource | None = None
+) -> NativeInitialModelResult:
+    """Run native recovar InitialModel refinement.
 
+    ``source`` (None: the native :class:`VdamInputSource`) is the run's input source, which the command chose.
+    """
+
+    source = VdamInputSource() if source is None else source
     profile = output._StageProfile(opts.environment.profile)
 
-    from relax.vdam.m_step import _validate_mstep_precision_route
-
-    _validate_mstep_precision_route(opts.mstep_compute_dtype)
     if int(opts.random_seed) == -1:
         # relion_refine's default --random_seed -1 takes the time (ml_optimiser.cpp:2827).
         opts = replace(opts, random_seed=int(time.time()))
         logger.info("InitialModel random seed %d (RELION default -1: the time)", opts.random_seed)
-    if opts.mstep_compute_dtype == "float32" and os.environ.get(
-        INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, ""
-    ).strip():
-        raise ValueError("float32 M-step is incompatible with iteration reference replay")
     opts.validate_run()
     symmetry_warning = opts.symmetry_mode_warning()
     if symmetry_warning is not None:
@@ -645,7 +641,6 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             profile_stages=opts.environment.profile,
         )
 
-    post_mstep_update = None
     solvent_mask = None
     if opts.do_solvent:
         solvent_mask = relion_solvent_mask(
@@ -654,21 +649,15 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             particle_diameter_ang=float(opts.particle_diameter),
             width_mask_edge_px=float(opts.width_mask_edge_px),
         )
-    if opts.do_solvent or os.environ.get(INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "").strip():
 
-        def post_mstep_update(current, _iteration, _meta):
-            # run_native_initial_model refused a float32 M-step with reference replay before the run.
-            if solvent_mask is not None:
-                current = relion_solvent_flatten_state(
-                    current,
-                    mask=solvent_mask,
-                    compute_dtype=opts.mstep_compute_dtype,
-                )
-            return _maybe_replay_iteration_references(
+    def post_mstep_update(current, iteration, meta):
+        if solvent_mask is not None:
+            current = relion_solvent_flatten_state(
                 current,
-                iteration=int(_iteration),
-                meta=_meta,
+                mask=solvent_mask,
+                compute_dtype=opts.mstep_compute_dtype,
             )
+        return source.iteration_references(current, iteration=int(iteration), meta=meta)
     profile.record("iteration_setup")
 
     # One stable-window class history for the run, as refinements have, on VDAM's ladder.
@@ -695,7 +684,11 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             mu=float(opts.mu),
             projector_padding_factor=int(opts.padding_factor),
             update=(
-                VdamUpdate(padding_factor=int(opts.padding_factor), mstep_compute_dtype=opts.mstep_compute_dtype)
+                VdamUpdate(
+                    padding_factor=int(opts.padding_factor),
+                    mstep_compute_dtype=opts.mstep_compute_dtype,
+                    single_class_m_step=source.single_class_m_step,
+                )
                 if opts.optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=float(opts.sgd_learning_rate), padding_factor=int(opts.padding_factor))
             ),

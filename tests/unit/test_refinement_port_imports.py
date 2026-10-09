@@ -65,7 +65,6 @@ ALLOWED_IMPORTS = {
     ("relax.sparse_pass2.firstiter_bpref", "relax.diagnostics.finite_check"): _INLINE_CHECK,
     ("relax.sparse_pass2.sparse_pass2_bucket_io", "relax.diagnostics.finite_check"): _INLINE_CHECK,
     ("relax.sparse_pass2.sparse_pass2_bucket_io", "relax.diagnostics.sparse_pass2_dump"): _INLINE_DUMP,
-    ("relax.vdam.driver", "relax.diagnostics.vdam_mstep_replay"): _VDAM,
     ("relax.vdam.estep_meta_updates", "relax.diagnostics.vdam_noise"): _VDAM,
 }
 

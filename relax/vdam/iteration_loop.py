@@ -38,7 +38,7 @@ from relax.vdam.estep_meta_updates import (
     update_probabilities_from_estep,
     with_uniform_class_direction_priors,
 )
-from relax.vdam.m_step import vdam_m_step
+from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.schedules import (
     VdamPhaseLengths,
@@ -160,10 +160,14 @@ def _ave_pmax(sums: EstepSums) -> float | None:
 
 @dataclass(frozen=True)
 class VdamUpdate:
-    """RELION's VDAM model update: the gradient M-step, the noise blend and the data_vs_prior resolution."""
+    """RELION's VDAM model update: the gradient M-step, the noise blend and the data_vs_prior resolution.
+
+    ``single_class_m_step``: each class's M-step, the run's input source's (``VdamInputSource``).
+    """
 
     padding_factor: int
     mstep_compute_dtype: Literal["float32", "float64"]
+    single_class_m_step: Callable[..., InitialModelState] = vdam_m_step_single_class
 
     def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:
         return vdam_m_step(
@@ -174,6 +178,7 @@ class VdamUpdate:
             padding_factor=self.padding_factor,
             mstep_compute_dtype=self.mstep_compute_dtype,
             average_ctf2=sums.average_ctf2,
+            single_class_m_step=self.single_class_m_step,
         )
 
     def update_noise(self, current, sums: EstepSums, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
