@@ -317,20 +317,20 @@ def _relion_half_layout_mask(coords, current_size, *, square=False, include_dc=F
     kx = np.rint(coords[:, 0]).astype(np.int32)
     ky = np.rint(coords[:, 1]).astype(np.int32)
     r_max = int(current_size) // 2
-    full_size = int(np.max(ky) - np.min(ky) + 1)
+    box_size = int(np.max(ky) - np.min(ky) + 1)
 
     if square:
-        if int(current_size) >= full_size:
+        if int(current_size) >= box_size:
             mask = np.ones_like(kx, dtype=bool)
         else:
             # RELION's windowFourierTransform downsizes an FFTW half image to
             # shape (current_size, current_size // 2 + 1).  In recovar's
             # centered-row coordinate system that is all rows
             # ky=-r_max+1..r_max and columns kx=0..r_max.  The original
-            # Nyquist column is represented as -full_size/2 in recovar's
+            # Nyquist column is represented as -box_size/2 in recovar's
             # packed half layout, so it must not be included for smaller
             # current_size crops.
-            kx_packed = np.where(kx < 0, full_size // 2, kx)
+            kx_packed = np.where(kx < 0, box_size // 2, kx)
             mask = (
                 (kx_packed >= 0)
                 & (kx_packed <= r_max)
@@ -343,7 +343,7 @@ def _relion_half_layout_mask(coords, current_size, *, square=False, include_dc=F
         else:
             radii = np.sqrt(np.sum(coords**2, axis=-1))
             mask = np.round(radii).astype(np.int32) <= r_max
-        if int(current_size) >= full_size:
+        if int(current_size) >= box_size:
             # At the box RELION does not crop, and its FFTW labels put the packed Nyquist row at
             # ip = +N/2 (fftw.h FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM: ip = i < XSIZE ? i : i - YSIZE),
             # where this layout stores it at ky = -N/2. That row is kept, x = 0 included (its
