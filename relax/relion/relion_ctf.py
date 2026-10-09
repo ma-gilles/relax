@@ -294,7 +294,7 @@ def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: i
     CTF-premultiplied images and the denominator over all of them (each image's weights
     sum to one, so ``sumw_group`` counts images). ``scale_corrections`` holds each
     half's per-image scale correction of this iteration's E-step (``None``: 1).
-    ``window`` is the E-step's image current size, ``ori_size`` the model's box. RELION
+    ``window`` is the E-step's image current size, ``box_size`` the model's box. RELION
     uses it without split halves and with tau2 not fixed (Class3D and InitialModel):
     it divides ``invtau2`` by ``avgctf2`` in ``BackProjector::updateSSNRarrays``
     (backprojector.cpp:1277-1279), which scales ``data_vs_prior`` by ``avgctf2``.
@@ -568,11 +568,11 @@ def _optics_group_ctf_geometry(cache, group: int, size: int):
         even = oa.parse_relion_vector(oa._optics_value(row, "rlnEvenZernike", "[]"))
         gamma = None
         if any(even):
-            box = int(oa._optics_value(row, "rlnImageSize", size))
-            if box != size:
-                raise ValueError(f"even Zernike terms need the optics group's box {box}, got an image of {size}")
+            box_size = int(oa._optics_value(row, "rlnImageSize", size))
+            if box_size != size:
+                raise ValueError(f"even Zernike terms need the optics group's box {box_size}, got an image of {size}")
             gamma = oa.zernike_phase_fftw_half(
-                even, oa.even_index_to_mn, size, float(oa._optics_value(row, "rlnImagePixelSize")), box, mag
+                even, oa.even_index_to_mn, size, float(oa._optics_value(row, "rlnImagePixelSize")), box_size, mag
             )
         geometry[key] = (gamma, mag)
     return geometry[key]

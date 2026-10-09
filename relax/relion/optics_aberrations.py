@@ -200,10 +200,10 @@ def _odd_phase_tables(experiment_dataset, image_shape):
         if not any(coefficients):
             tables[group] = None
             continue
-        box = int(_optics_value(row, "rlnImageSize", size))
+        box_size = int(_optics_value(row, "rlnImageSize", size))
         angpix = float(_optics_value(row, "rlnImagePixelSize"))
         phase = zernike_phase_fftw_half(
-            coefficients, odd_index_to_mn, size, angpix, box, optics_group_mag_matrix(row) if has_mag else None
+            coefficients, odd_index_to_mn, size, angpix, box_size, optics_group_mag_matrix(row) if has_mag else None
         )
         # RECOVAR's centered half rows are the FFTW rows rolled by size // 2
         # (relion_ctf._evaluate_exact_ctf_rows); the image values are otherwise RELION's.
