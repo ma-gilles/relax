@@ -19,6 +19,8 @@ from relax.vdam.ports import VdamInputSource
 from relax.vdam.state import InitialModelState
 
 INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV = "RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE"
+# RELION's start-up references in place of the bootstrap (VdamReplaySource.startup_references).
+INITIAL_IREF_OVERRIDE_ENV = "RELAX_INITIAL_IREF_OVERRIDE"
 
 # The native replays of RELION's M-step intermediates (relax.diagnostics.vdam_mstep_replay); only the oracle
 # reads them.
@@ -39,6 +41,28 @@ class VdamReplaySource(VdamInputSource):
 
     reference_template: str | None = None
     m_step: Callable[..., InitialModelState] = vdam_m_step_single_class
+    startup_reference_paths: str | None = None
+
+    def startup_references(self, *, n_classes: int, box_size: int):
+        """RELION's start-up references (``RELAX_INITIAL_IREF_OVERRIDE``) in place of the bootstrap: one path for
+        every class, one per class (comma-separated), or a template with ``{k}`` (the one-based class)."""
+        if self.startup_reference_paths is None:
+            return None
+        from recovar.utils.helpers import load_relion_volume
+
+        K = n_classes
+        paths = [p.strip() for p in self.startup_reference_paths.split(",") if p.strip()]
+        if len(paths) == 1 and "{k" in paths[0]:
+            paths = [paths[0].format(k=k + 1) for k in range(K)]
+        if len(paths) not in (1, K):
+            raise ValueError(f"{INITIAL_IREF_OVERRIDE_ENV} expects 1 or K={K} paths, got {len(paths)}")
+        vols = np.stack(
+            [np.asarray(load_relion_volume(p), dtype=np.float64) for p in paths],
+            axis=0,
+        )
+        if vols.shape[1:] != (box_size, box_size, box_size):
+            raise ValueError(f"{INITIAL_IREF_OVERRIDE_ENV} volume shape {vols.shape[1:]} != {(box_size,) * 3}")
+        return np.broadcast_to(vols, (K, box_size, box_size, box_size)).copy() if len(paths) == 1 else vols
 
     def single_class_m_step(self, state, k, accum_h0, accum_h1, **settings) -> InitialModelState:
         return self.m_step(state, k, accum_h0, accum_h1, **settings)
@@ -89,21 +113,24 @@ class VdamReplaySource(VdamInputSource):
 def vdam_input_source(
     *,
     reference_template: str,
+    startup_references: str,
     native_mstep_replays: Sequence[str],
     mstep_compute_dtype: str,
     oracle_m_step: Callable[..., InitialModelState] | None = None,
 ) -> VdamInputSource:
-    """The run's source, from the values of ``RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE`` (``""``: unset) and the
-    names of the set ``NATIVE_MSTEP_REPLAY_ENVS``, which only ``oracle_m_step`` (RELION's M-step) takes."""
+    """The run's source, from the values of ``RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE`` and
+    ``RELAX_INITIAL_IREF_OVERRIDE`` (``""``: unset) and the names of the set ``NATIVE_MSTEP_REPLAY_ENVS``, which only
+    ``oracle_m_step`` (RELION's M-step) takes."""
     if native_mstep_replays and oracle_m_step is None:
         raise ValueError(
             f"{list(native_mstep_replays)} replay RELION's M-step; run python -m relax.diagnostics.vdam_native_mstep instead"
         )
     if reference_template and mstep_compute_dtype == "float32":
         raise ValueError("float32 M-step is incompatible with iteration reference replay")
-    if not reference_template and oracle_m_step is None:
+    if not reference_template and not startup_references and oracle_m_step is None:
         return VdamInputSource()
     return VdamReplaySource(
         reference_template=reference_template or None,
         m_step=vdam_m_step_single_class if oracle_m_step is None else oracle_m_step,
+        startup_reference_paths=startup_references or None,
     )

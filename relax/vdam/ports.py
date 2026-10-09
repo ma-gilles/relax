@@ -1,8 +1,8 @@
 """The port through which comparison enters an InitialModel run (code rule 15).
 
 A :class:`VdamInputSource` supplies what a comparison run takes from elsewhere instead of what the run
-computes, at the call sites the driver assigns: the M-step of each class, and the references after each
-iteration's M-step. This base class is the native source. The command chooses the source once
+computes, at the call sites the driver assigns: the start-up references, the M-step of each class, and the
+references after each iteration's M-step. This base class is the native source. The command chooses the source once
 (``relax.parity.vdam_replay``); the algorithm never imports an implementation.
 """
 
@@ -13,7 +13,12 @@ from relax.vdam.state import InitialModelState, VdamAccumulator
 
 
 class VdamInputSource:
-    """The native source: relax's own M-step, and the references it made."""
+    """The native source: relax's own bootstrap and M-step, and the references it made."""
+
+    def startup_references(self, *, n_classes: int, box_size: int):
+        """References ``[K, N, N, N]`` (RELION layout, float64) that replace the start-up bootstrap, or None (the
+        native source: the run bootstraps its own)."""
+        return None
 
     def single_class_m_step(
         self, state: InitialModelState, k: int, accum_h0: VdamAccumulator, accum_h1: VdamAccumulator | None, **settings

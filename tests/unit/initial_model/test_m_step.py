@@ -344,6 +344,7 @@ def test_oracle_runs_one_m_step_as_the_command_wires_it(monkeypatch, average_ctf
     monkeypatch.setattr(vdam_native_mstep, "_bindings", lambda: FakeBindings)
     source = vdam_input_source(
         reference_template="",
+        startup_references="",
         native_mstep_replays=[],
         mstep_compute_dtype="float64",
         oracle_m_step=vdam_native_mstep.vdam_m_step_single_class_native,

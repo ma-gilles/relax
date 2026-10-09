@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -23,6 +24,9 @@ from relax.vdam import bootstrap_reconstruction, output
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import n_directions_for_healpix_order
 from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_count
+
+if TYPE_CHECKING:
+    from relax.vdam.ports import VdamInputSource
 
 # RELION's 0.07 digital-frequency low-pass for do_average_unaligned (ml_optimiser.cpp:2513-2518).
 INI_HIGH_DIGITAL_FREQ: float = 0.07
@@ -352,6 +356,8 @@ def initial_state_from_particles(
     main_star,
     optics_star,
     opts: NativeInitialModelOptions,
+    *,
+    source: VdamInputSource,
 ) -> tuple[InitialModelState, np.ndarray]:
     profile = output.StageProfile(opts.environment.profile)
 
@@ -404,10 +410,10 @@ def initial_state_from_particles(
     voltage, Cs, Q0, pixel_size = initial_model_io._particle_optics(sorted_star, optics_star, dataset)
     profile.record("optics_metadata")
 
-    # RELAX_INITIAL_IREF_OVERRIDE (parity hook): RELION's iter000 ref replaces the bootstrap below.
-    override_path = opts.environment.initial_iref_override
+    # A comparison source's start-up references replace the bootstrap (VdamInputSource.startup_references).
+    startup_references = source.startup_references(n_classes=int(opts.nr_classes), box_size=box_size)
     iref = rand_state = None
-    if not override_path:
+    if startup_references is None:
         iref, rand_state = compute_bootstrap_iref(
             images=images,
             defU=np.asarray(sorted_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
@@ -452,24 +458,8 @@ def initial_state_from_particles(
     state.sigma2_offset = float(init_sigma_offset_angstrom) ** 2
     state.Mavg = Mavg
     profile.record("state_init")
-    if override_path:
-        # Parity hook: load Iref directly. Comma-separated paths for K-class,
-        # single path broadcast across K, or a "{k}" template expanded k=1..K.
-        from recovar.utils.helpers import load_relion_volume
-
-        K = int(opts.nr_classes)
-        paths = [p.strip() for p in override_path.split(",") if p.strip()]
-        if len(paths) == 1 and "{k" in paths[0]:
-            paths = [paths[0].format(k=k + 1) for k in range(K)]
-        if len(paths) not in (1, K):
-            raise ValueError(f"RELAX_INITIAL_IREF_OVERRIDE expects 1 or K={K} paths, got {len(paths)}")
-        vols = np.stack(
-            [np.asarray(load_relion_volume(p), dtype=np.float64) for p in paths],
-            axis=0,
-        )
-        if vols.shape[1:] != (box_size, box_size, box_size):
-            raise ValueError(f"RELAX_INITIAL_IREF_OVERRIDE volume shape {vols.shape[1:]} != {(box_size,) * 3}")
-        state.Iref = np.broadcast_to(vols, (K, box_size, box_size, box_size)).copy() if len(paths) == 1 else vols
+    if startup_references is not None:
+        state.Iref = startup_references
     else:
         state.Iref = postprocess_bootstrap_iref(
             iref,

@@ -594,6 +594,7 @@ def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
         _require_custom_cuda_runtime()
 
     from relax.parity.vdam_replay import (
+        INITIAL_IREF_OVERRIDE_ENV,
         INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
         NATIVE_MSTEP_REPLAY_ENVS,
         vdam_input_source,
@@ -603,6 +604,7 @@ def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
 
     source = vdam_input_source(
         reference_template=os.environ.get(INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "").strip(),
+        startup_references=os.environ.get(INITIAL_IREF_OVERRIDE_ENV, ""),
         native_mstep_replays=[name for name in NATIVE_MSTEP_REPLAY_ENVS if os.environ.get(name, "").strip()],
         mstep_compute_dtype=options_dict["mstep_compute_dtype"],
         oracle_m_step=oracle_m_step,

@@ -34,6 +34,7 @@ from relax.vdam import (
     schedules,
 )
 from relax.vdam.bootstrap_iref import initialise_denovo_state
+from relax.vdam.ports import VdamInputSource
 from relax.vdam.state import NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import select_subset_for_iter
 
@@ -1661,6 +1662,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         main,
         optics,
         opts,
+        source=VdamInputSource(),
     )
 
     assert_matches(state.Iref, post_iref)
@@ -1695,19 +1697,22 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
 
     from recovar.utils import helpers
 
-    # Read once with the options' environment; empty means unset.
-    assert native_options.VdamEnvironment.from_environ({"RELAX_INITIAL_IREF_OVERRIDE": "seed.mrc"}).initial_iref_override == "seed.mrc"
-    assert native_options.VdamEnvironment.from_environ({"RELAX_INITIAL_IREF_OVERRIDE": ""}).initial_iref_override is None
-    environment = replace(opts.environment, initial_iref_override="seed.mrc")
+    # The command's source: RELAX_INITIAL_IREF_OVERRIDE's references replace the bootstrap; empty means unset.
+    from relax.parity.vdam_replay import vdam_input_source
+
+    def source_for(paths):
+        return vdam_input_source(
+            reference_template="", startup_references=paths, native_mstep_replays=[], mstep_compute_dtype="float64"
+        )
+
+    assert type(source_for("")) is VdamInputSource
     monkeypatch.setattr(
         bootstrap_iref,
         "compute_bootstrap_iref",
         lambda **_kwargs: pytest.fail("Override must bypass the bootstrap"),
     )
     monkeypatch.setattr(helpers, "load_relion_volume", lambda _path: post_iref[0].copy())
-    overridden, _ = bootstrap_iref.initial_state_from_particles(
-        dataset, main, optics, replace(opts, environment=environment)
-    )
+    overridden, _ = bootstrap_iref.initial_state_from_particles(dataset, main, optics, opts, source=source_for("seed.mrc"))
     np.testing.assert_array_equal(overridden.Iref, post_iref)
 
 

@@ -544,7 +544,7 @@ def run_native_initial_model(
         state, optics_group_by_particle = (
             initial_state_from_tomo_particles(dataset, main_star, opts)
             if tomo
-            else initial_state_from_particles(dataset, main_star, optics_star, opts)
+            else initial_state_from_particles(dataset, main_star, optics_star, opts, source=source)
         )
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:

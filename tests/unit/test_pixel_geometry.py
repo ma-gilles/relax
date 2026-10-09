@@ -178,6 +178,7 @@ def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch
     from relax.helpers.resolution import shell_index_to_resolution_angstrom
     from relax.relion import initial_model_io
     from relax.vdam import bootstrap_iref, estep_setup, native_options, native_sampling
+    from relax.vdam.ports import VdamInputSource
 
     path = _star(tmp_path)
     sf = StarFile.load(path)
@@ -208,6 +209,6 @@ def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch
     monkeypatch.setattr(bootstrap_iref, "compute_avg_unaligned_and_sigma2", average)
     monkeypatch.setattr(bootstrap_iref, "compute_bootstrap_iref", bootstrap)
     with pytest.raises(CapturedBootstrap):
-        bootstrap_iref.initial_state_from_particles(ds, sf.df, sf.data_optics, opts)
+        bootstrap_iref.initial_state_from_particles(ds, sf.df, sf.data_optics, opts, source=VdamInputSource())
     assert seen["average"]["pixel_size"] == PIXEL
     assert seen["bootstrap"]["pixel_size"] == PIXEL
