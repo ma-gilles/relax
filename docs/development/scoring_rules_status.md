@@ -3,19 +3,22 @@
 The agent-facing record of the open items of the coarse pass of the adaptive E-step
 (`relax/scoring/significance.py`, with the names `relax/scoring/tomo_coarse.py` imports from it) against
 [refactor_rules.md](refactor_rules.md) and [module_template.md](module_template.md). Close an item by deleting it
-here in the commit that closes it; record a decision in the "Decided" section. Numbers are of main (6610f54d) on
+here in the commit that closes it; record a decision in the "Decided" section. "Before" numbers are of main (6610f54d) on
 2026-10-08. Gate and verify: `REFACTOR_MODULE=scoring` (`scripts/dev/refactor_module.sh`).
 
-## Measured, before the first slice
+## Measured
 
-| Measure | Value |
-| --- | --- |
-| `significance.py` | 2,660 lines |
-| `_compute_k_class_significance_batched` | 1,819 lines, 46 parameters, 283 locals |
-| `_publish_batch` (nested) | 264 lines; captures 51 enclosing variables, writes one with `nonlocal`, unpacks a 34-field tuple |
-| Parameters never read | `disc_type`, `do_gridding_correction`; `means` is read only for `n_classes` |
-| Environment reads below the options boundary | 7 groups (item 3) |
-| Ceilings | `docs/development/scoring_structure_metrics.json` (the totals of `relax/scoring` on that date) |
+| Measure | Before (main 6610f54d) | Now |
+| --- | --- | --- |
+| `_compute_k_class_significance_batched` | 1,819 lines, 46 parameters, 283 locals | 9 lines, 4 parameters and the options of `Pass1Request` |
+| Planning (`plan_pass1`) and the loop (`run_pass1`) | inside that function | 404 and 173 lines, one parameter each |
+| `significance.py` | 2,660 lines | 218 lines |
+| `_publish_batch` | 264 lines, nested; captures 51 enclosing variables, unpacks a 34-field tuple | `pass1_publish.publish_batch`, explicit inputs, `BatchOutputs` record |
+| Largest function of `relax/scoring` | 1,819 lines | 466 lines (`tomo_coarse.particle_coarse_supports`) |
+| Largest parameter list of `relax/scoring` | 46 | 23 (`particle_coarse_supports`); pass 1's widest is `_pass1_block_update` with 22 |
+| Parameters never read | `disc_type`, `do_gridding_correction`; `means` read only for `n_classes` | deleted |
+| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 8,901 / 7,613: the cost of 17 new modules (headers, records, docstrings) |
+| Ceilings | `docs/development/scoring_structure_metrics.json` (the totals on that date) | the two line-count ceilings are exceeded (see "Waiting for the owner") |
 
 ## Coverage
 
@@ -36,25 +39,29 @@ device scoring (`defer_publish`).
 
 ## Open items
 
-1. **One function holds nine jobs (rules 6, 10, 11).** Planning and validation, projection closures, per-image
-   output buffers, operand preparation, the score-program driver, the tree rescore, the posterior and support
-   stage, publishing, and the post-loop assembly are one body. Mode (Gaussian or normalized CC) is a flag tested about
-   ten times, with `coarse_gaussian_*` and `exact_cc_*` locals set on one route only.
-2. **The environment steers pass 1 below the boundary (rule 5).** `RECOVAR_K1_RELION_F32_COARSE_SUPPORT` (selects the
-   generic support route), `RELAX_K1_COARSE_ROTATED_RADIUS`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (also the parameter
-   `pad_final_image_batch`: two owners), `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect is a
-   refusal), `RELAX_DENSE_MEANS_SCALE`, the projection-cache variables (they change `rotation_block_size`), and the
-   support-audit and dump variables.
-3. **A diagnostic steers execution (rule 9).** A dump batch switches off device compaction and deferred publishing;
-   `significance.py` imports `relax.diagnostics` directly.
-4. **Dead inputs and arms (rule 7).** `disc_type`, `do_gridding_correction`, `means`; the arms that
-   `_require_exact_pass1_operands` makes unreachable.
-5. **Results as a dict and a positional 6-tuple (rules 8, 10).**
-6. **Layer leak (rule 11).** Pass 1 imports four `relax/sparse_pass2` modules (private names among them:
+1. **The planner is one 404-line function (rules 6, 10, 11).** `plan_pass1` decides the route once and builds each
+   stage's plan, but it is still a sequence of 15 steps with the options read as `request.<field>` (ten rebound or
+   formatted fields keep a local name). Split it by contract into the Gaussian and the normalized-CC route planners, and
+   resolve the options once at the boundary: the callers (`k_class.py`, `scripts/run_k_class_parity.py`, tests) still pass
+   keywords that `_compute_k_class_significance_batched` turns into a `Pass1Request`; they would build the request.
+2. **The environment steers pass 1 below the boundary (rule 5).** Read in `pass1_plan.py`:
+   `RECOVAR_K1_RELION_F32_COARSE_SUPPORT` (selects the generic support route), `RELAX_K1_COARSE_ROTATED_RADIUS`,
+   `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (also the field `pad_final_image_batch`: two owners),
+   `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect is a refusal), the projection-cache variables
+   (`gaussian_plan.py`: they change `rotation_block_size`), and `RELAX_COARSE_GEMM_FLOAT64` (`pass1_plan.py`, read once
+   per pass); in `pass1_assembly.py` the support-audit variables; in `pass1_dump.py` the dump target list.
+3. **A diagnostic steers execution (rule 9).** A dump batch switches off device compaction and deferred publishing.
+   The dump and the audit are imported by `pass1_publish.py`, `pass1_dump.py`, `pass1_assembly.py` and
+   `tree_rescore.py` (the allowlist of `tests/unit/test_refinement_port_imports.py` names the four edges; the two
+   edges of `significance.py` it replaced are gone).
+4. **`full_stats` is a dict (rules 8, 10).** The six-tuple is now `Pass1Result` (named fields, same positions); the
+   statistics stay a dict whose keys `k_class.py`, `scripts/run_k_class_parity.py`, `global_winner_summary.py` and
+   `_full_stats_from_subset` read.
+5. **Layer leak (rule 11).** Pass 1 imports `relax/sparse_pass2` modules (private names among them:
    `_relion_cuda_powerclass_highres_xi2_half`, `_relion_translation_angles_f32`, `_relion_f32_fine_posterior`,
    `_relion_cuda_fine_full_to_compact_lookup`).
-7. **A source-reading test pins the function (rule 13).** `tests/unit/test_adaptive_oversampling.py`
-   (`_production_batch_size`).
+6. **The score-program kernels take 22, 22 and 19 parameters** (`pass1_program.py`): nine static settings travel as
+   keywords through three functions.
 
 ## Noticed, not changed (a refactor does not fix behaviour)
 
@@ -68,6 +75,9 @@ device scoring (`defer_publish`).
   as a production capability, kept as a named option, or moved to `tests/oracles` as an independent reference.
 - Whether the legacy source-pixel disk (`RELAX_K1_COARSE_ROTATED_RADIUS=0`) stays an option.
 - Whether dumps and the support audit become a `RunObserver` hook within this refactor.
+- Whether the two line-count ceilings of `scoring_structure_metrics.json` are raised by hand (the split added 17 modules
+  and 1,269 lines of headers, records and docstrings; the largest function fell from 1,819 to 466 lines and the widest
+  parameter list from 46 to 23), or the package is trimmed to fit.
 
 ## Decided
 
