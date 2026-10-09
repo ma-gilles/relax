@@ -558,11 +558,6 @@ def main(command=None):
 
     resume_snapshot = None
     if args.continue_optimiser_star is not None:
-        if shape_class_rows is not None:
-            raise SystemExit(
-                "--continue does not support particle STARs with several image shapes yet (relax#38); "
-                "restart the run from its input instead"
-            )
         resume_snapshot = run_files.read_run_files(
             args.continue_optimiser_star,
             image_names=[str(name) for name in our_names],

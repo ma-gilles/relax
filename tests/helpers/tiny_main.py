@@ -22,9 +22,13 @@ PIXEL_SIZE = 4.25
 SEED = "42"
 
 
-def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra_columns=None):
+def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra_columns=None, second_shape=None):
     """The data directory main reads: particles.star, its stack, reference_init_relion.mrc and
-    reference_init_class00K_relion.mrc. ``extra_columns`` adds particle STAR columns."""
+    reference_init_class00K_relion.mrc. ``extra_columns`` adds particle STAR columns.
+
+    ``second_shape=(box, pixel_size)`` puts every other particle in a second optics group of that image box and
+    pixel size, in its own stack: a run on several image shapes (relax.refinement.optics_shapes).
+    """
 
     import mrcfile
     import pandas as pd
@@ -36,23 +40,32 @@ def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra
     with mrcfile.new(root / f"particles.{box}.mrcs") as stack:
         stack.set_data(rng.standard_normal((n_images, box, box)).astype(np.float32))
         stack.voxel_size = PIXEL_SIZE
+    if second_shape is not None:
+        box2, pixel2 = int(second_shape[0]), float(second_shape[1])
+        with mrcfile.new(root / f"particles.{box2}.mrcs") as stack:
+            stack.set_data(rng.standard_normal((n_images, box2, box2)).astype(np.float32))
+            stack.voxel_size = pixel2
     maps = ["reference_init_relion.mrc"] + [f"reference_init_class{k + 1:03d}_relion.mrc" for k in range(n_classes)]
     for name in maps:
         with mrcfile.new(root / name) as volume:
             volume.set_data(rng.standard_normal((box, box, box)).astype(np.float32))
             volume.voxel_size = PIXEL_SIZE
+    groups = [(box, PIXEL_SIZE)] + ([] if second_shape is None else [(box2, pixel2)])
     optics = pd.DataFrame({
-        "rlnOpticsGroup": [1], "rlnOpticsGroupName": ["opticsGroup1"], "rlnAmplitudeContrast": [0.07],
-        "rlnSphericalAberration": [2.7], "rlnVoltage": [300.0], "rlnImagePixelSize": [PIXEL_SIZE],
-        "rlnImageSize": [box], "rlnImageDimensionality": [2],
+        "rlnOpticsGroup": [g + 1 for g in range(len(groups))],
+        "rlnOpticsGroupName": [f"opticsGroup{g + 1}" for g in range(len(groups))],
+        "rlnAmplitudeContrast": [0.07] * len(groups), "rlnSphericalAberration": [2.7] * len(groups),
+        "rlnVoltage": [300.0] * len(groups), "rlnImagePixelSize": [pixel for _, pixel in groups],
+        "rlnImageSize": [size for size, _ in groups], "rlnImageDimensionality": [2] * len(groups),
     })
     rows = np.arange(n_images)
+    group = rows % len(groups)
     particles = pd.DataFrame({
-        "rlnImageName": [f"{i + 1}@particles.{box}.mrcs" for i in rows],
+        "rlnImageName": [f"{i + 1}@particles.{groups[g][0]}.mrcs" for i, g in zip(rows, group)],
         "rlnMicrographName": [str(i + 1) for i in rows],
         "rlnDefocusU": 15000.0 + 100.0 * rows, "rlnDefocusV": 15100.0 + 100.0 * rows,
         "rlnDefocusAngle": np.full(n_images, 10.0), "rlnPhaseShift": np.zeros(n_images),
-        "rlnOpticsGroup": np.ones(n_images, dtype=int),
+        "rlnOpticsGroup": group + 1,
         "rlnAngleRot": rng.uniform(-180.0, 180.0, n_images), "rlnAngleTilt": rng.uniform(0.0, 180.0, n_images),
         "rlnAnglePsi": rng.uniform(-180.0, 180.0, n_images),
         "rlnOriginXAngst": np.zeros(n_images), "rlnOriginYAngst": np.zeros(n_images),

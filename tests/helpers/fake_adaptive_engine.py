@@ -40,6 +40,7 @@ def adaptive_result(
     pose_assignments=None,
     best_pose_translations=None,
     noise_fields=None,
+    noise_groups=None,
 ):
     """A ``KClassEMResult`` for ``means`` (``[K, V]``) over the dataset's images.
 
@@ -47,6 +48,8 @@ def adaptive_result(
     posterior 1, identity best rotation with zero best translation, unit noise sums and one
     significant sample per image. Arguments override one field; ``Ft_y``/``Ft_ctf`` are ``[K, V]`` arrays or callables of ``(k, size)``.
     ``noise_fields(n_images)`` returns further ``NoiseStats`` fields (norm and scale-correction sums).
+    ``noise_groups`` is each image's optics-group row of a per-group noise table (``[G, P]``, as the real engine
+    returns its noise sums per group), or None for one shared spectrum.
     """
 
     n_classes = int(np.asarray(means).shape[0]) if np.ndim(means) >= 2 else 1
@@ -78,6 +81,16 @@ def adaptive_result(
     )
 
     def noise(sumw):
+        if noise_groups is not None:
+            ids, n_groups = noise_groups
+            counts = np.bincount(np.asarray(ids, dtype=np.int64), minlength=n_groups).astype(np.float64)
+            return NoiseStats(
+                wsum_sigma2_noise=jnp.ones((n_groups, n_shells), dtype=jnp.float32),
+                wsum_img_power=jnp.ones((n_groups, n_shells), dtype=jnp.float32),
+                wsum_sigma2_offset=sigma2_offset,
+                sumw=jnp.asarray(counts * (float(sumw) / max(n_images, 1))),
+                **({} if noise_fields is None else noise_fields(n_images)),
+            )
         return NoiseStats(
             wsum_sigma2_noise=jnp.ones(n_shells, dtype=jnp.float32),
             wsum_img_power=jnp.ones(n_shells, dtype=jnp.float32),
@@ -156,7 +169,12 @@ def fake_adaptive_engine(calls=None, **result_kwargs):
                     kwargs=kwargs,
                 )
             )
-        return adaptive_result(experiment_dataset, means, fine_rotations, kwargs, **result_kwargs)
+        groups = None
+        if np.ndim(noise_variance) == 2 and kwargs.get("optics_group_ids") is not None:
+            groups = (np.asarray(kwargs["optics_group_ids"]), int(np.shape(noise_variance)[0]))
+        return adaptive_result(
+            experiment_dataset, means, fine_rotations, kwargs, **{"noise_groups": groups, **result_kwargs}
+        )
 
     return run
 
