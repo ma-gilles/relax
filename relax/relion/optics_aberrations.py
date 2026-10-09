@@ -399,6 +399,29 @@ def dataset_magnification_is_anisotropic(experiment_dataset) -> bool:
     return bool(matrices) and magnification_is_anisotropic(matrices.values())
 
 
+# Matrix2D::isIdentity's tolerance in RELION's double-precision build (macros.h:113-116).
+XMIPP_EQUAL_ACCURACY = 1e-6
+
+
+def relion_projection_optics(scale: float, magnification=None):
+    """``(scale, magnification)`` as RELION applies them to an image grid's matrices.
+
+    RELION composes ``MBL = applyScaleDifference(applyAnisoMag(I)) = s inv(M3)`` into the pass-1
+    plan, the fine pass and the weighted sums only when ``!mag.isIdentity()``
+    (acc_ml_optimiser_impl.h:1100, 1722, 3222), which allows ``XMIPP_EQUAL_ACCURACY`` per element
+    (matrix2d.h:1191-1206). A grid within it, such as a reference header that differs from the
+    STAR pixel by float32 rounding (s - 1 ~ 1e-8), projects with the plain matrices: ``(1.0, None)``.
+    The current-size remap keeps the true ``s`` (relax#57).
+    """
+
+    if scale == 1.0 and magnification is None:
+        return 1.0, None
+    left = relion_projection_left_matrix(scale, magnification)
+    if np.all(np.abs(left - np.eye(3)) <= XMIPP_EQUAL_ACCURACY):
+        return 1.0, None
+    return float(scale), magnification
+
+
 def projection_rotations(rotations, scale: float, magnification=None, *, dtype=np.float32):
     """Host projection matrices for the images' optics (RELION applyAnisoMag, applyScaleDifference).
 
@@ -412,9 +435,11 @@ def projection_rotations(rotations, scale: float, magnification=None, *, dtype=n
     every host-built row: ``rotations`` are the rows' double-precision matrices, composed here in
     float64 and cast to ``dtype`` once. Composing after a float32 cast moves most magnified matrices
     by an ulp and flips near-tie poses (relax#24). The device-built pass-1 rows follow
-    :func:`relax.sampling.relion_device_projection_rotations` instead.
+    :func:`relax.sampling.relion_device_projection_rotations` instead. A grid RELION treats as the
+    identity (:func:`relion_projection_optics`) keeps its rows.
     """
 
+    scale, magnification = relion_projection_optics(scale, magnification)
     if rotations is None or (scale == 1.0 and magnification is None):
         return rotations
     rotations = np.asarray(rotations)
@@ -441,6 +466,7 @@ def relion_projection_left_matrix(scale: float, magnification=None) -> np.ndarra
 def reported_rotations(rotations, scale: float, magnification=None):
     """Undo :func:`projection_rotations` on the engine's best poses: poses are reported unmagnified."""
 
+    scale, magnification = relion_projection_optics(scale, magnification)
     rotations = np.asarray(rotations)
     if scale != 1.0:
         rotations = rotations * float(scale)

@@ -29,7 +29,7 @@ def final_inputs():
         noise_radial=half.noise_radial, direction_prior=DirectionPrior(None, None),
         n_classes=1, use_local=False, coarse_angular_step_deg=None,
         particle_diameter_angstrom=3., sealed_sampling_state=None,
-        symmetry='C1', dtype=np.float32,
+        symmetry='C1', dtype=np.float32, projection_scale=1.,
     )
     return half.particles, sampling, kwargs
 

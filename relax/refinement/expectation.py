@@ -457,7 +457,8 @@ def run_numbered_expectation(
             replay_prior_translations=plan.replay_prior_translations,
             initial_class_assignments=this_iteration.seeding.seed_classes,
             single_class_iteration=this_iteration.seeding.single_class_iteration, scoring_dtype=ctx.scoring_dtype,
-            relion_translation_angle_scale=ctx.relion_translation_angle_scale, iteration=this_iteration.iteration,
+            relion_translation_angle_scale=ctx.relion_translation_angle_scale,
+            relion_projection_scale=ctx.relion_projection_scale, iteration=this_iteration.iteration,
             numbered_relion_iteration=this_iteration.numbered_relion_iteration, probe=ctx.expectation_probe,
         ),
         partial(
@@ -548,6 +549,7 @@ def prepare_final_half(
     sealed_sampling_state,
     symmetry: str,
     dtype,
+    projection_scale: float,
 ) -> PreparedFinalHalf:
     """Resolve SPA priors and optics in the final grid's image-pixel frame.
 
@@ -591,6 +593,7 @@ def prepare_final_half(
         with_log_prior=not use_local,
         zero_cold_center=False,
         dtype=dtype,
+        single_shape_projection_scale=projection_scale,
     )
     return PreparedFinalHalf(translations, translation_log_prior, directions, optics)
 
@@ -705,6 +708,7 @@ def score_numbered_half(
     single_class_iteration: bool,
     scoring_dtype,
     relion_translation_angle_scale: float,
+    relion_projection_scale: float,
     iteration: int,
     numbered_relion_iteration: int,
     probe: ExpectationProbe,
@@ -875,6 +879,7 @@ def score_numbered_half(
             with_log_prior=False,
             zero_cold_center=True,
             dtype=scoring_dtype,
+            single_shape_projection_scale=relion_projection_scale,
         )
         local_result = _score_half_local_in_bpref_scope(
             half=replace(half.data, mean_variance=None, image_seed_classes=seed_classes_k),
@@ -930,6 +935,7 @@ def score_numbered_half(
             with_log_prior=True,
             zero_cold_center=not k_class_enabled,
             dtype=scoring_dtype,
+            single_shape_projection_scale=relion_projection_scale,
         )
         dense_half = replace(half.data, image_seed_classes=seed_classes_k)
         dense_sampling = sampling

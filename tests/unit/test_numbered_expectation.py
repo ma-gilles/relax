@@ -83,7 +83,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
                                                 local_profile_history=[], bpref_device_signature_active=False,
                                                 probe=NoProbe()) if local else None,
         replay_prior_translations=None, initial_class_assignments=None, single_class_iteration=False,
-        scoring_dtype=np.float32, relion_translation_angle_scale=1.,
+        scoring_dtype=np.float32, relion_translation_angle_scale=1., relion_projection_scale=1.,
         iteration=0, numbered_relion_iteration=1, probe=NoProbe(),
     )
     phase = expectation.NumberedExpectation(

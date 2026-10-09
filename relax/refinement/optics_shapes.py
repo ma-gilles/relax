@@ -44,6 +44,14 @@ class ShapeClass:
     pixel_size: float
     scale: float  # s_g = box_g angpix_g / (ori angpix_ref)
     translation_factor: float  # reference pixels -> class pixels: angpix_ref / angpix_g
+    # The trial translation grid's reference pixels -> class pixels: RELION builds the grid in Angstrom
+    # with the model pixel (ml_optimiser.cpp:590, 597) and converts it with the class's pixel
+    # (getTranslationsInPixel), model_pix / angpix_g. None: translation_factor (the model pixel is the STAR's).
+    grid_factor: float | None = None
+
+    def trial_grid_factor(self) -> float:
+        """Reference pixels -> class pixels for the trial grid (``grid_factor``, else ``translation_factor``)."""
+        return self.translation_factor if self.grid_factor is None else self.grid_factor
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -71,13 +79,14 @@ class OpticsSpec:
     reference_current_size: int | None
 
     @classmethod
-    def single_shape(cls) -> "OpticsSpec":
-        """A half on one image grid: no per-class operands, the reference's own projection."""
+    def single_shape(cls, projection_scale: float = 1.0) -> "OpticsSpec":
+        """A half on one image grid: no per-class operands; its scale difference against the model grid
+        (``setup_checks.projection_scale_for_run``)."""
         return cls(
             noise_radial_k=None,
             coarse_sizing=None,
             class_translations=None,
-            projection_scale=1.0,
+            projection_scale=float(projection_scale),
             reference_current_size=None,
         )
 
@@ -178,17 +187,19 @@ def prepare_optics(
     coarse_step_deg,
     particle_diameter_ang,
     dtype,
+    single_shape_projection_scale: float,
 ) -> OpticsSpec:
     """Prepare half scoring operands for its image shape classes.
 
     Stored offsets are converted before rounding in each class's pixels
     (RELION ``my_old_offset.selfROUND()``, ml_optimiser.cpp:6085). Scaling an
     already-rounded reference offset gives different pre-shifts and priors.
-    A single-shape half needs no additional arrays or translation computation.
+    A single-shape half needs no additional arrays or translation computation; it projects with
+    ``single_shape_projection_scale``.
     """
 
     if not isinstance(dataset, MultiShapeHalf):
-        return OpticsSpec.single_shape()
+        return OpticsSpec.single_shape(single_shape_projection_scale)
 
     noise_radial = np.asarray(noise_radial, dtype=np.float64)
     coarse_sizing = None if coarse_step_deg is None else (float(coarse_step_deg), particle_diameter_ang)
@@ -203,8 +214,10 @@ def prepare_optics(
         inputs = relion_half_translation_prior_inputs(
             previous,
             voxel_size=shape_class.pixel_size,
-            base_translations=None if base_translations is None else np.asarray(base_translations) * factor,
-            current_translations=np.asarray(current_translations) * factor,
+            base_translations=(
+                None if base_translations is None else np.asarray(base_translations) * shape_class.trial_grid_factor()
+            ),
+            current_translations=np.asarray(current_translations) * shape_class.trial_grid_factor(),
             dtype=dtype,
         )
         search_base = relion_translation_search_base(previous, dtype=dtype)
@@ -276,6 +289,7 @@ def make_shape_classes(datasets_and_indices, *, model_box_size, ref_pixel, model
                 pixel_size=pixel,
                 scale=scale,
                 translation_factor=float(ref_pixel) / pixel,
+                grid_factor=None if model_pixel is None else float(model_pixel) / pixel,
             )
         )
     return classes
@@ -424,10 +438,10 @@ PER_IMAGE_IF_2D_KWARGS = ("translation_log_prior", "rotation_log_prior_k")
 # Per-class keywords ([K, hypothesis]) that are per image when three-dimensional
 # ([K, image, hypothesis]).
 PER_CLASS_IMAGE_IF_3D_KWARGS = ("class_rotation_log_prior_k",)
-# Keywords in reference pixels.
+# The trial translation grid, in reference pixels (ShapeClass.trial_grid_factor).
+TRIAL_GRID_KWARGS = ("current_translations", "base_translations")
+# Stored offsets and their priors, in reference pixels (ShapeClass.translation_factor).
 TRANSLATION_KWARGS = (
-    "current_translations",
-    "base_translations",
     "trans_prior_center",
     "trans_prior_center_for_engine",
     "translation_search_base",
@@ -473,11 +487,14 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     for name in TRANSLATION_KWARGS:
         if out.get(name) is not None:
             out[name] = np.asarray(out[name]) * shape_class.translation_factor
+    for name in TRIAL_GRID_KWARGS:
+        if out.get(name) is not None:
+            out[name] = np.asarray(out[name]) * shape_class.trial_grid_factor()
     translation_step = out.get("translation_step")
-    if translation_step is not None and shape_class.translation_factor != 1.0:
+    if translation_step is not None and shape_class.trial_grid_factor() != 1.0:
         # The oversampled translation grid is built from the step (RELION samples offsets in
         # Angstrom and converts them with the image's pixel size, getTranslationsInPixel).
-        out["translation_step"] = float(translation_step) * shape_class.translation_factor
+        out["translation_step"] = float(translation_step) * shape_class.trial_grid_factor()
     for name in IMAGE_SIZE_KWARGS:
         if out.get(name) is not None:
             out[name] = optics_scale.group_current_size(out[name], shape_class.box_size, shape_class.scale)
@@ -508,28 +525,33 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     return out
 
 
-def reconstruction_image_radius(reference_current_size, scale: float):
+def reconstruction_image_radius(reference_current_size, scale: float, magnification=None):
     """The M-step's image-space radius for images on another grid.
 
     RELION's backprojector keeps rotated samples inside the reference model's
     ``r_max = current_size / 2`` (BackProjector::backproject, ``max_r2``); an image pixel
     at radius ``|k|`` lands at reference radius ``|k| / s``, so the image-side bound is
-    ``r_max * s``. None keeps the engines' own bound (one grid). The M-step clip
+    ``r_max * s``, with the ``s`` RELION projects with
+    (:func:`relax.relion.optics_aberrations.relion_projection_optics`: 1 within its identity
+    tolerance). None keeps the engines' own bound (one grid). The M-step clip
     (:func:`relax.helpers.adjoint.mstep_adjoint_max_r`) turns it into the kernel's radius.
     """
+    from relax.relion.optics_aberrations import relion_projection_optics
+
     if reference_current_size is None:
         return None
-    return float(int(reference_current_size) // 2) * float(scale)
+    return float(int(reference_current_size) // 2) * relion_projection_optics(scale, magnification)[0]
 
 
-def reference_grid_kwargs(reference_current_size, scale: float) -> dict:
-    """Engine kwargs of images on another grid: the reference-model M-step size and image radius."""
+def reference_grid_kwargs(reference_current_size, scale: float, magnification=None) -> dict:
+    """Engine kwargs of images on another grid: the reference-model M-step size and image radius
+    (:func:`reconstruction_image_radius`)."""
 
     if reference_current_size is None:
         return {}
     return {
         "reconstruction_volume_current_size": int(reference_current_size),
-        "reconstruction_image_radius": reconstruction_image_radius(reference_current_size, scale),
+        "reconstruction_image_radius": reconstruction_image_radius(reference_current_size, scale, magnification),
     }
 
 
@@ -545,7 +567,8 @@ def engine_projection_inputs(dataset, *, scale, reference_current_size):
 
     from relax.relion.optics_aberrations import dataset_projection_magnification
 
-    return dataset_projection_magnification(dataset), reference_grid_kwargs(reference_current_size, scale)
+    magnification = dataset_projection_magnification(dataset)
+    return magnification, reference_grid_kwargs(reference_current_size, scale, magnification)
 
 
 # Engine keywords (run_dense_k_class_em_adaptive) whose leading axis is the images.

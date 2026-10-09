@@ -59,28 +59,23 @@ def test_relion_translation_angle_scale_changes_only_final_angle_operand():
     assert_matches(translations, baseline_translations)
 
 
-def test_relion_k1_translation_angle_scale_uses_model_over_optics_pixel_size():
-    from relax.refinement.setup_checks import _relion_k1_translation_angle_scale
+def test_relion_translation_angle_scale_uses_model_over_optics_pixel_size():
+    """Every class count: RELION's trial translations are Angstrom from the model pixel over the optics pixel."""
+    from relax.refinement.setup_checks import _relion_translation_angle_scale
 
-    scale = _relion_k1_translation_angle_scale(
-        n_classes=1,
+    scale = _relion_translation_angle_scale(
         model_pixel_size=544.0 / 384.0,
         optics_pixel_sizes=np.asarray([1.416667], dtype=np.float64),
     )
     assert scale == pytest.approx(0.99999976470593788, rel=0.0, abs=1e-16)
-    assert _relion_k1_translation_angle_scale(
-        n_classes=4,
-        model_pixel_size=544.0 / 384.0,
-        optics_pixel_sizes=np.asarray([1.416667], dtype=np.float64),
-    ) == 1.0
+    assert _relion_translation_angle_scale(model_pixel_size=1.5, optics_pixel_sizes=None) == 1.0
 
 
-def test_relion_k1_translation_angle_scale_rejects_heterogeneous_optics():
-    from relax.refinement.setup_checks import _relion_k1_translation_angle_scale
+def test_relion_translation_angle_scale_rejects_heterogeneous_optics():
+    from relax.refinement.setup_checks import _relion_translation_angle_scale
 
     with pytest.raises(NotImplementedError, match="one shared optics pixel size"):
-        _relion_k1_translation_angle_scale(
-            n_classes=1,
+        _relion_translation_angle_scale(
             model_pixel_size=1.5,
             optics_pixel_sizes=np.asarray([1.5, 1.6], dtype=np.float64),
         )

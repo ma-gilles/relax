@@ -231,6 +231,7 @@ def test_dense_owner_shape_derivation_passes_class_translations_through_the_merg
         sigma_offset_angstrom=10.0, base_translations=np.zeros((1, 2)), current_translations=np.zeros((1, 2)),
         with_log_prior=True, zero_cold_center=False,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
+        single_shape_projection_scale=1.0,
     )
 
     def fake_score(half, sampling, priors, batching, variant, execution, optics):
@@ -376,6 +377,7 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         sigma_offset_angstrom=10.0, base_translations=np.zeros((1, 2)), current_translations=np.zeros((1, 2)),
         with_log_prior=False, zero_cold_center=False,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
+        single_shape_projection_scale=1.0,
     )
 
     def fake_score(half, sampling, priors, batching, execution, diagnostics, optics):
@@ -535,6 +537,7 @@ def test_class_pre_shifts_are_rounded_in_the_class_pixels():
         sigma_offset_angstrom=10.0, base_translations=grid, current_translations=grid,
         with_log_prior=True, zero_cold_center=True,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
+        single_shape_projection_scale=1.0,
     ).class_translations
     for shape_class, values in zip(half.classes, out):
         in_class = previous[shape_class.image_indices] * shape_class.translation_factor
@@ -546,6 +549,7 @@ def test_class_pre_shifts_are_rounded_in_the_class_pixels():
         sigma_offset_angstrom=1.0, base_translations=grid, current_translations=grid,
         with_log_prior=False, zero_cold_center=False,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
+        single_shape_projection_scale=1.0,
     ) == optics_shapes.OpticsSpec.single_shape()
 
 
@@ -560,6 +564,7 @@ def test_prepared_optics_preserves_cold_start_prior_policy(dtype, with_log_prior
         half, noise_radial=noise, previous_translations=None, sigma_offset_angstrom=10.0,
         base_translations=grid, current_translations=grid, with_log_prior=with_log_prior,
         zero_cold_center=zero_cold_center, coarse_step_deg=34.5, particle_diameter_ang=100.0, dtype=dtype,
+        single_shape_projection_scale=1.0,
     )
     assert prepared.noise_radial_k is noise
     assert prepared.coarse_sizing == (34.5, 100.0)
@@ -590,6 +595,7 @@ def test_single_shape_preparation_does_not_materialize_operands():
         object(), noise_radial=array, previous_translations=array, sigma_offset_angstrom=1.0,
         base_translations=array, current_translations=array, with_log_prior=True, zero_cold_center=True,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
+        single_shape_projection_scale=1.0,
     ) == optics_shapes.OpticsSpec.single_shape()
 
 

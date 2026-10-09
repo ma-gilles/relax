@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from relax.helpers import optics_scale
 from relax.helpers.expected_accuracy import (
     RELION_DEFAULT_SIGMA2_FUDGE,
     Half1AccuracyInputs,
@@ -45,22 +46,17 @@ from relax.relion.geometry import (
 logger = logging.getLogger("relax.refinement.iteration_loop")
 
 
-def _relion_k1_translation_angle_scale(
-    *,
-    n_classes: int,
-    model_pixel_size: float,
-    optics_pixel_sizes,
-) -> float:
-    """Convert K=1 model-pixel translations to the shared optics pixel size.
+def _relion_translation_angle_scale(*, model_pixel_size: float, optics_pixel_sizes) -> float:
+    """Convert model-pixel trial translations to the shared optics pixel size.
 
-    RELION keeps sampling translations in Angstrom and converts them with the
-    particle's optics pixel size (HealpixSampling::getTranslationsInPixel),
-    while RECOVAR's translation grid is in model pixels. The scale
-    model_pixel_size / optics_pixel_size is exactly 1.0 when the serialized
-    sizes agree; it multiplies only the RELION translation-phase operand.
+    RELION builds its trial translations in Angstrom with the model pixel (ml_optimiser.cpp:590, 597,
+    2592-2593) and converts them with the particle's optics pixel size
+    (HealpixSampling::getTranslationsInPixel), for every class count, while RECOVAR's translation grid
+    is in model pixels. The scale model_pixel_size / optics_pixel_size is exactly 1.0 when the
+    serialized sizes agree; it multiplies only the RELION translation-phase operand.
     """
 
-    if int(n_classes) != 1 or optics_pixel_sizes is None:
+    if optics_pixel_sizes is None:
         return 1.0
     optics = np.asarray(optics_pixel_sizes, dtype=np.float64).reshape(-1)
     if optics.size == 0 or not np.all(np.isfinite(optics)) or np.any(optics <= 0.0):
@@ -68,7 +64,7 @@ def _relion_k1_translation_angle_scale(
     unique_optics = np.unique(optics)
     if unique_optics.size != 1:
         raise NotImplementedError(
-            "K=1 exact RELION translation phases currently require one shared optics pixel size; "
+            "exact RELION translation phases on one image shape require one shared optics pixel size; "
             "per-particle optics scaling is not yet implemented"
         )
     # A Python float: the model pixel size may arrive as the input's float32, and the scale is float64 arithmetic.
@@ -149,27 +145,46 @@ def checked_run_optics(parity: RelionParityOptions, image_geometry: ImageGeometr
     )
 
 
-def translation_angle_scale_for_run(optics: RunOptics, *, n_classes: int, subtomograms: bool) -> float:
-    """The scale of RELION's translation phases for the run: 1.0 for several image shapes and for subtomograms,
-    else the K=1 model-to-optics pixel-size ratio (``_relion_k1_translation_angle_scale``), logged when not 1.0."""
+def translation_angle_scale_for_run(optics: RunOptics, *, subtomograms: bool) -> float:
+    """The scale of RELION's translation phases for the run: 1.0 for several image shapes (their classes scale
+    their own grids, ``ShapeClass.trial_grid_factor``) and for subtomograms, else the model-to-optics pixel-size
+    ratio (``_relion_translation_angle_scale``), logged when not 1.0."""
     scale = (
         # Shape classes carry their translations in class pixels already; tilt images have their own phases.
         1.0
         if optics.multi_shape_halves or subtomograms
-        else _relion_k1_translation_angle_scale(
-            n_classes=n_classes,
+        else _relion_translation_angle_scale(
             model_pixel_size=optics.model_pixel_size,
             optics_pixel_sizes=optics.optics_pixel_sizes,
         )
     )
     if scale != 1.0:
         logger.info(
-            "RELION K=1 translation phases: model_pixel_size=%.12g "
+            "RELION translation phases: model_pixel_size=%.12g "
             "optics_pixel_size=%.12g angle_scale=%.17g",
             optics.model_pixel_size,
             float(optics.optics_pixel_sizes[0]),
             scale,
         )
+    return scale
+
+
+def projection_scale_for_run(optics: RunOptics, *, subtomograms: bool) -> float:
+    """The scale difference ``s`` of a single-shape run's images against RELION's model grid, or 1.0.
+
+    RELION scales every optics group's matrices by ``s = (box_g pix_g) / (ori model_pix)``
+    (``applyScaleDifference``, obs_model.cpp:1332-1340) with the model pixel the reference header's,
+    so a header that is not the STAR pixel gives single-shape data an ``s != 1`` too; whether it
+    projects with it is RELION's identity test (:func:`relax.relion.optics_aberrations.relion_projection_optics`).
+    Several image shapes carry their own class scales; tilt images their own left matrices.
+    """
+
+    if optics.multi_shape_halves or subtomograms or optics.optics_pixel_sizes is None:
+        return 1.0
+    pixel, box = optics.first_optics_group_geometry()
+    scale = optics_scale.scale_difference(box, pixel, optics.image_geometry.box_size, optics.model_pixel_size)
+    if scale != 1.0:
+        logger.info("RELION single-shape scale difference: s=%.17g (model pixel %.12g)", scale, optics.model_pixel_size)
     return scale
 
 
@@ -287,6 +302,8 @@ class RunContext:
     # Opt-in corrections of RELION's inconsistencies, refused on the routes that keep RELION's rules.
     consistency: RelionConsistencyOptions
     relion_translation_angle_scale: float
+    # A single-shape run's scale difference against the model grid (``projection_scale_for_run``).
+    relion_projection_scale: float
     reconstruction_settings: ReconstructionSettings
     snapshot_capture: SnapshotCapture
     batch_planner: BatchPlanner
@@ -325,9 +342,8 @@ def build_run_context(
         options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves,
         replays_relion_state=replays_relion_state,
     )
-    relion_translation_angle_scale = translation_angle_scale_for_run(
-        optics, n_classes=options.k_class.n_classes, subtomograms=tomo_halves,
-    )
+    relion_translation_angle_scale = translation_angle_scale_for_run(optics, subtomograms=tomo_halves)
+    relion_projection_scale = projection_scale_for_run(optics, subtomograms=tomo_halves)
     reconstruction_settings = reconstruction_settings_for_run(options, image_geometry, volume_shape, consistency)
     snapshot_capture = SnapshotCapture(
         n_classes=options.k_class.n_classes, box_size=image_geometry.box_size,
@@ -356,6 +372,7 @@ def build_run_context(
         optics=optics,
         consistency=consistency,
         relion_translation_angle_scale=relion_translation_angle_scale,
+        relion_projection_scale=relion_projection_scale,
         reconstruction_settings=reconstruction_settings,
         snapshot_capture=snapshot_capture,
         batch_planner=BatchPlanner(

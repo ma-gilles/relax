@@ -164,3 +164,21 @@ def test_an_exact_pixel_plans_the_same_windows_with_and_without_optics(pixel):
         with_optics = _single_shape_windows(current_size, model_pixel=float(np.float32(pixel)), star_pixel=pixel)
         without = _single_shape_windows(current_size, model_pixel=pixel, star_pixel=pixel, optics=False)
         assert with_optics == without
+
+
+def test_the_trial_grid_uses_the_model_pixel_and_stored_offsets_the_star_pixels():
+    """relax#57: RELION's trial offsets are Angstrom from the model pixel (ml_optimiser.cpp:590, 597), divided by the
+    class's STAR pixel (getTranslationsInPixel); stored offsets convert between STAR pixels (#52)."""
+    reference, diamond = _classes(HEADER_PIXEL)
+    grid = np.array([[1.0, -2.0]])
+    stored = np.array([[0.5, 1.5], [-3.0, 2.0]])  # one stored offset per image of the half
+    for shape_class in (reference, diamond):
+        out = optics_shapes.class_kwargs(
+            {"current_translations": grid, "trans_prior_center": stored, "translation_step": 1.0}, shape_class, 2
+        )
+        assert out["current_translations"] == pytest.approx(grid * HEADER_PIXEL / shape_class.pixel_size, rel=1e-15)
+        assert out["translation_step"] == pytest.approx(HEADER_PIXEL / shape_class.pixel_size, rel=1e-15)
+        expected = stored[shape_class.image_indices] * STAR_PIXEL / shape_class.pixel_size
+        assert out["trans_prior_center"] == pytest.approx(expected, rel=1e-15)
+    exact, _ = _classes(None)
+    assert exact.trial_grid_factor() == exact.translation_factor == 1.0

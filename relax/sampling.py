@@ -780,8 +780,13 @@ def relion_device_projection_rotations(source: DevicePass1Source, rows, scale: f
     for the double source).
     """
 
-    from relax.relion.optics_aberrations import projection_rotations, relion_projection_left_matrix
+    from relax.relion.optics_aberrations import (
+        projection_rotations,
+        relion_projection_left_matrix,
+        relion_projection_optics,
+    )
 
+    scale, magnification = relion_projection_optics(scale, magnification)
     if scale == 1.0 and magnification is None:
         return rows
     if source.use_float64:
@@ -812,8 +817,9 @@ def project_rows(rows, scale: float, magnification=None, *, device_source=None, 
     Exactly one is given. Unprojected images keep ``rows``.
     """
 
-    from relax.relion.optics_aberrations import projection_rotations
+    from relax.relion.optics_aberrations import projection_rotations, relion_projection_optics
 
+    scale, magnification = relion_projection_optics(scale, magnification)
     if rows is None or (scale == 1.0 and magnification is None):
         return rows
     if (device_source is None) == (host_rows is None):

@@ -195,8 +195,10 @@ def project_pass2_rotations(
     (images on another grid or magnified).
     """
 
+    from relax.relion.optics_aberrations import relion_projection_optics
     from relax.sampling import get_oversampled_rotation_grid_from_samples, project_rows
 
+    scale, magnification = relion_projection_optics(scale, magnification)
     if scale == 1.0 and magnification is None:
         return coarse_rotations, fine_rotations, fine_mstep_rotations
     n_coarse = int(np.shape(coarse_rotations)[0])

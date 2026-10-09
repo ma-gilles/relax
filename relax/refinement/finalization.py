@@ -497,6 +497,7 @@ def run_final_all_data(
                 ),
                 symmetry=options.symmetry.point_group,
                 dtype=scoring_dtype,
+                projection_scale=ctx.relion_projection_scale,
             )
             scoring_half = HalfScoringData(
                 particles=half,

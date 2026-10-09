@@ -743,7 +743,7 @@ def _score_half_dense_one_shape(
                 magnification=magnification,
                 em_kwargs={
                     **em_kwargs,
-                    **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
+                    **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale, magnification),
                 },
             )
             k_class_result = firstiter.result
@@ -819,6 +819,8 @@ def _score_half_dense_one_shape(
                 "RELAX_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
                 "custom CUDA is unsupported for non-C1 symmetry"
             )
+        # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
+        magnification = dataset_projection_magnification(half.particles.dataset)
         firstiter = _score_kclass_firstiter_cc_pass2(
             half,
             sampling,
@@ -826,12 +828,11 @@ def _score_half_dense_one_shape(
             batching,
             variant,
             execution,
-            # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
             projection_scale=optics.projection_scale,
-            magnification=dataset_projection_magnification(half.particles.dataset),
+            magnification=magnification,
             em_kwargs={
                 **em_kwargs,
-                **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
+                **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale, magnification),
             },
         )
         k1_adaptive_result = firstiter.result
@@ -1633,9 +1634,15 @@ def _score_half_local_one_shape(
             relion_translation_angle_scale=float(execution.relion_translation_angle_scale),
             projection_scale=float(optics.projection_scale),
             reconstruction_volume_current_size=optics.reference_current_size,
-            reconstruction_image_radius=reconstruction_image_radius(
-                optics.reference_current_size,
-                optics.projection_scale,
+            # A class on the reference grid (no reference size) keeps the engine's own bound and reads no optics.
+            reconstruction_image_radius=(
+                None
+                if optics.reference_current_size is None
+                else reconstruction_image_radius(
+                    optics.reference_current_size,
+                    optics.projection_scale,
+                    dataset_projection_magnification(half.particles.dataset),
+                )
             ),
             nyquist_column_counting=execution.nyquist_column_counting,
             wsum_current_size=sampling.wsum_current_size,
