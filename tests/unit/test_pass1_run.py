@@ -420,3 +420,72 @@ def test_the_tree_rescore_totals_add_up_over_the_batches_and_are_logged_once(cap
         log_tree_rescore_totals(totals)
     (record,) = caplog.records
     assert record.args == (6, 4, 2, 2)
+
+
+# ----------------------------------------------------------------------------- the normalized-CC route
+
+
+@pytest.fixture
+def make_cc(make):
+    """``make_cc(**request_overrides)`` -> ``(plan, args, kwargs)`` of a one-class normalized-CC pass (``--firstiter_cc``)."""
+
+    def build(**overrides):
+        plan, args, kwargs = make(
+            n_classes=1,
+            score_mode="normalized_cc",
+            return_class_best=True,
+            adaptive_fraction=1.0,
+            max_significants=1,
+            rotation_log_prior=None,
+            translation_log_prior=None,
+            **overrides,
+        )
+        return plan, args, kwargs
+
+    return build
+
+
+def test_a_cc_batch_is_prepared_with_the_correlation_image_and_no_high_resolution_power(make_cc):
+    plan, args, _ = make_cc()
+    batch = _prepared(plan, args)
+    operands = batch.operands
+    assert operands.corr_img is not None and operands.initial_diff2 is None
+    # The score's pixel weight is the correlation image times the half-spectrum weights.
+    assert_matches(
+        np.asarray(operands.pixel_weight),
+        np.asarray(operands.corr_img) * np.asarray(plan.route.operand_plan.score_half_weights),
+        rtol=1e-6,
+    )
+    shifted, pixel_weight, initial_diff2 = batch.program_inputs
+    assert shifted.dtype == np.complex64 and pixel_weight.dtype == np.float32 and initial_diff2 is None
+
+
+def test_a_cc_batch_has_the_posterior_weights_and_none_of_the_float32_route_sums(make_cc):
+    plan, args, _ = make_cc()
+    outputs = score_batch(plan, _prepared(plan, args), defer_publish=False).outputs
+    assert outputs.weights is not None and outputs.sig_mask is not None
+    assert outputs.pmax is None and outputs.sum_weight is None and outputs.significant_weight is None
+
+
+def test_a_cc_pass_never_defers_its_publish(make_cc, monkeypatch):
+    plan, _, _ = make_cc()
+    assert _loop_events(monkeypatch, plan) == [
+        ("prepare", 0), ("score", 0, False), ("publish", 0),
+        ("prepare", 3), ("score", 3, False), ("publish", 3),
+        ("prepare", 6), ("score", 6, False), ("publish", 6),
+    ]
+
+
+def test_a_cc_pass_reports_its_backend_and_derives_the_maximum_posterior_from_the_best_score(make_cc):
+    plan, _, _ = make_cc()
+    result = significance.run_pass1(plan)
+    stats = result.stats
+    assert stats.executed_coarse_backend == "exact_cc_gemm"
+    assert stats.relion_f32_sum_weight is None and stats.relion_f32_max_posterior is None
+    assert stats.class_best_log_score_per_image.shape == (1, 7) and stats.class_hard_assignments.shape == (1, 7)
+    assert (result.class_assignment == 0).all()
+    assert_matches(
+        stats.max_posterior_per_image,
+        np.exp(stats.best_log_score_per_image - stats.normalization_log_z).astype(np.float32),
+        rtol=1e-5,
+    )
