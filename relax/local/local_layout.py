@@ -18,6 +18,7 @@ from relax.helpers.orientation_priors import make_relion_translation_log_prior
 from relax.helpers.shape_buckets import coarse_bucket, power_bucket
 from relax.sampling import (
     _compute_oversampled_rotation_grid,
+    _relion_mstep_rotations_from_eulers,
     _wrapped_abs_diff_deg,
     apply_relion_rotation_perturbation_to_eulers,
     build_local_search_grid_metadata,
@@ -299,6 +300,12 @@ class LocalHypothesisLayout:
     sample_mask_bits: np.ndarray | None = None  # uint8, translation bits packed little-endian
     mstep_rotations_flat: np.ndarray | None = None
     source_eulers_flat: np.ndarray | None = None
+    # The rows are oversampled children of parents (RELION's oversampled orientations): rows and M-step rows
+    # are the host inverse matrices of ``source_eulers_flat``, and ``rotation_ids_flat`` index the fine grid.
+    oversampled_rows: bool = False
+    # Other rows were built from ``rotation_ids_flat`` on the local grid of this (healpix_order,
+    # random_perturbation, angular_sampling_deg): the builder's arguments, which a caller's grid need not repeat.
+    id_rows_source: tuple[int, float, float | None] | None = None
     symmetry: str = "C1"
     # Class3D (K>1) local searches: every image's rows repeated once per class, class-major within the
     # image (:func:`expand_local_layout_classes`); ``row_class_flat`` is each row's class. None: K=1.
@@ -905,27 +912,28 @@ def _selected_mstep_rotation_matrices(
     return np.asarray(mstep_rotations, dtype=dtype)[inverse]
 
 
-def local_layout_host_rotations(
-    rotation_ids_flat,
-    *,
-    healpix_order: int,
-    symmetry: str,
-    random_perturbation: float,
-    angular_sampling_deg: float | None,
-    mstep: bool,
-) -> np.ndarray:
-    """A layout's scoring (or, with ``mstep``, M-step) rows as float64 matrices of RELION's double angles.
+def local_layout_host_rotations(layout: LocalHypothesisLayout, *, mstep: bool) -> np.ndarray:
+    """A layout's scoring (or, with ``mstep``, M-step) rows as float64 matrices, by the rule that built them.
 
     The rows of images on another grid or magnified are composed from these and cast once
-    (:func:`relax.sampling.project_rows`); ``rotation_ids_flat`` index the local grid of
-    ``healpix_order``.
+    (:func:`relax.sampling.project_rows`). Oversampled children are the host inverse matrices of their
+    source Euler rows (:func:`relax.sampling.get_oversampled_rotation_grid_from_samples`); other rows are
+    rebuilt from ``rotation_ids_flat`` with the grid and perturbation the layout was built with
+    (``id_rows_source``), not the caller's.
     """
 
+    if layout.oversampled_rows:
+        if layout.source_eulers_flat is None:
+            raise ValueError("oversampled local rows carry no source Euler rows to rebuild them from")
+        return _relion_mstep_rotations_from_eulers(np.asarray(layout.source_eulers_flat), dtype=np.float64)
+    if layout.id_rows_source is None:
+        raise ValueError("local rows record no builder arguments to rebuild them from")
+    healpix_order, random_perturbation, angular_sampling_deg = layout.id_rows_source
     builder = _selected_mstep_rotation_matrices if mstep else _selected_rotation_matrices
     return builder(
-        rotation_ids_flat,
+        layout.rotation_ids_flat,
         None,
-        build_local_search_grid_metadata(healpix_order, symmetry=symmetry),
+        build_local_search_grid_metadata(healpix_order, symmetry=layout.symmetry),
         random_perturbation=random_perturbation,
         angular_sampling_deg=angular_sampling_deg,
         dtype=np.float64,
@@ -1181,6 +1189,16 @@ def build_local_hypothesis_layout(
         translation_log_priors=np.asarray(translation_log_priors, dtype=dtype),
         mstep_rotations_flat=mstep_rotations_flat,
         source_eulers_flat=source_eulers_flat,
+        oversampled_rows=int(local_parent_oversampling_order) > 0,
+        id_rows_source=(
+            None
+            if int(local_parent_oversampling_order) > 0
+            else (
+                int(healpix_order),
+                float(rotation_grid_random_perturbation),
+                None if rotation_grid_angular_sampling_deg is None else float(rotation_grid_angular_sampling_deg),
+            )
+        ),
         rotation_posterior_ids_flat=rotation_posterior_ids_flat_override,
         symmetry=symmetry,
     )
@@ -1425,6 +1443,7 @@ def build_local_adaptive_pass2_hypothesis_layout(
 
     fine_metadata = build_local_search_grid_metadata(fine_healpix_order, symmetry=symmetry)
     return LocalHypothesisLayout(
+        oversampled_rows=True,
         n_global_rotations=rotation_grid_size(parent_healpix_order, symmetry),
         n_pixels=int(fine_metadata["n_pixels"]),
         n_psi=int(fine_metadata["n_psi"]),
@@ -1688,6 +1707,7 @@ def build_pass2_hypothesis_layout(
     ))
 
     return LocalHypothesisLayout(
+        oversampled_rows=True,
         n_global_rotations=int(n_coarse_rotations),
         n_pixels=int(n_pixels),
         n_psi=int(rotation_grid_n_in_planes(int(nside_level))),

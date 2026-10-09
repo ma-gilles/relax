@@ -234,14 +234,7 @@ def _run_local_search_iteration(
         # matrices are transformed; priors and reported poses are not. The local rows are host-built
         # rows, composed from their float64 matrices (RELION's generateEulerMatrices rule).
         def host_rows(mstep: bool):
-            return lambda: local_layout_host_rotations(
-                local_layout.rotation_ids_flat,
-                healpix_order=grid.healpix_order,
-                symmetry=grid.symmetry,
-                random_perturbation=grid.rotation_grid_random_perturbation,
-                angular_sampling_deg=grid.rotation_grid_angular_sampling_deg,
-                mstep=mstep,
-            )
+            return lambda: local_layout_host_rotations(local_layout, mstep=mstep)
 
         local_layout = dataclasses.replace(
             local_layout,
