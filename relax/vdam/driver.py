@@ -490,7 +490,7 @@ def run_native_initial_model(
             )
             for rows in (shape_class_rows or [None])
         ]
-        if any(getattr(d, "tilt_series_flag", False) for d in datasets):
+        if any(d.tilt_series_flag for d in datasets):
             raise NotImplementedError("native InitialModel reads RELION 5 2D stacks (--ios), not tilt-series STAR files")
         # Optics groups on several image shapes: one dataset per shape (RELION S3b).
         dataset = image_dataset = (
@@ -499,7 +499,7 @@ def run_native_initial_model(
         if shape_class_rows is not None:
             _refuse_unsupported_multi_shape(opts, datasets)
         n_particles = int(dataset.n_images)
-    for class_dataset in getattr(image_dataset, "datasets", (image_dataset,)):
+    for class_dataset in shape_datasets(image_dataset):
         assert_reads_from_scratch(class_dataset, particle_scratch)
         estep_setup.configure_relion_image_mask(class_dataset, opts)
     profile.record("dataset_load")

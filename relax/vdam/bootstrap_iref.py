@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.relion import initial_model_io
 from relax.relion.initial_model_io import _experiment_read_order
 from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2, relion_startup_positions
@@ -306,7 +307,7 @@ def postprocess_bootstrap_iref(
 def _group_pixel_sizes(dataset, optics_group_by_particle) -> np.ndarray | None:
     """Each optics group's image pixel size for a dataset on several image shapes, else None."""
 
-    if getattr(dataset, "datasets", None) is None:
+    if not isinstance(dataset, MultiShapeDataset):
         return None
     sizes = np.zeros(int(np.max(optics_group_by_particle)) + 1)
     for class_dataset, rows in zip(dataset.datasets, dataset.rows):
