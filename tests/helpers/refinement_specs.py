@@ -179,7 +179,6 @@ def local_half_owners(**values):
             trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
             current_sigma_offset_angstrom=values.pop("current_sigma_offset_angstrom"),
             translation_search_base=values.pop("translation_search_base"),
-            local_search_translation_prior_mode=values.pop("local_search_translation_prior_mode"),
             replay_prior_translations=values.pop("replay_prior_translations"),
         ),
         half_scoring.LocalBatchPolicy(

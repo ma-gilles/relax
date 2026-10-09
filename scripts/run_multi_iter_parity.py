@@ -1328,12 +1328,6 @@ def main():
         help="Control exact-local profile collection. 'auto' profiles only when intermediates are enabled.",
     )
     parser.add_argument(
-        "--local_search_translation_prior_mode",
-        choices=["perturbed", "coarse"],
-        default="coarse",
-        help="Evaluate local-search translation priors on the perturbed candidate grid or the unperturbed coarse RELION grid.",
-    )
-    parser.add_argument(
         "--firstiter-cc-mode",
         choices=["auto", "on", "off"],
         default="auto",
@@ -2408,7 +2402,6 @@ def main():
         print(f"  GT volume requested but not found: {args.gt_volume}")
 
     print(f"  Local-search profile: {args.local_search_profile}")
-    print(f"  Local translation prior mode: {args.local_search_translation_prior_mode}")
     print(f"  Emulate RELION iter-1 CC: {do_firstiter_cc}")
     print(f"  RELION ini_high: {relion_ini_high}")
 
@@ -2479,7 +2472,6 @@ def main():
         ),
         local_search=LocalSearchOptions(
             local_search_profile_mode=args.local_search_profile,
-            local_search_translation_prior_mode=args.local_search_translation_prior_mode,
         ),
         symmetry=SymmetryOptions(point_group=point_group),
     )
@@ -2575,7 +2567,6 @@ def main():
         "half2_indices": half2_indices,
         "max_significants": np.int32(max_significants),
         "local_search_profile_mode": np.array(args.local_search_profile),
-        "local_search_translation_prior_mode": np.array(args.local_search_translation_prior_mode),
         "firstiter_cc_mode": np.array(args.firstiter_cc_mode),
         "firstiter_cc_oracle_enabled": np.bool_(oracle_firstiter_cc),
         "firstiter_cc_effective": np.bool_(do_firstiter_cc),

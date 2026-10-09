@@ -1123,7 +1123,6 @@ class LocalPriorSpec:
     trans_prior_center_for_engine: object
     current_sigma_offset_angstrom: float
     translation_search_base: object
-    local_search_translation_prior_mode: str
     replay_prior_translations: object | None = None
     # Class3D: the class log priors. A local search's weights carry no class prior, as RELION's, but a
     # class at -inf (pdf_class == 0) is left out of the search.
@@ -1588,32 +1587,27 @@ def _score_half_local_one_shape(
     # end when either flag requests it; default stays float32 to match
     # RELION's accelerated-GPU precision.
     parent_local_layout_dtype = execution.precision.rotation_real_dtype
-    if priors.local_search_translation_prior_mode == "coarse":
-        translation_prior_reference_translations, prior_grid_source, prior_grid_shape_mismatch = (
-            _local_translation_prior_reference_translations(
-                current_translations=sampling.translations,
-                base_translations=sampling.base_translations,
-                replay_prior_translations=priors.replay_prior_translations,
-                dtype=parent_local_layout_dtype,
-            )
+    translation_prior_reference_translations, prior_grid_source, prior_grid_shape_mismatch = (
+        _local_translation_prior_reference_translations(
+            current_translations=sampling.translations,
+            base_translations=sampling.base_translations,
+            replay_prior_translations=priors.replay_prior_translations,
+            dtype=parent_local_layout_dtype,
         )
-        if prior_grid_shape_mismatch:
-            logger.warning(
-                "RELION mode: local translation prior grid from replay/base did not match scoring grid; "
-                "using %s grid shape=%s for scoring grid shape=%s",
-                prior_grid_source,
-                translation_prior_reference_translations.shape,
-                sampling.translations.shape,
-            )
-        logger.info(
-            "RELION mode: local translation prior uses coarse %s grid (n=%d) while scoring perturbed translations",
+    )
+    if prior_grid_shape_mismatch:
+        logger.warning(
+            "RELION mode: local translation prior grid from replay/base did not match scoring grid; "
+            "using %s grid shape=%s for scoring grid shape=%s",
             prior_grid_source,
-            translation_prior_reference_translations.shape[0],
+            translation_prior_reference_translations.shape,
+            sampling.translations.shape,
         )
-    else:
-        translation_prior_reference_translations = np.asarray(
-            sampling.translations, dtype=parent_local_layout_dtype
-        )
+    logger.info(
+        "RELION mode: local translation prior uses coarse %s grid (n=%d) while scoring perturbed translations",
+        prior_grid_source,
+        translation_prior_reference_translations.shape[0],
+    )
     if int(sampling.search.oversampling_order) > 0:
         logger.info(
             "RELION local search: expanding translations by oversampling_order=%d (coarse n=%d -> fine n=%d)",

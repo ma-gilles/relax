@@ -212,7 +212,7 @@ def _local_one_shape(monkeypatch, *, parent_probe):
         translation_search_base=None, max_significants=None,
         iteration=3, local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=1,
-        diagnostic_score_only=False, local_search_translation_prior_mode="coarse", replay_prior_translations=None,
+        diagnostic_score_only=False, replay_prior_translations=None,
         collect_local_search_profile=False,
         local_profile_history=[],
     )

@@ -414,7 +414,6 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         trans_prior_center_for_engine=np.zeros((5, 2)),
         current_sigma_offset_angstrom=1.0,
         translation_search_base=np.zeros((5, 2)),
-        local_search_translation_prior_mode="current",
         replay_prior_translations=None,
         max_significants=-1,
         iteration=0,

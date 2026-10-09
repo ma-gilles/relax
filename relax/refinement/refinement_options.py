@@ -328,7 +328,6 @@ class LocalSearchOptions:
     # RELION --sigma_ang in degrees: local angular searches from iteration 1 (None: global until the order above).
     sigma_ang_deg: float | None = None
     local_search_profile_mode: Literal["auto", "on", "off"] = "auto"
-    local_search_translation_prior_mode: str = "coarse"
     # A probe run of the first local-search iteration: it returns after that iteration's expectation, with no
     # reconstruction (RefinementResult.profile_stop). ``..._profile`` also collects the search's profile;
     # ``..._score_only`` scores without accumulating. They change what the run does, so they are run options,

@@ -974,7 +974,6 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=None,
         local_parent_oversampling_order=0,
-        local_search_translation_prior_mode="current",
         replay_prior_translations=None,
         collect_local_search_profile=False,
         diagnostic_score_only=False,

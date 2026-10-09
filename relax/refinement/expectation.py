@@ -886,7 +886,6 @@ def score_numbered_half(
                 trans_prior_center_for_engine=trans_prior_center_for_engine,
                 current_sigma_offset_angstrom=half.sigma_offset_angstrom,
                 translation_search_base=translation_search_base,
-                local_search_translation_prior_mode=(options.local_search.local_search_translation_prior_mode),
                 replay_prior_translations=replay_prior_translations,
                 class_log_priors=class_log_priors if k_class_enabled else None,
             ),

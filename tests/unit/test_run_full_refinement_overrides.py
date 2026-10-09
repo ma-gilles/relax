@@ -970,7 +970,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
         translation_search_base=None, max_significants=None,
         iteration=3, local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=0,
-        diagnostic_score_only=score_only, local_search_translation_prior_mode="coarse",
+        diagnostic_score_only=score_only,
         replay_prior_translations=None, collect_local_search_profile=False,
         local_profile_history=[],
     )
