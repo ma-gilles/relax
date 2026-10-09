@@ -204,8 +204,13 @@ def prepare_optics(
     )
 
 
-def make_shape_classes(datasets_and_indices, *, model_box_size, ref_pixel):
+def make_shape_classes(datasets_and_indices, *, model_box_size, ref_pixel, model_pixel=None):
     """``ShapeClass`` records from ``(dataset, half positions)`` pairs.
+
+    ``model_pixel`` is RELION's model pixel size (the reference map's header value, ml_model.cpp:944-962;
+    None: ``ref_pixel``): each group's scale and current-size remap read it
+    (``remap_sizes``, ml_optimiser.cpp:6917-6923). The translations keep ``ref_pixel``, the first optics
+    group's pixel, as the stored offsets do.
 
     A class at scale ``s >= sqrt(2)`` is refused. There, RELION's fine kernels project
     a moved pixel inside the model sphere for the image rows beyond it
@@ -217,7 +222,9 @@ def make_shape_classes(datasets_and_indices, *, model_box_size, ref_pixel):
     for dataset, indices in datasets_and_indices:
         box_size = int(dataset.image_shape[0])
         pixel = float(dataset.voxel_size)
-        scale = optics_scale.scale_difference(box_size, pixel, model_box_size, ref_pixel)
+        scale = optics_scale.scale_difference(
+            box_size, pixel, model_box_size, ref_pixel if model_pixel is None else model_pixel
+        )
         if scale >= math.sqrt(2.0):
             raise NotImplementedError(
                 f"an optics group of {box_size} px at {pixel} A spans {scale:.3f} times the reference field of view "
@@ -284,9 +291,11 @@ class MultiShapeDataset:
     they cover every row once. The reference geometry (``image_shape``,
     ``volume_shape``, ``voxel_size``) is that of ``datasets[0]``, the class of the first
     optics group (RELION's model ``ori_size`` and pixel size, ml_model.cpp:1090-1091).
+    ``model_pixel_size`` is RELION's model pixel size when a reference map sets it
+    (:meth:`with_model_pixel_size`); the halves' shape classes scale against it.
     """
 
-    def __init__(self, datasets, rows):
+    def __init__(self, datasets, rows, model_pixel_size=None):
         self.datasets = tuple(datasets)
         self.rows = tuple(np.asarray(r, dtype=np.int64) for r in rows)
         if len(self.datasets) != len(self.rows) or len(self.datasets) < 2:
@@ -306,9 +315,15 @@ class MultiShapeDataset:
         self.volume_shape = tuple(int(size) for size in ref.volume_shape)
         self.voxel_size = float(ref.voxel_size)
         self.grid_size = self.image_shape[0]
+        self.model_pixel_size = self.voxel_size if model_pixel_size is None else float(model_pixel_size)
 
     def __getattr__(self, name):
         raise AttributeError(f"a dataset with several image shapes has no single {name!r}; use its classes")
+
+    def with_model_pixel_size(self, model_pixel_size):
+        """The same particles scaled against RELION's model pixel size (the reference map header's)."""
+
+        return MultiShapeDataset(self.datasets, self.rows, model_pixel_size=model_pixel_size)
 
     def subset(self, rows):
         """The ``MultiShapeHalf`` of these particle rows, in this order."""
@@ -319,7 +334,9 @@ class MultiShapeDataset:
             positions = np.flatnonzero(self._class_of_row[rows] == c)
             if positions.size:
                 pairs.append((dataset.subset(self._local_of_row[rows[positions]]), positions))
-        classes = make_shape_classes(pairs, model_box_size=self.grid_size, ref_pixel=self.voxel_size)
+        classes = make_shape_classes(
+            pairs, model_box_size=self.grid_size, ref_pixel=self.voxel_size, model_pixel=self.model_pixel_size
+        )
         return MultiShapeHalf(
             classes,
             image_shape=self.image_shape,

@@ -35,7 +35,8 @@ class StartupReferences:
     real-space maps handed to the first projector (float64) when that handoff is on, else None.
     ``reference_real`` (K=1) and
     ``class_references_real`` (Class3D, a list): the float64 real maps of RELION's start-up data-vs-prior.
-    ``model_pixel_size``: the K=1 map header's pixel size (None otherwise).
+    ``model_pixel_size``: the reference maps' header pixel size, RELION's model pixel size (None from a frozen
+    boundary).
     """
 
     fourier: np.ndarray
@@ -216,6 +217,7 @@ def load_class_references(
         prior_source=per_class_ft[0],
         real_for_projector=np.stack(per_class_real_for_projector, axis=0) if real_for_projector else None,
         class_references_real=class_references_real,
+        model_pixel_size=model_pixel_size,
     )
 
 

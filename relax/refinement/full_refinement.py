@@ -600,9 +600,6 @@ def main(command=None):
                 f"(RELION's --iter); the run files are already at iteration {resume_snapshot.relion_iteration}"
             )
 
-    ds_half1 = ds.subset(particle_layout.half1_rows)
-    ds_half2 = ds.subset(particle_layout.half2_rows)
-    logger.info("Half-sets: %d + %d images", ds_half1.n_units, ds_half2.n_units)
     if frozen_boundary is not None:
         frozen_boundary_cli.validate_particle_half_inputs(
             frozen_boundary,
@@ -738,6 +735,15 @@ def main(command=None):
             complex_dtype=_init_volume_complex_dtype,
             log=logger,
         )
+        relion_model_pixel_size = references.model_pixel_size
+
+    # RELION remaps every optics group against its model pixel size, the reference header's
+    # (ml_model.cpp:944-962, ml_optimiser.cpp:6917-6923): several image shapes scale their classes by it.
+    if shape_class_rows is not None and relion_model_pixel_size is not None:
+        ds = ds.with_model_pixel_size(relion_model_pixel_size)
+    ds_half1 = ds.subset(particle_layout.half1_rows)
+    ds_half2 = ds.subset(particle_layout.half2_rows)
+    logger.info("Half-sets: %d + %d images", ds_half1.n_units, ds_half2.n_units)
 
     # ---- Set up rotation and translation grids ----
     from relax.sampling import relion_base_translation_grid, rotation_grid_size
