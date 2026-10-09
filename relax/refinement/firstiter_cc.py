@@ -16,7 +16,7 @@ from relax.helpers.batch_planning import (
     _safe_dense_k_class_rotation_block_size,
     _safe_firstiter_cc_image_batch_size,
 )
-from relax.helpers.oversampling import build_adaptive_pass2_grids
+from relax.helpers.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 from relax.sampling import (
     apply_relion_translation_perturbation,
 )
@@ -50,9 +50,12 @@ class FirstIterCCGridSpec:
     random_perturbation: float
     coarse_rotation_ids: object | None = None
     symmetry: str = "C1"
-    # Maps the grids' rotation matrices to the projection matrices of images on another grid
-    # (``half_scoring._projection_rotations``); the returned parent maps are unchanged.
-    projection_rotations: object | None = None
+    # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag): the grids' rows
+    # become projection matrices by RELION's per-path rules (oversampling.project_pass2_rotations);
+    # ``effective_device_source`` is the device pass-1 source of ``effective_rotations`` (None: host rows).
+    projection_scale: float = 1.0
+    magnification: object | None = None
+    effective_device_source: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -131,12 +134,20 @@ def _score_kclass_firstiter_cc_pass2(
         ),
         symmetry=grid.symmetry,
     )
-    if grid.projection_rotations is not None:
-        coarse_rot, fine_rot, fine_mstep_rot = (
-            grid.projection_rotations(coarse_rot),
-            grid.projection_rotations(fine_rot),
-            grid.projection_rotations(fine_mstep_rot),
-        )
+    coarse_rot, fine_rot, fine_mstep_rot = project_pass2_rotations(
+        coarse_rot,
+        fine_rot,
+        fine_mstep_rot,
+        scale=float(grid.projection_scale),
+        magnification=grid.magnification,
+        coarse_healpix_order=int(grid.current_healpix_order),
+        adaptive_oversampling=adaptive_os_local,
+        random_perturbation=grid.random_perturbation,
+        coarse_rotation_ids=grid.coarse_rotation_ids,
+        symmetry=grid.symmetry,
+        coarse_device_source=grid.effective_device_source,
+        grid_device_source=grid.effective_device_source,
+    )
     coarse_translation_phase_source = apply_relion_translation_perturbation(
         np.asarray(grid.base_translations, dtype=np.float64),
         float(grid.random_perturbation),

@@ -18,14 +18,14 @@ from relax.helpers.types import NoiseStats, RelionStats
 from relax.local.local_layout import (
     build_local_hypothesis_layout,
     expand_local_layout_classes,
+    local_layout_host_rotations,
     restrict_local_layout_classes,
 )
 from relax.relion.optics_aberrations import (
     dataset_projection_magnification,
-    projection_rotations,
     reported_rotations,
 )
-from relax.sampling import build_local_search_grid_metadata
+from relax.sampling import build_local_search_grid_metadata, project_rows
 from relax.sparse_pass2.engine_record import record_pass_engine
 from relax.sparse_pass2.resident_local_pass2 import compute_local_search_resident
 
@@ -231,12 +231,33 @@ def _run_local_search_iteration(
     if kernel.projection_scale != 1.0 or magnification is not None:
         # Images on another grid than the reference (RELION applyScaleDifference) or with an
         # anisotropic magnification (applyAnisoMag): only the projection and backprojection
-        # matrices are transformed; priors and reported poses are not.
+        # matrices are transformed; priors and reported poses are not. The local rows are host-built
+        # rows, composed from their float64 matrices (RELION's generateEulerMatrices rule).
+        def host_rows(mstep: bool):
+            return lambda: local_layout_host_rotations(
+                local_layout.rotation_ids_flat,
+                healpix_order=grid.healpix_order,
+                symmetry=grid.symmetry,
+                random_perturbation=grid.rotation_grid_random_perturbation,
+                angular_sampling_deg=grid.rotation_grid_angular_sampling_deg,
+                mstep=mstep,
+            )
+
         local_layout = dataclasses.replace(
             local_layout,
-            rotations_flat=projection_rotations(local_layout.rotations_flat, kernel.projection_scale, magnification),
-            mstep_rotations_flat=projection_rotations(
-                local_layout.mstep_rotations_flat, kernel.projection_scale, magnification
+            rotations_flat=project_rows(
+                local_layout.rotations_flat,
+                kernel.projection_scale,
+                magnification,
+                host_rows=host_rows(False),
+                what="local rows",
+            ),
+            mstep_rotations_flat=project_rows(
+                local_layout.mstep_rotations_flat,
+                kernel.projection_scale,
+                magnification,
+                host_rows=host_rows(True),
+                what="local M-step rows",
             ),
         )
 

@@ -38,7 +38,7 @@ from relax.diagnostics.local_debug import log_local_adaptive_support, log_local_
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-from relax.helpers.oversampling import AdaptivePass2Grids, prepare_adaptive_pass2_grids
+from relax.helpers.oversampling import AdaptivePass2Grids, prepare_adaptive_pass2_grids, project_pass2_rotations
 from relax.local.local_layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
@@ -75,9 +75,10 @@ from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
 )
-from relax.relion.optics_aberrations import dataset_projection_magnification, projection_rotations, reported_rotations
+from relax.relion.optics_aberrations import dataset_projection_magnification, reported_rotations
 from relax.sampling import (
     build_local_search_grid_metadata,
+    project_rows,
     relion_angular_sampling_deg,
 )
 
@@ -179,6 +180,25 @@ class DenseSamplingSpec:
     coarse_rotation_ids: object | None = None
     coarse_scoring_rotations: object | None = None
     symmetry: str = "C1"
+    # RELION's device-built pass-1 source of ``effective_rotations`` / ``coarse_scoring_rotations``
+    # (None: host-built rows); images on another grid or magnified rebuild their rows from it.
+    effective_device_source: object | None = None
+    coarse_scoring_device_source: object | None = None
+
+    def rotation_source(self, adaptive_oversampling: int, symmetry: str, *, coarse_scoring: bool = False) -> dict:
+        """Provenance of :meth:`pass2_grids` rows for :func:`project_pass2_rotations`; ``coarse_scoring``
+        when the scored coarse rows are ``coarse_scoring_rotations``."""
+        return {
+            "coarse_healpix_order": self.current_healpix_order,
+            "adaptive_oversampling": adaptive_oversampling,
+            "random_perturbation": self.random_perturbation,
+            "coarse_rotation_ids": self.coarse_rotation_ids,
+            "symmetry": symmetry,
+            "coarse_device_source": (
+                self.coarse_scoring_device_source if coarse_scoring else self.effective_device_source
+            ),
+            "grid_device_source": self.effective_device_source,
+        }
 
     def pass2_grids(self, *, adaptive_oversampling: int, symmetry: str) -> AdaptivePass2Grids:
         """The adaptive pass-1 and pass-2 trial grids of these sampling settings."""
@@ -322,26 +342,29 @@ def _score_adaptive_kclass_dense(
     common_kwargs = _adaptive_engine_common_kwargs(pass2_grids, priors, batching, sampling, execution)
     # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag): the
     # projection and backprojection matrices carry it.
-    projected, grid_kwargs = engine_projection_inputs(
+    magnification, grid_kwargs = engine_projection_inputs(
         half.particles.dataset,
         scale=optics.projection_scale,
         reference_current_size=optics.reference_current_size,
-        rotations={
-            "coarse": pass2_grids.coarse_rotations,
-            "fine": pass2_grids.fine_rotations,
-            "mstep": common_kwargs["fine_mstep_rotations_override"],
-        },
+    )
+    projected_coarse, projected_fine, projected_mstep = project_pass2_rotations(
+        pass2_grids.coarse_rotations,
+        pass2_grids.fine_rotations,
+        common_kwargs["fine_mstep_rotations_override"],
+        scale=optics.projection_scale,
+        magnification=magnification,
+        **sampling.rotation_source(adaptive_os, symmetry),
     )
     adaptive_em_kwargs.update(grid_kwargs)
-    common_kwargs["fine_mstep_rotations_override"] = projected["mstep"]
+    common_kwargs["fine_mstep_rotations_override"] = projected_mstep
     result = run_dense_k_class_em_adaptive(
         half.particles.dataset,
         half.reference,
         half.mean_variance,
         half.noise_variance,
-        projected["coarse"],
+        projected_coarse,
         pass2_grids.coarse_translations,
-        projected["fine"],
+        projected_fine,
         pass2_grids.fine_translations,
         pass2_grids.rotation_parent_map,
         pass2_grids.translation_parent_map,
@@ -428,11 +451,22 @@ def _score_kclass_at_given_poses(
         # The engine's squared distance is |translation - center|^2 at the zero translation.
         centers = np.broadcast_to(np.asarray(centers, dtype=np.float64), grids.image_translations.shape)
         engine_kwargs["translation_prior_centers"] = (centers - grids.image_translations).astype(pose_dtype)
-    projected, grid_kwargs = engine_projection_inputs(
+    magnification, grid_kwargs = engine_projection_inputs(
         particles.dataset,
         scale=optics.projection_scale,
         reference_current_size=optics.reference_current_size,
-        rotations={"fine": grids.rotations},
+    )
+    # The given poses are host-built rows (RELION's matrices of the stored RFLOAT angles).
+    projected_rotations = project_rows(
+        grids.rotations,
+        optics.projection_scale,
+        magnification,
+        host_rows=lambda: (
+            given_pose_grids(
+                utils.R_from_relion(eulers, degrees=True).astype(np.float64), stored, symmetry=symmetry
+            ).rotations
+        ),
+        what="given-pose rows",
     )
     engine_kwargs.update(grid_kwargs)
     logger.info(
@@ -444,9 +478,9 @@ def _score_kclass_at_given_poses(
         half.reference,
         half.mean_variance,
         half.noise_variance,
-        projected["fine"],
+        projected_rotations,
         grids.translations,
-        projected["fine"],
+        projected_rotations,
         grids.translations,
         grids.rotation_parent_map,
         grids.translation_parent_map,
@@ -552,34 +586,36 @@ def _score_adaptive_k1_dense(
         adaptive_em_kwargs.get("relion_projector_half") is not None,
     )
     common_kwargs = _adaptive_engine_common_kwargs(pass2_grids, priors, batching, sampling, execution)
-    projected, grid_kwargs = engine_projection_inputs(
+    magnification, grid_kwargs = engine_projection_inputs(
         half.particles.dataset,
         scale=optics.projection_scale,
         reference_current_size=optics.reference_current_size,
-        rotations={
-            "coarse": (
-                sampling.coarse_scoring_rotations
-                if sampling.coarse_scoring_rotations is not None
-                and adaptive_os == 0
-                and execution.relion_x_half_mstep
-                and variant.firstiter_score_mode_this_iter == "gaussian"
-                and not execution.diagnostic_float64_pass2
-                else pass2_grids.coarse_rotations
-            ),
-            "fine": pass2_grids.fine_rotations,
-            "mstep": common_kwargs["fine_mstep_rotations_override"],
-        },
+    )
+    coarse_scoring = (
+        sampling.coarse_scoring_rotations is not None
+        and adaptive_os == 0
+        and execution.relion_x_half_mstep
+        and variant.firstiter_score_mode_this_iter == "gaussian"
+        and not execution.diagnostic_float64_pass2
+    )
+    projected_coarse, projected_fine, projected_mstep = project_pass2_rotations(
+        sampling.coarse_scoring_rotations if coarse_scoring else pass2_grids.coarse_rotations,
+        pass2_grids.fine_rotations,
+        common_kwargs["fine_mstep_rotations_override"],
+        scale=optics.projection_scale,
+        magnification=magnification,
+        **sampling.rotation_source(adaptive_os, symmetry, coarse_scoring=coarse_scoring),
     )
     adaptive_em_kwargs.update(grid_kwargs)
-    common_kwargs["fine_mstep_rotations_override"] = projected["mstep"]
+    common_kwargs["fine_mstep_rotations_override"] = projected_mstep
     k1_adaptive_result = run_dense_k_class_em_adaptive(
         half.particles.dataset,
         means_single,
         half.mean_variance,
         half.noise_variance,
-        projected["coarse"],
+        projected_coarse,
         pass2_grids.coarse_translations,
-        projected["fine"],
+        projected_fine,
         pass2_grids.fine_translations,
         pass2_grids.rotation_parent_map,
         pass2_grids.translation_parent_map,
@@ -747,6 +783,7 @@ def _score_half_dense_one_shape(
                 translation_step=sampling.translation_step,
                 random_perturbation=sampling.random_perturbation,
                 symmetry=symmetry,
+                effective_device_source=sampling.effective_device_source,
         )
         firstiter_policy = FirstIterCCPolicy(
                 disc_type=execution.disc_type,
@@ -805,11 +842,8 @@ def _score_half_dense_one_shape(
                 replace(
                     firstiter_grid,
                     coarse_rotation_ids=sampling.coarse_rotation_ids,
-                    projection_rotations=(
-                        None
-                        if magnification is None and optics.projection_scale == 1.0
-                        else lambda rotations: projection_rotations(rotations, optics.projection_scale, magnification)
-                    ),
+                    projection_scale=optics.projection_scale,
+                    magnification=magnification,
                 ),
                 firstiter_policy,
                 replace(
@@ -900,11 +934,8 @@ def _score_half_dense_one_shape(
             replace(
                 firstiter_grid,
                 # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
-                projection_rotations=lambda rotations: projection_rotations(
-                    rotations,
-                    optics.projection_scale,
-                    dataset_projection_magnification(half.particles.dataset),
-                ),
+                projection_scale=optics.projection_scale,
+                magnification=dataset_projection_magnification(half.particles.dataset),
             ),
             firstiter_policy,
             replace(

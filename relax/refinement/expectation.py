@@ -465,7 +465,7 @@ def prepare_numbered_expectation(
     oversampling_order: int,
     translation_step: float,
     random_perturbation: float,
-    adaptive_pass1_rotations,
+    adaptive_pass1,
     coarse_rotation_ids,
     coarse_angular_step_deg,
     options: RefinementOptions,
@@ -491,12 +491,11 @@ def prepare_numbered_expectation(
             local_profile_history=local_profile_history,
         )
     else:
+        adaptive_pass1_rotations, adaptive_pass1_source = (None, None) if adaptive_pass1 is None else adaptive_pass1
+        effective_from_pass1 = use_adaptive and adaptive_pass1_rotations is not None
         numbered_sampling = DenseSamplingSpec(
-            effective_rotations=(
-                adaptive_pass1_rotations
-                if use_adaptive and adaptive_pass1_rotations is not None
-                else grid.rotations
-            ),
+            effective_rotations=adaptive_pass1_rotations if effective_from_pass1 else grid.rotations,
+            effective_device_source=adaptive_pass1_source if effective_from_pass1 else None,
             current_translations=grid.translations,
             base_translations=base_translations,
             current_healpix_order=current_healpix_order,
@@ -509,6 +508,7 @@ def prepare_numbered_expectation(
             wsum_current_size_for_engine=windows.wsum_size_for_engine,
             coarse_rotation_ids=coarse_rotation_ids,
             coarse_scoring_rotations=adaptive_pass1_rotations if int(oversampling_order) == 0 else None,
+            coarse_scoring_device_source=adaptive_pass1_source if int(oversampling_order) == 0 else None,
             coarse_angular_step_deg=coarse_angular_step_deg,
             symmetry=options.symmetry.point_group,
         )

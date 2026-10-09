@@ -26,7 +26,7 @@ def preparation_inputs(*, local=False, adaptive=False):
         base_translations=phase.sampling.base_translations,
         current_healpix_order=2, oversampling_order=int(adaptive),
         translation_step=np.float64(.75), random_perturbation=np.float64(.125),
-        adaptive_pass1_rotations=None, coarse_rotation_ids=np.arange(4, dtype=np.int64),
+        adaptive_pass1=None, coarse_rotation_ids=np.arange(4, dtype=np.int64),
         coarse_angular_step_deg=np.float64(15.0), options=scoring['options'],
         iteration=5, numbered_relion_iteration=17,
         collect_local_search_profile=True, local_profile_history=[], observer=scoring['observer'],
@@ -40,7 +40,8 @@ def preparation_inputs(*, local=False, adaptive=False):
 def test_dense_phase_keeps_canonical_pose_rows_separate_from_device_coarse_rotations(adaptive, order, device_grid):
     grid, windows, inputs = preparation_inputs(adaptive=adaptive)
     device = np.full_like(grid.rotations, .125) if device_grid else None
-    inputs.update(oversampling_order=order, adaptive_pass1_rotations=device)
+    source = object()
+    inputs.update(oversampling_order=order, adaptive_pass1=None if device is None else (device, source))
     # Dense preparation does not consume local debug controls/history.
     inputs['options'] = SimpleNamespace(adaptive=SimpleNamespace(coarse_engine='gemm_dense'),
                                         symmetry=SimpleNamespace(point_group='D2'))
@@ -50,6 +51,10 @@ def test_dense_phase_keeps_canonical_pose_rows_separate_from_device_coarse_rotat
     assert grid.rotation_eulers.dtype == np.float64
     assert phase.sampling.effective_rotations is (device if adaptive and device is not None else grid.rotations)
     assert phase.sampling.coarse_scoring_rotations is (device if order == 0 else None)
+    # Each set of device rows travels with its source (images on another grid rebuild their rows from it).
+    from_device = adaptive and device is not None
+    assert phase.sampling.effective_device_source is (source if from_device else None)
+    assert phase.sampling.coarse_scoring_device_source is (source if order == 0 and device is not None else None)
     assert phase.sampling.current_translations is grid.translations
     assert phase.sampling.base_translations is inputs['base_translations']
     assert phase.sampling.coarse_rotation_ids is inputs['coarse_rotation_ids']

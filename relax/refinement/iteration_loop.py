@@ -808,7 +808,7 @@ def refine_single_volume(
         )
 
         # --- Local angular search: each image searches around its previous exact rotation at the current order ---
-        adaptive_pass1_rotations = None
+        adaptive_pass1 = None
         if state.do_local_search:
             # A half without poses is centred at Euler angles (0, 0, 0) with zero offsets.
             for half in halves:
@@ -840,7 +840,7 @@ def refine_single_volume(
         )
         coarse_grids = replace(coarse_grids, translations=trial_grid.translations)
         if builds_coarse_pass1_rotations(state, options, first_iteration, use_local=use_local):
-            adaptive_pass1_rotations = coarse_pass1_rotations(
+            adaptive_pass1 = coarse_pass1_rotations(
                 coarse_grids.rotation_grid, random_perturbation, options,
                 perturbation_order=perturbation_order, dtype=scoring_dtype, log=logger,
             )
@@ -913,7 +913,7 @@ def refine_single_volume(
             use_adaptive=use_adaptive, base_translations=coarse_grids.base_translations,
             current_healpix_order=coarse_grids.rotation_grid.healpix_order,
             oversampling_order=state.adaptive_oversampling, translation_step=state.translation_step,
-            random_perturbation=random_perturbation, adaptive_pass1_rotations=adaptive_pass1_rotations,
+            random_perturbation=random_perturbation, adaptive_pass1=adaptive_pass1,
             coarse_rotation_ids=coarse_rotation_ids_for_scoring,
             coarse_angular_step_deg=None if coarse_image_plan is None else coarse_image_plan.angular_step_deg,
             options=options, iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,

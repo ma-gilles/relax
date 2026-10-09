@@ -28,7 +28,6 @@ from relax.refinement import (
 )
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
-from relax.relion import optics_aberrations
 
 
 def _dense_owners(**values):
@@ -736,8 +735,14 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
         captured.update(kwargs)
         return "result"
 
+    def fake_projection(coarse, fine, mstep, **kwargs):
+        captured["projection"] = kwargs
+        return coarse / 2.0, fine / 2.0, mstep / 2.0
+
     monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(firstiter_cc, "project_pass2_rotations", fake_projection)
     monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
+    source = object()
 
     firstiter_cc._score_kclass_firstiter_cc_pass2(
         firstiter_cc.FirstIterCCData(
@@ -756,7 +761,8 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
             oversampling_order=1,
             translation_step=2.0,
             random_perturbation=0.0,
-            projection_rotations=lambda rotations: optics_aberrations.projection_rotations(rotations, 2.0),
+            projection_scale=2.0,
+            effective_device_source=source,
         ),
         firstiter_cc.FirstIterCCPolicy(disc_type="linear_interp", class_log_priors=None),
         firstiter_cc.FirstIterCCBatching(
@@ -768,6 +774,11 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
     assert np.all(captured["coarse_rot"] == 1.0)
     assert np.all(captured["fine_rot"] == 2.0)
     assert np.all(captured["fine_mstep_rotations_override"] == 4.0)
+    # The grid's own provenance picks RELION's per-path rule for each set of rows.
+    projection = captured["projection"]
+    assert projection["scale"] == 2.0 and projection["magnification"] is None
+    assert projection["coarse_device_source"] is source and projection["grid_device_source"] is source
+    assert (projection["coarse_healpix_order"], projection["adaptive_oversampling"]) == (1, 1)
 
 
 def test_firstiter_cc_global_winner_pass2_carries_each_images_optics_group(monkeypatch):

@@ -732,6 +732,99 @@ def _relion_adaptive_pass1_rotations(
     return _relion_device_scoring_rotations_f32(source_eulers_deg, right_matrix)
 
 
+class DevicePass1Source(NamedTuple):
+    """The inputs of RELION's device-built pass-1 rows (:func:`_relion_adaptive_pass1_rotations`)."""
+
+    source_eulers_deg: np.ndarray
+    random_perturbation: float
+    angular_sampling_deg: float
+    use_float64: bool
+
+
+class RotationProvenanceError(RuntimeError):
+    """Rows handed to a projection are not the rows their stated RELION source builds."""
+
+
+# A rebuilt row must reproduce the row it replaces to float32 rounding (about 1e-7); a wrong
+# index or source is off by O(1e-2) or more.
+_PROVENANCE_ATOL = 1e-5
+
+
+# The check compares an evenly strided sample of at most this many rows: a wrong source, perturbation
+# or row order shows on any row, and the check stays a few milliseconds on a 10M-row local layout.
+_PROVENANCE_SAMPLE_ROWS = 65536
+
+
+def require_same_rows(rebuilt, rows, what: str) -> None:
+    """Raise :class:`RotationProvenanceError` unless ``rebuilt`` reproduces ``rows`` (one check per grid build)."""
+
+    if np.shape(rebuilt) != np.shape(rows):
+        raise RotationProvenanceError(f"{what}: rebuilt {np.shape(rebuilt)} rows for {np.shape(rows)}")
+    stride = max(1, np.shape(rows)[0] // _PROVENANCE_SAMPLE_ROWS) if np.ndim(rows) else 1
+    sample = np.abs(np.asarray(rebuilt[::stride], dtype=np.float64) - np.asarray(rows[::stride], dtype=np.float64))
+    error = float(np.max(sample)) if sample.size else 0.0
+    if not error <= _PROVENANCE_ATOL:
+        raise RotationProvenanceError(f"{what}: rebuilt rows differ from the handed rows by {error:.3g}")
+
+
+def relion_device_projection_rotations(source: DevicePass1Source, rows, scale: float, magnification=None):
+    """Pass-1 rows of images on another grid or magnified, as RELION's device builds them.
+
+    RELION's pass-1 plan hands ``MBL = s inv(M3)`` to ``make_eulers_3D``, which forms ``L (A R)`` in
+    float32 from float Euler angles and inverts it with the float32 adjugate, since with a left matrix
+    the inverse is not the transpose (acc_projector_plan_impl.h:151-330, helper.cuh). The tilt images'
+    ``MBL`` go through the same kernel (:func:`_relion_device_scoring_rotations_left_f32`). ``rows`` are
+    the unprojected rows built from ``source``; they are checked against it. Under ACC double
+    precision the device chain stays double, which the host rule reproduces
+    (:func:`relax.relion.optics_aberrations.projection_rotations`). Returns float32 rows (float64
+    for the double source).
+    """
+
+    from relax.relion.optics_aberrations import projection_rotations, relion_projection_left_matrix
+
+    if scale == 1.0 and magnification is None:
+        return rows
+    if source.use_float64:
+        rows64 = np.asarray(rows, dtype=np.float64)
+        return projection_rotations(rows64, scale, magnification, dtype=np.float64)
+    plain = _relion_adaptive_pass1_rotations(
+        source.source_eulers_deg, source.random_perturbation, source.angular_sampling_deg
+    )
+    require_same_rows(plain, rows, "device pass-1 rows")
+    left = relion_projection_left_matrix(scale, magnification)
+    return np.asarray(
+        _relion_adaptive_pass1_rotations(
+            source.source_eulers_deg,
+            source.random_perturbation,
+            source.angular_sampling_deg,
+            left_matrices=left[None],
+        )
+    )[0]
+
+
+def project_rows(rows, scale: float, magnification=None, *, device_source=None, host_rows=None, what: str = "rows"):
+    """Rows of images on another grid or magnified, by the RELION path that builds them.
+
+    ``device_source`` (:class:`DevicePass1Source`): device-built pass-1 rows
+    (:func:`relion_device_projection_rotations`). ``host_rows``: a callable returning the rows'
+    float64 matrices, which must reproduce ``rows`` (checked once per call); they are composed in
+    float64 and cast to the rows' dtype once (:func:`relax.relion.optics_aberrations.projection_rotations`).
+    Exactly one is given. Unprojected images keep ``rows``.
+    """
+
+    from relax.relion.optics_aberrations import projection_rotations
+
+    if rows is None or (scale == 1.0 and magnification is None):
+        return rows
+    if (device_source is None) == (host_rows is None):
+        raise ValueError("projected rows need exactly one of a device source and host rows")
+    if device_source is not None:
+        return relion_device_projection_rotations(device_source, rows, scale, magnification)
+    rebuilt = np.asarray(host_rows(), dtype=np.float64)
+    require_same_rows(rebuilt, rows, what)
+    return projection_rotations(rebuilt, scale, magnification, dtype=np.asarray(rows).dtype)
+
+
 def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_matrices) -> jax.Array | None:
     """Tilt images' coarse scorer matrices, ``[B, N, 3, 3]``: ``make_eulers_3D`` with one left matrix per image.
 

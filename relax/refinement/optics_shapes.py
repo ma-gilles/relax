@@ -30,6 +30,7 @@ from relax.helpers.orientation_priors import (
     relion_half_translation_prior_inputs,
     relion_translation_search_base,
 )
+from relax.helpers.oversampling import project_pass2_rotations
 from relax.helpers.resolution import relion_coarse_image_size
 
 
@@ -443,20 +444,19 @@ def reference_grid_kwargs(reference_current_size, scale: float) -> dict:
     }
 
 
-def engine_projection_inputs(dataset, *, scale, reference_current_size, rotations):
-    """``(projection matrices, engine kwargs)`` for images on ``dataset``'s grid and optics.
+def engine_projection_inputs(dataset, *, scale, reference_current_size):
+    """``(magnification, engine kwargs)`` for images on ``dataset``'s grid and optics.
 
-    ``rotations`` maps names to pose matrices (None entries stay None); each becomes its
-    projection matrix (``applyScaleDifference`` for ``scale``, ``applyAnisoMag`` for the
-    dataset's magnification). The kwargs are :func:`reference_grid_kwargs`. Every
+    ``magnification`` is the dataset's ``applyAnisoMag`` left factor (None without); with ``scale``
+    (``applyScaleDifference``) it gives the projection matrices of the images' rows, which the
+    callers build by RELION's per-path rules (:func:`relax.helpers.oversampling.project_pass2_rotations`,
+    :func:`relax.sampling.project_rows`). The kwargs are :func:`reference_grid_kwargs`. Every
     adaptive engine call of a shape class (half scoring and VDAM) takes its geometry here.
     """
 
-    from relax.relion.optics_aberrations import dataset_projection_magnification, projection_rotations
+    from relax.relion.optics_aberrations import dataset_projection_magnification
 
-    magnification = dataset_projection_magnification(dataset)
-    projected = {name: projection_rotations(value, scale, magnification) for name, value in rotations.items()}
-    return projected, reference_grid_kwargs(reference_current_size, scale)
+    return dataset_projection_magnification(dataset), reference_grid_kwargs(reference_current_size, scale)
 
 
 # Engine keywords (run_dense_k_class_em_adaptive) whose leading axis is the images.
@@ -506,6 +506,7 @@ def shape_class_engine_inputs(
     fine_current_size,
     reference_current_size,
     engine_kwargs,
+    rotation_source: dict,
     coarse_sizing=None,
 ) -> ShapeClassEngineInputs:
     """A shape class's adaptive-engine call from the half's reference-grid arguments.
@@ -516,6 +517,8 @@ def shape_class_engine_inputs(
     reference shells, per-image keywords keep the class's rows and the backprojector stays
     on the reference model grid. Parent maps and Euler overrides index the shared grids
     and pass through. Results merge with :func:`merge_k_class_engine_results`.
+    ``rotation_source`` is the grid's provenance for RELION's per-path projection rules
+    (the keywords of :func:`relax.helpers.oversampling.project_pass2_rotations` after the rows).
     """
 
     n_half = half.n_units
@@ -547,20 +550,25 @@ def shape_class_engine_inputs(
         if kwargs.get(name) is not None:
             kwargs[name] = optics_scale.group_current_size(kwargs[name], shape_class.box_size, shape_class.scale)
     dataset = _engine_dataset(shape_class, half.volume_shape)
-    projected, grid_kwargs = engine_projection_inputs(
-        dataset,
+    magnification, grid_kwargs = engine_projection_inputs(
+        dataset, scale=shape_class.scale, reference_current_size=reference_current_size
+    )
+    coarse, fine, mstep = project_pass2_rotations(
+        coarse_rotations,
+        fine_rotations,
+        fine_mstep_rotations,
         scale=shape_class.scale,
-        reference_current_size=reference_current_size,
-        rotations={"coarse": coarse_rotations, "fine": fine_rotations, "mstep": fine_mstep_rotations},
+        magnification=magnification,
+        **rotation_source,
     )
     kwargs.update(grid_kwargs)
     factor = shape_class.translation_factor
     return ShapeClassEngineInputs(
         dataset=dataset,
         noise_variance=class_noise_table(noise_radial, shape_class, int(half.image_shape[0])),
-        coarse_rotations=projected["coarse"],
-        fine_rotations=projected["fine"],
-        fine_mstep_rotations=projected["mstep"],
+        coarse_rotations=coarse,
+        fine_rotations=fine,
+        fine_mstep_rotations=mstep,
         coarse_translations=np.asarray(coarse_translations) * factor,
         fine_translations=np.asarray(fine_translations) * factor,
         coarse_current_size=sizes["firstiter_coarse_current_size"],

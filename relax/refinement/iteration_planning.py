@@ -698,29 +698,36 @@ def coarse_pass1_rotations(
     perturbation_order: int | None,
     dtype,
     log: logging.Logger,
-):
-    """RELION's device-built rotations for the pass-1 coarse scorer, or None where the host grid serves.
+) -> tuple[object, sampling.DevicePass1Source] | None:
+    """RELION's device-built rotations for the pass-1 coarse scorer and their source, or None where the host grid serves.
 
     The source is the unperturbed coarse Euler rows of ``rotation_grid``, in the scoring ``dtype`` and
     then widened to float64. The perturbation applies only when the trial grid is perturbed
     (``perturbation_order``, the order whose angular step scales it; None: unperturbed, at the grid's order).
+    Images on another grid or magnified rebuild their rows from the source
+    (:func:`relax.sampling.relion_device_projection_rotations`).
     """
     source_eulers = np.asarray(np.asarray(rotation_grid.rotation_eulers, dtype=dtype), dtype=np.float64)
     adaptive_pass1_order = perturbation_order if perturbation_order is not None else int(rotation_grid.healpix_order)
-    adaptive_pass1_use_float64 = options.precision.use_float64_scoring
-    adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
-        source_eulers,
-        random_perturbation if perturbation_order is not None else 0.0,
-        sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),
-        use_float64=adaptive_pass1_use_float64,
+    source = sampling.DevicePass1Source(
+        source_eulers_deg=source_eulers,
+        random_perturbation=random_perturbation if perturbation_order is not None else 0.0,
+        angular_sampling_deg=sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),
+        use_float64=options.precision.use_float64_scoring,
     )
-    if adaptive_pass1_rotations is not None:
-        log.info(
-            "RELION adaptive pass 1: using %s-built coarse scorer rotations; "
-            "fine/M-step rotations remain host-generated",
-            "double-precision CUDA" if adaptive_pass1_use_float64 else "CUDA",
-        )
-    return adaptive_pass1_rotations
+    adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
+        source.source_eulers_deg,
+        source.random_perturbation,
+        source.angular_sampling_deg,
+        use_float64=source.use_float64,
+    )
+    if adaptive_pass1_rotations is None:
+        return None
+    log.info(
+        "RELION adaptive pass 1: using %s-built coarse scorer rotations; fine/M-step rotations remain host-generated",
+        "double-precision CUDA" if source.use_float64 else "CUDA",
+    )
+    return adaptive_pass1_rotations, source
 
 
 @dataclass(frozen=True)

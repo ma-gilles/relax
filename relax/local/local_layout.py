@@ -905,6 +905,33 @@ def _selected_mstep_rotation_matrices(
     return np.asarray(mstep_rotations, dtype=dtype)[inverse]
 
 
+def local_layout_host_rotations(
+    rotation_ids_flat,
+    *,
+    healpix_order: int,
+    symmetry: str,
+    random_perturbation: float,
+    angular_sampling_deg: float | None,
+    mstep: bool,
+) -> np.ndarray:
+    """A layout's scoring (or, with ``mstep``, M-step) rows as float64 matrices of RELION's double angles.
+
+    The rows of images on another grid or magnified are composed from these and cast once
+    (:func:`relax.sampling.project_rows`); ``rotation_ids_flat`` index the local grid of
+    ``healpix_order``.
+    """
+
+    builder = _selected_mstep_rotation_matrices if mstep else _selected_rotation_matrices
+    return builder(
+        rotation_ids_flat,
+        None,
+        build_local_search_grid_metadata(healpix_order, symmetry=symmetry),
+        random_perturbation=random_perturbation,
+        angular_sampling_deg=angular_sampling_deg,
+        dtype=np.float64,
+    )
+
+
 def _flat_parts(parts, *, empty_shape, dtype, cast=None):
     """Concatenate per-image layout parts along axis 0, or the typed empty array when no image contributed.
 

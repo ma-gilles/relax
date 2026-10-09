@@ -242,12 +242,16 @@ def test_magnified_projection_matrices_match_relion_left_matrix():
     left = np.broadcast_to(np.linalg.inv(m3), (7, 3, 3)).copy()
     relion = np.swapaxes(np.asarray(relion_bind.euler_angles_to_inverse_matrices(eulers, left)), 1, 2)
     plain = np.swapaxes(np.asarray(relion_bind.euler_angles_to_inverse_matrices(eulers)), 1, 2)
-    magnified = oa.projection_rotations(plain, 1.0, oa.relax_projection_magnification(MAG))
+    magnified = oa.projection_rotations(plain, 1.0, oa.relax_projection_magnification(MAG), dtype=np.float64)
     assert_matches(magnified, relion, rtol=1e-13)
     assert_matches(oa.reported_rotations(magnified, 1.0, oa.relax_projection_magnification(MAG)), plain, rtol=1e-13)
     # With the optics scale: applyScaleDifference multiplies inv(M3) A by s (obs_model.cpp:1332-1339).
     scaled = np.swapaxes(np.asarray(relion_bind.euler_angles_to_inverse_matrices(eulers, 1.1 * left)), 1, 2)
-    assert_matches(oa.projection_rotations(plain, 1.1, oa.relax_projection_magnification(MAG)), scaled, rtol=1e-13)
+    assert_matches(
+        oa.projection_rotations(plain, 1.1, oa.relax_projection_magnification(MAG), dtype=np.float64),
+        scaled,
+        rtol=1e-13,
+    )
 
 
 @pytest.mark.unit

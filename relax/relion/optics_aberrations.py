@@ -389,21 +389,43 @@ def dataset_magnification_is_anisotropic(experiment_dataset) -> bool:
     return magnification_is_anisotropic(optics_group_mag_matrix(row) for row in cache["optics"].values())
 
 
-def projection_rotations(rotations, scale: float, magnification=None):
-    """Projection matrices for the images' optics (RELION applyAnisoMag, applyScaleDifference).
+def projection_rotations(rotations, scale: float, magnification=None, *, dtype=np.float32):
+    """Host projection matrices for the images' optics (RELION applyAnisoMag, applyScaleDifference).
 
     The projector samples the reference at image pixel ``k`` times the matrix, so a grid
     ``s`` times coarser in reference voxels per image pixel divides the matrix by ``s``.
     ``magnification`` is the left factor of an anisotropic magnification
     (:func:`relax_projection_magnification`), None without.
+
+    This is RELION's host rule (``generateEulerMatrices``, acc_helper_functions_impl.h: ``L * A * R``
+    and its inverse in double, cast to XFLOAT once), used for the fine pass, the weighted sums and
+    every host-built row: ``rotations`` are the rows' double-precision matrices, composed here in
+    float64 and cast to ``dtype`` once. Composing after a float32 cast moves most magnified matrices
+    by an ulp and flips near-tie poses (relax#24). The device-built pass-1 rows follow
+    :func:`relax.sampling.relion_device_projection_rotations` instead.
     """
 
     if rotations is None or (scale == 1.0 and magnification is None):
         return rotations
     rotations = np.asarray(rotations)
+    if rotations.dtype != np.float64:
+        raise TypeError(f"projected rows are composed from their float64 matrices, got {rotations.dtype}")
     if magnification is not None:
-        rotations = np.einsum("ij,njk->nik", np.asarray(magnification), rotations).astype(rotations.dtype)
-    return rotations / float(scale) if scale != 1.0 else rotations
+        rotations = np.einsum("ij,njk->nik", np.asarray(magnification, dtype=np.float64), rotations)
+    if scale != 1.0:
+        rotations = rotations / float(scale)
+    return rotations.astype(dtype)
+
+
+def relion_projection_left_matrix(scale: float, magnification=None) -> np.ndarray:
+    """RELION's left matrix of an image grid, ``applyScaleDifference(applyAnisoMag(I))`` = ``s inv(M3)``.
+
+    RELION's pass-1 plan sends it to ``make_eulers_3D`` as ``MBL`` (acc_ml_optimiser_impl.h:1602-1617).
+    ``magnification`` is relax's left factor ``M3^T`` (:func:`relax_projection_magnification`).
+    """
+
+    m3 = np.eye(3) if magnification is None else np.asarray(magnification, dtype=np.float64).T
+    return float(scale) * np.linalg.inv(m3)
 
 
 def reported_rotations(rotations, scale: float, magnification=None):

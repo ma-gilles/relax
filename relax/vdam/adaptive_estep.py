@@ -186,6 +186,7 @@ class AdaptiveRouteGrids(NamedTuple):
     fine_source_eulers: np.ndarray | None
     relion_of_recovar: np.ndarray
     fill_fine_rows: object = None  # relax.helpers.oversampling.DeferredFineRows when the fine rows are deferred
+    pass1_device_source: object = None  # relax.sampling.DevicePass1Source of device-built pass1_rotations
 
 
 def adaptive_route_grids(
@@ -219,6 +220,11 @@ def adaptive_route_grids(
         source_eulers, float(random_perturbation), angular_sampling
     )
     pass1_rotations = host_rotations if device_rotations is None else np.asarray(device_rotations)
+    pass1_device_source = (
+        None
+        if device_rotations is None
+        else sampling.DevicePass1Source(source_eulers, float(random_perturbation), angular_sampling, False)
+    )
 
     base = np.asarray(coarse_base_translations, dtype=np.float64)
     coarse_translations = sampling.apply_relion_translation_perturbation(
@@ -244,6 +250,7 @@ def adaptive_route_grids(
         fine_source_eulers=fine_source_eulers,
         relion_of_recovar=relion_order_of_recovar_rotations(order),
         fill_fine_rows=fill,
+        pass1_device_source=pass1_device_source,
     )
 
 

@@ -256,7 +256,9 @@ def optics_signal_change(
         if magnification is None:
             new_slices = slices
         else:
-            magnified = projection_rotations(rotations, 1.0, relax_projection_magnification(magnification))
+            magnified = projection_rotations(
+                np.asarray(rotations, dtype=np.float64), 1.0, relax_projection_magnification(magnification)
+            )
             new_slices = project(np.asarray(magnified, dtype=rotations.dtype))
         delta = np.asarray(
             ftu.get_idft2((jnp.asarray(even) * new_slices - jnp.asarray(plain) * slices).reshape(-1, size, size)).real

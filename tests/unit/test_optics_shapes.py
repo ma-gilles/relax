@@ -686,9 +686,18 @@ def test_shape_class_engine_inputs_follow_the_class_rules(monkeypatch):
     from relax.relion import optics_aberrations
 
     monkeypatch.setattr(optics_aberrations, "dataset_projection_magnification", lambda dataset: None)
+    projections = []
+
+    def fake_projection(coarse, fine, mstep, *, scale, magnification, **source):
+        # The rows' rules are test_projection_rotation_rules'; here, what the class hands over.
+        projections.append((scale, magnification, source))
+        return tuple(None if rows is None else rows / scale for rows in (coarse, fine, mstep))
+
+    monkeypatch.setattr(optics_shapes, "project_pass2_rotations", fake_projection)
     half = _half()
     small = half.classes[1]
     rotations = np.stack([np.eye(3), 2 * np.eye(3)])
+    rotation_source = {"coarse_healpix_order": 1, "adaptive_oversampling": 1, "random_perturbation": 0.0}
     inputs = optics_shapes.shape_class_engine_inputs(
         small,
         half,
@@ -707,7 +716,9 @@ def test_shape_class_engine_inputs_follow_the_class_rules(monkeypatch):
             "translation_log_prior": np.zeros(4),
             "reconstruction_group_ids": np.array([0, 1, 2, 3, 0]),
         },
+        rotation_source=rotation_source,
     )
+    assert projections == [(small.scale, None, rotation_source)]
     # applyScaleDifference: the projector divides the matrices by s.
     np.testing.assert_allclose(inputs.coarse_rotations, rotations / small.scale)
     np.testing.assert_allclose(inputs.fine_rotations, rotations / small.scale)
@@ -739,6 +750,7 @@ def test_shape_class_engine_inputs_follow_the_class_rules(monkeypatch):
             fine_current_size=None,
             reference_current_size=None,
             engine_kwargs={"image_pre_shifts": np.ones((5, 2))},
+            rotation_source=rotation_source,
         )
 
 

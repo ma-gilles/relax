@@ -102,6 +102,12 @@ def run_by_shape_class(
             fine_current_size=engine_call["fine_current_size"],
             reference_current_size=current_size,
             engine_kwargs=kwargs,
+            rotation_source={
+                "coarse_healpix_order": int(engine_call["coarse_healpix_order"]),
+                "adaptive_oversampling": int(engine_call["oversampling_order"]),
+                "random_perturbation": float(options["random_perturbation"]),
+                "coarse_device_source": route.pass1_device_source,
+            },
             coarse_sizing=coarse_sizing,
         )
         offsets = offsets_ref[shape_class.image_indices] * factor

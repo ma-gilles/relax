@@ -168,6 +168,87 @@ def build_adaptive_pass2_grids(
     return outputs
 
 
+def project_pass2_rotations(
+    coarse_rotations,
+    fine_rotations,
+    fine_mstep_rotations,
+    *,
+    scale: float,
+    magnification,
+    coarse_healpix_order: int,
+    adaptive_oversampling: int,
+    random_perturbation: float,
+    coarse_rotation_ids=None,
+    symmetry: str = "C1",
+    coarse_device_source=None,
+    grid_device_source=None,
+):
+    """A pass-2 grid's ``(coarse, fine, M-step)`` rows for images on another grid or magnified.
+
+    RELION builds pass-1 rows on the device and the fine and M-step rows on the host, and each
+    path applies the images' left matrix in its own precision (:func:`relax.sampling.project_rows`).
+    ``coarse_device_source`` says the scored coarse rows are device-built (None: host-built, rebuilt
+    here in float64 from the coarse sample ids). The fine and M-step rows of an oversampled grid are
+    rebuilt in float64 from their parents (:func:`build_adaptive_pass2_grids`); without oversampling
+    they are the grid's own coarse rows, device-built from ``grid_device_source`` or host-built.
+    Unprojected images keep the rows as given. See ``docs/math/zero_coarse_geometry.md``
+    (images on another grid or magnified).
+    """
+
+    from relax.sampling import get_oversampled_rotation_grid_from_samples, project_rows
+
+    if scale == 1.0 and magnification is None:
+        return coarse_rotations, fine_rotations, fine_mstep_rotations
+    n_coarse = int(np.shape(coarse_rotations)[0])
+    ids = (
+        np.arange(n_coarse, dtype=np.int64)
+        if coarse_rotation_ids is None
+        else np.asarray(coarse_rotation_ids, dtype=np.int64)
+    )
+
+    def host_grid(oversampling: int, mstep: bool):
+        outputs = get_oversampled_rotation_grid_from_samples(
+            ids,
+            int(coarse_healpix_order),
+            oversampling_order=int(oversampling),
+            random_perturbation=float(random_perturbation),
+            return_mstep_rotations=True,
+            dtype=np.float64,
+            symmetry=symmetry,
+        )
+        return outputs[2] if mstep else outputs[0]
+
+    def provenance(device_source):
+        return (
+            {"device_source": device_source}
+            if device_source is not None
+            else {"host_rows": lambda: host_grid(0, False)}
+        )
+
+    coarse = project_rows(
+        coarse_rotations, scale, magnification, what="coarse rows", **provenance(coarse_device_source)
+    )
+    if int(adaptive_oversampling) <= 0:
+        grid_rows = provenance(grid_device_source)
+        fine = project_rows(fine_rotations, scale, magnification, what="fine rows", **grid_rows)
+        mstep = project_rows(fine_mstep_rotations, scale, magnification, what="M-step rows", **grid_rows)
+        return coarse, fine, mstep
+    fine = project_rows(
+        fine_rotations,
+        scale,
+        magnification,
+        what="fine rows",
+        host_rows=lambda: host_grid(adaptive_oversampling, False),
+    )
+    mstep = project_rows(
+        fine_mstep_rotations,
+        scale,
+        magnification,
+        what="M-step rows",
+        host_rows=lambda: host_grid(adaptive_oversampling, True),
+    )
+    return coarse, fine, mstep
+
 
 def fill_adaptive_fine_rotation_rows(
     parents,

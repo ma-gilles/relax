@@ -16,6 +16,7 @@ from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.dense import scoring_policy
 from relax.refinement import expectation, finalization, half_scoring, iteration_loop
+from relax.sampling import DevicePass1Source
 
 pytestmark = pytest.mark.unit
 
@@ -71,7 +72,8 @@ def _device_rotations_stand_in(monkeypatch):
     """RELION's device-built coarse rotations are CUDA-only (None on a CPU); stand in a distinct host copy."""
 
     def coarse_rotations(rotation_grid, *args, **kwargs):
-        return np.array(rotation_grid.rotations, copy=True)
+        source = DevicePass1Source(np.asarray(rotation_grid.rotation_eulers, dtype=np.float64), 0.0, 1.0, False)
+        return np.array(rotation_grid.rotations, copy=True), source
 
     monkeypatch.setattr(iteration_loop, "coarse_pass1_rotations", coarse_rotations)
 
@@ -132,7 +134,7 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, sc
     trace = CallTrace(monkeypatch)
     trace.wrap(half_scoring, "_score_adaptive_k1_dense", "scorer")
     trace.wrap(half_scoring, "prepare_adaptive_pass2_grids", "grids")
-    trace.wrap(half_scoring, "engine_projection_inputs", "projection")
+    trace.wrap(half_scoring, "project_pass2_rotations", "projection")
     run_tiny_refinement(
         monkeypatch, final_after_max_iter=False, parity=dict(first_iteration_score_mode=score_mode),
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
@@ -141,11 +143,14 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, sc
     assert len(scorers) == len(grids) == len(projections) == 4
     native = []
     for scorer, grid, projection in zip(scorers, grids, projections, strict=True):
-        rotations = projection.kwargs["rotations"]
-        assert rotations["fine"] is grid.result.fine_rotations
+        coarse, fine = projection.args[:2]
+        assert fine is grid.result.fine_rotations
         override = scorer.args[1].coarse_scoring_rotations
-        native.append(override is not None and rotations["coarse"] is override)
-        assert native[-1] or rotations["coarse"] is grid.result.coarse_rotations
+        native.append(override is not None and coarse is override)
+        assert native[-1] or coarse is grid.result.coarse_rotations
+        if native[-1]:
+            # The generated device rows are projected from their own source.
+            assert projection.kwargs["coarse_device_source"] is not None
     assert native == expected
 
 
@@ -264,4 +269,4 @@ def test_loop_transports_geometry_separately_from_effective_rotations(monkeypatc
     generated, samplings = trace.calls("coarse_rotations"), trace.calls("sampling")
     assert len(generated) == len(samplings) == 2
     for rotations, sampling in zip(generated, samplings, strict=True):
-        assert sampling.kwargs["coarse_scoring_rotations"] is (rotations.result if oversampling == 0 else None)
+        assert sampling.kwargs["coarse_scoring_rotations"] is (rotations.result[0] if oversampling == 0 else None)
