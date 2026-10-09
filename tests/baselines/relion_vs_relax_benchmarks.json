@@ -18154,7 +18154,7 @@
     ],
     "relax_per_seed": {
      "1": 0.983795,
-     "2": 0.982068,
+     "2": 0.982059,
      "3": 0.982412
     },
     "relion_per_seed": {
@@ -18176,8 +18176,8 @@
       0.983795
      ],
      "2": [
-      0.982068,
-      0.982069
+      0.982059,
+      0.982083
      ],
      "3": [
       0.982412
@@ -18211,7 +18211,7 @@
     },
     "relax_seed_provenance": {
      "1": "880483a5b812f3c31ceb0c8ed139389df5579e8c",
-     "2": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+     "2": "301d336ef585f9668dd07442dd7e96af3cd50bfd",
      "3": "1a107f5180c1eeb926cbccfd62179886eb0b728d"
     },
     "relax_prefix_f6c8299_s1": 0.983944,
@@ -18230,7 +18230,20 @@
      0.99987,
      0.99984,
      0.99987
-    ]
+    ],
+    "relax_s2_301d336e_runs": [
+     0.982059,
+     0.982083
+    ],
+    "relax_s2_previous_runs": [
+     0.982068,
+     0.982069
+    ],
+    "rescore_check_20261009": {
+     "relion_s2_r1": 0.982113,
+     "relion_s2_r2": 0.982104,
+     "relax_s2_1a107f5": 0.982029
+    }
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
@@ -18245,6 +18258,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Re-judged 2026-10-09 (team-lead, red-row re-judge): two relax runs at s2 on relax main 301d336e (job 15242356, post-relax#43; walls 13443/13471 s on one H100 each, JAX peak 11.5/11.5 GB; 880483a5 took 16802 s): 0.982059/0.982083 against RELION's two s2 runs 0.982119/0.982097 (not pooled with the older relax s2 runs, kept as relax_s2_previous_runs). relax's best s2 run is -1.4e-05 below RELION's lowest: verdict miss (worst s2 −1.4e-5 vs same-seed RELION; run ranges compared at s2 (both engines repeated); s2 below across-seed RELION band 0.982097-0.983891). Same-seed map FSC-AUC stays under 0.9999 (0.99984-0.99987), so the reproduced-map tie does not apply. Rescore check with the same scorer and config: RELION s2 0.982113/0.982104 (stored 0.982119/0.982097), the 1a107f5 relax s2 run 0.982029 (stored 0.982029): the stored RELION scores reproduce to 7e-6, smaller than the gap.",
     "Cryo-ET VDAM K=2 on 4 optics groups (etvdam, team-lead 2026-10-02): relax job 14876158, RELION r1 14817602 and r2 14835377. Runs, derived fixture and scores curated in em_fixtures/cryoet_vdam_ogtomo_20261002 (etvdam, sha256-verified copies).",
     "Seed-2 relax repeats rep2/rep3 (benchw, run-range rule, job 14896408): the first seed-2 run was below the across-seed RELION band by 8e-5.",
     "Open gap (2026-10-02): with three relax runs at s2 (0.98203/0.98205/0.98209) against RELION 0.98211/0.98212, relax's best run stays 2.0e-5 below RELION's lowest and below the across-seed band; s1 and s3 are above RELION. Reported to team-lead for investigation.",
@@ -18316,11 +18330,18 @@
      "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo_vdam/et15_og_1c57fb7.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_1c57fb7",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/et15_row_1c57fb7.py"
+    },
+    "reps_20261009": {
+     "runs": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/redrows/et15",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/redrows/et15/score_cfg.json",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/redrows/et15/out_1c57fb7/et15_og_301d336e_s2.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/cand_301d336e",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/et15_s2_reps_row_20261009.py"
     }
    },
-   "date": "2026-10-06",
+   "date": "2026-10-09",
    "quality_pass": false,
-   "quality_reason": "worst s2 −2.8e-5 vs same-seed RELION; run ranges compared at s2 (both engines repeated); s2 below across-seed RELION band 0.982097-0.983891",
+   "quality_reason": "worst s2 −1.4e-5 vs same-seed RELION; run ranges compared at s2 (both engines repeated); s2 below across-seed RELION band 0.982097-0.983891",
    "time_check": {
     "a": "relax and RELION each on 1 H100 + 12 CPUs, relion_refine --j 12 --gpu 0 non-MPI; separate jobs: relax 15037267 (della-h20g4, two arms on two GPUs of one node), RELION 14817602; seed 1 only",
     "b": "relax main 880483a5 snapshot with production defaults (no RELAX_* variables, JAX default allocator) and RELION's GUI InitialModel command; no --scratch_dir on either engine",
@@ -18692,6 +18713,100 @@
       }
      },
      "note": "values before the 2026-10-06 benchmark freeze (seed 2 on 880483a5; scorer 5744444f)"
+    },
+    {
+     "date": "2026-10-06",
+     "gt": {
+      "metric": "population-weighted masked GT FSC-AUC of the registered final maps (scripts/score_initialmodel_maps.py at relax main 1c57fb73 (freeze scorer: sized fit budget, per-class pair registration), fine registration; classes Hungarian-matched for K>1)",
+      "relion": 0.98378,
+      "relax": 0.983795,
+      "relion_band": [
+       0.982097,
+       0.983891
+      ],
+      "relax_per_seed": {
+       "1": 0.983795,
+       "2": 0.982068,
+       "3": 0.982412
+      },
+      "relion_per_seed": {
+       "1": [
+        0.983891,
+        0.98378
+       ],
+       "2": [
+        0.982119,
+        0.982097
+       ],
+       "3": [
+        0.982342,
+        0.982422
+       ]
+      },
+      "relax_runs_per_seed": {
+       "1": [
+        0.983795
+       ],
+       "2": [
+        0.982068,
+        0.982069
+       ],
+       "3": [
+        0.982412
+       ]
+      },
+      "unmasked_relax_per_seed": {
+       "1": [
+        0.979882
+       ],
+       "2": [
+        0.978104,
+        0.978097
+       ],
+       "3": [
+        0.978611
+       ]
+      },
+      "unmasked_relion_per_seed": {
+       "1": [
+        0.979999,
+        0.979901
+       ],
+       "2": [
+        0.978145,
+        0.978117
+       ],
+       "3": [
+        0.978522,
+        0.978607
+       ]
+      },
+      "relax_seed_provenance": {
+       "1": "880483a5b812f3c31ceb0c8ed139389df5579e8c",
+       "2": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+       "3": "1a107f5180c1eeb926cbccfd62179886eb0b728d"
+      },
+      "relax_prefix_f6c8299_s1": 0.983944,
+      "scorer_old_minus_new_max": 0.0,
+      "relax_s2_880483a_runs": [
+       0.982028,
+       0.982062
+      ],
+      "relax_s2_1a107f5_runs": [
+       0.982029,
+       0.982039,
+       0.982119
+      ],
+      "same_seed_map_fsc_auc_s2": [
+       0.99984,
+       0.99987,
+       0.99984,
+       0.99987
+      ]
+     },
+     "quality_pass": false,
+     "quality_reason": "worst s2 −2.8e-5 vs same-seed RELION; run ranges compared at s2 (both engines repeated); s2 below across-seed RELION band 0.982097-0.983891",
+     "note": "verdict before the 2026-10-09 s2 relax repeats on 301d336e"
     }
    ]
   }
