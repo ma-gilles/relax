@@ -14,6 +14,7 @@ from helpers.float_compare import assert_matches
 from helpers.generic_coarse_reference import gaussian_block_scores, normalized_cc_block_scores
 
 from relax.scoring import pass1_program
+from relax.scoring.pass1_scores import ProgramStatics
 
 N_CLASSES, N_ROT, BLOCK, N_IMAGES, N_TRANS, N_PIXELS = 2, 6, 4, 3, 4, 13
 
@@ -51,13 +52,15 @@ def _program_scores(projected, shifted, pixel_weight, initial_diff2, score_kind)
         tuple((jnp.asarray(0.0, dtype=jnp.float32), None) for _ in blocks),
         None,
         blocks=blocks,
-        n_trans=N_TRANS,
-        image_shape=(4, 4),
-        volume_shape=(4, 4, 4),
-        float64=False,
-        score_kind=score_kind,
-        exact_weight_order=False,
-        return_class_best=True,
+        statics=ProgramStatics(
+            n_trans=N_TRANS,
+            image_shape=(4, 4),
+            volume_shape=(4, 4, 4),
+            float64=False,
+            score_kind=score_kind,
+            exact_weight_order=False,
+            return_class_best=True,
+        ),
     )
     scores = np.concatenate([np.asarray(v) for v in values], axis=1).reshape(N_IMAGES, N_CLASSES, N_ROT, N_TRANS)
     return state, scores

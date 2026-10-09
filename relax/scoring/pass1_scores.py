@@ -44,16 +44,35 @@ def block_prior_terms(blocks: tuple, class_log_priors, rotation_log_prior_padded
 
 
 @dataclass(frozen=True)
+class ProgramStatics:
+    """What the score program is specialised on: the static arguments of its jitted kernels, one hashable record.
+
+    The program is compiled once per distinct record (and block shape). ``n_trans`` translations per rotation score
+    images of ``image_shape`` against a volume of ``volume_shape``; ``float64`` is the diagnostic precision.
+    ``score_kind`` is ``"gaussian"`` or ``"normalized_cc"``; ``exact_weight_order`` asks for the pre-prior support
+    values (RELION's log-weight order) and ``return_values`` for the support values at all. ``return_class_best`` and
+    ``track_class_second`` ask for each class's best pose and its runner-up.
+    """
+
+    n_trans: int
+    image_shape: tuple
+    volume_shape: tuple
+    float64: bool
+    score_kind: str
+    exact_weight_order: bool
+    return_class_best: bool
+    track_class_second: bool = False
+    return_values: bool = True
+
+
+@dataclass(frozen=True)
 class ScoreProgramPlan:
     """What every batch's score program runs over, fixed for the pass.
 
     ``blocks`` and ``prior_terms`` are aligned (:func:`score_blocks`, :func:`block_prior_terms`). ``rotations_padded``
     are the rotations padded with identities to whole blocks. ``projector`` yields a block's reference rows; with a
     ``projection_cache`` (the cached C64 table of the Gaussian GEMM) one program reads every block from it, otherwise
-    each block is projected and scored in its own call. ``score_kind`` is ``"gaussian"`` or ``"normalized_cc"``;
-    ``exact_weight_order`` asks for the pre-prior support values (RELION's log-weight order); ``return_values`` asks
-    for the support values at all. The remaining fields are the kernels' static arguments
-    (:func:`relax.scoring.pass1_program._pass1_block_update`).
+    each block is projected and scored in its own call. ``statics`` is what the kernels are specialised on.
     """
 
     blocks: tuple
@@ -62,15 +81,7 @@ class ScoreProgramPlan:
     projector: CoarseProjector
     projection_cache: Any
     n_classes: int
-    n_trans: int
-    image_shape: tuple
-    volume_shape: tuple
-    float64: bool
-    score_kind: str
-    exact_weight_order: bool
-    return_class_best: bool
-    track_class_second: bool
-    return_values: bool
+    statics: ProgramStatics
 
 
 class BatchScores(NamedTuple):

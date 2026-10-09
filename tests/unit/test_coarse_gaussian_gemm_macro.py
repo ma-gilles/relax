@@ -16,6 +16,7 @@ from helpers.pass1_programs import clear_pass1_programs
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion import relion_ctf
 from relax.scoring import coarse_gaussian_gemm, pass1_batch, pass1_program, scoring, significance
+from relax.scoring.pass1_scores import ProgramStatics
 from relax.scoring.significant_samples import significant_sample_ids
 
 
@@ -1311,14 +1312,16 @@ def _pass1_case(seed=20261002):
 
 def _pass1_static(case, score_kind, exact_weight_order, track_class_second=False):
     return dict(
-        n_trans=case["n_trans"],
-        image_shape=(4, 4),
-        volume_shape=(4, 4, 4),
-        float64=False,
-        score_kind=score_kind,
-        exact_weight_order=exact_weight_order,
-        return_class_best=True,
-        track_class_second=track_class_second,
+        statics=ProgramStatics(
+            n_trans=case["n_trans"],
+            image_shape=(4, 4),
+            volume_shape=(4, 4, 4),
+            float64=False,
+            score_kind=score_kind,
+            exact_weight_order=exact_weight_order,
+            return_class_best=True,
+            track_class_second=track_class_second,
+        )
     )
 
 

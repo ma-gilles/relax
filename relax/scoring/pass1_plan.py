@@ -35,7 +35,7 @@ from relax.scoring.pass1_results import (
     PassShape,
     ScoreDumpContext,
 )
-from relax.scoring.pass1_scores import ScoreProgramPlan, block_prior_terms, score_blocks
+from relax.scoring.pass1_scores import ProgramStatics, ScoreProgramPlan, block_prior_terms, score_blocks
 from relax.scoring.pass1_support import (
     SupportPlan,
     exact_order_rotation_prior,
@@ -515,15 +515,17 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         projector=coarse_projector,
         projection_cache=coarse_gaussian_gemm_projection_cache,
         n_classes=n_classes,
-        n_trans=int(n_trans),
-        image_shape=tuple(int(value) for value in image_shape),
-        volume_shape=tuple(int(value) for value in volume_shape),
-        float64=coarse_gemm_float64_requested(),
-        score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
-        exact_weight_order=relion_exact_coarse_weight_order,
-        return_class_best=bool(request.return_class_best),
-        track_class_second=bool(track_class_second),
-        return_values=bool(request.collect_significance),
+        statics=ProgramStatics(
+            n_trans=int(n_trans),
+            image_shape=tuple(int(value) for value in image_shape),
+            volume_shape=tuple(int(value) for value in volume_shape),
+            float64=coarse_gemm_float64_requested(),
+            score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
+            exact_weight_order=relion_exact_coarse_weight_order,
+            return_class_best=bool(request.return_class_best),
+            track_class_second=bool(track_class_second),
+            return_values=bool(request.collect_significance),
+        ),
     )
     support_plan = SupportPlan(
         n_classes=n_classes,
