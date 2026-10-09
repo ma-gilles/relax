@@ -251,6 +251,7 @@ def validate_fixed_boundary_runtime(
     boundary: FrozenRefinementBoundary,
     args,
     *,
+    random_seed: int,
     dataset,
     effective_max_healpix_order,
     effective_tau2_fudge,
@@ -265,6 +266,7 @@ def validate_fixed_boundary_runtime(
             boundary,
             _fixed_diagnostic_runtime_config(
                 args,
+                random_seed=random_seed,
                 dataset=dataset,
                 effective_max_healpix_order=effective_max_healpix_order,
                 effective_tau2_fudge=effective_tau2_fudge,
@@ -530,6 +532,7 @@ def _fixed_diagnostic_source_paths(args, boundary) -> dict[str, Path]:
 def _fixed_diagnostic_runtime_config(
     args,
     *,
+    random_seed: int,
     dataset,
     effective_max_healpix_order,
     effective_tau2_fudge,
@@ -566,7 +569,7 @@ def _fixed_diagnostic_runtime_config(
         "low_resol_join_halves_angstrom": RELION_GUI_LOW_RESOL_JOIN_HALVES_ANGSTROM,
         "image_batch_size": int(args.image_batch_size),
         "rotation_block_size": int(args.rotation_block_size),
-        "random_seed": int(args.seed),
+        "random_seed": int(random_seed),
         "perturb_seed": int(effective_perturb_seed),
         "n_classes": int(args.n_classes),
         "grid_size": int(dataset.grid_size),

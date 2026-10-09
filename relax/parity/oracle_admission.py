@@ -107,7 +107,7 @@ class FollowerRouting(NamedTuple):
     topology: object
 
 
-def admit_follower_routing(args, group_source, particle_groups, *, log) -> FollowerRouting:
+def admit_follower_routing(args, group_source, particle_groups, *, random_seed: int, log) -> FollowerRouting:
     """Admit the followers' dispatch capture against its oracle and build their topology.
 
     A capture is strict K>1 replay state only: it is admitted when the run replays or starts from a RELION
@@ -127,7 +127,7 @@ def admit_follower_routing(args, group_source, particle_groups, *, log) -> Follo
         strict_replay=strict_replay,
         replay_path=args.relion_follower_scale_replay,
         oracle_dir=dispatch.oracle_dirs[0] if dispatch.schedule is not None else None,
-        random_seed=args.seed,
+        random_seed=random_seed,
         init_relion_iteration=args.init_relion_iteration,
         max_iter=args.max_iter,
         group_source=group_source.path,

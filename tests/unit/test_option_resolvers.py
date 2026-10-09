@@ -93,13 +93,13 @@ def test_a_frozen_boundary_owns_its_schedule_fields():
 
 def test_class_seeds_are_drawn_only_for_a_fresh_class3d_run_from_one_reference():
     trial_order = np.arange(12)
-    seeded = command_options.resolve_k_class(_args("--n_classes", "3", "--init_volume", "ref.mrc", "--seed", "5"),
-                                             trial_order=trial_order, resumed=False)
+    seeded = command_options.resolve_k_class(_args("--n_classes", "3", "--init_volume", "ref.mrc"),
+                                             random_seed=5, trial_order=trial_order, resumed=False)
     assert seeded.n_classes == 3 and seeded.first_iteration_seed_classes.shape == (12,)
     assert set(seeded.first_iteration_seed_classes.tolist()) <= {0, 1, 2}
     for arguments, resumed in ((("--n_classes", "3", "--init_volume", "ref.mrc"), True), (("--n_classes", "3"), False),
                                (("--init_volume", "ref.mrc"), False)):
-        assert command_options.resolve_k_class(_args(*arguments), trial_order=trial_order,
+        assert command_options.resolve_k_class(_args(*arguments), random_seed=5, trial_order=trial_order,
                                                resumed=resumed).first_iteration_seed_classes is None
 
 

@@ -276,7 +276,8 @@ def test_follower_routing_hands_the_admitted_capture_and_its_oracle_to_the_topol
     monkeypatch.setattr(relion_worker_scale, "prepare_follower_topology", prepare)
     groups = object()
     routing = oracle_admission.admit_follower_routing(
-        args, SimpleNamespace(particles=particles, path=oracle / "run_it000_data.star"), groups, log=LOG
+        args, SimpleNamespace(particles=particles, path=oracle / "run_it000_data.star"), groups,
+        random_seed=9, log=LOG,
     )
     _, schedule, routed_groups, kwargs = calls[0]
     assert schedule is routing.schedule and schedule is not None and routing.topology is topology

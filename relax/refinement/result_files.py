@@ -30,6 +30,7 @@ from relax.refinement.refinement_result import FinalPassResult, ModelMaps, Refin
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 
 if TYPE_CHECKING:
+    from relax.refinement.command_options import RandomSeed
     from relax.refinement.refinement_options import InitialSampling, RestartProvenance
     from relax.relion.input_poses import PoseProvenance
     from relax.relion.relion_metadata import MaxSignificantsResolution
@@ -189,7 +190,7 @@ def build_archive_metadata(
     n_images,
     n_rotations,
     n_translations,
-    optimizer_seed_source,
+    random_seed: "RandomSeed",
     particle_diameter_ang,
     particle_layout,
     replay_provenance: dict,
@@ -218,8 +219,8 @@ def build_archive_metadata(
         "initial_pose_source_sha256": np.asarray(initial_pose_source.sha256 or ""),
         "relion_fresh_particle_order_applied": np.bool_(use_fresh_auto_refine_order),
         # The seed actually used (RELION's default -1 takes the time) and where it came from.
-        "random_seed": np.int64(args.seed),
-        "random_seed_source": np.asarray(optimizer_seed_source),
+        "random_seed": np.int64(random_seed.value),
+        "random_seed_source": np.asarray(random_seed.source),
         "current_sizes": np.array(result.history.current_sizes),
         "pixel_resolutions": np.array(result.history.pixel_resolutions),
         "wall_times": np.array(result.history.wall_times),

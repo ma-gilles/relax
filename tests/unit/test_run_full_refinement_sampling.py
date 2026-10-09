@@ -18,7 +18,6 @@ from relax.refinement.command_options import (
 )
 from relax.refinement.full_refinement import (
     _effective_perturb_seed,
-    _resolve_optimizer_random_seed,
 )
 from relax.refinement.result_files import _rotation_posterior_arrays, profile_rows_for_json
 from relax.sampling import (
@@ -188,9 +187,22 @@ def test_explicit_max_healpix_order_cannot_be_coarser_than_start():
 
 
 def test_cli_perturb_seed_defaults_to_relion_random_seed():
-    assert _effective_perturb_seed(SimpleNamespace(seed=17, perturb_seed=None)) == 17
-    assert _effective_perturb_seed(SimpleNamespace(seed=17, perturb_seed=23)) == 23
-    assert _effective_perturb_seed(SimpleNamespace(seed=17, perturb_seed=-1)) is None
+    assert _effective_perturb_seed(None, 17) == 17
+    assert _effective_perturb_seed(23, 17) == 23
+    assert _effective_perturb_seed(-1, 17) is None
+
+
+def _resolve_optimizer_random_seed(explicit_seed, seed_star):
+    """The run's seed and its source for an explicit ``--seed`` and the optimiser it may inherit from."""
+    args = SimpleNamespace(
+        seed=explicit_seed,
+        continue_optimiser_star=None,
+        relion_optimiser=None,
+        relion_init_dir=None,
+        perturb_replay_relion_dir=None,
+    )
+    seed = command_options.resolve_seed(args, seed_star, sealed=seed_star is not None)
+    return seed.value, seed.source
 
 
 def test_optimizer_seed_explicit_cli_wins_over_relion_star(tmp_path):
@@ -211,9 +223,7 @@ def test_optimizer_seed_inherits_explicit_relion_star_when_omitted(tmp_path):
 
 
 def test_optimizer_seed_omitted_without_relion_state_is_the_time(monkeypatch):
-    import relax.refinement.full_refinement as driver
-
-    monkeypatch.setattr(driver.time, "time", lambda: 1700000000.2)
+    monkeypatch.setattr(command_options.time, "time", lambda: 1700000000.2)
     assert _resolve_optimizer_random_seed(None, None) == (1700000000, "RELION default -1: the time")
 
 
@@ -418,3 +428,22 @@ def test_rotation_posterior_arrays_stack_even_halves_and_split_uneven_ones():
     assert uneven["post_half1"].shape == (3,) and uneven["post_half2"].shape == (5,)
 
     assert list(_rotation_posterior_arrays("post", [None, np.ones(2)])) == ["post_half2"]
+
+
+def test_a_continued_run_keeps_its_run_files_seed_and_refuses_another(tmp_path):
+    optimiser = tmp_path / "run_it003_optimiser.star"
+    optimiser.write_text("data_optimiser_general\n\n_rlnRandomSeed 1713\n")
+    args = SimpleNamespace(
+        seed=None,
+        continue_optimiser_star=str(optimiser),
+        relion_optimiser=None,
+        relion_init_dir=None,
+        perturb_replay_relion_dir=None,
+    )
+    # Recorded as an explicit seed, as the run's archive has always stored it.
+    assert command_options.resolve_seed(args, None, sealed=False) == command_options.RandomSeed(1713, "explicit CLI")
+    args.seed = 1713
+    assert command_options.resolve_seed(args, None, sealed=False).value == 1713
+    args.seed = 5
+    with pytest.raises(SystemExit, match="differs from the continued run's seed 1713"):
+        command_options.resolve_seed(args, None, sealed=False)

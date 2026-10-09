@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from relax.refinement import command_options, particle_loading
-from relax.refinement import full_refinement as driver
 
 pytestmark = pytest.mark.unit
 
@@ -72,9 +71,16 @@ def test_explicit_values_are_kept():
 
 
 def test_seed_defaults_to_the_time_like_relion(monkeypatch):
-    monkeypatch.setattr(driver.time, "time", lambda: 1234567890.7)
-    assert driver._resolve_optimizer_random_seed(None, None) == (1234567890, "RELION default -1: the time")
-    assert driver._resolve_optimizer_random_seed(7, None) == (7, "explicit CLI")
+    monkeypatch.setattr(command_options.time, "time", lambda: 1234567890.7)
+    args = SimpleNamespace(
+        seed=None, continue_optimiser_star=None, relion_optimiser=None, relion_init_dir=None,
+        perturb_replay_relion_dir=None,
+    )
+    assert command_options.resolve_seed(args, None, sealed=False) == command_options.RandomSeed(
+        1234567890, "RELION default -1: the time"
+    )
+    args.seed = 7
+    assert command_options.resolve_seed(args, None, sealed=False) == command_options.RandomSeed(7, "explicit CLI")
 
 
 def test_mask_diameter_falls_back_to_the_gui_default(monkeypatch):

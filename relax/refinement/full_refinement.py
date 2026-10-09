@@ -316,39 +316,17 @@ def _use_fresh_auto_refine_particle_order(
     )
 
 
-def _resolve_optimizer_random_seed(explicit_seed, relion_optimiser_star):
-    """Resolve the optimiser seed without silently diverging from RELION.
-
-    An explicit CLI seed always wins.  For strict-parity runs whose RELION
-    optimiser was explicitly supplied, inherit ``_rlnRandomSeed`` when the
-    CLI seed is omitted.  Otherwise relion_refine's default ``-1`` takes the
-    time (``MlOptimiser::initialiseWorkLoad``, ml_optimiser.cpp:2827).
-    """
-    if explicit_seed is not None:
-        return int(explicit_seed), "explicit CLI"
-
-    if relion_optimiser_star is not None:
-        from relax.relion.relion_metadata import read_relion_optimiser_metadata
-
-        metadata = read_relion_optimiser_metadata(relion_optimiser_star)
-        relion_seed = metadata.get("random_seed")
-        if relion_seed is not None:
-            return int(relion_seed), f"RELION optimiser {Path(relion_optimiser_star).resolve()}"
-
-    return int(time.time()), "RELION default -1: the time"
-
-
-def _effective_perturb_seed(args):
+def _effective_perturb_seed(perturb_seed: int | None, random_seed: int) -> int | None:
     """Resolve the SamplingPerturbation seed used by the refinement loop.
 
     RELION uses the optimiser ``--random_seed`` for SamplingPerturbation, so
-    the CLI-level ``--seed`` must drive the perturbation stream too. An explicit
+    the run's random seed must drive the perturbation stream too. An explicit
     ``--perturb_seed`` overrides it; a negative explicit value keeps the legacy
     non-deterministic NumPy perturbation path for diagnostics.
     """
-    if args.perturb_seed is None:
-        return args.seed
-    return None if args.perturb_seed < 0 else args.perturb_seed
+    if perturb_seed is None:
+        return random_seed
+    return None if perturb_seed < 0 else perturb_seed
 
 
 def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir) -> Path:
@@ -433,7 +411,7 @@ def main(command=None):
 
     command_options.validate_skip_align_args(args)
     if args.continue_optimiser_star is not None:
-        args.seed = command_options.validate_continue_args(args)
+        command_options.validate_continue_args(args)
 
     # The one RELION optimiser STAR the run reads: a sealed boundary's completed optimiser, or the one the
     # arguments locate (see command_options.relion_optimiser_star).
@@ -444,10 +422,8 @@ def main(command=None):
         args,
         sealed_optimiser=fixed_diagnostic_source_paths["completed_optimiser"] if fixed_diagnostic_arm else None,
     )
-    args.seed, optimizer_seed_source = _resolve_optimizer_random_seed(
-        args.seed, command_options.optimiser_seed_source(args, optimiser_star, sealed=fixed_diagnostic_arm)
-    )
-    logger.info("Optimiser random seed: %d (%s)", args.seed, optimizer_seed_source)
+    seed = command_options.resolve_seed(args, optimiser_star, sealed=fixed_diagnostic_arm)
+    logger.info("Optimiser random seed: %d (%s)", seed.value, seed.source)
 
     if args.timing_dir:
         timing_dir_path = Path(args.timing_dir)
@@ -529,13 +505,13 @@ def main(command=None):
             _write_relion_start_particle_table(
                 our_star,
                 os.path.join(args.data_dir, "particles.star"),
-                seed=int(args.seed),
+                seed=seed.value,
                 output_dir=args.output,
             )
         )
         logger.info(
             "RELION start-up particle table rebuilt from the input STAR with seed %d: %s",
-            int(args.seed),
+            seed.value,
             args.relion_half_sets,
         )
 
@@ -547,7 +523,7 @@ def main(command=None):
         ds,
         halfset_path=args.relion_half_sets,
         n_classes=int(args.n_classes),
-        seed=int(args.seed),
+        seed=seed.value,
         init_relion_iteration=args.init_relion_iteration,
         fresh_auto_refine_order=use_fresh_auto_refine_order,
         noise_order_needed=relion_startup_noise_needed or (args.n_classes == 1 and use_relion_live_initial_noise),
@@ -622,7 +598,7 @@ def main(command=None):
     group_particle_source = prepared_particle_groups.source
     particle_groups = prepared_particle_groups.layout
     follower_routing = oracle_admission.admit_follower_routing(
-        args, group_particle_source, particle_groups, log=logger
+        args, group_particle_source, particle_groups, random_seed=seed.value, log=logger
     )
     relion_dispatch_schedule = follower_routing.schedule
     follower_topology = follower_routing.topology
@@ -1108,11 +1084,12 @@ def main(command=None):
 
     t_start = time.time()
 
-    effective_perturb_seed = _effective_perturb_seed(args)
+    effective_perturb_seed = _effective_perturb_seed(args.perturb_seed, seed.value)
     if frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm:
         frozen_boundary_cli.validate_fixed_boundary_runtime(
             frozen_boundary,
             args,
+            random_seed=seed.value,
             dataset=ds,
             effective_max_healpix_order=initial_sampling.max_order,
             effective_tau2_fudge=effective_tau2_fudge,
@@ -1174,7 +1151,7 @@ def main(command=None):
             args.output,
             settings=run_files.RunSettings(
                 output_root=os.path.join(args.output, "run"),
-                random_seed=int(args.seed),
+                random_seed=seed.value,
                 nr_iter=int(args.max_iter),
                 particle_diameter=float(particle_diameter_ang or 0.0),
                 # RELION writes its live values (ml_optimiser.cpp:1660-1665): the run's mask edge, and the
@@ -1239,7 +1216,7 @@ def main(command=None):
             tau2_fudge=effective_tau2_fudge,
             perturb_factor=args.perturb_factor,
             perturb_seed=effective_perturb_seed,
-            optimizer_random_seed=args.seed,
+            optimizer_random_seed=seed.value,
             relion_optics_image_sizes=half_sets.optics_image_sizes,
             relion_optics_pixel_sizes=half_sets.optics_pixel_sizes,
             optics_group_ids_per_half=optics_group_ids_per_half,
@@ -1259,7 +1236,10 @@ def main(command=None):
         solvent=SolventOptions(mask_path=args.solvent_mask, correct_fsc=bool(args.solvent_correct_fsc)),
         local_search=command_options.resolve_local_search(args),
         k_class=command_options.resolve_k_class(
-            args, trial_order=particle_layout.accuracy_trial_order_local, resumed=resume_snapshot is not None
+            args,
+            random_seed=seed.value,
+            trial_order=particle_layout.accuracy_trial_order_local,
+            resumed=resume_snapshot is not None,
         ),
         checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
         replay=ReplayState(
@@ -1357,8 +1337,8 @@ def main(command=None):
         max_significants_resolution=runtime_controls.max_significants_resolution,
         restart=restart_provenance,
         max_iter=args.max_iter,
-        random_seed=args.seed,
-        random_seed_source=optimizer_seed_source,
+        random_seed=seed.value,
+        random_seed_source=seed.source,
         n_rotations=n_rotations,
         n_translations=translations.shape[0],
         initial_sampling=initial_sampling,
@@ -1384,7 +1364,7 @@ def main(command=None):
         n_images=n_images,
         n_rotations=n_rotations,
         n_translations=translations.shape[0],
-        optimizer_seed_source=optimizer_seed_source,
+        random_seed=seed,
         particle_diameter_ang=particle_diameter_ang,
         particle_layout=particle_layout,
         replay_provenance=archive_provenance.replay_archive_metadata(

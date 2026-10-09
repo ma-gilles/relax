@@ -10,6 +10,7 @@ import dataclasses
 import logging
 import math
 import os
+import time
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -267,12 +268,12 @@ def validate_skip_align_args(args) -> None:
         raise SystemExit("--skip_align: " + "; ".join(reasons))
 
 
-def validate_continue_args(args) -> int:
-    """Refuse options a continuation cannot honour; return the run's random seed.
+def validate_continue_args(args) -> None:
+    """Refuse options a continuation cannot honour.
 
     The run files pin the trajectory, so a RELION-seeded or replayed start, a frozen
     boundary or a sampling oracle would contradict them. The seed must be the original
-    run's: it fixes the particle order and the sampling perturbations.
+    run's (:func:`resolve_seed`).
     """
 
     conflicts = [
@@ -296,6 +297,42 @@ def validate_continue_args(args) -> int:
         conflicts.append("--diagnostic_single_half")
     if conflicts:
         raise SystemExit("--continue cannot be combined with " + ", ".join(conflicts))
+
+
+@dataclasses.dataclass(frozen=True)
+class RandomSeed:
+    """The run's random seed (RELION's ``--random_seed``) and where it came from (stored in the archive)."""
+
+    value: int
+    source: str
+
+
+def resolve_seed(args, optimiser_star, *, sealed: bool) -> RandomSeed:
+    """The run's random seed, decided once.
+
+    A continued run keeps its run files' seed (it fixes the particle order and the sampling perturbations;
+    a different ``--seed`` is refused) and records it as an explicit seed, as before. Otherwise an explicit
+    ``--seed`` wins; a run without one inherits ``_rlnRandomSeed`` from the optimiser
+    :func:`optimiser_seed_source` names; else relion_refine's default ``-1`` takes the time
+    (``MlOptimiser::initialiseWorkLoad``, ml_optimiser.cpp:2827).
+    """
+    explicit_seed = args.seed
+    if args.continue_optimiser_star is not None:
+        explicit_seed = _continued_run_seed(args)
+    if explicit_seed is not None:
+        return RandomSeed(int(explicit_seed), "explicit CLI")
+    seed_star = optimiser_seed_source(args, optimiser_star, sealed=sealed)
+    if seed_star is not None:
+        from relax.relion.relion_metadata import read_relion_optimiser_metadata
+
+        relion_seed = read_relion_optimiser_metadata(seed_star).get("random_seed")
+        if relion_seed is not None:
+            return RandomSeed(int(relion_seed), f"RELION optimiser {Path(seed_star).resolve()}")
+    return RandomSeed(int(time.time()), "RELION default -1: the time")
+
+
+def _continued_run_seed(args) -> int:
+    """The continued run's ``rlnRandomSeed``; a different explicit ``--seed`` is refused."""
     from relax.refinement.run_files import read_star_blocks
 
     general = read_star_blocks(args.continue_optimiser_star).get("optimiser_general", {})
@@ -1526,7 +1563,7 @@ def resolve_schedule(
     )
 
 
-def resolve_k_class(args, *, trial_order, resumed: bool) -> KClassOptions:
+def resolve_k_class(args, *, random_seed: int, trial_order, resumed: bool) -> KClassOptions:
     """The class count, ``--skip_align`` and, for a fresh Class3D run from one reference (``--init_volume``),
     each particle's class in RELION's first iteration, drawn in the expected-accuracy trial order ``trial_order``."""
     from relax.relion.input_particle_table import relion_class3d_seed_classes
@@ -1535,7 +1572,7 @@ def resolve_k_class(args, *, trial_order, resumed: bool) -> KClassOptions:
         n_classes=args.n_classes,
         skip_align=bool(args.skip_align),
         first_iteration_seed_classes=(
-            relion_class3d_seed_classes(trial_order, int(args.seed), int(args.n_classes))
+            relion_class3d_seed_classes(trial_order, random_seed, int(args.n_classes))
             if args.n_classes > 1 and args.init_volume is not None and not resumed
             else None
         ),
