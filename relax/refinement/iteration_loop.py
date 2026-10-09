@@ -171,6 +171,263 @@ logger = logging.getLogger(__name__)
 
 
 
+class _K1Iteration:
+    """The K=1 auto-refine iteration's own controller statements. ``_ClassIteration`` has the same methods; the
+    loop chooses one of the two once per run and calls them at the same points (code rule 6)."""
+
+    run_files_snapshot = staticmethod(iteration_snapshot.k1_run_files_snapshot)
+
+    def plan_image_size(self, ctx, carry, options, history, observer, *, previous_size, resume, iteration):
+        """The image size from the half-map FSC history; installs the growth state and the scheduling curve."""
+        image_size_plan = plan_halfmap_image_size(
+            history.fsc_history, growth_fsc_history=history.fsc_for_growth_history, restart=resume,
+            data_vs_prior=carry.previous_data_vs_prior_for_scheduling, previous_size=previous_size,
+            box_size=ctx.image_geometry.box_size, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
+            incr_size=carry.relion_incr_size, has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit,
+            ave_pmax=carry.state.ave_Pmax,
+            completed_relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration),
+            parity=options.parity, dtype=ctx.scoring_dtype, log=logger,
+        )
+        carry = replace(
+            carry, previous_data_vs_prior_for_scheduling=image_size_plan.data_vs_prior,
+            relion_incr_size=image_size_plan.incr_size,
+            relion_has_high_fsc_at_limit=image_size_plan.has_high_fsc_at_limit,
+        )
+        return carry, image_size_plan
+
+    def refuse_local_search(self, options):
+        """Auto-refine switches to local searches from the HEALPix order: nothing to refuse."""
+
+    def record_class_weights(self, carry, options, history, per_half):
+        """One class: no class weights to update."""
+        return carry
+
+    def maximize(self, ctx, carry, options, history, this_iteration, operands, reference_model, source):
+        """RELION's split-half M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct)."""
+        mstep = k1_maximization(
+            reference_model, operands, ctx, this_iteration, parity=options.parity,
+            pixel_resolutions=history.pixel_resolutions, current_resolution=carry.state.current_resolution,
+        )
+        return carry, mstep
+
+    def solved_accumulators(self, mstep, operands):
+        """The accumulators the solve used (joined at low resolution when that is on) replace the scored ones."""
+        return mstep.Ft_y_per_half, mstep.Ft_ctf_per_half
+
+    def learned_direction_priors(self, ctx, options, per_half, plan, use_local):
+        return maximization.k1_learned_direction_priors(
+            per_half.rotation_posterior, direction_prior_order=plan.direction_prior_healpix_order,
+            symmetry=options.symmetry.point_group, dtype=ctx.scoring_dtype, log=logger,
+        )
+
+    def unfiltered_maps(self, ctx, options, reference_model, mstep, accumulator_shape, needed):
+        """The unregularized half-maps (when ``needed``), then each new map's sign aligned to the previous."""
+        unreg_means = (
+            reconstruct_unregularized_k1_halfmaps(
+                mstep.Ft_y_per_half,
+                mstep.Ft_ctf_per_half,
+                ctx.reconstruction_settings,
+                accumulator_volume_shape=accumulator_shape,
+            )
+            if needed
+            else [None, None]
+        )
+        align_k1_volume_signs(reference_model.maps, mstep.previous_means, unreg_means, ctx.volume_shape)
+        return unreg_means
+
+    def fsc(self, mstep):
+        """K=1's FSC (the M-step's, which set tau2 before the Wiener solve) also drives size growth."""
+        return mstep.fsc
+
+    def log_statistics(self, statistics, per_half):
+        """Nothing beyond the history's Pmax row."""
+
+    def resolution(self, ctx, carry, options, history, this_iteration, mstep):
+        """The resolution from the half-map FSC's SSNR, and no class change (one class)."""
+        resolution_estimate = estimate_k1_iteration_resolution(
+            mstep.tau2_update_details["ssnr_shells"], current_size=this_iteration.current_size,
+            box_size=ctx.image_geometry.box_size,
+            voxel_size=ctx.source_pixel_size_angstrom,
+            emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
+            ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
+            relion_iteration=int(options.schedule.init_relion_iteration) + int(this_iteration.iteration) + 1,
+            dtype=ctx.scoring_dtype,
+        )
+        return resolution_estimate, 0.0
+
+    def scheduling_curve_after_resolution(self, ctx, carry, history, resolution_estimate):
+        """K=1's next scheduling curve is the resolution estimate's data-vs-prior: installed and recorded."""
+        carry = replace(carry, previous_data_vs_prior_for_scheduling=np.asarray(
+            resolution_estimate.data_vs_prior, dtype=ctx.scoring_dtype,
+        ))
+        history.data_vs_prior_trajectory.append(carry.previous_data_vs_prior_for_scheduling)
+        return carry
+
+    def sampling_decision_now(self, carry):
+        """Auto-refine decides the sampling at the end of a natively sampled iteration."""
+        return not carry.native_sampling_boundary
+
+    def after_convergence(self, carry, options, iteration):
+        """RELION's one-time reset of the follower's counter after the convergence update."""
+        return replace(carry, state=reset_follower_counter_once(carry.state, options, iteration=iteration))
+
+    def numbered_maps(self, reference_model, carry):
+        return finalization.numbered_k1_maps(reference_model.maps)
+
+    def final_join_means(self, reference_model, options):
+        """Each half's own map, or (diagnostic) the merged map for both halves."""
+        if not options.final_pass.merged_reference:
+            return [reference_model.maps[0], reference_model.maps[1]]
+        final_merged_reference = merged_half_map(reference_model.maps)
+        logger.info(
+            "Diagnostic %s=1: final all-data K=1 E-step uses merged reference for both halves",
+            FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
+        )
+        return [final_merged_reference, final_merged_reference]
+
+    def final_use_local(self, carry):
+        """The final pass searches locally where the numbered iterations did."""
+        return carry.state.do_local_search
+
+
+class _ClassIteration:
+    """The Class3D iteration's own controller statements; the methods of ``_K1Iteration``."""
+
+    run_files_snapshot = staticmethod(iteration_snapshot.class_run_files_snapshot)
+
+    def plan_image_size(self, ctx, carry, options, history, observer, *, previous_size, resume, iteration):
+        """The image size from the shared per-class curve; the observer sees the plan (the carry is unchanged)."""
+        image_size_plan = plan_class_image_size(
+            carry.previous_data_vs_prior_for_scheduling, previous_size=previous_size,
+            box_size=ctx.image_geometry.box_size,
+            pixel_size_angstrom=ctx.source_pixel_size_angstrom, incr_size=carry.relion_incr_size,
+            ave_pmax=carry.state.ave_Pmax,
+            completed_relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration),
+            parity=options.parity, dtype=ctx.scoring_dtype, log=logger,
+        )
+        observer.class_image_size_planned(
+            iteration, image_size_plan, previous_size=previous_size, box_size=ctx.image_geometry.box_size,
+            has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit, incr_size=carry.relion_incr_size,
+            state=carry.state,
+        )
+        return carry, image_size_plan
+
+    def refuse_local_search(self, options):
+        """Class3D searches locally only with --sigma_ang: RELION switches from the HEALPix order only under
+        auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938)."""
+        if options.local_search.sigma_ang_deg is None:
+            raise RuntimeError("K>1 (Class3D) reached local angular searches without --sigma_ang")
+
+    def record_class_weights(self, carry, options, history, per_half):
+        """The class weights from this expectation's posterior: installed, recorded with the full-posterior
+        weights, and logged."""
+        carry = replace(carry, class_mixture=class_mixture_from_weights(
+            _class_weights_from_posterior(
+                per_half.class_posterior, options.k_class.n_classes, carry.class_mixture.weights,
+            ),
+        ))
+        history.record_class_weights(
+            carry.class_mixture.weights,
+            _class_weights_from_posterior(
+                per_half.class_full_posterior, options.k_class.n_classes, carry.class_mixture.weights,
+            ),
+        )
+        logger.info(
+            "K-class occupancies: %s",
+            ", ".join(f"class {idx + 1}={weight:.4f}" for idx, weight in enumerate(carry.class_mixture.weights)),
+        )
+        return carry
+
+    def maximize(self, ctx, carry, options, history, this_iteration, operands, reference_model, source):
+        """Class3D joins the halves per class, carries the previous Iref power spectrum forward as tau2 and
+        solves once per class; its data-vs-prior curve is recorded and becomes the scheduling curve."""
+        mstep = class_maximization(
+            reference_model, operands, ctx, options, this_iteration,
+            class_tau2=source.class_tau2(this_iteration.iteration, options.k_class.n_classes),
+        )
+        history.data_vs_prior_trajectory.append(mstep.data_vs_prior)
+        carry = replace(carry, previous_data_vs_prior_for_scheduling=mstep.data_vs_prior)
+        return carry, mstep
+
+    def solved_accumulators(self, mstep, operands):
+        """The scored accumulators (the joined class sums stay in the M-step's record)."""
+        return operands.numerators, operands.denominators
+
+    def learned_direction_priors(self, ctx, options, per_half, plan, use_local):
+        return maximization.class_learned_direction_priors(
+            per_half.rotation_posterior, per_half.class_rotation_posterior, n_classes=options.k_class.n_classes,
+            direction_prior_order=plan.direction_prior_healpix_order, symmetry=options.symmetry.point_group,
+            use_local=use_local, n_trial_rotations=plan.trial_grid.rotations.shape[0], dtype=ctx.scoring_dtype,
+        )
+
+    def unfiltered_maps(self, ctx, options, reference_model, mstep, accumulator_shape, needed):
+        """The unregularized class means from the joined class sums (when ``needed``)."""
+        return (
+            reconstruct_unregularized_class_means(
+                mstep.Ft_y_combined,
+                mstep.Ft_ctf_combined,
+                ctx.reconstruction_settings,
+                options.k_class.n_classes,
+                accumulator_volume_shape=accumulator_shape,
+            )
+            if needed
+            else [None, None]
+        )
+
+    def fsc(self, mstep):
+        """Class3D has no half-map FSC (its shared per-class curve drives growth)."""
+        return None
+
+    def log_statistics(self, statistics, per_half):
+        logger.info(
+            "Class3D optimizer Pmax: value=%.9f numerator=%.9f "
+            "half1_mstep_posterior_mass=%.9f half1_particle_count=%d",
+            statistics.ave_pmax, float(np.sum(np.asarray(per_half.max_posterior[0]), dtype=np.float64)),
+            statistics.ave_pmax_mass, int(np.asarray(per_half.max_posterior[0]).size),
+        )
+
+    def resolution(self, ctx, carry, options, history, this_iteration, mstep):
+        """The joined class assignments (recorded) and their change since the previous iteration; the
+        resolution from the shared per-class prior and the combined class accumulators."""
+        current_combined_classes = concatenate_assignments(carry.class_assignments)
+        history.class_assignment_history.append(current_combined_classes.copy())
+        previous_combined_classes = concatenate_assignments_or_none(carry.previous_class_assignments)
+        resolution_estimate = estimate_class_iteration_resolution(
+            history.data_vs_prior_trajectory[-1], current_size=this_iteration.current_size,
+            box_size=ctx.image_geometry.box_size,
+            voxel_size=ctx.source_pixel_size_angstrom,
+            emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
+            ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
+            relion_iteration=int(options.schedule.init_relion_iteration) + int(this_iteration.iteration) + 1,
+            dtype=ctx.scoring_dtype,
+        )
+        return resolution_estimate, hard_class_change_fraction(current_combined_classes, previous_combined_classes)
+
+    def scheduling_curve_after_resolution(self, ctx, carry, history, resolution_estimate):
+        """Class3D's scheduling curve is the M-step's (already installed)."""
+        return carry
+
+    def sampling_decision_now(self, carry):
+        """Class3D takes no auto-refine sampling decision."""
+        return False
+
+    def after_convergence(self, carry, options, iteration):
+        return carry
+
+    def numbered_maps(self, reference_model, carry):
+        return finalization.numbered_class_maps(
+            reference_model.maps, carry.class_mixture.weights, carry.class_assignments,
+        )
+
+    def final_join_means(self, reference_model, options):
+        """Each half's own class stack."""
+        return [reference_model.maps[0], reference_model.maps[1]]
+
+    def final_use_local(self, carry):
+        """The Class3D final pass searches globally."""
+        return False
+
+
 def _follower_replay_telemetry(source, history) -> ReplayTelemetry:
     """The follower-scale replay's requested and applied iterations (both None without a replay), validated
     against the iterations the run applied; raises if the replay was not applied as requested."""
@@ -464,6 +721,8 @@ def refine_single_volume(
     )
     # Set when a local-search diagnostic stops the run after its first local search.
     profile_stop = None
+    # The run's one mode decision: the K=1 or the Class3D iteration's own statements.
+    mode = _ClassIteration() if ctx.k_class_enabled else _K1Iteration()
     while (
         options.schedule.force_max_iter_after_convergence or not carry.state.has_converged
     ) and iteration < options.schedule.max_iter:
@@ -523,35 +782,9 @@ def refine_single_volume(
             )
         else:
             prev_cs = history.current_sizes[-1] if history.current_sizes else int(resume.current_size)
-            if ctx.k_class_enabled:
-                image_size_plan = plan_class_image_size(
-                    carry.previous_data_vs_prior_for_scheduling, previous_size=prev_cs,
-                    box_size=ctx.image_geometry.box_size,
-                    pixel_size_angstrom=ctx.source_pixel_size_angstrom, incr_size=carry.relion_incr_size,
-                    ave_pmax=carry.state.ave_Pmax,
-                    completed_relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration),
-                    parity=options.parity, dtype=ctx.scoring_dtype, log=logger,
-                )
-                observer.class_image_size_planned(
-                    iteration, image_size_plan, previous_size=prev_cs, box_size=ctx.image_geometry.box_size,
-                    has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit, incr_size=carry.relion_incr_size,
-                    state=carry.state,
-                )
-            else:
-                image_size_plan = plan_halfmap_image_size(
-                    history.fsc_history, growth_fsc_history=history.fsc_for_growth_history, restart=resume,
-                    data_vs_prior=carry.previous_data_vs_prior_for_scheduling, previous_size=prev_cs,
-                    box_size=ctx.image_geometry.box_size, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
-                    incr_size=carry.relion_incr_size, has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit,
-                    ave_pmax=carry.state.ave_Pmax,
-                    completed_relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration),
-                    parity=options.parity, dtype=ctx.scoring_dtype, log=logger,
-                )
-                carry = replace(
-                    carry, previous_data_vs_prior_for_scheduling=image_size_plan.data_vs_prior,
-                    relion_incr_size=image_size_plan.incr_size,
-                    relion_has_high_fsc_at_limit=image_size_plan.has_high_fsc_at_limit,
-                )
+            carry, image_size_plan = mode.plan_image_size(
+                ctx, carry, options, history, observer, previous_size=prev_cs, resume=resume, iteration=iteration,
+            )
 
         current_size = resolve_current_size(
             image_size_plan, options, previous_size=prev_cs if has_previous_iteration else None,
@@ -707,10 +940,8 @@ def refine_single_volume(
             for half in halves:
                 half.centre_absent_poses(offset_dims=3 if ctx.tomo_halves else 2)
         use_local = carry.state.do_local_search
-        if use_local and ctx.k_class_enabled and options.local_search.sigma_ang_deg is None:
-            # Class3D searches locally only with --sigma_ang: RELION switches from the HEALPix
-            # order only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
-            raise RuntimeError("K>1 (Class3D) reached local angular searches without --sigma_ang")
+        if use_local:
+            mode.refuse_local_search(options)
         # --- RELION's SamplingPerturbation of the trial grid (healpix_sampling.cpp:1810-1820, 1909-1934): a rigid
         # rotation applied after oversampling; at OS0 the coarse grid is the trial grid. ---
         perturbation = source.random_perturbation(iteration)
@@ -789,8 +1020,8 @@ def refine_single_volume(
         # earlier release), and the inputs' references to its maps, which the M-step releases.
         half_inputs = projectors = shared_projector_half1 = None
 
-        Ft_y_0, Ft_y_1 = expected.per_half.Ft_y
-        Ft_ctf_0, Ft_ctf_1 = expected.per_half.Ft_ctf
+        numerators = tuple(expected.per_half.Ft_y)
+        denominators = tuple(expected.per_half.Ft_ctf)
 
         if options.local_search.stops_after_local_search and use_local:
             elapsed = iteration_clock.seconds
@@ -804,22 +1035,7 @@ def refine_single_volume(
                 significant_count=expected.significance.recorded,
             )
             break
-        if ctx.k_class_enabled:
-            carry = replace(carry, class_mixture=class_mixture_from_weights(
-                _class_weights_from_posterior(
-                    expected.per_half.class_posterior, options.k_class.n_classes, carry.class_mixture.weights,
-                ),
-            ))
-            history.record_class_weights(
-                carry.class_mixture.weights,
-                _class_weights_from_posterior(
-                    expected.per_half.class_full_posterior, options.k_class.n_classes, carry.class_mixture.weights,
-                ),
-            )
-            logger.info(
-                "K-class occupancies: %s",
-                ", ".join(f"class {idx + 1}={weight:.4f}" for idx, weight in enumerate(carry.class_mixture.weights)),
-            )
+        carry = mode.record_class_weights(carry, options, history, expected.per_half)
         mstep_accumulator_shape = _resolve_mstep_accumulator_shape(
             expected.per_half.mstep_accumulator_shape, ctx.padded_volume_shape,
         )
@@ -828,16 +1044,16 @@ def refine_single_volume(
         # The raw half accumulators, before any join: the observer sees them, then the finite guard checks them
         # (a report names the half that is actually damaged, not the one a join copied it into).
         observer.half_accumulators_ready(
-            iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1),
+            iteration, numerators=numerators, denominators=denominators,
             settings=ctx.reconstruction_settings, current_size=this_iteration.current_size, accumulator_shape=mstep_accumulator_shape,
             k_class_enabled=ctx.k_class_enabled, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
         )
         check_half_accumulators_before_join(
-            (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), iteration=iteration,
+            numerators, denominators, iteration=iteration,
             init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
         )
         operands = maximization.MStepOperands(
-            numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1),
+            numerators=numerators, denominators=denominators,
             accumulator_shape=mstep_accumulator_shape, full_half_axis=mstep_full_half_axis,
             full_half_axes=expected.per_half.mstep_full_half_axis, halves=halves,
             image_current_size=plan.sampling_plan.windows.image_current_size,
@@ -847,39 +1063,15 @@ def refine_single_volume(
         # --- RELION-exact M-step: K=1 on the split-half auto-refine path (compareTwoHalves -> updateSSNRarrays
         # -> reconstruct); Class3D joins the halves per class, carries the previous Iref power spectrum forward
         # as tau2 and solves once per class. mstep is the mode's record (ClassMaximization or K1Maximization). ---
-        if ctx.k_class_enabled:
-            mstep = class_maximization(
-                reference_model, operands, ctx, options, this_iteration,
-                class_tau2=source.class_tau2(iteration, options.k_class.n_classes),
-            )
-            history.data_vs_prior_trajectory.append(mstep.data_vs_prior)
-            carry = replace(carry, previous_data_vs_prior_for_scheduling=mstep.data_vs_prior)
-        else:
-            mstep = k1_maximization(
-                reference_model, operands, ctx, this_iteration, parity=options.parity,
-                pixel_resolutions=history.pixel_resolutions, current_resolution=carry.state.current_resolution,
-            )
-            # The accumulators the solve used (joined at low resolution when that is on) replace the scored ones.
-            Ft_y_0, Ft_y_1 = mstep.Ft_y_per_half
-            Ft_ctf_0, Ft_ctf_1 = mstep.Ft_ctf_per_half
+        carry, mstep = mode.maximize(ctx, carry, options, history, this_iteration, operands, reference_model, source)
+        numerators, denominators = mode.solved_accumulators(mstep, operands)
         observer.stage_finished(iteration, "recon")
 
         history.significant_counts.append(expected.significance.recorded)
 
         history.record_rotation_posterior(expected.per_half.rotation_posterior)
         # pdf_direction: each half's next direction prior from this iteration's posteriors (None: kept).
-        learned_priors = (
-            maximization.class_learned_direction_priors(
-                expected.per_half.rotation_posterior, expected.per_half.class_rotation_posterior, n_classes=options.k_class.n_classes,
-                direction_prior_order=plan.direction_prior_healpix_order, symmetry=options.symmetry.point_group,
-                use_local=use_local, n_trial_rotations=plan.trial_grid.rotations.shape[0], dtype=ctx.scoring_dtype,
-            )
-            if ctx.k_class_enabled
-            else maximization.k1_learned_direction_priors(
-                expected.per_half.rotation_posterior, direction_prior_order=plan.direction_prior_healpix_order,
-                symmetry=options.symmetry.point_group, dtype=ctx.scoring_dtype, log=logger,
-            )
-        )
+        learned_priors = mode.learned_direction_priors(ctx, options, expected.per_half, plan, use_local)
         for half_index, learned in enumerate(learned_priors):
             if learned is not None:
                 carry.direction_priors[half_index] = learned
@@ -905,43 +1097,21 @@ def refine_single_volume(
             )
         )
         unreg_clock = Stopwatch()
-        if ctx.k_class_enabled:
-            unreg_means = (
-                reconstruct_unregularized_class_means(
-                    mstep.Ft_y_combined,
-                    mstep.Ft_ctf_combined,
-                    ctx.reconstruction_settings,
-                    options.k_class.n_classes,
-                    accumulator_volume_shape=mstep_accumulator_shape,
-                )
-                if need_unreg_means
-                else [None, None]
-            )
-        else:
-            unreg_means = (
-                reconstruct_unregularized_k1_halfmaps(
-                    (Ft_y_0, Ft_y_1),
-                    (Ft_ctf_0, Ft_ctf_1),
-                    ctx.reconstruction_settings,
-                    accumulator_volume_shape=mstep_accumulator_shape,
-                )
-                if need_unreg_means
-                else [None, None]
-            )
-            align_k1_volume_signs(reference_model.maps, mstep.previous_means, unreg_means, ctx.volume_shape)
+        unreg_means = mode.unfiltered_maps(
+            ctx, options, reference_model, mstep, mstep_accumulator_shape, need_unreg_means,
+        )
         logger.info(
             "Unregularized reconstruction (2 halves): %.1fs%s", unreg_clock.seconds,
             "" if need_unreg_means else " (skipped; diagnostics disabled)",
         )
 
-        # K=1's FSC (the M-step's, which set tau2 before the Wiener solve) also drives size growth; Class3D has
-        # none (its shared per-class curve drives growth).
-        fsc = None if ctx.k_class_enabled else mstep.fsc
+        # K=1's FSC also drives size growth; Class3D has none (its shared per-class curve drives growth).
+        fsc = mode.fsc(mstep)
         history.record_fsc(fsc, fsc)
         observer.stage_finished(iteration, "fsc")
 
         observer.maps_reconstructed(ReconstructedIteration(
-            iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), reference_model=reference_model,
+            iteration, numerators=numerators, denominators=denominators, reference_model=reference_model,
             noise_model=carry.noise_model, per_half=expected.per_half, trial_grid=plan.trial_grid, sampling_plan=plan.sampling_plan,
             options=options, unfiltered_maps=unreg_means, fsc=fsc, current_size=this_iteration.current_size, state=carry.state,
             volume_shape=ctx.volume_shape, voxel_size=ctx.source_pixel_size_angstrom,
@@ -952,44 +1122,15 @@ def refine_single_volume(
             expected.per_half, carry.previous_assignments,
             _relion_pmax_normalization_mass_per_half(expected.per_half, k_class_enabled=ctx.k_class_enabled),
         )
-        if ctx.k_class_enabled:
-            logger.info(
-                "Class3D optimizer Pmax: value=%.9f numerator=%.9f "
-                "half1_mstep_posterior_mass=%.9f half1_particle_count=%d",
-                statistics.ave_pmax, float(np.sum(np.asarray(expected.per_half.max_posterior[0]), dtype=np.float64)),
-                statistics.ave_pmax_mass, int(np.asarray(expected.per_half.max_posterior[0]).size),
-            )
+        mode.log_statistics(statistics, expected.per_half)
         history.record_pmax(statistics.ave_pmax, statistics.ave_pmax_mass, statistics.max_posterior.copy())
         history.record_pass2_engines(take_pass_engines())
         history.record_coarse_engines(take_coarse_engine_calls())
 
         # --- Resolution from updated FSC-derived SSNR (RELION auto-refine) ---
-        if ctx.k_class_enabled:
-            current_combined_classes = concatenate_assignments(carry.class_assignments)
-            history.class_assignment_history.append(current_combined_classes.copy())
-            previous_combined_classes = concatenate_assignments_or_none(carry.previous_class_assignments)
-            # K>1: from the shared per-class prior and the combined class accumulators.
-            resolution_estimate = estimate_class_iteration_resolution(
-                history.data_vs_prior_trajectory[-1], current_size=this_iteration.current_size, box_size=ctx.image_geometry.box_size,
-                voxel_size=ctx.source_pixel_size_angstrom,
-                emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
-                ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
-                relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration) + 1,
-                dtype=ctx.scoring_dtype,
-            )
-        else:
-            current_combined_classes = None
-            previous_combined_classes = None
-            # K=1: data_vs_prior comes from the half-map FSC.
-            resolution_estimate = estimate_k1_iteration_resolution(
-                mstep.tau2_update_details["ssnr_shells"], current_size=this_iteration.current_size,
-                box_size=ctx.image_geometry.box_size,
-                voxel_size=ctx.source_pixel_size_angstrom,
-                emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
-                ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
-                relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration) + 1,
-                dtype=ctx.scoring_dtype,
-            )
+        resolution_estimate, class_change_fraction = mode.resolution(
+            ctx, carry, options, history, this_iteration, mstep,
+        )
         if int(resolution_estimate.scheduling_shell) != int(resolution_estimate.observed_shell):
             logger.info(
                 "RELION firstiter_cc resolution state: using ini_high=%.2f A shell %d "
@@ -1021,11 +1162,7 @@ def refine_single_volume(
             pose_update, translation_dimension=3 if ctx.tomo_halves else 2, dtype=ctx.scoring_dtype, log=logger,
         )
 
-        if not ctx.k_class_enabled:
-            carry = replace(carry, previous_data_vs_prior_for_scheduling=np.asarray(
-                resolution_estimate.data_vs_prior, dtype=ctx.scoring_dtype,
-            ))
-            history.data_vs_prior_trajectory.append(carry.previous_data_vs_prior_for_scheduling)
+        carry = mode.scheduling_curve_after_resolution(ctx, carry, history, resolution_estimate)
 
         # RELION's posterior-weighted noise update: the radial sigma2_noise and the engine's pixel rows.
         noise_update = update_posterior_noise_variance(
@@ -1095,20 +1232,13 @@ def refine_single_volume(
         # --- Convergence state: assignment changes, resolution stalls, angular-step refinement ---
         updated_state, accuracy_replay = update_iteration_convergence(
             carry.state, pose_comparison, options, image_geometry=ctx.image_geometry, iteration=iteration,
-            sampling_decision_now=not ctx.k_class_enabled and not carry.native_sampling_boundary,
-            class_change_fraction=(
-                hard_class_change_fraction(current_combined_classes, previous_combined_classes)
-                if ctx.k_class_enabled
-                else 0.0
-            ),
+            sampling_decision_now=mode.sampling_decision_now(carry), class_change_fraction=class_change_fraction,
             scheduling_resolution_shell=resolution_estimate.scheduling_shell, source=source,
             translations=carry.coarse_grids.translations, statistics=statistics,
             significant_counts=expected.significance.convergence,
             exact_acc_rot=iteration_accuracy.acc_rot, exact_acc_trans=iteration_accuracy.acc_trans_angstrom, log=logger,
         )
-        carry = replace(carry, state=updated_state)
-        if not ctx.k_class_enabled:
-            carry = replace(carry, state=reset_follower_counter_once(carry.state, options, iteration=iteration))
+        carry = mode.after_convergence(replace(carry, state=updated_state), options, iteration)
 
         # Reuse the assignment statistic computed by update_refinement_state.
         # Sampling transitions and optimiser replay preserve this field.
@@ -1144,11 +1274,7 @@ def refine_single_volume(
         # --- RELION's run_itNNN files (ml_optimiser.cpp:3489) ---
         checkpoint_writer = options.checkpoint.writer
         if checkpoint_writer is not None and checkpoint_writer.due(this_iteration.numbered_relion_iteration):
-            snapshot = (
-                iteration_snapshot.class_run_files_snapshot
-                if ctx.k_class_enabled
-                else iteration_snapshot.k1_run_files_snapshot
-            )(
+            snapshot = mode.run_files_snapshot(
                 ctx, carry, this_iteration, reference_model=reference_model, halves=halves, mstep=mstep,
                 unfiltered_maps=unreg_means, expected=expected, corrections=correction_report,
             )
@@ -1184,8 +1310,7 @@ def refine_single_volume(
         # run-files snapshot live can make high-resolution runs OOM before the batch-size estimator acts
         # (41 GB of host carried into the final pass at box 800).
         jax.block_until_ready(reference_model.maps)
-        Ft_y_0 = Ft_y_1 = None
-        Ft_ctf_0 = Ft_ctf_1 = None
+        numerators = denominators = None
         unreg_means = mstep = snapshot = None
         # Pass containers must not retain the previous grids while the next projector is built.
         expected = projector_power_spectrum = operands = None
@@ -1229,27 +1354,14 @@ def refine_single_volume(
         )
     if not finalization.final_pass_due(carry.state, options, iteration=iteration, k_class_enabled=ctx.k_class_enabled):
         return RefinementResult(
-            maps=(
-                finalization.numbered_class_maps(
-                    reference_model.maps, carry.class_mixture.weights, carry.class_assignments,
-                )
-                if ctx.k_class_enabled
-                else finalization.numbered_k1_maps(reference_model.maps)
-            ),
+            maps=mode.numbered_maps(reference_model, carry),
             replay=_follower_replay_telemetry(follower_scale_replay, history),
             follower_scale=follower_setup.result_outputs(history), convergence_state=carry.state, numbered=numbered,
             history=history,
         )
     # --- RELION's final iteration (do_join_random_halves + do_use_all_data, ml_optimiser.cpp:10157-10160 and
     # 5707-5708): one more E+M at full Nyquist, each half against its own map, the weighted sums joined. ---
-    final_join_means = [reference_model.maps[0], reference_model.maps[1]]
-    if not ctx.k_class_enabled and options.final_pass.merged_reference:
-        final_merged_reference = merged_half_map(reference_model.maps)
-        final_join_means = [final_merged_reference, final_merged_reference]
-        logger.info(
-            "Diagnostic %s=1: final all-data K=1 E-step uses merged reference for both halves",
-            FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
-        )
+    final_join_means = mode.final_join_means(reference_model, options)
     final_state = source.final_state(
         FinalState(final_join_means, carry.sigma_offset, carry.noise_model),
         means=reference_model.maps, numbered_iteration_count=len(history.current_sizes), halves=halves,
@@ -1265,7 +1377,7 @@ def refine_single_volume(
             numbered_iteration_count=len(history.current_sizes), relion_half_inputs=halves, dtype=ctx.scoring_dtype,
             logger=logger,
         )
-    final_use_local = not ctx.k_class_enabled and carry.state.do_local_search
+    final_use_local = mode.final_use_local(carry)
     if final_use_local:
         for half in halves:
             half.require_local_search_poses()
