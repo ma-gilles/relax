@@ -11,13 +11,13 @@ here in the commit that closes it; record a decision in the "Decided" section. "
 | Measure | Before (main 6610f54d) | Now |
 | --- | --- | --- |
 | `_compute_k_class_significance_batched` | 1,819 lines, 46 parameters, 283 locals | 9 lines, 4 parameters and the options of `Pass1Request` |
-| Planning (`plan_pass1`) and the loop (`run_pass1`) | inside that function | 240 and 76 lines, one parameter each; the route, the program and support plans and the batch's two steps are functions of their own modules |
+| Planning (`plan_pass1`) and the loop (`run_pass1`) | inside that function | 206 and 76 lines, one parameter each; the route, the program and support plans and the batch's two steps are functions of their own modules |
 | `significance.py` | 2,660 lines | 111 lines |
 | `_publish_batch` | 264 lines, nested; captures 51 enclosing variables, unpacks a 34-field tuple | `pass1_publish.publish_batch` (12 lines), explicit inputs, `BatchOutputs` record, five functions by what each writes |
 | Largest function of `relax/scoring` | 1,819 lines | 466 lines (`tomo_coarse.particle_coarse_supports`) |
 | Largest parameter list of `relax/scoring` | 46 | 23 (`particle_coarse_supports`); pass 1's widest is `_pass1_block_update` with 14 (nine static settings are one `ProgramStatics`) |
 | Parameters never read | `disc_type`, `do_gridding_correction`; `means` read only for `n_classes` | deleted |
-| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 8,961 / 7,629: the cost of 19 new modules (headers, records, docstrings); 60 / 16 above the line-count ceilings the owner set on 2026-10-09 (8,901 / 7,613), inside their 5% slack |
+| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 8,968 / 7,640: the cost of 19 new modules (headers, records, docstrings); 67 / 27 above the line-count ceilings the owner set on 2026-10-09 (8,901 / 7,613), inside their 5% slack |
 | Ceilings | `docs/development/scoring_structure_metrics.json` (the totals on that date) | the span, parameter and large-argument ceilings are at the measured values; the very-large-argument count is 1 |
 
 ## Coverage
@@ -31,6 +31,12 @@ the six results, the files a dump wrote, and an ordered trace of log records and
 kernels. 33 deliberate mutations of pass 1 are each detected (`selftest`), and `check_mutation_anchors.py`
 verifies their anchors. The refinement fingerprint cannot see inside pass 1: it replaces the function by a recorder.
 
+Each stage also has direct CPU tests (the fingerprint is a dev tool, not a test): `tests/unit/test_pass1_request.py`
+(the request's refusals), `test_pass1_planning.py` (the window, priors, blocks, support plan, route and the planner's
+refusals) and `test_pass1_run.py` (the batch steps, publish, the order of the loop, the typed result). They pin the
+deferred-publish rule that a waiting batch holds none of its large arrays, and the order operands, publish, program.
+They were checked against 13 deliberate breaks of the stage code, each caught.
+
 Not covered by it (the GPU tiers cover them): the tree rescore's kernel and its CUDA gates (the cases replace them by a
 deterministic stand-in, as `tests/unit/test_refine_relion_mode.py` does, so the selection around the kernel is covered);
 RELION's CUDA preprocessing, translation kernel and texture projector (stand-ins); real CTFs and noise weighting (unit values);
@@ -39,11 +45,12 @@ device scoring (`defer_publish`).
 
 ## Open items
 
-1. **The planner is still a sequence of steps (rules 6, 10, 11).** `plan_pass1` (240 lines) decides the route once
+1. **The planner is still a sequence of steps (rules 6, 10, 11).** `plan_pass1` (206 lines) decides the route once
    (`plan_gaussian_route` and `plan_cc_route` in `pass1_route.py`, one `RoutePlan`) and delegates the program and support
-   plans (`plan_score_program`, `plan_support`), but its first ten steps (the refusals, the request's fields, the window)
-   are inline, and `coarse_rotation_ids` and the healpix order are validated for every route although only the
-   normalized-CC tree rescore reads them. The callers (`k_class.py`, `scripts/run_k_class_parity.py`, about 30 tests)
+   plans (`plan_score_program`, `plan_support`); the refusals that read only the request's fields are `Pass1Request`'s own.
+   What remains inline is the normalization of the request's fields, the window and the construction of the output,
+   dump and batch-input records. `coarse_rotation_ids` and the healpix order are validated for every route although only
+   the normalized-CC tree rescore reads them. The callers (`k_class.py`, `scripts/run_k_class_parity.py`, about 30 tests)
    still pass keywords that `_compute_k_class_significance_batched` turns into a `Pass1Request`; that entry is the seam
    they patch and the fingerprint calls, so it stays until they build the request.
 2. **The environment steers pass 1 below the boundary (rule 5).** Read in `pass1_plan.py`:
@@ -75,7 +82,7 @@ device scoring (`defer_publish`).
 
 Retiring the generic Gaussian support route (the first question) would also delete the generic route's RELION
 normalization branch (`_coarse_max_posterior_for_host`, two `SupportResult` and `BatchOutputs` fields, their publish
-branch and one private import from `relax/sparse_pass2`): about 45 of the 60 lines by which the package is over its
+branch and one private import from `relax/sparse_pass2`): about 45 of the 67 lines by which the package is over its
 line-count ceiling. The rest is the headers of the modules added in the last two rounds (`pass1_route.py`,
 `pass1_step.py`).
 
