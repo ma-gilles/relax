@@ -73,13 +73,15 @@ def gpu_subprocess_env():
       local ``relax`` package rather than whatever is ``pip install -e``'d.
     - Sets ``XLA_PYTHON_CLIENT_PREALLOCATE=false`` so the subprocess does
       not try to grab most of GPU memory (the main pytest process may
-      already hold a large chunk).
+      already hold a large chunk). ``RELAX_TEST_XLA_PREALLOCATE=true``
+      overrides it, so a tier item can run relax with JAX's default
+      preallocated pool, as users do.
     - Pins ``XLA_PYTHON_CLIENT_MEM_FRACTION=.90`` so regression baselines
       are not perturbed by a developer shell override such as ``.50``.
     """
     env = dict(os.environ)
     _prepend_repo_root_to_pythonpath(env)
-    env["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    env["XLA_PYTHON_CLIENT_PREALLOCATE"] = os.environ.get("RELAX_TEST_XLA_PREALLOCATE", "false")
     env["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".90"
     env["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
     # Ensure subprocesses prefer CUDA backend for custom-call kernels.

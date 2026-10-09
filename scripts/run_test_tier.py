@@ -440,8 +440,17 @@ def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[
                 400,
             )
         )
+        # The relax subprocess runs with JAX's default preallocated pool, as users do, so memory-dependent
+        # routing (xla_memory_reserve.device_fits) is exercised under the allocator users have; the other
+        # GPU items run with preallocation off. This is the only item that runs a converged final pass.
         items.append(
-            Item("e2e_k1_5k_standalone", _pytest(py, f"{E2E}::test_k1_5k128_standalone_autorefine"), True, 1500)
+            Item(
+                "e2e_k1_5k_standalone",
+                _pytest(py, f"{E2E}::test_k1_5k128_standalone_autorefine"),
+                True,
+                1500,
+                env={"RELAX_TEST_XLA_PREALLOCATE": "true"},
+            )
         )
         items += sweep_shards(src, py)
         return items

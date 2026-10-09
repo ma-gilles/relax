@@ -137,18 +137,74 @@ def test_sign_overlap_and_pad_on_an_h100_at_box_800_stay_on_the_device(monkeypat
     assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is False
 
 
-@pytest.mark.gpu
-def test_device_can_place_answers_on_the_device():
-    """The probe on a real allocator: a small block places; a block larger than the pool limit does not."""
+def test_device_can_place_catches_only_out_of_memory(monkeypatch):
     import jax
+    from jax.errors import JaxRuntimeError
 
-    from relax.helpers.xla_memory_reserve import device_can_place
+    from relax.helpers import xla_memory_reserve
+
+    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
+
+    def refuse(*_a, **_k):
+        raise JaxRuntimeError("RESOURCE_EXHAUSTED: Out of memory while trying to allocate 2.01GiB.")
+
+    monkeypatch.setattr(jax.numpy, "zeros", refuse)
+    assert xla_memory_reserve.device_can_place(2 * GIB) is False
+
+    def broken(*_a, **_k):
+        raise JaxRuntimeError("INTERNAL: something else")
+
+    monkeypatch.setattr(jax.numpy, "zeros", broken)
+    with pytest.raises(JaxRuntimeError, match="INTERNAL"):
+        xla_memory_reserve.device_can_place(2 * GIB)
+
+
+def test_device_fits_skips_the_probe_well_inside_the_bounds(monkeypatch):
+    from relax.helpers import xla_memory_reserve
+
+    _fake_gpu(monkeypatch, limit_gib=72.0, in_use_gib=10.0, largest_block_gib=0.0)
+    probes = []
+    monkeypatch.setattr(xla_memory_reserve, "device_can_place", lambda n: probes.append(n) or False)
+    assert xla_memory_reserve.device_fits(int(2 * GIB)) is True  # 2.8% of the limit, 62 GiB free: no probe
+    assert probes == []
+    assert xla_memory_reserve.device_fits(int(5 * GIB)) is False  # near the boundary: probed, and refused
+    assert probes == [int(5 * GIB)]
+
+
+_PROBE_CHILD = """
+import jax, jax.numpy as jnp
+from relax.helpers.xla_memory_reserve import device_can_place
+x = jnp.ones((1 << 20,), jnp.float32).block_until_ready()
+stats = jax.devices()[0].memory_stats()
+before = stats["bytes_in_use"]
+small = device_can_place(1 << 26)
+huge = device_can_place(int(stats["bytes_limit"]) + (1 << 30))
+after = jax.devices()[0].memory_stats()["bytes_in_use"]
+print("PROBE", small, huge, before == after)
+"""
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("preallocate", ["true", "false"])
+def test_device_can_place_answers_on_the_device_and_leaves_nothing(preallocate):
+    """The probe on a real allocator, with and without preallocation: a small block places, a block larger than the
+    pool limit does not, and the allocator's bytes in use are unchanged afterwards."""
+    import os
+    import subprocess
+
+    import jax
 
     if jax.default_backend() != "gpu":
         pytest.skip("needs a GPU")
-    limit = jax.devices()[0].memory_stats()["bytes_limit"]
-    assert device_can_place(1 << 20) is True
-    assert device_can_place(int(limit) + (1 << 30)) is False
+    from conftest import repo_python_command, repo_subprocess_env
+
+    env = repo_subprocess_env(dict(os.environ, XLA_PYTHON_CLIENT_PREALLOCATE=preallocate))
+    env.pop("XLA_PYTHON_CLIENT_MEM_FRACTION", None)
+    env["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.3"
+    proc = subprocess.run(repo_python_command("-c", _PROBE_CHILD), env=env, capture_output=True, text=True, timeout=600)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    (line,) = [line for line in proc.stdout.splitlines() if line.startswith("PROBE")]
+    assert line.split()[1:] == ["True", "False", "True"], line
 
 
 def test_low_resolution_join_goes_to_the_host_when_its_copies_do_not_fit(monkeypatch):

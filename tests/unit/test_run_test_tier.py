@@ -21,6 +21,8 @@ def test_medium_plan_covers_fast_tier_sweep_and_end_to_end():
     collected = run_test_tier.fast_cases(REPO_ROOT, sys.executable)
     assert len(collected) >= 10 and set(collected) <= set(items)
     assert {"cpu_fast_guard", "cpu_merge_units", "vdam_k1_50k", "e2e_k1_5k_standalone"} <= set(items)
+    # Memory-dependent routing must be exercised under JAX's default preallocated pool in at least one item.
+    assert items["e2e_k1_5k_standalone"].env.get("RELAX_TEST_XLA_PREALLOCATE") == "true"
     swept = [a for i in items.values() if i.name.startswith("unit_") for a in i.argv if a.endswith(".py")]
     assert len(swept) == len(set(swept)), "a sweep file is in two shards"
     assert run_test_tier.FAST not in swept and run_test_tier.E2E not in swept

@@ -224,7 +224,7 @@ The GPU items of `scripts/run_test_tier.py` that run the refinement controller (
 | medium | `k1_multioptics_coldstart`, `k1_multioptics_firstiter_cc` | 1 | native, `--init_volume` | global | no | two optics groups of different pixel size and box |
 | medium | `kclass_coldstart` | 4 | `--perturb_replay_relion_dir`, 3 iterations | global hp2 os1 | no | Class3D; `--relion-dispatch-schedule` |
 | medium | `kclass_nonadaptive_replay`, `kclass_strict_oversample_coldstart` | 4 | `--relion_init_dir` + `--perturb_replay_relion_dir` | global hp1 os0; hp1 os1 | no | Class3D; `--relion-dispatch-schedule` |
-| medium | `e2e_k1_5k_standalone` (`tests/integration/test_em_tier_e2e.py`) | 1 | native cold start, to convergence (up to 25 iterations) | global, then local search | yes, asserted | the only tier item that runs the final pass of a converged run |
+| medium | `e2e_k1_5k_standalone` (`tests/integration/test_em_tier_e2e.py`) | 1 | native cold start, to convergence (up to 25 iterations) | global, then local search | yes, asserted | the only tier item that runs the final pass of a converged run; relax runs with `XLA_PYTHON_CLIENT_PREALLOCATE=true` (JAX's default) |
 | medium | GPU sweep: `test_tomo_aberrations_refine.py`, `test_tomo_premultiplied_final_pass.py`, `test_class3d_multishape_smoke.py`, `test_non_finite_image_stops_before_output_gpu.py` | 1 / K | native | `--auto_local_healpix_order 2` (tomo) | tomo aberrations: yes (`RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER=1`) | tomography; several-shape Class3D; the non-finite refusal |
 
 Not refinement: `kclass_replay` (smoke and medium) calls `relax.classification.k_class` directly; `vdam_k1_50k`

@@ -35,9 +35,12 @@ from __future__ import annotations
 
 import argparse
 import functools
+import logging
 import os
 import re
 import subprocess
+
+_LOG = logging.getLogger(__name__)
 
 MEM_FRACTION_ENV = "XLA_PYTHON_CLIENT_MEM_FRACTION"
 # CUDA context, cuFFT/CUB workspaces and the coarse-kernel texture cache.
@@ -246,8 +249,8 @@ def single_working_set_bytes(pool_limit_bytes: int | None = None) -> int | None:
 
 
 def device_can_place(n_bytes: int) -> bool | None:
-    """Whether the running GPU allocator can hand out one block of ``n_bytes`` now: one probe allocation, released at
-    once. ``None`` off GPU.
+    """Whether the running GPU allocator can hand out one block of ``n_bytes`` now: one probe allocation, released
+    (deleted and synchronized) at once. ``None`` off GPU. Only an out-of-memory answer is caught.
 
     The allocator's own statistics cannot answer it: jax 0.9's ``largest_free_block_bytes`` reads 0 with or without
     preallocation, and a fragmented pool can refuse a block much smaller than its free total (relax#49).
@@ -255,18 +258,26 @@ def device_can_place(n_bytes: int) -> bool | None:
 
     import jax
     import jax.numpy as jnp
+    from jax.errors import JaxRuntimeError
 
     if jax.default_backend() != "gpu":
         return None
     try:
         probe = jnp.zeros((max(int(n_bytes), 1),), dtype=jnp.uint8)
         probe.block_until_ready()
-    except Exception as exc:  # jax's XlaRuntimeError; anything else is not a placement answer
-        if "RESOURCE_EXHAUSTED" in str(exc):
-            return False
-        raise
+    except JaxRuntimeError as exc:
+        if "RESOURCE_EXHAUSTED" not in str(exc):
+            raise
+        _LOG.debug("device placement probe: %d bytes do not fit", int(n_bytes))
+        return False
     probe.delete()
+    jax.block_until_ready(jnp.zeros((), dtype=jnp.uint8))
+    _LOG.debug("device placement probe: %d bytes fit", int(n_bytes))
     return True
+
+
+# A working set at most this share of the pool limit, with twice it free, is placed without a probe.
+_PROBE_FREE_SHARE = 0.05
 
 
 def device_fits(working_set_bytes: int, *, pool_limit_bytes: int | None = None) -> bool:
@@ -276,8 +287,8 @@ def device_fits(working_set_bytes: int, *, pool_limit_bytes: int | None = None) 
     It must be within the single working set the pool limit allows (:func:`single_working_set_bytes`, the relax#40
     share; the limit is ``pool_limit_bytes`` when given, else the running backend's), twice it must be within what
     the allocator can still hand out (limit less bytes in use: a fragmentation margin of two), and the allocator must
-    place it as one block now (:func:`device_can_place`). The live checks run only on a GPU backend. True when
-    nothing is known (off GPU).
+    place it as one block now (:func:`device_can_place`), which is probed only above ``_PROBE_FREE_SHARE`` of the
+    limit. The live checks run only on a GPU backend. True when nothing is known (off GPU).
     """
 
     import jax
@@ -294,6 +305,8 @@ def device_fits(working_set_bytes: int, *, pool_limit_bytes: int | None = None) 
     if stats.get("bytes_limit"):
         if 2 * working_set > int(stats["bytes_limit"]) - int(stats.get("bytes_in_use", 0)):
             return False
+        if working_set <= _PROBE_FREE_SHARE * int(stats["bytes_limit"]):
+            return True
     return device_can_place(working_set) is not False
 
 
