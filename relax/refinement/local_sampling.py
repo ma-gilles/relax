@@ -356,6 +356,14 @@ class NumberedSamplingPlan:
     direction_prior_healpix_order: int
     direction_log_priors: list
     use_adaptive: bool
+    # The input source's choices and the adaptive pass-1 width, installed by the loop after its ports: the
+    # rotation ids the scorer reads (None: the grid's own), the angular step and size of the adaptive pass 1
+    # (None off the adaptive route) and the translations a replayed sampling centres the local translation
+    # prior on (None natively).
+    scoring_rotation_ids: object = None
+    coarse_angular_step_deg: float | None = None
+    coarse_cs: int | None = None
+    replay_prior_translations: object = None
 
 
 def plan_numbered_sampling(

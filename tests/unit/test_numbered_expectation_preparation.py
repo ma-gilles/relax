@@ -121,8 +121,8 @@ def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadat
     trace = CallTrace(monkeypatch)
     trace.wrap(local_sampling, 'iteration_trial_grid', 'grid')
     trace.wrap(iteration_loop, 'plan_adaptive_image_size', 'coarse_plan')
-    trace.wrap(iteration_loop, 'DenseVariantPolicy', 'variant')
-    trace.wrap(iteration_loop, 'prepare_numbered_expectation', 'phase')
+    trace.wrap(expectation, 'DenseVariantPolicy', 'variant')
+    trace.wrap(expectation, 'prepare_numbered_expectation', 'phase')
     run_tiny_refinement(
         monkeypatch, final_after_max_iter=False, adaptive=stand_in.adaptive(adaptive_oversampling=int(adaptive)),
     )
@@ -162,7 +162,7 @@ def test_actual_end_boundary_drops_phase_before_cache_policy(monkeypatch):
 
     trace = CallTrace(monkeypatch)
     for name in ('DenseVariantPolicy', 'prepare_numbered_expectation'):
-        trace.wrap(iteration_loop, name, after=lambda call: held.append(weakref.ref(call.result)), keep_operands=False)
+        trace.wrap(expectation, name, after=lambda call: held.append(weakref.ref(call.result)), keep_operands=False)
     # The cache policy clears JAX's caches between iterations (RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS).
     monkeypatch.setattr(iteration_loop.jax, 'clear_caches', clear_caches)
     execution = ExecutionOptions(

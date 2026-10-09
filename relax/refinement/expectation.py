@@ -51,12 +51,12 @@ from relax.refinement.half_scoring import (
     _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.iteration_planning import ExpectationWindows, IterationCarry
+from relax.refinement.iteration_planning import ExpectationWindows, IterationCarry, NumberedIteration
 from relax.refinement.local_sampling import LocalSampling, NumberedSamplingPlan, local_search_centre_half
 from relax.refinement.optics_shapes import OpticsSpec
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.refinement_options import RefinementOptions
-from relax.refinement.tomo_half import TomoSampling
+from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.sampling import TrialGrid, rotation_grid_size
 
@@ -369,6 +369,113 @@ def run_numbered_halves(
                 "complete target set; refusing to continue with one half missing"
             )
     significance.combine()
+
+
+@dataclass(frozen=True, kw_only=True)
+class NumberedExpectationResult:
+    """A numbered expectation's published per-half outputs and significance statistics."""
+
+    per_half: PerHalfOutputs
+    significance: SignificanceStatistics
+
+
+def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coarse_cs, fine_window_size):
+    """A numbered iteration's dense route: its first-iteration mode, the adaptive sizes and the class options.
+
+    ``coarse_cs`` is the adaptive pass-1 size, None off the adaptive route; ``fine_window_size`` is the pass-2
+    scoring window (the E-step size).
+    """
+
+    return DenseVariantPolicy(
+        firstiter_score_mode_this_iter=first_iteration.score_mode,
+        firstiter_winner_take_all_this_iter=first_iteration.winner_take_all,
+        k_class_enabled=int(k_class.n_classes) > 1,
+        relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
+        firstiter_coarse_current_size=coarse_cs,
+        firstiter_fine_current_size=fine_window_size if use_adaptive else None,
+        firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
+        skip_align=bool(k_class.skip_align),
+    )
+
+
+def run_numbered_expectation(
+    ctx: "RunContext",
+    carry: IterationCarry,
+    plan: NumberedSamplingPlan,
+    this_iteration: NumberedIteration,
+    options: RefinementOptions,
+    *,
+    half_inputs: list,
+    diagnostic_half_indices,
+    history,
+) -> NumberedExpectationResult:
+    """Score both halves of a numbered iteration (step S3): the dense route's variant, the expectation phase
+    shared by the halves, the subtomogram sampling, then each half scored and published (half 0's
+    accumulators leave the device before half 1 is scored; ``options.execution.overlap_halves`` may run the two
+    on two threads).
+
+    ``half_inputs`` are the halves' scoring inputs (``numbered_half_inputs``); ``diagnostic_half_indices`` the
+    halves to score (both, except for a targeted significance diagnostic, which stops the run). Reads from
+    ``carry``: ``state``, ``coarse_grids``, ``random_perturbation`` and the class log priors; from ``ctx``: the
+    run's scoring settings and its expectation probe (the observer's per-half hooks). Appends the local and
+    global profile rows to ``history``'s profile lists as the scorers produce them.
+    """
+    use_local = carry.state.do_local_search
+    variant = _numbered_dense_variant(
+        this_iteration.first_iteration, options.k_class, use_adaptive=plan.use_adaptive, coarse_cs=plan.coarse_cs,
+        fine_window_size=plan.sampling_plan.windows.score_window_size,
+    )
+    phase = prepare_numbered_expectation(
+        plan.trial_grid, plan.sampling_plan.windows, local_sampling=plan.sampling_plan.local, variant=variant,
+        use_adaptive=plan.use_adaptive, base_translations=carry.coarse_grids.base_translations,
+        current_healpix_order=carry.coarse_grids.rotation_grid.healpix_order,
+        oversampling_order=carry.state.adaptive_oversampling, translation_step=carry.state.translation_step,
+        random_perturbation=carry.random_perturbation, adaptive_pass1=plan.adaptive_pass1,
+        coarse_rotation_ids=plan.scoring_rotation_ids, coarse_angular_step_deg=plan.coarse_angular_step_deg,
+        options=options, iteration=this_iteration.iteration,
+        numbered_relion_iteration=this_iteration.numbered_relion_iteration,
+        collect_local_search_profile=ctx.collect_local_search_profile,
+        local_profile_history=history.local_profile_history, probe=ctx.expectation_probe,
+    )
+    tomo_sampling = (
+        numbered_iteration_tomo_sampling(
+            carry.state, ctx.image_geometry, local_sampling=plan.sampling_plan.local,
+            grid_healpix_order=carry.coarse_grids.rotation_grid.healpix_order,
+            random_perturbation=carry.random_perturbation,
+            coarse_size=plan.sampling_plan.local.coarse_image_window_size if use_local else plan.coarse_cs,
+            fine_size=plan.sampling_plan.windows.score_window_size,
+        )
+        if ctx.tomo_halves
+        else None
+    )
+    significance = SignificanceStatistics()
+    # per_half.coarse_ha holds the coarse-grid assignments (trial_grid.rotations indices on every route).
+    per_half = PerHalfOutputs()
+    run_numbered_halves(
+        partial(
+            score_numbered_half, phase=phase, tomo_sampling=tomo_sampling,
+            class_log_priors=carry.class_mixture.log_priors, batch_planner=ctx.batch_planner,
+            image_geometry=ctx.image_geometry, padded_volume_shape=ctx.padded_volume_shape,
+            multi_shape_halves=ctx.multi_shape_halves, options=options,
+            replay_prior_translations=plan.replay_prior_translations,
+            initial_class_assignments=this_iteration.seeding.seed_classes,
+            single_class_iteration=this_iteration.seeding.single_class_iteration, scoring_dtype=ctx.scoring_dtype,
+            relion_translation_angle_scale=ctx.relion_translation_angle_scale, iteration=this_iteration.iteration,
+            numbered_relion_iteration=this_iteration.numbered_relion_iteration, probe=ctx.expectation_probe,
+        ),
+        partial(
+            finish_numbered_half,
+            recording=NumberedHalfRecording(
+                per_half, significance, profile_history=history.global_profile_history,
+                iteration=this_iteration.iteration, image_window_size=plan.sampling_plan.windows.image_window_size,
+                healpix_order=carry.coarse_grids.rotation_grid.healpix_order, k_class_enabled=ctx.k_class_enabled,
+            ),
+            use_local=use_local, dtype=ctx.scoring_dtype,
+        ),
+        half_inputs, diagnostic_half_indices, significance,
+        overlap_halves=options.execution.overlap_halves, log=logger,
+    )
+    return NumberedExpectationResult(per_half=per_half, significance=significance)
 
 
 def numbered_half_inputs(

@@ -10,7 +10,6 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
-import relax.refinement.iteration_loop as iteration_loop
 from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics import local_debug
 from relax.helpers.convergence import native_final_perturbation_healpix_order
@@ -127,7 +126,7 @@ def test_per_half_update_preserves_double_posterior_state_in_double_mode(monkeyp
         "DENSE_PRECISION",
         replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
     )
-    outs = iteration_loop.PerHalfOutputs()
+    outs = score_outputs.PerHalfOutputs()
     outs.update_from(
         0,
         score_outputs.HalfScoreResult(

@@ -3204,7 +3204,7 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
     monkeypatch.setattr(setup, "reference_to_relion_projector_half_maps_and_power", transform)
     monkeypatch.setattr(projector_preparation, "prepare_scoring_projector", prepare)
     monkeypatch.setattr(expected_accuracy_module.Half1AccuracyInputs, "estimate", accuracy)
-    monkeypatch.setattr(iteration_loop_module, "score_numbered_half", score)
+    monkeypatch.setattr(expectation_module, "score_numbered_half", score)
     monkeypatch.setattr(
         sampling_module, "relion_scoring_rotation_grid",
         lambda order, dtype=None, *, symmetry="C1": sampling_module.RotationGrid(
@@ -3257,7 +3257,7 @@ def test_numbered_projector_preparation_skips_empty_half(
         raise PreparationChecked
 
     monkeypatch.setattr(projector_preparation, "prepare_scoring_projector", prepare)
-    monkeypatch.setattr(iteration_loop_module, "score_numbered_half", score)
+    monkeypatch.setattr(expectation_module, "score_numbered_half", score)
     with pytest.raises(PreparationChecked):
         refine_single_volume(
             half_datasets, StartupHandoff(init_volume, jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0), jnp.ones(IMAGE_SIZE, dtype=jnp.float32), translations,
