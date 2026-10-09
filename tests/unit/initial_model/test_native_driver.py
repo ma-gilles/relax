@@ -1901,9 +1901,6 @@ def test_update_particle_state_preserves_best_pose_metadata():
             "pose_assignments": np.asarray([1, 0], dtype=np.int32),
             "best_pose_rotations": rotations,
             "best_pose_translations": np.asarray([[3.0, -1.0], [0.0, 2.0]], dtype=np.float32),
-            "best_pose_rotation_ids": np.asarray([11, 7], dtype=np.int32),
-            "healpix_order": 1,
-            "oversampling": 1,
         },
         np.asarray([[0.0, 2.0], [3.0, -1.0]], dtype=np.float32),
     )
@@ -1914,8 +1911,6 @@ def test_update_particle_state_preserves_best_pose_metadata():
         particle_state.best_pose_translations,
         np.asarray([[0.0, 2.0], [0.0, 0.0], [3.0, -1.0]], dtype=np.float32),
     )
-    assert_matches(particle_state.best_pose_rotation_ids, [7, -1, 11])
-    assert_matches(particle_state.best_pose_rotation_orders, [2, -1, 2])
     assert_matches(particle_state.visited, [True, False, True])
 
     estep_meta_updates.update_particle_state_from_estep_meta(
@@ -1931,7 +1926,6 @@ def test_update_particle_state_preserves_best_pose_metadata():
     # VDAM subset, not only the identities selected by the current iteration.
     assert_matches(particle_state.visited, [True, True, True])
     np.testing.assert_allclose(particle_state.best_pose_rotations[[2, 0]], rotations)
-    assert_matches(particle_state.best_pose_rotation_ids, [7, -1, 11])
 
 
 def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():

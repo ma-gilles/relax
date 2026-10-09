@@ -285,16 +285,6 @@ def update_particle_state_from_estep_meta(
         particle_state.best_pose_translations = _ensure_field(particle_state.best_pose_translations, (N, 2), np.float32)
         particle_state.best_pose_translations[ids] = np.asarray(bt, dtype=np.float32)
 
-    if (rid := meta.get("best_pose_rotation_ids")) is not None:
-        particle_state.best_pose_rotation_ids = _ensure_field(particle_state.best_pose_rotation_ids, (N,), np.int32, -1)
-        particle_state.best_pose_rotation_ids[ids] = np.asarray(rid, dtype=np.int32).reshape(-1)
-        particle_state.best_pose_rotation_orders = _ensure_field(
-            particle_state.best_pose_rotation_orders, (N,), np.int32, -1
-        )
-        particle_state.best_pose_rotation_orders[ids] = int(meta.get("healpix_order", 0)) + int(
-            meta.get("oversampling", 0)
-        )
-
     if (cls := meta.get("class_assignments")) is not None:
         particle_state.class_assignments[ids] = np.asarray(cls, dtype=np.int32).reshape(-1)
 
