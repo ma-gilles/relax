@@ -45,7 +45,7 @@ def adaptive_result(
     """A ``KClassEMResult`` for ``means`` (``[K, V]``) over the dataset's images.
 
     Defaults: zero ``Ft_y``, unit ``Ft_ctf``, every image in class 0 at fine pose 0 with
-    posterior 1, identity best rotation with zero best translation, unit noise sums and one
+    posterior 1, fine rotation 0 as the best rotation with zero best translation, unit noise sums and one
     significant sample per image. Arguments override one field; ``Ft_y``/``Ft_ctf`` are ``[K, V]`` arrays or callables of ``(k, size)``.
     ``noise_fields(n_images)`` returns further ``NoiseStats`` fields (norm and scale-correction sums).
     ``noise_groups`` is each image's optics-group row of a per-group noise table (``[G, P]``, as the real engine
@@ -117,7 +117,9 @@ def adaptive_result(
         per_class_stats=stats,
         noise_stats=tuple(noise(n_images / n_classes) for _ in range(n_classes)),
         aggregate_noise_stats=noise(n_images),
-        best_pose_rotations=jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (n_images, 3, 3)),
+        # The rows of the selected fine rotation, as the engine returns them: for a magnified class the projected
+        # rows the caller handed it, which the caller's reported_rotations turns back into the rotation.
+        best_pose_rotations=jnp.broadcast_to(jnp.asarray(fine_rotations, dtype=jnp.float32)[0], (n_images, 3, 3)),
         best_pose_translations=(
             jnp.zeros((n_images, 2), dtype=jnp.float32)
             if best_pose_translations is None

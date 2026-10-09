@@ -7,8 +7,8 @@ import mrcfile
 import numpy as np
 import pytest
 import starfile
-from helpers.float_compare import assert_matches
 from helpers.fake_adaptive_engine import install_fake_adaptive_engine
+from helpers.float_compare import assert_matches
 from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
 from relax.refinement import firstiter_cc, half_scoring
@@ -80,15 +80,38 @@ def _assert_same_star(path_a, path_b):
                 np.testing.assert_array_equal(got, want, err_msg=f"{path_a.name} {block} {column}")
 
 
+def _magnify_second_group(data):
+    """Give optics group 2 its own anisotropic magnification matrix (rlnMagMat): its own shape class (relax#48)."""
+    star = starfile.read(data / "particles.star", always_dict=True)
+    optics = star["optics"]
+    for name, values in {
+        "rlnMagMat00": [1.0, 1.012], "rlnMagMat01": [0.0, 0.004], "rlnMagMat10": [0.0, 0.004], "rlnMagMat11": [1.0, 0.993],
+    }.items():
+        optics[name] = values
+    starfile.write(star, data / "particles.star", overwrite=True)
+
+
+def _write_data(tmp_path, groups, n_classes):
+    if groups == "shapes":
+        return write_tiny_data_dir(tmp_path / "data", n_images=16, n_classes=n_classes, second_shape=SECOND_SHAPE)
+    data = write_tiny_data_dir(tmp_path / "data", n_images=16, n_classes=n_classes, second_shape=(16, 4.25))
+    _magnify_second_group(data)
+    return data
+
+
 @pytest.mark.parametrize(
-    ("command", "arguments", "n_classes"),
-    [("refine", (), 1), ("class3d", ("--n_classes", "2"), 2)],
-    ids=["refine3d", "class3d-k2"],
+    ("command", "arguments", "n_classes", "groups"),
+    [
+        ("refine", (), 1, "shapes"),
+        ("class3d", ("--n_classes", "2"), 2, "shapes"),
+        ("refine", (), 1, "magnification"),
+    ],
+    ids=["refine3d", "class3d-k2", "refine3d-magnification"],
 )
 def test_continuing_a_several_shape_run_writes_what_the_uninterrupted_run_writes(
-    monkeypatch, tmp_path, command, arguments, n_classes
+    monkeypatch, tmp_path, command, arguments, n_classes, groups
 ):
-    data = write_tiny_data_dir(tmp_path / "data", n_images=16, n_classes=n_classes, second_shape=SECOND_SHAPE)
+    data = _write_data(tmp_path, groups, n_classes)
     whole = _run(monkeypatch, tmp_path, command, data, "whole", *arguments, "--max_iter", "3")
     first = _run(monkeypatch, tmp_path, command, data, "first", *arguments, "--max_iter", "2")
     continued = _run(
@@ -99,7 +122,7 @@ def test_continuing_a_several_shape_run_writes_what_the_uninterrupted_run_writes
     files = sorted(path.name for path in whole.glob("run_it003_*"))
     assert files and files == sorted(path.name for path in continued.glob("run_it003_*"))
     data_star = starfile.read(whole / "run_it003_data.star", always_dict=True)
-    assert sorted(data_star["optics"]["rlnImageSize"].astype(int)) == [14, 16]
+    assert len(data_star["optics"]) == 2
     for name in files:
         if name.endswith(".mrc"):
             assert_matches(mrcfile.read(continued / name), mrcfile.read(whole / name), rtol=1e-6, err_msg=name)
@@ -136,3 +159,24 @@ def test_a_continuation_logs_the_run_files_iteration_numbers(monkeypatch, tmp_pa
     assert any(message.startswith("=== RELION Iteration 3/3:") for message in messages)
     assert any(message.startswith("RELION Iteration 3:") for message in messages)
     assert not any(message.startswith(("=== RELION Iteration 1/", "RELION Iteration 1:")) for message in messages)
+
+
+def test_pose_records_of_a_magnified_class_are_rotations(monkeypatch, tmp_path):
+    """The loop's best rotations are proper rotations on a magnified class too: the engine returns the projected rows
+    it scored and the caller undoes the magnification (relax#61: a stand-in returning the identity left inv(M))."""
+    from relax.refinement import iteration_loop
+
+    seen = []
+    prepare = iteration_loop.prepare_pose_comparison
+
+    def record(pose_update, **kwargs):
+        seen.extend(np.asarray(poses.rotations, dtype=np.float64) for poses in pose_update.current)
+        return prepare(pose_update, **kwargs)
+
+    monkeypatch.setattr(iteration_loop, "prepare_pose_comparison", record)
+    _run(monkeypatch, tmp_path, "refine", _write_data(tmp_path, "magnification", 1), "whole", "--max_iter", "2")
+
+    rotations = np.concatenate([r for r in seen if r.size])
+    assert rotations.shape[0] > 0
+    np.testing.assert_allclose(np.einsum("nij,nkj->nik", rotations, rotations), np.broadcast_to(np.eye(3), rotations.shape), atol=1e-5)
+    np.testing.assert_allclose(np.linalg.det(rotations), 1.0, atol=1e-5)

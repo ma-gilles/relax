@@ -42,7 +42,7 @@ def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra
         stack.voxel_size = PIXEL_SIZE
     if second_shape is not None:
         box2, pixel2 = int(second_shape[0]), float(second_shape[1])
-        with mrcfile.new(root / f"particles.{box2}.mrcs") as stack:
+        with mrcfile.new(root / f"particles.group2.{box2}.mrcs") as stack:
             stack.set_data(rng.standard_normal((n_images, box2, box2)).astype(np.float32))
             stack.voxel_size = pixel2
     maps = ["reference_init_relion.mrc"] + [f"reference_init_class{k + 1:03d}_relion.mrc" for k in range(n_classes)]
@@ -51,6 +51,7 @@ def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra
             volume.set_data(rng.standard_normal((box, box, box)).astype(np.float32))
             volume.voxel_size = PIXEL_SIZE
     groups = [(box, PIXEL_SIZE)] + ([] if second_shape is None else [(box2, pixel2)])
+    stacks = [f"particles.{box}.mrcs"] + ([] if second_shape is None else [f"particles.group2.{box2}.mrcs"])
     optics = pd.DataFrame({
         "rlnOpticsGroup": [g + 1 for g in range(len(groups))],
         "rlnOpticsGroupName": [f"opticsGroup{g + 1}" for g in range(len(groups))],
@@ -61,7 +62,7 @@ def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra
     rows = np.arange(n_images)
     group = rows % len(groups)
     particles = pd.DataFrame({
-        "rlnImageName": [f"{i + 1}@particles.{groups[g][0]}.mrcs" for i, g in zip(rows, group)],
+        "rlnImageName": [f"{i + 1}@{stacks[g]}" for i, g in zip(rows, group)],
         "rlnMicrographName": [str(i + 1) for i in rows],
         "rlnDefocusU": 15000.0 + 100.0 * rows, "rlnDefocusV": 15100.0 + 100.0 * rows,
         "rlnDefocusAngle": np.full(n_images, 10.0), "rlnPhaseShift": np.zeros(n_images),
