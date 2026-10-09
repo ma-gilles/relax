@@ -62,6 +62,7 @@ def _case(size=8, padding=1, radius=2, pseudo=True, moments="populated"):
 def _native(bind, case):
     args = case.copy()
     args["vol_relion"] = args.pop("reference_relion")
+    args["ori_size"] = args.pop("box_size")  # the RELION binding keeps RELION's name
     return bind.vdam_m_step_transaction(**args)
 
 
