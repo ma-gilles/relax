@@ -354,6 +354,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         return wrapper
 
+    def named(module, name):
+        """``name``, or its ``_``-private spelling in a tree from before slice d6 made it public."""
+        return name if hasattr(module, name) else "_" + name
+
     def install_recorders(patch):
         from relax.cuda import kernels as em_cuda_kernels
         from relax.helpers import projection as projection_helpers
@@ -370,9 +374,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             recorded("translate", em_cuda_kernels.relion_translate_score_f32,
                      lambda images, angles, *_: (f"images={images.shape[0]}", f"translations={angles.shape[0]}")),
         )
+        ctf_rows = named(relion_ctf, "relion_exact_ctf_half_from_source_star")
         patch.setattr(
-            relion_ctf, "relion_exact_ctf_half_from_source_star",
-            recorded("ctf_rows", relion_ctf.relion_exact_ctf_half_from_source_star,
+            relion_ctf, ctf_rows,
+            recorded("ctf_rows", getattr(relion_ctf, ctf_rows),
                      lambda _dataset, indices, *_, **kw: (f"images={len(indices)}",)),
         )
 
@@ -418,7 +423,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             return base * jnp.asarray([1.0, 1.25], dtype=jnp.float32)[None, :] - 0.5 * kw["rotation_matrices"][..., 0, 1]
 
         patch.setattr(
-            scoring_module, "relion_coarse_normalized_cc_rescore",
+            scoring_module, named(scoring_module, "relion_coarse_normalized_cc_rescore"),
             recorded("tree_rescore", rescore, lambda shifted, *_, **kw: (f"candidates={shifted.shape[0]}",
                                                                           f"projector={tuple(kw['projector_full'].shape)}")),
         )
