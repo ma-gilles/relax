@@ -1,8 +1,8 @@
-"""Optional VDAM noise-boundary captures and nonfinite-input reports."""
+"""The VDAM noise-boundary capture and the non-finite noise-sum dump, written by the command's observer
+(``relax.diagnostics.vdam_observers.VdamDumpObserver``)."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
@@ -12,30 +12,8 @@ if TYPE_CHECKING:
     from relax.vdam.state import InitialModelState
 
 
-def _array_finite_summary(name: str, value: object, *, max_indices: int = 5) -> str:
-    arr = np.asarray(value)
-    bad = np.argwhere(~np.isfinite(arr))
-    if bad.size == 0:
-        values = arr.astype(np.float64, copy=False).reshape(-1)
-        if values.size == 0:
-            return f"{name}: shape={arr.shape}, empty"
-        return (
-            f"{name}: shape={arr.shape}, all finite, min={float(np.min(values)):.6g}, max={float(np.max(values)):.6g}"
-        )
-    finite_values = arr[np.isfinite(arr)].astype(np.float64, copy=False)
-    finite_range = (
-        f"finite_min={float(np.min(finite_values)):.6g}, finite_max={float(np.max(finite_values)):.6g}"
-        if finite_values.size
-        else "no finite values"
-    )
-    sample_indices = [tuple(int(x) for x in idx) for idx in bad[:max_indices]]
-    return f"{name}: shape={arr.shape}, nonfinite={int(bad.shape[0])}/{arr.size}, {finite_range}, first_bad={sample_indices}"
-
-
-def _dump_noise_failure_meta(state: InitialModelState, meta: dict, summaries: Sequence[str]) -> str | None:
-    dump_root = os.environ.get("RELAX_INITIALMODEL_NOISE_FAILURE_DUMP_DIR")
-    if not dump_root:
-        return None
+def dump_noise_failure_meta(dump_root: str, state: InitialModelState, meta: dict, summaries: Sequence[str]) -> str:
+    """Write the E-step meta's noise sums of an iteration whose sums are not finite; returns the file."""
     path = Path(dump_root)
     path.mkdir(parents=True, exist_ok=True)
     dump_path = path / f"noise_failure_iter_{getattr(state, 'iter', 'unknown')}.npz"
@@ -56,26 +34,18 @@ def _dump_noise_failure_meta(state: InitialModelState, meta: dict, summaries: Se
     return str(dump_path)
 
 
-def _maybe_dump_noise_update_boundary(
+def dump_noise_update_boundary(
+    dump_root: str,
     state: InitialModelState,
     updated_state: InitialModelState,
     *,
     wsum_sigma2_noise: np.ndarray,
     wsum_img_power: np.ndarray,
     noise_sumw: float,
-    wsum_noise_a2: np.ndarray | None = None,
-    wsum_noise_xa: np.ndarray | None = None,
-) -> str | None:
-    """Write VDAM noise sufficient statistics only when explicitly requested."""
-
-    dump_root = os.environ.get("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR")
-    if not dump_root:
-        return None
-    requested = os.environ.get("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION")
-    if requested:
-        requested_iterations = {int(token.strip()) for token in requested.split(",") if token.strip()}
-        if int(state.iter) not in requested_iterations:
-            return None
+    wsum_noise_a2: np.ndarray | None,
+    wsum_noise_xa: np.ndarray | None,
+) -> str:
+    """Write one iteration's VDAM noise sufficient statistics and spectra; returns the file."""
 
     from relax.relion.relion_metadata import _relion_half_plane_shell_counts
 

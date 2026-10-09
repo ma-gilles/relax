@@ -28,12 +28,13 @@ from relax.vdam.iteration_loop import (
 )
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.native_options import VdamEnvironment
+from relax.vdam.ports import VdamObserver
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.state import VdamAccumulator
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation, select_subset_for_iter
 
 # The loop tests run real M-steps on float64 states: the float64 diagnostic precision.
-run_vdam_iterations = partial(run_vdam_iterations, update=VdamUpdate(padding_factor=1, mstep_compute_dtype="float64"))
+run_vdam_iterations = partial(run_vdam_iterations, update=VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", observer=VdamObserver()))
 
 pytestmark = pytest.mark.unit
 
@@ -502,7 +503,7 @@ class TestRunVdamIterations:
             expectation_step=estep,
             projector_refresh_fn=keep_tau2,
             projector_padding_factor=2,
-            update=VdamUpdate(padding_factor=2, mstep_compute_dtype="float64"),
+            update=VdamUpdate(padding_factor=2, mstep_compute_dtype="float64", observer=VdamObserver()),
             grad_ini_frac=0.3,
             grad_fin_frac=0.2,
             mu=DEFAULT_GRAD_MU,
@@ -796,10 +797,14 @@ class TestRunVdamIterations:
             "wsum_noise_xa": np.asarray([5.0, 6.0, 7.0, 8.0, 9.0]),
             "noise_sumw": 4.0,
         }
-        monkeypatch.setenv("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR", str(tmp_path))
-        monkeypatch.setenv("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION", "1")
+        # The command's observer for these two variables writes the boundary of VDAM's noise update.
+        from relax.diagnostics.vdam_observers import vdam_command_observer
 
-        out = update_noise_from_estep(state, estep_sums(meta), do_grad=False, mu=DEFAULT_GRAD_MU,)
+        observer = vdam_command_observer(
+            {"RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR": str(tmp_path), "RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION": "1"}
+        )
+        update = VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", observer=observer)
+        out = update.update_noise(state, estep_sums(meta), meta, do_grad=False, mu=DEFAULT_GRAD_MU)
 
         dump_path = tmp_path / "initialmodel_noise_update_it001.npz"
         with np.load(dump_path, allow_pickle=False) as payload:

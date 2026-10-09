@@ -713,6 +713,7 @@ def run_native_initial_model(
                 VdamUpdate(
                     padding_factor=int(opts.padding_factor),
                     mstep_compute_dtype=opts.mstep_compute_dtype,
+                    observer=observer,
                     single_class_m_step=source.single_class_m_step,
                 )
                 if opts.optimizer == "vdam"

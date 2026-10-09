@@ -44,3 +44,12 @@ class VdamObserver:
     def expected_accuracy_estimated(self, inputs, accuracy) -> None:
         """An expected-accuracy estimate is made: ``inputs`` (``native_sampling.AccuracyEstimateInputs``) is what
         it read, ``accuracy`` (``helpers.expected_accuracy.ExpectedAccuracy``) what it found."""
+
+    def noise_updated(self, previous: InitialModelState, updated: InitialModelState, sums) -> None:
+        """VDAM's noise update made ``updated`` from ``previous`` with the E-step's ``sums``
+        (``estep_common.EstepSums``); not called when there was nothing to update."""
+
+    def noise_sums_nonfinite(self, state: InitialModelState, meta: dict, summaries) -> str | None:
+        """The E-step's noise sums are not finite and the run is about to stop; ``summaries`` describe them.
+        Returns the file of a dump the error message should name, or None."""
+        return None

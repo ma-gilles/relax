@@ -2,7 +2,7 @@
 
 RELION's ``MlOptimiser::maximization`` noise (sigma2) and class-probability
 (pdf_class) updates for the native VDAM InitialModel, computed from the
-E-step accumulator metadata. Optional reports live in diagnostics.vdam_noise.
+E-step accumulator metadata.
 ``iteration_loop`` calls these once per iteration.
 """
 
@@ -12,7 +12,6 @@ from dataclasses import replace
 
 import numpy as np
 
-from relax.diagnostics import vdam_noise
 from relax.helpers.orientation_priors import relion_round_away_from_zero
 from relax.vdam.estep_common import EstepSums
 from relax.vdam.state import InitialModelState, NativeParticleState
@@ -45,17 +44,43 @@ def with_uniform_class_direction_priors(
     )
 
 
+class NonFiniteNoiseSums(ValueError):
+    """The E-step's noise sums are not finite; ``summaries`` describe the sums and their weights."""
+
+    def __init__(self, summaries):
+        self.summaries = list(summaries)
+        super().__init__("noise weighted sums must be finite: " + "; ".join(self.summaries))
+
+
+def _array_finite_summary(name: str, value: object, *, max_indices: int = 5) -> str:
+    arr = np.asarray(value)
+    bad = np.argwhere(~np.isfinite(arr))
+    if bad.size == 0:
+        values = arr.astype(np.float64, copy=False).reshape(-1)
+        if values.size == 0:
+            return f"{name}: shape={arr.shape}, empty"
+        return (
+            f"{name}: shape={arr.shape}, all finite, min={float(np.min(values)):.6g}, max={float(np.max(values)):.6g}"
+        )
+    finite_values = arr[np.isfinite(arr)].astype(np.float64, copy=False)
+    finite_range = (
+        f"finite_min={float(np.min(finite_values)):.6g}, finite_max={float(np.max(finite_values)):.6g}"
+        if finite_values.size
+        else "no finite values"
+    )
+    sample_indices = [tuple(int(x) for x in idx) for idx in bad[:max_indices]]
+    return f"{name}: shape={arr.shape}, nonfinite={int(bad.shape[0])}/{arr.size}, {finite_range}, first_bad={sample_indices}"
+
+
 def update_noise_from_estep(
     state: InitialModelState,
     sums: EstepSums,
     *,
     do_grad: bool,
     mu: float,
-    report: dict | None = None,
 ) -> InitialModelState:
-    """Update ``sigma2_noise`` from E-step weighted sums (engine units → RELION /N⁴).
-
-    ``report`` (the E-step's meta) is only what a non-finite sum dumps (diagnostics.vdam_noise).
+    """Update ``sigma2_noise`` from E-step weighted sums (engine units → RELION /N⁴); non-finite sums raise
+    :class:`NonFiniteNoiseSums`. A state with no update to make (no sums, no weight) is returned as it is.
 
     One optics group's sums are ``[n]`` with a scalar ``noise_sumw``; several groups give
     ``[G, n]`` sums and ``[G]`` weights, and each group with noise sums is updated on its own
@@ -65,7 +90,7 @@ def update_noise_from_estep(
     if sums.noise is None:
         return state
     wsum_sigma2_noise, wsum_img_power = sums.noise.wsum_sigma2_noise, sums.noise.wsum_img_power
-    wsum_noise_a2, wsum_noise_xa, noise_sumw = sums.noise.wsum_noise_a2, sums.noise.wsum_noise_xa, sums.noise.sumw
+    noise_sumw = sums.noise.sumw
     total_sumw = float(np.sum(noise_sumw))
     if total_sumw <= 0.0 or not np.all(np.isfinite(noise_sumw)):
         return state
@@ -90,14 +115,11 @@ def update_noise_from_estep(
     if not per_group and n_groups != 1:
         raise ValueError(f"{n_groups} optics groups need per-group noise sums")
     if not np.all(np.isfinite(wsum_sigma2_noise)) or not np.all(np.isfinite(wsum_img_power)):
-        summaries = [
-            vdam_noise._array_finite_summary("wsum_sigma2_noise", wsum_sigma2_noise),
-            vdam_noise._array_finite_summary("wsum_img_power", wsum_img_power),
+        raise NonFiniteNoiseSums([
+            _array_finite_summary("wsum_sigma2_noise", wsum_sigma2_noise),
+            _array_finite_summary("wsum_img_power", wsum_img_power),
             f"noise_sumw={noise_sumw!r}",
-        ]
-        if dump_path := vdam_noise._dump_noise_failure_meta(state, report or {}, summaries):
-            summaries.append(f"dump={dump_path}")
-        raise ValueError("noise weighted sums must be finite: " + "; ".join(summaries))
+        ])
 
     from relax.reconstruction import noise_relion
 
@@ -120,15 +142,6 @@ def update_noise_from_estep(
         if not np.all(np.isfinite(new_sigma2[g])) or np.any(new_sigma2[g] <= 0.0):
             raise ValueError("updated sigma2_noise must be positive and finite")
     new_state.sigma2_noise = new_sigma2
-    vdam_noise._maybe_dump_noise_update_boundary(
-        state,
-        new_state,
-        wsum_sigma2_noise=wsum_sigma2_noise,
-        wsum_img_power=wsum_img_power,
-        noise_sumw=float(total_sumw) if not per_group else noise_sumw,
-        wsum_noise_a2=wsum_noise_a2,
-        wsum_noise_xa=wsum_noise_xa,
-    )
     return new_state
 
 

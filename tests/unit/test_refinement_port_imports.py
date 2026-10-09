@@ -38,7 +38,6 @@ DIAGNOSTIC_PACKAGES = ("relax.diagnostics", "relax.parity")
 _INLINE_DUMP = "an inline dump/capture called from the algorithm; it needs a RunObserver hook (deep2 PLAN c2)"
 _INLINE_CHECK = "an inline finite/accumulator check that raises inside the algorithm; it needs a port (deep2 PLAN c2)"
 _REPLAY = "a replay policy called by the controller; it needs an InputSource method (deep2 PLAN c3 follow-up)"
-_VDAM = "the vdam driver's replay and continuation; owned by the vdam workstream (deep2 PLAN c5)"
 
 # (importing module, imported module) -> why the edge is still there.
 ALLOWED_IMPORTS = {
@@ -65,7 +64,6 @@ ALLOWED_IMPORTS = {
     ("relax.sparse_pass2.firstiter_bpref", "relax.diagnostics.finite_check"): _INLINE_CHECK,
     ("relax.sparse_pass2.sparse_pass2_bucket_io", "relax.diagnostics.finite_check"): _INLINE_CHECK,
     ("relax.sparse_pass2.sparse_pass2_bucket_io", "relax.diagnostics.sparse_pass2_dump"): _INLINE_DUMP,
-    ("relax.vdam.estep_meta_updates", "relax.diagnostics.vdam_noise"): _VDAM,
 }
 
 

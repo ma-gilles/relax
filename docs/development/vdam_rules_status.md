@@ -43,7 +43,8 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    which builds the run's input source (`relax.vdam.ports.VdamInputSource`, `relax.parity.vdam_replay`) and
    refuses the native replays unless the M-step oracle (`relax.diagnostics.vdam_native_mstep`) runs; and the
    dumps the command's observer writes (`relax.vdam.ports.VdamObserver`,
-   `relax.diagnostics.vdam_observers.vdam_command_observer`): the expected-accuracy inputs.
+   `relax.diagnostics.vdam_observers.vdam_command_observer`): the expected-accuracy inputs, the noise-update
+   boundary and the non-finite noise sums.
 2. **`do_grad` twice (rule 7).** The loop decides it before the schedule update; the E-step closure
    recomputes it with `schedules.native_initialmodel_do_grad` from the same `state` (same value: the
    iteration and `has_converged` do not change in between). Passing it needs the E-step callback contract
@@ -60,8 +61,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    `grad_em_iters`, `tau2_fudge_arg`, `grad_stepsize`, `mu`), one concept of run lifetime. Other wide
    functions: `compute_bootstrap_iref` (22), `run_tomo_initial_model_estep` (16, engine boundary),
    `bootstrap_references` (16), `compute_subset_size` (13, RELION's arguments one for one).
-5. **Layers (rule 11).** Production imports a diagnostic (`estep_meta_updates` imports
-   `diagnostics.vdam_noise`), refinement internals (`refinement.optics_shapes`, `refinement.tomo_half`,
+5. **Layers (rule 11).** Production imports refinement internals (`refinement.optics_shapes`, `refinement.tomo_half`,
    `sparse_pass2.resident_pass2.stable_window_class_history`) and private names of
    `relion.initial_model_io`. `relax.vdam.sgd` imports `relax.vdam.state`, and the loop imports
    it back (lazily, inside `MomentumSgdUpdate`). `relion_solvent_mask` has copies in

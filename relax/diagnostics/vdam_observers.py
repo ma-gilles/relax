@@ -13,10 +13,14 @@ from pathlib import Path
 
 import numpy as np
 
+from relax.diagnostics.vdam_noise import dump_noise_failure_meta, dump_noise_update_boundary
 from relax.vdam.ports import VdamObserver
 
 EXPECTED_ACCURACY_DUMP_DIR_ENV = "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR"
 EXPECTED_ACCURACY_DUMP_ITERATIONS_ENV = "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS"
+NOISE_UPDATE_DUMP_DIR_ENV = "RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR"
+NOISE_UPDATE_DUMP_ITERATION_ENV = "RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION"
+NOISE_FAILURE_DUMP_DIR_ENV = "RELAX_INITIALMODEL_NOISE_FAILURE_DUMP_DIR"
 
 
 def _iterations(value: str) -> frozenset[int]:
@@ -26,11 +30,40 @@ def _iterations(value: str) -> frozenset[int]:
 
 @dataclass(frozen=True)
 class VdamDumpObserver(VdamObserver):
-    """The InitialModel's diagnostic dumps. ``expected_accuracy_dir`` (None: off) receives each single-particle
-    expected-accuracy estimate's inputs of ``expected_accuracy_iterations`` (empty: every iteration)."""
+    """The InitialModel's diagnostic dumps; a directory None turns its dump off, an empty iteration set dumps
+    every iteration. ``expected_accuracy_dir`` receives each single-particle expected-accuracy estimate's inputs
+    of ``expected_accuracy_iterations``; ``noise_update_dir`` each VDAM noise update's sums and spectra of
+    ``noise_update_iterations`` (refusing to overwrite a file); ``noise_failure_dir`` the noise sums of the
+    E-step meta when they are not finite."""
 
     expected_accuracy_dir: str | None = None
     expected_accuracy_iterations: frozenset[int] = frozenset()
+    noise_update_dir: str | None = None
+    noise_update_iterations: frozenset[int] = frozenset()
+    noise_failure_dir: str | None = None
+
+    def noise_updated(self, previous, updated, sums) -> None:
+        if self.noise_update_dir is None:
+            return
+        if self.noise_update_iterations and int(previous.iter) not in self.noise_update_iterations:
+            return
+        noise = sums.noise
+        per_group = noise.wsum_sigma2_noise.ndim == 2
+        dump_noise_update_boundary(
+            self.noise_update_dir,
+            previous,
+            updated,
+            wsum_sigma2_noise=noise.wsum_sigma2_noise,
+            wsum_img_power=noise.wsum_img_power,
+            noise_sumw=noise.sumw if per_group else float(np.sum(noise.sumw)),
+            wsum_noise_a2=noise.wsum_noise_a2,
+            wsum_noise_xa=noise.wsum_noise_xa,
+        )
+
+    def noise_sums_nonfinite(self, state, meta, summaries) -> str | None:
+        if self.noise_failure_dir is None:
+            return None
+        return dump_noise_failure_meta(self.noise_failure_dir, state, meta, summaries)
 
     def expected_accuracy_estimated(self, inputs, accuracy) -> None:
         state, particle_state, optics_state = inputs.state, inputs.particle_state, inputs.optics_state
@@ -83,10 +116,13 @@ def vdam_command_observer(environ=None) -> VdamObserver:
     """The observer the environment of a ``relax initial_model`` command asks for (``VdamObserver()``: none)."""
 
     env = os.environ if environ is None else environ
-    expected_accuracy_dir = env.get(EXPECTED_ACCURACY_DUMP_DIR_ENV, "").strip()
-    if not expected_accuracy_dir:
-        return VdamObserver()
-    return VdamDumpObserver(
-        expected_accuracy_dir=expected_accuracy_dir,
+    dumps = VdamDumpObserver(
+        expected_accuracy_dir=env.get(EXPECTED_ACCURACY_DUMP_DIR_ENV, "").strip() or None,
         expected_accuracy_iterations=_iterations(env.get(EXPECTED_ACCURACY_DUMP_ITERATIONS_ENV, "").strip()),
+        noise_update_dir=env.get(NOISE_UPDATE_DUMP_DIR_ENV) or None,
+        noise_update_iterations=_iterations(env.get(NOISE_UPDATE_DUMP_ITERATION_ENV) or ""),
+        noise_failure_dir=env.get(NOISE_FAILURE_DUMP_DIR_ENV) or None,
     )
+    if dumps == VdamDumpObserver():
+        return VdamObserver()
+    return dumps
