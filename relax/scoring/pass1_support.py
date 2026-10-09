@@ -12,6 +12,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.scoring.coarse_publication import coarse_support_posterior
+from relax.scoring.pass1_priors import RotationBlocks
+from relax.scoring.pass1_request import Pass1Request
+from relax.scoring.pass1_results import PassShape
 from relax.scoring.pass1_scores import BatchScores
 
 
@@ -84,6 +87,37 @@ def exact_order_rotation_prior(class_log_priors, rotation_log_prior_padded, n_ro
         if rotation_log_prior_padded is None
         else jnp.asarray(rotation_log_prior_padded[0, :n_rot], dtype=jnp.float32)
     ) + jnp.asarray(class_log_priors[0], dtype=jnp.float32)
+
+
+def plan_support(
+    request: Pass1Request,
+    shape: PassShape,
+    rotation_blocks: RotationBlocks,
+    class_log_priors,
+    *,
+    exact_weight_order: bool,
+) -> SupportPlan:
+    """Plan the support stage of a pass over ``shape``, with the pre-prior weight order when ``exact_weight_order``.
+
+    ``class_log_priors`` is ``[K]``; the exact weight order adds the rotation prior of ``rotation_blocks`` and the
+    class prior of class 0 to RELION's pre-prior scores (:func:`exact_order_rotation_prior`).
+    """
+
+    return SupportPlan(
+        n_classes=shape.n_classes,
+        n_rot=shape.n_rot,
+        n_trans=int(shape.n_trans),
+        adaptive_fraction=request.adaptive_fraction,
+        max_significants=request.max_significants,
+        tie_score_ulps=int(request.relion_f32_coarse_tie_ulps),
+        return_relion_f32_normalization=request.return_relion_f32_normalization,
+        exact_weight_order=exact_weight_order,
+        exact_rotation_prior=(
+            exact_order_rotation_prior(class_log_priors, rotation_blocks.rotation_log_prior_padded, shape.n_rot)
+            if exact_weight_order
+            else None
+        ),
+    )
 
 
 def float32_support(plan: SupportPlan, scores: BatchScores, translation_log_prior) -> SupportResult:
