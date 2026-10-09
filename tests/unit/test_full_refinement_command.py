@@ -239,3 +239,15 @@ def test_solvent_split_draws_count_the_halves_relax_draws(monkeypatch, tmp_path)
     given_data = write_tiny_data_dir(tmp_path / "given_data", extra_columns={"rlnRandomSubset": [1, 2] * 6})
     given = controller_inputs(monkeypatch, tmp_path / "given", "refine", data=given_data)["options"].solvent
     assert (drawn.split_draws, given.split_draws) == (12, 0)
+
+
+def test_solvent_split_draws_restart_on_continue(monkeypatch, tmp_path):
+    # RELION's --continue reseeds the leader with --random_seed (initialiseWorkLoad, ml_optimiser_mpi.cpp:827) and
+    # reads its halves from the data STAR, so the stream restarts with no split draws, unlike the fresh run above.
+    data = write_tiny_data_dir(tmp_path / "data")
+    first = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", data=data, output="first")
+    continued = controller_inputs(
+        monkeypatch, tmp_path / "continued", "refine", "--max_iter", "2",
+        "--continue", first / "run_it001_optimiser.star", data=data,
+    )["options"].solvent
+    assert continued.split_draws == 0
