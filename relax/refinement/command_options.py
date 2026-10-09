@@ -1466,11 +1466,11 @@ def resolve_class_reference_paths(args, *, log: logging.Logger) -> tuple[list[st
     return class_paths, class_option
 
 
-def resolve_adaptive_options(args, *, log) -> AdaptiveOptions:
+def resolve_adaptive_options(args, *, max_significants: int, log) -> AdaptiveOptions:
     """The adaptive sampling options, with RELION's per-iteration current sizes and HEALPix orders when the
     run follows a RELION oracle (``--relion_current_sizes``, ``--relion_healpix_orders``, comma lists).
 
-    ``args.max_significants`` must already be the active cap (``resolve_relion_runtime_controls``).
+    ``max_significants`` is the active cap (``resolve_relion_runtime_controls``), not ``--max_significants``.
     """
     oracle_current_sizes = None
     if args.relion_current_sizes is not None:
@@ -1485,7 +1485,7 @@ def resolve_adaptive_options(args, *, log) -> AdaptiveOptions:
         relion_healpix_orders=oracle_healpix_orders,
         adaptive_oversampling=args.adaptive_oversampling,
         coarse_engine=args.coarse_engine,
-        max_significants=args.max_significants,
+        max_significants=max_significants,
         strict_highres_exp_angstrom=args.strict_highres_exp,
     )
 

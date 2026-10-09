@@ -238,7 +238,7 @@ def build_archive_metadata(
         "volume_shape": np.array(dataset.volume_shape),
         "voxel_size": dataset.voxel_size,
         "adaptive_oversampling": args.adaptive_oversampling,
-        "max_significants": args.max_significants,
+        "max_significants": max_significants_resolution.active_max_significants,
         "max_significants_argument": (
             np.nan
             if max_significants_resolution.maximum_significants_argument is None

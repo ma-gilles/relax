@@ -468,7 +468,6 @@ def main(command=None):
     relion_mask_params = particle_inputs.mask_parameters
     _double_image_preprocessing = particle_inputs.double_preprocessing
     del particle_inputs
-    args._relion_mask_params = relion_mask_params
     particle_diameter_ang = None if relion_mask_params is None else float(relion_mask_params[0])
     # The loader's resolved edge (--width_mask_edge_px, or a found or sealed optimiser's rlnWidthMaskEdge).
     width_mask_edge_px = geometry.IMAGE_MASK_EDGE_PIXELS if relion_mask_params is None else float(relion_mask_params[1])
@@ -611,7 +610,8 @@ def main(command=None):
         n_classes=int(args.n_classes),
         log=logger,
     )
-    args.max_significants = runtime_controls.max_significants_resolution.active_max_significants
+    # The active cap (RELION's runtime resolution of the saved or given --maxsig), not --max_significants.
+    max_significants = runtime_controls.max_significants_resolution.active_max_significants
     expected_accuracy_do_ctf_correction = runtime_controls.do_ctf_correction
     relion_firstiter_ini_high_angstrom = runtime_controls.firstiter_ini_high_angstrom
 
@@ -963,7 +963,7 @@ def main(command=None):
     )
     logger.info("=" * 70)
 
-    adaptive_options = command_options.resolve_adaptive_options(args, log=logger)
+    adaptive_options = command_options.resolve_adaptive_options(args, max_significants=max_significants, log=logger)
 
     # Build per-iter replay overrides from RELION's per-iter data.star +
     # model.star when --perturb_replay_relion_dir is set. The override always
@@ -1090,6 +1090,8 @@ def main(command=None):
             frozen_boundary,
             args,
             random_seed=seed.value,
+            mask_params=relion_mask_params,
+            max_significants=max_significants,
             dataset=ds,
             effective_max_healpix_order=initial_sampling.max_order,
             effective_tau2_fudge=effective_tau2_fudge,
@@ -1164,7 +1166,7 @@ def main(command=None):
                 adaptive_fraction=0.999,
                 auto_local_healpix_order=int(args.auto_local_healpix_order),
                 strict_highres_exp=-1.0 if args.strict_highres_exp is None else float(args.strict_highres_exp),
-                max_significants=int(args.max_significants),
+                max_significants=int(max_significants),
                 symmetry=symmetry,
                 healpix_order_original=int(initial_sampling.coarse_order),
                 offset_range_original_angstrom=float(args.offset_range) * float(ds.voxel_size),
@@ -1333,7 +1335,7 @@ def main(command=None):
         auto_local_healpix_order=args.auto_local_healpix_order,
         sigma_ang=args.sigma_ang,
         adaptive_oversampling=args.adaptive_oversampling,
-        max_significants=args.max_significants,
+        max_significants=max_significants,
         max_significants_resolution=runtime_controls.max_significants_resolution,
         restart=restart_provenance,
         max_iter=args.max_iter,

@@ -252,6 +252,8 @@ def validate_fixed_boundary_runtime(
     args,
     *,
     random_seed: int,
+    mask_params,
+    max_significants: int,
     dataset,
     effective_max_healpix_order,
     effective_tau2_fudge,
@@ -267,6 +269,8 @@ def validate_fixed_boundary_runtime(
             _fixed_diagnostic_runtime_config(
                 args,
                 random_seed=random_seed,
+                mask_params=mask_params,
+                max_significants=max_significants,
                 dataset=dataset,
                 effective_max_healpix_order=effective_max_healpix_order,
                 effective_tau2_fudge=effective_tau2_fudge,
@@ -533,20 +537,26 @@ def _fixed_diagnostic_runtime_config(
     args,
     *,
     random_seed: int,
+    mask_params,
+    max_significants: int,
     dataset,
     effective_max_healpix_order,
     effective_tau2_fudge,
     effective_perturb_seed,
 ) -> dict[str, str | float | int | bool]:
-    """Materialize every v3 runtime control with stable Python scalar types."""
+    """Materialize every v3 runtime control with stable Python scalar types.
+
+    ``mask_params`` is the loader's resolved RELION image mask (particle diameter, edge width) or None;
+    ``max_significants`` the active cap.
+    """
 
     from relax.refinement.refinement_options import (
         RELION_GUI_LOW_RESOL_JOIN_HALVES_ANGSTROM,
         RELION_WIDTH_MASK_EDGE_PX,
     )
 
-    mask_edge = RELION_WIDTH_MASK_EDGE_PX if args._relion_mask_params is None else float(args._relion_mask_params[1])
-    particle_diameter = 0.0 if args._relion_mask_params is None else float(args._relion_mask_params[0])
+    mask_edge = RELION_WIDTH_MASK_EDGE_PX if mask_params is None else float(mask_params[1])
+    particle_diameter = 0.0 if mask_params is None else float(mask_params[0])
     return {
         "adaptive_oversampling": int(args.adaptive_oversampling),
         "diagnostic_arm_id": FROZEN_BOUNDARY_FIXED_DIAGNOSTIC_ARM,
@@ -562,7 +572,7 @@ def _fixed_diagnostic_runtime_config(
         "numerical_classification_scope": FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
         "auto_local_healpix_order": int(args.auto_local_healpix_order),
         "max_healpix_order": -1 if effective_max_healpix_order is None else int(effective_max_healpix_order),
-        "max_significants": int(args.max_significants),
+        "max_significants": int(max_significants),
         "particle_diameter_angstrom": float(particle_diameter),
         "width_mask_edge_px": float(mask_edge),
         "tau2_fudge": float(effective_tau2_fudge),

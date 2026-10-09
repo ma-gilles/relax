@@ -28,12 +28,11 @@ def _args(*arguments):
 def test_adaptive_options_parse_the_oracle_lists_and_keep_the_sampling_flags():
     args = _args("--relion_current_sizes", "12,16", "--relion_healpix_orders", "2,3", "--adaptive_oversampling", "0",
                  "--coarse_engine", "gemm_dense")
-    args.max_significants = 7
-    assert command_options.resolve_adaptive_options(args, log=LOG) == AdaptiveOptions(
+    assert command_options.resolve_adaptive_options(args, max_significants=7, log=LOG) == AdaptiveOptions(
         adaptive_oversampling=0, max_significants=7, coarse_engine="gemm_dense",
         relion_current_sizes=[12, 16], relion_healpix_orders=[2, 3],
     )
-    defaults = command_options.resolve_adaptive_options(_args(), log=LOG)
+    defaults = command_options.resolve_adaptive_options(_args(), max_significants=-1, log=LOG)
     assert defaults.relion_current_sizes is None and defaults.relion_healpix_orders is None
 
 
