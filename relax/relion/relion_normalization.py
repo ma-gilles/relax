@@ -126,6 +126,15 @@ def update_relion_norm_scale_corrections(
     posterior mass.  That mass is normally slightly smaller than the particle
     count, so using a conventional arithmetic mean introduces a systematic
     normalization drift.
+
+    Frames. An estimated average is in relax's frame, RELION's times
+    ``ori_size**2`` (the residual comes from relax's unnormalized FFT). A half
+    whose norm is not estimated here (``do_norm_correction`` off, as RELION
+    forces for subtomograms, ml_optimiser.cpp:2448-2453; or no norm statistic)
+    keeps its input state: the average passed in, or ``None`` when none was
+    passed. ``None`` is RELION's untouched 1.0, which
+    ``iteration_snapshot`` maps to relax's frame; the half's norm corrections
+    are then the particles' input values in RELION's frame (average 1).
     """
 
     stats_per_half = _half_list_or_none(noise_stats_per_half, n_halves=2, name="noise_stats_per_half")
@@ -156,6 +165,7 @@ def update_relion_norm_scale_corrections(
     out_image_corr = []
     out_scale_corr = []
     out_zero_norm_counts = []
+    avg_norm_given = avg_norm_correction_per_half is not None
 
     for half_idx, stats in enumerate(stats_per_half):
         if stats is None:
@@ -279,7 +289,7 @@ def update_relion_norm_scale_corrections(
             normcorr_new = avg_norm_new / np.maximum(image_norm_factor, eps)
         else:
             normcorr_new = avg_norm_old / np.maximum(image_norm_factor, eps)
-            avg_norm_new = avg_norm_old
+            avg_norm_new = avg_norm_old if avg_norm_given else None
             zero_norm_count = 0
 
         scale_xa = getattr(stats, "wsum_scale_correction_xa", None)
@@ -445,10 +455,9 @@ def log_norm_scale_update(update: NormScaleCorrectionUpdateResult, *, log) -> No
             int(update.zero_norm_residual_counts[1]),
         )
     log.info(
-        "RELION norm correction update: avg_norm half1=%.6g half2=%.6g; "
+        "RELION norm correction update: avg_norm half1=%s half2=%s; "
         "image_corr ranges half1=%s half2=%s; scale_corr ranges half1=%s half2=%s",
-        float(update.avg_norm_correction_per_half[0]),
-        float(update.avg_norm_correction_per_half[1]),
+        *("not estimated" if avg is None else f"{float(avg):.6g}" for avg in update.avg_norm_correction_per_half),
         _format_relion_correction_range(update.image_corrections_per_half[0]),
         _format_relion_correction_range(update.image_corrections_per_half[1]),
         _format_relion_correction_range(update.scale_corrections_per_half[0]),

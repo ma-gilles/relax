@@ -1919,7 +1919,9 @@ def _update_relion_follower_corrections(
             norm_scale_update.norm_corrections_per_half[half_idx],
             dtype=np.float64,
         )
-        avg_norm = float(norm_scale_update.avg_norm_correction_per_half[half_idx])
+        # None: the norm was not estimated, and normcorr is the input norm around RELION's average 1.
+        avg_norm = norm_scale_update.avg_norm_correction_per_half[half_idx]
+        avg_norm = 1.0 if avg_norm is None else float(avg_norm)
         norm_factor = np.ones_like(normcorr, dtype=np.float64)
         np.divide(avg_norm, normcorr, out=norm_factor, where=normcorr > 0.0)
         relion_half_inputs[half_idx].scale_corrections = selected_scales

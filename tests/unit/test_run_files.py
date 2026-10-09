@@ -469,6 +469,131 @@ def test_unnormalized_run_files_carry_relion_norm_and_spectra_past_current_size(
     _assert_snapshots_match(read, snapshot)
 
 
+def _unestimated_norm_snapshot(snapshot, input_norms, rng):
+    """``snapshot`` after a pass whose norm correction is off, for particles that entered with ``input_norms``.
+
+    The corrections go through the production path: the start-up corrections of the input column, the
+    norm/scale update with norm correction off, and the snapshot's frame conversion of its average.
+    """
+
+    from types import SimpleNamespace
+
+    from relax.helpers.types import NoiseStats
+    from relax.relion.input_poses import _initial_corrections_from_norm
+    from relax.relion.relion_normalization import update_relion_norm_scale_corrections
+
+    image, scale = _initial_corrections_from_norm(input_norms)
+    stats = [
+        NoiseStats(
+            wsum_sigma2_noise=np.zeros(1, np.float32),
+            wsum_img_power=np.zeros(1, np.float32),
+            wsum_sigma2_offset=0.0,
+            sumw=float(norms.size),
+            wsum_scale_correction_xa=np.asarray([0.93, 1.07]) * 5.0,
+            wsum_scale_correction_aa=np.full(2, 5.0),
+        )
+        for norms in input_norms
+    ]
+    update = update_relion_norm_scale_corrections(
+        noise_stats_per_half=stats,
+        image_corrections_per_half=image,
+        scale_corrections_per_half=scale,
+        group_ids_per_half=snapshot.group_ids,
+        group_count_per_half=[2, 2],
+        do_norm_correction=False,
+    )
+    assert update.avg_norm_correction_per_half == [None, None]
+    halves = [
+        SimpleNamespace(
+            rotation_eulers=snapshot.rotation_eulers[h],
+            translations=snapshot.translations[h],
+            image_corrections=np.asarray(update.image_corrections_per_half[h]),
+            scale_corrections=np.asarray(update.scale_corrections_per_half[h]),
+            group_ids=snapshot.group_ids[h],
+        )
+        for h in range(2)
+    ]
+    state = iteration_snapshot_module._host_particle_state(
+        halves, snapshot.max_posterior, snapshot.significant_counts, update.avg_norm_correction_per_half,
+        direction_priors=[], box_size=BOX, consistency={},
+    )
+    return dataclasses.replace(
+        snapshot,
+        image_corrections=state["image_corrections"],
+        scale_corrections=state["scale_corrections"],
+        avg_norm_correction=state["avg_norm_correction"],
+    )
+
+
+@pytest.mark.parametrize("input_norm", [1.0, 0.25, 1.0 / BOX**2])
+def test_unestimated_norm_column_is_written_back_and_does_not_compound(tmp_path, input_norm):
+    """A run without norm correction (subtomograms; relion_refine switches it off, ml_optimiser.cpp:2448-2453)
+    writes each particle's input rlnNormCorrection back and rlnNormCorrectionAverage 1, whatever the input
+    value; a second pass started from the written column writes the same column, and the files read back
+    (--continue) and written again are unchanged."""
+
+    rng = np.random.default_rng(64)
+    input_star = _write_input_star(tmp_path, 7)
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    base = _k1_snapshot([4, 3], rng)
+    column = np.full(7, input_norm) * np.where(np.arange(7) % 2, 1.0, 0.5 if input_norm != 1.0 else 1.0)
+
+    written_columns = []
+    for chained_pass in range(2):
+        out = tmp_path / f"pass{chained_pass}"
+        snapshot = _unestimated_norm_snapshot(base, [column[rows] for rows in half_rows], rng)
+        writer = RunFileWriter(
+            out, settings=_run_settings(out / "run"), input_star=input_star, half_rows=half_rows, background=False
+        )
+        optimiser = writer(snapshot)
+        data = read_star_blocks(out / "run_it005_data.star")["particles"]
+        written = np.asarray(data["rlnNormCorrection"], dtype=np.float64)
+        np.testing.assert_allclose(written, column, rtol=1e-6)
+        for h in (1, 2):
+            model = read_star_blocks(out / f"run_it005_half{h}_model.star")
+            assert float(model["model_general"]["rlnNormCorrectionAverage"]) == pytest.approx(1.0, rel=1e-12)
+        written_columns.append(written)
+
+        # --continue: read the files and write them again.
+        read = read_run_files(optimiser, image_names=names, half_rows=half_rows)
+        again = tmp_path / f"pass{chained_pass}_again"
+        RunFileWriter(
+            again, settings=_run_settings(again / "run"), input_star=input_star, half_rows=half_rows, background=False
+        )(read)
+        rewritten = read_star_blocks(again / "run_it005_data.star")["particles"]["rlnNormCorrection"]
+        np.testing.assert_allclose(np.asarray(rewritten, dtype=np.float64), written, rtol=1e-6)
+        column = written  # the next pass starts from this pass's data.star
+
+    np.testing.assert_allclose(written_columns[1], written_columns[0], rtol=1e-6)
+
+
+def test_data_star_writes_the_input_general_block_back(tmp_path):
+    """A subtomogram STAR's data_general (rlnTomoSubTomosAre2DStacks) is written back, as relion_refine does:
+    without it the output reads as single particles and cannot start the next job. A single-particle STAR has
+    no such block and gets none."""
+
+    rng = np.random.default_rng(65)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    plain = _write_input_star(tmp_path, 7)
+    _writer(tmp_path, plain, half_rows)(_k1_snapshot([4, 3], rng))
+    assert "general" not in read_star_blocks(tmp_path / "out" / "run_it005_data.star")
+
+    for name, block in (
+        ("loop", "\n# version 50001\n\ndata_general\n\nloop_\n_rlnTomoSubTomosAre2DStacks #1\n1\n"),
+        ("list", "\n# version 50001\n\ndata_general\n\n_rlnTomoSubTomosAre2DStacks 1\n"),
+    ):
+        directory = tmp_path / name
+        directory.mkdir()
+        tomo = directory / "particles.star"
+        tomo.write_text(block + plain.read_text())
+        _writer(directory, tomo, half_rows)(_k1_snapshot([4, 3], rng))
+        blocks = read_star_blocks(directory / "out" / "run_it005_data.star")
+        assert list(blocks)[0] == "general"
+        assert np.ravel(blocks["general"]["rlnTomoSubTomosAre2DStacks"]).tolist() in (["1"], list("1"))
+        assert blocks["particles"]["rlnImageName"] == read_star_blocks(plain)["particles"]["rlnImageName"]
+
+
 def test_healpix_cap_round_trips_and_the_continuing_run_keeps_its_own(tmp_path):
     """An uncapped run writes max_healpix_order as None and reads it back; a continued run
     keeps its own command-line limit (a restored cap of 7 overrode --max_healpix_order 12,

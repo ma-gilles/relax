@@ -256,6 +256,9 @@ class RunFileWriter:
         input_blocks = read_star_blocks(input_star)
         self.particles = input_blocks.get("particles") or input_blocks.get("")
         self.optics = input_blocks.get("optics")
+        # A subtomogram STAR says so in data_general (rlnTomoSubTomosAre2DStacks, ParticleSet::read);
+        # relion_refine writes the block back, and without it the output reads as single particles.
+        self.general = input_blocks.get("general")
         if not self.particles or "rlnImageName" not in self.particles:
             raise ValueError(f"{input_star} has no particle table with rlnImageName")
         self.half_rows = [np.asarray(rows, dtype=np.int64) for rows in half_rows]
@@ -327,7 +330,7 @@ class RunFileWriter:
         _write_maps(root, snapshot)
         model_paths = _write_model_stars(root, snapshot, self.settings, self._group_rows(snapshot))
         _write_sampling_star(root, snapshot, self.settings)
-        _write_data_star(root, snapshot, self.particles, self.optics, self.half_rows)
+        _write_data_star(root, snapshot, self.particles, self.optics, self.half_rows, general=self.general)
         optimiser = _write_optimiser_star(root, snapshot, self.settings, model_paths)
         self.seconds[int(snapshot.relion_iteration)] = time.time() - t0
         logger.info(
@@ -662,8 +665,16 @@ def _per_row(values_per_half, half_rows, n_rows, fill, dtype):
     return out
 
 
-def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics, half_rows) -> None:
-    """``particles``/``optics`` are the input tables as text columns (``read_star_blocks``)."""
+def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics, half_rows, *, general=None) -> None:
+    """``particles``/``optics``/``general`` are the input blocks as text (``read_star_blocks``).
+
+    The one data-STAR writer of Refine3D and Class3D, single particles and subtomograms. ``general``
+    (the input's ``data_general``, a subtomogram STAR's 2D-stack flag) is written back unchanged.
+    ``rlnNormCorrection`` is in RELION's frame: the snapshot's average is relax's (RELION's times
+    ``ori_size**2``, :mod:`relax.refinement.iteration_snapshot`) whoever the caller is; a
+    single-particle run hands the average its M-step estimated, a subtomogram run (norm correction
+    off, ml_optimiser.cpp:2448-2453) ``ori_size**2``, so each particle's input norm is written back.
+    """
 
     n_rows = len(particles["rlnImageName"])
     eulers = np.zeros((n_rows, 3), dtype=np.float64)
@@ -722,6 +733,9 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
     for label, values in columns.items():
         table[label] = values
     blocks = []
+    if general:
+        looped = isinstance(next(iter(general.values())), list)
+        blocks.append(_loop_block("general", general) if looped else _list_block("general", list(general.items())))
     if optics is not None:
         blocks.append(_loop_block("optics", optics))
     blocks.append(_loop_block("particles", table))

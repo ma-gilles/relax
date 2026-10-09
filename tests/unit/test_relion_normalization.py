@@ -131,6 +131,40 @@ class TestRelionNormalization:
         assert np.asarray(got.scale_corrections_per_half[0]).shape == (2,)
         np.testing.assert_allclose(np.asarray(got.group_scale_corrections_per_half[0])[[1, 3, 4]], 0.5)
 
+    def test_relion_norm_scale_update_without_norm_estimate_reports_no_average(self):
+        """Norm correction off (RELION forces it for subtomograms, ml_optimiser.cpp:2448-2453): the average is
+        not estimated (None, RELION's untouched 1.0), each particle keeps its input norm, and an average the
+        caller passes in is kept."""
+        stats = NoiseStats(
+            wsum_sigma2_noise=jnp.array([0.0], dtype=jnp.float32),
+            wsum_img_power=jnp.array([0.0], dtype=jnp.float32),
+            wsum_sigma2_offset=0.0,
+            sumw=3.0,
+            wsum_norm_correction=jnp.array([2.0, 8.0, 18.0], dtype=jnp.float32),
+        )
+        group_ids = np.array([0, 1, 1], dtype=np.int64)
+        scale = np.array([0.9, 1.1, 1.1], dtype=np.float64)
+        input_norm = np.array([1.0, 0.5, 0.25], dtype=np.float64)
+        kwargs = dict(
+            noise_stats_per_half=[stats, stats],
+            image_corrections_per_half=[scale / input_norm] * 2,
+            scale_corrections_per_half=[scale, scale],
+            group_ids_per_half=[group_ids, group_ids],
+            do_norm_correction=False,
+            do_scale_correction=False,
+            dtype=np.float64,
+        )
+
+        got = update_relion_norm_scale_corrections(**kwargs)
+
+        assert got.avg_norm_correction_per_half == [None, None]
+        np.testing.assert_allclose(np.asarray(got.norm_corrections_per_half[0]), input_norm, rtol=1e-12)
+        np.testing.assert_allclose(np.asarray(got.image_corrections_per_half[0]), scale / input_norm, rtol=1e-12)
+
+        kept = update_relion_norm_scale_corrections(**kwargs, avg_norm_correction_per_half=[5.0, 7.0])
+        assert kept.avg_norm_correction_per_half == [5.0, 7.0]
+        np.testing.assert_allclose(np.asarray(kept.norm_corrections_per_half[1]), 7.0 * input_norm, rtol=1e-12)
+
     def test_relion_norm_scale_update_skips_firstiter_cc_scale_only(self):
         """RELION firstiter-CC still updates normcorr but keeps old scales."""
         stats = NoiseStats(
