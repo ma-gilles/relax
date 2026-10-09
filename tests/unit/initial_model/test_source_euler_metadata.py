@@ -132,7 +132,12 @@ def _engine_result(**fields):
     """An engine result with only ``fields`` set (the E-step meta reads these attributes)."""
     names = ("best_pose_eulers_deg", "uncast_log_evidence_per_image", "stats", "pose_assignments", "class_assignments",
              "best_pose_rotations", "best_pose_translations", "best_pose_rotation_ids", "significant_counts")
-    return SimpleNamespace(**{**dict.fromkeys(names), **fields})
+    sums = dict(
+        class_posterior_sums=np.ones(1), class_mstep_posterior_sums=np.ones(1), noise_stats=None,
+        aggregate_noise_stats=None, profile_summary=None, class_assignments=np.zeros(2, dtype=np.int32),
+        per_class_stats=(SimpleNamespace(rotation_posterior_sums=np.ones(1)),),
+    )
+    return SimpleNamespace(**{**dict.fromkeys(names), **sums, **fields})
 
 
 def test_engine_rows_keep_identity_and_validity():

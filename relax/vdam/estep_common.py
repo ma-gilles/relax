@@ -11,11 +11,15 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from relax.vdam.state import InitialModelState, VdamAccumulator
+
+if TYPE_CHECKING:
+    from relax.classification.k_class_results import KClassEMResult
+    from relax.helpers.types import NoiseStats
 
 
 def _bp_slab(arr: np.ndarray, r_max: int, c: int) -> np.ndarray:
@@ -435,76 +439,63 @@ def arrays_to_accumulators(
     return accumulators
 
 
-def estep_meta(halfset_results: dict[int, Any]) -> dict[str, Any]:
-    meta: dict[str, Any] = {"halfset_ids": tuple(sorted(halfset_results))}
-    class_totals: dict[str, np.ndarray] = {}
+def _noise_sums_report(stats: NoiseStats) -> dict[str, Any]:
+    """A result's aggregate noise and offset sums under their meta keys (float64)."""
+    report = {
+        "wsum_sigma2_offset": float(stats.wsum_sigma2_offset),
+        # Several optics groups give [G, n] noise sums and [G] weights (sumw_group).
+        "sigma2_offset_sumw": float(np.sum(np.asarray(stats.sumw, dtype=np.float64))),
+        "wsum_sigma2_noise": np.asarray(stats.wsum_sigma2_noise, dtype=np.float64),
+        "wsum_img_power": np.asarray(stats.wsum_img_power, dtype=np.float64),
+        "noise_sumw": (
+            float(stats.sumw)
+            if np.ndim(stats.sumw) == 0
+            else np.asarray(stats.sumw, dtype=np.float64)
+        ),
+    }
+    if stats.wsum_noise_a2 is not None:
+        report["wsum_noise_a2"] = np.asarray(stats.wsum_noise_a2, dtype=np.float64)
+    if stats.wsum_noise_xa is not None:
+        report["wsum_noise_xa"] = np.asarray(stats.wsum_noise_xa, dtype=np.float64)
+    return report
 
-    def add_class_total(name, values):
-        previous = class_totals.get(name)
-        class_totals[name] = values if previous is None else previous + values
 
-    noise_totals: dict[str, Any] | None = None
-    for h, result in halfset_results.items():
-        if getattr(result, "class_posterior_sums", None) is not None:
-            full_sums = np.asarray(result.class_posterior_sums, dtype=np.float64)
-            # The engine always resolves the M-step (retained) class mass (k_class_results); a result
-            # without it cannot normalise the class and offset updates.
-            if getattr(result, "class_mstep_posterior_sums", None) is None:
-                raise ValueError(f"the E-step result of half {h} has class posterior sums but no M-step class mass")
-            sums = np.asarray(result.class_mstep_posterior_sums, dtype=np.float64)
-            meta[f"halfset_{h}_class_posterior_sums"] = sums
-            meta[f"halfset_{h}_class_posterior_sums_full"] = full_sums
-            add_class_total("class_posterior_sums", sums)
-            add_class_total("class_posterior_sums_full", full_sums)
-        per_class_noise = getattr(result, "noise_stats", None)
-        if per_class_noise is not None:
-            # A class's support over all its optics groups (sumw is [G] with several groups).
-            support = np.asarray([float(np.sum(stats.sumw)) for stats in per_class_noise], dtype=np.float64)
-            meta[f"halfset_{h}_class_reconstruction_support_sums"] = support
-            add_class_total("class_reconstruction_support_sums", support)
-        if getattr(result, "class_assignments", None) is not None:
-            meta[f"halfset_{h}_class_assignments"] = np.asarray(result.class_assignments, dtype=np.int32)
-        profile_summary = getattr(result, "profile_summary", None)
-        if profile_summary is not None:
-            meta[f"halfset_{h}_profile_summary"] = dict(profile_summary)
-        noise_stats = getattr(result, "aggregate_noise_stats", None)
-        if noise_stats is not None:
-            half = {
-                "wsum_sigma2_offset": float(noise_stats.wsum_sigma2_offset),
-                # Several optics groups give [G, n] noise sums and [G] weights (sumw_group).
-                "sigma2_offset_sumw": float(np.sum(np.asarray(noise_stats.sumw, dtype=np.float64))),
-                "wsum_sigma2_noise": np.asarray(noise_stats.wsum_sigma2_noise, dtype=np.float64),
-                "wsum_img_power": np.asarray(noise_stats.wsum_img_power, dtype=np.float64),
-                "noise_sumw": (
-                    float(noise_stats.sumw)
-                    if np.ndim(noise_stats.sumw) == 0
-                    else np.asarray(noise_stats.sumw, dtype=np.float64)
-                ),
-            }
-            if getattr(noise_stats, "wsum_noise_a2", None) is not None:
-                half["wsum_noise_a2"] = np.asarray(noise_stats.wsum_noise_a2, dtype=np.float64)
-            if getattr(noise_stats, "wsum_noise_xa", None) is not None:
-                half["wsum_noise_xa"] = np.asarray(noise_stats.wsum_noise_xa, dtype=np.float64)
-            for k, v in half.items():
-                meta[f"halfset_{h}_{k}"] = v
-            if noise_totals is None:
-                noise_totals = dict(half)
-            else:
-                for k, v in half.items():
-                    noise_totals[k] = noise_totals.get(k, 0.0) + v
-        per_class_stats = getattr(result, "per_class_stats", None)
-        if per_class_stats is not None:
-            direction_sums = np.stack(
-                [np.asarray(cs.rotation_posterior_sums, dtype=np.float64) for cs in per_class_stats],
-                axis=0,
-            )
-            add_class_total("class_direction_posterior_sums", direction_sums)
+def estep_meta(result: KClassEMResult) -> dict[str, Any]:
+    """The model sums and the report of one engine result.
+
+    The engine scores both pseudo-halfsets in one pass, so the report's per-half keys (``halfset_0_*``) hold
+    the same values as the totals the model update reads (:func:`estep_sums`).
+    """
+
+    meta: dict[str, Any] = {"halfset_ids": (0,)}
+    # The engine always resolves the M-step (retained) class mass (k_class_results); a result without it
+    # cannot normalise the class and offset updates.
+    if result.class_mstep_posterior_sums is None:
+        raise ValueError("the E-step result has no M-step class mass")
+    totals: dict[str, Any] = {
+        "class_posterior_sums": np.asarray(result.class_mstep_posterior_sums, dtype=np.float64),
+        "class_posterior_sums_full": np.asarray(result.class_posterior_sums, dtype=np.float64),
+    }
+    meta["halfset_0_class_posterior_sums"] = totals["class_posterior_sums"]
+    meta["halfset_0_class_posterior_sums_full"] = totals["class_posterior_sums_full"]
+    if result.noise_stats is not None:
+        # A class's support over all its optics groups (sumw is [G] with several groups).
+        support = np.asarray([float(np.sum(stats.sumw)) for stats in result.noise_stats], dtype=np.float64)
+        meta["halfset_0_class_reconstruction_support_sums"] = totals["class_reconstruction_support_sums"] = support
+    meta["halfset_0_class_assignments"] = np.asarray(result.class_assignments, dtype=np.int32)
+    if result.profile_summary is not None:
+        meta["halfset_0_profile_summary"] = dict(result.profile_summary)
+    noise = {} if result.aggregate_noise_stats is None else _noise_sums_report(result.aggregate_noise_stats)
+    for key, value in noise.items():
+        meta[f"halfset_0_{key}"] = value
+    totals["class_direction_posterior_sums"] = np.stack(
+        [np.asarray(stats.rotation_posterior_sums, dtype=np.float64) for stats in result.per_class_stats], axis=0
+    )
     for name in (
         "class_posterior_sums", "class_posterior_sums_full",
         "class_reconstruction_support_sums", "class_direction_posterior_sums",
     ):
-        if name in class_totals:
-            meta[name] = class_totals[name]
-    if noise_totals is not None:
-        meta.update(noise_totals)
+        if name in totals:
+            meta[name] = totals[name]
+    meta.update(noise)
     return meta

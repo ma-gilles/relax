@@ -111,6 +111,8 @@ def _fake_noise_stats(offset: float, sumw: float, wsum_noise, img_power):
         sumw=float(sumw),
         wsum_sigma2_noise=np.asarray(wsum_noise, dtype=np.float32),
         wsum_img_power=np.asarray(img_power, dtype=np.float32),
+        wsum_noise_a2=None,
+        wsum_noise_xa=None,
     )
 
 
@@ -255,81 +257,68 @@ def test_initial_model_estep_defaults_to_every_particle_in_alternating_halves(mo
     assert calls[1]["joint_halfset_ids"] is None
 
 
-def test_estep_meta_aggregates_noise_stats_for_model_updates():
-    halfset_results = {
-        0: SimpleNamespace(
-            class_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
-            noise_stats=(
-                _fake_noise_stats(0.0, 0.25, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-                _fake_noise_stats(0.0, 0.75, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-            ),
-            aggregate_noise_stats=_fake_noise_stats(10.0, 3.0, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0]),
-        ),
-        1: SimpleNamespace(
-            class_posterior_sums=np.asarray([3.0, 4.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([3.0, 4.0], dtype=np.float32),
-            noise_stats=(
-                _fake_noise_stats(0.0, 1.25, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-                _fake_noise_stats(0.0, 1.75, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-            ),
-            aggregate_noise_stats=_fake_noise_stats(20.0, 7.0, [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]),
-        ),
-    }
+def _engine_result(class_sums, mstep_class_sums, **fields):
+    """A stand-in for the engine's KClassEMResult with the fields the E-step meta reads."""
+    defaults = dict(
+        noise_stats=None,
+        aggregate_noise_stats=None,
+        profile_summary=None,
+        class_assignments=np.zeros(1, dtype=np.int32),
+        per_class_stats=tuple(SimpleNamespace(rotation_posterior_sums=np.zeros(2)) for _ in class_sums),
+    )
+    return SimpleNamespace(
+        class_posterior_sums=np.asarray(class_sums, dtype=np.float32),
+        class_mstep_posterior_sums=None if mstep_class_sums is None else np.asarray(mstep_class_sums, dtype=np.float32),
+        **{**defaults, **fields},
+    )
 
-    meta = estep_meta(halfset_results)
 
-    assert meta["wsum_sigma2_offset"] == pytest.approx(30.0)
-    assert meta["sigma2_offset_sumw"] == pytest.approx(10.0)
-    assert meta["noise_sumw"] == pytest.approx(10.0)
-    np.testing.assert_allclose(meta["class_reconstruction_support_sums"], [1.5, 2.5])
+def test_estep_meta_reports_noise_stats_for_model_updates():
+    result = _engine_result(
+        [1.0, 2.0],
+        [1.0, 2.0],
+        noise_stats=(
+            _fake_noise_stats(0.0, 0.25, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+            _fake_noise_stats(0.0, 0.75, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        ),
+        aggregate_noise_stats=_fake_noise_stats(10.0, 3.0, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0]),
+    )
+
+    meta = estep_meta(result)
+
+    assert meta["halfset_ids"] == (0,)
+    assert meta["wsum_sigma2_offset"] == pytest.approx(10.0)
+    assert meta["sigma2_offset_sumw"] == pytest.approx(3.0)
+    assert meta["noise_sumw"] == pytest.approx(3.0)
+    np.testing.assert_allclose(meta["class_reconstruction_support_sums"], [0.25, 0.75])
     np.testing.assert_allclose(meta["halfset_0_class_reconstruction_support_sums"], [0.25, 0.75])
-    np.testing.assert_allclose(meta["halfset_1_class_reconstruction_support_sums"], [1.25, 1.75])
-    np.testing.assert_allclose(meta["wsum_sigma2_noise"], [8.0, 10.0, 12.0])
-    np.testing.assert_allclose(meta["wsum_img_power"], [14.0, 16.0, 18.0])
+    np.testing.assert_allclose(meta["wsum_sigma2_noise"], [1.0, 2.0, 3.0])
+    np.testing.assert_allclose(meta["wsum_img_power"], [4.0, 5.0, 6.0])
     np.testing.assert_allclose(meta["halfset_0_wsum_sigma2_noise"], [1.0, 2.0, 3.0])
-    np.testing.assert_allclose(meta["halfset_1_wsum_img_power"], [10.0, 11.0, 12.0])
+    np.testing.assert_allclose(meta["halfset_0_wsum_img_power"], [4.0, 5.0, 6.0])
+    assert meta["class_direction_posterior_sums"].shape == (2, 2)
+    assert "wsum_noise_a2" not in meta and "halfset_0_wsum_noise_xa" not in meta
 
 
 def test_estep_meta_refuses_a_result_without_mstep_class_mass():
-    halfset_results = {0: SimpleNamespace(class_posterior_sums=np.asarray([1.0, 2.0]), class_mstep_posterior_sums=None)}
-
     with pytest.raises(ValueError, match="no M-step class mass"):
-        estep_meta(halfset_results)
+        estep_meta(_engine_result([1.0, 2.0], None))
 
 
 def test_estep_meta_uses_significant_mstep_mass_for_relion_probability_updates():
-    halfset_results = {
-        0: SimpleNamespace(
-            class_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([0.8, 1.9], dtype=np.float32),
-        ),
-        1: SimpleNamespace(
-            class_posterior_sums=np.asarray([3.0, 4.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([2.7, 3.6], dtype=np.float32),
-        ),
-    }
+    meta = estep_meta(_engine_result([1.0, 2.0], [0.8, 1.9]))
 
-    meta = estep_meta(halfset_results)
-
-    np.testing.assert_allclose(meta["class_posterior_sums"], [3.5, 5.5])
-    np.testing.assert_allclose(meta["class_posterior_sums_full"], [4.0, 6.0])
+    np.testing.assert_allclose(meta["class_posterior_sums"], [0.8, 1.9])
+    np.testing.assert_allclose(meta["class_posterior_sums_full"], [1.0, 2.0])
     np.testing.assert_allclose(meta["halfset_0_class_posterior_sums"], [0.8, 1.9])
     np.testing.assert_allclose(meta["halfset_0_class_posterior_sums_full"], [1.0, 2.0])
+    assert "wsum_sigma2_noise" not in meta and "class_reconstruction_support_sums" not in meta
 
 
-def test_estep_meta_keeps_each_halfset_profile_summary():
-    def halfset(profile_summary):
-        return SimpleNamespace(
-            class_posterior_sums=np.asarray([1.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([1.0], dtype=np.float32),
-            profile_summary=profile_summary,
-        )
-
-    meta = estep_meta({0: halfset({"em_time_s": 1.25, "batches": 1}), 1: halfset(None)})
-
+def test_estep_meta_keeps_the_profile_summary():
+    meta = estep_meta(_engine_result([1.0], [1.0], profile_summary={"em_time_s": 1.25, "batches": 1}))
     assert meta["halfset_0_profile_summary"] == {"em_time_s": 1.25, "batches": 1}
-    assert "halfset_1_profile_summary" not in meta
+    assert "halfset_0_profile_summary" not in estep_meta(_engine_result([1.0], [1.0]))
 
 
 def test_initial_model_estep_with_a_projector_passes_no_dense_means(monkeypatch):

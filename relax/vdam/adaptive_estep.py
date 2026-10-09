@@ -95,7 +95,7 @@ def sparse_pass2_estep_meta(
     ``particle_fields`` are the result's per-image fields the route copies, with their meta dtypes
     (``estep_common.SPA_META_PARTICLE_FIELDS``, ``TOMO_META_PARTICLE_FIELDS``)."""
 
-    meta = estep_meta({0: result})
+    meta = estep_meta(result)
     image_ids = np.asarray(image_ids, dtype=np.int64)
     source = result.best_pose_eulers_deg
     if source is not None:
