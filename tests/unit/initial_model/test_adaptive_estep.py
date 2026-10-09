@@ -202,7 +202,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     assert_matches(calls[0]["class_rotation_log_prior"], prior_relion[:, key])
     # The subset's rows, in subset order; RELION reuses them for every oversampled child.
     assert_matches(calls[0]["translation_log_prior"], translation_prior[[3, 0, 2]])
-    assert accumulator_calls[0]["halfset_idx"] is None and accumulator_calls[0]["reconstruction_group_count"] == 2
+    assert accumulator_calls[0]["half_count"] == 2
     assert result.meta["halfset_ids"] == (0, 1)
     # vdam_m_step's positional contract: halfset 0 of each class, then halfset 1.
     assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [

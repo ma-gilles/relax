@@ -357,10 +357,14 @@ def arrays_to_accumulators(
     Ft_ctf_by_class,
     state: InitialModelState,
     *,
-    halfset_idx: int | None,
-    reconstruction_group_count: int | None = None,
+    half_count: int | None,
     padding_factor: int,
 ) -> list[VdamAccumulator]:
+    """The engine's per-class M-step arrays as RELION BPref accumulators, class-major.
+
+    ``half_count``: the size of each class array's leading pseudo-halfset axis, or None when the arrays have
+    no such axis (one half, slot 0).
+    """
     # Refuse a class axis other than K on either array before building a partially aligned list.
     try:
         data_class_count = len(Ft_y_by_class)
@@ -376,32 +380,15 @@ def arrays_to_accumulators(
     data_scale, weight_scale = relion_bpref_frame_scales(state.box_size)
     dump_dir = os.environ.get("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR")
 
-    grouped = halfset_idx is None
-    if grouped:
-        if reconstruction_group_count is None or int(reconstruction_group_count) <= 0:
-            raise ValueError(
-                "reconstruction_group_count is required for grouped accumulators"
-            )
-        output_halfsets = range(int(reconstruction_group_count))
-    else:
-        if reconstruction_group_count not in (None, 1):
-            raise ValueError(
-                "reconstruction_group_count is only valid for grouped accumulators"
-            )
-        output_halfsets = (int(halfset_idx),)
+    grouped = half_count is not None
 
     accumulators: list[VdamAccumulator] = []
     for k in range(state.K):
         class_data = np.asarray(Ft_y_by_class[k])
         class_weight = np.asarray(Ft_ctf_by_class[k])
-        if grouped and (
-            class_data.shape[0] != int(reconstruction_group_count)
-            or class_weight.shape[0] != int(reconstruction_group_count)
-        ):
-            raise ValueError(
-                "grouped accumulator arrays do not match reconstruction_group_count"
-            )
-        for output_halfset in output_halfsets:
+        if grouped and (class_data.shape[0] != half_count or class_weight.shape[0] != half_count):
+            raise ValueError("grouped accumulator arrays do not match half_count")
+        for output_halfset in range(half_count if grouped else 1):
             public_data = class_data[output_halfset] if grouped else class_data
             public_weight = class_weight[output_halfset] if grouped else class_weight
             bp_data, bp_weight = relion_x_public_output_to_bpref(

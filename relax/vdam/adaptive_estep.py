@@ -434,8 +434,7 @@ def run_adaptive_initial_model_estep(
         result.Ft_y,
         result.Ft_ctf,
         state,
-        halfset_idx=None if grouped else 0,
-        reconstruction_group_count=2 if grouped else None,
+        half_count=2 if grouped else None,
         padding_factor=config.padding_factor,
     )
     # vdam_m_step reads the list by position, halfset-major (m_step.py: accumulators[k]

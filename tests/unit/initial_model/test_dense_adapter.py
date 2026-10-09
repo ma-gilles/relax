@@ -149,7 +149,7 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
         [public_data],
         [public_weight],
         state,
-        halfset_idx=0,
+        half_count=None,
         padding_factor=1,
     )[0]
 
@@ -185,8 +185,7 @@ def test_arrays_to_accumulators_splits_grouped_halfsets():
         grouped_data[None, ...],
         grouped_weight[None, ...],
         state,
-        halfset_idx=None,
-        reconstruction_group_count=2,
+        half_count=2,
         padding_factor=1,
     )
 
@@ -547,15 +546,15 @@ def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
         full_data.append(data_full.reshape(-1))
         full_weight.append(weight_full.reshape(-1))
 
-    common = dict(state=state, halfset_idx=1, padding_factor=1)
+    common = dict(state=state, half_count=None, padding_factor=1)
     compact = arrays_to_accumulators(compact_data, compact_weight, **common)
     full = arrays_to_accumulators(full_data, full_weight, **common)
 
     assert [(value.halfset_idx, value.class_idx) for value in compact] == [
-        (1, 0),
-        (1, 1),
-        (1, 2),
-        (1, 3),
+        (0, 0),
+        (0, 1),
+        (0, 2),
+        (0, 3),
     ]
     for compact_accumulator, full_accumulator in zip(compact, full):
         assert_matches(compact_accumulator.data, full_accumulator.data)
@@ -586,7 +585,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
             data,
             weight,
             state,
-            halfset_idx=0,
+            half_count=None,
                     padding_factor=1,
         )
 
@@ -608,7 +607,7 @@ def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
         data,
         weight,
         state,
-        halfset_idx=0,
+        half_count=None,
         padding_factor=1,
     )
 
