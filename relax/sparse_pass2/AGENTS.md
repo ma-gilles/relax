@@ -10,6 +10,7 @@ accumulation it feeds. It is the only pass-2 engine and it needs a CUDA GPU.
 | `dispatch.py` | `compute_pass2_stats_sparse`: the one entry the controllers call; it routes to the resident drivers |
 | `resident_pass2.py` | the drivers `compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`, `compute_tilt_pass2_stats_resident`; the configuration gate `require_resident_production_configuration`; chunk memory planning |
 | `resident_local_pass2.py`, `resident_local_layout.py` | local-search pass 2 and its adapter from `relax/local/local_layout.py` |
+| `local_search_records.py` | the records a local pass hands its engine: images and corrections, kernel policy, support policy |
 | `resident_candidates.py`, `resident_significance.py` | the candidate tables and their fixed-capacity chunks; device compaction of the coarse significance mask |
 | `resident_operands.py`, `resident_scoring.py`, `resident_statistics.py`, `resident_tilts.py` | per-image operands kept on the device; the scoring stage; the float64 device accumulators; tilt images of subtomogram particles |
 | `sparse_pass2_*.py` | shared pieces the drivers import: window, budgets, scoring, posterior, projection blocks, Wavg, adjoint, and `sparse_pass2_policy.py` (the environment switches) |

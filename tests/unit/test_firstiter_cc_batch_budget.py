@@ -29,6 +29,7 @@ from relax.refinement import (
 )
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
+from relax.sparse_pass2 import local_search_records
 
 
 def _dense_owners(**values):
@@ -272,10 +273,10 @@ def test_local_iteration_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            local_search_iteration.LocalSearchData,
+            local_search_records.LocalSearchData,
             local_search_iteration.LocalSearchGridSpec,
-            local_search_iteration.LocalSearchKernelPolicy,
-            local_search_iteration.LocalSearchSupportPolicy,
+            local_search_records.LocalSearchKernelPolicy,
+            local_search_records.LocalSearchSupportPolicy,
         )
         for field in dataclasses.fields(owner)
     }

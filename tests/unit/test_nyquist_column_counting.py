@@ -220,7 +220,7 @@ def test_local_search_policies_carry_the_rule():
     import dataclasses
 
     from relax.refinement.half_scoring import DenseExecutionPolicy, LocalExecutionPolicy
-    from relax.refinement.local_search_iteration import LocalSearchKernelPolicy
+    from relax.sparse_pass2.local_search_records import LocalSearchKernelPolicy
 
     for policy in (DenseExecutionPolicy, LocalExecutionPolicy, LocalSearchKernelPolicy):
         rule = {field.name: field for field in dataclasses.fields(policy)}["nyquist_column_counting"]

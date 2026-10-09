@@ -45,10 +45,7 @@ from relax.refinement.half_inputs import HalfSet
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.local_search_iteration import (
     LocalClassSearchResult,
-    LocalSearchData,
     LocalSearchGridSpec,
-    LocalSearchKernelPolicy,
-    LocalSearchSupportPolicy,
     _run_local_search_iteration,
 )
 from relax.refinement.optics_shapes import (
@@ -69,6 +66,11 @@ from relax.sampling import (
     build_local_search_grid_metadata,
     project_rows,
     relion_angular_sampling_deg,
+)
+from relax.sparse_pass2.local_search_records import (
+    LocalSearchData,
+    LocalSearchKernelPolicy,
+    LocalSearchSupportPolicy,
 )
 
 logger = logging.getLogger("relax.dense.half_scoring")

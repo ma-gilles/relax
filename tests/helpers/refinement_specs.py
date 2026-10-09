@@ -8,6 +8,7 @@ from relax.refinement.half_inputs import HalfSet
 from relax.refinement.ports import RunObserver
 from relax.refinement.projector_preparation import PreparedProjector
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
+from relax.sparse_pass2 import local_search_records
 
 _LOCAL_ITERATION_POSITIONAL = (
     "experiment_dataset",
@@ -37,7 +38,7 @@ def local_iteration_owners(*args, **values):
             raise TypeError(f"multiple values for {name}")
         values[name] = value
     owners = (
-        local_search_iteration.LocalSearchData(
+        local_search_records.LocalSearchData(
             experiment_dataset=values.pop("experiment_dataset"),
             mean=values.pop("mean"),
             noise_variance=values.pop("noise_variance"),
@@ -69,7 +70,7 @@ def local_iteration_owners(*args, **values):
             symmetry=values.pop("symmetry", "C1"),
             n_classes=values.pop("n_classes", 1),
         ),
-        local_search_iteration.LocalSearchKernelPolicy(
+        local_search_records.LocalSearchKernelPolicy(
             disc_type=values.pop("disc_type"),
             current_size=values.pop("current_size"),
             reconstruction_current_size=values.pop("reconstruction_current_size", None),
@@ -95,7 +96,7 @@ def local_iteration_owners(*args, **values):
             wsum_current_size=values.pop("wsum_current_size", None),
             firstiter_cc=values.pop("firstiter_cc", False),
         ),
-        local_search_iteration.LocalSearchSupportPolicy(
+        local_search_records.LocalSearchSupportPolicy(
             mstep_relion_x_half=values.pop("mstep_relion_x_half", False),
             disable_adjoint_y=values.pop("disable_adjoint_y", False),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf", False),
