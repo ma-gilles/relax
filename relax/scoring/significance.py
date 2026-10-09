@@ -18,10 +18,10 @@ from relax.scoring.pass1_assembly import build_full_stats, log_batch_timing, sig
 from relax.scoring.pass1_batch import prepare_batch_inputs
 from relax.scoring.pass1_dump import select_dump_targets
 from relax.scoring.pass1_plan import Pass1Plan, plan_pass1
+from relax.scoring.pass1_program import run_score_program
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_request import Pass1Request
 from relax.scoring.pass1_results import BatchOutputs, Pass1Outputs, Pass1Result
-from relax.scoring.pass1_scores import run_score_program
 from relax.scoring.pass1_support import NO_SUPPORT, float32_support, generic_support
 from relax.scoring.tree_rescore import (
     TreeRescoreState,
