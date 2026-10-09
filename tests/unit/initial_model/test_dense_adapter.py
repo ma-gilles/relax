@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.vdam import initial_model_state_stub
 
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.vdam.adaptive_estep import _safe_coarse_significance_image_batch_size, resolve_sparse_pass1_current_size
@@ -24,7 +25,6 @@ from relax.vdam.estep_setup import (
     prepare_relion_projector_class_inputs_and_power,
     run_initial_model_estep,
 )
-from relax.vdam.state import InitialModelState
 
 pytestmark = pytest.mark.unit
 
@@ -544,7 +544,7 @@ def test_sparse_control_split_preserves_input_and_array_identity():
 
 
 def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
-    state = InitialModelState(K=4, box_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
+    state = initial_model_state_stub(K=4, box_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
     r_max = state.current_size // 2
     compact_size = 2 * (r_max + 1) + 1
     full_center = state.box_size // 2
@@ -590,7 +590,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
     data_class_count,
     weight_class_count,
 ):
-    state = InitialModelState(K=4, box_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
+    state = initial_model_state_stub(K=4, box_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
     compact_voxels = 7**3
     data = [np.zeros(compact_voxels, dtype=np.complex64) for _ in range(data_class_count)]
     weight = [np.zeros(compact_voxels, dtype=np.float32) for _ in range(weight_class_count)]
@@ -614,7 +614,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
 def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
     """Pin the real-data K=4 current-size bridge that failed on 59-cubed outputs."""
 
-    state = InitialModelState(K=4, box_size=256, current_size=56, Iref=None, Igrad1=None, Igrad2=None)
+    state = initial_model_state_stub(K=4, box_size=256, current_size=56, Iref=None, Igrad1=None, Igrad2=None)
     compact_size = 59
     compact_voxels = compact_size**3
     data = np.stack(

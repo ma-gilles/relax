@@ -6,9 +6,10 @@ import jax
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.vdam import initial_model_state_stub
 
 from relax.vdam import m_step
-from relax.vdam.state import InitialModelState, half_slot_index
+from relax.vdam.state import half_slot_index
 
 pytestmark = pytest.mark.unit
 CHANGED = {"Iref", "Igrad1", "Igrad2", "tau2_class", "sigma2_class", "data_vs_prior_class", "fourier_coverage_class"}
@@ -31,7 +32,7 @@ def _case(K, pseudo, order):
             values = values[..., ::-1]
         return values
 
-    state = InitialModelState(
+    state = initial_model_state_stub(
         K=K,
         box_size=4,
         pseudo_halfsets=pseudo,

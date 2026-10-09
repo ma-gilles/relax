@@ -178,3 +178,23 @@ class PreparedProjector:
     def take(self, state, *, padding_factor):
         del state, padding_factor
         return self.inputs
+
+
+def initial_model_state_stub(**fields):
+    """An ``InitialModelState`` with stand-in values for the fields a test does not set: 200 iterations, a
+    64-pixel box at 1 A, zero 33-shell spectra and a unit class prior."""
+    from relax.vdam.state import InitialModelState
+
+    stand_ins = dict(
+        nr_iter=200,
+        box_size=64,
+        pixel_size=1.0,
+        sigma2_noise=np.zeros((1, 33)),
+        tau2_class=np.zeros((1, 33)),
+        sigma2_class=np.zeros((1, 33)),
+        fsc_halves_class=np.zeros((1, 33)),
+        fourier_coverage_class=np.zeros((1, 33)),
+        data_vs_prior_class=np.zeros((1, 33)),
+        pdf_class=np.ones(1),
+    )
+    return InitialModelState(**{**stand_ins, **fields})

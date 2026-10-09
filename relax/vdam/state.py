@@ -10,7 +10,7 @@ fourier_coverage_class: (K, S); data_vs_prior_class: (K, S).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -24,10 +24,10 @@ class InitialModelState:
     M-step (``m_step._run_m_step_transaction``), though annotated ``np.ndarray``."""
 
     iter: int = 0
-    nr_iter: int = 200
+    nr_iter: int
     K: int = 1
-    box_size: int = 64
-    pixel_size: float = 1.0
+    box_size: int
+    pixel_size: float
     pseudo_halfsets: bool = True
 
     Iref: np.ndarray
@@ -39,14 +39,14 @@ class InitialModelState:
     sgd_noise_count: Optional[np.ndarray] = None
     sgd_corner_sigma2: Optional[np.ndarray] = None
 
-    sigma2_noise: np.ndarray = field(default_factory=lambda: np.zeros((1, 33)))
-    tau2_class: np.ndarray = field(default_factory=lambda: np.zeros((1, 33)))
-    sigma2_class: np.ndarray = field(default_factory=lambda: np.zeros((1, 33)))
-    fsc_halves_class: np.ndarray = field(default_factory=lambda: np.zeros((1, 33)))
-    fourier_coverage_class: np.ndarray = field(default_factory=lambda: np.zeros((1, 33)))
-    data_vs_prior_class: np.ndarray = field(default_factory=lambda: np.zeros((1, 33)))
+    sigma2_noise: np.ndarray
+    tau2_class: np.ndarray
+    sigma2_class: np.ndarray
+    fsc_halves_class: np.ndarray
+    fourier_coverage_class: np.ndarray
+    data_vs_prior_class: np.ndarray
 
-    pdf_class: np.ndarray = field(default_factory=lambda: np.ones(1))
+    pdf_class: np.ndarray
     pdf_direction: Optional[np.ndarray] = None
     sigma2_offset: float = 100.0
 

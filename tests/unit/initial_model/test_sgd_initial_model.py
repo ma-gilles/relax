@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from helpers.vdam import keep_tau2
+from helpers.vdam import initial_model_state_stub, keep_tau2
 from recovar.data_io.image_backends import _apply_relion_soft_image_mask_numpy, _centered_rfft2_numpy
 from recovar.reconstruction.noise import make_radial_noise
 
@@ -34,7 +34,7 @@ from relax.vdam.sgd import (
     sgd_m_step,
     update_sgd_noise,
 )
-from relax.vdam.state import InitialModelState, VdamAccumulator
+from relax.vdam.state import VdamAccumulator
 
 pytestmark = pytest.mark.unit
 
@@ -179,7 +179,7 @@ def test_known_target_residual_step_reduces_projected_quadratic():
 @pytest.mark.parametrize("k", [1, 4])
 def test_class_pooling_uses_both_halves_without_crossing_classes(k):
     n, capacity = 16, 19
-    state = InitialModelState(
+    state = initial_model_state_stub(
         K=k,
         box_size=n,
         current_size=10,
@@ -237,7 +237,7 @@ def test_corner_prior_matches_actual_masked_fft_covariance():
 
 def test_noise_state_is_relion_units_and_adapter_restores_engine_units():
     n = 16
-    state = InitialModelState(
+    state = initial_model_state_stub(
         box_size=n,
         current_size=8,
         iter=1,
@@ -340,7 +340,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
     monkeypatch.setattr(sgd_noise, "update_sgd_noise", lambda state, meta: state)
 
     def initial_state():
-        return InitialModelState(
+        return initial_model_state_stub(
             nr_iter=3,
             K=3,
             box_size=16,
