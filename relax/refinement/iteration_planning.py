@@ -467,29 +467,18 @@ def first_iteration_policy(options: RefinementOptions, *, iteration) -> FirstIte
     """RELION's first-iteration CC emulation, the score mode and whether one pose takes all the weight.
 
     Normalised cross-correlation scoring and hard reconstruction apply to iteration 1 of a run that
-    starts at RELION iteration 0, under ``--firstiter_cc`` emulation or the two diagnostic options.
-    Reads from ``options``: ``schedule.init_relion_iteration``; ``parity.emulate_relion_firstiter_cc``,
-    ``first_iteration_score_mode`` and ``first_iteration_reconstruction_mode``.
+    starts at RELION iteration 0, under ``--firstiter_cc`` emulation.
+    Reads from ``options``: ``schedule.init_relion_iteration``, ``parity.emulate_relion_firstiter_cc``.
     """
     parity = options.parity
     init_relion_iteration = options.schedule.init_relion_iteration
     relion_firstiter_cc_this_iter = bool(
         parity.emulate_relion_firstiter_cc and init_relion_iteration == 0 and iteration == 0
     )
-    first_iter_normalized_cc_this_iter = bool(
-        parity.first_iteration_score_mode == "normalized_cc" and init_relion_iteration == 0 and iteration == 0
-    )
-    first_iter_hard_reconstruction_this_iter = bool(
-        parity.first_iteration_reconstruction_mode == "hard" and init_relion_iteration == 0 and iteration == 0
-    )
-    firstiter_score_mode_this_iter = (
-        "normalized_cc" if (relion_firstiter_cc_this_iter or first_iter_normalized_cc_this_iter) else "gaussian"
-    )
-    firstiter_winner_take_all_this_iter = bool(
-        relion_firstiter_cc_this_iter or first_iter_hard_reconstruction_this_iter
-    )
     return FirstIterationPolicy(
-        relion_firstiter_cc_this_iter, firstiter_score_mode_this_iter, firstiter_winner_take_all_this_iter,
+        relion_firstiter_cc_this_iter,
+        "normalized_cc" if relion_firstiter_cc_this_iter else "gaussian",
+        relion_firstiter_cc_this_iter,
     )
 
 

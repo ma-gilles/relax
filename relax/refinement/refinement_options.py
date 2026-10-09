@@ -136,8 +136,6 @@ class RelionParityOptions:
     # --firstiter_cc (on by default, as the RELION GUI).
     emulate_relion_firstiter_cc: bool = True
     relion_firstiter_ini_high_angstrom: float | None = None
-    first_iteration_score_mode: str = "gaussian"
-    first_iteration_reconstruction_mode: str = "soft"
     # --image-fourier-backend auto: RELION's CUDA image preprocessing.
     image_fourier_backend: Literal["host_numpy", "jax_gpu", "relion_cuda"] = "relion_cuda"
     optimizer_random_seed: int | None = None
@@ -309,9 +307,7 @@ def require_consistency_route(
             "nyquist_column_counting / firstiter_cc_support are not implemented for the experimental "
             "gemm_dense coarse engine"
         )
-    if consistency.firstiter_cc_support != "relion" and not (
-        options.parity.emulate_relion_firstiter_cc or options.parity.first_iteration_score_mode == "normalized_cc"
-    ):
+    if consistency.firstiter_cc_support != "relion" and not options.parity.emulate_relion_firstiter_cc:
         raise NotImplementedError(
             f"firstiter_cc_support={consistency.firstiter_cc_support!r} needs the first-iteration "
             "cross-correlation (--firstiter_cc); this run has no CC iteration"

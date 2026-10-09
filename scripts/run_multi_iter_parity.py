@@ -1344,18 +1344,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--first_iteration_score_mode",
-        choices=["gaussian", "normalized_cc"],
-        default="gaussian",
-        help="Diagnostic override for the iter-0 score metric.",
-    )
-    parser.add_argument(
-        "--first_iteration_reconstruction_mode",
-        choices=["soft", "hard"],
-        default="soft",
-        help="Diagnostic override for the iter-0 reconstruction weights.",
-    )
-    parser.add_argument(
         "--relion_ini_high",
         type=float,
         default=None,
@@ -2432,8 +2420,6 @@ def main():
 
     print(f"  Local-search profile: {args.local_search_profile}")
     print(f"  Local translation prior mode: {args.local_search_translation_prior_mode}")
-    print(f"  First-iteration score mode: {args.first_iteration_score_mode}")
-    print(f"  First-iteration reconstruction mode: {args.first_iteration_reconstruction_mode}")
     print(f"  Emulate RELION iter-1 CC: {do_firstiter_cc}")
     print(f"  RELION ini_high: {relion_ini_high}")
     print(f"  Adjoint ablations: disable_y={args.disable_adjoint_y}, disable_ctf={args.disable_adjoint_ctf}")
@@ -2478,8 +2464,6 @@ def main():
             perturb_seed=optimizer_random_seed,
             emulate_relion_firstiter_cc=do_firstiter_cc,
             relion_firstiter_ini_high_angstrom=relion_ini_high if args.iter == 0 else None,
-            first_iteration_score_mode=args.first_iteration_score_mode,
-            first_iteration_reconstruction_mode=args.first_iteration_reconstruction_mode,
             image_fourier_backend=args.image_fourier_backend,
             preserve_bpref_particle_order=(
                 args.diagnostic_preserve_bpref_particle_order
@@ -2610,8 +2594,6 @@ def main():
         "max_significants": np.int32(max_significants),
         "local_search_profile_mode": np.array(args.local_search_profile),
         "local_search_translation_prior_mode": np.array(args.local_search_translation_prior_mode),
-        "first_iteration_score_mode": np.array(args.first_iteration_score_mode),
-        "first_iteration_reconstruction_mode": np.array(args.first_iteration_reconstruction_mode),
         "firstiter_cc_mode": np.array(args.firstiter_cc_mode),
         "firstiter_cc_oracle_enabled": np.bool_(oracle_firstiter_cc),
         "firstiter_cc_effective": np.bool_(do_firstiter_cc),

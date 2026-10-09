@@ -78,25 +78,22 @@ def _device_rotations_stand_in(monkeypatch):
     monkeypatch.setattr(local_sampling, "coarse_pass1_rotations", coarse_rotations)
 
 
-# (oversampling, classes, first-iteration CC, first-iteration hard reconstruction, float64 scoring) ->
+# (oversampling, classes, first-iteration CC, float64 scoring) ->
 # whether iterations 1 and 2 generate RELION's coarse device rotations.
 _GATE_CASES = {
-    "os0_k1": ((0, 1, False, False, False), [True, True]),
-    "os0_kclass": ((0, 2, False, False, False), [False, False]),
-    "os0_k1_cc": ((0, 1, True, False, False), [False, True]),
-    "os0_k1_hard": ((0, 1, False, True, False), [False, True]),
-    "os0_k1_float64": ((0, 1, False, False, True), [False, False]),
-    "os1_k1": ((1, 1, False, False, False), [True, True]),
-    "os1_kclass_cc_float64": ((1, 2, True, False, True), [True, True]),
+    "os0_k1": ((0, 1, False, False), [True, True]),
+    "os0_kclass": ((0, 2, False, False), [False, False]),
+    "os0_k1_cc": ((0, 1, True, False), [False, True]),
+    "os0_k1_float64": ((0, 1, False, True), [False, False]),
+    "os1_k1": ((1, 1, False, False), [True, True]),
+    "os1_kclass_cc_float64": ((1, 2, True, True), [True, True]),
 }
 
 
-def _gate_run(monkeypatch, trace, oversampling, n_classes, cc, hard, float64):
+def _gate_run(monkeypatch, trace, oversampling, n_classes, cc, float64):
     parity = {}
     if cc:
         parity.update(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0)
-    if hard:
-        parity.update(first_iteration_reconstruction_mode="hard")
     if float64:
         monkeypatch.setattr(
             scoring_policy, "DENSE_PRECISION", replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
@@ -122,11 +119,10 @@ def test_device_matrix_generation_gate(monkeypatch, case):
 
 
 @pytest.mark.parametrize(
-    "oversampling,xhalf,score_mode,expected",
-    [(0, True, "gaussian", [True] * 4), (0, False, "gaussian", [False] * 4), (1, True, "gaussian", [False] * 4),
-     (0, True, "normalized_cc", [False, False, True, True])],
+    "oversampling,xhalf,expected",
+    [(0, True, [True] * 4), (0, False, [False] * 4), (1, True, [False] * 4)],
 )
-def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, score_mode, expected):
+def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, expected):
     """K=1 scores pass 1 on the generated coarse device rotations only at oversampling 0 with the x-half
     M-step and Gaussian scoring; the fine operand is always the pass-2 grid's."""
     monkeypatch.setenv("RELAX_K1_RELION_X_HALF_MSTEP", "1" if xhalf else "0")
@@ -136,7 +132,7 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, sc
     trace.wrap(half_scoring, "prepare_adaptive_pass2_grids", "grids")
     trace.wrap(half_scoring, "project_pass2_rotations", "projection")
     run_tiny_refinement(
-        monkeypatch, final_after_max_iter=False, parity=dict(first_iteration_score_mode=score_mode),
+        monkeypatch, final_after_max_iter=False,
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
     )
     scorers, grids, projections = trace.calls("scorer"), trace.calls("grids"), trace.calls("projection")
