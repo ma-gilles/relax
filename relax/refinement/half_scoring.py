@@ -45,14 +45,7 @@ from relax.local.local_layout import (
     expand_local_layout_classes,
     restrict_local_layout_classes,
 )
-from relax.refinement.firstiter_cc import (
-    FirstIterCCBatching,
-    FirstIterCCData,
-    FirstIterCCExecution,
-    FirstIterCCGridSpec,
-    FirstIterCCPolicy,
-    _score_kclass_firstiter_cc_pass2,
-)
+from relax.refinement.firstiter_cc import _score_kclass_firstiter_cc_pass2
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.local_search_iteration import (
@@ -748,46 +741,6 @@ def _score_half_dense_one_shape(
         half.projector is not None,
         int(sampling.oversampling_order),
     )
-    if variant.relion_firstiter_cc_this_iter:
-        # Shared first-iteration inputs; means, layouts and pose IDs remain route-specific.
-        firstiter_data = FirstIterCCData(
-                logger=logger,
-                experiment_dataset=half.particles.dataset,
-                mean=half.reference,
-                mean_variance=half.mean_variance,
-                noise_variance=half.noise_variance,
-                image_shape=half.particles.dataset.image_shape,
-                image_seed_classes=half.image_seed_classes,
-        )
-        firstiter_grid = FirstIterCCGridSpec(
-                effective_rotations=sampling.effective_rotations,
-                current_translations=sampling.current_translations,
-                base_translations=sampling.base_translations,
-                current_healpix_order=sampling.current_healpix_order,
-                oversampling_order=sampling.oversampling_order,
-                translation_step=sampling.translation_step,
-                random_perturbation=sampling.random_perturbation,
-                symmetry=symmetry,
-                effective_device_source=sampling.effective_device_source,
-        )
-        firstiter_policy = FirstIterCCPolicy(
-                disc_type=execution.disc_type,
-                class_log_priors=priors.class_log_priors,
-        )
-        firstiter_batching = FirstIterCCBatching(
-                image_batch_size=batching.image_batch_size,
-                em_kwargs=em_kwargs,
-                safe_batch_sizes=batching.safe_batch_sizes,
-                significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
-                coarse_current_size=variant.firstiter_coarse_current_size,
-                fine_current_size=variant.firstiter_fine_current_size,
-        )
-        firstiter_execution = FirstIterCCExecution(
-                log_label=variant.firstiter_log_label,
-                bpref_device_signature_active=execution.bpref_device_signature_active,
-                debug_iteration=execution.debug_iteration,
-        )
-
     if variant.k_class_enabled:
         if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
             raise NotImplementedError("K-class refine does not support adjoint ablation flags")
@@ -817,29 +770,28 @@ def _score_half_dense_one_shape(
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         elif variant.relion_firstiter_cc_this_iter:
             adaptive_os_local = int(sampling.oversampling_order)
-            (
-                k_class_result,
-                rot_pmap_for_collapse,
-                trans_pmap_for_collapse,
-                n_trans_fine_for_collapse,
-            ) = _score_kclass_firstiter_cc_pass2(
-                firstiter_data,
-                replace(
-                    firstiter_grid,
-                    coarse_rotation_ids=sampling.coarse_rotation_ids,
-                    projection_scale=optics.projection_scale,
-                    magnification=magnification,
-                ),
-                firstiter_policy,
-                replace(
-                    firstiter_batching,
-                    em_kwargs={
-                        **em_kwargs,
-                        **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
-                    },
-                ),
-                firstiter_execution,
+            firstiter = _score_kclass_firstiter_cc_pass2(
+                half,
+                sampling,
+                priors,
+                batching,
+                variant,
+                execution,
+                mean=half.reference,
+                coarse_rotation_ids=sampling.coarse_rotation_ids,
+                projection_scale=optics.projection_scale,
+                magnification=magnification,
+                em_kwargs={
+                    **em_kwargs,
+                    **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
+                },
+                log_label=variant.firstiter_log_label,
+                symmetry=symmetry,
             )
+            k_class_result = firstiter.result
+            rot_pmap_for_collapse = firstiter.rotation_parent_map
+            trans_pmap_for_collapse = firstiter.translation_parent_map
+            n_trans_fine_for_collapse = firstiter.n_fine_translations
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         else:
             k_class_result, pass2_grids = _score_adaptive_kclass_dense(
@@ -909,30 +861,30 @@ def _score_half_dense_one_shape(
                 "RELAX_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
                 "custom CUDA is unsupported for non-C1 symmetry"
             )
-        (
-            k1_adaptive_result,
-            rot_pmap_for_collapse,
-            trans_pmap_for_collapse,
-            n_trans_fine_for_collapse,
-        ) = _score_kclass_firstiter_cc_pass2(
-            replace(firstiter_data, mean=jnp.asarray(half.reference)[None, :]),
-            replace(
-                firstiter_grid,
-                # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
-                projection_scale=optics.projection_scale,
-                magnification=dataset_projection_magnification(half.particles.dataset),
-            ),
-            firstiter_policy,
-            replace(
-                firstiter_batching,
-                em_kwargs={
-                    **em_kwargs,
-                    **({"mstep_relion_x_half": True} if execution.relion_x_half_mstep else {}),
-                    **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
-                },
-            ),
-            replace(firstiter_execution, log_label="K=1 "),
+        firstiter = _score_kclass_firstiter_cc_pass2(
+            half,
+            sampling,
+            priors,
+            batching,
+            variant,
+            execution,
+            mean=jnp.asarray(half.reference)[None, :],
+            coarse_rotation_ids=None,
+            # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
+            projection_scale=optics.projection_scale,
+            magnification=dataset_projection_magnification(half.particles.dataset),
+            em_kwargs={
+                **em_kwargs,
+                **({"mstep_relion_x_half": True} if execution.relion_x_half_mstep else {}),
+                **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
+            },
+            log_label="K=1 ",
+            symmetry=symmetry,
         )
+        k1_adaptive_result = firstiter.result
+        rot_pmap_for_collapse = firstiter.rotation_parent_map
+        trans_pmap_for_collapse = firstiter.translation_parent_map
+        n_trans_fine_for_collapse = firstiter.n_fine_translations
     else:
         k1_adaptive_result, pass2_grids = _score_adaptive_k1_dense(
             half,

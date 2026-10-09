@@ -22,7 +22,6 @@ from relax.helpers.types import NoiseStats, make_relion_stats
 from relax.refinement import (
     firstiter_cc,
     half_scoring,
-    iteration_loop,
     local_sampling,
     local_search_iteration,
     optics_shapes,
@@ -98,10 +97,78 @@ def _dense_owners(**values):
     return owners
 
 
+def _firstiter_cc_dispatch(
+    *,
+    mean,
+    image_shape,
+    n_rotations,
+    n_translations,
+    image_batch_size,
+    em_kwargs,
+    safe_batch_sizes,
+    coarse_current_size,
+    fine_current_size,
+    projection_scale=1.0,
+    effective_device_source=None,
+):
+    """Run the first-iteration CC dispatch on the dense owners of a small half."""
+
+    half, sampling, priors, batching, variant, execution, _optics = _dense_owners(
+        k=0,
+        experiment_dataset=SimpleNamespace(image_shape=image_shape),
+        means_k=mean,
+        mean_variance=None,
+        noise_variance_k=None,
+        effective_rotations=np.zeros((n_rotations, 3, 3), dtype=np.float32),
+        current_translations=np.zeros((n_translations, 2), dtype=np.float32),
+        base_translations=np.zeros((n_translations, 2), dtype=np.float32),
+        current_healpix_order=1,
+        state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
+        random_perturbation=0.0,
+        disc_type="linear_interp",
+        image_batch_size=image_batch_size,
+        rotation_log_prior_k=None,
+        class_rotation_log_prior_k=None,
+        translation_log_prior=None,
+        translation_search_base=None,
+        trans_prior_center_for_engine=None,
+        image_corrections_k=None,
+        scale_corrections_k=None,
+        firstiter_score_mode_this_iter="normalized_cc",
+        firstiter_winner_take_all_this_iter=True,
+        cs_for_engine=None,
+        class_log_priors=None,
+        k_class_enabled=True,
+        relion_firstiter_cc_this_iter=True,
+        disable_adjoint_y=False,
+        disable_adjoint_ctf=False,
+        safe_batch_sizes=safe_batch_sizes,
+        max_significants=None,
+        firstiter_coarse_current_size=coarse_current_size,
+        firstiter_fine_current_size=fine_current_size,
+    )
+    return firstiter_cc._score_kclass_firstiter_cc_pass2(
+        half,
+        dataclasses.replace(sampling, effective_device_source=effective_device_source),
+        priors,
+        batching,
+        variant,
+        execution,
+        mean=mean,
+        coarse_rotation_ids=None,
+        projection_scale=projection_scale,
+        magnification=None,
+        em_kwargs=em_kwargs,
+        log_label="",
+        symmetry="C1",
+    )
+
+
 def test_firstiter_cc_core_keeps_owner_dependencies_visible():
     function = firstiter_cc._score_kclass_firstiter_cc_pass2
     assert tuple(inspect.signature(function).parameters) == (
-        "data", "grid", "policy", "batching", "execution",
+        "half", "sampling", "priors", "batching", "variant", "execution",
+        "mean", "coarse_rotation_ids", "projection_scale", "magnification", "em_kwargs", "log_label", "symmetry",
     )
 
     tree = ast.parse(inspect.getsource(function))
@@ -117,11 +184,12 @@ def test_firstiter_cc_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            firstiter_cc.FirstIterCCData,
-            firstiter_cc.FirstIterCCGridSpec,
-            firstiter_cc.FirstIterCCPolicy,
-            firstiter_cc.FirstIterCCBatching,
-            firstiter_cc.FirstIterCCExecution,
+            half_scoring.HalfScoringData,
+            half_scoring.DenseSamplingSpec,
+            half_scoring.DensePriorSpec,
+            half_scoring.DenseBatchPolicy,
+            half_scoring.DenseVariantPolicy,
+            half_scoring.DenseExecutionPolicy,
         )
         for field in dataclasses.fields(owner)
     }
@@ -341,42 +409,20 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
             return 120, 700
         raise AssertionError((n_rot, n_trans, current_size_for_batch))
 
-    data = firstiter_cc.FirstIterCCData(
-            logger=iteration_loop.logger,
-            experiment_dataset=object(),
-            mean=np.zeros((2, 4), dtype=np.complex64),
-            mean_variance=None,
-            noise_variance=None,
-            image_shape=(256, 256),
-    )
-    grid = firstiter_cc.FirstIterCCGridSpec(
-            effective_rotations=np.zeros((576, 3, 3), dtype=np.float32),
-            current_translations=np.zeros((29, 2), dtype=np.float32),
-            base_translations=np.zeros((29, 2), dtype=np.float32),
-            current_healpix_order=1,
-            oversampling_order=1,
-            translation_step=2.0,
-            random_perturbation=0.0,
-    )
-    policy = firstiter_cc.FirstIterCCPolicy(
-            disc_type="linear_interp",
-            class_log_priors=None,
-    )
-    batching = firstiter_cc.FirstIterCCBatching(
-            image_batch_size=200,
-            em_kwargs={"image_batch_size": 88, "rotation_block_size": 576},
-            safe_batch_sizes=fake_safe_batch_sizes,
-            significance_safe_batch_sizes=None,
-            coarse_current_size=40,
-            fine_current_size=90,
-    )
-    execution = firstiter_cc.FirstIterCCExecution(log_label="", bpref_device_signature_active=False, debug_iteration=None)
-    result, _rot_parent, _trans_parent, n_trans_fine = (
-        firstiter_cc._score_kclass_firstiter_cc_pass2(data, grid, policy, batching, execution)
+    dispatch = _firstiter_cc_dispatch(
+        mean=np.zeros((2, 4), dtype=np.complex64),
+        image_shape=(256, 256),
+        n_rotations=576,
+        n_translations=29,
+        image_batch_size=200,
+        em_kwargs={"image_batch_size": 88, "rotation_block_size": 576},
+        safe_batch_sizes=fake_safe_batch_sizes,
+        coarse_current_size=40,
+        fine_current_size=90,
     )
 
-    assert result == "result"
-    assert n_trans_fine == 116
+    assert dispatch.result == "result"
+    assert dispatch.n_fine_translations == 116
     expected_fine_ibs = min(88, _safe_firstiter_cc_image_batch_size(116, (256, 256)))
     expected_coarse_ibs = min(120, _safe_firstiter_cc_image_batch_size(29, (256, 256)))
     assert captured["image_batch_size"] == expected_fine_ibs
@@ -398,15 +444,9 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     dispatch = {}
     original_dispatch = half_scoring._score_kclass_firstiter_cc_pass2
 
-    def capture_dispatch(data, grid, policy, batching, execution):
-        dispatch.update(
-            data=data,
-            grid=grid,
-            policy=policy,
-            batching=batching,
-            execution=execution,
-        )
-        return original_dispatch(data, grid, policy, batching, execution)
+    def capture_dispatch(*owners, **values):
+        dispatch.update(values)
+        return original_dispatch(*owners, **values)
     calls = []
 
     class TinyDataset:
@@ -553,16 +593,16 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
     assert result.ha.shape == (3,)
     assert result.coarse_ha.shape == (3,)
 
-    assert dispatch["data"].mean.shape == (n_classes, 4)
-    assert dispatch["execution"].log_label == ("K=1 " if n_classes == 1 else "test K-class ")
+    assert dispatch["mean"].shape == (n_classes, 4)
+    assert dispatch["log_label"] == ("K=1 " if n_classes == 1 else "test K-class ")
     # The engine receives the clamped copy; the dispatch leaves the caller's dictionary alone.
-    assert dispatch["batching"].em_kwargs["image_batch_size"] == 187
+    assert dispatch["em_kwargs"]["image_batch_size"] == 187
     if n_classes == 1:
-        assert dispatch["grid"].coarse_rotation_ids is None
+        assert dispatch["coarse_rotation_ids"] is None
         assert captured["coarse_rotation_ids"] is None
     else:
-        assert dispatch["data"].mean is means
-        assert dispatch["grid"].coarse_rotation_ids is coarse_ids
+        assert dispatch["mean"] is means
+        assert dispatch["coarse_rotation_ids"] is coarse_ids
         assert captured["coarse_rotation_ids"] is coarse_ids
 
 
@@ -754,32 +794,18 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
     monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
     source = object()
 
-    firstiter_cc._score_kclass_firstiter_cc_pass2(
-        firstiter_cc.FirstIterCCData(
-            logger=iteration_loop.logger,
-            experiment_dataset=object(),
-            mean=np.zeros((1, 4), dtype=np.complex64),
-            mean_variance=None,
-            noise_variance=None,
-            image_shape=(64, 64),
-        ),
-        firstiter_cc.FirstIterCCGridSpec(
-            effective_rotations=np.zeros((12, 3, 3), dtype=np.float32),
-            current_translations=np.zeros((5, 2), dtype=np.float32),
-            base_translations=np.zeros((5, 2), dtype=np.float32),
-            current_healpix_order=1,
-            oversampling_order=1,
-            translation_step=2.0,
-            random_perturbation=0.0,
-            projection_scale=2.0,
-            effective_device_source=source,
-        ),
-        firstiter_cc.FirstIterCCPolicy(disc_type="linear_interp", class_log_priors=None),
-        firstiter_cc.FirstIterCCBatching(
-            image_batch_size=20, em_kwargs={"image_batch_size": 20, "rotation_block_size": 96},
-            safe_batch_sizes=None, significance_safe_batch_sizes=None, coarse_current_size=None, fine_current_size=None,
-        ),
-        firstiter_cc.FirstIterCCExecution(log_label="", bpref_device_signature_active=False, debug_iteration=None),
+    _firstiter_cc_dispatch(
+        mean=np.zeros((1, 4), dtype=np.complex64),
+        image_shape=(64, 64),
+        n_rotations=12,
+        n_translations=5,
+        image_batch_size=20,
+        em_kwargs={"image_batch_size": 20, "rotation_block_size": 96},
+        safe_batch_sizes=None,
+        coarse_current_size=None,
+        fine_current_size=None,
+        projection_scale=2.0,
+        effective_device_source=source,
     )
 
     assert np.all(captured["coarse_rot"] == 1.0)
