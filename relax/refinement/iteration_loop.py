@@ -1271,19 +1271,9 @@ def refine_single_volume(
     # Each half is still scored with its own numbered-iteration noise (one MPI follower per half); K=1 joins
     # the half sums after this E-step.
     final_result = finalization.run_final_all_data(
-        halves, reference_model=reference_model, noise_model=carry.noise_model, direction_priors=carry.direction_priors,
-        state=carry.state, history=history, options=options, optics=ctx.optics,
-        reconstruction_settings=ctx.reconstruction_settings,
-        batch_planner=ctx.batch_planner, follower_setup=follower_setup,
-        expected_accuracy_inputs=expected_accuracy_inputs,
-        final_join_means=final_join_means, final_use_local=final_use_local, tomo_halves=ctx.tomo_halves,
-        native_sampling_boundary=carry.native_sampling_boundary, rotation_grid=carry.coarse_grids.rotation_grid,
-        random_perturbation=carry.random_perturbation, perturb_rng=ctx.perturb_rng, source=source,
-        sigma_offset=carry.sigma_offset,
-        class_mixture=carry.class_mixture, class_assignments=carry.class_assignments,
-        previous_data_vs_prior_for_scheduling=carry.previous_data_vs_prior_for_scheduling, iteration=iteration,
-        collect_local_search_profile=ctx.collect_local_search_profile,
-        relion_translation_angle_scale=ctx.relion_translation_angle_scale, probe=ctx.expectation_probe,
+        halves, ctx=ctx, carry=carry, reference_model=reference_model, history=history, options=options,
+        follower_setup=follower_setup, expected_accuracy_inputs=expected_accuracy_inputs,
+        final_join_means=final_join_means, final_use_local=final_use_local, source=source, iteration=iteration,
     )
     return replace(final_result, numbered=numbered, replay=_follower_replay_telemetry(follower_scale_replay, history))
 

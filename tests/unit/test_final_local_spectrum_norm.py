@@ -27,7 +27,8 @@ def test_final_local_pass_keeps_the_source_faithful_spectrum_norm(monkeypatch, p
 
     def local_final(*args, **kwargs):
         sigma = float(np.deg2rad(2.0))
-        kwargs["state"] = replace(kwargs["state"], do_local_search=True, sigma_rot=sigma, sigma_psi=sigma)
+        carry = kwargs["carry"]
+        kwargs["carry"] = replace(carry, state=replace(carry.state, do_local_search=True, sigma_rot=sigma, sigma_psi=sigma))
         return final(*args, **{**kwargs, "final_use_local": True})
 
     def scorer(half, sampling, priors, batching, execution, *rest):

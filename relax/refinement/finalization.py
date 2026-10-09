@@ -6,10 +6,11 @@ post-convergence sampling/scoring/reconstruction sequence and its result.
 
 
 import logging
+from dataclasses import replace
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax import sampling
 from relax.dense.score_outputs import (
     PerHalfOutputs,
     _record_score_profile,
@@ -49,7 +50,7 @@ from relax.refinement.half_scoring import (
     _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.iteration_planning import RunOptics
+from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
 from relax.refinement.mean_helpers import (
     _class_weights_from_posterior,
@@ -58,7 +59,7 @@ from relax.refinement.mean_helpers import (
     weighted_class_merge,
 )
 from relax.refinement.optics_shapes import image_translation_factors
-from relax.refinement.ports import ExpectationProbe, FinalHalfScored, InputSource
+from relax.refinement.ports import FinalHalfScored, InputSource
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
@@ -66,6 +67,9 @@ from relax.refinement.result_files import final_pass_result
 from relax.refinement.tomo_half import local_tomo_sampling, score_tomo_half_in_loop
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.relion.relion_metadata import relion_metadata_translations
+
+if TYPE_CHECKING:
+    from relax.refinement.setup_checks import RunContext
 
 # The numbered controller's log: the final pass logs under its name.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -165,67 +169,54 @@ def numbered_class_maps(means, class_weights, class_assignments) -> ModelMaps:
 def run_final_all_data(
     halves,
     *,
+    ctx: "RunContext",
+    carry: IterationCarry,
     reference_model,
-    noise_model,
-    direction_priors,
-    state,
     history,
     options,
-    optics: RunOptics,
-    reconstruction_settings,
-    batch_planner,
     follower_setup,
     expected_accuracy_inputs,
     final_join_means,
     final_use_local,
-    tomo_halves,
-    native_sampling_boundary,
-    rotation_grid: sampling.RotationGrid,
-    random_perturbation,
-    perturb_rng,
     source: InputSource,
-    sigma_offset,
-    class_mixture,
-    class_assignments,
-    previous_data_vs_prior_for_scheduling,
     iteration,
-    collect_local_search_profile,
-    relion_translation_angle_scale,
-    probe: ExpectationProbe,
 ) -> RefinementResult:
     """Score the converged halves at full size and reconstruct the final maps.
 
     Replay and final-pass admission are resolved by the numbered controller.
     The returned result holds this phase's results with ``numbered`` and ``replay`` None; the caller adds
     the set-up and numbered-iteration metadata and the follower-scale replay's accounting after execution.
-    ``sigma_offset`` is the run's ``SigmaOffset`` (shared and per-half translation prior widths) and
-    ``class_mixture`` its ``ClassMixture`` (class weights and their log priors; one class for K=1). The
-    class count is ``options.k_class.n_classes``; arrays are in ``options.precision``'s dtype.
+    Reads the run's context (``ctx``: optics, reconstruction settings, batch planner, perturbation RNG,
+    profile switch, expectation probe) and the last numbered iteration's ``carry`` (state, noise model and
+    sigma offset as the input source's final state left them, direction priors, grids, perturbation, class
+    mixture and assignments, scheduling curve); the final pass updates its own copy of the carry's state
+    (the RefinementState object itself is updated in place, as before) and returns it as the convergence
+    state. The class count is ``options.k_class.n_classes``; arrays are in ``options.precision``'s dtype.
     See ``docs/math/relion_refinement_algorithm.md``, section 7.
     """
-    image_geometry = optics.image_geometry
+    image_geometry = ctx.optics.image_geometry
     scoring_dtype = options.precision.rotation_real_dtype
-    class_weights = class_mixture.weights
+    class_weights = carry.class_mixture.weights
     k_class_enabled = options.k_class.n_classes > 1
-    volume_shape = reconstruction_settings.volume_shape
+    volume_shape = ctx.reconstruction_settings.volume_shape
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
     final_expected_accuracy = None
     final_expected_accuracy_status = "not_run"
     final_iter_clock = Stopwatch()
     final_current_size = image_geometry.box_size
-    if native_sampling_boundary:
+    if carry.native_sampling_boundary:
         final_eulers_half1 = halves[0].rotation_eulers
         if expected_accuracy_inputs.trial_order_local is None or final_eulers_half1 is None:
             final_expected_accuracy_status = "unavailable_inputs"
-            state.acc_rot = float("inf")
-            state.acc_trans = float("inf")
+            carry.state.acc_rot = float("inf")
+            carry.state.acc_trans = float("inf")
             logger.warning(
                 "RELION final all-data expected accuracy unavailable; "
                 "final expectation remains fail-closed",
             )
         else:
             final_accuracy_class_ids = expected_accuracy_class_ids(
-                class_assignments[0],
+                carry.class_assignments[0],
                 k_class_enabled=k_class_enabled,
                 n_units=expected_accuracy_inputs.dataset.n_units,
             )
@@ -236,45 +227,45 @@ def run_final_all_data(
                 best_eulers_deg=final_eulers_half1,
                 class_ids=final_accuracy_class_ids,
                 class_weights=class_weights,
-                sigma2_noise_native=noise_model.radial_per_half[0],
+                sigma2_noise_native=carry.noise_model.radial_per_half[0],
                 current_image_size=final_current_size,
             )
-            state.acc_rot = final_expected_accuracy.acc_rot
-            state.acc_trans = final_expected_accuracy.acc_trans_angstrom
-            state = update_angular_sampling(state)
+            carry.state.acc_rot = final_expected_accuracy.acc_rot
+            carry.state.acc_trans = final_expected_accuracy.acc_trans_angstrom
+            carry = replace(carry, state=update_angular_sampling(carry.state))
             final_expected_accuracy_status = "ok"
             logger.info(
                 "RELION final all-data expected accuracy: acc_rot=%.3f deg, "
                 "acc_trans=%.4f A",
-                state.acc_rot,
-                state.acc_trans,
+                carry.state.acc_rot,
+                carry.state.acc_trans,
             )
     final_sampling = prepare_final_sampling(
-        state,
+        carry.state,
         image_geometry,
         options,
-        previous_rotation_grid=rotation_grid,
+        previous_rotation_grid=carry.coarse_grids.rotation_grid,
         numbered_iteration_count=len(history.current_sizes),
         source=source,
-        previous_perturbation=random_perturbation,
-        rng=perturb_rng,
+        previous_perturbation=carry.random_perturbation,
+        rng=ctx.perturb_rng,
         dtype=scoring_dtype,
     )
     final_precision = local_precision(options.precision, final_sampling.settings.relion_iteration, pass_index=2)
     ## THIS ALL SHOULD BE AN OBJECT/DICT/ENUM OR SOMETHING PROBABLY WITH THESE DECISIONS OR SOMETHING?
     ## SHOULD BE WANTING TO DEFINE 100 THINGS LIKE THIS
     if final_use_local:
-        final_sigma_rot, final_sigma_psi = relion_local_search_sigmas(state, use_local=True)
+        final_sigma_rot, final_sigma_psi = relion_local_search_sigmas(carry.state, use_local=True)
         final_search = LocalSearchSettings(
-            healpix_order=final_sampling.settings.perturbation_order + state.adaptive_oversampling,
-            oversampling_order=state.adaptive_oversampling,
+            healpix_order=final_sampling.settings.perturbation_order + carry.state.adaptive_oversampling,
+            oversampling_order=carry.state.adaptive_oversampling,
             sigma_rot=final_sigma_rot,
             sigma_psi=final_sigma_psi,
             symmetry=options.symmetry.point_group,
         )
         final_local_sampling = prepare_final_local_sampling(
             final_search,
-            optics,
+            ctx.optics,
             translations=final_sampling.grid.translations,
             base_translations=final_sampling.base_translations,
             image_window_size=final_current_size,
@@ -298,7 +289,7 @@ def run_final_all_data(
             final_sampling.settings.grid_order,
             final_sampling.settings.random_perturbation,
         )
-        if k_class_enabled and state.adaptive_oversampling > 0:
+        if k_class_enabled and carry.state.adaptive_oversampling > 0:
             final_adaptive_pass1_current_size = relion_coarse_image_size(
                 healpix_angular_step(final_sampling.settings.grid_order),
                 image_geometry.pixel_size_angstrom,
@@ -312,7 +303,7 @@ def run_final_all_data(
                 "fine_current_size=%d oversampling=%d",
                 final_adaptive_pass1_current_size,
                 final_adaptive_pass2_current_size,
-                state.adaptive_oversampling,
+                carry.state.adaptive_oversampling,
             )
         else:
             final_adaptive_pass1_current_size = None
@@ -327,7 +318,7 @@ def run_final_all_data(
             padding_factor=PROJECTION_PADDING_FACTOR,
             n_classes=options.k_class.n_classes,
             dump_label=f"final_half{half.index}",
-            gridding_kernel=reconstruction_settings.gridding_kernel,
+            gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
         )
         for half, reference in zip(halves, final_join_means, strict=True)
     ]
@@ -349,10 +340,10 @@ def run_final_all_data(
             # As the numbered local pass and the final dense pass: RELION's high-shell norm and sigma2 terms are
             # the same powerClass sums in the final iteration (ml_optimiser.cpp:10848-10856).
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
-            relion_translation_angle_scale=relion_translation_angle_scale,
+            relion_translation_angle_scale=ctx.relion_translation_angle_scale,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
-            adaptive_pass2=options.variants.local_adaptive_pass2.at(state.adaptive_oversampling),
+            adaptive_pass2=options.variants.local_adaptive_pass2.at(carry.state.adaptive_oversampling),
             precision=options.precision,
             fine_precision=final_precision,
             score_only=False,
@@ -362,8 +353,8 @@ def run_final_all_data(
             iteration=iteration + 1,
             debug_iteration=final_sampling.settings.relion_iteration,
             bpref_device_signature_active=False,
-            probe=probe,
-            collect_local_search_profile=collect_local_search_profile,
+            probe=ctx.expectation_probe,
+            collect_local_search_profile=ctx.collect_local_search_profile,
             local_profile_history=history.local_profile_history,
         )
     else:
@@ -372,8 +363,8 @@ def run_final_all_data(
             current_translations=final_sampling.grid.translations,
             base_translations=final_sampling.base_translations,
             current_healpix_order=final_sampling.settings.grid_order,
-            oversampling_order=state.adaptive_oversampling,
-            translation_step=state.translation_step,
+            oversampling_order=carry.state.adaptive_oversampling,
+            translation_step=carry.state.translation_step,
             coarse_engine=options.adaptive.coarse_engine,
             random_perturbation=final_sampling.settings.random_perturbation,
             cs_for_engine=final_current_size,
@@ -381,7 +372,7 @@ def run_final_all_data(
         )
         final_dense_batching = DenseBatchPolicy(
             image_batch_size=options.execution.image_batch_size,
-            safe_batch_sizes=batch_planner,
+            safe_batch_sizes=ctx.batch_planner,
             max_significants=options.adaptive.max_significants,
             significance_safe_batch_sizes=None,
             k_class_image_batch_size_override=None,
@@ -415,7 +406,7 @@ def run_final_all_data(
             preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
             # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
-            relion_translation_angle_scale=relion_translation_angle_scale,
+            relion_translation_angle_scale=ctx.relion_translation_angle_scale,
             firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
             firstiter_cc_support="relion",
             nyquist_column_counting=options.consistency.nyquist_column_counting,
@@ -424,7 +415,7 @@ def run_final_all_data(
         )
     final_outs = PerHalfOutputs()
     for half, projector in zip(halves, final_projectors, strict=True):
-        half = local_search_centre_half(half, (options.replay.init_angle_priors or (None, None))[half.index], state)
+        half = local_search_centre_half(half, (options.replay.init_angle_priors or (None, None))[half.index], carry.state)
         bpref_diagnostics.clear_bpref_contribution_dump_context()
         final_half_clock = Stopwatch()
         logger.info(
@@ -443,11 +434,11 @@ def run_final_all_data(
         )
         final_outs.translation_search_bases[half.index] = translation_search_base
         final_sigma_offset_k = _sigma_offset_for_half(
-            sigma_offset.shared_angstrom,
-            sigma_offset.per_half_angstrom,
+            carry.sigma_offset.shared_angstrom,
+            carry.sigma_offset.per_half_angstrom,
             half.index,
         )
-        if tomo_halves:
+        if ctx.tomo_halves:
             final_inputs = None  # the half preparation below is single-particle only
             # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the
             # previous poses), with the merged reference for both halves.
@@ -459,11 +450,11 @@ def run_final_all_data(
                 HalfScoringData(
                     particles=half,
                     reference=final_join_means[half.index],
-                    noise_variance=noise_model.variance_per_half[half.index],
+                    noise_variance=carry.noise_model.variance_per_half[half.index],
                     projector=projector,
                     scale_group_ids=follower_setup.scale_stats_group_ids_per_half[half.index],
                     scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
-                    scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
+                    scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
                 ),
                 use_adaptive=final_local_sampling.search.oversampling_order > 0,
                 sampling=local_tomo_sampling(
@@ -495,14 +486,14 @@ def run_final_all_data(
                 final_sampling,
                 image_geometry=image_geometry,
                 sigma_offset_angstrom=final_sigma_offset_k,
-                noise_radial=noise_model.radial_per_half[half.index],
-                direction_prior=direction_priors[half.index],
+                noise_radial=carry.noise_model.radial_per_half[half.index],
+                direction_prior=carry.direction_priors[half.index],
                 n_classes=options.k_class.n_classes,
                 use_local=final_use_local,
                 coarse_angular_step_deg=final_local_sampling.coarse_angular_step_deg if final_use_local else None,
                 particle_diameter_angstrom=options.schedule.particle_diameter_ang,
                 sealed_sampling_state=(
-                    source.sealed_sampling_state if final_sampling.base_rotations is rotation_grid.rotations else None
+                    source.sealed_sampling_state if final_sampling.base_rotations is carry.coarse_grids.rotation_grid.rotations else None
                 ),
                 symmetry=options.symmetry.point_group,
                 dtype=scoring_dtype,
@@ -512,10 +503,10 @@ def run_final_all_data(
                 projector=projector,
                 reference=final_join_means[half.index],
                 mean_variance=reference_model.tau2,
-                noise_variance=noise_model.variance_per_half[half.index],
+                noise_variance=carry.noise_model.variance_per_half[half.index],
                 scale_group_ids=follower_setup.scale_stats_group_ids_per_half[half.index],
                 scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
-                scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
+                scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
             )
             if final_use_local:
                 final_result = _score_half_local_in_bpref_scope(
@@ -543,7 +534,7 @@ def run_final_all_data(
                         translation_log_prior=final_inputs.translation_log_prior,
                         translation_search_base=translation_search_base,
                         trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
-                        class_log_priors=class_mixture.log_priors,
+                        class_log_priors=carry.class_mixture.log_priors,
                     ),
                     batching=final_dense_batching,
                     variant=final_dense_variant,
@@ -574,10 +565,10 @@ def run_final_all_data(
             half.index + 1,
             final_half_clock.seconds,
         )
-        probe.final_half_scored(FinalHalfScored(
+        ctx.expectation_probe.final_half_scored(FinalHalfScored(
             half, final_sampling, final_inputs,
             translation_search_base=translation_search_base, reference=final_join_means[half.index],
-            reference_model=reference_model, noise_variance=noise_model.variance_per_half[half.index],
+            reference_model=reference_model, noise_variance=carry.noise_model.variance_per_half[half.index],
             current_size=final_current_size, precision=final_precision, use_local=final_use_local,
         ))
 
@@ -623,7 +614,7 @@ def run_final_all_data(
             final_join_means[0],
             projector=final_projectors[0],
             n_classes=options.k_class.n_classes,
-            settings=reconstruction_settings,
+            settings=ctx.reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
             full_half_axis=final_mstep_full_half_axis,
@@ -638,15 +629,15 @@ def run_final_all_data(
             final_data_vs_prior, current_size=final_current_size, box_size=image_geometry.box_size,
             dtype=scoring_dtype,
         )
-        state.previous_resolution = state.current_resolution
-        state.current_resolution = shell_index_to_resolution_angstrom(
+        carry.state.previous_resolution = carry.state.current_resolution
+        carry.state.current_resolution = shell_index_to_resolution_angstrom(
             final_res_shell, image_geometry.box_size, image_geometry.pixel_size_angstrom
         )
         logger.info(
             "RELION final all-data current resolution: shell=%d res=%.2f A (last split-half iteration %.2f A)",
             int(final_res_shell),
-            state.current_resolution,
-            state.previous_resolution,
+            carry.state.current_resolution,
+            carry.state.previous_resolution,
         )
         logger.info(
             "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
@@ -658,7 +649,7 @@ def run_final_all_data(
             final_class_priors.shells,
             class_weights=class_weights,
             n_classes=options.k_class.n_classes,
-            settings=reconstruction_settings,
+            settings=ctx.reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
         )
@@ -697,7 +688,7 @@ def run_final_all_data(
         final_unfiltered_means_for_output = final_reconstruction.reconstruct_unfiltered_halfmaps(
             (final_Ft_y_0, final_Ft_y_1),
             (final_Ft_ctf_0, final_Ft_ctf_1),
-            settings=reconstruction_settings,
+            settings=ctx.reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
         )
@@ -714,7 +705,7 @@ def run_final_all_data(
                 padding_factor=RECONSTRUCTION_PADDING_FACTOR,
                 low_resolution_angstrom=options.parity.low_resol_join_halves_angstrom,
                 pixel_resolutions=history.pixel_resolutions,
-                current_resolution=state.current_resolution,
+                current_resolution=carry.state.current_resolution,
                 preserve_inputs=False,
             )
         # The unfiltered maps are made; drop the pass outputs' references so the
@@ -726,7 +717,7 @@ def run_final_all_data(
         final_halfmap_prior = final_reconstruction.compute_final_halfmap_prior(
             (final_Ft_y_0, final_Ft_y_1),
             (final_Ft_ctf_0, final_Ft_ctf_1),
-            settings=reconstruction_settings,
+            settings=ctx.reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
             full_half_axis=final_mstep_full_half_axis,
@@ -743,15 +734,15 @@ def run_final_all_data(
             np.asarray(final_tau2_update_details["ssnr_shells"], dtype=scoring_dtype),
             current_size=final_current_size, box_size=image_geometry.box_size, dtype=scoring_dtype,
         )
-        state.previous_resolution = state.current_resolution
-        state.current_resolution = shell_index_to_resolution_angstrom(
+        carry.state.previous_resolution = carry.state.current_resolution
+        carry.state.current_resolution = shell_index_to_resolution_angstrom(
             final_res_shell, image_geometry.box_size, image_geometry.pixel_size_angstrom
         )
         logger.info(
             "RELION final all-data current resolution: shell=%d res=%.2f A (last split-half iteration %.2f A)",
             int(final_res_shell),
-            state.current_resolution,
-            state.previous_resolution,
+            carry.state.current_resolution,
+            carry.state.previous_resolution,
         )
         logger.info(
             "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
@@ -771,7 +762,7 @@ def run_final_all_data(
         final_maps = final_reconstruction.reconstruct_final_halfmaps(
             final_backprojections,
             final_halfmap_prior.variance,
-            settings=reconstruction_settings,
+            settings=ctx.reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
         )
@@ -796,7 +787,7 @@ def run_final_all_data(
         maps=final_model_maps,
         replay=None,
         follower_scale=follower_setup.result_outputs(history),
-        convergence_state=state,
+        convergence_state=carry.state,
         history=history,
         numbered=None,
         final_pass=final_pass_result(
@@ -807,6 +798,6 @@ def run_final_all_data(
             fsc=final_iter_fsc,
             prior_weight_combination=final_prior_weight_combination,
             class_assignments=final_class_assignments,
-            gridding_kernel=reconstruction_settings.gridding_kernel,
+            gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
         ),
     )
