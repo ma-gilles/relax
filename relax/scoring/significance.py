@@ -59,7 +59,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
             # scores this batch while the host prepares the next. Only a dump reads the large score and
             # operand arrays, and a dump batch publishes at once, so a waiting batch does not hold them.
             defer_publish = (
-                plan.collect_significance and plan.relion_f32_coarse_support_enabled and not batch.dump_targets.enabled
+                plan.collect_significance and plan.route.float32_support and not batch.dump_targets.enabled
             )
             scored = score_batch(plan, batch, defer_publish=defer_publish)
             if scored.rescored is not None:
@@ -80,8 +80,8 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
         outputs,
         significant_sample_indices,
         plan.output_plan,
-        executed_backend=plan.executed_backend,
-        route_report=plan.route_report,
+        executed_backend=plan.route.executed_backend,
+        route_report=plan.route.report,
         tree_report=(
             {"firstiter_cc_tree_top2_rescore": tree_rescore_report(tree_rescore_totals, plan.tree_rescore_max_margin)}
             if plan.tree_rescore_enabled

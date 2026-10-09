@@ -28,7 +28,7 @@ from relax.scoring.pass1_results import (
     PassShape,
     ScoreDumpContext,
 )
-from relax.scoring.pass1_route import plan_cc_route, plan_gaussian_route
+from relax.scoring.pass1_route import RoutePlan, plan_cc_route, plan_gaussian_route
 from relax.scoring.pass1_scores import plan_score_program
 from relax.scoring.pass1_support import plan_support
 from relax.scoring.pass1_window import coarse_kernel_window, plan_scoring_window
@@ -157,12 +157,10 @@ class Pass1Plan:
     """A planned pass 1: what :func:`relax.scoring.significance.run_pass1` runs its batches from.
 
     ``experiment_dataset`` yields the ``n_images`` images in batches of ``image_batch_size``; ``current_size``,
-    ``debug_iteration`` and ``collect_significance`` are the request's. ``relion_f32_coarse_support_enabled`` is the
-    support route (float32 on the device, or the generic one). The stage plans: ``batch_input_plan`` (preprocessing),
-    ``operand_plan`` (the route's score operands), ``score_program_plan``, ``support_plan``, ``tree_rescore_plan``
-    (``None`` unless the pass rescores) with ``tree_rescore_max_margin`` its margin, ``output_plan`` (the results and how
-    they are allocated and published) and ``dump_context`` (the score dump). ``executed_backend`` names the scorer and
-    ``route_report`` is the route's entries of ``full_stats`` (empty for the normalized CC).
+    ``debug_iteration`` and ``collect_significance`` are the request's. ``route`` is what the score route decided (its
+    operand plan, support route, tree rescore plan, backend name and report). The stage plans: ``batch_input_plan``
+    (preprocessing), ``score_program_plan``, ``support_plan``, ``output_plan`` (the results and how they are allocated
+    and published) and ``dump_context`` (the score dump); ``tree_rescore_max_margin`` is the rescore's margin.
     """
 
     experiment_dataset: Any
@@ -171,23 +169,19 @@ class Pass1Plan:
     current_size: Any
     debug_iteration: Any
     collect_significance: bool
-    relion_f32_coarse_support_enabled: bool
+    route: RoutePlan
     batch_input_plan: Any
-    operand_plan: Any
     score_program_plan: Any
     support_plan: Any
-    tree_rescore_plan: Any
     tree_rescore_max_margin: Any
     output_plan: Any
     dump_context: Any
-    executed_backend: str
-    route_report: dict
 
     @property
     def tree_rescore_enabled(self) -> bool:
         """Whether the pass rescores the ambiguous winners of its normalized-CC scores."""
 
-        return self.tree_rescore_plan is not None
+        return self.route.tree_rescore_plan is not None
 
 
 def plan_pass1(request: Pass1Request) -> Pass1Plan:
@@ -421,15 +415,11 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         current_size=request.current_size,
         debug_iteration=request.debug_iteration,
         collect_significance=request.collect_significance,
-        relion_f32_coarse_support_enabled=route.float32_support,
+        route=route,
         batch_input_plan=batch_input_plan,
-        operand_plan=route.operand_plan,
         score_program_plan=score_program_plan,
         support_plan=support_plan,
-        tree_rescore_plan=route.tree_rescore_plan,
         tree_rescore_max_margin=request.tree_rescore_max_margin,
         output_plan=output_plan,
         dump_context=dump_context,
-        executed_backend=route.executed_backend,
-        route_report=route.report,
     )
