@@ -277,9 +277,10 @@ class InputSource:
         return reference_model.maps
 
     def swapped_state(self, iteration: int, scoring: ScoringState, *, volume_shape):
-        """The ``scoring`` state with a probe's components swapped back to the run's own snapshot (a tuple of
-        size, reference model, noise model, previous best rotations, the two sigma offsets and direction
-        priors), or None when iteration ``iteration`` swaps nothing."""
+        """The ``scoring`` state with a probe's components swapped back to the run's own snapshot (a
+        ``ScoringState``; the controller installs its size, models, previous best rotations, sigma offset and
+        direction priors, while ``state`` and ``halves`` are the run's own, updated in place), or None when
+        iteration ``iteration`` swaps nothing."""
         return None
 
     def scoring_state_bound(self, arrays: ScoringArrays) -> None:

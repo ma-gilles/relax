@@ -233,7 +233,8 @@ double-precision cast and denormal-weight clamp
 ([`test_covariance_rhs_and_bpref_source_owner.py`](../../tests/unit/test_covariance_rhs_and_bpref_source_owner.py)).
 [`state_swap_runtime._apply_state_swap_probe`](../../relax/parity/state_swap_runtime.py)
 returns a `_StateSwapValues` named tuple (current size, maps, tau2, noise, poses, sigma offset and
-direction priors in the controller's unpacking order); the unchanged value is built once from the
+direction priors), which `RelionReplaySource.swapped_state` hands to the controller as a `ScoringState`
+read by field; the unchanged value is built once from the
 inputs and returned by both early exits
 ([`test_state_swap_values_owner.py`](../../tests/unit/test_state_swap_values_owner.py)).
 [`k_class._PerClassSubsetResults`](../../relax/classification/k_class.py) collects the

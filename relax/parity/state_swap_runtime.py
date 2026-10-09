@@ -132,9 +132,9 @@ def _snapshot_state_swap_inputs(
 class _StateSwapValues(NamedTuple):
     """Iteration state the RELION replay override may hand back to the controller.
 
-    The controller unpacks it positionally in this order; the state-swap probe
-    returns the inputs unchanged unless a diagnostic variant restores RECOVAR
-    components at its target iteration.
+    ``RelionReplaySource.swapped_state`` hands it to the controller as a
+    ``ScoringState``; the state-swap probe returns the inputs unchanged unless
+    a diagnostic variant restores RECOVAR components at its target iteration.
     """
 
     cs: object

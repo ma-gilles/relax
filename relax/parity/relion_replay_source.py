@@ -338,15 +338,25 @@ class RelionReplaySource(InputSource):
 
     def swapped_state(self, iteration, scoring, *, volume_shape):
         """The probe's variant of the replayed state at its target iteration: its components restored from the
-        run's own snapshot."""
+        run's own snapshot. The ``state`` and ``halves`` it restores are updated in place."""
         if not self._swaps_at(iteration):
             return None
-        return _apply_state_swap_probe(
+        swapped = _apply_state_swap_probe(
             probe=self.replay.state_swap_probe,
             iteration=iteration,
             recovar_snapshot=self._state_swap_snapshot,
             volume_shape=volume_shape,
             **_state_swap_keywords(scoring),
+        )
+        return scoring._replace(
+            current_size=swapped.cs,
+            reference_model=swapped.reference_model,
+            noise_model=swapped.noise_model,
+            previous_best_rotations=swapped.previous_best_rotations,
+            sigma_offset=SigmaOffset(
+                swapped.current_sigma_offset_angstrom, swapped.current_sigma_offset_angstrom_per_half,
+            ),
+            direction_priors=swapped.direction_priors,
         )
 
     def _frozen_arrays(self, arrays):

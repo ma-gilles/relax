@@ -724,16 +724,12 @@ def refine_single_volume(
             volume_shape=volume_shape,
         )
         if swapped is not None:
-            (
-                current_size,
-                reference_model,
-                noise_model,
-                previous_best_rotations,
-                swapped_sigma_offset_angstrom,
-                swapped_sigma_offset_angstrom_per_half,
-                direction_priors,
-            ) = swapped
-            sigma_offset = SigmaOffset(swapped_sigma_offset_angstrom, swapped_sigma_offset_angstrom_per_half)
+            current_size = swapped.current_size
+            reference_model = swapped.reference_model
+            noise_model = swapped.noise_model
+            previous_best_rotations = swapped.previous_best_rotations
+            sigma_offset = swapped.sigma_offset
+            direction_priors = swapped.direction_priors
             history.state_swap_probe_applied_relion_iterations.append(
                 int(options.schedule.init_relion_iteration) + int(iteration) + 1
             )
