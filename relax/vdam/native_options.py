@@ -41,6 +41,9 @@ class VdamEnvironment:
     Two engine diagnostics: ``adaptive_fraction`` (RELAX_ADAPTIVE_FRACTION, a float; ``None`` when unset or
     empty keeps the engine's RELION 0.999) and ``subtract_projected_reference`` (``False`` when
     RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE has any value: back-project the images, not the residuals).
+    A parity input: ``initial_iref_override`` (RELAX_INITIAL_IREF_OVERRIDE; ``None`` when unset or empty), RELION's
+    start-up references in place of the bootstrap: one path for every class, one per class (comma-separated),
+    or a template with ``{k}`` (the one-based class).
     """
 
     profile: bool = False
@@ -49,6 +52,7 @@ class VdamEnvironment:
     isolate_expected_accuracy: bool = False
     adaptive_fraction: float | None = None
     subtract_projected_reference: bool = True
+    initial_iref_override: str | None = None
 
     @classmethod
     def from_environ(cls, environ=None) -> VdamEnvironment:
@@ -66,7 +70,8 @@ class VdamEnvironment:
                    strict("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"),
                    strict("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"),
                    float(adaptive_fraction) if (adaptive_fraction := env.get("RELAX_ADAPTIVE_FRACTION")) else None,
-                   not env.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"))
+                   not env.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"),
+                   env.get("RELAX_INITIAL_IREF_OVERRIDE") or None)
 
 
 @dataclass(frozen=True, kw_only=True)

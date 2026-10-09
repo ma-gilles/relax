@@ -439,7 +439,6 @@
   "env-read:relax.sparse_pass2.sparse_pass2_budget:_device_memory_limit_bytes:RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB",
   "env-read:relax.sparse_pass2.sparse_pass2_budget:_optional_positive_int_env:name",
   "env-read:relax.sparse_pass2.sparse_pass2_policy:_projection_cache_enabled_for_pass:_SPARSE_PASS2_PROJECTION_CACHE_ENV",
-  "env-read:relax.vdam.bootstrap_iref:_initial_state_from_particles:RELAX_INITIAL_IREF_OVERRIDE",
   "env-read:relax.vdam.dense_adapter:_finish_relion_projector_class_inputs:_RELION_PROJECTOR_DUMP_DIR_ENV",
   "env-read:relax.vdam.estep_common:_arrays_to_accumulators:RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR",
   "env-read:relax.vdam.native_sampling:_estimate_native_sampling_accuracy:RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR",

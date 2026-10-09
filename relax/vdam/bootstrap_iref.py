@@ -11,7 +11,6 @@ start-up) comes first.
 from __future__ import annotations
 
 import math
-import os
 from dataclasses import replace
 
 import numpy as np
@@ -410,7 +409,7 @@ def _initial_state_from_particles(
     profile.record("optics_metadata")
 
     # RELAX_INITIAL_IREF_OVERRIDE (parity hook): RELION's iter000 ref replaces the bootstrap below.
-    override_path = os.environ.get("RELAX_INITIAL_IREF_OVERRIDE")
+    override_path = opts.environment.initial_iref_override
     iref = rand_state = None
     if not override_path:
         iref, rand_state = compute_bootstrap_iref(

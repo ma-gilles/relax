@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1679,14 +1680,19 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
 
     from recovar.utils import helpers
 
-    monkeypatch.setenv("RELAX_INITIAL_IREF_OVERRIDE", "seed.mrc")
+    # Read once with the options' environment; empty means unset.
+    assert native_options.VdamEnvironment.from_environ({"RELAX_INITIAL_IREF_OVERRIDE": "seed.mrc"}).initial_iref_override == "seed.mrc"
+    assert native_options.VdamEnvironment.from_environ({"RELAX_INITIAL_IREF_OVERRIDE": ""}).initial_iref_override is None
+    environment = replace(opts.environment, initial_iref_override="seed.mrc")
     monkeypatch.setattr(
         bootstrap_iref,
         "compute_bootstrap_iref",
         lambda **_kwargs: pytest.fail("Override must bypass the bootstrap"),
     )
     monkeypatch.setattr(helpers, "load_relion_volume", lambda _path: post_iref[0].copy())
-    overridden, _ = bootstrap_iref._initial_state_from_particles(dataset, main, optics, opts)
+    overridden, _ = bootstrap_iref._initial_state_from_particles(
+        dataset, main, optics, replace(opts, environment=environment)
+    )
     np.testing.assert_array_equal(overridden.Iref, post_iref)
 
 
