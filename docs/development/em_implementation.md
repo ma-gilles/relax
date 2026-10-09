@@ -213,9 +213,9 @@ engine (`run_em`) that served runs without scale groups at oversampling 0 was re
 oversampled children with parent maps, the fine M-step rotations and the coarse
 translation phase source for both routes
 ([`test_adaptive_pass2_grids_owner.py`](../../tests/unit/test_adaptive_pass2_grids_owner.py)).
-`half_scoring._adaptive_engine_common_kwargs` holds the keywords both routes pass
-identically to `run_dense_k_class_em_adaptive` (noise accumulation, RELION's adaptive
-fraction, the fine M-step rotations pruned only for sparse pass 2); the K=1 call adds
+Both routes pass the same keywords to `run_dense_k_class_em_adaptive` (noise accumulation,
+RELION's adaptive fraction, the fine M-step rotations pruned only for sparse pass 2), each at
+its own call; the K=1 call adds
 significance skipping, the diagnostic float64 pass 2 and the host-double coarse
 translation phases, and the K-class call plans its own batches. Pass 2 always runs on the
 device-resident sparse engine (the dense pass 2 and its `RELAX_K1_DENSE_PASS2` /

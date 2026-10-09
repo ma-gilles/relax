@@ -1,12 +1,12 @@
-"""The K=1 and K-class dense routes share one adaptive engine call owner."""
+"""The dense pass-2 switches are retired; fine pose assignments collapse onto the coarse grid.
+
+The keywords both adaptive dense routes pass the engine are pinned by
+``test_firstiter_cc_batch_budget.test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid``.
+"""
 
 import numpy as np
-from helpers import refinement_specs
 
 from relax.classification import k_class
-from relax.dense import scoring_policy
-from relax.refinement import half_scoring
-from relax.refinement.refinement_options import ScoringVariants
 
 
 def test_the_dense_pass2_switches_are_gone_and_refused():
@@ -20,77 +20,6 @@ def test_the_dense_pass2_switches_are_gone_and_refused():
     text = json.dumps(retired)
     for env_name in ("RELAX_K1_DENSE_PASS2", "RELAX_K_CLASS_DENSE_PASS2"):
         assert env_name in text
-
-
-def _grids(fine_mstep):
-    return half_scoring.AdaptivePass2Grids(
-        coarse_rotations=np.zeros((2, 3, 3), dtype=np.float32),
-        coarse_translations=np.zeros((1, 2), dtype=np.float32),
-        fine_rotations=np.zeros((4, 3, 3), dtype=np.float32),
-        fine_translations=np.zeros((3, 2), dtype=np.float32),
-        rotation_parent_map=np.zeros(4, dtype=np.int64),
-        translation_parent_map=np.zeros(3, dtype=np.int64),
-        fine_mstep_rotations=fine_mstep,
-        coarse_translation_phase_source=np.zeros((1, 2), dtype=np.float64),
-        n_fine_translations=3,
-    )
-
-
-def test_common_engine_keywords_are_the_sparse_pass2_keywords():
-    fine_mstep = np.ones((4, 3, 3), dtype=np.float32)
-    def common_kwargs(*, max_significants):
-        return half_scoring._adaptive_engine_common_kwargs(
-            _grids(fine_mstep),
-            half_scoring.DensePriorSpec(
-                rotation_log_prior_k=None,
-                class_rotation_log_prior_k=None,
-                translation_log_prior=None,
-                translation_search_base=None,
-                trans_prior_center_for_engine=None,
-                class_log_priors="priors",
-            ),
-            refinement_specs.dense_batch_policy(
-                image_batch_size=1,
-                safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
-                max_significants=max_significants,
-            ),
-            refinement_specs.dense_sampling_spec(
-                effective_rotations=None,
-                current_translations=None,
-                base_translations=None,
-                current_healpix_order=np.int64(2),
-                oversampling_order=0,
-                translation_step=1.0,
-                random_perturbation=0.0,
-                cs_for_engine=None,
-            ),
-            refinement_specs.dense_execution_policy(
-                disc_type="linear_interp",
-                disable_adjoint_y=False,
-                disable_adjoint_ctf=False,
-                return_best_pose_details=True,
-                bpref_device_signature_active=False,
-                debug_iteration=3,
-                relion_x_half_mstep=ScoringVariants.from_environ().k1_relion_x_half_mstep,
-                precision=scoring_policy.DENSE_PRECISION,
-            ),
-        )
-
-    sparse = common_kwargs(max_significants=None)
-    capped = common_kwargs(max_significants=5)
-    expected_keys = {
-        "class_log_priors", "accumulate_noise", "adaptive_fraction", "max_significants",
-        "relion_fine_mstep_prune", "coarse_healpix_order", "fine_mstep_rotations_override",
-        "return_best_pose_details", "bpref_device_signature_active", "debug_iteration",
-    }
-    assert set(sparse) == set(capped) == expected_keys
-    assert sparse["accumulate_noise"] is True
-    assert sparse["adaptive_fraction"] == half_scoring.RELION_ADAPTIVE_FRACTION
-    assert sparse["max_significants"] == -1 and capped["max_significants"] == 5
-    assert sparse["relion_fine_mstep_prune"] is True and capped["relion_fine_mstep_prune"] is True
-    assert sparse["fine_mstep_rotations_override"] is fine_mstep
-    assert type(sparse["coarse_healpix_order"]) is int and sparse["coarse_healpix_order"] == 2
-    assert sparse["class_log_priors"] == "priors" and sparse["debug_iteration"] == 3
 
 
 def test_coarse_pose_assignments_need_a_fine_pass():

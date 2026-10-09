@@ -566,7 +566,8 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
         assert captured["coarse_rotation_ids"] is coarse_ids
 
 
-def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatch):
+@pytest.mark.parametrize("max_significants", [None, 5])
+def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatch, max_significants):
     captured = {}
 
     class TinyDataset:
@@ -663,7 +664,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
         disable_adjoint_y=False,
         disable_adjoint_ctf=False,
         safe_batch_sizes=fake_safe_batch_sizes,
-        max_significants=None,
+        max_significants=max_significants,
         k_class_image_batch_size_override=50,
         k_class_rotation_block_size_override=2000,
         firstiter_coarse_current_size=40,
@@ -677,6 +678,13 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
     assert captured["sparse_pass2"] is True
     assert np.all(captured["fine_mstep_rotations_override"] == 0.25)
     assert result.ha.shape == (3,)
+    # The keywords both adaptive dense routes pass the engine identically.
+    assert captured["accumulate_noise"] is True
+    assert captured["adaptive_fraction"] == half_scoring.RELION_ADAPTIVE_FRACTION
+    assert captured["max_significants"] == (-1 if max_significants is None else 5)
+    assert captured["relion_fine_mstep_prune"] is True
+    assert type(captured["coarse_healpix_order"]) is int and captured["coarse_healpix_order"] == 1
+    assert np.all(captured["class_log_priors"] == 0.0)
 
 
 def test_dense_global_k1_batch_plan_accounts_for_pose_pixel_tile():

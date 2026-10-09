@@ -115,35 +115,6 @@ def _expand_significant_samples_to_full_parent_translations(
 
 
 
-def _adaptive_engine_common_kwargs(
-    pass2_grids: AdaptivePass2Grids,
-    priors: "DensePriorSpec",
-    batching: "DenseBatchPolicy",
-    sampling: "DenseSamplingSpec",
-    execution: "DenseExecutionPolicy",
-) -> dict:
-    """Owner-derived keywords shared by both adaptive dense routes.
-
-    Both routes accumulate noise, keep RELION's adaptive significance fraction
-    and prune the fine M-step rotations of the sparse pass 2. Route-local
-    batch sizes, Fourier sizes and oversampling order stay beside each engine
-    call rather than being hidden in a one-call plan.
-    """
-
-    return dict(
-        class_log_priors=priors.class_log_priors,
-        accumulate_noise=True,
-        adaptive_fraction=RELION_ADAPTIVE_FRACTION,
-        max_significants=(-1 if batching.max_significants is None else int(batching.max_significants)),
-        relion_fine_mstep_prune=True,
-        coarse_healpix_order=int(sampling.current_healpix_order),
-        fine_mstep_rotations_override=pass2_grids.fine_mstep_rotations,
-        return_best_pose_details=execution.return_best_pose_details,
-        bpref_device_signature_active=execution.bpref_device_signature_active,
-        debug_iteration=execution.debug_iteration,
-    )
-
-
 @dataclass(frozen=True, kw_only=True)
 class HalfScoringData:
     """Persistent particle half and the model operands for one expectation."""
@@ -293,7 +264,7 @@ def _score_adaptive_kclass_dense(
     optics: OpticsSpec,
     em_kwargs,
     symmetry,
-):
+) -> tuple[object, AdaptivePass2Grids]:
     """Run the ordinary adaptive K-class engine and return its trial grids."""
 
     adaptive_os = int(sampling.oversampling_order)
@@ -339,7 +310,6 @@ def _score_adaptive_kclass_dense(
         "(oversampling=%d, pass2_backend=sparse, fine_mstep_prune=True)",
         adaptive_os,
     )
-    common_kwargs = _adaptive_engine_common_kwargs(pass2_grids, priors, batching, sampling, execution)
     # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag): the
     # projection and backprojection matrices carry it.
     magnification, grid_kwargs = engine_projection_inputs(
@@ -350,13 +320,12 @@ def _score_adaptive_kclass_dense(
     projected_coarse, projected_fine, projected_mstep = project_pass2_rotations(
         pass2_grids.coarse_rotations,
         pass2_grids.fine_rotations,
-        common_kwargs["fine_mstep_rotations_override"],
+        pass2_grids.fine_mstep_rotations,
         scale=optics.projection_scale,
         magnification=magnification,
         **sampling.rotation_source(adaptive_os, symmetry),
     )
     adaptive_em_kwargs.update(grid_kwargs)
-    common_kwargs["fine_mstep_rotations_override"] = projected_mstep
     result = run_dense_k_class_em_adaptive(
         half.particles.dataset,
         half.reference,
@@ -375,7 +344,16 @@ def _score_adaptive_kclass_dense(
         fine_current_size=fine_current_size,
         oversampling_order=adaptive_os,
         image_seed_classes=half.image_seed_classes,
-        **common_kwargs,
+        class_log_priors=priors.class_log_priors,
+        accumulate_noise=True,
+        adaptive_fraction=RELION_ADAPTIVE_FRACTION,
+        max_significants=(-1 if batching.max_significants is None else int(batching.max_significants)),
+        relion_fine_mstep_prune=True,
+        coarse_healpix_order=int(sampling.current_healpix_order),
+        fine_mstep_rotations_override=projected_mstep,
+        return_best_pose_details=execution.return_best_pose_details,
+        bpref_device_signature_active=execution.bpref_device_signature_active,
+        debug_iteration=execution.debug_iteration,
         **adaptive_em_kwargs,
     )
     return result, pass2_grids
@@ -545,7 +523,7 @@ def _score_adaptive_k1_dense(
     base_em_kwargs,
     *,
     symmetry,
-):
+) -> tuple[object, AdaptivePass2Grids]:
     """Run the ordinary adaptive K=1 engine and return its trial grids."""
 
     adaptive_os = int(sampling.oversampling_order)
@@ -585,7 +563,6 @@ def _score_adaptive_k1_dense(
         half.projector is not None,
         adaptive_em_kwargs.get("relion_projector_half") is not None,
     )
-    common_kwargs = _adaptive_engine_common_kwargs(pass2_grids, priors, batching, sampling, execution)
     magnification, grid_kwargs = engine_projection_inputs(
         half.particles.dataset,
         scale=optics.projection_scale,
@@ -601,13 +578,12 @@ def _score_adaptive_k1_dense(
     projected_coarse, projected_fine, projected_mstep = project_pass2_rotations(
         sampling.coarse_scoring_rotations if coarse_scoring else pass2_grids.coarse_rotations,
         pass2_grids.fine_rotations,
-        common_kwargs["fine_mstep_rotations_override"],
+        pass2_grids.fine_mstep_rotations,
         scale=optics.projection_scale,
         magnification=magnification,
         **sampling.rotation_source(adaptive_os, symmetry, coarse_scoring=coarse_scoring),
     )
     adaptive_em_kwargs.update(grid_kwargs)
-    common_kwargs["fine_mstep_rotations_override"] = projected_mstep
     k1_adaptive_result = run_dense_k_class_em_adaptive(
         half.particles.dataset,
         means_single,
@@ -628,7 +604,16 @@ def _score_adaptive_k1_dense(
         coarse_current_size=coarse_current_size,
         fine_current_size=fine_current_size,
         oversampling_order=adaptive_os,
-        **common_kwargs,
+        class_log_priors=priors.class_log_priors,
+        accumulate_noise=True,
+        adaptive_fraction=RELION_ADAPTIVE_FRACTION,
+        max_significants=(-1 if batching.max_significants is None else int(batching.max_significants)),
+        relion_fine_mstep_prune=True,
+        coarse_healpix_order=int(sampling.current_healpix_order),
+        fine_mstep_rotations_override=projected_mstep,
+        return_best_pose_details=execution.return_best_pose_details,
+        bpref_device_signature_active=execution.bpref_device_signature_active,
+        debug_iteration=execution.debug_iteration,
         **adaptive_em_kwargs,
     )
     return k1_adaptive_result, pass2_grids
