@@ -13,15 +13,20 @@ from relax.helpers.orientation_priors import DirectionPrior
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
+from relax.refinement.refinement_options import RefinementSchedule
 
 pytestmark = pytest.mark.unit
 IMAGE_SIZE = 64
 
 
 def test_numbered_relion_iteration_includes_completed_continuations():
-    assert relion_replay_module._numbered_relion_iteration(0, 0) == 1
-    assert relion_replay_module._numbered_relion_iteration(1, 0) == 2
-    assert relion_replay_module._numbered_relion_iteration(11, 2) == 14
+    def numbered(init_relion_iteration, iteration):
+        schedule = RefinementSchedule(init_current_size=IMAGE_SIZE, init_relion_iteration=init_relion_iteration)
+        return schedule.numbered_relion_iteration(iteration)
+
+    assert numbered(0, 0) == 1
+    assert numbered(1, 0) == 2
+    assert numbered(11, 2) == 14
 
 
 def _sealed_sampling_fixture():

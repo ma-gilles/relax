@@ -112,7 +112,7 @@ class _K1Iteration:
             box_size=ctx.image_geometry.box_size, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
             incr_size=carry.relion_incr_size, has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit,
             ave_pmax=carry.state.ave_Pmax,
-            completed_relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration),
+            completed_relion_iteration=options.schedule.numbered_relion_iteration(iteration) - 1,
             parity=options.parity, dtype=ctx.scoring_dtype, log=logger,
         )
         carry = replace(
@@ -277,7 +277,7 @@ class _ClassIteration:
             box_size=ctx.image_geometry.box_size,
             pixel_size_angstrom=ctx.source_pixel_size_angstrom, incr_size=carry.relion_incr_size,
             ave_pmax=carry.state.ave_Pmax,
-            completed_relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration),
+            completed_relion_iteration=options.schedule.numbered_relion_iteration(iteration) - 1,
             parity=options.parity, dtype=ctx.scoring_dtype, log=logger,
         )
         observer.class_image_size_planned(
@@ -711,9 +711,7 @@ def refine_single_volume(
             break
         iteration_clock = timing.Stopwatch()
         observer.iteration_started(iteration)
-        numbered_relion_iteration = replay_policy._numbered_relion_iteration(
-            options.schedule.init_relion_iteration, iteration
-        )
+        numbered_relion_iteration = options.schedule.numbered_relion_iteration(iteration)
 
         if follower_setup.follower_scale_state is not None:
             relion_worker_scale._dispatch_relion_follower_scale_for_numbered_iteration(
@@ -800,9 +798,7 @@ def refine_single_volume(
                 carry, noise_model=swapped.noise_model, previous_best_rotations=swapped.previous_best_rotations,
                 sigma_offset=swapped.sigma_offset, direction_priors=swapped.direction_priors,
             )
-            history.state_swap_probe_applied_relion_iterations.append(
-                int(options.schedule.init_relion_iteration) + int(iteration) + 1
-            )
+            history.state_swap_probe_applied_relion_iterations.append(numbered_relion_iteration)
         checked = source.scoring_state_checked(
             iteration,
             ports.ScoringArrays(
@@ -881,7 +877,7 @@ def refine_single_volume(
         if carry.state.do_local_search:
             # A half without poses is centred at Euler angles (0, 0, 0) with zero offsets.
             for half in halves:
-                half.centre_absent_poses(offset_dims=3 if ctx.tomo_halves else 2)
+                half.centre_absent_poses(offset_dims=ctx.offset_dims)
         use_local = carry.state.do_local_search
         if use_local:
             mode.refuse_local_search(options)
@@ -1095,7 +1091,7 @@ def refine_single_volume(
         )
 
         pose_comparison = half_inputs.prepare_pose_comparison(
-            pose_update, translation_dimension=3 if ctx.tomo_halves else 2, dtype=ctx.scoring_dtype, log=logger,
+            pose_update, translation_dimension=ctx.offset_dims, dtype=ctx.scoring_dtype, log=logger,
         )
 
         carry = mode.scheduling_curve_after_resolution(ctx, carry, history, resolution_estimate)
@@ -1183,7 +1179,7 @@ def refine_single_volume(
         sigma_offset_result = noise_updates.update_c1_sigma_offset_from_posterior(
             expected.per_half, carry.sigma_offset, n_classes=options.k_class.n_classes,
             state_fallback_offsets_angstrom=carry.state.current_changes_optimal_offsets_angstrom,
-            offset_dims=3 if ctx.tomo_halves else 2,
+            offset_dims=ctx.offset_dims,
         )
         carry = replace(carry, sigma_offset=half_inputs.SigmaOffset(
             sigma_offset_result.current_sigma_offset_angstrom, sigma_offset_result.current_sigma_offset_angstrom_per_half,

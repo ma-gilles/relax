@@ -313,6 +313,11 @@ class RunContext:
     expectation_probe: ExpectationProbe
     maximization_probe: MaximizationProbe
 
+    @property
+    def offset_dims(self) -> int:
+        """The number of translation components: 3 for subtomograms, 2 for single particles."""
+        return 3 if self.tomo_halves else 2
+
 
 def build_run_context(
     experiment_datasets,

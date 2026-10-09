@@ -122,12 +122,6 @@ def _class_tau2_replay(*, iteration, n_classes, iter_replay_override, replay, lo
     return replay_class_tau2, replay_tau2_enabled, kclass_tau2_source
 
 
-def _numbered_relion_iteration(init_relion_iteration: int, local_iteration: int) -> int:
-    """Map a restart-local zero-based loop index to RELION's numbered iteration."""
-
-    return int(init_relion_iteration) + int(local_iteration) + 1
-
-
 def _past_perturb_replay_max_iter(iteration: int, perturb_replay_max_iter: int | None) -> bool:
     """Return whether ``iteration`` (0-indexed) is past the diagnostic replay cutoff.
 

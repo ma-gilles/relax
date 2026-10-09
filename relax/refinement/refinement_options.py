@@ -79,6 +79,10 @@ class RefinementSchedule:
     skip_final_iteration: bool = False
     init_relion_incr_size: int = RELION_INCR_SIZE
 
+    def numbered_relion_iteration(self, iteration: int) -> int:
+        """RELION's number of the run's zero-based ``iteration``: a continuation counts on from its start."""
+        return int(self.init_relion_iteration) + int(iteration) + 1
+
 
 @dataclass(frozen=True, kw_only=True)
 class AdaptiveOptions:
