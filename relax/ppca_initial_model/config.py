@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from relax.vdam.schedules import (
+    DEFAULT_GRAD_EM_ITERS,
     compute_phase_lengths,
     compute_stepsize,
     compute_subset_size,
@@ -133,7 +134,9 @@ class Config:
         """
         phases = compute_phase_lengths(self.iterations)
         first, last = default_subset_sizes_for_3d_initial_model(n_images)
-        scheduled = compute_subset_size(iteration, phases, first, last, n_images, self.iterations)
+        scheduled = compute_subset_size(
+            iteration, phases, first, last, n_images, self.iterations, grad_em_iters=DEFAULT_GRAD_EM_ITERS
+        )
         scheduled = n_images if scheduled < 0 or iteration == self.iterations else min(scheduled, n_images)
         return min(1.0, self.schedule(iteration, n_images)[0] / scheduled)
 
@@ -143,7 +146,9 @@ class Config:
     def schedule(self, iteration, n_images):
         phases = compute_phase_lengths(self.iterations)
         first, last = default_subset_sizes_for_3d_initial_model(n_images)
-        count = compute_subset_size(iteration, phases, first, last, n_images, self.iterations)
+        count = compute_subset_size(
+            iteration, phases, first, last, n_images, self.iterations, grad_em_iters=DEFAULT_GRAD_EM_ITERS
+        )
         if self.stochastic_batch_size is not None and (iteration != self.iterations or self.stochastic_all_iterations):
             count = self.stochastic_batch_size
         if (iteration == self.iterations and not self.stochastic_all_iterations) or count < 0:

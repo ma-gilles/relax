@@ -431,7 +431,9 @@ def test_uniform_joint_prior_is_fixed_while_offset_updates_and_default_still_lea
     }
     uniform = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9, uniform_class_direction_prior=True
     )
-    learned = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
+    learned = update_probabilities_from_estep(
+        state, estep_sums(meta), do_grad=True, mu=0.9, uniform_class_direction_prior=False
+    )
     np.testing.assert_array_equal(uniform.pdf_class, np.full(k, 1.0 / k))
     np.testing.assert_array_equal(uniform.pdf_direction, np.full((k, 5), 1.0 / (5 * k)))
     assert np.isclose(uniform.pdf_direction.sum(), 1.0)

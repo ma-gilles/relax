@@ -681,7 +681,9 @@ class TestRunVdamIterations:
             "sigma2_offset_sumw": 100.0,  # the E-step writes it with the offset sums
         }
 
-        out = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
+        out = update_probabilities_from_estep(
+            state, estep_sums(meta), do_grad=True, mu=0.9, uniform_class_direction_prior=False
+        )
 
         np.testing.assert_allclose(out.pdf_class, [0.48, 0.52])
         np.testing.assert_allclose(
@@ -707,7 +709,9 @@ class TestRunVdamIterations:
             "sigma2_offset_sumw": 80.0,
         }
 
-        out = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
+        out = update_probabilities_from_estep(
+            state, estep_sums(meta), do_grad=True, mu=0.9, uniform_class_direction_prior=False
+        )
 
         assert out.sigma2_offset == pytest.approx(90.3125)
 
@@ -883,7 +887,9 @@ class TestRunVdamIterations:
             "class_direction_posterior_sums": direction_sums,
         }
 
-        out = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
+        out = update_probabilities_from_estep(
+            state, estep_sums(meta), do_grad=True, mu=0.9, uniform_class_direction_prior=False
+        )
 
         assert out.pdf_direction.shape == (2, 5)
         expected_uniform = np.full((2, 5), 1.0 / 10.0, dtype=np.float64)
@@ -908,6 +914,7 @@ class TestRunVdamIterations:
             }),
             do_grad=True,
             mu=0.9,
+            uniform_class_direction_prior=False,
         )
 
         np.testing.assert_allclose(out.pdf_class, [0.0, 1.0])

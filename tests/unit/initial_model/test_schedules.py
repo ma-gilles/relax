@@ -21,6 +21,7 @@ import pytest
 from relax.relion.macros import relion_round
 from relax.vdam.native_options import InitialModelDefaults
 from relax.vdam.schedules import (
+    DEFAULT_GRAD_EM_ITERS,
     DEFAULT_STEPSIZE_3D_INITIAL_MODEL,
     DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL,
     _step_sigmoid_value,
@@ -146,6 +147,7 @@ class TestSubsetSizeSchedule:
                 grad_fin_subset_size=self.fin,
                 nr_particles=self.nr_particles,
                 nr_iter=200,
+                grad_em_iters=DEFAULT_GRAD_EM_ITERS,
             )
             assert size == self.ini, f"iter={it}: got {size}, expected {self.ini}"
 
@@ -160,6 +162,7 @@ class TestSubsetSizeSchedule:
                 grad_fin_subset_size=self.fin,
                 nr_particles=self.nr_particles,
                 nr_iter=200,
+                grad_em_iters=DEFAULT_GRAD_EM_ITERS,
             )
             assert size == self.fin, f"iter={it}: got {size}, expected {self.fin}"
 
@@ -188,6 +191,7 @@ class TestSubsetSizeSchedule:
             grad_fin_subset_size=self.fin,
             nr_particles=self.nr_particles,
             nr_iter=200,
+            grad_em_iters=DEFAULT_GRAD_EM_ITERS,
         )
         assert size_lo == self.ini
 
@@ -202,6 +206,7 @@ class TestSubsetSizeSchedule:
             grad_fin_subset_size=self.fin,
             nr_particles=self.nr_particles,
             nr_iter=200,
+            grad_em_iters=DEFAULT_GRAD_EM_ITERS,
         )
         assert size_hi == 9905
 
@@ -216,6 +221,7 @@ class TestSubsetSizeSchedule:
             grad_fin_subset_size=self.fin,
             nr_particles=self.nr_particles,
             nr_iter=200,
+            grad_em_iters=DEFAULT_GRAD_EM_ITERS,
         )
         assert size == 5250
 
@@ -228,6 +234,7 @@ class TestSubsetSizeSchedule:
             nr_particles=self.nr_particles,
             nr_iter=200,
             do_grad=False,
+            grad_em_iters=DEFAULT_GRAD_EM_ITERS,
         )
         assert size == -1
 
@@ -253,6 +260,7 @@ class TestSubsetSizeSchedule:
             grad_fin_subset_size=5000,
             nr_particles=500,  # 500-particle fixture
             nr_iter=200,
+            grad_em_iters=DEFAULT_GRAD_EM_ITERS,
         )
         assert size == -1
 
@@ -276,6 +284,7 @@ class TestSubsetSizeSchedule:
                 grad_fin_subset_size=fin,
                 nr_particles=500,
                 nr_iter=200,
+                grad_em_iters=DEFAULT_GRAD_EM_ITERS,
             )
             == 200
         )
@@ -293,6 +302,7 @@ class TestSubsetSizeSchedule:
             grad_fin_subset_size=fin,
             nr_particles=500,
             nr_iter=200,
+            grad_em_iters=DEFAULT_GRAD_EM_ITERS,
         )
         assert size_98 == -1
 
@@ -304,6 +314,7 @@ class TestSubsetSizeSchedule:
             grad_fin_subset_size=fin,
             nr_particles=500,
             nr_iter=200,
+            grad_em_iters=DEFAULT_GRAD_EM_ITERS,
         )
         expected_97 = 200 + relion_round((97 - 60) / 100 * 800)
         assert size_97 == expected_97

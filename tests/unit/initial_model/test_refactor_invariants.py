@@ -42,6 +42,7 @@ from relax.vdam import (
 from relax.vdam.bootstrap_iref import compute_current_size_for_denovo, compute_ini_high_angstrom, compute_ini_high_shell
 from relax.vdam.estep_common import relion_bpref_frame_scales
 from relax.vdam.schedules import (
+    DEFAULT_GRAD_EM_ITERS,
     compute_phase_lengths,
     compute_stepsize,
     compute_subset_size,
@@ -180,7 +181,7 @@ class TestScheduleGoldenValues:
         )
         expected = {0: 100, 30: 100, 60: 100, 100: 460, 160: 1000, 199: 1000}
         for it, want in expected.items():
-            got = compute_subset_size(iter=it, **kwargs)
+            got = compute_subset_size(iter=it, **kwargs, grad_em_iters=DEFAULT_GRAD_EM_ITERS)
             assert got == want, f"subset_size(it={it}) = {got}, expected {want}"
 
     def test_stepsize_trajectory(self):

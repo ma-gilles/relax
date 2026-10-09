@@ -138,7 +138,7 @@ def update_probabilities_from_estep(
     *,
     do_grad: bool,
     mu: float,
-    uniform_class_direction_prior: bool = False,
+    uniform_class_direction_prior: bool,
 ) -> InitialModelState:
     """``MlOptimiser::maximizationOtherParameters`` for pdf_class / pdf_direction / sigma2_offset."""
     class_sums = sums.class_mass

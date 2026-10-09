@@ -143,7 +143,7 @@ def compute_subset_size(
     grad_fin_subset_size: int,
     nr_particles: int,
     nr_iter: int,
-    grad_em_iters: int = DEFAULT_GRAD_EM_ITERS,
+    grad_em_iters: int,
     do_grad: bool = True,
     has_converged: bool = False,
     grad_has_converged: bool = False,

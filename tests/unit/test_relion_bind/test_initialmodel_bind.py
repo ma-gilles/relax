@@ -25,7 +25,13 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.vdam.schedules import compute_phase_lengths, compute_stepsize, compute_subset_size, compute_tau2_fudge
+from relax.vdam.schedules import (
+    DEFAULT_GRAD_EM_ITERS,
+    compute_phase_lengths,
+    compute_stepsize,
+    compute_subset_size,
+    compute_tau2_fudge,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -64,6 +70,7 @@ class TestSubsetSizeParity:
                 grad_fin_subset_size=fin,
                 nr_particles=nr_particles,
                 nr_iter=nr_iter,
+                grad_em_iters=DEFAULT_GRAD_EM_ITERS,
             )
             cpp_val = bind.vdam_compute_subset_size(
                 it,
