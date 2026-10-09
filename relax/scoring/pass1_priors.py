@@ -8,14 +8,13 @@ import numpy as np
 class RotationBlocks(NamedTuple):
     """The pass's rotations and rotation prior padded to a whole number of blocks.
 
-    ``rotations_padded`` is ``[R_padded, 3, 3]``: the rotations followed by identities up to ``n_rot_padded`` (the
-    padded tail rows are scored and discarded). ``rotation_log_prior_padded`` is ``[K, R_padded]`` of the score dtype
-    (zero in the padding), or ``None`` without a rotation prior.
+    ``rotations_padded`` is ``[R_padded, 3, 3]``: the rotations followed by identities up to a whole number of
+    blocks (the padded tail rows are scored and discarded). ``rotation_log_prior_padded`` is ``[K, R_padded]`` of the
+    score dtype (zero in the padding), or ``None`` without a rotation prior.
     """
 
     rotations_padded: Any
     rotation_log_prior_padded: Any
-    n_rot_padded: int
 
 
 def plan_rotation_blocks(
@@ -60,7 +59,7 @@ def plan_rotation_blocks(
             )
         else:
             rotation_log_prior_padded = prior
-    return RotationBlocks(rotations_padded, rotation_log_prior_padded, n_rot_padded)
+    return RotationBlocks(rotations_padded, rotation_log_prior_padded)
 
 
 def validated_translation_log_prior(translation_log_prior, *, n_images: int, n_trans: int, score_real_dtype):

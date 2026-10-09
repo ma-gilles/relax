@@ -215,22 +215,19 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     pad_final_image_batch = request.pad_final_image_batch
     relion_projector_half = request.relion_projector_half
     rotation_block_size = request.rotation_block_size
-    score_mode = request.score_mode
     translation_log_prior = request.translation_log_prior
-    translations = request.translations
-    tree_rescore_max_margin = request.tree_rescore_max_margin
 
     if request.return_class_second and not request.return_class_best:
         raise ValueError("return_class_second requires return_class_best")
     if request.return_relion_f32_normalization and (
-        not request.collect_significance or score_mode != "gaussian" or request.use_float64_scoring
+        not request.collect_significance or request.score_mode != "gaussian" or request.use_float64_scoring
     ):
         raise ValueError("RELION float32 normalization requires Gaussian float32 significance")
 
 
 
-    if score_mode not in {"gaussian", "normalized_cc"}:
-        raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {score_mode!r}")
+    if request.score_mode not in {"gaussian", "normalized_cc"}:
+        raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {request.score_mode!r}")
     # VDAM asks for the padded tail batch explicitly; the global coarse pass
     # opts in through the environment while the bitwise equality is qualified.
     pad_final_image_batch = bool(pad_final_image_batch) or _coarse_pad_final_image_batch_enabled()
@@ -243,15 +240,15 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     n_classes = int(class_log_priors_np.shape[0])
 
     translations_source = np.asarray(
-        translations if request.translation_phase_source is None else request.translation_phase_source,
+        request.translations if request.translation_phase_source is None else request.translation_phase_source,
     )
-    if translations_source.shape != translations.shape:
+    if translations_source.shape != request.translations.shape:
         raise ValueError(
             "translation_phase_source must match translations: "
-            f"{translations_source.shape} != {translations.shape}",
+            f"{translations_source.shape} != {request.translations.shape}",
         )
     n_rot = int(request.rotations.shape[0])
-    n_trans = int(translations.shape[0])
+    n_trans = int(request.translations.shape[0])
     n_images = int(request.experiment_dataset.n_units)
     input_image_batch_size = operator.index(image_batch_size)
     if input_image_batch_size <= 0:
@@ -284,7 +281,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         image_shape,
         n_half,
         request.current_size,
-        score_mode=score_mode,
+        score_mode=request.score_mode,
         half_spectrum_scoring=request.half_spectrum_scoring,
         square_window=request.square_window,
         window_at_box=request.window_at_box,
@@ -301,14 +298,16 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         if request.relion_projector_texture_interp is None
         else bool(request.relion_projector_texture_interp)
     )
-    if tree_rescore_max_margin is not None and not (
-        np.isfinite(tree_rescore_max_margin) and tree_rescore_max_margin >= 0.0
+    if request.tree_rescore_max_margin is not None and not (
+        np.isfinite(request.tree_rescore_max_margin) and request.tree_rescore_max_margin >= 0.0
     ):
-        raise ValueError(f"tree_rescore_max_margin must be a finite non-negative float, got {tree_rescore_max_margin!r}")
+        raise ValueError(
+            f"tree_rescore_max_margin must be a finite non-negative float, got {request.tree_rescore_max_margin!r}"
+        )
     # The margin is a run option, while only iteration 1 uses normalized CC.
     # Later Gaussian iterations must remain unaffected.
     tree_rescore_enabled = (
-        tree_rescore_max_margin is not None and score_mode == "normalized_cc"
+        request.tree_rescore_max_margin is not None and request.score_mode == "normalized_cc"
     )
     # Pass 1 scores RELION's exact coarse operands only: the Gaussian passes with the coarse GEMMs
     # (_relion_coarse_gaussian_gemm_scores_jit), the --firstiter_cc passes with RELION's coarse CC
@@ -321,7 +320,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         use_float64_scoring=request.use_float64_scoring,
         use_float64_projections=request.use_float64_projections,
     )
-    exact_gaussian = score_mode == "gaussian"
+    exact_gaussian = request.score_mode == "gaussian"
     pass_shape = PassShape(
         n_classes=n_classes,
         n_rot=n_rot,
@@ -346,7 +345,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     # FFT, RFLOAT CTF and corr_img operands, translated with RELION's sincosf for
     # every translation and scored by the coarse GEMMs
     # (_relion_coarse_normalized_cc_gemm_scores_jit).
-    exact_cc_enabled = score_mode == "normalized_cc"
+    exact_cc_enabled = request.score_mode == "normalized_cc"
     exact_cc_score_indices = None
     exact_cc_translation_angles = None
     if exact_cc_enabled:
@@ -383,7 +382,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
             half_spectrum_scoring=request.half_spectrum_scoring,
         )
         tree_rescore_plan = plan_tree_rescore(
-            max_margin=tree_rescore_max_margin,
+            max_margin=request.tree_rescore_max_margin,
             relion_projector_half=relion_projector_half,
             image_shape=image_shape,
             n_half=n_half,
@@ -561,7 +560,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     dump_context = ScoreDumpContext(
         experiment_dataset=request.experiment_dataset,
         rotations=request.rotations,
-        translations=translations,
+        translations=request.translations,
         translations_source=translations_source,
         class_log_priors=class_log_priors_np,
         rotation_log_prior_padded=rotation_log_prior_padded,
@@ -598,7 +597,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         score_program_plan=score_program_plan,
         support_plan=support_plan,
         tree_rescore_plan=tree_rescore_plan,
-        tree_rescore_max_margin=tree_rescore_max_margin,
+        tree_rescore_max_margin=request.tree_rescore_max_margin,
         output_plan=output_plan,
         dump_context=dump_context,
         executed_backend="exact_cc_gemm" if exact_cc_enabled else "gemm_macro",
