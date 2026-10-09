@@ -1092,7 +1092,13 @@ def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _re
     with their own class's reference (a block spans the class boundary of the image's class-major rows), the
     joint and per-class posteriors are formed over all rows at once, and each class's M-step blocks project with
     that class's reference. The discrete outputs agree exactly and each class's accumulators within the
-    driver's repeat band, as for the single-class lone chunk."""
+    driver's repeat band, as for the single-class lone chunk.
+
+    The block size must not divide each class's rows per image, or no block spans a class boundary and the
+    per-block class split is never exercised: the rows come in multiples of the 8 oversampled children, so
+    8-row blocks align with the classes (an 8-row first version of this test found no straddling block) and
+    12-row blocks do not.
+    The test asserts a straddling block rather than assuming one."""
 
     case = _case()
     other_ft = _hermitian_volume(VOLUME_SHAPE, seed=29)
@@ -1115,8 +1121,7 @@ def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _re
         return real_project(host_chunk, *args, **kwargs)
 
     monkeypatch.setattr(rlp, "_project_class_rows", spy)
-    # 12-row blocks: each class's rows per image are a multiple of the 8 oversampled children, so 8-row
-    # blocks would never straddle the class boundary.
+    # 12-row blocks straddle the class boundary (see the docstring).
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "12")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
     lone = _run(two, monkeypatch=monkeypatch, n_classes=2).class_pass
