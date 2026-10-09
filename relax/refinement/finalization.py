@@ -14,8 +14,8 @@ import numpy as np
 from relax.dense.score_outputs import (
     PerHalfOutputs,
     _record_score_profile,
-    _resolve_mstep_accumulator_shape,
-    _resolve_mstep_full_half_axis,
+    resolve_mstep_accumulator_shape,
+    resolve_mstep_full_half_axis,
 )
 from relax.dense.scoring_policy import (
     local_precision,
@@ -582,7 +582,7 @@ def run_final_all_data(
             current_size=final_current_size, precision=final_precision, use_local=final_use_local,
         ))
 
-    final_mstep_accumulator_shape = _resolve_mstep_accumulator_shape(
+    final_mstep_accumulator_shape = resolve_mstep_accumulator_shape(
         final_outs.mstep_accumulator_shape,
         padded_volume_shape,
     )
@@ -604,7 +604,7 @@ def run_final_all_data(
         # only ones read from here on.
         final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
         final_outs.Ft_ctf[0] = final_outs.Ft_ctf[1] = None
-        final_mstep_full_half_axis = _resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
+        final_mstep_full_half_axis = resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
         class_weights = _class_weights_from_posterior(
             final_outs.class_posterior,
             options.k_class.n_classes,
@@ -722,7 +722,7 @@ def run_final_all_data(
         # pre-join accumulators live only as long as the joined ones do.
         final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
         final_outs.Ft_ctf[0] = final_outs.Ft_ctf[1] = None
-        final_mstep_full_half_axis = _resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
+        final_mstep_full_half_axis = resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
         final_tau2_clock = Stopwatch()
         final_halfmap_prior = final_reconstruction.compute_final_halfmap_prior(
             (final_Ft_y_0, final_Ft_y_1),

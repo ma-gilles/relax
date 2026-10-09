@@ -20,6 +20,7 @@ from helpers.pass1_programs import clear_pass1_programs
 from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import unconverged_accuracy
 
+import relax.refinement.noise_updates as noise_updates
 from relax.helpers import oversampling as oversampling_grids
 from relax.helpers.orientation_priors import (
     DirectionPrior,
@@ -109,16 +110,14 @@ from relax.reconstruction import regularization_relion
 from relax.refinement import finalization, half_scoring, local_sampling, local_search_iteration
 from relax.refinement import maximization as maximization_module
 from relax.refinement import mean_helpers as mean_helpers_module
-from relax.refinement.iteration_loop import (
-    _normalize_noise_variance_per_half,
-    refine_single_volume,
-)
+from relax.refinement.iteration_loop import refine_single_volume
 from relax.refinement.local_search_iteration import LocalSearchResult
 from relax.refinement.mean_helpers import (
     _align_fourier_volume_sign_to_reference,
 )
 from relax.refinement.noise_updates import (
     _combined_noise_stats,
+    _normalize_noise_variance_per_half,
 )
 from relax.refinement.refinement_options import (
     FinalPassOptions,
@@ -588,7 +587,7 @@ def testrefine_single_volume_clears_perturb_replay_dir_past_cutoff_source(monkey
     trace = CallTrace(monkeypatch)
     trace.wrap(relion_replay_source, "_past_perturb_replay_max_iter", "cutoff", after=move_replay_dir_away)
     trace.wrap(RelionReplaySource, "relion_run_directory", "directory")
-    trace.wrap(iteration_loop_module, "relion_expectation_coarse_size_order", "coarse_order")
+    trace.wrap(resolution_helpers, "relion_expectation_coarse_size_order", "coarse_order")
     run_tiny_refinement(
         monkeypatch, max_iter=3, final_after_max_iter=False, converge_after=None,
         parity=dict(perturb_replay_relion_dir=replay_dir, perturb_replay_max_iter=1, low_resol_join_halves_angstrom=0.0),
@@ -1105,14 +1104,14 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
     import weakref
 
     initial_model_refs = []
-    initialize = iteration_loop_module.initialize_noise_model
+    initialize = noise_updates.initialize_noise_model
 
     def record_initial_noise(*args, **kwargs):
         model = initialize(*args, **kwargs)
         initial_model_refs.append(weakref.ref(model))
         return model
 
-    monkeypatch.setattr(iteration_loop_module, "initialize_noise_model", record_initial_noise)
+    monkeypatch.setattr(noise_updates, "initialize_noise_model", record_initial_noise)
     marker = refinement_result()
     replayed_noise = jnp.full(IMAGE_SIZE, 7.0, dtype=jnp.float32)
 

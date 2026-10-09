@@ -8,9 +8,11 @@ import pytest
 from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
+import relax.diagnostics.reconstruction as reconstruction_diagnostics
+from relax.dense import score_outputs
 from relax.diagnostics import observers
 from relax.diagnostics import reconstruction as diagnostics
-from relax.refinement import iteration_loop, maximization
+from relax.refinement import maximization
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -118,9 +120,9 @@ def test_actual_controller_audits_before_join_and_snapshot(n_classes, monkeypatc
     """Each iteration audits the raw half accumulators before its M-step; Class3D combines the halves in the
     M-step; K=1 joins them, releases the previous maps, dumps the joined accumulators, then updates the prior."""
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "check_half_accumulators_before_join", "audit")
+    trace.wrap(reconstruction_diagnostics, "check_half_accumulators_before_join", "audit")
     trace.wrap(maximization, "class_maximization", "class")
-    trace.wrap(maximization, "_combine_optional_half_accumulators", "combine")
+    trace.wrap(score_outputs, "_combine_optional_half_accumulators", "combine")
     trace.wrap(maximization, "k1_maximization", "k1")
     trace.wrap(maximization, "join_half_accumulators_at_low_resolution", "join")
     trace.wrap(maximization, "_snapshot_and_release_previous_k1_means", "release")

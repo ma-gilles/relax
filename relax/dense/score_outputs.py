@@ -431,7 +431,7 @@ def _combine_optional_half_accumulators(left, right, *, label: str):
     return left + right
 
 
-def _resolve_mstep_accumulator_shape(per_half_shapes, default_shape):
+def resolve_mstep_accumulator_shape(per_half_shapes, default_shape):
     """Return the common M-step accumulator shape for this iteration."""
 
     present = [tuple(int(v) for v in shape) for shape in per_half_shapes if shape is not None]
@@ -443,7 +443,7 @@ def _resolve_mstep_accumulator_shape(per_half_shapes, default_shape):
     return first
 
 
-def _resolve_mstep_full_half_axis(per_half_axes, default_axis=-1):
+def resolve_mstep_full_half_axis(per_half_axes, default_axis=-1):
     """Return the common RELION half-complex axis for shell statistics."""
 
     present = [int(axis) for axis in per_half_axes if axis is not None]

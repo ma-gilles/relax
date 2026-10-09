@@ -10,6 +10,7 @@ from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
+import relax.refinement.noise_updates as noise_updates
 from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.orientation_priors import HalfDirectionLogPriors
@@ -195,10 +196,10 @@ def test_actual_numbered_half_binding_does_not_read_unused_radial_noise(monkeypa
     """
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import expectation, iteration_loop
+    from relax.refinement import expectation
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, 'initialize_noise_model', 'noise')
+    trace.wrap(noise_updates, 'initialize_noise_model', 'noise')
     trace.wrap(expectation, 'HalfScoringData', 'data')
     run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False)
     (noise,) = trace.calls('noise')

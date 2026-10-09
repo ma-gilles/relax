@@ -11,6 +11,7 @@ from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 from helpers.float_compare import assert_matches
 from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
+import relax.refinement.half_inputs as half_inputs_module
 from relax.refinement import firstiter_cc, half_scoring
 
 pytestmark = pytest.mark.unit
@@ -164,16 +165,15 @@ def test_a_continuation_logs_the_run_files_iteration_numbers(monkeypatch, tmp_pa
 def test_pose_records_of_a_magnified_class_are_rotations(monkeypatch, tmp_path):
     """The loop's best rotations are proper rotations on a magnified class too: the engine returns the projected rows
     it scored and the caller undoes the magnification (relax#61: a stand-in returning the identity left inv(M))."""
-    from relax.refinement import iteration_loop
 
     seen = []
-    prepare = iteration_loop.prepare_pose_comparison
+    prepare = half_inputs_module.prepare_pose_comparison
 
     def record(pose_update, **kwargs):
         seen.extend(np.asarray(poses.rotations, dtype=np.float64) for poses in pose_update.current)
         return prepare(pose_update, **kwargs)
 
-    monkeypatch.setattr(iteration_loop, "prepare_pose_comparison", record)
+    monkeypatch.setattr(half_inputs_module, "prepare_pose_comparison", record)
     _run(monkeypatch, tmp_path, "refine", _write_data(tmp_path, "magnification", 1), "whole", "--max_iter", "2")
 
     rotations = np.concatenate([r for r in seen if r.size])

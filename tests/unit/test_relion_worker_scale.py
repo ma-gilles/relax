@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+import relax.refinement.convergence as convergence_policy
+import relax.relion.relion_worker_scale as relion_worker_scale
 from relax.helpers.types import NoiseStats
 from relax.parity.relion_replay import _apply_replay_correction_overrides
 from relax.refinement.half_inputs import initialize_halfsets
@@ -1065,11 +1067,11 @@ def _follower_scale_replay(iteration=2):
 def test_final_dispatch_remap_is_wired_before_final_scoring(monkeypatch):
     from helpers.tiny_refinement import CallTrace
 
-    from relax.refinement import finalization, iteration_loop
+    from relax.refinement import finalization
     from relax.relion import relion_worker_scale
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_final_all_data", "dispatch")
+    trace.wrap(relion_worker_scale, "_dispatch_relion_follower_scale_for_final_all_data", "dispatch")
     trace.wrap(relion_worker_scale, "_require_relion_follower_owners", "owners")
     trace.wrap(relion_worker_scale, "_remap_relion_follower_runtime_inputs", "remap")
     trace.wrap(finalization, "run_final_all_data", "final")
@@ -1087,7 +1089,6 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypa
     from helpers.tiny_refinement import CallTrace
 
     from relax.parity.relion_replay_source import RelionReplaySource
-    from relax.refinement import iteration_loop
     from relax.relion import relion_worker_scale
 
     seen = {}
@@ -1114,14 +1115,14 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypa
         assert not np.shares_memory(trajectory[-1], scales)
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch", after=dispatched)
+    trace.wrap(relion_worker_scale, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch", after=dispatched)
     trace.wrap(RelionReplaySource, "numbered_state", "replay")
-    trace.wrap(iteration_loop, "_update_relion_follower_corrections", "update",
+    trace.wrap(relion_worker_scale, "_update_relion_follower_corrections", "update",
                before=post_mstep_count(lambda call: len(trace.calls("update")) - 1), after=installed)
     trace.wrap(relion_worker_scale, "update_relion_follower_scales", "update_scales")
-    trace.wrap(iteration_loop, "update_iteration_convergence", "convergence",
+    trace.wrap(convergence_policy, "update_iteration_convergence", "convergence",
                before=post_mstep_count(lambda call: len(trace.calls("convergence"))))
-    trace.wrap(iteration_loop, "update_iteration_convergence", "convergence_recorded", before=recorded)
+    trace.wrap(convergence_policy, "update_iteration_convergence", "convergence_recorded", before=recorded)
     trace.wrap(RelionFollowerScaleSetup, "result_outputs", "result")
     result = _follower_run(monkeypatch, final=final)
     numbered = ["dispatch", "replay", "update", "convergence"]
@@ -1135,7 +1136,6 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, cap
     """Class3D without the follower emulation runs RELION's norm and scale updates and logs their ranges."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import iteration_loop
     from relax.relion import relion_normalization
     from relax.relion.relion_normalization import _format_relion_correction_range
 
@@ -1144,10 +1144,10 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, cap
                     wsum_scale_correction_aa=np.full(1, 2.0))
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "numbered_norm_scale_update", "numbered")
+    trace.wrap(relion_normalization, "numbered_norm_scale_update", "numbered")
     trace.wrap(relion_normalization, "prepare_norm_scale_update", "prepare")
     trace.wrap(relion_normalization, "update_relion_norm_scale_corrections", "update")
-    trace.wrap(iteration_loop, "log_norm_scale_update", "log")
+    trace.wrap(relion_normalization, "log_norm_scale_update", "log")
     with caplog.at_level(logging.INFO, logger="relax.refinement.iteration_loop"):
         run_tiny_refinement(monkeypatch, n_classes=2, final_after_max_iter=False, engine_noise_fields=statistics)
     assert trace.labels() == ["numbered", "prepare", "update", "log"] * 2
@@ -1165,7 +1165,6 @@ def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry(
     from helpers.tiny_refinement import CallTrace
 
     from relax.helpers.iteration_history import RefinementHistory
-    from relax.refinement import iteration_loop
     from relax.relion import relion_worker_scale
 
     replay = _follower_scale_replay(2)
@@ -1178,7 +1177,7 @@ def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry(
         seen.setdefault("remapped", []).append(np.array(call.kwargs["state"].scales, copy=True))
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
+    trace.wrap(relion_worker_scale, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
                before=dispatch_starts)
     trace.wrap(relion_worker_scale, "_require_relion_follower_owners", "owners")
     trace.wrap(relion_worker_scale, "_remap_relion_follower_runtime_inputs", "remap", before=remapped_state)
@@ -1222,14 +1221,13 @@ def test_sparse_follower_scale_replay_accounting_guards_every_result_return(monk
     """
     from helpers.tiny_refinement import CallTrace
 
-    from relax.refinement import iteration_loop
 
     replay = _follower_scale_replay(2)
     seen = {}
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
+    trace.wrap(relion_worker_scale, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
                before=lambda call: seen.setdefault("history", call.args[1]))
-    trace.wrap(iteration_loop, "_finalize_relion_follower_scale_replay_telemetry", "accounting")
+    trace.wrap(relion_worker_scale, "_finalize_relion_follower_scale_replay_telemetry", "accounting")
     result = _follower_run(monkeypatch, final=final, follower_replay=replay)
     (accounting,) = trace.calls("accounting")
     assert accounting.args[0] is replay

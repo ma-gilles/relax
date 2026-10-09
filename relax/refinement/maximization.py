@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.dense.score_outputs import _combine_optional_half_accumulators
+from relax.dense import score_outputs
 from relax.helpers.orientation_priors import DirectionPrior, learn_class_direction_priors, learn_k1_direction_priors
 from relax.helpers.resolution import _firstiter_cc_ini_high_tapered
 from relax.helpers.timing import Stopwatch
@@ -127,6 +127,19 @@ class MStepOperands:
     projector_power_spectrum: object
 
 
+def mstep_operands(per_half, *, padded_volume_shape, halves, image_current_size, projector_power_spectrum) -> MStepOperands:
+    """The M-step's operands from the expectation's published ``per_half``: its accumulators, their resolved
+    accumulator shape (the padded volume when the scorers set none) and full-half axis (the last axis when
+    none), each half's own axes, and the Class3D prior's other inputs."""
+    return MStepOperands(
+        numerators=tuple(per_half.Ft_y), denominators=tuple(per_half.Ft_ctf),
+        accumulator_shape=score_outputs.resolve_mstep_accumulator_shape(per_half.mstep_accumulator_shape, padded_volume_shape),
+        full_half_axis=score_outputs.resolve_mstep_full_half_axis(per_half.mstep_full_half_axis, default_axis=-1),
+        full_half_axes=per_half.mstep_full_half_axis, halves=halves, image_current_size=image_current_size,
+        projector_power_spectrum=projector_power_spectrum,
+    )
+
+
 def class_maximization(
     reference_model,
     operands: MStepOperands,
@@ -150,8 +163,8 @@ def class_maximization(
     parity = options.parity
     Ft_y_0, Ft_y_1 = operands.numerators
     Ft_ctf_0, Ft_ctf_1 = operands.denominators
-    Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
-    Ft_ctf_combined = _combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
+    Ft_y_combined = score_outputs._combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
+    Ft_ctf_combined = score_outputs._combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
     # K-class 256px maps are large enough that materializing both
     # previous class stacks on the host immediately after pass 2 can
     # SIGBUS under Slurm/tmp quota pressure.  JAX arrays are immutable;

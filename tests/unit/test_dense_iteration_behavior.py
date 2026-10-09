@@ -146,12 +146,12 @@ def test_per_half_update_preserves_double_posterior_state_in_double_mode(monkeyp
 
 
 def test_mstep_full_half_axis_resolver_keeps_common_axis_or_default():
-    assert score_outputs._resolve_mstep_full_half_axis([None, None]) == -1
-    assert score_outputs._resolve_mstep_full_half_axis([None, 0]) == 0
-    assert score_outputs._resolve_mstep_full_half_axis([0, 0]) == 0
+    assert score_outputs.resolve_mstep_full_half_axis([None, None]) == -1
+    assert score_outputs.resolve_mstep_full_half_axis([None, 0]) == 0
+    assert score_outputs.resolve_mstep_full_half_axis([0, 0]) == 0
 
     with pytest.raises(RuntimeError, match="full-half axes disagree"):
-        score_outputs._resolve_mstep_full_half_axis([0, -1])
+        score_outputs.resolve_mstep_full_half_axis([0, -1])
 
 
 def test_relion_correction_range_formatter_accepts_empty_halves():

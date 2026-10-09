@@ -7,9 +7,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+import relax.relion.relion_normalization as relion_normalization
+import relax.relion.relion_worker_scale as relion_worker_scale
 from relax.diagnostics import iteration as captures
 from relax.diagnostics import parity_dump
-from relax.refinement import iteration_loop
 from relax.relion.relion_normalization import NormScaleCorrectionReport, NormScaleCorrectionUpdateResult
 
 pytestmark = pytest.mark.unit
@@ -90,11 +91,11 @@ def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_se
         for k, half in enumerate(halves):
             assert half.image_corrections is images[k] and half.scale_corrections is scales[k]
 
-    monkeypatch.setattr(iteration_loop, 'numbered_norm_scale_update', numbered)
-    monkeypatch.setattr(iteration_loop, '_update_relion_follower_corrections', update_followers)
+    monkeypatch.setattr(relion_normalization, 'numbered_norm_scale_update', numbered)
+    monkeypatch.setattr(relion_worker_scale, '_update_relion_follower_corrections', update_followers)
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, 'norm_scale_report', 'report')
-    trace.wrap(iteration_loop, 'log_norm_scale_update', 'log', before=installed)
+    trace.wrap(relion_normalization, 'norm_scale_report', 'report')
+    trace.wrap(relion_normalization, 'log_norm_scale_update', 'log', before=installed)
     writer = _Writer()
     run = dict(final_after_max_iter=False, checkpoint=CheckpointOptions(writer=writer))
     if follower:

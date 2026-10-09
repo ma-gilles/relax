@@ -1,6 +1,7 @@
 import pytest
 from helpers.run_options import stand_in
 
+import relax.refinement.refinement_options as refinement_options
 from relax.helpers.convergence import RefinementState, apply_relion_healpix_order_oracle
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
@@ -126,7 +127,7 @@ def test_refinement_entry_validates_options_before_reading_data(monkeypatch, use
             assert len(validated_options) == 1
             raise RuntimeError("dataset boundary reached")
 
-    monkeypatch.setattr(iteration_loop, "with_validated_sampling_schedule", validate)
+    monkeypatch.setattr(refinement_options, "with_validated_sampling_schedule", validate)
     # The command always passes options; use_defaults is the all-default record.
     options = stand_in.options() if use_defaults else stand_in.options(
         schedule=stand_in.schedule(max_iter=3, init_healpix_order=3),
