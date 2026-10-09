@@ -35,8 +35,8 @@ compared. So is one present only in A whose value there was ``None``, ``False`` 
 chosen through a port: code rule 15), and the length of the
 container that holds only such added or retired members. So is an input moved to another option group with its
 value (``MOVED_INPUTS`` names each move), a leaf of any section whose record field was renamed with its value
-(``RENAMED_FIELDS``), and an input whose value is unchanged but whose field's declared default changed (only its
-``=default`` mark differs: the record's default was aligned, the value the command hands over was not). A removed
+(``RENAMED_FIELDS``), and an input or checkpoint leaf whose value is unchanged but whose field's declared default
+changed (only its ``=default`` mark differs: the record's default was aligned or removed, the value was not). A removed
 input that was on, or a changed one, is an output difference. Any other difference exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
@@ -142,8 +142,12 @@ def _is_field_default(field, value) -> bool:
 
 
 def _unmarked(leaf: str) -> str:
-    """A flattened leaf without its ``=default`` mark."""
-    return leaf.removesuffix(f" {DEFAULT_MARK}")
+    """A flattened leaf without its ``=default`` mark, also inside a quoted leaf (checkpoint fields are recorded as
+    the repr of their flattened leaf: ``'None =default'``)."""
+    for quote in ("", "'", '"'):
+        if leaf.endswith(f" {DEFAULT_MARK}{quote}"):
+            return leaf[: -len(f" {DEFAULT_MARK}{quote}")] + quote
+    return leaf
 
 
 def flatten(value, path: str = "", out: dict | None = None, *, scrub=lambda text: text) -> dict:
@@ -307,10 +311,12 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
             for key in list(moved_pairs)[:shown_per_section]:
                 lines.append(f"MOVED {name} {section} {key} -> {moved_pairs[key]}")
             changed = [key for key in changed if key not in moved_pairs and key not in moved_pairs.values()]
-            # The same value under a field whose declared default changed: only the =default mark differs.
+            # The same value under a field whose declared default changed: only the =default mark differs. A
+            # controller input (an option record's default aligned) or a checkpoint leaf (a checkpoint record's
+            # default removed); a result leaf whose mark changes is still an output difference.
             redefaulted = [
                 key for key in changed
-                if key in flat_a and key in flat_b and CONTROLLER_INPUT.match(key)
+                if key in flat_a and key in flat_b and (CONTROLLER_INPUT.match(key) or section == "checkpoints")
                 and _unmarked(flat_a[key]) == _unmarked(flat_b[key])
             ]
             counts["redefaulted"] += len(redefaulted)
@@ -386,7 +392,7 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
     if counts["redefaulted"] and not counts["outputs"] and not counts["trace"]:
         lines.append(
             f"controller inputs redefaulted ({counts['redefaulted']}); accepted: same values, the fields' declared "
-            "defaults changed"
+            "defaults changed (option inputs or checkpoint fields)"
         )
     return counts, lines
 
@@ -686,6 +692,10 @@ MUTATIONS = (
      "a K1 checkpoint loses the curve that drives image-size growth", True),
     ("class_checkpoint_weights_dropped", "class_weights=host_array(class_weights, np.float64),", "class_weights=None,",
      "a Class3D checkpoint loses the class weights", True),
+    # A checkpoint leaf's value change is an output difference even where the leaf's =default mark may change
+    # (the "redefaulted" class accepts only a mark change).
+    ("k1_checkpoint_class_weights_filled", "class_weights=None,\ndirection_prior=_host_direction_prior(direction_priors),", "class_weights=np.ones(1),\ndirection_prior=_host_direction_prior(direction_priors),",
+     "a K1 checkpoint records class weights it does not have", True),
     ("final_replay_reads_k1_layout", "if n_classes > 1:\nreturn apply_class_final_replay_state(", "if False:\nreturn apply_class_final_replay_state(",
      "the final-pass replay treats every run as K1", True),
     ("k1_final_replay_prior_order_dropped", "direction_priors[_half_idx] = DirectionPrior(_prior, _prior_order)", "direction_priors[_half_idx] = DirectionPrior(_prior, None)",

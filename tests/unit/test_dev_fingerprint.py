@@ -220,6 +220,25 @@ def test_a_controller_input_whose_default_changed_is_listed_and_accepted_but_a_c
         assert counts["redefaulted"] == 0 and counts["outputs"] == 1 and not fingerprint.accepted(counts)
 
 
+def test_a_checkpoint_field_whose_default_was_removed_is_listed_and_accepted_but_a_changed_value_is_not():
+    key = "[0]/<IterationSnapshot>/class_weights"
+    a = _fingerprint(k1=dict(_case({"/mean": "aa"}), checkpoints={key: "None =default"}))
+    b = _fingerprint(k1=dict(_case({"/mean": "aa"}), checkpoints={key: "None"}))
+    counts, lines = fingerprint.diff_fingerprints(a, b)
+    assert counts == {"outputs": 0, "added": 0, "retired": 0, "moved": 0, "redefaulted": 1, "trace": 0, "log": 0}
+    assert fingerprint.accepted(counts)
+    assert f"REDEFAULTED k1 checkpoints {key}: None =default -> None" in lines
+    # The same for a checkpoint leaf recorded as the repr of its flattened leaf.
+    a = _fingerprint(k1=dict(_case({"/mean": "aa"}), checkpoints={key: "'None =default'"}))
+    b = _fingerprint(k1=dict(_case({"/mean": "aa"}), checkpoints={key: "'None'"}))
+    counts, _ = fingerprint.diff_fingerprints(a, b)
+    assert counts["redefaulted"] == 1 and counts["outputs"] == 0 and fingerprint.accepted(counts)
+    # A changed checkpoint value is still an output difference, with or without the mark.
+    b = _fingerprint(k1=dict(_case({"/mean": "aa"}), checkpoints={key: "numpy float64 (2,) sha256:aa"}))
+    counts, _ = fingerprint.diff_fingerprints(a, b)
+    assert counts["redefaulted"] == 0 and counts["outputs"] == 1 and not fingerprint.accepted(counts)
+
+
 def test_a_dataclass_field_at_its_declared_default_is_marked_and_may_be_retired():
     import dataclasses
 
