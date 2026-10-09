@@ -554,10 +554,15 @@ def significant_coarse_parents(support, *, n_images: int, n_coarse_rot: int, n_c
     every_parent = np.asarray(csr.store_excluded, dtype=bool) | (n_significant == int(csr.n_samples))
     if bool(np.any(every_parent & (n_significant != 0))):
         return None
-    parents = np.unique(np.asarray(csr.ids, dtype=np.int64) // int(n_coarse_trans))
+    # Global supports can contain billions of cells. Scan bounded slices rather
+    # than allocating and sorting a second, int64 copy of the whole id buffer.
+    parent_present = np.zeros(int(n_coarse_rot), dtype=bool)
+    step = 1 << 20
+    for start in range(0, csr.ids.size, step):
+        parent_present[csr.ids[start : start + step] // int(n_coarse_trans)] = True
     if bool(np.any(n_significant == 0)):
-        parents = np.union1d(parents, [0])
-    return parents
+        parent_present[0] = True
+    return np.flatnonzero(parent_present)
 
 
 # ---------------------------------------------------------------------------

@@ -32,6 +32,7 @@ from relax.sparse_pass2.resident_significance import (
     compact_batch_significance_classes,
     csr_capacity_for_total,
     host_support_rows,
+    significant_coarse_parents,
 )
 
 pytestmark = pytest.mark.unit
@@ -719,3 +720,57 @@ def test_seed_iteration_supports_without_a_csr_stay_plain_lists():
     by_class = seed_iteration_supports(supports, [1, 0], 2)
     assert all(type(rows) is list for rows in by_class)
     assert by_class[0][1] is supports[1] and by_class[1][0] is supports[0] and by_class[0][0].size == 0
+
+
+def _parents_by_unique(csr, n_coarse_trans):
+    """The previous whole-buffer route: np.unique of an int64 copy, with parent 0 for an empty support."""
+
+    parents = np.unique(np.asarray(csr.ids, dtype=np.int64) // int(n_coarse_trans))
+    if bool(np.any(np.asarray(csr.n_significant) == 0)):
+        parents = np.union1d(parents, [0])
+    return parents
+
+
+@pytest.mark.parametrize("with_empty_image", [False, True])
+def test_coarse_parents_slice_scan_matches_unique_across_id_slices(with_empty_image):
+    """Ids longer than one 2**20 slice give the parents np.unique gave; an empty image adds parent 0."""
+
+    rng = np.random.default_rng(30)
+    n_coarse_rot, n_coarse_trans = 200_000, 7
+    # Distinct sorted cells per image; parent 0 appears only through the empty image (the ids start at parent 1).
+    lengths = np.array([700_000, 0 if with_empty_image else 300_000, 600_000], dtype=np.int32)
+    ids = [
+        np.sort(rng.choice(np.arange(n_coarse_trans, n_coarse_rot * n_coarse_trans), size=length, replace=False))
+        .astype(np.int32)
+        for length in lengths
+    ]
+    assert sum(int(length) for length in lengths) > (1 << 20)
+    csr = build_coarse_significance_csr(
+        n_images=3, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans,
+        n_significant_per_batch=[lengths], store_excluded_per_batch=[np.zeros(3, dtype=bool)],
+        ids_per_batch=[np.concatenate(ids)],
+    )
+    support = DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+
+    parents = significant_coarse_parents(
+        support, n_images=3, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans,
+    )
+
+    expected = _parents_by_unique(csr, n_coarse_trans)
+    assert parents.dtype == expected.dtype
+    np.testing.assert_array_equal(parents, expected)
+    assert (0 in parents) == with_empty_image
+
+
+def test_coarse_parents_of_only_empty_images_are_parent_zero():
+    csr = build_coarse_significance_csr(
+        n_images=2, n_coarse_rot=8, n_coarse_trans=3,
+        n_significant_per_batch=[np.zeros(2, dtype=np.int32)],
+        store_excluded_per_batch=[np.zeros(2, dtype=bool)], ids_per_batch=[np.zeros(0, dtype=np.int32)],
+    )
+    support = DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+
+    parents = significant_coarse_parents(support, n_images=2, n_coarse_rot=8, n_coarse_trans=3)
+
+    np.testing.assert_array_equal(parents, _parents_by_unique(csr, 3))
+    np.testing.assert_array_equal(parents, [0])
