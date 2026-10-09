@@ -276,7 +276,7 @@ def test_collate_keeps_device_arrays_on_device():
     [
         (
             "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH",
-            "relax.scoring.significance:_coarse_pad_final_image_batch_enabled",
+            "relax.scoring.pass1_plan:_coarse_pad_final_image_batch_enabled",
             True,  # on by default since the K=1 resident flip
         ),
         (

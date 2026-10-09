@@ -213,7 +213,7 @@ MUTATIONS = (
     ("adaptive_fraction", "adaptive_fraction=float(plan.adaptive_fraction),",
      "adaptive_fraction=0.5 * float(plan.adaptive_fraction),",
      "the float32 support takes half the adaptive fraction", True),
-    ("tie_ulps", "tie_score_ulps=int(relion_f32_coarse_tie_ulps),", "tie_score_ulps=int(relion_f32_coarse_tie_ulps) + 4000,",
+    ("tie_ulps", "tie_score_ulps=int(request.relion_f32_coarse_tie_ulps),", "tie_score_ulps=int(request.relion_f32_coarse_tie_ulps) + 4000,",
      "the support's tie tolerance is 4000 ULPs wider", True),
     ("exact_weight_order", "relion_exact_coarse_weight_order = bool(relion_f32_coarse_support_enabled and n_classes == 1)",
      "relion_exact_coarse_weight_order = False",
@@ -291,8 +291,8 @@ MUTATIONS = (
     ("tree_runner_score_installed", "class_second_score=state.class_second_score.at[rows_jax].set(rescored_runner_score[applied_rows]),",
      "class_second_score=state.class_second_score.at[rows_jax].set(rescored_winner_score[applied_rows]),",
      "the class runner-up score takes the winner's rescored score", True),
-    ("prefetch_order", "iter_indexed_batches(experiment_dataset, image_indices, image_batch_size)",
-     "iter_indexed_batches(experiment_dataset, image_indices[::-1], image_batch_size)",
+    ("prefetch_order", "iter_indexed_batches(plan.experiment_dataset, image_indices, plan.image_batch_size)",
+     "iter_indexed_batches(plan.experiment_dataset, image_indices[::-1], plan.image_batch_size)",
      "the image batches arrive in reverse order", True),
 )
 

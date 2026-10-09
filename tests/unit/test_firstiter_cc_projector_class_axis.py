@@ -18,7 +18,7 @@ def test_k1_single_slab_gains_class_axis_before_upload():
     Consolidation 41128dcd0 kept the 4-D-only check, so every real-data K=1 run
     failed in iteration 1 (e.g. 'got (79, 79, 40)').
     """
-    from relax.scoring.significance import _class_stacked_coarse_relion_projector
+    from relax.scoring.pass1_plan import _class_stacked_coarse_relion_projector
 
     slab = _slab((23, 23, 12))
     result = _class_stacked_coarse_relion_projector(slab, 1, use_float64_scoring=False, use_float64_projections=False)
@@ -28,7 +28,7 @@ def test_k1_single_slab_gains_class_axis_before_upload():
 
 
 def test_class_stacked_projector_passes_through_and_rejects_mismatches():
-    from relax.scoring.significance import _class_stacked_coarse_relion_projector
+    from relax.scoring.pass1_plan import _class_stacked_coarse_relion_projector
 
     stacked = _slab((2, 9, 9, 6))
     result = _class_stacked_coarse_relion_projector(

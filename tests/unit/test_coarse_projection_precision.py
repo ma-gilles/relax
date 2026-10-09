@@ -1,8 +1,10 @@
 """Consumer precision must precede projection, not merely narrow scores."""
 import numpy as np
 import pytest
-from relax.scoring.significance import _prepare_coarse_relion_projector
 from helpers.float_compare import assert_matches
+
+from relax.scoring.pass1_plan import _prepare_coarse_relion_projector
+
 pytestmark = pytest.mark.unit
 
 

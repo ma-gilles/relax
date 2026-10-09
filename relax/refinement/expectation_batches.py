@@ -207,7 +207,7 @@ def prepare_half_batches(
                 planner, compact_k1_relion_layout=True,
                 model_current_size_for_batch=model_size,
             )
-            from relax.scoring.significance import _global_pass1_relion_projector_texture_enabled
+            from relax.scoring.pass1_plan import _global_pass1_relion_projector_texture_enabled
             if (projector_half.dtype == np.dtype(np.complex64)
                 and _global_pass1_relion_projector_texture_enabled()
                 and firstiter_cc_tree_rescore_max_margin is None):

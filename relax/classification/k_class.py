@@ -723,10 +723,8 @@ def _run_dense_k_class_joint_firstiter_score_probe(
 
     from relax.diagnostics.coarse_gaussian_diagnostics import _significance_debug_dump_matches
     from relax.helpers.projection import compact_relion_projector_half_for_centered_indices
-    from relax.scoring.significance import (
-        _compute_k_class_significance_batched,
-        _global_pass1_relion_projector_texture_enabled,
-    )
+    from relax.scoring.pass1_plan import _global_pass1_relion_projector_texture_enabled
+    from relax.scoring.significance import _compute_k_class_significance_batched
 
     means_array = _as_class_means(means_array)
     n_classes = int(means_array.shape[0])
