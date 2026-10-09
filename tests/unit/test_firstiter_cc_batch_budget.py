@@ -15,9 +15,9 @@ from relax.classification.k_class_results import KClassEMResult
 from relax.dense import scoring_policy
 from relax.helpers import batch_planning, oversampling
 from relax.helpers.batch_planning import (
-    _estimate_relion_em_batch_sizes,
-    _safe_dense_k_class_rotation_block_size,
-    _safe_firstiter_cc_image_batch_size,
+    estimate_relion_em_batch_sizes,
+    safe_dense_k_class_rotation_block_size,
+    safe_firstiter_cc_image_batch_size,
 )
 from relax.helpers.types import NoiseStats, make_relion_stats
 from relax.refinement import (
@@ -315,27 +315,27 @@ def test_firstiter_cc_budget_preserves_256_k4_completion_batch_size():
     # K=4 completion benchmarks use 256^2 images and 116 fine translations
     # at adaptive_oversampling=1. The cap must not collapse the requested
     # batch size 50 back to single digits on A100/H100 runs.
-    assert _safe_firstiter_cc_image_batch_size(116, (256, 256)) >= 50
+    assert safe_firstiter_cc_image_batch_size(116, (256, 256)) >= 50
 
 
 def test_firstiter_cc_budget_still_caps_larger_tiles():
-    assert 1 <= _safe_firstiter_cc_image_batch_size(137, (384, 384)) < 250
+    assert 1 <= safe_firstiter_cc_image_batch_size(137, (384, 384)) < 250
 
 
 def test_firstiter_cc_budget_env_override_lifts_debug_cap(monkeypatch):
-    default_batch = _safe_firstiter_cc_image_batch_size(116, (256, 256))
+    default_batch = safe_firstiter_cc_image_batch_size(116, (256, 256))
     assert default_batch == 70
 
     monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", str(3 * 268_435_456))
 
-    assert _safe_firstiter_cc_image_batch_size(116, (256, 256)) >= 187
+    assert safe_firstiter_cc_image_batch_size(116, (256, 256)) >= 187
 
 
 def test_firstiter_cc_budget_env_override_rejects_invalid(monkeypatch):
     monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", "0")
 
     try:
-        _safe_firstiter_cc_image_batch_size(116, (256, 256))
+        safe_firstiter_cc_image_batch_size(116, (256, 256))
     except ValueError as exc:
         assert "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET" in str(exc)
     else:
@@ -420,14 +420,14 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
 
     assert dispatch.result == "result"
     assert dispatch.n_fine_translations == 116
-    expected_fine_ibs = min(88, _safe_firstiter_cc_image_batch_size(116, (256, 256)))
-    expected_coarse_ibs = min(120, _safe_firstiter_cc_image_batch_size(29, (256, 256)))
+    expected_fine_ibs = min(88, safe_firstiter_cc_image_batch_size(116, (256, 256)))
+    expected_coarse_ibs = min(120, safe_firstiter_cc_image_batch_size(29, (256, 256)))
     assert captured["image_batch_size"] == expected_fine_ibs
-    assert captured["rotation_block_size"] == min(576, _safe_dense_k_class_rotation_block_size(116, expected_fine_ibs))
+    assert captured["rotation_block_size"] == min(576, safe_dense_k_class_rotation_block_size(116, expected_fine_ibs))
     assert captured["significance_image_batch_size"] == expected_coarse_ibs
     assert captured["significance_rotation_block_size"] == min(
         700,
-        _safe_dense_k_class_rotation_block_size(29, expected_coarse_ibs),
+        safe_dense_k_class_rotation_block_size(29, expected_coarse_ibs),
     )
     assert captured["firstiter_cc_pass2_only_best_coarse"] is True
     assert captured["relion_fine_mstep_prune"] is True
@@ -582,9 +582,9 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
         (4608, 116, n_classes, (256, 256), 90),
         (576, 29, n_classes, (256, 256), 40),
     ]
-    assert captured["image_batch_size"] == _safe_firstiter_cc_image_batch_size(116, (256, 256))
+    assert captured["image_batch_size"] == safe_firstiter_cc_image_batch_size(116, (256, 256))
     assert captured["significance_image_batch_size"] == (133 if separate_coarse else 187)
-    assert captured["rotation_block_size"] == min(700, _safe_dense_k_class_rotation_block_size(116, captured["image_batch_size"]))
+    assert captured["rotation_block_size"] == min(700, safe_dense_k_class_rotation_block_size(116, captured["image_batch_size"]))
     # K-class applies the existing coarse score-tile cap; K=1 retains its batch.
     assert captured["significance_rotation_block_size"] == (333 if separate_coarse else (700 if n_classes == 1 else 368))
     assert captured["bpref_device_signature_active"] is True
@@ -728,7 +728,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
 
 
 def test_dense_global_k1_batch_plan_accounts_for_pose_pixel_tile():
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=500,
         requested_rotation_block_size=40000,
         n_rot=36864,
@@ -747,7 +747,7 @@ def test_dense_global_k1_batch_plan_accounts_for_pose_pixel_tile():
 
 
 def test_dense_global_k1_high_current_size_keeps_pose_pixel_tile_below_large_allocations():
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=500,
         requested_rotation_block_size=40000,
         n_rot=36864,

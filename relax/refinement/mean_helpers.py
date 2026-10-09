@@ -23,7 +23,7 @@ from relax.helpers.orientation_priors import (
 )
 from relax.helpers.resolution import (
     _firstiter_cc_ini_high_tapered,
-    _firstiter_cc_ini_high_tau2_taper,
+    firstiter_cc_ini_high_tau2_taper,
     shell_index_to_resolution_angstrom,
 )
 from relax.helpers.timing import Stopwatch
@@ -1779,7 +1779,7 @@ def taper_first_cc_k1_prior(
     half -> prior/SSNR update order. The expanded taper and radial grid are temporary implementation
     arrays; model installation and shared/per-half policy stay with the caller.
     """
-    tau2_taper = _firstiter_cc_ini_high_tau2_taper(
+    tau2_taper = firstiter_cc_ini_high_tau2_taper(
         len(details_per_half[0]["prior_shells"]),
         settings.box_size,
         pixel_size_angstrom,

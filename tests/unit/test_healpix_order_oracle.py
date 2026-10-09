@@ -1,7 +1,7 @@
 import pytest
 from helpers.run_options import stand_in
 
-from relax.helpers.convergence import RefinementState, _apply_relion_healpix_order_oracle
+from relax.helpers.convergence import RefinementState, apply_relion_healpix_order_oracle
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
     KClassOptions,
@@ -47,18 +47,18 @@ def test_relion_healpix_order_oracle_holds_then_advances_sampling_state():
         nr_iter_wo_large_hidden_variable_changes=2,
     )
 
-    held = _apply_relion_healpix_order_oracle(state, 3, iteration_number=8)
+    held = apply_relion_healpix_order_oracle(state, 3, iteration_number=8)
     assert held is state
     assert not held.do_local_search
 
-    advanced = _apply_relion_healpix_order_oracle(held, 4, iteration_number=10)
+    advanced = apply_relion_healpix_order_oracle(held, 4, iteration_number=10)
     assert advanced.healpix_order == 4
     assert advanced.do_local_search
     assert advanced.nr_iter_wo_resol_gain == 0
     assert advanced.nr_iter_wo_large_hidden_variable_changes == 0
 
     with pytest.raises(ValueError, match="cannot coarsen the active state"):
-        _apply_relion_healpix_order_oracle(advanced, 3, iteration_number=11)
+        apply_relion_healpix_order_oracle(advanced, 3, iteration_number=11)
 
 
 @pytest.mark.parametrize("orders", [None, [3, 3, 4], (3, 3, 4)])

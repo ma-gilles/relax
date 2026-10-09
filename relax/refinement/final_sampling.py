@@ -13,7 +13,7 @@ from relax import sampling
 from relax.helpers.convergence import (
     RefinementState,
     _exhaustive_grid_order_for_state,
-    _native_final_perturbation_healpix_order,
+    native_final_perturbation_healpix_order,
 )
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.ports import InputSource
@@ -95,7 +95,7 @@ def native_final_sampling_settings(
     return FinalSamplingSettings(
         relion_iteration=relion_iteration,
         grid_order=grid_order,
-        perturbation_order=_native_final_perturbation_healpix_order(state, grid_order),
+        perturbation_order=native_final_perturbation_healpix_order(state, grid_order),
         translation_range=state.translation_range,
         translation_step=state.translation_step,
         pixel_size_angstrom=image_geometry.pixel_size_angstrom,

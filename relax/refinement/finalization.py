@@ -22,7 +22,7 @@ from relax.dense.scoring_policy import (
 from relax.diagnostics import bpref_diagnostics
 from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
-from relax.helpers.expected_accuracy import _expected_accuracy_class_ids
+from relax.helpers.expected_accuracy import expected_accuracy_class_ids
 from relax.helpers.orientation_priors import relion_local_search_sigmas, relion_translation_search_base
 from relax.helpers.resolution import (
     class_current_resolution_shell,
@@ -225,7 +225,7 @@ def run_final_all_data(
                 "final expectation remains fail-closed",
             )
         else:
-            final_accuracy_class_ids = _expected_accuracy_class_ids(
+            final_accuracy_class_ids = expected_accuracy_class_ids(
                 class_assignments[0],
                 k_class_enabled=k_class_enabled,
                 n_units=expected_accuracy_inputs.dataset.n_units,

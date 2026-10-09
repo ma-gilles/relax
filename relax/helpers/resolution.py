@@ -212,7 +212,7 @@ def relion_coarse_image_size(
     )
 
 
-def _bootstrap_current_size_relion(init_current_size: int, box_size: int, incr_size: int = 10) -> int:
+def bootstrap_current_size_relion(init_current_size: int, box_size: int, incr_size: int = 10) -> int:
     """Match RELION's first expectation-time current_size growth step.
 
     RELION seeds the initial resolution from ``--ini_high`` and then immediately
@@ -241,7 +241,7 @@ def bootstrap_current_size_from_ini_high_relion(
     if ini_high_angstrom is None or float(ini_high_angstrom) <= 0.0:
         return None
     init_shell = max(1, int(np.round(float(box_size) * float(voxel_size) / float(ini_high_angstrom))))
-    return _bootstrap_current_size_relion(2 * init_shell, box_size=box_size, incr_size=incr_size)
+    return bootstrap_current_size_relion(2 * init_shell, box_size=box_size, incr_size=incr_size)
 
 
 def _zero_shells_past_current_size(shell_curve, *, current_size, box_size, dtype=np.float32):
@@ -352,7 +352,7 @@ def _firstiter_cc_ini_high_resolution_shell(box_size, voxel_size, ini_high_angst
     return max(1, min(int(box_size) // 2, shell))
 
 
-def _firstiter_cc_scheduling_resolution_shell(
+def firstiter_cc_scheduling_resolution_shell(
     resolution_shell,
     *,
     emulate_relion_firstiter_cc,
@@ -417,7 +417,7 @@ def estimate_k1_iteration_resolution(
     )
     observed_shell = resolution_from_data_vs_prior(data_vs_prior, box_size=box_size, allow_high_res_recovery=True)
     scheduling_shell = float(
-        _firstiter_cc_scheduling_resolution_shell(
+        firstiter_cc_scheduling_resolution_shell(
             observed_shell,
             emulate_relion_firstiter_cc=emulate_relion_firstiter_cc,
             ini_high_angstrom=ini_high_angstrom,
@@ -455,7 +455,7 @@ def estimate_class_iteration_resolution(
     )
     observed_shell = max(class_resolution_shells(data_vs_prior, box_size=box_size))
     scheduling_shell = float(
-        _firstiter_cc_scheduling_resolution_shell(
+        firstiter_cc_scheduling_resolution_shell(
             observed_shell,
             emulate_relion_firstiter_cc=emulate_relion_firstiter_cc,
             ini_high_angstrom=ini_high_angstrom,
@@ -468,7 +468,7 @@ def estimate_class_iteration_resolution(
 
 
 
-def _firstiter_cc_ini_high_tau2_taper(
+def firstiter_cc_ini_high_tau2_taper(
     n_shells,
     box_size,
     voxel_size,
@@ -499,14 +499,14 @@ def _firstiter_cc_ini_high_tapered(
     *,
     filter_edgewidth,
 ):
-    """``values`` times :func:`_firstiter_cc_ini_high_tau2_taper` along its last (shell) axis.
+    """``values`` times :func:`firstiter_cc_ini_high_tau2_taper` along its last (shell) axis.
 
     Class3D's per-class tau2 and data_vs_prior curves ``[K, n_shells]``
     (ml_optimiser.cpp:6389-6420); the result keeps ``values``' dtype.
     """
 
     values = np.asarray(values)
-    taper = _firstiter_cc_ini_high_tau2_taper(
+    taper = firstiter_cc_ini_high_tau2_taper(
         int(values.shape[-1]),
         box_size,
         voxel_size,

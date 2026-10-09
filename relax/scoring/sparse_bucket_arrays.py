@@ -12,7 +12,7 @@ import logging
 
 import numpy as np
 
-from relax.helpers.batch_planning import _plan_consecutive_padded_batches
+from relax.helpers.batch_planning import plan_consecutive_padded_batches
 from relax.helpers.env_flags import parse_env_binary_flag, parse_env_flag
 from relax.helpers.shape_buckets import pow2_ceil, pow2_floor, power_of_two_bucket
 from relax.local.local_layout import _exact_bucket_rotation_size
@@ -144,7 +144,7 @@ def _bucket_pass2_inputs(
                         )
                     run_start = run_end
                 return buckets
-            plans = _plan_consecutive_padded_batches(
+            plans = plan_consecutive_padded_batches(
                 bucket_sizes,
                 processing_order=processing_order,
                 target_items_per_batch=int(processing_order_chunk_size),

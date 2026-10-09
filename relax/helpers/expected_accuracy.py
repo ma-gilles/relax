@@ -96,7 +96,7 @@ class Half1AccuracyInputs(NamedTuple):
         )
 
 
-def _expected_accuracy_class_ids(class_assignments_half1, *, k_class_enabled, n_units):
+def expected_accuracy_class_ids(class_assignments_half1, *, k_class_enabled, n_units):
     """Half-1 class labels of the accuracy trials: K-class assignments when present, else class 0."""
 
     if k_class_enabled and class_assignments_half1 is not None:
@@ -177,7 +177,7 @@ def estimate_iteration_accuracy(
                 iteration + 1,
             )
         else:
-            accuracy_class_ids = _expected_accuracy_class_ids(
+            accuracy_class_ids = expected_accuracy_class_ids(
                 class_assignments,
                 k_class_enabled=n_classes > 1,
                 n_units=inputs.dataset.n_units,

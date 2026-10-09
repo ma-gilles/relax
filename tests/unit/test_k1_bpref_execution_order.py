@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from relax.classification.k_class import _apply_bpref_particle_order_policy
-from relax.helpers.batch_planning import _plan_consecutive_padded_batches
+from relax.helpers.batch_planning import plan_consecutive_padded_batches
 from relax.helpers.env_flags import parse_env_flag
 from relax.parity.relion_replay import _validate_bpref_particle_order_scope
 from relax.scoring.sparse_bucket_arrays import _bucket_pass2_inputs
@@ -77,7 +77,7 @@ def test_shared_consecutive_padded_planner_preserves_order_and_pool_alignment():
     padded_sizes = np.asarray([32, 64, 16, 128, 32, 16, 256], dtype=np.int64)
     order = np.asarray([2, 0, 1, 4, 3, 5, 6], dtype=np.int64)
 
-    plans = _plan_consecutive_padded_batches(
+    plans = plan_consecutive_padded_batches(
         padded_sizes,
         processing_order=order,
         target_items_per_batch=4,
@@ -98,7 +98,7 @@ def test_shared_consecutive_padded_planner_preserves_order_and_pool_alignment():
 
 def test_shared_consecutive_padded_planner_validates_processing_order():
     with pytest.raises(ValueError, match="must be a permutation"):
-        _plan_consecutive_padded_batches(
+        plan_consecutive_padded_batches(
             [16, 32, 64],
             processing_order=[0, 0, 2],
             target_items_per_batch=2,
@@ -116,7 +116,7 @@ def test_shared_consecutive_padded_planner_rejects_limits_that_split_a_pool(
     max_items,
 ):
     with pytest.raises(ValueError, match="too small to preserve"):
-        _plan_consecutive_padded_batches(
+        plan_consecutive_padded_batches(
             [32, 32, 32],
             target_items_per_batch=target_items,
             max_items_per_batch=max_items,
@@ -127,7 +127,7 @@ def test_shared_consecutive_padded_planner_rejects_limits_that_split_a_pool(
 
 def test_shared_consecutive_padded_planner_rejects_an_oversize_aligned_pool():
     with pytest.raises(ValueError, match="too small for one aligned item group"):
-        _plan_consecutive_padded_batches(
+        plan_consecutive_padded_batches(
             [32, 32, 32],
             target_items_per_batch=3,
             max_items_per_batch=3,
@@ -138,7 +138,7 @@ def test_shared_consecutive_padded_planner_rejects_an_oversize_aligned_pool():
 
 @pytest.mark.parametrize("padded_sizes", [[32], [32, 32], [32, 32, 32, 32], [32, 32, 32, 32, 32]])
 def test_shared_consecutive_padded_planner_allows_a_fitting_final_incomplete_pool(padded_sizes):
-    plans = _plan_consecutive_padded_batches(
+    plans = plan_consecutive_padded_batches(
         padded_sizes,
         target_items_per_batch=3,
         max_items_per_batch=3,
@@ -153,7 +153,7 @@ def test_shared_consecutive_padded_planner_allows_a_fitting_final_incomplete_poo
 
 
 def test_shared_consecutive_padded_planner_keeps_alignment_one_oversize_progress():
-    plans = _plan_consecutive_padded_batches(
+    plans = plan_consecutive_padded_batches(
         [128],
         target_items_per_batch=1,
         max_items_per_batch=1,

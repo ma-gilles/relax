@@ -11,15 +11,15 @@ import numpy as np
 
 from relax.classification.k_class_inputs import _select_projector_half_for_class
 from relax.helpers.batch_planning import (
-    _RELION_EM_COMPACT_K1_FIXED_BASE_GB,
-    _estimate_relion_em_batch_sizes,
-    _plan_adaptive_dense_batch_sizes,
-    _safe_dense_k_class_rotation_block_size,
-    _safe_firstiter_cc_image_batch_size,
+    RELION_EM_COMPACT_K1_FIXED_BASE_GB,
+    estimate_relion_em_batch_sizes,
+    plan_adaptive_dense_batch_sizes,
+    safe_dense_k_class_rotation_block_size,
+    safe_firstiter_cc_image_batch_size,
 )
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
-from relax.helpers.projection import _host_relion_projector_texture_enabled
+from relax.helpers.projection import host_relion_projector_texture_enabled
 from relax.refinement import optics_shapes
 from relax.refinement.refinement_options import ExecutionOptions
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
@@ -71,7 +71,7 @@ class BatchPlanner:
             )
             if free_bytes is not None and free_bytes > 0:
                 runtime_free_memory_gb = free_bytes / 1e9
-        plan = _estimate_relion_em_batch_sizes(
+        plan = estimate_relion_em_batch_sizes(
             requested_image_batch_size=self.requested.image_batch_size,
             requested_rotation_block_size=self.requested.rotation_block_size,
             n_rot=n_rot,
@@ -193,7 +193,7 @@ def prepare_half_batches(
     if (
         use_adaptive and not use_local and not k_class_enabled
         and relion_firstiter_cc_this_iter and compact_precision
-        and _host_relion_projector_texture_enabled(
+        and host_relion_projector_texture_enabled(
             projector_half, r_max=None if projector is None else projector.r_max,
             padding_factor=PROJECTION_PADDING_FACTOR, allow_float32_cast=True,
         )
@@ -212,7 +212,7 @@ def prepare_half_batches(
             score_complex_dtype=np.complex64,
             recon_volume_size=int(np.prod(half_volume_accumulator_shape(recon_shape))),
             bpref_device_signature_active=bpref_device_signature_active,
-            fixed_base_bytes=int(_RELION_EM_COMPACT_K1_FIXED_BASE_GB * 1e9),
+            fixed_base_bytes=int(RELION_EM_COMPACT_K1_FIXED_BASE_GB * 1e9),
         )
         if decision.enabled:
             safe_batch_sizes_for_half = partial(
@@ -232,7 +232,7 @@ def prepare_half_batches(
                 model_size, decision.deferred_firstiter_bpref, projector_half.nbytes,
             )
     if use_adaptive:
-        adaptive_batch_plan = _plan_adaptive_dense_batch_sizes(
+        adaptive_batch_plan = plan_adaptive_dense_batch_sizes(
             n_rot=rotations.shape[0],
             n_trans=translations.shape[0],
             n_classes=n_classes,
@@ -252,7 +252,7 @@ def prepare_half_batches(
             class_batch_overrides = _class_adaptive_batch_overrides(
                 dataset,
                 plan=partial(
-                    _plan_adaptive_dense_batch_sizes,
+                    plan_adaptive_dense_batch_sizes,
                     n_rot=rotations.shape[0],
                     n_trans=translations.shape[0],
                     n_classes=n_classes,
@@ -273,14 +273,14 @@ def prepare_half_batches(
         )
         k_class_image_batch_size = min(
             k_class_image_batch_size,
-            _safe_firstiter_cc_image_batch_size(
+            safe_firstiter_cc_image_batch_size(
                 translations.shape[0],
                 dataset.image_shape,
             ),
         )
         dense_k_class_rotation_block_size = min(
             dense_k_class_rotation_block_size,
-            _safe_dense_k_class_rotation_block_size(
+            safe_dense_k_class_rotation_block_size(
                 translations.shape[0],
                 k_class_image_batch_size,
             ),

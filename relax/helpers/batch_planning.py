@@ -1,6 +1,6 @@
 """GPU-aware batch sizing for the EM iteration loop.
 
-``_estimate_relion_em_batch_sizes`` chooses microbatch sizes from pose-grid,
+``estimate_relion_em_batch_sizes`` chooses microbatch sizes from pose-grid,
 image, class, and GPU size so the dense RELION loop's transient memory
 drivers (score tensor + projection tile + translation-expanded half-images)
 stay within available memory. Whether raw particles are held in host memory
@@ -44,7 +44,7 @@ _RELION_EM_BATCH_RUNTIME_FREE_FRACTION = 0.80
 _RELION_EM_BATCH_PROJECTION_FRACTION_ENV = "RELAX_RELION_EM_BATCH_PROJECTION_FRACTION"
 
 # Compact estimates require explicit single-texture lifetime qualification.
-_RELION_EM_COMPACT_K1_FIXED_BASE_GB = 4.0
+RELION_EM_COMPACT_K1_FIXED_BASE_GB = 4.0
 
 
 # Dense reconstruction-tile and class-hypothesis limits.
@@ -121,7 +121,7 @@ def _firstiter_cc_recon_complex_budget() -> int:
     return value
 
 
-def _safe_firstiter_cc_image_batch_size(n_trans, image_shape):
+def safe_firstiter_cc_image_batch_size(n_trans, image_shape):
     """Cap dense K-class reconstruction batches by the temporary footprint.
 
     ``prepare_reconstruction_batch`` materializes a
@@ -138,7 +138,7 @@ def _safe_firstiter_cc_image_batch_size(n_trans, image_shape):
     return max(1, _firstiter_cc_recon_complex_budget() // max(int(n_trans) * n_half, 1))
 
 
-def _safe_dense_k_class_rotation_block_size(n_trans, image_batch_size):
+def safe_dense_k_class_rotation_block_size(n_trans, image_batch_size):
     """Cap dense K-class rotation buckets by a microbatch hypothesis budget.
 
     The dense K-class adaptive probe still has to evaluate a dense (batch,
@@ -164,7 +164,7 @@ class _AdaptiveDenseBatchSizes:
     significance_rotation_block_size: int
 
 
-def _plan_adaptive_dense_batch_sizes(
+def plan_adaptive_dense_batch_sizes(
     *,
     n_rot: int,
     n_trans: int,
@@ -187,14 +187,14 @@ def _plan_adaptive_dense_batch_sizes(
     if n_classes > 1:
         pass2_image_batch_size = min(
             pass2_image_batch_size,
-            _safe_firstiter_cc_image_batch_size(
+            safe_firstiter_cc_image_batch_size(
                 n_trans,
                 image_shape,
             ),
         )
         pass2_rotation_block_size = min(
             pass2_rotation_block_size,
-            _safe_dense_k_class_rotation_block_size(
+            safe_dense_k_class_rotation_block_size(
                 n_trans,
                 pass2_image_batch_size,
             ),
@@ -254,7 +254,7 @@ def _plan_kclass_adaptive_grid_batch_sizes(
     )
     pass2_image_batch_size = min(
         pass2_image_batch_size,
-        _safe_firstiter_cc_image_batch_size(
+        safe_firstiter_cc_image_batch_size(
             int(np.asarray(fine_translations).shape[0]),
             image_shape,
         ),
@@ -262,7 +262,7 @@ def _plan_kclass_adaptive_grid_batch_sizes(
     if int(n_classes) > 1:
         pass2_rotation_block_size = min(
             pass2_rotation_block_size,
-            _safe_dense_k_class_rotation_block_size(
+            safe_dense_k_class_rotation_block_size(
                 int(np.asarray(fine_translations).shape[0]),
                 pass2_image_batch_size,
             ),
@@ -282,7 +282,7 @@ def _plan_kclass_adaptive_grid_batch_sizes(
     )
     significance_image_batch_size = min(
         significance_image_batch_size,
-        _safe_firstiter_cc_image_batch_size(
+        safe_firstiter_cc_image_batch_size(
             int(np.asarray(coarse_translations).shape[0]),
             image_shape,
         ),
@@ -290,7 +290,7 @@ def _plan_kclass_adaptive_grid_batch_sizes(
     if int(n_classes) > 1:
         significance_rotation_block_size = min(
             significance_rotation_block_size,
-            _safe_dense_k_class_rotation_block_size(
+            safe_dense_k_class_rotation_block_size(
                 int(np.asarray(coarse_translations).shape[0]),
                 significance_image_batch_size,
             ),
@@ -313,7 +313,7 @@ class _ConsecutivePaddedBatch:
     padded_item_capacity: int
 
 
-def _plan_consecutive_padded_batches(
+def plan_consecutive_padded_batches(
     padded_sizes,
     *,
     processing_order=None,
@@ -452,7 +452,7 @@ def _active_half_spectrum_pixels(image_shape, current_size: int | None) -> int:
     return max(1, min(full_half_pixels, int(np.count_nonzero(keep))))
 
 
-def _estimate_relion_em_batch_sizes(
+def estimate_relion_em_batch_sizes(
     *,
     requested_image_batch_size: int,
     requested_rotation_block_size: int,
@@ -594,7 +594,7 @@ def _estimate_relion_em_batch_sizes(
             # planner boundary and must be subtracted from live free memory.
             persistent_bytes = score_projector_bytes + bpref_bytes
             persistent_gb = (
-                _RELION_EM_COMPACT_K1_FIXED_BASE_GB
+                RELION_EM_COMPACT_K1_FIXED_BASE_GB
                 + persistent_bytes / 1e9
             )
             pending_score_persistent_gb = persistent_bytes / 1e9
@@ -602,7 +602,7 @@ def _estimate_relion_em_batch_sizes(
         else:
             # The fresh K=1 path defers BPref until the Projector texture
             # closes; these allocations are phase alternatives.
-            persistent_gb = _RELION_EM_COMPACT_K1_FIXED_BASE_GB + max(
+            persistent_gb = RELION_EM_COMPACT_K1_FIXED_BASE_GB + max(
                 score_projector_bytes,
                 bpref_bytes,
             ) / 1e9
@@ -815,7 +815,7 @@ def _estimate_relion_em_batch_sizes(
     )
 
 
-def _image_backend(ds):
+def image_backend(ds):
     return getattr(getattr(ds, "image_source", None), "backend", None)
 
 

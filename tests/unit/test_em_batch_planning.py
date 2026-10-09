@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from recovar import utils as recovar_utils
 
-from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
+from relax.helpers.batch_planning import estimate_relion_em_batch_sizes
 from relax.local.local_layout import (
     LocalHypothesisLayout,
     _local_search_engine_rotation_block_size,
@@ -46,7 +46,7 @@ def test_local_search_engine_rotation_block_size_caps_dense_tiles():
 
 
 def test_relion_em_batch_sizing_preserves_small_safe_requests():
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=4,
         requested_rotation_block_size=8,
         n_rot=8,
@@ -63,7 +63,7 @@ def test_relion_em_batch_sizing_preserves_small_safe_requests():
 
 
 def test_relion_em_batch_sizing_clamps_highres_projection_tiles():
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
         requested_rotation_block_size=20000,
         n_rot=294912,
@@ -84,7 +84,7 @@ def test_relion_em_batch_sizing_clamps_highres_projection_tiles():
 
 
 def test_relion_em_batch_sizing_does_not_pad_beyond_actual_rotation_grid():
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
         requested_rotation_block_size=20000,
         n_rot=4608,
@@ -106,7 +106,7 @@ def test_relion_em_batch_sizing_uses_runtime_gpu_occupancy(monkeypatch):
     monkeypatch.setattr(recovar_utils, "get_gpu_memory_total", lambda: 80.0)
     monkeypatch.setattr(recovar_utils, "get_gpu_memory_used", lambda: 60.0)
 
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
         requested_rotation_block_size=20000,
         n_rot=4608,
@@ -127,7 +127,7 @@ def test_relion_em_batch_sizing_caps_runtime_highres_local_translation_tile(monk
     monkeypatch.setattr(recovar_utils, "get_gpu_memory_total", lambda: 80.0)
     monkeypatch.setattr(recovar_utils, "get_gpu_memory_used", lambda: 24.0)
 
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
         requested_rotation_block_size=4608,
         n_rot=4608,
@@ -148,7 +148,7 @@ def test_relion_em_batch_sizing_caps_dense_big_jit_score_workspace(monkeypatch):
     monkeypatch.setattr(recovar_utils, "get_gpu_memory_total", lambda: 80.0)
     monkeypatch.setattr(recovar_utils, "get_gpu_memory_used", lambda: 41.0)
 
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=64,
         requested_rotation_block_size=8192,
         n_rot=36864,
@@ -183,8 +183,8 @@ def test_relion_em_batch_sizing_uses_active_window_for_dense_score_workspace(mon
         n_classes=1,
         gpu_memory_gb=None,
     )
-    low_res = _estimate_relion_em_batch_sizes(**common, current_size=56)
-    high_res = _estimate_relion_em_batch_sizes(**common, current_size=248)
+    low_res = estimate_relion_em_batch_sizes(**common, current_size=56)
+    high_res = estimate_relion_em_batch_sizes(**common, current_size=248)
 
     assert low_res.rotation_block_size == 8192
     assert high_res.rotation_block_size < 8192
@@ -204,8 +204,8 @@ def test_relion_em_batch_sizing_allows_larger_adaptive_pass1_blocks():
         gpu_memory_gb=80.0,
     )
 
-    pass1_coarse = _estimate_relion_em_batch_sizes(**common, current_size=100)
-    pass2_fine = _estimate_relion_em_batch_sizes(**common, current_size=154)
+    pass1_coarse = estimate_relion_em_batch_sizes(**common, current_size=100)
+    pass2_fine = estimate_relion_em_batch_sizes(**common, current_size=154)
 
     assert pass1_coarse.score_pixel_count < pass2_fine.score_pixel_count
     assert pass1_coarse.rotation_block_size > pass2_fine.rotation_block_size
@@ -228,10 +228,10 @@ def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks(
     )
 
     monkeypatch.delenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", raising=False)
-    default = _estimate_relion_em_batch_sizes(**common)
+    default = estimate_relion_em_batch_sizes(**common)
 
     monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", "0.40")
-    expanded = _estimate_relion_em_batch_sizes(**common)
+    expanded = estimate_relion_em_batch_sizes(**common)
 
     assert expanded.rotation_block_size > default.rotation_block_size
     assert expanded.rotation_block_size <= common["requested_rotation_block_size"]
@@ -242,7 +242,7 @@ def test_relion_em_batch_sizing_projection_budget_override_rejects_invalid(monke
     monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", "0")
 
     with pytest.raises(ValueError, match="RELAX_RELION_EM_BATCH_PROJECTION_FRACTION"):
-        _estimate_relion_em_batch_sizes(
+        estimate_relion_em_batch_sizes(
             requested_image_batch_size=64,
             requested_rotation_block_size=8192,
             n_rot=36864,
@@ -257,7 +257,7 @@ def test_relion_em_batch_sizing_projection_budget_override_rejects_invalid(monke
 
 
 def test_relion_em_batch_sizing_clamps_highres_translation_tiles():
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
         requested_rotation_block_size=1024,
         n_rot=1024,
@@ -276,7 +276,7 @@ def test_relion_em_batch_sizing_clamps_highres_translation_tiles():
 
 
 def test_relion_em_batch_sizing_accounts_for_k_classes():
-    single = _estimate_relion_em_batch_sizes(
+    single = estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
         requested_rotation_block_size=20000,
         n_rot=294912,
@@ -287,7 +287,7 @@ def test_relion_em_batch_sizing_accounts_for_k_classes():
         n_classes=1,
         gpu_memory_gb=80.0,
     )
-    k4 = _estimate_relion_em_batch_sizes(
+    k4 = estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
         requested_rotation_block_size=20000,
         n_rot=294912,

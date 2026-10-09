@@ -14,11 +14,11 @@ from relax.helpers.convergence import RefinementState, _exhaustive_grid_order_fo
 from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.resolution import (
     ImageGeometry,
-    _bootstrap_current_size_relion,
-    _firstiter_cc_scheduling_resolution_shell,
     _zero_shells_past_current_size,
     bootstrap_current_size_from_ini_high_relion,
+    bootstrap_current_size_relion,
     class_resolution_shells,
+    firstiter_cc_scheduling_resolution_shell,
     initialize_resolution_from_firstiter_ini_high,
     initialize_resolution_from_fsc,
     initialize_resolution_from_ini_high,
@@ -829,7 +829,7 @@ def plan_initial_image_size(
         )
         current_size = quantize_current_size(raw_cs, box_size=box_size)
     else:
-        current_size = _bootstrap_current_size_relion(schedule.init_current_size, box_size)
+        current_size = bootstrap_current_size_relion(schedule.init_current_size, box_size)
         data_vs_prior_iter = None
 
     return ImageSizeUpdate(
@@ -850,7 +850,7 @@ def _firstiter_cc_resolution_shell(
 ) -> int:
     """The shell both growth plans schedule from: RELION's firstiter_cc override of ``res_shell``, logged
     naming ``size_name``."""
-    scheduling_res_shell = _firstiter_cc_scheduling_resolution_shell(
+    scheduling_res_shell = firstiter_cc_scheduling_resolution_shell(
         res_shell,
         emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
         ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,

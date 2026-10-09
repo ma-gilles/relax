@@ -16,7 +16,7 @@ class TestResolutionScheduling:
     """Resolution policies independent of refinement dispatch and datasets."""
 
     def test_firstiter_cc_ini_high_tau2_taper_matches_relion_squared_cosine(self):
-        taper = resolution_helpers._firstiter_cc_ini_high_tau2_taper(
+        taper = resolution_helpers.firstiter_cc_ini_high_tau2_taper(
             65,
             128,
             4.25,
@@ -199,7 +199,7 @@ class TestResolutionScheduling:
 
     def test_firstiter_cc_scheduling_override_is_class_count_independent(self):
         """The ini_high rule also applies to Class3D/K-class iteration 1."""
-        shell = resolution_helpers._firstiter_cc_scheduling_resolution_shell(
+        shell = resolution_helpers.firstiter_cc_scheduling_resolution_shell(
             10,
             emulate_relion_firstiter_cc=True,
             ini_high_angstrom=60.0,
@@ -230,7 +230,7 @@ class TestResolutionScheduling:
             "voxel_size": 2.125,
         }
         assert (
-            resolution_helpers._firstiter_cc_scheduling_resolution_shell(
+            resolution_helpers.firstiter_cc_scheduling_resolution_shell(
                 **common,
                 emulate_relion_firstiter_cc=True,
                 ini_high_angstrom=60.0,
@@ -239,7 +239,7 @@ class TestResolutionScheduling:
             == 10
         )
         assert (
-            resolution_helpers._firstiter_cc_scheduling_resolution_shell(
+            resolution_helpers.firstiter_cc_scheduling_resolution_shell(
                 **common,
                 emulate_relion_firstiter_cc=False,
                 ini_high_angstrom=60.0,
@@ -248,7 +248,7 @@ class TestResolutionScheduling:
             == 10
         )
         assert (
-            resolution_helpers._firstiter_cc_scheduling_resolution_shell(
+            resolution_helpers.firstiter_cc_scheduling_resolution_shell(
                 **common,
                 emulate_relion_firstiter_cc=True,
                 ini_high_angstrom=None,

@@ -11,8 +11,8 @@ import numpy as np
 from relax.helpers.convergence import (
     ExpectationStatistics,
     RefinementState,
-    _apply_relion_healpix_order_oracle,
-    _approx_acc_rot_policy_for_convergence,
+    apply_relion_healpix_order_oracle,
+    approx_acc_rot_policy_for_convergence,
     calculate_expected_angular_errors,
     update_angular_sampling,
     update_refinement_state,
@@ -35,7 +35,7 @@ def _scheduled_healpix_order_state(
 ) -> RefinementState:
     """Install this iteration's order of an explicit HEALPix schedule."""
     target_order = int(adaptive.relion_healpix_orders[iteration])
-    state = _apply_relion_healpix_order_oracle(
+    state = apply_relion_healpix_order_oracle(
         state, target_order, iteration_number=iteration + 1,
     )
     log.info(
@@ -93,7 +93,7 @@ def _iteration_accuracy_for_convergence(
             significant_counts,
             n_translations=n_translations,
         )
-        approx_for_convergence, approx_convergence_reason = _approx_acc_rot_policy_for_convergence(
+        approx_for_convergence, approx_convergence_reason = approx_acc_rot_policy_for_convergence(
             approx_acc_rot_for_convergence
         )
         if approx_for_convergence and exact_acc_rot is None:

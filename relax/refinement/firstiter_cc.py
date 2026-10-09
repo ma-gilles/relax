@@ -16,8 +16,8 @@ from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
 from relax.helpers.batch_planning import (
     _plan_kclass_adaptive_grid_batch_sizes,
-    _safe_dense_k_class_rotation_block_size,
-    _safe_firstiter_cc_image_batch_size,
+    safe_dense_k_class_rotation_block_size,
+    safe_firstiter_cc_image_batch_size,
 )
 from relax.helpers.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 from relax.sampling import (
@@ -158,14 +158,14 @@ def _score_kclass_firstiter_cc_pass2(
         )
         firstiter_image_batch_size = min(
             requested_firstiter_image_batch_size,
-            _safe_firstiter_cc_image_batch_size(
+            safe_firstiter_cc_image_batch_size(
                 fine_trans.shape[0],
                 half.particles.dataset.image_shape,
             ),
         )
         firstiter_rotation_block_size = min(
             int(em_kwargs.get("rotation_block_size", batch_plan.pass2_rotation_block_size)),
-            _safe_dense_k_class_rotation_block_size(
+            safe_dense_k_class_rotation_block_size(
                 fine_trans.shape[0],
                 firstiter_image_batch_size,
             ),
@@ -187,7 +187,7 @@ def _score_kclass_firstiter_cc_pass2(
         )
         firstiter_image_batch_size = min(
             requested_firstiter_image_batch_size,
-            _safe_firstiter_cc_image_batch_size(
+            safe_firstiter_cc_image_batch_size(
                 fine_trans.shape[0],
                 half.particles.dataset.image_shape,
             ),

@@ -24,9 +24,9 @@ def _open_persistent_relion_projector_texture(
     ``relion_projector_half`` as before). The caller owns the texture and closes it.
     """
 
-    from relax.helpers.projection import _host_relion_projector_texture_enabled
+    from relax.helpers.projection import host_relion_projector_texture_enabled
 
-    if not _host_relion_projector_texture_enabled(
+    if not host_relion_projector_texture_enabled(
         relion_projector_half, r_max=relion_projector_r_max,
         padding_factor=projection_padding_factor, allow_float32_cast=True,
         enabled=relion_texture_interp,
@@ -635,7 +635,7 @@ def test_host_texture_planning_and_dispatch_share_eligibility(monkeypatch, layou
     if layout == "double": slab = slab.astype(np.complex128)
     if layout == "class_axis": slab = slab[None]
     if layout == "missing_radius": radius = None
-    assert projection._host_relion_projector_texture_enabled(slab, r_max=radius, padding_factor=2) is (layout == "valid")
+    assert projection.host_relion_projector_texture_enabled(slab, r_max=radius, padding_factor=2) is (layout == "valid")
     assert len(calls) == (1 if layout == "valid" else 0)
 
 
@@ -703,7 +703,7 @@ def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
     captured = []
     monkeypatch.setattr(projection, "_relion_projector_texture_enabled", lambda value, **kw: value.dtype == np.complex64)
     monkeypatch.setattr(em_cuda_kernels, "RelionPersistentHalfTextureF32", lambda value, **kw: captured.append(value) or object())
-    assert projection._host_relion_projector_texture_enabled(source, r_max=1, padding_factor=1, allow_float32_cast=True)
+    assert projection.host_relion_projector_texture_enabled(source, r_max=1, padding_factor=1, allow_float32_cast=True)
     _open_persistent_relion_projector_texture(source, relion_projector_r_max=1, projection_padding_factor=1)
     assert captured[0].dtype == np.complex64
     assert_matches(captured[0], source.astype(np.complex64))

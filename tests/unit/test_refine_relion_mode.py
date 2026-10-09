@@ -83,8 +83,8 @@ from relax.helpers.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.helpers.resolution import (
-    _bootstrap_current_size_relion,
     bootstrap_current_size_from_ini_high_relion,
+    bootstrap_current_size_relion,
     clamp_relion_coarse_image_size,
     compute_coarse_image_size,
     relion_expectation_coarse_size_order,
@@ -4507,7 +4507,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_bootstrap_current_size_matches_benchmark_case(self):
         """128px, 4.25A/px, ini_high=30A should bootstrap from 36 -> 56."""
-        assert _bootstrap_current_size_relion(36, 128) == 56
+        assert bootstrap_current_size_relion(36, 128) == 56
 
     def test_relion_bootstrap_current_size_from_ini_high_matches_benchmark_case(self):
         assert bootstrap_current_size_from_ini_high_relion(128, 4.25, 30.0) == 56
@@ -4557,7 +4557,7 @@ class TestRelionModeSmokeTest:
         )
         monkeypatch.setattr(
             mean_helpers_module,
-            "_firstiter_cc_ini_high_tau2_taper",
+            "firstiter_cc_ini_high_tau2_taper",
             lambda *_args, **_kwargs: taper,
         )
         monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)

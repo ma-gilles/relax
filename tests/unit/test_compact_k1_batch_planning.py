@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from relax.sparse_pass2 import firstiter_bpref
 import numpy as np
 import pytest
-from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
+from relax.helpers.batch_planning import estimate_relion_em_batch_sizes
 pytestmark = pytest.mark.unit
 
 def test_box800_k1_score_tile_plan_uses_resolved_precision():
@@ -192,7 +192,7 @@ def _box800_plan(**overrides):
         current_size=62,
     )
     kwargs.update(overrides)
-    return _estimate_relion_em_batch_sizes(**kwargs)
+    return estimate_relion_em_batch_sizes(**kwargs)
 
 def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64):
     sparse = firstiter_bpref
@@ -325,7 +325,7 @@ def test_staging_estimate_requires_explicit_compact_layout():
 
 
 def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
-    from relax.helpers.batch_planning import _plan_adaptive_dense_batch_sizes
+    from relax.helpers.batch_planning import plan_adaptive_dense_batch_sizes
     calls = []
     def fine(n_rot, n_trans, **kwargs):
         calls.append(("fine", n_rot, n_trans, kwargs["current_size_for_batch"]))
@@ -333,7 +333,7 @@ def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
     def coarse(n_rot, n_trans, **kwargs):
         calls.append(("coarse", n_rot, n_trans, kwargs["current_size_for_batch"]))
         return 3, 5
-    plan = _plan_adaptive_dense_batch_sizes(
+    plan = plan_adaptive_dense_batch_sizes(
         n_rot=40, n_trans=9, n_classes=1, image_shape=(800, 800),
         cs_for_engine=62, coarse_cs=62, safe_batch_sizes=fine,
         significance_safe_batch_sizes=coarse,

@@ -81,12 +81,12 @@ def _safe_k_class_replay_batch_plan(
     """Mirror the main RELION replay loop's K-class microbatch planner."""
 
     from relax.helpers.batch_planning import (
-        _estimate_relion_em_batch_sizes,
-        _safe_dense_k_class_rotation_block_size,
-        _safe_firstiter_cc_image_batch_size,
+        estimate_relion_em_batch_sizes,
+        safe_dense_k_class_rotation_block_size,
+        safe_firstiter_cc_image_batch_size,
     )
 
-    plan = _estimate_relion_em_batch_sizes(
+    plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=requested_image_batch_size,
         requested_rotation_block_size=requested_rotation_block_size,
         n_rot=n_rot,
@@ -99,11 +99,11 @@ def _safe_k_class_replay_batch_plan(
     )
     image_batch_size = min(
         int(plan.image_batch_size),
-        _safe_firstiter_cc_image_batch_size(n_trans, image_shape),
+        safe_firstiter_cc_image_batch_size(n_trans, image_shape),
     )
     rotation_block_size = min(
         int(plan.rotation_block_size),
-        _safe_dense_k_class_rotation_block_size(n_trans, image_batch_size),
+        safe_dense_k_class_rotation_block_size(n_trans, image_batch_size),
     )
     return _ReplayBatchPlan(
         image_batch_size=max(1, int(image_batch_size)),

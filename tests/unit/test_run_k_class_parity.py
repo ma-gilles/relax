@@ -18,9 +18,9 @@ def test_k_class_replay_batch_plan_applies_estimator_and_kclass_caps(monkeypatch
         captured.update(kwargs)
         return SimpleNamespace(image_batch_size=250, rotation_block_size=5000)
 
-    monkeypatch.setattr(batch_planning, "_estimate_relion_em_batch_sizes", fake_estimator)
-    monkeypatch.setattr(batch_planning, "_safe_firstiter_cc_image_batch_size", lambda *_args: 17)
-    monkeypatch.setattr(batch_planning, "_safe_dense_k_class_rotation_block_size", lambda *_args: 31)
+    monkeypatch.setattr(batch_planning, "estimate_relion_em_batch_sizes", fake_estimator)
+    monkeypatch.setattr(batch_planning, "safe_firstiter_cc_image_batch_size", lambda *_args: 17)
+    monkeypatch.setattr(batch_planning, "safe_dense_k_class_rotation_block_size", lambda *_args: 31)
 
     plan = _safe_k_class_replay_batch_plan(
         requested_image_batch_size=250,
@@ -303,11 +303,11 @@ def test_k_class_replay_batch_plan_preserves_smaller_estimator_plan(monkeypatch)
 
     monkeypatch.setattr(
         batch_planning,
-        "_estimate_relion_em_batch_sizes",
+        "estimate_relion_em_batch_sizes",
         lambda **_kwargs: SimpleNamespace(image_batch_size=9, rotation_block_size=11),
     )
-    monkeypatch.setattr(batch_planning, "_safe_firstiter_cc_image_batch_size", lambda *_args: 17)
-    monkeypatch.setattr(batch_planning, "_safe_dense_k_class_rotation_block_size", lambda *_args: 31)
+    monkeypatch.setattr(batch_planning, "safe_firstiter_cc_image_batch_size", lambda *_args: 17)
+    monkeypatch.setattr(batch_planning, "safe_dense_k_class_rotation_block_size", lambda *_args: 31)
 
     plan = _safe_k_class_replay_batch_plan(
         requested_image_batch_size=250,

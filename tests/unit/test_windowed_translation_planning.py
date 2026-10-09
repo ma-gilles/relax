@@ -5,7 +5,7 @@ import pytest
 def test_windowed_translation_tile_lifts_the_coarse_pass_image_cap():
     """The K-class passes translate inside the current-size window; sizing them by the
     full half-image translation tile capped the 100k/256 K=4 coarse pass at 88 images."""
-    from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
+    from relax.helpers.batch_planning import estimate_relion_em_batch_sizes
 
     common = dict(
         requested_image_batch_size=5000,
@@ -19,8 +19,8 @@ def test_windowed_translation_tile_lifts_the_coarse_pass_image_cap():
         gpu_memory_gb=80.0,
         current_size=14,
     )
-    full = _estimate_relion_em_batch_sizes(**common)
-    windowed = _estimate_relion_em_batch_sizes(**common, windowed_translation=True)
+    full = estimate_relion_em_batch_sizes(**common)
+    windowed = estimate_relion_em_batch_sizes(**common, windowed_translation=True)
     # the full-size tile (29 x 33 024 pixels per image and class) binds well below the
     # request; the 584-pixel window lifts it by more than 2x, and other caps still bind
     assert full.image_batch_size < 5000, full
@@ -29,8 +29,8 @@ def test_windowed_translation_tile_lifts_the_coarse_pass_image_cap():
     # without a current size there is no window: the two estimates agree
     common_full = dict(common, current_size=None)
     assert (
-        _estimate_relion_em_batch_sizes(**common_full).image_batch_size
-        == _estimate_relion_em_batch_sizes(**common_full, windowed_translation=True).image_batch_size
+        estimate_relion_em_batch_sizes(**common_full).image_batch_size
+        == estimate_relion_em_batch_sizes(**common_full, windowed_translation=True).image_batch_size
     )
 
 def test_kclass_adaptive_planner_requests_windowed_translation_when_supported():

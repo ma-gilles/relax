@@ -119,7 +119,7 @@ _LOW_PMAX_REFINE_DEFAULT_MIN_RES_STALL = 3
 _TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 _FALSE_ENV_VALUES = {"0", "false", "no", "off"}
 
-_APPROX_ACC_ROT_CONVERGENCE_ENV = "RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE"
+APPROX_ACC_ROT_CONVERGENCE_ENV = "RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE"
 
 # RELION's initial last-iteration offset change (ml_optimiser.cpp:1040, 2147): the first angular-sampling update
 # before a measurement reads it as min(1.3 * range, 5 * 999).
@@ -592,7 +592,7 @@ def _exhaustive_grid_order_for_state(state: RefinementState) -> int:
         )
     return min(state.healpix_order, RELION_MAX_FULL_GRID_ORDER)
 
-def _native_final_perturbation_healpix_order(state, final_current_healpix_order: int) -> int:
+def native_final_perturbation_healpix_order(state, final_current_healpix_order: int) -> int:
     """Return the angular-step order for native final sampling perturbation.
 
     Local search deliberately caps the exhaustive trial grid below the active
@@ -1068,7 +1068,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return default
 
 
-def _approx_acc_rot_policy_for_convergence(enabled: bool) -> tuple[bool, str]:
+def approx_acc_rot_policy_for_convergence(enabled: bool) -> tuple[bool, str]:
     """Return whether native support-width acc_rot may gate convergence, and the reason logged.
 
     The support-width estimate is much cheaper than RELION's map-perturbation
@@ -1262,7 +1262,7 @@ def refine_angular_sampling(state: RefinementState) -> RefinementState:
 
 
 
-def _apply_relion_healpix_order_oracle(state, target_order, *, iteration_number):
+def apply_relion_healpix_order_oracle(state, target_order, *, iteration_number):
     if target_order < int(state.healpix_order):
         raise ValueError(
             "relion_healpix_orders cannot coarsen the active state: "

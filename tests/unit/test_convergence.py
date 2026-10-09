@@ -1480,7 +1480,7 @@ class TestRefinementPolicy:
 
         monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
         enabled = ScoringVariants.from_environ().approx_acc_rot_for_convergence
-        allow, reason = convergence_helpers._approx_acc_rot_policy_for_convergence(enabled)
+        allow, reason = convergence_helpers.approx_acc_rot_policy_for_convergence(enabled)
 
         assert not allow
         assert reason == "diagnostic-only-default"
@@ -1491,7 +1491,7 @@ class TestRefinementPolicy:
 
         monkeypatch.setenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", "1")
         enabled = ScoringVariants.from_environ().approx_acc_rot_for_convergence
-        allow, reason = convergence_helpers._approx_acc_rot_policy_for_convergence(enabled)
+        allow, reason = convergence_helpers.approx_acc_rot_policy_for_convergence(enabled)
         assert allow
         assert reason == "forced-by-env"
 

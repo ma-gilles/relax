@@ -54,7 +54,7 @@ def capture_estimates(monkeypatch):
             log_adjustment=lambda **kw: None,
         )
 
-    monkeypatch.setattr(batches, "_estimate_relion_em_batch_sizes", estimate)
+    monkeypatch.setattr(batches, "estimate_relion_em_batch_sizes", estimate)
     return calls
 
 
@@ -94,7 +94,7 @@ def test_compact_texture_budget_stays_inside_the_allocator_pool(
 
 
 def test_local_deferred_grids_are_not_inspected_by_batch_preparation(planner, monkeypatch):
-    monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: False)
+    monkeypatch.setattr(batches, "host_relion_projector_texture_enabled", lambda *a, **k: False)
     policy = prepare(planner, use_local=True, rotations=None, translations=None)
     assert policy.safe_batch_sizes is planner
     assert policy.class_overrides is None
@@ -107,7 +107,7 @@ def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monk
 
     calls = capture_estimates(monkeypatch)
     monkeypatch.setattr(batches.sparse_pass2_budget, "_device_free_memory_bytes", lambda: 8_000_000_000)
-    monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: True)
+    monkeypatch.setattr(batches, "host_relion_projector_texture_enabled", lambda *a, **k: True)
     monkeypatch.setattr(pass1_plan, "global_pass1_relion_projector_texture_enabled", lambda: True)
     monkeypatch.setattr(batches.firstiter_bpref, "_relion_firstiter_compact_batch_planning_decision",
                         lambda **k: SimpleNamespace(enabled=True, deferred_firstiter_bpref=True))
@@ -131,7 +131,7 @@ def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monk
 def test_local_half_plans_no_compact_staging(planner, monkeypatch):
     """The local pass sizes its own tiles: a non-adaptive local half keeps the plain planner."""
     calls = capture_estimates(monkeypatch)
-    monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: True)
+    monkeypatch.setattr(batches, "host_relion_projector_texture_enabled", lambda *a, **k: True)
     policy = prepare(planner, use_local=True, rotations=None, translations=None)
     assert calls == []
     assert policy.safe_batch_sizes is planner
@@ -146,7 +146,7 @@ def test_diagnostic_precision_keeps_compact_planning_disabled(planner, monkeypat
         planner = replace(planner, precision=DensePrecisionPolicy(
             use_float64_scoring=precision == "scoring", use_float64_projections=precision == "projection",
         ))
-    monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: pytest.fail("compact planning"))
+    monkeypatch.setattr(batches, "host_relion_projector_texture_enabled", lambda *a, **k: pytest.fail("compact planning"))
     policy = prepare(planner, use_adaptive=True, relion_firstiter_cc_this_iter=True)
     assert policy.safe_batch_sizes is planner
     assert not any(c["compact_k1_relion_layout"] for c in calls)

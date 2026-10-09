@@ -41,7 +41,7 @@ def preparation(monkeypatch):
     host_grid = np.array([[1.0 / 7.0, -1.0 / 3.0]], dtype=np.float64)
     events = []
     monkeypatch.setattr(final_sampling, "_exhaustive_grid_order_for_state", lambda state: 3)
-    monkeypatch.setattr(final_sampling, "_native_final_perturbation_healpix_order", lambda state, order: 5)
+    monkeypatch.setattr(final_sampling, "native_final_perturbation_healpix_order", lambda state, order: 5)
     monkeypatch.setattr(final_sampling.sampling, "relion_base_translation_grid", lambda *a, **kw: host_grid)
     monkeypatch.setattr(final_sampling.sampling, "relion_mstep_source_eulers", lambda eulers, *a, **kw: eulers)
     monkeypatch.setattr(final_sampling.sampling, "relion_angular_sampling_deg", lambda *a, **kw: 7.5)

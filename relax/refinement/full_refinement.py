@@ -356,7 +356,7 @@ def _relion_split_draws(input_particles, *, from_input: bool, resumed: bool) -> 
 def _initial_current_size(voxel_size: float, box_size: int, init_resolution: float) -> int:
     """Twice RELION's --ini_high pixel, ``getPixelFromResolution(1 / ini_high)`` (ml_model.h:441,
     ml_optimiser.cpp:2801): ``2 ROUND(ori_size pixel_size / ini_high)``. The first E-step then adds
-    ``incr_size`` shells (``_bootstrap_current_size_relion``). No floor: RELION has none, and the GUI
+    ``incr_size`` shells (``bootstrap_current_size_relion``). No floor: RELION has none, and the GUI
     default ini_high of 60 A lands below the former 32-pixel floor on small boxes.
     """
 

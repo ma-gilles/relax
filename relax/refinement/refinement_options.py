@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-from relax.helpers.convergence import _APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
+from relax.helpers.convergence import APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
 from relax.helpers.env_flags import (
     parse_env_auto_flag,
     parse_env_choice,
@@ -559,7 +559,7 @@ class ScoringVariants:
                     expected="rotation_only or full_parent",
                 ),
             ),
-            approx_acc_rot_for_convergence=parse_env_true_flag(_APPROX_ACC_ROT_CONVERGENCE_ENV),
+            approx_acc_rot_for_convergence=parse_env_true_flag(APPROX_ACC_ROT_CONVERGENCE_ENV),
             reconstruction=ReconstructionPrograms.from_environ(),
         )
 

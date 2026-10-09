@@ -12,7 +12,7 @@ from recovar import utils
 
 from relax.healpix_sampling import euler_angles_to_matrix
 from relax.helpers.batch_planning import (
-    _plan_consecutive_padded_batches,
+    plan_consecutive_padded_batches,
 )
 from relax.helpers.orientation_priors import make_relion_translation_log_prior
 from relax.helpers.shape_buckets import coarse_bucket, power_bucket
@@ -1819,7 +1819,7 @@ def plan_local_hypothesis_buckets(
 
     planned_groups: list[tuple[np.ndarray, int, int]] = []
     if consecutive_mixed_bucket_size is not None:
-        for plan in _plan_consecutive_padded_batches(
+        for plan in plan_consecutive_padded_batches(
             bucket_sizes,
             processing_order=processing_order,
             target_items_per_batch=consecutive_mixed_bucket_size,

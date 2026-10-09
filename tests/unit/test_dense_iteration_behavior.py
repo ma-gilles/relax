@@ -13,7 +13,7 @@ from helpers.refinement_specs import local_half_owners
 import relax.refinement.iteration_loop as iteration_loop
 from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics import local_debug
-from relax.helpers.convergence import _native_final_perturbation_healpix_order
+from relax.helpers.convergence import native_final_perturbation_healpix_order
 from relax.refinement import half_scoring
 from relax.refinement.local_search_iteration import LocalSearchResult
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
@@ -573,8 +573,8 @@ def test_native_final_perturbation_uses_active_local_order_but_preserves_global_
     local_state = SimpleNamespace(do_local_search=True, healpix_order=4)
     global_state = SimpleNamespace(do_local_search=False, healpix_order=4)
 
-    assert _native_final_perturbation_healpix_order(local_state, 3) == 4
-    assert _native_final_perturbation_healpix_order(global_state, 3) == 3
+    assert native_final_perturbation_healpix_order(local_state, 3) == 4
+    assert native_final_perturbation_healpix_order(global_state, 3) == 3
 
 
 def test_local_adaptive_pass2_defaults_to_relion_pruned_parent(monkeypatch):

@@ -452,7 +452,7 @@ def _relion_projector_texture_enabled(
     return enabled_now
 
 
-def _host_relion_projector_texture_enabled(
+def host_relion_projector_texture_enabled(
     projector_half, *, r_max, padding_factor, allow_float32_cast=False, enabled=None,
 ):
     """Check upload geometry using the fine consumer's effective dtype.
