@@ -124,9 +124,10 @@ def prepare_relion_halfset_inputs(
 class HalfSets:
     """The particles' split into halves, with what the start-up reads from the table it came from.
 
-    ``layout``: the half rows and the expected-accuracy trial order. ``relion_particles``,
-    ``optics_image_sizes`` and ``optics_pixel_sizes``: the RELION half-set table and its optics (None for a
-    Class3D split of the input STAR). ``noise_source_rows``, ``noise_optics_group_ids`` and
+    ``layout``: the half rows and the expected-accuracy trial order. ``relion_particles``: the RELION half-set
+    table (None for a Class3D split of the input STAR). ``optics_image_sizes`` and ``optics_pixel_sizes``: the
+    optics geometry every optics group remaps its current size with: the half-set table's for K=1, the input
+    STAR's for K>1 (None for a STAR without an optics table). ``noise_source_rows``, ``noise_optics_group_ids`` and
     ``noise_optics_pixel_sizes``: the particles RELION's start-up noise estimate reads, in its order (None when
     the run loads its noise). ``accuracy_ctf_params``: half 1's CTFs for the expected accuracy (None for
     tomography and for Class3D).
@@ -218,11 +219,14 @@ def split_half_sets(
         if not isinstance(particle_star, dict) or "optics" not in particle_star:
             raise SystemExit("Class3D RELION start-up noise needs an optics table in the particle STAR")
         noise_pixel_sizes = np.asarray(particle_star["optics"]["rlnImagePixelSize"], dtype=np.float64)
+    # Class3D remaps each optics group's current size as auto-refine does (ml_optimiser.cpp:6917-6923),
+    # with the input STAR's optics geometry against the model pixel size (relax#56).
+    optics = particle_star.get("optics") if isinstance(particle_star, dict) else None
     return HalfSets(
         layout=layout,
         relion_particles=relion_particles,
-        optics_image_sizes=None if source is None else source.optics_image_sizes,
-        optics_pixel_sizes=None if source is None else source.optics_pixel_sizes,
+        optics_image_sizes=None if optics is None else np.asarray(optics["rlnImageSize"], dtype=np.int64),
+        optics_pixel_sizes=None if optics is None else np.asarray(optics["rlnImagePixelSize"], dtype=np.float64),
         noise_source_rows=noise_rows,
         noise_optics_group_ids=noise_groups,
         noise_optics_pixel_sizes=noise_pixel_sizes,
