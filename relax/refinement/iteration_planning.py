@@ -371,7 +371,7 @@ def initialize_refinement_state(
     # in replay mode, or from the initial FSC/ini_high state in a fresh run.
     if source.restore_convergence_state(state):
         pass
-    elif schedule.init_fsc is not None:
+    elif options.start.init_fsc is not None:
         initialize_resolution_from_fsc(
             state, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom,
             dtype=dtype,
@@ -380,9 +380,9 @@ def initialize_refinement_state(
         initialize_resolution_from_firstiter_ini_high(
             state, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom
         )
-    elif init_relion_iteration == 0 and schedule.ini_high_angstrom is not None:
+    elif init_relion_iteration == 0 and options.start.ini_high_angstrom is not None:
         initialize_resolution_from_ini_high(
-            state, schedule.ini_high_angstrom, box_size=image_geometry.box_size,
+            state, options.start.ini_high_angstrom, box_size=image_geometry.box_size,
             voxel_size=image_geometry.pixel_size_angstrom,
         )
     source.restore_boundary_state(state)
@@ -882,10 +882,10 @@ def plan_initial_image_size(
             float(parity.relion_firstiter_ini_high_angstrom),
             current_size,
         )
-    elif schedule.init_fsc is not None:
+    elif options.start.init_fsc is not None:
         prev_cs = int(schedule.init_current_size)
         fsc_prev = zero_shells_past_current_size(
-            schedule.init_fsc,
+            options.start.init_fsc,
             current_size=prev_cs,
             box_size=box_size,
             dtype=dtype,
@@ -904,7 +904,7 @@ def plan_initial_image_size(
             incr_size=incr_size,
             has_high_fsc_at_limit=has_high_fsc_at_limit,
         )
-        _init_pmax = float(schedule.init_ave_Pmax) if schedule.init_ave_Pmax is not None else 0.0
+        _init_pmax = float(options.start.init_ave_Pmax) if options.start.init_ave_Pmax is not None else 0.0
         raw_cs = compute_current_size_relion(
             res_shell,
             box_size,

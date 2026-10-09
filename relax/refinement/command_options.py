@@ -31,6 +31,7 @@ from relax.refinement.refinement_options import (
     LocalSearchOptions,
     RefinementSchedule,
     RelionConsistencyOptions,
+    StartState,
     relax_mode_consistency,
 )
 from relax.relion import input_poses
@@ -1530,39 +1531,38 @@ def resolve_local_search(args) -> LocalSearchOptions:
     )
 
 
-def resolve_schedule(
+def resolve_start_state(
     args,
     *,
-    max_iter: int,
-    initial_sampling,
-    init_current_size,
+    particle_groups,
+    initial_poses,
     ini_high_angstrom,
     init_data_vs_prior,
-    image_mask,
     relion_init_sigma_offset_angstrom,
     frozen_boundary,
-    continued_iterations,
-) -> RefinementSchedule:
-    """The numbered schedule: how many iterations remain, where the first one starts and its sampling.
+) -> StartState:
+    """The state the run starts from: the particles' groups, poses and corrections and the first iteration's
+    resolution and translation-prior seeds.
 
-    ``continued_iterations``: the run files' last numbered iteration with ``--continue`` (None for a fresh
-    run). A frozen boundary owns the first FSC, Pmax, high-FSC flag, RELION increment and translation sigma;
-    a RELION-seeded start (``--relion_init_dir``) the sigma offset; otherwise the flags do.
+    A frozen boundary owns the first FSC, Pmax, high-FSC flag, RELION increment, translation sigma, the
+    corrections and the direction prior; a RELION-seeded start (``--relion_init_dir``) the sigma offset;
+    otherwise the flags and the input particles do.
     """
-    return RefinementSchedule(
-        # --max_iter counts from iteration 1 of the whole run, as RELION's --iter.
-        max_iter=int(max_iter) - (continued_iterations or 0),
-        init_current_size=init_current_size,
-        init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
-        ini_high_angstrom=ini_high_angstrom,
-        init_data_vs_prior=init_data_vs_prior,
-        init_ave_Pmax=None if frozen_boundary is None else frozen_boundary.ave_pmax,
-        init_has_high_fsc_at_limit=None if frozen_boundary is None else frozen_boundary.has_high_fsc_at_limit,
-        init_relion_incr_size=RELION_INCR_SIZE if frozen_boundary is None else frozen_boundary.relion_incr_size,
-        init_healpix_order=initial_sampling.coarse_order,
-        max_healpix_order=initial_sampling.max_order,
-        init_translation_range=args.offset_range,
-        init_translation_step=args.offset_step,
+    poses = initial_poses.poses
+    return StartState(
+        init_group_ids=list(particle_groups.group_ids_per_half),
+        init_group_count=particle_groups.n_groups,
+        init_relion_optics_group_count=particle_groups.n_optics_groups,
+        init_previous_best_translations=None if poses is None else poses["previous_best_translations"],
+        init_previous_best_rotation_eulers=None if poses is None else poses["previous_best_rotation_eulers"],
+        init_angle_priors=None if poses is None else poses.get("angle_priors"),
+        init_image_corrections=(
+            initial_poses.image_corrections if frozen_boundary is None else frozen_boundary.image_corrections
+        ),
+        init_scale_corrections=(
+            initial_poses.scale_corrections if frozen_boundary is None else frozen_boundary.scale_corrections
+        ),
+        init_direction_prior=None if frozen_boundary is None else frozen_boundary.direction_prior_per_half,
         init_translation_sigma_angstrom=(
             frozen_boundary.translation_sigma_angstrom_per_half
             if frozen_boundary is not None
@@ -1572,6 +1572,37 @@ def resolve_schedule(
                 else args.offset_sigma_angstrom
             )
         ),
+        ini_high_angstrom=ini_high_angstrom,
+        init_data_vs_prior=init_data_vs_prior,
+        init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
+        init_ave_Pmax=None if frozen_boundary is None else frozen_boundary.ave_pmax,
+        init_has_high_fsc_at_limit=None if frozen_boundary is None else frozen_boundary.has_high_fsc_at_limit,
+        init_relion_incr_size=RELION_INCR_SIZE if frozen_boundary is None else frozen_boundary.relion_incr_size,
+    )
+
+
+def resolve_schedule(
+    args,
+    *,
+    max_iter: int,
+    initial_sampling,
+    init_current_size,
+    image_mask,
+    continued_iterations,
+) -> RefinementSchedule:
+    """The numbered schedule: how many iterations remain, where the first one starts and its sampling.
+
+    ``continued_iterations``: the run files' last numbered iteration with ``--continue`` (None for a fresh
+    run).
+    """
+    return RefinementSchedule(
+        # --max_iter counts from iteration 1 of the whole run, as RELION's --iter.
+        max_iter=int(max_iter) - (continued_iterations or 0),
+        init_current_size=init_current_size,
+        init_healpix_order=initial_sampling.coarse_order,
+        max_healpix_order=initial_sampling.max_order,
+        init_translation_range=args.offset_range,
+        init_translation_step=args.offset_step,
         # The loader's (particle diameter or None, edge width): the RELION image mask the run resolved.
         particle_diameter_ang=image_mask[0],
         width_mask_edge_px=image_mask[1],

@@ -302,7 +302,7 @@ def initialize_resolution_from_fsc(
 ) -> None:
     """Seed current/previous resolution from a caller-provided initial FSC curve."""
     schedule = options.schedule
-    fsc = np.asarray(schedule.init_fsc, dtype=dtype).copy()
+    fsc = np.asarray(options.start.init_fsc, dtype=dtype).copy()
     previous_current_size = int(schedule.init_current_size)
     if previous_current_size < box_size:
         fsc[min(len(fsc), previous_current_size // 2) :] = 0.0

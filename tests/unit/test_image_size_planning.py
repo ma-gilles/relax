@@ -12,6 +12,7 @@ from relax.refinement.iteration_planning import (
     plan_halfmap_image_size,
     plan_initial_image_size,
 )
+from relax.refinement.refinement_options import StartState
 
 pytestmark = pytest.mark.unit
 
@@ -20,7 +21,7 @@ pytestmark = pytest.mark.unit
 def test_initial_ini_high_precedes_fsc_and_retains_growth(dtype):
     plan = plan_initial_image_size(
         stand_in.options(
-            schedule=stand_in.schedule(init_current_size=32, init_fsc=np.zeros(65, dtype=dtype)),
+            schedule=stand_in.schedule(init_current_size=32), start=StartState(init_fsc=np.zeros(65, dtype=dtype)),
             parity=stand_in.parity(relion_firstiter_ini_high_angstrom=30.),
         ),
         box_size=128, pixel_size_angstrom=4.25, incr_size=16,
@@ -51,7 +52,9 @@ def test_initial_fsc_updates_growth_and_scheduling_curve(dtype):
     fsc[:10] = .8
     original = fsc.tobytes()
     plan = plan_initial_image_size(
-        stand_in.options(schedule=stand_in.schedule(init_current_size=40, init_fsc=fsc, init_ave_Pmax=.2)),
+        stand_in.options(
+            schedule=stand_in.schedule(init_current_size=40), start=StartState(init_fsc=fsc, init_ave_Pmax=.2),
+        ),
         box_size=128, pixel_size_angstrom=4.25,
         incr_size=6, has_high_fsc_at_limit=False, dtype=dtype, log=Mock(),
     )

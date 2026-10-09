@@ -4499,7 +4499,7 @@ class TestRelionModeSmokeTest:
                 options=stand_in.options(
                     schedule=stand_in.schedule(
                         max_iter=1, init_current_size=4, init_healpix_order=2,
-                        max_healpix_order=2, init_translation_sigma_angstrom=10.0,
+                        max_healpix_order=2,
                     ),
                     execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                     adaptive=stand_in.adaptive(adaptive_oversampling=1),
@@ -6138,7 +6138,6 @@ class TestRelionModeSmokeTest:
             options=stand_in.options(
                 schedule=stand_in.schedule(
                     max_iter=1,
-                    init_translation_sigma_angstrom=10.0,
                     init_current_size=16,
                     init_healpix_order=2,
                     max_healpix_order=3,
@@ -6853,8 +6852,8 @@ class TestRelionModeSmokeTest:
                     init_current_size=16,
                     init_healpix_order=2,
                     max_healpix_order=3,
-                    init_fsc=np.ones(grid_size // 2),
                 ),
+                start=StartState(init_fsc=np.ones(grid_size // 2)),
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
                 parity=stand_in.parity(use_per_half_mean_variance=per_half),

@@ -111,6 +111,14 @@ MOVED_INPUTS = (
     ("/debug<EngineDebugOptions>/environment<DiagnosticEnvironment>/", "/execution<ExecutionOptions>/"),
     # The run's start state is named for what it holds (PLAN d4, O N1).
     ("/replay<ReplayState>/", "/start<StartState>/"),
+    # The start state's seeds leave the schedule (PLAN d4, O S1).
+    *(
+        (f"/schedule<RefinementSchedule>/{name}", f"/start<StartState>/{name}")
+        for name in (
+            "init_translation_sigma_angstrom", "ini_high_angstrom", "init_data_vs_prior", "init_fsc", "init_ave_Pmax",
+            "init_has_high_fsc_at_limit", "init_relion_incr_size",
+        )
+    ),
 )
 # Record fields renamed, as (old path piece, new path piece) of a leaf in any section (results, files, checkpoints,
 # controller inputs): a leaf only in A whose renamed path is a leaf only in B with the same value is counted with

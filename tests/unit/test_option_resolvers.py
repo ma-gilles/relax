@@ -57,12 +57,19 @@ def test_the_command_hands_the_resolved_groups_to_the_controller(monkeypatch, tm
     assert options.execution.image_batch_size == 8
 
 
-def _schedule(args, frozen_boundary=None, continued_iterations=None, sigma_offset=None):
+def _schedule(args, continued_iterations=None):
     return command_options.resolve_schedule(
         args, max_iter=command_options.resolve_job_defaults(args).max_iter, initial_sampling=SimpleNamespace(coarse_order=2, max_order=5), init_current_size=24,
-        ini_high_angstrom=30.0, init_data_vs_prior="dvp", image_mask=(180.0, 5.0),
-        relion_init_sigma_offset_angstrom=sigma_offset, frozen_boundary=frozen_boundary,
-        continued_iterations=continued_iterations,
+        image_mask=(180.0, 5.0), continued_iterations=continued_iterations,
+    )
+
+
+def _start_state(args, frozen_boundary=None, sigma_offset=None):
+    return command_options.resolve_start_state(
+        args, particle_groups=SimpleNamespace(group_ids_per_half=([0], [0]), n_groups=1, n_optics_groups=1),
+        initial_poses=SimpleNamespace(poses=None, image_corrections="image", scale_corrections="scale"),
+        ini_high_angstrom=30.0, init_data_vs_prior="dvp", relion_init_sigma_offset_angstrom=sigma_offset,
+        frozen_boundary=frozen_boundary,
     )
 
 
@@ -73,21 +80,25 @@ def test_schedule_takes_the_sampling_and_the_first_iteration_from_the_flags():
     assert (schedule.max_iter, schedule.init_relion_iteration, schedule.skip_final_iteration) == (6, 2, True)
     assert (schedule.init_healpix_order, schedule.max_healpix_order) == (2, 5)
     assert (schedule.init_translation_range, schedule.init_translation_step) == (3.0, 1.0)
-    assert (schedule.init_translation_sigma_angstrom, schedule.init_relion_incr_size) == (7.0, 10)
-    assert (schedule.init_current_size, schedule.ini_high_angstrom, schedule.init_data_vs_prior) == (24, 30.0, "dvp")
-    assert schedule.particle_diameter_ang == 180.0 and schedule.init_fsc is None
-    assert _schedule(args, sigma_offset=1.5).init_translation_sigma_angstrom == 1.5
+    assert schedule.init_current_size == 24 and schedule.particle_diameter_ang == 180.0
+    start = _start_state(args)
+    assert (start.init_translation_sigma_angstrom, start.init_relion_incr_size) == (7.0, 10)
+    assert (start.ini_high_angstrom, start.init_data_vs_prior, start.init_fsc) == (30.0, "dvp", None)
+    assert (start.init_image_corrections, start.init_scale_corrections) == ("image", "scale")
+    assert _start_state(args, sigma_offset=1.5).init_translation_sigma_angstrom == 1.5
     # --continue: --max_iter counts the whole run; the run files' iteration is the first one.
     continued = _schedule(args, continued_iterations=4)
     assert (continued.max_iter, continued.init_relion_iteration) == (2, 4)
 
 
-def test_a_frozen_boundary_owns_its_schedule_fields():
+def test_a_frozen_boundary_owns_its_start_state_fields():
     boundary = SimpleNamespace(fsc="fsc", ave_pmax=0.5, has_high_fsc_at_limit=True, relion_incr_size=6,
-                               translation_sigma_angstrom_per_half=(1.0, 2.0))
-    schedule = _schedule(_args("--max_iter", "3"), frozen_boundary=boundary, sigma_offset=1.5)
-    assert (schedule.init_fsc, schedule.init_ave_Pmax, schedule.init_has_high_fsc_at_limit) == ("fsc", 0.5, True)
-    assert (schedule.init_relion_incr_size, schedule.init_translation_sigma_angstrom) == (6, (1.0, 2.0))
+                               translation_sigma_angstrom_per_half=(1.0, 2.0), image_corrections="frozen image",
+                               scale_corrections="frozen scale", direction_prior_per_half="prior")
+    start = _start_state(_args("--max_iter", "3"), frozen_boundary=boundary, sigma_offset=1.5)
+    assert (start.init_fsc, start.init_ave_Pmax, start.init_has_high_fsc_at_limit) == ("fsc", 0.5, True)
+    assert (start.init_relion_incr_size, start.init_translation_sigma_angstrom) == (6, (1.0, 2.0))
+    assert (start.init_image_corrections, start.init_direction_prior) == ("frozen image", "prior")
 
 
 def test_class_seeds_are_drawn_only_for_a_fresh_class3d_run_from_one_reference():

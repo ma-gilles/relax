@@ -60,24 +60,13 @@ class RefinementSchedule:
     # --offset_range and --offset_step, in pixels.
     init_translation_range: float = 5.0
     init_translation_step: float = 2.0
-    init_translation_sigma_angstrom: float = 10.0
     particle_diameter_ang: float | None = None
     # RELION's width_mask_edge (--maskedge, ml_optimiser.cpp:1235-1237): the soft edge, in pixels, of the
     # particle-diameter image mask (ml_optimiser.cpp:3193) and of the reference's solvent flattening.
     width_mask_edge_px: float = IMAGE_MASK_EDGE_PIXELS
     init_relion_iteration: int = 0
-    init_fsc: Any | None = None
-    # RELION's --ini_high of a fresh run, which seeds the iteration-0 current resolution
-    # (ml_optimiser.cpp:6768); None leaves it unset, as RELION without --ini_high.
-    ini_high_angstrom: float | None = None
-    # RELION-unit data_vs_prior spectrum of the start-up model (initialiseDataVersusPrior);
-    # it selects the iteration-1 scale-correction shells (ml_optimiser.cpp:10473).
-    init_data_vs_prior: Any | None = None
-    init_ave_Pmax: float | None = None
-    init_has_high_fsc_at_limit: bool | None = None
     force_max_iter_after_convergence: bool = False
     skip_final_iteration: bool = False
-    init_relion_incr_size: int = RELION_INCR_SIZE
 
     def numbered_relion_iteration(self, iteration: int) -> int:
         """RELION's number of the run's zero-based ``iteration``: a continuation counts on from its start."""
@@ -629,6 +618,21 @@ class StartState:
     # Per half, [N, 3] degrees: the input STAR's rlnAngle{Rot,Tilt,Psi}Prior, NaN where absent (None: no column).
     init_angle_priors: Any | None = None
     init_relion_optics_group_count: Any | None = None
+    # The translation prior width the run starts with (--offset_sigma_angstrom, a RELION-seeded start's or a
+    # frozen boundary's per-half pair).
+    init_translation_sigma_angstrom: Any = 10.0
+    # RELION's --ini_high of a fresh run, which seeds the iteration-0 current resolution
+    # (ml_optimiser.cpp:6768); None leaves it unset, as RELION without --ini_high.
+    ini_high_angstrom: float | None = None
+    # RELION-unit data_vs_prior spectrum of the start-up model (initialiseDataVersusPrior);
+    # it selects the iteration-1 scale-correction shells (ml_optimiser.cpp:10473).
+    init_data_vs_prior: Any | None = None
+    # A frozen boundary's FSC, average Pmax, high-FSC flag and RELION size increment (None and RELION's
+    # increment otherwise).
+    init_fsc: Any | None = None
+    init_ave_Pmax: float | None = None
+    init_has_high_fsc_at_limit: bool | None = None
+    init_relion_incr_size: int = RELION_INCR_SIZE
 
 
 CLEAR_JAX_CACHES_BETWEEN_ITERATIONS_ENV = "RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"

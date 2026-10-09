@@ -652,15 +652,16 @@ def test_frozen_boundary_schedule_is_threaded_exactly_to_refinement_loop(monkeyp
 
     from relax.parity import frozen_boundary_cli
 
-    fresh = controller_inputs(monkeypatch, tmp_path / "fresh", "refine")["options"].schedule
-    assert (fresh.init_relion_incr_size, fresh.init_fsc, fresh.init_ave_Pmax) == (10, None, None)
+    fresh = controller_inputs(monkeypatch, tmp_path / "fresh", "refine")["options"]
+    assert (fresh.start.init_relion_incr_size, fresh.start.init_fsc, fresh.start.init_ave_Pmax) == (10, None, None)
     boundary = _StandInBoundary()
     monkeypatch.setattr(frozen_boundary_cli, "load_cli_boundary", lambda args, **_kwargs: (boundary, None))
     monkeypatch.setattr(frozen_boundary_cli, "validate_particle_half_inputs", lambda *a, **k: None)
     monkeypatch.setattr(frozen_boundary_cli, "validate_empty_replay_slots", lambda *a, **k: None)
-    schedule = controller_inputs(monkeypatch, tmp_path / "frozen", "refine")["options"].schedule
-    assert (schedule.init_current_size, schedule.init_relion_incr_size) == (12, 7) != (fresh.init_current_size, 10)
-    assert schedule.init_fsc is boundary.fsc and schedule.init_ave_Pmax == 0.25
+    frozen = controller_inputs(monkeypatch, tmp_path / "frozen", "refine")["options"]
+    assert (frozen.schedule.init_current_size, frozen.start.init_relion_incr_size) == (12, 7)
+    assert (12, 7) != (fresh.schedule.init_current_size, 10)
+    assert frozen.start.init_fsc is boundary.fsc and frozen.start.init_ave_Pmax == 0.25
 
 
 def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():

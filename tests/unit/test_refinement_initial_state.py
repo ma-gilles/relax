@@ -17,6 +17,7 @@ from relax.refinement.iteration_snapshot import IterationSnapshot, refinement_st
 from relax.refinement.refinement_options import (
     CheckpointOptions,
     KClassOptions,
+    StartState,
 )
 
 pytestmark = pytest.mark.unit
@@ -67,7 +68,8 @@ def test_initial_fsc_wins_over_both_lowpass_sources_and_respects_available_shell
     fsc[:7] = 0.9
     original = fsc.copy()
     options = stand_in.options(
-        schedule=stand_in.schedule(init_fsc=fsc, init_current_size=current_size, ini_high_angstrom=80.0),
+        schedule=stand_in.schedule(init_current_size=current_size),
+        start=StartState(init_fsc=fsc, ini_high_angstrom=80.0),
         parity=stand_in.parity(relion_firstiter_ini_high_angstrom=20.0),
     )
     state = _initialize(options, dtype=dtype)
@@ -85,7 +87,8 @@ def test_initial_fsc_wins_over_both_lowpass_sources_and_respects_available_shell
 ])
 def test_lowpass_priority_and_fresh_run_admission(restart_iteration, firstiter_high, ordinary_high, expected):
     options = stand_in.options(
-        schedule=stand_in.schedule(init_relion_iteration=restart_iteration, ini_high_angstrom=ordinary_high),
+        schedule=stand_in.schedule(init_relion_iteration=restart_iteration),
+        start=StartState(ini_high_angstrom=ordinary_high),
         parity=stand_in.parity(relion_firstiter_ini_high_angstrom=firstiter_high),
     )
     state = _initialize(options)
@@ -105,7 +108,7 @@ def test_replay_restart_uses_recorded_resolution_accuracy_and_stalls_before_fres
         '_rlnHasConverged 0\n'
     )
     options = stand_in.options(
-        schedule=stand_in.schedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
+        schedule=stand_in.schedule(init_relion_iteration=2), start=StartState(init_fsc=np.full(33, 0.9)),
         parity=stand_in.parity(relion_firstiter_ini_high_angstrom=30.0),
     )
     state = _initialize(options, relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)))
@@ -122,7 +125,7 @@ def test_sealed_state_suppresses_restart_read_and_frozen_fields_override_resolut
     # If restart were read, the deliberately malformed model would fail.
     (tmp_path / 'run_it002_half1_model.star').write_text('data_model_general\n')
     options = stand_in.options(
-        schedule=stand_in.schedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
+        schedule=stand_in.schedule(init_relion_iteration=2), start=StartState(init_fsc=np.full(33, 0.9)),
     )
     state = _initialize(options, relion_replay=RelionReplay(
         perturb_replay_relion_dir=str(tmp_path), sealed_sampling_state={},

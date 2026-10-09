@@ -541,7 +541,7 @@ def refine_single_volume(
         scale_corrections=options.start.init_scale_corrections, group_ids=options.start.init_group_ids,
         group_count=options.start.init_group_count,
     )
-    if int(options.schedule.init_relion_incr_size) <= 0:
+    if int(options.start.init_relion_incr_size) <= 0:
         raise ValueError("init_relion_incr_size must be positive")
 
     expected_accuracy_inputs = setup_checks.expected_accuracy_inputs_for_run(
@@ -571,15 +571,15 @@ def refine_single_volume(
         previous_class_assignments = [None, None]
         previous_data_vs_prior_for_scheduling = (
             None
-            if options.schedule.init_data_vs_prior is None
-            else np.asarray(options.schedule.init_data_vs_prior, dtype=ctx.scoring_dtype)
+            if options.start.init_data_vs_prior is None
+            else np.asarray(options.start.init_data_vs_prior, dtype=ctx.scoring_dtype)
         )
         # RELION's sigma2_offset in Angstrom^2 (min_sigma2_offset=2 A^2), updated each iteration from the data.
-        sigma_offset = half_inputs.SigmaOffset.from_halves(options.schedule.init_translation_sigma_angstrom)
-        relion_incr_size = int(options.schedule.init_relion_incr_size)
+        sigma_offset = half_inputs.SigmaOffset.from_halves(options.start.init_translation_sigma_angstrom)
+        relion_incr_size = int(options.start.init_relion_incr_size)
         relion_has_high_fsc_at_limit = (
-            bool(options.schedule.init_has_high_fsc_at_limit)
-            if options.schedule.init_has_high_fsc_at_limit is not None
+            bool(options.start.init_has_high_fsc_at_limit)
+            if options.start.init_has_high_fsc_at_limit is not None
             else False
         )
         direction_priors = orientation_priors.initial_direction_priors_from_snapshot(

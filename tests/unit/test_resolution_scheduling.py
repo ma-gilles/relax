@@ -264,7 +264,7 @@ def test_initial_fsc_seeding_preserves_input_and_sets_both_resolution_fields(dty
     original = fsc.copy()
     state = SimpleNamespace(current_resolution=100.0, previous_resolution=200.0)
     options = SimpleNamespace(
-        schedule=SimpleNamespace(init_fsc=fsc, init_current_size=32),
+        schedule=SimpleNamespace(init_current_size=32), start=SimpleNamespace(init_fsc=fsc),
         parity=SimpleNamespace(tau2_fudge=1.0),
     )
     resolution_helpers.initialize_resolution_from_fsc(
@@ -273,7 +273,7 @@ def test_initial_fsc_seeding_preserves_input_and_sets_both_resolution_fields(dty
     # Initial FSC seeding truncates at shell16; the last supported shell is15.
     assert state.current_resolution == state.previous_resolution == 128 * 3.28 / 15
     assert_matches(fsc, original)
-    assert options.schedule.init_fsc is fsc
+    assert options.start.init_fsc is fsc
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -285,7 +285,7 @@ def test_initial_fsc_without_resolved_shell_seeds_minres_map(dtype):
     """
     state = SimpleNamespace(current_resolution=100.0, previous_resolution=200.0)
     options = SimpleNamespace(
-        schedule=SimpleNamespace(init_fsc=np.zeros(65, dtype=dtype), init_current_size=128),
+        schedule=SimpleNamespace(init_current_size=128), start=SimpleNamespace(init_fsc=np.zeros(65, dtype=dtype)),
         parity=SimpleNamespace(tau2_fudge=1.0),
     )
     resolution_helpers.initialize_resolution_from_fsc(

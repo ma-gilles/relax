@@ -987,7 +987,6 @@ def main(command=None):
         RefinementOptions,
         RelionParityOptions,
         SolventOptions,
-        StartState,
         SymmetryOptions,
     )
 
@@ -1248,11 +1247,7 @@ def main(command=None):
             max_iter=job.max_iter,
             initial_sampling=initial_sampling,
             init_current_size=init_current_size,
-            ini_high_angstrom=_ini_high_for_lowpass,
-            init_data_vs_prior=relion_start_data_vs_prior,
             image_mask=(particle_diameter_ang, width_mask_edge_px),
-            relion_init_sigma_offset_angstrom=relion_init_sigma_offset_angstrom,
-            frozen_boundary=frozen_boundary,
             continued_iterations=None if resume_snapshot is None else continued_iterations,
         ),
         execution=command_options.resolve_execution(args),
@@ -1294,30 +1289,14 @@ def main(command=None):
             resumed=resume_snapshot is not None,
         ),
         checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
-        start=StartState(
-            init_group_ids=list(particle_groups.group_ids_per_half),
-            init_group_count=particle_groups.n_groups,
-            init_relion_optics_group_count=particle_groups.n_optics_groups,
-            init_previous_best_translations=(
-                None
-                if initial_poses.poses is None
-                else initial_poses.poses["previous_best_translations"]
-            ),
-            init_previous_best_rotation_eulers=(
-                None
-                if initial_poses.poses is None
-                else initial_poses.poses["previous_best_rotation_eulers"]
-            ),
-            init_angle_priors=None if initial_poses.poses is None else initial_poses.poses.get("angle_priors"),
-            init_image_corrections=(
-                initial_poses.image_corrections if frozen_boundary is None else frozen_boundary.image_corrections
-            ),
-            init_scale_corrections=(
-                initial_poses.scale_corrections if frozen_boundary is None else frozen_boundary.scale_corrections
-            ),
-            init_direction_prior=(
-                None if frozen_boundary is None else frozen_boundary.direction_prior_per_half
-            ),
+        start=command_options.resolve_start_state(
+            args,
+            particle_groups=particle_groups,
+            initial_poses=initial_poses,
+            ini_high_angstrom=_ini_high_for_lowpass,
+            init_data_vs_prior=relion_start_data_vs_prior,
+            relion_init_sigma_offset_angstrom=relion_init_sigma_offset_angstrom,
+            frozen_boundary=frozen_boundary,
         ),
         expected_accuracy=ExpectedAccuracyOptions(
             half1_base_order_local=particle_layout.accuracy_base_order_local,

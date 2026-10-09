@@ -217,7 +217,7 @@ def test_controller_installs_arrays_before_reporting_and_drops_temporary_owner(m
     assert_matches(np.asarray(inputs["startup"].take()[1]), np.asarray(trace.calls("prepare_prior")[0].result))
     assert_matches(np.asarray(inputs["init_noise_variance"].half1), np.full(256, 2.0, np.float32))
     assert_matches(inputs["options"].parity.tau2_fudge, 1.75)
-    assert_matches(inputs["options"].schedule.init_translation_sigma_angstrom, 0.42)
+    assert_matches(inputs["options"].start.init_translation_sigma_angstrom, 0.42)
 
 
 @pytest.mark.unit
