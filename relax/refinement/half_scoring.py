@@ -1040,17 +1040,28 @@ def _score_half_dense_one_shape(
 
 
 
+@dataclass(frozen=True, kw_only=True)
+class DenseShapeOwners:
+    """The dense scoring owners one shape class of a multi-shape half changes; execution is shared."""
+
+    half: HalfScoringData
+    sampling: DenseSamplingSpec
+    priors: DensePriorSpec
+    batching: DenseBatchPolicy
+    variant: DenseVariantPolicy
+    optics: OpticsSpec
+
+
 def _dense_owners_for_shape(
     half: HalfScoringData,
     sampling: DenseSamplingSpec,
     priors: DensePriorSpec,
     batching: DenseBatchPolicy,
     variant: DenseVariantPolicy,
-    execution: DenseExecutionPolicy,
     optics: OpticsSpec,
     shape_class,
     class_index: int,
-) -> tuple:
+) -> DenseShapeOwners:
     """Derive one shape class without changing the shared scoring owners."""
 
     from relax.refinement import optics_shapes
@@ -1088,8 +1099,8 @@ def _dense_owners_for_shape(
             shape_values["translation_log_prior"] = translations.log_prior
 
     batch_overrides = {} if batching.class_batch_overrides is None else batching.class_batch_overrides[class_index]
-    return (
-        replace(
+    return DenseShapeOwners(
+        half=replace(
             half,
             particles=replace(
                 half.particles,
@@ -1106,7 +1117,7 @@ def _dense_owners_for_shape(
             scale_group_ids=shape_values["group_ids_k"],
             image_seed_classes=shape_values["image_seed_classes"],
         ),
-        replace(
+        sampling=replace(
             sampling,
             current_translations=shape_values["current_translations"],
             base_translations=shape_values["base_translations"],
@@ -1114,7 +1125,7 @@ def _dense_owners_for_shape(
             cs_for_engine=shape_values["cs_for_engine"],
             model_current_size_for_engine=shape_values["model_current_size_for_engine"],
         ),
-        replace(
+        priors=replace(
             priors,
             rotation_log_prior_k=shape_values["rotation_log_prior_k"],
             class_rotation_log_prior_k=shape_values["class_rotation_log_prior_k"],
@@ -1122,14 +1133,13 @@ def _dense_owners_for_shape(
             translation_search_base=shape_values["translation_search_base"],
             trans_prior_center_for_engine=shape_values["trans_prior_center_for_engine"],
         ),
-        replace(batching, class_batch_overrides=None, **batch_overrides),
-        replace(
+        batching=replace(batching, class_batch_overrides=None, **batch_overrides),
+        variant=replace(
             variant,
             firstiter_coarse_current_size=shape_values["firstiter_coarse_current_size"],
             firstiter_fine_current_size=shape_values["firstiter_fine_current_size"],
         ),
-        execution,
-        replace(
+        optics=replace(
             optics,
             noise_radial_k=None,
             class_translations=None,
@@ -1181,18 +1191,15 @@ def _score_half_dense(
 
     results = []
     for index, shape_class in enumerate(experiment_half.classes):
+        owners = _dense_owners_for_shape(half, sampling, priors, batching, variant, optics, shape_class, index)
         result = _score_half_dense_one_shape(
-            *_dense_owners_for_shape(
-                half,
-                sampling,
-                priors,
-                batching,
-                variant,
-                execution,
-                optics,
-                shape_class,
-                index,
-            )
+            owners.half,
+            owners.sampling,
+            owners.priors,
+            owners.batching,
+            owners.variant,
+            execution,
+            owners.optics,
         )
         if not variant.k_class_enabled:
             # K1 shape merging retains common statistics, not class-prior summaries.
@@ -1449,17 +1456,24 @@ def _build_local_adaptive_parent_layout(
     return parent_layout, parent_order
 
 
+@dataclass(frozen=True, kw_only=True)
+class LocalShapeOwners:
+    """The exact-local scoring owners one shape class changes; batching, execution and diagnostics are shared."""
+
+    half: HalfScoringData
+    sampling: LocalSampling
+    priors: LocalPriorSpec
+    optics: OpticsSpec
+
+
 def _local_owners_for_shape(
     half: HalfScoringData,
     sampling: LocalSampling,
     priors: LocalPriorSpec,
-    batching: LocalBatchPolicy,
-    execution: LocalExecutionPolicy,
-    diagnostics: LocalDiagnosticPolicy,
     optics: OpticsSpec,
     shape_class,
     class_index: int,
-) -> tuple:
+) -> LocalShapeOwners:
     """Derive one exact-local shape class through the optics owner."""
 
     from relax.refinement import optics_shapes
@@ -1491,8 +1505,8 @@ def _local_owners_for_shape(
         shape_values["translation_search_base"] = translations.search_base
         shape_values["trans_prior_center"] = translations.local_prior_center
         shape_values["trans_prior_center_for_engine"] = translations.engine_prior_center
-    return (
-        replace(
+    return LocalShapeOwners(
+        half=replace(
             half,
             particles=replace(
                 half.particles,
@@ -1509,7 +1523,7 @@ def _local_owners_for_shape(
             ),
             scale_group_ids=shape_values["group_ids_k"],
         ),
-        replace(
+        sampling=replace(
             sampling,
             translations=shape_values["current_translations"],
             base_translations=shape_values["base_translations"],
@@ -1517,17 +1531,14 @@ def _local_owners_for_shape(
             model_support_size=shape_values["model_current_size_for_engine"],
             coarse_image_window_size=shape_values["local_pass1_current_size"],
         ),
-        replace(
+        priors=replace(
             priors,
             trans_prior_center=shape_values["trans_prior_center"],
             trans_prior_center_for_engine=shape_values["trans_prior_center_for_engine"],
             translation_search_base=shape_values["translation_search_base"],
             replay_prior_translations=shape_values["replay_prior_translations"],
         ),
-        batching,
-        execution,
-        diagnostics,
-        replace(
+        optics=replace(
             optics,
             noise_radial_k=None,
             class_translations=None,
@@ -1562,22 +1573,14 @@ def _score_half_local(
             "coarse_sizing": optics.coarse_sizing,
         }
     )
-    results = [
-        _score_half_local_one_shape(
-            *_local_owners_for_shape(
-                half,
-                sampling,
-                priors,
-                batching,
-                execution,
-                diagnostics,
-                optics,
-                shape_class,
-                index,
+    results = []
+    for index, shape_class in enumerate(experiment_half.classes):
+        owners = _local_owners_for_shape(half, sampling, priors, optics, shape_class, index)
+        results.append(
+            _score_half_local_one_shape(
+                owners.half, owners.sampling, owners.priors, batching, execution, diagnostics, owners.optics
             )
         )
-        for index, shape_class in enumerate(experiment_half.classes)
-    ]
     return _merge_shape_class_results(results, experiment_half)
 
 
