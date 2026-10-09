@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 import logging
 import math
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -1990,6 +1991,10 @@ def _large_relion_host_irfft_enabled(
     return True
 
 
+# Complex128 elements of one slab of the host inverse FFT (1 GiB; smaller slabs ran slower at 1600^3).
+_HOST_IRFFT_SLAB_ELEMENTS = 1 << 26
+
+
 def _host_irfft_and_center_crop(
     fftw_half,
     reconstruction_shape,
@@ -1997,11 +2002,17 @@ def _host_irfft_and_center_crop(
     *,
     workers: int,
 ):
-    """Run a normalized c64-to-f32 inverse FFT and retain only its center crop.
+    """RELION's padded inverse FFT of a reconstruction, keeping only its centre crop, in slabs and in double.
 
-    ``fftw_half`` is already in raw FFTW order.  The crop indices combine
-    ``ifftshift`` with RELION's spatial unpadding so the host never allocates a
-    second reconstruction-sized real volume merely to shift it.
+    ``fftw_half`` is in raw FFTW order. RELION transforms the padded volume in ``RFLOAT`` (double in its CPU
+    build, ``DoublePrec_CPU``; BackProjector::windowToOridimRealSpace) and crops it to the output box. The
+    separable inverse runs the same way here, without the whole padded real volume: for a slab of x columns at a
+    time the (z, y) inverse transform runs in complex128 and only the crop's z and y rows are kept; the x
+    inverse then runs on those rows a z slab at a time and keeps the crop's x. The strided slab copies run on
+    ``workers`` threads, as the transforms do. The crop indices combine
+    ``ifftshift`` with RELION's spatial unpadding. At box 800 (1600^3 padded) the transient beside the input is
+    about 10 GiB instead of scipy's whole-volume ``irfftn`` working set (41-64 GiB measured, relax#39). Returns the
+    float32 crop, C-contiguous.
     """
 
     from scipy import fft as scipy_fft
@@ -2022,20 +2033,7 @@ def _host_irfft_and_center_crop(
     expected_half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(
         reconstruction_shape,
     )
-    fftw_half = np.asarray(fftw_half, dtype=np.complex64, order="C").reshape(
-        expected_half_shape,
-    )
-    real_raw = scipy_fft.irfftn(
-        fftw_half,
-        s=reconstruction_shape,
-        axes=(-3, -2, -1),
-        norm="backward",
-        overwrite_x=True,
-        workers=workers,
-    )
-    if real_raw.dtype != np.float32:
-        raise TypeError(f"RELION host inverse FFT returned {real_raw.dtype}, expected float32")
-
+    fftw_half = np.asarray(fftw_half, order="C").reshape(expected_half_shape)
     raw_indices = []
     for reconstruction, output in zip(reconstruction_shape, output_shape):
         padding_width = reconstruction - output
@@ -2045,12 +2043,70 @@ def _host_irfft_and_center_crop(
         # input index ``i + floor(N / 2)``.  Keep the explicit floor because
         # the distinction matters for odd reconstruction sizes.
         raw_indices.append((centered_indices + reconstruction // 2) % reconstruction)
-    cropped = np.asarray(
-        real_raw[np.ix_(*raw_indices)],
-        dtype=np.float32,
-        order="C",
-    )
+    z_runs, y_runs, x_runs = (_contiguous_runs(indices) for indices in raw_indices)
+    n_z, n_y, n_x_half = expected_half_shape
+    workers = max(1, int(workers))
+
+    def in_parallel(function, n):
+        """``function(start, stop)`` over ``workers`` contiguous parts of ``range(n)``: the slab copies are
+        strided NumPy assignments, which release the GIL."""
+        step = -(-n // workers)
+        list(pool.map(lambda i: function(i * step, min(n, (i + 1) * step)), range(workers)))
+
+    def copy_runs(destination, source, runs, axis):
+        for source_start, source_stop, destination_start in runs:
+            index = [slice(None)] * destination.ndim
+            index[axis] = slice(destination_start, destination_start + source_stop - source_start)
+            source_index = [slice(None)] * source.ndim
+            source_index[axis] = slice(source_start, source_stop)
+            destination[tuple(index)] = source[tuple(source_index)]
+
+    zy = np.empty((output_shape[0], output_shape[1], n_x_half), dtype=np.complex128)
+    cropped = np.empty(output_shape, dtype=np.float32)
+    x_step = max(1, min(n_x_half, _HOST_IRFFT_SLAB_ELEMENTS // (n_z * n_y)))
+    slab_buffer = np.empty((n_z, n_y, x_step), dtype=np.complex128)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        # (z, y) inverse per slab of x columns, kept at the crop's z and y rows.
+        for x0 in range(0, n_x_half, x_step):
+            x1 = min(n_x_half, x0 + x_step)
+            slab = slab_buffer[:, :, : x1 - x0]
+
+            def gather(z0, z1, slab=slab, x0=x0, x1=x1):
+                slab[z0:z1] = fftw_half[z0:z1, :, x0:x1]
+
+            in_parallel(gather, n_z)
+            slab = scipy_fft.ifftn(slab, axes=(0, 1), norm="backward", overwrite_x=True, workers=workers)
+
+            def keep(z0, z1, slab=slab, x0=x0, x1=x1):
+                for source_start, source_stop, destination_start in z_runs:
+                    lo = max(z0, destination_start)
+                    hi = min(z1, destination_start + source_stop - source_start)
+                    if lo < hi:
+                        rows = slab[source_start + lo - destination_start : source_start + hi - destination_start]
+                        copy_runs(zy[lo:hi, :, x0:x1], rows, y_runs, axis=1)
+
+            in_parallel(keep, output_shape[0])
+            del slab
+        del slab_buffer
+
+        # x inverse per slab of z rows, kept at the crop's x.
+        z_step = max(1, _HOST_IRFFT_SLAB_ELEMENTS // (output_shape[1] * reconstruction_shape[2]))
+        for z0 in range(0, output_shape[0], z_step):
+            z1 = min(output_shape[0], z0 + z_step)
+            rows = scipy_fft.irfft(zy[z0:z1], n=reconstruction_shape[2], axis=2, norm="backward", workers=workers)
+            copy_runs(cropped[z0:z1], rows, x_runs, axis=2)
+            del rows
     return cropped
+
+
+def _contiguous_runs(indices):
+    """``[(source_start, source_stop, destination_start)]`` covering ``indices`` (crop index ``i`` reads
+    ``indices[i]``) as runs of consecutive source indices; a wrapped centre crop is two runs."""
+
+    breaks = np.flatnonzero(np.diff(indices) != 1) + 1
+    starts = np.concatenate([[0], breaks])
+    stops = np.concatenate([breaks, [indices.size]])
+    return [(int(indices[a]), int(indices[b - 1]) + 1, int(a)) for a, b in zip(starts, stops)]
 
 
 def _accumulator_shape_or_default(vol_shape, padding_factor, accumulator_volume_shape) -> tuple:

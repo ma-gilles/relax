@@ -2165,6 +2165,35 @@ def test_host_irfft_center_crop_matches_jax_without_full_shift(
     assert_matches(actual, expected)
 
 
+@pytest.mark.parametrize("workers", [1, 3])
+@pytest.mark.parametrize(("reconstruction_size", "output_size"), [(20, 10), (21, 11), (18, 9), (19, 10)])
+def test_host_irfft_slabs_match_the_double_whole_volume_inverse(monkeypatch, reconstruction_size, output_size, workers):
+    """The slab-wise host inverse FFT (relax#39) is the whole-volume double ``irfftn`` cropped as RELION crops
+    (BackProjector::windowToOridimRealSpace runs it in RFLOAT, double in RELION's CPU build). Slabs of a few
+    columns and rows are forced so several slabs, and odd sizes, are exercised; the float32 output is the
+    double result rounded once; the slab copies run on one or several threads."""
+
+    from recovar.core import fourier_transform_utils as ftu
+    from relax.refinement import mean_helpers
+
+    reconstruction_shape = (reconstruction_size,) * 3
+    output_shape = (output_size,) * 3
+    half_shape = ftu.volume_shape_to_half_volume_shape(reconstruction_shape)
+    rng = np.random.default_rng(39 + reconstruction_size)
+    fftw_half = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
+    whole = np.fft.irfftn(fftw_half.astype(np.complex128), s=reconstruction_shape)
+    pad = [(r - o) // 2 for r, o in zip(reconstruction_shape, output_shape)]
+    expected = np.fft.ifftshift(whole)[
+        pad[0] : pad[0] + output_size, pad[1] : pad[1] + output_size, pad[2] : pad[2] + output_size
+    ]
+
+    monkeypatch.setattr(mean_helpers, "_HOST_IRFFT_SLAB_ELEMENTS", 3 * reconstruction_size * reconstruction_size)
+    actual = mean_helpers._host_irfft_and_center_crop(fftw_half, reconstruction_shape, output_shape, workers=workers)
+
+    assert actual.dtype == np.float32 and actual.flags.c_contiguous
+    np.testing.assert_allclose(actual, expected.astype(np.float32), rtol=0, atol=1e-6 * np.abs(expected).max())
+
+
 @pytest.mark.usefixtures("_jax_cpu_default_device")
 def test_host_unpadded_tail_matches_existing_fftw_half_finish():
     from recovar.core import fourier_transform_utils as ftu
