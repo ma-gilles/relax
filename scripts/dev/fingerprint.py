@@ -70,7 +70,8 @@ NOT_COVERED = (
     "STAR replays, --final-replay-relion-dir), frozen boundaries, state-swap probes, "
     "follower-scale topologies, noise or poses from an earlier archive, several optics groups, subtomograms",
     "the real E-step engines and their numbers (a stand-in seeded by its operands replaces the dense adaptive engine)",
-    "local search, local sampling and the profile-only return",
+    "local search with adaptive oversampling (its parent and fine local passes), Class3D local search and the "
+    "real local engine (k1_local* run K=1 local searches on a stand-in seeded by its operands)",
     "symmetry other than C1",
     "tomography",
     "multi-shape optics halves",
@@ -607,6 +608,12 @@ def _cases() -> dict[str, tuple[str, dict]]:
         add(f"k{k}_sealed_sampling", f"K={k}, one iteration on a sealed sampling state (captured directions, psi "
             "angles, translations and sizes), adaptive oversampling 1", n_classes=k, join=0.0, sealed=True,
             oversampling=1, max_iter=1, converge_after=None, dump=False)
+    # Local angular searches (RELION --sigma_ang) on the stand-in local engine.
+    local = dict(n_classes=1, join=0.0, max_iter=3, converge_after=3)
+    add("k1_local", "K=1 local angular searches from iteration 1 (--sigma_ang 3), intermediates and local profiles "
+        "dumped, checkpoints written", local={"sigma_ang_deg": 3.0}, writer=True, **local)
+    add("k1_local_profile_stop", "K=1 local-search profile probe: returns after the first local expectation",
+        local={"sigma_ang_deg": 3.0, "stop_after_local_search_profile": True}, **local)
     add("k1_sealed_final", "K=1 on a sealed sampling state that converges after its iteration: the final pass "
         "reuses the sealed grid", n_classes=1, join=0.0, sealed=True, max_iter=1, converge_after=1, dump=False)
     # The command entry (full_refinement.main) on a 12-image, 16-pixel data directory.
@@ -711,6 +718,8 @@ MUTATIONS = (
      "the pass-1 coarse rotations are perturbed by the oversampled step", True),
     ("projector_not_reused", "reusable=reusable_half1 if half.index == 0 else None,", "reusable=None,",
      "half 1's scoring projector is rebuilt instead of reusing the accuracy projector", True),
+    ("local_poses_not_centred", "half.centre_absent_poses(offset_dims=3 if tomo_halves else 2)", "pass",
+     "a local search starts from absent poses instead of centring them at zero", True),
     ("significance_not_combined", "significance.combine()", "pass",
      "the halves' significant-sample counts are never combined", True),
     ("final_replay_prior_order_dropped", "direction_priors[_half_idx] = DirectionPrior(_prior_k, _prior_order_k)", "direction_priors[_half_idx] = DirectionPrior(_prior_k, None)",
@@ -909,6 +918,70 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             class_posterior_sums=jnp.asarray(resp.sum(axis=1), dtype=jnp.float32),
         )
 
+    def stand_in_local(*owners):
+        """CPU stand-in for _run_local_search_iteration (one K=1 local pass): a result seeded by every operand of
+        its four owners, with the accumulator layout, statistics and best poses the half reads."""
+        from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+        from relax.helpers.types import NoiseStats, RelionStats
+        from relax.refinement.local_search_iteration import LocalSearchResult
+        from relax.sampling import rotation_grid_size
+
+        fields = {f.name: getattr(owner, f.name) for owner in owners for f in dataclasses.fields(owner)}
+        seed = digest_operands(*owners)
+        record("call", "local_engine", f"seed={seed:016x}", f"order={int(fields['healpix_order'])}",
+               f"current_size={fields['current_size']}", f"noise={bool(fields['accumulate_noise'])}",
+               f"poses={bool(fields['return_best_pose_details'])}", f"profile={bool(fields['return_profile'])}")
+        rng = np.random.default_rng(seed)
+        dataset = fields["experiment_dataset"]
+        n_images = int(dataset.n_units)
+        padding = int(fields["reconstruction_padding_factor"])
+        if fields["mstep_relion_x_half"]:
+            shape = relion_backprojector_volume_shape(
+                dataset.volume_shape, padding, current_size=fields["reconstruction_volume_current_size"],
+            )
+        else:
+            shape = tuple(int(size) * padding for size in dataset.volume_shape)
+        size = int(np.prod(shape))
+        side = round(size ** (1.0 / 3.0))
+        numerator = (
+            fixtures._hermitian_volume((side, side, side), seed=int(rng.integers(0, 2**31 - 1)))
+            if side ** 3 == size else jnp.asarray(rng.standard_normal(size), dtype=jnp.complex64)
+        )
+        n_shells = int(dataset.image_shape[0] // 2 + 1)
+        n_rotations = int(rotation_grid_size(int(fields["healpix_order"]), symmetry=fields["symmetry"]))
+        stats = RelionStats(
+            log_evidence_per_image=jnp.asarray(rng.standard_normal(n_images), dtype=jnp.float32),
+            best_log_score_per_image=jnp.asarray(rng.standard_normal(n_images), dtype=jnp.float32),
+            max_posterior_per_image=jnp.asarray(0.2 + 0.8 * rng.random(n_images), dtype=jnp.float32),
+            rotation_posterior_sums=jnp.asarray(rng.random(n_rotations), dtype=jnp.float32),
+        )
+        noise = NoiseStats(
+            wsum_sigma2_noise=jnp.asarray(1.0 + rng.random(n_shells), dtype=jnp.float32),
+            wsum_img_power=jnp.asarray(1.0 + rng.random(n_shells), dtype=jnp.float32),
+            wsum_sigma2_offset=float(rng.random()), sumw=float(n_images),
+        )
+        # Best rotations about z by a small seeded angle each.
+        angles = rng.uniform(-0.2, 0.2, size=n_images)
+        cos, sin = np.cos(angles), np.sin(angles)
+        rotations = np.zeros((n_images, 3, 3), dtype=np.float32)
+        rotations[:, 0, 0], rotations[:, 0, 1], rotations[:, 1, 0], rotations[:, 1, 1] = cos, -sin, sin, cos
+        rotations[:, 2, 2] = 1.0
+        return LocalSearchResult(
+            Ft_y=numerator,
+            Ft_ctf=jnp.asarray(1.0 + rng.random(size), dtype=jnp.complex64),
+            hard_assignment=np.asarray(rng.integers(0, max(n_rotations, 1), size=n_images), dtype=np.int32),
+            relion_stats=stats,
+            noise_stats=noise if fields["accumulate_noise"] else None,
+            profile_summary=(
+                {"reconstruction_sample_indices_by_image": np.arange(n_images), "seed": np.int64(seed % 2**62)}
+                if fields["return_profile"] else None
+            ),
+            best_pose_rotations=rotations if fields["return_best_pose_details"] else None,
+            best_pose_translations=(
+                rng.integers(-1, 2, size=(n_images, 2)).astype(np.float32) if fields["return_best_pose_details"] else None
+            ),
+        )
+
     def stand_in_accuracy(self, **operands):
         """Stand-in for Half1AccuracyInputs.estimate: a successful estimate seeded by its operands."""
         seed = digest_operands(operands)
@@ -993,6 +1066,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         """The stand-in engine and the call spies of every case; ``converge_after`` forces convergence."""
         for owner in relax_modules_with("run_dense_k_class_em_adaptive"):
             patch(owner, "run_dense_k_class_em_adaptive", stand_in_engine)
+        for owner in relax_modules_with("_run_local_search_iteration"):
+            if owner.__name__ != "relax.refinement.local_search_iteration":
+                patch(owner, "_run_local_search_iteration", stand_in_local)
         for owner in relax_modules_with("_host_tau2_volumes"):
             original_host = owner._host_tau2_volumes
 
@@ -1045,7 +1121,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                  writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
                  iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
                  seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None,
-                 consistency=None, current_sizes=None, sealed=False):
+                 consistency=None, current_sizes=None, sealed=False, local=None):
         first_pass = None
         if continued:
             first_pass = run_case(n_classes, join, max_iter=1, converge_after=None, dump=False, cc=cc, writer=True,
@@ -1099,6 +1175,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         if current_sizes is not None:
             adaptive_fields["relion_current_sizes"] = tuple(current_sizes)
         extra["adaptive"] = refinement_options.AdaptiveOptions(**adaptive_fields)
+        if local is not None:
+            # RELION --sigma_ang (local angular searches from iteration 1) and the local-search probe stops.
+            extra["local_search"] = refinement_options.LocalSearchOptions(
+                sigma_ang_deg=local["sigma_ang_deg"], **{k: v for k, v in local.items() if k != "sigma_ang_deg"},
+            )
         # The execution knobs: one ExecutionOptions, or (a source before PLAN d1) RefinementBatching and
         # HalfOverlapOptions.
         execution_fields = dict(image_batch_size=fixtures.N_IMAGES, rotation_block_size=fixtures.N_ROTATIONS)
