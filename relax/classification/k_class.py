@@ -716,7 +716,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     noise_variance,
     rotations,
     translations,
-    disc_type: str,
     *,
     engine_kwargs: dict,
 ) -> _DenseKClassScoreProbeResult:
@@ -724,10 +723,8 @@ def _run_dense_k_class_joint_firstiter_score_probe(
 
     from relax.diagnostics.coarse_gaussian_diagnostics import _significance_debug_dump_matches
     from relax.helpers.projection import compact_relion_projector_half_for_centered_indices
-    from relax.scoring.significance import (
-        _compute_k_class_significance_batched,
-        _global_pass1_relion_projector_texture_enabled,
-    )
+    from relax.scoring.pass1_plan import _global_pass1_relion_projector_texture_enabled
+    from relax.scoring.significance import _compute_k_class_significance_batched
 
     means_array = _as_class_means(means_array)
     n_classes = int(means_array.shape[0])
@@ -792,11 +789,9 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     firstiter_class_log_priors = np.zeros(n_classes, dtype=np.float64)
     full_stats = _compute_k_class_significance_batched(
         experiment_dataset,
-        means_array,
         noise_variance,
         rotations,
         translations,
-        disc_type,
         class_log_priors=firstiter_class_log_priors,
         adaptive_fraction=1.0,
         max_significants=1,
@@ -813,7 +808,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         optics_group_ids=engine_kwargs.get("optics_group_ids"),
         half_spectrum_scoring=bool(engine_kwargs.get("half_spectrum_scoring", False)),
         projection_padding_factor=int(engine_kwargs.get("projection_padding_factor", 1)),
-        do_gridding_correction=bool(engine_kwargs.get("do_gridding_correction", False)),
         square_window=bool(engine_kwargs.get("square_window", False)),
         use_float64_scoring=bool(engine_kwargs.get("use_float64_scoring", False)),
         use_float64_projections=_projection_float64_from_kwargs(engine_kwargs),
@@ -839,7 +833,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         translation_phase_source=engine_kwargs.get("translation_phase_source"),
         **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(engine_kwargs),
-    )[-1]
+    ).full_stats
     from relax.diagnostics.global_winner_summary import maybe_dump_global_winner_summary
 
     maybe_dump_global_winner_summary(
@@ -1708,7 +1702,6 @@ def run_dense_k_class_em_adaptive(
         if relion_projector_half is not None:
             significance_projector_half = seed_iteration_first_class(relion_projector_half)[0]
     coarse_significance_support_audit = None
-    exact_coarse_operand_assembly = None
     coarse_actual_backend = None
     pass1_t0 = time.time()
     if given_supports is not None:
@@ -1768,7 +1761,6 @@ def run_dense_k_class_em_adaptive(
                     noise_variance,
                     coarse_rotations_np,
                     coarse_translations_np,
-                    disc_type,
                     engine_kwargs=coarse_probe_kwargs,
                 )
         coarse_actual_backend = coarse_result.coarse_score_backend
@@ -1818,7 +1810,6 @@ def run_dense_k_class_em_adaptive(
             image_pre_shifts=engine_kwargs.get("image_pre_shifts"),
             half_spectrum_scoring=engine_kwargs.get("half_spectrum_scoring", False),
             projection_padding_factor=engine_kwargs.get("projection_padding_factor", 1),
-            do_gridding_correction=engine_kwargs.get("do_gridding_correction", False),
             square_window=engine_kwargs.get("square_window", False),
             window_at_box=bool(engine_kwargs.get("window_at_box", False)),
             use_float64_scoring=engine_kwargs.get("use_float64_scoring", False),
@@ -1842,25 +1833,18 @@ def run_dense_k_class_em_adaptive(
             sig_kwargs["return_relion_f32_normalization"] = True
 
         with nvtx.annotate("kclass.adaptive.significance", color="orange", domain=NVTX_DOMAIN_EM):
-            (
-                _sig_rot_any_by_class,
-                _n_sig_per_image,
-                _coarse_hard_assignment,
-                _coarse_class_assignment,
-                sig_sample_indices_by_class,
-                _full_coarse_stats,
-            ) = _compute_k_class_significance_batched(
+            pass1_result = _compute_k_class_significance_batched(
                 experiment_dataset,
-                significance_means,
                 noise_variance,
                 coarse_rotations_np,
                 coarse_translations_np,
-                disc_type,
                 class_log_priors=significance_log_priors,
                 **sig_kwargs,
                 **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
                 **_translation_angle_scale_kwargs(engine_kwargs),
             )
+        sig_sample_indices_by_class = pass1_result.significant_sample_indices
+        _full_coarse_stats = pass1_result.full_stats
         if image_seed_classes is not None:
             sig_sample_indices_by_class = seed_iteration_supports(
                 sig_sample_indices_by_class[0], image_seed_classes, n_classes
@@ -1874,9 +1858,6 @@ def run_dense_k_class_em_adaptive(
         coarse_actual_backend = _full_coarse_stats.get("executed_coarse_backend")
         coarse_significance_support_audit = _full_coarse_stats.get(
             "coarse_significance_support_audit",
-        )
-        exact_coarse_operand_assembly = _full_coarse_stats.get(
-            "exact_coarse_operand_assembly",
         )
     if coarse_engine == "gemm_hybrid" and coarse_actual_backend not in {"gemm_macro", "exact_cc_gemm"}:
         raise RuntimeError(f"gemm_hybrid selected but coarse scorer executed {coarse_actual_backend!r}")
@@ -1893,7 +1874,6 @@ def run_dense_k_class_em_adaptive(
         result = _with_coarse_significance_diagnostics(
             result,
             support_audit=coarse_significance_support_audit,
-            exact_coarse_operand_assembly=exact_coarse_operand_assembly,
         )
         if coarse_engine == "gemm_hybrid":
             from relax.sparse_pass2.engine_record import record_coarse_engine_call
@@ -1940,7 +1920,7 @@ def run_dense_k_class_em_adaptive(
     if reuse_zero_oversampling_coarse_state:
         pass2_kwargs["relion_f32_normalization_sum_weight"] = _full_coarse_stats["relion_f32_sum_weight"]
         pass2_kwargs["relion_coarse_max_posterior"] = _full_coarse_stats["relion_f32_max_posterior"]
-        pass2_kwargs["relion_coarse_hard_assignment"] = _coarse_hard_assignment
+        pass2_kwargs["relion_coarse_hard_assignment"] = pass1_result.hard_assignment
     if pass2_use_float64_scoring is not None:
         pass2_kwargs["use_float64_scoring"] = bool(pass2_use_float64_scoring)
     if pass2_use_float64_projections is not None:

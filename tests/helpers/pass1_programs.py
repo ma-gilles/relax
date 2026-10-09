@@ -1,6 +1,6 @@
-"""Test isolation for the jitted pass-1 programs of ``relax.scoring.significance``."""
+"""Test isolation for the jitted pass-1 programs of ``relax.scoring.pass1_program``."""
 
-from relax.scoring import significance
+from relax.scoring import pass1_program
 
 
 def clear_pass1_programs(request) -> None:
@@ -11,8 +11,8 @@ def clear_pass1_programs(request) -> None:
     """
 
     def clear():
-        significance._coarse_pass1_blocks.clear_cache()
-        significance._coarse_pass1_block.clear_cache()
+        pass1_program._coarse_pass1_blocks.clear_cache()
+        pass1_program._coarse_pass1_block.clear_cache()
 
     clear()
     request.addfinalizer(clear)

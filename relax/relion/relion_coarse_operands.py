@@ -313,7 +313,6 @@ def _assemble_relion_exact_coarse_gaussian_operands(
     indices,
     *,
     batch_scale_np,
-    actual_batch_size: int,
     batch_size: int,
     score_indices,
     score_indices_np,

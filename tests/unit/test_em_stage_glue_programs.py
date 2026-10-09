@@ -41,11 +41,9 @@ def _significance_call(monkeypatch, n_classes=2):
     rotations[:, 0, 1] = np.asarray([0.0, 0.3, 0.1, 0.4, 0.2], dtype=np.float32)
     args = (
         dataset,
-        jnp.zeros((n_classes, dataset.volume_size), dtype=jnp.complex64),
         jnp.ones(dataset.image_size, dtype=jnp.float32),
         rotations,
         jnp.array([[0.0, 0.0], [1.0, -1.0], [-1.0, 0.0]], dtype=jnp.float32),
-        "linear_interp",
     )
     kwargs = dict(
         class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),
@@ -166,17 +164,17 @@ def test_coarse_pad_env_flag_stays_inside_the_null_band_on_gpu(monkeypatch):
 def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
     """With the flag on, preprocessing sees ``image_batch_size`` rows every time."""
 
-    from relax.scoring import significance
+    from relax.scoring import pass1_operands, significance
 
     args, kwargs = _significance_call(monkeypatch, n_classes=1)
-    original = significance._process_relion_exact_coarse_half_image
+    original = pass1_operands._process_relion_exact_coarse_half_image
     seen = []
 
     def record(experiment_dataset, batch, *rest, **batch_kwargs):
         seen.append(int(np.asarray(batch).shape[0]))
         return original(experiment_dataset, batch, *rest, **batch_kwargs)
 
-    monkeypatch.setattr(significance, "_process_relion_exact_coarse_half_image", record)
+    monkeypatch.setattr(pass1_operands, "_process_relion_exact_coarse_half_image", record)
 
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     significance._compute_k_class_significance_batched(*args, **kwargs)
@@ -278,7 +276,7 @@ def test_collate_keeps_device_arrays_on_device():
     [
         (
             "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH",
-            "relax.scoring.significance:_coarse_pad_final_image_batch_enabled",
+            "relax.scoring.pass1_plan:_coarse_pad_final_image_batch_enabled",
             True,  # on by default since the K=1 resident flip
         ),
         (

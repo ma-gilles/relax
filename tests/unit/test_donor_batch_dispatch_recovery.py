@@ -1,6 +1,5 @@
 """Donor memory policy and metadata-only batch shape regressions."""
-import numpy as np
-from relax.scoring.significance import _pad_significance_preprocess_inputs
+from relax.scoring.pass1_batch import _pad_significance_preprocess_inputs
 
 
 class ShapeOnlyBatch:
@@ -11,6 +10,5 @@ class ShapeOnlyBatch:
 
 def test_unpadded_batch_shape_does_not_copy_to_host():
     batch = ShapeOnlyBatch()
-    ctf = np.ones((3, 9))
-    out = _pad_significance_preprocess_inputs(batch, ctf, None, None, None, None, target_size=3)
-    assert out[0] is batch and out[1] is ctf
+    out = _pad_significance_preprocess_inputs(batch, None, None, None, target_size=3)
+    assert out[0] is batch

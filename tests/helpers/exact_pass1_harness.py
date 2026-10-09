@@ -165,9 +165,9 @@ def install_exact_pass1_mocks(monkeypatch):
 
     from relax.cuda import kernels as em_cuda_kernels
     from relax.helpers import projection as projection_helpers
-    from relax.scoring import significance
+    from relax.scoring import gaussian_plan
 
-    monkeypatch.setattr(significance, "_custom_cuda_ready", lambda: True)
+    monkeypatch.setattr(gaussian_plan, "_custom_cuda_ready", lambda: True)
     mock_unit_ctf_and_zero_highres_power(monkeypatch)
     monkeypatch.setattr(
         em_cuda_kernels,

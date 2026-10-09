@@ -190,7 +190,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     from relax.refinement.iteration_planning import build_initial_coarse_grids
     from relax.relion.optics_aberrations import projection_rotations
     from relax.relion.relion_metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
-    from relax.scoring.significance import _plan_coarse_gaussian_square_layout
+    from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
     from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
     from relax.sparse_pass2.sparse_pass2_window import _pass2_window_setup, _sparse_pass2_window_setup
 
@@ -242,7 +242,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
         if window.window_spec.score_indices_np is None
         else np.asarray(window.window_spec.score_indices_np, dtype=np.int32)
     )
-    score_layout = _plan_coarse_gaussian_square_layout(
+    score_layout = plan_coarse_gaussian_square_layout(
         dataset.image_shape, checkpoint.current_size, active_score,
         stable_fourier_window_shapes=False,
     )
@@ -313,7 +313,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     )
     exact = _assemble_relion_exact_coarse_gaussian_operands(
         dataset, processed, local_indices,
-        batch_scale_np=batch_scale, actual_batch_size=len(local_indices),
+        batch_scale_np=batch_scale,
         batch_size=len(local_indices), score_indices=score_indices,
         score_indices_np=geometry["score_layout"].score_indices_np,
         score_active_mask=geometry["score_mask"],

@@ -11,9 +11,6 @@ Tests:
    Verify it completes, produces valid output, resolution does not collapse.
 """
 
-import ast
-from pathlib import Path
-
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
@@ -31,26 +28,9 @@ from relax.helpers.oversampling import (
     find_significant_mask,
     find_significant_rotations,
 )
+from relax.scoring.pass1_batch import batch_image_count
 
 pytestmark = pytest.mark.unit
-
-
-def _production_batch_size(batch_data):
-    # Execute the actual production assignment without starting the E-step.
-    source = Path(__file__).parents[2] / "relax/scoring/significance.py"
-    tree = ast.parse(source.read_text())
-    owner = next(
-        n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_compute_k_class_significance_batched"
-    )
-    assignments = [
-        n
-        for n in ast.walk(owner)
-        if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "batch_size" for t in n.targets)
-    ]
-    assert len(assignments) == 1
-    namespace = {"batch_data": batch_data, "np": np}
-    exec(compile(ast.Module(body=assignments, type_ignores=[]), str(source), "exec"), namespace)
-    return namespace["batch_size"]
 
 
 @pytest.mark.parametrize("rows", [0, 1, 250, 256])
@@ -62,17 +42,17 @@ def test_batch_size_does_not_materialize_device_values(rows, pixels):
         def __array__(self, *args, **kwargs):
             raise AssertionError("Unnecessary device-to-host image transfer")
 
-    assert _production_batch_size(ShapeOnly()) == rows
+    assert batch_image_count(ShapeOnly()) == rows
 
 
 @pytest.mark.parametrize("rows", [0, 1, 250, 256])
 def test_batch_size_matches_numpy_reference(rows):
     batch = np.empty((rows, 3, 3), dtype=np.float32)
-    assert _production_batch_size(batch) == int(np.asarray(batch).shape[0])
+    assert batch_image_count(batch) == int(np.asarray(batch).shape[0])
 
 
 def test_batch_size_uses_static_jax_shape_without_readback():
-    result = jax.eval_shape(_production_batch_size, jax.ShapeDtypeStruct((250, 380, 380), np.float32))
+    result = jax.eval_shape(batch_image_count, jax.ShapeDtypeStruct((250, 380, 380), np.float32))
     assert result.shape == ()
 
 
@@ -123,11 +103,9 @@ def _exact_pass1_call(n_classes, n_images=3):
     rotations[:, 0, 1] = np.asarray([0.0, 0.3, 0.1, 0.4, 0.2], dtype=np.float32)
     args = (
         dataset,
-        jnp.zeros((n_classes, dataset.volume_size), dtype=jnp.complex64),
         jnp.ones(dataset.image_size, dtype=jnp.float32),
         rotations,
         jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32),
-        "linear_interp",
     )
     projector = dict(
         relion_projector_half=coded_class_projectors(n_classes),
@@ -145,11 +123,11 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     """Return raw F32 normalization without selecting from a different posterior."""
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
-    from relax.scoring import significance
+    from relax.scoring import pass1_plan, significance
     from relax.sparse_pass2 import sparse_pass2_posterior
 
     install_exact_pass1_mocks(monkeypatch)
-    monkeypatch.setattr(significance, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
+    monkeypatch.setattr(pass1_plan, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
     captured = []
     original = sparse_pass2_posterior._relion_f32_fine_posterior
 
@@ -212,11 +190,11 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
     from relax.helpers import oversampling
-    from relax.scoring import significance
+    from relax.scoring import pass1_plan, pass1_support, significance
 
     install_exact_pass1_mocks(monkeypatch)
-    monkeypatch.setattr(significance, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
-    support_program = significance.coarse_support_posterior
+    monkeypatch.setattr(pass1_plan, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
+    support_program = pass1_support.coarse_support_posterior
 
     def run(n_classes, rotation_log_prior, translation_log_prior):
         calls = []
@@ -226,7 +204,7 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
             calls.append((np.asarray(values), raw_max, rotation_prior, translation_prior, static, support))
             return support
 
-        monkeypatch.setattr(significance, "coarse_support_posterior", record)
+        monkeypatch.setattr(pass1_support, "coarse_support_posterior", record)
         args, projector = _exact_pass1_call(n_classes)
         result = significance._compute_k_class_significance_batched(
             *args,
@@ -306,8 +284,6 @@ def test_coarse_numeric_normalization_rejects_incompatible_modes(kwargs):
             None,
             None,
             None,
-            None,
-            "linear_interp",
             class_log_priors=None,
             adaptive_fraction=0.999,
             max_significants=-1,
@@ -1285,7 +1261,7 @@ def test_coarse_projections_are_computed_once_per_block_across_image_batches(mon
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
     from relax.helpers import projection
-    from relax.scoring import significance
+    from relax.scoring import coarse_projector, significance
 
     install_exact_pass1_mocks(monkeypatch)
     calls = []
@@ -1309,7 +1285,7 @@ def test_coarse_projections_are_computed_once_per_block_across_image_batches(mon
     memoized = significance._compute_k_class_significance_batched(*args, **kwargs)
     n_blocks = 3  # 5 rotations in blocks of 2
     assert len(calls) == n_classes * n_blocks
-    monkeypatch.setattr(significance, "_PASS1_PROJECTION_MEMO_MAX_BYTES", 0)
+    monkeypatch.setattr(coarse_projector, "_PASS1_PROJECTION_MEMO_MAX_BYTES", 0)
     calls.clear()
     recomputed = significance._compute_k_class_significance_batched(*args, **kwargs)
     assert len(calls) > n_classes * n_blocks

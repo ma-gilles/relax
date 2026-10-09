@@ -139,10 +139,9 @@ from relax.sampling import (
     rotation_grid_n_in_planes,
     rotation_grid_size,
 )
-from relax.scoring.significance import (
-    _capture_offset_free_and_absolute_float32_scores,
-    _compute_k_class_significance_batched,
-)
+from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores
+from relax.scoring.pass1_results import Pass1Result
+from relax.scoring.significance import _compute_k_class_significance_batched
 
 pytestmark = pytest.mark.unit
 
@@ -2859,18 +2858,18 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
 
 
 def test_global_pass1_relion_projector_texture_defaults_to_texture(monkeypatch):
-    from relax.scoring import significance
+    from relax.scoring import pass1_plan
 
     monkeypatch.delenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", raising=False)
     monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "1")
-    assert significance._global_pass1_relion_projector_texture_enabled()
+    assert pass1_plan._global_pass1_relion_projector_texture_enabled()
 
     monkeypatch.setenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "1")
-    assert significance._global_pass1_relion_projector_texture_enabled()
+    assert pass1_plan._global_pass1_relion_projector_texture_enabled()
 
     monkeypatch.setenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "invalid")
     with pytest.raises(ValueError, match="RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"):
-        significance._global_pass1_relion_projector_texture_enabled()
+        pass1_plan._global_pass1_relion_projector_texture_enabled()
 
 
 def test_texture_centered_crop_masks_current_image_disk():
@@ -4171,9 +4170,7 @@ def _exact_pass1_on_cpu(monkeypatch):
 
     import recovar.cuda_backproject as cuda_backproject
 
-    import relax.scoring.significance as significance_module
-
-    monkeypatch.setattr(significance_module.jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
     monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "0")
 
@@ -4230,11 +4227,9 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
     with pytest.raises(_CapturedStrictPreprocess):
         _compute_k_class_significance_batched(
             dataset,
-            jnp.asarray([_hermitian_volume(VOLUME_SHAPE, seed=883)]),
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             _make_rotations(1, seed=884),
             np.zeros((1, 2), dtype=np.float32),
-            "linear_interp",
             class_log_priors=np.zeros(1, dtype=np.float64),
             adaptive_fraction=1.0,
             max_significants=1,
@@ -4274,11 +4269,9 @@ def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng, monke
     with pytest.raises(_CapturedStrictPreprocess):
         _compute_k_class_significance_batched(
             dataset,
-            _hermitian_volume(VOLUME_SHAPE, seed=885)[None, :],
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             _make_rotations(1, seed=886),
             np.zeros((1, 2), dtype=np.float32),
-            "linear_interp",
             class_log_priors=np.zeros(1, dtype=np.float64),
             adaptive_fraction=1.0,
             max_significants=1,
@@ -6357,11 +6350,9 @@ class TestRelionModeSmokeTest:
         dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch)
         sig_rot_any, n_sig, ha, _, _, _ = _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
-            "linear_interp",
             **projector,
             class_log_priors=np.zeros(1, dtype=np.float64),
             adaptive_fraction=0.999,
@@ -6390,7 +6381,7 @@ class TestRelionModeSmokeTest:
         """Windowed texture scoring must not materialize full projection rows."""
         from relax.helpers import projection as projection_helpers
         from relax.helpers.fourier_window import make_fourier_window_spec
-        from relax.scoring import significance as significance_module
+        from relax.scoring import coarse_layout
 
         dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch)
         window = make_fourier_window_spec(
@@ -6402,7 +6393,7 @@ class TestRelionModeSmokeTest:
         )
         if score_mode == "gaussian":
             # The coarse GEMMs read the square layout planned over the window's rows.
-            layout = significance_module._plan_coarse_gaussian_square_layout(
+            layout = coarse_layout.plan_coarse_gaussian_square_layout(
                 IMAGE_SHAPE,
                 current_size,
                 np.asarray(window.score_indices_np, dtype=np.int32),
@@ -6438,11 +6429,9 @@ class TestRelionModeSmokeTest:
         rotations = _make_rotations(3, seed=201)
         _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             jnp.zeros((1, 2), dtype=jnp.float32),
-            "linear_interp",
             class_log_priors=np.zeros(1, dtype=np.float64),
             adaptive_fraction=1.0,
             max_significants=1,
@@ -6488,22 +6477,18 @@ class TestRelionModeSmokeTest:
 
         unpadded = _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
-            "linear_interp",
             image_batch_size=dataset.n_units,
             pad_final_image_batch=False,
             **common_kwargs,
         )
         padded = _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
-            "linear_interp",
             image_batch_size=dataset.n_units + 1,
             pad_final_image_batch=True,
             **common_kwargs,
@@ -6545,8 +6530,8 @@ class TestRelionModeSmokeTest:
         import recovar.cuda_backproject as cuda_backproject
 
         import relax.helpers.projection as projection_module
+        import relax.scoring.pass1_program as pass1_program
         import relax.scoring.scoring as scoring_module
-        import relax.scoring.significance as significance_module
         from relax.cuda import kernels as em_cuda_kernels
 
         dataset = half_datasets[0]
@@ -6558,7 +6543,7 @@ class TestRelionModeSmokeTest:
         dataset.process_images_half = fake_relion_process_half
         rotations = _make_rotations(2, seed=6322)
         translations = jnp.zeros((1, 2), dtype=jnp.float32)
-        monkeypatch.setattr(significance_module.jax, "default_backend", lambda: "gpu")
+        monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
         monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
         monkeypatch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
         monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
@@ -6609,9 +6594,9 @@ class TestRelionModeSmokeTest:
                 (n_images, 2, n_trans),
             )
 
-        # The pass-1 program (significance) and the scorer module each bind the scorer.
+        # The pass-1 program (pass1_program) and the scorer module each bind the scorer.
         clear_pass1_programs(request)
-        for module in (scoring_module, significance_module):
+        for module in (scoring_module, pass1_program):
             monkeypatch.setattr(module, "_relion_coarse_normalized_cc_gemm_scores_jit", fake_cc_gemm_scores)
         monkeypatch.setattr(
             em_cuda_kernels,
@@ -6626,11 +6611,9 @@ class TestRelionModeSmokeTest:
 
         *_, full_stats = _compute_k_class_significance_batched(
             dataset,
-            jnp.asarray(init_volume)[None, :],
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             rotations,
             translations,
-            "linear_interp",
             class_log_priors=np.zeros(1, dtype=np.float64),
             adaptive_fraction=1.0,
             max_significants=1,
@@ -6693,11 +6676,9 @@ class TestRelionModeSmokeTest:
 
         _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
-            "linear_interp",
             class_log_priors=class_log_priors,
             adaptive_fraction=0.999,
             max_significants=-1,
@@ -6740,11 +6721,9 @@ class TestRelionModeSmokeTest:
 
         *_, full_stats = _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
-            "linear_interp",
             class_log_priors=class_log_priors,
             adaptive_fraction=0.999,
             max_significants=-1,
@@ -9438,7 +9417,7 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
         assert kwargs["score_mode"] == "normalized_cc"
         assert kwargs["max_significants"] == 1
         assert kwargs["return_class_best"] is True
-        return (
+        return Pass1Result(
             None,
             None,
             None,

@@ -1,7 +1,7 @@
 """The generic dense coarse scorer, kept as an independent float64 reference for pass 1.
 
 Production pass 1 scores RELION's exact coarse operands with the coarse GEMMs
-(``relax.scoring.significance._coarse_pass1_blocks``). Until 2026-10-02 pass 1 also had a
+(``relax.scoring.pass1_program._coarse_pass1_blocks``). Until 2026-10-02 pass 1 also had a
 generic dense scorer on the CTF-weighted, noise-whitened half-spectrum operands
 (``_e_step_block_scores`` and ``_e_step_block_scores_normalized_cc``, now test helpers in
 ``tests/helpers/dense_block_scores.py``, on the significance operands). Its arithmetic is restated here in NumPy float64 so the

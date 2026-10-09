@@ -13,7 +13,7 @@ import numpy as np
 from helpers.float_compare import assert_matches
 from helpers.generic_coarse_reference import gaussian_block_scores, normalized_cc_block_scores
 
-from relax.scoring import significance
+from relax.scoring import pass1_program
 
 N_CLASSES, N_ROT, BLOCK, N_IMAGES, N_TRANS, N_PIXELS = 2, 6, 4, 3, 4, 13
 
@@ -41,8 +41,8 @@ def _program_scores(projected, shifted, pixel_weight, initial_diff2, score_kind)
         jnp.zeros(N_IMAGES, dtype=jnp.float32),
         jnp.zeros(N_IMAGES, dtype=jnp.int32),
     )
-    state, values, _ = significance._coarse_pass1_blocks(
-        significance._pass1_initial_state(zeros, N_CLASSES),
+    state, values, _ = pass1_program._coarse_pass1_blocks(
+        pass1_program._pass1_initial_state(zeros, N_CLASSES),
         jnp.asarray(projected, dtype=jnp.complex64),
         jnp.asarray(shifted, dtype=jnp.complex64),
         jnp.asarray(pixel_weight, dtype=jnp.float32),

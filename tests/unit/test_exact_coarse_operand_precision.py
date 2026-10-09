@@ -68,7 +68,6 @@ def test_exact_coarse_assembly_precision_and_padding(
         source_images,
         np.arange(2),
         batch_scale_np=scales,
-        actual_batch_size=2,
         batch_size=batch_size,
         score_indices=jnp.asarray(score_indices),
         score_indices_np=score_indices,

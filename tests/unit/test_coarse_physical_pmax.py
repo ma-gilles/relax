@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.scoring import significance
+from relax.scoring import pass1_publish, pass1_support
 
 pytestmark = pytest.mark.unit
 
@@ -21,7 +21,7 @@ def test_physical_pmax_preserves_active_bytes(active, tail):
     device_weights = jnp.asarray(weights)
     # The trimmed-table reduction this publication replaced.
     control = np.asarray(jnp.max(device_weights[:active], axis=1), dtype=np.float32)
-    candidate = significance._coarse_max_posterior_for_host(device_weights, active)
+    candidate = pass1_support._coarse_max_posterior_for_host(device_weights, active)
     assert candidate.shape == control.shape == (active,)
     assert candidate.dtype == control.dtype == np.dtype(np.float32)
     assert_matches(candidate, control, strict=True)
@@ -32,7 +32,7 @@ def test_physical_pmax_preserves_active_bytes(active, tail):
 def test_any_over_leading_rows_matches_the_trimmed_reduction(active):
     mask = np.random.default_rng(31).uniform(size=(8, 6, 3)) < 0.2
     expected = np.any(mask[:active], axis=0)
-    actual = np.asarray(significance._any_over_leading_rows(jnp.asarray(mask), active))
+    actual = np.asarray(pass1_publish._any_over_leading_rows(jnp.asarray(mask), active))
     assert actual.dtype == np.bool_ and actual.shape == expected.shape
     assert_matches(actual, expected, strict=True)
 
@@ -73,7 +73,7 @@ def test_physical_pmax_gpu_shapes(width, monkeypatch):
     monkeypatch.setattr(compiler, "compile_or_get_cached", observe)
     jax.clear_caches()
     for active in active_sizes:
-        actual = significance._coarse_max_posterior_for_host(device_weights, active)
+        actual = pass1_support._coarse_max_posterior_for_host(device_weights, active)
         assert_matches(actual, expected[:active], strict=True)
     reductions = [x for x in acquisitions if x["module"] == "jit__reduce_max"]
     slices = [x for x in acquisitions if x["module"] == "jit_dynamic_slice"]

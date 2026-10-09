@@ -1738,20 +1738,11 @@ def main() -> None:
     need_significant_support = args.significant_mstep or args.relion_bpref_mstep
     if need_significant_support:
         sig_t0 = time.time()
-        (
-            _sig_rot_any,
-            n_sig_all,
-            _hard_assignment,
-            _class_assignment,
-            significant_sample_indices,
-            significant_full_stats,
-        ) = _compute_k_class_significance_batched(
+        significance = _compute_k_class_significance_batched(
             ds,
-            means,
             noise_variance,
             coarse_scoring_rotations,
             translations.astype(np.float32),
-            args.disc_type,
             class_log_priors=class_log_priors,
             adaptive_fraction=args.significance_adaptive_fraction,
             max_significants=int(max_significants["active_max_significants"]),
@@ -1766,12 +1757,14 @@ def main() -> None:
             image_pre_shifts=image_pre_shifts,
             half_spectrum_scoring=True,
             projection_padding_factor=args.projection_padding_factor,
-            do_gridding_correction=True,
             square_window=False,
             use_float64_scoring=False,
             relion_projector_half=relion_projector_half_by_class,
             relion_projector_r_max=relion_projector_r_max,
         )
+        n_sig_all = significance.n_sig_all
+        significant_sample_indices = significance.significant_sample_indices
+        significant_full_stats = significance.full_stats
         normalization_log_z = significant_full_stats["normalization_log_z"]
         significant_mstep_applied = bool(args.significant_mstep and not args.adaptive_2pass)
         if args.significant_mstep and args.adaptive_2pass:
@@ -1857,20 +1850,11 @@ def main() -> None:
             "  RELION BPref diagnostic: recomputing same-window support "
             f"at current_size={current_size} (coarse support used current_size={coarse_engine_current_size})"
         )
-        (
-            _bpref_sig_rot_any,
-            bpref_n_sig_all,
-            _bpref_hard_assignment,
-            _bpref_class_assignment,
-            bpref_significant_sample_indices,
-            bpref_full_stats,
-        ) = _compute_k_class_significance_batched(
+        bpref_significance = _compute_k_class_significance_batched(
             ds,
-            means,
             noise_variance,
             coarse_scoring_rotations,
             translations.astype(np.float32),
-            args.disc_type,
             class_log_priors=class_log_priors,
             adaptive_fraction=args.significance_adaptive_fraction,
             max_significants=int(max_significants["active_max_significants"]),
@@ -1885,12 +1869,14 @@ def main() -> None:
             image_pre_shifts=image_pre_shifts,
             half_spectrum_scoring=True,
             projection_padding_factor=args.projection_padding_factor,
-            do_gridding_correction=True,
             square_window=False,
             use_float64_scoring=False,
             relion_projector_half=relion_projector_half_by_class,
             relion_projector_r_max=relion_projector_r_max,
         )
+        bpref_n_sig_all = bpref_significance.n_sig_all
+        bpref_significant_sample_indices = bpref_significance.significant_sample_indices
+        bpref_full_stats = bpref_significance.full_stats
         bpref_significant_summary = {
             "adaptive_fraction": float(args.significance_adaptive_fraction),
             "elapsed_s": float(time.time() - bpref_sig_t0),

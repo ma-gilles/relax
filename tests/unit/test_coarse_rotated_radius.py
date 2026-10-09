@@ -4,12 +4,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
+from helpers.float_compare import assert_matches
 from recovar import cuda_backproject as cb
+
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import projection
-from relax.scoring import significance
-from helpers.float_compare import assert_matches
+from relax.scoring import pass1_plan
 
 pytestmark = pytest.mark.unit
 
@@ -31,13 +31,13 @@ def test_optin(monkeypatch, token, expected):
     monkeypatch.delenv("RELAX_K1_COARSE_ROTATED_RADIUS", raising=False)
     if token is not None:
         monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", token)
-    assert significance._coarse_rotated_radius_enabled() is expected
+    assert pass1_plan._coarse_rotated_radius_enabled() is expected
 
 
 def test_invalid_optin(monkeypatch):
     monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", "typo")
     with pytest.raises(ValueError, match="must be 0 or 1"):
-        significance._coarse_rotated_radius_enabled()
+        pass1_plan._coarse_rotated_radius_enabled()
 
 
 @pytest.mark.parametrize("radius", [np.float32(13), np.array([13], np.int32)])
@@ -142,9 +142,9 @@ def test_gpu_invalid_image_radius_is_nan(radius):
 
 def test_canonical_default_can_be_explicitly_overridden(monkeypatch):
     monkeypatch.delenv("RELAX_K1_COARSE_ROTATED_RADIUS", raising=False)
-    assert significance._coarse_rotated_radius_enabled(default=True)
+    assert pass1_plan._coarse_rotated_radius_enabled(default=True)
     monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", "0")
-    assert not significance._coarse_rotated_radius_enabled(default=True)
+    assert not pass1_plan._coarse_rotated_radius_enabled(default=True)
 
 
 @pytest.mark.parametrize("active_size", [None, 26])
