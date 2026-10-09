@@ -104,6 +104,7 @@ tests/unit/test_optimiser_convergence_replay.py
 tests/unit/test_option_resolvers.py
 tests/unit/test_pass1_request.py
 tests/unit/test_pass1_planning.py
+tests/unit/test_pass1_run.py
 tests/unit/test_poseless_local_search.py
 tests/unit/test_parity_check_perf.py
 tests/unit/test_parity_dump_timing.py
