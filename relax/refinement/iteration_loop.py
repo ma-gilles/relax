@@ -574,9 +574,7 @@ def refine_single_volume(
             else np.asarray(options.schedule.init_data_vs_prior, dtype=ctx.scoring_dtype)
         )
         # RELION's sigma2_offset in Angstrom^2 (min_sigma2_offset=2 A^2), updated each iteration from the data.
-        sigma_offset = half_inputs.sigma_offset_from_halves(
-            half_inputs.as_sigma_offset_half_pair(options.schedule.init_translation_sigma_angstrom)
-        )
+        sigma_offset = half_inputs.SigmaOffset.from_halves(options.schedule.init_translation_sigma_angstrom)
         relion_incr_size = int(options.schedule.init_relion_incr_size)
         relion_has_high_fsc_at_limit = (
             bool(options.schedule.init_has_high_fsc_at_limit)
@@ -612,7 +610,7 @@ def refine_single_volume(
         previous_class_assignments = class_start.previous_class_assignments
         class_mixture = class_start.class_mixture
         previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=ctx.scoring_dtype)
-        sigma_offset = half_inputs.sigma_offset_from_halves(half_inputs.as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
+        sigma_offset = half_inputs.SigmaOffset.from_halves(resume.sigma_offset_angstrom)
         relion_incr_size = int(resume.incr_size)
         relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
         direction_priors = iteration_snapshot.direction_priors_from_snapshot(
@@ -780,16 +778,7 @@ def refine_single_volume(
         reference_model.tau2 = numbered.mean_variance
         carry = replace(
             carry, previous_best_rotations=numbered.previous_best_rotations, noise_model=numbered.noise_model,
-            class_mixture=numbered.class_mixture,
-            # Both halves' translation prior widths, a scalar width repeated.
-            sigma_offset=half_inputs.SigmaOffset(
-                numbered.sigma_offset.shared_angstrom,
-                half_inputs.as_sigma_offset_half_pair(
-                    numbered.sigma_offset.shared_angstrom
-                    if numbered.sigma_offset.per_half_angstrom is None
-                    else numbered.sigma_offset.per_half_angstrom
-                ),
-            ),
+            class_mixture=numbered.class_mixture, sigma_offset=numbered.sigma_offset,
         )
         if carry.replay_saved_healpix_order is not None:
             carry = replace(carry, replay_saved_healpix_order=int(carry.state.healpix_order))
@@ -870,8 +859,8 @@ def refine_single_volume(
         ))
 
         history.record_scheduling(
-            this_iteration.current_size, carry.state.healpix_order, float(carry.sigma_offset.shared_angstrom),
-            half_inputs.copy_optional_float_pair(carry.sigma_offset.per_half_angstrom),
+            this_iteration.current_size, carry.state.healpix_order, carry.sigma_offset.shared_angstrom,
+            list(carry.sigma_offset.per_half_angstrom),
         )
         scoring_current_size = int(this_iteration.current_size)
 
@@ -1201,12 +1190,11 @@ def refine_single_volume(
             offset_dims=3 if ctx.tomo_halves else 2,
         )
         carry = replace(carry, sigma_offset=half_inputs.SigmaOffset(
-            sigma_offset_result.current_sigma_offset_angstrom,
-            half_inputs.normalize_sigma_offset_per_half(sigma_offset_result.current_sigma_offset_angstrom_per_half),
+            sigma_offset_result.current_sigma_offset_angstrom, sigma_offset_result.current_sigma_offset_angstrom_per_half,
         ))
         per_class_sigma_offset = sigma_offset_result.per_class_sigma_offset_angstrom
         history.record_sigma_offset_update(
-            float(carry.sigma_offset.shared_angstrom), half_inputs.copy_optional_float_pair(carry.sigma_offset.per_half_angstrom),
+            carry.sigma_offset.shared_angstrom, list(carry.sigma_offset.per_half_angstrom),
             None if per_class_sigma_offset is None else per_class_sigma_offset.tolist(),
         )
         history.record_pose_accuracy_diagnostics(

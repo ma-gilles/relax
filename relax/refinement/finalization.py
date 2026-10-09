@@ -35,7 +35,6 @@ from relax.helpers.timing import Stopwatch
 from relax.refinement import final_reconstruction
 from relax.refinement.expectation import prepare_final_half
 from relax.refinement.final_sampling import prepare_final_sampling
-from relax.refinement.half_inputs import sigma_offset_for_half
 from relax.refinement.half_scoring import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -442,11 +441,7 @@ def run_final_all_data(
             half.translations, dtype=scoring_dtype
         )
         final_outs.translation_search_bases[half.index] = translation_search_base
-        final_sigma_offset_k = sigma_offset_for_half(
-            carry.sigma_offset.shared_angstrom,
-            carry.sigma_offset.per_half_angstrom,
-            half.index,
-        )
+        final_sigma_offset_k = carry.sigma_offset.for_half(half.index)
         if ctx.tomo_halves:
             final_inputs = None  # the half preparation below is single-particle only
             # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the

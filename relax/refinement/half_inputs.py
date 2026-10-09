@@ -25,14 +25,6 @@ def optional_half_arrays(values, *, dtype=None):
     ]
 
 
-def sigma_offset_for_half(
-    current_sigma_offset_angstrom, current_sigma_offset_angstrom_per_half, half_index: int
-) -> float:
-    if current_sigma_offset_angstrom_per_half is None:
-        return float(current_sigma_offset_angstrom)
-    return float(current_sigma_offset_angstrom_per_half[half_index])
-
-
 def _optional_group_count_half_pair(values):
     """Return an optional explicit group cardinality for each half-set."""
     if values is None:
@@ -352,59 +344,45 @@ def initialize_halfsets(
     )
 
 
-def normalize_sigma_offset_per_half(values):
-    """Return a strict two-element float list for half-specific sigma offsets."""
-    if values is None:
-        return None
-    arr = np.asarray(values, dtype=np.float64).reshape(-1)
-    if arr.size != 2:
-        raise ValueError(
-            f"translation_sigma_angstrom_per_half must contain exactly two values; got shape {np.asarray(values).shape}"
-        )
-    if not np.all(np.isfinite(arr)):
-        raise ValueError("translation_sigma_angstrom_per_half must be finite")
-    return [float(arr[0]), float(arr[1])]
-
-
-def as_sigma_offset_half_pair(values):
-    """Return a scalar or explicit pair as a strict two-half sigma list."""
-
-    arr = np.asarray(values, dtype=np.float64).reshape(-1)
-    if arr.size == 1:
-        arr = np.repeat(arr, 2)
-    return normalize_sigma_offset_per_half(arr)
-
-
-def _mean_sigma_offset_per_half(values):
-    per_half = normalize_sigma_offset_per_half(values)
-    if per_half is None:
-        return None
-    return float(0.5 * (per_half[0] + per_half[1]))
-
-
 @dataclass(frozen=True)
 class SigmaOffset:
     """The translation prior width in Angstrom: the value the halves share and each half's own.
 
-    A producer supplies both; the shared value is not always the mean of the two.
+    A producer supplies both; the shared value is not always the mean of the two. Without a pair, both halves
+    have the shared width.
     """
 
-    shared_angstrom: object
-    per_half_angstrom: object
+    shared_angstrom: float
+    per_half_angstrom: tuple[float, float] | None = None
 
+    def __post_init__(self):
+        shared = float(self.shared_angstrom)
+        pair = (shared, shared) if self.per_half_angstrom is None else self.per_half_angstrom
+        arr = np.asarray(pair, dtype=np.float64).reshape(-1)
+        if arr.size != 2:
+            raise ValueError(
+                f"translation_sigma_angstrom_per_half must contain exactly two values; got shape {np.asarray(pair).shape}"
+            )
+        if not np.all(np.isfinite(arr)):
+            raise ValueError("translation_sigma_angstrom_per_half must be finite")
+        object.__setattr__(self, "shared_angstrom", shared)
+        object.__setattr__(self, "per_half_angstrom", (float(arr[0]), float(arr[1])))
 
-def copy_optional_float_pair(values):
-    """Two widths as Python floats, for a record that outlives the run's arrays (None stays None)."""
+    @classmethod
+    def from_halves(cls, widths) -> "SigmaOffset":
+        """Each half's width (a pair, or one width for both) with their mean as the shared value."""
 
-    if values is None:
-        return None
-    return [float(values[0]), float(values[1])]
+        arr = np.asarray(widths, dtype=np.float64).reshape(-1)
+        if arr.size == 1:
+            arr = np.repeat(arr, 2)
+        if arr.size != 2:
+            raise ValueError(
+                f"translation_sigma_angstrom_per_half must contain exactly two values; got shape {np.asarray(widths).shape}"
+            )
+        return cls(float(0.5 * (float(arr[0]) + float(arr[1]))), arr)
 
-
-def sigma_offset_from_halves(per_half) -> SigmaOffset:
-    """Each half's width with their mean as the shared value."""
-
-    return SigmaOffset(_mean_sigma_offset_per_half(per_half), per_half)
+    def for_half(self, half_index: int) -> float:
+        return self.per_half_angstrom[half_index]
 
 
 def configure_half_image_preprocessing(

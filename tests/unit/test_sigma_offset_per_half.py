@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from relax.helpers.types import make_noise_stats
-from relax.refinement.half_inputs import as_sigma_offset_half_pair
+from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.noise_updates import (
     update_class_sigma_offset_from_posterior,
     update_k1_sigma_offset_from_posterior,
@@ -67,10 +67,11 @@ def test_missing_half_uses_hard_assignment_fallback_independently(missing_stats)
 
 
 def test_sigma_offset_half_pair_normalizes_scalar_and_pair():
-    assert as_sigma_offset_half_pair(1.5) == [1.5, 1.5]
-    assert as_sigma_offset_half_pair([1.5, 2.5]) == [1.5, 2.5]
+    assert SigmaOffset.from_halves(1.5) == SigmaOffset(1.5, (1.5, 1.5))
+    assert SigmaOffset.from_halves([1.5, 2.5]) == SigmaOffset(2.0, (1.5, 2.5))
+    assert SigmaOffset(3.0).for_half(1) == 3.0
     with pytest.raises(ValueError, match="exactly two"):
-        as_sigma_offset_half_pair([1.0, 2.0, 3.0])
+        SigmaOffset.from_halves([1.0, 2.0, 3.0])
 
 
 def test_a_zero_offset_moment_takes_relions_lower_bound():

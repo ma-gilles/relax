@@ -516,9 +516,7 @@ def numbered_half_inputs(
                 scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
             ),
             direction_priors=plan.direction_log_priors[k],
-            sigma_offset_angstrom=half_inputs.sigma_offset_for_half(
-                carry.sigma_offset.shared_angstrom, carry.sigma_offset.per_half_angstrom, k,
-            ),
+            sigma_offset_angstrom=carry.sigma_offset.for_half(k),
         )
         for k in (0, 1)
     ]
