@@ -658,9 +658,9 @@ def prepare_numbered_expectation(
             translation_step=translation_step,
             coarse_engine=options.adaptive.coarse_engine,
             random_perturbation=random_perturbation,
-            cs_for_engine=windows.score_window_size,
-            model_current_size_for_engine=windows.engine_model_window_size,
-            wsum_current_size_for_engine=windows.wsum_size_for_engine,
+            image_window_size=windows.score_window_size,
+            model_support_size=windows.engine_model_window_size,
+            wsum_current_size=windows.wsum_size_for_engine,
             coarse_rotation_ids=coarse_rotation_ids,
             coarse_scoring_rotations=adaptive_pass1_rotations if int(oversampling_order) == 0 else None,
             coarse_scoring_device_source=adaptive_pass1_source if int(oversampling_order) == 0 else None,
@@ -723,9 +723,9 @@ def score_numbered_half(
     use_local = isinstance(sampling, local_sampling.LocalSampling)
     tomo_halves = tomo_sampling is not None
     k_class_enabled = phase.variant.k_class_enabled
-    image_window_size = sampling.image_window_size if use_local else sampling.cs_for_engine
-    model_support_size = sampling.model_support_size if use_local else sampling.model_current_size_for_engine
-    symmetry = sampling.search.symmetry if use_local else sampling.symmetry
+    image_window_size = sampling.image_window_size
+    model_support_size = sampling.model_support_size
+    symmetry = sampling.symmetry
     coarse_size_step_deg = sampling.coarse_angular_step_deg
     particle_diameter_ang = options.schedule.particle_diameter_ang
     source_faithful_spectrum_norm = options.parity.preserve_bpref_particle_order

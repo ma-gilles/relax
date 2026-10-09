@@ -160,7 +160,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             oversampling_order=1,
             translation_step=1.0,
             random_perturbation=0.0,
-            cs_for_engine=None,
+            image_window_size=None,
         ),
         half_scoring.DensePriorSpec(
             rotation_log_prior_k=None,

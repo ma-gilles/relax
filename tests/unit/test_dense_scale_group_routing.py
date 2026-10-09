@@ -56,7 +56,7 @@ def _engine_sizes(monkeypatch, *, n_classes, oversampling):
     )
     dense = trace.calls("dense")
     assert len(engine_calls) == len(dense) == 4
-    return [(call.args[1].cs_for_engine, engine["kwargs"]) for call, engine in zip(dense, engine_calls, strict=True)]
+    return [(call.args[1].image_window_size, engine["kwargs"]) for call, engine in zip(dense, engine_calls, strict=True)]
 
 
 @pytest.mark.parametrize("n_classes", [1, 2])

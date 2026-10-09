@@ -56,7 +56,7 @@ def _dense_owners(**values):
             oversampling_order=sampling_state.adaptive_oversampling,
             translation_step=sampling_state.translation_step,
             random_perturbation=values.pop("random_perturbation"),
-            cs_for_engine=values.pop("cs_for_engine"),
+            image_window_size=values.pop("cs_for_engine"),
             coarse_rotation_ids=values.pop("coarse_rotation_ids", None),
         ),
         half_scoring.DensePriorSpec(

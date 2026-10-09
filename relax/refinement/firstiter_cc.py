@@ -144,12 +144,12 @@ def _score_kclass_firstiter_cc_pass2(
             coarse_current_size=(
                 variant.coarse_window_size
                 if variant.coarse_window_size is not None
-                else sampling.cs_for_engine
+                else sampling.image_window_size
             ),
             fine_current_size=(
                 variant.fine_window_size
                 if variant.fine_window_size is not None
-                else sampling.cs_for_engine
+                else sampling.image_window_size
             ),
             safe_batch_sizes=batching.safe_batch_sizes,
             significance_safe_batch_sizes=batching.significance_safe_batch_sizes,

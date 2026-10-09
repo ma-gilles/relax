@@ -97,8 +97,8 @@ def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_st
     for phase, plan, mstep in zip(phases, coarse, msteps, strict=True):
         windows = phase.args[1]
         assert windows.score_size == 4
-        assert phase.result.sampling.cs_for_engine == 4
-        assert phase.result.sampling.model_current_size_for_engine == windows.model_size
+        assert phase.result.sampling.image_window_size == 4
+        assert phase.result.sampling.model_support_size == windows.model_size
         assert plan.result.size == 4
         assert mstep.args[1].image_current_size == windows.image_current_size > 4
     # The engine scores at the cap and sums the noise, Wavg and powerClass terms at the full current size.

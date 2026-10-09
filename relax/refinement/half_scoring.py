@@ -129,11 +129,11 @@ class DenseSamplingSpec:
     oversampling_order: int
     translation_step: float
     random_perturbation: float
-    cs_for_engine: int | None
+    image_window_size: int | None
     coarse_engine: str
-    model_current_size_for_engine: int | None = None
-    # --strict_highres_exp: the weighted sums' image size, above cs_for_engine (None: cs_for_engine).
-    wsum_current_size_for_engine: int | None = None
+    model_support_size: int | None = None
+    # --strict_highres_exp: the weighted sums' image size, above image_window_size (None: image_window_size).
+    wsum_current_size: int | None = None
     coarse_angular_step_deg: float | None = None
     coarse_rotation_ids: object | None = None
     coarse_scoring_rotations: object | None = None
@@ -262,12 +262,12 @@ def _score_adaptive_kclass_dense(
     coarse_current_size = variant.coarse_window_size
     fine_current_size = variant.fine_window_size
     if adaptive_os <= 0:
-        coarse_current_size = sampling.cs_for_engine
-        fine_current_size = sampling.cs_for_engine
+        coarse_current_size = sampling.image_window_size
+        fine_current_size = sampling.image_window_size
         logger.info(
             "RELION K-class scale groups at oversampling 0: routing the single pass through the "
             "adaptive engine (current_size=%s)",
-            sampling.cs_for_engine,
+            sampling.image_window_size,
         )
     pass2_grids = sampling.pass2_grids(adaptive_oversampling=adaptive_os, symmetry=symmetry)
     adaptive_em_kwargs = dict(em_kwargs)
@@ -403,8 +403,8 @@ def _score_kclass_at_given_poses(
         fine_translations=grids.translations[:1],
         n_classes=n_classes,
         image_shape=particles.dataset.image_shape,
-        coarse_current_size=sampling.cs_for_engine,
-        fine_current_size=sampling.cs_for_engine,
+        coarse_current_size=sampling.image_window_size,
+        fine_current_size=sampling.image_window_size,
         safe_batch_sizes=batching.safe_batch_sizes,
         significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
     )
@@ -456,8 +456,8 @@ def _score_kclass_at_given_poses(
         execution.disc_type,
         class_log_priors=priors.class_log_priors,
         accumulate_noise=True,
-        coarse_current_size=sampling.cs_for_engine,
-        fine_current_size=sampling.cs_for_engine,
+        coarse_current_size=sampling.image_window_size,
+        fine_current_size=sampling.image_window_size,
         coarse_healpix_order=grids.healpix_order,
         oversampling_order=0,
         relion_fine_mstep_prune=True,
@@ -523,12 +523,12 @@ def _score_adaptive_k1_dense(
     if adaptive_os <= 0:
         # The sparse engine supplies group statistics and per-particle BPref
         # launches even for a single pass on the current grid.
-        coarse_current_size = sampling.cs_for_engine
-        fine_current_size = sampling.cs_for_engine
+        coarse_current_size = sampling.image_window_size
+        fine_current_size = sampling.image_window_size
         logger.info(
             "RELION K=1 group statistics or BPref order at oversampling 0: single pass through the "
             "adaptive engine (current_size=%s)",
-            sampling.cs_for_engine,
+            sampling.image_window_size,
         )
     if symmetry != "C1" and not execution.relion_x_half_mstep:
         raise RuntimeError(
@@ -642,7 +642,7 @@ def _score_half_dense_one_shape(
     safe_ibs, safe_rbs = batching.safe_batch_sizes(
         sampling.effective_rotations.shape[0],
         sampling.current_translations.shape[0],
-        current_size_for_batch=sampling.cs_for_engine,
+        current_size_for_batch=sampling.image_window_size,
     )
     if half.image_seed_classes is not None and not variant.k_class_enabled:
         raise NotImplementedError("a seed iteration runs on the adaptive or first-iteration CC K-class route")
@@ -671,7 +671,7 @@ def _score_half_dense_one_shape(
             safe_rbs if batching.k_class_rotation_block_size_override is None
             else batching.k_class_rotation_block_size_override
         ),
-        "current_size": sampling.cs_for_engine,
+        "current_size": sampling.image_window_size,
         # A class direction prior replaces the shared one.
         "rotation_log_prior": (
             priors.rotation_log_prior_k if priors.class_rotation_log_prior_k is None else None
@@ -690,8 +690,8 @@ def _score_half_dense_one_shape(
         "coarse_engine": sampling.coarse_engine,
         "symmetry_label": symmetry,
         "optics_group_ids": half.particles.optics_group_ids,
-        "reconstruction_current_size": sampling.model_current_size_for_engine,
-        "wsum_current_size": sampling.wsum_current_size_for_engine,
+        "reconstruction_current_size": sampling.model_support_size,
+        "wsum_current_size": sampling.wsum_current_size,
         "preserve_bpref_particle_order": execution.preserve_bpref_particle_order,
         "source_faithful_spectrum_norm": execution.source_faithful_spectrum_norm,
         "firstiter_cc_tree_rescore_max_margin": execution.firstiter_cc_tree_rescore_max_margin,
@@ -990,8 +990,8 @@ def _dense_owners_for_shape(
             "current_translations": sampling.current_translations,
             "base_translations": sampling.base_translations,
             "translation_step": sampling.translation_step,
-            "cs_for_engine": sampling.cs_for_engine,
-            "model_current_size_for_engine": sampling.model_current_size_for_engine,
+            "cs_for_engine": sampling.image_window_size,
+            "model_current_size_for_engine": sampling.model_support_size,
             "firstiter_coarse_current_size": variant.coarse_window_size,
             "firstiter_fine_current_size": variant.fine_window_size,
             "coarse_sizing": optics.coarse_sizing,
@@ -1029,8 +1029,8 @@ def _dense_owners_for_shape(
             current_translations=shape_values["current_translations"],
             base_translations=shape_values["base_translations"],
             translation_step=shape_values["translation_step"],
-            cs_for_engine=shape_values["cs_for_engine"],
-            model_current_size_for_engine=shape_values["model_current_size_for_engine"],
+            image_window_size=shape_values["cs_for_engine"],
+            model_support_size=shape_values["model_current_size_for_engine"],
         ),
         priors=replace(
             priors,

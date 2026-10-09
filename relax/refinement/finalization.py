@@ -375,7 +375,7 @@ def run_final_all_data(
             translation_step=carry.state.translation_step,
             coarse_engine=options.adaptive.coarse_engine,
             random_perturbation=final_sampling.settings.random_perturbation,
-            cs_for_engine=final_current_size,
+            image_window_size=final_current_size,
             symmetry=options.symmetry.point_group,
         )
         final_dense_batching = DenseBatchPolicy(

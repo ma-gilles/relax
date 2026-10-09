@@ -58,7 +58,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         sampling = refinement_specs.dense_sampling_spec(
             effective_rotations=rotations, current_translations=translations, base_translations=translations,
             current_healpix_order=0, oversampling_order=int(adaptive), translation_step=1.,
-            random_perturbation=.125, cs_for_engine=4,
+            random_perturbation=.125, image_window_size=4,
             coarse_angular_step_deg=15.,
         )
     variant = refinement_specs.dense_variant_policy(

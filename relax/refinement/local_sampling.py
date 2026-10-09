@@ -73,6 +73,10 @@ class LocalSampling:
     # --strict_highres_exp: the fine pass's weighted-sum image size, above image_window_size; None when equal.
     wsum_current_size: int | None = None
 
+    @property
+    def symmetry(self) -> str:
+        return self.search.symmetry
+
 
 def prepare_numbered_local_sampling(
     search: LocalSearchSettings,

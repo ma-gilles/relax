@@ -62,9 +62,9 @@ def test_dense_phase_keeps_canonical_pose_rows_separate_from_device_coarse_rotat
     assert phase.sampling.translation_step is inputs['translation_step']
     assert phase.sampling.random_perturbation is inputs['random_perturbation']
     assert phase.sampling.current_healpix_order == 2
-    assert phase.sampling.cs_for_engine == 2
+    assert phase.sampling.image_window_size == 2
     # A full model box stays explicit when the image window is narrower.
-    assert phase.sampling.model_current_size_for_engine == 4
+    assert phase.sampling.model_support_size == 4
     assert phase.sampling.symmetry == 'D2'
     assert phase.sampling.coarse_engine == 'gemm_dense'
     assert phase.variant is inputs['variant']
@@ -83,8 +83,8 @@ def test_dense_phase_preserves_full_grid_sentinels_and_distinct_support(
         grid, ExpectationWindows(model_size=model_size, image_current_size=image_size, image_box_size=box_size),
         **inputs,
     )
-    assert phase.sampling.model_current_size_for_engine == model_window
-    assert phase.sampling.cs_for_engine == image_window
+    assert phase.sampling.model_support_size == model_window
+    assert phase.sampling.image_window_size == image_window
 
 
 @pytest.mark.parametrize('order', [0, 1])
