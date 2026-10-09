@@ -14557,7 +14557,7 @@
    "gt": {
     "metric": "masked GT FSC-AUC over the scorecard band (relax scripts/masked_fsc.py score --gt-map, frozen mask synth_k1_50k256_snr05_c1); seed 42",
     "relion": 0.94966,
-    "relax": 0.949118,
+    "relax": 0.949737,
     "relion_band": [
      0.94966,
      0.950988
@@ -14566,19 +14566,15 @@
      "seed 42 x3"
     ],
     "relax_per_seed": {
-     "42": 0.949508
+     "42": 0.949737
     },
     "relion_per_seed": {
      "42": 0.94966
     },
     "relax_fixed_seed_runs": {
      "42": [
-      0.949118,
-      0.949009,
-      0.949508,
-      0.948594,
-      0.949424,
-      0.948807
+      0.949737,
+      0.950558
      ]
     },
     "relion_fixed_seed_runs": {
@@ -14597,6 +14593,24 @@
     },
     "relax_runs_provenance": {
      "42": [
+      "a4aa751c0bb596d96c0bec55098a2a009d2cc9a1",
+      "a4aa751c0bb596d96c0bec55098a2a009d2cc9a1"
+     ]
+    },
+    "relion_stock_s42_same_node": 0.949546,
+    "relion_stock_3x4_s42_d046c0a": 0.94942,
+    "relax_fixed_seed_runs_before_a4aa751c": {
+     "42": [
+      0.949118,
+      0.949009,
+      0.949508,
+      0.948594,
+      0.949424,
+      0.948807
+     ]
+    },
+    "relax_runs_provenance_before_a4aa751c": {
+     "42": [
       "b92be02 patch (etoptics 473f291)",
       "b92be02 patch (etoptics 473f291)",
       "b92be02 patch (etoptics 473f291)",
@@ -14604,9 +14618,7 @@
       "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
       "d046c0a2120fa19a6fd624fc0b05a8fc68575c8a"
      ]
-    },
-    "relion_stock_s42_same_node": 0.949546,
-    "relion_stock_3x4_s42_d046c0a": 0.94942
+    }
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
@@ -14621,6 +14633,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Re-judged 2026-10-09 on relax main a4aa751c (magnification/scale projection-matrix precision fix 411ed2c1 and local-row provenance fix a4aa751c (landw); team-lead): two same-command relax runs at seed 42 (job 15266628, walls 581/585 s, not quoted) score 0.949737/0.950558 against RELION's three seed-42 runs 0.950988/0.949660/0.949854; run ranges overlap (relax best 0.950558 >= RELION lowest 0.949660): hit. The six earlier relax runs (b92be02 patch, 1c57fb73, d046c0a2; 0.948594-0.949508) predate the fixes and are not pooled. landw's run on 598cb737 scored 0.950409.",
     "Feature check (etoptics, team-lead 2026-10-05): SPA Refine3D with an anisotropic magnification matrix in one optics group. Fixture optics_mag_k1_10k256_20260929: the first 10,000 particles of synth_k1_50k256_snr05 re-imaged with MagMat [[1.015, 0.004], [0.004, 0.990]], box 256 at 2.125 A, total B 40. Auto-refine with --firstiter_cc from a 60 A reference, seed 42.",
     "relax b92be02 (the M-step backprojects on RELION's rotated-radius support, |A^-1 (x, y, 0)| <= r_max, instead of the image radius): masked GT FSC-AUC 0.94912, 0.94901, 0.94951 (three H100 runs, near-identical trajectories); before the fix (afa5028) 0.94970, 0.94988, 0.94958; RELION a/b/c 0.95099, 0.94966, 0.94985.",
     "With the fix, iterations 1-4 equal RELION (masked GT AUC 0.3839 against 0.3839; the edge-shell FSC ratio goes from 0.926 to 1.001). At iteration 5 relax picks 14.32 A where RELION picks 15.11 A, a magnification-only divergence tracked as ma-gilles/relax#24; the final-map difference is downstream of it.",
@@ -14665,9 +14678,19 @@
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/short_d046c0a/mag_k1/masked_fsc.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_d046c0a",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/freeze2_rows_d046c0a.py"
+    },
+    "a4aa751c_20261009": {
+     "runs": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/mag_a4aa751c",
+     "scores": [
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/mag_a4aa751c/score_k1_s42_r1",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/mag_a4aa751c/score_k1_s42_r2",
+      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/mag_a4aa751c/score_chk_1c57fb7_s42"
+     ],
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_landw_20261008/cands/cand_a4aa751c",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/mag_rows_a4aa751c_20261009.py"
     }
    },
-   "date": "2026-10-07",
+   "date": "2026-10-09",
    "history": [
     {
      "date": "2026-10-05",
@@ -14874,10 +14897,70 @@
       "d": "NVIDIA H100 80GB HBM3 on both arms (GPU.csv)"
      },
      "note": "values before the 2026-10-07 benchmark freeze (speed pair 15116707 on 1c57fb73)"
+    },
+    {
+     "date": "2026-10-07",
+     "gt": {
+      "metric": "masked GT FSC-AUC over the scorecard band (relax scripts/masked_fsc.py score --gt-map, frozen mask synth_k1_50k256_snr05_c1); seed 42",
+      "relion": 0.94966,
+      "relax": 0.949118,
+      "relion_band": [
+       0.94966,
+       0.950988
+      ],
+      "relion_band_runs": [
+       "seed 42 x3"
+      ],
+      "relax_per_seed": {
+       "42": 0.949508
+      },
+      "relion_per_seed": {
+       "42": 0.94966
+      },
+      "relax_fixed_seed_runs": {
+       "42": [
+        0.949118,
+        0.949009,
+        0.949508,
+        0.948594,
+        0.949424,
+        0.948807
+       ]
+      },
+      "relion_fixed_seed_runs": {
+       "42": [
+        0.950988,
+        0.94966,
+        0.949854
+       ]
+      },
+      "relax_before_b92be02": {
+       "42": [
+        0.949697,
+        0.949877,
+        0.949576
+       ]
+      },
+      "relax_runs_provenance": {
+       "42": [
+        "b92be02 patch (etoptics 473f291)",
+        "b92be02 patch (etoptics 473f291)",
+        "b92be02 patch (etoptics 473f291)",
+        "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+        "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+        "d046c0a2120fa19a6fd624fc0b05a8fc68575c8a"
+       ]
+      },
+      "relion_stock_s42_same_node": 0.949546,
+      "relion_stock_3x4_s42_d046c0a": 0.94942
+     },
+     "quality_pass": false,
+     "quality_reason": "worst s42 −1.5e-4 vs same-seed RELION; run ranges compared at s42 (both engines repeated); s42 below across-seed RELION band 0.94966-0.950988; relax#24",
+     "note": "verdict before the a4aa751c rerun (2026-10-09)"
     }
    ],
-   "quality_pass": false,
-   "quality_reason": "worst s42 −1.5e-4 vs same-seed RELION; run ranges compared at s42 (both engines repeated); s42 below across-seed RELION band 0.94966-0.950988; relax#24",
+   "quality_pass": true,
+   "quality_reason": "worst s42 +9.0e-4 vs same-seed RELION; run ranges compared at s42 (both engines repeated); inside across-seed band; relax main a4aa751c (magnification/scale projection-matrix precision fix 411ed2c1 and local-row provenance fix a4aa751c (landw))",
    "label": "optics_mag_k1_10k256 (feature)",
    "feature_reference": "anisotropic magnification (rlnMagMat) in SPA Refine3D: RELION 5.0.1 + MPI scale-sum patch (mpiscale), relion_refine_mpi 3 ranks x 4 threads, one H100, seed 42, three runs",
    "time_check": {
@@ -14957,7 +15040,7 @@
     ],
     "relax_per_seed": {
      "42": 0.205895,
-     "29": 0.20772,
+     "29": 0.210252,
      "53": 0.213095,
      "61": 0.209276,
      "67": 0.208152
@@ -14986,7 +15069,7 @@
       0.2066
      ],
      "29": [
-      0.20772
+      0.210252
      ],
      "53": [
       0.213095
@@ -15005,7 +15088,7 @@
       0.8302
      ],
      "29": [
-      0.838
+      0.8398
      ],
      "53": [
       0.8475
@@ -15073,7 +15156,7 @@
     },
     "relax_seed_provenance": {
      "42": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
-     "29": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+     "29": "a4aa751c0bb596d96c0bec55098a2a009d2cc9a1",
      "53": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
      "61": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
      "67": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d"
@@ -15142,9 +15225,10 @@
      0.214919
     ],
     "paired_mean_se_vs_patched_gpu": [
-     -0.00089,
-     0.00092
-    ]
+     -0.000384,
+     0.00047
+    ],
+    "relax_s29_before_a4aa751c": 0.20772
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
@@ -15159,6 +15243,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Seed 29 rerun 2026-10-09 on relax main a4aa751c (magnification/scale projection-matrix precision fix 411ed2c1 and local-row provenance fix a4aa751c (landw); landw job 15266527, 355 s, scored by scorew with the row's config and scorer): masked mean GT FSC-AUC 0.210252 (was 0.207720 on 1c57fb73) against patched GPU RELION 0.212136; gap -0.0019 (was -0.0044); class accuracy 0.8398. Other seeds keep their 1c57fb73 runs. Paired over five seeds -0.00038 ± 0.00047. Page verdict: miss (worst s29 −0.0019 vs same-seed RELION; below same-seed RELION at 3 of 5 seeds (systematic); inside across-seed band).",
     "Reference (team-lead 2026-10-07, user approval to fix confident RELION bugs in our own build): patched GPU RELION with bindw's relax#12 fix. Qualification on this fixture (s42, iteration 1, class-1 poses vs RELION K1 auto-refine): patched 1.0000 vs K1 GPU and 0.9851 vs K1 CPU (RELION's own K1 GPU-vs-CPU bound 0.9845); stock GPU 0.8058; no-magnification control identical within float noise (em_work/relax12_qual_20261006).",
     "Against patched GPU RELION (masked mean GT FSC-AUC per seed, relax / RELION): s29 0.207720 / 0.212136; s42 0.205895 / 0.205293; s53 0.213095 / 0.213587; s61 0.209276 / 0.210032; s67 0.208152 / 0.207542; paired -0.00089 ± 0.00092. Page verdict: miss (worst s29 −0.0044 vs same-seed RELION; below same-seed RELION at 3 of 5 seeds (systematic); inside across-seed band). Seed 42, relax's low seed, is low in patched GPU RELION too (0.205293); the miss comes from seed 29 (-0.0044). Class accuracy RELION 0.8387/0.8326/0.8458/0.8397/0.8376.",
     "History columns: stock CPU RELION (the row's earlier reference) 0.211077/0.211092/0.210008/0.205033/0.205250; stock GPU RELION at s42 [0.21343, 0.215135, 0.214919]. Patched GPU RELION walls 773-781 s per seed (one H100, job 15158644).",
@@ -15218,11 +15303,17 @@
      "build": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_patched_coarsemag_bpd_20261006",
      "qualification": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax12_qual_20261006",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/k2mag_w2_rows_20261007.py"
+    },
+    "a4aa751c_s29_20261009": {
+     "run": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_landw_20261008/mag_attr/fwdA4_k2_s29/relax",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/mag_a4aa751c/k2_score_cfg.json",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/mag_a4aa751c/K2_SCORE.json",
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/mag_rows_a4aa751c_20261009.py"
     }
    },
-   "date": "2026-10-07",
+   "date": "2026-10-09",
    "quality_pass": false,
-   "quality_reason": "worst s29 −0.0044 vs same-seed RELION; below same-seed RELION at 3 of 5 seeds (systematic); inside across-seed band; against patched GPU RELION (relax#12 fix)",
+   "quality_reason": "worst s29 −0.0019 vs same-seed RELION; below same-seed RELION at 3 of 5 seeds (systematic); inside across-seed band; against patched GPU RELION (relax#12 fix); seed 29 on relax main a4aa751c (magnification/scale projection-matrix precision fix 411ed2c1 and local-row provenance fix a4aa751c (landw)), other seeds 1c57fb73",
    "feature_reference": "anisotropic magnification in Class3D K=2: patched GPU RELION (relax#12 fix, qualified 2026-10-07), seeds 29/42/53/61/67; stock CPU and stock GPU RELION in the row's history",
    "time_check": {
     "a": "relax: job 15111112, one H100 + 12 CPUs, 2026-10-06; RELION: the row's stock GPU RELION wall from its earlier separate job (same GPU model, not the same node)",
@@ -15656,6 +15747,211 @@
       "relax command: class3d --n_classes 2 --max_iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --init_resolution 60 --tau2_fudge 4 --particle_diameter_ang 380 --firstiter_cc --apply-initial-lowpass --ref_star reference_init_classes_relion.star --seed S; RELION: relion_refine --K 2 --tau2_fudge 4 --iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 380 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --pool 3 --dont_combine_weights_via_disc --random_seed S."
      ],
      "note": "judged against stock CPU RELION before the patched GPU reference (2026-10-07)"
+    },
+    {
+     "date": "2026-10-07",
+     "gt": {
+      "metric": "mean per-class GT FSC-AUC (plain mean over the 2 GT classes), masked with the frozen mask synth_pdb_k2_50k256_snr05_c1 (classes matched to GT by Hungarian on unmasked AUC; tools/score_class3d.py); RELION reference = patched GPU RELION (relax#12 fix)",
+      "relion": 0.205293,
+      "relax": 0.205895,
+      "relion_band": [
+       0.205293,
+       0.213587
+      ],
+      "relax_per_seed": {
+       "42": 0.205895,
+       "29": 0.20772,
+       "53": 0.213095,
+       "61": 0.209276,
+       "67": 0.208152
+      },
+      "relion_per_seed": {
+       "29": [
+        0.212136
+       ],
+       "42": [
+        0.205293
+       ],
+       "53": [
+        0.213587
+       ],
+       "61": [
+        0.210032
+       ],
+       "67": [
+        0.207542
+       ]
+      },
+      "relax_runs_per_seed": {
+       "42": [
+        0.205895,
+        0.206545,
+        0.2066
+       ],
+       "29": [
+        0.20772
+       ],
+       "53": [
+        0.213095
+       ],
+       "61": [
+        0.209276
+       ],
+       "67": [
+        0.208152
+       ]
+      },
+      "class_accuracy_relax_per_seed": {
+       "42": [
+        0.8347,
+        0.8326,
+        0.8302
+       ],
+       "29": [
+        0.838
+       ],
+       "53": [
+        0.8475
+       ],
+       "61": [
+        0.8402
+       ],
+       "67": [
+        0.8395
+       ]
+      },
+      "class_accuracy_relion_per_seed": {
+       "29": [
+        0.8387
+       ],
+       "42": [
+        0.8326
+       ],
+       "53": [
+        0.8458
+       ],
+       "61": [
+        0.8397
+       ],
+       "67": [
+        0.8376
+       ]
+      },
+      "unmasked_relax_per_seed": {
+       "42": [
+        0.20101,
+        0.201579,
+        0.201587
+       ],
+       "29": [
+        0.202602
+       ],
+       "53": [
+        0.20828
+       ],
+       "61": [
+        0.204004
+       ],
+       "67": [
+        0.202874
+       ]
+      },
+      "unmasked_relion_per_seed": {
+       "29": [
+        0.206136
+       ],
+       "42": [
+        0.206078,
+        0.206078
+       ],
+       "53": [
+        0.205103
+       ],
+       "61": [
+        0.199739
+       ],
+       "67": [
+        0.199953
+       ]
+      },
+      "relax_seed_provenance": {
+       "42": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+       "29": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+       "53": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+       "61": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d",
+       "67": "1c57fb732fc6fefbc54bbb2e70aa261baf73267d"
+      },
+      "relax_pre_b92be02_runs_per_seed": {
+       "29": [
+        0.209362,
+        0.209036
+       ],
+       "42": [
+        0.207075,
+        0.206533,
+        0.207609,
+        0.209553
+       ],
+       "53": [
+        0.211691,
+        0.211337
+       ],
+       "61": [
+        0.210088
+       ],
+       "67": [
+        0.208088
+       ]
+      },
+      "relion_cpu_per_seed_history": {
+       "29": [
+        0.211077
+       ],
+       "42": [
+        0.211092,
+        0.211092
+       ],
+       "53": [
+        0.210008
+       ],
+       "61": [
+        0.205033
+       ],
+       "67": [
+        0.20525
+       ]
+      },
+      "class_accuracy_relion_cpu_history": {
+       "29": [
+        0.8359
+       ],
+       "42": [
+        0.8455,
+        0.8455
+       ],
+       "53": [
+        0.8395
+       ],
+       "61": [
+        0.8342
+       ],
+       "67": [
+        0.8371
+       ]
+      },
+      "relion_stock_gpu_s42_history": [
+       0.21343,
+       0.215135,
+       0.214919
+      ],
+      "paired_mean_se_vs_patched_gpu": [
+       -0.00089,
+       0.00092
+      ]
+     },
+     "quality_pass": false,
+     "quality_reason": "worst s29 −0.0044 vs same-seed RELION; below same-seed RELION at 3 of 5 seeds (systematic); inside across-seed band; against patched GPU RELION (relax#12 fix)",
+     "note": "verdict before the a4aa751c s29 rerun (2026-10-09)"
     }
    ]
   },
