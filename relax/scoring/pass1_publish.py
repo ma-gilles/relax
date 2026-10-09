@@ -30,15 +30,16 @@ def _capture_offset_free_and_absolute_float32_scores(scores, log_score_offset):
     return offset_free, absolute
 
 
-def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, dump: ScoreDumpContext) -> None:
-    """Read one batch's pass-1 outputs back and store them in rows ``batch.start_idx:batch.end_idx`` of ``outputs``.
+def _publish_support(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan) -> tuple:
+    """Store the batch's significant support and its counts; returns ``(pmax_host, sig_mask_host)``.
 
-    Writes ``outputs`` in place (the only writer of those rows) and, when ``batch.debug_dump_enabled``, the score dump
-    of ``dump``; returns nothing. The batch loop calls this for a batch once the next batch's operands are on the
-    device, before that batch's score program: the device scores this batch while the host prepares the next (a dump
-    batch publishes at once). ``plan`` says which results the pass returns.
+    ``pmax_host`` is the float32 support route's row maxima of the real rows (``None`` on the generic route and for a pass
+    that collects no support). ``sig_mask_host`` is the host copy of a dump batch's significance mask; it is ``None`` when
+    the support was compacted on the device, which every other batch does, or when the pass collects none.
     """
 
+    batch_pmax_host = None
+    batch_sig_mask_np = None
     if plan.collect_significance:
         if batch.normalization_sum_weight is not None:
             outputs.relion_f32_sum_weight[batch.start_idx:batch.end_idx] = batch.normalization_sum_weight
@@ -51,8 +52,7 @@ def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, 
             batch_pmax_host = np.asarray(batch.pmax, dtype=np.float32)[:batch.actual_batch_size]
             if plan.return_relion_f32_normalization:
                 outputs.relion_f32_max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
-        device_significance_batch = not batch.debug_dump_enabled
-        if device_significance_batch:
+        if not batch.debug_dump_enabled:
             # The mask stays on the device; only the per-image ids cross
             # the bus.  ``sig_rot_any`` below is already a device
             # reduction, so it is unaffected.
@@ -64,7 +64,6 @@ def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, 
                     "the device significance compaction needs image batches in "
                     "dataset order",
                 )
-            batch_sig_mask_np = None
             class_results = compact_batch_significance_classes(
                 batch.sig_mask,
                 n_classes=plan.n_classes,
@@ -95,9 +94,17 @@ def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, 
             dtype=np.int32,
         )[:batch.actual_batch_size]
     else:
-        batch_sig_mask_np = None
         outputs.n_sig_all[batch.start_idx:batch.end_idx] = 0
         outputs.cutoff_count_all[batch.start_idx:batch.end_idx] = 0
+    return batch_pmax_host, batch_sig_mask_np
+
+
+def _publish_scores(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, pmax_host) -> tuple:
+    """Store the batch's winners, evidence and maximum posterior; returns ``(global_log_z_np, best_score_np)``.
+
+    ``pmax_host`` is :func:`_publish_support`'s row maxima, which the float32 support route publishes as the maximum
+    posterior; the other routes take it from the best score and the log normalizer.
+    """
 
     outputs.hard_assignment[batch.start_idx:batch.end_idx] = np.asarray(
         batch.best_argmax,
@@ -122,7 +129,7 @@ def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, 
         best_score_np[output_slice] + log_score_offset[output_slice]
     ).astype(plan.score_real_dtype)
     if plan.relion_f32_coarse_support_enabled and plan.collect_significance:
-        outputs.max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
+        outputs.max_posterior[batch.start_idx:batch.end_idx] = pmax_host
     else:
         outputs.max_posterior[batch.start_idx:batch.end_idx] = np.exp(
             best_score_np[output_slice] - global_log_z_np[output_slice]
@@ -132,118 +139,165 @@ def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, 
             np.asarray(class_log_z, dtype=np.float64)[output_slice]
             + log_score_offset[output_slice]
         )
-    if plan.return_class_best:
+    return global_log_z_np, best_score_np
+
+
+def _publish_class_scores(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan) -> None:
+    """Store each class's best pose and score, and its runner-up's, when the pass returns them."""
+
+    log_score_offset = np.zeros(batch.batch_size, dtype=np.float64)
+    output_slice = slice(0, batch.actual_batch_size)
+    for wanted, scores, argmaxes, offset_free_scores, absolute_scores, assignments in (
+        (
+            plan.return_class_best,
+            batch.class_best_scores,
+            batch.class_best_argmaxes,
+            outputs.class_best_offset_free_log_score,
+            outputs.class_best_log_score,
+            outputs.class_hard_assignment,
+        ),
+        (
+            plan.return_class_second,
+            batch.class_second_best_scores,
+            batch.class_second_best_argmaxes,
+            outputs.class_second_best_offset_free_log_score,
+            outputs.class_second_best_log_score,
+            outputs.class_second_hard_assignment,
+        ),
+    ):
+        if not wanted:
+            continue
         for class_index in range(plan.n_classes):
             offset_free, absolute = _capture_offset_free_and_absolute_float32_scores(
-                batch.class_best_scores[class_index],
+                scores[class_index],
                 log_score_offset,
             )
-            outputs.class_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
-            outputs.class_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
-            outputs.class_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
-                batch.class_best_argmaxes[class_index][output_slice],
-                dtype=np.int32,
-            )
-    if plan.return_class_second:
-        for class_index in range(plan.n_classes):
-            offset_free, absolute = _capture_offset_free_and_absolute_float32_scores(
-                batch.class_second_best_scores[class_index],
-                log_score_offset,
-            )
-            outputs.class_second_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
-            outputs.class_second_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
-            outputs.class_second_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
-                batch.class_second_best_argmaxes[class_index][output_slice],
+            offset_free_scores[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
+            absolute_scores[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
+            assignments[class_index, batch.start_idx:batch.end_idx] = np.asarray(
+                argmaxes[class_index][output_slice],
                 dtype=np.int32,
             )
 
+
+def _dump_batch(
+    batch: BatchOutputs,
+    outputs: Pass1Outputs,
+    plan: OutputPlan,
+    dump: ScoreDumpContext,
+    sig_mask_host,
+    global_log_z_np,
+    best_score_np,
+) -> None:
+    """Write the score dump of a dump batch (``RELAX_SIGNIFICANCE_DUMP_*``) from the batch and what was published."""
+
+    # Concatenate per-class per-block raw scores for the dump targets
+    # into per-class arrays of shape (n_targets, n_rot, n_trans).
+    target_scores_pre_prior_per_class = None
+    target_scores_with_prior_per_class = None
+    target_local_positions_for_dump = None
+    # The pass-1 program returns the target rows' scores; the loop pulls
+    # them from each block.
+    score_capture_mode = "pass1_program_target_rows"
+    if batch.dump_target_pre_prior_blocks_per_class is not None:
+        target_scores_pre_prior_per_class = [
+            np.concatenate(blocks, axis=1) if blocks else None
+            for blocks in batch.dump_target_pre_prior_blocks_per_class
+        ]
+        target_scores_with_prior_per_class = [
+            np.concatenate(blocks, axis=1) if blocks else None
+            for blocks in batch.dump_target_with_prior_blocks_per_class
+        ]
+        target_local_positions_for_dump = batch.dump_target_local_positions
+    maybe_dump_k_class_significance_batch(
+        experiment_dataset=dump.experiment_dataset,
+        indices=batch.indices,
+        n_classes=plan.n_classes,
+        rotations=dump.rotations,
+        translations=dump.translations,
+        # ``batch_weights`` is the class-major concatenation of each class's
+        # weights on every route.
+        class_weight_mats=[
+            np.asarray(
+                batch.weights.reshape(
+                    batch.batch_size,
+                    plan.n_classes,
+                    plan.n_rot * plan.n_trans,
+                )[:, class_index, :],
+                dtype=np.float64,
+            )
+            for class_index in range(plan.n_classes)
+        ],
+        batch_sig_mask=sig_mask_host,
+        batch_n_sig=np.asarray(batch.n_sig, dtype=np.int64),
+        hard_assignment_batch=np.asarray(batch.best_argmax, dtype=np.int64),
+        class_assignment_batch=np.asarray(batch.best_class, dtype=np.int64),
+        global_log_z=global_log_z_np,
+        class_log_z_values=batch.class_log_z_values,
+        best_score=best_score_np,
+        max_posterior=outputs.max_posterior[batch.start_idx:batch.end_idx],
+        rotation_log_prior_padded=dump.rotation_log_prior_padded,
+        batch_translation_log_prior=batch.translation_log_prior,
+        class_log_priors=dump.class_log_priors,
+        current_size=dump.current_size,
+        adaptive_fraction=dump.adaptive_fraction,
+        max_significants=dump.max_significants,
+        target_local_positions=target_local_positions_for_dump,
+        target_scores_pre_prior_per_class=target_scores_pre_prior_per_class,
+        target_scores_with_prior_per_class=target_scores_with_prior_per_class,
+        # RELION's exact coarse operands: the Gaussian GEMM's, or the CC pass's.
+        coarse_gaussian_shifted_corrected=batch.operands.shifted,
+        coarse_gaussian_unshifted_corrected=batch.operands.unshifted,
+        coarse_gaussian_pixel_weight=batch.operands.pixel_weight,
+        coarse_gaussian_initial_diff2=batch.operands.initial_diff2,
+        coarse_gaussian_score_indices=dump.score_indices,
+        translation_phase_source=dump.translations_source,
+        relion_projector_half=dump.relion_projector_half,
+        relion_projector_r_max=dump.relion_projector_r_max,
+        projection_padding_factor=dump.projection_padding_factor,
+        relion_f32_sum_weight=(
+            batch.sum_weight if plan.relion_f32_coarse_support_enabled else None
+        ),
+        relion_f32_significant_weight=(
+            batch.significant_weight
+            if plan.relion_f32_coarse_support_enabled
+            else None
+        ),
+        relion_f32_cutoff_count=(
+            batch.cutoff_count if plan.relion_f32_coarse_support_enabled else None
+        ),
+        score_capture_mode=score_capture_mode,
+        debug_iteration=dump.debug_iteration,
+    )
+
+
+def _publish_host_support_rows(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, sig_mask_host) -> None:
+    """Store the per-image support rows of a dump batch, whose mask was copied to the host."""
+
+    samples_per_class = plan.n_rot * plan.n_trans
+    for local_idx, global_idx in enumerate(batch.indices):
+        for class_index in range(plan.n_classes):
+            c0 = class_index * samples_per_class
+            c1 = c0 + samples_per_class
+            mask = sig_mask_host[local_idx, c0:c1]
+            outputs.significant_sample_indices[class_index][global_idx] = compact_significant_sample_indices_from_mask(
+                mask,
+            )
+
+
+def publish_batch(batch: BatchOutputs, outputs: Pass1Outputs, plan: OutputPlan, dump: ScoreDumpContext) -> None:
+    """Read one batch's pass-1 outputs back and store them in rows ``batch.start_idx:batch.end_idx`` of ``outputs``.
+
+    Writes ``outputs`` in place (the only writer of those rows) and, when ``batch.debug_dump_enabled``, the score dump
+    of ``dump``; returns nothing. The batch loop calls this for a batch once the next batch's operands are on the
+    device, before that batch's score program: the device scores this batch while the host prepares the next (a dump
+    batch publishes at once). ``plan`` says which results the pass returns.
+    """
+
+    pmax_host, sig_mask_host = _publish_support(batch, outputs, plan)
+    global_log_z_np, best_score_np = _publish_scores(batch, outputs, plan, pmax_host)
+    _publish_class_scores(batch, outputs, plan)
     if batch.debug_dump_enabled:
-        # Concatenate per-class per-block raw scores for the dump targets
-        # into per-class arrays of shape (n_targets, n_rot, n_trans).
-        target_scores_pre_prior_per_class = None
-        target_scores_with_prior_per_class = None
-        target_local_positions_for_dump = None
-        # The pass-1 program returns the target rows' scores; the loop pulls
-        # them from each block.
-        score_capture_mode = "pass1_program_target_rows"
-        if batch.dump_target_pre_prior_blocks_per_class is not None:
-            target_scores_pre_prior_per_class = [
-                np.concatenate(blocks, axis=1) if blocks else None
-                for blocks in batch.dump_target_pre_prior_blocks_per_class
-            ]
-            target_scores_with_prior_per_class = [
-                np.concatenate(blocks, axis=1) if blocks else None
-                for blocks in batch.dump_target_with_prior_blocks_per_class
-            ]
-            target_local_positions_for_dump = batch.dump_target_local_positions
-        maybe_dump_k_class_significance_batch(
-            experiment_dataset=dump.experiment_dataset,
-            indices=batch.indices,
-            n_classes=plan.n_classes,
-            rotations=dump.rotations,
-            translations=dump.translations,
-            # ``batch_weights`` is the class-major concatenation of each class's
-            # weights on every route.
-            class_weight_mats=[
-                np.asarray(
-                    batch.weights.reshape(
-                        batch.batch_size,
-                        plan.n_classes,
-                        plan.n_rot * plan.n_trans,
-                    )[:, class_index, :],
-                    dtype=np.float64,
-                )
-                for class_index in range(plan.n_classes)
-            ],
-            batch_sig_mask=batch_sig_mask_np,
-            batch_n_sig=np.asarray(batch.n_sig, dtype=np.int64),
-            hard_assignment_batch=np.asarray(batch.best_argmax, dtype=np.int64),
-            class_assignment_batch=np.asarray(batch.best_class, dtype=np.int64),
-            global_log_z=global_log_z_np,
-            class_log_z_values=batch.class_log_z_values,
-            best_score=best_score_np,
-            max_posterior=outputs.max_posterior[batch.start_idx:batch.end_idx],
-            rotation_log_prior_padded=dump.rotation_log_prior_padded,
-            batch_translation_log_prior=batch.translation_log_prior,
-            class_log_priors=dump.class_log_priors,
-            current_size=dump.current_size,
-            adaptive_fraction=dump.adaptive_fraction,
-            max_significants=dump.max_significants,
-            target_local_positions=target_local_positions_for_dump,
-            target_scores_pre_prior_per_class=target_scores_pre_prior_per_class,
-            target_scores_with_prior_per_class=target_scores_with_prior_per_class,
-            # RELION's exact coarse operands: the Gaussian GEMM's, or the CC pass's.
-            coarse_gaussian_shifted_corrected=batch.operands.shifted,
-            coarse_gaussian_unshifted_corrected=batch.operands.unshifted,
-            coarse_gaussian_pixel_weight=batch.operands.pixel_weight,
-            coarse_gaussian_initial_diff2=batch.operands.initial_diff2,
-            coarse_gaussian_score_indices=dump.score_indices,
-            translation_phase_source=dump.translations_source,
-            relion_projector_half=dump.relion_projector_half,
-            relion_projector_r_max=dump.relion_projector_r_max,
-            projection_padding_factor=dump.projection_padding_factor,
-            relion_f32_sum_weight=(
-                batch.sum_weight if plan.relion_f32_coarse_support_enabled else None
-            ),
-            relion_f32_significant_weight=(
-                batch.significant_weight
-                if plan.relion_f32_coarse_support_enabled
-                else None
-            ),
-            relion_f32_cutoff_count=(
-                batch.cutoff_count if plan.relion_f32_coarse_support_enabled else None
-            ),
-            score_capture_mode=score_capture_mode,
-            debug_iteration=dump.debug_iteration,
-        )
-
-    if plan.collect_significance and not device_significance_batch:
-        samples_per_class = plan.n_rot * plan.n_trans
-        for local_idx, global_idx in enumerate(batch.indices):
-            for class_index in range(plan.n_classes):
-                c0 = class_index * samples_per_class
-                c1 = c0 + samples_per_class
-                mask = batch_sig_mask_np[local_idx, c0:c1]
-                outputs.significant_sample_indices[class_index][global_idx] = compact_significant_sample_indices_from_mask(
-                    mask,
-                )
+        _dump_batch(batch, outputs, plan, dump, sig_mask_host, global_log_z_np, best_score_np)
+    if sig_mask_host is not None:
+        _publish_host_support_rows(batch, outputs, plan, sig_mask_host)
