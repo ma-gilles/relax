@@ -385,8 +385,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
             image_shape=image_shape,
             n_half=n_half,
             score_indices_np=window_spec.score_indices_np,
-            translations_source=translations_source,
-            relion_translation_angle_scale=request.relion_translation_angle_scale,
+            translation_angles=exact_cc_translation_angles,
             geometry=TreeRescoreGeometry(
                 half_weights=window.score_half_weights,
                 rotations=request.rotations,
