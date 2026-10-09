@@ -55,7 +55,7 @@ def prepare_batch(plan: Pass1Plan, batch_data, indices, start_idx: int, end_idx:
         start_idx=start_idx,
         end_idx=end_idx,
     )
-    operands = plan.operand_plan.prepare(inputs, indices)
+    operands = plan.route.operand_plan.prepare(inputs, indices)
 
     dump_targets = select_dump_targets(
         plan.experiment_dataset,
@@ -84,7 +84,7 @@ def _with_tree_rescore(plan: Pass1Plan, batch: PreparedBatch, scores: BatchScore
     # The bounded top-two rescore uses the batch's exact CUDA CC operands (the per-image FFT/CTF
     # assembly), not a second copy.
     rescored = rescore_ambiguous_images(
-        plan.tree_rescore_plan,
+        plan.route.tree_rescore_plan,
         TreeRescoreState(
             best_argmax=scores.best_argmax,
             best_score=scores.best_score,
@@ -137,7 +137,7 @@ def score_batch(plan: Pass1Plan, batch: PreparedBatch, *, defer_publish: bool) -
 
     support = NO_SUPPORT
     if plan.collect_significance:
-        if plan.relion_f32_coarse_support_enabled:
+        if plan.route.float32_support:
             support = float32_support(plan.support_plan, scores, batch.inputs.translation_log_prior)
         else:
             support = generic_support(plan.support_plan, scores, global_log_z, actual_batch_size)
