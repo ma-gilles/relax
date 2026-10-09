@@ -568,6 +568,20 @@ def main(command=None):
             resume_snapshot.relion_iteration,
             args.continue_optimiser_star,
         )
+        class_maps = np.asarray(resume_snapshot.means[0])
+        if (
+            int(resume_snapshot.n_classes) > 1
+            and int(resume_snapshot.relion_iteration) == 1
+            and all(np.array_equal(class_maps[0], other) for other in class_maps[1:])
+        ):
+            # A Class3D start from one reference with --firstiter_cc scores class 1 alone in iteration 1 and
+            # gives each particle its random class in iteration 2; RELION's --continue reads its optimiser with
+            # do_generate_seeds and do_firstiter_cc off (ml_optimiser.cpp:1291-1292), and so does this run.
+            logger.warning(
+                "Continuing a Class3D run after iteration 1, whose classes are still copies of one reference: "
+                "the continuation does not seed random classes (RELION's --continue does not either), so the "
+                "classes may stay identical. Continue from iteration 2 or later, or restart the run."
+            )
         if int(job.max_iter) < int(resume_snapshot.relion_iteration):
             raise SystemExit(
                 f"--max_iter {job.max_iter} is the last numbered iteration of the whole run "

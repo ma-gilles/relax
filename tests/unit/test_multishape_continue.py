@@ -105,3 +105,19 @@ def test_continuing_a_several_shape_run_writes_what_the_uninterrupted_run_writes
             assert_matches(mrcfile.read(continued / name), mrcfile.read(whole / name), rtol=1e-6, err_msg=name)
         else:
             _assert_same_star(whole / name, continued / name)
+
+
+def test_continuing_class3d_before_its_seed_iteration_warns(monkeypatch, tmp_path, caplog):
+    """A Class3D start from one map with --firstiter_cc seeds its classes in iteration 2; continuing from iteration 1
+    seeds none (RELION's --continue neither), and the run says so."""
+    import logging
+
+    data = write_tiny_data_dir(tmp_path / "data", n_images=16, n_classes=2)
+    arguments = ("--n_classes", "2", "--init_volume", data / "reference_init_relion.mrc")
+    first = _run(monkeypatch, tmp_path, "class3d", data, "first", *arguments, "--max_iter", "1")
+    with caplog.at_level(logging.WARNING, logger="relax.refinement.full_refinement"):
+        _run(
+            monkeypatch, tmp_path, "class3d", data, "continued", *arguments, "--max_iter", "2",
+            "--continue", first / "run_it001_optimiser.star",
+        )
+    assert any("does not seed random classes" in record.getMessage() for record in caplog.records)

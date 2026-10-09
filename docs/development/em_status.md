@@ -921,7 +921,11 @@ how it was qualified.
 - Run files on several image shapes (2026-10-07, relax#38): Refine3D and Class3D write run_itNNN_{data,model,
   optimiser,sampling}.star for optics groups of several image shapes. On multioptics_s3b_600 (Refine3D, 3 iterations,
   Slurm 15171521) every particle's rlnNormCorrection equals RELION's iteration 3 in both groups, the optics table is
-  RELION's and each group's noise table matches. `--continue` from them is still refused (phase 2, deferred).
+  RELION's and each group's noise table matches. `--continue` from them works since relax#38 phase 2 (2026-10-09):
+  on multioptics_s3b_600 (Slurm 15265116, 15265229), Refine3D 2 iterations plus a continuation and Class3D K=2
+  2 plus a continuation write iteration 3 as the uninterrupted run does (every pose, offset and class equal; maps
+  rel L2 1.0-1.4e-6, the same as two uninterrupted runs). A Class3D continuation from iteration 1 of a seeded
+  --firstiter_cc start seeds no classes, as RELION's --continue; the run warns.
 - Class3D (K>1) on optics groups of several image shapes (2026-10-01): each half is scored per shape
   class and merged (`optics_shapes.merge_k_class_outputs`), as K=1 is. Qualified on
   multioptics_k2_10k128_20260930 (K=2, 128 px at 4.25 A and 112 px at 5.44 A, --firstiter_cc), one

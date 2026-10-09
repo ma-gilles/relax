@@ -74,9 +74,7 @@ command.
   (pixel size, voltage, Cs, amplitude contrast, image size) and a
   `data_particles` block with `rlnImageName` (`index@stack.mrcs`) and the CTF
   columns. Several optics groups, including groups with different image sizes,
-  are supported. Limitation: `relax refine` and `relax class3d` on groups with
-  different image sizes or pixel sizes write their run files but cannot
-  `--continue` from them yet ([relax#38](https://github.com/ma-gilles/relax/issues/38)).
+  are supported.
 - **Reference map** (refine and class3d): an MRC in RELION's map convention,
   the file `relion_refine --ref` would read. relax accepts a map written by
   RELION or relax, or an unlabelled map whose file name contains `_relion`;
@@ -153,6 +151,17 @@ of the input STAR, which the run writes back unchanged. With the default
 `--firstiter_cc` and one `--init_volume`, the first iteration scores each particle
 by cross-correlation at its given pose, as RELION does. Not implemented yet with
 it: `--firstiter_cc` from several references, `--continue` and subtomogram particles.
+
+### Continuing a run
+
+`relax refine` and `relax class3d` write RELION's `run_itNNN_*` files every iteration.
+`--continue <output>/run_itNNN_optimiser.star` resumes after iteration NNN with the same
+command, as `relion_refine --continue` does, also for optics groups of several image
+sizes or pixel sizes. `--max_iter` stays the last iteration of the whole run. A Class3D
+run from one `--init_volume` with `--firstiter_cc` gives the particles their random
+classes in iteration 2, so a continuation from iteration 1 scores classes that are still
+copies of one map and never seeds them, as RELION's continuation does; the run warns.
+Continue from iteration 2 or later.
 
 ## Subtomogram auto-refine (RELION 5 tilt series)
 
