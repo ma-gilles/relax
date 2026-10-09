@@ -65,7 +65,6 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
     from relax.diagnostics import observers
-    from relax.refinement import iteration_loop as iteration_loop_module
     from relax.refinement import maximization as maximization_module
     from relax.refinement import mean_helpers as mean_helpers_module
     from relax.refinement import setup_checks as setup_checks_module
@@ -74,7 +73,7 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
     monkeypatch.setattr(observers, "write_premask_mean", lambda *args, **kwargs: None)
     trace = CallTrace(monkeypatch)
     trace.wrap(setup_checks_module, "ReconstructionSettings", "settings")
-    trace.wrap(iteration_loop_module, maximization, "maximization")
+    trace.wrap(maximization_module, maximization, "maximization")
     trace.wrap(maximization_module, operation, "operation")
     for name, label in (
         (solve, "solve"), (lowpass, "lowpass"),

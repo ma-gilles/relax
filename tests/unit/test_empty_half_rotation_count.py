@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from relax.helpers.convergence import RefinementState, _direction_prior_healpix_order_for_scoring
+from relax.helpers.convergence import RefinementState, direction_prior_healpix_order_for_scoring
 from relax.refinement.expectation import empty_half_rotation_count
 from relax.refinement.local_sampling import LocalSearchSettings
 from relax.sampling import rotation_grid_size
@@ -21,7 +21,7 @@ def test_local_empty_half_uses_the_direction_prior_grid(oversampling, symmetry):
     search = LocalSearchSettings(healpix_order=4 + oversampling, oversampling_order=oversampling, sigma_rot=0.03, sigma_psi=0.03, symmetry="C1")
     sampling = SimpleNamespace(search=search)
     state = RefinementState(healpix_order=4, adaptive_oversampling=oversampling, do_local_search=True)
-    prior_order = _direction_prior_healpix_order_for_scoring(
+    prior_order = direction_prior_healpix_order_for_scoring(
         state, use_local=True, grid_healpix_order=3, local_search_order=search.healpix_order
     )
     count = empty_half_rotation_count(sampling, 123, use_local=True, symmetry=symmetry)

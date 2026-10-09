@@ -80,12 +80,12 @@ def test_only_class3d_and_no_accuracy_current_size():
 def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_step(monkeypatch):
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import expectation, iteration_loop
+    from relax.refinement import expectation, maximization
 
     trace = CallTrace(monkeypatch)
     trace.wrap(expectation, "prepare_numbered_expectation", "phase")
-    trace.wrap(iteration_loop, "plan_adaptive_image_size", "coarse")
-    trace.wrap(iteration_loop, "class_maximization", "mstep")
+    trace.wrap(iteration_planning, "plan_adaptive_image_size", "coarse")
+    trace.wrap(maximization, "class_maximization", "mstep")
     # 8 px at 1 A, limit 4 A: the E-step size is 2 * ROUND(2) = 4 while the current size is the box.
     engine_calls = []
     run_tiny_refinement(

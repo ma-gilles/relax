@@ -43,7 +43,7 @@ import numpy as np
 
 from relax.helpers.convergence import RefinementState
 from relax.helpers.orientation_priors import DirectionPrior, initial_direction_priors_from_snapshot
-from relax.helpers.resolution import _zero_shells_past_current_size
+from relax.helpers.resolution import zero_shells_past_current_size
 from relax.reconstruction.regularization_relion import update_relion_growth_state_from_fsc
 
 if TYPE_CHECKING:
@@ -589,7 +589,7 @@ def k1_run_files_snapshot(
     shells); ``expected`` its NumberedExpectationResult; ``corrections`` its NormScaleCorrectionReport.
     """
     incr_size, has_high_fsc_at_limit = update_relion_growth_state_from_fsc(
-        _zero_shells_past_current_size(
+        zero_shells_past_current_size(
             mstep.fsc, current_size=this_iteration.current_size, box_size=ctx.image_geometry.box_size,
             dtype=ctx.scoring_dtype,
         ),

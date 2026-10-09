@@ -117,9 +117,9 @@ def test_actual_controller_audits_before_join_and_snapshot(n_classes, monkeypatc
     M-step; K=1 joins them, releases the previous maps, dumps the joined accumulators, then updates the prior."""
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop, "check_half_accumulators_before_join", "audit")
-    trace.wrap(iteration_loop, "class_maximization", "class")
+    trace.wrap(maximization, "class_maximization", "class")
     trace.wrap(maximization, "_combine_optional_half_accumulators", "combine")
-    trace.wrap(iteration_loop, "k1_maximization", "k1")
+    trace.wrap(maximization, "k1_maximization", "k1")
     trace.wrap(maximization, "join_half_accumulators_at_low_resolution", "join")
     trace.wrap(maximization, "_snapshot_and_release_previous_k1_means", "release")
     monkeypatch.setattr(observers, "write_bpref_accumulators", lambda *args, **kwargs: None)

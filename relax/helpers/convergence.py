@@ -606,7 +606,7 @@ def native_final_perturbation_healpix_order(state, final_current_healpix_order: 
         return int(state.healpix_order)
     return int(final_current_healpix_order)
 
-def _direction_prior_healpix_order_for_scoring(
+def direction_prior_healpix_order_for_scoring(
     state,
     *,
     use_local: bool,

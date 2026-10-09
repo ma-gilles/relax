@@ -33,10 +33,9 @@ from relax.helpers.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement import optics_shapes
+from relax.refinement import half_inputs, iteration_planning, local_sampling, optics_shapes
 from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
 from relax.refinement.final_sampling import FinalSampling
-from relax.refinement.half_inputs import HalfSet, _sigma_offset_for_half
 from relax.refinement.half_scoring import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -51,8 +50,6 @@ from relax.refinement.half_scoring import (
     _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.iteration_planning import ExpectationWindows, IterationCarry, NumberedIteration
-from relax.refinement.local_sampling import LocalSampling, NumberedSamplingPlan, local_search_centre_half
 from relax.refinement.optics_shapes import OpticsSpec
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.refinement_options import RefinementOptions
@@ -97,7 +94,7 @@ class SignificanceStatistics:
 
 def record_numbered_half(
     score_result: HalfScoreResult,
-    particle_half: HalfSet,
+    particle_half: half_inputs.HalfSet,
     per_half: PerHalfOutputs,
     significance: SignificanceStatistics,
     *,
@@ -400,9 +397,9 @@ def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coa
 
 def run_numbered_expectation(
     ctx: "RunContext",
-    carry: IterationCarry,
-    plan: NumberedSamplingPlan,
-    this_iteration: NumberedIteration,
+    carry: iteration_planning.IterationCarry,
+    plan: local_sampling.NumberedSamplingPlan,
+    this_iteration: iteration_planning.NumberedIteration,
     options: RefinementOptions,
     *,
     half_inputs: list,
@@ -480,8 +477,8 @@ def run_numbered_expectation(
 
 def numbered_half_inputs(
     ctx: "RunContext",
-    carry: IterationCarry,
-    plan: NumberedSamplingPlan,
+    carry: iteration_planning.IterationCarry,
+    plan: local_sampling.NumberedSamplingPlan,
     options: RefinementOptions,
     *,
     halves,
@@ -501,7 +498,7 @@ def numbered_half_inputs(
     return [
         NumberedHalfInputs(
             data=HalfScoringData(
-                particles=local_search_centre_half(
+                particles=local_sampling.local_search_centre_half(
                     halves[k], (options.replay.init_angle_priors or (None, None))[k], carry.state
                 ),
                 reference=reference_model.maps[k],
@@ -518,7 +515,7 @@ def numbered_half_inputs(
                 scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
             ),
             direction_priors=plan.direction_log_priors[k],
-            sigma_offset_angstrom=_sigma_offset_for_half(
+            sigma_offset_angstrom=half_inputs.sigma_offset_for_half(
                 carry.sigma_offset.shared_angstrom, carry.sigma_offset.per_half_angstrom, k,
             ),
         )
@@ -537,7 +534,7 @@ class PreparedFinalHalf:
 
 
 def prepare_final_half(
-    half: HalfSet,
+    half: half_inputs.HalfSet,
     sampling: FinalSampling,
     *,
     image_geometry: ImageGeometry,
@@ -603,7 +600,7 @@ class NumberedExpectation:
     """Trial pose grid and resolved sampling/policies shared by both numbered halves."""
 
     grid: TrialGrid
-    sampling: LocalSampling | DenseSamplingSpec
+    sampling: local_sampling.LocalSampling | DenseSamplingSpec
     variant: DenseVariantPolicy
     use_adaptive: bool
     local_diagnostics: LocalDiagnosticPolicy | None
@@ -611,9 +608,9 @@ class NumberedExpectation:
 
 def prepare_numbered_expectation(
     grid: TrialGrid,
-    windows: ExpectationWindows,
+    windows: iteration_planning.ExpectationWindows,
     *,
-    local_sampling: LocalSampling | None,
+    local_sampling: local_sampling.LocalSampling | None,
     variant: DenseVariantPolicy,
     use_adaptive: bool,
     base_translations,
@@ -684,7 +681,7 @@ def empty_half_rotation_count(sampling, grid_rotation_count: int, *, use_local: 
     """The rotation-sum length an empty half reports, the grid its occupied twin sums over.
 
     A local pass bins its rotation posterior on the parent (pass-1) grid, which is the
-    direction-prior grid of a local search (``_direction_prior_healpix_order_for_scoring``);
+    direction-prior grid of a local search (``direction_prior_healpix_order_for_scoring``);
     a global pass on its trial grid.
     """
     if use_local:
@@ -722,7 +719,7 @@ def score_numbered_half(
     sampling = phase.sampling
     particle_half = half.data.particles
     k = particle_half.index
-    use_local = isinstance(sampling, LocalSampling)
+    use_local = isinstance(sampling, local_sampling.LocalSampling)
     tomo_halves = tomo_sampling is not None
     k_class_enabled = phase.variant.k_class_enabled
     image_window_size = sampling.image_window_size if use_local else sampling.cs_for_engine

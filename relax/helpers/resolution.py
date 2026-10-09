@@ -244,7 +244,7 @@ def bootstrap_current_size_from_ini_high_relion(
     return bootstrap_current_size_relion(2 * init_shell, box_size=box_size, incr_size=incr_size)
 
 
-def _zero_shells_past_current_size(shell_curve, *, current_size, box_size, dtype=np.float32):
+def zero_shells_past_current_size(shell_curve, *, current_size, box_size, dtype=np.float32):
     """Zero the shells of an FSC or data-vs-prior curve beyond RELION's inclusive current-size boundary.
 
     BackProjector includes radii ``R <= current_size / 2``.  The boundary
@@ -282,7 +282,7 @@ def k1_current_resolution_shell(data_vs_prior, *, current_size, box_size, dtype=
     unavailable and zeroed first. See docs/math/relion_refinement_algorithm.md
     section 7 for the split-half and final all-data curves.
     """
-    dvp = _zero_shells_past_current_size(data_vs_prior, current_size=current_size, box_size=box_size, dtype=dtype)
+    dvp = zero_shells_past_current_size(data_vs_prior, current_size=current_size, box_size=box_size, dtype=dtype)
     return resolution_from_data_vs_prior(dvp, box_size=box_size, allow_high_res_recovery=True)
 
 
@@ -293,7 +293,7 @@ def class_current_resolution_shell(data_vs_prior, *, current_size, box_size, dty
     ``current_size`` are zeroed first; the result is the maximum over classes
     of each class's shell (``class_resolution_shells``, no recheck).
     """
-    dvp = _zero_shells_past_current_size(data_vs_prior, current_size=current_size, box_size=box_size, dtype=dtype)
+    dvp = zero_shells_past_current_size(data_vs_prior, current_size=current_size, box_size=box_size, dtype=dtype)
     return max(class_resolution_shells(dvp, box_size=box_size))
 
 
@@ -409,7 +409,7 @@ def estimate_k1_iteration_resolution(
     ``ini_high`` scheduling override.
     See ``docs/math/relion_refinement_algorithm.md#6-sampling-transitions-and-convergence``.
     """
-    data_vs_prior = _zero_shells_past_current_size(
+    data_vs_prior = zero_shells_past_current_size(
         data_vs_prior,
         current_size=current_size,
         box_size=box_size,
@@ -447,7 +447,7 @@ def estimate_class_iteration_resolution(
     scheduling override.
     See ``docs/math/relion_refinement_algorithm.md#6-sampling-transitions-and-convergence``.
     """
-    data_vs_prior = _zero_shells_past_current_size(
+    data_vs_prior = zero_shells_past_current_size(
         class_data_vs_prior,
         current_size=current_size,
         box_size=box_size,

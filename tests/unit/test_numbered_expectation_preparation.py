@@ -116,11 +116,11 @@ def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadat
     pass reads the coarse plan's angular step."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import iteration_loop, local_sampling
+    from relax.refinement import iteration_planning, local_sampling
 
     trace = CallTrace(monkeypatch)
     trace.wrap(local_sampling, 'iteration_trial_grid', 'grid')
-    trace.wrap(iteration_loop, 'plan_adaptive_image_size', 'coarse_plan')
+    trace.wrap(iteration_planning, 'plan_adaptive_image_size', 'coarse_plan')
     trace.wrap(expectation, 'DenseVariantPolicy', 'variant')
     trace.wrap(expectation, 'prepare_numbered_expectation', 'phase')
     run_tiny_refinement(

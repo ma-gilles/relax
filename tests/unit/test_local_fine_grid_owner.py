@@ -13,7 +13,6 @@ import numpy as np
 import pytest
 from helpers.float_compare import matches
 
-import relax.refinement.iteration_loop as iteration_loop
 import relax.sampling as sampling_module
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement import finalization, iteration_planning, local_sampling
@@ -182,7 +181,7 @@ def test_coarse_image_size_is_owned_by_the_adaptive_pass1_sizing(monkeypatch):
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "plan_adaptive_image_size", "numbered")
+    trace.wrap(iteration_planning, "plan_adaptive_image_size", "numbered")
     trace.wrap(finalization, "run_final_all_data", "final")
     for module in (iteration_planning, finalization):
         trace.wrap(module, "relion_coarse_image_size", "size")

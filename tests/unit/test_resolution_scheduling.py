@@ -65,7 +65,7 @@ class TestResolutionScheduling:
         corrected_dvp[:boundary_shell] = 0.05
         corrected_dvp[boundary_shell] = 10.0
 
-        corrected = resolution_helpers._zero_shells_past_current_size(
+        corrected = resolution_helpers.zero_shells_past_current_size(
             corrected_dvp,
             current_size=current_size,
             box_size=256,
@@ -89,7 +89,7 @@ class TestResolutionScheduling:
         data_vs_prior[:, : boundary_shell + 2] = 0.25
         data_vs_prior[:, boundary_shell] = 10.0
 
-        truncated = resolution_helpers._zero_shells_past_current_size(
+        truncated = resolution_helpers.zero_shells_past_current_size(
             data_vs_prior,
             current_size=current_size,
             box_size=128,
@@ -130,7 +130,7 @@ class TestResolutionScheduling:
         fsc[0] = 1.0
         data_vs_prior = regularization_relion.fsc_to_relion_ssnr(fsc, tau2_fudge=1.0)
 
-        truncated = resolution_helpers._zero_shells_past_current_size(
+        truncated = resolution_helpers.zero_shells_past_current_size(
             data_vs_prior,
             current_size=current_size,
             box_size=grid_size,
@@ -158,7 +158,7 @@ class TestResolutionScheduling:
         fsc[33] = 0.184406
         fsc[34] = 0.159366
 
-        growth_fsc = resolution_helpers._zero_shells_past_current_size(
+        growth_fsc = resolution_helpers.zero_shells_past_current_size(
             fsc,
             current_size=68,
             box_size=128,

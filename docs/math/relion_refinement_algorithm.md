@@ -715,7 +715,7 @@ tau2 and data/prior helpers. `compute_data_vs_prior` uses shell-average weight
 **multiplied by** tau2, tau2 fudge and the padding-volume correction; it is not
 `Ft_ctf / tau2`. The controller's K1 scheduling path reads the curve the
 previous iteration published, truncated to the previous current size
-(`_zero_shells_past_current_size`); the generic weight-based helper
+(`zero_shells_past_current_size`); the generic weight-based helper
 is not an exhaustive description of its resolution policy.
 [`relion_reconstruct`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/reconstruction/relion_functions.py) applies
 the actual regularized reconstruction and postprocessing conventions.

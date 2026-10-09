@@ -25,7 +25,7 @@ def optional_half_arrays(values, *, dtype=None):
     ]
 
 
-def _sigma_offset_for_half(
+def sigma_offset_for_half(
     current_sigma_offset_angstrom, current_sigma_offset_angstrom_per_half, half_index: int
 ) -> float:
     if current_sigma_offset_angstrom_per_half is None:

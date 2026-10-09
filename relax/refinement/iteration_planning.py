@@ -14,7 +14,6 @@ from relax.helpers.convergence import RefinementState, _exhaustive_grid_order_fo
 from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.resolution import (
     ImageGeometry,
-    _zero_shells_past_current_size,
     bootstrap_current_size_from_ini_high_relion,
     bootstrap_current_size_relion,
     class_resolution_shells,
@@ -24,6 +23,7 @@ from relax.helpers.resolution import (
     initialize_resolution_from_ini_high,
     relion_coarse_image_size,
     relion_optics_image_current_sizes,
+    zero_shells_past_current_size,
 )
 from relax.reconstruction.regularization_relion import (
     compute_current_size_relion,
@@ -884,7 +884,7 @@ def plan_initial_image_size(
         )
     elif schedule.init_fsc is not None:
         prev_cs = int(schedule.init_current_size)
-        fsc_prev = _zero_shells_past_current_size(
+        fsc_prev = zero_shells_past_current_size(
             schedule.init_fsc,
             current_size=prev_cs,
             box_size=box_size,
@@ -986,7 +986,7 @@ def plan_class_image_size(
         data_vs_prior,
         dtype=dtype,
     ).copy()
-    data_vs_prior_prev = _zero_shells_past_current_size(
+    data_vs_prior_prev = zero_shells_past_current_size(
         data_vs_prior_prev_raw,
         current_size=previous_size,
         box_size=box_size,
@@ -1047,14 +1047,14 @@ def plan_halfmap_image_size(
     else:
         # The raw FSC: this run's last one, else the continued snapshot's.
         fsc_for_growth = fsc_history[-1] if fsc_history else restart.fsc
-    fsc_prev_for_growth = _zero_shells_past_current_size(
+    fsc_prev_for_growth = zero_shells_past_current_size(
         fsc_for_growth,
         current_size=previous_size,
         box_size=box_size,
         dtype=dtype,
     )
 
-    data_vs_prior_iter = _zero_shells_past_current_size(
+    data_vs_prior_iter = zero_shells_past_current_size(
         data_vs_prior,
         current_size=previous_size,
         box_size=box_size,

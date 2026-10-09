@@ -188,7 +188,7 @@ def test_controller_builds_one_initial_grid_and_one_final_sampling(monkeypatch, 
     from relax.parity.relion_replay_source import RelionReplay
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "build_initial_coarse_grids", "initial")
+    trace.wrap(iteration_planning, "build_initial_coarse_grids", "initial")
     trace.wrap(relion_replay_source, "build_sealed_initial_coarse_grids", "sealed")
     trace.wrap(finalization, "run_final_all_data", "final")
     trace.wrap(finalization, "prepare_final_sampling", "final_sampling")

@@ -676,7 +676,7 @@ def test_the_backend_pairing_is_enforced_before_pass_2(monkeypatch, backend_name
     """A source-faithful K1 run refuses an incompatible backend before state/scoring."""
     from types import SimpleNamespace
 
-    from relax.refinement import iteration_loop
+    from relax.refinement import iteration_loop, iteration_planning
 
     # No backend setter or image arrays are needed: admission must reject this
     # combination before refinement state, projection or pass-2 preparation.
@@ -688,7 +688,7 @@ def test_the_backend_pairing_is_enforced_before_pass_2(monkeypatch, backend_name
     def unexpected_state(*args, **kwargs):
         raise AssertionError("invalid image backend reached refinement state initialization")
 
-    monkeypatch.setattr(iteration_loop, "initialize_refinement_state", unexpected_state)
+    monkeypatch.setattr(iteration_planning, "initialize_refinement_state", unexpected_state)
     with pytest.raises(ValueError, match="require RELION CUDA image preprocessing"):
         iteration_loop.refine_single_volume(
             [dataset, dataset], None, None, None,

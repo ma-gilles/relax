@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax import sampling
-from relax.helpers.convergence import _direction_prior_healpix_order_for_scoring, healpix_angular_step
+from relax.helpers.convergence import direction_prior_healpix_order_for_scoring, healpix_angular_step
 from relax.helpers.orientation_priors import relion_direction_log_priors, relion_local_search_sigmas
 from relax.helpers.resolution import relion_local_pass1_current_size
 from relax.refinement.iteration_planning import (
@@ -413,7 +413,7 @@ def plan_numbered_sampling(
         use_local=use_local, perturbation=carry.random_perturbation,
         coarse_size_healpix_order=coarse_size_healpix_order,
     )
-    direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
+    direction_prior_healpix_order = direction_prior_healpix_order_for_scoring(
         carry.state, use_local=use_local, grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
         local_search_order=sampling_plan.local.search.healpix_order if use_local else None,
     )

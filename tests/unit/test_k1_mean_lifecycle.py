@@ -67,7 +67,7 @@ def test_k1_mean_release_precedes_tau_and_reconstruction(monkeypatch):
     def previous_means_released(call):
         assert entry["model"].maps == [None, None]
 
-    trace.wrap(iteration_loop, "k1_maximization", before=maximization_starts)
+    trace.wrap(maximization, "k1_maximization", before=maximization_starts)
     trace.wrap(maximization, "_snapshot_and_release_previous_k1_means")
     trace.wrap(maximization, "estimate_split_half_prior", before=previous_means_released)
     trace.wrap(maximization, "reconstruct_numbered_k1_halfmaps", before=previous_means_released)
