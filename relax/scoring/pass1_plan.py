@@ -184,7 +184,7 @@ class Pass1Plan:
 
 
 def plan_pass1(request: Pass1Request) -> Pass1Plan:
-    """Refuse a request pass 1 cannot score, and plan the pass: see the module docstring."""
+    """Refuse what pass 1 cannot score with these resources, and plan the pass: see the module docstring."""
 
     coarse_healpix_order = request.coarse_healpix_order
     coarse_rotation_ids = request.coarse_rotation_ids
@@ -194,16 +194,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     rotation_block_size = request.rotation_block_size
     translation_log_prior = request.translation_log_prior
 
-    if request.return_class_second and not request.return_class_best:
-        raise ValueError("return_class_second requires return_class_best")
-    if request.return_relion_f32_normalization and (
-        not request.collect_significance or request.score_mode != "gaussian" or request.use_float64_scoring
-    ):
-        raise ValueError("RELION float32 normalization requires Gaussian float32 significance")
-
-
-    if request.score_mode not in {"gaussian", "normalized_cc"}:
-        raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {request.score_mode!r}")
     # VDAM asks for the padded tail batch explicitly; the global coarse pass
     # opts in through the environment while the bitwise equality is qualified.
     pad_final_image_batch = bool(pad_final_image_batch) or _coarse_pad_final_image_batch_enabled()
@@ -218,34 +208,18 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     translations_source = np.asarray(
         request.translations if request.translation_phase_source is None else request.translation_phase_source,
     )
-    if translations_source.shape != request.translations.shape:
-        raise ValueError(
-            "translation_phase_source must match translations: "
-            f"{translations_source.shape} != {request.translations.shape}",
-        )
     n_rot = int(request.rotations.shape[0])
     n_trans = int(request.translations.shape[0])
     n_images = int(request.experiment_dataset.n_units)
-    input_image_batch_size = operator.index(image_batch_size)
-    if input_image_batch_size <= 0:
-        raise ValueError("image_batch_size must be positive")
-    image_batch_size = input_image_batch_size
+    image_batch_size = operator.index(image_batch_size)
     image_shape = request.experiment_dataset.image_shape
     n_half = int(image_shape[0] * (image_shape[1] // 2 + 1))
     if coarse_rotation_ids is not None:
         coarse_rotation_ids = np.asarray(coarse_rotation_ids, dtype=np.int64).reshape(-1)
-        if coarse_rotation_ids.shape != (n_rot,):
-            raise ValueError(
-                f"coarse_rotation_ids must have shape ({n_rot},), got {coarse_rotation_ids.shape}",
-            )
     if coarse_healpix_order is None:
         coarse_healpix_order = infer_relion_coarse_healpix_order(n_rot, **({"symmetry_label": request.symmetry_label} if request.symmetry_label != "C1" else {}))
-    elif int(coarse_healpix_order) < 0:
-        raise ValueError(f"coarse_healpix_order must be non-negative, got {coarse_healpix_order}")
 
     use_relion_projector = relion_projector_half is not None
-    if use_relion_projector and request.relion_projector_r_max is None:
-        raise ValueError("relion_projector_r_max is required when relion_projector_half is provided")
     if use_relion_projector:
         relion_projector_half = _class_stacked_coarse_relion_projector(
             relion_projector_half, n_classes, use_float64_scoring=request.use_float64_scoring,
@@ -272,12 +246,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         if request.relion_projector_texture_interp is None
         else bool(request.relion_projector_texture_interp)
     )
-    if request.tree_rescore_max_margin is not None and not (
-        np.isfinite(request.tree_rescore_max_margin) and request.tree_rescore_max_margin >= 0.0
-    ):
-        raise ValueError(
-            f"tree_rescore_max_margin must be a finite non-negative float, got {request.tree_rescore_max_margin!r}"
-        )
     # Pass 1 scores RELION's exact coarse operands only: the Gaussian passes with the coarse GEMMs
     # (relion_coarse_gaussian_gemm_scores_jit), the --firstiter_cc passes with RELION's coarse CC
     # (relion_coarse_normalized_cc_gemm_scores_jit). The generic dense scorer was removed on
