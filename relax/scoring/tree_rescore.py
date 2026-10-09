@@ -186,21 +186,20 @@ def plan_tree_rescore(
     image_shape,
     n_half: int,
     score_indices_np,
-    translations_source,
-    relion_translation_angle_scale: float,
+    translation_angles,
     geometry: TreeRescoreGeometry,
 ) -> TreeRescorePlan:
     """Build the rescore's plan once :func:`require_tree_rescore_call` has accepted the call.
 
     Refuses a backend that is not the custom CUDA one. ``score_indices_np`` are the scored rows of the window
-    (``None``: every half-spectrum row).
+    (``None``: every half-spectrum row). ``translation_angles`` is RELION's float32 ``[T, 2]`` table of the
+    translations on the device, the one the pass's normalized-CC operands translate with.
     """
 
     from recovar import cuda_backproject
 
     from relax.helpers.fourier_window import relion_fftw_order_for_square_score_window
     from relax.helpers.projection import relion_projector_half_to_texture_full
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
     if (
         jax.default_backend() != "gpu"
@@ -223,14 +222,6 @@ def plan_tree_rescore(
             score_indices_np,
         ),
         dtype=jnp.int32,
-    )
-    translation_angles = jnp.asarray(
-        relion_translation_angles_f32(
-            translations_source,
-            image_shape,
-            angle_scale=relion_translation_angle_scale,
-        ),
-        dtype=jnp.float32,
     )
     logger.warning(
         "RELION coarse-tree top-2 rescore: max_margin=%g current_size=%d",
