@@ -844,26 +844,21 @@ def refine_single_volume(
         # as tau2 and solves once per class. mstep is the mode's record (ClassMaximization or K1Maximization). ---
         if ctx.k_class_enabled:
             mstep = class_maximization(
-                reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx.reconstruction_settings, options,
-                halves=halves, iteration=iteration, current_size=current_size,
+                reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx, options, this_iteration,
+                halves=halves, current_size=current_size,
                 image_current_size=plan.sampling_plan.windows.image_current_size,
                 mstep_accumulator_shape=mstep_accumulator_shape, mstep_full_half_axis=mstep_full_half_axis,
                 projector_power_spectrum=projector_power_spectrum,
-                class_tau2=source.class_tau2(iteration, options.k_class.n_classes), scoring_dtype=ctx.scoring_dtype,
-                relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
-                source_pixel_size_angstrom=ctx.source_pixel_size_angstrom, probe=ctx.maximization_probe,
+                class_tau2=source.class_tau2(iteration, options.k_class.n_classes),
             )
             history.data_vs_prior_trajectory.append(mstep.data_vs_prior)
             carry = replace(carry, previous_data_vs_prior_for_scheduling=mstep.data_vs_prior)
         else:
             mstep = k1_maximization(
-                reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx.reconstruction_settings,
-                parity=options.parity,
+                reference_model, (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), ctx, this_iteration, parity=options.parity,
                 pixel_resolutions=history.pixel_resolutions, current_resolution=carry.state.current_resolution,
-                iteration=iteration, current_size=current_size, mstep_accumulator_shape=mstep_accumulator_shape,
-                mstep_full_half_axes=expected.per_half.mstep_full_half_axis, scoring_dtype=ctx.scoring_dtype,
-                relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
-                source_pixel_size_angstrom=ctx.source_pixel_size_angstrom, probe=ctx.maximization_probe,
+                current_size=current_size, mstep_accumulator_shape=mstep_accumulator_shape,
+                mstep_full_half_axes=expected.per_half.mstep_full_half_axis,
             )
             # The accumulators the solve used (joined at low resolution when that is on) replace the scored ones.
             Ft_y_0, Ft_y_1 = mstep.Ft_y_per_half

@@ -6,7 +6,7 @@ history and installs them; each M-step writes the reference model in place, as i
 """
 
 import logging
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -15,9 +15,9 @@ from relax.dense.score_outputs import _combine_optional_half_accumulators
 from relax.helpers.orientation_priors import DirectionPrior, learn_class_direction_priors, learn_k1_direction_priors
 from relax.helpers.resolution import _firstiter_cc_ini_high_tapered
 from relax.helpers.timing import Stopwatch
+from relax.refinement.iteration_planning import NumberedIteration
 from relax.refinement.mean_helpers import (
     ClassMixture,
-    ReconstructionSettings,
     _host_tau2_volumes,
     _snapshot_and_release_previous_k1_means,
     _stack_class_tau2_update_details,
@@ -32,10 +32,13 @@ from relax.refinement.mean_helpers import (
     taper_first_cc_class_prior,
     taper_first_cc_k1_prior,
 )
-from relax.refinement.ports import ClassTau2, MaximizationProbe
+from relax.refinement.ports import ClassTau2
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR, REFERENCE_FILTER_EDGE_SHELLS
 from relax.sampling import rotation_grid_size
+
+if TYPE_CHECKING:
+    from relax.refinement.setup_checks import RunContext
 
 # The M-steps log as part of the controller's iteration.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -108,21 +111,17 @@ def class_maximization(
     reference_model,
     Ft_y_per_half,
     Ft_ctf_per_half,
-    reconstruction_settings: ReconstructionSettings,
+    ctx: "RunContext",
     options: RefinementOptions,
+    this_iteration: NumberedIteration,
     *,
     halves,
-    iteration: int,
     current_size,
     image_current_size,
     mstep_accumulator_shape,
     mstep_full_half_axis,
     projector_power_spectrum,
     class_tau2: ClassTau2,
-    scoring_dtype,
-    relion_firstiter_cc_this_iter: bool,
-    source_pixel_size_angstrom,
-    probe: MaximizationProbe,
 ) -> ClassMaximization:
     """RELION's Class3D M-step: one prior and one Wiener solve per class from the combined halves.
 
@@ -132,7 +131,8 @@ def class_maximization(
     returned data-vs-prior curve in the history and installs it as the next iteration's scheduling curve.
     ``class_tau2`` is the prior an input source supplies (None shells: the previous references').
     Reads ``reference_model.maps``; from ``options``: ``k_class.n_classes`` and
-    ``parity.relion_firstiter_ini_high_angstrom``.
+    ``parity.relion_firstiter_ini_high_angstrom``; from ``ctx``: the reconstruction settings, scoring dtype,
+    pixel size and M-step probe; from ``this_iteration``: its index and first-iteration CC.
     """
     parity = options.parity
     Ft_y_0, Ft_y_1 = Ft_y_per_half
@@ -150,25 +150,25 @@ def class_maximization(
         previous_means,
         Ft_y_combined,
         Ft_ctf_combined,
-        reconstruction_settings,
+        ctx.reconstruction_settings,
         half_denominators=(Ft_ctf_0, Ft_ctf_1),
         halves=halves,
         n_classes=options.k_class.n_classes,
-        iteration=iteration,
+        iteration=this_iteration.iteration,
         current_size=current_size,
         image_current_size=image_current_size,
         accumulator_shape=mstep_accumulator_shape,
         full_half_axis=mstep_full_half_axis,
         projector_power_spectrum=projector_power_spectrum,
         class_tau2=class_tau2,
-        scoring_dtype=scoring_dtype,
+        scoring_dtype=ctx.scoring_dtype,
         log=logger,
-        probe=probe,
+        probe=ctx.maximization_probe,
     )
     tau2_update_details = _stack_class_tau2_update_details(class_priors.details_per_class)
     logger.info(
         "Computed iter-%d Class3D tau2 from %s: %.1fs",
-        iteration + 1,
+        this_iteration.iteration + 1,
         class_tau2.source,
         tau2_clock.seconds,
     )
@@ -186,19 +186,19 @@ def class_maximization(
         Ft_y_combined,
         Ft_ctf_combined,
         class_priors.shells,
-        reconstruction_settings,
+        ctx.reconstruction_settings,
         n_classes=options.k_class.n_classes,
-        iteration=iteration,
+        iteration=this_iteration.iteration,
         current_size=current_size,
         accumulator_volume_shape=mstep_accumulator_shape,
-        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-        probe=probe,
+        relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
+        probe=ctx.maximization_probe,
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",
         recon_clock.seconds,
     )
-    if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
+    if this_iteration.first_iteration.relion_firstiter_cc and parity.relion_firstiter_ini_high_angstrom is not None:
         # Class3D tapers each class's tau2_class and data_vs_prior_class the
         # same way (ml_optimiser.cpp:6389-6420). RELION's comment calls this
         # output only, but the next E-step gates each class's scale sums on
@@ -208,16 +208,16 @@ def class_maximization(
         # iteration, so only the shell curves carry the taper.
         tapered_data_vs_prior = _firstiter_cc_ini_high_tapered(
             class_priors.data_vs_prior,
-            reconstruction_settings.box_size,
-            source_pixel_size_angstrom,
+            ctx.reconstruction_settings.box_size,
+            ctx.source_pixel_size_angstrom,
             parity.relion_firstiter_ini_high_angstrom,
             filter_edgewidth=REFERENCE_FILTER_EDGE_SHELLS,
         )
         tapered_prior = taper_first_cc_class_prior(
             class_priors.shells,
             tau2_update_details,
-            reconstruction_settings,
-            pixel_size_angstrom=source_pixel_size_angstrom,
+            ctx.reconstruction_settings,
+            pixel_size_angstrom=ctx.source_pixel_size_angstrom,
         )
         logger.info(
             "RELION iter-1 CC emulation: tapered Class3D tau2/data-vs-prior with ini_high=%.2f A",
@@ -250,26 +250,24 @@ def k1_maximization(
     reference_model,
     Ft_y_per_half,
     Ft_ctf_per_half,
-    reconstruction_settings: ReconstructionSettings,
+    ctx: "RunContext",
+    this_iteration: NumberedIteration,
     *,
     parity,
     pixel_resolutions,
     current_resolution,
-    iteration: int,
     current_size,
     mstep_accumulator_shape,
     mstep_full_half_axes,
-    scoring_dtype,
-    relion_firstiter_cc_this_iter: bool,
-    source_pixel_size_angstrom,
-    probe: MaximizationProbe,
 ) -> K1Maximization:
     """RELION's split-half auto-refine M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct).
 
     In order: join the half accumulators at low resolution when requested, copy the previous references
     to host and release them, estimate the split-half prior from this iteration's FSC, replace
     ``reference_model``'s tau2 and maps; after a first-iteration CC pass, taper the reported tau2; then
-    park the tau2 volumes on the host. ``probe`` sees the joined accumulators before the prior reads them.
+    park the tau2 volumes on the host. ``ctx.maximization_probe`` sees the joined accumulators before the prior
+    reads them. Reads from ``ctx``: the reconstruction settings, scoring dtype and pixel size; from
+    ``this_iteration``: its index and first-iteration CC.
     """
     Ft_y_0, Ft_y_1 = Ft_y_per_half
     Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
@@ -282,8 +280,8 @@ def k1_maximization(
             (Ft_y_0, Ft_y_1),
             (Ft_ctf_0, Ft_ctf_1),
             accumulator_volume_shape=mstep_accumulator_shape,
-            box_size=reconstruction_settings.box_size,
-            voxel_size=source_pixel_size_angstrom,
+            box_size=ctx.reconstruction_settings.box_size,
+            voxel_size=ctx.source_pixel_size_angstrom,
             padding_factor=RECONSTRUCTION_PADDING_FACTOR,
             low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
             pixel_resolutions=pixel_resolutions,
@@ -292,20 +290,20 @@ def k1_maximization(
             return_retained_first_numerator=True,
         )
     previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
-    probe.k1_accumulators_joined(
-        iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), settings=reconstruction_settings,
+    ctx.maximization_probe.k1_accumulators_joined(
+        this_iteration.iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), settings=ctx.reconstruction_settings,
         current_size=current_size, accumulator_shape=mstep_accumulator_shape,
-        pixel_size_angstrom=source_pixel_size_angstrom,
+        pixel_size_angstrom=ctx.source_pixel_size_angstrom,
     )
     split_prior = estimate_split_half_prior(
         (Ft_y_0, Ft_y_1),
         (Ft_ctf_0, Ft_ctf_1),
-        reconstruction_settings,
+        ctx.reconstruction_settings,
         current_size=current_size,
         accumulator_shape=mstep_accumulator_shape,
         full_half_axes=mstep_full_half_axes,
-        iteration=iteration,
-        scoring_dtype=scoring_dtype,
+        iteration=this_iteration.iteration,
+        scoring_dtype=ctx.scoring_dtype,
         log=logger,
     )
     logger.info("tau2 updated from this iteration's FSC")
@@ -323,13 +321,13 @@ def k1_maximization(
         (Ft_y_0, Ft_y_1),
         (Ft_ctf_0, Ft_ctf_1),
         split_prior.shells_per_half,
-        reconstruction_settings,
-        iteration=iteration,
+        ctx.reconstruction_settings,
+        iteration=this_iteration.iteration,
         current_size=current_size,
         accumulator_volume_shape=mstep_accumulator_shape,
-        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+        relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
         retained_first_numerator=retained_Ft_y_0_device,
-        probe=probe,
+        probe=ctx.maximization_probe,
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",
@@ -343,13 +341,13 @@ def k1_maximization(
     # model state and reporting; that tapered spectrum is explicitly not
     # used in the reconstruction calculation (ml_optimiser.cpp:5296-5328).
     # The taper rewrites split_prior's per-half volumes and details in place; its shared volume is new.
-    if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
+    if this_iteration.first_iteration.relion_firstiter_cc and parity.relion_firstiter_ini_high_angstrom is not None:
         reference_model.tau2 = taper_first_cc_k1_prior(
             split_prior.variance_per_half,
             split_prior.details_per_half,
-            reconstruction_settings,
-            pixel_size_angstrom=source_pixel_size_angstrom,
-            scoring_dtype=scoring_dtype,
+            ctx.reconstruction_settings,
+            pixel_size_angstrom=ctx.source_pixel_size_angstrom,
+            scoring_dtype=ctx.scoring_dtype,
         ).variance
         reference_model.tau2_per_half = _updated_mean_variance_per_half(
             reference_model.tau2,
