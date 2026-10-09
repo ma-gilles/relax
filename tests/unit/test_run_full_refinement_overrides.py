@@ -10,6 +10,7 @@ relative to RELION (cf. iteration_loop.py:4667-4703).
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,7 +57,7 @@ from relax.refinement.full_refinement import (
     _use_fresh_auto_refine_particle_order,
 )
 from relax.refinement.half_inputs import HalfSet
-from relax.refinement.mean_helpers import _updated_mean_variance_per_half
+from relax.refinement.mean_helpers import ReferenceModel, _updated_mean_variance_per_half
 from relax.refinement.particle_loading import _apply_relion_image_mask, prepare_relion_halfset_inputs
 from relax.refinement.startup_noise import (
     estimate_startup_sigma2,
@@ -366,14 +367,13 @@ def test_ordinary_k1_keeps_shared_tau2_across_multiple_updates():
             np.asarray([1.0 + iteration, 2.0], dtype=np.float32),
             np.asarray([3.0 + iteration, 4.0], dtype=np.float32),
         ]
-        scoring_tau2 = _updated_mean_variance_per_half(
-            shared,
-            candidate_per_half,
-            use_per_half_mean_variance=False,
+        model = ReferenceModel(
+            maps=[None, None], tau2=shared,
+            tau2_per_half=_updated_mean_variance_per_half(candidate_per_half, use_per_half_mean_variance=False),
         )
 
-        assert scoring_tau2[0] is shared
-        assert scoring_tau2[1] is shared
+        assert model.half_tau2(0) is shared
+        assert model.half_tau2(1) is shared
 
 
 def test_fixed_arm_can_keep_per_half_tau2_across_updates():
@@ -383,11 +383,7 @@ def test_fixed_arm_can_keep_per_half_tau2_across_updates():
         np.asarray([3.0, 4.0], dtype=np.float32),
     ]
 
-    scoring_tau2 = _updated_mean_variance_per_half(
-        shared,
-        candidate_per_half,
-        use_per_half_mean_variance=True,
-    )
+    scoring_tau2 = _updated_mean_variance_per_half(candidate_per_half, use_per_half_mean_variance=True)
 
     assert_matches(
         scoring_tau2[0], candidate_per_half[0]
@@ -397,21 +393,14 @@ def test_fixed_arm_can_keep_per_half_tau2_across_updates():
     )
 
 
-def test_default_state_swap_resyncs_both_scorer_halves_to_substituted_shared_tau2():
-    stale_per_half = [
-        np.asarray([1.0, 2.0], dtype=np.float32),
-        np.asarray([3.0, 4.0], dtype=np.float32),
-    ]
+def test_default_state_swap_scores_both_halves_with_substituted_shared_tau2():
+    model = ReferenceModel(maps=[None, None], tau2=np.asarray([1.0, 2.0], dtype=np.float32), tau2_per_half=None)
     substituted_shared = np.asarray([30.0, 40.0], dtype=np.float32)
 
-    scoring_tau2 = _updated_mean_variance_per_half(
-        substituted_shared,
-        stale_per_half,
-        use_per_half_mean_variance=False,
-    )
+    swapped = dataclasses.replace(model, tau2=substituted_shared)
 
-    assert scoring_tau2[0] is substituted_shared
-    assert scoring_tau2[1] is substituted_shared
+    assert swapped.half_tau2(0) is substituted_shared
+    assert swapped.half_tau2(1) is substituted_shared
 
 
 def test_fixed_arm_provenance_manifests_fail_closed_on_environment_tamper(

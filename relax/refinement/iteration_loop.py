@@ -803,10 +803,6 @@ def refine_single_volume(
             history.state_swap_probe_applied_relion_iterations.append(
                 int(options.schedule.init_relion_iteration) + int(iteration) + 1
             )
-        if not options.parity.use_per_half_mean_variance:
-            # State-swap diagnostics historically replace the one shared tau2.
-            # Do not leave the scorer pointing at pre-swap aliases.
-            reference_model.tau2_per_half = mean_helpers.shared_tau2_per_half(reference_model.tau2)
         checked = source.scoring_state_checked(
             iteration,
             ports.ScoringArrays(

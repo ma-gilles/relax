@@ -364,9 +364,7 @@ class RelionReplaySource(InputSource):
         return _frozen_scoring_state_arrays(
             means=arrays.reference_model.maps,
             mean_variance=arrays.reference_model.tau2,
-            mean_variance_per_half=(
-                arrays.reference_model.tau2_per_half if self.options.parity.use_per_half_mean_variance else None
-            ),
+            mean_variance_per_half=arrays.reference_model.tau2_per_half,
             relion_half_inputs=arrays.halves,
             noise_variance_per_half=arrays.noise_model.variance_per_half,
             current_sigma_offset_angstrom_per_half=arrays.sigma_offset.per_half_angstrom,

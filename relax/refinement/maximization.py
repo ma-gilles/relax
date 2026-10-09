@@ -29,7 +29,6 @@ from relax.refinement.mean_helpers import (
     join_half_accumulators_at_low_resolution,
     reconstruct_numbered_class_maps,
     reconstruct_numbered_k1_halfmaps,
-    shared_tau2_per_half,
     taper_first_cc_class_prior,
     taper_first_cc_k1_prior,
 )
@@ -87,7 +86,6 @@ def copy_first_class_to_every_class(
     first_class_maps = None if reference_model.maps[0] is None else _copy_first_class(reference_model.maps[0])
     reference_model.maps = [first_class_maps, first_class_maps]
     reference_model.tau2 = _copy_first_class(reference_model.tau2)
-    reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
     copied = mstep._replace(
         tau2_shells=_copy_first_class(mstep.tau2_shells),
         data_vs_prior=_copy_first_class(mstep.data_vs_prior),
@@ -199,7 +197,6 @@ def class_maximization(
         tau2_clock.seconds,
     )
     reference_model.tau2 = class_priors.variance
-    reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
 
     # --- Free previous-iteration means to reclaim GPU memory ---
     # (previous_means already snapshotted earlier for FSC sign alignment)
@@ -331,9 +328,7 @@ def k1_maximization(
     logger.info("tau2 updated from this iteration's FSC")
     reference_model.tau2 = split_prior.variance
     reference_model.tau2_per_half = _updated_mean_variance_per_half(
-        reference_model.tau2,
-        split_prior.variance_per_half,
-        use_per_half_mean_variance=parity.use_per_half_mean_variance,
+        split_prior.variance_per_half, use_per_half_mean_variance=parity.use_per_half_mean_variance,
     )
 
     # --- Now reconstruct the regularized means ---
@@ -372,9 +367,7 @@ def k1_maximization(
             scoring_dtype=ctx.scoring_dtype,
         ).variance
         reference_model.tau2_per_half = _updated_mean_variance_per_half(
-            reference_model.tau2,
-            split_prior.variance_per_half,
-            use_per_half_mean_variance=parity.use_per_half_mean_variance,
+            split_prior.variance_per_half, use_per_half_mean_variance=parity.use_per_half_mean_variance,
         )
         logger.info(
             "RELION iter-1 CC emulation: tapered post-reconstruction tau2/data-vs-prior "
@@ -387,10 +380,10 @@ def k1_maximization(
     # float32 volumes are 8 GB of the device floor (GPU census, bigbox
     # 14480607). The per-half reconstruction volumes are not read again:
     # they are released with split_prior when this function returns.
-    reference_model.tau2, reference_model.tau2_per_half = _host_tau2_volumes(
-        reference_model.tau2,
-        reference_model.tau2_per_half,
-    )
+    host_tau2 = _host_tau2_volumes(reference_model.tau2, [reference_model.half_tau2(0), reference_model.half_tau2(1)])
+    reference_model.tau2 = host_tau2.shared
+    if reference_model.tau2_per_half is not None:
+        reference_model.tau2_per_half = host_tau2.per_half
     return K1Maximization(
         (Ft_y_0, Ft_y_1),
         (Ft_ctf_0, Ft_ctf_1),

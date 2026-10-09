@@ -48,17 +48,17 @@ class ReferenceModel:
 
     Maps stay in the existing flat centered Fourier layout. K1 map slots are
     cleared before reconstruction; Class3D slots share one class stack. Tau2
-    retains the RECOVAR frame scale and its shared/per-half scoring policy.
+    retains the RECOVAR frame scale. ``tau2_per_half`` is each half's own tau2 when the halves score
+    per half (K=1 only), and None when both score with the shared ``tau2``.
     """
 
     maps: list
     tau2: object
-    tau2_per_half: list
+    tau2_per_half: list | None
 
-
-def shared_tau2_per_half(tau2) -> list:
-    """Both halves score with the one shared tau2: the pair refers to that array twice."""
-    return [tau2, tau2]
+    def half_tau2(self, half_index: int):
+        """The tau2 half ``half_index`` scores with."""
+        return self.tau2 if self.tau2_per_half is None else self.tau2_per_half[half_index]
 
 
 def initialize_reference_model(half_maps, initial_mean_variance, *, use_per_half_mean_variance, dtype, log):
@@ -78,7 +78,7 @@ def initialize_reference_model(half_maps, initial_mean_variance, *, use_per_half
         log.info("Initialized exact per-half K=1 tau2 priors")
     else:
         mean_variance = initial_mean_variance
-        mean_variance_per_half = shared_tau2_per_half(mean_variance)
+        mean_variance_per_half = None
     return ReferenceModel(maps=half_maps, tau2=mean_variance, tau2_per_half=mean_variance_per_half)
 
 
@@ -86,9 +86,7 @@ def initialize_class_reference_model(half_maps, initial_mean_variance, *, use_pe
     """Class3D: the already normalized class stacks with the one shared tau2 (per-half tau2 is refused)."""
     if use_per_half_mean_variance:
         raise ValueError("per-half scoring tau2 is supported only for K=1")
-    return ReferenceModel(
-        maps=half_maps, tau2=initial_mean_variance, tau2_per_half=shared_tau2_per_half(initial_mean_variance),
-    )
+    return ReferenceModel(maps=half_maps, tau2=initial_mean_variance, tau2_per_half=None)
 
 
 def reference_model_from_snapshot(snapshot, volume_shape, *, dtype):
@@ -97,7 +95,7 @@ def reference_model_from_snapshot(snapshot, volume_shape, *, dtype):
 
     maps = [jnp.asarray(mean) for mean in snapshot.means]
     tau2 = tau2_mean_variance(snapshot, volume_shape, dtype=dtype)
-    return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=shared_tau2_per_half(tau2))
+    return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=None)
 
 
 def class_reference_model_from_snapshot(snapshot, volume_shape, *, dtype):
@@ -108,7 +106,7 @@ def class_reference_model_from_snapshot(snapshot, volume_shape, *, dtype):
     maps = [jnp.asarray(mean) for mean in snapshot.means]
     maps[1] = maps[0]
     tau2 = tau2_mean_variance(snapshot, volume_shape, dtype=dtype)
-    return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=shared_tau2_per_half(tau2))
+    return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=None)
 
 
 class HostTau2(NamedTuple):
@@ -139,13 +137,8 @@ def _host_tau2_volumes(mean_variance, mean_variance_per_half):
     )
 
 
-def _updated_mean_variance_per_half(
-    shared_mean_variance,
-    updated_mean_variance_per_half,
-    *,
-    use_per_half_mean_variance,
-):
-    """Keep historical K=1 scoring on shared tau2 unless explicitly enabled."""
+def _updated_mean_variance_per_half(updated_mean_variance_per_half, *, use_per_half_mean_variance):
+    """Each half's own scoring tau2 when per-half scoring is on; None (the shared tau2) otherwise."""
 
     if use_per_half_mean_variance:
         if len(updated_mean_variance_per_half) != 2:
@@ -154,7 +147,7 @@ def _updated_mean_variance_per_half(
             jnp.asarray(updated_mean_variance_per_half[0]),
             jnp.asarray(updated_mean_variance_per_half[1]),
         ]
-    return shared_tau2_per_half(shared_mean_variance)
+    return None
 
 
 class ClassMixture(NamedTuple):

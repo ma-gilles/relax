@@ -85,9 +85,8 @@ def test_shared_tau2_keeps_original_object(classes):
         if classes
         else initialize_reference_model([None, None], initial, use_per_half_mean_variance=False, dtype=np.float32, log=LOG)
     )
-    shared, halves = model.tau2, model.tau2_per_half
-    assert shared is initial
-    assert halves[0] is initial and halves[1] is initial
+    assert model.tau2 is initial and model.tau2_per_half is None
+    assert model.half_tau2(0) is initial and model.half_tau2(1) is initial
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])

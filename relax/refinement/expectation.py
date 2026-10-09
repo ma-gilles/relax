@@ -503,7 +503,7 @@ def numbered_half_inputs(
                     halves[k], (options.replay.init_angle_priors or (None, None))[k], carry.state
                 ),
                 reference=reference_model.maps[k],
-                mean_variance=reference_model.tau2_per_half[k],
+                mean_variance=reference_model.half_tau2(k),
                 noise_variance=carry.noise_model.variance_per_half[k],
                 noise_radial=(
                     carry.noise_model.radial_per_half[k]
