@@ -5,11 +5,9 @@ request pass 1 cannot score, decides once whether the pass scores with the Gauss
 the projector (and the Gaussian route's projection cache) and each stage's plan record. Nothing is scored here.
 """
 
-import logging
 import operator
 import os
 from dataclasses import dataclass
-from functools import partial
 from typing import Any
 
 import jax.numpy as jnp
@@ -19,11 +17,9 @@ from recovar.utils.nvtx_shim import nvtx
 from relax.helpers.env_flags import (
     parse_env_strict_flag,
 )
-from relax.helpers.projection_cache import build_projection_cache
 from relax.relion.relion_coarse_operands import (
     infer_relion_coarse_healpix_order,
 )
-from relax.scoring.coarse_projector import CoarseProjector
 from relax.scoring.pass1_batch import BatchInputPlan, resolve_noise_tables
 from relax.scoring.pass1_priors import plan_rotation_blocks, validated_translation_log_prior
 from relax.scoring.pass1_request import Pass1Request
@@ -33,11 +29,8 @@ from relax.scoring.pass1_results import (
     ScoreDumpContext,
 )
 from relax.scoring.pass1_route import plan_cc_route, plan_gaussian_route
-from relax.scoring.pass1_scores import ProgramStatics, ScoreProgramPlan, block_prior_terms, score_blocks
-from relax.scoring.pass1_support import (
-    SupportPlan,
-    exact_order_rotation_prior,
-)
+from relax.scoring.pass1_scores import plan_score_program
+from relax.scoring.pass1_support import plan_support
 from relax.scoring.pass1_window import coarse_kernel_window, plan_scoring_window
 from relax.scoring.scoring import (
     coarse_gemm_float64_requested,
@@ -48,7 +41,6 @@ _COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
     "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH"
 )
 NVTX_DOMAIN_EM = "recovar_em"
-logger = logging.getLogger(__name__)
 
 
 def _coarse_rotated_radius_enabled(*, default: bool = False) -> bool:
@@ -246,7 +238,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         raise ValueError("image_batch_size must be positive")
     image_batch_size = input_image_batch_size
     image_shape = request.experiment_dataset.image_shape
-    volume_shape = request.experiment_dataset.volume_shape
     n_half = int(image_shape[0] * (image_shape[1] // 2 + 1))
     if coarse_rotation_ids is not None:
         coarse_rotation_ids = np.asarray(coarse_rotation_ids, dtype=np.int64).reshape(-1)
@@ -344,8 +335,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         rotation_block_size=rotation_block_size,
         score_real_dtype=score_real_dtype,
     )
-    rotations_padded = rotation_blocks.rotations_padded
-    rotation_log_prior_padded = rotation_blocks.rotation_log_prior_padded
     translation_log_prior = validated_translation_log_prior(
         translation_log_prior,
         n_images=n_images,
@@ -364,76 +353,25 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     if coarse_rotated_radius and route.compact_rows is None:
         raise ValueError("rotated coarse radius requires the compact RELION texture projector")
 
-    coarse_projector = CoarseProjector(
-        relion_projector_half=relion_projector_half,
-        relion_projector_r_max=request.relion_projector_r_max,
-        image_shape=image_shape,
-        projection_padding_factor=request.projection_padding_factor,
-        current_size=request.current_size,
-        score_size=score_size,
-        stable_fourier_window_shapes=request.stable_fourier_window_shapes,
-        compact=route.compact_rows,
-        rotated_radius=coarse_rotated_radius,
-    )
-
-    coarse_gaussian_gemm_projection_cache = None
-    if route.projection_cache_plan is not None:
-
-        coarse_gaussian_gemm_projection_cache = (
-            build_projection_cache(
-                route.projection_cache_plan,
-                partial(coarse_projector.cache_block, request.rotations),
-            )
-        )
-        logger.warning(
-            "Coarse GEMM C64 projection cache built: "
-            "shape=%s chunks=%d conservative_peak_bytes=%d budget_bytes=%d",
-            route.projection_cache_plan.cache_shape,
-            route.projection_cache_plan.chunk_count_per_table,
-            route.projection_cache_plan.predicted_peak_bytes,
-            route.projection_cache_plan.budget_bytes,
-        )
-
     # RELION's CUDA coarse kernel forms ``pdf_orientation + pdf_offset +
     # min_diff2 - diff2`` left to right (cuda_kernel_weights_exponent_coarse).
     # Adding the priors to the absolute scores and the min_diff2 offset
     # afterwards can tie poses that RELION separates by one ULP, so the
     # support pass keeps the pre-prior scores.
-    relion_exact_coarse_weight_order = route.float32_support and n_classes == 1
-    pass1_blocks = score_blocks(n_classes, n_rot, rotation_block_size)
-    score_program_plan = ScoreProgramPlan(
-        blocks=pass1_blocks,
-        prior_terms=block_prior_terms(pass1_blocks, class_log_priors_np, rotation_log_prior_padded, rotation_block_size),
-        rotations_padded=rotations_padded,
-        projector=coarse_projector,
-        projection_cache=coarse_gaussian_gemm_projection_cache,
-        n_classes=n_classes,
-        statics=ProgramStatics(
-            n_trans=int(n_trans),
-            image_shape=tuple(int(value) for value in image_shape),
-            volume_shape=tuple(int(value) for value in volume_shape),
-            float64=coarse_gemm_float64_requested(),
-            score_kind=route.score_kind,
-            exact_weight_order=relion_exact_coarse_weight_order,
-            return_class_best=bool(request.return_class_best),
-            track_class_second=bool(request.return_class_second or route.tree_rescore_plan is not None),
-            return_values=bool(request.collect_significance),
-        ),
+    exact_weight_order = route.float32_support and n_classes == 1
+    score_program_plan = plan_score_program(
+        request,
+        pass_shape,
+        route,
+        relion_projector_half,
+        rotation_blocks,
+        class_log_priors_np,
+        exact_weight_order=exact_weight_order,
+        float64=coarse_gemm_float64_requested(),
+        rotated_radius=coarse_rotated_radius,
     )
-    support_plan = SupportPlan(
-        n_classes=n_classes,
-        n_rot=n_rot,
-        n_trans=int(n_trans),
-        adaptive_fraction=request.adaptive_fraction,
-        max_significants=request.max_significants,
-        tie_score_ulps=int(request.relion_f32_coarse_tie_ulps),
-        return_relion_f32_normalization=request.return_relion_f32_normalization,
-        exact_weight_order=relion_exact_coarse_weight_order,
-        exact_rotation_prior=(
-            exact_order_rotation_prior(class_log_priors_np, rotation_log_prior_padded, n_rot)
-            if relion_exact_coarse_weight_order
-            else None
-        ),
+    support_plan = plan_support(
+        request, pass_shape, rotation_blocks, class_log_priors_np, exact_weight_order=exact_weight_order
     )
 
     output_plan = OutputPlan(
@@ -455,7 +393,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         translations=request.translations,
         translations_source=translations_source,
         class_log_priors=class_log_priors_np,
-        rotation_log_prior_padded=rotation_log_prior_padded,
+        rotation_log_prior_padded=rotation_blocks.rotation_log_prior_padded,
         current_size=request.current_size,
         adaptive_fraction=request.adaptive_fraction,
         max_significants=request.max_significants,

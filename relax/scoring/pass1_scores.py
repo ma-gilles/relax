@@ -4,12 +4,21 @@
 :class:`BatchScores`.
 """
 
+import logging
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, NamedTuple
 
 import jax.numpy as jnp
 
+from relax.helpers.projection_cache import build_projection_cache
 from relax.scoring.coarse_projector import CoarseProjector
+from relax.scoring.pass1_priors import RotationBlocks
+from relax.scoring.pass1_request import Pass1Request
+from relax.scoring.pass1_results import PassShape
+from relax.scoring.pass1_route import RoutePlan
+
+logger = logging.getLogger(__name__)
 
 
 def score_blocks(n_classes: int, n_rot: int, rotation_block_size: int) -> tuple:
@@ -112,3 +121,75 @@ class BatchScores(NamedTuple):
     support_values: Any
     dump_pre_prior_blocks: list | None
     dump_with_prior_blocks: list | None
+
+
+def plan_score_program(
+    request: Pass1Request,
+    shape: PassShape,
+    route: RoutePlan,
+    relion_projector_half,
+    rotation_blocks: RotationBlocks,
+    class_log_priors,
+    *,
+    exact_weight_order: bool,
+    float64: bool,
+    rotated_radius: bool,
+) -> ScoreProgramPlan:
+    """Plan the score program of a pass over ``shape`` on ``route``: its blocks, priors, projector and projection cache.
+
+    ``rotation_blocks`` are the rotations and rotation prior padded to whole blocks of ``route.rotation_block_size`` and
+    ``class_log_priors`` the classes' prior (``[K]``). The projector is built from ``relion_projector_half``, on the
+    route's compact rows; ``rotated_radius`` asks it for the canonical rotated clipping. ``exact_weight_order`` asks for
+    the pre-prior support values and ``float64`` for the diagnostic precision. Builds the projection cache the route
+    planned (none when it planned none).
+    """
+
+    coarse_projector = CoarseProjector(
+        relion_projector_half=relion_projector_half,
+        relion_projector_r_max=request.relion_projector_r_max,
+        image_shape=shape.image_shape,
+        projection_padding_factor=request.projection_padding_factor,
+        current_size=request.current_size,
+        score_size=shape.score_size,
+        stable_fourier_window_shapes=request.stable_fourier_window_shapes,
+        compact=route.compact_rows,
+        rotated_radius=rotated_radius,
+    )
+
+    projection_cache = None
+    if route.projection_cache_plan is not None:
+        projection_cache = build_projection_cache(
+            route.projection_cache_plan,
+            partial(coarse_projector.cache_block, request.rotations),
+        )
+        logger.warning(
+            "Coarse GEMM C64 projection cache built: "
+            "shape=%s chunks=%d conservative_peak_bytes=%d budget_bytes=%d",
+            route.projection_cache_plan.cache_shape,
+            route.projection_cache_plan.chunk_count_per_table,
+            route.projection_cache_plan.predicted_peak_bytes,
+            route.projection_cache_plan.budget_bytes,
+        )
+
+    blocks = score_blocks(shape.n_classes, shape.n_rot, route.rotation_block_size)
+    return ScoreProgramPlan(
+        blocks=blocks,
+        prior_terms=block_prior_terms(
+            blocks, class_log_priors, rotation_blocks.rotation_log_prior_padded, route.rotation_block_size
+        ),
+        rotations_padded=rotation_blocks.rotations_padded,
+        projector=coarse_projector,
+        projection_cache=projection_cache,
+        n_classes=shape.n_classes,
+        statics=ProgramStatics(
+            n_trans=int(shape.n_trans),
+            image_shape=tuple(int(value) for value in shape.image_shape),
+            volume_shape=tuple(int(value) for value in request.experiment_dataset.volume_shape),
+            float64=float64,
+            score_kind=route.score_kind,
+            exact_weight_order=exact_weight_order,
+            return_class_best=bool(request.return_class_best),
+            track_class_second=bool(request.return_class_second or route.tree_rescore_plan is not None),
+            return_values=bool(request.collect_significance),
+        ),
+    )
