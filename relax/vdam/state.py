@@ -20,7 +20,8 @@ MOM2_INIT_CONSTANT: float = 1.0  # ml_model.cpp:23
 
 @dataclass(kw_only=True)
 class InitialModelState:
-    """Plain dataclass (not Equinox) so tests run CPU-only without JAX tracing."""
+    """The InitialModel's run state. ``Iref``, ``Igrad1`` and ``Igrad2`` are device (JAX) arrays after the first
+    M-step (``m_step._run_m_step_transaction``), though annotated ``np.ndarray``."""
 
     iter: int = 0
     nr_iter: int = 200
@@ -100,10 +101,9 @@ def half_slot_index(k: int, h: int, K: int, pseudo_halfsets: bool) -> int:
 class VdamAccumulator:
     """Per-class raw backprojection accumulator.
 
-    The E-step adapter produces one `VdamAccumulator` per `(class, halfset)`
-    pair (so `2K` total when `pseudo_halfsets` is active). `data` and
-    `weight` have the padded Fourier shape `(N_pad, N_pad, N_pad // 2 + 1)`
-    at `padding_factor=1`.
+    The E-step produces one `VdamAccumulator` per `(class, halfset)` pair (so `2K` total when
+    `pseudo_halfsets` is active). `data` and `weight` are RELION BackProjector half-complex slabs
+    `(N, N, N // 2 + 1)`: the padded box, or (the common case) cropped to the iteration's current size.
     """
 
     data: np.ndarray  # complex128, shape (Nz_pad, Ny_pad, Nx_pad_half)

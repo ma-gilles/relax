@@ -30,7 +30,7 @@ from relax.vdam.schedules import (
 class VdamEnvironment:
     """The InitialModel's switches of the process environment, read once when the options are built.
 
-    :meth:`from_environ` reads each as its consumer used to; the default instance has every switch off.
+    :meth:`from_environ` reads them; the default instance has every switch off.
     ``profile`` (RECOVAR_INITIAL_MODEL_PROFILE, any value) prints the wall times of the start-up stages, of
     each iteration's stages (the E-step as one stage: its coarse and fine passes are not timed apart) and of
     the artifact writes;

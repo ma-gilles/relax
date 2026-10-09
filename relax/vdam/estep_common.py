@@ -1,10 +1,9 @@
-"""E-step records and accumulator helpers shared by the dense and sparse InitialModel E-steps.
+"""E-step records and accumulator helpers shared by the single-particle and subtomogram InitialModel E-steps.
 
-The E-step configuration and result records, the accumulator packing, the
-per-image row selection and the metadata assembly live here so the dense
-adapter and the sparse pass-2 owner import them without importing each other. The layout bridge
-from the shared RELION-x-half M-step's public Fourier cubes to RELION BackProjector centered
-half-complex slabs (formerly ``vdam/layout.py``) comes first.
+The E-step configuration and result records, the accumulator packing, the per-image row selection and the
+metadata assembly live here so ``adaptive_estep`` and ``tomo_estep`` import them without importing each
+other. The layout bridge from the shared RELION-x-half M-step's public Fourier cubes to RELION
+BackProjector centered half-complex slabs comes first.
 """
 
 from __future__ import annotations
@@ -36,10 +35,9 @@ def _as_centered_bpref_source(
 ) -> tuple[np.ndarray, int, int]:
     """Return ``(centered cube, center, effective radius)`` for BPref slicing.
 
-    Dense EM historically returned an original-box full cube. The shared
-    RELION x-half M-step returns its current-size odd BackProjector cube after
-    conversion to the public full layout. Both encode the same centered
-    support and must feed the one BPref slab conversion below.
+    ``values`` is an original-box full cube or the shared RELION x-half M-step's current-size odd
+    BackProjector cube in the public full layout. Both encode the same centered support and feed the one
+    BPref slab conversion below.
     """
     arr = np.asarray(values)
     full_size = int(box_size) * int(padding_factor)
@@ -274,7 +272,7 @@ def _group_local_kwargs(
 
 
 def _add_accumulator_weight_meta(meta: dict[str, Any], accumulators: list[VdamAccumulator], K: int) -> None:
-    """Record RELION BPref weight totals used to normalize class prior updates."""
+    """Record each class's RELION BPref weight total, and per half-set, in ``meta`` (a report; nothing reads it)."""
 
     sums = np.zeros(int(K), dtype=np.float64)
     halfset_sums: dict[int, np.ndarray] = {}
@@ -311,9 +309,7 @@ def _arrays_to_accumulators(
     reconstruction_group_count: int | None = None,
     padding_factor: int,
 ) -> list[VdamAccumulator]:
-    # This adapter used to iterate only ``state.K`` and silently discard a
-    # duplicated trailing class.  Reject either axis before constructing a
-    # partially aligned accumulator list.
+    # Refuse a class axis other than K on either array before building a partially aligned list.
     try:
         data_class_count = len(Ft_y_by_class)
         weight_class_count = len(Ft_ctf_by_class)

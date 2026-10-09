@@ -1,11 +1,9 @@
 """VDAM M-step: gradient moment update + reference reconstruction.
 
 Runs RELION's moment/reconstruction transaction in JAX, in float32 by default
-(float64 is the diagnostic reference); the native per-primitive route remains
-for dumps and replays. The single-class M-step (the per-class transaction, RELION's reconstruction-weight and
-resolution-shell rules) follows the multi-class
-driver; RELION's own step-by-step M-step with its dumps and replays is the oracle in
-``diagnostics.vdam_native_mstep``.
+(float64 is the diagnostic reference). The single-class M-step (the per-class transaction, RELION's
+reconstruction-weight and resolution-shell rules) follows the multi-class driver; RELION's own
+step-by-step M-step with its dumps and replays is the oracle in ``diagnostics.vdam_native_mstep``.
 """
 
 from __future__ import annotations
@@ -322,9 +320,6 @@ def vdam_m_step_single_class(
 ) -> InitialModelState:
     """VDAM M-step for one class: the transaction of
     :func:`relax.relion.relion_vdam_mstep.relion_vdam_m_step_host`.
-
-    RELION's own step-by-step M-step, with its intermediate dumps and parity
-    replays, is the oracle in :mod:`relax.diagnostics.vdam_native_mstep`.
 
     Pseudo-halfsets: FSC/noise-power is derived from the halfset-data difference
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.

@@ -60,7 +60,7 @@ RELION_INITIALMODEL_SMALL_CHANGE_INIT_CLASSES = 9999999.0
 
 @dataclass(frozen=True)
 class NativeSamplingPlan:
-    """Trial geometry; sparse execution can defer the unused dense fine grid."""
+    """Trial geometry of one iteration; the adaptive E-step builds its own fine grid (``rotations`` None)."""
 
     rotations: np.ndarray | None
     translations: np.ndarray
@@ -98,7 +98,8 @@ class NativeSamplingState:
     pixel_size: float
     max_healpix_order: int | None = None
     auto_local_healpix_order: int = RELION_INITIALMODEL_LOCAL_SEARCH_HEALPIX_ORDER
-    # acc_rot=0 means "not fine enough yet" pending calculateExpectedAngularErrors port.
+    # 0 until _estimate_native_sampling_accuracy (calculateExpectedAngularErrors) sets it; the HEALPix
+    # order does not refine before then.
     acc_rot: float = 0.0
     acc_trans_angstrom: float = 999.0
     current_changes_optimal_offsets_angstrom: float = RELION_INITIALMODEL_SMALL_CHANGE_INIT_OFFSETS
@@ -300,7 +301,8 @@ def _best_eulers_from_particle_state(
     *,
     rotation_grid_order: int,
 ) -> np.ndarray | None:
-    """Resolve exact source rows first, with explicit legacy fallback per row."""
+    """Each particle's Euler angles: the exact source triple where valid, else from its best rotation
+    matrix, else from its best rotation id on the RELION grid; None when a particle has none of them."""
     ids = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
     n_particles = len(particle_state.translation_offsets)
     source = particle_state.best_pose_eulers_deg

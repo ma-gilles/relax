@@ -4,19 +4,20 @@ Mirrors `MlOptimiser::iterate` (ml_optimiser.cpp:3458-3550) for the
 gradient-refine branch:
 
   for iter in 1 .. nr_iter:
-      schedule_update(state, iter)        # stepsize, tau2_fudge, subset
       do_grad = ...                       # drop grad at the EM tail
-      pseudo_halfsets = do_grad
-      select_subset_for_iter(state, ...)  # shuffle + prefix + stable-sort
-      update_current_resolution(state)    # FSC-driven from iter 2
-      expectation_step(state, ...)        # E-step adapter -> posteriors
-      maximisation_step(state, ...)       # VDAM M-step
-      post_mstep_update(state, ...)       # masks / other post-M-step hooks
-      write_iter_artifacts(state, iter)
+      default_schedule_update(state, iter)  # stepsize, tau2_fudge, subset size
+      select_subset_for_iter(state, ...)  # shuffle + prefix + stable-sort; pseudo_halfsets = do_grad
+      update_image_size_and_resolution_pointers(state)
+      projector_refresh_fn(state)         # projector and tau2 for the E-step
+      expectation_step(state, ...)        # accumulators and the E-step's meta
+      update.maximize(state, ...)         # the M-step (VDAM or momentum SGD)
+      update_probabilities_from_estep, update.update_noise
+      post_mstep_update(state, ...)       # solvent flattening, the input source's references
+      update.update_resolution(state)
+      record_iteration, iter_artifact_sink
 
-The E-step adapter (`expectation_step`) is a callback supplied by the
-caller because it requires dense-path kernels + real particle data. This
-module is the pure orchestrator.
+The E-step (`expectation_step`) is a callback supplied by the caller, which owns the particle data and
+the engine.
 """
 
 from __future__ import annotations
@@ -57,8 +58,8 @@ ExpectationStepFn = Callable[
 ]
 """E-step callback. Must return `(accumulators, meta)` where accumulators
 holds 2K entries when pseudo_halfsets is on (halfset-0 first, then
-halfset-1) and meta is a free-form dict written into per-iter STAR output
-(Pmax, nr_significant, best_class, best_euler, best_trans).
+halfset-1) and meta holds the E-step's sums, which the M-step and the probability and noise updates read
+(`estep_common.estep_sums`), and the iteration's report.
 """
 
 IterArtifactSink = Callable[[InitialModelState, int, dict], None]

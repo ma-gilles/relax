@@ -38,10 +38,6 @@ INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE = 256
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB = 32
 
 _RELION_PROJECTOR_DUMP_DIR_ENV = "RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
-# VDAM prepares its projector one way: the device FFT in double, narrowed to
-# the complex64 slab that RELION's GPU projector holds as a float texture
-# (the single float32 texture path of a7977c8). The corrected power spectrum
-# that seeds tau2 stays double.
 
 
 logger = logging.getLogger(__name__)
@@ -89,7 +85,7 @@ def _configure_relion_image_mask(dataset, opts: NativeInitialModelOptions) -> No
         width_mask_edge_px=float(opts.width_mask_edge_px),
     )
     from relax.cuda import (
-        kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
+        kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor)
     )
 
     backend.set_relion_fourier_backend(opts.image_fourier_backend)
@@ -319,8 +315,7 @@ def _resolve_class_inputs(
     dense class means.
 
     The resident adaptive route scores with the projector and reads only K and the dtype of the dense
-    N^3 means and their power (a NaN stand-in left 12-iteration K=1 and K=2 maps unchanged, job
-    14512033), so ``(K, 1)`` NaN arrays replace them and any read shows up as NaN.
+    N^3 means and their power, so ``(K, 1)`` NaN arrays replace them and any read shows up as NaN.
     """
     if config.relion_projector_half_by_class is None or config.relion_projector_r_max is None:
         raise ValueError("the E-step needs the iteration's RELION projector: relion_projector_half_by_class and _r_max")
@@ -338,11 +333,8 @@ def run_dense_initial_model_estep(
     particle_ids: np.ndarray | None = None,
     halfset_ids: np.ndarray | None = None,
 ) -> DenseInitialModelEstepResult:
-    """Run the InitialModel E-step with RELION-compatible pseudo-halfset routing.
-
-    VDAM's one E-step route is the adaptive pass-1/pass-2 route on the
-    device-resident pass 2; the dense E-step was removed on 2026-10-03.
-    """
+    """Run the InitialModel E-step with RELION-compatible pseudo-halfset routing: the adaptive
+    pass-1/pass-2 route on the device-resident pass 2."""
     engine_kwargs = _dense_engine_kwargs(state, config)
     selected_particle_ids = (
         np.arange(int(experiment_dataset.n_images), dtype=np.int64)
