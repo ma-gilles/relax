@@ -6,7 +6,8 @@ gradient-refine branch:
   for iter in 1 .. nr_iter:
       do_grad = ...                       # drop grad at the EM tail
       apply_schedules(state, iter)  # stepsize, tau2_fudge, subset size
-      select_subset_for_iter(state, ...)  # shuffle + prefix + stable-sort; pseudo_halfsets = do_grad
+      pseudo_halfsets = do_grad           # two pseudo-halfsets in gradient iterations
+      select_subset_for_iter(state, ...)  # shuffle + prefix + stable-sort into those halfsets
       update_image_size_and_resolution_pointers(state)
       projector_refresh_fn(state)         # projector and tau2 for the E-step
       expectation_step(state, ...)        # accumulators and the E-step's meta
@@ -311,13 +312,15 @@ def run_vdam_iterations(
             current = replace(current, subset_size=batch_size)
         profile.stage("schedule")
 
+        # RELION's gradient iterations split the subset into two pseudo-halfsets; the EM tail does not.
+        current = replace(current, pseudo_halfsets=do_grad)
         current = select_subset_for_iter(
             current,
             iter=it,
             nr_particles=nr_particles,
             optics_group_by_particle=optics_group_by_particle,
             random_seed=random_seed,
-            do_grad=do_grad,
+            pseudo_halfsets=current.pseudo_halfsets,
             particle_order=particle_order,
         )
         profile.stage("subset")

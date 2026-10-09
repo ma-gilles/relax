@@ -86,7 +86,7 @@ def select_subset_for_iter(
     nr_particles: int,
     optics_group_by_particle: Sequence[int],
     random_seed: int,
-    do_grad: bool,
+    pseudo_halfsets: bool,
     particle_order: Sequence[int] | None = None,
 ) -> InitialModelState:
     """Select RELION's per-iteration VDAM subset.
@@ -95,7 +95,9 @@ def select_subset_for_iter(
     zero. Otherwise it shuffles RELION's current ``sorted_idx`` particle list
     with seed ``random_seed + iter``, takes the first ``subset_size`` (or all
     particles if ``-1``), stable-sorts by optics group, and assigns pseudo-
-    halfset ids.
+    halfset ids (``pseudo_halfsets``, the iteration's mode, which the caller installs in the state: RELION's
+    gradient iterations split the subset into two pseudo-halfsets). Returns the state with the subset and the
+    particle order for the next shuffle.
     """
     stored_order = state.sorted_particle_ids
     stored_part_ids = state.sorted_particle_part_ids
@@ -143,12 +145,11 @@ def select_subset_for_iter(
         shuffled_part_ids = base_part_ids[permutation]
 
     # `-1` (all particles) still needs to be translated via select_vdam_subset
-    pseudo = do_grad
     plan = select_vdam_subset(
         shuffled_particle_ids=shuffled,
         subset_size=subset_size,
         optics_group_by_particle=optics_group_by_particle,
-        pseudo_halfsets=pseudo,
+        pseudo_halfsets=pseudo_halfsets,
         shuffled_part_ids=shuffled_part_ids,
     )
     # Persist the sorted prefix and untouched tail for the next iteration's shuffle.
@@ -159,7 +160,6 @@ def select_subset_for_iter(
     new_state.subset_halfset_ids = plan.halfset_ids
     new_state.sorted_particle_ids = shuffled
     new_state.sorted_particle_part_ids = shuffled_part_ids
-    new_state.pseudo_halfsets = pseudo
     return new_state
 
 
@@ -236,13 +236,14 @@ def restore_subset_order_for_continuation(
         )
         order_state = replace(order_state, subset_size=int(subset_size))
         do_grad = (int(state.nr_iter) - iteration) >= int(grad_em_iters)
+        order_state = replace(order_state, pseudo_halfsets=do_grad)
         order_state = select_subset_for_iter(
             order_state,
             iter=iteration,
             nr_particles=nr_particles,
             optics_group_by_particle=optics_group_by_particle,
             random_seed=int(random_seed),
-            do_grad=do_grad,
+            pseudo_halfsets=order_state.pseudo_halfsets,
             particle_order=particle_order,
         )
 

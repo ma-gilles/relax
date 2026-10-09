@@ -960,7 +960,7 @@ class TestRunVdamIterations:
             nr_particles=6,
             optics_group_by_particle=[0, 1, 0, 1, 0, 1],
             random_seed=0,
-            do_grad=True,
+            pseudo_halfsets=True,
         )
 
         assert_matches(out.subset_particle_ids, np.array([0, 2, 1, 3]))
@@ -991,7 +991,7 @@ class TestRunVdamIterations:
             nr_particles=6,
             optics_group_by_particle=[0, 1, 0, 1, 0, 1],
             random_seed=0,
-            do_grad=True,
+            pseudo_halfsets=True,
             particle_order=np.array([5, 0, 3, 4, 1, 2], dtype=np.int64),
         )
 
@@ -1016,7 +1016,7 @@ class TestRunVdamIterations:
                 nr_particles=4,
                 optics_group_by_particle=[0, 0, 0, 0],
                 random_seed=0,
-                do_grad=True,
+                pseudo_halfsets=True,
                 particle_order=np.array([0, 1, 1, 3], dtype=np.int64),
             )
 
@@ -1038,7 +1038,7 @@ class TestRunVdamIterations:
             nr_particles=6,
             optics_group_by_particle=[0, 1, 0, 1, 0, 1],
             random_seed=7,
-            do_grad=True,
+            pseudo_halfsets=True,
             particle_order=particle_order,
         )
         second = select_subset_for_iter(
@@ -1047,7 +1047,7 @@ class TestRunVdamIterations:
             nr_particles=6,
             optics_group_by_particle=[0, 1, 0, 1, 0, 1],
             random_seed=7,
-            do_grad=True,
+            pseudo_halfsets=True,
             particle_order=particle_order,
         )
 
@@ -1075,7 +1075,7 @@ class TestRunVdamIterations:
             nr_particles=6,
             optics_group_by_particle=optics,
             random_seed=7,
-            do_grad=True,
+            pseudo_halfsets=True,
             particle_order=particle_order,
         )
         second = select_subset_for_iter(
@@ -1084,7 +1084,7 @@ class TestRunVdamIterations:
             nr_particles=6,
             optics_group_by_particle=optics,
             random_seed=7,
-            do_grad=True,
+            pseudo_halfsets=True,
             particle_order=particle_order,
         )
 
@@ -1159,7 +1159,7 @@ class TestRunVdamIterations:
             nr_particles=6,
             optics_group_by_particle=optics,
             random_seed=7,
-            do_grad=True,
+            pseudo_halfsets=True,
             particle_order=particle_order,
         )
         next_permutation = np.asarray(

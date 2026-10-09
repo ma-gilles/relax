@@ -460,7 +460,7 @@ def test_seed_zero_halfsets_use_relion_experiment_position_parity(monkeypatch):
         nr_particles=len(main),
         optics_group_by_particle=np.zeros(len(main), dtype=np.int64),
         random_seed=0,
-        do_grad=True,
+        pseudo_halfsets=True,
         particle_order=initial_model_io._experiment_read_order(main),
     )
 
