@@ -12,6 +12,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.helpers.relion_expected_accuracy import expected_angular_errors
+from relax.refinement.tomo_half import TiltImageAccuracyInputs
 
 bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
 
@@ -413,12 +414,18 @@ def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
                 np.where(rng.uniform(size=n_images) < 0.5, rng.uniform(0, 80, n_images), -1.0),
             ]
         )
-        tilt = dict(
+        extra = dict(
             image_offsets=offsets,
             image_projections=np.asarray([_rotation(rng) for _ in range(n_images)]),
             image_ctf=image_ctf,
         )
-        extra = dict(tilt)
+        # The optics constants come from the estimate's arguments; the tilt images' own are unused.
+        tilt = TiltImageAccuracyInputs(
+            **extra,
+            voltage=np.full(n_images, np.nan),
+            spherical_aberration=np.full(n_images, np.nan),
+            amplitude_contrast=np.full(n_images, np.nan),
+        )
     oracle = bind.vdam_expected_angular_errors(
         case["references"], case["eulers"], case["particles"], np.zeros(len(case["particles"]), dtype=np.int32),
         case["pdf"], case["sigma2"], case["defU"], case["defV"], case["defA"], case["phase"],

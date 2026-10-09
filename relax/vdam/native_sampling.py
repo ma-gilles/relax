@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
@@ -32,6 +33,9 @@ from relax.relion.optics_aberrations import expected_accuracy_optics
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.schedules import relion_sampling_cadence
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
+
+if TYPE_CHECKING:
+    from relax.refinement.tomo_half import TiltImageAccuracyInputs
 
 RELION_INITIALMODEL_LOCAL_SEARCH_HEALPIX_ORDER = 4
 
@@ -381,7 +385,7 @@ def estimate_native_sampling_accuracy(
     random_seed: int,
     padding_factor: int,
     sigma2_fudge: float,
-    tilt_images: dict | None = None,
+    tilt_images: TiltImageAccuracyInputs | None = None,
     optics_group_ids: np.ndarray | None = None,
     experiment_dataset=None,
     isolate_in_subprocess: bool = False,
@@ -462,17 +466,28 @@ def estimate_native_sampling_accuracy(
         else:
             # The per-particle defocus arrays are unused; the group's images give the constants.
             zeros = np.zeros(len(particle_state.translation_offsets), dtype=np.float64)
-            offsets = np.asarray(tilt_images["image_offsets"], dtype=np.int64)
+            offsets = np.asarray(tilt_images.image_offsets, dtype=np.int64)
             images = np.concatenate([np.arange(offsets[p], offsets[p + 1]) for p in ids])
             optics_kwargs = dict(
                 defocus_u=zeros,
                 defocus_v=zeros,
                 defocus_angle=zeros,
                 phase_shift=zeros,
-                **{
-                    name: group_constant(tilt_images[name], images, name, n_rows=len(tilt_images[name]))
-                    for name in ("voltage", "spherical_aberration", "amplitude_contrast")
-                },
+                voltage=group_constant(
+                    tilt_images.voltage, images, "voltage", n_rows=len(tilt_images.voltage)
+                ),
+                spherical_aberration=group_constant(
+                    tilt_images.spherical_aberration,
+                    images,
+                    "spherical_aberration",
+                    n_rows=len(tilt_images.spherical_aberration),
+                ),
+                amplitude_contrast=group_constant(
+                    tilt_images.amplitude_contrast,
+                    images,
+                    "amplitude_contrast",
+                    n_rows=len(tilt_images.amplitude_contrast),
+                ),
                 pixel_size=float(state.pixel_size),
                 tilt_images=tilt_images,
                 # The trials' tilt images' exact CTF rows and the magnification's factor, when optics need them.

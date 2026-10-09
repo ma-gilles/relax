@@ -298,7 +298,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     Supplied-map EM and InitialModel have different state containers and noise
     conventions, but the calculation has one owner
     (:func:`relax.helpers.relion_expected_accuracy.expected_angular_errors`).
-    ``tilt_images`` (``image_offsets``, ``image_projections``, ``image_ctf``; see
+    ``tilt_images`` (a :class:`relax.refinement.tomo_half.TiltImageAccuracyInputs`, from
     :func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`) makes the particles
     subtomograms over their tilt images; the per-particle defocus arrays are then unused.
     ``optics`` (:func:`relax.relion.optics_aberrations.expected_accuracy_optics`) gives the trial
@@ -340,7 +340,6 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     references = np.ascontiguousarray(references_relion, dtype=np.float64)
     if projector_data is None:
         projector_data = _projector_data(references, projector_current_size, int(padding_factor), gridding_kernel)
-    tilt = None if tilt_images is None else {key: np.asarray(value) for key, value in tilt_images.items()}
     optics = {} if optics is None else dict(optics)
     ctf_images = None
     if do_ctf_correction and "trial_ctf" in optics:
@@ -354,7 +353,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
             pixel_size=float(pixel_size),
             box_size=box_size,
             current_image_size=int(current_image_size),
-            tilt_images=tilt,
+            tilt_images=tilt_images,
         )
     out = expected_angular_errors(
         projector_data=np.asarray(projector_data, dtype=np.complex128),
@@ -373,8 +372,10 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
         random_seed_particle_ids=trial_particles,
         model_pixel_size=model_pixel_size,
         box_size=box_size,
-        image_offsets=None if tilt is None else tilt["image_offsets"].astype(np.int64),
-        image_projections=None if tilt is None else tilt["image_projections"].astype(np.float64),
+        image_offsets=None if tilt_images is None else np.asarray(tilt_images.image_offsets).astype(np.int64),
+        image_projections=(
+            None if tilt_images is None else np.asarray(tilt_images.image_projections).astype(np.float64)
+        ),
         projection_left=optics.get("projection_left"),
     )
     return ExpectedAccuracy(
@@ -445,15 +446,15 @@ def _trial_ctf_images(trial_local, *, defocus, optics, pixel_size, box_size, cur
         params = np.column_stack([du, dv, da, voltage * ones, cs * ones, q0 * ones, 0.0 * ones, ones, phase])
         rows = relion_ctf_fftw_half(params, box_size, pixel_size)
     else:
-        offsets = np.asarray(tilt_images["image_offsets"], dtype=np.int64)
+        offsets = np.asarray(tilt_images.image_offsets, dtype=np.int64)
         images = np.concatenate([np.arange(offsets[p], offsets[p + 1]) for p in trial_local])
-        c = np.asarray(tilt_images["image_ctf"], dtype=np.float64)[images]
+        c = np.asarray(tilt_images.image_ctf, dtype=np.float64)[images]
         dosed = c[:, 6] >= 0.0
         ones = np.ones(images.size)
         if optics is None:
             voltage, cs, q0 = (
-                np.asarray(tilt_images[name], dtype=np.float64)[images]
-                for name in ("voltage", "spherical_aberration", "amplitude_contrast")
+                np.asarray(values, dtype=np.float64)[images]
+                for values in (tilt_images.voltage, tilt_images.spherical_aberration, tilt_images.amplitude_contrast)
             )
         params = np.column_stack(
             [c[:, 0], c[:, 1], c[:, 2], voltage * ones, cs * ones, q0 * ones, np.where(dosed, 0.0, c[:, 3]), c[:, 4], c[:, 5]]
@@ -1087,9 +1088,9 @@ def _estimate_tomo_half(
         images = np.concatenate(
             [np.arange(half.unit_image_offsets[u], half.unit_image_offsets[u + 1]) for u in group_trials]
         )
-        voltage = _constant_selected(tilt["voltage"], images, "voltage")
-        cs = _constant_selected(tilt["spherical_aberration"], images, "spherical aberration")
-        q0 = _constant_selected(tilt["amplitude_contrast"], images, "amplitude contrast")
+        voltage = _constant_selected(tilt.voltage, images, "voltage")
+        cs = _constant_selected(tilt.spherical_aberration, images, "spherical aberration")
+        q0 = _constant_selected(tilt.amplitude_contrast, images, "amplitude contrast")
         noise = sigma2 if sigma2.ndim == 1 else sigma2[int(group)]
         per_group.append(
             estimate_relion_expected_accuracy_from_prepared_inputs(

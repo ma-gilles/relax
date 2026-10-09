@@ -21,7 +21,12 @@ from recovar.data_io.starfile import read_star
 from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
-from relax.refinement.tomo_half import TomoDataset, load_tomo_dataset, tilt_image_accuracy_inputs
+from relax.refinement.tomo_half import (
+    TiltImageAccuracyInputs,
+    TomoDataset,
+    load_tomo_dataset,
+    tilt_image_accuracy_inputs,
+)
 from relax.relion import initial_model_io, relion_ctf, vdam_checkpoint
 from relax.relion.initial_model_io import (
     _experiment_read_order,
@@ -86,7 +91,7 @@ def _native_expectation_step(
     optics_state: NativeOpticsState | None = None,
     *,
     projector_context: estep_setup.IterationProjectorContext,
-    tilt_images: dict | None = None,
+    tilt_images: TiltImageAccuracyInputs | None = None,
     optics_group_ids: np.ndarray | None = None,
     premultiplied_ctf: bool = False,
 ):
@@ -328,7 +333,7 @@ def _native_expectation_step(
                 evidence,
                 sigma2_noise=state.sigma2_noise,
                 groups=np.zeros(ids.size, np.int64) if optics_group_ids is None else np.asarray(optics_group_ids)[ids],
-                n_images=np.ones(ids.size) if tilt_images is None else np.diff(tilt_images["image_offsets"])[ids],
+                n_images=np.ones(ids.size) if tilt_images is None else np.diff(tilt_images.image_offsets)[ids],
                 box_size=int(state.box_size),
                 current_size=int(state.effective_current_size),
             )
@@ -442,7 +447,7 @@ def run_native_initial_model(
         strip_prefix=opts.strip_prefix,
     )
     profile.record("particle_scratch")
-    tilt_images = None
+    tilt_images: TiltImageAccuracyInputs | None = None
     if tomo:
         # RELION 5 subtomogram 2D stacks (--ios): the particles are the units, each over its tilt images.
         dataset = load_tomo_dataset(

@@ -1001,7 +1001,24 @@ def score_tomo_half_in_loop(
     )
 
 
-def tilt_image_accuracy_inputs(half: TomoHalf) -> dict:
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class TiltImageAccuracyInputs:
+    """Per-tilt-image inputs of RELION's expected-accuracy estimate for a tomo half, by tilt image."""
+
+    # (n_particles + 1,): particle p's tilt images are image_offsets[p]:image_offsets[p + 1].
+    image_offsets: np.ndarray
+    # (n_images, 3, 3): each tilt image's projection (Aproj).
+    image_projections: np.ndarray
+    # (n_images, 7): defocus U, V (A), angle (deg), B-factor, scale, phase shift, dose (-999: the B-factor
+    # carries the dose).
+    image_ctf: np.ndarray
+    # (n_images,) each: the image's optics group's voltage (kV), Cs (mm) and amplitude contrast.
+    voltage: np.ndarray
+    spherical_aberration: np.ndarray
+    amplitude_contrast: np.ndarray
+
+
+def tilt_image_accuracy_inputs(half: TomoHalf) -> TiltImageAccuracyInputs:
     """Per-tilt-image inputs of RELION's expected-accuracy estimate for a tomo half.
 
     Each image's ``Aproj`` and CTF as Experiment::addImageToParticle stores them (exp_model.cpp:196-243):
@@ -1048,14 +1065,14 @@ def tilt_image_accuracy_inputs(half: TomoHalf) -> dict:
     def optics_column(name):
         return np.asarray(star_column(optics, name, required=True), dtype=np.float64)[optics_rows]
 
-    return {
-        "image_offsets": half.unit_image_offsets,
-        "image_projections": half.image_projections,
-        "image_ctf": image_ctf,
-        "voltage": optics_column("rlnVoltage"),
-        "spherical_aberration": optics_column("rlnSphericalAberration"),
-        "amplitude_contrast": optics_column("rlnAmplitudeContrast"),
-    }
+    return TiltImageAccuracyInputs(
+        image_offsets=half.unit_image_offsets,
+        image_projections=half.image_projections,
+        image_ctf=image_ctf,
+        voltage=optics_column("rlnVoltage"),
+        spherical_aberration=optics_column("rlnSphericalAberration"),
+        amplitude_contrast=optics_column("rlnAmplitudeContrast"),
+    )
 
 
 

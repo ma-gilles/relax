@@ -22,6 +22,7 @@ from relax.helpers.expected_accuracy import ExpectedAccuracy
 from relax.helpers.orientation_priors import relion_round_away_from_zero
 from relax.helpers.particle_io import ParticleReadPolicy
 from relax.parity import vdam_replay
+from relax.refinement.tomo_half import TiltImageAccuracyInputs
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.vdam import (
     bootstrap_iref,
@@ -833,12 +834,14 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
         best_pose_eulers_valid=np.ones(2, dtype=bool),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
-    tilt_images = {
-        "image_offsets": np.asarray([0, 2, 4]),
-        "voltage": np.full(4, 300.0),
-        "spherical_aberration": np.full(4, 2.7),
-        "amplitude_contrast": np.full(4, 0.07),
-    }
+    tilt_images = TiltImageAccuracyInputs(
+        image_offsets=np.asarray([0, 2, 4]),
+        image_projections=np.broadcast_to(np.eye(3), (4, 3, 3)),
+        image_ctf=np.zeros((4, 7)),
+        voltage=np.full(4, 300.0),
+        spherical_aberration=np.full(4, 2.7),
+        amplitude_contrast=np.full(4, 0.07),
+    )
 
     def estimate(images):
         return native_sampling.estimate_native_sampling_accuracy(
@@ -857,7 +860,7 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
         estimate(tilt_images)  # one value each: valid input reaches the estimator unchanged
     assert reached["voltage"] == 300.0 and reached["spherical_aberration"] == 2.7
 
-    mixed = dict(tilt_images, **{name: np.asarray([1.0, 1.0, 1.0, 2.0]) * tilt_images[name]})
+    mixed = replace(tilt_images, **{name: np.asarray([1.0, 1.0, 1.0, 2.0]) * getattr(tilt_images, name)})
     with pytest.raises(ValueError, match=f"several {name} values"):
         estimate(mixed)
 
