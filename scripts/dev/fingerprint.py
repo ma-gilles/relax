@@ -114,6 +114,47 @@ RENAMED_FIELDS = (
     ("<InitialModelState>/ori_size", "<InitialModelState>/box_size"),
 )
 TMP_TOKEN = "<TMP>"
+# Keywords of run_dense_k_class_em_adaptive that the engine and every callee read with a default
+# (``engine_kwargs.get(key, default)`` or a named parameter): passing the default is the same call as
+# omitting the key. The stand-in engine drops a key whose value is this default before it digests its
+# operands, so a caller that always passes such a key (code rule 12, no conditional insertions) records the
+# same call as one that inserts it only when it differs. The commit that added this table lists where each
+# key is read; a key that changes behaviour when passed at its default (pass2_use_float64_scoring: None
+# inherits use_float64_scoring, False overrides it) is not listed.
+ENGINE_KWARG_DEFAULTS = {
+    "coarse_engine": "auto",
+    "symmetry_label": "C1",
+    "optics_group_ids": None,
+    "reconstruction_current_size": None,
+    "wsum_current_size": None,
+    "preserve_bpref_particle_order": False,
+    "source_faithful_spectrum_norm": False,
+    "firstiter_cc_tree_rescore_max_margin": None,
+    "relion_translation_angle_scale": 1.0,
+    "firstiter_cc_support": "relion",
+    "nyquist_column_counting": "relion",
+    "class_rotation_log_prior": None,
+    "relion_projector_half": None,
+    "relion_projector_r_max": None,
+    "mstep_relion_x_half": False,
+    "relion_half_volume_mstep": False,
+    "coarse_current_size": None,
+    "fine_current_size": None,
+}
+
+
+def engine_kwargs_without_defaults(kwargs: dict) -> dict:
+    """``kwargs`` less every key of ``ENGINE_KWARG_DEFAULTS`` passed at its default (exact type and value)."""
+
+    def at_default(key, value):
+        if key not in ENGINE_KWARG_DEFAULTS:
+            return False
+        default = ENGINE_KWARG_DEFAULTS[key]
+        return value is None if default is None else type(value) is type(default) and value == default
+
+    return {key: value for key, value in kwargs.items() if not at_default(key, value)}
+
+
 
 
 # ----------------------------------------------------------------------------- pure logic
@@ -811,7 +852,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def stand_in_engine(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
                         coarse_translations, fine_rotations, fine_translations, rot_parent_map, trans_parent_map,
                         disc_type, **kwargs):
-        """CPU stand-in for run_dense_k_class_em_adaptive: a result seeded by every operand it receives."""
+        """CPU stand-in for run_dense_k_class_em_adaptive: a result seeded by every operand it receives.
+
+        A keyword passed at the engine's own default is the same call as an omitted one
+        (``engine_kwargs_without_defaults``)."""
+        kwargs = engine_kwargs_without_defaults(kwargs)
         seed = digest_operands(means, mean_variance, noise_variance, coarse_rotations, coarse_translations,
                                fine_rotations, fine_translations, rot_parent_map, trans_parent_map, disc_type, kwargs)
         record("call", "engine", f"seed={seed:016x}", "kwargs=" + ",".join(sorted(kwargs)),

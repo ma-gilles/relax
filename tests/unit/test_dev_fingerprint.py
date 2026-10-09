@@ -59,6 +59,23 @@ def test_operand_digest_changes_with_any_operand():
     assert seed != fingerprint.digest_operands(dict(operands, extra=None))
 
 
+def test_an_engine_keyword_at_its_default_is_the_same_call_as_an_omitted_one():
+    projector = np.ones(3)
+    omitted = {"current_size": 8, "relion_projector_half": projector}
+    passed = {**omitted, "symmetry_label": "C1", "class_rotation_log_prior": None, "mstep_relion_x_half": False,
+              "relion_translation_angle_scale": 1.0, "coarse_current_size": None}
+
+    assert fingerprint.engine_kwargs_without_defaults(passed) == omitted
+    # A value off the default, or of another type than the default, stays an operand.
+    for key, value in (("symmetry_label", "D2"), ("mstep_relion_x_half", True), ("mstep_relion_x_half", np.bool_(False)),
+                       ("relion_translation_angle_scale", 0.5), ("optics_group_ids", np.zeros(2))):
+        assert key in fingerprint.engine_kwargs_without_defaults({key: value})
+    # A keyword the engine reads without a shared default is never dropped.
+    assert fingerprint.engine_kwargs_without_defaults({"pass2_use_float64_scoring": None}) == {
+        "pass2_use_float64_scoring": None
+    }
+
+
 def test_log_row_keeps_the_template_and_drops_wall_times():
     plain = fingerprint.log_row("relax.a", "INFO", "order %d", "order 2")
     timed = fingerprint.log_row("relax.a", "INFO", "done in %.2fs", "done in 0.31s")
