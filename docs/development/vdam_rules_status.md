@@ -33,10 +33,10 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    hook owned below the controller:
    - `estep_setup._finish_relion_projector_class_inputs`: `RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR`
      (called through the projector context, which has no options);
-   - `estep_common._arrays_to_accumulators`: `RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR`;
-   - `native_sampling._estimate_native_sampling_accuracy`: the expected-accuracy dump directory and
+   - `estep_common.arrays_to_accumulators`: `RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR`;
+   - `native_sampling.estimate_native_sampling_accuracy`: the expected-accuracy dump directory and
      iterations;
-   - `output._write_initial_run_metadata`: records the CUDA allocator and JAX cache variables as provenance.
+   - `output.write_initial_run_metadata`: records the CUDA allocator and JAX cache variables as provenance.
    Moving them into `VdamEnvironment` costs plumbing through the projector context and the accuracy
    helpers. Not an exception: `RELAX_USE_FLOAT64_SCORING`, read once by `VdamEnvironment` only to refuse it;
    `RELAX_INITIAL_IREF_OVERRIDE` (RELION's start-up references in place of the bootstrap), read once by
@@ -44,13 +44,13 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    which builds the run's input source (`relax.vdam.ports.VdamInputSource`, `relax.parity.vdam_replay`) and
    refuses the native replays unless the M-step oracle (`relax.diagnostics.vdam_native_mstep`) runs.
 2. **`do_grad` twice (rule 7).** The loop decides it before the schedule update; the E-step closure
-   recomputes it with `schedules._native_initialmodel_do_grad` from the same `state` (same value: the
+   recomputes it with `schedules.native_initialmodel_do_grad` from the same `state` (same value: the
    iteration and `has_converged` do not change in between). Passing it needs the E-step callback contract
    to change (item 3).
 3. **The E-step callback (rules 8, 9).** `ExpectationStepFn` returns `(accumulators, meta)`; the loop
    builds `EstepSums` from `meta` at once (`estep_common.estep_sums`, which refuses partial sums), and the
    rest of `meta` is the iteration's report. The closure built by `driver._native_expectation_step`
-   updates `particle_state` (`_update_particle_state_from_estep_meta`) and `sampling_state` (the sampling
+   updates `particle_state` (`update_particle_state_from_estep_meta`) and `sampling_state` (the sampling
    plan and the change monitor) in place before it returns: run-state installs inside a callback. The
    next step is an E-step result type `(accumulators, sums, report)` and installs returned to the driver;
    about 20 test stubs return the tuple today.

@@ -61,7 +61,7 @@ The same posterior algebra is used by:
   (the single-grid dense engine `run_em` / `run_dense_k_class_em` was removed on 2026-10-03);
 - native InitialModel, through
   [`driver.py::_native_expectation_step`](../../relax/vdam/driver.py)
-  and [`estep_setup.py::run_dense_initial_model_estep`](../../relax/vdam/estep_setup.py).
+  and [`estep_setup.py::run_initial_model_estep`](../../relax/vdam/estep_setup.py).
 
 The debugging rule is: equal per-hypothesis scores are not enough for map
 parity. The map also depends on the support being normalized over, the class
@@ -307,7 +307,7 @@ phase_lengths = compute_phase_lengths(nr_iter, grad_ini_frac, grad_fin_frac)
 
 for iter = 1 .. nr_iter:
     do_grad = ((nr_iter - iter) >= grad_em_iters) and not state.has_converged
-    state = default_schedule_update(...)
+    state = apply_schedules(...)
     state = select_subset_for_iter(..., do_grad=do_grad)
     accumulators, meta = expectation_step(state, subset_particle_ids, halfset_ids)
     sums = estep_sums(meta)                  # the update's operands; meta is the report
@@ -673,7 +673,7 @@ RELION GUI InitialModel command construction in
 [`tests/helpers/relion_initial_model_command.py::build_command`](../../tests/helpers/relion_initial_model_command.py)
 adds `--flatten_solvent` by default when `InitialModelJobOptions.do_solvent` is
 true, and also adds `--zero_mask`. In native RECOVAR InitialModel, image masking
-is configured in `estep_setup.py::_configure_relion_image_mask`, but the final
+is configured in `estep_setup.py::configure_relion_image_mask`, but the final
 native `initial_model.mrc` is written directly from `state.Iref[best_class]`;
 there is no separate native `relion_align_symmetry` postprocess or documented
 Python-side solvent-flattening pass for the final selected InitialModel map in
@@ -745,7 +745,7 @@ the same momentum rule. InitialModel sparse pass 2 uses fine rotation ids for
 direction posterior updates via `_initial_model_pass2_layout`; standard local
 refinement may instead track parent coarse rotations.
 
-`estep_meta_updates.py::_update_particle_state_from_estep_meta` also updates:
+`estep_meta_updates.py::update_particle_state_from_estep_meta` also updates:
 
 - STAR origin offsets from best translation assignments,
 - `_rlnClassNumber` from best class assignments,
@@ -772,7 +772,7 @@ The native path intentionally encodes these RELION GUI InitialModel assumptions:
 - The current scoring path uses masked images for scores but unmasked images
   for reconstruction accumulation, matching the dense-engine contract.
 - The dense scoring noise uses `sigma2_noise * N^4` via
-  `estep_setup.py::_noise_variance_from_sigma2`.
+  `estep_setup.py::noise_variance_from_sigma2`.
 - The independent `minvsigma2_with_dc_zero` reference in
   [the VDAM test helpers](../../tests/helpers/vdam.py) documents the RELION
   DC-exclusion convention. It is not part of production E-step execution.
@@ -809,7 +809,7 @@ These are code-level limitations in the current branch:
 - `run_native_initial_model` supports padding factors 1 and 2 only.
 - Native execution does not spawn RELION's post-run symmetry-alignment tool.
 - `run_native_initial_model` rejects tilt-series datasets.
-- `_initial_state_from_particles` rejects multiple optics groups because
+- `initial_state_from_particles` rejects multiple optics groups because
   `compute_bootstrap_iref` currently takes scalar optics parameters.
 - `compute_bootstrap_iref` carries a documented bootstrap
   `padding_factor=2` fixture quirk.

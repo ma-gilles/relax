@@ -5,7 +5,7 @@ gradient-refine branch:
 
   for iter in 1 .. nr_iter:
       do_grad = ...                       # drop grad at the EM tail
-      default_schedule_update(state, iter)  # stepsize, tau2_fudge, subset size
+      apply_schedules(state, iter)  # stepsize, tau2_fudge, subset size
       select_subset_for_iter(state, ...)  # shuffle + prefix + stable-sort; pseudo_halfsets = do_grad
       update_image_size_and_resolution_pointers(state)
       projector_refresh_fn(state)         # projector and tau2 for the E-step
@@ -48,7 +48,7 @@ from relax.vdam.schedules import (
     compute_tau2_fudge,
 )
 from relax.vdam.state import InitialModelState
-from relax.vdam.subset_schedule import _resolve_phase_lengths, select_subset_for_iter
+from relax.vdam.subset_schedule import resolve_phase_lengths, select_subset_for_iter
 
 # Callback signatures
 ExpectationStepFn = Callable[
@@ -66,7 +66,7 @@ IterArtifactSink = Callable[[InitialModelState, int, dict], None]
 PostMstepUpdateFn = Callable[[InitialModelState, int, dict], InitialModelState]
 
 
-def default_schedule_update(
+def apply_schedules(
     state: InitialModelState,
     iter: int,
     phase_lengths: VdamPhaseLengths,
@@ -245,15 +245,15 @@ def run_vdam_iterations(
     uniform_class_direction_prior: bool,
     environment: VdamEnvironment,
 ) -> InitialModelState:
-    """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``.
+    """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``with_sigma2_noise``.
 
     ``update`` is the optimizer's model update (:class:`VdamUpdate` or :class:`MomentumSgdUpdate`), chosen
     once by the caller. ``projector_refresh_fn(state, padding_factor=...)`` runs before every E-step:
     RELION's ``MlModel::setFourierTransformMaps(!fix_tau)``, the projector and tau2 from its power
-    spectrum (:meth:`relax.vdam.estep_setup._IterationProjectorContext.refresh`). ``record_iteration`` updates the caller's own run state from the completed
+    spectrum (:meth:`relax.vdam.estep_setup.IterationProjectorContext.refresh`). ``record_iteration`` updates the caller's own run state from the completed
     iteration (the sampling controller's counters) before ``iter_artifact_sink`` writes its outputs.
     """
-    phase_lengths = _resolve_phase_lengths(
+    phase_lengths = resolve_phase_lengths(
         int(state.nr_iter),
         float(grad_ini_frac),
         float(grad_fin_frac),
@@ -291,7 +291,7 @@ def run_vdam_iterations(
             ((state.nr_iter - it) >= grad_em_iters) and not current.has_converged
         )
 
-        current = default_schedule_update(
+        current = apply_schedules(
             current,
             iter=it,
             phase_lengths=phase_lengths,

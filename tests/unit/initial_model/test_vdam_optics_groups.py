@@ -86,10 +86,10 @@ def test_particle_optics_follow_each_particles_group():
 
 def test_noise_rows_per_group():
     spectra = np.abs(np.random.default_rng(1).standard_normal((2, 9))) + 0.1
-    rows = estep_setup._noise_variance_from_sigma2(spectra, 16)
+    rows = estep_setup.noise_variance_from_sigma2(spectra, 16)
     assert rows.shape == (2, 256)
-    np.testing.assert_allclose(rows[1], estep_setup._noise_variance_from_sigma2(spectra[1:], 16), rtol=1e-12)
-    assert estep_setup._noise_variance_from_sigma2(spectra[:1], 16).shape == (256,)
+    np.testing.assert_allclose(rows[1], estep_setup.noise_variance_from_sigma2(spectra[1:], 16), rtol=1e-12)
+    assert estep_setup.noise_variance_from_sigma2(spectra[:1], 16).shape == (256,)
 
 
 def _state(n_groups, size=16):
@@ -192,11 +192,11 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
 
     monkeypatch.setattr(native_sampling, "estimate_relion_expected_accuracy_from_prepared_inputs", fake_estimator)
     sampling_state = replace(
-        native_sampling._initial_sampling_state(
+        native_sampling.initial_sampling_state(
             native_sampling.NativeInitialModelOptions(fn_img="x", outputname="y"), pixel_size=2.0
         )
     )
-    meta = native_sampling._estimate_native_sampling_accuracy(
+    meta = native_sampling.estimate_native_sampling_accuracy(
         sampling_state,
         state,
         _Particles(n),

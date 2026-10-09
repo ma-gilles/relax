@@ -44,14 +44,14 @@ from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.vdam.estep_common import (
     _PARTICLE_RESULT_FIELDS,
     ENGINE_DISC_TYPE,
-    DenseInitialModelEstepConfig,
-    DenseInitialModelEstepResult,
-    _add_accumulator_weight_meta,
-    _arrays_to_accumulators,
-    _empty_accumulator,
-    _estep_meta,
-    _group_local_kwargs,
-    _select_image_rows,
+    InitialModelEstepConfig,
+    InitialModelEstepResult,
+    add_accumulator_weight_meta,
+    arrays_to_accumulators,
+    empty_accumulator,
+    estep_meta,
+    group_local_kwargs,
+    select_image_rows,
 )
 from relax.vdam.state import InitialModelState
 
@@ -86,7 +86,7 @@ def _pop_sparse_pass2_options(engine_kwargs: dict[str, Any]) -> tuple[dict[str, 
     return cleaned, options
 
 
-def _resolve_sparse_pass1_current_size(
+def resolve_sparse_pass1_current_size(
     state: InitialModelState,
     current_size: int | None,
     particle_diameter_ang: float,
@@ -112,13 +112,13 @@ def _resolve_sparse_pass1_current_size(
     return None if int(coarse_size) >= int(state.box_size) else int(coarse_size)
 
 
-def _sparse_pass2_estep_meta(
+def sparse_pass2_estep_meta(
     halfset_results: dict[int, Any],
     selected_particle_ids_by_halfset: dict[int, np.ndarray],
 ) -> dict[str, Any]:
     """Meta merger for the pseudo-halfset results of one E-step."""
 
-    meta = _estep_meta(halfset_results)
+    meta = estep_meta(halfset_results)
     source_euler_rows = []
     source_euler_valid = []
     selected_particle_ids: list[np.ndarray] = []
@@ -254,7 +254,7 @@ def adaptive_route_grids(
     )
 
 
-def _direction_posterior_stats(result, *, n_coarse_rot: int, rot_parent_map: np.ndarray, n_psi: int):
+def direction_posterior_stats(result, *, n_coarse_rot: int, rot_parent_map: np.ndarray, n_psi: int):
     """Bin each class's rotation posterior mass by HEALPix direction (``pdf_direction``).
 
     RECOVAR order is ``psi * n_directions + direction``; fine sums collapse onto coarse parents first.
@@ -276,7 +276,7 @@ def _direction_posterior_stats(result, *, n_coarse_rot: int, rot_parent_map: np.
     return result._replace(per_class_stats=tuple(binned))
 
 
-def _recovar_order_prior(prior, relion_of_recovar: np.ndarray):
+def recovar_order_prior(prior, relion_of_recovar: np.ndarray):
     if prior is None:
         return None
     prior = np.asarray(prior)
@@ -288,7 +288,7 @@ def _recovar_order_prior(prior, relion_of_recovar: np.ndarray):
 def run_adaptive_initial_model_estep(
     experiment_dataset,
     state: InitialModelState,
-    config: DenseInitialModelEstepConfig,
+    config: InitialModelEstepConfig,
     *,
     class_log_priors,
     joint_particle_ids: np.ndarray,
@@ -298,7 +298,7 @@ def run_adaptive_initial_model_estep(
     relion_projector_half_by_class,
     relion_projector_r_max,
     engine_kwargs: dict[str, Any],
-) -> DenseInitialModelEstepResult:
+) -> InitialModelEstepResult:
     """Run one VDAM E-step as one adaptive-route pass over the subset, both pseudo-halfsets at once."""
 
     base_kwargs, options = _pop_sparse_pass2_options(engine_kwargs)
@@ -326,10 +326,10 @@ def run_adaptive_initial_model_estep(
         raise RuntimeError("the adaptive route's fine translations differ from VDAM's sampling plan")
     n_coarse_rot = int(grids.coarse_rotations.shape[0])
     n_psi = int(sampling.rotation_grid_n_in_planes(healpix_order))
-    class_rotation_log_prior = _recovar_order_prior(
+    class_rotation_log_prior = recovar_order_prior(
         base_kwargs.get("class_rotation_log_prior"), route.relion_of_recovar
     )
-    rotation_log_prior = _recovar_order_prior(base_kwargs.get("rotation_log_prior"), route.relion_of_recovar)
+    rotation_log_prior = recovar_order_prior(base_kwargs.get("rotation_log_prior"), route.relion_of_recovar)
     significance_image_batch_size = _safe_coarse_significance_image_batch_size(
         config.image_batch_size,
         n_classes=state.K,
@@ -340,8 +340,8 @@ def run_adaptive_initial_model_estep(
     image_indices = np.asarray(joint_particle_ids, dtype=np.int64)
     grouped = bool(state.pseudo_halfsets)
     if image_indices.size == 0:
-        empty = [_empty_accumulator(state, k, h) for h in ((0, 1) if grouped else (0,)) for k in range(state.K)]
-        return DenseInitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "adaptive"})
+        empty = [empty_accumulator(state, k, h) for h in ((0, 1) if grouped else (0,)) for k in range(state.K)]
+        return InitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "adaptive"})
     group_ids = None
     if grouped:
         # Difference 2: one reference per class and two pseudo-halfset BPref slots,
@@ -351,9 +351,9 @@ def run_adaptive_initial_model_estep(
         if group_ids.shape != image_indices.shape or np.any((group_ids != 0) & (group_ids != 1)):
             raise ValueError("pseudo-halfset ids must give each selected particle 0 or 1")
     n_images_total = int(experiment_dataset.n_images)
-    group_kwargs = _group_local_kwargs(base_kwargs, image_indices, n_images=n_images_total)
+    group_kwargs = group_local_kwargs(base_kwargs, image_indices, n_images=n_images_total)
     group_dataset = experiment_dataset.subset(image_indices)
-    coarse_translation_log_prior = _select_image_rows(
+    coarse_translation_log_prior = select_image_rows(
         options.get("coarse_translation_log_prior"),
         image_indices,
         n_images=n_images_total,
@@ -363,7 +363,7 @@ def run_adaptive_initial_model_estep(
     pass1_current_size = (
         current_size
         if oversampling_order == 0
-        else _resolve_sparse_pass1_current_size(
+        else resolve_sparse_pass1_current_size(
             state, current_size, options["particle_diameter_ang"], options["pass1_healpix_order"]
         )
     )
@@ -464,13 +464,13 @@ def run_adaptive_initial_model_estep(
             **engine_call,
             **route_kwargs,
         )
-    result = _direction_posterior_stats(
+    result = direction_posterior_stats(
         result,
         n_coarse_rot=n_coarse_rot,
         rot_parent_map=np.asarray(grids.rotation_parent_map, dtype=np.int64),
         n_psi=n_psi,
     )
-    accumulators = _arrays_to_accumulators(
+    accumulators = arrays_to_accumulators(
         result.Ft_y,
         result.Ft_ctf,
         state,
@@ -484,15 +484,15 @@ def run_adaptive_initial_model_estep(
     halfset_results = {0: result}
     selected = {0: image_indices}
 
-    meta = _sparse_pass2_estep_meta(halfset_results, selected)
+    meta = sparse_pass2_estep_meta(halfset_results, selected)
     # The route's rotation ids index its RECOVAR-order fine grid; VDAM reads rotation
     # ids as RELION-order rows. The source Euler rows and matrices carry the pose.
     meta.pop("best_pose_rotation_ids", None)
-    _add_accumulator_weight_meta(meta, accumulators, state.K)
+    add_accumulator_weight_meta(meta, accumulators, state.K)
     meta["pass2_engine"] = "adaptive"
     if shape_offsets is not None:
         meta["image_offsets_px"] = shape_offsets
     if grouped:
         meta["halfset_ids"] = (0, 1)
         meta["joint_halfset_particle_stream"] = True
-    return DenseInitialModelEstepResult(accumulators=accumulators, meta=meta)
+    return InitialModelEstepResult(accumulators=accumulators, meta=meta)

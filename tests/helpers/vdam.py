@@ -148,7 +148,7 @@ def particle_state_table(rows):
 def projector_power_refresh(state, *, padding_factor):
     """A loop projector refresh for tests: tau2 from the projector setup's power spectrum, no operands kept.
 
-    The arithmetic of ``relax.vdam.estep_setup._IterationProjectorContext.refresh`` without its
+    The arithmetic of ``relax.vdam.estep_setup.IterationProjectorContext.refresh`` without its
     handoff to the E-step (the tests' E-steps are stand-ins).
     """
     from dataclasses import replace

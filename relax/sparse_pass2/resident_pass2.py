@@ -4765,7 +4765,7 @@ def _class_accumulators(result, class_index: int):
     """Class ``class_index``'s BPref pair: one volume, or ``[groups, ...]`` with several slot groups.
 
     The grouped form is the exact-local engine's reconstruction-group layout, which
-    VDAM's accumulator adapter (``relax.vdam.estep_common._arrays_to_accumulators``) reads.
+    VDAM's accumulator adapter (``relax.vdam.estep_common.arrays_to_accumulators``) reads.
     """
 
     k, n_classes = int(class_index), int(result.n_classes)

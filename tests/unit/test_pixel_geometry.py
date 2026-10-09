@@ -186,10 +186,10 @@ def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch
     seen = {}
     backend = ds.image_source.backend
     monkeypatch.setattr(backend, "set_relion_image_mask", lambda **kwargs: seen.update(mask=kwargs))
-    estep_setup._configure_relion_image_mask(ds, opts)
+    estep_setup.configure_relion_image_mask(ds, opts)
     assert seen["mask"]["pixel_size"] == PIXEL
     assert initial_model_io._particle_optics(sf.df, sf.data_optics, ds)[-1] == pytest.approx(PIXEL, rel=1e-12)
-    sampling = native_sampling._initial_sampling_state(opts, pixel_size=ds.voxel_size)
+    sampling = native_sampling.initial_sampling_state(opts, pixel_size=ds.voxel_size)
     assert sampling.offset_range_angstrom == 6 * PIXEL
     assert sampling.offset_step_angstrom == 2 * PIXEL
     assert shell_index_to_resolution_angstrom(2, 8, ds.voxel_size) == 4 * PIXEL
@@ -208,6 +208,6 @@ def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch
     monkeypatch.setattr(bootstrap_iref, "compute_avg_unaligned_and_sigma2", average)
     monkeypatch.setattr(bootstrap_iref, "compute_bootstrap_iref", bootstrap)
     with pytest.raises(CapturedBootstrap):
-        bootstrap_iref._initial_state_from_particles(ds, sf.df, sf.data_optics, opts)
+        bootstrap_iref.initial_state_from_particles(ds, sf.df, sf.data_optics, opts)
     assert seen["average"]["pixel_size"] == PIXEL
     assert seen["bootstrap"]["pixel_size"] == PIXEL

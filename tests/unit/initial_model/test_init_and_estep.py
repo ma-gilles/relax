@@ -10,7 +10,7 @@ RELION fixture in Phase 4. Here we validate:
   - `pdf_class` / `pdf_direction` are uniform.
   - Pseudo-halfset slot packing matches RELION convention (K-th class's
     halfset 0 at slot k, halfset 1 at slot K+k).
-  - `seed_noise_from_mavg` transfers spectra correctly.
+  - `with_sigma2_noise` transfers spectra correctly.
   - `minvsigma2_with_dc_zero` zeroes ires=0 and inverts the rest.
   - `hermitian_weights_relion` produces all-ones half-complex map.
   - `fourier_crop_half` keeps low-|k| rows from the top and high-|k| rows
@@ -33,7 +33,7 @@ from relax.vdam.bootstrap_iref import (
     compute_ini_high_shell,
     initialise_data_vs_prior_from_references,
     initialise_denovo_state,
-    seed_noise_from_mavg,
+    with_sigma2_noise,
 )
 from relax.vdam.state import MOM2_INIT_CONSTANT, half_slot_count, half_slot_index
 from helpers.float_compare import assert_matches, matches
@@ -188,7 +188,7 @@ class TestHalfSlotIndex:
 
 
 # ---------------------------------------------------------------------------
-# seed_noise_from_mavg
+# with_sigma2_noise
 # ---------------------------------------------------------------------------
 
 
@@ -196,7 +196,7 @@ class TestSeedNoiseFromMavg:
     def test_roundtrip(self):
         state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=1, nr_iter=10, n_directions=12)
         sigma = np.arange(9, dtype=np.float64).reshape(1, 9) * 0.1
-        new_state = seed_noise_from_mavg(state, sigma)
+        new_state = with_sigma2_noise(state, sigma)
         assert_matches(new_state.sigma2_noise, sigma)
         # Original unchanged
         assert_matches(state.sigma2_noise, 0.0)
@@ -211,7 +211,7 @@ class TestSeedNoiseFromMavg:
             nr_optics_groups=1,
         )
         with pytest.raises(ValueError):
-            seed_noise_from_mavg(state, np.zeros((2, 9)))
+            with_sigma2_noise(state, np.zeros((2, 9)))
 
 
 class TestInitialiseDataVsPrior:

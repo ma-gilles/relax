@@ -218,7 +218,7 @@ def _ensure_field(arr: np.ndarray | None, shape: tuple, dtype, fill=0) -> np.nda
     return arr
 
 
-def _update_particle_state_from_estep_meta(
+def update_particle_state_from_estep_meta(
     particle_state: NativeParticleState,
     meta: dict,
     translations: np.ndarray,

@@ -144,7 +144,7 @@ _MSTEP_F32_STATE_DTYPES = {
 }
 
 
-def _prepare_mstep_state_precision(state, mstep_compute_dtype):
+def prepare_mstep_state_precision(state, mstep_compute_dtype):
     """Convert M-owned numerical state once after bootstrap or continuation.
 
     FSC, authoritative tau2, noise and priors retain their existing precision.

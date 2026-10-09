@@ -10,19 +10,19 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.local.local_layout import LocalHypothesisLayout
-from relax.vdam.adaptive_estep import _resolve_sparse_pass1_current_size, _safe_coarse_significance_image_batch_size
+from relax.vdam.adaptive_estep import _safe_coarse_significance_image_batch_size, resolve_sparse_pass1_current_size
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import (
-    DenseInitialModelEstepConfig,
-    DenseInitialModelEstepResult,
-    _arrays_to_accumulators,
-    _estep_meta,
+    InitialModelEstepConfig,
+    InitialModelEstepResult,
+    arrays_to_accumulators,
+    estep_meta,
     relion_bpref_frame_scales,
 )
 from relax.vdam.estep_setup import (
     _resolve_class_inputs,
     prepare_relion_projector_class_inputs_and_power,
-    run_dense_initial_model_estep,
+    run_initial_model_estep,
 )
 from relax.vdam.state import InitialModelState
 
@@ -143,7 +143,7 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
     public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), compact_shape)
     public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), compact_shape)
 
-    actual = _arrays_to_accumulators(
+    actual = arrays_to_accumulators(
         [public_data],
         [public_weight],
         state,
@@ -179,7 +179,7 @@ def test_arrays_to_accumulators_splits_grouped_halfsets():
         ]
     )
 
-    actual = _arrays_to_accumulators(
+    actual = arrays_to_accumulators(
         grouped_data[None, ...],
         grouped_weight[None, ...],
         state,
@@ -200,7 +200,7 @@ def _capture_adaptive_route(monkeypatch):
 
     def fake_route(dataset, state, config, **kwargs):
         calls.append(kwargs)
-        return DenseInitialModelEstepResult(accumulators=[], meta={})
+        return InitialModelEstepResult(accumulators=[], meta={})
 
     monkeypatch.setattr("relax.vdam.estep_setup.run_adaptive_initial_model_estep", fake_route)
     return calls
@@ -214,7 +214,7 @@ def _projector_config(n_classes, **overrides):
         relion_projector_r_max=3,
     )
     values.update(overrides)
-    return DenseInitialModelEstepConfig(**values)
+    return InitialModelEstepConfig(**values)
 
 
 def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_adaptive_route(monkeypatch):
@@ -223,7 +223,7 @@ def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_ada
     state.current_size = 8
     state.pdf_class = np.asarray([0.75, 0.25])
 
-    result = run_dense_initial_model_estep(
+    result = run_initial_model_estep(
         _Dataset(),
         state,
         _projector_config(2),
@@ -245,12 +245,12 @@ def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_ada
 def test_initial_model_estep_defaults_to_every_particle_in_alternating_halves(monkeypatch):
     calls = _capture_adaptive_route(monkeypatch)
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
-    run_dense_initial_model_estep(_Dataset(), state, _projector_config(1))
+    run_initial_model_estep(_Dataset(), state, _projector_config(1))
     assert_matches(calls[0]["joint_particle_ids"], [0, 1, 2, 3])
     assert_matches(calls[0]["joint_halfset_ids"], [0, 1, 0, 1])
 
     single = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4, pseudo_halfsets=False)
-    run_dense_initial_model_estep(_Dataset(), single, _projector_config(1))
+    run_initial_model_estep(_Dataset(), single, _projector_config(1))
     assert calls[1]["joint_halfset_ids"] is None
 
 
@@ -276,7 +276,7 @@ def test_estep_meta_aggregates_noise_stats_for_model_updates():
         ),
     }
 
-    meta = _estep_meta(halfset_results)
+    meta = estep_meta(halfset_results)
 
     assert meta["wsum_sigma2_offset"] == pytest.approx(30.0)
     assert meta["sigma2_offset_sumw"] == pytest.approx(10.0)
@@ -294,7 +294,7 @@ def test_estep_meta_refuses_a_result_without_mstep_class_mass():
     halfset_results = {0: SimpleNamespace(class_posterior_sums=np.asarray([1.0, 2.0]), class_mstep_posterior_sums=None)}
 
     with pytest.raises(ValueError, match="no M-step class mass"):
-        _estep_meta(halfset_results)
+        estep_meta(halfset_results)
 
 
 def test_estep_meta_uses_significant_mstep_mass_for_relion_probability_updates():
@@ -309,7 +309,7 @@ def test_estep_meta_uses_significant_mstep_mass_for_relion_probability_updates()
         ),
     }
 
-    meta = _estep_meta(halfset_results)
+    meta = estep_meta(halfset_results)
 
     np.testing.assert_allclose(meta["class_posterior_sums"], [3.5, 5.5])
     np.testing.assert_allclose(meta["class_posterior_sums_full"], [4.0, 6.0])
@@ -325,7 +325,7 @@ def test_estep_meta_keeps_each_halfset_profile_summary():
             profile_summary=profile_summary,
         )
 
-    meta = _estep_meta({0: halfset({"em_time_s": 1.25, "batches": 1}), 1: halfset(None)})
+    meta = estep_meta({0: halfset({"em_time_s": 1.25, "batches": 1}), 1: halfset(None)})
 
     assert meta["halfset_0_profile_summary"] == {"em_time_s": 1.25, "batches": 1}
     assert "halfset_1_profile_summary" not in meta
@@ -334,7 +334,7 @@ def test_estep_meta_keeps_each_halfset_profile_summary():
 def test_initial_model_estep_with_a_projector_passes_no_dense_means(monkeypatch):
     calls = _capture_adaptive_route(monkeypatch)
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
-    run_dense_initial_model_estep(_Dataset(), state, _projector_config(2))
+    run_initial_model_estep(_Dataset(), state, _projector_config(2))
     # The resident route reads only K and the dtype of the dense means: a NaN stand-in.
     assert np.asarray(calls[0]["means"]).shape == (2, 1) and np.all(np.isnan(calls[0]["means"]))
     assert np.all(np.isnan(calls[0]["mean_variance"]))
@@ -439,7 +439,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     (half, r_max), _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
-    config = DenseInitialModelEstepConfig(
+    config = InitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_half_by_class=half,
@@ -461,7 +461,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
         lambda *args, **kwargs: pytest.fail("prebuilt production projector was rebuilt"),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
-    config = DenseInitialModelEstepConfig(
+    config = InitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_half_by_class=projector_half,
@@ -509,7 +509,7 @@ def test_sparse_pass2_pass1_current_size_matches_relion_fixture_coarse_size():
     )
     assert state.current_size == 28
 
-    pass1_current_size = _resolve_sparse_pass1_current_size(state, state.current_size, 544.0, 1)
+    pass1_current_size = resolve_sparse_pass1_current_size(state, state.current_size, 544.0, 1)
 
     assert pass1_current_size == 10
 
@@ -526,7 +526,7 @@ def test_sparse_pass2_pass1_current_size_uses_pre_update_healpix_order():
     )
     state.current_size = 56
 
-    pass1_current_size = _resolve_sparse_pass1_current_size(state, state.current_size, 200.0, 1)
+    pass1_current_size = resolve_sparse_pass1_current_size(state, state.current_size, 200.0, 1)
 
     assert pass1_current_size == 26
 
@@ -568,8 +568,8 @@ def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
         full_weight.append(weight_full.reshape(-1))
 
     common = dict(state=state, halfset_idx=1, padding_factor=1)
-    compact = _arrays_to_accumulators(compact_data, compact_weight, **common)
-    full = _arrays_to_accumulators(full_data, full_weight, **common)
+    compact = arrays_to_accumulators(compact_data, compact_weight, **common)
+    full = arrays_to_accumulators(full_data, full_weight, **common)
 
     assert [(value.halfset_idx, value.class_idx) for value in compact] == [
         (1, 0),
@@ -602,7 +602,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
             f"got data={data_class_count} and weight={weight_class_count}"
         ),
     ):
-        _arrays_to_accumulators(
+        arrays_to_accumulators(
             data,
             weight,
             state,
@@ -624,7 +624,7 @@ def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
         [np.full(compact_voxels, class_index + 1, dtype=np.float32) for class_index in range(4)],
     )
 
-    accumulators = _arrays_to_accumulators(
+    accumulators = arrays_to_accumulators(
         data,
         weight,
         state,

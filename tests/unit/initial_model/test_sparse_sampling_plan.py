@@ -25,13 +25,13 @@ def test_deferred_plan_preserves_geometry(monkeypatch, order, oversampling, pert
         oversampling=oversampling,
         random_perturbation=perturbation,
     )
-    dense = native_sampling._build_sampling_plan(opts, iteration=3)
+    dense = native_sampling.build_sampling_plan(opts, iteration=3)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Unused full fine grid was materialized")
 
     monkeypatch.setattr(sampling, "get_oversampled_relion_hidden_rotation_grid_from_samples", forbidden)
-    sparse = native_sampling._build_sampling_plan(opts, iteration=3, defer_fine_rotations=True)
+    sparse = native_sampling.build_sampling_plan(opts, iteration=3, defer_fine_rotations=True)
     assert sparse.n_rotations == dense.n_rotations == len(dense.rotations)
     if oversampling:
         assert sparse.rotations is None
@@ -51,7 +51,7 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
         oversampling=1,
         random_perturbation=0.25,
     )
-    dense = native_sampling._build_sampling_plan(opts, iteration=3)
+    dense = native_sampling.build_sampling_plan(opts, iteration=3)
     expected_count = len(dense.rotations)
     calls = []
 
@@ -60,7 +60,7 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
         assert_matches(config.translations, dense.translations)
         return SimpleNamespace(accumulators=[], meta={})
 
-    monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run)
+    monkeypatch.setattr(driver, "run_initial_model_estep", fake_run)
     def forbidden(*args, **kwargs):
         raise AssertionError("Sparse E-step built a full fine grid")
 
@@ -77,7 +77,7 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
             max_posterior=np.zeros(2, dtype=np.float32),
             pose_assignments=np.full(2, -1, dtype=np.int32),
         ),
-        sampling_state=native_sampling._initial_sampling_state(
+        sampling_state=native_sampling.initial_sampling_state(
             opts, pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),

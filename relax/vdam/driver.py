@@ -37,24 +37,24 @@ from relax.relion.relion_metadata import (
 from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 from relax.vdam import estep_meta_updates, estep_setup, native_sampling, output, schedules
 from relax.vdam.bootstrap_iref import (
-    _initial_state_from_particles,
-    _initial_state_from_tomo_particles,
-    _load_raw_images,
+    initial_state_from_particles,
+    initial_state_from_tomo_particles,
+    load_raw_images,
 )
-from relax.vdam.estep_setup import run_dense_initial_model_estep
+from relax.vdam.estep_setup import run_initial_model_estep
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
-from relax.vdam.m_step import _prepare_mstep_state_precision, relion_solvent_flatten_state, relion_solvent_mask
+from relax.vdam.m_step import prepare_mstep_state_precision, relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import (
     NativeSamplingState,
-    _build_sampling_plan,
-    _estimate_native_sampling_accuracy,
-    _initial_sampling_state,
-    _prepare_native_sampling_for_iteration,
-    _record_native_sampling_assignment_changes,
-    _record_native_sampling_post_iteration,
+    build_sampling_plan,
+    estimate_native_sampling_accuracy,
+    initial_sampling_state,
+    prepare_native_sampling_for_iteration,
+    record_native_sampling_assignment_changes,
+    record_native_sampling_post_iteration,
 )
-from relax.vdam.output import _write_final_outputs, _write_iteration_artifacts
+from relax.vdam.output import write_final_outputs, write_iteration_artifacts
 from relax.vdam.ports import VdamInputSource
 from relax.vdam.schedules import (
     DEFAULT_SIGMA2_FUDGE,
@@ -85,7 +85,7 @@ def _native_expectation_step(
     sampling_state: NativeSamplingState,
     optics_state: NativeOpticsState | None = None,
     *,
-    projector_context: estep_setup._IterationProjectorContext,
+    projector_context: estep_setup.IterationProjectorContext,
     tilt_images: dict | None = None,
     optics_group_ids: np.ndarray | None = None,
     premultiplied_ctf: bool = False,
@@ -108,7 +108,7 @@ def _native_expectation_step(
     def _expectation_step(state: InitialModelState, particle_ids: np.ndarray, halfset_ids: np.ndarray):
         sampling_kwargs = {"defer_fine_rotations": True}  # the adaptive route builds its own grids
         iteration = max(1, int(state.iter))
-        do_grad = bool(opts.stochastic_all_iterations) or schedules._native_initialmodel_do_grad(
+        do_grad = bool(opts.stochastic_all_iterations) or schedules.native_initialmodel_do_grad(
             state, iteration, grad_em_iters=int(opts.grad_em_iters)
         )
         accuracy_meta = None
@@ -118,14 +118,14 @@ def _native_expectation_step(
         if (
             (optics_state is not None or tilt_images is not None)
             and not skip_expected_accuracy
-            and schedules._should_estimate_native_sampling_accuracy(
+            and schedules.should_estimate_native_sampling_accuracy(
                 iteration=iteration, nr_iter=int(state.nr_iter), do_grad=do_grad
             )
         ):
             # RELION expectationSetup constructs the production PPref
             # before calculateExpectedAngularErrors and reuses that PPref
             # for scoring: the projector refresh built it before this estimate.
-            accuracy_meta = _estimate_native_sampling_accuracy(
+            accuracy_meta = estimate_native_sampling_accuracy(
                 sampling_state,
                 state,
                 particle_state,
@@ -140,18 +140,18 @@ def _native_expectation_step(
                 isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
             )
         sampling_updated = (
-            _prepare_native_sampling_for_iteration(sampling_state, state, iteration=iteration, do_grad=do_grad)
+            prepare_native_sampling_for_iteration(sampling_state, state, iteration=iteration, do_grad=do_grad)
             if opts.fixed_healpix_order is None
             else False
         )
-        sampling_plan = _build_sampling_plan(
+        sampling_plan = build_sampling_plan(
             opts,
             iteration=iteration,
             sampling_state=sampling_state,
             **sampling_kwargs,
         )
         sigma_offset_angstrom = float(np.sqrt(max(float(state.sigma2_offset), 0.0)))
-        current_noise_variance = estep_setup._noise_variance_from_sigma2(state.sigma2_noise, int(state.box_size))
+        current_noise_variance = estep_setup.noise_variance_from_sigma2(state.sigma2_noise, int(state.box_size))
         previous_translations = np.asarray(particle_state.translation_offsets, dtype=np.float64).copy()
         previous_rotations = (
             None
@@ -165,7 +165,7 @@ def _native_expectation_step(
             # state only in this change-monitor snapshot, before visits update.
             previous_classes[~np.asarray(particle_state.visited, dtype=bool)] = -1
         if tomo:
-            max_significants = schedules._active_relion_initialmodel_max_significants(state, do_grad=do_grad)
+            max_significants = schedules.active_relion_initialmodel_max_significants(state, do_grad=do_grad)
             ids = np.asarray(particle_ids, dtype=np.int64)
             result = run_tomo_initial_model_estep(
                 dataset,
@@ -178,7 +178,7 @@ def _native_expectation_step(
                 noise_variance=current_noise_variance,
                 relion_projector_half_by_class=prepared_projector_inputs[0],
                 relion_projector_r_max=int(prepared_projector_inputs[1]),
-                class_rotation_log_prior=native_sampling._class_rotation_log_prior_for_sampling(
+                class_rotation_log_prior=native_sampling.class_rotation_log_prior_for_sampling(
                     state, sampling_state, int(sampling_plan.healpix_order)
                 ),
                 max_significants=int(max_significants),
@@ -260,7 +260,7 @@ def _native_expectation_step(
         do_grad,
         iteration,
     ):
-        config = estep_setup._dense_estep_config(
+        config = estep_setup.initial_model_estep_config(
             dataset,
             opts,
             noise_variance,
@@ -279,7 +279,7 @@ def _native_expectation_step(
             relion_projector_half_by_class=prepared_half,
             relion_projector_r_max=prepared_r_max,
         )
-        class_rotation_log_prior = native_sampling._class_rotation_log_prior_for_sampling(
+        class_rotation_log_prior = native_sampling.class_rotation_log_prior_for_sampling(
             state,
             sampling_state,
             int(sampling_plan.healpix_order),
@@ -287,10 +287,10 @@ def _native_expectation_step(
         config.engine_kwargs["class_rotation_log_prior"] = class_rotation_log_prior
         config.engine_kwargs.setdefault(
             "max_significants",
-            schedules._active_relion_initialmodel_max_significants(state, do_grad=do_grad),
+            schedules.active_relion_initialmodel_max_significants(state, do_grad=do_grad),
         )
         config.engine_kwargs["debug_iteration"] = iteration
-        result = run_dense_initial_model_estep(
+        result = run_initial_model_estep(
             dataset, state, config, particle_ids=particle_ids, halfset_ids=halfset_ids
         )
         return result, int(config.image_batch_size), int(config.engine_kwargs["max_significants"])
@@ -332,7 +332,7 @@ def _native_expectation_step(
                 box_size=int(state.box_size),
                 current_size=int(state.effective_current_size),
             )
-        estep_meta_updates._update_particle_state_from_estep_meta(
+        estep_meta_updates.update_particle_state_from_estep_meta(
             particle_state,
             result.meta,
             (
@@ -343,7 +343,7 @@ def _native_expectation_step(
         )
         # Monitor hidden-variable changes every iteration, independently of autosampling.
         if int(iteration) <= int(state.nr_iter):
-            _record_native_sampling_assignment_changes(
+            record_native_sampling_assignment_changes(
                 sampling_state,
                 particle_ids=result.meta.get("selected_particle_ids"),
                 previous_translations=previous_translations,
@@ -406,7 +406,7 @@ def run_native_initial_model(
     """
 
     source = VdamInputSource() if source is None else source
-    profile = output._StageProfile(opts.environment.profile)
+    profile = output.StageProfile(opts.environment.profile)
 
     if int(opts.random_seed) == -1:
         # relion_refine's default --random_seed -1 takes the time (ml_optimiser.cpp:2827).
@@ -485,7 +485,7 @@ def run_native_initial_model(
         n_particles = int(dataset.n_images)
     for class_dataset in getattr(image_dataset, "datasets", (image_dataset,)):
         assert_reads_from_scratch(class_dataset, particle_scratch)
-        estep_setup._configure_relion_image_mask(class_dataset, opts)
+        estep_setup.configure_relion_image_mask(class_dataset, opts)
     profile.record("dataset_load")
 
     optics_state = None if tomo else initial_model_io._native_optics_state(main_star, optics_star, dataset)
@@ -524,11 +524,11 @@ def run_native_initial_model(
         grad_ini_frac = opts.grad_ini_frac
         grad_fin_frac = opts.grad_fin_frac
         continuation_phase_lengths = None
-        sampling_state = _initial_sampling_state(opts, pixel_size=float(dataset.voxel_size), subtomogram=tomo)
+        sampling_state = initial_sampling_state(opts, pixel_size=float(dataset.voxel_size), subtomogram=tomo)
         state, optics_group_by_particle = (
-            _initial_state_from_tomo_particles(dataset, main_star, opts)
+            initial_state_from_tomo_particles(dataset, main_star, opts)
             if tomo
-            else _initial_state_from_particles(dataset, main_star, optics_star, opts)
+            else initial_state_from_particles(dataset, main_star, optics_star, opts)
         )
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:
@@ -563,14 +563,14 @@ def run_native_initial_model(
             phase_lengths=continuation_phase_lengths,
         )
         sampling_state = continuation.sampling_state
-    state = _prepare_mstep_state_precision(state, opts.mstep_compute_dtype)
+    state = prepare_mstep_state_precision(state, opts.mstep_compute_dtype)
     if opts.optimizer == "momentum_sgd" and int(np.unique(optics_group_by_particle).size) > 1:
         raise NotImplementedError("the momentum-SGD InitialModel takes one optics group")
     if opts.optimizer == "momentum_sgd":
         from relax.vdam.sgd import corner_white_sigma2, initialize_sgd_noise
 
         corner_count = min(int(opts.sigma2_min_particles), int(dataset.n_images))
-        corner_images = _load_raw_images(
+        corner_images = load_raw_images(
             dataset, particle_order[:corner_count], batch_size=max(1, int(opts.image_batch_size))
         )
         state = initialize_sgd_noise(
@@ -582,7 +582,7 @@ def run_native_initial_model(
             ),
         )
     profile.record("state_setup")
-    projector_context = estep_setup._IterationProjectorContext()
+    projector_context = estep_setup.IterationProjectorContext()
     expectation_step = _native_expectation_step(
         dataset,
         opts,
@@ -598,14 +598,14 @@ def run_native_initial_model(
     profile.record("expectation_setup")
 
     if opts.write_iter_artifacts:
-        output._write_initial_run_metadata(opts, continuation)
+        output.write_initial_run_metadata(opts, continuation)
         if continuation is None:
             initial_meta = {"checkpoint_iteration": 0, "phase": "bootstrap"}
             if opts.fourier_radius_schedule is not None or opts.stochastic_all_iterations:
                 initial_meta["initial_iref_sha256"] = hashlib.sha256(
                     np.ascontiguousarray(np.asarray(state.Iref)).tobytes()
                 ).hexdigest()
-            _write_iteration_artifacts(
+            write_iteration_artifacts(
                 opts.outputname,
                 state,
                 0,
@@ -619,7 +619,7 @@ def run_native_initial_model(
     profile.record("initial_artifacts")
 
     def record_iteration(current, _iteration, meta):
-        _record_native_sampling_post_iteration(sampling_state, current, meta=meta)
+        record_native_sampling_post_iteration(sampling_state, current, meta=meta)
 
     written_iterations: set[int] = set()  # the iterations whose class maps and model.star this run wrote
 
@@ -629,7 +629,7 @@ def run_native_initial_model(
         ):
             return
         written_iterations.add(int(iteration))
-        _write_iteration_artifacts(
+        write_iteration_artifacts(
             opts.outputname,
             current,
             iteration,
@@ -703,7 +703,7 @@ def run_native_initial_model(
     profile.record("iterations")
     if opts.pilot_controls is not None:
         opts.pilot_controls.check_completed(final_state.iter, opts.nr_iter)
-    final_mrc, class_mrcs, align_report = _write_final_outputs(
+    final_mrc, class_mrcs, align_report = write_final_outputs(
         opts.outputname,
         final_state,
         sym_name=opts.sym_name,

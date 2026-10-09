@@ -27,7 +27,7 @@ from relax.vdam import m_step as mstep_owner
 from relax.vdam.bootstrap_iref import (
     initialise_data_vs_prior_from_references,
     initialise_denovo_state,
-    seed_noise_from_mavg,
+    with_sigma2_noise,
 )
 from relax.vdam.m_step import (
     _grad_min_resol_shell_from_state,
@@ -311,7 +311,7 @@ class TestMstepSingleClass:
             pseudo_halfsets=True,
         )
         state.Iref[0, ori // 2, ori // 2, ori // 2] = 1.0
-        state = seed_noise_from_mavg(state, np.ones_like(state.sigma2_noise))
+        state = with_sigma2_noise(state, np.ones_like(state.sigma2_noise))
         seeded = initialise_data_vs_prior_from_references(state, nr_particles=1_000_000)
         r_max = seeded.current_size // 2
         half_ps = r_max + 1

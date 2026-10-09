@@ -18,10 +18,10 @@ from relax.relion.relion_projector_setup import setup_relion_projector, swap_rel
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_meta_updates import update_probabilities_from_estep
-from relax.vdam.estep_setup import _noise_variance_from_sigma2
+from relax.vdam.estep_setup import noise_variance_from_sigma2
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
-from relax.vdam.native_sampling import _build_sampling_plan
+from relax.vdam.native_sampling import build_sampling_plan
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.sgd import (
     GAMMA,
@@ -266,7 +266,7 @@ def test_noise_state_is_relion_units_and_adapter_restores_engine_units():
         mass * active + WHITE_PRIOR_COUNT + inflated
     )
     np.testing.assert_allclose(updated.sigma2_noise[0], expected, rtol=2e-6)
-    engine_radial = _noise_variance_from_sigma2(updated.sigma2_noise, n)
+    engine_radial = noise_variance_from_sigma2(updated.sigma2_noise, n)
     expected_radial = np.asarray(make_radial_noise(expected * n**4, (n, n))).reshape(-1)
     np.testing.assert_allclose(engine_radial, expected_radial, rtol=2e-6)
     np.testing.assert_allclose(updated.sgd_noise_count, mass * active)
@@ -314,7 +314,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
         return np.zeros((12, 3), dtype=np.float64)
 
     monkeypatch.setattr(sampling, "_get_relion_rotation_grid_eulers_float64", coarse_eulers)
-    grids = [_build_sampling_plan(opts[name], iteration=iteration) for name in opts for iteration in (1, 3)]
+    grids = [build_sampling_plan(opts[name], iteration=iteration) for name in opts for iteration in (1, 3)]
     # RELION's native hidden-variable order (its source angles; the matrices are their host inverses).
     assert requested_orders == [(1, "relion")] * 4
     for grid in grids:

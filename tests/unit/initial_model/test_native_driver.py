@@ -41,7 +41,7 @@ pytestmark = pytest.mark.unit
 def test_noise_variance_preserves_relion_rfloat_shell_values():
     sigma2 = np.asarray([[1.00000006e-5, 2.00000012e-5, 3.00000018e-5]], dtype=np.float64)
 
-    noise = estep_setup._noise_variance_from_sigma2(sigma2, 4)
+    noise = estep_setup.noise_variance_from_sigma2(sigma2, 4)
 
     assert noise.dtype == np.float64
     assert np.any(noise != noise.astype(np.float32).astype(np.float64))
@@ -467,14 +467,14 @@ def test_seed_zero_halfsets_use_relion_experiment_position_parity(monkeypatch):
 def test_translation_log_prior_matches_relion_pdf_offset_scaling():
     translations = np.asarray([[0.0, 0.0], [2.0, 0.0], [0.0, -1.0]], dtype=np.float32)
 
-    prior = native_sampling._translation_log_prior(
+    prior = native_sampling.sampling_translation_log_prior(
         translations, voxel_size=3.0, sigma_angstrom=6.0,
         old_offsets=np.zeros((1, 2), dtype=np.float32),
     )[0]
 
     np.testing.assert_allclose(prior, np.asarray([0.0, -4.5, -1.125], dtype=np.float32), rtol=1e-6)
 
-    centered = native_sampling._translation_log_prior(
+    centered = native_sampling.sampling_translation_log_prior(
         translations,
         voxel_size=3.0,
         sigma_angstrom=6.0,
@@ -751,8 +751,8 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         phase_shift=np.zeros(3),
     )
 
-    meta = native_sampling._estimate_native_sampling_accuracy(
-        native_sampling._initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
+    meta = native_sampling.estimate_native_sampling_accuracy(
+        native_sampling.initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
         state,
         particle_state,
         optics_state,
@@ -794,8 +794,8 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
         defU=np.full(3, 10000.0), defV=np.full(3, 10000.0), defAngle=np.zeros(3), phase_shift=np.zeros(3),
     )
 
-    meta = native_sampling._estimate_native_sampling_accuracy(
-        native_sampling._initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
+    meta = native_sampling.estimate_native_sampling_accuracy(
+        native_sampling.initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
         state,
         particle_state,
         optics_state,
@@ -838,8 +838,8 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
     }
 
     def estimate(images):
-        return native_sampling._estimate_native_sampling_accuracy(
-            native_sampling._initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
+        return native_sampling.estimate_native_sampling_accuracy(
+            native_sampling.initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
             state,
             particle_state,
             None,
@@ -902,7 +902,7 @@ def test_sampling_plan_oversamples_relion_grid():
         random_perturbation=0.0,
     )
 
-    plan = native_sampling._build_sampling_plan(opts)
+    plan = native_sampling.build_sampling_plan(opts)
 
     assert plan.rotations.shape == (4608, 3, 3)
     assert plan.translations.shape == (116, 2)
@@ -936,8 +936,8 @@ def test_native_expectation_step_uses_rfloat_metadata_translations(monkeypatch):
             },
         )
 
-    monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
-    monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
+    monkeypatch.setattr(driver, "build_sampling_plan", fake_build_sampling_plan)
+    monkeypatch.setattr(driver, "run_initial_model_estep", fake_run_dense)
     particle_state = NativeParticleState(
         translation_offsets=np.zeros((1, 2), dtype=np.float64),
         class_assignments=np.zeros(1, dtype=np.int32),
@@ -950,7 +950,7 @@ def test_native_expectation_step_uses_rfloat_metadata_translations(monkeypatch):
         SimpleNamespace(image_shape=(8, 8), voxel_size=1.0, n_images=1),
         native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=1),
         particle_state,
-        sampling_state=native_sampling._initial_sampling_state(
+        sampling_state=native_sampling.initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=1), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
@@ -1101,7 +1101,7 @@ def test_configure_relion_image_mask_forwards_image_backend():
         image_fourier_backend="relion_cuda",
     )
 
-    estep_setup._configure_relion_image_mask(dataset, opts)
+    estep_setup.configure_relion_image_mask(dataset, opts)
 
     assert calls["mask"] == {
         "pixel_size": 2.125,
@@ -1121,8 +1121,8 @@ def test_initial_sampling_state_uses_relion_angstrom_internal_units():
         random_perturbation=0.0,
     )
 
-    sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
-    plan = native_sampling._build_sampling_plan(opts, iteration=1, sampling_state=sampling_state)
+    sampling_state = native_sampling.initial_sampling_state(opts, pixel_size=2.125)
+    plan = native_sampling.build_sampling_plan(opts, iteration=1, sampling_state=sampling_state)
 
     assert sampling_state.offset_range_angstrom == pytest.approx(12.75)
     assert sampling_state.offset_step_angstrom == pytest.approx(4.25)
@@ -1153,7 +1153,7 @@ def test_sampling_plan_applies_relion_radius_tolerance_in_angstroms():
         pixel_size=4.25,
     )
 
-    plan = native_sampling._build_sampling_plan(
+    plan = native_sampling.build_sampling_plan(
         opts,
         iteration=20,
         sampling_state=sampling_state,
@@ -1172,11 +1172,11 @@ def test_native_sampling_updates_like_relion_gradient_initialmodel_default():
         offset_range_px=6.0,
         offset_step_px=2.0,
     )
-    sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
+    sampling_state = native_sampling.initial_sampling_state(opts, pixel_size=2.125)
     state = initialise_denovo_state(box_size=256, pixel_size=2.125, K=1, nr_iter=200, n_directions=1)
     state.current_resolution = 1.0 / 108.8
 
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=9,
@@ -1190,7 +1190,7 @@ def test_native_sampling_updates_like_relion_gradient_initialmodel_default():
 
     sampling_state.nr_iter_wo_resol_gain = 1
     sampling_state.nr_iter_wo_large_hidden_variable_changes = 1
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=10,
@@ -1205,7 +1205,7 @@ def test_native_sampling_updates_like_relion_gradient_initialmodel_default():
     sampling_state.current_changes_optimal_offsets_angstrom = 2.614243
     sampling_state.nr_iter_wo_resol_gain = 1
     sampling_state.nr_iter_wo_large_hidden_variable_changes = 1
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=20,
@@ -1219,7 +1219,7 @@ def test_native_sampling_updates_like_relion_gradient_initialmodel_default():
     sampling_state.current_changes_optimal_offsets_angstrom = 2.0
     sampling_state.nr_iter_wo_resol_gain = 1
     sampling_state.nr_iter_wo_large_hidden_variable_changes = 1
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=30,
@@ -1253,7 +1253,7 @@ def test_native_sampling_refreshes_gf46_translation_grid_without_stable_assignme
     )
     state = initialise_denovo_state(box_size=8, pixel_size=4.25, K=1, nr_iter=200, n_directions=1)
 
-    assert native_sampling._prepare_native_sampling_for_iteration(sampling_state, state, iteration=60, do_grad=do_grad) is True
+    assert native_sampling.prepare_native_sampling_for_iteration(sampling_state, state, iteration=60, do_grad=do_grad) is True
     assert sampling_state.healpix_order == expected_order
     assert sampling_state.offset_step_angstrom == 0.75 * 0.8075 * 2
     assert sampling_state.offset_range_angstrom == 5 * 0.7050266
@@ -1265,7 +1265,7 @@ def test_native_sampling_refreshes_gf46_translation_grid_without_stable_assignme
 
 def test_native_sampling_still_waits_for_resolution_stall():
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200)
-    sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
+    sampling_state = native_sampling.initial_sampling_state(opts, pixel_size=2.125)
     state = initialise_denovo_state(
         box_size=128,
         pixel_size=2.125,
@@ -1275,7 +1275,7 @@ def test_native_sampling_still_waits_for_resolution_stall():
     )
     sampling_state.nr_iter_wo_resol_gain = 0
 
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=10,
@@ -1285,7 +1285,7 @@ def test_native_sampling_still_waits_for_resolution_stall():
     assert sampling_state.healpix_order == 1
 
     sampling_state.nr_iter_wo_resol_gain = 1
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=20,
@@ -1298,7 +1298,7 @@ def test_native_sampling_still_waits_for_resolution_stall():
 
 def test_native_sampling_uses_previous_completed_resolution_counter():
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200)
-    sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
+    sampling_state = native_sampling.initial_sampling_state(opts, pixel_size=2.125)
     state = initialise_denovo_state(
         box_size=128,
         pixel_size=2.125,
@@ -1314,7 +1314,7 @@ def test_native_sampling_uses_previous_completed_resolution_counter():
     # therefore stays at HEALPix 2 even though its completed M-step will be the
     # first no-gain observation.
     sampling_state.healpix_order = 2
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=40,
@@ -1324,7 +1324,7 @@ def test_native_sampling_uses_previous_completed_resolution_counter():
 
     state.current_resolution = 0.045956
     meta = {}
-    native_sampling._record_native_sampling_post_iteration(
+    native_sampling.record_native_sampling_post_iteration(
         sampling_state,
         state,
         meta=meta,
@@ -1337,7 +1337,7 @@ def test_native_sampling_uses_previous_completed_resolution_counter():
     sampling_state.nr_iter_wo_resol_gain = 2
     sampling_state.nr_iter_wo_large_hidden_variable_changes = 9
     sampling_state.acc_rot = 0.768
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=50,
@@ -1348,7 +1348,7 @@ def test_native_sampling_uses_previous_completed_resolution_counter():
 
 def test_native_sampling_burnin_resets_before_decision_then_records_checkpoint():
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200)
-    sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
+    sampling_state = native_sampling.initial_sampling_state(opts, pixel_size=2.125)
     state = initialise_denovo_state(
         box_size=128,
         pixel_size=2.125,
@@ -1360,7 +1360,7 @@ def test_native_sampling_burnin_resets_before_decision_then_records_checkpoint()
     sampling_state.nr_iter_wo_resol_gain = 4
     sampling_state.nr_iter_wo_large_hidden_variable_changes = 3
 
-    assert native_sampling._prepare_native_sampling_for_iteration(
+    assert native_sampling.prepare_native_sampling_for_iteration(
         sampling_state,
         state,
         iteration=9,
@@ -1369,7 +1369,7 @@ def test_native_sampling_burnin_resets_before_decision_then_records_checkpoint()
     assert sampling_state.nr_iter_wo_resol_gain == 0
     assert sampling_state.nr_iter_wo_large_hidden_variable_changes == 0
 
-    native_sampling._record_native_sampling_post_iteration(
+    native_sampling.record_native_sampling_post_iteration(
         sampling_state,
         state,
         meta={},
@@ -1396,7 +1396,7 @@ def test_native_sampling_change_monitor_reuses_relion_em_predicate():
     # those minima.  Consequently the first complete observation seeds the
     # trackers and the second identical observation increments the counter.
     for expected_counter in (0, 1):
-        native_sampling._record_native_sampling_assignment_changes(
+        native_sampling.record_native_sampling_assignment_changes(
             sampling_state,
             particle_ids=particle_ids,
             previous_translations=translations,
@@ -1444,7 +1444,7 @@ def test_native_sampling_change_monitor_records_relion_orientation_distance():
     previous_translations = np.zeros((2, 2), dtype=np.float64)
     current_translations = np.asarray([[0.0, 0.0], [1.0, 0.0]])
 
-    native_sampling._record_native_sampling_assignment_changes(
+    native_sampling.record_native_sampling_assignment_changes(
         sampling_state,
         particle_ids=np.asarray([0, 1]),
         previous_translations=previous_translations,
@@ -1482,7 +1482,7 @@ def test_uniform_local_orientation_prior_replaces_learned_direction_prior():
         uniform_local_orientation_prior=True,
     )
 
-    prior = native_sampling._class_rotation_log_prior_for_sampling(state, sampling_state, healpix_order=0)
+    prior = native_sampling.class_rotation_log_prior_for_sampling(state, sampling_state, healpix_order=0)
 
     n_rot = sampling.rotation_grid_size(0)
     assert prior.shape == (2, n_rot)
@@ -1504,7 +1504,7 @@ def test_noprior_sampling_uses_learned_direction_prior(monkeypatch):
 
     monkeypatch.setattr(native_sampling, "_class_direction_rotation_log_prior", lambda _state, _order: expected)
 
-    prior = native_sampling._class_rotation_log_prior_for_sampling(state, sampling_state, healpix_order=0)
+    prior = native_sampling.class_rotation_log_prior_for_sampling(state, sampling_state, healpix_order=0)
 
     assert prior is expected
 
@@ -1541,16 +1541,16 @@ def test_direction_prior_preserves_relion_absolute_log_scale_and_cutoff_tie():
 def test_active_relion_initialmodel_max_significants_matches_gradient_default():
     state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=3, nr_iter=8, n_directions=1)
 
-    assert schedules._active_relion_initialmodel_max_significants(state, do_grad=True) == 300
-    assert schedules._active_relion_initialmodel_max_significants(state, do_grad=False) == -1
+    assert schedules.active_relion_initialmodel_max_significants(state, do_grad=True) == 300
+    assert schedules.active_relion_initialmodel_max_significants(state, do_grad=False) == -1
 
 
 def test_native_initialmodel_do_grad_honors_terminal_em_iterations():
     state = initialise_denovo_state(box_size=16, pixel_size=1.0, K=1, nr_iter=8, n_directions=1)
 
-    assert schedules._native_initialmodel_do_grad(state, 6, grad_em_iters=2)
-    assert not schedules._native_initialmodel_do_grad(state, 7, grad_em_iters=2)
-    assert not schedules._native_initialmodel_do_grad(state, 8, grad_em_iters=2)
+    assert schedules.native_initialmodel_do_grad(state, 6, grad_em_iters=2)
+    assert not schedules.native_initialmodel_do_grad(state, 7, grad_em_iters=2)
+    assert not schedules.native_initialmodel_do_grad(state, 8, grad_em_iters=2)
 
 
 def test_random_perturbation_override_is_fixed():
@@ -1610,7 +1610,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         return post_iref.copy()
 
     monkeypatch.setattr(bootstrap_iref, "compute_avg_unaligned_and_sigma2", fake_avg)
-    monkeypatch.setattr(bootstrap_iref, "_load_raw_images", fake_load_raw_images)
+    monkeypatch.setattr(bootstrap_iref, "load_raw_images", fake_load_raw_images)
     monkeypatch.setattr(bootstrap_iref, "compute_bootstrap_iref", fake_bootstrap)
     monkeypatch.setattr(bootstrap_iref, "postprocess_bootstrap_iref", fake_postprocess)
 
@@ -1641,7 +1641,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         bootstrap_min_particles=2,
     )
 
-    state, optics_groups = bootstrap_iref._initial_state_from_particles(
+    state, optics_groups = bootstrap_iref.initial_state_from_particles(
         dataset,
         main,
         optics,
@@ -1690,7 +1690,7 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
         lambda **_kwargs: pytest.fail("Override must bypass the bootstrap"),
     )
     monkeypatch.setattr(helpers, "load_relion_volume", lambda _path: post_iref[0].copy())
-    overridden, _ = bootstrap_iref._initial_state_from_particles(
+    overridden, _ = bootstrap_iref.initial_state_from_particles(
         dataset, main, optics, replace(opts, environment=environment)
     )
     np.testing.assert_array_equal(overridden.Iref, post_iref)
@@ -1717,8 +1717,8 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
         assert particle_ids.tolist() == [0, 1]
         return SimpleNamespace(accumulators=["acc"], meta={})
 
-    monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
-    monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
+    monkeypatch.setattr(driver, "build_sampling_plan", fake_build_sampling_plan)
+    monkeypatch.setattr(driver, "run_initial_model_estep", fake_run_dense)
     dataset = SimpleNamespace(image_shape=(8, 8), voxel_size=1.0, n_images=2)
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=3, n_directions=3)
     state.iter = 3
@@ -1732,7 +1732,7 @@ def test_native_expectation_step_rebuilds_sampling_per_iteration(monkeypatch):
             max_posterior=np.zeros(2, dtype=np.float32),
             pose_assignments=np.full(2, -1, dtype=np.int32),
         ),
-        sampling_state=native_sampling._initial_sampling_state(
+        sampling_state=native_sampling.initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
@@ -1774,8 +1774,8 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
             },
         )
 
-    monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
-    monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
+    monkeypatch.setattr(driver, "build_sampling_plan", fake_build_sampling_plan)
+    monkeypatch.setattr(driver, "run_initial_model_estep", fake_run_dense)
     dataset = SimpleNamespace(image_shape=(8, 8), voxel_size=1.0, n_images=2)
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=2, n_directions=1)
     particle_state = NativeParticleState(
@@ -1787,7 +1787,7 @@ def test_native_expectation_step_updates_translation_offsets_between_iterations(
         dataset,
         native_options.NativeInitialModelOptions(fn_img="particles.star", translation_sigma_angstrom=2.0),
         particle_state,
-        sampling_state=native_sampling._initial_sampling_state(
+        sampling_state=native_sampling.initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star", translation_sigma_angstrom=2.0), pixel_size=1.0,
         ),
         projector_context=PreparedProjector(),
@@ -1848,7 +1848,7 @@ def test_update_particle_state_preserves_best_pose_metadata():
         axis=0,
     )
 
-    estep_meta_updates._update_particle_state_from_estep_meta(
+    estep_meta_updates.update_particle_state_from_estep_meta(
         particle_state,
         {
             "selected_particle_ids": np.asarray([2, 0], dtype=np.int64),
@@ -1872,7 +1872,7 @@ def test_update_particle_state_preserves_best_pose_metadata():
     assert_matches(particle_state.best_pose_rotation_orders, [2, -1, 2])
     assert_matches(particle_state.visited, [True, False, True])
 
-    estep_meta_updates._update_particle_state_from_estep_meta(
+    estep_meta_updates.update_particle_state_from_estep_meta(
         particle_state,
         {
             "selected_particle_ids": np.asarray([1], dtype=np.int64),
@@ -1947,11 +1947,11 @@ def test_native_expectation_step_uses_autosampling_state_at_iteration_ten(monkey
             },
         )
 
-    monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
-    monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
+    monkeypatch.setattr(driver, "build_sampling_plan", fake_build_sampling_plan)
+    monkeypatch.setattr(driver, "run_initial_model_estep", fake_run_dense)
 
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200)
-    sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
+    sampling_state = native_sampling.initial_sampling_state(opts, pixel_size=2.125)
     particle_state = NativeParticleState(
         translation_offsets=np.zeros((1, 2), dtype=np.float32),
         class_assignments=np.zeros(1, dtype=np.int32),
@@ -2056,12 +2056,12 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
             },
         )
 
-    monkeypatch.setattr(driver, "_estimate_native_sampling_accuracy", fake_estimate_sampling_accuracy)
-    monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
-    monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
+    monkeypatch.setattr(driver, "estimate_native_sampling_accuracy", fake_estimate_sampling_accuracy)
+    monkeypatch.setattr(driver, "build_sampling_plan", fake_build_sampling_plan)
+    monkeypatch.setattr(driver, "run_initial_model_estep", fake_run_dense)
 
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200, random_seed=17, padding_factor=2)
-    sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.125)
+    sampling_state = native_sampling.initial_sampling_state(opts, pixel_size=2.125)
     sampling_state.current_changes_optimal_offsets_angstrom = 10.366644 / 5.0
     particle_state = NativeParticleState(
         translation_offsets=np.zeros((2, 2), dtype=np.float32),
@@ -2229,8 +2229,8 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
 
     monkeypatch.setenv("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", str(tmp_path))
     monkeypatch.setenv("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS", "80,90")
-    meta = native_sampling._estimate_native_sampling_accuracy(
-        native_sampling._initial_sampling_state(
+    meta = native_sampling.estimate_native_sampling_accuracy(
+        native_sampling.initial_sampling_state(
             native_options.NativeInitialModelOptions(fn_img="particles.star"),
             pixel_size=2.125,
         ),
@@ -2289,11 +2289,11 @@ def test_native_expectation_step_records_sampling_changes_each_gradient_iteratio
             },
         )
 
-    monkeypatch.setattr(driver, "_build_sampling_plan", fake_build_sampling_plan)
-    monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run_dense)
+    monkeypatch.setattr(driver, "build_sampling_plan", fake_build_sampling_plan)
+    monkeypatch.setattr(driver, "run_initial_model_estep", fake_run_dense)
 
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", nr_iter=200, oversampling=0)
-    sampling_state = native_sampling._initial_sampling_state(opts, pixel_size=2.0)
+    sampling_state = native_sampling.initial_sampling_state(opts, pixel_size=2.0)
     particle_state = NativeParticleState(
         translation_offsets=np.zeros((2, 2), dtype=np.float32),
         class_assignments=np.zeros(2, dtype=np.int32),
@@ -2347,7 +2347,7 @@ def test_dense_estep_config_splits_fine_and_coarse_translation_priors():
         translation_parent=np.asarray([0, 0], dtype=np.int64),
     )
 
-    config = estep_setup._dense_estep_config(
+    config = estep_setup.initial_model_estep_config(
         dataset,
         opts,
         np.ones(5, dtype=np.float32),
@@ -2377,7 +2377,7 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
         coarse_base_translations=np.asarray([[0.0, 0.0], [2.0, 0.0]], dtype=np.float64),
     )
 
-    config = estep_setup._dense_estep_config(
+    config = estep_setup.initial_model_estep_config(
         dataset,
         opts,
         np.ones(5, dtype=np.float32),
@@ -2406,7 +2406,7 @@ def test_final_outputs_replace_stale_files_of_a_reused_prefix(tmp_path):
     stale_star = tmp_path / "run_it003_model.star"
     stale_star.write_text("data_stale\n")
 
-    output._write_final_outputs(prefix, state, sym_name="C1", seed=0)
+    output.write_final_outputs(prefix, state, sym_name="C1", seed=0)
 
     with mrcfile.open(stale_map) as written:
         assert np.any(np.asarray(written.data) != 0)
@@ -2501,7 +2501,7 @@ def test_iteration_zero_artifacts_use_the_normal_iteration_writer(monkeypatch, t
 
     monkeypatch.setattr(output, "write_map", fake_write_mrc)  # the artifact writer resolves the name in output
     prefix = str(tmp_path / "run")
-    output._write_iteration_artifacts(
+    output.write_iteration_artifacts(
         prefix,
         state,
         0,

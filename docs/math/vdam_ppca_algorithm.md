@@ -209,7 +209,7 @@ zero-prior and empty-shell branches. The scalar data/prior crossing drives
 resolution estimates; current-size selection includes frequency headroom.
 Neither quantity can simply be reused as a PPCA loading variance.
 
-Sources: the projector refresh `_IterationProjectorContext.refresh` in
+Sources: the projector refresh `IterationProjectorContext.refresh` in
 [estep_setup.py](../../relax/vdam/estep_setup.py), the scheduling in
 [iteration_loop.py](../../relax/vdam/iteration_loop.py), and
 `relion_vdam_m_step_device` in the transaction linked above.

@@ -31,7 +31,7 @@ DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL: float = 4.0
 RELION_INITIALMODEL_3D_GRADIENT_MAX_SIGNIFICANTS_PER_CLASS = 100
 
 
-def _native_initialmodel_do_grad(
+def native_initialmodel_do_grad(
     state: InitialModelState,
     iteration: int,
     *,
@@ -40,7 +40,7 @@ def _native_initialmodel_do_grad(
     return ((int(state.nr_iter) - int(iteration)) >= int(grad_em_iters)) and not bool(state.has_converged)
 
 
-def _active_relion_initialmodel_max_significants(state: InitialModelState, *, do_grad: bool) -> int:
+def active_relion_initialmodel_max_significants(state: InitialModelState, *, do_grad: bool) -> int:
     """Runtime maximum_significants used by RELION gradient InitialModel."""
 
     if not bool(do_grad):
@@ -54,7 +54,7 @@ def relion_sampling_cadence(*, iteration: int, do_grad: bool) -> bool:
     return not bool(do_grad) or int(iteration) % 10 == 0
 
 
-def _should_estimate_native_sampling_accuracy(*, iteration: int, nr_iter: int, do_grad: bool) -> bool:
+def should_estimate_native_sampling_accuracy(*, iteration: int, nr_iter: int, do_grad: bool) -> bool:
     """RELION's ``calculateExpectedAngularErrors`` cadence (ml_optimiser.cpp:3541-3542): the sampling cadence,
     always in iteration 1, and in the last iteration (``iter == nr_iter``) also under gradients."""
     return (

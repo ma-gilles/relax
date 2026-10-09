@@ -23,7 +23,6 @@ from relax.vdam.native_options import InitialModelDefaults
 from relax.vdam.schedules import (
     DEFAULT_STEPSIZE_3D_INITIAL_MODEL,
     DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL,
-    _should_estimate_native_sampling_accuracy,
     _step_sigmoid_value,
     compute_phase_lengths,
     compute_stepsize,
@@ -31,6 +30,7 @@ from relax.vdam.schedules import (
     compute_tau2_fudge,
     default_subset_sizes_for_3d_initial_model,
     phase_lengths_from_effective_fractions,
+    should_estimate_native_sampling_accuracy,
 )
 
 pytestmark = pytest.mark.unit
@@ -640,6 +640,6 @@ def test_expected_accuracy_cadence_is_relions_including_the_last_iteration(nr_it
     for iteration in range(1, nr_iter + 1):
         relion = (not do_grad) or iteration % 10 == 0 or iteration == nr_iter or iteration <= 1
         assert (
-            _should_estimate_native_sampling_accuracy(iteration=iteration, nr_iter=nr_iter, do_grad=do_grad)
+            should_estimate_native_sampling_accuracy(iteration=iteration, nr_iter=nr_iter, do_grad=do_grad)
             == relion
         ), iteration

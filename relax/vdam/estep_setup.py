@@ -27,8 +27,8 @@ from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass
 from relax.vdam import native_sampling
 from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (
-    DenseInitialModelEstepConfig,
-    DenseInitialModelEstepResult,
+    InitialModelEstepConfig,
+    InitialModelEstepResult,
 )
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import NativeSamplingPlan
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class _IterationProjectorContext:
+class IterationProjectorContext:
     """One refresh-to-E-step handoff; never a cache across iterations."""
 
     prepared: tuple | None = None
@@ -75,7 +75,7 @@ class _IterationProjectorContext:
         return inputs
 
 
-def _configure_relion_image_mask(dataset, opts: NativeInitialModelOptions) -> None:
+def configure_relion_image_mask(dataset, opts: NativeInitialModelOptions) -> None:
     """Configure dataset preprocessing to match InitialModel scoring masks."""
 
     backend = dataset.image_source.backend
@@ -91,7 +91,7 @@ def _configure_relion_image_mask(dataset, opts: NativeInitialModelOptions) -> No
     backend.set_relion_fourier_backend(opts.image_fourier_backend)
 
 
-def _noise_variance_from_sigma2(sigma2_noise: np.ndarray, box_size: int) -> np.ndarray:
+def noise_variance_from_sigma2(sigma2_noise: np.ndarray, box_size: int) -> np.ndarray:
     """Convert RELION normalized shell power to engine-frame radial noise (unnormalised FFT).
 
     One optics group gives the ``[P]`` pixel row; several give one row per group, ``[G, P]``
@@ -142,7 +142,7 @@ def _effective_initial_model_image_batch_size(
     return min(int(requested), max(1, scaled_cap))
 
 
-def _dense_estep_config(
+def initial_model_estep_config(
     dataset,
     opts: NativeInitialModelOptions,
     noise_variance: np.ndarray,
@@ -150,7 +150,7 @@ def _dense_estep_config(
     translation_offsets: np.ndarray,
     sigma_offset_angstrom: float,
     pass1_healpix_order: int,
-) -> DenseInitialModelEstepConfig:
+) -> InitialModelEstepConfig:
     image_pre_shifts = relion_round_away_from_zero(translation_offsets)
     coarse_translations = np.asarray(
         sampling_plan.coarse_translations
@@ -168,7 +168,7 @@ def _dense_estep_config(
     # offset, independently of the same integer shift being pre-applied to the
     # image. RELION computes this prior on the coarse translation grid and
     # reuses each parent value for all oversampled children.
-    coarse_translation_log_prior = native_sampling._translation_log_prior(
+    coarse_translation_log_prior = native_sampling.sampling_translation_log_prior(
         coarse_prior_translations,
         voxel_size=float(dataset.voxel_size),
         sigma_angstrom=float(sigma_offset_angstrom),
@@ -240,7 +240,7 @@ def _dense_estep_config(
         box_size=box_size,
         gpu_memory_gb=gpu_memory_gb,
     )
-    return DenseInitialModelEstepConfig(
+    return InitialModelEstepConfig(
         noise_variance=noise_variance,
         translations=sampling_plan.translations,
         image_batch_size=effective_image_batch_size,
@@ -251,7 +251,7 @@ def _dense_estep_config(
     )
 
 
-def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEstepConfig) -> dict[str, Any]:
+def _engine_kwargs(state: InitialModelState, config: InitialModelEstepConfig) -> dict[str, Any]:
     engine_kwargs = {
         "current_size": None if state.current_size <= 0 else state.current_size,
         # RELION's radial window at the full box too (ml_optimiser.cpp:5784-5793, :6841-6880).
@@ -309,7 +309,7 @@ def _finish_relion_projector_class_inputs(
 
 def _resolve_class_inputs(
     state: InitialModelState,
-    config: DenseInitialModelEstepConfig,
+    config: InitialModelEstepConfig,
 ) -> tuple[Any, Any, np.ndarray, int]:
     """The iteration's RELION projector (prepared by the projector refresh), with NaN stand-ins for the
     dense class means.
@@ -325,17 +325,17 @@ def _resolve_class_inputs(
     return means, mean_variance, relion_projector_half_by_class, config.relion_projector_r_max
 
 
-def run_dense_initial_model_estep(
+def run_initial_model_estep(
     experiment_dataset,
     state: InitialModelState,
-    config: DenseInitialModelEstepConfig,
+    config: InitialModelEstepConfig,
     *,
     particle_ids: np.ndarray | None = None,
     halfset_ids: np.ndarray | None = None,
-) -> DenseInitialModelEstepResult:
+) -> InitialModelEstepResult:
     """Run the InitialModel E-step with RELION-compatible pseudo-halfset routing: the adaptive
     pass-1/pass-2 route on the device-resident pass 2."""
-    engine_kwargs = _dense_engine_kwargs(state, config)
+    engine_kwargs = _engine_kwargs(state, config)
     selected_particle_ids = (
         np.arange(int(experiment_dataset.n_images), dtype=np.int64)
         if particle_ids is None

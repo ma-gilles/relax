@@ -23,7 +23,7 @@ def test_initialmodel_fine_children_inherit_frozen_relion_parent_prior():
     fields = vars(plan).copy()
     fields['translation_parent'] = np.asarray([0, 0], np.int64)
     fields['coarse_base_translations'] = np.asarray([[99, 0]], np.float64)
-    config = estep_setup._dense_estep_config(
+    config = estep_setup.initial_model_estep_config(
         SimpleNamespace(voxel_size=1.6375, n_images=1, image_shape=(8, 8)),
         native_options.NativeInitialModelOptions(fn_img='particles.star', oversampling=1),
         np.ones(5, np.float32), SimpleNamespace(**fields),

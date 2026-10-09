@@ -32,7 +32,7 @@ def _class_mrc_paths(output_prefix: str, iteration: int, K: int) -> tuple[str, .
     return tuple(f"{output_prefix}_it{iteration:03d}_class{k + 1:03d}.mrc" for k in range(K))
 
 
-class _StageProfile:
+class StageProfile:
     """Optional elapsed-stage report for InitialModel startup and artifact I/O."""
 
     def __init__(self, enabled: bool):
@@ -52,7 +52,7 @@ class _StageProfile:
             print(f"VDAM {label} profile: {json.dumps(self.values, sort_keys=True)}", flush=True)
 
 
-def _write_initial_run_metadata(opts, continuation) -> None:
+def write_initial_run_metadata(opts, continuation) -> None:
     """Write startup options and the optional native continuation provenance."""
 
     Path(opts.outputname).parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +94,7 @@ def _write_initial_run_metadata(opts, continuation) -> None:
             f.write("\n")
 
 
-def _write_iteration_artifacts(
+def write_iteration_artifacts(
     output_prefix: str,
     state: InitialModelState,
     iteration: int,
@@ -106,7 +106,7 @@ def _write_iteration_artifacts(
     particle_state: NativeParticleState,
     profile_stages: bool,
 ) -> None:
-    profile = _StageProfile(profile_stages)
+    profile = StageProfile(profile_stages)
 
     out_dir = Path(output_prefix).parent
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -145,7 +145,7 @@ def _json_ready(value):
     return value
 
 
-def _write_final_outputs(
+def write_final_outputs(
     output_prefix: str,
     state: InitialModelState,
     *,

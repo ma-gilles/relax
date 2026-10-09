@@ -23,7 +23,7 @@ def test_subset_source_validity_and_mixed_legacy_rows():
     value = state()
     value.best_pose_rotations = np.zeros((3, 3, 3), np.float32)
     eulers = np.array([[159.3271497477632, 126.91279408422895, 85.75518260708287], [-2.0, 30.0, 7.0]])
-    estep_meta_updates._update_particle_state_from_estep_meta(
+    estep_meta_updates.update_particle_state_from_estep_meta(
         value,
         dict(
             selected_particle_ids=np.array([2, 0]),
@@ -40,14 +40,14 @@ def test_subset_source_validity_and_mixed_legacy_rows():
         got[1], R_to_relion(value.best_pose_rotations[[0]].astype(np.float64), degrees=True)[0]
     )
     # A matrix-only replacement invalidates that row, never a different particle.
-    estep_meta_updates._update_particle_state_from_estep_meta(
+    estep_meta_updates.update_particle_state_from_estep_meta(
         value,
         dict(selected_particle_ids=np.array([0]), best_pose_rotations=np.eye(3, dtype=np.float32)[None]),
         np.zeros((1, 2)),
     )
     assert_matches(value.best_pose_eulers_valid, [False, False, True])
     assert_matches(value.best_pose_eulers_deg[2], eulers[0])
-    estep_meta_updates._update_particle_state_from_estep_meta(
+    estep_meta_updates.update_particle_state_from_estep_meta(
         value,
         dict(selected_particle_ids=np.array([2]), best_pose_rotations=np.eye(3, dtype=np.float32)[None]),
         np.zeros((1, 2)),
@@ -130,12 +130,12 @@ def test_invalid_restored_source_metadata_rejected(fault):
 def test_mixed_halfset_rows_keep_identity_and_validity():
     source = np.array([[2.0 + 2**-40, 30.0, 4.0]])
     results = {1: SimpleNamespace(best_pose_eulers_deg=source), 0: SimpleNamespace()}
-    meta = adaptive_estep._sparse_pass2_estep_meta(results, {1: np.array([2]), 0: np.array([1, 0])})
+    meta = adaptive_estep.sparse_pass2_estep_meta(results, {1: np.array([2]), 0: np.array([1, 0])})
     assert_matches(meta["selected_particle_ids"], [1, 0, 2])
     assert_matches(meta["best_pose_eulers_valid"], [False, False, True])
     assert_matches(meta["best_pose_eulers_deg"][2], source[0])
     value = state()
-    estep_meta_updates._update_particle_state_from_estep_meta(value, meta, np.zeros((1, 2)))
+    estep_meta_updates.update_particle_state_from_estep_meta(value, meta, np.zeros((1, 2)))
     assert_matches(value.best_pose_eulers_valid, [False, False, True])
     assert_matches(value.best_pose_eulers_deg[2], source[0])
 

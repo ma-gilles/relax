@@ -20,7 +20,7 @@ from relax.helpers.orientation_priors import relion_round_away_from_zero, relion
 from relax.refinement import optics_shapes
 from relax.relion.optics_aberrations import reported_rotations
 from relax.vdam import native_sampling
-from relax.vdam.estep_common import ENGINE_DISC_TYPE, DenseInitialModelEstepConfig
+from relax.vdam.estep_common import ENGINE_DISC_TYPE, InitialModelEstepConfig
 from relax.vdam.state import InitialModelState
 
 
@@ -40,7 +40,7 @@ def _unscaled_poses(result, scale: float):
 def run_by_shape_class(
     half,
     state: InitialModelState,
-    config: DenseInitialModelEstepConfig,
+    config: InitialModelEstepConfig,
     means,
     mean_variance,
     route,
@@ -112,7 +112,7 @@ def run_by_shape_class(
         )
         offsets = offsets_ref[shape_class.image_indices] * factor
         pre_shifts = relion_round_away_from_zero(offsets)
-        coarse_prior = native_sampling._translation_log_prior(
+        coarse_prior = native_sampling.sampling_translation_log_prior(
             coarse_prior_ref * factor,
             voxel_size=float(shape_class.pixel_size),
             sigma_angstrom=sigma_angstrom,

@@ -31,7 +31,7 @@ def test_route_translations_match_the_vdam_sampling_plan(order, oversampling, pe
         oversampling=oversampling,
         random_perturbation=perturbation,
     )
-    plan = native_sampling._build_sampling_plan(opts, iteration=3, defer_fine_rotations=True)
+    plan = native_sampling.build_sampling_plan(opts, iteration=3, defer_fine_rotations=True)
     route = adaptive_estep.adaptive_route_grids(
         healpix_order=order,
         oversampling_order=oversampling,
@@ -49,10 +49,10 @@ def test_route_translations_match_the_vdam_sampling_plan(order, oversampling, pe
 def test_rotation_priors_move_to_recovar_order():
     key = adaptive_estep.relion_order_of_recovar_rotations(1)
     prior_relion = np.arange(2 * key.size, dtype=np.float32).reshape(2, key.size)
-    prior = adaptive_estep._recovar_order_prior(prior_relion, key)
+    prior = adaptive_estep.recovar_order_prior(prior_relion, key)
     assert_matches(prior[:, 5], prior_relion[:, key[5]])
     with pytest.raises(ValueError):
-        adaptive_estep._recovar_order_prior(prior_relion[:, :-1], key)
+        adaptive_estep.recovar_order_prior(prior_relion[:, :-1], key)
 
 
 @pytest.mark.parametrize("fine", [False, True])
@@ -74,7 +74,7 @@ def test_direction_sums_bin_recovar_order_rotations(fine):
     )
     result = SimpleNamespace(per_class_stats=(stats,))
     result._replace = lambda **kw: SimpleNamespace(**{**result.__dict__, **kw})
-    binned = adaptive_estep._direction_posterior_stats(result, n_coarse_rot=n_rot, rot_parent_map=parent, n_psi=n_psi)
+    binned = adaptive_estep.direction_posterior_stats(result, n_coarse_rot=n_rot, rot_parent_map=parent, n_psi=n_psi)
     expected = coarse.reshape(n_psi, n_dir).sum(axis=0)
     assert_matches(np.asarray(binned.per_class_stats[0].rotation_posterior_sums), expected, rtol=1e-13)
 
@@ -103,11 +103,11 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     """
 
     from relax.vdam.bootstrap_iref import initialise_denovo_state
-    from relax.vdam.estep_common import DenseInitialModelEstepConfig
+    from relax.vdam.estep_common import InitialModelEstepConfig
 
     calls = []
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
-    plan = native_sampling._build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
+    plan = native_sampling.build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
     key = adaptive_estep.relion_order_of_recovar_rotations(1)
     prior_relion = np.arange(n_classes * key.size, dtype=np.float32).reshape(n_classes, key.size)
     # One coarse translation prior row per image of the whole dataset.
@@ -136,11 +136,11 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
         # The grouped adapter's own order: class-major.
         return [SimpleNamespace(class_idx=k, halfset_idx=h) for k in range(n_classes) for h in range(2)]
 
-    monkeypatch.setattr(adaptive_estep, "_arrays_to_accumulators", fake_accumulators)
-    monkeypatch.setattr(adaptive_estep, "_sparse_pass2_estep_meta", lambda results, selected: {})
-    monkeypatch.setattr(adaptive_estep, "_add_accumulator_weight_meta", lambda meta, acc, K: None)
+    monkeypatch.setattr(adaptive_estep, "arrays_to_accumulators", fake_accumulators)
+    monkeypatch.setattr(adaptive_estep, "sparse_pass2_estep_meta", lambda results, selected: {})
+    monkeypatch.setattr(adaptive_estep, "add_accumulator_weight_meta", lambda meta, acc, K: None)
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=n_classes, nr_iter=4, n_directions=4, pseudo_halfsets=True)
-    config = DenseInitialModelEstepConfig(
+    config = InitialModelEstepConfig(
         noise_variance=np.ones(64, dtype=np.float32),
         translations=plan.translations,
         coarse_engine=coarse_engine,
@@ -199,18 +199,18 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
 @pytest.mark.parametrize("pseudo_halfsets", [False, True])
 def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(monkeypatch, pseudo_halfsets):
     from relax.vdam.bootstrap_iref import initialise_denovo_state
-    from relax.vdam.estep_common import DenseInitialModelEstepConfig
+    from relax.vdam.estep_common import InitialModelEstepConfig
 
     def forbidden(*args, **kwargs):
         raise AssertionError("the adaptive route ran on an empty subset")
 
     monkeypatch.setattr(adaptive_estep, "run_dense_k_class_em_adaptive", forbidden)
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
-    plan = native_sampling._build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
+    plan = native_sampling.build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
     state = initialise_denovo_state(
         box_size=8, pixel_size=1.0, K=2, nr_iter=4, n_directions=4, pseudo_halfsets=pseudo_halfsets
     )
-    config = DenseInitialModelEstepConfig(
+    config = InitialModelEstepConfig(
         noise_variance=np.ones(64, dtype=np.float32),
         translations=plan.translations,
         engine_kwargs={},

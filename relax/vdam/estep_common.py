@@ -142,7 +142,7 @@ _PARTICLE_RESULT_FIELDS: tuple[tuple[str, type], ...] = (
 ENGINE_DISC_TYPE = "linear_interp"
 
 @dataclass(frozen=True, kw_only=True)
-class DenseInitialModelEstepConfig:
+class InitialModelEstepConfig:
     """Configuration for one InitialModel dense K-class E-step."""
 
     noise_variance: Any
@@ -157,7 +157,7 @@ class DenseInitialModelEstepConfig:
 
 
 @dataclass
-class DenseInitialModelEstepResult:
+class InitialModelEstepResult:
     """Output consumed by ``iteration_loop.run_vdam_iterations``."""
 
     accumulators: list[VdamAccumulator]
@@ -227,7 +227,7 @@ def estep_sums(meta: dict[str, Any]) -> EstepSums:
     )
 
 
-def _select_image_rows(value, image_indices: np.ndarray, *, n_images: int, name: str):
+def select_image_rows(value, image_indices: np.ndarray, *, n_images: int, name: str):
     if value is None:
         return None
     array = np.asarray(value)
@@ -244,7 +244,7 @@ def _select_image_rows(value, image_indices: np.ndarray, *, n_images: int, name:
     )
 
 
-def _group_local_kwargs(
+def group_local_kwargs(
     engine_kwargs: dict[str, Any],
     image_indices: np.ndarray,
     *,
@@ -257,7 +257,7 @@ def _group_local_kwargs(
     # A shared translation prior is 1D; only 2D priors have an image axis.
     prior_np = None if prior is None else np.asarray(prior)
     if prior_np is not None and prior_np.ndim == 2:
-        out["translation_log_prior"] = _select_image_rows(
+        out["translation_log_prior"] = select_image_rows(
             prior, image_indices, n_images=n_images, name="translation_log_prior"
         )
     for name in (
@@ -267,11 +267,11 @@ def _group_local_kwargs(
         "translation_prior_centers",
         "optics_group_ids",
     ):
-        out[name] = _select_image_rows(out.get(name), image_indices, n_images=n_images, name=name)
+        out[name] = select_image_rows(out.get(name), image_indices, n_images=n_images, name=name)
     return out
 
 
-def _add_accumulator_weight_meta(meta: dict[str, Any], accumulators: list[VdamAccumulator], K: int) -> None:
+def add_accumulator_weight_meta(meta: dict[str, Any], accumulators: list[VdamAccumulator], K: int) -> None:
     """Record each class's RELION BPref weight total, and per half-set, in ``meta`` (a report; nothing reads it)."""
 
     sums = np.zeros(int(K), dtype=np.float64)
@@ -285,7 +285,7 @@ def _add_accumulator_weight_meta(meta: dict[str, Any], accumulators: list[VdamAc
         meta[f"halfset_{halfset_idx}_class_bpref_weight_sums"] = values
 
 
-def _empty_accumulator(state: InitialModelState, class_idx: int, halfset_idx: int) -> VdamAccumulator:
+def empty_accumulator(state: InitialModelState, class_idx: int, halfset_idx: int) -> VdamAccumulator:
     r_max = state.effective_current_size // 2
     if r_max >= state.box_size // 2:
         shape = (state.box_size, state.box_size, state.box_size // 2 + 1)
@@ -300,7 +300,7 @@ def _empty_accumulator(state: InitialModelState, class_idx: int, halfset_idx: in
     )
 
 
-def _arrays_to_accumulators(
+def arrays_to_accumulators(
     Ft_y_by_class,
     Ft_ctf_by_class,
     state: InitialModelState,
@@ -387,7 +387,7 @@ def _arrays_to_accumulators(
     return accumulators
 
 
-def _estep_meta(halfset_results: dict[int, Any]) -> dict[str, Any]:
+def estep_meta(halfset_results: dict[int, Any]) -> dict[str, Any]:
     meta: dict[str, Any] = {"halfset_ids": tuple(sorted(halfset_results))}
     class_totals: dict[str, np.ndarray] = {}
 

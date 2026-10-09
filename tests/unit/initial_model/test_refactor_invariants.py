@@ -463,7 +463,7 @@ print(parent_elapsed, initial_model_elapsed)
 # Module ownership and adapter routing.
 
 STAR_ADAPTER = ("_optics_group_indices", "_particle_optics", "_phase_shift", "_native_optics_state", "_particle_state_from_star", "_write_model_star", "_write_data_star", "_stack_star_pair", "_experiment_read_order")
-SAMPLING = ("NativeSamplingPlan", "NativeSamplingState", "_build_sampling_plan", "_initial_sampling_state", "_estimate_native_sampling_accuracy", "_relion_update_native_sampling_state", "_prepare_native_sampling_for_iteration", "_random_perturbation_for_iteration")
+SAMPLING = ("NativeSamplingPlan", "NativeSamplingState", "build_sampling_plan", "initial_sampling_state", "estimate_native_sampling_accuracy", "_relion_update_native_sampling_state", "prepare_native_sampling_for_iteration", "_random_perturbation_for_iteration")
 
 
 def test_iteration_loop_updates_definition_ownership():
@@ -510,13 +510,13 @@ def test_initial_model_serialization_owners_and_driver_imports():
     driver_src = inspect.getsource(driver)
     for owner, names in (
         (initial_model_io, STAR_ADAPTER),
-        (output, ("_write_iteration_artifacts", "_write_final_outputs", "_StageProfile")),
+        (output, ("write_iteration_artifacts", "write_final_outputs", "StageProfile")),
         (state, ("NativeOpticsState", "NativeParticleState")),
     ):
         for name in names:
             assert inspect.getmodule(getattr(owner, name)) is owner
             assert f"\ndef {name}(" not in driver_src and f"\nclass {name}(" not in driver_src
-    assert driver._write_iteration_artifacts is output._write_iteration_artifacts
+    assert driver.write_iteration_artifacts is output.write_iteration_artifacts
     assert output._write_data_star is initial_model_io._write_data_star
     assert output._write_model_star is initial_model_io._write_model_star
     assert initial_model_io.star_column is relion_ctf.star_column is star_column
@@ -546,11 +546,11 @@ def test_native_sampling_definition_ownership():
 
 def test_adaptive_estep_definition_ownership():
     adapter_src = inspect.getsource(estep_setup)
-    for name in ("run_adaptive_initial_model_estep", "_sparse_pass2_estep_meta", "_pop_sparse_pass2_options"):
+    for name in ("run_adaptive_initial_model_estep", "sparse_pass2_estep_meta", "_pop_sparse_pass2_options"):
         assert inspect.getmodule(getattr(adaptive_estep, name)) is adaptive_estep and f"\ndef {name}(" not in adapter_src
-    for name in ("DenseInitialModelEstepConfig", "DenseInitialModelEstepResult", "_estep_meta", "_select_image_rows"):
+    for name in ("InitialModelEstepConfig", "InitialModelEstepResult", "estep_meta", "select_image_rows"):
         assert inspect.getmodule(getattr(estep_common, name)) is estep_common
     assert estep_setup.run_adaptive_initial_model_estep is adaptive_estep.run_adaptive_initial_model_estep
-    assert estep_setup.DenseInitialModelEstepConfig is estep_common.DenseInitialModelEstepConfig
+    assert estep_setup.InitialModelEstepConfig is estep_common.InitialModelEstepConfig
     for mod in (adaptive_estep, estep_common):
         assert "vdam.estep_setup import" not in inspect.getsource(mod)

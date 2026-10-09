@@ -98,7 +98,7 @@ class NativeSamplingState:
     pixel_size: float
     max_healpix_order: int | None = None
     auto_local_healpix_order: int = RELION_INITIALMODEL_LOCAL_SEARCH_HEALPIX_ORDER
-    # 0 until _estimate_native_sampling_accuracy (calculateExpectedAngularErrors) sets it; the HEALPix
+    # 0 until estimate_native_sampling_accuracy (calculateExpectedAngularErrors) sets it; the HEALPix
     # order does not refine before then.
     acc_rot: float = 0.0
     acc_trans_angstrom: float = 999.0
@@ -130,13 +130,13 @@ class NativeSamplingState:
         return float(self.offset_step_angstrom) / (2 ** int(self.adaptive_oversampling))
 
 
-def _n_directions_for_healpix_order(healpix_order: int) -> int:
+def n_directions_for_healpix_order(healpix_order: int) -> int:
     return int(
         sampling.rotation_grid_size(int(healpix_order)) // sampling.rotation_grid_n_in_planes(int(healpix_order))
     )
 
 
-def _initial_sampling_state(
+def initial_sampling_state(
     opts: NativeInitialModelOptions, *, pixel_size: float, subtomogram: bool = False
 ) -> NativeSamplingState:
     if pixel_size <= 0.0:
@@ -159,7 +159,7 @@ def _should_update_native_sampling(*, iteration: int, do_grad: bool) -> bool:
     return int(iteration) > 1 and relion_sampling_cadence(iteration=iteration, do_grad=do_grad)
 
 
-def _record_native_sampling_post_iteration(
+def record_native_sampling_post_iteration(
     sampling_state: NativeSamplingState,
     state: InitialModelState,
     *,
@@ -272,7 +272,7 @@ def _relion_update_native_sampling_state(
     return changed
 
 
-def _prepare_native_sampling_for_iteration(
+def prepare_native_sampling_for_iteration(
     sampling_state: NativeSamplingState,
     state: InitialModelState,
     *,
@@ -345,7 +345,7 @@ def _best_eulers_from_particle_state(
     return result if np.all(resolved) else None
 
 
-def _estimate_native_sampling_accuracy(
+def estimate_native_sampling_accuracy(
     sampling_state: NativeSamplingState,
     state: InitialModelState,
     particle_state: NativeParticleState,
@@ -561,7 +561,7 @@ def _estimate_native_sampling_accuracy(
     }
 
 
-def _record_native_sampling_assignment_changes(
+def record_native_sampling_assignment_changes(
     sampling_state: NativeSamplingState,
     *,
     particle_ids: np.ndarray | None,
@@ -641,7 +641,7 @@ def _record_native_sampling_assignment_changes(
         )
 
 
-def _build_sampling_plan(
+def build_sampling_plan(
     opts: NativeInitialModelOptions,
     *,
     iteration: int = 1,
@@ -767,7 +767,7 @@ def _random_perturbation_for_iteration(opts: NativeInitialModelOptions, iteratio
     )
 
 
-def _translation_log_prior(
+def sampling_translation_log_prior(
     translations: np.ndarray,
     *,
     voxel_size: float,
@@ -812,7 +812,7 @@ def _class_direction_rotation_log_prior(state: InitialModelState, healpix_order:
     """
 
     n_psi = int(sampling.rotation_grid_n_in_planes(int(healpix_order)))
-    n_dir = _n_directions_for_healpix_order(int(healpix_order))
+    n_dir = n_directions_for_healpix_order(int(healpix_order))
     n_rot = int(n_dir * n_psi)
     pdf_direction = np.asarray(state.pdf_direction, dtype=np.float64)
     if pdf_direction.shape != (int(state.K), n_dir):
@@ -826,7 +826,7 @@ def _class_direction_rotation_log_prior(state: InitialModelState, healpix_order:
 
 
 
-def _class_rotation_log_prior_for_sampling(
+def class_rotation_log_prior_for_sampling(
     state: InitialModelState,
     sampling_state: NativeSamplingState,
     healpix_order: int,

@@ -81,8 +81,8 @@ def test_one_time_conversion_only_changes_m_owned_state(K):
         for f in fields(state)
         if isinstance(getattr(state, f.name), np.ndarray)
     }
-    assert m_step._prepare_mstep_state_precision(state, "float64") is state
-    converted = m_step._prepare_mstep_state_precision(state, "float32")
+    assert m_step.prepare_mstep_state_precision(state, "float64") is state
+    converted = m_step.prepare_mstep_state_precision(state, "float32")
     for f in fields(state):
         original, actual = getattr(state, f.name), getattr(converted, f.name)
         if f.name in F32_STATE:
@@ -106,17 +106,17 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
     monkeypatch.setattr(driver, "optics_shape_class_rows", lambda _: None)
     monkeypatch.setattr(driver, "load_dataset", lambda *a, **k: dataset)
     monkeypatch.setattr(driver, "prepare_particle_reads", lambda *a, **k: None)
-    monkeypatch.setattr(estep_setup, "_configure_relion_image_mask", lambda *a: None)
+    monkeypatch.setattr(estep_setup, "configure_relion_image_mask", lambda *a: None)
     monkeypatch.setattr(initial_model_io, "_native_optics_state", lambda *a: None)
     monkeypatch.setattr(driver, "_particle_state_from_star", lambda *a, **k: None)
-    monkeypatch.setattr(driver, "_initial_sampling_state", lambda *a, **k: SimpleNamespace())
-    monkeypatch.setattr(driver, "_build_sampling_plan", lambda *a, **k: SimpleNamespace(rotations=None))
-    monkeypatch.setattr(driver, "_initial_state_from_particles", lambda *a, **k: (state, np.zeros(20, int)))
+    monkeypatch.setattr(driver, "initial_sampling_state", lambda *a, **k: SimpleNamespace())
+    monkeypatch.setattr(driver, "build_sampling_plan", lambda *a, **k: SimpleNamespace(rotations=None))
+    monkeypatch.setattr(driver, "initial_state_from_particles", lambda *a, **k: (state, np.zeros(20, int)))
     monkeypatch.setattr(driver, "_native_expectation_step", lambda *a, **k: None)
     observed = []
     monkeypatch.setattr(
         driver,
-        "_write_iteration_artifacts",
+        "write_iteration_artifacts",
         lambda _, current, iteration, *a, **k: observed.append((iteration, current)),
     )
 
@@ -213,13 +213,13 @@ def test_oracle_m_step_admits_native_replays(monkeypatch, env):
 def test_mstep_dump_variable_does_not_divert_production(monkeypatch, tmp_path):
     monkeypatch.setenv("RELAX_MSTEP_DUMP_DIR", str(tmp_path))
     monkeypatch.setitem(sys.modules, "relax.relion_bind._relion_bind_core", None)
-    _call(m_step._prepare_mstep_state_precision(_state(), "float32"))
+    _call(m_step.prepare_mstep_state_precision(_state(), "float32"))
     assert not any(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize("field", list(F32_STATE))
 def test_float32_rejects_mixed_publication_state_before_execution(monkeypatch, field):
-    state = m_step._prepare_mstep_state_precision(_state(), "float32")
+    state = m_step.prepare_mstep_state_precision(_state(), "float32")
     value = getattr(state, field)
     setattr(state, field, value.astype(np.complex128 if np.iscomplexobj(value) else np.float64))
     monkeypatch.setattr(m_step, "_run_m_step_transaction", lambda *a, **k: pytest.fail("entered transaction"))
@@ -230,7 +230,7 @@ def test_float32_rejects_mixed_publication_state_before_execution(monkeypatch, f
 def test_real_host_device_transaction_publishes_f32_and_preserves_k4_other_slots(monkeypatch):
     from relax.relion import relion_vdam_mstep as helper
 
-    state = m_step._prepare_mstep_state_precision(_state(4), "float32")
+    state = m_step.prepare_mstep_state_precision(_state(4), "float32")
     state.Iref[:] = np.arange(1, 5, dtype=np.float32)[:, None, None, None]
     before = {name: getattr(state, name).copy() for name in F32_STATE}
     # Exact-zero first moments take the host serial-sum certificate; the binding is never needed.
@@ -249,7 +249,7 @@ def test_real_host_device_transaction_publishes_f32_and_preserves_k4_other_slots
 
 @pytest.mark.parametrize("bad_field", ["iref", "mom1_h0", "sigma2", "tau2"])
 def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field, monkeypatch):
-    state = m_step._prepare_mstep_state_precision(_state(), "float32")
+    state = m_step.prepare_mstep_state_precision(_state(), "float32")
     result = dict(
         iref=state.Iref[0],
         mom1_h0=state.Igrad1[0],
@@ -283,7 +283,7 @@ def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field, monk
 
 
 def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monkeypatch):
-    state = m_step._prepare_mstep_state_precision(_state(), "float32")
+    state = m_step.prepare_mstep_state_precision(_state(), "float32")
     calls = []
 
     def step(current, **kwargs):
@@ -317,7 +317,7 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
 
 
 def test_solvent_route_uses_explicit_f32_product_and_preserves_default():
-    state = m_step._prepare_mstep_state_precision(_state(), "float32")
+    state = m_step.prepare_mstep_state_precision(_state(), "float32")
     state.Iref[:] = np.float32(1.0000001192092896)
     mask = np.full((16,) * 3, 1.0000000596046446, dtype=np.float64)
     default = m_step.relion_solvent_flatten_state(state, mask=mask, compute_dtype="float64")
@@ -332,6 +332,6 @@ def test_solvent_route_uses_explicit_f32_product_and_preserves_default():
 
 def test_float32_transaction_runs_without_the_relion_binding(monkeypatch):
     monkeypatch.setitem(sys.modules, "relax.relion_bind._relion_bind_core", None)
-    state = m_step._prepare_mstep_state_precision(_state(), "float32")
+    state = m_step.prepare_mstep_state_precision(_state(), "float32")
     out = _call(state)
     assert out.Iref.dtype == np.float32

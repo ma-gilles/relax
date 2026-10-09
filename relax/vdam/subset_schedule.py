@@ -38,11 +38,11 @@ def select_vdam_subset(
     subset_size: int,
     optics_group_by_particle: Sequence[int],
     pseudo_halfsets: bool,
-    halfset_particle_ids: np.ndarray,
+    shuffled_part_ids: np.ndarray,
 ) -> SubsetPlan:
     """Per-iteration plan: prefix-N of shuffle, stable-sort by optics group, BPref halfset assignment.
 
-    ``halfset_particle_ids`` are RELION's part ids of the shuffled rows (same order); a pseudo-halfset
+    ``shuffled_part_ids`` are RELION's part ids of the shuffled rows (same order); a pseudo-halfset
     is ``part_id % 2``. Caller must resolve ``subset_size=-1`` to ``nr_particles`` first.
     """
     if subset_size < 0 or subset_size > shuffled_particle_ids.size:
@@ -53,16 +53,16 @@ def select_vdam_subset(
     keys = np.asarray([optics_group_by_particle[int(p)] for p in prefix], dtype=np.int64)
     stable_order = np.argsort(keys, kind="stable")
     sorted_prefix = prefix[stable_order]
-    sorted_halfset_source = np.asarray(halfset_particle_ids, dtype=np.int64)[:subset_size][stable_order]
+    sorted_part_ids = np.asarray(shuffled_part_ids, dtype=np.int64)[:subset_size][stable_order]
     halfsets = (
-        (sorted_halfset_source % 2).astype(np.int8, copy=False)
+        (sorted_part_ids % 2).astype(np.int8, copy=False)
         if pseudo_halfsets
         else np.zeros(sorted_prefix.size, dtype=np.int8)
     )
-    return SubsetPlan(particle_ids=sorted_prefix, part_ids=sorted_halfset_source, halfset_ids=halfsets)
+    return SubsetPlan(particle_ids=sorted_prefix, part_ids=sorted_part_ids, halfset_ids=halfsets)
 
 
-def _resolve_phase_lengths(
+def resolve_phase_lengths(
     nr_iter: int,
     grad_ini_frac: float,
     grad_fin_frac: float,
@@ -103,15 +103,15 @@ def select_subset_for_iter(
         if stored_order is None or stored_part_ids is None:
             raise ValueError("stored RELION particle order is incomplete")
         base_order = np.asarray(stored_order, dtype=np.int64)
-        base_halfset_ids = np.asarray(stored_part_ids, dtype=np.int64)
-        if base_order.shape != (int(nr_particles),) or base_halfset_ids.shape != base_order.shape:
+        base_part_ids = np.asarray(stored_part_ids, dtype=np.int64)
+        if base_order.shape != (int(nr_particles),) or base_part_ids.shape != base_order.shape:
             raise ValueError(
                 "stored RELION particle order must match nr_particles: "
-                f"{base_order.shape}, {base_halfset_ids.shape} != ({int(nr_particles)},)",
+                f"{base_order.shape}, {base_part_ids.shape} != ({int(nr_particles)},)",
             )
     elif particle_order is None:
         base_order = np.arange(int(nr_particles), dtype=np.int64)
-        base_halfset_ids = np.arange(int(nr_particles), dtype=np.int64)
+        base_part_ids = np.arange(int(nr_particles), dtype=np.int64)
     else:
         base_order = np.asarray(particle_order, dtype=np.int64)
         if base_order.shape != (int(nr_particles),):
@@ -128,19 +128,19 @@ def select_subset_for_iter(
         # ``iproj_offset = (part_id % 2) * nr_classes`` in storeWeightedSums.
         # ``particle_order`` maps those internal positions to RECOVAR dataset
         # rows, so parity must travel with the positions through shuffling.
-        base_halfset_ids = np.arange(int(nr_particles), dtype=np.int64)
+        base_part_ids = np.arange(int(nr_particles), dtype=np.int64)
 
     subset_size = state.subset_size if state.subset_size != -1 else nr_particles
     doing_subset = 0 < int(subset_size) < int(nr_particles)
     first_randomisation = stored_order is None
     if int(random_seed) == 0 or (not first_randomisation and not doing_subset):
         shuffled = base_order.copy()
-        shuffled_halfset_ids = base_halfset_ids.copy()
+        shuffled_part_ids = base_part_ids.copy()
     else:
         # RELION's std::shuffle(sorted_idx, std::mt19937(seed + iter)) ordering.
         permutation = relion_random.shuffled_orders([int(nr_particles)], int(random_seed + iter))[0]
         shuffled = base_order[permutation]
-        shuffled_halfset_ids = base_halfset_ids[permutation]
+        shuffled_part_ids = base_part_ids[permutation]
 
     # `-1` (all particles) still needs to be translated via select_vdam_subset
     pseudo = do_grad
@@ -149,16 +149,16 @@ def select_subset_for_iter(
         subset_size=subset_size,
         optics_group_by_particle=optics_group_by_particle,
         pseudo_halfsets=pseudo,
-        halfset_particle_ids=shuffled_halfset_ids,
+        shuffled_part_ids=shuffled_part_ids,
     )
     # Persist the sorted prefix and untouched tail for the next iteration's shuffle.
     shuffled[:subset_size] = plan.particle_ids
-    shuffled_halfset_ids[:subset_size] = plan.part_ids
+    shuffled_part_ids[:subset_size] = plan.part_ids
     new_state = replace(state)
     new_state.subset_particle_ids = plan.particle_ids
     new_state.subset_halfset_ids = plan.halfset_ids
     new_state.sorted_particle_ids = shuffled
-    new_state.sorted_particle_part_ids = shuffled_halfset_ids
+    new_state.sorted_particle_part_ids = shuffled_part_ids
     new_state.pseudo_halfsets = pseudo
     return new_state
 
@@ -208,7 +208,7 @@ def restore_subset_order_for_continuation(
             "cannot reconstruct particle order after an unrecorded convergence boundary"
         )
 
-    phase_lengths = _resolve_phase_lengths(
+    phase_lengths = resolve_phase_lengths(
         int(state.nr_iter),
         float(grad_ini_frac),
         float(grad_fin_frac),

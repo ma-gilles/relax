@@ -21,7 +21,7 @@ from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned
 from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
 from relax.vdam import bootstrap_reconstruction, output
 from relax.vdam.native_options import NativeInitialModelOptions
-from relax.vdam.native_sampling import _n_directions_for_healpix_order
+from relax.vdam.native_sampling import n_directions_for_healpix_order
 from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_count
 
 # RELION's 0.07 digital-frequency low-pass for do_average_unaligned (ml_optimiser.cpp:2513-2518).
@@ -93,7 +93,7 @@ def initialise_denovo_state(
     )
 
 
-def seed_noise_from_mavg(
+def with_sigma2_noise(
     state: InitialModelState,
     sigma2_per_group: np.ndarray,
 ) -> InitialModelState:
@@ -336,7 +336,7 @@ def _model_grid_startup_images(dataset, rows, pixel_sizes, opts: NativeInitialMo
     return out
 
 
-def _load_raw_images(dataset, image_indices: np.ndarray, *, batch_size: int) -> np.ndarray:
+def load_raw_images(dataset, image_indices: np.ndarray, *, batch_size: int) -> np.ndarray:
     """Load raw real-space particle images through ``CryoEMDataset`` I/O."""
 
     images: list[np.ndarray] = []
@@ -351,13 +351,13 @@ def _load_raw_images(dataset, image_indices: np.ndarray, *, batch_size: int) -> 
     return np.ascontiguousarray(np.concatenate(images, axis=0))
 
 
-def _initial_state_from_particles(
+def initial_state_from_particles(
     dataset,
     main_star,
     optics_star,
     opts: NativeInitialModelOptions,
 ) -> tuple[InitialModelState, np.ndarray]:
-    profile = output._StageProfile(opts.environment.profile)
+    profile = output.StageProfile(opts.environment.profile)
 
     box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)
@@ -398,7 +398,7 @@ def _initial_state_from_particles(
     bootstrap_positions = relion_startup_positions(ordered_groups, ones, int(opts.bootstrap_min_particles))
     bootstrap_order = order[bootstrap_positions]
     if group_pixel_sizes is None:
-        images = _load_raw_images(dataset, bootstrap_order, batch_size=batch_size)
+        images = load_raw_images(dataset, bootstrap_order, batch_size=batch_size)
     else:
         images = _model_grid_startup_images(
             dataset, bootstrap_order, group_pixel_sizes[optics_group_by_particle[bootstrap_order]], opts, pixel_size
@@ -445,12 +445,12 @@ def _initial_state_from_particles(
         pixel_size=pixel_size,
         K=int(opts.nr_classes),
         nr_iter=int(opts.nr_iter),
-        n_directions=_n_directions_for_healpix_order(int(opts.healpix_order)),
+        n_directions=n_directions_for_healpix_order(int(opts.healpix_order)),
         nr_optics_groups=nr_optics_groups,
         pseudo_halfsets=True,
         padding_factor=int(opts.padding_factor),
     )
-    state = seed_noise_from_mavg(state, sigma2_per_group)
+    state = with_sigma2_noise(state, sigma2_per_group)
     init_sigma_offset_angstrom = (
         opts.translation_sigma_angstrom if opts.translation_sigma_angstrom is not None else 10.0
     )
@@ -492,7 +492,7 @@ def _initial_state_from_particles(
     return state, optics_group_by_particle
 
 
-def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInitialModelOptions):
+def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInitialModelOptions):
     """The de novo start of subtomogram particles (RELION 5 2D stacks): noise, bootstrap and priors.
 
     ``dataset`` is a :class:`relax.refinement.tomo_half.TomoDataset`; its units are the particles.
@@ -579,12 +579,12 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
         pixel_size=pixel_size,
         K=int(opts.nr_classes),
         nr_iter=int(opts.nr_iter),
-        n_directions=_n_directions_for_healpix_order(int(opts.healpix_order)),
+        n_directions=n_directions_for_healpix_order(int(opts.healpix_order)),
         nr_optics_groups=nr_optics_groups,
         pseudo_halfsets=True,
         padding_factor=int(opts.padding_factor),
     )
-    state = seed_noise_from_mavg(state, sigma2_per_group)
+    state = with_sigma2_noise(state, sigma2_per_group)
     init_sigma_offset_angstrom = opts.translation_sigma_angstrom if opts.translation_sigma_angstrom is not None else 10.0
     state.sigma2_offset = float(init_sigma_offset_angstrom) ** 2
     state.Mavg = Mavg

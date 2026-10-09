@@ -20,17 +20,17 @@ import numpy as np
 from relax import sampling
 from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.vdam.adaptive_estep import (
-    _direction_posterior_stats,
-    _recovar_order_prior,
-    _resolve_sparse_pass1_current_size,
-    _sparse_pass2_estep_meta,
+    direction_posterior_stats,
+    recovar_order_prior,
     relion_order_of_recovar_rotations,
+    resolve_sparse_pass1_current_size,
+    sparse_pass2_estep_meta,
 )
 from relax.vdam.estep_common import (
-    DenseInitialModelEstepResult,
-    _add_accumulator_weight_meta,
-    _arrays_to_accumulators,
-    _empty_accumulator,
+    InitialModelEstepResult,
+    add_accumulator_weight_meta,
+    arrays_to_accumulators,
+    empty_accumulator,
 )
 from relax.vdam.state import InitialModelState
 
@@ -45,7 +45,7 @@ def tomo_initial_model_sampling(
     """The iteration's :class:`relax.refinement.tomo_half.TomoSampling` from VDAM's sampling plan.
 
     The coarse size is RELION's ``image_coarse_size`` for the pass-1 order, as for single particles
-    (:func:`relax.vdam.adaptive_estep._resolve_sparse_pass1_current_size`); the fine size is the
+    (:func:`relax.vdam.adaptive_estep.resolve_sparse_pass1_current_size`); the fine size is the
     current size. ``pass1_healpix_order`` is the order before this iteration's sampling update:
     RELION sets the sizes (expectationSetup step A) before it updates the sampling (step D).
     """
@@ -57,7 +57,7 @@ def tomo_initial_model_sampling(
     coarse_size = (
         fine_size
         if int(sampling_plan.oversampling) == 0
-        else _resolve_sparse_pass1_current_size(
+        else resolve_sparse_pass1_current_size(
             state,
             None if int(state.current_size) <= 0 else int(state.current_size),
             float(particle_diameter_ang),
@@ -93,7 +93,7 @@ def run_tomo_initial_model_estep(
     padding_factor: int,
     optics_group_ids=None,
     pass1_healpix_order: int | None = None,
-) -> DenseInitialModelEstepResult:
+) -> InitialModelEstepResult:
     """One VDAM E-step over the subset's particles, both pseudo-halfsets in one pass.
 
     ``particle_ids`` are particle-STAR rows (the dataset's units) and ``halfset_ids`` their
@@ -111,8 +111,8 @@ def run_tomo_initial_model_estep(
 
     particle_ids = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
     if particle_ids.size == 0:
-        empty = [_empty_accumulator(state, k, h) for h in (0, 1) for k in range(state.K)]
-        return DenseInitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "tomo"})
+        empty = [empty_accumulator(state, k, h) for h in (0, 1) for k in range(state.K)]
+        return InitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "tomo"})
     if not state.pseudo_halfsets:
         raise NotImplementedError("subtomogram InitialModel backprojects into RELION's two pseudo-halfsets")
     group_ids = np.asarray(halfset_ids, dtype=np.int32).reshape(-1)
@@ -125,7 +125,7 @@ def run_tomo_initial_model_estep(
     order = int(tomo_sampling.healpix_order)
     n_coarse_rot = int(sampling.rotation_grid_size(order))
     relion_of_recovar = relion_order_of_recovar_rotations(order)
-    prior = np.asarray(_recovar_order_prior(np.asarray(class_rotation_log_prior), relion_of_recovar), dtype=np.float32)
+    prior = np.asarray(recovar_order_prior(np.asarray(class_rotation_log_prior), relion_of_recovar), dtype=np.float32)
     if prior.shape != (state.K, n_coarse_rot):
         raise ValueError(f"the class/direction prior must be [K, R] = {(state.K, n_coarse_rot)}, got {prior.shape}")
     projector_half = np.asarray(relion_projector_half_by_class)
@@ -190,13 +190,13 @@ def run_tomo_initial_model_estep(
             mstep_accumulator_shape=mstep_shape,
         )
     # The tilt pass sums its rotation posteriors over the coarse grid (RECOVAR order).
-    result = _direction_posterior_stats(
+    result = direction_posterior_stats(
         result,
         n_coarse_rot=n_coarse_rot,
         rot_parent_map=np.arange(n_coarse_rot, dtype=np.int64),
         n_psi=int(sampling.rotation_grid_n_in_planes(order)),
     )
-    accumulators = _arrays_to_accumulators(
+    accumulators = arrays_to_accumulators(
         result.Ft_y,
         result.Ft_ctf,
         state,
@@ -206,7 +206,7 @@ def run_tomo_initial_model_estep(
     )
     # vdam_m_step reads the list halfset-major (accumulators[k], accumulators[K + k]).
     accumulators = sorted(accumulators, key=lambda accum: (accum.halfset_idx, accum.class_idx))
-    meta = _sparse_pass2_estep_meta({0: result}, {0: particle_ids})
+    meta = sparse_pass2_estep_meta({0: result}, {0: particle_ids})
     # Rotation ids index the RECOVAR-order fine grid; the source Euler rows carry the pose.
     meta.pop("best_pose_rotation_ids", None)
     # The particles' offsets are 3D; RELION writes the rounded old offset plus the winning shift.
@@ -216,8 +216,8 @@ def run_tomo_initial_model_estep(
         tomo_particles.relion_gpu_old_offsets(old) + np.asarray(fine_px, dtype=np.float64)[pose % int(fine_px.shape[0])]
     )
     meta.update(offset_dims=3, significant_counts=counts.astype(np.int32))  # nsig as Refine3D writes it
-    _add_accumulator_weight_meta(meta, accumulators, state.K)
+    add_accumulator_weight_meta(meta, accumulators, state.K)
     meta["pass2_engine"] = "tomo"
     meta["halfset_ids"] = (0, 1)
     meta["joint_halfset_particle_stream"] = True
-    return DenseInitialModelEstepResult(accumulators=accumulators, meta=meta)
+    return InitialModelEstepResult(accumulators=accumulators, meta=meta)
