@@ -146,18 +146,12 @@ def log_tree_rescore_totals(totals: TreeRescoreTotals) -> None:
     )
 
 
-def require_tree_rescore_call(
-    *,
-    n_classes: int,
-    return_class_best: bool,
-    use_relion_projector: bool,
-    coarse_texture_interp: bool,
-    half_spectrum_scoring: bool,
-) -> None:
+def require_tree_rescore_call(*, n_classes: int, return_class_best: bool) -> None:
     """Refuse, naming ``tree_rescore_max_margin``, a call that cannot run the rescore.
 
-    The rescore is K=1, returns the class best, and needs the supplied RELION projector with texture interpolation and
-    half-spectrum scoring.
+    The rescore is K=1 and returns the class best. The supplied RELION projector with texture interpolation and
+    half-spectrum scoring, which it also needs, are required of every pass 1 before it is planned
+    (``_require_exact_pass1_operands``).
     """
 
     if n_classes != 1:
@@ -167,15 +161,6 @@ def require_tree_rescore_call(
     if not return_class_best:
         raise ValueError(
             "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires return_class_best=True",
-        )
-    if not use_relion_projector or not coarse_texture_interp:
-        raise ValueError(
-            "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
-            "the supplied RELION projector with texture interpolation",
-        )
-    if not half_spectrum_scoring:
-        raise ValueError(
-            "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires half-spectrum scoring",
         )
 
 
