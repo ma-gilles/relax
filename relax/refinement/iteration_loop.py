@@ -621,7 +621,7 @@ def refine_single_volume(
             symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
         )
         random_perturbation = iteration_planning.initial_random_perturbation(options, log=logger)
-        published_accuracy = iteration_planning.PublishedAccuracy.before_first_estimate(options.k_class.n_classes)
+        published_accuracy = expected_accuracy.PublishedAccuracy.before_first_estimate(options.k_class.n_classes)
     else:
         # --- A continued run starts from the run files of an earlier run (RELION --continue) ---
         # The snapshot replaces every value the next numbered iteration reads, so the
@@ -653,7 +653,7 @@ def refine_single_volume(
             dtype=ctx.scoring_dtype, log=logger,
         )
         random_perturbation = resume.random_perturbation
-        published_accuracy = iteration_planning.PublishedAccuracy.before_first_estimate(
+        published_accuracy = expected_accuracy.PublishedAccuracy.before_first_estimate(
             options.k_class.n_classes, resume.acc_rot_per_class, resume.acc_trans_per_class_angstrom
         )
         logger.info(
@@ -869,7 +869,7 @@ def refine_single_volume(
             # The estimate, or infinity when it was due and could not be made (convergence stays fail-closed).
             carry.state.acc_rot, carry.state.acc_trans = iteration_accuracy.sampling_accuracy
         if iteration_accuracy.published:
-            carry = replace(carry, published_accuracy=iteration_planning.PublishedAccuracy(
+            carry = replace(carry, published_accuracy=expected_accuracy.PublishedAccuracy(
                 iteration_accuracy.trial_local_indices, iteration_accuracy.trial_particle_ids,
                 iteration_accuracy.acc_rot_per_class.copy(), iteration_accuracy.acc_trans_per_class_angstrom.copy(),
             ))

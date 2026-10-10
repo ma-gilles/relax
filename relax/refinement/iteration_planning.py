@@ -10,6 +10,7 @@ import numpy as np
 
 from relax import sampling
 from relax.helpers.convergence import RefinementState, healpix_angular_step
+from relax.helpers.expected_accuracy import PublishedAccuracy
 from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.resolution import (
     ImageGeometry,
@@ -521,31 +522,6 @@ class NumberedIteration:
     seeding: ClassSeeding
     # The image size the iteration plans its windows from, after the input source's replacements.
     current_size: int
-
-
-class PublishedAccuracy(NamedTuple):
-    """The latest completed expected-accuracy estimate, as the run reports it.
-
-    Its trials (half-1 local rows and particle ids; None before the first estimate) and RELION's per-class
-    ``MlModel::acc_rot``/``acc_trans`` for model.star (zero until the first estimate, ml_model.cpp:68).
-    """
-
-    trial_local_indices: np.ndarray | None
-    trial_particle_ids: np.ndarray | None
-    acc_rot_per_class: np.ndarray
-    acc_trans_per_class_angstrom: np.ndarray
-
-    @classmethod
-    def before_first_estimate(cls, n_classes, acc_rot_per_class=None, acc_trans_per_class_angstrom=None):
-        """No estimate yet in this run: no trials; the continued run's per-class values, else zeros."""
-        if acc_rot_per_class is None:
-            return cls(None, None, np.zeros(n_classes, dtype=np.float64), np.zeros(n_classes, dtype=np.float64))
-        return cls(
-            None,
-            None,
-            np.array(acc_rot_per_class, dtype=np.float64),
-            np.array(acc_trans_per_class_angstrom, dtype=np.float64),
-        )
 
 
 @dataclass(frozen=True, kw_only=True)
