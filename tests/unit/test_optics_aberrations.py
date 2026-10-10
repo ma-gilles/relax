@@ -18,7 +18,12 @@ from helpers.float_compare import assert_matches
 
 from relax.relion import optics_aberrations as oa
 from relax.relion import relion_ctf
-from relax.relion.relion_metadata import IMPLEMENTED_OPTICS_FEATURES, refuse_unsupported_optics
+from relax.relion.relion_metadata import (
+    IMPLEMENTED_OPTICS_FEATURES,
+    INITIAL_MODEL_OPTICS_FEATURES,
+    refuse_unsupported_optics,
+)
+from relax.vdam import bootstrap_iref
 
 BOX = 24
 PIXEL = 1.4
@@ -313,3 +318,30 @@ def test_relax_ctf_rows_match_relion_observation_model(tmp_path, even, mag):
     params = np.asarray([[20000.0, 19000.0, 40.0, 0.0, 1.0, 0.0, g] for g in (2, 1, 2)])
     relion = np.asarray(relion_bind.optics_ctf_images_batch(str(star), params, BOX, BOX, False, 1))
     assert_matches(rows, np.stack([-np.fft.fftshift(r, axes=0).reshape(-1) for r in relion]), rtol=1e-12)
+
+
+@pytest.mark.unit
+def test_initial_model_takes_identity_magnification_columns_and_refuses_every_other_matrix(tmp_path):
+    """An optics table whose ``rlnMagMat`` columns hold the exact identity is the same data as one without
+    them: InitialModel's bootstrap gamma offsets are equal. Every other matrix is refused, also one inside
+    ``Matrix2D::isIdentity``'s 1e-6: that tolerance only decides whether RELION magnifies the projections
+    (acc_ml_optimiser_impl.h:1100), its CTF still applies the stored matrix (relax#66)."""
+
+    def offsets(name, mag):
+        star = _write_star(tmp_path / name, tilt=None, odd=None, even=EVEN, mag=mag)
+        optics = starfile.read(star, always_dict=True)["optics"]
+        refuse_unsupported_optics(optics, source=name, supported=INITIAL_MODEL_OPTICS_FEATURES)
+        dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
+        return bootstrap_iref._bootstrap_gamma_offsets(dataset, np.arange(3), BOX)
+
+    groups, gamma = offsets("plain.star", None)
+    identity_groups, identity_gamma = offsets("identity.star", np.eye(2))
+    np.testing.assert_array_equal(identity_groups, groups)
+    assert np.abs(gamma[2]).max() > 0.01 and gamma[1] is None and identity_gamma[1] is None
+    assert_matches(identity_gamma[2], gamma[2], rtol=1e-13)
+    refused = (("near.star", np.eye(2) + 5e-7), ("beyond.star", np.eye(2) + 2e-6), ("magnified.star", MAG))
+    for name, mag in refused:
+        with pytest.raises(NotImplementedError, match="rlnMagMat.*only identity magnification matrices"):
+            offsets(name, mag)
+    with pytest.raises(NotImplementedError, match=r"found \{'rlnMagMat00': \[1.0, 1.012\]"):
+        offsets("values.star", MAG)

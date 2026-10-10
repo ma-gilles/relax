@@ -650,7 +650,11 @@ def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) ->
     if column is not None and len({str(name) for name in column}) > 1:
         refused.append("rlnMtfFileName with several different MTFs (not implemented)")
     if refused:
+        magnification = ""
+        matrices = {m: np.asarray(values(m), dtype=np.float64).tolist() for m in refused if m.startswith("rlnMagMat")}
+        if matrices:
+            magnification = f"; only identity magnification matrices are supported by this job, found {matrices}"
         raise NotImplementedError(
             f"{source}: optics table uses {', '.join(refused)}, which this job does not implement "
-            f"(it implements: {', '.join(sorted(supported)) or 'none'})"
+            f"(it implements: {', '.join(sorted(supported)) or 'none'}){magnification}"
         )

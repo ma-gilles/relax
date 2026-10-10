@@ -249,8 +249,9 @@ def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
     """``(image_group, {group: gamma})`` for the bootstrap CTF, or None without even Zernike terms.
 
     The groups' even Zernike gamma offsets on the model grid, as relax's exact CTF rows
-    use them (:func:`relax.relion.relion_ctf._optics_group_ctf_geometry`). Magnification is
-    refused upstream for InitialModel.
+    use them (:func:`relax.relion.relion_ctf._optics_group_ctf_geometry`). The command refuses
+    magnification (:func:`relax.relion.relion_metadata.refuse_unsupported_optics`), so a group's
+    ``rlnMagMat`` columns can only hold the exact identity here, which leaves the offsets unchanged (relax#66).
     """
 
     from recovar.data_io.starfile import star_column
@@ -265,10 +266,7 @@ def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
     groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[original]
     gamma_by_group = {}
     for group in np.unique(groups):
-        gamma, mag = relion_ctf._optics_group_ctf_geometry(cache, int(group), int(box_size))
-        if mag is not None:
-            raise NotImplementedError("InitialModel does not implement anisotropic magnification")
-        gamma_by_group[int(group)] = gamma
+        gamma_by_group[int(group)] = relion_ctf._optics_group_ctf_geometry(cache, int(group), int(box_size))[0]
     if all(gamma is None for gamma in gamma_by_group.values()):
         return None
     return groups, gamma_by_group
