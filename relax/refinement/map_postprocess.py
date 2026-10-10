@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _apply_relion_initial_lowpass_filter(
+def apply_relion_initial_lowpass_filter(
     volume_ft_flat, volume_shape, voxel_size, ini_high_angstrom, filter_edgewidth
 ):
     """Apply RELION's ``initialLowPassFilterReferences`` to a full Fourier volume."""
@@ -100,14 +100,14 @@ def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, v
     return volume_ft_flat, False
 
 
-def _solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
+def solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
     """Return whether new references are solvent-flattened: a user mask or a particle diameter is set."""
     if settings.solvent_mask is not None:
         return True
     return settings.particle_diameter_angstrom is not None and settings.particle_diameter_angstrom > 0
 
 
-def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
+def numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
     """The solvent mask in ``dtype``: the user mask, else the soft sphere of the particle diameter.
 
     RELION's solventFlatten multiplies each reference by the user mask as read (no soft edge
@@ -130,7 +130,7 @@ def _set_class_row(class_maps, row, class_idx):
     return class_maps.at[class_idx].set(row)
 
 
-def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes):
+def lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes):
     """Apply the first-CC initial low-pass to every class, in place (``class_maps`` is consumed).
 
     One class is filtered at a time and written back into the stack, so the stack and one class's temporaries
@@ -138,7 +138,7 @@ def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes
     together: 1.23 GiB each for Class3D K=3 at box 380 (relax#45).
     """
     for class_idx in range(n_classes):
-        row = _apply_relion_initial_lowpass_filter(
+        row = apply_relion_initial_lowpass_filter(
             class_maps[class_idx],
             settings.volume_shape,
             settings.voxel_size,
@@ -163,7 +163,7 @@ def _flatten_class_row(class_maps, solvent_mask, class_idx, *, volume_shape):
     return class_maps.at[class_idx].set(_flatten_volume(class_maps[class_idx], solvent_mask, volume_shape=volume_shape))
 
 
-def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
+def flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
     """Solvent-flatten every class on the device with one mask, in place (``class_maps`` is consumed).
 
     One program per class keeps the stack plus about two class maps of transforms live (measured at box 256:
@@ -175,7 +175,7 @@ def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
     return class_maps
 
 
-def _log_first_cc_lowpass(settings: ReconstructionSettings) -> None:
+def log_first_cc_lowpass(settings: ReconstructionSettings) -> None:
     """Report the first-CC initial low-pass once all slots are postprocessed."""
     if settings.first_iteration_lowpass_angstrom is not None:
         logger.info(
@@ -269,7 +269,7 @@ def _make_relion_solvent_mask(volume_shape, *, radius, radius_p, dtype):
     return solvent_mask
 
 
-def _apply_relion_solvent_flatten_k1(
+def apply_relion_solvent_flatten_k1(
     volume_ft_flat,
     solvent_mask,
     volume_shape,

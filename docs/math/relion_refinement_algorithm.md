@@ -763,7 +763,7 @@ reads its halves, so its stream restarts. With the same maps the corrected FSC i
 rounding (`test_corrected_fsc_replays_relion_leader_stream`, relax#35).
 
 Implementation: [`read_solvent_mask` and `solvent_corrected_fsc`](../../relax/reconstruction/solvent_mask.py);
-the flatten in `_numbered_solvent_mask` and the FSC in `solvent_corrected_fsc` in
+the flatten in `numbered_solvent_mask` and the FSC in `solvent_corrected_fsc` in
 [`numbered_reconstruction.py`](../../relax/refinement/numbered_reconstruction.py), on the unregularised maps of
 `reconstruct_unregularized_k1_halfmaps` (the maps written as `run_itNNN_half*_unfil.mrc`). Tests: `tests/unit/test_solvent_mask.py`.
 

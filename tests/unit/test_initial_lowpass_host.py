@@ -37,7 +37,7 @@ def test_host_lowpass_matches_the_device_formulation():
     volume = jnp.asarray((rng.standard_normal(size) + 1j * rng.standard_normal(size)).astype(np.complex64))
     expected = _device_lowpass(volume, 2.0, 8.0, 2.0)
 
-    result = map_postprocess._apply_relion_initial_lowpass_filter(volume, VOLUME_SHAPE, 2.0, 8.0, filter_edgewidth=2.0)
+    result = map_postprocess.apply_relion_initial_lowpass_filter(volume, VOLUME_SHAPE, 2.0, 8.0, filter_edgewidth=2.0)
 
     assert result.dtype == volume.dtype and result.shape == volume.shape
     assert result.devices() == {jax.devices()[0]}
@@ -54,7 +54,7 @@ volume = jnp.asarray((rng.standard_normal(box**3) + 1j * rng.standard_normal(box
 volume.block_until_ready()
 device = jax.devices()[0]
 before = device.memory_stats()["bytes_in_use"]
-out = map_postprocess._apply_relion_initial_lowpass_filter(volume, (box,) * 3, 1.4, 60.0, filter_edgewidth=2.0)
+out = map_postprocess.apply_relion_initial_lowpass_filter(volume, (box,) * 3, 1.4, 60.0, filter_edgewidth=2.0)
 out.block_until_ready()
 print("EXTRA_PEAK_MAPS", (device.memory_stats()["peak_bytes_in_use"] - before) / (box**3 * 8))
 """

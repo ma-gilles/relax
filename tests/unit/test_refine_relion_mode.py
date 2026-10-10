@@ -4559,7 +4559,7 @@ class TestRelionModeSmokeTest:
         monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
         monkeypatch.setattr(
             map_postprocess,
-            "_apply_relion_initial_lowpass_filter",
+            "apply_relion_initial_lowpass_filter",
             lambda volume, *_args, **_kwargs: volume,
         )
 
@@ -6957,7 +6957,7 @@ class TestRelionModeSmokeTest:
             return jnp.ones(volume_shape, dtype=jnp.float64)
 
         monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
-        monkeypatch.setattr(map_postprocess, "_apply_relion_initial_lowpass_filter", fake_lowpass)
+        monkeypatch.setattr(map_postprocess, "apply_relion_initial_lowpass_filter", fake_lowpass)
         monkeypatch.setattr(map_postprocess.fourier_transform_utils, "get_idft3", fake_idft3)
         monkeypatch.setattr(map_postprocess.fourier_transform_utils, "get_dft3", fake_dft3)
 

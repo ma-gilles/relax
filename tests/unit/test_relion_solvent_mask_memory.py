@@ -122,7 +122,7 @@ def test_box_scale_solvent_flatten_lifecycle_is_bitwise_exact(monkeypatch, volum
 
     volume_actual = jnp.asarray(volume_ft)
     mask_actual = jnp.asarray(solvent_mask)
-    actual = map_postprocess._apply_relion_solvent_flatten_k1(
+    actual = map_postprocess.apply_relion_solvent_flatten_k1(
         volume_actual,
         mask_actual,
         volume_shape,
@@ -187,7 +187,7 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch):
         lambda _shape: True,
     )
 
-    result = map_postprocess._apply_relion_solvent_flatten_k1(
+    result = map_postprocess.apply_relion_solvent_flatten_k1(
         volume_ft,
         solvent_mask,
         (800, 800, 800),
@@ -318,7 +318,7 @@ def test_small_solvent_flatten_keeps_async_default_path(monkeypatch):
         lambda _shape: False,
     )
 
-    result = map_postprocess._apply_relion_solvent_flatten_k1(
+    result = map_postprocess.apply_relion_solvent_flatten_k1(
         volume_ft,
         solvent_mask,
         (8, 8, 8),

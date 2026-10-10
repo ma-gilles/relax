@@ -258,22 +258,22 @@ def reconstruct_numbered_k1_halfmaps(
         # not commute: masking in real space after the Fourier low-pass adds a
         # small, deterministic high-shell tail.
         if relion_firstiter_cc_this_iter:
-            means[k] = map_postprocess._apply_relion_initial_lowpass_filter(
+            means[k] = map_postprocess.apply_relion_initial_lowpass_filter(
                 means[k],
                 settings.volume_shape,
                 settings.voxel_size,
                 settings.first_iteration_lowpass_angstrom,
                 filter_edgewidth=settings.fmask_edge,
             )
-        if map_postprocess._solvent_flatten_requested(settings):
-            solvent_mask = map_postprocess._numbered_solvent_mask(settings, dtype=means[k].real.dtype)
-            means[k] = map_postprocess._apply_relion_solvent_flatten_k1(
+        if map_postprocess.solvent_flatten_requested(settings):
+            solvent_mask = map_postprocess.numbered_solvent_mask(settings, dtype=means[k].real.dtype)
+            means[k] = map_postprocess.apply_relion_solvent_flatten_k1(
                 means[k],
                 solvent_mask,
                 settings.volume_shape,
             )
     if relion_firstiter_cc_this_iter:
-        map_postprocess._log_first_cc_lowpass(settings)
+        map_postprocess.log_first_cc_lowpass(settings)
     return means
 
 
@@ -320,12 +320,12 @@ def reconstruct_numbered_class_maps(
         )
     # As for K1, the low-pass precedes the solvent flatten and does not commute with it.
     if relion_firstiter_cc_this_iter:
-        shared_classes = map_postprocess._lowpass_class_stack(shared_classes, settings, n_classes)
-    if map_postprocess._solvent_flatten_requested(settings):
-        solvent_mask = map_postprocess._numbered_solvent_mask(settings, dtype=jnp.finfo(shared_classes.dtype).dtype)
-        shared_classes = map_postprocess._flatten_class_stack(shared_classes, solvent_mask, settings.volume_shape, n_classes)
+        shared_classes = map_postprocess.lowpass_class_stack(shared_classes, settings, n_classes)
+    if map_postprocess.solvent_flatten_requested(settings):
+        solvent_mask = map_postprocess.numbered_solvent_mask(settings, dtype=jnp.finfo(shared_classes.dtype).dtype)
+        shared_classes = map_postprocess.flatten_class_stack(shared_classes, solvent_mask, settings.volume_shape, n_classes)
     if relion_firstiter_cc_this_iter:
-        map_postprocess._log_first_cc_lowpass(settings)
+        map_postprocess.log_first_cc_lowpass(settings)
     return [shared_classes, shared_classes]
 
 

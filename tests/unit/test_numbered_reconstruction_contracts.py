@@ -77,9 +77,9 @@ class _Recorder:
                 capture(mean, half_index=half_index, n_classes=n_classes)
 
         self.observer = Observer()
-        monkeypatch.setattr(map_postprocess, "_apply_relion_initial_lowpass_filter", lowpass)
+        monkeypatch.setattr(map_postprocess, "apply_relion_initial_lowpass_filter", lowpass)
         monkeypatch.setattr(map_postprocess, "_make_relion_solvent_mask", mask)
-        monkeypatch.setattr(map_postprocess, "_apply_relion_solvent_flatten_k1", flatten)
+        monkeypatch.setattr(map_postprocess, "apply_relion_solvent_flatten_k1", flatten)
         monkeypatch.setattr(map_postprocess, "_large_relion_solvent_mask_uses_compiled_builder", lambda _shape: False)
 
         def flatten_class(class_maps, _mask, class_idx, *, volume_shape):

@@ -189,10 +189,10 @@ def test_user_mask_replaces_the_diameter_sphere():
     user = np.zeros((8, 8, 8))
     user[2:5, 3:6, 1:7] = 1.0
     settings = _settings(solvent_mask=user)
-    assert map_postprocess._solvent_flatten_requested(settings)
-    assert_matches(np.asarray(map_postprocess._numbered_solvent_mask(settings, dtype=np.float64)), user)
+    assert map_postprocess.solvent_flatten_requested(settings)
+    assert_matches(np.asarray(map_postprocess.numbered_solvent_mask(settings, dtype=np.float64)), user)
     # Without a diameter a user mask still flattens.
-    assert map_postprocess._solvent_flatten_requested(_settings(solvent_mask=user, particle_diameter_angstrom=None))
+    assert map_postprocess.solvent_flatten_requested(_settings(solvent_mask=user, particle_diameter_angstrom=None))
 
 
 def test_corrected_fsc_needs_a_mask_of_the_model_shape():

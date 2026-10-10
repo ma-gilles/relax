@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from recovar.core import fourier_transform_utils as ftu
 
-from relax.refinement.map_postprocess import _apply_relion_initial_lowpass_filter
+from relax.refinement.map_postprocess import apply_relion_initial_lowpass_filter
 from relax.relion.reference_initialization import initial_low_pass_filter_references
 from relax.relion.relion_metadata import (
     read_relion_mrc_model_pixel_size,
@@ -38,7 +38,7 @@ def test_centered_fft_wrapper_matches_relion_lowpass():
     volume = rng.normal(size=(1, 8, 8, 8)).astype(np.float32)
     volume_ft = np.asarray(ftu.get_dft3(jnp.asarray(volume[0]))).reshape(-1)
 
-    actual_ft = _apply_relion_initial_lowpass_filter(
+    actual_ft = apply_relion_initial_lowpass_filter(
         volume_ft,
         (8, 8, 8),
         voxel_size=1.25,

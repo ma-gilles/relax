@@ -52,9 +52,9 @@ def test_mean_reconstruction_variants_share_run_level_settings():
 
 _NUMBERED_SEQUENCES = {
     1: ("k1_maximization", "reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps",
-        "_apply_relion_initial_lowpass_filter", "_apply_relion_solvent_flatten_k1"),
+        "apply_relion_initial_lowpass_filter", "apply_relion_solvent_flatten_k1"),
     2: ("class_maximization", "reconstruct_numbered_class_maps", "_reconstruct_class_maps",
-        "_lowpass_class_stack", "_flatten_class_stack"),
+        "lowpass_class_stack", "flatten_class_stack"),
 }
 
 
@@ -78,8 +78,8 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
     trace.wrap(maximization_module, operation, "operation")
     for name, label in (
         (solve, "solve"), (lowpass, "lowpass"),
-        ("_numbered_solvent_mask", "mask"), ("_make_relion_solvent_mask", "mask_builder"), (flatten, "flatten"),
-        ("_log_first_cc_lowpass", "log"),
+        ("numbered_solvent_mask", "mask"), ("_make_relion_solvent_mask", "mask_builder"), (flatten, "flatten"),
+        ("log_first_cc_lowpass", "log"),
     ):
         # The solve is numbered_reconstruction' own (or its name for the solver); the post-processing is map_postprocess's.
         trace.wrap(numbered_reconstruction_module if hasattr(numbered_reconstruction_module, name) else map_postprocess, name, label)
