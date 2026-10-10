@@ -265,3 +265,30 @@ def test_dropping_no_class_or_every_class_from_a_local_search():
         local_layout.drop_local_layout_classes(full, (0, 1))
     with pytest.raises(ValueError, match="only a class-expanded layout"):
         local_layout.drop_local_layout_classes(_local_layout(), (0,))
+
+
+def test_run_files_of_an_emptied_class_read_back_for_a_continued_run():
+    """The model STAR holds RELION's joint rows, each class's direction prior times its weight: an empty class
+    (weight 0) has a zero row. Reading the files back (--continue) recovers the live classes' conditionals
+    and gives the empty class the uniform row, which it never uses; dividing by its zero weight made the
+    continued run stop on a non-finite prior."""
+    from relax.helpers import orientation_priors
+    from relax.refinement import run_files
+
+    rng = np.random.default_rng(681)
+    weights = np.array([0.7, 0.0, 0.3])
+    conditional = rng.random((3, 48))
+    conditional /= conditional.sum(axis=1, keepdims=True)
+    joint = conditional * weights[:, None]  # what the writer stores (ml_optimiser.cpp:5325)
+    assert np.all(joint[1] == 0.0)
+
+    read = run_files._class_conditionals(joint, weights)
+
+    assert np.all(np.isfinite(read))
+    assert_matches(read[[0, 2]], conditional[[0, 2]], rtol=1e-12)
+    assert_matches(read[1], np.full(48, 1.0 / 48), rtol=0)
+    normalized = orientation_priors.normalize_class_direction_prior(read, 3, dtype=np.float64)
+    assert_matches(normalized.sum(axis=1), np.ones(3), rtol=1e-12)
+    # No class empty: the plain inverse, unchanged.
+    full = np.array([0.5, 0.2, 0.3])
+    assert np.array_equal(run_files._class_conditionals(conditional * full[:, None], full), conditional * full[:, None] / full[:, None])

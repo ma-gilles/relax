@@ -919,6 +919,14 @@ def _state_text(relax_state, name):
     raise KeyError(f"run files have no {key}")
 
 
+def _class_conditionals(joint_prior: np.ndarray, class_weights: np.ndarray) -> np.ndarray:
+    """Each class's direction prior given the class, from the written joint rows ``conditional * weight``."""
+
+    weights = np.asarray(class_weights, dtype=np.float64)[:, None]
+    alive = weights > 0.0
+    return np.where(alive, joint_prior / np.where(alive, weights, 1.0), 1.0 / joint_prior.shape[1])
+
+
 def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapshot:
     """Read the ``run_itNNN_*`` files named by ``optimiser_star`` into a snapshot.
 
@@ -1029,8 +1037,10 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
             direction_prior.append(None)
             continue
         prior = np.stack([_floats(t["rlnOrientationDistribution"]) for t in tables])
-        # Back to the loop's per-class conditionals (the writer's inverse).
-        direction_prior.append(prior / class_weights[:, None] if k_class else prior[0])
+        # Back to the loop's per-class conditionals (the writer's inverse). An empty class (weight 0, RELION's
+        # pdf_class == 0) has a zero joint row and no conditional to recover; it is never scored again, so it
+        # reads back as the uniform row.
+        direction_prior.append(_class_conditionals(prior, class_weights) if k_class else prior[0])
     if all(p is None for p in direction_prior):
         direction_prior = None
 
