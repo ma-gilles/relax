@@ -4,8 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.helpers.types import NoiseStats
-from relax.relion.relion_normalization import update_relion_norm_scale_corrections
+from relax.relion.normalization import update_relion_norm_scale_corrections
+from relax.types import NoiseStats
 
 pytestmark = pytest.mark.unit
 
@@ -262,7 +262,7 @@ def test_scale_clamp_and_normalisation_follow_relion_for_any_sign():
     (a tiny premultiplied tomo case: RELION's it001 groups at 1.000000 from xa / aa of -0.65 and -0.31).
     """
 
-    from relax.relion.relion_normalization import relion_clamped_scale_corrections
+    from relax.relion.normalization import relion_clamped_scale_corrections
 
     def relion(scale, counts):
         scale = list(map(float, scale))

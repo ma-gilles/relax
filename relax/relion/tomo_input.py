@@ -44,7 +44,7 @@ def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
 
     One expression on two array backends, chosen by the inputs: NumPy for host arrays (the
     start-up expected-accuracy estimate) and ``jax.numpy`` when any input is a JAX array or
-    tracer (the CTF program, :func:`relax.relion.relion_ctf._relion_ctf_program`). Both are
+    tracer (the CTF program, :func:`relax.relion.ctf._relion_ctf_program`). Both are
     float64 and agree to the last units of a double (``pow`` and ``exp`` are glibc's or XLA's;
     tests/unit/test_tomo_input.py).
     """
@@ -105,7 +105,7 @@ def flatten_relion5_tomo(particles_star, tomograms_star, output_star) -> Path:
 
     Tomograms with ``rlnCtfBfactorPerElectronDose`` carry it on every row as the
     column ``_rlnCtfBfactorPerElectronDose``. The per-tilt optics table keeps the particle
-    STAR's optics features (:data:`relax.relion.relion_metadata.OPTICS_FEATURE_LABELS`:
+    STAR's optics features (:data:`relax.relion.metadata.OPTICS_FEATURE_LABELS`:
     ``rlnCtfDataAreCtfPremultiplied``, beam tilt, odd and even Zernike terms, ``rlnMagMat``):
     relion_refine reads them from the particle STAR's optics groups for every tilt image
     (``Experiment::read``, exp_model.cpp:863), and relax's exact CTF and aberration operands
@@ -136,7 +136,7 @@ def flatten_relion5_tomo(particles_star, tomograms_star, output_star) -> Path:
         names = np.asarray(star_column(rows, "rlnGroupName", required=True))
         rows["_rlnCtfBfactorPerElectronDose"] = [per_tomo[tomo_of_particle[name]] for name in names]
         changed = True
-    from relax.relion.relion_metadata import OPTICS_FEATURE_LABELS
+    from relax.relion.metadata import OPTICS_FEATURE_LABELS
 
     features = {label for labels in OPTICS_FEATURE_LABELS.values() for label in labels}
     written = {str(name).lstrip("_") for name in optics.columns}
@@ -264,7 +264,7 @@ def relion_image_geometry(
 
     from ast import literal_eval
 
-    from relax.healpix_sampling import euler_angles_to_matrix
+    from relax.sampling.healpix import euler_angles_to_matrix
 
     particles_star, tomograms_star = Path(particles_star), Path(tomograms_star)
     particles, _ = read_star(str(particles_star))

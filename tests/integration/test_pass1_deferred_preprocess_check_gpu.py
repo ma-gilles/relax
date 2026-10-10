@@ -19,7 +19,7 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
     from relax.classification import k_class
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from integration.test_dense_gemm_coarse_engine_gpu import _install_native_preprocessing, _variable_ctf_rows
@@ -32,7 +32,7 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
     _install_native_preprocessing(dataset)
     if dataset_edit is not None:
         dataset_edit(dataset)
-    monkeypatch.setattr(relion_ctf, "relion_exact_ctf_half_from_source_star", _variable_ctf_rows)
+    monkeypatch.setattr(ctf, "relion_exact_ctf_half_from_source_star", _variable_ctf_rows)
     for name in (
         "volume", "noise_variance", "significant_sample_indices", "normalization_other_score_log_z",
         "normalization_score_mode", "relion_x_half_mstep", "return_score_log_z", "preserve_bpref_particle_order",

@@ -232,7 +232,7 @@ class InputSource:
     replays_relion_trajectory = False
     starts_from_frozen_boundary = False
     # A replayed MPI RELION run's follower topology and captured dispatch schedule (a
-    # ``relax.relion.relion_worker_scale.PreparedFollowerTopology``); None natively: no followers.
+    # ``relax.relion.worker_scale.PreparedFollowerTopology``); None natively: no followers.
     follower_topology = None
 
     def replays_relion_state(self) -> bool:

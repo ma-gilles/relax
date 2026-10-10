@@ -12,7 +12,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.sparse_pass2.sparse_pass2_scoring import (
+from relax.fine_pass.scoring import (
     _RELION_CUDA_FINE_REF3D_BLOCK_SIZE,
     _relion_cuda_fine_normalized_cc_score,
     _relion_cuda_fine_reduce_lanes,

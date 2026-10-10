@@ -19,8 +19,8 @@ from recovar.data_io import staging
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import write_star
 
-from relax.helpers import particle_io
-from relax.helpers.particle_io import (
+from relax.io import particle_io
+from relax.io.particle_io import (
     ParticleReadPolicy,
     add_particle_read_arguments,
     assert_reads_from_scratch,

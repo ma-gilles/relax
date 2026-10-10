@@ -32,7 +32,7 @@ BASELINE = Path("scripts/dev/smell_baseline.json")
 # Check 6: modules allowed to read the environment (paths relative to the repository root; a trailing "/"
 # allows a whole directory).
 ENV_READ_ALLOWED = (
-    "relax/helpers/env_flags.py",
+    "relax/runtime/env_flags.py",
     "relax/command_line.py",
     "relax/commands/",
     "relax/refinement/command_options.py",
@@ -498,7 +498,7 @@ def _is_environ(node) -> bool:
 
 
 def check_env_reads(repo: Repo) -> list[Finding]:
-    """The environment is read only in relax/helpers/env_flags.py and the command boundary (``ENV_READ_ALLOWED``);
+    """The environment is read only in relax/runtime/env_flags.py and the command boundary (``ENV_READ_ALLOWED``);
     code below receives the value as an argument or an options field. [rule 7]"""
     out = []
     for rel in repo.files("relax"):

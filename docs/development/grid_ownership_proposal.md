@@ -40,10 +40,10 @@ assumptions in the earlier final-search examples, not the agreed principles.
    nominal pixel sizes look equal.
 
 See [iteration loop](../../relax/refinement/iteration_loop.py),
-[Fourier windows](../../relax/helpers/fourier_window.py),
-[accumulator geometry](../../relax/helpers/half_volume_mstep.py),
+[Fourier windows](../../relax/fourier/fourier_window.py),
+[accumulator geometry](../../relax/reconstruction/half_volume_mstep.py),
 [optics grouping](../../relax/refinement/optics_shapes.py),
-[resolution helpers](../../relax/helpers/resolution.py), and
+[resolution helpers](../../relax/fourier/resolution.py), and
 [input loading](../../relax/refinement/full_refinement.py).
 
 ## Proposed ownership

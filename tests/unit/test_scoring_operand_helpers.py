@@ -12,8 +12,8 @@ pytest.importorskip("jax")
 import jax.numpy as jnp
 from test_sparse_pass2_bucketed_parity import IMAGE_SHAPE, IMAGE_SIZE, MockDataset
 
-from relax.helpers import projection as projection_helpers
-from relax.scoring.scoring import update_logsumexp
+from relax.projection import projection as projection_helpers
+from relax.scoring.coarse_kernels import update_logsumexp
 
 pytestmark = pytest.mark.unit
 
@@ -62,7 +62,7 @@ def _unshifted_cc_operands(dataset, *, image_corrections=None, scale_corrections
     from recovar.core.configs import ForwardModelConfig
     from recovar.reconstruction import noise as noise_utils
 
-    from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
+    from relax.fine_pass.bucket_io import prepare_unshifted_bucket_operands
 
     config = ForwardModelConfig.from_dataset(dataset, disc_type="linear_interp", process_fn=dataset.process_images)
     batch, _, _, ctf_params, _, _, image_indices = next(dataset.iter_batches(dataset.n_images))

@@ -11,8 +11,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.helpers import dtype_policy
-from relax.helpers.dtype_policy import (
+from relax.refinement import precision
+from relax.refinement.precision import (
     DensePrecisionPolicy,
     audit_operand_precision,
     operand_precision_check_mode,
@@ -31,12 +31,12 @@ def _clean_f32():
 
 
 def test_mode_parsing(monkeypatch):
-    monkeypatch.delenv(dtype_policy.OPERAND_PRECISION_CHECK_ENV, raising=False)
+    monkeypatch.delenv(precision.OPERAND_PRECISION_CHECK_ENV, raising=False)
     assert operand_precision_check_mode() == "warn"
     for mode in ("warn", "raise", "off", "RAISE"):
-        monkeypatch.setenv(dtype_policy.OPERAND_PRECISION_CHECK_ENV, mode)
+        monkeypatch.setenv(precision.OPERAND_PRECISION_CHECK_ENV, mode)
         assert operand_precision_check_mode() == mode.lower()
-    monkeypatch.setenv(dtype_policy.OPERAND_PRECISION_CHECK_ENV, "yes")
+    monkeypatch.setenv(precision.OPERAND_PRECISION_CHECK_ENV, "yes")
     with pytest.raises(ValueError):
         operand_precision_check_mode()
 
@@ -84,9 +84,9 @@ def test_off_mode_reports_nothing():
 
 
 def test_warn_mode_reports_each_violation_once(caplog):
-    dtype_policy._REPORTED_PRECISION_VIOLATIONS.clear()
+    precision._REPORTED_PRECISION_VIOLATIONS.clear()
     operands = _clean_f32() | {"shifted_recon_half": jnp.zeros((2, 4), jnp.complex128)}
-    with caplog.at_level("WARNING", logger=dtype_policy.logger.name):
+    with caplog.at_level("WARNING", logger=precision.logger.name):
         audit_operand_precision(F32, operands, where="w", mode="warn")
         audit_operand_precision(F32, operands, where="w", mode="warn")
     assert sum("EM operand precision" in r.message for r in caplog.records) == 1
@@ -100,7 +100,7 @@ def test_audit_catches_the_generic_k_class_noise_promotion():
     produced float64 / complex128 rows under a float32 policy. The fix forms RELION's own XFLOAT
     reciprocal first, which keeps the accumulation dtype.
     """
-    from relax.sparse_pass2.sparse_pass2_bucket_io import (
+    from relax.fine_pass.bucket_io import (
         _ctf_over_noise_weighted_pair,
         _ctf2_over_noise_and_ctf2,
         _weighted_ctf_pair,

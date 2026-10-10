@@ -44,7 +44,7 @@ from recovar.cuda_backproject import (
 from recovar.cuda_build import NativeLibrary, include_dir
 from recovar.data_io import image_backends as _image_backends
 
-from relax.helpers.env_flags import parse_env_binary_flag
+from relax.runtime.env_flags import parse_env_binary_flag
 
 
 @contextmanager

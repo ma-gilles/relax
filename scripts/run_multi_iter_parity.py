@@ -29,17 +29,17 @@ os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 import numpy as np
 
 from relax.diagnostics.gt_metrics import DEFAULT_GT_ALIGN_HEALPIX_ORDER, DEFAULT_GT_ALIGN_MAX_SHELL
-from relax.helpers.git_provenance import git_head_or_none
-from relax.helpers.iteration_history import add_significant_count_artifacts
 from relax.parity.parity_provenance import (
     assert_parity_ancestors_or_exit as _print_provenance_banner_and_assert_parity_ancestors,
 )
 from relax.refinement.command_options import apply_k1_refine3d_env_defaults
 from relax.refinement.half_inputs import HalfPair
+from relax.refinement.iteration_history import add_significant_count_artifacts
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
     relion_mpi_process_start_scoring_noise_pair,
 )
+from relax.runtime.git_provenance import git_head_or_none
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -151,7 +151,7 @@ def read_relion_model_pixel_size(path: str | Path) -> float:
     ``relion_metadata.read_relion_mrc_model_pixel_size`` does; ``mrcfile.voxel_size`` divides in float32.
     """
 
-    from relax.relion.relion_metadata import read_relion_mrc_model_pixel_size
+    from relax.relion.metadata import read_relion_mrc_model_pixel_size
 
     source = Path(path).expanduser().resolve()
     if not source.is_file():
@@ -288,7 +288,7 @@ def particle_half_indices(
 
     subsets = np.asarray(random_subsets)
     if fresh_order_seed is not None:
-        from relax.helpers.expected_accuracy import relion_auto_refine_half_orders
+        from relax.sampling.expected_accuracy import relion_auto_refine_half_orders
 
         return relion_auto_refine_half_orders(
             subsets,
@@ -1428,7 +1428,7 @@ def main():
     from recovar.utils import helpers
 
     from relax.diagnostics import observers
-    from relax.helpers.map_io import write_map_from_ft
+    from relax.io.map_io import write_map_from_ft
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
@@ -1445,7 +1445,7 @@ def main():
         SymmetryOptions,
     )
     from relax.refinement.startup_references import StartupHandoff
-    from relax.relion.relion_metadata import (
+    from relax.relion.metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,
@@ -2476,7 +2476,7 @@ def main():
         symmetry=SymmetryOptions(point_group=point_group),
     )
     # One stable-window class history for the refinement (see refine_single_volume).
-    from relax.sparse_pass2.resident_pass2 import stable_window_class_history
+    from relax.fine_pass.resident_pass2 import stable_window_class_history
 
     with stable_window_class_history():
         result = refine_single_volume(
@@ -2582,7 +2582,7 @@ def main():
     if fields.get("healpix_order_trajectory"):
         save_dict["healpix_order_trajectory"] = np.array(fields["healpix_order_trajectory"])
     # Which E-step engine each pass ran on, per iteration and for the final all-data
-    # pass (relax.sparse_pass2.engine_record), as JSON: resident vs fallback per run.
+    # pass (relax.refinement.engine_record), as JSON: resident vs fallback per run.
     for key in (
         "pass2_engine_trajectory", "final_all_data_pass2_engines",
         "coarse_engine_trajectory", "final_all_data_coarse_engines",

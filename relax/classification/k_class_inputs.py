@@ -115,7 +115,7 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
         raise ValueError("a seed iteration gives every unit one class in range")
     csr = getattr(first_class_supports, "csr", None)
     if csr is not None:
-        from relax.sparse_pass2.resident_significance import (
+        from relax.fine_pass.resident_significance import (
             DeviceCompactedSignificantSamples,
             csr_restricted_to_images,
         )

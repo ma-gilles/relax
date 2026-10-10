@@ -329,7 +329,7 @@ def _production_score_gradient_rows(
     import jax
     import jax.numpy as jnp
 
-    from relax.local.local_backprojection import compute_local_weighted_sums
+    from relax.fine_pass.local_backprojection import compute_local_weighted_sums
 
     required = {
         "posterior",
@@ -535,7 +535,7 @@ def analyze(
     from relax.relion_bind._relion_bind_core import get_backprojector_data
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.projection import compute_relion_projector_projections_block
+    from relax.projection.projection import compute_relion_projector_projections_block
 
     _require(jax.default_backend() == "gpu", "VDAM StoreWavg replay requires a GPU")
     native = _load_native(
@@ -585,7 +585,7 @@ def analyze(
         current_posterior = np.asarray(recovar["reconstruction_probs"])[particle_slot][
             active_rotation_rows
         ][rotation_map]
-    from relax.sparse_pass2.sparse_pass2_posterior import _relion_f32_fine_reconstruction_probs
+    from relax.fine_pass.posterior import _relion_f32_fine_reconstruction_probs
 
     replay_posterior, *_ = _relion_f32_fine_reconstruction_probs(
         jnp.asarray(np.asarray(recovar["candidate_combined_scores"])[particle_slot : particle_slot + 1]),

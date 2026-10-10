@@ -11,20 +11,20 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.helpers.resolution import (
+from relax.fourier.resolution import (
     _firstiter_cc_ini_high_tapered,
     firstiter_cc_ini_high_tau2_taper,
     shell_index_to_resolution_angstrom,
 )
-from relax.helpers.timing import Stopwatch
-from relax.helpers.types import total_sumw
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import regularization
 from relax.refinement import numbered_reconstruction
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
 from relax.refinement.optics_shapes import average_ctf2_parts
 from relax.refinement.ports import ClassPriorEstimated, MaximizationProbe, NoProbe
 from relax.refinement.tomo_half import TomoHalf
-from relax.relion import relion_ctf
+from relax.relion import ctf
+from relax.runtime.timing import Stopwatch
+from relax.types import total_sumw
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def join_half_accumulators_at_low_resolution(
         box_size=box_size,
         voxel_size=voxel_size,
     )
-    return regularization_relion.join_halves_at_low_resolution(
+    return regularization.join_halves_at_low_resolution(
         numerators_by_half[0],
         numerators_by_half[1],
         denominators_by_half[0],
@@ -133,7 +133,7 @@ def _class_tau2_from_iref_power_spectrum(
     ``compute_relion_tau2_from_iref_power_spectrum``).
     """
 
-    mean_signal_variance_relion, details = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
+    mean_signal_variance_relion, details = regularization.compute_relion_tau2_from_iref_power_spectrum(
         iref_fourier,
         volume_shape,
         padding_factor=padding_factor,
@@ -175,13 +175,13 @@ def _class_tau2_update_details(
 
     ``shell_stats`` are the round-shell weight statistics of ``Ft_ctf_class``.
     ``average_ctf2`` is RELION's average CTF^2 of CTF-premultiplied images
-    (:func:`relax.relion.relion_ctf.premultiplied_average_ctf2`), or None: RELION
+    (:func:`relax.relion.ctf.premultiplied_average_ctf2`), or None: RELION
     divides ``invtau2`` by it where it is positive (backprojector.cpp:1277-1279), which
     multiplies ``data_vs_prior`` by it. The record uses the K=1 per-half key layout with
     ``fsc_shells`` set to ``None``. Returns ``(data_vs_prior, details)``.
     """
 
-    data_vs_prior = regularization_relion.compute_data_vs_prior(
+    data_vs_prior = regularization.compute_data_vs_prior(
         Ft_ctf_class,
         tau2_shells_recovar_frame,
         settings.volume_shape,
@@ -286,7 +286,7 @@ def estimate_class_prior(
             ),
             shell_pair_counting=settings.shell_pair_counting,
         )
-    weight_shells = regularization_relion.compute_relion_weight_shell_stats(
+    weight_shells = regularization.compute_relion_weight_shell_stats(
         denominators[class_index],
         settings.volume_shape,
         padding_factor=settings.padding_factor,
@@ -390,7 +390,7 @@ def estimate_class_priors(
             dataset, scales, current_size=current_size, image_current_size=image_current_size
         )
     sumw = sum(total_sumw(stats.sumw) for stats in noise_stats_per_half if stats is not None)
-    average_ctf2 = relion_ctf.premultiplied_average_ctf2(ctf2_parts, settings.box_size, sumw)
+    average_ctf2 = ctf.premultiplied_average_ctf2(ctf2_parts, settings.box_size, sumw)
     for class_idx in range(n_classes):
         log.info(
             "Class3D tau2 update start: iter=%d class=%d/%d current_size=%d source=%s spectrum=%s",
@@ -481,7 +481,7 @@ def estimate_split_half_prior(
     """
 
     fsc_clock = Stopwatch()
-    current_iter_fsc = regularization_relion.compute_relion_fsc_from_backprojector(
+    current_iter_fsc = regularization.compute_relion_fsc_from_backprojector(
         numerators[0],
         numerators[1],
         denominators[0],
@@ -517,7 +517,7 @@ def estimate_split_half_prior(
     mean_signal_variance_per_half = []
     for half_idx, Ft_ctf_half in enumerate((denominators[0], denominators[1])):
         full_half_axis = full_half_axes[half_idx]
-        mean_signal_variance_k, _, tau2_update_details_k = regularization_relion.compute_relion_tau2_from_weights(
+        mean_signal_variance_k, _, tau2_update_details_k = regularization.compute_relion_tau2_from_weights(
             Ft_ctf_half,
             Ft_ctf_half,
             current_iter_fsc,
@@ -565,7 +565,7 @@ def solvent_corrected_fsc(numerators, denominators, settings, *, current_size, a
     )
     # RELION's getFSC sums the FFTW half spectrum halved along the map file's x axis, and the
     # half-spectrum sum depends on which axis is halved; the maps and the mask return to the file's
-    # axis order (the transpose of the internal frame; relax.helpers.map_io).
+    # axis order (the transpose of the internal frame; relax.io.map_io).
     half1, half2 = (
         np.transpose(
             np.real(np.asarray(fourier_transform_utils.get_idft3(jnp.asarray(m).reshape(settings.volume_shape)))),

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers import half_volume_mstep
+from relax.reconstruction import half_volume_mstep
 
 pytestmark = pytest.mark.unit
 

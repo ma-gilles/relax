@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 
-from relax.helpers.git_provenance import git_worktree_provenance
+from relax.runtime.git_provenance import git_worktree_provenance
 
 
 def test_git_worktree_fingerprint_changes_with_dirty_patch_content(tmp_path, monkeypatch):

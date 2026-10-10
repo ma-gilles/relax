@@ -8,7 +8,7 @@ it runs the transaction (:func:`relax.vdam.m_step.vdam_m_step_single_class`).
 ``python -m relax.diagnostics.vdam_native_mstep <relax initial_model arguments>``
 runs an InitialModel whose M-step is this oracle, with the parity hooks
 ``RELAX_MSTEP_DUMP_DIR`` / ``RELAX_MSTEP_DUMP_ITER`` (intermediate dumps) and the
-``RELAX_VDAM_NATIVE_*_REPLAY_BIN`` replays (:mod:`relax.diagnostics.vdam_mstep_replay`).
+``RELAX_VDAM_NATIVE_*_REPLAY_BIN`` replays (:mod:`relax.parity.vdam_mstep_replay`).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from relax.diagnostics import vdam_mstep_replay as replay
+from relax.parity import vdam_mstep_replay as replay
 from relax.vdam.state import InitialModelState, VdamAccumulator, half_slot_index
 
 

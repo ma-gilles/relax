@@ -12,7 +12,7 @@ import oracles.iterations as em_iterations
 from oracles.core import translations_to_indices
 
 import relax.sampling as em_sampling
-from relax.relion import relion_metadata
+from relax.relion import metadata as relion_metadata
 
 pytestmark = pytest.mark.unit
 

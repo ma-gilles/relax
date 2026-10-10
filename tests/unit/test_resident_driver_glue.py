@@ -30,7 +30,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.sparse_pass2 import resident_pass2 as rp
+from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
 

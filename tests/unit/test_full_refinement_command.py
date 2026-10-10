@@ -171,8 +171,7 @@ def test_native_group_ids_are_available_to_k_class_refinement(monkeypatch, tmp_p
 
 def test_init_noise_from_npz_replaces_the_startup_estimate(monkeypatch, tmp_path):
     """A fresh run estimates the start-up noise from the images; --init_noise_from_npz loads an archive's."""
-    from relax.helpers import iteration_history
-    from relax.refinement import startup_noise
+    from relax.refinement import iteration_history, startup_noise
 
     archive = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", output="first") / "refinement_results.npz"
     trace = CallTrace(monkeypatch).wrap(startup_noise, "prepare_startup_noise", "estimate")

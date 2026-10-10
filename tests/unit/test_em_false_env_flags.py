@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from relax.helpers.env_flags import (
+from relax.runtime.env_flags import (
     parse_env_binary_flag,
     parse_env_capacity_ladder,
     parse_env_flag,

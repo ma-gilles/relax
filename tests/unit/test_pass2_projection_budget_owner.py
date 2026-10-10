@@ -1,14 +1,14 @@
 """The pass-2 projection budget is sized by one owner (sparse_pass2_window)."""
 
-from relax.sparse_pass2 import sparse_pass2_window as sp
-from relax.sparse_pass2 import sparse_pass2_window
+from relax.fine_pass import window as sp
+from relax.fine_pass import window
 
 
 def test_owner_threads_the_budget(monkeypatch):
     seen = []
-    monkeypatch.setattr(sparse_pass2_window, "_projection_cache_budget_complex_dtype", lambda d, c, *, use_relion_projector: seen.append(("dtype", d, c, use_relion_projector)) or "CDT")
-    monkeypatch.setattr(sparse_pass2_window, "_projection_budget_pixels_for_pass", lambda n, *, use_window, use_relion_projector: seen.append(("pixels", n, use_window)) or 77)
-    monkeypatch.setattr(sparse_pass2_window, "_max_projected_rotations_per_call_for_pass", lambda **kw: seen.append(("rot", kw)) or 5)
+    monkeypatch.setattr(window, "_projection_cache_budget_complex_dtype", lambda d, c, *, use_relion_projector: seen.append(("dtype", d, c, use_relion_projector)) or "CDT")
+    monkeypatch.setattr(window, "_projection_budget_pixels_for_pass", lambda n, *, use_window, use_relion_projector: seen.append(("pixels", n, use_window)) or 77)
+    monkeypatch.setattr(window, "_max_projected_rotations_per_call_for_pass", lambda **kw: seen.append(("rot", kw)) or 5)
 
     class Policy:
         score_complex_dtype = "c64"

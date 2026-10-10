@@ -727,7 +727,7 @@ class TestRunVdamIterations:
         assert out.sigma2_offset == pytest.approx(90.3125)
 
     def test_updates_sigma2_noise_from_estep_meta_in_relion_units(self):
-        from relax.reconstruction import noise_relion
+        from relax.reconstruction import noise as noise_relion
 
         state = initialise_denovo_state(
             box_size=8,
@@ -757,7 +757,7 @@ class TestRunVdamIterations:
         np.testing.assert_allclose(state.sigma2_noise, 0.01)
 
     def test_updates_sigma2_noise_with_vdam_momentum_on_subset_iterations(self):
-        from relax.reconstruction import noise_relion
+        from relax.reconstruction import noise as noise_relion
 
         state = initialise_denovo_state(
             box_size=8,

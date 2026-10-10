@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics import vdam_mstep_replay
+from relax.parity import vdam_mstep_replay
 from relax.vdam import m_step as mstep_owner
 from relax.vdam.bootstrap_iref import (
     initialise_data_vs_prior_from_references,

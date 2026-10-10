@@ -7,9 +7,9 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_numbered_expectation import numbered_inputs
 
-from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement.finalization import prepare_final_half
 from relax.refinement.trial_grids import FinalSampling, FinalSamplingSettings
+from relax.sampling.orientation_priors import DirectionPrior
 
 pytestmark = pytest.mark.unit
 

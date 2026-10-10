@@ -148,7 +148,7 @@ position in a newly shuffled subset. Also, averaging two separately
 preconditioned directions is generally different from preconditioning pooled
 statistics once.
 
-Sources: [device transaction](../../relax/relion/relion_vdam_mstep.py),
+Sources: [device transaction](../../relax/relion/vdam_mstep.py),
 [native transaction wrapper](../../relax/vdam/m_step.py),
 [subset ordering](../../relax/vdam/subset_schedule.py).
 
@@ -1294,7 +1294,7 @@ scientific contract; runnable code alone does not establish recovery.
   As in RELION, pass 1 runs on a smaller image window than pass 2: the coarse
   image size the coarse angular step resolves, `2 ceil(pixel ori_size /
   (step/360 pi diameter / 1.2))`, at most the stage's
-  ([compute_coarse_image_size](../../relax/helpers/resolution.py), with RELION's
+  ([compute_coarse_image_size](../../relax/fourier/resolution.py), with RELION's
   clamp; 50 against 62 pixels at the eleven-state HP3 stage). A tile's images are
   read once, unshifted at the pass-2 window: the pass-1 operands are their pixels
   inside the pass-1 window times the coarse shifts' phase factors, and a job's
@@ -1591,7 +1591,7 @@ three float32 RELION-frame maps. The VDAM override skips its native double
 bootstrap when these maps are supplied; later projection and M-step backends
 must still be selected explicitly for production float32 execution.
 VDAM has one projector setup
-([`reference_to_relion_projector_half_maps_and_power`](../../relax/relion/relion_projector_setup.py)): the device
+([`reference_to_relion_projector_half_maps_and_power`](../../relax/relion/projector_setup.py)): the device
 FFT in double, narrowed to the complex64 slab RELION's GPU projector holds as a
 float texture, with the tau2 shell power kept in double. It does not follow the
 M-step dtype, and `--projector-setup-backend` is gone from InitialModel; a

@@ -30,16 +30,16 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.local.local_backprojection import compute_local_mstep_sums
-from relax.sparse_pass2 import resident_pass2 as rp
-from relax.sparse_pass2.resident_candidates import (
+from relax.fine_pass import resident_pass2 as rp
+from relax.fine_pass.local_backprojection import compute_local_mstep_sums
+from relax.fine_pass.policy import ResidentConfigurationUnsupported
+from relax.fine_pass.resident_candidates import (
     CapacityChunk,
     ResidentCandidateTables,
     chunk_segment_offsets,
     plan_capacity_chunks,
 )
-from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
-from relax.sparse_pass2.sparse_pass2_wavg import (
+from relax.fine_pass.wavg import (
     _relion_wavg_rectangle_triplet_terms,
 )
 
@@ -349,7 +349,7 @@ def test_wavg_shifted_power_commutes_with_a_row_gather():
     optimization barrier that keeps the two products from contracting.
     """
 
-    from relax.sparse_pass2.sparse_pass2_wavg import _relion_wavg_shifted_power
+    from relax.fine_pass.wavg import _relion_wavg_shifted_power
 
     rng = np.random.default_rng(5150)
     rect = (
@@ -401,7 +401,7 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
     rows, the translation tiles and a 64-row M-step block (9.7 GiB, sized without T)
     overcommitted the device together; one plan now sizes all three from one budget."""
 
-    from relax.sparse_pass2.resident_scoring import resident_row_projection_bytes
+    from relax.fine_pass.resident_scoring import resident_row_projection_bytes
 
     gib = 1024**3
     t, p_recon, p_score = 148, 135755, 137153
@@ -443,7 +443,7 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
 def test_float32_posterior_bucket_scratch_is_admitted_for_regular_pipeline_and_overflow():
     """The row-stage plan includes two bucket partials and output at each capacity."""
 
-    from relax.sparse_pass2.resident_statistics import posterior_translation_bucket_scratch_bytes
+    from relax.fine_pass.resident_statistics import posterior_translation_bucket_scratch_bytes
 
     base = dict(row_bytes=1, n_fine_trans=8, n_recon_pixels=1, mstep_block_rows=1,
                 held_tile_pixels=0, prepare_tile_pixels=0, projection_transient_bytes=0)
@@ -677,7 +677,7 @@ def test_full_box_chunk_plan_counts_the_projector_call_and_the_accumulators():
 
     import numpy as np
 
-    from relax.sparse_pass2.resident_scoring import resident_row_projection_bytes
+    from relax.fine_pass.resident_scoring import resident_row_projection_bytes
 
     gib = 1024**3
     crop, n_score, n_recon, union = 800 * 401, 251966, 251313, 252000
@@ -1115,7 +1115,7 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
     :func:`test_resident_driver_repeats_itself` measures.
     """
 
-    from relax.helpers.deterministic_reduce import (
+    from relax.numerics.deterministic_reduce import (
         deterministic_reductions_enabled,
     )
 
@@ -1297,8 +1297,8 @@ def test_reorder_permutation_inverts_a_shuffled_fetch():
 def test_dispatcher_sends_every_pass_to_the_resident_engine(monkeypatch):
     """The resident driver is relax's one pass-2 engine: dispatch has no other route."""
 
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
-    from relax.sparse_pass2.engine_record import take_pass_engines
+    from relax.fine_pass import dispatch as sparse_dispatch
+    from relax.refinement.engine_record import take_pass_engines
 
     calls = []
     monkeypatch.setattr(rp, "compute_pass2_stats_resident", lambda *a, **k: calls.append(k) or "resident")
@@ -1635,8 +1635,8 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, ca
 def test_stable_window_reference_volume_on_another_grid(monkeypatch):
     """A pass on another grid keeps the image grid's plan; its reference cube and clip take a physical class."""
 
-    from relax.helpers.adjoint import ReferenceSphereClip, mstep_adjoint_max_r
-    from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+    from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+    from relax.projection.adjoint import ReferenceSphereClip, mstep_adjoint_max_r
     from relax.refinement.shape_class_scoring import reconstruction_image_radius
 
     monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
@@ -1716,7 +1716,7 @@ def test_accumulators_exist_before_the_chunk_budget_is_read():
 
     import inspect
 
-    from relax.sparse_pass2 import resident_local_pass2 as rlp
+    from relax.local_search import resident_pass2 as rlp
 
     for source in (inspect.getsource(rp._resident_pass2), inspect.getsource(rlp.compute_local_search_resident)):
         first_budget_read = source.index("resident_chunk_budget_bytes(")
@@ -1861,7 +1861,7 @@ def test_projection_cache_row_blocks_gather_the_one_array_rows(monkeypatch):
     largest block. A cache the allocator refuses whole is allocated in row blocks, built in
     place across them, and gathered row for row as the one array."""
 
-    from relax.sparse_pass2.resident_scoring import cache_dtype, cache_rows
+    from relax.fine_pass.resident_scoring import cache_dtype, cache_rows
 
     n_rows, n_pixels = 10, 4
     real_allocate = rp._allocate_projection_cache
@@ -1929,7 +1929,7 @@ def test_only_host_pixel_indices_are_validated_per_call():
     """Device indices are built valid (projection_window_union); reading them back to validate
     synchronized every projector call of the resident passes (bigbox 14747301)."""
 
-    from relax.helpers.projection import _host_pixel_indices
+    from relax.projection.projection import _host_pixel_indices
 
     assert _host_pixel_indices(np.arange(4, dtype=np.int32))
     assert not _host_pixel_indices(jnp.arange(4, dtype=jnp.int32))
@@ -1966,7 +1966,7 @@ def test_the_projection_sums_choice_reads_the_allocator_not_the_physical_free_me
     """relax#41: at a 16 GB pool on an 80 GB card the physical reading (62 GiB free) chose 3.76 GiB of
     per-projection sums that the pool could not hold. The choice reads what the allocator can hand out."""
 
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     gib = 1024**3
     monkeypatch.setattr(rp, "_device_free_memory_bytes", lambda: 62 * gib)
@@ -1986,7 +1986,7 @@ def test_every_free_memory_budget_honours_the_allocator_pool(monkeypatch):
     """relax#41 audit: with physical free memory far above the pool (an 80 GB card at a 16 GB pool), every
     budget that reads free memory stays inside what the allocator can hand out."""
 
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     gib = 1024**3
     readings = dict(physical=62 * gib, allocator=10 * gib, pool=1 * gib)
@@ -2007,7 +2007,7 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
     import subprocess
 
     probe = (
-        "import json, jax, jax.numpy as jnp; from relax.sparse_pass2 import resident_pass2 as rp; "
+        "import json, jax, jax.numpy as jnp; from relax.fine_pass import resident_pass2 as rp; "
         "x = jnp.zeros((1 << 20,), jnp.float32).block_until_ready(); "
         "s = jax.devices()[0].memory_stats(); "
         "print(json.dumps({'available': rp._allocator_available_bytes(), 'physical': rp._device_free_memory_bytes(), "

@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from relax.helpers.projection import project_relion_projector_half_spectrum
-from relax.relion.relion_projector_setup import setup_relion_projector
+from relax.projection.projection import project_relion_projector_half_spectrum
+from relax.relion.projector_setup import setup_relion_projector
 
 REF = (32, 4.0)
 GROUP = (28, 4.0 * 32 / 24)  # a coarser pixel and a different box

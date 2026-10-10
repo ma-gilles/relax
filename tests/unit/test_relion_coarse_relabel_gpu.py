@@ -17,13 +17,13 @@ from scipy.spatial.transform import Rotation
 
 def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.projection import (
+    from relax.fine_pass.bucket_io import relion_translation_angles_f32
+    from relax.projection.projection import (
         compute_relion_projector_projections_block,
         relion_projector_half_to_texture_full,
     )
-    from relax.relion.relion_coarse_operands import relion_coarse_translate
+    from relax.scoring.coarse_operands import relion_coarse_translate
     from relax.scoring.tomo_coarse import coarse_score_layout
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
     rng = np.random.default_rng(7)
     padding_factor = 2
@@ -95,7 +95,7 @@ def test_coarse_gemm_operands_match_the_fused_relion_kernel_in_the_band(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.helpers.optics_scale import coarse_rows_wrap_inside
+    from relax.relion.optics_scale import coarse_rows_wrap_inside
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)

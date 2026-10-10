@@ -336,7 +336,7 @@ class TestRandomiseParticlesOrderBinding:
 
 class TestAutoRefineExpectedAccuracyBinding:
     def test_spawned_expected_accuracy_matches_direct_result(self, bind):
-        from relax.helpers.expected_accuracy import (
+        from relax.sampling.expected_accuracy import (
             estimate_relion_expected_accuracy_from_prepared_inputs,
             estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
         )
@@ -385,10 +385,10 @@ class TestAutoRefineExpectedAccuracyBinding:
 
         from recovar.utils.helpers import relion_volume_to_recovar
 
-        from relax.helpers.expected_accuracy import (
+        from relax.relion.projector_setup import reference_to_relion_projector_half_maps_and_power
+        from relax.sampling.expected_accuracy import (
             estimate_relion_expected_accuracy_from_prepared_inputs,
         )
-        from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
 
         rng = np.random.default_rng(11)
         references = rng.standard_normal((2, 16, 16, 16)).astype(np.float64)
@@ -436,7 +436,7 @@ class TestAutoRefineExpectedAccuracyBinding:
             assert_matches(supplied.acc_rot_per_class, direct.acc_rot_per_class, err_msg=backend)
 
     def test_python_order_applies_relion_base_order_and_stable_optics_sort(self, bind):
-        from relax.helpers.expected_accuracy import relion_half1_trial_order
+        from relax.sampling.expected_accuracy import relion_half1_trial_order
 
         base = np.asarray([5, 4, 3, 2, 1, 0], dtype=np.int64)
         optics = np.asarray([2, 1, 2, 1, 2, 1], dtype=np.int64)

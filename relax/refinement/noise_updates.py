@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.types import make_noise_stats, total_sumw
+from relax.types import make_noise_stats, total_sumw
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ def _noise_radial_history(noise_variance_per_half, image_shape, *, dtype):
     Pixel-array normalization and noise estimation remain with the caller.
     Preserve the float64 host shell reduction before the final JAX cast.
     """
-    from relax.relion.relion_metadata import radial_profile_from_noise_variance
+    from relax.relion.metadata import radial_profile_from_noise_variance
 
     def radial(noise_k):
         noise_k = _flat_noise_rows(noise_k)
@@ -178,7 +178,7 @@ def _per_optics_group_sigma2_noise(
     spectrum. Returns the ``[G, n_shells]`` shell profiles and ``[G, P]`` pixel rows.
     """
 
-    from relax.reconstruction import noise_relion
+    from relax.reconstruction import noise as noise_relion
 
     wsum = np.asarray(stats.wsum_sigma2_noise, dtype=np.float64)
     power = np.asarray(stats.wsum_img_power, dtype=np.float64)
@@ -290,10 +290,10 @@ def datasets_store_premultiplied_ctf(experiment_datasets) -> bool:
     """
     from relax.refinement.optics_shapes import shape_datasets
     from relax.refinement.tomo_half import TomoHalf
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
 
     return any(
-        relion_ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))
+        ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))
         for half in experiment_datasets
         for dataset in shape_datasets(half.images if isinstance(half, TomoHalf) else half)
     )
@@ -333,7 +333,7 @@ def _noise_update_keeping_previous_spectra(model: NoiseModel) -> NoiseUpdateResu
 
 def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied, summed_current_size, nyquist_column_counting):
     """One optics group's M-step noise update: the float64 shell profile and its flat pixel row."""
-    from relax.reconstruction import noise_relion
+    from relax.reconstruction import noise as noise_relion
 
     sigma2_noise = noise_relion.normalize_wsum_to_sigma2_noise(
         np.asarray(stats.wsum_sigma2_noise, dtype=np.float64),

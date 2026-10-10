@@ -22,7 +22,7 @@ def _metadata(monkeypatch, order=1, oversampling=0):
 
 
 def test_case_pair_takes_precedence_and_verifies_same_capture(monkeypatch):
-    from relax.relion import relion_worker_scale as worker
+    from relax.relion import worker_scale as worker
 
     _metadata(monkeypatch)
     marker = object()
@@ -51,7 +51,7 @@ def test_partial_case_pair_cannot_mix_with_global_pair():
 
 
 def test_cross_capture_error_propagates(monkeypatch):
-    from relax.relion import relion_worker_scale as worker
+    from relax.relion import worker_scale as worker
 
     _metadata(monkeypatch)
     monkeypatch.setattr(worker, "load_relion_dispatch_schedule", lambda p: object())
@@ -65,7 +65,7 @@ def test_cross_capture_error_propagates(monkeypatch):
 def test_manifest_capture_is_the_default(monkeypatch):
     from helpers import em_fixtures
 
-    from relax.relion import relion_worker_scale as worker
+    from relax.relion import worker_scale as worker
 
     _metadata(monkeypatch, 2, 1)
     monkeypatch.setattr(em_fixtures, "fixture_dir", lambda name: Path("/manifest") / name)

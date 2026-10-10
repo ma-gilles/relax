@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.relion import relion_ctf
+from relax.relion import ctf
 
 relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
 
@@ -67,13 +67,13 @@ def _relion_plain(params, box, pixel):
 @pytest.mark.parametrize("box, pixel", [(16, 3.0), (64, 1.3), (128, 0.85)])
 def test_plain_ctf_matches_relion(box, pixel):
     params = _params(np.random.default_rng(box), 12)
-    assert_matches(relion_ctf.relion_ctf_fftw_half(params, box, pixel), _relion_plain(params, box, pixel), rtol=RTOL)
+    assert_matches(ctf.relion_ctf_fftw_half(params, box, pixel), _relion_plain(params, box, pixel), rtol=RTOL)
 
 
 @pytest.mark.unit
 def test_premultiplied_fctf_is_relions_square():
     params = _params(np.random.default_rng(3), 8)
-    relax = relion_ctf.relion_ctf_fftw_half(params, 64, 1.3)
+    relax = ctf.relion_ctf_fftw_half(params, 64, 1.3)
     relion = _relion_plain(params, 64, 1.3)
     assert_matches(relax * relax, relion * relion, rtol=RTOL)
 
@@ -110,19 +110,19 @@ def test_optics_table_ctf_matches_relion_observation_model(tmp_path, even, mag):
     params = _params(np.random.default_rng(7), 6)
     params[:, 3:6] = (300.0, 2.7, 0.07)  # the optics group's
     gamma = None if even is None else np.asarray(relion_bind.optics_gamma_offset(str(star), 1, box))
-    relax = relion_ctf.relion_ctf_fftw_half(params, box, pixel, gamma_offset=gamma, mag_matrix=mag)
+    relax = ctf.relion_ctf_fftw_half(params, box, pixel, gamma_offset=gamma, mag_matrix=mag)
     by_group = np.stack(
         [params[:, 0], params[:, 1], params[:, 2], params[:, 6], params[:, 7], params[:, 8], np.ones(6)], axis=1
     )
     relion = np.asarray(relion_bind.optics_ctf_images_batch(str(star), by_group, box, box, True, 1))
     assert_matches(relax, relion, rtol=RTOL)
     if even is not None or mag is not None:
-        assert np.abs(relax - relion_ctf.relion_ctf_fftw_half(params, box, pixel)).max() > 1e-3
+        assert np.abs(relax - ctf.relion_ctf_fftw_half(params, box, pixel)).max() > 1e-3
 
 
 @pytest.mark.unit
 def test_exact_ctf_rows_are_relions_in_recovar_frame(tmp_path, monkeypatch):
-    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    monkeypatch.setattr(ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     box, pixel = 32, 2.0
     star = tmp_path / "particles.star"
     star.write_text(
@@ -133,7 +133,7 @@ def test_exact_ctf_rows_are_relions_in_recovar_frame(tmp_path, monkeypatch):
         "1@s.mrcs 21000 20000 30 0 1.0 0 1\n2@s.mrcs 15000 15800 110 20 0.9 80 2\n"
     )
     dataset = SimpleNamespace(particles_file=str(star))
-    rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([1, 0]), (box, box))
+    rows = ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.asarray([1, 0]), (box, box))
     params = np.asarray(
         [
             [15000.0, 15800.0, 110.0, 200.0, 2.0, 0.1, 80.0, 0.9, 20.0],

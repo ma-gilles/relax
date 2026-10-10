@@ -23,7 +23,7 @@ def test_the_dense_pass2_switches_are_gone_and_refused():
 
 
 def test_coarse_pose_assignments_need_a_fine_pass():
-    from relax.dense.score_outputs import _collapse_fine_pose_assignments_to_coarse as collapse
+    from relax.refinement.score_outputs import _collapse_fine_pose_assignments_to_coarse as collapse
 
     ha = np.array([0, 5], dtype=np.int32)
     assert collapse(ha, rot_parent_map=None, trans_parent_map=None, n_trans_coarse=1, n_trans_fine=None) is None

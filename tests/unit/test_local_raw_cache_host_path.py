@@ -21,7 +21,7 @@ pytest.importorskip("jax")
 
 import recovar.data_io.cryoem_dataset as dataset  # noqa: E402
 
-from relax.helpers.batch_fetch import fetch_indexed_batch  # noqa: E402
+from relax.io.batch_fetch import fetch_indexed_batch  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -99,7 +99,7 @@ def _dataset():
 def test_fetch_indexed_batch_host_path_matches_the_iterator(indices):
     """fetch_indexed_batch's vectorized host read equals the batch iterator's route."""
 
-    from relax.helpers.batch_fetch import fetch_indexed_batch_via_iterator
+    from relax.io.batch_fetch import fetch_indexed_batch_via_iterator
 
     cryo = _dataset()
     images, ctf, fetched = fetch_indexed_batch(cryo, indices)

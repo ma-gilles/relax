@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.helpers import expected_accuracy as owner
+from relax.sampling import expected_accuracy as owner
 
 pytestmark = pytest.mark.unit
 

@@ -9,7 +9,7 @@ from helpers.float_compare import assert_matches
 pytestmark = pytest.mark.unit
 
 
-# Moved from relax/sparse_pass2/dispatch.py (PLAN e1): no relax module uses it, only this test file.
+# Moved from relax/fine_pass/dispatch.py (PLAN e1): no relax module uses it, only this test file.
 def _open_persistent_relion_projector_texture(
     relion_projector_half,
     *,
@@ -24,7 +24,7 @@ def _open_persistent_relion_projector_texture(
     ``relion_projector_half`` as before). The caller owns the texture and closes it.
     """
 
-    from relax.helpers.projection import host_relion_projector_texture_enabled
+    from relax.projection.projection import host_relion_projector_texture_enabled
 
     if not host_relion_projector_texture_enabled(
         relion_projector_half, r_max=relion_projector_r_max,
@@ -38,7 +38,7 @@ def _open_persistent_relion_projector_texture(
     # RELION's texture is float32 (AccProjector::setMdlData); cast before any device upload.
     relion_projector_half = np.asarray(relion_projector_half, dtype=np.complex64)
 
-    logging.getLogger("relax.helpers.oversampling").info(
+    logging.getLogger("relax.sampling.oversampling").info(
         "%s persistent RELION projector texture: shape=%s host=%.2f GiB",
         str(log_label),
         tuple(relion_projector_half.shape),
@@ -389,7 +389,7 @@ def test_persistent_host_texture_matches_transient_and_rejects_stale_token(
 ):
     import recovar.cuda_backproject as cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         compute_relion_projector_projections_block,
     )
 
@@ -507,7 +507,7 @@ def test_persistent_texture_preserves_nyquist_and_current_radius(
     monkeypatch, custom_cuda_lib, gpu_device, radius, current_size
 ):
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.projection import compute_relion_projector_projections_block
+    from relax.projection.projection import compute_relion_projector_projections_block
     monkeypatch.setenv('RECOVAR_CUDA_LIB', str(custom_cuda_lib))
     monkeypatch.delenv('RECOVAR_DISABLE_CUDA', raising=False)
     projector = _projector(r_max=radius, padding_factor=2)
@@ -599,7 +599,7 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
 
 def test_large_static_projector_uses_half_storage_without_full_cube(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers import projection
+    from relax.projection import projection
     class HostShape:
         dtype = jnp.dtype(jnp.complex64)
         shape = (1603, 1603, 802)
@@ -626,7 +626,7 @@ def test_large_static_projector_uses_half_storage_without_full_cube(monkeypatch)
 
 @pytest.mark.parametrize("layout", ["valid", "strided", "double", "class_axis", "missing_radius"])
 def test_host_texture_planning_and_dispatch_share_eligibility(monkeypatch, layout):
-    from relax.helpers import projection
+    from relax.projection import projection
     calls = []
     monkeypatch.setattr(projection, "_relion_projector_texture_enabled", lambda *a, **kw: calls.append(kw) or True)
     slab = np.zeros((7, 7, 4), dtype=np.complex64)
@@ -656,7 +656,7 @@ def test_projector_class_selection_preserves_host_view(monkeypatch, classes, dty
 
 def test_sparse_pass2_opens_eligible_texture_from_original_host_slab(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers import projection
+    from relax.projection import projection
 
     projector = _projector()
     created = []
@@ -695,7 +695,7 @@ def test_sparse_pass2_opens_eligible_texture_from_original_host_slab(monkeypatch
 
 
 def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
-    from relax.helpers import projection
+    from relax.projection import projection
     from relax.cuda import kernels as em_cuda_kernels
     source = _projector().astype(np.complex128)
     source += np.float64(2**-27)
@@ -713,7 +713,7 @@ def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
 
 @pytest.mark.gpu
 def test_host_cast_matches_device_cast_and_texture_projection(custom_cuda_lib, gpu_device):
-    from relax.helpers.projection import compute_relion_projector_projections_block
+    from relax.projection.projection import compute_relion_projector_projections_block
     source = _projector(r_max=7, padding_factor=2).astype(np.complex128)
     source += np.float64(2**-26)
     source.reshape(-1)[:4] = [complex(-0.0, 0.0), complex(0.0, -0.0), 1 + 2**-24, 1 + 3 * 2**-24]

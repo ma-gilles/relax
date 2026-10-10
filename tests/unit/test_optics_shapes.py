@@ -15,12 +15,12 @@ from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
-from relax.dense import scoring_policy
-from relax.dense.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
-from relax.helpers.types import RelionStats, make_noise_stats
-from relax.refinement import dense_half, half_inputs, local_half, optics_shapes, shape_class_scoring
+from relax.local_search import half as local_half
+from relax.refinement import dense_half, half_inputs, optics_shapes, scoring_policy, shape_class_scoring
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
+from relax.refinement.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
+from relax.types import RelionStats, make_noise_stats
 
 REF_BOX, REF_PIX = 32, 4.0
 
@@ -465,8 +465,8 @@ def test_class_coarse_size_is_relions_formula_at_the_class_grid():
 
 @pytest.mark.unit
 def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
-    from relax.helpers.batch_planning import _AdaptiveDenseBatchSizes
     from relax.refinement import expectation_batches
+    from relax.runtime.batch_planning import _AdaptiveDenseBatchSizes
 
     ds_a = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     ds_b = SimpleNamespace(image_shape=(40, 40), volume_shape=(40,) * 3, voxel_size=4.0)  # larger box
@@ -621,8 +621,8 @@ def test_class_mstep_image_radius_is_reference_r_max_times_scale():
 def test_class_mstep_clip_keeps_the_reference_padding():
     import inspect
 
-    from relax.helpers import adjoint
-    from relax.sparse_pass2 import resident_pass2
+    from relax.fine_pass import resident_pass2
+    from relax.projection import adjoint
 
     # One grid: the reference r_max, from which recovar infers RELION's pad size.
     assert adjoint.mstep_adjoint_max_r(56, None, 2) == pytest.approx(28.0)
@@ -824,7 +824,7 @@ def test_bpref_cubes_on_different_windows_merge_on_the_smaller_centred_cube():
     # A model-grid class may return its BPref on a stable physical cube (7^3) while a class at its own
     # box returns the logical cube (5^3); the merge sums the logical voxels, as crop_public_full_volume
     # would select them, and leaves equal cubes alone.
-    from relax.helpers.half_volume_mstep import crop_public_full_volume
+    from relax.reconstruction.half_volume_mstep import crop_public_full_volume
 
     rng = np.random.default_rng(0)
     physical = rng.standard_normal((1, 2, 7**3))

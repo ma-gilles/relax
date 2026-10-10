@@ -11,26 +11,18 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.dense.score_outputs import (
-    HalfScoreResult,
-    PerHalfOutputs,
-    _maybe_host_offload_half0_local_accumulators,
-    _record_score_profile,
-    empty_half_result,
-)
-from relax.dense.scoring_policy import local_precision
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
-from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
-from relax.helpers.host_memory import return_freed_heap
-from relax.helpers.orientation_priors import (
-    HalfDirectionLogPriors,
-    make_relion_translation_log_prior,
-    relion_half_translation_prior_inputs,
-    relion_translation_search_base,
+from relax.fourier.resolution import ImageGeometry
+from relax.local_search import sampling as local_sampling
+from relax.local_search.half import (
+    LocalBatchPolicy,
+    LocalDiagnosticPolicy,
+    LocalExecutionPolicy,
+    LocalPriorSpec,
+    _score_half_local_in_bpref_scope,
 )
-from relax.helpers.resolution import ImageGeometry
-from relax.refinement import half_inputs, image_size_plans, iteration_planning, local_sampling, shape_class_scoring
+from relax.refinement import half_inputs, image_size_plans, iteration_planning, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -41,18 +33,27 @@ from relax.refinement.dense_half import (
 )
 from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
 from relax.refinement.half_inputs import HalfScoringData
-from relax.refinement.local_half import (
-    LocalBatchPolicy,
-    LocalDiagnosticPolicy,
-    LocalExecutionPolicy,
-    LocalPriorSpec,
-    _score_half_local_in_bpref_scope,
-)
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
+from relax.refinement.precision import _diagnostic_float64_pass2_matches
 from relax.refinement.refinement_options import RefinementOptions
+from relax.refinement.score_outputs import (
+    HalfScoreResult,
+    PerHalfOutputs,
+    _maybe_host_offload_half0_local_accumulators,
+    _record_score_profile,
+    empty_half_result,
+)
+from relax.refinement.scoring_policy import local_precision
 from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop as _score_tomo_half_in_loop
+from relax.runtime.host_memory import return_freed_heap
 from relax.sampling import TrialGrid, rotation_grid_size
+from relax.sampling.orientation_priors import (
+    HalfDirectionLogPriors,
+    make_relion_translation_log_prior,
+    relion_half_translation_prior_inputs,
+    relion_translation_search_base,
+)
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext
@@ -244,7 +245,7 @@ def finish_numbered_half(
 
 def _score_and_finish_half(score_half, finish_half, half_inputs, k) -> None:
     """Score half ``k`` and finish it before anything else runs on that half's thread, then return the heap its
-    passes freed (:func:`~relax.helpers.host_memory.return_freed_heap`)."""
+    passes freed (:func:`~relax.runtime.host_memory.return_freed_heap`)."""
     finish_half(half_inputs[k], score_half(half_inputs[k]))
     return_freed_heap(f"half {k + 1}'s E-step")
 
@@ -290,7 +291,7 @@ def _run_halves_overlapped(run_half, diagnostic_half_indices) -> None:
 
     import threading
 
-    from relax.sparse_pass2.sparse_pass2_budget import set_concurrent_device_shares
+    from relax.runtime.memory_budget import set_concurrent_device_shares
 
     errors: dict[int, BaseException] = {}
 

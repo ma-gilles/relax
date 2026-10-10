@@ -16,12 +16,12 @@ from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import record_calls, run_tiny_refinement
 
-from relax.helpers import half_volume_mstep
-from relax.reconstruction import regularization_relion as rr
+from relax.reconstruction import half_volume_mstep
+from relax.reconstruction import regularization as rr
 from relax.refinement import final_reconstruction, priors, startup_references
 from relax.refinement.refinement_options import ReconstructionPrograms, RelionConsistencyOptions
+from relax.relion import projector_setup as setup
 from relax.relion import reference_initialization
-from relax.relion import relion_projector_setup as setup
 
 pytestmark = pytest.mark.unit
 

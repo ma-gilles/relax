@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from relax.relion_bind._relion_bind_core import find_current_resolution
 
-from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
+from relax.reconstruction.regularization import resolution_from_data_vs_prior
 
 
 class TestM5Parity:

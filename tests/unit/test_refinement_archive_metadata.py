@@ -8,13 +8,13 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.refinement_results import refinement_result
 
-from relax.helpers.iteration_history import RefinementHistory
 from relax.parity.archive_provenance import replay_archive_metadata
 from relax.refinement.command_options import RandomSeed, resolve_initial_sampling
+from relax.refinement.iteration_history import RefinementHistory
 from relax.refinement.refinement_options import RestartProvenance
 from relax.refinement.result_files import _savez_deflate_fast, build_archive_metadata
 from relax.relion.input_poses import PoseProvenance
-from relax.relion.relion_metadata import MaxSignificantsResolution
+from relax.relion.metadata import MaxSignificantsResolution
 
 pytestmark = pytest.mark.unit
 

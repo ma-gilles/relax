@@ -24,7 +24,7 @@ import numpy as np
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.utils.json_utils import to_jsonable
 
-from relax.local.local_layout import build_pass2_hypothesis_layout
+from relax.local_search.layout import build_pass2_hypothesis_layout
 from relax.ppca_refinement.config import (
     GeometryConfig,
     PoseSelectionConfig,

@@ -6,10 +6,10 @@ import pytest
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.refinement.map_postprocess import apply_relion_initial_lowpass_filter
-from relax.relion.reference_initialization import initial_low_pass_filter_references
-from relax.relion.relion_metadata import (
+from relax.relion.metadata import (
     read_relion_mrc_model_pixel_size,
 )
+from relax.relion.reference_initialization import initial_low_pass_filter_references
 
 pytestmark = pytest.mark.unit
 

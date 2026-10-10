@@ -9,10 +9,9 @@ from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 import relax.diagnostics.reconstruction as reconstruction_diagnostics
-from relax.dense import score_outputs
 from relax.diagnostics import observers
 from relax.diagnostics import reconstruction as diagnostics
-from relax.refinement import maximization
+from relax.refinement import maximization, score_outputs
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit

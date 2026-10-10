@@ -7,7 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results as k_class
-from relax.helpers.types import make_relion_stats
+from relax.types import make_relion_stats
 
 pytestmark = pytest.mark.unit
 

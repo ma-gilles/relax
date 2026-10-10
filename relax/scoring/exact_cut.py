@@ -1,7 +1,7 @@
 """Direct-square scores where the coarse GEMM scorer does not decide the significance cut.
 
 The subtomogram coarse pass scores RELION's ``d0 + 0.5 sum w |p - y|^2`` as the expansion
-``d0 + 0.5 A + 0.5 C - X`` (two float32 GEMMs, :func:`relax.scoring.scoring.relion_coarse_gemm_terms`),
+``d0 + 0.5 A + 0.5 C - X`` (two float32 GEMMs, :func:`relax.scoring.coarse_kernels.relion_coarse_gemm_terms`),
 which rounds differently from RELION's sum of squares. A particle's diff2 is the sum of its tilt images',
 thousands with a float32 unit of 2e-4, while its samples' log weights at the significance cut are closer
 than that: the rounding moved samples across the cut (194 of 200 particles' kept sets matched RELION's on
@@ -19,7 +19,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.helpers.shape_buckets import pow2_ceil
+from relax.runtime.shape_buckets import pow2_ceil
 
 # The fused coarse projector's translation capacity (one 128-thread block).
 FUSED_TRANSLATION_CAPACITY = 128

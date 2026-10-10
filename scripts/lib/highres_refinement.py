@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from relax.local.local_layout import (
+from relax.local_search.layout import (
     LocalHypothesisLayout,
     build_local_hypothesis_layout,
 )

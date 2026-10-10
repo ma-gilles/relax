@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.relion.relion_projector_setup import prepare_local_projector_slab
+from relax.relion.projector_setup import prepare_local_projector_slab
 
 pytestmark = pytest.mark.unit
 
@@ -38,20 +38,20 @@ def test_invalid_slab_preserves_exact_path_error(shape, path_label):
 
 @pytest.mark.parametrize("strided", [False, True])
 def test_host_singleton_uploads_only_the_selected_slab(monkeypatch, strided):
-    from relax.relion import relion_projector_setup
+    from relax.relion import projector_setup
 
     slab = (np.arange(120).reshape(4, 6, 5) + 3j).astype(np.complex64)
     if strided:
         slab = slab[::-1, ::2, ::-1]
     supplied = slab[None]
     uploaded_shapes = []
-    original_asarray = relion_projector_setup.jnp.asarray
+    original_asarray = projector_setup.jnp.asarray
 
     def record_upload(value, *args, **kwargs):
         uploaded_shapes.append(tuple(np.shape(value)))
         return original_asarray(value, *args, **kwargs)
 
-    monkeypatch.setattr(relion_projector_setup.jnp, "asarray", record_upload)
+    monkeypatch.setattr(projector_setup.jnp, "asarray", record_upload)
     actual = prepare_local_projector_slab(supplied)
 
     assert uploaded_shapes == [slab.shape]

@@ -12,7 +12,7 @@ def test_poseless_halves_search_locally_around_zero_in_the_first_iteration(monke
     # global search instead.
     from helpers.tiny_refinement import run_tiny_refinement
 
-    from relax.refinement import local_half
+    from relax.local_search import half as local_half
     from relax.refinement.refinement_options import LocalSearchOptions
 
     class Reached(Exception):

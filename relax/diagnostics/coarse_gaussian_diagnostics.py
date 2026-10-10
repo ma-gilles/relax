@@ -9,8 +9,8 @@ import os
 
 import numpy as np
 
-from relax.helpers.batch_fetch import original_image_indices
-from relax.helpers.env_flags import parse_env_int_set
+from relax.io.batch_fetch import original_image_indices
+from relax.runtime.env_flags import parse_env_int_set
 
 logger = logging.getLogger(__name__)
 

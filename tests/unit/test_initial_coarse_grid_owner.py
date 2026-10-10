@@ -18,10 +18,10 @@ from helpers.float_compare import matches
 import relax.refinement.finalization as finalization
 import relax.refinement.iteration_loop as iteration_loop
 import relax.sampling as sampling_module
-from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.parity import relion_replay_source
 from relax.parity.relion_replay import _sealed_sampling_base_grids
 from relax.refinement import trial_grids
+from relax.refinement.scoring_policy import _dense_global_scoring_dtype
 from relax.sampling import _translation_grid_for_class_count
 
 pytestmark = pytest.mark.unit

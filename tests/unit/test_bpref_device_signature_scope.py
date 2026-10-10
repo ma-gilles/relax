@@ -11,7 +11,8 @@ from recovar import cuda_backproject
 from relax.classification import k_class
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import bpref_diagnostics
-from relax.refinement import dense_half, finalization, local_half
+from relax.local_search import half as local_half
+from relax.refinement import dense_half, finalization
 from relax.refinement.refinement_options import ExecutionOptions, bpref_device_signature_target
 
 pytestmark = pytest.mark.unit

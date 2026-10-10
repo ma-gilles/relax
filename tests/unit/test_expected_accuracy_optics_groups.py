@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy
+from relax.sampling.expected_accuracy import estimate_relion_expected_accuracy
 
 N = 16
 SHAPE = (N, N, N)
@@ -148,7 +148,7 @@ def test_class_on_another_grid_takes_the_scale_difference():
 
 
 def _group_result(terms_rot, terms_trans):
-    from relax.helpers.expected_accuracy import ExpectedAccuracy
+    from relax.sampling.expected_accuracy import ExpectedAccuracy
 
     rot, trans = np.atleast_2d(terms_rot), np.atleast_2d(terms_trans)
     n = rot.shape[1]
@@ -165,7 +165,7 @@ def test_groups_recombine_as_relions_single_trial_loop(split_seed):
     """Per-group estimates add their trial terms in RELION's trial order and divide by the trial count
     (ml_optimiser.cpp:9327-9652), so the result is bitwise RELION's, whatever the groups' sizes; count-weighted group
     means rounded differently and flipped RELION's "no coarser offset step" test on et15 s2 (iteration 60)."""
-    from relax.helpers.expected_accuracy import _combine_group_expected_accuracies
+    from relax.sampling.expected_accuracy import _combine_group_expected_accuracies
 
     rng = np.random.default_rng(split_seed)
     n_trials = 100
@@ -191,7 +191,7 @@ def test_groups_recombine_as_relions_single_trial_loop(split_seed):
 def test_identical_trial_terms_give_the_same_bits_for_every_group_split():
     """Every trial at 0.85 A (RELION's 0.1-pixel shift step at 8.5 A) averages to the same bits however the 100 trials
     split into groups; RELION's sum does not depend on the split either."""
-    from relax.helpers.expected_accuracy import _combine_group_expected_accuracies
+    from relax.sampling.expected_accuracy import _combine_group_expected_accuracies
 
     values = []
     for sizes in ([100], [27, 23, 26, 24], [40, 10, 49, 1]):

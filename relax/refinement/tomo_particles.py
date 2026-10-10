@@ -75,7 +75,7 @@ def relion_offset_log_prior_3d(translations_angst, old_offsets_px, *, pixel_size
     RELION f2c1a3 dump of a tilt-series particle to 2e-6 (em_work/cryoet_s42_20260925).
     """
 
-    from relax.helpers.orientation_priors import make_relion_translation_log_prior
+    from relax.sampling.orientation_priors import make_relion_translation_log_prior
 
     centers = -relion_gpu_old_offsets(np.asarray(old_offsets_px, dtype=np.float64).reshape(-1, 3)) / pixel_size
     return make_relion_translation_log_prior(

@@ -1,4 +1,4 @@
-"""Sign and axis-convention check of relax map files against RELION's (relax.helpers.map_io).
+"""Sign and axis-convention check of relax map files against RELION's (relax.io.map_io).
 
 relax writes its maps in RELION's convention, so the raw file arrays of a relax map and the
 RELION map of the same run correlate positively; a sign or convention flip gives about -1

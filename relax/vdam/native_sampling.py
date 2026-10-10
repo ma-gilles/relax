@@ -15,20 +15,20 @@ import numpy as np
 from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 from relax import sampling
-from relax.helpers import optics_scale
 from relax.helpers.convergence import (
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
     relion_mpi_hidden_variable_change_is_small,
 )
-from relax.helpers.expected_accuracy import (
+from relax.refinement.optics_shapes import MultiShapeDataset
+from relax.relion import optics_scale
+from relax.relion.optics_aberrations import expected_accuracy_optics
+from relax.sampling.expected_accuracy import (
     ExpectedAccuracy,
     _combine_group_expected_accuracies,
     estimate_relion_expected_accuracy_from_prepared_inputs,
     estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
 )
-from relax.refinement.optics_shapes import MultiShapeDataset
-from relax.relion.optics_aberrations import expected_accuracy_optics
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.schedules import relion_sampling_cadence
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState

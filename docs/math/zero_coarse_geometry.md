@@ -36,12 +36,12 @@ and each matrix path applies it in its own precision:
 
 - pass 1 (`AccProjectorPlan::setup`, `make_eulers_3D`): `MBL (A R)` in float32 from float Euler angles, inverted
   with the float32 adjugate, since with a left matrix the inverse is not the transpose
-  ([`relion_device_projection_rotations`](../../relax/sampling.py)); the tilt images' `MBL` use the same kernel;
+  ([`relion_device_projection_rotations`](../../relax/sampling/__init__.py)); the tilt images' `MBL` use the same kernel;
 - fine pass, weighted sums and M-step (`generateEulerMatrices`): `MBL A R` and its inverse in double, cast to
   float once ([`projection_rotations`](../../relax/relion/optics_aberrations.py)).
 
 relax builds every projected set of rows from its own source by the rule of the path that built it
-([`project_pass2_rotations`](../../relax/helpers/oversampling.py), [`project_rows`](../../relax/sampling.py)):
+([`project_pass2_rotations`](../../relax/sampling/oversampling.py), [`project_rows`](../../relax/sampling/__init__.py)):
 the device rows from their source Euler rows, the host rows from their float64 matrices, which must reproduce the
 rows handed in (`RotationProvenanceError` otherwise, one check per grid build). Composing after the float32 cast
 moved 80% of the order-2 magnified matrices by an ulp and flipped two near-tie iteration-1 poses in 10,000 on the

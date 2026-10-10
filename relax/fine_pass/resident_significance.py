@@ -1,0 +1,1275 @@
+"""Device compaction of the coarse significance mask, and its candidate tables.
+
+Ticket T13 (``em_parity_tickets_20260918/T13_device_significance_compaction.md``).
+
+The coarse posterior produces one boolean support mask per image batch, shaped
+``[batch, n_classes * n_rot * n_trans]``.  At healpix order 3 with 21
+translations that is 774144 cells per image, so a 5000-image half carries
+about 3.8 GB of booleans per iteration.  The host path in
+``recovar/em/scoring/significance.py`` pulls that whole mask
+(``batch_sig_mask_np = np.array(batch_sig_mask, dtype=bool, copy=True)``),
+reduces it per image with :func:`numpy.flatnonzero`, and
+``_prepare_per_image_pass2_inputs`` then re-expands the resulting ids into
+per-image candidate structures that the resident candidate tables flatten
+again.
+
+This module replaces the first two steps with one jitted program that compacts
+the mask on the device into a CSR pair ``(offsets, ids)``, and the third with a
+vectorized builder that produces the same
+:class:`~recovar.em.sparse_pass2.resident_candidates.ResidentCandidateTables`
+straight from that CSR.  Only the compact ids cross the bus: a few MB per half
+instead of a few GB.
+
+Scope and selection
+-------------------
+The coarse pass always compacts on the device, one CSR per class (the host
+mask pull remains only for score dumps and the compact-hybrid diagnostics).
+The host encoder stays the oracle: the CSR must equal its
+``significant_sample_indices`` per image bitwise, and the tables built here
+must equal the tables built through ``_prepare_per_image_pass2_inputs`` field
+by field.  Nothing here changes a scientific default; the RELION significance
+selection itself (adaptive fraction, ``max_significants``, the tie-inclusive
+cutoff) happens upstream in the posterior and is only read here.
+
+A support larger than half of the grid is stored as its excluded cells, the
+host encoder's sparse-complement choice, taken for exactly the same images
+(see :func:`host_support_rows`).
+
+Index conventions match :mod:`recovar.em.sparse_pass2.resident_candidates`:
+"image" is a local position inside the half's dataset, "parent" is an
+image-local coarse rotation, coarse cell ids are ``rot * n_coarse_trans +
+trans``, and coarse-translation bitsets pack bit ``k`` for coarse translation
+``k`` (bit ``k % 32`` of uint32 word ``k // 32``).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from functools import partial
+
+import numpy as np
+
+from relax.fine_pass.bucket_arrays import relion_parent_execution_key
+from relax.fine_pass.resident_candidates import (
+    ResidentCandidateTables,
+    all_translations_words,
+    build_resident_candidate_tables,
+    n_mask_words,
+    table_block_starts,
+    translation_word_and_bit,
+)
+from relax.runtime.host_memory import return_freed_heap
+from relax.runtime.shape_buckets import pow2_ceil
+
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "CoarseSignificanceCSR",
+    "PackedCoarseSignificanceCSR",
+    "DeviceCompactedSignificantSamples",
+    "build_coarse_significance_csr",
+    "build_resident_candidate_tables_from_csr",
+    "compact_batch_significance",
+    "compact_batch_significance_classes",
+    "csr_candidate_rows_per_image",
+    "csr_capacity_for_total",
+    "fine_rotation_children",
+    "host_support_row",
+    "host_support_rows",
+    "resident_candidate_tables",
+    "resident_significance_csr",
+]
+
+# Compacted-id buffers are traced at a power-of-two capacity, so one program
+# serves every batch whose support falls in the same octave instead of one
+# program per exact support total.
+_MIN_CSR_CAPACITY = 1 << 12
+
+_MASK_MODE_FULL = np.int8(0)
+_MASK_MODE_BITSET = np.int8(1)
+_MASK_MODE_EMPTY = np.int8(2)
+
+_compact_jitted = None
+
+
+def csr_capacity_for_total(total: int) -> int:
+    """Smallest power-of-two id capacity that holds ``total`` compact ids."""
+
+    if total < 0:
+        raise ValueError("compact id total must be non-negative")
+    return max(_MIN_CSR_CAPACITY, pow2_ceil(total))
+
+
+# ---------------------------------------------------------------------------
+# Device compaction
+# ---------------------------------------------------------------------------
+
+
+def _compact_program():
+    """The jitted compaction, built once so JAX reuses its trace cache."""
+
+    global _compact_jitted
+    if _compact_jitted is not None:
+        return _compact_jitted
+
+    import jax
+    import jax.numpy as jnp
+
+    @partial(jax.jit, static_argnames=("capacity", "n_coarse_trans", "n_classes"))
+    def _run(mask, class_index, image_valid, store_excluded, *, capacity, n_coarse_trans, n_classes):
+        # ``mask`` is the batch's class-major ``[batch, n_classes * n_samples]``
+        # support; the class is sliced here, inside the program.
+        mask = mask.reshape(mask.shape[0], n_classes, -1)
+        mask = jax.lax.dynamic_index_in_dim(mask, class_index, axis=1, keepdims=False)
+        # ``image_valid`` clears the padded rows of a short final batch, so
+        # every batch of a given shape reuses one program.  ``store_excluded``
+        # flips an image whose support is dense, so the ids compacted for it
+        # are its *excluded* cells: the same choice the host encoder makes
+        # when more than half the grid is significant.
+        valid = jnp.asarray(image_valid, dtype=bool)[:, None]
+        support = jnp.asarray(mask, dtype=bool) & valid
+        rot_any = jnp.any(
+            support.reshape(support.shape[0], -1, n_coarse_trans),
+            axis=(0, 2),
+        )
+        mask = (jnp.asarray(mask, dtype=bool) ^ jnp.asarray(store_excluded, dtype=bool)[:, None]) & valid
+        counts = jnp.sum(mask, axis=1, dtype=jnp.int32)
+        starts = jnp.concatenate(
+            [jnp.zeros((1,), dtype=jnp.int32), jnp.cumsum(counts, dtype=jnp.int32)[:-1]],
+        )
+        # Rank of each selected cell inside its image, shifted to the batch's
+        # flat CSR position; unselected cells scatter out of bounds and drop.
+        # The drop sentinel is ``capacity`` rather than -1: a negative scatter
+        # index is not reliably dropped, and with a full buffer it lands on
+        # the last slot and overwrites a real id (regression test
+        # ``test_compaction_fills_an_exactly_full_capacity``).
+        rank = jnp.cumsum(mask, axis=1, dtype=jnp.int32) - jnp.int32(1)
+        position = jnp.where(mask, starts[:, None] + rank, jnp.int32(capacity))
+        sample_ids = jnp.broadcast_to(
+            jnp.arange(mask.shape[1], dtype=jnp.int32)[None, :],
+            mask.shape,
+        )
+        ids = jnp.full((capacity,), -1, dtype=jnp.int32)
+        ids = ids.at[position.reshape(-1)].set(sample_ids.reshape(-1), mode="drop")
+        # The same stored set as one bit per cell (PackedCoarseSignificanceCSR's mask rows).
+        packed = jnp.packbits(mask, axis=1, bitorder="little")
+        return ids, counts, rot_any, packed
+
+    _compact_jitted = _run
+    return _run
+
+
+_class_counts_jitted = None
+
+
+def _class_counts_program():
+    """Per-class significant-sample counts ``[n_classes, batch]`` of a class-major mask, jitted once."""
+
+    global _class_counts_jitted
+    if _class_counts_jitted is None:
+        import jax
+        import jax.numpy as jnp
+
+        @partial(jax.jit, static_argnames=("n_classes",))
+        def _counts(mask, *, n_classes):
+            mask = jnp.asarray(mask, dtype=bool).reshape(mask.shape[0], n_classes, -1)
+            return jnp.sum(mask, axis=2, dtype=jnp.int32).T
+
+        _class_counts_jitted = _counts
+    return _class_counts_jitted
+
+
+@dataclass(frozen=True)
+class CoarseSignificanceCSR:
+    """Per-image coarse significance support in CSR form.
+
+    ``ids`` holds every image's significant coarse cell ids
+    (``rot * n_coarse_trans + trans``), ascending within each image; image
+    ``i`` owns ``ids[offsets[i]:offsets[i + 1]]``.  Both arrays are int32.
+    The mask they were compacted from never leaves the device.
+    """
+
+    n_images: int
+    n_coarse_rot: int
+    n_coarse_trans: int
+    offsets: np.ndarray  # int32 [n_images + 1]
+    ids: np.ndarray  # int32 [offsets[-1]]
+    store_excluded: np.ndarray  # bool [n_images]
+    n_significant: np.ndarray  # int32 [n_images]
+
+    def __post_init__(self):
+        if self.offsets.shape != (self.n_images + 1,):
+            raise ValueError("CSR offsets must have shape (n_images + 1,)")
+        if self.offsets.dtype != np.int32 or self.ids.dtype != np.int32:
+            raise ValueError("CSR offsets and ids must both be int32")
+        if int(self.offsets[0]) != 0 or int(self.offsets[-1]) != int(self.ids.shape[0]):
+            raise ValueError("CSR offsets must start at 0 and end at the id count")
+        if self.store_excluded.shape != (self.n_images,) or self.store_excluded.dtype != np.bool_:
+            raise ValueError("store_excluded must be one boolean per image")
+        if self.n_significant.shape != (self.n_images,) or self.n_significant.dtype != np.int32:
+            raise ValueError("n_significant must be one int32 per image")
+        stored = np.where(
+            self.store_excluded,
+            self.n_samples - self.n_significant.astype(np.int64),
+            self.n_significant.astype(np.int64),
+        )
+        if not np.array_equal(stored, np.diff(self.offsets).astype(np.int64)):
+            raise ValueError("CSR row lengths disagree with the stored-set sizes")
+
+    @property
+    def n_samples(self) -> int:
+        return int(self.n_coarse_rot) * int(self.n_coarse_trans)
+
+    def counts(self) -> np.ndarray:
+        """Stored ids per image: included, or excluded for a dense support."""
+
+        return np.diff(self.offsets).astype(np.int32, copy=False)
+
+    @property
+    def n_ids(self) -> int:
+        """Stored ids of the whole support."""
+
+        return int(self.ids.size)
+
+    @property
+    def nbytes(self) -> int:
+        """Bytes the stored support takes."""
+
+        return int(self.ids.nbytes)
+
+    def ids_of_images(self, start: int, stop: int) -> np.ndarray:
+        """The stored ids of images ``[start, stop)``, concatenated in image order (a view)."""
+
+        return self.ids[int(self.offsets[start]) : int(self.offsets[stop])]
+
+    def image_ids(self, image: int) -> np.ndarray:
+        return self.ids[int(self.offsets[image]) : int(self.offsets[image + 1])]
+
+    def image_block(self, start: int, stop: int) -> "CoarseSignificanceCSR":
+        """Images ``[start, stop)`` as their own CSR; ``ids`` is a view of this one's."""
+
+        if not 0 <= start <= stop <= self.n_images:
+            raise ValueError(f"image block [{start}, {stop}) is outside the CSR's {self.n_images} images")
+        offsets = self.offsets[start : stop + 1]
+        base = int(offsets[0])
+        return CoarseSignificanceCSR(
+            n_images=stop - start,
+            n_coarse_rot=self.n_coarse_rot,
+            n_coarse_trans=self.n_coarse_trans,
+            offsets=(offsets - np.int32(base)).astype(np.int32),
+            ids=self.ids[base : int(offsets[-1])],
+            store_excluded=self.store_excluded[start:stop],
+            n_significant=self.n_significant[start:stop],
+        )
+
+
+def significance_mask_bytes(n_samples: int) -> int:
+    """Bytes of one image's support stored as a bit mask over the coarse grid."""
+
+    return (int(n_samples) + 7) // 8
+
+
+def rows_kept_as_masks(counts, n_samples: int) -> np.ndarray:
+    """The rows of ``counts`` stored ids that are smaller as a bit mask than as int32 ids."""
+
+    return 4 * np.asarray(counts, dtype=np.int64) > significance_mask_bytes(n_samples)
+
+
+def _ids_of_mask_rows(mask_rows: np.ndarray) -> np.ndarray:
+    """The set bits of each mask row, ascending, the rows concatenated in order (int32)."""
+
+    bits = np.unpackbits(mask_rows, axis=1, bitorder="little").view(np.bool_)
+    flat = np.flatnonzero(bits)
+    flat -= np.repeat(np.arange(bits.shape[0], dtype=np.int64) * bits.shape[1], np.count_nonzero(bits, axis=1))
+    return flat.astype(np.int32)
+
+
+@dataclass(frozen=True)
+class PackedSignificanceBatch:
+    """One batch's compacted support as the device packed it: the ids of its id rows and its mask rows' bits.
+
+    ``as_mask`` marks the batch's images kept as masks (:func:`rows_kept_as_masks`); ``n_ids`` is the batch's
+    stored ids in both encodings.
+    """
+
+    as_mask: np.ndarray  # bool [images]
+    id_values: np.ndarray  # int32 [ids of the id rows]
+    mask_rows: np.ndarray  # uint8 [mask rows, significance_mask_bytes(n_samples)]
+    n_ids: int
+
+
+@dataclass(frozen=True)
+class PackedCoarseSignificanceCSR:
+    """A :class:`CoarseSignificanceCSR` whose rows are each stored in the smaller of two encodings.
+
+    A row of ``count`` stored ids takes ``4 * count`` bytes as int32 ids and ``n_samples / 8`` bytes as a bit mask
+    over the coarse grid, whatever its count; rows above ``n_samples / 32`` ids are kept as masks
+    (``as_mask``). At soft posteriors most rows are: Class3D K4 on 100k EMPIAR-10076 particles held 21 GB of ids
+    at 13k ids per image and class, against 16.7 KB per row as a mask (relax#34). The stored set, its polarity
+    (``store_excluded``) and its order are the CSR's: :meth:`image_block` returns the same
+    :class:`CoarseSignificanceCSR` a plain one would, decoded for those images only.
+
+    ``offsets`` are the id offsets of the equivalent CSR (int64: the total may pass int32 here). Id rows are
+    concatenated in ``id_values`` and mask rows stacked in ``mask_rows`` (bit ``id`` of a row, little-endian within
+    a byte), both in image order.
+    """
+
+    n_images: int
+    n_coarse_rot: int
+    n_coarse_trans: int
+    offsets: np.ndarray  # int64 [n_images + 1]
+    as_mask: np.ndarray  # bool [n_images]
+    id_values: np.ndarray  # int32 [ids of the id rows]
+    mask_rows: np.ndarray  # uint8 [mask rows, significance_mask_bytes(n_samples)]
+    store_excluded: np.ndarray  # bool [n_images]
+    n_significant: np.ndarray  # int32 [n_images]
+
+    def __post_init__(self):
+        if self.offsets.shape != (self.n_images + 1,) or self.offsets.dtype != np.int64:
+            raise ValueError("packed CSR offsets must be int64 with shape (n_images + 1,)")
+        if self.as_mask.shape != (self.n_images,) or self.as_mask.dtype != np.bool_:
+            raise ValueError("as_mask must be one boolean per image")
+        if self.store_excluded.shape != (self.n_images,) or self.store_excluded.dtype != np.bool_:
+            raise ValueError("store_excluded must be one boolean per image")
+        if self.n_significant.shape != (self.n_images,) or self.n_significant.dtype != np.int32:
+            raise ValueError("n_significant must be one int32 per image")
+        counts = np.diff(self.offsets)
+        stored = np.where(
+            self.store_excluded,
+            self.n_samples - self.n_significant.astype(np.int64),
+            self.n_significant.astype(np.int64),
+        )
+        if not np.array_equal(stored, counts):
+            raise ValueError("packed CSR row lengths disagree with the stored-set sizes")
+        if self.id_values.dtype != np.int32 or int(self.id_values.size) != int(counts[~self.as_mask].sum()):
+            raise ValueError("id_values must hold the int32 ids of the id rows")
+        expected = (int(self.as_mask.sum()), significance_mask_bytes(self.n_samples))
+        if self.mask_rows.dtype != np.uint8 or self.mask_rows.shape != expected:
+            raise ValueError(f"mask_rows must be uint8 with shape {expected}")
+        id_starts = np.zeros(self.n_images + 1, dtype=np.int64)
+        id_starts[1:] = np.cumsum(np.where(self.as_mask, 0, counts))
+        mask_starts = np.zeros(self.n_images + 1, dtype=np.int64)
+        mask_starts[1:] = np.cumsum(self.as_mask)
+        object.__setattr__(self, "_id_starts", id_starts)
+        object.__setattr__(self, "_mask_starts", mask_starts)
+
+    @property
+    def n_samples(self) -> int:
+        return int(self.n_coarse_rot) * int(self.n_coarse_trans)
+
+    @property
+    def n_ids(self) -> int:
+        """Stored ids of the whole support, as the equivalent CSR counts them."""
+
+        return int(self.offsets[-1])
+
+    @property
+    def nbytes(self) -> int:
+        """Bytes the stored support takes."""
+
+        return int(self.id_values.nbytes) + int(self.mask_rows.nbytes)
+
+    def counts(self) -> np.ndarray:
+        """Stored ids per image: included, or excluded for a dense support."""
+
+        return np.diff(self.offsets).astype(np.int32)
+
+    def ids_of_images(self, start: int, stop: int) -> np.ndarray:
+        """The stored ids of images ``[start, stop)``, concatenated in image order: the equivalent CSR's slice."""
+
+        if not 0 <= start <= stop <= self.n_images:
+            raise ValueError(f"image range [{start}, {stop}) is outside the CSR's {self.n_images} images")
+        id_part = self.id_values[int(self._id_starts[start]) : int(self._id_starts[stop])]
+        as_mask = self.as_mask[start:stop]
+        if not bool(as_mask.any()):
+            return id_part
+        counts = np.diff(self.offsets[start : stop + 1])
+        from_mask = np.repeat(as_mask, counts)
+        ids = np.empty(int(counts.sum()), dtype=np.int32)
+        ids[~from_mask] = id_part
+        ids[from_mask] = _ids_of_mask_rows(
+            self.mask_rows[int(self._mask_starts[start]) : int(self._mask_starts[stop])]
+        )
+        return ids
+
+    def image_ids(self, image: int) -> np.ndarray:
+        return self.ids_of_images(int(image), int(image) + 1)
+
+    def image_block(self, start: int, stop: int) -> CoarseSignificanceCSR:
+        """Images ``[start, stop)`` as the plain CSR of their decoded ids."""
+
+        ids = self.ids_of_images(start, stop)
+        offsets = self.offsets[start : stop + 1]
+        if ids.size > np.iinfo(np.int32).max:
+            raise OverflowError(f"images [{start}, {stop}) hold {ids.size} significant ids, past a plain CSR's int32")
+        return CoarseSignificanceCSR(
+            n_images=stop - start,
+            n_coarse_rot=self.n_coarse_rot,
+            n_coarse_trans=self.n_coarse_trans,
+            offsets=(offsets - offsets[0]).astype(np.int32),
+            ids=ids,
+            store_excluded=self.store_excluded[start:stop],
+            n_significant=self.n_significant[start:stop],
+        )
+
+
+class _UndecodedRow:
+    """Placeholder of a row :class:`DeviceCompactedSignificantSamples` decodes on access; using it is an error."""
+
+    def _refuse(self, *args, **kwargs):
+        raise TypeError(
+            "a device-compacted support row was read past the list's element access; "
+            "index or iterate the DeviceCompactedSignificantSamples itself"
+        )
+
+    __array__ = __len__ = __iter__ = __getitem__ = _refuse
+
+
+_UNDECODED = _UndecodedRow()
+
+
+class DeviceCompactedSignificantSamples(list):
+    """The usual per-image support list, carrying its device-compacted CSR.
+
+    The resident pass-2 driver reads ``csr`` and builds its candidate tables from the compact ids, so the per-image
+    arrays are never re-expanded into per-image structures. A host consumer indexes or iterates this as the list
+    of per-image encodings it expects; with ``rows`` None each row is decoded from the CSR when it is read
+    (:func:`host_support_row`) and none is kept, so a support held as bit masks stays packed.
+    """
+
+    def __init__(self, rows=None, *, csr: CoarseSignificanceCSR | PackedCoarseSignificanceCSR):
+        super().__init__([_UNDECODED] * int(csr.n_images) if rows is None else rows)
+        if len(self) != int(csr.n_images):
+            raise ValueError(
+                f"support list has {len(self)} images but the CSR covers {csr.n_images}",
+            )
+        self.csr = csr
+
+    def _decoded(self, image: int, row):
+        return host_support_row(self.csr, image) if row is _UNDECODED else row
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [
+                self._decoded(image, row)
+                for image, row in zip(range(*index.indices(len(self))), super().__getitem__(index))
+            ]
+        index = int(index)
+        return self._decoded(index % len(self) if len(self) else index, super().__getitem__(index))
+
+    def __iter__(self):
+        return (self._decoded(image, row) for image, row in enumerate(super().__iter__()))
+
+
+# The compacted id buffers of the classes awaiting their read-back together stay
+# within this many bytes; each class's buffer is batch * n_samples / 2 int32.
+_PENDING_CLASS_ID_BYTES = 512 * 1024**2
+
+
+def compact_batch_significance(
+    batch_sig_mask,
+    *,
+    actual_batch_size: int,
+    n_coarse_rot: int,
+    n_coarse_trans: int,
+    batch_n_sig,
+):
+    """One class's :func:`compact_batch_significance_classes` result."""
+
+    return compact_batch_significance_classes(
+        batch_sig_mask,
+        n_classes=1,
+        actual_batch_size=actual_batch_size,
+        n_coarse_rot=n_coarse_rot,
+        n_coarse_trans=n_coarse_trans,
+        batch_n_sig=batch_n_sig,
+    )[0]
+
+
+def compact_batch_significance_classes(
+    batch_sig_mask,
+    *,
+    n_classes: int,
+    actual_batch_size: int,
+    n_coarse_rot: int,
+    n_coarse_trans: int,
+    batch_n_sig=None,
+):
+    """Compact one batch's coarse significance mask on the device, one result per class.
+
+    ``batch_sig_mask`` is the posterior's class-major
+    ``[batch, n_classes * n_rot * n_trans]`` support. ``batch_n_sig`` is the
+    per-image count the posterior already returns, used for one class; for
+    several classes the per-class counts are one device program and one read-back.
+
+    Returns one ``(n_significant, store_excluded, ids, rot_any)`` per class.
+    ``n_significant`` is the per-image support size, ``store_excluded`` marks
+    the images whose ids are their *excluded* cells (the host encoder's
+    sparse-complement choice, taken for exactly the same images), ``ids`` is
+    the concatenated image-major ascending id array, and ``rot_any`` marks the
+    coarse rotations carrying any significant sample. When an image's stored
+    set is smaller as a bit mask (:func:`rows_kept_as_masks`), ``ids`` is a
+    :class:`PackedSignificanceBatch` instead: those images' ids are dropped
+    here and their device-packed bits kept (relax#34).  The full mask never
+    reaches the host, and the ids stored per image are always the smaller of
+    the included and excluded sets. The classes' compactions are enqueued
+    before their results are read back, a group of classes at a time, so the
+    device does not wait on the host between classes (K15: three read-backs
+    per class and batch left the GPU idle between them).
+    """
+
+    import jax
+    import jax.numpy as jnp
+
+    mask = jnp.asarray(batch_sig_mask)
+    if mask.ndim != 2:
+        raise ValueError(f"coarse significance mask must be rank 2, got {mask.shape}")
+    batch_size = int(mask.shape[0])
+    n_samples = n_coarse_rot * n_coarse_trans
+    if n_classes < 1 or int(mask.shape[1]) != n_classes * n_samples:
+        raise ValueError(
+            "coarse significance mask width does not match the classes' coarse grids: "
+            f"{int(mask.shape[1])} vs {n_classes} x {n_samples}",
+        )
+    if not 0 <= actual_batch_size <= batch_size:
+        raise ValueError("actual batch size is outside the mask's image axis")
+    if batch_n_sig is not None:
+        if n_classes != 1:
+            raise ValueError("batch_n_sig is one class's per-image count")
+        class_n_sig = np.asarray(batch_n_sig, dtype=np.int32)[None, :]
+    else:
+        class_n_sig = np.asarray(_class_counts_program()(mask, n_classes=n_classes), dtype=np.int32)
+
+    # An image stores at most half its grid (the smaller of the included and
+    # excluded sets), so this bound depends only on the batch's shape: one
+    # program per mask shape, where a capacity sized to each batch's total
+    # compiled the same shape again whenever the total crossed a power of two.
+    capacity = max(batch_size * (n_samples // 2), 1)
+    image_valid = jnp.asarray(np.arange(batch_size, dtype=np.int32) < actual_batch_size)
+    group = max(1, _PENDING_CLASS_ID_BYTES // (4 * capacity))
+    results = []
+    for first in range(0, n_classes, group):
+        pending = []
+        for class_index in range(first, min(n_classes, first + group)):
+            n_significant = class_n_sig[class_index, :actual_batch_size].copy()
+            # The host encoder keeps the included ids unless more than half the
+            # grid is significant, in which case it keeps the excluded ones.
+            # Reproduce that choice exactly, per image, so the two paths encode
+            # identically.
+            store_excluded = (n_significant.astype(np.int64) * 2) > n_samples
+            stored = np.where(
+                store_excluded, n_samples - n_significant.astype(np.int64), n_significant,
+            ).astype(np.int32)
+            total = int(stored.sum(dtype=np.int64))
+            padded_polarity = np.zeros(batch_size, dtype=bool)
+            padded_polarity[:actual_batch_size] = store_excluded
+            ids, device_counts, rot_any, packed = _compact_program()(
+                mask,
+                class_index,
+                image_valid,
+                jnp.asarray(padded_polarity),
+                capacity=capacity,
+                n_coarse_trans=n_coarse_trans,
+                n_classes=n_classes,
+            )
+            # Only the power-of-two prefix holding the ids leaves the device.
+            ids = ids[: min(capacity, csr_capacity_for_total(total))]
+            as_mask = rows_kept_as_masks(stored, n_samples)
+            # The bit masks leave the device only for a batch with a row to keep as one.
+            packed = packed[:actual_batch_size] if bool(as_mask.any()) else None
+            pending.append((n_significant, store_excluded, stored, total, as_mask, ids, device_counts, rot_any, packed))
+        fetched = jax.device_get([entry[5:] for entry in pending])
+        for (n_significant, store_excluded, stored, total, as_mask, *_), (ids, device_counts, rot_any, packed) in zip(
+            pending, fetched
+        ):
+            device_counts = np.asarray(device_counts, dtype=np.int32)[:actual_batch_size]
+            if not np.array_equal(device_counts, stored):
+                raise RuntimeError(
+                    "the device significance compaction disagrees with the posterior's "
+                    "significant-sample counts",
+                )
+            ids = np.asarray(ids, dtype=np.int32)[:total]
+            if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= n_samples):
+                raise RuntimeError("a compacted significance id is outside the coarse pose grid")
+            if packed is None:
+                ids = ids.copy()
+            else:
+                mask_rows = np.asarray(packed, dtype=np.uint8)[as_mask]
+                popcount = np.count_nonzero(np.unpackbits(mask_rows, axis=1), axis=1)
+                if not np.array_equal(popcount, stored[as_mask]):
+                    raise RuntimeError("the device's packed significance rows disagree with their counts")
+                ids = PackedSignificanceBatch(
+                    as_mask=as_mask, id_values=ids[~np.repeat(as_mask, stored)], mask_rows=mask_rows, n_ids=total
+                )
+            results.append((n_significant, store_excluded, ids, np.asarray(rot_any, dtype=bool)))
+    return results
+
+
+# Consumed id-block bytes after which build_coarse_significance_csr returns the freed heap to the system.
+_CSR_TRIM_BYTES = 1 << 30
+
+
+def build_coarse_significance_csr(
+    *,
+    n_images: int,
+    n_coarse_rot: int,
+    n_coarse_trans: int,
+    n_significant_per_batch: list[np.ndarray],
+    store_excluded_per_batch: list[np.ndarray],
+    ids_per_batch: list[np.ndarray],
+) -> CoarseSignificanceCSR | PackedCoarseSignificanceCSR:
+    """Assemble one half's CSR from the per-batch compaction results.
+
+    Rows that are smaller as a bit mask than as ids are stored as masks (:class:`PackedCoarseSignificanceCSR`);
+    a support without such a row is the plain :class:`CoarseSignificanceCSR`, as before.
+
+    ``ids_per_batch`` is consumed: each block is copied into the CSR's id array and its list slot set to None, and
+    the freed blocks are handed back to the system every :data:`_CSR_TRIM_BYTES` (they are below glibc's mmap
+    threshold, so freeing alone leaves them resident). Concatenating the list held a class's ids twice, and the
+    freed lists of earlier classes stayed resident under the later classes' arrays: Class3D K4 on 100k EMPIAR-10076
+    particles peaked at 42.8 GiB of host memory with 21 GB of ids (relax#34).
+    """
+
+    n_significant = (
+        np.concatenate([np.asarray(c, dtype=np.int32) for c in n_significant_per_batch])
+        if n_significant_per_batch
+        else np.zeros(0, dtype=np.int32)
+    )
+    store_excluded = (
+        np.concatenate([np.asarray(c, dtype=bool) for c in store_excluded_per_batch])
+        if store_excluded_per_batch
+        else np.zeros(0, dtype=bool)
+    )
+    if n_significant.shape != (n_images,) or store_excluded.shape != (n_images,):
+        raise ValueError(
+            f"compacted counts cover {n_significant.shape[0]} images, expected {n_images}",
+        )
+    n_samples = int(n_coarse_rot) * int(n_coarse_trans)
+    counts = np.where(
+        store_excluded, n_samples - n_significant.astype(np.int64), n_significant,
+    ).astype(np.int64)
+    if int(counts.sum()) != sum(
+        block.n_ids if isinstance(block, PackedSignificanceBatch) else int(np.size(block)) for block in ids_per_batch
+    ):
+        raise ValueError("compacted counts and ids disagree on the total support")
+    # A row is kept as a bit mask when that is smaller than its int32 ids (PackedCoarseSignificanceCSR).
+    mask_bytes = significance_mask_bytes(n_samples)
+    as_mask = rows_kept_as_masks(counts, n_samples)
+    packed = bool(as_mask.any())
+    if not packed and counts.size and int(counts.sum()) > np.iinfo(np.int32).max:
+        raise OverflowError("the half's compacted significance support overflows int32")
+    ids = np.empty(int(counts[~as_mask].sum()), dtype=np.int32)
+    mask_rows = np.zeros((int(as_mask.sum()), mask_bytes), dtype=np.uint8)
+    image = filled = mask_filled = untrimmed = 0
+    for index, block in enumerate(ids_per_batch):
+        n_block = int(np.size(n_significant_per_batch[index]))
+        block_counts, block_as_mask = counts[image : image + n_block], as_mask[image : image + n_block]
+        image += n_block
+        n_mask = int(block_as_mask.sum())
+        if isinstance(block, PackedSignificanceBatch):
+            # The device packed this batch: its mask rows are already bits.
+            if not np.array_equal(block.as_mask, block_as_mask) or block.n_ids != int(block_counts.sum()):
+                raise ValueError("a packed batch disagrees with its compacted counts")
+            kept, block_bytes = block.id_values, block.id_values.nbytes + block.mask_rows.nbytes
+            mask_rows[mask_filled : mask_filled + n_mask] = block.mask_rows
+        else:
+            block = np.asarray(block, dtype=np.int32).reshape(-1)
+            block_bytes = block.nbytes
+            if packed and int(block_counts.sum()) != block.size:
+                raise ValueError("a batch's compacted counts and ids disagree")
+            kept = block
+            if n_mask:
+                from_mask = np.repeat(block_as_mask, block_counts)
+                masked = block[from_mask]
+                row_start = np.zeros(masked.size, dtype=bool)
+                row_start[np.cumsum(block_counts[block_as_mask])[:-1]] = True
+                if not bool(np.all((masked[1:] > masked[:-1]) | row_start[1:])):
+                    raise ValueError("a compacted significance row is not strictly ascending")
+                if int(masked.min()) < 0 or int(masked.max()) >= n_samples:
+                    raise ValueError("a compacted significance id is outside the coarse grid")
+                bits = np.zeros((n_mask, 8 * mask_bytes), dtype=bool)
+                bits[np.repeat(np.cumsum(block_as_mask) - 1, block_counts)[from_mask], masked] = True
+                mask_rows[mask_filled : mask_filled + n_mask] = np.packbits(bits, axis=1, bitorder="little")
+                kept = block[~from_mask]
+                del bits, masked, row_start, from_mask
+        mask_filled += n_mask
+        ids[filled : filled + kept.size] = kept
+        filled += kept.size
+        untrimmed += block_bytes
+        ids_per_batch[index] = None
+        del block, kept
+        if untrimmed >= _CSR_TRIM_BYTES:
+            return_freed_heap("a coarse significance CSR's consumed id blocks", level=logging.DEBUG)
+            untrimmed = 0
+    if untrimmed >= _CSR_TRIM_BYTES // 4:
+        return_freed_heap("a coarse significance CSR's consumed id blocks", level=logging.DEBUG)
+    offsets = np.zeros(n_images + 1, dtype=np.int64)
+    offsets[1:] = np.cumsum(counts)
+    if packed:
+        return PackedCoarseSignificanceCSR(
+            n_images=n_images,
+            n_coarse_rot=int(n_coarse_rot),
+            n_coarse_trans=int(n_coarse_trans),
+            offsets=offsets,
+            as_mask=as_mask,
+            id_values=ids,
+            mask_rows=mask_rows,
+            store_excluded=store_excluded,
+            n_significant=n_significant,
+        )
+    return CoarseSignificanceCSR(
+        n_images=n_images,
+        n_coarse_rot=int(n_coarse_rot),
+        n_coarse_trans=int(n_coarse_trans),
+        offsets=offsets.astype(np.int32),
+        ids=ids,
+        store_excluded=store_excluded,
+        n_significant=n_significant,
+    )
+
+
+def host_support_row(csr, image: int):
+    """One image's host encoding, taken from the CSR.
+
+    Reproduces
+    :func:`recovar.em.scoring.significant_samples.compact_significant_sample_indices_from_mask`
+    exactly, for every regime: ``None`` when the whole grid is significant, a
+    :class:`ComplementSignificantSampleIndices` when more than half of it is,
+    and an explicit ascending int32 id array otherwise. The compaction already
+    stored whichever of the two id sets that rule selects.
+    """
+
+    from relax.scoring.significant_samples import ComplementSignificantSampleIndices
+
+    if int(csr.n_significant[image]) == csr.n_samples:
+        return None
+    if bool(csr.store_excluded[image]):
+        return ComplementSignificantSampleIndices(excluded_indices=csr.image_ids(image), total_size=csr.n_samples)
+    return csr.image_ids(image)
+
+
+def host_support_rows(csr) -> list:
+    """Every image's :func:`host_support_row`, as a list."""
+
+    return [host_support_row(csr, image) for image in range(csr.n_images)]
+
+
+def csr_restricted_to_images(csr, keep) -> CoarseSignificanceCSR | PackedCoarseSignificanceCSR:
+    """``csr`` with every image outside ``keep`` (bool ``[n_images]``) given no significant sample.
+
+    The kept images' ids are this CSR's, in order and in its encoding; a dropped image becomes an empty support, the
+    ``np.zeros(0)`` row of a seed iteration's other classes (``k_class_inputs.seed_iteration_supports``).
+    """
+
+    keep = np.asarray(keep, dtype=bool)
+    if keep.shape != (int(csr.n_images),):
+        raise ValueError(f"keep must have one flag per image, got shape {keep.shape} for {csr.n_images} images")
+    all_counts = np.diff(csr.offsets.astype(np.int64))
+    counts = np.where(keep, all_counts, 0)
+    offsets = np.zeros(int(csr.n_images) + 1, dtype=np.int64)
+    offsets[1:] = np.cumsum(counts)
+    common = dict(
+        n_images=int(csr.n_images),
+        n_coarse_rot=int(csr.n_coarse_rot),
+        n_coarse_trans=int(csr.n_coarse_trans),
+        store_excluded=csr.store_excluded & keep,
+        n_significant=np.where(keep, csr.n_significant, 0).astype(np.int32),
+    )
+    if not isinstance(csr, PackedCoarseSignificanceCSR):
+        return CoarseSignificanceCSR(
+            offsets=offsets.astype(np.int32), ids=csr.ids[np.repeat(keep, all_counts)], **common
+        )
+    as_mask = csr.as_mask & keep
+    id_values = csr.id_values[np.repeat(keep[~csr.as_mask], all_counts[~csr.as_mask])]
+    if not bool(as_mask.any()):
+        return CoarseSignificanceCSR(offsets=offsets.astype(np.int32), ids=id_values, **common)
+    return PackedCoarseSignificanceCSR(
+        offsets=offsets, as_mask=as_mask, id_values=id_values, mask_rows=csr.mask_rows[keep[csr.as_mask]], **common
+    )
+
+
+def resident_significance_csr(
+    significant_sample_indices,
+    *,
+    n_images: int,
+    n_coarse_rot: int,
+    n_coarse_trans: int,
+):
+    """Return the device-compacted CSR behind a support list, or ``None``.
+
+    ``None`` means the candidate tables must be built through the host path:
+    this support did not come from the coarse posterior (the local-search
+    routes pass their own parent support, and the coarse diagnostics keep the
+    host mask).
+    The caller logs which route it took, so a measured result always knows
+    which one produced it.
+    """
+
+    csr = getattr(significant_sample_indices, "csr", None)
+    if csr is None:
+        logger.info(
+            "Resident pass-2 candidate tables: this support carries no "
+            "device-compacted CSR; building them through the host path",
+        )
+        return None
+    if (
+        int(csr.n_images) != int(n_images)
+        or int(csr.n_coarse_rot) != int(n_coarse_rot)
+        or int(csr.n_coarse_trans) != int(n_coarse_trans)
+    ):
+        raise ValueError(
+            "the device-compacted significance CSR does not match this pass: "
+            f"images {csr.n_images} vs {n_images}, rotations {csr.n_coarse_rot} vs "
+            f"{n_coarse_rot}, translations {csr.n_coarse_trans} vs {n_coarse_trans}",
+        )
+    return csr
+
+
+def significant_coarse_parents(support, *, n_images: int, n_coarse_rot: int, n_coarse_trans: int):
+    """Every coarse rotation a pass-2 candidate row of ``support`` descends from, or None for all of them.
+
+    A class's candidate rows are the fine children of its images' significant
+    coarse rotations (:func:`csr_candidate_rows_per_image`): a sparse support
+    takes its ids' rotations and an empty one parent 0. None when the support
+    has no device CSR for this pass or an image's support takes every parent.
+    """
+
+    csr = getattr(support, "csr", None)
+    if (
+        csr is None
+        or int(csr.n_images) != int(n_images)
+        or int(csr.n_coarse_rot) != int(n_coarse_rot)
+        or int(csr.n_coarse_trans) != int(n_coarse_trans)
+    ):
+        return None
+    n_significant = np.asarray(csr.n_significant, dtype=np.int64)
+    every_parent = np.asarray(csr.store_excluded, dtype=bool) | (n_significant == int(csr.n_samples))
+    if bool(np.any(every_parent & (n_significant != 0))):
+        return None
+    # Global supports can contain billions of cells. Scan bounded slices rather
+    # than allocating and sorting a second, int64 copy of the whole id buffer.
+    parent_present = np.zeros(int(n_coarse_rot), dtype=bool)
+    step = 1 << 20
+    packed = isinstance(csr, PackedCoarseSignificanceCSR)
+    ids = csr.id_values if packed else csr.ids
+    for start in range(0, ids.size, step):
+        parent_present[ids[start : start + step] // int(n_coarse_trans)] = True
+    if packed:
+        # A mask row's parents are the rotations with any bit set: OR the rows, then reduce over translations.
+        union = np.zeros(csr.mask_rows.shape[1], dtype=np.uint8)
+        rows_per_step = max(1, step // max(1, csr.mask_rows.shape[1]))
+        for start in range(0, csr.mask_rows.shape[0], rows_per_step):
+            union |= np.bitwise_or.reduce(csr.mask_rows[start : start + rows_per_step], axis=0)
+        present = np.unpackbits(union, bitorder="little")[: csr.n_samples].astype(bool)
+        parent_present |= present.reshape(int(n_coarse_rot), int(n_coarse_trans)).any(axis=1)
+    if bool(np.any(n_significant == 0)):
+        parent_present[0] = True
+    return np.flatnonzero(parent_present)
+
+
+# ---------------------------------------------------------------------------
+# Candidate tables straight from the CSR
+# ---------------------------------------------------------------------------
+
+
+def fine_rotation_children(
+    *,
+    n_coarse_rot: int,
+    nside_level: int,
+    oversampling_order: int,
+    random_perturbation: float,
+    fine_rotation_parent_override,
+    symmetry_label: str = "C1",
+):
+    """Fine-rotation children of every coarse parent, in host-path row order.
+
+    Returns ``(child_offsets, child_ids)``: parent ``p`` owns
+    ``child_ids[child_offsets[p]:child_offsets[p + 1]]``.  The order inside a
+    parent is the order ``_prepare_per_image_pass2_inputs`` produces for it --
+    ascending fine id when the caller supplies a fine rotation/parent override
+    (its rows come from :func:`numpy.flatnonzero`), and the sampling
+    generator's own child order otherwise.  Both are functions of the parent
+    alone, which is why one table serves every image.
+    """
+
+    if fine_rotation_parent_override is not None:
+        parent = np.asarray(fine_rotation_parent_override, dtype=np.int64).reshape(-1)
+        if parent.size and (int(parent.min()) < 0 or int(parent.max()) >= n_coarse_rot):
+            raise ValueError("fine rotation parents must be in [0, n_coarse_rot)")
+        order = np.argsort(parent, kind="stable")
+        counts = np.bincount(parent, minlength=n_coarse_rot).astype(np.int64)
+        child_offsets = np.zeros(n_coarse_rot + 1, dtype=np.int64)
+        child_offsets[1:] = np.cumsum(counts)
+        return child_offsets, order.astype(np.int64, copy=False)
+
+    from relax.sampling import get_oversampled_rotation_grid_from_samples
+
+    _rotations, parent_map, child_ids = get_oversampled_rotation_grid_from_samples(
+        np.arange(n_coarse_rot, dtype=np.int64),
+        int(nside_level),
+        oversampling_order=int(oversampling_order),
+        random_perturbation=float(random_perturbation),
+        return_rotation_indices=True,
+        **({} if symmetry_label == "C1" else {"symmetry": symmetry_label}),
+    )
+    parent_map = np.asarray(parent_map, dtype=np.int64)
+    child_ids = np.asarray(child_ids, dtype=np.int64)
+    if parent_map.size and not bool(np.all(np.diff(parent_map) >= 0)):
+        raise RuntimeError("the oversampled rotation grid is not parent-major")
+    counts = np.bincount(parent_map, minlength=n_coarse_rot).astype(np.int64)
+    child_offsets = np.zeros(n_coarse_rot + 1, dtype=np.int64)
+    child_offsets[1:] = np.cumsum(counts)
+    return child_offsets, child_ids
+
+
+def csr_candidate_rows_per_image(
+    csr: CoarseSignificanceCSR | PackedCoarseSignificanceCSR,
+    child_offsets: np.ndarray,
+    *,
+    cells_per_step: int = 1 << 23,
+) -> np.ndarray:
+    """Candidate rows each image's table holds, without building the table.
+
+    The counts :func:`build_resident_candidate_tables_from_csr` produces: a
+    full or complement-encoded support takes every coarse parent, an empty one
+    parent 0, and a sparse one the distinct coarse rotations of its ids; each
+    parent brings its fine children (``child_offsets`` from
+    :func:`fine_rotation_children`). The ids are read in steps of whole images
+    holding at most ``cells_per_step`` ids (or one image), so the int64
+    temporaries stay bounded however dense the support is.
+    """
+
+    child_counts = np.diff(np.asarray(child_offsets, dtype=np.int64))
+    if child_counts.shape != (int(csr.n_coarse_rot),):
+        raise ValueError("child_offsets must cover every coarse rotation")
+    n_samples = csr.n_samples
+    n_significant = csr.n_significant.astype(np.int64)
+    store_excluded = np.asarray(csr.store_excluded, dtype=bool)
+    sparse = ~store_excluded & (n_significant != n_samples) & (n_significant != 0)
+    rows = np.where(n_significant == 0, child_counts[0], int(child_counts.sum())).astype(np.int64)
+    offsets = csr.offsets.astype(np.int64)
+    n_trans = int(csr.n_coarse_trans)
+    packed = isinstance(csr, PackedCoarseSignificanceCSR)
+    as_mask = csr.as_mask if packed else np.zeros(int(csr.n_images), dtype=bool)
+    steps = table_block_starts(offsets, cells_per_step)
+    for step_start, stop in zip(steps[:-1].tolist(), steps[1:].tolist()):
+        if not bool(sparse[step_start:stop].any()):
+            continue
+        step_as_mask = as_mask[step_start:stop]
+        # An id row's parents are the distinct coarse rotations of its ascending ids.
+        id_counts = np.where(step_as_mask, 0, np.diff(offsets[step_start : stop + 1]))
+        ids = (
+            csr.id_values[int(csr._id_starts[step_start]) : int(csr._id_starts[stop])]
+            if packed
+            else csr.ids[offsets[step_start] : offsets[stop]]
+        )
+        rot = ids.astype(np.int64) // n_trans
+        cell_image = np.repeat(np.arange(stop - step_start, dtype=np.int64), id_counts)
+        parent_start = np.ones(rot.size, dtype=bool)
+        parent_start[1:] = (rot[1:] != rot[:-1]) | (cell_image[1:] != cell_image[:-1])
+        # Row counts stay far below 2**53, so the float64 bincount is exact.
+        block_rows = np.bincount(
+            cell_image[parent_start],
+            weights=child_counts[rot[parent_start]].astype(np.float64),
+            minlength=stop - step_start,
+        ).astype(np.int64)
+        if bool(step_as_mask.any()):
+            # A mask row's parents are the rotations with any bit set, read from the bits.
+            bits = np.unpackbits(
+                csr.mask_rows[int(csr._mask_starts[step_start]) : int(csr._mask_starts[stop])],
+                axis=1,
+                bitorder="little",
+            )[:, :n_samples]
+            parent_present = bits.reshape(bits.shape[0], int(csr.n_coarse_rot), n_trans).any(axis=2)
+            block_rows[step_as_mask] = parent_present.astype(np.int64) @ child_counts
+        rows[step_start:stop] = np.where(sparse[step_start:stop], block_rows, rows[step_start:stop])
+    return rows
+
+
+def _ragged_gather(
+    child_offsets: np.ndarray,
+    child_ids: np.ndarray,
+    parents: np.ndarray,
+    child_counts: np.ndarray,
+) -> np.ndarray:
+    """Concatenate each parent's child ids, in ``parents`` order."""
+
+    total = int(child_counts.sum(dtype=np.int64))
+    if total == 0:
+        return np.zeros(0, dtype=child_ids.dtype)
+    group_starts = np.zeros(child_counts.size, dtype=np.int64)
+    if child_counts.size:
+        group_starts[1:] = np.cumsum(child_counts)[:-1]
+    within = np.arange(total, dtype=np.int64) - np.repeat(group_starts, child_counts)
+    return child_ids[np.repeat(child_offsets[parents], child_counts) + within]
+
+
+def build_resident_candidate_tables_from_csr(
+    csr: CoarseSignificanceCSR,
+    *,
+    nside_level: int,
+    oversampling_order: int,
+    n_fine_trans: int,
+    fine_translation_parent,
+    rotation_log_prior,
+    random_perturbation: float,
+    fine_rotation_parent_override=None,
+    relion_parent_execution_order: bool = False,
+    dtype=np.float32,
+    symmetry_label: str = "C1",
+    children=None,
+) -> ResidentCandidateTables:
+    """Build the resident candidate tables directly from the compact CSR.
+
+    ``children`` is :func:`fine_rotation_children`'s ``(child_offsets,
+    child_ids)`` for these arguments, when the caller already has it (one
+    pass builds several image blocks from the same grid).
+
+    Produces exactly what
+    :func:`recovar.em.sparse_pass2.resident_candidates.build_resident_candidate_tables`
+    produces from ``_prepare_per_image_pass2_inputs`` for the same support, and
+    is validated against it field by field.  Nothing here materializes a dense
+    mask, a per-image rotation-matrix block, or a per-image Python loop over
+    the fine grid: every table is assembled with whole-array numpy over the
+    concatenated CSR.
+    """
+
+    if isinstance(csr, PackedCoarseSignificanceCSR):
+        csr = csr.image_block(0, int(csr.n_images))
+    n_words = n_mask_words(csr.n_coarse_trans)
+    fine_translation_parent = np.asarray(fine_translation_parent)
+    if fine_translation_parent.shape != (n_fine_trans,):
+        raise ValueError(
+            "fine_translation_parent must have shape (n_fine_trans,), got "
+            f"{fine_translation_parent.shape}",
+        )
+
+    counts = csr.counts().astype(np.int64)
+    n_samples = csr.n_samples
+    n_significant = csr.n_significant.astype(np.int64)
+    store_excluded = np.asarray(csr.store_excluded, dtype=bool)
+    # Three regimes, matching ``_prepare_per_image_pass2_inputs`` exactly:
+    # a full support takes the full rotation grid with an all-true mask, a
+    # dense (complement-encoded) support takes the full rotation grid with the
+    # excluded pairs cleared, and everything else takes only the rotations its
+    # own support references.
+    full_images = np.flatnonzero(n_significant == n_samples)
+    complement_images = np.flatnonzero(store_excluded & (n_significant != n_samples))
+    empty_images = np.flatnonzero(n_significant == 0)
+    sparse_images = np.flatnonzero(
+        ~store_excluded & (n_significant != n_samples) & (n_significant != 0),
+    )
+
+    child_offsets, child_ids = children if children is not None else fine_rotation_children(
+        n_coarse_rot=csr.n_coarse_rot,
+        nside_level=nside_level,
+        oversampling_order=oversampling_order,
+        random_perturbation=random_perturbation,
+        fine_rotation_parent_override=fine_rotation_parent_override,
+        symmetry_label=symmetry_label,
+    )
+
+    ids = csr.ids.astype(np.int64, copy=False)
+    all_cell_image = np.repeat(np.arange(csr.n_images, dtype=np.int64), counts)
+    all_cell_rot = ids // csr.n_coarse_trans
+    all_cell_trans = ids % csr.n_coarse_trans
+    sparse_cell = np.isin(all_cell_image, sparse_images)
+    cell_image = all_cell_image[sparse_cell]
+    cell_rot = all_cell_rot[sparse_cell]
+    cell_trans = all_cell_trans[sparse_cell]
+
+    # Sparse images: their parents are the runs of equal coarse rotation in
+    # their ids, image-major and ascending, the same set and order as the host
+    # path's ``np.unique(coarse_rot)``.
+    if cell_rot.size:
+        parent_start = np.ones(cell_rot.size, dtype=bool)
+        parent_start[1:] = (cell_rot[1:] != cell_rot[:-1]) | (
+            cell_image[1:] != cell_image[:-1]
+        )
+        cell_parent = np.cumsum(parent_start) - 1
+        first_cell = np.flatnonzero(parent_start)
+    else:
+        cell_parent = np.zeros(0, dtype=np.int64)
+        first_cell = np.zeros(0, dtype=np.int64)
+    sparse_parent_rot = cell_rot[first_cell]
+    sparse_parent_image = cell_image[first_cell]
+    # One bitset per parent: exactly ``SparseCandidateMask.coarse_valid``
+    # packed bit by bit, coarse translation k = bit k % 32 of word k // 32.
+    sparse_parent_bits = np.zeros((sparse_parent_rot.size, n_words), dtype=np.uint32)
+    if cell_rot.size:
+        cell_word, cell_bit = translation_word_and_bit(cell_trans)
+        # A parent's cells are distinct translations, so their bits never
+        # overlap and OR equals the sum: one bincount instead of the unbuffered
+        # bitwise_or.at. A word's sum is below 2**32, exact in float64.
+        word_sums = np.bincount(
+            cell_parent * n_words + cell_word,
+            weights=cell_bit.astype(np.float64),
+            minlength=sparse_parent_bits.size,
+        )
+        sparse_parent_bits = word_sums.astype(np.uint32).reshape(sparse_parent_bits.shape)
+
+    # Full-support and complement-encoded images take the whole coarse
+    # rotation grid as their parents, ascending, exactly as the host path's
+    # full-rotation-support branch does.
+    grid_images = np.sort(np.concatenate([full_images, complement_images]))
+    grid_rot = np.tile(np.arange(csr.n_coarse_rot, dtype=np.int64), grid_images.size)
+    grid_image = np.repeat(grid_images, csr.n_coarse_rot)
+    grid_bits = np.tile(all_translations_words(csr.n_coarse_trans), (grid_rot.size, 1))
+    if complement_images.size:
+        complement_cell = np.isin(all_cell_image, complement_images)
+        if bool(complement_cell.any()):
+            slot = np.searchsorted(grid_images, all_cell_image[complement_cell])
+            clear_word, clear_bit = translation_word_and_bit(all_cell_trans[complement_cell])
+            np.bitwise_and.at(
+                grid_bits,
+                (slot * csr.n_coarse_rot + all_cell_rot[complement_cell], clear_word),
+                ~clear_bit,
+            )
+
+    # An image with no significant sample still carries one parent, coarse
+    # rotation 0, and an all-false candidate mask, matching
+    # ``_prepare_per_image_pass2_inputs``' ``unique_rot = [0]`` branch.
+    mask_mode = np.full(csr.n_images, _MASK_MODE_BITSET, dtype=np.int8)
+    mask_mode[full_images] = _MASK_MODE_FULL
+    mask_mode[empty_images] = _MASK_MODE_EMPTY
+
+    parent_image = np.concatenate([sparse_parent_image, grid_image, empty_images])
+    parent_rot = np.concatenate(
+        [sparse_parent_rot, grid_rot, np.zeros(empty_images.size, dtype=np.int64)],
+    )
+    parent_bits = np.concatenate(
+        [sparse_parent_bits, grid_bits, np.zeros((empty_images.size, n_words), dtype=np.uint32)],
+    )
+    # A stable sort by image keeps each image's own parent order; an image
+    # belongs to exactly one regime, so the blocks never interleave inside one.
+    order = np.argsort(parent_image, kind="stable")
+    parent_image = parent_image[order]
+    parent_rot = parent_rot[order]
+    parent_bits = parent_bits[order]
+
+    parents_per_image = np.bincount(parent_image, minlength=csr.n_images).astype(np.int64)
+    parent_row_offsets = np.zeros(csr.n_images + 1, dtype=np.int64)
+    parent_row_offsets[1:] = np.cumsum(parents_per_image)
+    parent_local = np.arange(parent_rot.size, dtype=np.int64) - parent_row_offsets[
+        parent_image
+    ]
+
+    # The bitset table holds only bitset-mode images, in image-major order.
+    is_bitset = mask_mode == _MASK_MODE_BITSET
+    support_parent_bits = parent_bits[is_bitset[parent_image]]
+    bits_per_image = np.where(is_bitset, parents_per_image, 0)
+    parent_offsets = np.zeros(csr.n_images + 1, dtype=np.int32)
+    parent_offsets[1:] = np.cumsum(bits_per_image).astype(np.int32)
+
+    # Row order: image-major, then RELION's parent execution key when the fine
+    # posterior requires it, then the host path's within-parent child order.
+    if relion_parent_execution_order:
+        key = relion_parent_execution_key(
+            parent_rot, n_coarse_rot=csr.n_coarse_rot, nside_level=nside_level
+        )
+        # The key permutes [0, n_coarse_rot), so (image, key) is one unique
+        # integer and a single argsort gives lexsort's order.
+        parent_order = np.argsort(parent_image * np.int64(csr.n_coarse_rot) + key)
+    else:
+        parent_order = np.arange(parent_rot.size, dtype=np.int64)
+
+    ordered_rot = parent_rot[parent_order]
+    ordered_image = parent_image[parent_order]
+    ordered_local = parent_local[parent_order]
+    child_counts = (child_offsets[ordered_rot + 1] - child_offsets[ordered_rot]).astype(
+        np.int64,
+    )
+
+    rows_per_image = np.zeros(csr.n_images, dtype=np.int64)
+    np.add.at(rows_per_image, ordered_image, child_counts)
+    row_offsets = np.zeros(csr.n_images + 1, dtype=np.int32)
+    row_offsets[1:] = np.cumsum(rows_per_image).astype(np.int32)
+    n_rows = int(row_offsets[-1])
+
+    row_fine_rot = _ragged_gather(child_offsets, child_ids, ordered_rot, child_counts)
+    row_image = np.repeat(ordered_image, child_counts)
+    row_parent_local = np.repeat(ordered_local, child_counts)
+    row_parent_rot = np.repeat(ordered_rot, child_counts)
+
+    if not relion_parent_execution_order and fine_rotation_parent_override is not None:
+        # Without RELION's execution order the host path leaves the rows in
+        # ``np.flatnonzero`` order, i.e. ascending fine id inside each image.
+        order = np.lexsort((row_fine_rot, row_image))
+        row_fine_rot = row_fine_rot[order]
+        row_image = row_image[order]
+        row_parent_local = row_parent_local[order]
+        row_parent_rot = row_parent_rot[order]
+
+    if row_fine_rot.size and int(row_fine_rot.max()) > np.iinfo(np.int32).max:
+        raise ValueError("a fine rotation id overflows int32")
+
+    if rotation_log_prior is None:
+        row_log_prior = np.zeros(n_rows, dtype=dtype)
+    else:
+        prior = np.asarray(rotation_log_prior, dtype=dtype)
+        if prior.shape != (csr.n_coarse_rot,):
+            raise ValueError(
+                f"rotation_log_prior must have shape ({csr.n_coarse_rot},), got {prior.shape}",
+            )
+        row_log_prior = prior[row_parent_rot].astype(dtype, copy=False)
+
+    return ResidentCandidateTables(
+        n_images=csr.n_images,
+        n_rows=n_rows,
+        n_fine_trans=n_fine_trans,
+        n_coarse_trans=csr.n_coarse_trans,
+        row_offsets=row_offsets,
+        row_unit=row_image.astype(np.int32, copy=False),
+        row_fine_rot=row_fine_rot.astype(np.int32, copy=False),
+        row_parent_local=row_parent_local.astype(np.int32, copy=False),
+        row_log_prior=np.asarray(row_log_prior, dtype=np.float32),
+        mask_mode=mask_mode,
+        parent_offsets=parent_offsets,
+        parent_trans_bits=support_parent_bits,
+    )
+
+
+def resident_candidate_tables(
+    significance_csr,
+    per_image_inputs,
+    *,
+    n_coarse_trans,
+    n_fine_trans,
+    fine_translation_parent,
+    nside_level,
+    oversampling_order,
+    rotation_log_prior,
+    random_perturbation,
+    fine_rotation_parent_override,
+    relion_parent_execution_order,
+    dtype,
+    symmetry_label="C1",
+):
+    """Candidate tables from the device-compacted CSR, or from the host path.
+
+    ``significance_csr`` is present only when the coarse pass compacted its
+    support on the device (ticket T13);
+    both routes return the same ``ResidentCandidateTables``.
+    """
+
+    if significance_csr is not None:
+        return build_resident_candidate_tables_from_csr(
+            significance_csr,
+            nside_level=nside_level,
+            oversampling_order=oversampling_order,
+            n_fine_trans=n_fine_trans,
+            fine_translation_parent=fine_translation_parent,
+            rotation_log_prior=rotation_log_prior,
+            random_perturbation=random_perturbation,
+            fine_rotation_parent_override=fine_rotation_parent_override,
+            relion_parent_execution_order=relion_parent_execution_order,
+            dtype=dtype,
+            symmetry_label=symmetry_label,
+        )
+    return build_resident_candidate_tables(
+        per_image_inputs,
+        n_coarse_trans=n_coarse_trans,
+        n_fine_trans=n_fine_trans,
+        fine_translation_parent=fine_translation_parent,
+    )

@@ -3,7 +3,7 @@
 Images of different shapes cannot share one dataset or one compiled program, so a
 half is split into *shape classes* (optics groups with the same box and pixel size).
 Half scoring runs the unchanged single-shape route once per class on that class's
-dataset, with RELION's rules for a group on another grid (:mod:`relax.helpers.optics_scale`):
+dataset, with RELION's rules for a group on another grid (:mod:`relax.relion.optics_scale`):
 
 - projection/backprojection matrices divided by the class scale ``s_g``
   (``applyScaleDifference``); poses stay unscaled everywhere else;
@@ -27,7 +27,7 @@ import math
 
 import numpy as np
 
-from relax.helpers import optics_scale
+from relax.relion import optics_scale
 
 
 @dataclasses.dataclass(frozen=True)
@@ -143,7 +143,7 @@ def make_shape_classes(datasets_and_indices, *, model_box_size, ref_pixel, model
 
     A class at scale ``s >= sqrt(2)`` is refused. There, RELION's fine kernels project
     a moved pixel inside the model sphere for the image rows beyond it
-    (:func:`relax.helpers.projection.relion_kernel_zero_rows`), which relax does not reproduce.
+    (:func:`relax.projection.projection.relion_kernel_zero_rows`), which relax does not reproduce.
     Listing the optics group with the largest box x pixel size first avoids it.
     """
 

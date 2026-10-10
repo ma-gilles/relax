@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.reconstruction import volume_solver
+from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 from relax.refinement import numbered_reconstruction
 from relax.refinement.refinement_options import ReconstructionPrograms
 

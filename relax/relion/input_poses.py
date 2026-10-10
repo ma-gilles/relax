@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 from recovar.utils.file_hash import sha256_file as _sha256_file
 
-from relax.helpers import iteration_history
-from relax.relion import relion_metadata
+from relax.refinement import iteration_history
+from relax.relion import metadata
 
 if TYPE_CHECKING:
     from relax.relion.input_particle_table import ParticleLayout
@@ -111,11 +111,11 @@ def _load_input_star_previous_best_poses(
     the input STAR has no ``rlnNormCorrection``, as in relion_refine.
     """
 
-    input_rows = relion_metadata.particle_identity_rows(
+    input_rows = metadata.particle_identity_rows(
         input_particles,
         label="RECOVAR input STAR",
     )
-    halfset_rows = relion_metadata.particle_identity_rows(
+    halfset_rows = metadata.particle_identity_rows(
         relion_halfset_particles,
         label="RELION half-set STAR",
     )

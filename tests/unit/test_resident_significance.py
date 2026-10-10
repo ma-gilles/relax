@@ -14,16 +14,12 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.scoring.significant_samples import (
-    ComplementSignificantSampleIndices,
-    compact_significant_sample_indices_from_mask,
-)
-from relax.scoring.sparse_bucket_arrays import (
+from relax.fine_pass.bucket_arrays import (
     _prepare_per_image_pass2_inputs,
     relion_parent_execution_key,
 )
-from relax.sparse_pass2.resident_candidates import build_resident_candidate_tables
-from relax.sparse_pass2.resident_significance import (
+from relax.fine_pass.resident_candidates import build_resident_candidate_tables
+from relax.fine_pass.resident_significance import (
     CoarseSignificanceCSR,
     DeviceCompactedSignificantSamples,
     PackedCoarseSignificanceCSR,
@@ -38,6 +34,10 @@ from relax.sparse_pass2.resident_significance import (
     fine_rotation_children,
     host_support_rows,
     significant_coarse_parents,
+)
+from relax.scoring.significant_samples import (
+    ComplementSignificantSampleIndices,
+    compact_significant_sample_indices_from_mask,
 )
 
 pytestmark = pytest.mark.unit
@@ -207,7 +207,7 @@ def test_class_compaction_matches_each_class_alone(monkeypatch):
     A one-class read-back group exercises the grouping as well as one group.
     """
 
-    import relax.sparse_pass2.resident_significance as resident_significance
+    import relax.fine_pass.resident_significance as resident_significance
 
     n_samples = N_COARSE_ROT * N_COARSE_TRANS
     n_classes, actual = 3, 5
@@ -581,7 +581,7 @@ def test_compaction_fills_an_exactly_full_capacity():
     mask = np.zeros((2, n_samples), dtype=bool)
     mask[0, ids.astype(np.int64)] = True
 
-    from relax.sparse_pass2.resident_significance import _compact_program
+    from relax.fine_pass.resident_significance import _compact_program
 
     # The program itself: the batch entry point keeps a row this dense as its bit mask and drops the ids.
     compacted, counts, _rot_any, packed = _compact_program()(
@@ -663,7 +663,7 @@ def test_batches_of_one_shape_share_one_compaction_program():
     same mask shape; now both batches reuse one and still compact exactly.
     """
 
-    from relax.sparse_pass2.resident_significance import _compact_program
+    from relax.fine_pass.resident_significance import _compact_program
 
     n_coarse_rot, n_coarse_trans = 512, 16
     n_samples = n_coarse_rot * n_coarse_trans
@@ -839,7 +839,7 @@ def test_csr_consumes_its_id_blocks_and_holds_their_concatenation(monkeypatch):
     """The CSR's ids are the per-batch blocks in order; the blocks' list slots are emptied as they are copied, and
     the freed heap is returned along the way, so the pass never holds a class's ids twice (relax#34)."""
 
-    from relax.sparse_pass2 import resident_significance
+    from relax.fine_pass import resident_significance
 
     rng = np.random.default_rng(3)
     counts = [rng.integers(0, 6, size=n).astype(np.int32) for n in (4, 7, 1, 5)]

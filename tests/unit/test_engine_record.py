@@ -2,7 +2,7 @@
 
 import pytest
 
-from relax.sparse_pass2.engine_record import record_pass_engine, take_pass_engines
+from relax.refinement.engine_record import record_pass_engine, take_pass_engines
 
 
 def test_entries_are_taken_once():
@@ -15,7 +15,7 @@ def test_entries_are_taken_once():
 
 @pytest.fixture
 def _fresh_deprecation_warnings(monkeypatch):
-    from relax.sparse_pass2 import engine_record
+    from relax.refinement import engine_record
 
     monkeypatch.setattr(engine_record, "_warned", set())
     take_pass_engines()
@@ -28,7 +28,7 @@ def _deprecation_messages(caplog):
 
 
 def test_a_deprecated_engine_warns_once_per_reason(caplog, _fresh_deprecation_warnings):
-    caplog.set_level("WARNING", logger="relax.sparse_pass2.engine_record")
+    caplog.set_level("WARNING", logger="relax.refinement.engine_record")
     record_pass_engine("global", "resident")
     assert _deprecation_messages(caplog) == []
 

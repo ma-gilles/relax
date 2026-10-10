@@ -31,15 +31,15 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
-from relax.local.local_layout import (
+from relax.fine_pass import resident_pass2 as rp
+from relax.local_search import half
+from relax.local_search import resident_pass2 as rlp
+from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
-from relax.refinement import local_half
-from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
+from relax.relion.projector_setup import reference_to_relion_projector_half_maps
 from relax.sampling import build_local_search_grid_metadata
-from relax.sparse_pass2 import resident_local_pass2 as rlp
-from relax.sparse_pass2 import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
 
@@ -198,7 +198,7 @@ def _run(
         image_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         scale_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         trans_centers = rng.uniform(-0.5, 0.5, (N_IMAGES, 2)).astype(np.float32)
-    return local_half._run_local_search_iteration(*local_iteration_owners(
+    return half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
         case["volume"],
         case["noise_variance"],
@@ -263,7 +263,7 @@ def _dispatched_arguments(monkeypatch, **run):
         bound.append((signature.bind(*args, **kwargs), set(kwargs)))
         raise _Dispatched
 
-    monkeypatch.setattr(local_half, "compute_local_search_resident", resident)
+    monkeypatch.setattr(half, "compute_local_search_resident", resident)
     with pytest.raises(_Dispatched):
         _run(_case(), monkeypatch=monkeypatch, **run)
     (arguments, keywords), = bound
@@ -555,7 +555,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     of memory when the plan counted three recon tiles and the tile preparation held
     about ten; a new translated array must update ``resident_pass2.chunk_translated_tile_pixels``."""
 
-    from relax.sparse_pass2 import resident_pass2 as rp_module
+    from relax.fine_pass import resident_pass2 as rp_module
 
     planned = []
     measured = []
@@ -1103,7 +1103,7 @@ def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_l
     repeat band (the x-half BPref and Wavg atomics are not bit-reproducible in either arm). The --firstiter_cc
     iteration scores its blocks with the normalized-CC block core the one-call CC chunk uses."""
 
-    from relax.sparse_pass2 import resident_scoring
+    from relax.fine_pass import resident_scoring
 
     case = _case()
     whole = _run(case, monkeypatch=monkeypatch, production_shapes=True, firstiter_cc=firstiter_cc)
@@ -1254,7 +1254,7 @@ def test_cc_row_block_scorer_matches_the_one_call_cc_chunk():
     """The --firstiter_cc lone scorer and the one-call CC chunk scorer share one block core: scoring the same
     projections a block at a time gives the one-call chunk's scores and candidates (padding blocks included)."""
 
-    from relax.sparse_pass2 import resident_scoring as rs
+    from relax.fine_pass import resident_scoring as rs
 
     rng = np.random.default_rng(11)
     n_images, n_trans, n_pix, rows, n_valid = 2, 5, 24, 32, 21

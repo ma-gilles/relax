@@ -14,8 +14,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.env_flags import parse_env_binary_flag
-from relax.helpers.types import NoiseStats, RelionStats, make_noise_stats, make_relion_stats, total_sumw
+from relax.runtime.env_flags import parse_env_binary_flag
+from relax.types import NoiseStats, RelionStats, make_noise_stats, make_relion_stats, total_sumw
 
 _K1_POSE_PUBLISH_DIRECT_ENV = "RELAX_K1_POSE_PUBLISH_DIRECT"
 

@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from relax.relion.relion_metadata import refuse_unsupported_optics
+from relax.relion.metadata import refuse_unsupported_optics
 
 
 @pytest.mark.unit

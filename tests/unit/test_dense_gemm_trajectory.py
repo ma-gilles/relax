@@ -63,8 +63,9 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
     from relax.cuda import kernels as cuda_kernels
     from relax.dense.gemm_experiment import pad_batch, pad_grid
     from relax.dense.gemm_experiment_kernels import empty_normalizer_table
-    from relax.scoring import scoring
-    from relax.sparse_pass2 import resident_pass2, sparse_pass2_adjoint
+    from relax.fine_pass import adjoint as sparse_pass2_adjoint
+    from relax.fine_pass import resident_pass2
+    from relax.scoring import coarse_kernels
 
     selected = {"score_traces": 0, "row_traces": 0, "adjoint_traces": 0}
 
@@ -105,7 +106,7 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
         return volume.at[0].add(jnp.sum(rows))
 
     monkeypatch.setattr(cuda_kernels, "relion_translate_score_f32", translate)
-    monkeypatch.setattr(scoring, "relion_coarse_gaussian_gemm_scores_jit", score)
+    monkeypatch.setattr(coarse_kernels, "relion_coarse_gaussian_gemm_scores_jit", score)
     monkeypatch.setattr(resident_pass2, "_resident_block_weighted_sums_kernel", weighted_rows)
     monkeypatch.setattr(sparse_pass2_adjoint, "_accumulate_adjoint_block_chunked", adjoint)
 

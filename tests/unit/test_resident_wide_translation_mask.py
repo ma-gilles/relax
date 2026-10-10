@@ -18,10 +18,9 @@ pytest.importorskip("jax")
 import jax.numpy as jnp
 from test_resident_significance import _csr_from_supports, _encoded_supports, _supports
 
-from relax.scoring.compact_candidates import candidate_mask_to_dense
-from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.sparse_pass2 import resident_pass2 as rp
-from relax.sparse_pass2.resident_candidates import (
+from relax.fine_pass import resident_pass2 as rp
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     expand_chunk_mask_jnp,
     expand_mask_rows,
@@ -29,7 +28,8 @@ from relax.sparse_pass2.resident_candidates import (
     n_mask_words,
     plan_capacity_chunks,
 )
-from relax.sparse_pass2.resident_significance import build_resident_candidate_tables_from_csr
+from relax.fine_pass.resident_significance import build_resident_candidate_tables_from_csr
+from relax.scoring.compact_candidates import candidate_mask_to_dense
 
 pytestmark = pytest.mark.unit
 

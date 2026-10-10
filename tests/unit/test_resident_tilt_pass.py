@@ -28,9 +28,9 @@ _BPREF_ATOMIC_BAND = 2e-7
 
 
 def _one_image_tilt_inputs(args):
-    from relax.sparse_pass2.resident_tilts import TiltPassInputs
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_cuda_score_translation_angles_if_available
-    from relax.sparse_pass2.sparse_pass2_window import _fine_translation_prior_2d
+    from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
+    from relax.fine_pass.resident_tilts import TiltPassInputs
+    from relax.fine_pass.window import _fine_translation_prior_2d
 
     n_images = args["experiment_dataset"].n_units
     fine_translations = np.asarray(args["fine_translations_override"])
@@ -68,7 +68,7 @@ def _one_image_tilt_inputs(args):
 
 @requires_resident_gpu
 def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  # noqa: F811
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     # The once-per-half resident operands, which the tilt runner needs, cover masked scoring only.
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
@@ -82,7 +82,7 @@ def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  
 def test_tilt_chunks_prepare_their_own_operands_when_the_half_does_not_fit(_resident_production_env, monkeypatch):  # noqa: F811
     """A half whose resident operands exceed the budget: each tilt chunk prepares its own images' operands."""
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
     spa = rp._resident_pass2(**args)
@@ -138,7 +138,7 @@ def test_one_image_particles_reproduce_the_spa_k_class_pass(_resident_production
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     args, volumes, supports, priors = _k_class_args(2)
@@ -189,7 +189,7 @@ def test_duplicated_class_of_tilt_particles_is_the_k1_pass(_resident_production_
 
     from test_resident_k_class_pass2 import _resident
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
     tilt, n_units = _two_image_particles(args)
@@ -292,7 +292,7 @@ def test_one_image_particles_reproduce_the_spa_vdam_pass(_resident_production_en
     every row here (no per-projection sums), as the tilt runner does. The residual must change the map.
     """
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
@@ -320,7 +320,7 @@ def test_one_image_particles_reproduce_the_spa_k_class_vdam_pass(_resident_produ
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     args, volumes, supports, priors = _k_class_args(2)
@@ -347,8 +347,8 @@ def test_slot_blocked_tilt_projections_are_the_one_block_pass(_resident_producti
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.sparse_pass2 import resident_pass2 as rp
-    from relax.sparse_pass2 import resident_tilts
+    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_tilts
 
     monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     args, volumes, supports, priors = _k_class_args(2)
@@ -382,7 +382,7 @@ def test_each_particles_own_translations_are_the_whole_grid_mstep(_resident_prod
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.sparse_pass2 import resident_tilts
+    from relax.fine_pass import resident_tilts
 
     args, volumes, supports, priors = _k_class_args(2)
     args = dict(args, score_with_masked_images=True)
@@ -431,7 +431,7 @@ def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(_resident_product
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.sparse_pass2 import resident_tilts
+    from relax.fine_pass import resident_tilts
 
     args, volumes, supports, priors = _k_class_args(2)
     args = dict(args, score_with_masked_images=True)
@@ -473,7 +473,7 @@ def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight(_resid
 
     from types import SimpleNamespace
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     n, n_rows = 8, 200_000
     spec = SimpleNamespace(
@@ -539,7 +539,7 @@ def test_one_image_particles_reproduce_the_spa_firstiter_cc_pass(_resident_produ
     each unit's best cell, then backproject it with the Gaussian M-step.
     """
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args = dict(
         _driver_fixture_args(),

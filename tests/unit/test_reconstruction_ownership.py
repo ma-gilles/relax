@@ -11,7 +11,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
-from relax.reconstruction import regularization_relion, volume_solver
+from relax.reconstruction import regularization, volume_solver
 from relax.refinement import map_postprocess
 from relax.refinement.refinement_options import ReconstructionPrograms
 
@@ -223,7 +223,7 @@ class TestReconstructionOwnership:
         """The retained half-0 buffer must feed Stage A and release before the iFFT."""
         from recovar.reconstruction import relion_functions
 
-        from relax.reconstruction import relion_functions_relion
+        from relax.reconstruction import relion_functions as relion_functions_relion
         from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
         events = []
@@ -296,7 +296,7 @@ class TestReconstructionOwnership:
         """Half 2 must see half 1 freed, then stage/delete its host numerator."""
         from recovar.reconstruction import relion_functions
 
-        from relax.reconstruction import relion_functions_relion
+        from relax.reconstruction import relion_functions as relion_functions_relion
         from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
         volume_shape = (2, 2, 2)
@@ -381,7 +381,7 @@ def test_relion_reconstruction_tau_shells_match_full_prior_bitwise():
     weight = (0.5 + rng.random(half_shape)).astype(np.float32)
     numerator = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
     fsc = np.linspace(0.9, 0.1, volume_shape[0] // 2 + 1, dtype=np.float64)
-    tau_full, _, details = regularization_relion.compute_relion_tau2_from_weights(
+    tau_full, _, details = regularization.compute_relion_tau2_from_weights(
         weight,
         weight,
         fsc,
@@ -434,7 +434,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     ft_ctf_0 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
-    joined = regularization_relion.join_halves_at_low_resolution(
+    joined = regularization.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,
         ft_ctf_0,
@@ -516,10 +516,10 @@ def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypat
         low_resol_join_halves_angstrom=40.0,
         padding_factor=2,
     )
-    host = regularization_relion.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
+    host = regularization.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
     assert all(isinstance(value, np.ndarray) for value in host)
     monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "never")
-    device = regularization_relion.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
+    device = regularization.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
     for h, d in zip(host, device, strict=True):
         np.testing.assert_allclose(np.asarray(h), np.asarray(d), rtol=1e-6, atol=0)
 

@@ -8,17 +8,17 @@ from helpers.array_padding import pad_axis
 from helpers.cuda_source import read_em_cuda_source
 from helpers.float_compare import assert_matches, matches
 
-from relax.helpers.fourier_window import (
+from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+from relax.fine_pass.wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
+from relax.fourier.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
     make_stable_fourier_window_shape_plan,
     stable_fourier_window_current_size,
 )
-from relax.helpers.half_volume_mstep import crop_relion_x_half_accumulator
-from relax.helpers.projection import _texture_centered_crop_at_indices
+from relax.projection.projection import _texture_centered_crop_at_indices
+from relax.reconstruction.half_volume_mstep import crop_relion_x_half_accumulator
 from relax.scoring.coarse_layout import coarse_gaussian_fused_logical_lookup, plan_coarse_gaussian_square_layout
-from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
-from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
 
 pytestmark = pytest.mark.unit
 
@@ -110,7 +110,7 @@ def test_stable_window_size_rejects_invalid_shapes(current_size, image_size, qua
 
 
 def test_stable_window_runtime_quantum_is_diagnostic_and_fail_closed(monkeypatch):
-    from relax.helpers.fourier_window import (
+    from relax.fourier.fourier_window import (
         DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         STABLE_FOURIER_WINDOW_QUANTUM_ENV,
         stable_fourier_window_quantum,
@@ -294,7 +294,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
     # must hand the kernel the logical size-86 radius, and the embedding helper
     # must then preserve the kernel's values.
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers import projection
+    from relax.projection import projection
 
     kernel_calls = []
     physical = int(layout.physical_current_size)

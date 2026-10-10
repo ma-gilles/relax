@@ -78,7 +78,7 @@ section of the owner's global instruction file says, and create a
 in place.
 
 Particle images are read the way RELION reads them
-([`relax/helpers/particle_io.py`](../../relax/helpers/particle_io.py)). Auto-refine,
+([`relax/io/particle_io.py`](../../relax/io/particle_io.py)). Auto-refine,
 Class3D and InitialModel stream batches from the original stacks by default, as the
 RELION GUI does (no pre-read, no scratch). `--preread_images` holds every particle
 in host memory. `--scratch_dir DIR` copies the referenced particles to `DIR` at

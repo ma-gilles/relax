@@ -108,9 +108,9 @@ def _memory_tiles(
     See ``docs/math/dense_gemm_experiment.md#buffer-ownership-and-measurement-boundaries``.
     """
 
-    from relax.sparse_pass2.resident_operands import resident_half_operand_bytes
-    from relax.sparse_pass2.resident_statistics import posterior_translation_bucket_scratch_bytes
-    from relax.sparse_pass2.sparse_pass2_budget import (
+    from relax.fine_pass.resident_operands import resident_half_operand_bytes
+    from relax.fine_pass.resident_statistics import posterior_translation_bucket_scratch_bytes
+    from relax.runtime.memory_budget import (
         _device_free_memory_bytes,
         _jax_allocator_free_memory_bytes,
         _jax_allocator_pool_free_bytes,
@@ -235,8 +235,8 @@ def _full_grid_local_rotation_slots(state: DenseGemmPreparedState) -> np.ndarray
     candidate rows.  K-class tables concatenate these slots class-major.
     """
 
-    from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
-    from relax.sparse_pass2.resident_significance import _ragged_gather, fine_rotation_children
+    from relax.fine_pass.bucket_arrays import relion_parent_execution_key
+    from relax.fine_pass.resident_significance import _ragged_gather, fine_rotation_children
 
     n_fine = len(state.fine_rotations)
     if state.relion_parent_execution_order:
@@ -289,27 +289,27 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
 
     from recovar.reconstruction import noise as noise_utils
 
-    from relax.helpers.adjoint import mstep_adjoint_max_r
-    from relax.helpers.half_spectrum import (
-        make_relion_noise_shell_indices_half,
-        mask_relion_noise_shell_indices_to_current_window,
-    )
-    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
-    from relax.helpers.scale_groups import prepare_scale_correction_groups
-    from relax.sparse_pass2.resident_operands import prepare_resident_half_operands
-    from relax.sparse_pass2.resident_pass2 import (
+    from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
+    from relax.fine_pass.resident_operands import prepare_resident_half_operands
+    from relax.fine_pass.resident_pass2 import (
         _make_chunk_translation_sqdist,
         _relion_native_fine_units_in_place,
         _relion_scale_correction_pixel_mask,
     )
-    from relax.sparse_pass2.resident_statistics import (
+    from relax.fine_pass.resident_statistics import (
         make_resident_statistics,
         resolve_statistics_config,
     )
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_cuda_score_translation_angles_if_available
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_pixel_weights
-    from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
-    from relax.sparse_pass2.sparse_pass2_window import _pass2_half_weights, _sparse_pass2_window_setup
+    from relax.fine_pass.scoring import _relion_cuda_fine_pixel_weights
+    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fine_pass.window import _pass2_half_weights, _sparse_pass2_window_setup
+    from relax.fourier.half_spectrum import (
+        make_relion_noise_shell_indices_half,
+        mask_relion_noise_shell_indices_to_current_window,
+    )
+    from relax.projection.adjoint import mstep_adjoint_max_r
+    from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+    from relax.relion.scale_groups import prepare_scale_correction_groups
 
     dataset = state.dataset
     n_images = int(dataset.n_units)
@@ -615,13 +615,13 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
 def _finalize_dense_result(state, numerator, denominator, stats, stats_config, bp_shape, *, n_groups):
     """Use the resident BPref/statistics finalizers, with one terminal host pull."""
 
-    from relax.helpers.half_volume_mstep import (
+    from relax.fine_pass.resident_pass2 import _ResidentPass2Result
+    from relax.fine_pass.resident_statistics import finalize_statistics
+    from relax.reconstruction.half_volume_mstep import (
         finalize_half_volume_bpref,
         relion_x_half_accumulators_to_public_layout,
     )
-    from relax.helpers.types import make_noise_stats
-    from relax.sparse_pass2.resident_pass2 import _ResidentPass2Result
-    from relax.sparse_pass2.resident_statistics import finalize_statistics
+    from relax.types import make_noise_stats
 
     k = int(numerator.shape[0])
     final_y, final_w = [], []

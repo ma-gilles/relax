@@ -83,7 +83,7 @@ def _identity_process(batch, apply_image_mask=False):
 def _identity_process_half(batch, apply_image_mask=False):
     """Half-spectrum passthrough: full centered FT → packed Hermitian half.
 
-    Dense-EM's preprocessing (relax/helpers/
+    Dense-EM's preprocessing (relax/fourier/
     preprocessing.py:63) reads ``experiment_dataset.process_images_half``
     and expects the packed half-image layout
     ``(batch, H * (W // 2 + 1))``. The mock stores full-spectrum FT images
@@ -118,7 +118,7 @@ class MockDataset:
         self.CTF_params = np.zeros((n_images, 9), dtype=np.float32)
         self.ctf_evaluator = staticmethod(_identity_ctf)
         self.process_images = staticmethod(_identity_process)
-        # Dense-EM preprocessing (relax/helpers/
+        # Dense-EM preprocessing (relax/fourier/
         # preprocessing.py:63) now reads ``process_images_half`` rather than
         # ``process_images``. The half-image variant returns the packed
         # half-spectrum layout (H * (W // 2 + 1) pixels per image).

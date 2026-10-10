@@ -7,7 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement.half_inputs import HalfSet
-from relax.relion import relion_worker_scale as scale
+from relax.relion import worker_scale as scale
 
 pytestmark = pytest.mark.unit
 

@@ -10,7 +10,9 @@ from recovar import core, jax_config
 from recovar.reconstruction import regularization
 from recovar.reconstruction import relion_functions as rf
 
-from relax.reconstruction import regularization_relion, relion_functions_relion, volume_solver
+from relax.reconstruction import regularization as regularization_relion
+from relax.reconstruction import relion_functions as relion_functions_relion
+from relax.reconstruction import volume_solver
 from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,

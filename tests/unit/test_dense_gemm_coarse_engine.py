@@ -19,7 +19,7 @@ from relax.dense.gemm_coarse_statistics import (
     initial_statistics_carry,
     split_normalizer_metadata,
 )
-from relax.sparse_pass2.resident_statistics import ResidentStatisticsConfig
+from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
 from helpers.float_compare import assert_matches
 
 
@@ -27,7 +27,7 @@ from helpers.float_compare import assert_matches
 @pytest.mark.parametrize("exact_bpref", [False, True])
 def test_gemm_reconstruction_operands_follow_resident_preparation(exact_bpref):
     from relax.dense.gemm_coarse_engine import _dense_reconstruction_operands
-    from relax.sparse_pass2.resident_operands import _BatchWindowInputs, _batch_window_operands
+    from relax.fine_pass.resident_operands import _BatchWindowInputs, _batch_window_operands
 
     raw = jnp.asarray([[1 + 2j, 3 + 4j, 5 + 6j, 7 + 8j],
                        [2 + 1j, 4 + 3j, 6 + 5j, 8 + 7j],
@@ -71,7 +71,7 @@ def test_gemm_reconstruction_operands_follow_resident_preparation(exact_bpref):
 @pytest.mark.parametrize("relion_order", [False, True])
 def test_complete_grid_local_slots_match_actual_resident_table(relion_order):
     from relax.dense.gemm_coarse_engine import _full_grid_local_rotation_slots
-    from relax.sparse_pass2.resident_significance import (
+    from relax.fine_pass.resident_significance import (
         CoarseSignificanceCSR, build_resident_candidate_tables_from_csr,
     )
 
@@ -107,7 +107,7 @@ def test_complete_grid_local_slots_match_actual_resident_table(relion_order):
 @pytest.mark.parametrize("configured_native", [False, True])
 def test_public_adaptive_dense_dispatch_uses_complete_grid(n_classes, symmetry, configured_native, monkeypatch):
     from relax.classification import k_class
-    from relax.sparse_pass2.engine_record import take_coarse_engine_calls
+    from relax.refinement.engine_record import take_coarse_engine_calls
 
     class Returned(NamedTuple):
         significant_counts: object = None
@@ -154,7 +154,7 @@ def test_public_adaptive_dense_dispatch_uses_complete_grid(n_classes, symmetry, 
 @pytest.mark.unit
 def test_memory_plan_bounds_preparation_and_nondivisible_rotation_count(monkeypatch):
     from relax.dense.gemm_coarse_engine import _memory_tiles
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 1 << 30)
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 1 << 30)
@@ -179,7 +179,7 @@ def test_memory_plan_bounds_preparation_and_nondivisible_rotation_count(monkeypa
 @pytest.mark.unit
 def test_memory_plan_uses_large_projection_tile_and_full_translation_when_it_fits(monkeypatch):
     from relax.dense.gemm_coarse_engine import _memory_tiles
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 16 << 30)
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 16 << 30)

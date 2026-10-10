@@ -39,27 +39,27 @@ from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
 from recovar.core.configs import ForwardModelConfig
 from recovar.reconstruction import noise as noise_utils
 
-from relax.helpers.batch_fetch import fetch_indexed_batch
-from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
-from relax.helpers.preprocessing import (
-    apply_half_translation_phases,
-    half_translation_phase_table,
-)
-from relax.sparse_pass2 import resident_operands as resident_module
-from relax.sparse_pass2 import sparse_pass2_bucket_io as bucket_io_module
-from relax.sparse_pass2.resident_operands import (
-    ResidentOperandsUnsupported,
-    gather_resident_chunk_operands,
-    prepare_resident_half_operands,
-    resident_half_operand_bytes,
-)
-from relax.sparse_pass2.sparse_pass2_bucket_io import (
+from relax.fine_pass import bucket_io as bucket_io_module
+from relax.fine_pass import resident_operands as resident_module
+from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
     _relion_cuda_score_translation_angles_if_available,
     _relion_translation_angles_f64,
     prepare_unshifted_bucket_operands,
 )
-from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells
+from relax.fine_pass.resident_operands import (
+    ResidentOperandsUnsupported,
+    gather_resident_chunk_operands,
+    prepare_resident_half_operands,
+    resident_half_operand_bytes,
+)
+from relax.fine_pass.wavg import image_power_shells
+from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half
+from relax.fourier.preprocessing import (
+    apply_half_translation_phases,
+    half_translation_phase_table,
+)
+from relax.io.batch_fetch import fetch_indexed_batch
 
 pytestmark = pytest.mark.unit
 
@@ -569,7 +569,7 @@ def test_translate_sum_kernel_matches_the_block_reduction(
     output by up to one relative ulp; that arm is held to its measured bound.
     """
 
-    from relax.sparse_pass2.resident_pass2 import (
+    from relax.fine_pass.resident_pass2 import (
         _resident_block_weighted_sums,
         _resident_block_weighted_sums_kernel,
     )
@@ -697,7 +697,7 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
     masked reduction and all three comparisons below match in the float64 band.
     """
 
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_powerclass_noise_terms
+    from relax.fine_pass.scoring import _relion_powerclass_noise_terms
 
     _gpu_case(monkeypatch, custom_cuda_lib)
     rng = np.random.default_rng(4242)
@@ -749,8 +749,8 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
 
 
 def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
-    from relax.sparse_pass2.resident_operands import resident_operands_max_bytes
-    from relax.sparse_pass2.sparse_pass2_budget import device_available_bytes
+    from relax.fine_pass.resident_operands import resident_operands_max_bytes
+    from relax.runtime.memory_budget import device_available_bytes
 
     gib = 1024**3
     monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", raising=False)
@@ -769,7 +769,7 @@ def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
 def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
     """At box 380 (72580 half pixels, 192 B each) 256 images per call took 2.7 GiB that a 16 GB pool no longer
     had beside the projection cache (relax#49); the batch now takes what the operand budget leaves."""
-    from relax.sparse_pass2.resident_operands import (
+    from relax.fine_pass.resident_operands import (
         resident_prepare_batch_size,
         resident_prepare_image_bytes,
         resident_prepare_reserved_bytes,
@@ -789,9 +789,9 @@ def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
 
 
 def test_operand_peak_counts_the_smallest_preparation_batch():
-    from relax.helpers.dtype_policy import DensePrecisionPolicy
-    from relax.sparse_pass2.resident_operands import resident_prepare_reserved_bytes
-    from relax.sparse_pass2.resident_pass2 import _resident_half_operand_sizes
+    from relax.fine_pass.resident_operands import resident_prepare_reserved_bytes
+    from relax.fine_pass.resident_pass2 import _resident_half_operand_sizes
+    from relax.refinement.precision import DensePrecisionPolicy
 
     common = dict(
         n_images=1000, n_windowed=600, n_recon_windowed=580, n_rect=800, n_shells=40, n_fine_trans=9,

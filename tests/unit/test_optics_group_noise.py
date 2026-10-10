@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.types import make_noise_stats
 from relax.refinement import noise_updates, sigma_offset
+from relax.types import make_noise_stats
 
 SHAPE = (16, 16)
 N_SHELLS = SHAPE[0] // 2 + 1
@@ -284,7 +284,7 @@ def test_class3d_sigma_offset_per_class_diagnostic_takes_per_group_weight_sums()
 def test_empty_high_shells_take_the_previous_shell():
     # A group on a coarser grid leaves the outer reference shells empty; RELION fills an
     # empty shell from the previous one (ml_optimiser.cpp:5281-5284).
-    from relax.reconstruction import noise_relion
+    from relax.reconstruction import noise as noise_relion
 
     shape = (8, 8)
     wsum = np.array([0.0, 4.0, 3.0, 2.0, 0.0])

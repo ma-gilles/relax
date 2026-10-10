@@ -275,8 +275,8 @@ def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_shar
     4608 rotations, 81 translations, 278 score pixels, complex128 projector without a texture. The fixed 2 GiB batch
     at 8 B per pixel asked for one 6.42 GiB program buffer with 6.6 GiB physically free and ran out of memory."""
 
-    from relax.helpers import projection
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.projection import projection
+    from relax.runtime import memory_budget as budget
 
     gib = 1 << 30
     rotations, slots, trans, pixels = 4608, 41, 81, 278
@@ -322,8 +322,8 @@ def test_coarse_batch_plan_on_an_80gb_card_is_the_fixed_2gib_plan(monkeypatch):
     quarter of the free memory exceeds the fixed 2 GiB, so the batches are those of the fixed budget (the policy in
     docs/development/gpu_compatibility.md: small-card sizing is a no-op on large cards)."""
 
-    from relax.helpers import projection
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.projection import projection
+    from relax.runtime import memory_budget as budget
 
     gib = 1 << 30
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 66 * gib)
@@ -413,7 +413,7 @@ def _gemm_fixture(rng, *, n_images=3, n_rot=256, n_trans=200, box=32):
     """A projector half for ``box`` (32 by default), random rotations, images, weights, d0 and translation phases
     on the GPU."""
 
-    from relax.helpers.projection import relion_projector_half_to_texture_full
+    from relax.projection.projection import relion_projector_half_to_texture_full
 
     size, pad, max_r = box, 2, box // 2
     layout = tomo_coarse.coarse_score_layout((box, box), size, half_spectrum_scoring=True, square_window=False)
@@ -758,7 +758,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     from relax import sampling
 
     monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", pass1_rotations)
-    from relax.helpers import projection
+    from relax.projection import projection
 
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
     monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", direct)
@@ -1028,7 +1028,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         return significance(diff2, rotation_prior, translation_prior, **kwargs)
 
     from relax import sampling
-    from relax.helpers import projection
+    from relax.projection import projection
 
     monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", pass1_rotations)
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))

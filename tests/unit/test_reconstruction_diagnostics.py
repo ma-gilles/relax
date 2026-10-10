@@ -142,7 +142,7 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
         }
         return values["reconstruct_floor_stats_k"]
 
-    monkeypatch.setattr(dumps.regularization_relion, "compute_relion_weight_shell_stats", floor_statistics)
+    monkeypatch.setattr(dumps.regularization, "compute_relion_weight_shell_stats", floor_statistics)
     dumps.write_class_mstep(
         prior, numerators=values["Ft_y_combined"], denominators=values["Ft_ctf_combined"],
         half_denominators=(values["Ft_ctf_0"], values["Ft_ctf_1"]),

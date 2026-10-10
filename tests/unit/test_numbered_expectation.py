@@ -11,18 +11,18 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
 import relax.refinement.noise_updates as noise_updates
-from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
-from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.helpers.orientation_priors import HalfDirectionLogPriors
-from relax.helpers.resolution import ImageGeometry
+from relax.fourier.resolution import ImageGeometry
+from relax.local_search.half import LocalDiagnosticPolicy
+from relax.local_search.sampling import LocalSampling, LocalSearchSettings
 from relax.refinement import expectation
 from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
 from relax.refinement.half_inputs import HalfScoringData, HalfSet
-from relax.refinement.local_half import LocalDiagnosticPolicy
-from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import NoProbe
+from relax.refinement.precision import DensePrecisionPolicy
+from relax.refinement.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.refinement.tomo_half import TomoSampling
 from relax.sampling import TrialGrid
+from relax.sampling.orientation_priors import HalfDirectionLogPriors
 
 pytestmark = pytest.mark.unit
 

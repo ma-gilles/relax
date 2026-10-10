@@ -4,11 +4,11 @@
   "relax/cuda/*.cu*": ["tests/unit/test_relion_bind/test_m7_ifft_crop.py"],
   "relax/refinement/full_refinement.py": ["tests/unit/test_refine_relion_mode.py"],
   "relax/vdam/*.py": ["tests/integration/test_vdam_multishape_smoke.py", "tests/integration/test_scratch_dir_image_names.py"],
-  "relax/helpers/particle_io.py": ["tests/integration/test_scratch_dir_image_names.py"],
+  "relax/io/particle_io.py": ["tests/integration/test_scratch_dir_image_names.py"],
   "relax/refinement/particle_loading.py": ["tests/integration/test_scratch_dir_image_names.py"],
   "relax/refinement/optics_shapes.py": ["tests/integration/test_vdam_multishape_smoke.py"],
-  "relax/sparse_pass2/resident_pass2.py": ["tests/integration/test_vdam_multishape_smoke.py"],
-  "relax/sparse_pass2/dispatch.py": ["tests/integration/test_vdam_multishape_smoke.py"],
-  "relax/helpers/fourier_window.py": ["tests/integration/test_vdam_multishape_smoke.py"]
+  "relax/fine_pass/resident_pass2.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/fine_pass/dispatch.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/fourier/fourier_window.py": ["tests/integration/test_vdam_multishape_smoke.py"]
  }
 }

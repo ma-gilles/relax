@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from recovar.utils.helpers import recovar_volume_to_relion
 
-from relax.helpers.map_io import write_map
+from relax.io.map_io import write_map
 from relax.relion.initial_model_io import _write_data_star, _write_model_star
 from relax.vdam.align_symmetry import align_symmetry, select_largest_class
 from relax.vdam.state import InitialModelState, NativeParticleState

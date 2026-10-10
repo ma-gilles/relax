@@ -50,7 +50,7 @@ def _ppref(volume_ft):
 
     import recovar.core.fourier_transform_utils as ftu
 
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
+    from relax.relion.projector_setup import reference_to_relion_projector_half_maps
 
     volume_real = np.asarray(ftu.get_idft3(np.asarray(volume_ft).reshape(N, N, N)).real, dtype=np.float64)
     halves, r_max = reference_to_relion_projector_half_maps(
@@ -284,7 +284,7 @@ def test_resident_driver_is_relions_fine_pass(_resident_env, current_size, noise
     relative L2; noise, norm and scale sums at most 3.1e-7.
     """
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(current_size, noise)
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
@@ -355,7 +355,7 @@ def test_wide_translation_grids_are_relions_fine_pass(_resident_env, n_coarse_tr
 
     from test_resident_wide_translation_mask import _wide_driver_args
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_wide_driver_args(n_coarse_trans))
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
@@ -368,7 +368,7 @@ def test_vdam_residual_backprojection_is_relions_grad_pass(_resident_env, groups
 
     from test_resident_vdam_estep import _vdam_args
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_vdam_args(residual=True, groups=groups), subtract_reference=True)
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference, scale_sums=groups)
@@ -382,7 +382,7 @@ def test_zero_oversampling_reuses_relions_coarse_normalization(_resident_env):
 
     from test_resident_zero_oversampling import _os0_driver_args
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     base = _os0_driver_args()
     args, reference = _case(6, 200.0, base_args=base)
@@ -425,7 +425,7 @@ def test_c4_pass_is_relions_fine_pass_on_the_asymmetric_unit(_resident_env):
 
     from test_resident_symmetry import _c4_driver_args
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_c4_driver_args(), symmetry="C4")
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
@@ -552,7 +552,7 @@ def _run_local(case, current_size: int):
 
     from test_resident_local_pass2 import N_IMAGES, OVERSAMPLING, PARENT_ORDER, _prior_eulers
 
-    from relax.refinement import local_half
+    from relax.local_search import half as local_half
 
     return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
@@ -685,9 +685,8 @@ def _local_parent_case(current_size: int, noise: float):
     # (helpers.relion_plan_rows), not from relax's builder.
     from helpers.relion_plan_rows import relion_plan_rows_f32
 
-    from relax import healpix_sampling
-    from relax.local.local_layout import _rotation_eulers_from_grid_metadata
-    from relax.sampling import build_local_search_grid_metadata
+    from relax.local_search.layout import _rotation_eulers_from_grid_metadata
+    from relax.sampling import build_local_search_grid_metadata, healpix
 
     order, perturbation, angular_sampling_deg = parent.id_rows_source
     parent_eulers = _rotation_eulers_from_grid_metadata(
@@ -695,7 +694,7 @@ def _local_parent_case(current_size: int, noise: float):
     )
     right = None
     if abs(perturbation) >= 1e-12:
-        right = healpix_sampling.euler_angles_to_matrix(np.full((1, 3), perturbation * angular_sampling_deg))[0]
+        right = healpix.euler_angles_to_matrix(np.full((1, 3), perturbation * angular_sampling_deg))[0]
     plan_rows = relion_plan_rows_f32(parent_eulers, right, None)
     # A parent layout without posterior bins bins its posterior by its fine rotation ids.
     posterior_ids = (
@@ -741,7 +740,7 @@ def _run_local_parent_probe(case, current_size: int):
 
     from test_resident_local_pass2 import N_IMAGES, PARENT_ORDER, _prior_eulers
 
-    from relax.refinement import local_half
+    from relax.local_search import half as local_half
 
     return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],

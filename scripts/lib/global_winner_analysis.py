@@ -15,7 +15,7 @@ import numpy as np
 from recovar.utils.file_hash import sha256_file
 
 from relax.diagnostics.global_winner_summary import MAX_SUPPORTED_BYTES, SCHEMA
-from relax.relion.relion_worker_scale import load_relion_dispatch_schedule, verify_relion_dispatch_schedule_oracle
+from relax.relion.worker_scale import load_relion_dispatch_schedule, verify_relion_dispatch_schedule_oracle
 
 RELION_DISPATCH_CAPTURE_PENDING = "capture_pending_v1"
 

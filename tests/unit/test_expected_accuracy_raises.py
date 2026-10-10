@@ -9,7 +9,7 @@ import logging
 import numpy as np
 import pytest
 
-from relax.helpers import expected_accuracy
+from relax.sampling import expected_accuracy
 
 
 class _FailingInputs:

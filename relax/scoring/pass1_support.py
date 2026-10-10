@@ -131,12 +131,12 @@ def generic_support(plan: SupportPlan, scores: BatchScores, global_log_z, actual
     ``global_log_z`` is the batch's log-sum-exp over every pose. ``scores.support_values`` are the with-prior scores.
     """
 
-    from relax.helpers.oversampling import find_significant_rotations as _find_sig
+    from relax.sampling.oversampling import find_significant_rotations as _find_sig
 
     weights = jnp.exp(scores.support_values - global_log_z[:, None])
     normalization_sum_weight = normalization_max_posterior = None
     if plan.return_relion_f32_normalization:
-        from relax.sparse_pass2.sparse_pass2_posterior import relion_f32_fine_probabilities
+        from relax.fine_pass.posterior import relion_f32_fine_probabilities
 
         # Retain the existing coarse selector and all of its outputs.
         # The symbolic fine pass needs the numeric maximum-shifted

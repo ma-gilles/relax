@@ -41,7 +41,7 @@ its batch; it does not need one volume per image.
 
 Do not replace canonical image/CTF/noise conventions with a generic Euclidean
 metric. The existing
-[`relion_coarse_operands.py`](../../relax/relion/relion_coarse_operands.py) owns
+[`relion_coarse_operands.py`](../../relax/scoring/coarse_operands.py) owns
 corrections, masks, Fourier weights, zero-CTF handling and `d[i]`.
 
 The implementation stores a float32 pair `(m[i], l[i])`, where
@@ -204,7 +204,7 @@ by `relion_ctf._relion_ctf_program` and kept by no cache (relax#39).
 
 The final real-data adapter fetches and stages each raw batch once and passes it
 to both canonical operand owners. The optional `staged_batch` input of
-[`prepare_resident_half_operands`](../../relax/sparse_pass2/resident_operands.py)
+[`prepare_resident_half_operands`](../../relax/fine_pass/resident_operands.py)
 validates row identities and shapes and pads short batches on device. Full/tail
 real GPU operand comparisons pass existing float bands. The existing lazy loader
 uses float16 raw storage; preprocessing promotes to float32, and scoring and

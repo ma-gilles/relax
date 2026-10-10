@@ -15,8 +15,8 @@ import numpy as np
 from recovar.core.ctf import _compute_spa_ctf
 from relax.cuda.kernels import relion_preprocess_real_f32
 from recovar.data_io.image_backends import _centered_rfft2_jax, _centered_rfft2_numpy
-from relax.helpers.image_shifts import apply_relion_integer_pre_shifts
-from relax.sparse_pass2.sparse_pass2_bucket_io import _half_translation_phase_table_for_indices
+from relax.fourier.image_shifts import apply_relion_integer_pre_shifts
+from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
 from recovar.utils.file_hash import sha256_file
 from scripts.validate_relion_bpref_factor_capture import (
     FactorCapture,

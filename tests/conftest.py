@@ -551,7 +551,7 @@ def _strict_em_operand_precision(monkeypatch):
     Production EM precision is float32; a single float64 factor upstream can
     silently promote reconstruction and M-step rows with no visible effect on
     results. Production only warns (see
-    ``relax.helpers.dtype_policy``); tests are strict
+    ``relax.refinement.precision``); tests are strict
     unless a test opts out by setting the variable itself.
     """
 

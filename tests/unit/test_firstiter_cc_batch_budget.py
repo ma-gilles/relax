@@ -12,24 +12,20 @@ from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
-from relax.dense import scoring_policy
-from relax.helpers import batch_planning, oversampling
-from relax.helpers.batch_planning import (
+from relax.local_search import half as local_half
+from relax.local_search import records
+from relax.local_search import sampling as local_sampling
+from relax.refinement import dense_half, half_inputs, scoring_policy, shape_class_scoring
+from relax.refinement.half_inputs import HalfSet
+from relax.refinement.refinement_options import ScoringVariants
+from relax.runtime import batch_planning
+from relax.runtime.batch_planning import (
     estimate_relion_em_batch_sizes,
     safe_dense_k_class_rotation_block_size,
     safe_firstiter_cc_image_batch_size,
 )
-from relax.helpers.types import NoiseStats, make_relion_stats
-from relax.refinement import (
-    dense_half,
-    half_inputs,
-    local_half,
-    local_sampling,
-    shape_class_scoring,
-)
-from relax.refinement.half_inputs import HalfSet
-from relax.refinement.refinement_options import ScoringVariants
-from relax.sparse_pass2 import local_search_records
+from relax.sampling import oversampling
+from relax.types import NoiseStats, make_relion_stats
 
 
 def _dense_owners(**values):
@@ -268,10 +264,10 @@ def test_local_iteration_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            local_search_records.LocalSearchData,
+            records.LocalSearchData,
             local_half.LocalSearchGridSpec,
-            local_search_records.LocalSearchKernelPolicy,
-            local_search_records.LocalSearchSupportPolicy,
+            records.LocalSearchKernelPolicy,
+            records.LocalSearchSupportPolicy,
         )
         for field in dataclasses.fields(owner)
     }
@@ -814,7 +810,7 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
 def test_firstiter_cc_global_winner_pass2_carries_each_images_optics_group(monkeypatch):
     """The --firstiter_cc fine pass gives the resident engine each subset image's optics group."""
     from relax.classification import k_class
-    from relax.sparse_pass2 import dispatch
+    from relax.fine_pass import dispatch
 
     captured = {}
 
@@ -877,7 +873,7 @@ def test_firstiter_cc_global_winner_pass2_keeps_the_optics_group_noise_table_wit
     noise", so every image backprojected with group 1's spectrum (SPA Class3D, 2026-09-30).
     """
     from relax.classification import k_class
-    from relax.sparse_pass2 import dispatch
+    from relax.fine_pass import dispatch
 
     captured = {}
 

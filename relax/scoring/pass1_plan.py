@@ -16,11 +16,14 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.utils.nvtx_shim import nvtx
 
-from relax.helpers.env_flags import (
+from relax.projection.projection_cache import build_projection_cache
+from relax.runtime.env_flags import (
     parse_env_strict_flag,
 )
-from relax.helpers.projection_cache import build_projection_cache
-from relax.relion.relion_coarse_operands import (
+from relax.scoring.coarse_kernels import (
+    coarse_gemm_float64_requested,
+)
+from relax.scoring.coarse_operands import (
     infer_relion_coarse_healpix_order,
     k1_relion_f32_coarse_support_enabled,
 )
@@ -41,9 +44,6 @@ from relax.scoring.pass1_support import (
     exact_order_rotation_prior,
 )
 from relax.scoring.pass1_window import coarse_kernel_window, plan_scoring_window
-from relax.scoring.scoring import (
-    coarse_gemm_float64_requested,
-)
 from relax.scoring.tree_rescore import (
     TreeRescoreGeometry,
     plan_tree_rescore,
@@ -347,7 +347,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     exact_cc_score_indices = None
     exact_cc_translation_angles = None
     if exact_cc_enabled:
-        from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+        from relax.fine_pass.bucket_io import relion_translation_angles_f32
 
         exact_cc_score_indices = jnp.asarray(
             np.arange(n_half) if window_spec.score_indices_np is None else window_spec.score_indices_np,

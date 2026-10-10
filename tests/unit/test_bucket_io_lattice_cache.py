@@ -17,8 +17,8 @@ import jax
 import jax.numpy as jnp
 
 from recovar.core import fourier_transform_utils
-from relax.helpers.preprocessing import relion_half_translation_lattice
-from relax.sparse_pass2 import sparse_pass2_bucket_io as bio
+from relax.fourier.preprocessing import relion_half_translation_lattice
+from relax.fine_pass import bucket_io as bio
 from helpers.float_compare import assert_matches
 
 
@@ -92,7 +92,7 @@ def test_a_cropped_window_never_selects_the_relabelled_row_or_column():
     only place the two labels can disagree.
     """
 
-    from relax.helpers.fourier_window import (
+    from relax.fourier.fourier_window import (
         make_fourier_window_indices_np,
         make_frequency_coords_half_np,
     )
@@ -124,7 +124,7 @@ def test_the_dense_batch_preparation_consumes_the_relabelled_table():
 
     import inspect
 
-    from relax.helpers import preprocessing
+    from relax.fourier import preprocessing
 
     source = inspect.getsource(preprocessing._dense_batch_half_inputs)
     assert "half_translation_phase_table(" in source

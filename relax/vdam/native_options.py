@@ -10,8 +10,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Literal
 
-from relax.helpers.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
-from relax.symmetry import is_identity_symmetry
+from relax.io.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
+from relax.sampling.symmetry import is_identity_symmetry
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
     DEFAULT_GRAD_FIN_FRAC,
@@ -93,7 +93,7 @@ class InitialModelDefaults:
     bootstrap_min_particles: int = 1000
     sigma2_min_particles: int = 1000
     padding_factor: int = 1
-    # RELION GUI defaults: no pre-read, no scratch copy (relax.helpers.particle_io).
+    # RELION GUI defaults: no pre-read, no scratch copy (relax.io.particle_io).
     preread_images: bool = False
     scratch_dir: str = ""
     keep_free_scratch_gb: float = DEFAULT_KEEP_FREE_SCRATCH_GB

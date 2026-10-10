@@ -1,4 +1,4 @@
-"""Test helper: pad one array axis (moved from relax/helpers/shape_buckets.py, PLAN e1; no relax module uses it)."""
+"""Test helper: pad one array axis (moved from relax/runtime/shape_buckets.py, PLAN e1; no relax module uses it)."""
 
 import numpy as np
 

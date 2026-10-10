@@ -14,11 +14,11 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.relion import relion_ctf
-from relax.relion.relion_metadata import refuse_unsupported_optics
+from relax.relion import ctf as relion_ctf
+from relax.relion.metadata import refuse_unsupported_optics
 
 
-# Moved from relax/relion/relion_ctf.py (PLAN e1): no relax module uses it, only this test file.
+# Moved from relax/relion/ctf.py (PLAN e1): no relax module uses it, only this test file.
 def require_no_premultiplied_ctf(experiment_dataset, image_indices, image_shape, *, where: str) -> None:
     """Refuse CTF-premultiplied images on a path that backprojects them as ordinary ones."""
 
@@ -175,7 +175,7 @@ def _relion_bp_sums(image, fctf, minvsigma2, weight, scale, premultiplied):
 
 @pytest.mark.unit
 def test_premultiplied_bpref_weights_match_relion_bp_kernel_in_recovar_frame():
-    from relax.sparse_pass2.sparse_pass2_bucket_io import premultiplied_bpref_weights
+    from relax.fine_pass.bucket_io import premultiplied_bpref_weights
 
     rng = np.random.default_rng(7)
     n_images, n_pixels = 3, 11
@@ -223,7 +223,7 @@ def test_refinement_accepts_premultiplied_optics_only_where_supported():
 
 @pytest.mark.unit
 def test_dense_preprocessing_scores_premultiplied_batches_with_the_exact_rows(star_dataset, tmp_path, monkeypatch):
-    from relax.helpers.preprocessing import _dense_batch_ctf_half
+    from relax.fourier.preprocessing import _dense_batch_ctf_half
 
     generic_calls = []
     config = SimpleNamespace(image_shape=(BOX, BOX), compute_ctf_half=lambda params: generic_calls.append(params))
@@ -374,9 +374,9 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
     (:2842). The Class3D prior hands premultiplied_average_ctf2 the tilt images as parts and the halves'
     noise sumw as the denominator: neither the tilt count nor the particle count."""
 
-    from relax.helpers.types import NoiseStats
     from relax.refinement import priors
     from relax.refinement.tomo_half import TomoHalf
+    from relax.types import NoiseStats
 
     class _Seen(Exception):
         pass
@@ -387,7 +387,7 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
         seen.update(parts=parts, box_size=box_size, sumw=sumw)
         raise _Seen
 
-    monkeypatch.setattr(priors.relion_ctf, "premultiplied_average_ctf2", average_ctf2)
+    monkeypatch.setattr(priors.ctf, "premultiplied_average_ctf2", average_ctf2)
     monkeypatch.setattr(
         priors, "average_ctf2_parts", lambda dataset, scales, **_: [(dataset, scales, BOX, 1.0)]
     )

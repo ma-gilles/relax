@@ -17,8 +17,8 @@ import pytest
 import starfile
 from helpers.em_fixtures import fixture_dir
 
-from relax.healpix_sampling import euler_angles_to_matrix
-from relax.symmetry import relion_symmetry_operators
+from relax.sampling.healpix import euler_angles_to_matrix
+from relax.sampling.symmetry import relion_symmetry_operators
 from relax.vdam import align_symmetry as align
 
 pytestmark = pytest.mark.unit

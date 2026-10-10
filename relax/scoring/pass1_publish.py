@@ -5,9 +5,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.diagnostics.coarse_gaussian_diagnostics import maybe_dump_k_class_significance_batch
+from relax.fine_pass.resident_significance import compact_batch_significance_classes
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
 from relax.scoring.significant_samples import compact_significant_sample_indices_from_mask
-from relax.sparse_pass2.resident_significance import compact_batch_significance_classes
 
 
 @jax.jit

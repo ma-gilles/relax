@@ -11,7 +11,7 @@ from recovar import cuda_backproject as cb
 from scipy.spatial.transform import Rotation
 
 from relax.cuda import kernels as em_cuda_kernels
-from relax.helpers.projection import relion_projector_half_to_texture_full
+from relax.projection.projection import relion_projector_half_to_texture_full
 
 pytestmark = pytest.mark.unit
 
@@ -216,7 +216,7 @@ def test_gpu_staged_capacity_texture_is_the_per_call_projector(q, radius, pf, im
 @pytest.mark.parametrize("mask_disk", [False, True])
 def test_gpu_projection_block_with_a_staged_texture_matches_the_per_call_block(mask_disk):
     """The helper the resident local pass calls gives the same windowed rows with the texture."""
-    from relax.helpers.projection import compute_relion_projector_projections_block, relion_capacity_texture_serves
+    from relax.projection.projection import compute_relion_projector_projections_block, relion_capacity_texture_serves
 
     image_size, radius, pf = 32, 14, 2
     size = 2 * pf * radius + 3
@@ -296,14 +296,14 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
     Its windowed rows (score and reconstruction windows of the physical class) equal the
     logical-crop projection of the logical slab: window pixels outside the logical crop,
     RELION's ky = -L/2 row among them, take the zero column either way
-    (capacity_projection_window_union; relax/relion/relion_project.py).
+    (capacity_projection_window_union; relax/relion/project.py).
     """
-    from relax.sparse_pass2.resident_pass2 import center_pad_relion_projector_half
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import (
+    from relax.fine_pass.projection_blocks import (
         _compute_sparse_pass2_windowed_projections_block,
         capacity_projection_window_union,
         projection_window_union,
     )
+    from relax.fine_pass.resident_pass2 import center_pad_relion_projector_half
 
     image_size, radius = 96, logical_size // 2
     size = 2 * pf * radius + 3
@@ -351,7 +351,7 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
 @pytest.mark.parametrize("logical_size, physical_size", [(30, 32), (34, 40), (56, 56)])
 def test_capacity_window_union_takes_the_logical_pixels(logical_size, physical_size):
     """Each window pixel takes the same projected pixel, or the zero column, as the logical union."""
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import (
+    from relax.fine_pass.projection_blocks import (
         capacity_projection_window_union,
         projection_window_union,
     )

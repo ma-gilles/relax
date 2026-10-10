@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from relax.helpers.shape_buckets import pow2_ceil
-from relax.local.local_layout import exact_bucket_rotation_size
+from relax.local_search.layout import exact_bucket_rotation_size
+from relax.runtime.shape_buckets import pow2_ceil
 
 
 class SparseCandidateMask:

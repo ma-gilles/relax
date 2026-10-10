@@ -1,11 +1,11 @@
-"""relax.helpers.host_memory.return_freed_heap: glibc malloc_trim, a no-op elsewhere (relax#34)."""
+"""relax.runtime.host_memory.return_freed_heap: glibc malloc_trim, a no-op elsewhere (relax#34)."""
 
 import logging
 
 import numpy as np
 import pytest
 
-from relax.helpers import host_memory
+from relax.runtime import host_memory
 
 pytestmark = pytest.mark.unit
 

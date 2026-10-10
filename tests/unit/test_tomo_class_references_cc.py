@@ -17,10 +17,10 @@ import pytest
 pytest.importorskip("jax")
 from helpers.float_compare import assert_matches
 
-from relax.helpers.types import SparsePass2Output, make_noise_stats, make_relion_stats
 from relax.refinement import tomo_half, tomo_scoring
 from relax.refinement.tomo_half import TomoHalf, TomoSampling
 from relax.refinement.tomo_scoring import TomoScoreResult, classes_of_best_coarse_cc
+from relax.types import SparsePass2Output, make_noise_stats, make_relion_stats
 
 pytestmark = pytest.mark.unit
 

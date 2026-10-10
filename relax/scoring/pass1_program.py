@@ -10,7 +10,7 @@ from functools import lru_cache, partial
 import jax
 import jax.numpy as jnp
 
-from relax.scoring.scoring import (
+from relax.scoring.coarse_kernels import (
     relion_coarse_gaussian_gemm_scores_jit,
     relion_coarse_normalized_cc_gemm_scores_jit,
     update_logsumexp,

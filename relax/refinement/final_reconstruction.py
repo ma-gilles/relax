@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import regularization
 from relax.refinement import numbered_reconstruction, priors
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
 
@@ -67,7 +67,7 @@ def compute_final_halfmap_prior(
     scoring_dtype,
 ) -> HalfmapPrior:
     """Estimate the whole-data prior from the joined halves' backprojector FSC."""
-    fsc = regularization_relion.compute_relion_fsc_from_backprojector(
+    fsc = regularization.compute_relion_fsc_from_backprojector(
         numerators[0],
         numerators[1],
         denominators[0],
@@ -93,7 +93,7 @@ def compute_final_halfmap_prior(
             like=fsc,
             log=logger,
         )
-    variance, _, details = regularization_relion.compute_relion_tau2_from_weights(
+    variance, _, details = regularization.compute_relion_tau2_from_weights(
         denominators[0],
         denominators[1],
         fsc,

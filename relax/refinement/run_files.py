@@ -32,7 +32,7 @@ Two deliberate differences from RELION's files:
 rank 1's ``sigma2_noise`` to every rank (ml_optimiser_mpi.cpp:750-758), so its half 2
 restarts on half 1's noise (relax issue #7); an uninterrupted run keeps both.
 
-Maps use RELION's sign and axis convention (``relax.helpers.map_io``). Relax's Fourier means
+Maps use RELION's sign and axis convention (``relax.io.map_io``). Relax's Fourier means
 round-trip through the float32 real-space MRC that RELION's ``--continue`` also reads.
 """
 
@@ -437,7 +437,7 @@ def _class_map_paths(root: Path, snapshot: IterationSnapshot, half: int | None):
 
 
 def _write_maps(root: Path, snapshot: IterationSnapshot) -> None:
-    from relax.helpers.map_io import write_map
+    from relax.io.map_io import write_map
 
     shape = (snapshot.box_size,) * 3
 
@@ -936,7 +936,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     loop held them in (``relax_*_dtype`` in ``data_relax_state``).
     """
 
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
 
     optimiser_star = Path(optimiser_star).resolve()
     directory = optimiser_star.parent

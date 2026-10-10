@@ -10,12 +10,12 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.float_compare import assert_matches
 from helpers.tiny_refinement import VOLUME_SHAPE, CallTrace, frame_holds, run_tiny_refinement
 
-from relax.dense.score_outputs import PerHalfOutputs
 from relax.diagnostics.observers import IntermediatesObserver
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import regularization
 from relax.refinement import finalization, iteration_loop, maximization, reference_state
 from relax.refinement.iteration_snapshot import IterationSnapshot
 from relax.refinement.refinement_options import CheckpointOptions
+from relax.refinement.score_outputs import PerHalfOutputs
 
 pytestmark = pytest.mark.unit
 
@@ -71,8 +71,8 @@ def test_k1_mean_release_precedes_tau_and_reconstruction(monkeypatch):
     trace.wrap(maximization, "_snapshot_and_release_previous_k1_means")
     trace.wrap(maximization, "estimate_split_half_prior", before=previous_means_released)
     trace.wrap(maximization, "reconstruct_numbered_k1_halfmaps", before=previous_means_released)
-    trace.wrap(regularization_relion, "compute_relion_fsc_from_backprojector", "fsc")
-    trace.wrap(regularization_relion, "compute_relion_tau2_from_weights", "tau2")
+    trace.wrap(regularization, "compute_relion_fsc_from_backprojector", "fsc")
+    trace.wrap(regularization, "compute_relion_tau2_from_weights", "tau2")
     run_tiny_refinement(monkeypatch, init_volume=start_volume)
 
     m_steps = [call for call in trace.calls_seen if call.label == "k1_maximization" or "k1_maximization" in call.inside]

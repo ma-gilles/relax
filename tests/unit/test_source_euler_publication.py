@@ -8,7 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar import utils
 
-from relax.dense import score_outputs
+from relax.refinement import score_outputs
 
 pytestmark = pytest.mark.unit
 

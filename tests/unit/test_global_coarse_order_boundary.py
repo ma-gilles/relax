@@ -5,8 +5,8 @@ import logging
 import pytest
 from helpers.run_options import stand_in
 
-import relax.helpers.resolution as resolution_helpers
-from relax.helpers.resolution import ImageGeometry
+import relax.fourier.resolution as resolution_helpers
+from relax.fourier.resolution import ImageGeometry
 from relax.refinement.image_size_plans import ExpectationWindows, RunOptics, plan_adaptive_image_size
 
 pytestmark = pytest.mark.unit

@@ -1,4 +1,4 @@
-"""The XLA pool reserve for RELION's projector texture (relax.helpers.xla_memory_reserve)."""
+"""The XLA pool reserve for RELION's projector texture (relax.runtime.xla_memory_reserve)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from conftest import repo_subprocess_env
 
-from relax.helpers import xla_memory_reserve as reserve
+from relax.runtime import xla_memory_reserve as reserve
 
 H100_TOTAL_BYTES = 81559 * 1024**2  # nvidia-smi memory.total of the della H100s
 

@@ -68,7 +68,7 @@ class CoarseProjector:
     def compact_rows(self, class_index, rots_b, *, return_abs2: bool):
         """Project the exact compact rows shared by direct and GEMM scoring: ``(projected, abs2 or None)``."""
 
-        from relax.helpers import projection as projection_helpers
+        from relax.projection import projection as projection_helpers
 
         projected, projected_abs2 = projection_helpers.compute_relion_projector_projections_block(
             self.relion_projector_half[class_index],
@@ -101,7 +101,7 @@ class CoarseProjector:
 
         if self.returns_compact:
             return self.compact_rows(class_index, rots_b, return_abs2=True)
-        from relax.helpers import projection as projection_helpers
+        from relax.projection import projection as projection_helpers
 
         projector_kwargs = {}
         if self.current_size is not None:

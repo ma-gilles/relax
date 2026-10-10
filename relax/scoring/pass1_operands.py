@@ -10,8 +10,8 @@ from typing import Any, NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.image_shifts import tiled_half_image_phase_factors
-from relax.relion.relion_coarse_operands import (
+from relax.fourier.image_shifts import tiled_half_image_phase_factors
+from relax.scoring.coarse_operands import (
     assemble_relion_cc_coarse_operands,
     assemble_relion_exact_coarse_gaussian_operands,
     process_relion_exact_coarse_half_image,
@@ -83,7 +83,7 @@ class GaussianOperandPlan:
     def prepare(self, batch: BatchInputs, indices) -> ScoreOperands:
         """The Gaussian operands of ``batch``, whose images are the dataset images ``indices``."""
 
-        from relax.helpers.half_spectrum import redundant_nyquist_column_pixels
+        from relax.fourier.half_spectrum import redundant_nyquist_column_pixels
 
         processed_direct = process_relion_exact_coarse_half_image(
             self.experiment_dataset,
@@ -163,7 +163,7 @@ class CcOperandPlan:
         """The normalized-CC operands of ``batch``, whose images are the dataset images ``indices``."""
 
         from relax.cuda import kernels as em_cuda_kernels
-        from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
+        from relax.relion.ctf import relion_exact_ctf_half_from_source_star
 
         processed = process_relion_exact_coarse_half_image(
             self.experiment_dataset,

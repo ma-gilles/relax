@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from helpers.run_options import stand_in
 
-from relax.dense import scoring_policy
-from relax.helpers.dtype_policy import DensePrecisionPolicy
+from relax.refinement import scoring_policy
 from relax.refinement.ports import InputSource, RunObserver
+from relax.refinement.precision import DensePrecisionPolicy
 
 pytestmark = pytest.mark.unit
 

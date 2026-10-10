@@ -1,7 +1,7 @@
 """Float32 dense GEMM tiles for the opt-in resident K1 experiment.
 
 The score convention is the absolute RELION coarse Gaussian convention in
-``relax.scoring.scoring.relion_coarse_gaussian_gemm_scores_jit``.  Inputs are
+``relax.scoring.coarse_kernels.relion_coarse_gaussian_gemm_scores_jit``.  Inputs are
 already assembled by the canonical RELION operand path.  This module only
 changes the placement and tiling of the translation phase.
 See ``docs/math/dense_gemm_experiment.md`` for the score and memory contract.
@@ -12,7 +12,7 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
-from relax.scoring.scoring import (
+from relax.scoring.coarse_kernels import (
     _relion_coarse_cc_atomic_score_from_components,
     relion_coarse_gemm_terms,
 )

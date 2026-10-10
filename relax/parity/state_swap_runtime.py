@@ -13,10 +13,10 @@ from typing import NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.orientation_priors import DirectionPrior
 from relax.parity.state_swap_probe import _STATE_SWAP_VARIANT_COMPONENTS
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.reference_state import ReferenceModel
+from relax.sampling.orientation_priors import DirectionPrior
 
 # Keep the existing diagnostic log namespace for configured handlers/filters.
 logger = logging.getLogger("relax.diagnostics.state_swap_runtime")  # the name before the move to relax.parity: log rows keep it

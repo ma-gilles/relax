@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.dense import score_outputs
+from relax.refinement import score_outputs
 
 pytestmark = pytest.mark.unit
 

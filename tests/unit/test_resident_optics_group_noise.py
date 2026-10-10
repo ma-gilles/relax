@@ -11,12 +11,12 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
-from relax.helpers.optics_noise import dense_optics_groups, noise_rows, pixel_rows
-from relax.helpers.projection import compute_noise_block, compute_noise_block_per_optics_group
-from relax.sparse_pass2 import resident_pass2 as rp
-from relax.sparse_pass2.resident_statistics import make_resident_statistics, resolve_statistics_config
-from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells
+from relax.fine_pass import resident_pass2 as rp
+from relax.fine_pass.resident_statistics import make_resident_statistics, resolve_statistics_config
+from relax.fine_pass.wavg import image_power_shells
+from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half
+from relax.projection.projection import compute_noise_block, compute_noise_block_per_optics_group
+from relax.relion.optics_noise import dense_optics_groups, noise_rows, pixel_rows
 
 IMAGE_SHAPE = (16, 16)
 N_SHELLS = 9

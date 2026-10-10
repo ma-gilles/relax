@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.orientation_priors import (
+from relax.sampling.orientation_priors import (
     class_weights_from_direction_prior,
 )
 

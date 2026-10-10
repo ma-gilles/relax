@@ -148,6 +148,7 @@ def test_relion_scoring_rotations_reject_invalid_inputs(eulers, right_matrix, er
 
 def test_relion_scoring_rotations_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -160,6 +161,7 @@ def test_relion_scoring_rotations_fails_closed_without_gpu(monkeypatch):
 
 def test_relion_scoring_rotations_fails_closed_when_custom_cuda_disabled(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "gpu")
@@ -173,6 +175,7 @@ def test_relion_scoring_rotations_fails_closed_when_custom_cuda_disabled(monkeyp
 
 def test_relion_scoring_rotations_ffi_has_no_aliases(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     call_options = {}
@@ -203,6 +206,7 @@ def test_relion_scoring_rotations_ffi_has_no_aliases(monkeypatch):
 
 def test_relion_scoring_rotations_f64_ffi_dtype_and_target(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     call = {}
@@ -257,8 +261,8 @@ def test_relion_scoring_rotations_with_left_matrices_invert_l_a_r(monkeypatch, c
 
     from scipy.spatial.transform import Rotation
 
-    from relax import healpix_sampling
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.sampling import healpix
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -272,7 +276,7 @@ def test_relion_scoring_rotations_with_left_matrices_invert_l_a_r(monkeypatch, c
                 jnp.asarray(eulers), jnp.asarray(right_matrix), jnp.asarray(left)
             )
         )
-    relion_a = healpix_sampling.euler_angles_to_matrix(eulers.astype(np.float64))
+    relion_a = healpix.euler_angles_to_matrix(eulers.astype(np.float64))
     for b in range(3):
         expected = np.linalg.inv(left[b].astype(np.float64) @ relion_a @ right_matrix.astype(np.float64))
         assert_matches(actual[b], expected.swapaxes(1, 2).astype(np.float32))

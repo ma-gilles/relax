@@ -14,8 +14,8 @@ from pathlib import Path
 import jax
 import numpy as np
 
-from relax.helpers.env_flags import parse_env_flag
-from relax.local.local_backprojection import relion_x_half_sequential_translation_reduction_enabled
+from relax.fine_pass.local_backprojection import relion_x_half_sequential_translation_reduction_enabled
+from relax.runtime.env_flags import parse_env_flag
 
 _BPREF_MEMBERSHIP_DUMP_DIR_ENV = "RELAX_BPREF_MEMBERSHIP_DUMP_DIR"
 _BPREF_MEMBERSHIP_DUMP_ITERATION_ENV = "RELAX_BPREF_MEMBERSHIP_DUMP_ITERATION"

@@ -3,7 +3,7 @@
 JAX's default matmul precision lets XLA run float32 and complex64 products as TF32 on A100/H100
 (about 3e-4 relative error) and in float32 on P100, so an unannotated product would make results
 depend on the GPU generation. PPCA chooses its precision on purpose (fp32 | tf32) and is exempt.
-``relax.helpers.dtype_policy.use_float32_matmuls`` is the EM commands' backstop for products this
+``relax.refinement.precision.use_float32_matmuls`` is the EM commands' backstop for products this
 scan cannot see (``@`` on JAX arrays).
 """
 
@@ -67,7 +67,7 @@ def test_the_scan_sees_an_unannotated_matmul(tmp_path):
 def test_em_commands_default_to_float32_matmuls():
     import jax
 
-    from relax.helpers.dtype_policy import use_float32_matmuls
+    from relax.refinement.precision import use_float32_matmuls
 
     previous = jax.config.jax_default_matmul_precision
     try:

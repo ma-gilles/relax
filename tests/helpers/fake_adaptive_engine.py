@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.classification.k_class_results import KClassEMResult
-from relax.helpers.types import NoiseStats, RelionStats
+from relax.types import NoiseStats, RelionStats
 
 
 def accumulator_size(experiment_dataset, kwargs) -> int:

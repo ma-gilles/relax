@@ -9,9 +9,9 @@ import logging
 
 import numpy as np
 
-from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.refinement import tomo_particles
 from relax.refinement.half_inputs import HalfScoringData
+from relax.refinement.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.refinement.tomo_half import TomoHalf, TomoSampling, tomo_local_rotations, tomo_translation_grids
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
@@ -35,7 +35,7 @@ def tilt_pass_inputs(
 ):
     """The resident pass's :class:`TiltPassInputs` for one half and one sampling."""
 
-    from relax.sparse_pass2.resident_tilts import TiltPassInputs
+    from relax.fine_pass.resident_tilts import TiltPassInputs
 
     image_particle = half.image_particle()
     rounded_old = tomo_particles.relion_gpu_old_offsets(old_offsets_px)
@@ -142,11 +142,11 @@ def score_tomo_half(
 
     from relax import sampling as relax_sampling
     from relax.classification.k_class_inputs import seed_iteration_first_class, seed_iteration_supports
-    from relax.scoring import tomo_coarse
-    from relax.sparse_pass2.resident_pass2 import (
+    from relax.fine_pass.resident_pass2 import (
         compute_k_class_pass2_stats_resident,
         compute_tilt_pass2_stats_resident,
     )
+    from relax.scoring import tomo_coarse
 
     # RELION's float projector, as the SPA passes read it: the refinement builds complex128, and a complex128
     # projector never reaches the float32 texture, so the coarse pass projected in double where RELION interpolates
@@ -421,8 +421,8 @@ def tilt_coarse_cc_winners(
     ``scale_corrections`` are per particle."""
 
     from relax import sampling as relax_sampling
+    from relax.fine_pass.bucket_arrays import relion_parent_execution_key
     from relax.scoring import tomo_coarse
-    from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 
     coarse_ids = np.arange(int(relax_sampling.rotation_grid_size(sampling.healpix_order, "C1")))
     _, coarse_px, _, _ = tomo_translation_grids(sampling, float(half.voxel_size))
@@ -532,8 +532,8 @@ def winner_class_tomo_result(results, members, n_units: int, sampling: TomoSampl
 
     from relax.classification.k_class import sparse_pose_ids_to_fine_grid
     from relax.classification.k_class_results import _expand_subset_noise_stats, _sum_noise_stats
-    from relax.helpers.types import make_relion_stats
-    from relax.sparse_pass2.resident_pass2 import ResidentKClassPass2Output
+    from relax.fine_pass.resident_pass2 import ResidentKClassPass2Output
+    from relax.types import make_relion_stats
 
     n_classes = len(results)
     present = [(k, r) for k, r in enumerate(results) if r is not None]
@@ -617,7 +617,7 @@ def _first_class_k_class_output(pass2, n_classes: int, sampling: TomoSampling, p
     """
 
     from relax.classification.k_class import sparse_pose_ids_to_fine_grid
-    from relax.sparse_pass2.resident_pass2 import ResidentKClassPass2Output
+    from relax.fine_pass.resident_pass2 import ResidentKClassPass2Output
 
     _, _, fine_px, _ = tomo_translation_grids(sampling, pixel_size)
     stats = pass2.relion_stats
@@ -693,8 +693,8 @@ def score_tomo_half_in_loop(
     ``--firstiter_cc`` iteration (:func:`score_tomo_half`).
     """
 
-    from relax.dense.score_outputs import HalfScoreResult
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.refinement.score_outputs import HalfScoreResult
     from relax.sampling import rotation_grid_size
 
     half = data.particles.dataset
@@ -805,7 +805,7 @@ def score_tomo_half_in_loop(
     )
     if n_classes > 1:
         from relax.classification.k_class import _class_segmented_em_result
-        from relax.dense.score_outputs import class_em_to_half_result
+        from relax.refinement.score_outputs import class_em_to_half_result
 
         k_class_result = _class_segmented_em_result(
             pass2,

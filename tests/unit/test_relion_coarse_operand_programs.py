@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.relion.relion_coarse_operands import (
+from relax.scoring.coarse_operands import (
     _relion_cc_coarse_operand_program,
     _relion_cc_coarse_operands,
     _relion_exact_coarse_operand_program,

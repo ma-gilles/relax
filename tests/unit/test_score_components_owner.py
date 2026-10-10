@@ -6,7 +6,7 @@ import numpy as np
 from helpers import dense_block_scores
 from helpers.float_compare import matches
 
-from relax.scoring import scoring
+from relax.scoring import coarse_kernels
 
 
 def test_components_match_the_documented_gemms():
@@ -16,7 +16,7 @@ def test_components_match_the_documented_gemms():
     ctf2 = jnp.asarray(np.abs(rng.standard_normal((n_images, n_half))).astype(np.float32))
     proj_w = jnp.asarray((rng.standard_normal((n_rot, n_half)) + 1j * rng.standard_normal((n_rot, n_half))).astype(np.complex64))
     proj_abs2 = jnp.asarray(np.abs(rng.standard_normal((n_rot, n_half))).astype(np.float32))
-    cross, norms = scoring._e_step_block_score_components(shifted, ctf2, proj_w, proj_abs2, n_images, n_trans)
+    cross, norms = coarse_kernels._e_step_block_score_components(shifted, ctf2, proj_w, proj_abs2, n_images, n_trans)
     assert cross.shape == (n_images, n_rot, n_trans) and norms.shape == (n_images, n_rot)
     expected_cross = (-2.0 * jnp.matmul(jnp.conj(shifted), proj_w.T, precision=jax.lax.Precision.HIGHEST).real).reshape(n_images, n_trans, n_rot).swapaxes(1, 2)
     expected_norms = jnp.matmul(ctf2, proj_abs2.T, precision=jax.lax.Precision.HIGHEST)

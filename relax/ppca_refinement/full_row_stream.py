@@ -65,8 +65,7 @@ from relax.cuda.kernels import (
     ppca_posterior_prep_f32,
     ppca_window_project_f32,
 )
-from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
-from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.dense_dataset import (
     DensePPCAEmbeddings,
@@ -79,6 +78,7 @@ from relax.ppca_refinement.engine import (
     pose_invariant_score_offset,
 )
 from relax.ppca_refinement.residual_statistics import full_float32, residual_statistics_from_moment_images
+from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
 
 FULL_ROW_ENGINE = "full_row_device_resident"
 
@@ -288,7 +288,7 @@ def coarse_support_mask(significant_rows, n_coarse_rotations: int, n_coarse_tran
     """Return ``(B, R_coarse, T_coarse)`` coarse support from packed significant ids.
 
     ``None`` keeps every coarse pose, as in
-    :func:`relax.local.local_layout.build_pass2_hypothesis_layout`.
+    :func:`relax.local_search.layout.build_pass2_hypothesis_layout`.
     """
     coarse = np.zeros((len(significant_rows), int(n_coarse_rotations) * int(n_coarse_translations)), dtype=bool)
     for image, significant in enumerate(significant_rows):
@@ -1282,9 +1282,9 @@ def plan_tile_images(
 
     The budget is ``memory_bytes`` minus :data:`TILE_FRAGMENTATION_HEADROOM` of ``device_bytes``. On a
     GPU stream they default to what the device can still hand out after the stream's upload
-    (:func:`relax.sparse_pass2.sparse_pass2_budget.device_available_bytes`) and the device's memory;
+    (:func:`relax.runtime.memory_budget.device_available_bytes`) and the device's memory;
     on a CPU stream to the host memory left to this process and the host memory it may use
-    (:mod:`relax.helpers.host_memory`). Every stage (radius, window, pose grid) is planned with its
+    (:mod:`relax.runtime.host_memory`). Every stage (radius, window, pose grid) is planned with its
     own shapes, once: with the probed defaults the plan is kept per stage shape, measured at the
     stage's first update. A stage whose one-image tile does not fit is refused: its rotation block
     is too large for the device.
@@ -1313,7 +1313,7 @@ def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipel
     if not memory_bytes:
         return int(requested)
     if device_bytes is None and stream.static.cuda_kernels:
-        from relax.sparse_pass2 import sparse_pass2_budget as budget
+        from relax.runtime import memory_budget as budget
 
         device_bytes = budget._device_memory_limit_bytes()
     budget_bytes = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)
@@ -1376,11 +1376,11 @@ def _available_bytes(stream):
     """``(available, total)`` memory for the stream's tiles: the GPU's after the stream's upload and
     its memory, or the host memory left to this process and the host memory it may use."""
     if not stream.static.cuda_kernels:
-        from relax.helpers.host_memory import available_memory_bytes, resident_bytes
+        from relax.runtime.host_memory import available_memory_bytes, resident_bytes
 
         host = available_memory_bytes()
         return host - resident_bytes(), host
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     available = budget.device_available_bytes(
         budget._device_free_memory_bytes(),
@@ -1422,7 +1422,7 @@ def reserve_plan_region(device, counted_bytes) -> int:
     and the results do not change: the allocator can hand out the same bytes before and after, and
     the pool only takes earlier what the planned tiles would take.
     """
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     stats = device.memory_stats() or {}
     size = plan_region_bytes(

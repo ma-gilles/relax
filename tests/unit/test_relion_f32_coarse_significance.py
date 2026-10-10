@@ -3,13 +3,13 @@
 import numpy as np
 from helpers.float_compare import assert_matches
 
-from relax.helpers.oversampling import (
+from relax.sampling.oversampling import (
     _relion_cuda_f32_tail_target,
     relion_cuda_f32_coarse_log_weights,
     relion_cuda_f32_coarse_posterior,
 )
-from relax.relion.relion_coarse_operands import k1_relion_f32_coarse_support_enabled
 from relax.scoring.coarse_gaussian_gemm import _K1_RELION_F32_COARSE_SUPPORT_ENV
+from relax.scoring.coarse_operands import k1_relion_f32_coarse_support_enabled
 
 
 def _numpy_reference(scores, adaptive_fraction, max_significants):

@@ -33,24 +33,24 @@ from test_resident_candidates import (  # noqa: E402
     _synthetic_tables,
 )
 
-import relax.sparse_pass2.resident_pass2 as rp  # noqa: E402
-from relax.sparse_pass2.compile_ahead import (  # noqa: E402
-    CompileAheadConfig,
-    CompileAheadPool,
-)
-from relax.sparse_pass2.resident_candidates import (  # noqa: E402
+import relax.fine_pass.resident_pass2 as rp  # noqa: E402
+from relax.fine_pass.resident_candidates import (  # noqa: E402
     CandidateTableBlocks,
     plan_capacity_chunks,
 )
-from relax.sparse_pass2.resident_operands import (  # noqa: E402
+from relax.fine_pass.resident_operands import (  # noqa: E402
     describe_resident_operand_mismatch,
     resident_half_operand_avals,
     resident_half_operand_presence,
 )
-from relax.sparse_pass2.sparse_pass2_scoring import (  # noqa: E402
+from relax.fine_pass.scoring import (  # noqa: E402
     _relion_powerclass_noise_terms,
     relion_powerclass_noise_dtypes,
     relion_powerclass_noise_presence,
+)
+from relax.runtime.compile_ahead import (  # noqa: E402
+    CompileAheadConfig,
+    CompileAheadPool,
 )
 
 pytestmark = pytest.mark.unit

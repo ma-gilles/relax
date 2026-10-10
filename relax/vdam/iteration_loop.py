@@ -30,8 +30,8 @@ from typing import Callable, Literal, Sequence
 import numpy as np
 
 from relax.helpers.convergence import _relion_optimizer_average_pmax
-from relax.reconstruction import regularization_relion
-from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
+from relax.reconstruction import regularization
+from relax.reconstruction.regularization import resolution_from_data_vs_prior
 from relax.relion.macros import relion_round
 from relax.vdam.estep_common import EstepSums, estep_sums
 from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
@@ -126,7 +126,7 @@ def update_current_resolution_from_data_vs_prior(state: InitialModelState) -> In
         resolution_from_data_vs_prior(
             np.asarray(state.data_vs_prior_class[k], dtype=np.float64),
             box_size=state.box_size,
-            minres_map=regularization_relion.RELION_MINRES_MAP,
+            minres_map=regularization.RELION_MINRES_MAP,
         )
         for k in range(int(state.K))
     )

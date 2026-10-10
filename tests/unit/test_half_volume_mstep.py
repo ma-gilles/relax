@@ -16,8 +16,7 @@ import recovar.core.slicing as slicing
 import recovar.cuda_backproject as cuda_backproject
 
 from relax.cuda import kernels as em_cuda_kernels
-from relax.helpers import half_volume_mstep
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import half_volume_mstep, regularization
 
 pytestmark = pytest.mark.unit
 
@@ -227,7 +226,7 @@ def test_relion_backprojector_volume_shape_rejects_invalid_inputs():
 
 
 def test_enforce_relion_x0_hermitian_uses_centered_odd_grid_partner():
-    from relax.helpers.half_volume_mstep import (
+    from relax.reconstruction.half_volume_mstep import (
         enforce_relion_half_volume_x0_hermitian,
         enforce_relion_half_volume_x0_hermitian_host,
     )
@@ -386,14 +385,14 @@ def test_relion_x_half_public_full_tau2_shell_stats_use_relion_x_axis(monkeypatc
     )
     fsc = np.full(volume_shape[0] // 2 + 1, 0.5, dtype=np.float64)
 
-    _, _, packed_details = regularization_relion.compute_relion_tau2_from_weights(
+    _, _, packed_details = regularization.compute_relion_tau2_from_weights(
         relion_x_half_weight.reshape(-1),
         relion_x_half_weight.reshape(-1),
         fsc,
         volume_shape,
         return_details=True,
     )
-    _, _, public_full_details = regularization_relion.compute_relion_tau2_from_weights(
+    _, _, public_full_details = regularization.compute_relion_tau2_from_weights(
         relion_x_public_full,
         relion_x_public_full,
         fsc,
@@ -401,7 +400,7 @@ def test_relion_x_half_public_full_tau2_shell_stats_use_relion_x_axis(monkeypatc
         return_details=True,
         full_half_axis=0,
     )
-    _, _, wrong_axis_details = regularization_relion.compute_relion_tau2_from_weights(
+    _, _, wrong_axis_details = regularization.compute_relion_tau2_from_weights(
         relion_x_public_full,
         relion_x_public_full,
         fsc,

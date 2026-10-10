@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
+from relax.fourier.resolution import ImageGeometry, shell_index_to_resolution_angstrom
 from relax.helpers.convergence import (
     ExpectationStatistics,
     RefinementState,
@@ -17,7 +18,6 @@ from relax.helpers.convergence import (
     update_angular_sampling,
     update_refinement_state,
 )
-from relax.helpers.resolution import ImageGeometry, shell_index_to_resolution_angstrom
 from relax.refinement.ports import InputSource, OptimiserAccuracyReplay
 
 if TYPE_CHECKING:

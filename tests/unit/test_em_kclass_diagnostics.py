@@ -10,10 +10,10 @@ import pytest
 from helpers.float_compare import assert_matches, matches
 
 import relax.diagnostics.coarse_gaussian_diagnostics as coarse_diagnostics
-import relax.helpers.oversampling as oversampling_mod
-from relax.dense import score_outputs, scoring_policy
+import relax.sampling.oversampling as oversampling_mod
 from relax.diagnostics import coarse_gaussian_diagnostics
 from relax.diagnostics import iteration as debug_dumps
+from relax.refinement import score_outputs, scoring_policy
 from relax.refinement.refinement_options import ScoringVariants
 
 pytestmark = pytest.mark.unit
@@ -94,7 +94,7 @@ def test_kclass_result_uses_mstep_class_mass_for_relion_priors():
     assert prepared.best_pose_translations.dtype == np.float64
 
 def test_class_weight_history_snapshots_mstep_and_full_posterior():
-    from relax.helpers import iteration_history
+    from relax.refinement import iteration_history
 
     history = iteration_history.RefinementHistory()
     mstep = np.asarray([0.25, 0.75], dtype=np.float64)
@@ -109,8 +109,8 @@ def test_kclass_weight_trajectories_record_mstep_and_full_posterior_provenance(m
 
     from helpers.tiny_refinement import N_IMAGES, CallTrace, run_tiny_refinement
 
-    from relax.helpers.iteration_history import RefinementHistory
     from relax.refinement import result_files
+    from relax.refinement.iteration_history import RefinementHistory
 
     trace = CallTrace(monkeypatch).wrap(RefinementHistory, "record_class_weights")
     result = run_tiny_refinement(monkeypatch, n_classes=2, final_after_max_iter=False)
@@ -637,14 +637,14 @@ def test_kclass_significance_dump_uses_original_index_mapper(monkeypatch, tmp_pa
 def test_relion_score_window_projection_kwargs_use_image_window_not_model_window():
     """The score-window helper must hand the projector the image window size."""
 
-    from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.sparse_pass2 import sparse_pass2_projection_blocks
+    from relax.fine_pass import projection_blocks
+    from relax.fourier.fourier_window import make_fourier_window_spec
 
     spec = make_fourier_window_spec(
         (64, 64), 34, 64 * 33, reconstruction_current_size=32, square=False, include_recon_window=True
     )
     assert int(2 * spec.max_r) == 32
-    kwargs = sparse_pass2_projection_blocks._projection_kwargs_for_relion_score_window(
+    kwargs = projection_blocks._projection_kwargs_for_relion_score_window(
         spec.projection_kwargs(return_abs2=False),
         use_relion_projector=True,
         current_size=34,

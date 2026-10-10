@@ -42,8 +42,8 @@ CHILD = textwrap.dedent(
     ):
         importlib.import_module(module)
 
-    from relax import sampling, symmetry
-    from relax.helpers import expected_accuracy
+    from relax import sampling
+    from relax.sampling import expected_accuracy, symmetry
 
     for label in ("C1", "C4", "D2", "T", "O", "I"):
         symmetry.rotational_operators(label)

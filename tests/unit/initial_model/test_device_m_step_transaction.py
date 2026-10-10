@@ -8,7 +8,7 @@ from helpers import natives
 from helpers.float_compare import assert_matches
 from helpers.vdam import relative_metrics
 
-from relax.relion.relion_vdam_mstep import relion_vdam_m_step_device, relion_vdam_m_step_host
+from relax.relion.vdam_mstep import relion_vdam_m_step_device, relion_vdam_m_step_host
 
 pytestmark = pytest.mark.unit
 
@@ -144,7 +144,7 @@ def test_nan_tau2_fudge_selects_the_fsc_spectrum_like_native(bind, pseudo):
 
 
 def test_branch_certificate_real_only_and_serial_order_like_native(bind):
-    from relax.relion.relion_vdam_mstep import _serial_real_sum_is_zero
+    from relax.relion.vdam_mstep import _serial_real_sum_is_zero
 
     values = np.zeros((8, 8, 5), np.complex128)
     values.imag[:] = 1.0
@@ -208,7 +208,7 @@ def test_physical_hermitian_transaction_native_fp64(bind, size, padding, full, p
 
 @pytest.mark.parametrize("size,padding,expected_backend", [(8, 1, "refused"), (8, 2, "device"), (16, 1, "device")])
 def test_host_backend_capability_attestation(bind, monkeypatch, size, padding, expected_backend):
-    from relax.relion import relion_vdam_mstep as helper
+    from relax.relion import vdam_mstep as helper
 
     case = _case(size=size, padding=padding, radius=size // 4)
     expected = _native(bind, case)
@@ -293,7 +293,7 @@ def test_bpref_slabs_of_one_window_class_share_the_pack_program(padding):
     """Radii 5..8 of a 32 box are one quantum-8 class: the packed cube is the unpadded pack's, one program."""
     import jax.numpy as jnp
 
-    from relax.relion import relion_vdam_mstep as helper
+    from relax.relion import vdam_mstep as helper
 
     rng = np.random.default_rng(7)
     size, capacity = 32, padding * 32 + 3

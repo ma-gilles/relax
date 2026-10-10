@@ -360,8 +360,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     def install_recorders(patch):
         from relax.cuda import kernels as em_cuda_kernels
-        from relax.helpers import projection as projection_helpers
-        from relax.relion import relion_ctf
+        try:
+            from relax.projection import projection as projection_helpers
+        except ImportError:  # the source before the package layout move
+            from relax.helpers import projection as projection_helpers
+        try:
+            from relax.relion import ctf as relion_ctf
+        except ImportError:  # the source before the package layout move
+            from relax.relion import relion_ctf
 
         patch.setattr(
             projection_helpers, "compute_relion_projector_projections_block",
@@ -383,7 +389,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     def install_phased_projection(patch):
         """A projector whose phase ramp depends on the rotation, so the normalized CC differs between poses."""
-        from relax.helpers import projection as projection_helpers
+        try:
+            from relax.projection import projection as projection_helpers
+        except ImportError:  # the source before the package layout move
+            from relax.helpers import projection as projection_helpers
 
         def phased_projection(projector_half, rotations_block, image_shape, **kwargs):
             class_value = float(np.asarray(projector_half)[0, 0, 0].real)
@@ -407,7 +416,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         import recovar.cuda_backproject as cuda_backproject
 
         from relax.cuda import kernels as em_cuda_kernels
-        from relax.scoring import scoring as scoring_module
+        try:
+            from relax.scoring import coarse_kernels as scoring_module
+        except ImportError:  # the source before the package layout move
+            from relax.scoring import scoring as scoring_module
 
         patch.setattr(jax, "default_backend", lambda: "gpu")
         patch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)

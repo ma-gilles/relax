@@ -2,12 +2,12 @@
 
 import jax.numpy as jnp
 
-from relax.sparse_pass2 import sparse_pass2_window as sp
-from relax.sparse_pass2 import sparse_pass2_window
+from relax.fine_pass import window as sp
+from relax.fine_pass import window
 
 
 def test_owner_casts_and_rewindows_in_double(monkeypatch):
-    monkeypatch.setattr(sparse_pass2_window, "make_scoring_half_image_weights", lambda shape, *, relion_half_sum, exclude_relion_redundant_x0, **consistency: jnp.ones((4,), dtype=jnp.float32) * (2.0 if exclude_relion_redundant_x0 else 1.0))
+    monkeypatch.setattr(window, "make_scoring_half_image_weights", lambda shape, *, relion_half_sum, exclude_relion_redundant_x0, **consistency: jnp.ones((4,), dtype=jnp.float32) * (2.0 if exclude_relion_redundant_x0 else 1.0))
 
     class Window:
         @staticmethod

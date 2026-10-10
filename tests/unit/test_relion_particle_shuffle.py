@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.expected_accuracy import relion_auto_refine_half_orders, relion_class3d_trial_layout
+from relax.sampling.expected_accuracy import relion_auto_refine_half_orders, relion_class3d_trial_layout
 
 pytestmark = pytest.mark.unit
 
@@ -20,7 +20,7 @@ def test_mt19937_paired_reference():
 
 
 def test_python_dispatch_and_stable_optics_sort(monkeypatch):
-    from relax.helpers import relion_random
+    from relax.numerics import relion_random
 
     calls = []
 
@@ -47,8 +47,8 @@ def test_half_orders_need_no_binding(monkeypatch):
 
 @pytest.mark.requires_relion_bind
 def test_half1_trial_order_is_the_paired_first_half():
-    from relax.helpers.expected_accuracy import relion_half1_trial_order
     from relax.relion_bind import _relion_bind_core as bind
+    from relax.sampling.expected_accuracy import relion_half1_trial_order
 
     # Half 1 is shuffled first from a fresh generator, so it does not depend on half 2.
     first, _second = bind.auto_refine_randomise_half_orders_mt19937(10, 7, 1712)
@@ -64,7 +64,7 @@ def test_class3d_whole_vector_shuffle_is_the_first_half_generator():
 
 
 def test_class3d_layout_maps_part_ids_to_input_rows_then_sorts_optics(monkeypatch):
-    from relax.helpers import relion_random
+    from relax.numerics import relion_random
 
     calls = []
 

@@ -1,0 +1,460 @@
+"""Shared half-spectrum image preprocessing helpers for dense EM engines."""
+
+from __future__ import annotations
+
+from functools import partial
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+import recovar.core.fourier_transform_utils as fourier_transform_utils
+
+from relax.cuda import (
+    kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
+)
+from relax.fourier.half_spectrum import make_half_image_weights
+from relax.runtime.env_flags import parse_env_strict_flag
+
+_JIT_STAGE_GLUE_ENV = "RELAX_EM_JIT_STAGE_GLUE"
+
+
+def jit_stage_glue_enabled(*, default: bool = False) -> bool:
+    """Whether per-stage host glue runs as one jitted program instead of eager ops.
+
+    The arithmetic after ``process_half_image`` is a fixed chain of elementwise
+    operations and one shell reduction. Run eagerly it is traced, lowered and
+    compiled as one XLA program per primitive per image-batch extent; the T19
+    census charged eight such programs per extent to ``preprocess_batch``
+    alone. The jitted form issues the identical primitives in the identical
+    order on the identical dtypes, so it is a program-count change, not a
+    numerical one, and it is opt-in until that equality is qualified on the
+    production fixtures.
+    """
+
+    return parse_env_strict_flag(_JIT_STAGE_GLUE_ENV, default=default)
+
+
+@jax.jit
+def apply_half_translation_phases(weighted_half, translation_phases_half):
+    return (weighted_half[:, None, :] * translation_phases_half[None, :, :]).reshape(
+        weighted_half.shape[0] * translation_phases_half.shape[0],
+        weighted_half.shape[1],
+    )
+
+
+def _cast_shift_inputs(
+    processed_half,
+    ctf_half,
+    noise_variance_half=None,
+    translation_phases_half=None,
+    *,
+    score_complex_dtype=None,
+    score_real_dtype=None,
+):
+    if score_complex_dtype is not None:
+        processed_half = processed_half.astype(score_complex_dtype)
+        if translation_phases_half is not None:
+            translation_phases_half = translation_phases_half.astype(score_complex_dtype)
+    if score_real_dtype is not None:
+        ctf_half = ctf_half.astype(score_real_dtype)
+        if noise_variance_half is not None:
+            noise_variance_half = noise_variance_half.astype(score_real_dtype)
+    return processed_half, ctf_half, noise_variance_half, translation_phases_half
+
+
+def _norm_inputs(processed_half, noise_variance_half=None, half_weights=None, *, norm_real_dtype=None):
+    if norm_real_dtype is None:
+        return processed_half, noise_variance_half, half_weights
+    norm_complex_dtype = jnp.complex128 if norm_real_dtype == jnp.float64 else jnp.complex64
+    processed_half = processed_half.astype(norm_complex_dtype)
+    if noise_variance_half is not None:
+        noise_variance_half = noise_variance_half.astype(norm_real_dtype)
+    if half_weights is not None:
+        half_weights = half_weights.astype(norm_real_dtype)
+    return processed_half, noise_variance_half, half_weights
+
+
+def process_half_image(
+    experiment_dataset,
+    batch,
+    apply_image_mask: bool,
+    *,
+    relion_preprocess_kwargs=None,
+    image_indices=None,
+):
+    """The batch's images on RECOVAR's centered half spectrum, as every EM path scores them.
+
+    Images of optics groups with beam tilt or odd Zernike terms are demodulated
+    here, as RELION demodulates each particle image before scoring and
+    backprojection (:func:`relax.relion.optics_aberrations.demodulate_odd_aberrations`);
+    that needs the batch's ``image_indices``.
+    """
+
+    from relax.relion.optics_aberrations import demodulate_odd_aberrations
+
+    process_half_fn = getattr(experiment_dataset, "process_images_half", None)
+    if process_half_fn is None:
+        raise ValueError("Dense EM requires experiment_dataset.process_images_half")
+    kwargs = {} if relion_preprocess_kwargs is None else dict(relion_preprocess_kwargs)
+    processed = process_half_fn(batch, apply_image_mask=apply_image_mask, **kwargs)
+    return demodulate_odd_aberrations(experiment_dataset, processed, image_indices)
+
+
+def _dense_batch_ctf_half(experiment_dataset, ctf_params, config, ctf_real_dtype, image_indices):
+    """The batch's CTF on RECOVAR's centered half spectrum.
+
+    Datasets whose CTF needs the optics table (CTF-premultiplied images, even Zernike
+    terms, magnification; :func:`relax.relion.optics_aberrations.dataset_needs_exact_ctf`)
+    take relax's exact RELION CTF rows of the batch's ``image_indices``
+    (:mod:`relax.relion.ctf`), as RELION scores them; the generic evaluator
+    refuses those datasets. Other datasets keep the generic CTF of ``ctf_params``.
+    """
+
+    from relax.relion.optics_aberrations import dataset_needs_exact_ctf
+
+    if image_indices is not None and dataset_needs_exact_ctf(experiment_dataset):
+        from relax.relion.ctf import relion_exact_ctf_half_from_source_star
+
+        rows = relion_exact_ctf_half_from_source_star(experiment_dataset, image_indices, config.image_shape)
+        return rows.astype(jnp.float32 if ctf_real_dtype is None else ctf_real_dtype)
+    if ctf_real_dtype is not None:
+        ctf_params = jnp.asarray(ctf_params, dtype=ctf_real_dtype)
+    return config.compute_ctf_half(ctf_params)
+
+
+def _dense_batch_half_inputs(
+    experiment_dataset,
+    batch,
+    ctf_params,
+    noise_variance,
+    translations,
+    config,
+    apply_image_mask: bool,
+    *,
+    ctf_real_dtype=None,
+    relion_preprocess_kwargs=None,
+    image_indices=None,
+):
+    processed_half = process_half_image(
+        experiment_dataset,
+        batch,
+        apply_image_mask,
+        relion_preprocess_kwargs=relion_preprocess_kwargs,
+        image_indices=image_indices,
+    )
+    ctf_half = _dense_batch_ctf_half(experiment_dataset, ctf_params, config, ctf_real_dtype, image_indices)
+    noise_variance_half = jnp.asarray(noise_variance)
+    translation_phases_half = half_translation_phase_table(translations, config.image_shape)
+    return processed_half, ctf_half, noise_variance_half, translation_phases_half
+
+
+def preprocess_batch(
+    experiment_dataset,
+    batch,
+    ctf_params,
+    noise_variance,
+    translations,
+    config,
+    score_with_masked_images=False,
+    *,
+    score_complex_dtype=None,
+    score_real_dtype=None,
+    norm_real_dtype=None,
+    relion_preprocess_kwargs=None,
+    return_unshifted_score_weighted=False,
+    image_indices=None,
+):
+    """Preprocess one dense image batch for E-step scoring."""
+
+    processed_half, ctf_half, noise_variance_half, translation_phases_half = _dense_batch_half_inputs(
+        experiment_dataset,
+        batch,
+        ctf_params,
+        noise_variance,
+        translations,
+        config,
+        score_with_masked_images,
+        ctf_real_dtype=score_real_dtype,
+        relion_preprocess_kwargs=relion_preprocess_kwargs,
+        image_indices=image_indices,
+    )
+    half_weights = make_half_image_weights(config.image_shape)
+    elementwise = (
+        _preprocess_batch_elementwise_jit
+        if jit_stage_glue_enabled()
+        else _preprocess_batch_elementwise
+    )
+    shifted_half, norm_integrand, ctf2_over_nv_half, score_weighted_half = elementwise(
+        processed_half,
+        ctf_half,
+        noise_variance_half,
+        translation_phases_half,
+        half_weights,
+        score_complex_dtype=score_complex_dtype,
+        score_real_dtype=score_real_dtype,
+        norm_real_dtype=norm_real_dtype,
+    )
+    # The shell reduction stays its own program in both paths. Fusing it into
+    # the elementwise chain changes the accumulation XLA emits and moves the
+    # last bit of ``batch_norm``; the elementwise chain itself is bitwise.
+    batch_norm = jnp.sum(norm_integrand, axis=-1, keepdims=True).real
+    if return_unshifted_score_weighted:
+        return shifted_half, batch_norm, ctf2_over_nv_half, score_weighted_half
+    return shifted_half, batch_norm, ctf2_over_nv_half
+
+
+def _preprocess_batch_elementwise(
+    processed_half,
+    ctf_half,
+    noise_variance_half,
+    translation_phases_half,
+    half_weights,
+    *,
+    score_complex_dtype,
+    score_real_dtype,
+    norm_real_dtype,
+):
+    """:func:`preprocess_batch`'s elementwise arithmetic, without the reduction.
+
+    Kept as a plain function so the eager and jitted paths issue exactly the
+    same primitives in the same order on the same dtypes. ``norm_integrand``
+    is the summand of ``batch_norm``, returned unreduced so the caller keeps
+    the reduction in its own program.
+    """
+
+    shift_processed_half, shift_ctf_half, shift_noise_half, shift_phases_half = _cast_shift_inputs(
+        processed_half,
+        ctf_half,
+        noise_variance_half,
+        translation_phases_half,
+        score_complex_dtype=score_complex_dtype,
+        score_real_dtype=score_real_dtype,
+    )
+    score_weighted_half = shift_processed_half * shift_ctf_half / shift_noise_half
+    shifted_half = apply_half_translation_phases(score_weighted_half, shift_phases_half)
+    norm_processed_half, norm_noise_half, norm_half_weights = _norm_inputs(
+        processed_half,
+        noise_variance_half,
+        half_weights,
+        norm_real_dtype=norm_real_dtype,
+    )
+    norm_integrand = (
+        jnp.abs(norm_processed_half) ** 2 / norm_noise_half
+    ) * norm_half_weights[None, :]
+    weight_ctf_half = shift_ctf_half if score_real_dtype is not None else ctf_half
+    weight_noise_half = shift_noise_half if score_real_dtype is not None else noise_variance_half
+    ctf2_over_nv_half = weight_ctf_half**2 / weight_noise_half
+    return shifted_half, norm_integrand, ctf2_over_nv_half, score_weighted_half
+
+
+_preprocess_batch_elementwise_jit = jax.jit(
+    _preprocess_batch_elementwise,
+    static_argnames=(
+        "score_complex_dtype",
+        "score_real_dtype",
+        "norm_real_dtype",
+    ),
+)
+
+
+def prepare_reconstruction_batch(
+    experiment_dataset,
+    batch,
+    ctf_params,
+    noise_variance,
+    translations,
+    config,
+    *,
+    score_complex_dtype=None,
+    score_real_dtype=None,
+    relion_preprocess_kwargs=None,
+    image_indices=None,
+):
+    """Preprocess one dense image batch for the unmasked M-step path."""
+
+    processed_half, ctf_half, noise_variance_half, translation_phases_half = _dense_batch_half_inputs(
+        experiment_dataset,
+        batch,
+        ctf_params,
+        noise_variance,
+        translations,
+        config,
+        False,
+        ctf_real_dtype=score_real_dtype,
+        relion_preprocess_kwargs=relion_preprocess_kwargs,
+        image_indices=image_indices,
+    )
+    shift_processed_half, shift_ctf_half, shift_noise_half, shift_phases_half = _cast_shift_inputs(
+        processed_half,
+        ctf_half,
+        noise_variance_half,
+        translation_phases_half,
+        score_complex_dtype=score_complex_dtype,
+        score_real_dtype=score_real_dtype,
+    )
+    return apply_half_translation_phases(
+        shift_processed_half * shift_ctf_half / shift_noise_half,
+        shift_phases_half,
+    )
+
+
+def relion_half_translation_lattice(image_shape):
+    """Packed half-spectrum frequencies with RELION's row and column labels.
+
+    ``get_k_coordinate_of_each_pixel_half`` labels the packed Nyquist row
+    ``ky = -N/2`` and the packed Nyquist column ``kx = -N/2``, which is RECOVAR's
+    own centered convention and is what the non-EM callers of that core helper
+    expect. RELION labels the same physical row of a half image it is not
+    cropping ``+N/2`` (``fftw.h:99-109``: ``ip = (i < XSIZE) ? i : i - YSIZE``
+    with ``XSIZE`` the half width) and its column ``x = j`` up to ``+N/2``, and
+    its scoring and translate kernels all derive those labels, so an EM
+    translation phase built on the centered labels is the conjugate of RELION's
+    on that row and column for any shift that is not a whole pixel.
+
+    The table is always built on the uncropped packed half, so RELION's labels
+    are the right ones for it; a cropped window simply never selects that row
+    or column (``windowFourierTransform`` keeps ``ip = -(cs/2-1)..+cs/2``,
+    ``fftw.h:849-855``). This wrapper is EM-local by design: the core helper
+    keeps its own convention for its other callers.
+    """
+
+    lattice = jnp.asarray(
+        fourier_transform_utils.get_k_coordinate_of_each_pixel_half(
+            image_shape, voxel_size=1, scaled=True
+        )
+    )
+    box_size = int(image_shape[0])
+    if box_size % 2 == 0:
+        for axis in (1, 0):
+            k = jnp.rint(lattice[:, axis] * box_size).astype(jnp.int32)
+            nyquist = k == -(box_size // 2)
+            lattice = lattice.at[:, axis].set(jnp.where(nyquist, -lattice[:, axis], lattice[:, axis]))
+    return lattice
+
+
+def half_translation_phase_table(translations, image_shape, dtype=jnp.float32):
+    """Return the complex phase-shift table for a translation grid.
+
+    ``dtype`` defaults to float32 (RELION's accelerated-GPU precision, and
+    RECOVAR's own historical default here). Pass ``jnp.float64`` to compute
+    genuinely double-precision phase factors; ``jax.lax.Precision.HIGHEST``
+    alone does not upcast float32 inputs, so the input dtype must change too.
+
+    Frequencies come from :func:`relion_half_translation_lattice`, so the
+    packed Nyquist row carries RELION's label rather than RECOVAR's centered
+    one.
+    """
+    real_dtype = jnp.float64 if jnp.dtype(dtype) == jnp.dtype(jnp.float64) else jnp.float32
+    return _half_translation_phase_table(
+        jnp.asarray(translations), tuple(int(v) for v in image_shape), np.dtype(real_dtype).name
+    )
+
+
+@partial(jax.jit, static_argnames=("image_shape", "real_dtype"))
+def _half_translation_phase_table(translations, image_shape, real_dtype):
+    # One program per (translations, image shape): eager, the lattice and the
+    # phases were about twenty single-primitive programs per new image size.
+    real_dtype = jnp.dtype(real_dtype)
+    complex_dtype = jnp.complex128 if real_dtype == jnp.float64 else jnp.complex64
+    phase_arg = jnp.einsum(
+        "td,pd->tp",
+        translations.astype(real_dtype),
+        relion_half_translation_lattice(image_shape).astype(real_dtype),
+        precision=jax.lax.Precision.HIGHEST,
+    )
+    return jnp.exp(jnp.asarray(-2j * jnp.pi, dtype=complex_dtype) * phase_arg)
+
+
+def image_preprocess_backend(experiment_dataset):
+    image_source = getattr(experiment_dataset, "image_source", None)
+    return getattr(image_source, "backend", image_source)
+
+
+def relion_preprocess_backend(experiment_dataset):
+    """Root image backend of a dataset, following subset ``parent`` links."""
+
+    image_source = getattr(experiment_dataset, "image_source", None)
+    while hasattr(image_source, "parent"):
+        image_source = image_source.parent
+    return getattr(image_source, "backend", image_source)
+
+
+def uses_relion_cuda_image_preprocessing(experiment_dataset) -> bool:
+    """Whether the dataset's root backend runs RELION's CUDA image preprocessing.
+
+    The fresh K=1 refinement defaults (source-faithful powerClass
+    normalization, exact BPref operands, exact coarse operands) score from
+    that preprocessing and fail closed without it.
+    """
+
+    return getattr(relion_preprocess_backend(experiment_dataset), "relion_fourier_backend", None) == "relion_cuda"
+
+
+def prepare_batch_preprocess_operands(
+    experiment_dataset,
+    batch,
+    image_indices,
+    *,
+    image_corrections=None,
+    scale_corrections=None,
+    image_pre_shifts=None,
+    dtype: np.dtype = np.float32,
+):
+    """Select typed per-image operands for host or strict CUDA preprocessing.
+
+    ``dtype`` defaults to float32 (RELION's accelerated-GPU precision);
+    callers running double-precision scoring should pass ``np.float64`` --
+    these are RELION's per-image group-scale/normalization correction
+    factors (RFLOAT, never narrowed), multiplied directly into the
+    CTF^2/noise weighting used by both pass-1 and pass-2 scoring. The
+    ``relion_cuda``-backend branch below is unaffected: it's a real CUDA
+    FFI kernel input, hardware-locked to float32 independent of this
+    ``dtype``.
+    """
+
+    from relax.fourier.image_shifts import integer_pre_shifts_or_none
+
+    image_indices_np = np.asarray(image_indices)
+    batch_size = int(batch.shape[0])
+    integer_pre_shifts = integer_pre_shifts_or_none(image_pre_shifts, image_indices_np, batch=batch)
+    backend = image_preprocess_backend(experiment_dataset)
+    relion_cuda_preprocess = getattr(backend, "relion_fourier_backend", None) == "relion_cuda"
+    if relion_cuda_preprocess and image_pre_shifts is not None and integer_pre_shifts is None:
+        raise RuntimeError("relion_cuda preprocessing requires integral RELION image pre-shifts")
+    if relion_cuda_preprocess and integer_pre_shifts is None:
+        integer_pre_shifts = np.zeros((batch_size, 2), dtype=np.int32)
+
+    batch_scale_np = (
+        np.asarray(scale_corrections)[image_indices_np].astype(dtype, copy=False)
+        if scale_corrections is not None
+        else np.ones(batch_size, dtype=dtype)
+    )
+    batch_corr_np = (
+        np.asarray(image_corrections)[image_indices_np].astype(dtype, copy=False)
+        if image_corrections is not None
+        else None
+    )
+    relion_preprocess_kwargs = None
+    if relion_cuda_preprocess:
+        from relax.cuda.kernels import note_relion_preprocess_batch
+
+        # An invalid image of this batch is reported by its dataset index (relax#16).
+        note_relion_preprocess_batch(image_indices_np)
+        normalization_factors = (
+            batch_corr_np / batch_scale_np
+            if batch_corr_np is not None
+            else np.ones(batch_size, dtype=np.float32)
+        )
+        relion_preprocess_kwargs = {
+            "relion_normalization_factors": jnp.asarray(normalization_factors, dtype=jnp.float32),
+            "relion_integer_shifts": jnp.asarray(integer_pre_shifts, dtype=jnp.int32),
+        }
+    return (
+        relion_cuda_preprocess,
+        integer_pre_shifts,
+        batch_corr_np,
+        batch_scale_np,
+        relion_preprocess_kwargs,
+    )
+
+

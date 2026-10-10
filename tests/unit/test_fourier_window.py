@@ -26,7 +26,7 @@ from helpers.em_arrays import _hermitian_volume, _raw_real_image_2d
 from recovar import core
 from recovar.core.configs import ForwardModelConfig
 
-from relax.helpers.fourier_window import (
+from relax.fourier.fourier_window import (
     ALLOWED_CURRENT_SIZES,
     make_fourier_window_indices_np,
     make_fourier_window_spec,
@@ -34,15 +34,15 @@ from relax.helpers.fourier_window import (
     quantize_current_size,
     relion_fftw_order_for_square_score_window,
 )
-from relax.helpers.half_spectrum import (
+from relax.fourier.half_spectrum import (
     make_half_image_weights,
     make_relion_noise_shell_indices_half,
     make_scoring_half_image_weights,
     mask_relion_noise_shell_indices_to_current_window,
 )
-from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
-from relax.helpers.projection import compute_projections_block as _compute_projections_block
-from relax.scoring.scoring import _e_step_block_scores_windowed
+from relax.fourier.preprocessing import preprocess_batch as _preprocess_batch
+from relax.projection.projection import compute_projections_block as _compute_projections_block
+from relax.scoring.coarse_kernels import _e_step_block_scores_windowed
 
 pytestmark = pytest.mark.unit
 
@@ -923,8 +923,8 @@ def test_window_at_box_is_relions_support_with_its_nyquist_row():
     (``relion_half_translation_lattice``), which differs from the centred label by a
     conjugate y-phase for any non-integer shift.
     """
-    from relax.helpers.fourier_window import make_fourier_window_spec, make_frequency_coords_half_np
-    from relax.helpers.preprocessing import relion_half_translation_lattice
+    from relax.fourier.fourier_window import make_fourier_window_spec, make_frequency_coords_half_np
+    from relax.fourier.preprocessing import relion_half_translation_lattice
 
     n = 64
     n_half = n * (n // 2 + 1)
@@ -964,7 +964,7 @@ def test_stable_window_plan_keeps_relions_window_at_box():
     (S3b group 2: 112 px, s = 1.12, reference r_max 64) the corners then project inside the
     model sphere, where RELION's corr_img is zero (ires >= N/2 + 1; ACC dump of iteration 13).
     """
-    from relax.helpers.fourier_window import make_fourier_window_spec, make_stable_fourier_window_shape_plan
+    from relax.fourier.fourier_window import make_fourier_window_spec, make_stable_fourier_window_shape_plan
 
     n = 112
     n_half = n * (n // 2 + 1)
@@ -990,8 +990,8 @@ def test_class_reconstruction_window_at_box_keeps_relions_outer_ring():
     backprojects every pixel with ``ires < N/2 + 1``, including the ring N/2 < r < N/2 + 1/2 that
     the single-grid exact cut drops. Single-grid pixels keep the exact cut (sphere = window there).
     """
-    from relax.helpers.fourier_window import make_frequency_coords_half_np
-    from relax.sparse_pass2.sparse_pass2_window import _pass2_window_setup
+    from relax.fine_pass.window import _pass2_window_setup
+    from relax.fourier.fourier_window import make_frequency_coords_half_np
 
     n = 112
     common = dict(

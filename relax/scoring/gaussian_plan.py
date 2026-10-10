@@ -106,7 +106,7 @@ def plan_coarse_gaussian(
     cache_requested, cache_explicit = _projection_cache_requested(shape, relion_projector_half)
     if shape.n_trans > 128:
         raise ValueError(f"the coarse GEMM scorer supports at most 128 translations, got {shape.n_trans}")
-    from relax.sparse_pass2.sparse_pass2_scoring import (
+    from relax.fine_pass.scoring import (
         relion_cuda_powerclass_highres_xi2_half,
     )
 

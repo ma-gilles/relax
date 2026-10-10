@@ -12,11 +12,10 @@ from helpers.float_compare import assert_matches, matches
 from helpers.refinement_specs import local_half_owners
 from helpers.run_options import stand_in
 
-from relax.dense import scoring_policy
-from relax.refinement import shape_class_scoring
+from relax.refinement import scoring_policy, shape_class_scoring
 from relax.refinement.half_inputs import HalfScoringData, HalfSet
 from relax.refinement.refinement_options import ScoringVariants
-from relax.symmetry import (
+from relax.sampling.symmetry import (
     canonicalize_rotational_symmetry,
     parse_rotational_symmetry,
     relion_symmetry_operators,
@@ -265,7 +264,7 @@ def test_parent_expanded_local_layout_maps_non_c1_children_to_reduced_parent_ids
     expected_n_global,
     expected_posterior_ids,
 ):
-    from relax.local import local_layout
+    from relax.local_search import layout as local_layout
 
     parent_ids = np.asarray([2, 7], dtype=np.int32)
     parent_map = np.asarray([0, 0, 1, 1], dtype=np.int64)
@@ -395,11 +394,11 @@ def test_explicit_c1_convergence_distance_preserves_default_path():
     "label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
 )
 def test_symmetry_direction_prior_collapse_and_expansion(label):
-    from relax.helpers.orientation_priors import (
+    from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+    from relax.sampling.orientation_priors import (
         collapse_rotation_posterior_to_direction_prior,
         make_relion_direction_log_prior,
     )
-    from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
 
     order = 3
     n_rotations = rotation_grid_size(order, label)
@@ -432,13 +431,13 @@ def test_symmetry_direction_prior_collapse_and_expansion(label):
     "label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
 )
 def test_symmetry_direction_prior_geometry_expansion_matches_canonical_ids(label):
-    from relax.helpers.orientation_priors import (
-        make_relion_direction_log_prior,
-    )
     from relax.sampling import (
         get_relion_rotation_grid,
         rotation_grid_n_in_planes,
         rotation_grid_size,
+    )
+    from relax.sampling.orientation_priors import (
+        make_relion_direction_log_prior,
     )
 
     order = 3
@@ -474,12 +473,12 @@ def test_refinement_symmetry_options_canonicalize_at_construction(requested, can
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_firstiter_cc_fine_grid_uses_reduced_asymmetric_unit_ids(label):
-    from relax.helpers.oversampling import (
-        build_adaptive_pass2_grids,
-    )
     from relax.sampling import (
         get_oversampled_rotation_grid_from_samples,
         get_relion_rotation_grid,
+    )
+    from relax.sampling.oversampling import (
+        build_adaptive_pass2_grids,
     )
 
     order = 3
@@ -508,12 +507,12 @@ def test_firstiter_cc_fine_grid_uses_reduced_asymmetric_unit_ids(label):
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
+    from relax.fine_pass.bucket_arrays import (
+        _prepare_per_image_pass2_inputs,
+    )
     from relax.sampling import (
         get_oversampled_rotation_grid_from_samples,
         rotation_grid_size,
-    )
-    from relax.scoring.sparse_bucket_arrays import (
-        _prepare_per_image_pass2_inputs,
     )
 
     order = 3
@@ -542,10 +541,10 @@ def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
 
 
 def test_sparse_pass2_rejects_c1_sized_parent_grid_for_i1():
-    from relax.sampling import rotation_grid_size
-    from relax.scoring.sparse_bucket_arrays import (
+    from relax.fine_pass.bucket_arrays import (
         _prepare_per_image_pass2_inputs,
     )
+    from relax.sampling import rotation_grid_size
 
     with pytest.raises(ValueError, match="I1 sparse pass-2 coarse rotation count mismatch"):
         _prepare_per_image_pass2_inputs(
@@ -564,12 +563,12 @@ def test_sparse_pass2_rejects_c1_sized_parent_grid_for_i1():
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_symmetry_reduced_coarse_tie_break_uses_relion_direction_major_order(label):
-    from relax.relion.relion_coarse_operands import (
+    from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+    from relax.scoring.coarse_operands import (
         _relion_coarse_pose_tie_break_keys,
         infer_relion_coarse_healpix_order,
         select_relion_coarse_rescore_winner_slots,
     )
-    from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
 
     order = 3
     n_rotations = rotation_grid_size(order, label)
@@ -736,7 +735,7 @@ def test_kclass_healpix_order_inference_uses_symmetry_reduced_grid(label):
 
 
 def test_exact_local_precompute_policy_counts_the_symmetry_asu():
-    from relax.refinement.local_sampling import (
+    from relax.local_search.sampling import (
         _precompute_exact_local_fine_grid_enabled,
     )
 
@@ -753,7 +752,7 @@ def _write_iteration_debug_metadata(
     from relax.diagnostics.iteration import (
         _save_iteration_intermediates,
     )
-    from relax.helpers import map_io
+    from relax.io import map_io
 
     monkeypatch.setattr(map_io, "write_map_from_ft", lambda *_args, **_kwargs: None)
     from relax.refinement.refinement_options import SymmetryOptions
@@ -941,10 +940,10 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
 def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monkeypatch):
     """Final Q a087087cc: exact-local reconstruction of a point group requires x-half accumulation."""
 
-    from relax.refinement import local_half
+    from relax.local_search import half
 
     monkeypatch.setattr(
-        local_half,
+        half,
         "_run_local_search_iteration",
         lambda *_args, **_kwargs: pytest.fail("unsupported non-C1 exact-local route was scored"),
     )
@@ -982,7 +981,7 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         relion_x_half_mstep=False,
     )
     with pytest.raises(RuntimeError, match="C4 exact-local reconstruction requires RELION x-half BPref"):
-        local_half._score_half_local(*local_half_owners(**kwargs))
+        half._score_half_local(*local_half_owners(**kwargs))
 
 
 @pytest.mark.parametrize("label", ["C4", "O", "I1"])

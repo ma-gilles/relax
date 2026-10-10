@@ -13,9 +13,9 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils, mask
 
-from relax.helpers.xla_memory_reserve import device_fits
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import regularization
 from relax.relion.reference_initialization import initial_low_pass_filter_references
+from relax.runtime.xla_memory_reserve import device_fits
 
 if TYPE_CHECKING:
     from relax.refinement.numbered_reconstruction import ReconstructionSettings
@@ -291,6 +291,6 @@ def apply_relion_solvent_flatten_k1(
     # unchanged; only the storage owner crosses the device/host boundary.
     flattened.block_until_ready()
     flattened_host = np.array(jax.device_get(flattened), copy=True, order="C")
-    regularization_relion.delete_device_array(flattened)
-    regularization_relion.delete_device_array(solvent_mask)
+    regularization.delete_device_array(flattened)
+    regularization.delete_device_array(solvent_mask)
     return flattened_host

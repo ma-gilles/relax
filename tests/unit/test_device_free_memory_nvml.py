@@ -6,7 +6,7 @@ import ctypes
 
 import pytest
 
-from relax.sparse_pass2 import sparse_pass2_budget as budget
+from relax.runtime import memory_budget as budget
 
 pytestmark = pytest.mark.unit
 

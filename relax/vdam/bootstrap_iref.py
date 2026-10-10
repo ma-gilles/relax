@@ -194,7 +194,7 @@ def compute_bootstrap_iref(
     """
     from recovar.utils.helpers import relion_volume_to_recovar
 
-    from relax.relion.relion_ctf import relion_ctf_fftw_half
+    from relax.relion.ctf import relion_ctf_fftw_half
 
     # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not A).
     current_size = compute_ini_high_shell(box_size)
@@ -250,24 +250,24 @@ def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
     """``(image_group, {group: gamma})`` for the bootstrap CTF, or None without even Zernike terms.
 
     The groups' even Zernike gamma offsets on the model grid, as relax's exact CTF rows
-    use them (:func:`relax.relion.relion_ctf._optics_group_ctf_geometry`). The command refuses
-    magnification (:func:`relax.relion.relion_metadata.refuse_unsupported_optics`), so a group's
+    use them (:func:`relax.relion.ctf._optics_group_ctf_geometry`). The command refuses
+    magnification (:func:`relax.relion.metadata.refuse_unsupported_optics`), so a group's
     ``rlnMagMat`` columns can only hold the exact identity here, which leaves the offsets unchanged (relax#66).
     """
 
     from recovar.data_io.starfile import star_column
 
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
     from relax.relion.optics_aberrations import dataset_needs_exact_ctf
 
     if not dataset_needs_exact_ctf(dataset):
         return None
-    _, cache = relion_ctf.exact_ctf_source_cache(dataset, (int(box_size), int(box_size)))
-    original = np.asarray(relion_ctf.original_image_indices(dataset, np.asarray(image_indices, dtype=np.int64)))
+    _, cache = ctf.exact_ctf_source_cache(dataset, (int(box_size), int(box_size)))
+    original = np.asarray(ctf.original_image_indices(dataset, np.asarray(image_indices, dtype=np.int64)))
     groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[original]
     gamma_by_group = {}
     for group in np.unique(groups):
-        gamma_by_group[int(group)] = relion_ctf._optics_group_ctf_geometry(cache, int(group), int(box_size))[0]
+        gamma_by_group[int(group)] = ctf._optics_group_ctf_geometry(cache, int(group), int(box_size))[0]
     if all(gamma is None for gamma in gamma_by_group.values()):
         return None
     return groups, gamma_by_group
@@ -490,10 +490,10 @@ def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInit
     ``data_vs_prior`` counts particles (ml_model.cpp:1609-1617). Returns ``(state, optics_group_by_particle)``.
     """
 
-    from relax.helpers.expected_accuracy import _trial_ctf_images
     from relax.refinement.tomo_half import tilt_image_accuracy_inputs
+    from relax.relion.ctf import relion_fftw_ctf_rows
     from relax.relion.optics_aberrations import dataset_needs_exact_ctf
-    from relax.relion.relion_ctf import relion_fftw_ctf_rows
+    from relax.sampling.expected_accuracy import _trial_ctf_images
 
     box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)

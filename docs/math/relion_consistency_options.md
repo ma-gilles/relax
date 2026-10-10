@@ -97,7 +97,7 @@ Nyquist plane, and the origin, which is its own mate), which makes every sum and
 half the one over the whole Fourier grid, every voxel once. Both public layouts of an accumulator
 give that statistic: the full layout expanded from RELION's x-half, and the native packed half
 that accumulators of 200M voxels or more are repacked to (`_pair_once_weights`,
-`relax/reconstruction/regularization_relion.py`).
+`relax/reconstruction/regularization.py`).
 
 | RELION loop | relax function | Feeds |
 | --- | --- | --- |
@@ -125,7 +125,7 @@ counted and never summed, and `sigma2_noise[cs/2]` is low by that fraction: 52 o
 other shell, and every shell at the box, is exact.
 
 `summed` divides each shell by the pixels the expectation summed
-(`summed_noise_pixels_per_shell`, `relax/reconstruction/noise_relion.py`), through
+(`summed_noise_pixels_per_shell`, `relax/reconstruction/noise.py`), through
 `update_posterior_noise_variance` for the K=1 per-half, the Class3D shared and the per-optics-group
 updates; the numbered iterations pass the expectation's image current size. The sums themselves
 and the kernels that accumulate them are unchanged. Not changed: RELION's average CTF^2 of
@@ -159,7 +159,7 @@ and scale sums and in `Npix_per_shell`. A cropped image has no such column (its 
 affected, and there only shells `>= N/2`, which lie outside the reference sphere.
 
 `once` leaves out the members `jp = N/2, ip < 0` (`redundant_nyquist_column_pixels`,
-`relax/helpers/half_spectrum.py`), through arrays built in Python only:
+`relax/fourier/half_spectrum.py`), through arrays built in Python only:
 
 | Quantity | Function |
 | --- | --- |
@@ -184,7 +184,7 @@ without DC. The first iteration therefore picks its poses on a different set of 
 `kx = 0` column at double weight, from all later ones.
 
 `gaussian` scores the CC iteration on the Gaussian support (`gaussian_support_weights`,
-`relax/helpers/half_spectrum.py`), through arrays built in Python only:
+`relax/fourier/half_spectrum.py`), through arrays built in Python only:
 
 | Quantity | Function |
 | --- | --- |

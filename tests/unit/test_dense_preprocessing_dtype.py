@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import numpy as np
 from helpers.float_compare import assert_matches
 
-from relax.helpers.preprocessing import preprocess_batch
+from relax.fourier.preprocessing import preprocess_batch
 
 
 class _Float64CtfConfig:

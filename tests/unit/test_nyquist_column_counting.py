@@ -13,8 +13,8 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import MockHalfSet, engine_stage_kwargs, record_calls, run_tiny_refinement
 
-from relax.helpers import half_spectrum
-from relax.reconstruction import noise_relion
+from relax.fourier import half_spectrum
+from relax.reconstruction import noise as noise_relion
 from relax.refinement.refinement_options import RelionConsistencyOptions
 
 pytestmark = pytest.mark.unit
@@ -132,7 +132,7 @@ def _unshifted_operands(**kwargs):
     import jax.numpy as jnp
     from recovar.core.configs import ForwardModelConfig
 
-    from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
+    from relax.fine_pass.bucket_io import prepare_unshifted_bucket_operands
 
     dataset = MockHalfSet(3, np.random.default_rng(0))
     config = ForwardModelConfig.from_dataset(dataset, disc_type="linear_interp", process_fn=dataset.process_images)
@@ -179,8 +179,8 @@ def test_image_power_of_the_noise_image_counts_each_nyquist_pair_once():
 
 
 def test_pass2_weight_builder_takes_the_rule():
-    from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.sparse_pass2.sparse_pass2_window import _pass2_half_weights
+    from relax.fine_pass.window import _pass2_half_weights
+    from relax.fourier.fourier_window import make_fourier_window_spec
 
     spec = make_fourier_window_spec((16, 16), 16, 16 * 9, window_at_box=True)
     kwargs = dict(half_spectrum_scoring=True, relion_firstiter_score_mode="gaussian", use_float64_scoring=False)
@@ -218,9 +218,9 @@ def test_local_search_policies_carry_the_rule():
     """Every builder of the local policies names the rule: neither record defaults it."""
     import dataclasses
 
+    from relax.local_search.half import LocalExecutionPolicy
+    from relax.local_search.records import LocalSearchKernelPolicy
     from relax.refinement.dense_half import DenseExecutionPolicy
-    from relax.refinement.local_half import LocalExecutionPolicy
-    from relax.sparse_pass2.local_search_records import LocalSearchKernelPolicy
 
     for policy in (DenseExecutionPolicy, LocalExecutionPolicy, LocalSearchKernelPolicy):
         rule = {field.name: field for field in dataclasses.fields(policy)}["nyquist_column_counting"]
@@ -228,7 +228,7 @@ def test_local_search_policies_carry_the_rule():
 
 
 def test_resident_pass_refuses_the_rule_for_subtomograms_and_the_full_grid_gemm_engine():
-    from relax.sparse_pass2 import resident_pass2
+    from relax.fine_pass import resident_pass2
 
     for refused in (dict(tilt=object()), dict(dense_gemm_full_grid=True)):
         with pytest.raises(NotImplementedError, match="single-particle resident pass 2"):

@@ -9,8 +9,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
+from relax.fourier.resolution import ImageGeometry
 from relax.helpers.convergence import RefinementState
-from relax.helpers.resolution import ImageGeometry
 from relax.parity.relion_replay_source import RelionReplay
 from relax.refinement.iteration_planning import initialize_refinement_state
 from relax.refinement.iteration_snapshot import IterationSnapshot, refinement_state_fields

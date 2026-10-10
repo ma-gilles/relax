@@ -153,9 +153,9 @@ def projector_power_refresh(state, *, padding_factor):
     """
     from dataclasses import replace
 
-    from relax.relion import relion_projector_setup
+    from relax.relion import projector_setup
 
-    _, power, _ = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+    _, power, _ = projector_setup.reference_to_relion_projector_half_maps_and_power(
         state.Iref,
         current_size=int(state.current_size if state.current_size > 0 else state.box_size),
         padding_factor=int(padding_factor),

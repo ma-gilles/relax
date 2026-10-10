@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import pytest
 
-from relax.helpers import preprocessing
+from relax.fourier import preprocessing
 from relax.vdam import adaptive_estep
 
 pytestmark = pytest.mark.unit

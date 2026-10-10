@@ -131,7 +131,7 @@ def _comparison(replays, left_key, right_key):
 def _reconstruct_unregularized_map(replay, boundary):
     """Transfer one replay through the shared no-prior reconstruction path."""
 
-    from relax.helpers.half_volume_mstep import (
+    from relax.reconstruction.half_volume_mstep import (
         enforce_relion_half_volume_x0_hermitian_host,
         relion_x_half_volume_to_native_half,
     )

@@ -10,7 +10,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.vdam import estep_sampling_stub, initial_model_state_stub
 
-from relax.local.local_layout import LocalHypothesisLayout
+from relax.local_search.layout import LocalHypothesisLayout
 from relax.vdam.adaptive_estep import _safe_coarse_significance_image_batch_size, resolve_sparse_pass1_current_size
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import (
@@ -117,7 +117,7 @@ def _fake_noise_stats(offset: float, sumw: float, wsum_noise, img_power):
 
 
 def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector_flip():
-    from relax.helpers.half_volume_mstep import (
+    from relax.reconstruction.half_volume_mstep import (
         enforce_relion_half_volume_x0_hermitian_host,
         relion_x_half_volume_to_full,
     )
@@ -383,7 +383,7 @@ def test_projector_conversion_uses_relion_frame(monkeypatch):
 def test_relion_projector_projection_dense_scale_matches_embedded_means(monkeypatch):
     import jax.numpy as jnp
 
-    from relax.helpers import projection as projection_helpers
+    from relax.projection import projection as projection_helpers
 
     raw = jnp.asarray([[1.0 + 2.0j, -3.0 + 0.5j]], dtype=jnp.complex64)
 
@@ -423,7 +423,7 @@ def _assert_nan_stand_ins(means, mean_variance, n_classes):
 def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(monkeypatch, dtype):
     projector_half = np.ones((1, 3, 3, 2), dtype=dtype)
     monkeypatch.setattr(
-        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power",
+        "relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power",
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
@@ -448,7 +448,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
 def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
     projector_half = np.ones((2, 3, 3, 2), dtype=np.complex64)
     monkeypatch.setattr(
-        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps",
+        "relax.relion.projector_setup.reference_to_relion_projector_half_maps",
         lambda *args, **kwargs: pytest.fail("prebuilt production projector was rebuilt"),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
@@ -473,7 +473,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
 def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_path):
     projector_half = np.arange(54, dtype=np.float32).reshape(1, 3, 3, 6)[..., :2].astype(np.complex64)
     monkeypatch.setattr(
-        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power",
+        "relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power",
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", str(tmp_path))

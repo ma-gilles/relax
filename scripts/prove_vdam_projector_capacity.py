@@ -24,8 +24,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.fourier_window import stable_fourier_window_current_size  # noqa: E402
-from relax.helpers.projection import project_relion_projector_half_spectrum  # noqa: E402
+from relax.fourier.fourier_window import stable_fourier_window_current_size  # noqa: E402
+from relax.projection.projection import project_relion_projector_half_spectrum  # noqa: E402
 
 SCHEMA = "recovar.vdam_projector_capacity_proof.v1"
 GF46_IMAGE_SIZE = 128

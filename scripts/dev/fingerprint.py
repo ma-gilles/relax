@@ -838,7 +838,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     from helpers.fake_adaptive_engine import adaptive_result
 
     import relax
-    from relax.helpers import expected_accuracy
+    try:
+        from relax.sampling import expected_accuracy
+    except ImportError:  # the source before the package layout move
+        from relax.helpers import expected_accuracy
     from relax.refinement import iteration_loop, refinement_options
 
     assert relax.__file__.startswith(source), relax.__file__
@@ -944,12 +947,21 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def stand_in_local(*owners):
         """CPU stand-in for _run_local_search_iteration (one K=1 local pass): a result seeded by every operand of
         its four owners, with the accumulator layout, statistics and best poses the half reads."""
-        from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-        from relax.helpers.types import NoiseStats, RelionStats
+        try:
+            from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
+        except ImportError:  # the source before the package layout move
+            from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+        try:
+            from relax.types import NoiseStats, RelionStats
+        except ImportError:  # the source before the package layout move
+            from relax.helpers.types import NoiseStats, RelionStats
         try:
             from relax.refinement.local_search_iteration import LocalSearchResult
         except ImportError:  # a source in which the local search is local_half's own
-            from relax.refinement.local_half import LocalSearchResult
+            try:
+                from relax.local_search.half import LocalSearchResult
+            except ImportError:  # the source before the package layout move
+                from relax.refinement.local_half import LocalSearchResult
         from relax.sampling import rotation_grid_size
 
         fields = {f.name: getattr(owner, f.name) for owner in owners for f in dataclasses.fields(owner)}

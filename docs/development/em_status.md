@@ -425,7 +425,7 @@ are historical evidence rather than current instructions.
 
 RELION's "Perform image alignment: No" (feature gaps row 2, single particles). Each particle is scored
 against every class at its input angles and offsets: no pass 1, one rotation and one translation per
-particle (`relax/classification/given_poses.py`). The translation is the offset's remainder after the
+particle (`relax/refinement/given_poses.py`). The translation is the offset's remainder after the
 rounded pre-shift, applied to the particle's prepared images as a phase (`image_translations` of the
 resident pass, `prepare_unshifted_bucket_operands`), with the one zero translation scored. The direction
 prior is kept (ml_optimiser.cpp:5198); sigma_offset is still updated (:8690). With `--firstiter_cc`
@@ -1062,7 +1062,7 @@ how it was qualified.
   RELION GPU and relax (0.210942 vs 0.213352-0.214689).
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
   `rlnCtfBfactor` and `rlnCtfScalefactor`) with one float64 JAX program
-  (`relion_ctf._relion_ctf_program` in `relax/relion/relion_ctf.py`), per request, at the
+  (`relion_ctf._relion_ctf_program` in `relax/relion/ctf.py`), per request, at the
   requested pixels, on the default device; no row is cached on the host or the device
   (relax#39). The rows are cast to float32 before GPU scoring. `sin` and `exp` are the
   device's, so a value can differ from RELION's CPU double in the last unit. Production CTF
@@ -1147,7 +1147,7 @@ User decision (2026-09-26): relax keeps one pass-2 engine, the device-resident o
 (`relax/sparse_pass2/resident_*.py`), as RELION keeps one algorithm. Every other pass-2
 engine or route is deprecated: its docstring says so, and a run that routes a pass to it
 logs one `DEPRECATED engine` warning per engine, pass kind and reason
-(`relax.sparse_pass2.engine_record.warn_deprecated_engine`), next to the per-iteration
+(`relax.refinement.engine_record.warn_deprecated_engine`), next to the per-iteration
 `pass2_engine_trajectory` entry. They are removed in the order below once resident covers
 what still routes to them. Inventory and line estimates (relax bc6d3e1):
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_onengine_20260926/PLAN.md`.
@@ -1202,7 +1202,7 @@ the score cache, the generic preprocessing and operands, the manual and dense co
 `relax/renamed_environment.json`). The generic scorer's arithmetic stays as a float64 test oracle
 (`tests/helpers/generic_coarse_reference.py`, `tests/unit/test_pass1_program_generic_reference.py`), and
 `tests/helpers/exact_pass1_harness.py` runs pass 1 on CPU for the significance unit tests. The generic
-kernels of `relax/scoring/scoring.py` that only dense `run_em` used left with it (item 6).
+kernels of `relax/scoring/coarse_kernels.py` that only dense `run_em` used left with it (item 6).
 
 Pass 1 on stable Fourier-window shapes: tried 2026-10-03, no gain, not landed (speedw; team-lead decision).
 
@@ -1287,7 +1287,7 @@ masked GT 0.679335 against same-seed RELION 0.679354; K4 pdb 50k Class3D 345 vs 
 same seed 0.240796, band 0.239769-0.24114), class accuracy 0.87506 (band 0.87462-0.87824).
 `--scratch_dir` (2026-10-07) stages single particles as RELION's `copyParticlesToScratch` does: only the
 referenced particles, one compact stack per optics group in STAR order, read through a scratch copy of the particle
-STAR whose `_rlnImageName` points into them (`relax/helpers/particle_io.py`). Until then relax copied whole stack
+STAR whose `_rlnImageName` points into them (`relax/io/particle_io.py`). Until then relax copied whole stack
 files (to reuse recovar's per-file staging redirect): the EMPIAR-10076 10k fixture names 10k images of a 131k-image
 stack, so every run copied 34.58 GB to local disk in 38 s. The input STAR stays the only source of image names for
 every output (`tests/integration/test_scratch_dir_image_names.py`). Subtomogram tilt stacks are one file per particle
@@ -1339,14 +1339,14 @@ reads the targets' pre-prior and with-prior scores from the pass-1 program (`dum
 `score_capture_mode="pass1_program_target_rows"`), so a dump no longer leaves the program.
 
 Projection kernel (2026-09-27, kspeed, from team-lead's TODO): `project_relion_half_capacity`
-and the half-storage branch of `relax.helpers.projection._project_relion_projector_texture` take
+and the half-storage branch of `relax.projection.projection._project_relion_projector_texture` take
 every slab whose texels fit the staging kernel's int32 indexing (box 800 at padding 2 is 1603 x
 1603 x 802), in launches of at most 65535 rotations, so one kernel serves every size. A resident
 local half stages one `RelionCapacityHalfTextureF32` for every slab, a plane group at a time
 (1 GiB of staging beside the texture); `resident_local_pass2._open_resident_local_projector_texture`
 and its persistent texture are gone. The per-call `relion_projector_half_texture_f32` branch now
 serves only the geometry the half-storage kernel does not take (odd output sizes, padding other
-than 1 or 2). The XLA pool reserve (`relax/helpers/xla_memory_reserve.py`) sizes the texture.
+than 1 or 2). The XLA pool reserve (`relax/runtime/xla_memory_reserve.py`) sizes the texture.
 
 ## Current evidence and open gates
 
@@ -1377,7 +1377,7 @@ measured free memory) and the low-resolution half join, which moved a physically
 large grid's host accumulators back to the device before the 1600^3 inverse FFT.
 
 RELION's projector (`Projector::computeFourierTransformMap`) has one device build
-(`relax/relion/relion_projector_setup.py::_build_projector_window`, bigbox 2026-09-27): the padded
+(`relax/relion/projector_setup.py::_build_projector_window`, bigbox 2026-09-27): the padded
 transform one axis at a time inside a window, mask and shell power on the device. It replaced the
 whole-volume rfftn build, which needed about 100 GB at box 800 and left 10202 on the native host
 binding (two single-threaded builds, 117 s per iteration in py-spy 14561585). At 10202 it22 the
@@ -1591,7 +1591,7 @@ runs 0.2225-0.2259 / 0.3550-0.3605. `--pass2_engine auto` now selects resident f
 
 VDAM coarse scorer, native vs GEMM (2026-09-26, relax main bc6d3e1; same node, one H100 + 8 CPUs per
 arm, uncapped). The default exact-operand coarse pass is a real-packed float32 GEMM pair
-(`relax/scoring/scoring.py::_relion_coarse_gaussian_gemm_scores_jit`); the native arm is RELION's fused
+(`relax/scoring/coarse_kernels.py::_relion_coarse_gaussian_gemm_scores_jit`); the native arm is RELION's fused
 per-pair projector/diff2 kernel (`RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO=0`, and for the K>1 resident route
 also `RECOVAR_K1_COARSE_GAUSSIAN_FFI=1 RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF=1
 RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS=1 RECOVAR_K1_COARSE_FUSED_PROJECTOR=1`, because K>1 resident
@@ -1770,7 +1770,7 @@ error): `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
 `RELAX_EM_JIT_STAGE_GLUE=0`, `RELAX_LOCAL_IMAGE_CAPACITY_LADDER=0`. Device coarse significance has no
 switch: every class's coarse support is compacted on the device whenever the ids are collected
 (K>1 and VDAM too); score dumps keep the host mask
-(`relax/sparse_pass2/resident_significance.py`). Flip pairs (relax vs
+(`relax/fine_pass/resident_significance.py`). Flip pairs (relax vs
 RELION wall, same node): EMPIAR-10073 1.05x and 10345 1.01x pass the scorecard thresholds; K1
 50k/256 runs at 0.65x, with the resident masked GT FSC 9e-5 below the three-run RELION band
 (compact inside it). OPEN (small, both engines): on 10345 and K1 50k/256 relax's map agreement with RELION
@@ -1826,7 +1826,7 @@ carried factor. Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_normfix_
 (`PERSTEP_DEVIATION.json`, `PMAX_AB.json`).
 
 Map sign convention: every map relax writes is in RELION's map convention, so a relax map and
-the RELION map of the same run agree voxel for voxel and in sign (`relax/helpers/map_io.py`).
+the RELION map of the same run agree voxel for voxel and in sign (`relax/io/map_io.py`).
 relax holds volumes internally in RECOVAR's frame, the negated transpose of RELION's file array
 (`relion_volume_to_recovar`); the sign entered at the map-file boundary, where the refinement,
 the parity harness and the per-iteration dumps wrote with RECOVAR's `write_mrc` and the K1

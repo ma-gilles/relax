@@ -90,7 +90,7 @@ def test_subtomogram_offsets_keep_their_rounding():
     # whole-pixel rounding of RELION's GPU path (tomo_particles.relion_gpu_old_offsets), unchanged by relax#52.
     from relax.refinement.tomo_half import TomoHalf
     from relax.refinement.tomo_particles import relion_gpu_old_offsets
-    from relax.relion.relion_metadata import relion_metadata_translations
+    from relax.relion.metadata import relion_metadata_translations
 
     assert not issubclass(TomoHalf, optics_shapes.MultiShapeHalf)
     old = np.array([[1.5, -2.49, 0.51], [-0.5, 3.2, -1.7]])

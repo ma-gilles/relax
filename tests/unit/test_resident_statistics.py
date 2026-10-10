@@ -20,8 +20,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-from relax.helpers.projection import compute_norm_residual_per_image
-from relax.sparse_pass2.resident_statistics import (
+from relax.fine_pass.resident_statistics import (
     ChunkStatisticsOperands,
     ResidentStatisticsTables,
     accumulate_chunk_statistics,
@@ -31,7 +30,8 @@ from relax.sparse_pass2.resident_statistics import (
     resolve_statistics_config,
     segment_sum_by_image,
 )
-from relax.sparse_pass2.sparse_pass2_wavg import image_power_shells
+from relax.fine_pass.wavg import image_power_shells
+from relax.projection.projection import compute_norm_residual_per_image
 
 pytestmark = pytest.mark.unit
 
@@ -306,7 +306,7 @@ def test_segment_sum_by_image_matches_numpy_add_at():
 def test_bucketed_float32_posterior_keeps_image_mass_and_index_semantics(monkeypatch):
     """Only the opted-in F32 [rows,T] sum uses bounded row buckets."""
 
-    from relax.sparse_pass2.resident_statistics import posterior_translation_bucket_scratch_bytes
+    from relax.fine_pass.resident_statistics import posterior_translation_bucket_scratch_bytes
 
     capacity, translations, rows = 4, 3, 4097
     rng = np.random.default_rng(20260928)
@@ -349,7 +349,7 @@ def test_bucketed_float32_posterior_keeps_image_mass_and_index_semantics(monkeyp
 def test_flat_row_norm_residual_matches_host_per_image_helper():
     """The flat-row A2/XA partials reproduce ``compute_norm_residual_per_image``."""
 
-    from relax.sparse_pass2.resident_statistics import _flat_row_norm_and_scale_terms
+    from relax.fine_pass.resident_statistics import _flat_row_norm_and_scale_terms
 
     rng = _rng()
     batch, n_rot = 3, 4
@@ -381,7 +381,7 @@ def test_flat_row_norm_residual_matches_host_per_image_helper():
 def test_flat_row_scale_terms_match_host_scale_helper():
     """The masked flat-row partials reproduce the algebraic scale statistics."""
 
-    from relax.sparse_pass2.resident_statistics import _flat_row_norm_and_scale_terms
+    from relax.fine_pass.resident_statistics import _flat_row_norm_and_scale_terms
 
     rng = _rng()
     batch, n_rot = 3, 4
@@ -638,7 +638,7 @@ def test_one_program_per_capacity_class():
     config = _config()
     resident_tables = _resident_tables(tables)
     stats = make_resident_statistics(config, max_posterior_dtype=jnp.float32)
-    from relax.sparse_pass2 import resident_statistics as module
+    from relax.fine_pass import resident_statistics as module
 
     module._accumulate_chunk_statistics_jit.clear_cache()
     for ids in ([0, 1, 2], [3, 4], [5, 6]):

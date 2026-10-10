@@ -23,10 +23,9 @@ from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.triangular import tri_size as _tri_size
 from recovar.reconstruction import noise as noise_utils
 
-from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.half_spectrum import make_scoring_half_image_weights
-from relax.helpers.oversampling import find_significant_mask, top_k_rows
-from relax.helpers.preprocessing import prepare_reconstruction_batch, preprocess_batch
+from relax.fourier.fourier_window import make_fourier_window_spec
+from relax.fourier.half_spectrum import make_scoring_half_image_weights
+from relax.fourier.preprocessing import prepare_reconstruction_batch, preprocess_batch
 from relax.ppca_refinement.config import (
     GeometryConfig,
     PoseSelectionConfig,
@@ -64,6 +63,7 @@ from relax.ppca_refinement.pose_selection import (
 from relax.ppca_refinement.postprocess import PostprocessConfig, postprocess_ppca_half_volumes
 from relax.ppca_refinement.residual_statistics import full_float32, residual_statistics_precision
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
+from relax.sampling.oversampling import find_significant_mask, top_k_rows
 
 
 class DensePPCASignificanceResult(NamedTuple):
@@ -684,7 +684,7 @@ def compute_dense_ppca_adaptive_significance(
 
     The returned ``significant_sample_indices`` use rotation-major packed pose
     IDs (``rotation_idx * n_translations + translation_idx``), matching
-    :func:`relax.local.local_layout.build_pass2_hypothesis_layout`.
+    :func:`relax.local_search.layout.build_pass2_hypothesis_layout`.
     """
 
     geometry = geometry if geometry is not None else GeometryConfig()
@@ -1159,9 +1159,9 @@ def accumulate_dense_ppca_statistics(
             if id(block) not in retained_block_ids:
                 continue
             if collect_residuals:
-                from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
-                from relax.helpers.half_spectrum import make_half_image_weights
+                from relax.fourier.half_spectrum import make_half_image_weights
                 from relax.ppca_refinement.residual_statistics import residual_image_statistics
+                from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
 
                 residual_images, correction, embedding = residual_image_statistics(
                     block_scores[block_idx] - score_center[:, None, None],
@@ -1318,7 +1318,7 @@ def accumulate_dense_ppca_statistics(
     )
     residual_num = residual_den = original_ids = None
     if collect_residuals:
-        from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
+        from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 
         weights = make_half_image_weights(image_shape)
         shells = make_shell_indices_half(image_shape)

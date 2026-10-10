@@ -20,11 +20,6 @@ from helpers.em_fixtures import fixture_dir, fixture_root
 from helpers.float_compare import assert_matches, matches
 from recovar.utils.file_hash import sha256_file
 
-from relax.helpers.iteration_history import (
-    _load_init_noise_radial_npz,
-    _load_init_previous_best_poses_npz,
-)
-from relax.helpers.orientation_priors import DirectionPrior
 from relax.parity import frozen_boundary_cli
 from relax.parity.frozen_boundary import (
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
@@ -57,6 +52,10 @@ from relax.refinement.full_refinement import (
     _use_fresh_auto_refine_particle_order,
 )
 from relax.refinement.half_inputs import HalfSet
+from relax.refinement.iteration_history import (
+    _load_init_noise_radial_npz,
+    _load_init_previous_best_poses_npz,
+)
 from relax.refinement.particle_loading import _apply_relion_image_mask, prepare_relion_halfset_inputs
 from relax.refinement.reference_state import ReferenceModel, _updated_mean_variance_per_half
 from relax.refinement.startup_noise import (
@@ -69,10 +68,11 @@ from relax.relion.initial_noise import (
     relion_mpi_process_start_scoring_noise_pair,
 )
 from relax.relion.input_particle_table import prepare_relion_halfset_layout
-from relax.relion.relion_metadata import (
+from relax.relion.metadata import (
     _parse_relion_tau2_fudge,
     parse_relion_cli_ini_high,
 )
+from relax.sampling.orientation_priors import DirectionPrior
 
 FIXTURE = fixture_root("k1_5k128_relion_os0")
 
@@ -816,7 +816,7 @@ def _archive_metadata(result, *, half_indices=None, n_images=None):
 
 
 def test_refinement_results_persist_final_tau2_weight_combination():
-    from relax.helpers.iteration_history import add_refinement_history_artifacts
+    from relax.refinement.iteration_history import add_refinement_history_artifacts
 
     result = {
         "fsc_history": [],
@@ -847,7 +847,7 @@ def test_final_all_data_writes_matched_unfiltered_half_products(tmp_path):
 
 
 def test_refinement_results_persist_class_assignment_history():
-    from relax.helpers.iteration_history import add_class_history_artifacts
+    from relax.refinement.iteration_history import add_class_history_artifacts
 
     result = {
         "class_assignment_history": [np.array([3, 0, 2, 1], dtype=np.int64)],
@@ -893,7 +893,7 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
 
     from relax.parity import archive_provenance, oracle_admission
     from relax.refinement import full_refinement, iteration_loop
-    from relax.relion import relion_worker_scale
+    from relax.relion import worker_scale
 
     # The controller's replay telemetry is archived as integers.
     saved = _archive_metadata({
@@ -905,8 +905,8 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     replay, schedule = object(), object()
     monkeypatch.setattr(oracle_admission, "load_verified_dispatch_schedule",
                         lambda *a, **k: oracle_admission.VerifiedDispatchSchedule(schedule, [tmp_path]))
-    monkeypatch.setattr(relion_worker_scale, "prepare_follower_topology",
-                        lambda *a, **k: relion_worker_scale.PreparedFollowerTopology(
+    monkeypatch.setattr(worker_scale, "prepare_follower_topology",
+                        lambda *a, **k: worker_scale.PreparedFollowerTopology(
                             n_followers=0, replay=replay, reduction_mode=None, owners_by_iteration=None))
     controller = {}
     monkeypatch.setattr(iteration_loop, "refine_single_volume", lambda **kw: controller.update(kw) or refinement_result())
@@ -937,7 +937,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
     from helpers.refinement_specs import local_half_owners
     from helpers.sparse_pass2_mock import MockDataset
 
-    from relax.refinement import local_half
+    from relax.local_search import half as local_half
     from relax.sampling import relion_angular_sampling_deg
 
     class Scored(Exception):
@@ -1128,7 +1128,7 @@ def test_relion_expected_accuracy_layout_supports_repeated_indices_across_stacks
 
 def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
     pd = pytest.importorskip("pandas")
-    from relax.helpers.expected_accuracy import relion_auto_refine_half_orders
+    from relax.sampling.expected_accuracy import relion_auto_refine_half_orders
 
     relion_particles = pd.DataFrame(
         {
@@ -2117,7 +2117,7 @@ def test_fresh_kclass_selects_only_run_it000_translations():
 def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
     # RELION's first iteration at ini_high 60 A on 128 px / 4.25 A runs at current size 38
     # (2 * (ROUND(9.07) + incr_size 10)); the old 32-pixel floor gave 52.
-    from relax.helpers.resolution import bootstrap_current_size_relion
+    from relax.fourier.resolution import bootstrap_current_size_relion
     from relax.refinement.full_refinement import _initial_current_size
 
     assert _initial_current_size(4.25, 128, 60.0) == 18
@@ -2129,7 +2129,7 @@ def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
 @pytest.mark.unit
 def test_every_reference_loader_refuses_a_map_of_unknown_convention(tmp_path):
     """K=1 --init_volume and the Class3D --ref_star / --init_class_volumes / data-dir class maps go
-    through one check (relax.helpers.map_io.require_relion_convention_reference) before they are read."""
+    through one check (relax.io.map_io.require_relion_convention_reference) before they are read."""
     import mrcfile
 
     legacy = tmp_path / "reference_init_class001.mrc"  # RECOVAR-convention name, mrcfile's default label

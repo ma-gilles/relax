@@ -105,7 +105,7 @@ def test_coarse_cut_keeps_relions_cub_sort_and_scan_cut(monkeypatch, custom_cuda
     import recovar.cuda_backproject as cuda_backproject
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.oversampling import _relion_cuda_f32_tail_target
+    from relax.sampling.oversampling import _relion_cuda_f32_tail_target
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)

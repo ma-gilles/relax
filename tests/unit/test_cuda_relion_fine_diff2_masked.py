@@ -56,7 +56,7 @@ def test_masked_fine_diff2_is_optional_ffi_target():
 
 def test_fine_diff2_masked_knob_defaults_on_and_is_disableable(monkeypatch):
     """Default on after the matched hp3 pair (job 14082785); still switchable."""
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.fine_pass import scoring
 
     monkeypatch.delenv(scoring._RELION_FINE_DIFF2_MASKED_ENV, raising=False)
     assert scoring._fine_diff2_masked_enabled() is True
@@ -69,7 +69,7 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
     import numpy as np
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.fine_pass import scoring
 
     monkeypatch.setattr(
         em_cuda_kernels, "relion_fine_diff2_rectangular_masked_supported", lambda: False
@@ -118,7 +118,7 @@ def test_masked_support_probe_reports_false_without_a_library(monkeypatch):
 
 def test_fine_diff2_sum_jax_path_ignores_candidate_mask(monkeypatch):
     """Without the fused FFI the emulation evaluates every cell (mask is a no-op)."""
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.fine_pass import scoring
 
     monkeypatch.delenv(scoring._RELION_FINE_DIFF2_FUSED_FFI_ENV, raising=False)
     rng = np.random.default_rng(3)
@@ -192,7 +192,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
 def test_scoring_path_masked_matches_unmasked_scores(monkeypatch, custom_cuda_lib, gpu_device):
     """The full raw->scores path gives identical scores with the mask on and off."""
     import recovar.cuda_backproject as cuda_backproject
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.fine_pass import scoring
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)

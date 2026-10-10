@@ -21,8 +21,8 @@ import numpy as np
 from recovar import core
 from scipy.spatial.transform import Rotation
 
-from relax.helpers.half_spectrum import make_half_image_weights
-from relax.helpers.preprocessing import relion_half_translation_lattice
+from relax.fourier.half_spectrum import make_half_image_weights
+from relax.fourier.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
 from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
@@ -91,8 +91,8 @@ def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
     matrix in the tomogram (one subtomogram matrix); a particle that disagrees forms its own group.
     Tomograms with identical frame lists share a group.
     """
-    from relax.helpers.batch_fetch import fetch_indexed_batch
-    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
+    from relax.io.batch_fetch import fetch_indexed_batch
+    from relax.relion.ctf import relion_exact_ctf_half_from_source_star
 
     offsets = np.asarray(tomo.unit_image_offsets, dtype=np.int64)
     projections = np.asarray(tomo.image_projections, dtype=np.float64)

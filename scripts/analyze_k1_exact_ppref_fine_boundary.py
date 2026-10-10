@@ -13,8 +13,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.projection import compute_relion_projector_projections_block
-from relax.sparse_pass2.sparse_pass2_scoring import (
+from relax.projection.projection import compute_relion_projector_projections_block
+from relax.fine_pass.scoring import (
     _relion_cuda_fine_diff2_sum,
     _relion_cuda_fine_full_to_compact_lookup,
 )

@@ -11,7 +11,7 @@ class Pass1Request:
     The pass finds significant samples from one posterior over ``class x rotation x translation``: the poses that carry
     ``adaptive_fraction`` of it, at most ``max_significants``. ``noise_variance`` is one shared spectrum or ``[G, P]`` rows
     of G optics groups; with rows, ``optics_group_ids`` gives each image's group and every image scores with its own
-    group's spectrum (:mod:`relax.helpers.optics_noise`).
+    group's spectrum (:mod:`relax.relion.optics_noise`).
 
     ``firstiter_cc_support="gaussian"`` weights a normalized-CC pass, and its image power, on the Gaussian support of the
     current size; ``nyquist_column_counting="once"`` drops the redundant members of the full-size Nyquist column from the

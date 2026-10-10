@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 
 from relax import sampling
-from relax.helpers.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 from relax.relion.optics_aberrations import relax_projection_magnification, relion_projection_left_matrix
+from relax.sampling.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 
 pytestmark = pytest.mark.unit
 
@@ -154,7 +154,7 @@ def test_device_rows_are_relions_float32_left_kernel(scale):
     kernel = np.asarray(
         sampling._relion_device_scoring_rotations_left_f32(
             source.source_eulers_deg,
-            sampling.healpix_sampling.euler_angles_to_matrix(
+            sampling.healpix.euler_angles_to_matrix(
                 np.full((1, 3), PERTURBATION * source.angular_sampling_deg)
             )[0],
             relion_projection_left_matrix(scale, left)[None],
@@ -202,7 +202,7 @@ def test_single_shape_runs_project_with_the_model_pixel_scale():
     rounded 1.4 A header does not."""
     import logging
 
-    from relax.helpers.resolution import ImageGeometry
+    from relax.fourier.resolution import ImageGeometry
     from relax.refinement.image_size_plans import RunOptics
     from relax.refinement.setup_checks import projection_scale_for_run
     from relax.relion.optics_aberrations import relion_projection_optics
@@ -235,7 +235,7 @@ def test_the_mstep_radius_takes_the_scale_relion_projects_with():
 
 def _local_parent_layout():
     """A local search's parent layout (id rows) on a perturbed order-2 grid, five images, float32."""
-    from relax.local.local_layout import build_local_hypothesis_layout
+    from relax.local_search.layout import build_local_hypothesis_layout
 
     rng = np.random.default_rng(11)
     eulers = np.column_stack([rng.uniform(0, 360, 5), rng.uniform(20, 160, 5), rng.uniform(0, 360, 5)])
@@ -259,7 +259,7 @@ def test_local_parent_rows_are_the_projector_plans_rows(scale, magnified):
     The external evidence for the rule is a RELION score dump (relax#70: with these rows 0 of 50,220 poses
     differ from RELION's score by more than 100 float32 steps, against 3.4% with the host rows); this test guards
     the rule against regression."""
-    from relax.local.local_layout import (
+    from relax.local_search.layout import (
         _rotation_eulers_from_grid_metadata,
         local_layout_device_rotations,
         local_layout_host_rotations,
@@ -288,7 +288,7 @@ def test_local_parent_rows_are_the_projector_plans_rows(scale, magnified):
     # one, largest 3. The bounds below are those measurements, not a tighter claim.
     from helpers.relion_plan_rows import relion_plan_rows_f32
 
-    right = sampling.healpix_sampling.euler_angles_to_matrix(np.full((1, 3), PERTURBATION * step))[0]
+    right = sampling.healpix.euler_angles_to_matrix(np.full((1, 3), PERTURBATION * step))[0]
     kernel_left = None if left is None and scale == 1.0 else relion_projection_left_matrix(scale, left)
     mirror = relion_plan_rows_f32(eulers, right, kernel_left)
     unit = float(np.finfo(np.float32).eps)
@@ -316,7 +316,7 @@ def test_only_a_parent_layouts_id_rows_have_a_projector_plan():
     """Oversampled children are fine-pass rows (host rule): asking for their plan rows is an error."""
     import dataclasses
 
-    from relax.local.local_layout import local_layout_device_rotations
+    from relax.local_search.layout import local_layout_device_rotations
 
     layout = dataclasses.replace(_local_parent_layout(), oversampled_rows=True, id_rows_source=None)
     with pytest.raises(ValueError, match="only a parent layout's id rows"):

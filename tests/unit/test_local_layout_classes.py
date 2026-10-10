@@ -6,14 +6,14 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.local.local_layout import (
+from relax.fine_pass.resident_candidates import CapacityChunk
+from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
     expand_local_layout_classes,
 )
+from relax.local_search.resident_layout import materialize_local_chunk, tables_from_local_layout
 from relax.sampling import build_local_search_grid_metadata
-from relax.sparse_pass2.resident_candidates import CapacityChunk
-from relax.sparse_pass2.resident_local_layout import materialize_local_chunk, tables_from_local_layout
 
 pytestmark = pytest.mark.unit
 

@@ -66,7 +66,7 @@ reported masked resolution. Both arms' unfiltered half maps are postprocessed
 with the frozen mask and one protocol: `--force_mask --skip_fsc_weighting
 --low_pass 0 --randomize_at_fsc 0.8 --random_seed 42`. `--force_mask` stops
 RELION from reporting an unmasked resolution when the mask looks unhelpful.
-relax maps are written in RELION's map convention (`relax.helpers.map_io`) and are
+relax maps are written in RELION's map convention (`relax.io.map_io`) and are
 postprocessed as read; a relax map written before that convention has no relax
 header label and holds the negated array, so it is negated first, and the score
 records each relax map's convention under `relax_map_convention`.

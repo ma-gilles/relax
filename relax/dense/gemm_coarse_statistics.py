@@ -17,8 +17,7 @@ import jax
 import jax.numpy as jnp
 
 from relax.cuda import kernels as cuda_backproject
-from relax.helpers.half_spectrum import bin_shell_values_jax
-from relax.sparse_pass2.resident_pass2 import (
+from relax.fine_pass.resident_pass2 import (
     _accumulate_chunk_image_terms,
     _add_wavg_rectangle_image_power,
     _ChunkImageOperands,
@@ -28,11 +27,12 @@ from relax.sparse_pass2.resident_pass2 import (
     _resident_block_wavg_algebraic_terms,
     _resident_block_weighted_sums_kernel,
 )
-from relax.sparse_pass2.resident_statistics import ResidentStatisticsConfig
-from relax.sparse_pass2.sparse_pass2_wavg import (
+from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
+from relax.fine_pass.wavg import (
     _relion_wavg_shifted_power,
     relion_cuda_translate_wavg_norm_window,
 )
+from relax.fourier.half_spectrum import bin_shell_values_jax
 
 
 class DenseGemmStatisticsOperands(NamedTuple):

@@ -12,7 +12,7 @@ Priorities, in order: correctness, GPU performance, clarity.
 - Work in your own worktree and branch. Never modify the source snapshot of a queued or running job; the tier
   commands freeze their own copy.
 - Before editing a file, read the `AGENTS.md` in its directory and in each directory above it. They exist in
-  `relax/`, `relax/refinement/`, `relax/sparse_pass2/`, `relax/ppca_refinement/`, `tests/`, `scripts/`, `docs/`.
+  `relax/`, `relax/refinement/`, `relax/fine_pass/`, `relax/ppca_refinement/`, `tests/`, `scripts/`, `docs/`.
 - Accounts, writable roots, local GPUs, Slurm requests, data layout and cleanup are governed by the owner's
   global instruction file, which the tool loads at session start. This repository's guides do not repeat it.
 - The owner's explicit instruction outranks every guide and skill. If a rule here blocks the task, quote the
@@ -78,13 +78,15 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 | `relax/commands/`, `relax/command_line.py` | the `relax <command>` entry points |
 | `relax/refinement/` | Refine3D and Class3D: options, controller, expectation, reconstruction, finalization, run files |
 | `relax/scoring/` | coarse pass: scores, significance, candidate layouts |
-| `relax/sparse_pass2/` | fine pass: the device-resident pass-2 engine (CUDA only) |
-| `relax/local/`, `relax/classification/` | exact local-search layout and backprojection; K-class execution and results |
-| `relax/dense/` | score payloads and scoring policy; the dense GEMM coarse pass and experiment |
+| `relax/fine_pass/` | fine pass: the device-resident pass-2 engine (CUDA only) |
+| `relax/local_search/`, `relax/classification/` | exact local search: layout, sampling, a half's route and the resident local pass; K-class execution and results |
+| `relax/dense/` | the dense GEMM coarse pass and experiment |
 | `relax/reconstruction/`, `relax/relion/` | RELION M-step, regularization and noise; RELION metadata, CTF, projector, normalization |
 | `relax/vdam/` (momentum SGD in `vdam/sgd.py`), `relax/ppca_initial_model/` | InitialModel variants |
 | `relax/ppca_refinement/` | pose-marginal PPCA refinement |
-| `relax/helpers/`, `relax/sampling.py`, `relax/healpix_sampling.py`, `relax/symmetry.py` | shared layouts, planning, grids |
+| `relax/sampling/`, `relax/fourier/`, `relax/projection/` | grids, symmetry, priors, oversampling and expected accuracy; Fourier windows, shells, resolution and preprocessing; projection and its adjoint |
+| `relax/runtime/`, `relax/io/`, `relax/numerics/`, `relax/types.py` | environment flags, memory and batch planning, compile cache; map and particle I/O; deterministic sums and RELION's random stream; shared records |
+| `relax/helpers/convergence.py` | `RefinementState` and its convergence update |
 | `relax/cuda/` | CUDA kernels and their FFI (`librelax_cuda.so`) |
 | `relax/diagnostics/`, `relax/relion_bind/` | capture and replay; the RELION binding (never imported by production code) |
 | `tests/helpers/`, `tests/oracles/` | test helpers; independent EM references (earlier formulations, imported as `oracles.<module>`) |

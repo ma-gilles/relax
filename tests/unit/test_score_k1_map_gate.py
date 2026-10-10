@@ -45,7 +45,7 @@ def _write_relax_run(root, relion_like_root, perturbation=0.0, seed=0):
 
     from recovar.utils.helpers import load_relion_volume
 
-    from relax.helpers.map_io import write_map
+    from relax.io.map_io import write_map
 
     rng = np.random.default_rng(seed)
     root.mkdir(parents=True)

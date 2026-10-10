@@ -31,8 +31,8 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.sparse_pass2 import resident_operands as ro
-from relax.sparse_pass2 import resident_pass2 as rp
+from relax.fine_pass import resident_operands as ro
+from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
 
@@ -403,7 +403,7 @@ def _window_into_buffers(batches, *, native_fft_size=None, rows=12):
 def test_a_batch_is_windowed_and_placed_by_one_program(native_fft_size):
     """Every operand of every batch, extra per-image terms included: one program for the first batch, one after."""
 
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units
+    from relax.fine_pass.scoring import _relion_native_fine_units
 
     rng = np.random.default_rng(9)
     batches = [

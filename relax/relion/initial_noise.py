@@ -18,7 +18,7 @@ from typing import Iterable, Iterator, Tuple
 
 import numpy as np
 
-from relax.helpers.shells import shell_of_radius_sq
+from relax.fourier.shells import shell_of_radius_sq
 
 
 def _softmask_outside_map(image: np.ndarray, radius: float, cosine_width: float) -> np.ndarray:

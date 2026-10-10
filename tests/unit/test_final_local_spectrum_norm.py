@@ -17,7 +17,8 @@ def test_final_local_pass_keeps_the_source_faithful_spectrum_norm(monkeypatch, p
     import numpy as np
     from helpers.tiny_refinement import run_tiny_refinement
 
-    from relax.refinement import finalization, local_half
+    from relax.local_search import half as local_half
+    from relax.refinement import finalization
 
     class Reached(Exception):
         pass

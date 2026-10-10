@@ -17,8 +17,8 @@ from helpers.float_compare import assert_matches
 from recovar import core
 from scipy.spatial.transform import Rotation
 
-from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
-from relax.helpers.preprocessing import relion_half_translation_lattice
+from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.fourier.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.tomo import TiltParticles, load_tilt_tile, tilt_shifts, tilt_tiles
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.engine import _enforce_augmented_x0

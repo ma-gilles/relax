@@ -29,7 +29,7 @@ def archived_noise(path, iteration, image_shape, *, log) -> StartupNoise:
     """The radial noise an earlier run's archive recorded at ``iteration`` (``--init_noise_from_npz``)."""
     from recovar.reconstruction import noise as recon_noise
 
-    from relax.helpers import iteration_history
+    from relax.refinement import iteration_history
 
     init_noise = iteration_history._load_init_noise_radial_npz(path, iteration)
     radial = init_noise["noise_radial"]

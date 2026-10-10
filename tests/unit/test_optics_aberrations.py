@@ -16,9 +16,9 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
+from relax.relion import ctf as relion_ctf
 from relax.relion import optics_aberrations as oa
-from relax.relion import relion_ctf
-from relax.relion.relion_metadata import (
+from relax.relion.metadata import (
     IMPLEMENTED_OPTICS_FEATURES,
     INITIAL_MODEL_OPTICS_FEATURES,
     refuse_unsupported_optics,

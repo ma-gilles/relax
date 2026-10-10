@@ -12,10 +12,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.dense import score_outputs
-from relax.helpers.orientation_priors import DirectionPrior, learn_class_direction_priors, learn_k1_direction_priors
-from relax.helpers.resolution import _firstiter_cc_ini_high_tapered
-from relax.helpers.timing import Stopwatch
+from relax.fourier.resolution import _firstiter_cc_ini_high_tapered
+from relax.refinement import score_outputs
 from relax.refinement.iteration_planning import NumberedIteration
 from relax.refinement.numbered_reconstruction import reconstruct_numbered_class_maps, reconstruct_numbered_k1_halfmaps
 from relax.refinement.ports import ClassTau2
@@ -36,7 +34,9 @@ from relax.refinement.reference_state import (
 )
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR, REFERENCE_FILTER_EDGE_SHELLS
+from relax.runtime.timing import Stopwatch
 from relax.sampling import rotation_grid_size
+from relax.sampling.orientation_priors import DirectionPrior, learn_class_direction_priors, learn_k1_direction_priors
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext

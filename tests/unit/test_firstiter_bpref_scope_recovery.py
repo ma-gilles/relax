@@ -1,7 +1,7 @@
 """Final-Q native first-iteration scope guards at the current owner."""
 import pytest
 from relax.diagnostics.bpref_diagnostics import _bpref_contribution_context
-from relax.sparse_pass2.firstiter_bpref import _relion_firstiter_fused_bpref_enabled
+from relax.refinement.firstiter_bpref import _relion_firstiter_fused_bpref_enabled
 
 def test_firstiter_fused_bpref_defaults_only_inside_complete_fresh_k1_guard(monkeypatch):
     monkeypatch.delenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", raising=False)

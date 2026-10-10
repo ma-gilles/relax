@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from recovar.core import fourier_transform_utils as ftu
 
-from relax.local.local_layout import LocalHypothesisLayout
+from relax.local_search.layout import LocalHypothesisLayout
 from relax.ppca_refinement.config import (
     GeometryConfig,
     ScheduleConfig,

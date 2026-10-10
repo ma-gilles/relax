@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.relion.relion_vdam_mstep import relion_vdam_m_step_device, relion_vdam_m_step_host
+from relax.relion.vdam_mstep import relion_vdam_m_step_device, relion_vdam_m_step_host
 
 pytestmark = pytest.mark.unit
 

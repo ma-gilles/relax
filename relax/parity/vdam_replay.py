@@ -22,7 +22,7 @@ INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV = "RELAX_INITIALMODEL_IREF_REPLAY_TEMPLAT
 # RELION's start-up references in place of the bootstrap (VdamReplaySource.startup_references).
 INITIAL_IREF_OVERRIDE_ENV = "RELAX_INITIAL_IREF_OVERRIDE"
 
-# The native replays of RELION's M-step intermediates (relax.diagnostics.vdam_mstep_replay); only the oracle
+# The native replays of RELION's M-step intermediates (relax.parity.vdam_mstep_replay); only the oracle
 # reads them.
 NATIVE_MSTEP_REPLAY_ENVS = (
     "RELAX_VDAM_NATIVE_SECOND_MOMENT_REPLAY_BIN",

@@ -28,25 +28,25 @@ import jax.numpy as jnp
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
 
 from recovar.core.configs import ForwardModelConfig
-from relax.helpers.batch_fetch import fetch_indexed_batch
-from relax.helpers.half_spectrum import make_scoring_half_image_weights
-from relax.helpers.preprocessing import half_translation_phase_table
+from relax.io.batch_fetch import fetch_indexed_batch
+from relax.fourier.half_spectrum import make_scoring_half_image_weights
+from relax.fourier.preprocessing import half_translation_phase_table
 from relax.scoring.compact_candidates import candidate_mask_to_dense
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
-from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.sparse_pass2 import sparse_pass2_scoring as spb
-from relax.sparse_pass2.resident_candidates import (
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass import scoring as spb
+from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     materialize_chunk,
     plan_capacity_chunks,
 )
-from relax.sparse_pass2.resident_scoring import (
+from relax.fine_pass.resident_scoring import (
     materialize_chunk_device,
     prepare_resident_image_operands,
     score_all_chunks,
     score_resident_chunk,
 )
-from relax.sparse_pass2.sparse_pass2_bucket_io import (
+from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
     _relion_cuda_score_translation_angles_if_available,
 )

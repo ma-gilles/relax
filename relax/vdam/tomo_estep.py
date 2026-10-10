@@ -18,7 +18,7 @@ import logging
 import numpy as np
 
 from relax import sampling
-from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
+from relax.refinement.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.vdam.adaptive_estep import (
     direction_posterior_stats,
     recovar_order_prior,
@@ -106,7 +106,7 @@ def run_tomo_initial_model_estep(
     """
 
     from relax.classification.k_class import _class_segmented_em_result, single_class_pass2_em_result
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
     from relax.refinement import tomo_particles
     from relax.refinement.tomo_half import tomo_translation_grids
     from relax.refinement.tomo_scoring import score_tomo_half

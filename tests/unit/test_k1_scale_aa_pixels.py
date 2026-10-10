@@ -5,12 +5,12 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.fourier_window import (
+from relax.fine_pass.policy import _relion_wavg_direct_modes
+from relax.fine_pass.wavg import _make_relion_wavg_rectangle, _relion_wavg_rectangle_triplet_terms
+from relax.fourier.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
 )
-from relax.sparse_pass2.sparse_pass2_policy import _relion_wavg_direct_modes
-from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _relion_wavg_rectangle_triplet_terms
 from scripts.analyze_k1_scale_aa_pixels import analyze
 
 

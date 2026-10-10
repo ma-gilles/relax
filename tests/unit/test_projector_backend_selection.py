@@ -13,7 +13,7 @@ from helpers.run_options import stand_in
 
 
 def _build(**kwargs):
-    from relax.relion.relion_projector_setup import (
+    from relax.relion.projector_setup import (
         reference_to_relion_projector_half_maps_and_power,
     )
 
@@ -130,7 +130,7 @@ def test_accuracy_projector_reuse_bypasses_conversion_cache_and_dump(
 def test_accuracy_projector_reuse_misses_build_the_requested_transform(
     monkeypatch, n_classes, same_reference, current_size, cached_size, transform_size,
 ):
-    import relax.relion.relion_projector_setup as setup
+    import relax.relion.projector_setup as setup
     from relax.refinement.projector_preparation import (
         PreparedProjector,
         ProjectorReuse,

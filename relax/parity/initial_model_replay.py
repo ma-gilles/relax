@@ -14,7 +14,7 @@ import numpy as np
 from recovar import utils
 
 from relax.refinement.half_inputs import HalfPair
-from relax.relion import relion_metadata
+from relax.relion import metadata
 from relax.relion.initial_noise import (
     read_relion_single_optics_sigma2_noise,
     relion_mpi_process_start_scoring_noise_pair,
@@ -181,14 +181,14 @@ def read_controls(model, *, log) -> InitialModelControls:
     """Prefer model tau2 fudge; read offset sigma only from the optimiser."""
     sigma_offset_angstrom = None
     model_text = model.reference.path.read_text()
-    tau2_fudge = relion_metadata._parse_relion_tau2_fudge(model_text)
+    tau2_fudge = metadata._parse_relion_tau2_fudge(model_text)
     if tau2_fudge is not None:
         log.info("STRICT-PARITY: tau2_fudge from RELION it000 model.star: %.3f", tau2_fudge)
     optimiser_path = model.reference.path.parent / "run_it000_optimiser.star"
     if optimiser_path.exists():
         optimiser_text = optimiser_path.read_text()
         if tau2_fudge is None:
-            tau2_fudge = relion_metadata._parse_relion_tau2_fudge(optimiser_text)
+            tau2_fudge = metadata._parse_relion_tau2_fudge(optimiser_text)
             if tau2_fudge is not None:
                 log.info("STRICT-PARITY: --tau2_fudge override from RELION it000 optimiser: %.3f", tau2_fudge)
         match = re.search(r"_rlnSigmaOffsetsAngst\s+(\S+)", optimiser_text)

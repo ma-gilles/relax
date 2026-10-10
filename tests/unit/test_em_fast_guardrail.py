@@ -13,9 +13,9 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.image_shifts import half_image_phase_factors, tiled_half_image_phase_factors
+from relax.fourier.fourier_window import make_fourier_window_spec
+from relax.fourier.image_shifts import half_image_phase_factors, tiled_half_image_phase_factors
+from relax.refinement.precision import DensePrecisionPolicy
 
 pytestmark = pytest.mark.unit
 

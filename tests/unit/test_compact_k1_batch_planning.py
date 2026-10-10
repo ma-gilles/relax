@@ -1,9 +1,9 @@
 """Qualified-lifetime memory estimates retained from Q, not enabled by default."""
 from types import SimpleNamespace
-from relax.sparse_pass2 import firstiter_bpref
+from relax.refinement import firstiter_bpref
 import numpy as np
 import pytest
-from relax.helpers.batch_planning import estimate_relion_em_batch_sizes
+from relax.runtime.batch_planning import estimate_relion_em_batch_sizes
 pytestmark = pytest.mark.unit
 
 def test_box800_k1_score_tile_plan_uses_resolved_precision():
@@ -214,8 +214,8 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
         shape=(1603, 1603, 802),
         dtype=np.dtype(np.complex64),
     )
-    monkeypatch.setattr(sparse.sparse_pass2_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
-    monkeypatch.setattr(sparse.sparse_pass2_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
+    monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
+    monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
     for name in (
         "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
         "RELAX_RELION_FIRSTITER_DEFERRED_BPREF",
@@ -263,8 +263,8 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
         shape=(1603, 1603, 802),
         dtype=np.dtype(np.complex64),
     )
-    monkeypatch.setattr(sparse.sparse_pass2_budget, "_device_memory_limit_bytes", lambda: None)
-    monkeypatch.setattr(sparse.sparse_pass2_budget, "_jax_allocator_free_memory_bytes", lambda: None)
+    monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda: None)
+    monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: None)
     sparse.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
     try:
         monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "1")
@@ -325,7 +325,7 @@ def test_staging_estimate_requires_explicit_compact_layout():
 
 
 def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
-    from relax.helpers.batch_planning import plan_adaptive_dense_batch_sizes
+    from relax.runtime.batch_planning import plan_adaptive_dense_batch_sizes
     calls = []
     def fine(n_rot, n_trans, **kwargs):
         calls.append(("fine", n_rot, n_trans, kwargs["current_size_for_batch"]))

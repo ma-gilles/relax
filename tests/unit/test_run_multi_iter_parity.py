@@ -8,8 +8,8 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
-from relax.helpers.iteration_history import add_significant_count_artifacts
 from relax.parity.relion_replay import _validate_bpref_particle_order_scope
+from relax.refinement.iteration_history import add_significant_count_artifacts
 from scripts import diff_relion_recovar_per_iter as parity_diff
 from scripts.postprocess_multi_iter_gt import resolve_intermediates_dir
 from scripts.run_multi_iter_parity import (
@@ -183,7 +183,7 @@ def test_particle_half_indices_preserve_source_order_and_int64_dtype():
 
 
 def test_particle_half_indices_can_reconstruct_fresh_relion_order(monkeypatch):
-    from relax.helpers import expected_accuracy
+    from relax.sampling import expected_accuracy
 
     observed = {}
 

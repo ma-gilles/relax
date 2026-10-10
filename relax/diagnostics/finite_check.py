@@ -29,7 +29,7 @@ from functools import lru_cache
 
 import numpy as np
 
-from relax.helpers.env_flags import parse_env_true_flag
+from relax.runtime.env_flags import parse_env_true_flag
 
 logger = logging.getLogger(__name__)
 

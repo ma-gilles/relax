@@ -18,8 +18,9 @@ import numpy as np
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import read_star
 
-from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
-from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
+from relax.fine_pass.resident_pass2 import stable_window_class_history
+from relax.fourier.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
+from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement.optics_shapes import (
     MultiShapeDataset,
     average_ctf2_parts,
@@ -32,19 +33,18 @@ from relax.refinement.tomo_half import (
     load_tomo_dataset,
     tilt_image_accuracy_inputs,
 )
-from relax.relion import initial_model_io, relion_ctf, vdam_checkpoint
+from relax.relion import ctf, initial_model_io, vdam_checkpoint
 from relax.relion.initial_model_io import (
     _experiment_read_order,
     _particle_state_from_star,
     _tomo_particle_state_from_star,
     tomo_checkpoint_particle_state,
 )
-from relax.relion.relion_metadata import (
+from relax.relion.metadata import (
     INITIAL_MODEL_OPTICS_FEATURES,
     TOMO_INITIAL_MODEL_OPTICS_FEATURES,
     refuse_unsupported_optics,
 )
-from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 from relax.vdam import estep_setup, native_sampling, output, particle_update, schedules
 from relax.vdam.bootstrap_iref import (
     initial_state_from_particles,
@@ -205,7 +205,7 @@ def _native_expectation_step(
             effective_image_batch_size = int(opts.image_batch_size)
             if premultiplied_ctf:
                 # setAverageCTF2: the numerator over the tilt images, the denominator over the particles' sumw_group.
-                result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
+                result.meta["premultiplied_average_ctf2"] = ctf.premultiplied_average_ctf2(
                     average_ctf2_parts(
                         dataset.subset(ids).images,
                         None,
@@ -231,7 +231,7 @@ def _native_expectation_step(
             if premultiplied_ctf:
                 # The subset's average CTF^2 corrects the M-step's SSNR (setAverageCTF2 over
                 # this iteration's images and their sumw_group, ml_optimiser.cpp:4885-4926).
-                result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
+                result.meta["premultiplied_average_ctf2"] = ctf.premultiplied_average_ctf2(
                     average_ctf2_parts(
                         dataset.subset(np.asarray(particle_ids, dtype=np.int64)),
                         None,
@@ -610,7 +610,7 @@ def run_native_initial_model(
         tilt_images=tilt_images,
         optics_group_ids=optics_group_by_particle if int(np.unique(optics_group_by_particle).size) > 1 else None,
         premultiplied_ctf=any(
-            relion_ctf.dataset_has_premultiplied_ctf(d, tuple(int(v) for v in d.image_shape))
+            ctf.dataset_has_premultiplied_ctf(d, tuple(int(v) for v in d.image_shape))
             for d in shape_datasets(image_dataset)
         ),
         probe=expectation_probe,

@@ -96,7 +96,7 @@ def _fake_gpu(monkeypatch, *, limit_gib, in_use_gib, largest_block_gib):
     ``largest_block_gib`` (the probe allocation's answer)."""
     import jax
 
-    from relax.helpers import xla_memory_reserve
+    from relax.runtime import xla_memory_reserve
 
     stats = {"bytes_limit": int(limit_gib * GIB), "bytes_in_use": int(in_use_gib * GIB)}
 
@@ -113,7 +113,7 @@ def _fake_gpu(monkeypatch, *, limit_gib, in_use_gib, largest_block_gib):
 
 
 def test_device_fits_is_the_share_the_headroom_and_a_placement(monkeypatch):
-    from relax.helpers.xla_memory_reserve import device_fits
+    from relax.runtime.xla_memory_reserve import device_fits
 
     # A 16 GB card at box 448 after a K=1 M-step: limit 10.19 GiB, 8.4 GiB in use.
     _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=8.4, largest_block_gib=1.5)
@@ -142,7 +142,7 @@ def test_device_can_place_catches_only_out_of_memory(monkeypatch):
     import jax
     from jax.errors import JaxRuntimeError
 
-    from relax.helpers import xla_memory_reserve
+    from relax.runtime import xla_memory_reserve
 
     monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
 
@@ -161,7 +161,7 @@ def test_device_can_place_catches_only_out_of_memory(monkeypatch):
 
 
 def test_device_fits_skips_the_probe_well_inside_the_bounds(monkeypatch):
-    from relax.helpers import xla_memory_reserve
+    from relax.runtime import xla_memory_reserve
 
     _fake_gpu(monkeypatch, limit_gib=72.0, in_use_gib=10.0, largest_block_gib=0.0)
     probes = []
@@ -174,7 +174,7 @@ def test_device_fits_skips_the_probe_well_inside_the_bounds(monkeypatch):
 
 _PROBE_CHILD = """
 import jax, jax.numpy as jnp
-from relax.helpers.xla_memory_reserve import device_can_place
+from relax.runtime.xla_memory_reserve import device_can_place
 x = jnp.ones((1 << 20,), jnp.float32).block_until_ready()
 stats = jax.devices()[0].memory_stats()
 before = stats["bytes_in_use"]
@@ -209,15 +209,15 @@ def test_device_can_place_answers_on_the_device_and_leaves_nothing(preallocate):
 
 
 def test_low_resolution_join_goes_to_the_host_when_its_copies_do_not_fit(monkeypatch):
-    from relax.reconstruction import regularization_relion
+    from relax.reconstruction import regularization
 
     monkeypatch.delenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", raising=False)
     seen = []
-    monkeypatch.setattr(regularization_relion, "device_fits", lambda nbytes: seen.append(nbytes) or False)
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 10, itemsize=8) is True
+    monkeypatch.setattr(regularization, "device_fits", lambda nbytes: seen.append(nbytes) or False)
+    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 10, itemsize=8) is True
     assert seen == [2 * 1000 * 8]  # both joined copies of the half pair
-    monkeypatch.setattr(regularization_relion, "device_fits", lambda nbytes: True)
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 10) is False
+    monkeypatch.setattr(regularization, "device_fits", lambda nbytes: True)
+    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 10) is False
     # A full join (every voxel) never takes the host path; physically large grids always do.
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 1000) is False
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(300_000_000, 10) is True
+    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 1000) is False
+    assert regularization._low_resolution_join_host_fallback_enabled_for_size(300_000_000, 10) is True

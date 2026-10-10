@@ -12,8 +12,8 @@ import starfile
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
+from relax.fourier.resolution import ImageGeometry
 from relax.helpers.convergence import RefinementState, healpix_angular_step, refine_angular_sampling
-from relax.helpers.resolution import ImageGeometry
 from relax.refinement.command_options import validate_sigma_ang
 from relax.refinement.half_inputs import HalfSet, local_search_centre_half
 from relax.refinement.iteration_planning import initialize_refinement_state

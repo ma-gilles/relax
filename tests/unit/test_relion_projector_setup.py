@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.relion.relion_projector_setup import setup_relion_projector
+from relax.relion.projector_setup import setup_relion_projector
 
 pytestmark = pytest.mark.unit
 
@@ -178,7 +178,7 @@ def _float64_power_bound(size, padding):
 def test_host_window_build_meets_the_derived_float64_bound(size, padding, full):
     """The host wrapper's build (window at r_max) against RELION's own computeFourierTransformMap."""
 
-    from relax.relion.relion_projector_setup import setup_relion_projector_on_host
+    from relax.relion.projector_setup import setup_relion_projector_on_host
     from relax.relion_bind import _relion_bind_core as bind
 
     reference = np.random.default_rng(62).normal(size=(size,) * 3).astype(np.float64)
@@ -204,7 +204,7 @@ def test_host_window_build_meets_the_derived_float64_bound(size, padding, full):
 
 
 def test_host_window_build_is_chunking_invariant():
-    from relax.relion.relion_projector_setup import setup_relion_projector_on_host
+    from relax.relion.projector_setup import setup_relion_projector_on_host
 
     reference = np.random.default_rng(63).normal(size=(16,) * 3).astype(np.float64)
     whole = setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2)
@@ -221,7 +221,7 @@ def test_jax_backend_builds_on_the_device_at_every_size(monkeypatch):
 
     from recovar.utils.helpers import recovar_volume_to_relion
 
-    from relax.relion import relion_projector_setup as setup
+    from relax.relion import projector_setup as setup
     from relax.relion_bind import _relion_bind_core as bind
 
     called = []
@@ -245,7 +245,7 @@ def test_jax_backend_builds_on_the_device_at_every_size(monkeypatch):
 def test_host_build_reuses_programs_inside_a_stable_window_class():
     """Radii whose current sizes share a stable window class (quantum 8) share compiled programs."""
 
-    from relax.relion import relion_projector_setup as setup
+    from relax.relion import projector_setup as setup
 
     reference = np.random.default_rng(65).normal(size=(32,) * 3).astype(np.float64)
     programs = (setup._transform_xy, setup._transform_z, setup._mask_and_shell_power)

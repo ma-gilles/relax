@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers import optics_scale
+from relax.relion import optics_scale
 
 
-# Moved from relax/helpers/optics_scale.py (PLAN e1): no relax module uses it, only this test file.
+# Moved from relax/relion/optics_scale.py (PLAN e1): no relax module uses it, only this test file.
 def group_coarse_size(coarse_resolution_pixels, current_size_g, box_size, scale, max_coarse_size=None) -> int:
     """``image_coarse_size[g]`` for adaptive oversampling (``ml_optimiser.cpp:5761-5777``).
 

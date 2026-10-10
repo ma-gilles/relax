@@ -18,7 +18,7 @@ from helpers.em_fixtures import fixture_dir
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
-from relax.helpers import relion_random
+from relax.numerics import relion_random
 from relax.reconstruction import solvent_mask
 from relax.refinement import map_postprocess
 from relax.refinement.refinement_options import ReconstructionPrograms

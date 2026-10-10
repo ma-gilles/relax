@@ -17,7 +17,7 @@ whose glibc stream is seeded once, ``init_random_generator(random_seed)`` in ``i
 (ml_optimiser_mpi.cpp:827); only the followers reseed with ``random_seed + iter`` each expectation
 (ml_optimiser_mpi.cpp:1018-1020). The leader's stream therefore runs on across iterations, advanced
 only by the iterations that randomise, and that one stream is the one to match: the caller keeps a
-single :class:`~relax.helpers.relion_random.GlibcRand` for the run.
+single :class:`~relax.numerics.relion_random.GlibcRand` for the run.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.helpers.relion_random import RAND_MAX, GlibcRand
-from relax.helpers.shells import shell_of_radius_sq
+from relax.fourier.shells import shell_of_radius_sq
+from relax.numerics.relion_random import RAND_MAX, GlibcRand
 from relax.relion.macros import relion_round
 
 # randomize_at is the first shell whose unmasked FSC falls below this; the corrected formula starts

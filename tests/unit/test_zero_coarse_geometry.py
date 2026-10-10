@@ -14,8 +14,9 @@ import pytest
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-from relax.dense import scoring_policy
-from relax.refinement import dense_half, expectation, finalization, iteration_loop, local_half, local_sampling
+from relax.local_search import half
+from relax.local_search import sampling as local_sampling
+from relax.refinement import dense_half, expectation, finalization, iteration_loop, scoring_policy
 from relax.sampling import DevicePass1Source
 
 pytestmark = pytest.mark.unit
@@ -188,16 +189,16 @@ def _local_one_shape(monkeypatch, *, parent_probe):
     dataset = MockDataset(n_images=2, seed=3)
     layout = SimpleNamespace(rotation_counts=np.asarray([2]))
     trace = CallTrace(monkeypatch)
-    monkeypatch.setattr(local_half, "_build_local_adaptive_parent_layout", lambda *args: (layout, 0))
-    monkeypatch.setattr(local_half, "_run_local_search_iteration", parent_probe)
+    monkeypatch.setattr(half, "_build_local_adaptive_parent_layout", lambda *args: (layout, 0))
+    monkeypatch.setattr(half, "_run_local_search_iteration", parent_probe)
 
     def stop(*args):
         raise _Stop
 
-    monkeypatch.setattr(local_half, "_prepare_local_adaptive_pass2_support", stop)
-    trace.wrap(local_half, "_score_half_local_one_shape", "scorer")
-    trace.wrap(local_half, "_build_local_adaptive_parent_layout", "parent_layout")
-    trace.wrap(local_half, "_prepare_local_adaptive_pass2_support", "support")
+    monkeypatch.setattr(half, "_prepare_local_adaptive_pass2_support", stop)
+    trace.wrap(half, "_score_half_local_one_shape", "scorer")
+    trace.wrap(half, "_build_local_adaptive_parent_layout", "parent_layout")
+    trace.wrap(half, "_prepare_local_adaptive_pass2_support", "support")
     owners = local_half_owners(
         k=0, experiment_dataset=dataset, means_k=np.zeros(dataset.volume_size, dtype=np.complex64),
         noise_variance_k=np.ones(dataset.image_size, dtype=np.float32),
@@ -217,12 +218,12 @@ def _local_one_shape(monkeypatch, *, parent_probe):
         local_profile_history=[],
     )
     with pytest.raises(_Stop):
-        local_half._score_half_local(*owners)
+        half._score_half_local(*owners)
     return trace, layout
 
 
 def test_local_adaptive_parent_layout_exposes_five_story_inputs(monkeypatch):
-    assert _parameters(local_half._build_local_adaptive_parent_layout) == [
+    assert _parameters(half._build_local_adaptive_parent_layout) == [
         "half", "sampling", "priors", "translation_prior_reference_translations", "layout_dtype",
     ]
 
@@ -236,7 +237,7 @@ def test_local_adaptive_parent_layout_exposes_five_story_inputs(monkeypatch):
 
 
 def test_local_adaptive_support_helper_exposes_six_story_inputs(monkeypatch):
-    assert _parameters(local_half._prepare_local_adaptive_pass2_support) == [
+    assert _parameters(half._prepare_local_adaptive_pass2_support) == [
         "parent_layout", "significant_sample_indices", "sampling", "support", "parent_order",
         "fine_layout_dtype",
     ]

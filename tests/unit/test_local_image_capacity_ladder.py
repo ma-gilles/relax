@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.local.local_layout import (
+from relax.local_search.layout import (
     DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER,
     LOCAL_IMAGE_CAPACITY_LADDER_ENV,
     LocalHypothesisLayout,

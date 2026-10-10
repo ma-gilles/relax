@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from relax.helpers.convergence import APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
-from relax.helpers.env_flags import (
+from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
+from relax.runtime.env_flags import (
     parse_env_auto_flag,
     parse_env_choice,
     parse_env_flag,
@@ -27,11 +28,10 @@ from relax.helpers.env_flags import (
     parse_env_true_flag,
     parse_env_worker_count,
 )
-from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
-from relax.symmetry import canonicalize_rotational_symmetry
+from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
 if TYPE_CHECKING:
-    from relax.helpers.dtype_policy import DensePrecisionPolicy
+    from relax.refinement.precision import DensePrecisionPolicy
 
 # Every option field's default is the value ``relax refine`` (K=1) uses when its flag is not given; a field
 # whose value the command computes from the data (init_current_size) has none (code rule 5).
@@ -118,7 +118,7 @@ class OpticsGeometry:
     relion_optics_image_sizes: Any | None = None
     relion_optics_pixel_sizes: Any | None = None
     # Each half's per-image optics-group row (0 .. G-1) of a per-group noise table
-    # (relax.helpers.optics_noise); required when the initial noise has G > 1 rows.
+    # (relax.relion.optics_noise); required when the initial noise has G > 1 rows.
     optics_group_ids_per_half: Any | None = None
     # The reference maps' pixel size (None: the image pixel size).
     relion_model_pixel_size: float | None = None
@@ -493,7 +493,7 @@ class ReconstructionPrograms:
 
     @classmethod
     def from_environ(cls) -> ReconstructionPrograms:
-        from relax.sparse_pass2.resident_pass2 import _RESIDENT_STABLE_WINDOWS_ENV
+        from relax.fine_pass.resident_pass2 import _RESIDENT_STABLE_WINDOWS_ENV
 
         log = logging.getLogger(__name__)
         return cls(
@@ -531,7 +531,7 @@ class ScoringVariants:
 
     @classmethod
     def from_environ(cls) -> ScoringVariants:
-        from relax.dense import scoring_policy as sp
+        from relax.refinement import scoring_policy as sp
 
         log = logging.getLogger(__name__)
         k1 = parse_env_optional_flag(sp.K1_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K=1 RELION x-half M-step default")
@@ -709,13 +709,13 @@ class RefinementOptions:
 
 
 def _process_dense_precision() -> DensePrecisionPolicy:
-    """The process's dense precision, ``relax.dense.scoring_policy.DENSE_PRECISION``.
+    """The process's dense precision, ``relax.refinement.scoring_policy.DENSE_PRECISION``.
 
     That policy owns the default: ``RELAX_USE_FLOAT64_SCORING`` and ``RELAX_USE_FLOAT64_PROJECTIONS``, read once
-    when ``relax.dense.scoring_policy`` is imported. The scoring engines still read it there, so the
+    when ``relax.refinement.scoring_policy`` is imported. The scoring engines still read it there, so the
     refinement refuses options whose precision differs (``require_process_precision``).
     """
-    from relax.dense import scoring_policy
+    from relax.refinement import scoring_policy
 
     return scoring_policy.DENSE_PRECISION
 
@@ -726,7 +726,7 @@ def require_process_precision(options: RefinementOptions) -> None:
     if options.precision != process:
         raise ValueError(
             f"options.precision={options.precision!r} differs from the process's dense precision {process!r} "
-            "(relax.dense.scoring_policy.DENSE_PRECISION), which the scoring engines read; build the options "
+            "(relax.refinement.scoring_policy.DENSE_PRECISION), which the scoring engines read; build the options "
             "after setting RELAX_USE_FLOAT64_SCORING / RELAX_USE_FLOAT64_PROJECTIONS"
         )
 

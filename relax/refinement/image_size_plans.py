@@ -10,9 +10,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.helpers.convergence import RefinementState, healpix_angular_step
-from relax.helpers.fourier_window import quantize_current_size
-from relax.helpers.resolution import (
+from relax.fourier.fourier_window import quantize_current_size
+from relax.fourier.resolution import (
     ImageGeometry,
     bootstrap_current_size_from_ini_high_relion,
     bootstrap_current_size_relion,
@@ -22,7 +21,8 @@ from relax.helpers.resolution import (
     relion_optics_image_current_sizes,
     zero_shells_past_current_size,
 )
-from relax.reconstruction.regularization_relion import (
+from relax.helpers.convergence import RefinementState, healpix_angular_step
+from relax.reconstruction.regularization import (
     compute_current_size_relion,
     fsc_to_relion_ssnr,
     resolution_from_data_vs_prior,

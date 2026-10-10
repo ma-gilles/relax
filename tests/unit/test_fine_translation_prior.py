@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-from relax.helpers.translation_prior import expand_fine_translation_prior
+from relax.sampling.translation_prior import expand_fine_translation_prior
 
 pytestmark = pytest.mark.unit
 

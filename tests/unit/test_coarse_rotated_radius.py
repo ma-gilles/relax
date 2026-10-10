@@ -8,7 +8,7 @@ from helpers.float_compare import assert_matches
 from recovar import cuda_backproject as cb
 
 from relax.cuda import kernels as em_cuda_kernels
-from relax.helpers import projection
+from relax.projection import projection
 from relax.scoring import pass1_plan
 
 pytestmark = pytest.mark.unit

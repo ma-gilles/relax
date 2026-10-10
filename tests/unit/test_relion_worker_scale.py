@@ -10,14 +10,13 @@ import pytest
 from helpers.float_compare import assert_matches
 
 import relax.refinement.numbered_transitions as convergence_policy
-import relax.relion.relion_worker_scale as relion_worker_scale
-from relax.helpers.types import NoiseStats
+import relax.relion.worker_scale as relion_worker_scale
 from relax.parity.relion_replay import _apply_replay_correction_overrides
 from relax.refinement.half_inputs import initialize_halfsets
-from relax.relion.relion_normalization import (
+from relax.relion.normalization import (
     update_relion_norm_scale_corrections,
 )
-from relax.relion.relion_worker_scale import (
+from relax.relion.worker_scale import (
     RELION_SCALE_REDUCTION_ALL_GROUPS,
     RELION_SCALE_REDUCTION_OPTICS_PREFIX,
     RelionDispatchSchedule,
@@ -47,6 +46,7 @@ from relax.relion.relion_worker_scale import (
     validate_relion_follower_scale_start,
     verify_relion_dispatch_schedule_oracle,
 )
+from relax.types import NoiseStats
 
 _ORACLE_MANIFEST = "0" * 64
 _PARTICLE_ORDER = "1" * 64
@@ -1068,7 +1068,7 @@ def test_final_dispatch_remap_is_wired_before_final_scoring(monkeypatch):
     from helpers.tiny_refinement import CallTrace
 
     from relax.refinement import finalization
-    from relax.relion import relion_worker_scale
+    from relax.relion import worker_scale as relion_worker_scale
 
     trace = CallTrace(monkeypatch)
     trace.wrap(relion_worker_scale, "_dispatch_relion_follower_scale_for_final_all_data", "dispatch")
@@ -1089,7 +1089,7 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypa
     from helpers.tiny_refinement import CallTrace
 
     from relax.parity.relion_replay_source import RelionReplaySource
-    from relax.relion import relion_worker_scale
+    from relax.relion import worker_scale as relion_worker_scale
 
     seen = {}
 
@@ -1136,18 +1136,18 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, cap
     """Class3D without the follower emulation runs RELION's norm and scale updates and logs their ranges."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.relion import relion_normalization
-    from relax.relion.relion_normalization import _format_relion_correction_range
+    from relax.relion import normalization
+    from relax.relion.normalization import _format_relion_correction_range
 
     def statistics(n_images):
         return dict(wsum_norm_correction=np.ones(n_images), wsum_scale_correction_xa=np.ones(1),
                     wsum_scale_correction_aa=np.full(1, 2.0))
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(relion_normalization, "numbered_norm_scale_update", "numbered")
-    trace.wrap(relion_normalization, "prepare_norm_scale_update", "prepare")
-    trace.wrap(relion_normalization, "update_relion_norm_scale_corrections", "update")
-    trace.wrap(relion_normalization, "log_norm_scale_update", "log")
+    trace.wrap(normalization, "numbered_norm_scale_update", "numbered")
+    trace.wrap(normalization, "prepare_norm_scale_update", "prepare")
+    trace.wrap(normalization, "update_relion_norm_scale_corrections", "update")
+    trace.wrap(normalization, "log_norm_scale_update", "log")
     with caplog.at_level(logging.INFO, logger="relax.refinement.iteration_loop"):
         run_tiny_refinement(monkeypatch, n_classes=2, final_after_max_iter=False, engine_noise_fields=statistics)
     assert trace.labels() == ["numbered", "prepare", "update", "log"] * 2
@@ -1164,8 +1164,8 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, cap
 def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry(monkeypatch):
     from helpers.tiny_refinement import CallTrace
 
-    from relax.helpers.iteration_history import RefinementHistory
-    from relax.relion import relion_worker_scale
+    from relax.refinement.iteration_history import RefinementHistory
+    from relax.relion import worker_scale as relion_worker_scale
 
     replay = _follower_scale_replay(2)
     seen = {}

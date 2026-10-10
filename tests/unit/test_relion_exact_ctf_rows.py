@@ -26,7 +26,8 @@ from helpers.em_fixtures import fixture_file
 from helpers.float_compare import assert_matches
 from recovar.data_io.starfile import read_star, star_column
 
-from relax.relion import relion_ctf, tomo_input
+from relax.relion import ctf as relion_ctf
+from relax.relion import tomo_input
 
 relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
 

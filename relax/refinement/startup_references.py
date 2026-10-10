@@ -1,7 +1,7 @@
 """The start-up references of a refinement: the maps relion_refine reads with --ref, in the loop's layout.
 
 References are RELION-convention maps; ``load_relion_volume`` puts them in the internal frame
-(``relax.helpers.map_io``), and ``get_dft3`` gives the centered Fourier volume. NEVER use raw
+(``relax.io.map_io``), and ``get_dft3`` gives the centered Fourier volume. NEVER use raw
 ``mrcfile.open`` + ``np.fft.fftn(np.fft.ifftshift(...))`` here: that produces a Fourier volume with the
 right values but at WRONG array indices (DC at corner instead of center), so ``slice_volume`` reads Nyquist
 as if it were DC and projections are off by ~2400x in amplitude at low frequencies.
@@ -22,7 +22,7 @@ from recovar import utils as recovar_utils
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.refinement.half_inputs import HalfPair
-from relax.relion import relion_metadata
+from relax.relion import metadata
 from relax.relion.geometry import REFERENCE_FILTER_EDGE_SHELLS
 
 
@@ -119,7 +119,7 @@ def load_k1_reference(
     from recovar.utils.helpers import load_relion_volume
 
     init_vol_real = load_relion_volume(path).astype(real_dtype)
-    model_pixel_size = relion_metadata.read_relion_mrc_model_pixel_size(path)
+    model_pixel_size = metadata.read_relion_mrc_model_pixel_size(path)
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise SystemExit(f"Initial RELION reference has invalid voxel size {model_pixel_size}: {path}")
     assert init_vol_real.shape == volume_shape, f"Volume shape mismatch: {init_vol_real.shape} vs {volume_shape}"
@@ -175,11 +175,11 @@ def load_class_references(
     """
     from recovar.utils.helpers import load_relion_volume
 
-    model_pixel_size = relion_metadata.read_relion_mrc_model_pixel_size(paths[0])
+    model_pixel_size = metadata.read_relion_mrc_model_pixel_size(paths[0])
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise SystemExit(f"Initial RELION reference has invalid voxel size {model_pixel_size}: {paths[0]}")
     for p in paths[1:]:
-        header_pixel_size = relion_metadata.read_relion_mrc_model_pixel_size(p)
+        header_pixel_size = metadata.read_relion_mrc_model_pixel_size(p)
         if abs(header_pixel_size - model_pixel_size) > 0.001:
             raise SystemExit(
                 f"Class references have different pixel sizes in their headers: {model_pixel_size} A "

@@ -15,12 +15,12 @@ from helpers.dense_block_scores import _score_rotation_block
 from recovar.core.configs import ForwardModelConfig
 from recovar.reconstruction import noise as noise_utils
 
-from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.half_spectrum import make_half_image_weights
-from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
-from relax.helpers.projection import compute_projections_block as _compute_projections_block
-from relax.scoring.scoring import update_logsumexp
+from relax.fourier.fourier_window import make_fourier_window_spec
+from relax.fourier.half_spectrum import make_half_image_weights
+from relax.fourier.preprocessing import preprocess_batch as _preprocess_batch
+from relax.projection.projection import compute_projections_block as _compute_projections_block
+from relax.refinement.precision import DensePrecisionPolicy
+from relax.scoring.coarse_kernels import update_logsumexp
 
 
 @dataclass(frozen=True)

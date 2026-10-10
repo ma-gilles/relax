@@ -74,7 +74,7 @@ def hard_assignment_idx_to_pose(indices, rotation_grid, translation_grid):
     return predicted_pose, predicted_trans
 
 
-# Moved from relax/sampling.py (PLAN e1): no relax module uses it, only these oracles and tests.
+# Moved from relax/sampling/__init__.py (PLAN e1): no relax module uses it, only these oracles and tests.
 @functools.partial(jax.jit, static_argnums=[1])
 def translations_to_indices(translations, image_shape):
     # Assumes that translations are integers

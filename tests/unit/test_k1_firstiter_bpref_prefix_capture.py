@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.sparse_pass2 import firstiter_bpref as sparse
+from relax.refinement import firstiter_bpref as sparse
 from relax.diagnostics import bpref_diagnostics
 
 

@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.helpers.orientation_priors import DirectionPrior
 from relax.parity.state_swap_probe import (
     _STATE_SWAP_VARIANT_COMPONENTS,
     REQUIRED_STATE_SWAP_REPLAY_KEYS,
@@ -22,6 +21,7 @@ from relax.parity.state_swap_runtime import (
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.reference_state import ReferenceModel
+from relax.sampling.orientation_priors import DirectionPrior
 
 pytestmark = pytest.mark.unit
 

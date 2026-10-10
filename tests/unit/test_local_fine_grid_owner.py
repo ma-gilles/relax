@@ -14,9 +14,10 @@ import pytest
 from helpers.float_compare import matches
 
 import relax.sampling as sampling_module
-from relax.helpers.resolution import ImageGeometry
-from relax.refinement import finalization, image_size_plans, local_sampling
-from relax.refinement.local_sampling import prepare_final_local_sampling, prepare_numbered_local_sampling
+from relax.fourier.resolution import ImageGeometry
+from relax.local_search import sampling
+from relax.local_search.sampling import prepare_final_local_sampling, prepare_numbered_local_sampling
+from relax.refinement import finalization, image_size_plans
 from relax.sampling import (
     _relion_mstep_rotations_from_eulers,
     apply_relion_rotation_perturbation_to_eulers,
@@ -118,7 +119,7 @@ def _numbered_local_inputs(*, reuse=False, oversampling=0, symmetry="C1"):
         translations=np.zeros((1, 2), dtype=np.float32),
     )
     return dict(
-        search=local_sampling.LocalSearchSettings(
+        search=sampling.LocalSearchSettings(
             healpix_order=ORDER, oversampling_order=oversampling, sigma_rot=0.1, sigma_psi=0.2, symmetry=symmetry,
         ),
         grid=grid, base_translations=grid.translations,
@@ -131,7 +132,7 @@ def _numbered_local_inputs(*, reuse=False, oversampling=0, symmetry="C1"):
 
 def _final_local_inputs(*, oversampling=0, symmetry="C1"):
     return dict(
-        search=local_sampling.LocalSearchSettings(
+        search=sampling.LocalSearchSettings(
             healpix_order=ORDER, oversampling_order=oversampling, sigma_rot=0.1, sigma_psi=0.2, symmetry=symmetry,
         ),
         optics=_optics(None, None),
@@ -146,8 +147,8 @@ def _trace_local_grid_owners(monkeypatch):
     trace = CallTrace(monkeypatch)
     trace.wrap(sampling_module, "exact_local_fine_grid")
     trace.wrap(sampling_module, "local_search_mstep_rotations")
-    trace.wrap(local_sampling, "relion_local_pass1_current_size")
-    trace.wrap(local_sampling, "_precompute_exact_local_fine_grid_enabled")
+    trace.wrap(sampling, "relion_local_pass1_current_size")
+    trace.wrap(sampling, "_precompute_exact_local_fine_grid_enabled")
     return trace
 
 
@@ -229,8 +230,8 @@ def test_numbered_parent_window_uses_preceding_order_and_optics_geometry(monkeyp
     def unexpected_fine_grid(*args, **kwargs):
         raise AssertionError("Expanded parents must not materialize the exhaustive fine grid")
 
-    monkeypatch.setattr(local_sampling, 'relion_local_pass1_current_size', parent_window)
-    monkeypatch.setattr(local_sampling, '_precompute_exact_local_fine_grid_enabled', unexpected_fine_grid)
+    monkeypatch.setattr(sampling, 'relion_local_pass1_current_size', parent_window)
+    monkeypatch.setattr(sampling, '_precompute_exact_local_fine_grid_enabled', unexpected_fine_grid)
     result = prepare_numbered_local_sampling(**inputs)
     assert result.rotations is None and result.rotation_eulers is None
     assert result.mstep_rotations is None
@@ -314,7 +315,7 @@ def test_controller_passes_the_point_group_to_every_grid_owner(monkeypatch):
     from relax.refinement.refinement_options import SymmetryOptions
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(local_sampling, "iteration_trial_grid", "numbered")
+    trace.wrap(sampling, "iteration_trial_grid", "numbered")
     trace.wrap(finalization, "prepare_final_sampling", "final")
     trace.wrap(sampling_module, "relion_mstep_source_eulers", "source_eulers")
     # A point group other than C1 requires the x-half M-step, which defaults off without a GPU.

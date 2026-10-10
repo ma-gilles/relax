@@ -19,15 +19,6 @@ import numpy as np
 from recovar import utils
 
 from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.env_flags import parse_env_flag_or_false
-from relax.helpers.orientation_priors import (
-    DirectionPrior,
-    class_weights_from_direction_prior,
-    infer_direction_prior_healpix_order,
-    normalize_class_direction_prior,
-    normalize_class_direction_prior_per_half,
-    normalize_direction_prior_per_half,
-)
 from relax.refinement.half_inputs import HalfSet, optional_half_arrays
 from relax.refinement.noise_updates import (
     NoiseModel,
@@ -35,25 +26,34 @@ from relax.refinement.noise_updates import (
 )
 from relax.refinement.ports import OptimiserAccuracyReplay
 from relax.refinement.sigma_offset import SigmaOffset
-from relax.relion import relion_metadata
+from relax.relion import metadata as relion_metadata
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
     relion_mpi_process_start_scoring_noise_pair,
 )
-from relax.relion.relion_metadata import (
+from relax.relion.metadata import (
     read_relion_direction_prior,
     read_relion_direction_priors,
     read_relion_model_metadata,
     read_relion_optimiser_metadata,
     read_relion_sampling_metadata,
 )
+from relax.runtime.env_flags import parse_env_flag_or_false
 from relax.sampling import (
     _translation_grid_for_class_count,
     relion_sampling_perturbation_for_iteration,
 )
+from relax.sampling.orientation_priors import (
+    DirectionPrior,
+    class_weights_from_direction_prior,
+    infer_direction_prior_healpix_order,
+    normalize_class_direction_prior,
+    normalize_class_direction_prior_per_half,
+    normalize_direction_prior_per_half,
+)
 
 if TYPE_CHECKING:
-    from relax.helpers.resolution import ImageGeometry
+    from relax.fourier.resolution import ImageGeometry
 
 
 logger = logging.getLogger("relax.diagnostics.relion_replay")  # the name before the move to relax.parity: log rows keep it
@@ -2066,7 +2066,7 @@ def _build_replay_iteration_overrides(
     def _read_model_direction_prior(model_path, model):
         if not _model_has_class_direction_priors(model):
             return None
-        from relax.relion.relion_metadata import (
+        from relax.relion.metadata import (
             read_relion_direction_prior,
             read_relion_direction_priors,
         )

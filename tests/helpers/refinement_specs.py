@@ -2,19 +2,12 @@
 
 import dataclasses
 
-from relax.dense import scoring_policy
-from relax.refinement import (
-    dense_half,
-    half_inputs,
-    local_half,
-    local_sampling,
-    shape_class_scoring,
-)
+from relax.local_search import half, records, sampling
+from relax.refinement import dense_half, half_inputs, scoring_policy, shape_class_scoring
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.ports import NoProbe
 from relax.refinement.projector_preparation import PreparedProjector
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
-from relax.sparse_pass2 import local_search_records
 
 _LOCAL_ITERATION_POSITIONAL = (
     "experiment_dataset",
@@ -44,7 +37,7 @@ def local_iteration_owners(*args, **values):
             raise TypeError(f"multiple values for {name}")
         values[name] = value
     owners = (
-        local_search_records.LocalSearchData(
+        records.LocalSearchData(
             experiment_dataset=values.pop("experiment_dataset"),
             mean=values.pop("mean"),
             noise_variance=values.pop("noise_variance"),
@@ -56,7 +49,7 @@ def local_iteration_owners(*args, **values):
             image_pre_shifts=values.pop("image_pre_shifts", None),
             optics_group_ids=values.pop("optics_group_ids", None),
         ),
-        local_half.LocalSearchGridSpec(
+        half.LocalSearchGridSpec(
             prior_rotations=values.pop("prior_rotations"),
             rotation_grid_rotations=values.pop("rotation_grid_rotations"),
             healpix_order=values.pop("healpix_order"),
@@ -76,7 +69,7 @@ def local_iteration_owners(*args, **values):
             symmetry=values.pop("symmetry", "C1"),
             n_classes=values.pop("n_classes", 1),
         ),
-        local_search_records.LocalSearchKernelPolicy(
+        records.LocalSearchKernelPolicy(
             disc_type=values.pop("disc_type"),
             current_size=values.pop("current_size"),
             reconstruction_current_size=values.pop("reconstruction_current_size", None),
@@ -102,7 +95,7 @@ def local_iteration_owners(*args, **values):
             wsum_current_size=values.pop("wsum_current_size", None),
             firstiter_cc=values.pop("firstiter_cc", False),
         ),
-        local_search_records.LocalSearchSupportPolicy(
+        records.LocalSearchSupportPolicy(
             mstep_relion_x_half=values.pop("mstep_relion_x_half", False),
             disable_adjoint_y=values.pop("disable_adjoint_y", False),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf", False),
@@ -162,8 +155,8 @@ def local_half_owners(**values):
             scale_group_count=values.pop("group_count_k", None),
             scale_correction_data_vs_prior=values.pop("scale_correction_data_vs_prior", None),
         ),
-        local_sampling.LocalSampling(
-            search=local_sampling.LocalSearchSettings(
+        sampling.LocalSampling(
+            search=sampling.LocalSearchSettings(
                 healpix_order=values.pop("local_search_order"),
                 oversampling_order=values.pop("local_parent_oversampling_order"),
                 sigma_rot=values.pop("sigma_rot"),
@@ -180,17 +173,17 @@ def local_half_owners(**values):
             perturbation=values.pop("local_search_random_perturbation"),
             angular_step_deg=values.pop("local_search_angular_sampling_deg"),
         ),
-        local_half.LocalPriorSpec(
+        half.LocalPriorSpec(
             trans_prior_center=values.pop("trans_prior_center"),
             trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
             current_sigma_offset_angstrom=values.pop("current_sigma_offset_angstrom"),
             translation_search_base=values.pop("translation_search_base"),
             replay_prior_translations=values.pop("replay_prior_translations"),
         ),
-        local_half.LocalBatchPolicy(
+        half.LocalBatchPolicy(
             max_significants=values.pop("max_significants"),
         ),
-        local_half.LocalExecutionPolicy(
+        half.LocalExecutionPolicy(
             disc_type=values.pop("disc_type"),
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
@@ -214,7 +207,7 @@ def local_half_owners(**values):
             score_only=values.pop("diagnostic_score_only"),
             firstiter_cc=values.pop("firstiter_cc", False),
         ),
-        local_half.LocalDiagnosticPolicy(
+        half.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),
             debug_iteration=values.pop("debug_iteration", None),
             collect_local_search_profile=values.pop("collect_local_search_profile"),

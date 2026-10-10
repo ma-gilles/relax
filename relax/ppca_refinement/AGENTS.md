@@ -8,7 +8,7 @@ Current branch facts:
 - K-class dense/local orchestration lives in
   `relax/classification/k_class.py`.
 - Exact-local support must use `LocalHypothesisLayout` from
-  `relax/local/local_layout.py`.
+  `relax/local_search/layout.py`.
 - Parent EM rules in `relax/AGENTS.md` apply. Do not run the full
   RECOVAR long suite for PPCA/EM-only changes.
 - `z ~ N(0, I_q)` with real latent coordinates. Eigenvalue scale lives in

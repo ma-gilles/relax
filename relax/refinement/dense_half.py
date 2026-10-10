@@ -16,32 +16,21 @@ from recovar import utils
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
 from relax.cuda import kernels as em_cuda_kernels
-from relax.dense import scoring_policy
-from relax.dense.score_outputs import (
+from relax.diagnostics import parity_dump as _parity_dump
+from relax.refinement import scoring_policy
+from relax.refinement.half_inputs import HalfScoringData
+from relax.refinement.precision import DensePrecisionPolicy
+from relax.refinement.score_outputs import (
     HalfScoreResult,
     _collapse_fine_pose_assignments_to_coarse,
     _collapse_single_class_stats_to_coarse,
     _select_single_class_accumulator,
     class_em_to_half_result,
 )
-from relax.dense.scoring_policy import (
+from relax.refinement.scoring_policy import (
     RELION_ADAPTIVE_FRACTION,
     RELION_FOURIER_WINDOW_SQUARE,
 )
-from relax.diagnostics import parity_dump as _parity_dump
-from relax.helpers.batch_planning import (
-    _plan_kclass_adaptive_grid_batch_sizes,
-    safe_dense_k_class_rotation_block_size,
-    safe_firstiter_cc_image_batch_size,
-)
-from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.helpers.oversampling import (
-    AdaptivePass2Grids,
-    build_adaptive_pass2_grids,
-    prepare_adaptive_pass2_grids,
-    project_pass2_rotations,
-)
-from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.shape_class_scoring import OpticsSpec, engine_projection_inputs, reference_grid_kwargs
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
@@ -52,11 +41,22 @@ from relax.relion.optics_aberrations import (
     dataset_projection_magnification,
     reported_rotations,
 )
+from relax.runtime.batch_planning import (
+    _plan_kclass_adaptive_grid_batch_sizes,
+    safe_dense_k_class_rotation_block_size,
+    safe_firstiter_cc_image_batch_size,
+)
 from relax.sampling import (
     apply_relion_translation_perturbation,
     project_rows,
 )
-from relax.symmetry import canonicalize_rotational_symmetry
+from relax.sampling.oversampling import (
+    AdaptivePass2Grids,
+    build_adaptive_pass2_grids,
+    prepare_adaptive_pass2_grids,
+    project_pass2_rotations,
+)
+from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
 logger = logging.getLogger("relax.dense.half_scoring")
 
@@ -184,7 +184,7 @@ class DenseVariantPolicy:
     firstiter_cc: bool
     coarse_window_size: int | None
     fine_window_size: int | None
-    # RELION --skip_align: classify at each particle's stored pose (relax.classification.given_poses).
+    # RELION --skip_align: classify at each particle's stored pose (relax.refinement.given_poses).
     skip_align: bool
 
 
@@ -347,7 +347,7 @@ def _score_kclass_at_given_poses(
     apply as in the searched one (:6190, :6316, :6385).
     """
 
-    from relax.classification.given_poses import given_pose_grids
+    from relax.refinement.given_poses import given_pose_grids
 
     particles = half.particles
     if particles.rotation_eulers is None or particles.translations is None:
@@ -586,7 +586,7 @@ def _score_half_dense_one_shape(
 
     ``half.particles.optics_group_ids`` gives each image's row of a
     per-optics-group ``noise_variance_k`` table
-    (:mod:`relax.helpers.optics_noise`); only the K=1 adaptive route carries it,
+    (:mod:`relax.relion.optics_noise`); only the K=1 adaptive route carries it,
     every other engine refuses it.
 
     ``optics.projection_scale`` and ``reference_current_size`` describe
@@ -598,7 +598,7 @@ def _score_half_dense_one_shape(
     ``batching.safe_batch_sizes`` plans against memory available at invocation.
     """
 
-    from relax.symmetry import canonicalize_rotational_symmetry
+    from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
     symmetry = canonicalize_rotational_symmetry(sampling.symmetry)
     if symmetry != "C1" and int(sampling.oversampling_order) <= 0 and sampling.coarse_engine != "gemm_dense":
@@ -1109,7 +1109,7 @@ def single_shape_reconstruction_grid(dataset, sampling, optics: OpticsSpec):
     Wavg rectangle refuses (relax#69).
     """
 
-    from relax.helpers import optics_scale
+    from relax.relion import optics_scale
 
     reference_size = sampling.model_support_size
     if reference_size is None or optics.projection_scale == 1.0 or not dataset_magnification_is_anisotropic(dataset):

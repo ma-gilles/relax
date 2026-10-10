@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.classification.given_poses import given_pose_grids
 from relax.refinement import command_options
+from relax.refinement.given_poses import given_pose_grids
 from relax.relion import input_poses
 from relax.sampling import rotation_grid_size
 
@@ -99,7 +99,7 @@ def test_class3d_pose_seed_keeps_the_input_orientations_under_skip_align():
 
 def test_given_supports_carry_the_csr_that_limits_the_projection_cache():
     from relax.classification.k_class import _given_support_csr
-    from relax.sparse_pass2.resident_significance import significant_coarse_parents
+    from relax.fine_pass.resident_significance import significant_coarse_parents
 
     n = 7
     grids = given_pose_grids(_rotations(n), np.zeros((n, 2)))

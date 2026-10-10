@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 
 from relax.diagnostics.gt_metrics import DEFAULT_GT_ALIGN_HEALPIX_ORDER, DEFAULT_GT_ALIGN_MAX_SHELL
-from relax.helpers.map_io import load_relax_map
+from relax.io.map_io import load_relax_map
 
 
 def resolve_intermediates_dir(recovar_dir, explicit_intermediates_dir=None):

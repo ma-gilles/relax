@@ -4,13 +4,13 @@ import logging
 import time
 
 from relax.diagnostics.coarse_score_diagnostics import build_coarse_significance_support_audit
-from relax.helpers.env_flags import parse_env_strict_flag
-from relax.scoring.pass1_results import OutputPlan, Pass1Outputs
-from relax.sparse_pass2.resident_significance import (
+from relax.fine_pass.resident_significance import (
     DeviceCompactedSignificantSamples,
     build_coarse_significance_csr,
     host_support_rows,
 )
+from relax.runtime.env_flags import parse_env_strict_flag
+from relax.scoring.pass1_results import OutputPlan, Pass1Outputs
 
 logger = logging.getLogger(__name__)
 

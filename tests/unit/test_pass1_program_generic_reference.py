@@ -68,7 +68,7 @@ def test_gaussian_program_scores_are_the_generic_scores_up_to_an_image_constant(
     rng = np.random.default_rng(7)
     initial_diff2 = rng.uniform(0.0, 3.0, size=N_IMAGES)
     # Exact operands: the image divided by the CTF, weighted by CTF^2 / sigma^2 and the
-    # half-spectrum multiplicity (relax.relion.relion_coarse_operands).
+    # half-spectrum multiplicity (relax.scoring.coarse_operands).
     state, program = _program_scores(
         projected,
         translated / ctf[:, None, :],

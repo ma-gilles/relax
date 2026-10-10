@@ -19,7 +19,7 @@ from relax.vdam.state import InitialModelState, VdamAccumulator
 
 if TYPE_CHECKING:
     from relax.classification.k_class_results import KClassEMResult
-    from relax.helpers.types import NoiseStats
+    from relax.types import NoiseStats
 
 
 def _bp_slab(arr: np.ndarray, r_max: int, c: int) -> np.ndarray:

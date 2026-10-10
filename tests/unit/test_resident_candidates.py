@@ -10,10 +10,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-from relax.scoring.compact_candidates import candidate_mask_to_dense
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
-from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.sparse_pass2.resident_candidates import (
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.resident_candidates import (
     ResidentCandidateTables,
     build_resident_candidate_tables,
     expand_chunk_mask_jnp,
@@ -23,6 +21,8 @@ from relax.sparse_pass2.resident_candidates import (
     n_mask_words,
     plan_capacity_chunks,
 )
+from relax.scoring.compact_candidates import candidate_mask_to_dense
+from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 
 pytestmark = pytest.mark.unit
 
@@ -242,7 +242,7 @@ def test_a_pass_runs_in_one_row_class_when_few_extra_chunks_cost():
     """The greedy plan's remainder chunk took a smaller row class, which compiled the chunk
     programs twice per size; the pass is planned again in the smallest class it used."""
 
-    from relax.sparse_pass2.resident_candidates import plan_pass_chunks
+    from relax.fine_pass.resident_candidates import plan_pass_chunks
 
     # 20 one-row images: greedy fills one 16-row chunk and puts the 4-row remainder in class 4.
     tables = _synthetic_tables([1] * 20)
@@ -260,7 +260,7 @@ def test_a_pass_with_many_chunks_keeps_the_greedy_plan():
     the remainder is not padded up to the largest class, whose shape-static programs would pay
     for the whole capacity."""
 
-    from relax.sparse_pass2.resident_candidates import _MAX_EXTRA_CHUNKS_FOR_ONE_ROW_CLASS, plan_pass_chunks
+    from relax.fine_pass.resident_candidates import _MAX_EXTRA_CHUNKS_FOR_ONE_ROW_CLASS, plan_pass_chunks
 
     n = 16 * 10 + 4  # ten full 16-row chunks and a 4-row remainder
     tables = _synthetic_tables([1] * n)
@@ -278,7 +278,7 @@ def test_one_row_class_keeps_the_overflow_chunks_of_the_greedy_plan():
     """An image past the smaller class would become a new one-image overflow chunk there, so
     that class is rejected and the greedy plan is kept."""
 
-    from relax.sparse_pass2.resident_candidates import plan_pass_chunks
+    from relax.fine_pass.resident_candidates import plan_pass_chunks
 
     # A 12-row image fits class 16 but would overflow class 4; the 3-row tail takes class 4.
     tables = _synthetic_tables([12, 3, 3])
@@ -294,7 +294,7 @@ def test_one_row_class_chunks_stay_inside_their_table_blocks_and_cover_each_imag
     """Chunks never cross an image range, and the re-planned pass covers every image and row
     exactly once, as the greedy plan does."""
 
-    from relax.sparse_pass2.resident_candidates import plan_pass_chunks
+    from relax.fine_pass.resident_candidates import plan_pass_chunks
 
     tables = _synthetic_tables([1] * 23 + [3, 2] + [1] * 14)
     ranges = [(0, 20), (20, tables.n_images)]
@@ -309,7 +309,7 @@ def test_one_row_class_chunks_stay_inside_their_table_blocks_and_cover_each_imag
 
 
 def test_the_chunks_of_a_pass_share_its_largest_image_class():
-    from relax.sparse_pass2.resident_candidates import share_image_capacity
+    from relax.fine_pass.resident_candidates import share_image_capacity
 
     # Nine one-row images: a full 8-image chunk and a one-image tail in the 2-image class;
     # then a 40-row image, past the largest row class, which runs alone in its own class.

@@ -3,14 +3,14 @@
 import numpy as np
 import pytest
 
-from relax.helpers.fourier_window import (
+from relax.fine_pass.resident_pass2 import _stable_window_physical_class, stable_window_class_history
+from relax.fourier.fourier_window import (
     DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     STABLE_FOURIER_WINDOW_QUANTUM_ENV,
     VDAM_STABLE_FOURIER_WINDOW_QUANTUM,
     make_stable_fourier_window_shape_plan,
     stable_fourier_window_quantum,
 )
-from relax.sparse_pass2.resident_pass2 import _stable_window_physical_class, stable_window_class_history
 
 pytestmark = pytest.mark.unit
 

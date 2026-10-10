@@ -12,7 +12,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.relion import relion_ctf
+from relax.relion import ctf
 
 pytestmark = pytest.mark.unit
 
@@ -536,7 +536,7 @@ def test_relion_coarse_single_lane_canonical_requires_canonical_reduction():
 def test_exact_relion_ctf_source_defaults_to_dataset_star(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    from relax.relion.relion_ctf import _relion_exact_ctf_source_star
+    from relax.relion.ctf import _relion_exact_ctf_source_star
 
     dataset_star = tmp_path / "particles.star"
     explicit_star = tmp_path / "override.star"
@@ -579,12 +579,12 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
         "rlnImagePixelSize": 1.5,
     }
     monkeypatch.setattr(
-        relion_ctf,
+        ctf,
         "_relion_exact_ctf_source_star",
         lambda _dataset: source,
     )
     monkeypatch.setitem(
-        relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE,
+        ctf._RELION_EXACT_CTF_SOURCE_CACHE,
         cache_key,
         {
             "particles": pd.DataFrame([particle]),
@@ -597,18 +597,18 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     )
 
     pixel_indices = np.asarray([11, 0, 4, 4], dtype=np.int32)
-    compact_result = relion_ctf.relion_exact_ctf_half_from_source_star_host(
+    compact_result = ctf.relion_exact_ctf_half_from_source_star_host(
         dataset,
         np.asarray([0, 0], dtype=np.int32),
         (4, 4),
         pixel_indices=pixel_indices,
     )
-    host_result = relion_ctf.relion_exact_ctf_half_from_source_star_host(
+    host_result = ctf.relion_exact_ctf_half_from_source_star_host(
         dataset,
         np.asarray([0], dtype=np.int32),
         (4, 4),
     )
-    device_result = relion_ctf.relion_exact_ctf_half_from_source_star(
+    device_result = ctf.relion_exact_ctf_half_from_source_star(
         dataset,
         np.asarray([0], dtype=np.int32),
         (4, 4),
@@ -619,7 +619,7 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     assert isinstance(device_result, jax.Array)
     assert device_result.dtype == jnp.float64
     # RECOVAR's frame: centred rows and the opposite sign of RELION's FFTW rows.
-    fftw_rows = relion_ctf.relion_fftw_ctf_rows(dataset, np.asarray([0], dtype=np.int32), (4, 4))
+    fftw_rows = ctf.relion_fftw_ctf_rows(dataset, np.asarray([0], dtype=np.int32), (4, 4))
     assert_matches(host_result[0], -np.fft.fftshift(fftw_rows[0], axes=0).reshape(-1))
     assert_matches(np.asarray(device_result), host_result)
 
@@ -628,7 +628,7 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     # Every request is evaluated anew: the caller owns its array.
     compact_result[:] = 99.0
     assert_matches(
-        relion_ctf.relion_exact_ctf_half_from_source_star_host(
+        ctf.relion_exact_ctf_half_from_source_star_host(
             dataset,
             np.asarray([0], dtype=np.int32),
             (4, 4),
@@ -1006,7 +1006,7 @@ def test_sparse_pass2_fused_flag_routes_supported_operand_layouts(
     expected_shape,
 ):
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_diff2_sum
+    from relax.fine_pass.scoring import _relion_cuda_fine_diff2_sum
 
     routes = []
 
@@ -1059,7 +1059,7 @@ def test_sparse_pass2_fused_flag_routes_supported_operand_layouts(
 
 def test_sparse_pass2_fused_flag_routes_float64_to_f64_ffi(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_diff2_sum
+    from relax.fine_pass.scoring import _relion_cuda_fine_diff2_sum
 
     calls = []
 
@@ -1137,10 +1137,10 @@ def test_exact_ctf_compact_indices_reject_invalid_host_geometry(monkeypatch, tmp
     from types import SimpleNamespace
 
     source = (tmp_path / "particles.star").resolve()
-    monkeypatch.setattr(relion_ctf, "_relion_exact_ctf_source_star", lambda _: source)
+    monkeypatch.setattr(ctf, "_relion_exact_ctf_source_star", lambda _: source)
     dataset = SimpleNamespace(original_image_indices_from_local=lambda indices: indices)
     with pytest.raises(ValueError):
-        relion_ctf.relion_exact_ctf_half_from_source_star_host(
+        ctf.relion_exact_ctf_half_from_source_star_host(
             dataset,
             np.asarray([0]),
             (4, 4),
@@ -1156,11 +1156,11 @@ def test_exact_ctf_compact_indices_never_materialize_device_inputs(monkeypatch, 
             raise AssertionError("Unexpected device-to-host materialization")
 
     source = (tmp_path / "particles.star").resolve()
-    monkeypatch.setattr(relion_ctf, "_relion_exact_ctf_source_star", lambda _: source)
+    monkeypatch.setattr(ctf, "_relion_exact_ctf_source_star", lambda _: source)
     dataset = SimpleNamespace(original_image_indices_from_local=lambda indices: indices)
     for indices in (DeviceOnly(), jnp.asarray([0], dtype=jnp.int32)):
         with pytest.raises(TypeError, match="host NumPy array"):
-            relion_ctf.relion_exact_ctf_half_from_source_star_host(
+            ctf.relion_exact_ctf_half_from_source_star_host(
                 dataset,
                 np.asarray([0]),
                 (4, 4),
@@ -1179,7 +1179,7 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
     import recovar.cuda_backproject as cuda_backproject
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         compute_relion_projector_projections_block,
         relion_projector_half_to_texture_full,
     )
@@ -1300,7 +1300,7 @@ def test_relion_half_texture_full_even_indexed_projection_matches_full_scatter(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         compute_relion_projector_projections_block,
     )
 
@@ -1449,10 +1449,10 @@ def test_relion_half_texture_projection_is_invariant_to_host_support_crop(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.helpers.fourier_window import (
+    from relax.fourier.fourier_window import (
         make_fourier_window_spec,
     )
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         compact_relion_projector_half_for_centered_indices,
         compute_relion_projector_projections_block,
     )

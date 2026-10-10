@@ -166,9 +166,9 @@ def configure_half_image_preprocessing(
     Shape classes use their own pixels; SPA and tilt-image masks keep the
     reference pixel scalar used by the existing refinement path.
     """
-    from relax.helpers.batch_planning import image_backend
     from relax.refinement.optics_shapes import MultiShapeHalf
     from relax.refinement.tomo_half import TomoHalf
+    from relax.runtime.batch_planning import image_backend
 
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
     # A half of several image shapes sets up each shape class's images, masked with

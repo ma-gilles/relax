@@ -24,8 +24,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax import sampling
-from relax.dense.scoring_policy import _dense_global_scoring_dtype
-from relax.helpers.env_flags import parse_env_true_flag
 from relax.parity.frozen_boundary import (
     _assert_frozen_scoring_state_unchanged,
     _frozen_scoring_state_arrays,
@@ -55,9 +53,11 @@ from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_s
 from relax.refinement.image_size_plans import CoarseImageSize
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState
 from relax.refinement.reference_state import class_mixture_from_weights
+from relax.refinement.scoring_policy import _dense_global_scoring_dtype
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.refinement.trial_grids import CoarseGrids, FinalSamplingSettings, native_final_sampling_settings
-from relax.relion.relion_metadata import read_relion_sampling_metadata
+from relax.relion.metadata import read_relion_sampling_metadata
+from relax.runtime.env_flags import parse_env_true_flag
 
 # The controller's log: what the replay installs is logged under its name, as before.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -89,7 +89,7 @@ class RelionReplay:
     of reloading them from the STAR replay's model files.
     ``follower_topology``: an MPI RELION run's followers, its captured dispatch schedule (which follower scored
     which particle in each iteration, ``--relion-dispatch-schedule``) and follower-scale replay
-    (``relax.relion.relion_worker_scale.PreparedFollowerTopology``; None or no followers: none).
+    (``relax.relion.worker_scale.PreparedFollowerTopology``; None or no followers: none).
     """
 
     perturb_replay_relion_dir: str | None = None

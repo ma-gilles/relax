@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from relax.helpers.orientation_priors import relion_round_away_from_zero
+from relax.sampling.orientation_priors import relion_round_away_from_zero
 from relax.vdam.state import NativeParticleState
 
 
@@ -113,7 +113,7 @@ def optics_group_grids(optics_state, optics_group_ids, model_box):
 
     if optics_state is None or optics_state.image_box is None or optics_group_ids is None:
         return None
-    from relax.helpers.optics_scale import scale_difference
+    from relax.relion.optics_scale import scale_difference
 
     groups = np.asarray(optics_group_ids)
     grids = {}
@@ -141,8 +141,8 @@ def relion_log_likelihood_contributions(
     ``remap_sizes``), and each ``ires`` reads the model shell ``ROUND(remap * ires)``
     (``remap_image_sizes``, ml_optimiser.cpp:9046-9055).
     """
-    from relax.helpers.optics_scale import group_current_size
-    from relax.relion.relion_ctf import _fftw_shell_labels
+    from relax.relion.ctf import _fftw_shell_labels
+    from relax.relion.optics_scale import group_current_size
 
     shells = _fftw_shell_labels(int(box_size), int(current_size), centered_rows=False)
     sigma2 = np.atleast_2d(np.asarray(sigma2_noise, dtype=np.float64))

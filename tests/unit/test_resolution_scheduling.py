@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers import resolution as resolution_helpers
-from relax.reconstruction import regularization_relion
+from relax.fourier import resolution as resolution_helpers
+from relax.reconstruction import regularization
 
 pytestmark = pytest.mark.unit
 
@@ -74,7 +74,7 @@ class TestResolutionScheduling:
         assert corrected[boundary_shell] > 1.0
         assert corrected[boundary_shell + 1] == 0.0
         assert (
-            regularization_relion.resolution_from_data_vs_prior(
+            regularization.resolution_from_data_vs_prior(
                 corrected,
                 allow_high_res_recovery=True,
             )
@@ -101,7 +101,7 @@ class TestResolutionScheduling:
         )
         assert np.all(truncated[:, boundary_shell + 1 :] == 0.0)
         assert all(
-            regularization_relion.resolution_from_data_vs_prior(
+            regularization.resolution_from_data_vs_prior(
                 half_dvp,
                 allow_high_res_recovery=True,
             )
@@ -128,18 +128,18 @@ class TestResolutionScheduling:
         fsc = np.zeros(grid_size // 2 + 1, dtype=np.float32)
         fsc[: boundary_shell + 1] = boundary_fsc
         fsc[0] = 1.0
-        data_vs_prior = regularization_relion.fsc_to_relion_ssnr(fsc, tau2_fudge=1.0)
+        data_vs_prior = regularization.fsc_to_relion_ssnr(fsc, tau2_fudge=1.0)
 
         truncated = resolution_helpers.zero_shells_past_current_size(
             data_vs_prior,
             current_size=current_size,
             box_size=grid_size,
         )
-        resolution_shell = regularization_relion.resolution_from_data_vs_prior(
+        resolution_shell = regularization.resolution_from_data_vs_prior(
             truncated,
             allow_high_res_recovery=True,
         )
-        next_size = regularization_relion.compute_current_size_relion(
+        next_size = regularization.compute_current_size_relion(
             resolution_shell,
             grid_size,
             ave_Pmax=1.0,
@@ -163,13 +163,13 @@ class TestResolutionScheduling:
             current_size=68,
             box_size=128,
         )
-        incr_size, has_high_fsc = regularization_relion.update_relion_growth_state_from_fsc(
+        incr_size, has_high_fsc = regularization.update_relion_growth_state_from_fsc(
             growth_fsc,
             68,
             incr_size=10,
             has_high_fsc_at_limit=False,
         )
-        next_size = regularization_relion.compute_current_size_relion(
+        next_size = regularization.compute_current_size_relion(
             24,
             128,
             ave_Pmax=0.521225,
@@ -179,8 +179,8 @@ class TestResolutionScheduling:
 
         assert growth_fsc[34] == pytest.approx(0.159366)
         assert growth_fsc[35] == 0.0
-        assert regularization_relion.first_shell_below_threshold(growth_fsc, 0.5) == 25
-        assert regularization_relion.first_shell_below_threshold(growth_fsc, 0.143) == 35
+        assert regularization.first_shell_below_threshold(growth_fsc, 0.5) == 25
+        assert regularization.first_shell_below_threshold(growth_fsc, 0.143) == 35
         assert incr_size == 15
         assert has_high_fsc is False
         assert next_size == 78
@@ -188,7 +188,7 @@ class TestResolutionScheduling:
     def test_firstiter_cc_scheduling_uses_ini_high_shell(self):
         """RELION iter-1 firstiter_cc grows from ini_high, not DVP."""
         shell = resolution_helpers._firstiter_cc_ini_high_resolution_shell(256, 2.125, 30.0)
-        current_size = regularization_relion.compute_current_size_relion(
+        current_size = regularization.compute_current_size_relion(
             shell,
             256,
             ave_Pmax=1.0,
@@ -207,7 +207,7 @@ class TestResolutionScheduling:
             box_size=256,
             voxel_size=2.125,
         )
-        current_size = regularization_relion.compute_current_size_relion(
+        current_size = regularization.compute_current_size_relion(
             shell,
             256,
             ave_Pmax=1.0,
@@ -332,8 +332,8 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
     def test_whole_data_dvp_crosses_at_fsc_0143(self):
         """The final all-data DVP (whole-map conversion) crosses 1 at FSC 1/7."""
         fsc = np.linspace(1.0, 0.0, 33)
-        whole = regularization_relion.fsc_to_relion_ssnr(fsc, is_whole_instead_of_half=True)
-        half = regularization_relion.fsc_to_relion_ssnr(fsc)
+        whole = regularization.fsc_to_relion_ssnr(fsc, is_whole_instead_of_half=True)
+        half = regularization.fsc_to_relion_ssnr(fsc)
         whole_shell = resolution_helpers.k1_current_resolution_shell(
             whole, current_size=64, box_size=64
         )
@@ -351,17 +351,17 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         """
         saturated = np.full(33, 5.0, dtype=np.float32)
         for recovery in (False, True):
-            assert regularization_relion.resolution_from_data_vs_prior(
+            assert regularization.resolution_from_data_vs_prior(
                 saturated, allow_high_res_recovery=recovery
             ) == 31
-            assert regularization_relion.resolution_from_data_vs_prior(
+            assert regularization.resolution_from_data_vs_prior(
                 saturated, box_size=64, allow_high_res_recovery=recovery
             ) == 31
         # Only Nyquist above 1 after an early dip: the recheck starts at 31.
         dip_then_nyquist = np.full(33, 0.5, dtype=np.float32)
         dip_then_nyquist[:10] = 5.0
         dip_then_nyquist[32] = 5.0
-        assert regularization_relion.resolution_from_data_vs_prior(
+        assert regularization.resolution_from_data_vs_prior(
             dip_then_nyquist, box_size=64, allow_high_res_recovery=True
         ) == 9
 
@@ -372,9 +372,9 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         """
         early = np.full(33, 0.5, dtype=np.float32)
         early[:3] = 5.0
-        assert regularization_relion.RELION_MINRES_MAP == 5
-        assert regularization_relion.resolution_from_data_vs_prior(early, box_size=64) == 5
-        assert regularization_relion.resolution_from_data_vs_prior(early, box_size=64, minres_map=0) == 2
+        assert regularization.RELION_MINRES_MAP == 5
+        assert regularization.resolution_from_data_vs_prior(early, box_size=64) == 5
+        assert regularization.resolution_from_data_vs_prior(early, box_size=64, minres_map=0) == 2
         assert resolution_helpers.class_current_resolution_shell(
             np.stack([early, early]), current_size=64, box_size=64
         ) == 5

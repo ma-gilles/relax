@@ -20,10 +20,10 @@ from recovar.data_io.image_backends import (
     _centered_rfft2_jax,
     _centered_rfft2_numpy,
 )
-from relax.helpers.half_spectrum import make_scoring_half_image_weights, make_shell_indices_half
-from relax.helpers.image_shifts import apply_relion_integer_pre_shifts
-from relax.sparse_pass2.sparse_pass2_bucket_io import _half_translation_phase_table_for_indices
-from relax.sparse_pass2.sparse_pass2_scoring import (
+from relax.fourier.half_spectrum import make_scoring_half_image_weights, make_shell_indices_half
+from relax.fourier.image_shifts import apply_relion_integer_pre_shifts
+from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
+from relax.fine_pass.scoring import (
     _relion_cuda_fine_diff2_sum,
     _relion_cuda_fine_full_to_compact_lookup,
     _relion_cuda_fine_pixel_weights,

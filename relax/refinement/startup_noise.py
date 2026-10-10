@@ -12,11 +12,11 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.helpers.shells import shell_of_radius_sq
+from relax.fourier.shells import shell_of_radius_sq
 from relax.refinement.half_inputs import HalfPair
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.refinement.tomo_half import TomoDataset
-from relax.relion import relion_metadata
+from relax.relion import metadata
 from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2, radial_power_spectrum
 
 
@@ -48,11 +48,11 @@ def auto_refine_noise_order(our_particles, relion_particles):
     continues into half 2; it is not a half-1-only calculation.
     """
 
-    our_row_by_identity = relion_metadata.particle_identity_rows(
+    our_row_by_identity = metadata.particle_identity_rows(
         our_particles,
         label="RECOVAR input STAR",
     )
-    relion_row_by_identity = relion_metadata.particle_identity_rows(
+    relion_row_by_identity = metadata.particle_identity_rows(
         relion_particles,
         label="RELION data STAR",
     )

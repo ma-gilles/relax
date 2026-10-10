@@ -24,8 +24,8 @@ import pytest
 import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _raw_real_image_2d
 
-from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half, make_shell_indices_half
-from relax.sparse_pass2.sparse_pass2_scoring import (
+from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half, make_shell_indices_half
+from relax.fine_pass.scoring import (
     _relion_cuda_corr_img_from_native_noise_variance,
     _relion_cuda_native_corr_img_from_noise_variance,
     _relion_native_fine_units,
@@ -193,7 +193,7 @@ class _NativeUnitsDataset:
     ],
 )
 def test_native_unit_condition_is_the_compact_condition(fresh, exact, float64, rfloat, expected):
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units_enabled
+    from relax.fine_pass.scoring import _relion_native_fine_units_enabled
 
     assert (
         _relion_native_fine_units_enabled(
@@ -211,8 +211,8 @@ def _resident_native_case(monkeypatch, image_size, current_size, with_scale):
     from recovar.reconstruction import noise as noise_utils
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.relion import relion_ctf
+    from relax.fourier.fourier_window import make_fourier_window_spec
+    from relax.relion import ctf as relion_ctf
 
     n_images = 3
     dataset = _NativeUnitsDataset(image_size, n_images=n_images)
@@ -286,7 +286,7 @@ def _resident_native_case(monkeypatch, image_size, current_size, with_scale):
 
 
 def _prepare_resident(case, native):
-    from relax.sparse_pass2.resident_operands import prepare_resident_half_operands
+    from relax.fine_pass.resident_operands import prepare_resident_half_operands
 
     return prepare_resident_half_operands(
         case["dataset"],
@@ -374,7 +374,7 @@ def test_per_chunk_operands_match_the_resident_native_operands(monkeypatch, curr
 
     from types import SimpleNamespace
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     image_size = 6
     case = _resident_native_case(monkeypatch, image_size, current_size, with_scale)

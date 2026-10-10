@@ -21,12 +21,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import unconverged_accuracy
 
 import relax.refinement.noise_updates as noise_updates
-from relax.helpers import oversampling as oversampling_grids
-from relax.helpers.orientation_priors import (
-    DirectionPrior,
-    _combined_class_direction_prior_from_halves,
-)
-from relax.helpers.resolution import ImageGeometry
+from relax.fourier.resolution import ImageGeometry
 from relax.reconstruction import volume_solver
 from relax.refinement import map_postprocess
 from relax.refinement.half_inputs import HalfPair, initialize_halfsets
@@ -34,6 +29,11 @@ from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import OpticsGeometry, ReconstructionPrograms
 from relax.refinement.startup_references import StartupHandoff
+from relax.sampling import oversampling as oversampling_grids
+from relax.sampling.orientation_priors import (
+    DirectionPrior,
+    _combined_class_direction_prior_from_halves,
+)
 
 pytest.importorskip("jax")
 import healpy as hp
@@ -51,40 +51,24 @@ from helpers.refinement_specs import (
 from helpers.run_options import stand_in
 from recovar import utils as recovar_utils
 
-import relax.helpers.expected_accuracy as expected_accuracy_module
-import relax.helpers.orientation_priors as orientation_priors_module
-import relax.local.local_layout as local_layout_module
+import relax.local_search.layout as local_layout_module
 import relax.parity.relion_replay as relion_replay_module
 import relax.refinement.expectation as expectation_module
 import relax.refinement.iteration_loop as iteration_loop_module
 import relax.refinement.numbered_transitions as convergence_policy
 import relax.refinement.projector_preparation as projector_preparation
 import relax.sampling as sampling_module
+import relax.sampling.expected_accuracy as expected_accuracy_module
+import relax.sampling.orientation_priors as orientation_priors_module
 from relax.classification.k_class_results import (
     KClassEMResult,
     _resolve_class_mstep_posterior_sums,
     _sum_noise_stats,
 )
-from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics.observers import IntermediatesObserver
-from relax.healpix_sampling import euler_angles_to_matrix
-from relax.helpers import dtype_policy as dtype_policy_module
-from relax.helpers import resolution as resolution_helpers
-from relax.helpers.convergence import RefinementState, _relion_optimizer_average_pmax, healpix_angular_step
-from relax.helpers.half_volume_mstep import (
-    relion_backprojector_volume_shape,
-)
-from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
-from relax.helpers.orientation_priors import (
-    collapse_rotation_posterior_to_direction_prior,
-    make_relion_direction_log_prior,
-    make_relion_translation_log_prior,
-    normalize_direction_prior_per_half,
-    relion_sigma_offset_prior_center,
-    relion_translation_prior_center,
-    relion_translation_search_base,
-)
-from relax.helpers.resolution import (
+from relax.fourier import resolution as resolution_helpers
+from relax.fourier.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
+from relax.fourier.resolution import (
     bootstrap_current_size_from_ini_high_relion,
     bootstrap_current_size_relion,
     clamp_relion_coarse_image_size,
@@ -94,8 +78,11 @@ from relax.helpers.resolution import (
     relion_optics_image_current_sizes,
     shell_index_to_resolution_angstrom,
 )
-from relax.helpers.types import LocalEMResult, NoiseStats, RelionStats
-from relax.local.local_layout import (
+from relax.helpers.convergence import RefinementState, _relion_optimizer_average_pmax, healpix_angular_step
+from relax.local_search import half as local_half
+from relax.local_search import sampling as local_sampling
+from relax.local_search.half import LocalSearchResult
+from relax.local_search.layout import (
     EXACT_LOCAL_BUCKET_RADIX_ENV,
     LocalHypothesisLayout,
     bucket_local_hypothesis_layout,
@@ -107,13 +94,16 @@ from relax.local.local_layout import (
 )
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
-from relax.reconstruction import regularization_relion
-from relax.refinement import dense_half, finalization, local_half, local_sampling, trial_grids
+from relax.reconstruction import regularization as regularization_relion
+from relax.reconstruction.half_volume_mstep import (
+    relion_backprojector_volume_shape,
+)
+from relax.refinement import dense_half, finalization, score_outputs, scoring_policy, trial_grids
 from relax.refinement import image_size_plans as image_size_plans_module
 from relax.refinement import maximization as maximization_module
 from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
+from relax.refinement import precision as dtype_policy_module
 from relax.refinement.iteration_loop import refine_single_volume
-from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.map_postprocess import _align_fourier_volume_sign_to_reference
 from relax.refinement.noise_updates import (
     _combined_noise_stats,
@@ -126,7 +116,7 @@ from relax.refinement.refinement_options import (
     StartState,
     SymmetryOptions,
 )
-from relax.relion import relion_ctf
+from relax.relion import ctf
 from relax.sampling import (
     _get_relion_rotation_grid_eulers_float64,
     apply_relion_rotation_perturbation,
@@ -142,9 +132,20 @@ from relax.sampling import (
     rotation_grid_n_in_planes,
     rotation_grid_size,
 )
+from relax.sampling.healpix import euler_angles_to_matrix
+from relax.sampling.orientation_priors import (
+    collapse_rotation_posterior_to_direction_prior,
+    make_relion_direction_log_prior,
+    make_relion_translation_log_prior,
+    normalize_direction_prior_per_half,
+    relion_sigma_offset_prior_center,
+    relion_translation_prior_center,
+    relion_translation_search_base,
+)
 from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores
 from relax.scoring.pass1_results import Pass1Result
 from relax.scoring.significance import _compute_k_class_significance_batched
+from relax.types import LocalEMResult, NoiseStats, RelionStats
 
 pytestmark = pytest.mark.unit
 
@@ -1332,7 +1333,7 @@ def _mock_reconstruction_accumulator_size(experiment_dataset, kwargs, *, current
 
 
 def test_build_local_hypothesis_layout_and_bucketization_preserve_per_image_support(monkeypatch):
-    import relax.local.local_layout as local_layout_mod
+    import relax.local_search.layout as local_layout_mod
 
     call_count = {"value": 0}
 
@@ -1562,7 +1563,7 @@ def test_build_pass2_hypothesis_layout_can_keep_empty_class_support():
     assert not np.any(layout.sample_mask_rows())
 
 
-# Moved from relax/local/local_layout.py (PLAN e1): no relax module uses it, only this test.
+# Moved from relax/local_search/layout.py (PLAN e1): no relax module uses it, only this test.
 def _lookup_values_by_id(ids: np.ndarray, values: np.ndarray, query_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Return ``values`` for integer ids without allocating a global id table."""
 
@@ -2464,7 +2465,7 @@ def test_relion_mstep_generation_keeps_source_eulers_float64_until_host_inverse(
 
 
 def test_exact_local_fine_grid_precompute_auto_policy():
-    from relax.refinement.local_sampling import _precompute_exact_local_fine_grid_enabled
+    from relax.local_search.sampling import _precompute_exact_local_fine_grid_enabled
 
     assert _precompute_exact_local_fine_grid_enabled(5, "C1")
     assert not _precompute_exact_local_fine_grid_enabled(6, "C1")
@@ -2732,8 +2733,8 @@ def test_bucket_local_hypothesis_layout_aligns_preserved_chunks_to_pool_three(mo
 
 
 def test_relion_projector_indexed_centered_rows_match_full_window(rng):
-    from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.helpers.projection import compute_relion_projector_projections_block
+    from relax.fourier.fourier_window import make_fourier_window_spec
+    from relax.projection.projection import compute_relion_projector_projections_block
 
     image_shape = (8, 8)
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)
@@ -2774,7 +2775,7 @@ def test_relion_projector_indexed_centered_rows_match_full_window(rng):
 
 
 def test_relion_projector_texture_full_embeds_positive_x_half():
-    from relax.helpers.projection import relion_projector_half_to_texture_full
+    from relax.projection.projection import relion_projector_half_to_texture_full
 
     projector_half = (
         np.arange(5 * 5 * 3, dtype=np.float32).reshape(5, 5, 3)
@@ -2788,7 +2789,7 @@ def test_relion_projector_texture_full_embeds_positive_x_half():
 
 
 def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypatch):
-    from relax.helpers import projection as projection_helpers
+    from relax.projection import projection as projection_helpers
 
     projector_half = jnp.ones((5, 5, 3), dtype=jnp.complex64)
     rotations = jnp.eye(3, dtype=jnp.float32)[None]
@@ -2882,7 +2883,7 @@ def test_global_pass1_relion_projector_texture_defaults_to_texture(monkeypatch):
 
 
 def test_texture_centered_crop_masks_current_image_disk():
-    from relax.helpers.projection import _texture_centered_crop_to_full
+    from relax.projection.projection import _texture_centered_crop_to_full
 
     crop = jnp.ones((1, 4 * 3), dtype=jnp.complex64)
     got = np.asarray(
@@ -2919,7 +2920,7 @@ def test_texture_centered_crop_direct_indices_match_full_scatter(
     image_size,
     crop_size,
 ):
-    from relax.helpers.projection import _texture_centered_crop_at_indices, _texture_centered_crop_to_full
+    from relax.projection.projection import _texture_centered_crop_at_indices, _texture_centered_crop_to_full
 
     crop_pixels = crop_size * (crop_size // 2 + 1)
     crop = (
@@ -2957,7 +2958,7 @@ def test_texture_centered_crop_direct_indices_match_full_scatter(
 
 
 def test_texture_projector_compact_indices_bypass_full_scatter(monkeypatch):
-    from relax.helpers import projection as projection_helpers
+    from relax.projection import projection as projection_helpers
 
     requested = jnp.asarray([6, 7, 9], dtype=jnp.int32)
     monkeypatch.setattr(projection_helpers, "_relion_projector_texture_enabled", lambda *args, **kwargs: True)
@@ -2987,7 +2988,7 @@ def test_texture_projector_compact_indices_bypass_full_scatter(monkeypatch):
 
 def test_texture_projector_compact_implementation_never_builds_full_box(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers import projection as projection_helpers
+    from relax.projection import projection as projection_helpers
 
     crop = jnp.asarray([[0.0 + 1.0j, 1.0 + 2.0j, 2.0 + 3.0j, 3.0 + 4.0j]])
     requested = jnp.asarray([6, 7, 9], dtype=jnp.int32)
@@ -3027,7 +3028,7 @@ def test_texture_projector_compact_implementation_never_builds_full_box(monkeypa
 
 
 def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_path):
-    import relax.relion.relion_projector_setup as projector_setup
+    import relax.relion.projector_setup as projector_setup
 
     calls = []
 
@@ -3071,7 +3072,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
 
 
 def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monkeypatch):
-    import relax.relion.relion_projector_setup as projector_setup
+    import relax.relion.projector_setup as projector_setup
 
     captured_real = []
 
@@ -3196,7 +3197,7 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
             mstep_accumulator_shape=shape,
         )
 
-    import relax.relion.relion_projector_setup as setup
+    import relax.relion.projector_setup as setup
 
     monkeypatch.delenv("RELAX_RELION_PROJECTOR_CACHE_DIR", raising=False)
     monkeypatch.delenv("RELAX_RELION_PROJECTOR_DUMP_DIR", raising=False)
@@ -4121,7 +4122,7 @@ def test_pass2_operands_route_relion_cuda_norm_and_shift_before_fft(rng):
     from recovar.core.configs import ForwardModelConfig
     from recovar.reconstruction import noise as noise_utils
 
-    from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
+    from relax.fine_pass.bucket_io import prepare_unshifted_bucket_operands
 
     dataset = MockDataset(1, rng)
     dataset.image_source.backend.image_mask_mode = "relion_background_fill"
@@ -6379,8 +6380,8 @@ class TestRelionModeSmokeTest:
         stable_fourier_window_shapes,
     ):
         """Windowed texture scoring must not materialize full projection rows."""
-        from relax.helpers import projection as projection_helpers
-        from relax.helpers.fourier_window import make_fourier_window_spec
+        from relax.fourier.fourier_window import make_fourier_window_spec
+        from relax.projection import projection as projection_helpers
         from relax.scoring import coarse_layout
 
         dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch)
@@ -6529,9 +6530,9 @@ class TestRelionModeSmokeTest:
 
         import recovar.cuda_backproject as cuda_backproject
 
-        import relax.helpers.projection as projection_module
+        import relax.projection.projection as projection_module
+        import relax.scoring.coarse_kernels as scoring_module
         import relax.scoring.pass1_program as pass1_program
-        import relax.scoring.scoring as scoring_module
         from relax.cuda import kernels as em_cuda_kernels
 
         dataset = half_datasets[0]
@@ -6548,7 +6549,7 @@ class TestRelionModeSmokeTest:
         monkeypatch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
         monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
         monkeypatch.setattr(
-            relion_ctf,
+            ctf,
             "relion_exact_ctf_half_from_source_star",
             lambda _dataset, indices, image_shape: jnp.ones(
                 (
@@ -6787,7 +6788,7 @@ class TestRelionModeSmokeTest:
         double_scoring,
     ):
         """RELION mode should compute tau2 from Ft_ctf weights + FSC (RELION order)."""
-        from relax.reconstruction import regularization_relion
+        from relax.reconstruction import regularization as regularization_relion
 
         monkeypatch.setattr(
             scoring_policy,
@@ -6874,7 +6875,7 @@ class TestRelionModeSmokeTest:
         monkeypatch,
     ):
         """The raw backprojector FSC drives tau2, as in GUI auto-refine without solvent-corrected FSC."""
-        from relax.reconstruction import regularization_relion
+        from relax.reconstruction import regularization as regularization_relion
 
         grid_size = int(np.sqrt(IMAGE_SIZE))
         n_shells = grid_size // 2 + 1
@@ -9271,7 +9272,7 @@ def test_canonical_rotation_grid_reuses_relion_euler_table(monkeypatch):
 
 
 def test_texture_full_even_nyquist_indices_validate_and_match_full_scatter():
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         _texture_centered_crop_at_indices,
         _texture_centered_crop_to_full,
         _validate_centered_relion_projector_pixel_indices,
@@ -9310,7 +9311,7 @@ def test_texture_full_even_nyquist_indices_validate_and_match_full_scatter():
 
 
 def test_texture_cropped_projector_rejects_rows_outside_crop():
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         _validate_centered_relion_projector_pixel_indices,
     )
 
@@ -9323,7 +9324,7 @@ def test_texture_cropped_projector_rejects_rows_outside_crop():
 
 
 def test_texture_full_projector_rejects_out_of_bounds_flat_index():
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         _validate_centered_relion_projector_pixel_indices,
     )
 
@@ -9336,7 +9337,7 @@ def test_texture_full_projector_rejects_out_of_bounds_flat_index():
 
 
 def test_texture_centered_crop_preserves_kernel_owned_rounded_outer_shell():
-    from relax.helpers.projection import _texture_centered_crop_to_full
+    from relax.projection.projection import _texture_centered_crop_to_full
 
     crop = jnp.ones((1, 4 * 3), dtype=jnp.complex64)
     got = np.asarray(
@@ -9361,9 +9362,9 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
     import copy
 
     import relax.classification.k_class as k_class_module
-    from relax.helpers.types import SparsePass2Output, make_relion_stats
+    from relax.fine_pass import dispatch as sparse_dispatch
     from relax.scoring import significance as significance_module
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
+    from relax.types import SparsePass2Output, make_relion_stats
 
     class SubsetMockDataset(MockDataset):
         def subset(self, image_indices):
@@ -9515,7 +9516,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
     """The donating host gather is crop-only; Fourier padding stays on device."""
     from recovar.reconstruction import relion_functions
 
-    from relax.reconstruction import relion_functions_relion
+    from relax.reconstruction import relion_functions as relion_functions_relion
     from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
     events = []

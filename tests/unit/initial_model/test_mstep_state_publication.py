@@ -48,9 +48,9 @@ def _case(K, pseudo, order):
 
 
 def _call(state, k, transaction, monkeypatch):
-    from relax.relion import relion_vdam_mstep
+    from relax.relion import vdam_mstep
 
-    monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", lambda *args, **options: transaction(*args))
+    monkeypatch.setattr(vdam_mstep, "relion_vdam_m_step_host", lambda *args, **options: transaction(*args))
     accum = m_step.VdamAccumulator(np.zeros((4, 4, 3), dtype=np.complex128), np.ones((4, 4, 3)), k, 0)
     return m_step._run_m_step_transaction(
         state,

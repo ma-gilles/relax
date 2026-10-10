@@ -24,7 +24,7 @@ from helpers.em_arrays import _hermitian_volume, _raw_real_image_2d
 from recovar import core
 from recovar.core.configs import ForwardModelConfig
 
-from relax.helpers.half_spectrum import (
+from relax.fourier.half_spectrum import (
     bin_shell_values_jax,
     bin_shell_values_np,
     make_half_image_weights,
@@ -32,9 +32,9 @@ from relax.helpers.half_spectrum import (
     make_scoring_half_image_weights,
     make_shell_indices_half,
 )
-from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
-from relax.helpers.projection import compute_projections_block as _compute_projections_block
-from relax.scoring.scoring import update_logsumexp
+from relax.fourier.preprocessing import preprocess_batch as _preprocess_batch
+from relax.projection.projection import compute_projections_block as _compute_projections_block
+from relax.scoring.coarse_kernels import update_logsumexp
 
 pytestmark = pytest.mark.unit
 

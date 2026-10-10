@@ -33,11 +33,11 @@ from relax.diagnostics.coarse_score_diagnostics import (
     _with_coarse_significance_diagnostics,
 )
 from relax.diagnostics.local_debug import score_dump_label
-from relax.helpers.env_flags import parse_env_flag
-from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-from relax.helpers.scale_groups import prepare_scale_correction_groups
-from relax.helpers.types import RelionStats, make_relion_stats
+from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
+from relax.relion.scale_groups import prepare_scale_correction_groups
+from relax.runtime.env_flags import parse_env_flag
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
+from relax.types import RelionStats, make_relion_stats
 
 logger = logging.getLogger(__name__)
 NVTX_DOMAIN_EM = "recovar_em"
@@ -260,7 +260,7 @@ def _run_sparse_k_class_adaptive_pass2(
 ) -> KClassEMResult:
     """Run K-class adaptive pass-2 over RELION significant sparse support."""
 
-    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
+    from relax.fine_pass.dispatch import compute_pass2_stats_sparse
 
     n_classes = int(means_array.shape[0])
     n_rot_coarse = int(coarse_rotations_np.shape[0])
@@ -567,8 +567,8 @@ def _run_resident_k_class_pass2(
     (``engine_record``).
     """
 
-    from relax.sparse_pass2.engine_record import record_pass_engine
-    from relax.sparse_pass2.resident_pass2 import compute_k_class_pass2_stats_resident
+    from relax.fine_pass.resident_pass2 import compute_k_class_pass2_stats_resident
+    from relax.refinement.engine_record import record_pass_engine
 
     if engine_kwargs.get("normalization_log_evidence") is not None:
         raise NotImplementedError(
@@ -722,7 +722,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     """Score RELION firstiter-CC K-class coarse poses in one shared pass."""
 
     from relax.diagnostics.coarse_gaussian_diagnostics import significance_debug_dump_matches
-    from relax.helpers.projection import compact_relion_projector_half_for_centered_indices
+    from relax.projection.projection import compact_relion_projector_half_for_centered_indices
     from relax.scoring.pass1_plan import global_pass1_relion_projector_texture_enabled
     from relax.scoring.significance import _compute_k_class_significance_batched
 
@@ -744,7 +744,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     if score_texture_interp is None:
         score_texture_interp = global_pass1_relion_projector_texture_enabled()
     if score_projector_half is not None and n_classes == 1 and score_texture_interp:
-        from relax.helpers.fourier_window import make_fourier_window_spec
+        from relax.fourier.fourier_window import make_fourier_window_spec
 
         image_shape = tuple(int(value) for value in experiment_dataset.image_shape)
         n_half = image_shape[0] * (image_shape[1] // 2 + 1)
@@ -1095,7 +1095,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
     own (the coarse and the fine sample are the same).
     """
 
-    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
+    from relax.fine_pass.dispatch import compute_pass2_stats_sparse
 
     n_classes = int(means_array.shape[0])
     n_images = int(coarse_class_assignments.shape[0])
@@ -1304,7 +1304,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
 def _supports_coarse_parents(supports_by_class, n_images, n_coarse_rot, n_coarse_trans):
     """The coarse parents any class's pass-2 rows descend from, or None for every parent."""
 
-    from relax.sparse_pass2.resident_significance import significant_coarse_parents
+    from relax.fine_pass.resident_significance import significant_coarse_parents
 
     parents = []
     for support in supports_by_class:
@@ -1325,7 +1325,7 @@ def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int
     whole grid.
     """
 
-    from relax.sparse_pass2.resident_significance import (
+    from relax.fine_pass.resident_significance import (
         DeviceCompactedSignificantSamples,
         build_coarse_significance_csr,
     )
@@ -1438,7 +1438,7 @@ def run_dense_k_class_em_adaptive(
         projections, posterior selection, and reported best poses continue to
         use ``fine_rotations``. Supported by sparse pass 2 only.
     fill_fine_rows : callable or None
-        For a deferred fine grid (:class:`relax.helpers.oversampling.DeferredFineRows`):
+        For a deferred fine grid (:class:`relax.sampling.oversampling.DeferredFineRows`):
         called with the significant coarse parents before the sparse pass 2, or
         with None (every parent) before the full-grid or firstiter-CC routes read the fine rows.
     rot_parent_map : np.ndarray of int, shape (n_rot_fine,)
@@ -1452,7 +1452,7 @@ def run_dense_k_class_em_adaptive(
     given_supports : list of np.ndarray or None
         Each image's coarse samples, given by the caller instead of found by pass 1
         (RELION ``--skip_align``: one sample per image, its stored pose,
-        :func:`relax.classification.given_poses.given_pose_grids`). Pass 1 is skipped
+        :func:`relax.refinement.given_poses.given_pose_grids`). Pass 1 is skipped
         and pass 2 scores every class on these samples, so the posterior is over the
         classes alone.
     given_image_translations : np.ndarray or None
@@ -1480,8 +1480,8 @@ def run_dense_k_class_em_adaptive(
         )
     # Lazy import to avoid the formatter stripping a top-level name that is
     # only referenced inside this function.
+    from relax.sampling.symmetry import canonicalize_rotational_symmetry
     from relax.scoring.significance import _compute_k_class_significance_batched
-    from relax.symmetry import canonicalize_rotational_symmetry
 
     if not engine_kwargs.pop("sparse_pass2", True):
         raise RuntimeError(
@@ -1631,7 +1631,7 @@ def run_dense_k_class_em_adaptive(
             oversampling_order=_resolved_oversampling_order(),
             random_perturbation=0.0, engine_kwargs=dense_kwargs,
         )
-        from relax.sparse_pass2.engine_record import record_coarse_engine_call
+        from relax.refinement.engine_record import record_coarse_engine_call
 
         score_mode = dense_kwargs["relion_firstiter_score_mode"]
         record_coarse_engine_call(
@@ -1793,7 +1793,7 @@ def run_dense_k_class_em_adaptive(
         # per-class child lists above remain convenient for pass-2 routing.
         significant_counts_for_result = np.ones(n_images, dtype=np.int32)
     else:
-        from relax.sparse_pass2.resident_pass2 import _resident_stable_windows_requested
+        from relax.fine_pass.resident_pass2 import _resident_stable_windows_requested
 
         sig_kwargs = dict(
             adaptive_fraction=adaptive_fraction,
@@ -1875,7 +1875,7 @@ def run_dense_k_class_em_adaptive(
             support_audit=coarse_significance_support_audit,
         )
         if coarse_engine == "gemm_hybrid":
-            from relax.sparse_pass2.engine_record import record_coarse_engine_call
+            from relax.refinement.engine_record import record_coarse_engine_call
 
             support = sig_sample_indices_by_class
             if firstiter_cc_pass2_only_best_coarse:

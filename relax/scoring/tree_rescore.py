@@ -18,7 +18,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.diagnostics.coarse_gaussian_diagnostics import maybe_dump_tree_rescore_batch
-from relax.relion.relion_coarse_operands import select_relion_coarse_rescore_winner_slots
+from relax.scoring.coarse_operands import select_relion_coarse_rescore_winner_slots
 
 logger = logging.getLogger(__name__)
 
@@ -198,9 +198,9 @@ def plan_tree_rescore(
 
     from recovar import cuda_backproject
 
-    from relax.helpers.fourier_window import relion_fftw_order_for_square_score_window
-    from relax.helpers.projection import relion_projector_half_to_texture_full
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+    from relax.fine_pass.bucket_io import relion_translation_angles_f32
+    from relax.fourier.fourier_window import relion_fftw_order_for_square_score_window
+    from relax.projection.projection import relion_projector_half_to_texture_full
 
     if (
         jax.default_backend() != "gpu"
@@ -265,7 +265,7 @@ def rescore_ambiguous_images(
     and ``debug_iteration`` only name the candidates of a ``RELAX_SIGNIFICANCE_DUMP_*`` dump.
     """
 
-    from relax.scoring.scoring import relion_coarse_normalized_cc_rescore
+    from relax.scoring.coarse_kernels import relion_coarse_normalized_cc_rescore
 
     tree_score_dtype = np.float32
     best_scores_np = np.asarray(state.class_best_score, dtype=tree_score_dtype)

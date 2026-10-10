@@ -713,7 +713,10 @@ def native_relion_callbacks(
 ):
     """Adapt the existing CUDA RELION projector and fused x-half adjoint."""
     from relax.cuda.kernels import relion_fused_x_half_backproject_indexed
-    from relax.helpers.projection import _relion_projector_texture_enabled, compute_relion_projector_projections_block
+    from relax.projection.projection import (
+        _relion_projector_texture_enabled,
+        compute_relion_projector_projections_block,
+    )
 
     if backprojection_backend not in {"fused", "separate"}:
         raise ValueError("backprojection_backend must be 'fused' or 'separate'")
@@ -741,7 +744,7 @@ def native_relion_callbacks(
         return projected.astype(jnp.complex64)
 
     def backproject(y_volume, w_volume, y_slices, w_slices, rotations):
-        from relax.helpers.adjoint import ReferenceSphereClip, adjoint_slice_volume_windowed
+        from relax.projection.adjoint import ReferenceSphereClip, adjoint_slice_volume_windowed
 
         if isinstance(backprojection_r_max, ReferenceSphereClip):
             # The fused CUDA kernel has only a scalar radius.  The canonical

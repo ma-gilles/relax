@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from relax.helpers.convergence import RefinementState, healpix_angular_step
-from relax.helpers.orientation_priors import relion_local_search_sigmas
+from relax.sampling.orientation_priors import relion_local_search_sigmas
 
 pytestmark = pytest.mark.unit
 

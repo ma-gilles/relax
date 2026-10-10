@@ -13,8 +13,8 @@ from typing import NamedTuple
 import jax
 import numpy as np
 
-from relax.helpers import projection_cache as projection_cache_helpers
-from relax.helpers.env_flags import parse_env_strict_flag
+from relax.projection import projection_cache as projection_cache_helpers
+from relax.runtime.env_flags import parse_env_strict_flag
 
 _COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV = (
     "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB"

@@ -15,10 +15,10 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import MockHalfSet, engine_stage_kwargs, run_tiny_refinement
 
-from relax.helpers import half_spectrum
-from relax.helpers.fourier_window import make_fourier_window_spec
+from relax.fine_pass.window import _pass2_half_weights
+from relax.fourier import half_spectrum
+from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.refinement.refinement_options import RelionConsistencyOptions
-from relax.sparse_pass2.sparse_pass2_window import _pass2_half_weights
 
 pytestmark = pytest.mark.unit
 
@@ -100,7 +100,7 @@ def test_gaussian_iterations_are_not_touched_by_the_option():
 def _cc_operands(box=8, current_size=6, **kwargs):
     from recovar.core.configs import ForwardModelConfig
 
-    from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
+    from relax.fine_pass.bucket_io import prepare_unshifted_bucket_operands
 
     dataset = MockHalfSet(3, np.random.default_rng(0))
     config = ForwardModelConfig.from_dataset(dataset, disc_type="linear_interp", process_fn=dataset.process_images)
@@ -130,7 +130,7 @@ def test_image_power_is_summed_on_the_support_the_score_counts():
 
 def test_coarse_image_power_takes_the_weights():
     """Xi2 of pass 1 (the exact coarse operands)."""
-    from relax.relion.relion_coarse_operands import relion_cc_inverse_power_from_processed
+    from relax.scoring.coarse_operands import relion_cc_inverse_power_from_processed
 
     rng = np.random.default_rng(1)
     processed = rng.normal(size=(2, 8 * 5)) + 1j * rng.normal(size=(2, 8 * 5))
@@ -146,7 +146,7 @@ def test_coarse_image_power_takes_the_weights():
 @pytest.mark.parametrize("box,current_size", [(16, 8), (16, 12), (16, 16)])
 def test_fine_cc_score_is_the_normalized_cc_over_the_weighted_support(box, current_size):
     """The fine CC reduction with the two weight sets against the plain numpy normalized CC."""
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_normalized_cc_score
+    from relax.fine_pass.scoring import _relion_cuda_fine_normalized_cc_score
 
     spec = _cc_window(box, current_size)
     window = np.arange(box * (box // 2 + 1)) if spec.score_indices_np is None else np.asarray(spec.score_indices_np)

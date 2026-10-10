@@ -7,7 +7,7 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.sparse_pass2.sparse_pass2_posterior import (
+from relax.fine_pass.posterior import (
     _relion_f32_fine_reconstruction_probs,
     relion_f32_fine_probabilities,
 )

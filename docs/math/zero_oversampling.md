@@ -13,7 +13,7 @@ Weights are divided by this denominator without re-normalizing retained support.
 `keep_all=True` retains finite, positive-weight selected candidates, not padding.
 The coarse controller maximum is preserved independently.
 
-[`_relion_pass2_reconstruction_probs_for_mstep`](../../relax/sparse_pass2/sparse_pass2_posterior.py)
+[`_relion_pass2_reconstruction_probs_for_mstep`](../../relax/fine_pass/posterior.py)
 now forwards the existing `normalization_sum_weight` and `keep_all` controls to
 the float32 primitive, and rejects them on incompatible reconstruction paths.
 Defaults preserve the previous computation. Exact forwarding tests are in
@@ -58,12 +58,12 @@ completion or speed admission follows from these transport tests.
 ## Device-resident pass 2
 
 The resident K=1 driver implements the same arithmetic
-([`_resident_chunk_posterior`](../../relax/sparse_pass2/resident_pass2.py),
-[`_coarse_normalization_reuse`](../../relax/sparse_pass2/resident_pass2.py)).
+([`_resident_chunk_posterior`](../../relax/fine_pass/resident_pass2.py),
+[`_coarse_normalization_reuse`](../../relax/fine_pass/resident_pass2.py)).
 The segmented float32 posterior keeps every positive selected weight and divides
 by the coarse float32 sum (`keep_all`, `use_external_sum_weight`). The chunk then
 publishes `log(coarse_sum) - float32(50 - fine_max_score)`, the coarse winner's
-segment cell ([`coarse_winner_cells`](../../relax/sparse_pass2/resident_candidates.py),
+segment cell ([`coarse_winner_cells`](../../relax/fine_pass/resident_candidates.py),
 the counterpart of `coarse_winner_local_pose_ids`) and the coarse Pmax. The
 resident gate requires the sum, winner and Pmax together, as the K=1 adaptive
 route supplies them. On the local route the resident pass keeps every weight for

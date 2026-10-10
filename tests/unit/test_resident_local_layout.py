@@ -17,12 +17,12 @@ from helpers.float_compare import assert_matches, matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.local.local_layout import (
+from relax.local_search import resident_layout as rll
+from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
 from relax.sampling import build_local_search_grid_metadata
-from relax.sparse_pass2 import resident_local_layout as rll
 
 pytestmark = pytest.mark.unit
 

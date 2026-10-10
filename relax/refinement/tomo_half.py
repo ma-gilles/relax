@@ -163,7 +163,7 @@ def tilt_left_matrices(images, image_projections, image_rows) -> np.ndarray:
     from recovar.data_io.starfile import star_column
 
     from relax.relion import optics_aberrations
-    from relax.relion.relion_ctf import exact_ctf_source_cache
+    from relax.relion.ctf import exact_ctf_source_cache
 
     image_projections = np.asarray(image_projections, dtype=np.float64)
     _, cache = exact_ctf_source_cache(images, tuple(int(n) for n in images.image_shape))
@@ -187,14 +187,14 @@ def load_tomo_dataset(
 ) -> TomoDataset:
     """A RELION 5 2D-stack project as a :class:`TomoDataset`; the per-tilt STAR is written to ``flat_star``.
 
-    ``read_policy`` (:class:`relax.helpers.particle_io.ParticleReadPolicy`) applies ``--scratch_dir`` to
+    ``read_policy`` (:class:`relax.io.particle_io.ParticleReadPolicy`) applies ``--scratch_dir`` to
     the stacks the per-tilt STAR names: the particle STAR has no ``_rlnImageName`` rows to stage from.
     """
 
     from recovar.data_io.cryoem_dataset import load_dataset
     from recovar.data_io.starfile import read_star
 
-    from relax.helpers.particle_io import assert_reads_from_scratch, prepare_particle_reads
+    from relax.io.particle_io import assert_reads_from_scratch, prepare_particle_reads
     from relax.relion.tomo_input import flatten_relion5_tomo
 
     flat_star = flatten_relion5_tomo(particles_star, tomograms_star, flat_star)
@@ -496,12 +496,12 @@ def tomo_local_rotations(
 ) -> TomoLocalRotations:
     """Every particle's local orientations and log priors around its previous pose (subtomogram local search).
 
-    The single-particle local search's neighbourhoods (relax.local.local_layout.build_local_hypothesis_layout,
+    The single-particle local search's neighbourhoods (relax.local_search.layout.build_local_hypothesis_layout,
     RELION's selectOrientationsWithNonZeroPriorProbability) with the particle's subtomogram-frame angles;
     only the rotation part is used (the 3D offset prior is the particle's own, score_tomo_half).
     """
 
-    from relax.local.local_layout import build_local_hypothesis_layout
+    from relax.local_search.layout import build_local_hypothesis_layout
     from relax.sampling import build_local_search_grid_metadata, relion_angular_sampling_deg
 
     eulers = np.asarray(previous_eulers_deg, dtype=np.float64)

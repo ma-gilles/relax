@@ -226,7 +226,7 @@ def follower_scale_replay(n_iterations, n_followers=2, replay=None):
 
     from relax.parity.relion_replay_source import RelionReplay
     from relax.refinement.refinement_options import StartState
-    from relax.relion.relion_worker_scale import RELION_SCALE_REDUCTION_MODES, PreparedFollowerTopology
+    from relax.relion.worker_scale import RELION_SCALE_REDUCTION_MODES, PreparedFollowerTopology
 
     n_half = N_IMAGES // 2
     owners = [np.arange(n_half) % n_followers, (np.arange(n_half) + 1) % n_followers]
@@ -361,8 +361,8 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
     """
 
     from relax.classification import k_class
+    from relax.fine_pass import resident_pass2
     from relax.scoring import significance
-    from relax.sparse_pass2 import resident_pass2
 
     recorded = []
 
@@ -409,7 +409,7 @@ def unconverged_accuracy(n_classes: int = 1):
     """
     import numpy as np
 
-    from relax.helpers.expected_accuracy import ExpectedAccuracy
+    from relax.sampling.expected_accuracy import ExpectedAccuracy
 
     return ExpectedAccuracy(
         acc_rot=999.0,

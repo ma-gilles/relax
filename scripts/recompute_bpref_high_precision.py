@@ -451,8 +451,8 @@ def _source_rows_production_f32(
     from recovar.core.ctf import _compute_spa_ctf
     from relax.cuda.kernels import relion_preprocess_real_f32
     from recovar.data_io.image_backends import _centered_rfft2_jax
-    from relax.local.local_backprojection import compute_local_mstep_sums
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _half_translation_phase_table_for_indices
+    from relax.fine_pass.local_backprojection import compute_local_mstep_sums
+    from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
 
     if jax.default_backend() != "gpu":
         raise RuntimeError("production-f32 source control requires a JAX GPU backend")

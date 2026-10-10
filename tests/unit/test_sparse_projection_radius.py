@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.sparse_pass2 import sparse_pass2_projection_blocks as blocks
+from relax.fine_pass import projection_blocks as blocks
 
 pytestmark = pytest.mark.unit
 

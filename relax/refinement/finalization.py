@@ -11,37 +11,23 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.dense.score_outputs import (
-    PerHalfOutputs,
-    _record_score_profile,
-    resolve_mstep_accumulator_shape,
-    resolve_mstep_full_half_axis,
-)
-from relax.dense.scoring_policy import (
-    local_precision,
-)
 from relax.diagnostics import bpref_diagnostics
-from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
-from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
-from relax.helpers.expected_accuracy import expected_accuracy_class_ids
-from relax.helpers.orientation_priors import (
-    DirectionPrior,
-    HalfDirectionLogPriors,
-    HalfTranslationPriorInputs,
-    make_relion_translation_log_prior,
-    relion_direction_log_priors_for_half,
-    relion_half_translation_prior_inputs,
-    relion_local_search_sigmas,
-    relion_translation_search_base,
-)
-from relax.helpers.resolution import (
+from relax.fourier.resolution import (
     ImageGeometry,
     class_current_resolution_shell,
     k1_current_resolution_shell,
     relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
-from relax.helpers.timing import Stopwatch
+from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
+from relax.local_search.half import (
+    LocalBatchPolicy,
+    LocalDiagnosticPolicy,
+    LocalExecutionPolicy,
+    LocalPriorSpec,
+    _score_half_local_in_bpref_scope,
+)
+from relax.local_search.sampling import LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement import final_reconstruction, half_inputs, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
@@ -53,29 +39,43 @@ from relax.refinement.dense_half import (
 )
 from relax.refinement.half_inputs import HalfScoringData, local_search_centre_half
 from relax.refinement.iteration_planning import IterationCarry
-from relax.refinement.local_half import (
-    LocalBatchPolicy,
-    LocalDiagnosticPolicy,
-    LocalExecutionPolicy,
-    LocalPriorSpec,
-    _score_half_local_in_bpref_scope,
-)
-from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
 from relax.refinement.optics_shapes import image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource
+from relax.refinement.precision import _diagnostic_float64_pass2_matches
 from relax.refinement.priors import join_half_accumulators_at_low_resolution
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.reference_state import _class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
+from relax.refinement.score_outputs import (
+    PerHalfOutputs,
+    _record_score_profile,
+    resolve_mstep_accumulator_shape,
+    resolve_mstep_full_half_axis,
+)
+from relax.refinement.scoring_policy import (
+    local_precision,
+)
 from relax.refinement.shape_class_scoring import OpticsSpec
 from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop
 from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
-from relax.relion.relion_metadata import relion_metadata_translations
+from relax.relion.metadata import relion_metadata_translations
+from relax.runtime.timing import Stopwatch
+from relax.sampling.expected_accuracy import expected_accuracy_class_ids
+from relax.sampling.orientation_priors import (
+    DirectionPrior,
+    HalfDirectionLogPriors,
+    HalfTranslationPriorInputs,
+    make_relion_translation_log_prior,
+    relion_direction_log_priors_for_half,
+    relion_half_translation_prior_inputs,
+    relion_local_search_sigmas,
+    relion_translation_search_base,
+)
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext

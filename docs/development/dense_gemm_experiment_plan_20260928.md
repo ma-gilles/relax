@@ -89,14 +89,14 @@ unchanged. The lagged algorithm is an explicitly requested approximation.
 
 | Responsibility | Existing owner | Reuse boundary |
 | --- | --- | --- |
-| Exact coarse operands and translation convention | `relax/relion/relion_coarse_operands.py` | Same masks, CTF, norm/scale, image offsets, Fourier window and high-frequency score constant; avoid redundant generic preprocessing |
+| Exact coarse operands and translation convention | `relax/scoring/coarse_operands.py` | Same masks, CTF, norm/scale, image offsets, Fourier window and high-frequency score constant; avoid redundant generic preprocessing |
 | Project once, score many images | `relax/scoring/coarse_gaussian_gemm.py`, `_score_relion_coarse_gaussian_gemm_macro` | Existing projection callback and score operand contract; no hybrid selection/pruning in this experiment |
-| GEMM score arithmetic | `relax/scoring/scoring.py`, `_relion_coarse_gaussian_gemm_scores*` | Real/complex float32 GEMMs and absolute score restoration; inspect inherited casts rather than assume |
+| GEMM score arithmetic | `relax/scoring/coarse_kernels.py`, `_relion_coarse_gaussian_gemm_scores*` | Real/complex float32 GEMMs and absolute score restoration; inspect inherited casts rather than assume |
 | Dense sufficient-statistic GEMMs | `relax/dense/dense_big_jit.py`, `_mstep_half_sums` | Sum images and translations to one slice per rotation, then backproject; avoid copying a second variant of shared formulas |
-| Projection cache admission | `relax/helpers/projection_cache.py` | Exact retained/build/scratch byte estimates, bounded row construction, alias accounting |
-| RELION projector state | `relax/relion/relion_projector_setup.py`, `relax/helpers/projection.py`, CUDA wrappers | Reuse float32 texture projector, coordinate/half-spectrum conventions and texture lifetime |
-| Resident loop and statistics patterns | `relax/sparse_pass2/resident_pass2.py` | Fixed capacities, device loops, donation and persistent accumulators; do not import sparse support machinery just to run dense GEMMs |
-| Native backprojection | `relax/helpers/adjoint.py`, `relax/helpers/half_volume_mstep.py`, pinned RECOVAR CUDA | Existing RELION x-half interpolation/scatter and final accumulator conversion |
+| Projection cache admission | `relax/projection/projection_cache.py` | Exact retained/build/scratch byte estimates, bounded row construction, alias accounting |
+| RELION projector state | `relax/relion/projector_setup.py`, `relax/projection/projection.py`, CUDA wrappers | Reuse float32 texture projector, coordinate/half-spectrum conventions and texture lifetime |
+| Resident loop and statistics patterns | `relax/fine_pass/resident_pass2.py` | Fixed capacities, device loops, donation and persistent accumulators; do not import sparse support machinery just to run dense GEMMs |
+| Native backprojection | `relax/projection/adjoint.py`, `relax/reconstruction/half_volume_mstep.py`, pinned RECOVAR CUDA | Existing RELION x-half interpolation/scatter and final accumulator conversion |
 | VDAM map update | `relax/vdam/m_step.py` | Existing residual and optimizer/moment semantics; do not implement a new VDAM update |
 | Focused reference coverage | `tests/unit/test_coarse_gaussian_gemm_macro.py`, dense/local tests | Independent direct-square reference, translation/phase, tail padding, geometry and dtype checks |
 

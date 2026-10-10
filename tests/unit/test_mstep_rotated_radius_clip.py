@@ -14,7 +14,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
-from relax.helpers import adjoint
+from relax.projection import adjoint
 
 pytestmark = pytest.mark.unit
 
@@ -191,7 +191,7 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
     import jax.numpy as jnp
     from relax.relion_bind._relion_bind_core import get_backprojector_data
 
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     box, current_size, padding = 64, 36, 2
     r_max = current_size // 2
@@ -213,7 +213,7 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
         current_size, None if scale == 1.0 else r_max * scale, padding, anisotropic_magnification=mag is not None
     )
     volume_shape = relion_backprojector_volume_shape((box, box, box), padding, current_size=current_size)
-    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape
+    from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape
 
     def adjoint_weight(max_r):
         volume = jnp.zeros(int(np.prod(half_volume_accumulator_shape(volume_shape))), jnp.float32)
@@ -262,7 +262,7 @@ def test_gpu_runtime_radius_reads_back_the_reference_radius(scale, anisotropic):
 
     import jax.numpy as jnp
 
-    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
 
     box, current_size, capacity_size, padding = 64, 36, 48, 2
     r_max = current_size // 2

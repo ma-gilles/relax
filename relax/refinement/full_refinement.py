@@ -33,11 +33,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import relax
-from relax.dense import scoring_policy
 from relax.diagnostics import observers
-from relax.helpers import xla_memory_reserve
-from relax.helpers.compilation_cache import activate_recovar_compilation_cache
-from relax.helpers.dtype_policy import use_float32_matmuls
 from relax.parity import (
     archive_provenance,
     frozen_boundary_cli,
@@ -52,9 +48,17 @@ from relax.parity.state_swap_probe import (
     state_swap_probe_loop_index,
     validate_state_swap_probe_application,
 )
-from relax.refinement import command_options, particle_loading, run_files, startup_noise, startup_references
+from relax.refinement import (
+    command_options,
+    particle_loading,
+    run_files,
+    scoring_policy,
+    startup_noise,
+    startup_references,
+)
 from relax.refinement.command_options import apply_k1_refine3d_env_defaults
 from relax.refinement.half_inputs import HalfPair
+from relax.refinement.precision import use_float32_matmuls
 from relax.refinement.result_files import (
     RunReport,
     build_archive_metadata,
@@ -64,7 +68,10 @@ from relax.refinement.result_files import (
     write_profile_only_summary,
     write_refinement_archive,
 )
-from relax.relion import geometry, input_particle_table, input_poses, relion_metadata
+from relax.relion import geometry, input_particle_table, input_poses
+from relax.relion import metadata as relion_metadata
+from relax.runtime import xla_memory_reserve
+from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,7 +85,7 @@ _CONCRETE_RECOVAR_PROVENANCE_MODULES = (
     "relax",
     "relax.refinement.iteration_loop",
     "relax.refinement.dense_half",
-    "relax.dense.scoring_policy",
+    "relax.refinement.scoring_policy",
     "relax.classification.k_class",
     "relax.scoring.significance",
 )
@@ -190,7 +197,7 @@ def _assert_expected_repo_imports() -> None:
 def _per_image_optics_groups(particles, layout) -> tuple[list, np.ndarray]:
     """Each half's dense optics-group row per image, for noise held as one spectrum per optics group, and the
     number of particles in each group."""
-    from relax.helpers.optics_noise import dense_optics_groups
+    from relax.relion.optics_noise import dense_optics_groups
 
     image_optics_groups, _ = dense_optics_groups(particles["rlnOpticsGroup"])
     per_half = [image_optics_groups[layout.half1_rows], image_optics_groups[layout.half2_rows]]
@@ -365,8 +372,8 @@ def _initial_current_size(voxel_size: float, box_size: int, init_resolution: flo
 
 
 def _require_relion_convention_reference(path, option: str) -> None:
-    """Stop the run when a reference map's RELION convention is not established (relax.helpers.map_io)."""
-    from relax.helpers.map_io import require_relion_convention_reference
+    """Stop the run when a reference map's RELION convention is not established (relax.io.map_io)."""
+    from relax.io.map_io import require_relion_convention_reference
 
     try:
         require_relion_convention_reference(path, option=option)
@@ -768,7 +775,7 @@ def main(command=None):
         initial_sampling.max_order_source,
     )
 
-    from relax.symmetry import (
+    from relax.sampling.symmetry import (
         canonicalize_rotational_symmetry,
         parse_rotational_symmetry,
         relion_point_group_code,
@@ -1311,7 +1318,7 @@ def main(command=None):
         ),
     )
     # One stable-window class history for the refinement (see refine_single_volume).
-    from relax.sparse_pass2.resident_pass2 import stable_window_class_history
+    from relax.fine_pass.resident_pass2 import stable_window_class_history
 
     with stable_window_class_history():
         result = refine_single_volume(

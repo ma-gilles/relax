@@ -14,8 +14,8 @@ pytest.importorskip("jax")
 import jax.numpy as jnp
 
 from relax.cuda import kernels as em_cuda_kernels
+from relax.fine_pass import resident_scoring
 from relax.refinement import tomo_particles
-from relax.sparse_pass2 import resident_scoring
 
 pytestmark = pytest.mark.unit
 

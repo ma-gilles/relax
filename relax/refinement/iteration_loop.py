@@ -24,15 +24,17 @@ import relax.diagnostics.reconstruction as reconstruction_diagnostics
 import relax.helpers.convergence as convergence_helpers
 import relax.parity.relion_replay as replay_policy
 from relax.diagnostics import bpref_diagnostics
-from relax.helpers import expected_accuracy, iteration_history, orientation_priors, resolution, timing
+from relax.fourier import resolution
+from relax.local_search import sampling as local_sampling
 from relax.refinement import (
+    engine_record,
     expectation,
     finalization,
     half_inputs,
     image_size_plans,
+    iteration_history,
     iteration_planning,
     iteration_snapshot,
-    local_sampling,
     map_postprocess,
     maximization,
     noise_updates,
@@ -49,8 +51,9 @@ from relax.refinement import (
     startup_references,
     trial_grids,
 )
-from relax.relion import relion_normalization, relion_worker_scale
-from relax.sparse_pass2 import engine_record
+from relax.relion import normalization, worker_scale
+from relax.runtime import timing
+from relax.sampling import expected_accuracy, orientation_priors
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +95,7 @@ class _K1Iteration:
 
     def follower_scale_setup(self, options, source, halves, experiment_datasets):
         """K=1 runs no follower-scale emulation (a follower topology is refused)."""
-        return relion_worker_scale.k1_follower_scale_state(
+        return worker_scale.k1_follower_scale_state(
             options, topology=source.follower_topology, relion_half_inputs=halves,
             experiment_datasets=experiment_datasets,
         )
@@ -250,7 +253,7 @@ class _ClassIteration:
 
     def follower_scale_setup(self, options, source, halves, experiment_datasets):
         """RELION's per-follower group-scale emulation where the input source has a follower topology."""
-        return relion_worker_scale.setup_relion_follower_scale_state(
+        return worker_scale.setup_relion_follower_scale_state(
             options,
             topology=source.follower_topology,
             relion_half_inputs=halves,
@@ -441,7 +444,7 @@ def _follower_replay_telemetry(source, history) -> refinement_result.ReplayTelem
     """The follower-scale replay's requested and applied iterations (both None without a replay), validated
     against the iterations the run applied; raises if the replay was not applied as requested."""
 
-    requested, applied = relion_worker_scale._finalize_relion_follower_scale_replay_telemetry(
+    requested, applied = worker_scale._finalize_relion_follower_scale_replay_telemetry(
         source, applied_iterations=history.relion_follower_scale_replay_applied_iterations, logger=logger,
     )
     return refinement_result.ReplayTelemetry(requested_iterations=requested, applied_iterations=applied)
@@ -458,7 +461,7 @@ def refine_single_volume(
 ) -> refinement_result.RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
 
-    Run it inside ``relax.sparse_pass2.resident_pass2.stable_window_class_history()``, as the commands do, so a
+    Run it inside ``relax.fine_pass.resident_pass2.stable_window_class_history()``, as the commands do, so a
     refinement's resident passes reuse the window classes they already ran (about 5 s of recompiles saved per
     current-size crossing on the 5k K=1 run); outside one, every pass picks its class afresh.
 
@@ -749,7 +752,7 @@ def refine_single_volume(
         numbered_relion_iteration = options.schedule.numbered_relion_iteration(iteration)
 
         if follower_setup.follower_scale_state is not None:
-            relion_worker_scale._dispatch_relion_follower_scale_for_numbered_iteration(
+            worker_scale._dispatch_relion_follower_scale_for_numbered_iteration(
                 follower_setup, history, iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,
                 relion_half_inputs=halves, relion_follower_scale_replay_source=follower_scale_replay,
                 dtype=ctx.scoring_dtype, logger=logger,
@@ -1160,8 +1163,8 @@ def refine_single_volume(
         noise_from_res_per_half = noise_update.noise_from_res_per_half
         carry = replace(carry, noise_model=noise_update.model)
 
-        correction_report = relion_normalization.NormScaleCorrectionReport()
-        norm_scale_update = relion_normalization.numbered_norm_scale_update(
+        correction_report = normalization.NormScaleCorrectionReport()
+        norm_scale_update = normalization.numbered_norm_scale_update(
             expected.per_half, halves, firstiter_cc=this_iteration.first_iteration.relion_firstiter_cc, do_norm_correction=not ctx.tomo_halves,
             do_scale_correction=follower_setup.follower_scale_state is None, dtype=ctx.scoring_dtype,
             iteration=iteration, current_size=this_iteration.current_size,
@@ -1184,13 +1187,13 @@ def refine_single_volume(
                 group_scale_corrections = norm_scale_update.group_scale_corrections_per_half
             else:
                 # Class3D follower-scale emulation: the follower state owns the scales and installs them.
-                group_scale_corrections = relion_worker_scale._update_relion_follower_corrections(
+                group_scale_corrections = worker_scale._update_relion_follower_corrections(
                     follower_setup, noise_stats_per_half=expected.per_half.noise_stats, norm_scale_update=norm_scale_update,
                     relion_half_inputs=halves, relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
                     dtype=ctx.scoring_dtype, logger=logger,
                 )
-            correction_report = relion_normalization.norm_scale_report(norm_scale_update, group_scale_corrections)
-            relion_normalization.log_norm_scale_update(norm_scale_update, log=logger)
+            correction_report = normalization.norm_scale_report(norm_scale_update, group_scale_corrections)
+            normalization.log_norm_scale_update(norm_scale_update, log=logger)
         if follower_setup.follower_scale_state is not None:
             history.relion_scale_follower_scales_numbered_post_mstep_trajectory.append(
                 np.asarray(follower_setup.follower_scale_state.scales, dtype=np.float64).copy()
@@ -1341,7 +1344,7 @@ def refine_single_volume(
     final_join_means = final_state.join_means
     carry = replace(carry, sigma_offset=final_state.sigma_offset, noise_model=final_state.noise_model)
     if follower_setup.follower_scale_state is not None:
-        relion_worker_scale._dispatch_relion_follower_scale_for_final_all_data(
+        worker_scale._dispatch_relion_follower_scale_for_final_all_data(
             follower_setup, init_relion_iteration=options.schedule.init_relion_iteration,
             numbered_iteration_count=len(history.current_sizes), relion_half_inputs=halves, dtype=ctx.scoring_dtype,
             logger=logger,

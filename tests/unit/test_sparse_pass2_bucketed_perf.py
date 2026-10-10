@@ -34,27 +34,36 @@ from helpers.fine_grid_significance_reference import _build_fine_grid_significan
 from recovar.core.configs import ForwardModelConfig
 
 from relax.classification.k_class import _fine_support_stats
-from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.preprocessing import apply_half_translation_phases, half_translation_phase_table
-from relax.local.local_backprojection import (
-    compute_local_ctf_sums,
-    compute_local_ctf_sums_from_probs_sum_t,
-)
-from relax.scoring.significant_samples import (
-    ComplementSignificantSampleIndices,
-)
-from relax.scoring.sparse_bucket_arrays import (
+from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked, _adjoint_block_chunk_rows
+from relax.fine_pass.bucket_arrays import (
     _bucket_pass2_inputs,
     _coalesce_tail_bucket_sizes,
     _prepare_per_image_pass2_inputs,
 )
-from relax.sparse_pass2.sparse_pass2_adjoint import _accumulate_adjoint_block_chunked, _adjoint_block_chunk_rows
-from relax.sparse_pass2.sparse_pass2_bucket_io import (
+from relax.fine_pass.bucket_io import (
     _half_translation_phase_table_for_indices,
     _prepare_bucket_io,
     relion_translation_angles_f32,
 )
-from relax.sparse_pass2.sparse_pass2_budget import (
+from relax.fine_pass.local_backprojection import (
+    compute_local_ctf_sums,
+    compute_local_ctf_sums_from_probs_sum_t,
+)
+from relax.fine_pass.policy import (
+    _projection_cache_enabled_for_pass,
+)
+from relax.fine_pass.projection_blocks import (
+    _compute_sparse_pass2_projections_block,
+    _compute_sparse_pass2_windowed_projections_block,
+)
+from relax.fine_pass.scoring import (
+    _relion_cuda_corr_img_from_native_noise_variance,
+    _relion_cuda_corr_img_from_rfloat_ctf,
+    _relion_cuda_pixel_correction_from_rfloat_ctf,
+)
+from relax.fourier.fourier_window import make_fourier_window_spec
+from relax.fourier.preprocessing import apply_half_translation_phases, half_translation_phase_table
+from relax.runtime.memory_budget import (
     _max_projected_rotations_per_call_for_pass,
     _nvidia_smi_visible_device_memory_bytes,
     _projection_budget_pixels_for_pass,
@@ -62,21 +71,12 @@ from relax.sparse_pass2.sparse_pass2_budget import (
     _projection_cache_fits_budget,
     _projection_cache_transient_bytes,
 )
-from relax.sparse_pass2.sparse_pass2_policy import (
-    _projection_cache_enabled_for_pass,
-)
-from relax.sparse_pass2.sparse_pass2_projection_blocks import (
-    _compute_sparse_pass2_projections_block,
-    _compute_sparse_pass2_windowed_projections_block,
-)
-from relax.sparse_pass2.sparse_pass2_scoring import (
-    _relion_cuda_corr_img_from_native_noise_variance,
-    _relion_cuda_corr_img_from_rfloat_ctf,
-    _relion_cuda_pixel_correction_from_rfloat_ctf,
+from relax.scoring.significant_samples import (
+    ComplementSignificantSampleIndices,
 )
 
 
-# Moved from relax/sparse_pass2/sparse_pass2_policy.py (PLAN e1): no relax module uses it, only this test file.
+# Moved from relax/fine_pass/policy.py (PLAN e1): no relax module uses it, only this test file.
 def _native_dual_weighted_sums_supported_for_operands(
     *,
     requested: bool,
@@ -564,7 +564,7 @@ def test_bucket_count_bounded_under_varied_per_image_rotation_counts():
     ]
 
     # Build per-image inputs the way compute_pass2_stats_sparse_bucketed does.
-    from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
+    from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 
     # fine_translation_parent maps fine trans -> coarse trans. With oversampling=1
     # in 2D, each coarse trans expands to 4 children, so trans 0..3 map to coarse 0,
@@ -764,9 +764,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
 
 
 def test_sparse_pass2_adjoint_block_chunking_accumulates_all_rows(monkeypatch):
-    from relax.sparse_pass2 import (
-        sparse_pass2_adjoint,
-    )
+    from relax.fine_pass import adjoint
 
     flat_block = jnp.arange(30, dtype=jnp.float32).reshape(10, 3)
     rotations = jnp.zeros((10, 3, 3), dtype=jnp.float32)
@@ -787,13 +785,13 @@ def test_sparse_pass2_adjoint_block_chunking_accumulates_all_rows(monkeypatch):
         calls.append(int(half_block.shape[0]))
         return volume_in + jnp.sum(half_block)
 
-    monkeypatch.setattr(sparse_pass2_adjoint, "_adjoint_slice_volume_half", fake_adjoint_slice_volume_half)
+    monkeypatch.setattr(adjoint, "_adjoint_slice_volume_half", fake_adjoint_slice_volume_half)
 
     row_bytes = flat_block.shape[1] * np.dtype(np.float32).itemsize
     assert _adjoint_block_chunk_rows(flat_block, max_block_bytes=4 * row_bytes + 1) == 4
     # The chunks run in one program per chunk shape, which traces the fake: start and end without
     # a program compiled around another adjoint.
-    sparse_pass2_adjoint._adjoint_rows.clear_cache()
+    adjoint._adjoint_rows.clear_cache()
     try:
         actual = _accumulate_adjoint_block_chunked(
             flat_block,
@@ -811,7 +809,7 @@ def test_sparse_pass2_adjoint_block_chunking_accumulates_all_rows(monkeypatch):
             log_label="test",
         )
     finally:
-        sparse_pass2_adjoint._adjoint_rows.clear_cache()
+        adjoint._adjoint_rows.clear_cache()
 
     # Rows 0-3 and 4-7 share the four-row program; rows 8-9 trace the second.
     assert calls == [4, 2]
@@ -1198,9 +1196,7 @@ def test_native_dual_dispatch_checks_actual_operand_dtypes(
 
 
 def test_sparse_pass2_projection_cap_chunks_projection_calls(monkeypatch):
-    from relax.sparse_pass2 import (
-        sparse_pass2_projection_blocks,
-    )
+    from relax.fine_pass import projection_blocks as sparse_pass2_projection_blocks
 
     calls = []
 
@@ -1234,9 +1230,7 @@ def test_sparse_pass2_projection_cap_chunks_projection_calls(monkeypatch):
 
 
 def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkeypatch):
-    from relax.sparse_pass2 import (
-        sparse_pass2_projection_blocks,
-    )
+    from relax.fine_pass import projection_blocks as sparse_pass2_projection_blocks
 
     calls = []
 
@@ -1304,7 +1298,7 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
 
 
 def test_class_call_length_pads_to_an_eighth_of_the_power_of_two():
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import class_call_length
+    from relax.fine_pass.projection_blocks import class_call_length
 
     assert [class_call_length(n) for n in (1, 256, 257, 2000, 2049, 8192, 8193, 70000)] == [
         256, 256, 512, 2048, 2560, 8192, 10240, 81920,
@@ -1323,10 +1317,10 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
     projection.
     """
 
-    from relax.sparse_pass2 import resident_pass2 as rp
-    from relax.sparse_pass2 import sparse_pass2_projection_blocks
-    from relax.sparse_pass2.sparse_pass2_budget import _projection_cache_transient_bytes
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import project_rows_by_class
+    from relax.fine_pass import projection_blocks as sparse_pass2_projection_blocks
+    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass.projection_blocks import project_rows_by_class
+    from relax.runtime.memory_budget import _projection_cache_transient_bytes
 
     n_classes, rows_per_class, row_capacity, chunk_rotations = 15, 3, 64, 8
     # Windows of realistic width next to the 36-byte rotation matrices a call uploads.
@@ -1400,9 +1394,7 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
 
 
 def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypatch):
-    from relax.sparse_pass2 import (
-        sparse_pass2_projection_blocks,
-    )
+    from relax.fine_pass import projection_blocks as sparse_pass2_projection_blocks
 
     calls = []
     relion_projector_half = jnp.ones((4, 4, 3), dtype=jnp.complex64)
@@ -1489,7 +1481,7 @@ def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypat
 
 
 def test_relion_score_window_keeps_particle_crop_separate_from_model_radius():
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import _projection_kwargs_for_relion_score_window
+    from relax.fine_pass.projection_blocks import _projection_kwargs_for_relion_score_window
 
     kwargs = _projection_kwargs_for_relion_score_window(
         {"max_r": 28.0, "return_abs2": False},
@@ -1505,9 +1497,7 @@ def test_relion_score_window_keeps_particle_crop_separate_from_model_radius():
 
 
 def test_sparse_pass2_windowed_projection_cap_casts_chunks_before_concat(monkeypatch):
-    from relax.sparse_pass2 import (
-        sparse_pass2_projection_blocks,
-    )
+    from relax.fine_pass import projection_blocks as sparse_pass2_projection_blocks
 
     def fake_project(volume_block, rotations_block, image_shape, volume_shape, disc_type, **kwargs):
         del volume_block, image_shape, volume_shape, disc_type, kwargs
@@ -1700,7 +1690,7 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
     Q's normalized-image assertion.
     """
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
 
     ds = MockDataset(n_images=1, seed=1701)
 
@@ -1723,7 +1713,7 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
     n_half = IMAGE_SHAPE[0] * (IMAGE_SHAPE[1] // 2 + 1)
     ctf_half = np.linspace(0.5, 1.5, n_half, dtype=np.float64)[None, :]
     monkeypatch.setattr(
-        relion_ctf,
+        ctf,
         "relion_exact_ctf_half_from_source_star",
         lambda *args, **kwargs: ctf_half,
     )
@@ -1836,9 +1826,7 @@ def test_prepare_bucket_io_routes_relion_cuda_operands_to_score_and_reconstructi
 def test_prepare_bucket_io_windowed_reuses_unmasked_recon_shift_for_noise(monkeypatch):
     """Unmasked windowed prepare can reuse the recon-window shifted image."""
 
-    from relax.sparse_pass2 import (
-        sparse_pass2_bucket_io,
-    )
+    from relax.fine_pass import bucket_io
 
     ds = MockDataset(n_images=4, seed=613)
     batch_indices = np.asarray([0, 1, 2], dtype=np.int64)
@@ -1886,14 +1874,14 @@ def test_prepare_bucket_io_windowed_reuses_unmasked_recon_shift_for_noise(monkey
         recon_window_indices=window_spec.recon_indices,
         return_windowed_shifted=True,
     )
-    original_apply = sparse_pass2_bucket_io.apply_half_translation_phases
+    original_apply = bucket_io.apply_half_translation_phases
     call_shapes = []
 
     def counting_apply(images, phases):
         call_shapes.append((tuple(images.shape), tuple(phases.shape)))
         return original_apply(images, phases)
 
-    monkeypatch.setattr(sparse_pass2_bucket_io, "apply_half_translation_phases", counting_apply)
+    monkeypatch.setattr(bucket_io, "apply_half_translation_phases", counting_apply)
     unmasked = _prepare_bucket_io(**common_kwargs, score_with_masked_images=False)
     assert len(call_shapes) == 3
     assert_matches(np.asarray(unmasked[5]), np.asarray(unmasked[1]))

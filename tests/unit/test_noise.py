@@ -5,7 +5,7 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 
 import recovar.reconstruction.noise as noise
-from relax.reconstruction import noise_relion
+from relax.reconstruction import noise as noise_relion
 
 pytestmark = pytest.mark.unit
 
@@ -692,7 +692,7 @@ def test_estimate_initial_noise_spectrum_from_unaligned_images_matches_legacy_lo
 
 
 def test_normalize_wsum_to_sigma2_noise_drops_relion_shell_sentinels(monkeypatch):
-    import relax.helpers.half_spectrum as half_spectrum
+    import relax.fourier.half_spectrum as half_spectrum
 
     image_shape = (8, 8)
     n_shells = image_shape[0] // 2 + 1
@@ -729,7 +729,7 @@ def test_normalize_wsum_to_sigma2_noise_preserves_float64_inputs(monkeypatch):
     the caller's own accumulation (compute_noise_block and its callers)
     already achieved.
     """
-    import relax.helpers.half_spectrum as half_spectrum
+    import relax.fourier.half_spectrum as half_spectrum
 
     image_shape = (8, 8)
     n_shells = image_shape[0] // 2 + 1
@@ -768,7 +768,7 @@ def test_compute_noise_block_preserves_float64_inputs():
     here compounds error across that whole reduction, unlike RELION's own
     per-particle RFLOAT accumulation.
     """
-    from relax.helpers.projection import compute_noise_block
+    from relax.projection.projection import compute_noise_block
 
     n_rot, n_pix, n_shells = 3, 5, 3
     rng = np.random.default_rng(0)
@@ -802,8 +802,8 @@ def test_compute_noise_block_preserves_float64_inputs():
 
 @pytest.mark.parametrize("box_size", [32, 64, 100, 128, 256])
 def test_relion_noise_shell_indices_include_vertical_nyquist(box_size):
-    from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
-    from relax.relion.relion_metadata import _relion_half_plane_shell_counts
+    from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half
+    from relax.relion.metadata import _relion_half_plane_shell_counts
 
     image_shape = (box_size, box_size)
     shell_indices = np.asarray(make_relion_noise_shell_indices_half(image_shape), dtype=np.int32)
@@ -858,7 +858,7 @@ def test_normalize_wsum_fills_shells_below_relions_absolute_threshold_in_relion_
     """
     image_shape = (8, 8)
     box4 = 8.0**4
-    from relax.helpers.half_spectrum import bin_shell_values_jax, make_relion_noise_shell_indices_half
+    from relax.fourier.half_spectrum import bin_shell_values_jax, make_relion_noise_shell_indices_half
 
     npix = np.maximum(
         np.asarray(bin_shell_values_jax(jnp.ones(image_shape[0] * (image_shape[1] // 2 + 1)), make_relion_noise_shell_indices_half(image_shape), 5)),

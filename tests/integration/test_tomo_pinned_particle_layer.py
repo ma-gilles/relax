@@ -75,7 +75,8 @@ def pinned():
     from recovar.data_io.starfile import read_star, star_column
 
     from relax.refinement import tomo_particles as tp
-    from relax.relion import relion_ctf, tomo_input
+    from relax.relion import ctf as relion_ctf
+    from relax.relion import tomo_input
 
     bind = natives.relion_bind_core()
 

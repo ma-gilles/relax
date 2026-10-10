@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import pytest
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
 from recovar.core.configs import ForwardModelConfig
-from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
+from relax.fine_pass.bucket_io import prepare_unshifted_bucket_operands
 from helpers.float_compare import assert_matches
 
 @pytest.mark.parametrize("diagnostic", [False, True])

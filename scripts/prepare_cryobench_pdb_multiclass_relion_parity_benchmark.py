@@ -58,8 +58,8 @@ def _symmetrize_real_volume(
     """
 
     from relax.diagnostics.gt_metrics import rotate_volume_about_center
-    from relax.symmetry import canonicalize_rotational_symmetry, parse_rotational_symmetry
-    from relax.symmetry import rotational_operators as load_rotational_operators
+    from relax.sampling.symmetry import canonicalize_rotational_symmetry, parse_rotational_symmetry
+    from relax.sampling.symmetry import rotational_operators as load_rotational_operators
 
     canonical = canonicalize_rotational_symmetry(symmetry)
     parsed = parse_rotational_symmetry(canonical)
@@ -98,7 +98,7 @@ def _symmetrize_real_volume(
 def _symmetry_contract(symmetry: str) -> dict[str, object]:
     """Return the immutable RELION operator identity used by the generator."""
 
-    from relax.symmetry import canonicalize_rotational_symmetry, parse_rotational_symmetry
+    from relax.sampling.symmetry import canonicalize_rotational_symmetry, parse_rotational_symmetry
 
     requested = symmetry.strip().upper()
     canonical = canonicalize_rotational_symmetry(requested)
@@ -110,10 +110,10 @@ def _symmetry_contract(symmetry: str) -> dict[str, object]:
         ).hexdigest()
         operator_source = "analytic identity (RELION C1 convention)"
     else:
-        from relax.symmetry import symmetry_operator_sha256
+        from relax.sampling.symmetry import symmetry_operator_sha256
 
         operator_digest = symmetry_operator_sha256(canonical)
-        operator_source = "relax.symmetry.rotational_operators (RELION SymList source order)"
+        operator_source = "relax.sampling.symmetry.rotational_operators (RELION SymList source order)"
     return {
         "requested_label": requested,
         "canonical_label": canonical,

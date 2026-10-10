@@ -5,8 +5,8 @@ from typing import Any
 
 import numpy as np
 
-from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.half_spectrum import make_scoring_half_image_weights
+from relax.fourier.fourier_window import make_fourier_window_spec
+from relax.fourier.half_spectrum import make_scoring_half_image_weights
 
 
 @dataclass(frozen=True)
@@ -96,7 +96,7 @@ def coarse_kernel_window(score_size: int, projector_r_max, rotations):
     """
 
     if score_size // 2 > int(projector_r_max):
-        from relax.helpers.optics_scale import coarse_rows_wrap_inside
+        from relax.relion.optics_scale import coarse_rows_wrap_inside
 
         rotation_scale = 1.0 / float(np.linalg.norm(np.asarray(rotations, dtype=np.float64).reshape(-1, 3, 3)[0, 0]))
         if coarse_rows_wrap_inside(score_size, int(projector_r_max), rotation_scale):

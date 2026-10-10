@@ -1,6 +1,6 @@
 # Compact RELION projector indices
 
-Implemented by [`_validate_centered_relion_projector_pixel_indices`](../../relax/helpers/projection.py), with regression coverage in
+Implemented by [`_validate_centered_relion_projector_pixel_indices`](../../relax/projection/projection.py), with regression coverage in
 [`test_refine_relion_mode.py`](../../tests/unit/test_refine_relion_mode.py) and
 [`test_cuda_relion_fine_diff2.py`](../../tests/unit/test_cuda_relion_fine_diff2.py).
 
@@ -20,7 +20,7 @@ This validation matches the existing texture gather and full scatter. It
 changes neither the packed storage layout nor the translation convention.
 
 The current runtime-radius path uses
-[`prepare_relion_projector_capacity`](../../relax/helpers/projection.py)
+[`prepare_relion_projector_capacity`](../../relax/projection/projection.py)
 to preserve the logical slab and its ghost planes in larger storage, then
 [`project_relion_half_capacity`](../../relax/cuda/kernels.py) projects it.
 The existing compact gather labels full-box row zero as positive Nyquist;

@@ -15,9 +15,9 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_significance import _encoded_supports, _supports
 
-from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.sparse_pass2 import resident_candidates
-from relax.sparse_pass2.resident_candidates import (
+from relax.fine_pass import resident_candidates
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     expand_mask_rows,
     materialize_chunk,

@@ -10,7 +10,7 @@ import pytest
 
 from relax.dense.gemm_experiment import DenseGemmTileConfig, make_batch_program, native_relion_callbacks
 from relax.dense.gemm_experiment_kernels import empty_normalizer_table
-from relax.helpers.projection import relion_projector_half_to_texture_full
+from relax.projection.projection import relion_projector_half_to_texture_full
 from scripts.benchmark_dense_gemm_em import _direct_comparison, _make_case, _production_program, _run_once
 
 
@@ -77,7 +77,7 @@ def test_lagged_bootstrap_uses_native_program_and_exposes_mass():
 @pytest.mark.gpu
 def test_compiled_batch_reuses_capacity_texture_until_concrete_completion():
     from relax.cuda.kernels import RelionCapacityHalfTextureF32
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     args = SimpleNamespace(
         seed=20260928,

@@ -6,10 +6,6 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.iteration_history import (
-    _pose_history_by_image,
-    add_significant_count_artifacts,
-)
 from relax.refinement import command_options
 from relax.refinement.command_options import (
     resolve_firstiter_cc_tree_rescore_margin,
@@ -18,6 +14,10 @@ from relax.refinement.command_options import (
 )
 from relax.refinement.full_refinement import (
     _effective_perturb_seed,
+)
+from relax.refinement.iteration_history import (
+    _pose_history_by_image,
+    add_significant_count_artifacts,
 )
 from relax.refinement.result_files import _rotation_posterior_arrays, profile_rows_for_json
 from relax.sampling import (

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.relion.relion_worker_scale import (
+from relax.relion.worker_scale import (
     make_relion_dispatch_schedule_from_chunks,
     relion_dispatch_metadata_relative_path,
     relion_oracle_id,

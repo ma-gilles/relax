@@ -31,9 +31,9 @@ from test_resident_significance import (
     _supports,
 )
 
-from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.sparse_pass2.resident_candidates import build_resident_candidate_tables
-from relax.sparse_pass2.resident_significance import build_resident_candidate_tables_from_csr
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.resident_candidates import build_resident_candidate_tables
+from relax.fine_pass.resident_significance import build_resident_candidate_tables_from_csr
 
 pytestmark = pytest.mark.unit
 
@@ -171,7 +171,7 @@ def test_resident_local_call_carries_the_point_group(monkeypatch):
 def test_replay_reads_the_point_group_relion_sampled_with(tmp_path):
     """A replay of a symmetric RELION run takes its group from the sampling STAR."""
 
-    from relax.relion.relion_metadata import read_relion_sampling_symmetry
+    from relax.relion.metadata import read_relion_sampling_symmetry
 
     star = tmp_path / "run_it011_sampling.star"
     star.write_text("data_sampling_general\n\n_rlnHealpixOrder 3\n_rlnSymmetryGroup c4\n")
@@ -257,7 +257,7 @@ def _c4_local_case(monkeypatch):
 
     import test_resident_local_pass2 as local_tests
 
-    from relax.local.local_layout import (
+    from relax.local_search.layout import (
         build_local_adaptive_pass2_hypothesis_layout,
         build_local_hypothesis_layout,
     )

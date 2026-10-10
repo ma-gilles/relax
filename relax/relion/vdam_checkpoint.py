@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.relion.relion_metadata import _relion_star_list_value
+from relax.relion.metadata import _relion_star_list_value
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import (
     RELION_ORIENTATIONAL_PRIOR_ROTTILT_PSI,

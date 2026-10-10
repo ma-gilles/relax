@@ -23,17 +23,17 @@ import numpy as np
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.diagnostics import parity_dump
-from relax.helpers import iteration_history
-from relax.helpers.git_provenance import git_head_or_none, git_worktree_provenance
-from relax.helpers.resolution import shell_index_to_resolution_angstrom
+from relax.fourier.resolution import shell_index_to_resolution_angstrom
+from relax.refinement import iteration_history
+from relax.refinement.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.refinement.refinement_result import FinalPassResult, ModelMaps, RefinementResult
-from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
+from relax.runtime.git_provenance import git_head_or_none, git_worktree_provenance
 
 if TYPE_CHECKING:
     from relax.refinement.command_options import RandomSeed
     from relax.refinement.refinement_options import InitialSampling, RestartProvenance
     from relax.relion.input_poses import PoseProvenance
-    from relax.relion.relion_metadata import MaxSignificantsResolution
+    from relax.relion.metadata import MaxSignificantsResolution
 
 
 logger = logging.getLogger("relax.refinement.full_refinement")
@@ -288,7 +288,7 @@ def write_refinement_archive(
             dtype=np.int32,
         )
     # Which E-step engine each pass ran on, per iteration and for the final all-data
-    # pass (relax.sparse_pass2.engine_record), as JSON: resident vs fallback per run.
+    # pass (relax.refinement.engine_record), as JSON: resident vs fallback per run.
     for key in (
         "pass2_engine_trajectory", "final_all_data_pass2_engines",
         "coarse_engine_trajectory", "final_all_data_coarse_engines",
@@ -442,8 +442,8 @@ def write_final_maps(
     if skip_large_outputs:
         logger.info("Skipping final MRC volume writes (--skip-large-outputs)")
     else:
-        # Final maps are written in RELION's map convention (relax.helpers.map_io).
-        from relax.helpers.map_io import write_map
+        # Final maps are written in RELION's map convention (relax.io.map_io).
+        from relax.io.map_io import write_map
 
         def _ft_to_real_volume(ft_array):
             ft_reshape = np.asarray(ft_array).reshape(volume_shape)

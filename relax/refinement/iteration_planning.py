@@ -9,16 +9,16 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from relax.helpers.convergence import RefinementState
-from relax.helpers.expected_accuracy import PublishedAccuracy
-from relax.helpers.resolution import (
+from relax.fourier.resolution import (
     ImageGeometry,
     initialize_resolution_from_firstiter_ini_high,
     initialize_resolution_from_fsc,
     initialize_resolution_from_ini_high,
 )
+from relax.helpers.convergence import RefinementState
 from relax.refinement.iteration_snapshot import validate_resume_snapshot
 from relax.refinement.ports import InputSource
+from relax.sampling.expected_accuracy import PublishedAccuracy
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions

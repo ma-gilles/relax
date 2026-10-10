@@ -22,14 +22,14 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.helpers.half_spectrum import make_relion_noise_shell_indices_half
-from relax.refinement.ports import InputSource, RunObserver
-from relax.sparse_pass2.resident_operands import (
+from relax.fine_pass.resident_operands import (
     ResidentHalfOperands,
     resident_half_operand_avals,
     resident_half_operand_bytes,
 )
-from relax.sparse_pass2.resident_statistics import resident_image_capacity
+from relax.fine_pass.resident_statistics import resident_image_capacity
+from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half
+from relax.refinement.ports import InputSource, RunObserver
 
 pytestmark = pytest.mark.unit
 
@@ -274,11 +274,11 @@ def test_the_optional_operands_dtypes_against_the_real_preparation(
 
     from test_resident_operands import N_FINE_TRANS, N_IMAGES, _case, _gpu_case
 
-    from relax.sparse_pass2.resident_operands import (
+    from relax.fine_pass.resident_operands import (
         ResidentOperandsUnsupported,
         prepare_resident_half_operands,
     )
-    from relax.sparse_pass2.sparse_pass2_scoring import (
+    from relax.fine_pass.scoring import (
         relion_powerclass_noise_dtypes,
     )
 
@@ -378,7 +378,7 @@ def test_eval_shape_through_the_real_gather_predicts_the_chunk_operands(
         _resident_operands,
     )
 
-    from relax.sparse_pass2.resident_operands import gather_resident_chunk_operands
+    from relax.fine_pass.resident_operands import gather_resident_chunk_operands
 
     _gpu_case(monkeypatch, custom_cuda_lib)
     with jax.default_device(gpu_device):
@@ -487,18 +487,18 @@ def test_the_optional_operands_against_a_star_backed_preparation(
     from recovar.reconstruction import noise as noise_utils
     from test_resident_operands import _gpu_case
 
-    from relax.helpers.preprocessing import image_preprocess_backend
-    from relax.sparse_pass2.resident_operands import (
+    from relax.fine_pass.bucket_io import (
+        _relion_cuda_score_translation_angles_if_available,
+    )
+    from relax.fine_pass.resident_operands import (
         describe_resident_operand_mismatch,
         prepare_resident_half_operands,
         resident_half_operand_presence,
     )
-    from relax.sparse_pass2.sparse_pass2_bucket_io import (
-        _relion_cuda_score_translation_angles_if_available,
-    )
-    from relax.sparse_pass2.sparse_pass2_scoring import (
+    from relax.fine_pass.scoring import (
         relion_powerclass_noise_dtypes,
     )
+    from relax.fourier.preprocessing import image_preprocess_backend
 
     star = os.environ.get("RELAX_P4J_STAR_FIXTURE", "").strip()
     if not star:
@@ -628,7 +628,7 @@ def test_exact_bpref_is_refused_by_name_on_a_dataset_that_is_not_production_shap
 
     from test_resident_operands import _case
 
-    from relax.sparse_pass2.sparse_pass2_bucket_io import (
+    from relax.fine_pass.bucket_io import (
         prepare_unshifted_bucket_operands,
     )
 
@@ -666,7 +666,7 @@ def test_the_per_chunk_oracle_meets_the_same_guard():
     reading of the source is how I got this wrong the first time.
     """
 
-    from relax.sparse_pass2 import sparse_pass2_bucket_io as io
+    from relax.fine_pass import bucket_io as io
 
     assert "prepare_unshifted_bucket_operands" in io._prepare_bucket_io.__code__.co_names
 

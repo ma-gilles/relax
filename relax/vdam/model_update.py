@@ -119,7 +119,7 @@ def update_noise_from_estep(
             f"noise_sumw={noise_sumw!r}",
         ])
 
-    from relax.reconstruction import noise_relion
+    from relax.reconstruction import noise
 
     wsum_rows = wsum_sigma2_noise.reshape(-1, expected_shells)
     power_rows = wsum_img_power.reshape(-1, expected_shells)
@@ -131,9 +131,9 @@ def update_noise_from_estep(
         if sumw_rows[g] <= 0.0:
             raise ValueError(f"optics group {g + 1} has noise sums but no weight")
         shape = (int(state.box_size), int(state.box_size))
-        wsum_g = noise_relion.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)
+        wsum_g = noise.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)
         # RELION blends, then applies its floors (ml_optimiser.cpp:5255-5282): a shell without data decays by mu.
-        new_sigma2[g] = noise_relion.apply_relion_sigma2_floors(
+        new_sigma2[g] = noise.apply_relion_sigma2_floors(
             new_sigma2[g] * my_mu + (1.0 - my_mu) * np.asarray(wsum_g, dtype=np.float64) / float(shape[0] ** 4),
             ctf_premultiplied=sums.average_ctf2 is not None,
         )

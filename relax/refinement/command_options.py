@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
-from relax.helpers.particle_io import add_particle_read_arguments
+from relax.io.particle_io import add_particle_read_arguments
 from relax.parity import frozen_boundary_cli
 from relax.parity.state_swap_probe import add_state_swap_probe_arguments
 from relax.refinement.refinement_options import (
@@ -37,7 +37,7 @@ from relax.refinement.refinement_options import (
 from relax.relion import input_poses
 
 if TYPE_CHECKING:
-    from relax.relion.relion_metadata import MaxSignificantsResolution
+    from relax.relion.metadata import MaxSignificantsResolution
 
 logger = logging.getLogger(__name__)
 
@@ -329,7 +329,7 @@ def resolve_seed(args, optimiser_star, *, sealed: bool) -> RandomSeed:
         return RandomSeed(int(explicit_seed), "explicit CLI")
     seed_star = optimiser_seed_source(args, optimiser_star, sealed=sealed)
     if seed_star is not None:
-        from relax.relion.relion_metadata import read_relion_optimiser_metadata
+        from relax.relion.metadata import read_relion_optimiser_metadata
 
         relion_seed = read_relion_optimiser_metadata(seed_star).get("random_seed")
         if relion_seed is not None:
@@ -381,7 +381,7 @@ class RetiredFlag(argparse.Action):
 
 
 def parse_refinement_args(argv=None):
-    from relax.symmetry import canonicalize_rotational_symmetry
+    from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
     parser = argparse.ArgumentParser(
         description="RELION-equivalent 3D auto-refine (relax refine, K=1) and 3D classification "
@@ -925,7 +925,7 @@ def parse_refinement_args(argv=None):
         "distribution starts at 1/K as in relion_refine (a _rlnClassDistribution "
         "column is not read). Exclusive with --init_class_volumes. Each map needs a RELION "
         "or relax header label or '_relion' in its file name "
-        "(relax.helpers.map_io.require_relion_convention_reference).",
+        "(relax.io.map_io.require_relion_convention_reference).",
     )
     parser.add_argument(
         "--init_volume",
@@ -935,7 +935,7 @@ def parse_refinement_args(argv=None):
             "relion_refine reads with --ref). Defaults to "
             "<data_dir>/reference_init_relion.mrc when omitted. A map without a RELION "
             "or relax header label must have '_relion' in its file name; any other map "
-            "is refused (relax.helpers.map_io.require_relion_convention_reference)."
+            "is refused (relax.io.map_io.require_relion_convention_reference)."
         ),
     )
     parser.add_argument(
@@ -1192,7 +1192,7 @@ def resolve_consistency_options(
             "--mode relax: the RELION-consistency options are implemented for single-particle refinement of one "
             f"image shape from relax's own state; not with {', '.join(no_option_route)}"
         )
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
 
     options, skipped = relax_mode_consistency(
         explicit,
@@ -1201,7 +1201,7 @@ def resolve_consistency_options(
         coarse_engine=args.coarse_engine,
         ctf_premultiplied=(
             dataset is not None
-            and relion_ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))
+            and ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))
         ),
     )
     logger.info("--mode relax: RELION-consistency options %s", options.non_default())
@@ -1328,13 +1328,13 @@ def resolve_relion_runtime_controls(
     ``target_iteration`` is the first numbered iteration of this invocation.
     See ``docs/math/relion_refinement_algorithm.md#command-admission``.
     """
-    from relax.relion import relion_metadata
+    from relax.relion import metadata as relion_metadata
 
     expected_accuracy_do_ctf_correction = None
     relion_firstiter_ini_high_angstrom = None
     relion_optimiser_metadata = None
     if optimiser_star is not None:
-        from relax.relion.relion_metadata import read_relion_optimiser_metadata
+        from relax.relion.metadata import read_relion_optimiser_metadata
 
         relion_optimiser_metadata = read_relion_optimiser_metadata(optimiser_star)
         stored_do_correct_ctf = relion_optimiser_metadata.get("do_correct_ctf")
@@ -1361,7 +1361,7 @@ def resolve_relion_runtime_controls(
                 )
     max_significants_resolution = None
     if optimiser_star is not None and relion_optimiser_metadata is not None:
-        from relax.relion.relion_metadata import resolve_relion_runtime_max_significants
+        from relax.relion.metadata import resolve_relion_runtime_max_significants
 
         optimiser_max_significants = relion_optimiser_metadata.get(
             "maximum_significants_arg"
@@ -1391,7 +1391,7 @@ def resolve_relion_runtime_controls(
             optimiser_star,
         )
     if max_significants is None:
-        from relax.relion.relion_metadata import resolve_relion_runtime_max_significants
+        from relax.relion.metadata import resolve_relion_runtime_max_significants
 
         # Without a RELION optimiser STAR, use relion_refine's own --maxsig default of -1
         # (ml_optimiser.cpp:1109) and its runtime resolution (ml_optimiser.cpp:3692-3699).
@@ -1430,7 +1430,7 @@ def resolve_class_reference_paths(args, *, log: logging.Logger) -> tuple[list[st
     --ref_star list, --init_class_volumes, or the data directory's reference_init_class00K_relion.mrc."""
     import numpy as np
 
-    from relax.relion import relion_metadata
+    from relax.relion import metadata as relion_metadata
 
     if args.init_volume is not None:
         # relion_refine --K K with one --ref map: every class starts from it and the first iteration scores

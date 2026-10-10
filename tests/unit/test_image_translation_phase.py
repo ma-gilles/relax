@@ -1,4 +1,4 @@
-"""The host translation phase (:func:`relax.helpers.preprocessing.half_translation_phase_table`) is RELION's.
+"""The host translation phase (:func:`relax.fourier.preprocessing.half_translation_phase_table`) is RELION's.
 
 The reference here is written from RELION's kernels, not from relax: ``translatePixel`` multiplies
 pixel ``(x, y)`` by ``exp(i v)``, ``v = x * tx + y * ty`` with ``tx = -2 pi xshift / N``
@@ -36,7 +36,7 @@ def _relax_translated_rfft(image, shift):
     import jax.numpy as jnp
     from recovar.core import fourier_transform_utils as ftu
 
-    from relax.helpers.preprocessing import half_translation_phase_table
+    from relax.fourier.preprocessing import half_translation_phase_table
 
     n = image.shape[0]
     half = np.asarray(ftu.get_dft2_real(jnp.asarray(image, dtype=jnp.float64))).reshape(-1)

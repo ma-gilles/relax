@@ -12,9 +12,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.helpers import optics_scale
+from relax.fine_pass.resident_statistics import resolve_statistics_config
 from relax.refinement import optics_shapes, shape_class_scoring
-from relax.sparse_pass2.resident_statistics import resolve_statistics_config
+from relax.relion import optics_scale
 
 pytestmark = pytest.mark.unit
 
@@ -84,7 +84,7 @@ def test_single_and_several_shape_paths_give_a_group_the_same_window_and_noise_s
     shells 26/27 vs 25/26 on EMPIAR-10299)."""
     import logging
 
-    from relax.helpers.resolution import ImageGeometry
+    from relax.fourier.resolution import ImageGeometry
     from relax.refinement.image_size_plans import RunOptics, plan_expectation_windows
 
     single = plan_expectation_windows(
@@ -111,7 +111,7 @@ CELL9_HEADER_PIXEL = float(np.float32(1.6374975))  # its reference header, 1.637
 def _single_shape_windows(current_size, *, model_pixel, star_pixel, box=256, optics=True):
     import logging
 
-    from relax.helpers.resolution import ImageGeometry
+    from relax.fourier.resolution import ImageGeometry
     from relax.refinement.image_size_plans import RunOptics, plan_expectation_windows
 
     return plan_expectation_windows(
@@ -200,8 +200,8 @@ def unmagnified(monkeypatch):
 
 
 def _local_grid(model_pixel, model_support_size=38):
+    from relax.local_search.sampling import LocalSampling
     from relax.refinement import dense_half
-    from relax.refinement.local_sampling import LocalSampling
 
     scale = optics_scale.scale_difference(128, STAR_PIXEL, 128, model_pixel)
     sampling = LocalSampling(
@@ -231,8 +231,8 @@ def test_a_magnified_single_shape_local_half_reconstructs_on_the_remapped_window
     """relax#69: one magnified 1.40 A group against the header pixel scores at 40 for model size 38. Its M-step
     window is the rounded shell of 40 (653 pixels) with the reference kept at 38, as for the same group among
     several shapes; the rounded shell of 38 (597 pixels) is not a window the Wavg rectangle of the 40 crop takes."""
-    from relax.helpers.fourier_window import make_fourier_window_indices_np
-    from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
+    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fourier.fourier_window import make_fourier_window_indices_np
 
     sampling, optics = _local_grid(HEADER_PIXEL)
     assert (sampling.image_window_size, sampling.model_support_size, optics.reference_current_size) == (40, 40, 38)
@@ -253,8 +253,8 @@ def test_a_magnified_single_shape_local_half_reconstructs_on_the_remapped_window
 def test_a_magnified_single_shape_dense_half_reconstructs_on_the_remapped_window(magnified):
     """The dense path (global searches, Class3D) takes the same grid: cell C group 1 at Class3D's model size 28
     scores at 30, and its rounded shell of 28 (330 pixels) is refused on the 30 crop as the local one of 38 is."""
-    from relax.helpers.fourier_window import make_fourier_window_indices_np
-    from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
+    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fourier.fourier_window import make_fourier_window_indices_np
 
     sampling, optics = _dense_grid(HEADER_PIXEL)
     assert (sampling.image_window_size, sampling.model_support_size, optics.reference_current_size) == (30, 30, 28)
@@ -271,8 +271,8 @@ def test_an_unmagnified_single_shape_half_keeps_the_exact_window_of_the_model_si
     """Without magnification a rounding scale changes nothing on either entry: the engine gets the model's size
     (it builds the exact-radius window, 565 pixels at 38 and 307 at 28, which the rectangle of the remapped crop
     takes) and no reference clip."""
-    from relax.helpers.fourier_window import make_fourier_window_indices_np
-    from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
+    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fourier.fourier_window import make_fourier_window_indices_np
 
     for grid, model_size, image_size, pixels in ((_local_grid, 38, 40, 565), (_dense_grid, 28, 30, 307)):
         sampling, optics = grid(HEADER_PIXEL)

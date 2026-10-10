@@ -41,7 +41,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
 
     start_idx = 0
     image_indices = np.arange(plan.n_images)
-    from relax.helpers.batch_fetch import iter_indexed_batches, prefetched_batches
+    from relax.io.batch_fetch import iter_indexed_batches, prefetched_batches
 
     _coarse_batch_starts = []
     _coarse_loop_t0 = time.time()

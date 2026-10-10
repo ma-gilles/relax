@@ -5,7 +5,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.mstep_reference import numpy_relion_f32_mstep_sums
 
-from relax.local.local_backprojection import (
+from relax.fine_pass.local_backprojection import (
     compute_local_mstep_sums,
     compute_local_weighted_sums,
     compute_relion_sequential_mstep_sums,

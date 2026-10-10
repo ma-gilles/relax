@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.timing import Stopwatch
+from relax.runtime.timing import Stopwatch
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def prepare_scoring_projector(
     derives its tau2 from it.
 
     The slabs come from the device projector setup
-    (:func:`relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power`);
+    (:func:`relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power`);
     RELION's own transform is a test oracle only. ``gridding_kernel`` is the
     setup's correction window; a ``reusable`` projector must have been built
     with the same one, and a non-radial window has its own cache entries.
@@ -114,7 +114,7 @@ def prepare_scoring_projector(
 
     from recovar.core import fourier_transform_utils as ftu
 
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
+    from relax.relion.projector_setup import reference_to_relion_projector_half_maps_and_power
 
     refs_ft = np.asarray(references)
     if int(n_classes) == 1 and refs_ft.ndim == 1:

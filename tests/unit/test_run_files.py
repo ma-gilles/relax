@@ -14,8 +14,7 @@ from helpers.float_compare import assert_matches
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.helpers.convergence import RefinementState
-from relax.helpers.orientation_priors import DirectionPrior
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import regularization
 from relax.refinement import iteration_snapshot as iteration_snapshot_module
 from relax.refinement import setup_checks
 from relax.refinement.half_inputs import initialize_halfsets
@@ -33,6 +32,7 @@ from relax.refinement.run_files import (
     read_run_files,
     read_star_blocks,
 )
+from relax.sampling.orientation_priors import DirectionPrior
 
 pytestmark = pytest.mark.unit
 
@@ -479,9 +479,9 @@ def _unestimated_norm_snapshot(snapshot, input_norms, rng):
 
     from types import SimpleNamespace
 
-    from relax.helpers.types import NoiseStats
     from relax.relion.input_poses import _initial_corrections_from_norm
-    from relax.relion.relion_normalization import update_relion_norm_scale_corrections
+    from relax.relion.normalization import update_relion_norm_scale_corrections
+    from relax.types import NoiseStats
 
     image, scale = _initial_corrections_from_norm(input_norms)
     stats = [
@@ -831,7 +831,7 @@ def test_tau2_volume_matches_the_mstep_volume():
     volumes, shells = [], []
     for _ in range(2):
         weights = jnp.asarray(rng.random(shape).astype(np.float32).reshape(-1))
-        prior, _, details = regularization_relion.compute_relion_tau2_from_weights(
+        prior, _, details = regularization.compute_relion_tau2_from_weights(
             weights, weights, fsc, shape, r_max=BOX // 2, return_details=True
         )
         volumes.append(prior)
@@ -850,8 +850,8 @@ def test_growth_state_update_is_idempotent():
     """The files hold incr_size after the FSC update; the loop applies it once more."""
 
     fsc = np.concatenate([np.ones(20), np.linspace(0.9, 0.0, 45)])
-    once = regularization_relion.update_relion_growth_state_from_fsc(fsc, 60, incr_size=10, has_high_fsc_at_limit=False)
-    twice = regularization_relion.update_relion_growth_state_from_fsc(
+    once = regularization.update_relion_growth_state_from_fsc(fsc, 60, incr_size=10, has_high_fsc_at_limit=False)
+    twice = regularization.update_relion_growth_state_from_fsc(
         fsc, 60, incr_size=once[0], has_high_fsc_at_limit=once[1]
     )
     assert once == twice

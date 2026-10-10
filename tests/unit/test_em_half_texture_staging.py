@@ -6,7 +6,7 @@ import pytest
 from helpers.float_compare import assert_matches, default_rtol
 
 from relax.cuda import kernels as em_cuda_kernels
-from relax.helpers import projection as p
+from relax.projection import projection as p
 
 pytestmark = pytest.mark.unit
 

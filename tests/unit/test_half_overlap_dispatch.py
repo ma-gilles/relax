@@ -168,7 +168,7 @@ def test_runner_wires_the_flag_into_the_option_group(monkeypatch, tmp_path, flag
 
 
 def test_device_share_defaults_to_the_whole_device():
-    from relax.sparse_pass2.sparse_pass2_budget import concurrent_device_shares
+    from relax.runtime.memory_budget import concurrent_device_shares
 
     assert concurrent_device_shares() == 1
 
@@ -180,7 +180,7 @@ def test_device_share_divides_the_budget(monkeypatch):
     overlap fail with RESOURCE_EXHAUSTED while building the second half's
     projection cache.
     """
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", "80")
     whole = budget._device_memory_limit_bytes()
@@ -195,7 +195,7 @@ def test_device_share_divides_the_budget(monkeypatch):
 
 
 def test_device_share_rejects_a_nonsense_count():
-    from relax.sparse_pass2.sparse_pass2_budget import set_concurrent_device_shares
+    from relax.runtime.memory_budget import set_concurrent_device_shares
 
     with pytest.raises(ValueError):
         set_concurrent_device_shares(0)
@@ -203,7 +203,7 @@ def test_device_share_rejects_a_nonsense_count():
 
 def test_dispatcher_declares_and_restores_the_share():
     """The share must be declared for the run and put back afterwards."""
-    from relax.sparse_pass2.sparse_pass2_budget import concurrent_device_shares
+    from relax.runtime.memory_budget import concurrent_device_shares
 
     seen = []
 
@@ -216,7 +216,7 @@ def test_dispatcher_declares_and_restores_the_share():
 
 
 def test_dispatcher_restores_the_share_after_a_failure():
-    from relax.sparse_pass2.sparse_pass2_budget import concurrent_device_shares
+    from relax.runtime.memory_budget import concurrent_device_shares
 
     def run_half(k):
         raise RuntimeError("boom")
@@ -236,7 +236,7 @@ def test_device_memory_limit_is_capped_by_the_allocator_limit(monkeypatch):
     import subprocess
     from types import SimpleNamespace
 
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     gib = 1024**3
     monkeypatch.delenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", raising=False)

@@ -14,7 +14,7 @@ same stored state) measures RELION's own spread for that case:
     python scripts/em_tier_fsc.py relax --run-root <pytest basetemp root> --output fsc.json
     python scripts/em_tier_fsc.py relion --case k1_replay --other <RELION dir> --output band.json
 
-relax and RELION write maps in the same (RELION) convention (``relax.helpers.map_io``); both are
+relax and RELION write maps in the same (RELION) convention (``relax.io.map_io``); both are
 read into the internal frame, relax maps through ``load_relax_map`` and RELION maps through
 ``load_relion_volume``. A relax map without the relax label predates that convention: the
 refinement and harness maps then hold the negated array and are read as such, so run roots of
@@ -127,7 +127,7 @@ def _load_relion(path: Path) -> np.ndarray:
 
 
 def _load_relax(path: Path, case: Case) -> np.ndarray:
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
 
     if case.relax_relion_frame:
         return _load_relion(path)

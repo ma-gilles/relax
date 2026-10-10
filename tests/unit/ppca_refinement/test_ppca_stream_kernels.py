@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 from helpers.float_compare import assert_matches
 
-from relax.helpers.fourier_window import make_fourier_window_spec
+from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.ppca_refinement import full_row_stream as frs
 
 IMAGE_SHAPE, VOLUME_SHAPE = (32, 32), (32, 32, 32)

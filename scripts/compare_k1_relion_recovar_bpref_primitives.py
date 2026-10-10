@@ -23,7 +23,7 @@ from recovar.data_io.image_backends import (
     _centered_rfft2_jax_per_image,
     _centered_rfft2_numpy,
 )
-from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+from relax.fine_pass.bucket_io import relion_translation_angles_f32
 from recovar.utils.file_hash import sha256_file
 from scripts.analyze_k1_bpref_factor_boundary import _metric, _pixel_coordinates, _translation_map
 from scripts.parse_relion_dump_dir import _read_real_2d

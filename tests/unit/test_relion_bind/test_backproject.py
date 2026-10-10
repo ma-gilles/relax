@@ -28,7 +28,7 @@ from relax.relion_bind._relion_bind_core import (
 )
 
 from recovar.reconstruction import regularization
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import regularization as regularization_relion
 
 
 def _make_test_volume(N, rng):

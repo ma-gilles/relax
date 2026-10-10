@@ -9,7 +9,7 @@ pass-1 program, its posterior and its outputs can be tested without a GPU.
 import jax.numpy as jnp
 import numpy as np
 
-from relax.relion import relion_ctf
+from relax.relion import ctf
 
 
 class ExactPass1Dataset:
@@ -120,10 +120,10 @@ class ExactPass1Dataset:
 
 def mock_unit_ctf_and_zero_highres_power(monkeypatch):
     """Use unit CTFs and no high-resolution image power in live-path CPU tests."""
-    from relax.sparse_pass2 import sparse_pass2_scoring
+    from relax.fine_pass import scoring
 
     monkeypatch.setattr(
-        relion_ctf,
+        ctf,
         "relion_exact_ctf_half_from_source_star",
         lambda _dataset, indices, image_shape, *, pixel_indices=None: jnp.ones(
             (
@@ -134,7 +134,7 @@ def mock_unit_ctf_and_zero_highres_power(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        relion_ctf,
+        ctf,
         "relion_exact_ctf_half_from_source_star_host",
         lambda _dataset, indices, image_shape, *, pixel_indices=None: np.ones(
             (
@@ -145,7 +145,7 @@ def mock_unit_ctf_and_zero_highres_power(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        sparse_pass2_scoring,
+        scoring,
         "relion_cuda_powerclass_highres_xi2_half",
         lambda processed, **_kwargs: jnp.zeros(
             processed.shape[0],
@@ -166,7 +166,7 @@ def install_exact_pass1_mocks(monkeypatch):
     ``(k + 1 + c) * exp(0.3 i p)`` over the requested pixels ``p``."""
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers import projection as projection_helpers
+    from relax.projection import projection as projection_helpers
     from relax.scoring import gaussian_plan
 
     monkeypatch.setattr(gaussian_plan, "_custom_cuda_ready", lambda: True)

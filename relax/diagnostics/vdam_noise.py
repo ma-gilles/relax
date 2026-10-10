@@ -47,7 +47,7 @@ def dump_noise_update_boundary(
 ) -> str:
     """Write one iteration's VDAM noise sufficient statistics and spectra; returns the file."""
 
-    from relax.relion.relion_metadata import _relion_half_plane_shell_counts
+    from relax.relion.metadata import _relion_half_plane_shell_counts
 
     dump_dir = Path(dump_root)
     dump_dir.mkdir(parents=True, exist_ok=True)

@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.sparse_pass2 import resident_tilts
+from relax.fine_pass import resident_tilts
 
 
-# Moved from relax/sparse_pass2/resident_tilts.py (PLAN e1): no relax module uses them, only this test file.
+# Moved from relax/fine_pass/resident_tilts.py (PLAN e1): no relax module uses them, only this test file.
 def validate_unit_image_offsets(unit_image_offsets, n_units: int) -> np.ndarray:
     """The CSR of images over units: ``[n_units + 1]``, starting at 0, every unit owning an image."""
 
@@ -79,7 +79,7 @@ def test_chunk_tilt_layout_refuses_overflow_and_bad_offsets():
 
 @pytest.mark.unit
 def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
-    from relax.healpix_sampling import euler_angles_to_matrix
+    from relax.sampling.healpix import euler_angles_to_matrix
 
     rng = np.random.default_rng(3)
     offsets = validate_unit_image_offsets([0, 2, 3], 2)
@@ -118,7 +118,7 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
 
     import jax.numpy as jnp
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     offsets = validate_unit_image_offsets([0, 3, 4, 6], 3)
     layout = resident_tilts.chunk_tilt_layout(
@@ -263,8 +263,8 @@ def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
     The SPA model (images x T x P x 3 tiles) keeps two particles per chunk here, which made the S1
     standalone's full-box iterations 7x slower; the tilt model keeps the default classes that fit.
     """
-    from relax.sparse_pass2.resident_pass2 import _cap_image_capacity_ladder
-    from relax.sparse_pass2.sparse_pass2_budget import _max_translation_tile_bytes_for_pass
+    from relax.fine_pass.resident_pass2 import _cap_image_capacity_ladder
+    from relax.runtime.memory_budget import _max_translation_tile_bytes_for_pass
 
     n_recon_pixels, slots, budget = 128 * 65, 41, _max_translation_tile_bytes_for_pass(80 * 1024**3)
     ladder = (32, 64, 128, 256)
@@ -312,7 +312,7 @@ def test_numbered_iteration_tomo_sampling_reads_the_state_grid_or_local_search(l
     oversampling order below its fine order with its own. A window of None is the full image."""
     from types import SimpleNamespace
 
-    from relax.helpers.resolution import ImageGeometry
+    from relax.fourier.resolution import ImageGeometry
     from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 
     sampling = numbered_iteration_tomo_sampling(
@@ -338,7 +338,7 @@ def test_numbered_iteration_tomo_sampling_reads_the_state_grid_or_local_search(l
 def test_tilt_image_power_above_the_cutoff_carries_one_over_n_images():
     """Above the norm cutoff a tilt image adds its power with 1 / n_images, not 1 (14547997 kept it at 1:
     the noise above the current size came out n_images times RELION's)."""
-    from relax.sparse_pass2.sparse_pass2_wavg import weighted_image_power_from_shells
+    from relax.fine_pass.wavg import weighted_image_power_from_shells
 
     rng = np.random.default_rng(3)
     power = rng.uniform(1.0, 2.0, size=(5, 8))
@@ -427,7 +427,7 @@ def test_slot_views_take_every_per_image_operand():
     CTF-premultiplied tilt images backprojected another image's CTF weight (2026-10-03).
     """
 
-    from relax.sparse_pass2.resident_pass2 import _ChunkStageOperands
+    from relax.fine_pass.resident_pass2 import _ChunkStageOperands
 
     view = set(resident_tilts._SLOT_VIEW_FIELDS)
     chunk_only = set(resident_tilts._SLOT_CHUNK_ONLY_FIELDS)
@@ -450,7 +450,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
 
     import jax.numpy as jnp
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     units, rows, translations, window = 8, 16, 32, 512
 
@@ -536,7 +536,7 @@ def test_tilt_mstep_census_logs_one_line_per_pass(caplog):
     census.add(16, 16, 1)
     census.add(64, 8, 8)
     census.add(8, 16, 1)
-    with caplog.at_level(logging.INFO, logger="relax.sparse_pass2.resident_tilts"):
+    with caplog.at_level(logging.INFO, logger="relax.fine_pass.resident_tilts"):
         census.log()
     assert [r.getMessage() for r in caplog.records] == [
         "Tilt M-step translation blocks: largest k 64, smallest block 8 translations, multi-block chunks 1/3"

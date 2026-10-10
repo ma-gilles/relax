@@ -82,10 +82,10 @@ def test_an_explicit_option_overrides_the_mode():
     ids=["class3d", "no-cc-iteration", "gemm-dense", "ctf-premultiplied", "several"],
 )
 def test_mode_relax_skips_what_the_route_does_not_honour_and_says_why(monkeypatch, caplog, flags, route, skipped):
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
 
     monkeypatch.setattr(
-        relion_ctf, "dataset_has_premultiplied_ctf", lambda dataset, image_shape: dataset.premultiplied
+        ctf, "dataset_has_premultiplied_ctf", lambda dataset, image_shape: dataset.premultiplied
     )
     route.setdefault("dataset", SimpleNamespace(image_shape=(8, 8), premultiplied=False))
     with caplog.at_level(logging.INFO):

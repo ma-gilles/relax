@@ -37,7 +37,7 @@ from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.em_parity_oracles import k4_oracle
 from helpers.map_sign import SIGN_CORRELATION_MIN, assert_same_sign_convention, file_correlation
 
-from relax.helpers.map_io import load_relax_map
+from relax.io.map_io import load_relax_map
 
 logger = logging.getLogger(__name__)
 
@@ -757,7 +757,7 @@ def _run_k1_coldstart(tmp_path, *, start, oversampling, gui_default=False):
     assert n_iters >= 3, f"Expected ≥3 iterations, got {n_iters}"
 
     # Compare halfmaps against RELION it003. Both engines write RELION-convention maps
-    # (relax.helpers.map_io); load_relax_map checks relax's label and both loaders return the
+    # (relax.io.map_io); load_relax_map checks relax's label and both loaders return the
     # internal frame.
     from recovar.utils import helpers as _recovar_helpers
 

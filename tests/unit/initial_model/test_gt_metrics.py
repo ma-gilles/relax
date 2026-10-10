@@ -136,7 +136,7 @@ def test_order_two_alignment_improves_over_too_coarse_grid():
 
 def _icosahedral_orbit_volume(n):
     """A smooth map that is exactly RELION-I2 symmetric about the origin voxel n // 2."""
-    from relax.symmetry import rotational_operators
+    from relax.sampling.symmetry import rotational_operators
 
     operators = rotational_operators("I2")
     z, y, x = np.indices((n, n, n), dtype=np.float64) - n // 2

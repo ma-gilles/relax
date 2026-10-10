@@ -15,13 +15,13 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from relax.helpers.env_flags import parse_env_true_flag
-from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
+from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement import command_options
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star, load_tomo_dataset
-from relax.relion import relion_metadata
-from relax.relion.relion_ctf import refuse_generic_ctf_for_optics
+from relax.relion import metadata
+from relax.relion.ctf import refuse_generic_ctf_for_optics
+from relax.runtime.env_flags import parse_env_true_flag
 
 if TYPE_CHECKING:
     from recovar.data_io.cryoem_dataset import CryoEMDataset
@@ -57,10 +57,10 @@ class HalfsetParticleInputs(NamedTuple):
 
 def validate_particle_optics(optics_table, *, tomographic: bool) -> None:
     """Admit the particle format's qualified optics features."""
-    relion_metadata.refuse_unsupported_optics(
+    metadata.refuse_unsupported_optics(
         optics_table,
         source="particles.star",
-        supported=relion_metadata.TOMO_OPTICS_FEATURES if tomographic else relion_metadata.IMPLEMENTED_OPTICS_FEATURES,
+        supported=metadata.TOMO_OPTICS_FEATURES if tomographic else metadata.IMPLEMENTED_OPTICS_FEATURES,
     )
 
 
@@ -242,7 +242,7 @@ def _apply_relion_image_mask(ds, args, *, relion_half_sets_from_input: bool, sea
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
     if sealed_optimiser_star is not None:
         optimiser_star = Path(sealed_optimiser_star).resolve()
-        params = relion_metadata.load_relion_mask_params(optimiser_star)
+        params = metadata.load_relion_mask_params(optimiser_star)
         if params is None:
             raise ValueError(
                 f"sealed fixed-arm optimiser lacks RELION mask parameters: {optimiser_star}"
@@ -268,7 +268,7 @@ def _apply_relion_image_mask(ds, args, *, relion_half_sets_from_input: bool, sea
         optimiser_star = command_options.find_relion_optimiser_star(
             args, relion_half_sets_from_input=relion_half_sets_from_input
         )
-        params = None if optimiser_star is None else relion_metadata.load_relion_mask_params(optimiser_star)
+        params = None if optimiser_star is None else metadata.load_relion_mask_params(optimiser_star)
         if params is None:
             params = (RELION_GUI_PARTICLE_DIAMETER_ANG, float(args.width_mask_edge_px))
             optimiser_star = "RELION GUI default"

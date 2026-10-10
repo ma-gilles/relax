@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from relax.helpers.shells import shell_of_radius_sq
+from relax.fourier.shells import shell_of_radius_sq
 from relax.relion.geometry import REFERENCE_FILTER_EDGE_SHELLS
 
 # Elements of the start-up low-pass mask built at once (128 MiB of float64).

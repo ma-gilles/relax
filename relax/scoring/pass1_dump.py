@@ -5,8 +5,8 @@ from typing import NamedTuple
 import numpy as np
 
 from relax.diagnostics.coarse_gaussian_diagnostics import significance_debug_dump_matches
-from relax.helpers.batch_fetch import original_image_indices
-from relax.helpers.env_flags import parse_env_int_set
+from relax.io.batch_fetch import original_image_indices
+from relax.runtime.env_flags import parse_env_int_set
 
 
 class DumpTargets(NamedTuple):

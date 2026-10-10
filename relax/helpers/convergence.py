@@ -25,8 +25,8 @@ from typing import NamedTuple, Optional
 
 import numpy as np
 
-from relax.helpers.env_flags import parse_env_float_or_default, parse_env_int_or_default, parse_env_true_flag
-from relax.helpers.types import total_sumw
+from relax.runtime.env_flags import parse_env_float_or_default, parse_env_int_or_default, parse_env_true_flag
+from relax.types import total_sumw
 
 logger = logging.getLogger(__name__)
 
@@ -739,7 +739,7 @@ def _relion_angular_distance_per_particle(
     if M_current.ndim != 3 or M_current.shape[-2:] != (3, 3):
         raise ValueError(f"Expected (N, 3, 3) rotation matrices, got {M_current.shape}")
 
-    from relax.symmetry import canonicalize_rotational_symmetry
+    from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
     symmetry_label = canonicalize_rotational_symmetry(symmetry_label)
 
@@ -754,7 +754,7 @@ def _relion_angular_distance_per_particle(
     if symmetry_label == "C1":
         return _axes_distance(M_previous)
 
-    from relax.symmetry import relion_symmetry_operators
+    from relax.sampling.symmetry import relion_symmetry_operators
 
     left_operators, right_operators = relion_symmetry_operators(symmetry_label)
     minimum = np.full(M_current.shape[0], np.inf, dtype=np.float64)

@@ -17,10 +17,10 @@ from typing import Sequence
 # RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
-from relax.helpers.dtype_policy import use_float32_matmuls
-from relax.helpers.particle_io import add_particle_read_arguments
+from relax.io.particle_io import add_particle_read_arguments
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.refinement.command_options import RetiredFlag
+from relax.refinement.precision import use_float32_matmuls
 from relax.vdam.native_options import InitialModelDefaults
 
 
@@ -464,7 +464,7 @@ def _configure_jax_compilation_cache(*, enabled: bool, requested_dir: str) -> di
         "jax_persistent_cache_min_compile_time_secs",
         float(min_compile_time_secs),
     )
-    from relax.helpers.compilation_cache import start_background_prune
+    from relax.runtime.compilation_cache import start_background_prune
 
     start_background_prune(directory)
     return {"enabled": True, "directory": str(directory), "source": source}

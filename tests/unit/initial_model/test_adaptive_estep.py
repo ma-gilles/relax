@@ -7,7 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax import sampling
-from relax.helpers.types import make_relion_stats
+from relax.types import make_relion_stats
 from relax.vdam import adaptive_estep, native_options, native_sampling
 
 pytestmark = pytest.mark.unit
@@ -269,7 +269,7 @@ def test_route_perturbs_the_coarse_grid_by_relions_euler_route(oversampling_orde
     angles (healpix_sampling.cpp:1909-1934, getOrientations), and the scorer's matrices are the host inverses of
     those angles (generateEulerMatrices). The route's host coarse matrices (pass 1 off the GPU, and the fine
     rows of --oversampling 0) follow that route, not a float32 product of perturbed matrices."""
-    from relax import healpix_sampling
+    from relax.sampling import healpix
 
     # The host route: on a GPU node pass 1 takes the device builder's matrices instead.
     monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", lambda *args, **kwargs: None)
@@ -283,7 +283,7 @@ def test_route_perturbs_the_coarse_grid_by_relions_euler_route(oversampling_orde
     )
     source = sampling._get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
     expected = sampling._relion_mstep_rotations_from_eulers(
-        healpix_sampling.perturb_orientations(source, random_perturbation, order)
+        healpix.perturb_orientations(source, random_perturbation, order)
     )
     # Bitwise: the two routes differ by float32 ulps, which flip near-tied winners.
     np.testing.assert_array_equal(np.asarray(route.pass1_rotations), expected)

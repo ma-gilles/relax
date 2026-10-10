@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers import orientation_priors as op
-from relax.helpers.iteration_history import RefinementHistory
+from relax.refinement.iteration_history import RefinementHistory
+from relax.sampling import orientation_priors as op
 from relax.sampling import rotation_grid_size
 
 pytestmark = pytest.mark.unit

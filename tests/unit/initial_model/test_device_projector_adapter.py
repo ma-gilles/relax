@@ -9,7 +9,7 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import estep_sampling_stub, relative_metrics
 from recovar.utils.helpers import recovar_volume_to_relion
 
-from relax.relion import relion_projector_setup
+from relax.relion import projector_setup
 from relax.vdam import estep_setup as adapter
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from scripts.lib.native_projector_setup import (
@@ -37,7 +37,7 @@ def _assert_existing_consumer_policy(control1, candidate1, candidate2, control2)
 @pytest.mark.parametrize("padding", [1, 2])
 @pytest.mark.parametrize("current", ["negative", "zero", "one", "partial_odd", "full", "oversize"])
 def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, current, monkeypatch):
-    from relax.relion import relion_projector_setup as setup
+    from relax.relion import projector_setup as setup
     from relax.relion_bind import _relion_bind_core as bind
 
     current_size = {
@@ -65,7 +65,7 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
         for _ in range(2)
     ]
     candidates = [
-        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs)
+        projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs)
         for _ in range(2)
     ]
     assert len(raw) == 4  # The native controls never enter the device helper.
@@ -102,7 +102,7 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
 def test_unsupported_projector_geometry_is_refused(size, padding, interpolator):
     refs = np.random.default_rng(31).normal(size=(1, size, size, size))
     with pytest.raises(ValueError, match="projector setup"):
-        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+        projector_setup.reference_to_relion_projector_half_maps_and_power(
             refs, current_size=size, padding_factor=padding, interpolator=interpolator
         )
 
@@ -149,15 +149,15 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
 def test_float32_projector_route(monkeypatch):
     refs = np.random.default_rng(41).normal(size=(1, 8, 8, 8)).astype(np.float32)
     captured = []
-    original = relion_projector_setup.setup_relion_projector_on_host
+    original = projector_setup.setup_relion_projector_on_host
 
     def capture(*args, **kwargs):
         result = original(*args, **kwargs)
         captured.append(result)
         return result
 
-    monkeypatch.setattr(relion_projector_setup, "setup_relion_projector_on_host", capture)
-    halves, power, radius = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+    monkeypatch.setattr(projector_setup, "setup_relion_projector_on_host", capture)
+    halves, power, radius = projector_setup.reference_to_relion_projector_half_maps_and_power(
         refs, current_size=8, compute_dtype=np.float32,
     )
     assert radius == 4
@@ -166,6 +166,6 @@ def test_float32_projector_route(monkeypatch):
     assert captured[0][1].dtype == np.float32
     assert power.dtype == np.float64  # tau2 host metadata keeps its precision.
     with pytest.raises(ValueError, match="trilinear"):
-        relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
+        projector_setup.reference_to_relion_projector_half_maps_and_power(
             refs, current_size=8, interpolator=0, compute_dtype=np.float32,
         )

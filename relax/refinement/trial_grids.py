@@ -13,12 +13,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax import sampling
+from relax.fourier.resolution import ImageGeometry
 from relax.helpers.convergence import (
     RefinementState,
     _exhaustive_grid_order_for_state,
     native_final_perturbation_healpix_order,
 )
-from relax.helpers.resolution import ImageGeometry
 from relax.refinement.ports import InputSource
 from relax.sampling import relion_adaptive_pass1_rotations
 

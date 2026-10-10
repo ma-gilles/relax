@@ -17,8 +17,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
-from relax.helpers.resolution import shell_index_to_resolution_angstrom
-from relax.reconstruction import regularization_relion
+from relax.fourier.resolution import shell_index_to_resolution_angstrom
+from relax.reconstruction import regularization
 from relax.refinement import numbered_reconstruction, priors
 from relax.refinement.refinement_options import ReconstructionPrograms
 
@@ -64,8 +64,8 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diamete
         detail_rows.append(details)
         return variance, fsc, details
 
-    monkeypatch.setattr(regularization_relion, "compute_relion_fsc_from_backprojector", compute_fsc)
-    monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_weights", compute_tau)
+    monkeypatch.setattr(regularization, "compute_relion_fsc_from_backprojector", compute_fsc)
+    monkeypatch.setattr(regularization, "compute_relion_tau2_from_weights", compute_tau)
     log = Mock()
     result = priors.estimate_split_half_prior(
         numerators, denominators,
@@ -127,7 +127,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
         return prior, details
 
     monkeypatch.setattr(priors, "_class_tau2_from_iref_power_spectrum", estimate)
-    monkeypatch.setattr(regularization_relion, "compute_relion_weight_shell_stats", weights)
+    monkeypatch.setattr(regularization, "compute_relion_weight_shell_stats", weights)
     monkeypatch.setattr(priors, "_class_tau2_update_details", normalize)
     settings = reconstruction_settings(
         box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
@@ -224,7 +224,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             calls.append((args, kwargs))
             return sentinel
 
-        monkeypatch.setattr(regularization_relion, "join_halves_at_low_resolution", spy)
+        monkeypatch.setattr(regularization, "join_halves_at_low_resolution", spy)
         ft_y, ft_ctf = _random_accumulators(0)
         result = priors.join_half_accumulators_at_low_resolution(
             ft_y,
@@ -260,7 +260,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
         expected_cap = priors._previous_resolution_angstrom_for_half_join(
             pixel_resolutions, current_resolution, box_size=GRID_SIZE, voxel_size=1.5
         )
-        expected = regularization_relion.join_halves_at_low_resolution(
+        expected = regularization.join_halves_at_low_resolution(
             ft_y[0],
             ft_y[1],
             ft_ctf[0],
@@ -302,7 +302,7 @@ class TestClassTau2FromIrefPowerSpectrum:
             calls.append((iref_fourier, volume_shape, kwargs))
             return relion_tau2, {"tau2_shells": relion_shells, "shell_sum": relion_shells}
 
-        monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_iref_power_spectrum", fake)
+        monkeypatch.setattr(regularization, "compute_relion_tau2_from_iref_power_spectrum", fake)
         frame_scale = float(GRID_SIZE) ** 4
         tau2, shells_relion, shells_recovar = priors._class_tau2_from_iref_power_spectrum(
             iref,
@@ -345,7 +345,7 @@ class TestClassTau2UpdateDetails:
         rng = np.random.default_rng(3)
         ft_ctf = jnp.asarray(rng.uniform(0.5, 2.0, int(np.prod(ACCUMULATOR_SHAPE))) + 0j, dtype=jnp.complex64)
         tau2_shells = jnp.asarray(rng.uniform(0.1, 1.0, N_SHELLS), dtype=jnp.float32)
-        shell_stats = regularization_relion.compute_relion_weight_shell_stats(
+        shell_stats = regularization.compute_relion_weight_shell_stats(
             ft_ctf,
             VOLUME_SHAPE,
             padding_factor=PADDING_FACTOR,
@@ -367,7 +367,7 @@ class TestClassTau2UpdateDetails:
             full_half_axis=-1,
             accumulator_volume_shape=ACCUMULATOR_SHAPE,
         )
-        expected_dvp = regularization_relion.compute_data_vs_prior(
+        expected_dvp = regularization.compute_data_vs_prior(
             ft_ctf,
             tau2_shells,
             VOLUME_SHAPE,

@@ -1,7 +1,7 @@
 import pytest
 
 from recovar.cuda_backproject import _infer_backproject_upsampling, _project_ffi_kwargs
-from relax.helpers.fourier_window import centered_half_indices_to_fftw_half_indices
+from relax.fourier.fourier_window import centered_half_indices_to_fftw_half_indices
 
 pytestmark = pytest.mark.unit
 

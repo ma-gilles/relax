@@ -9,7 +9,7 @@ import time
 
 import jax.numpy as jnp
 
-from relax.helpers.env_flags import parse_env_flag
+from relax.runtime.env_flags import parse_env_flag
 
 
 def _add_sparse_group_timing(group_timing: dict[str, float] | None, key: str, elapsed_s: float) -> None:

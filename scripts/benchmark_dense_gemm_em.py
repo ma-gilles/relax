@@ -50,8 +50,8 @@ from relax.dense.gemm_experiment_kernels import (
     tile_normalizer,
     weighted_slices,
 )
-from relax.helpers.projection import relion_projector_half_to_texture_full
-from relax.relion.relion_projector_setup import setup_relion_projector
+from relax.projection.projection import relion_projector_half_to_texture_full
+from relax.relion.projector_setup import setup_relion_projector
 
 
 def arguments():
@@ -170,7 +170,7 @@ def _make_case(args):
         raise ValueError("box must be an even integer of at least 8")
     if args.translations > 128:
         raise ValueError("native direct coarse scorer supports at most 128 translations")
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     volume_shape = relion_backprojector_volume_shape((n, n, n), padding_factor, current_size=2 * r_max)
     image_shape = (n, n)
@@ -589,7 +589,7 @@ def _production_program(args, backproject, translation_angles):
     pf = args.padding_factor
     native_rows = getattr(args, "engine", "production") == "native"
     if native_rows:
-        from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+        from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
         rec_native_indices = _native_reconstruction_indices(n, radius)
         rec_centered_indices = _centered_reconstruction_indices(rec_native_indices, n)
@@ -860,7 +860,7 @@ def main():
     reference, batch, grid, project, backproject, _, _, _, _ = case
     texture = None
     if args.engine == "gemm":
-        from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+        from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
         texture = RelionCapacityHalfTextureF32(reference, args.box // 4, padding_factor=args.padding_factor)
         project, backproject = native_relion_callbacks(

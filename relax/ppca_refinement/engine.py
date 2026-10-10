@@ -517,7 +517,7 @@ def backproject_moment_images(
     *, disc_type_backproject, recon_window_indices, use_recon_window, backprojection_max_r,
 ):
     """Adjoint-slice augmented RHS/LHS images into their half-volume accumulators."""
-    from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
+    from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
 
     volumes = []
     for images, volume in ((rhs_images, rhs_volume), (lhs_images, lhs_tri_volume)):
@@ -727,7 +727,7 @@ def fused_dense_pose_ppca_block(
 
 
 def _enforce_augmented_x0(volumes, volume_shape):
-    from relax.helpers.half_volume_mstep import enforce_relion_half_volume_x0_hermitian
+    from relax.reconstruction.half_volume_mstep import enforce_relion_half_volume_x0_hermitian
 
     enforced = [enforce_relion_half_volume_x0_hermitian(volumes[i], volume_shape) for i in range(volumes.shape[0])]
     return jnp.stack(enforced, axis=0)

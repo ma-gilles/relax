@@ -7,8 +7,8 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.projection import compute_relion_projector_projections_block
+from relax.fourier.fourier_window import make_fourier_window_spec
+from relax.projection.projection import compute_relion_projector_projections_block
 
 pytestmark = [pytest.mark.unit, pytest.mark.gpu]
 

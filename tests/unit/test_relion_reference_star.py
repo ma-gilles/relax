@@ -6,7 +6,7 @@ import pytest
 import starfile
 
 from relax.refinement.reference_state import _initialize_class_log_priors
-from relax.relion.relion_metadata import read_relion_reference_star
+from relax.relion.metadata import read_relion_reference_star
 
 pytestmark = pytest.mark.unit
 
@@ -48,7 +48,7 @@ def test_fresh_class3d_class_distribution_is_uniform():
 def test_mask_params_read_the_whole_token_relion_wrote(tmp_path, diameter_token, width_token, expected):
     # MetaDataTable writes doubles as %12.6f, %12.5f when negative, and in e notation outside [1e-3, 1e5]
     # (metadata_table.cpp:257-277); a digits-only pattern read 2.500000e+05 as 2.5 and missed -1.00000.
-    from relax.relion.relion_metadata import load_relion_mask_params
+    from relax.relion.metadata import load_relion_mask_params
 
     star = tmp_path / "run_it001_optimiser.star"
     star.write_text(

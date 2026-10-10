@@ -15,7 +15,7 @@ from recovar.data_io.starfile import read_star, star_column
 from recovar.simulation import relion_tomo
 from scipy.spatial.transform import Rotation
 
-from relax.relion import relion_ctf, tomo_input
+from relax.relion import ctf, tomo_input
 
 GRID = 32
 VOXEL = 4.0
@@ -168,10 +168,10 @@ def test_exact_ctf_matches_simulated_tomo_ctf(project, monkeypatch):
     out, flat = project
     rows, optics = read_star(str(flat))
     monkeypatch.setenv("RELAX_K1_RELION_EXACT_CTF_STAR", str(flat))
-    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    monkeypatch.setattr(ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     dataset = SimpleNamespace(particles_file=str(flat))
     indices = np.arange(len(rows), dtype=np.int64)
-    got = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
+    got = ctf.relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
 
     # The simulator's CTF parameters for the same rows, in recovar's CTF layout.
     ctf_params = np.zeros((len(rows), 11))
@@ -280,7 +280,7 @@ def test_image_geometry_is_relion_frame_order(project):
 def test_image_geometry_applies_the_subtomogram_matrix(project, tmp_path):
     from recovar.data_io import starfile
 
-    from relax.healpix_sampling import euler_angles_to_matrix
+    from relax.sampling.healpix import euler_angles_to_matrix
 
     out, _ = project
     particles, optics = read_star(str(out / "particles.star"))
@@ -321,7 +321,7 @@ def test_subtomogram_runs_refuse_unqualified_optics_features(project):
     """
 
     from relax.refinement.particle_loading import validate_particle_optics
-    from relax.relion.relion_metadata import OPTICS_FEATURE_LABELS, TOMO_OPTICS_FEATURES
+    from relax.relion.metadata import OPTICS_FEATURE_LABELS, TOMO_OPTICS_FEATURES
 
     out, _ = project
     _, optics = read_star(str(out / "particles.star"))
@@ -430,9 +430,9 @@ def test_exact_ctf_of_aberrated_tilts_matches_the_simulator(aberrated_project, m
 
     flat = aberrated_project
     rows, _ = read_star(str(flat))
-    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    monkeypatch.setattr(ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     dataset = SimpleNamespace(particles_file=str(flat))
-    got = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.arange(len(rows)), (GRID, GRID))
+    got = ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.arange(len(rows)), (GRID, GRID))
     group = np.asarray(star_column(rows, "rlnOpticsGroup"), dtype=np.int64)
     params = np.zeros((len(rows), 11))
     for column, label in (
@@ -463,7 +463,7 @@ def test_odd_demodulation_of_aberrated_tilts_undoes_the_simulated_phase(aberrate
 
     flat = aberrated_project
     rows, _ = read_star(str(flat))
-    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    monkeypatch.setattr(ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     monkeypatch.setattr(optics_aberrations, "_ODD_PHASE_CACHE", {})
     dataset = SimpleNamespace(particles_file=str(flat), image_shape=(GRID, GRID))
     got = np.asarray(optics_aberrations.odd_demodulation_rows(dataset, np.arange(len(rows))))
@@ -486,11 +486,11 @@ def test_uncached_fftw_ctf_rows_are_the_exact_rows(aberrated_project, monkeypatc
 
     flat = aberrated_project
     rows, _ = read_star(str(flat))
-    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    monkeypatch.setattr(ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     dataset = SimpleNamespace(particles_file=str(flat))
     indices = np.arange(len(rows))[::-1]
-    cached = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
-    squared = relion_ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID))
+    cached = ctf.relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
+    squared = ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID))
     assert_matches(-np.fft.fftshift(squared, axes=1).reshape(len(rows), -1), cached)
-    plain = relion_ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID), square_premultiplied=False)
+    plain = ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID), square_premultiplied=False)
     assert_matches(plain * plain, squared)

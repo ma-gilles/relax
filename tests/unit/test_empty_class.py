@@ -205,7 +205,7 @@ def test_a_dead_class_scored_in_the_coarse_pass_does_not_shift_the_live_classes(
 
 
 def _local_layout(n_translations=5):
-    from relax.local import local_layout
+    from relax.local_search import layout as local_layout
 
     rng = np.random.default_rng(680)
     n_rows = 10
@@ -234,7 +234,7 @@ def test_a_local_search_builds_no_rows_for_an_empty_class(empty):
     class prior in the weights (as RELION's). An empty class is therefore removed from the search itself:
     no row is built for it, and the rows of the other classes are those of the full expansion, bit for
     bit, in the same order, so the engine receives for them the operands it would receive without it."""
-    from relax.local import local_layout
+    from relax.local_search import layout as local_layout
 
     full = local_layout.expand_local_layout_classes(_local_layout(), 3)
     kept = local_layout.drop_local_layout_classes(full, empty)
@@ -257,7 +257,7 @@ def test_a_local_search_builds_no_rows_for_an_empty_class(empty):
 
 
 def test_dropping_no_class_or_every_class_from_a_local_search():
-    from relax.local import local_layout
+    from relax.local_search import layout as local_layout
 
     full = local_layout.expand_local_layout_classes(_local_layout(), 2)
     assert local_layout.drop_local_layout_classes(full, ()) is full
@@ -272,8 +272,8 @@ def test_run_files_of_an_emptied_class_read_back_for_a_continued_run():
     (weight 0) has a zero row. Reading the files back (--continue) recovers the live classes' conditionals
     and gives the empty class the uniform row, which it never uses; dividing by its zero weight made the
     continued run stop on a non-finite prior."""
-    from relax.helpers import orientation_priors
     from relax.refinement import run_files
+    from relax.sampling import orientation_priors
 
     rng = np.random.default_rng(681)
     weights = np.array([0.7, 0.0, 0.3])

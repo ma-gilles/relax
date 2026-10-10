@@ -9,11 +9,11 @@ from types import SimpleNamespace
 import pytest
 from helpers.refinement_results import numbered_metadata, refinement_result
 
-from relax.helpers.iteration_history import RefinementHistory
 from relax.refinement import result_files
+from relax.refinement.iteration_history import RefinementHistory
 from relax.refinement.refinement_options import RestartProvenance
 from relax.refinement.refinement_result import ProfileStop
-from relax.relion.relion_metadata import MaxSignificantsResolution
+from relax.relion.metadata import MaxSignificantsResolution
 
 pytestmark = pytest.mark.unit
 

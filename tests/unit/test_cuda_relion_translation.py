@@ -15,7 +15,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_relion_translation_angles_match_captured_float32_values():
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+    from relax.fine_pass.bucket_io import relion_translation_angles_f32
 
     translations = np.asarray(
         [
@@ -40,7 +40,7 @@ def test_relion_translation_angles_match_captured_float32_values():
 
 def test_relion_translation_angle_scale_changes_only_final_angle_operand():
     """Final-Q aa0eccbfd4: the model/optics scale multiplies only the angle operand."""
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+    from relax.fine_pass.bucket_io import relion_translation_angles_f32
 
     translations = np.asarray([[0.25, -1.75]], dtype=np.float64)
     baseline_translations = translations.copy()
@@ -83,7 +83,7 @@ def test_relion_translation_angle_scale_rejects_heterogeneous_optics():
 
 def test_unit_translation_angle_scale_keeps_every_angle_producer_unchanged():
     """Equal pixel sizes must leave the RELION angle operands untouched."""
-    from relax.sparse_pass2.sparse_pass2_bucket_io import (
+    from relax.fine_pass.bucket_io import (
         _relion_translation_angles_f64,
         relion_translation_angles_f32,
     )

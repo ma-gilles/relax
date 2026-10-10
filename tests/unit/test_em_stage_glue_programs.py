@@ -193,7 +193,7 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
 def test_preprocess_batch_jitted_elementwise_matches_eager():
     """The jitted elementwise chain matches the eager one within the float band."""
 
-    from relax.helpers import preprocessing
+    from relax.fourier import preprocessing
 
     rng = np.random.default_rng(3)
     n_images, n_half_pixels, n_trans = 4, 9, 3
@@ -281,7 +281,7 @@ def test_collate_keeps_device_arrays_on_device():
         ),
         (
             "RELAX_EM_JIT_STAGE_GLUE",
-            "relax.helpers.preprocessing:jit_stage_glue_enabled",
+            "relax.fourier.preprocessing:jit_stage_glue_enabled",
             False,  # the K=1 entry points set it; the shared default stays off
         ),
     ],
@@ -322,10 +322,10 @@ def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
     zero, and broadcasts against the padded per-image scale.
     """
 
-    from relax.relion.relion_coarse_operands import repeat_pad_batch_axis
-    from relax.sparse_pass2.sparse_pass2_scoring import (
+    from relax.fine_pass.scoring import (
         _relion_cuda_pixel_correction_from_rfloat_ctf,
     )
+    from relax.scoring.coarse_operands import repeat_pad_batch_axis
 
     actual, padded_size, pixels = 216, 250, 12
     rng = np.random.default_rng(20260920)

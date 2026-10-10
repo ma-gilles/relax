@@ -10,7 +10,7 @@ These checks pin the admission rule that lets an 80 GB device cache the
 import numpy as np
 import pytest
 
-from relax.sparse_pass2.sparse_pass2_budget import (
+from relax.runtime.memory_budget import (
     _projection_cache_fits_budget,
     _projection_cache_max_bytes_for_pass,
     _projection_cache_transient_bytes,
@@ -69,7 +69,7 @@ def test_env_override_still_wins(monkeypatch):
 
 
 def test_cache_build_rotations_per_call_scales_scoring_budget(monkeypatch):
-    from relax.sparse_pass2.sparse_pass2_budget import _projection_cache_build_max_rotations_per_call
+    from relax.runtime.memory_budget import _projection_cache_build_max_rotations_per_call
 
     _clear_env(monkeypatch)
     assert _projection_cache_build_max_rotations_per_call(809, 294912) == 4 * 809
@@ -81,7 +81,7 @@ def test_cache_build_rotations_per_call_scales_scoring_budget(monkeypatch):
 
 
 def test_flatten_bucket_rotations_is_host_side_for_numpy_and_not_jitted():
-    from relax.local import local_backprojection as lb
+    from relax.fine_pass import local_backprojection as lb
 
     rots = np.arange(2 * 3 * 9, dtype=np.float32).reshape(2, 3, 3, 3)
     out = lb.flatten_bucket_rotations(rots)
@@ -95,7 +95,7 @@ def test_flatten_bucket_rotations_is_host_side_for_numpy_and_not_jitted():
 
 
 def test_large_bucket_pow2_rung_is_opt_in(monkeypatch):
-    from relax.scoring import sparse_bucket_arrays as sba
+    from relax.fine_pass import bucket_arrays as sba
 
     monkeypatch.delenv("RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2", raising=False)
     monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
@@ -114,7 +114,7 @@ def test_texture_projector_fallback_is_reported_once_per_reason(monkeypatch, cap
 
     import jax.numpy as jnp
 
-    from relax.helpers import projection
+    from relax.projection import projection
 
     monkeypatch.setattr(projection, "_cuda_projection_available", lambda: True)
     projection._TEXTURE_FALLBACK_REPORTED.clear()
@@ -140,7 +140,7 @@ def test_pass2_projector_cast_unblocks_the_texture_projector(monkeypatch):
     """complex128 is exactly what makes the texture path reject the slab."""
     import jax.numpy as jnp
 
-    from relax.helpers import projection
+    from relax.projection import projection
 
     monkeypatch.setattr(projection, "_cuda_projection_available", lambda: True)
     projection._TEXTURE_FALLBACK_REPORTED.clear()

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from relax.parity.relion_replay import _resolve_replay_random_perturbation
-from relax.relion.relion_metadata import read_relion_optimiser_metadata
+from relax.relion.metadata import read_relion_optimiser_metadata
 
 
 def _write_optimizer(path: Path, seed: int) -> None:

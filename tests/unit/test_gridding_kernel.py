@@ -17,7 +17,6 @@ from helpers.reconstruction_settings import reconstruction_settings
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
-from relax.helpers import expected_accuracy
 from relax.refinement import (
     command_options,
     final_reconstruction,
@@ -32,7 +31,8 @@ from relax.refinement.refinement_options import (
     ReconstructionPrograms,
     RelionConsistencyOptions,
 )
-from relax.relion import relion_projector_setup as setup
+from relax.relion import projector_setup as setup
+from relax.sampling import expected_accuracy
 
 pytestmark = pytest.mark.unit
 

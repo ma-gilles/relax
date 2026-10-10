@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.relion_expected_accuracy import expected_angular_errors
 from relax.refinement.tomo_half import TiltImageAccuracyInputs
+from relax.sampling.relion_expected_accuracy import expected_angular_errors
 
 bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
 
@@ -121,7 +121,7 @@ def test_without_ctf_matches(current_size, padding):
 @pytest.mark.parametrize("padding", [1, 2])
 def test_current_sizes_of_one_window_class_share_the_device_programs(padding):
     """Sizes 18..24 are one quantum-8 class of a 32 box: exact against RELION, one compile each."""
-    from relax.helpers import relion_expected_accuracy as accuracy
+    from relax.sampling import relion_expected_accuracy as accuracy
 
     case = _case(np.random.default_rng(3))
     programs = (
@@ -149,7 +149,7 @@ def _slab_bytes(size, current_size, padding):
 def test_slab_at_and_over_the_device_budget_matches(monkeypatch, planes_short, chunk_planes):
     """At the resident budget the slab stays whole; a plane over it streams in chunks no larger than the
     stream chunk, and the accuracies match the oracle."""
-    from relax.helpers import relion_expected_accuracy as accuracy
+    from relax.sampling import relion_expected_accuracy as accuracy
 
     size, current_size, padding = 32, 32, 2
     slab_bytes, plane_bytes = _slab_bytes(size, current_size, padding)
@@ -176,7 +176,7 @@ def test_slab_at_and_over_the_device_budget_matches(monkeypatch, planes_short, c
 
 
 def test_slab_budget_streams_the_full_box_10202_slab_in_small_chunks_and_keeps_box_256_whole():
-    from relax.sparse_pass2.sparse_pass2_budget import ACCURACY_SLAB_STREAM_CHUNK_BYTES, accuracy_slab_resident_bytes
+    from relax.runtime.memory_budget import ACCURACY_SLAB_STREAM_CHUNK_BYTES, accuracy_slab_resident_bytes
 
     h100, p100 = int(79.65 * 1024**3), int(14.30 * 1024**3)
     assert _slab_bytes(800, 800, 2)[0] > accuracy_slab_resident_bytes(h100)
@@ -392,7 +392,7 @@ def test_optics_group_on_another_grid_matches():
 def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
     """The production entry point, with relax's own CTF and projector, against the binding."""
 
-    from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
+    from relax.sampling.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
 
     size, n_particles = 32, 30
     rng = np.random.default_rng(51 + current_size)
@@ -466,7 +466,7 @@ def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
 def test_prepared_inputs_with_optics_rows_match(magnified):
     """The caller's CTF rows (premultiplied, Zernike, magnification) and ``inv(M3)`` against the binding."""
 
-    from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
+    from relax.sampling.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
 
     size, current_size = 32, 24
     rng = np.random.default_rng(71)

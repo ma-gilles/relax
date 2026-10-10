@@ -18,7 +18,7 @@ Adapting to every GPU size must not make relax slower, less correct or harder to
 3. **One code path.** Adaptation changes sizes only, never the algorithm. A host-versus-device fallback
    lives in one helper with a documented threshold, not in per-GPU branches.
 4. **Small.** The net line count and complexity stay small. Extend the existing planners
-   (`relax/helpers/batch_planning.py`, `relax/sparse_pass2/sparse_pass2_budget.py`) rather than add knobs.
+   (`relax/runtime/batch_planning.py`, `relax/runtime/memory_budget.py`) rather than add knobs.
    A budget is a share of `device_available_bytes(...)`, which counts state already resident on the device.
 
 ## How compatibility is tested

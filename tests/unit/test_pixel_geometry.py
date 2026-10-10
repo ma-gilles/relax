@@ -175,7 +175,7 @@ def test_cs_scaling_preserves_serialized_pixel_value(tmp_path):
 
 
 def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch):
-    from relax.helpers.resolution import shell_index_to_resolution_angstrom
+    from relax.fourier.resolution import shell_index_to_resolution_angstrom
     from relax.relion import initial_model_io
     from relax.vdam import bootstrap_iref, estep_setup, native_options, native_sampling
     from relax.vdam.ports import NoStageProfile, VdamInputSource

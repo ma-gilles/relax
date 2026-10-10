@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.scoring import sparse_bucket_arrays as sba
+from relax.fine_pass import bucket_arrays as sba
 from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 from helpers.float_compare import assert_matches
 

@@ -13,7 +13,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
-from relax.helpers.projection import compute_relion_projector_projections_block, relion_kernel_zero_rows
+from relax.projection.projection import compute_relion_projector_projections_block, relion_kernel_zero_rows
 
 
 def _acc_kernel_coordinate(i, x, img_y, max_r, kernel):
@@ -95,7 +95,7 @@ def test_projection_block_applies_the_named_kernels_rule():
 @pytest.mark.unit
 @pytest.mark.parametrize("scale", [1.12, 1.3])
 def test_coarse_band_is_where_relion_projects_wrapped_rows(scale):
-    from relax.helpers.optics_scale import coarse_rows_wrap_inside
+    from relax.relion.optics_scale import coarse_rows_wrap_inside
 
     r_max = 20
     matrix = Rotation.random(1, random_state=2).as_matrix()[0] / scale
@@ -117,7 +117,7 @@ def test_coarse_band_is_where_relion_projects_wrapped_rows(scale):
 @pytest.mark.parametrize("image_size, window, r_max", [(18, 18, 8), (112, 56, 25), (64, 40, 17), (128, 128, 60)])
 def test_coarse_relabel_is_relions_kernel_row_rule(image_size, window, r_max):
     """Every window pixel keeps its label or moves to the row RELION's coarse kernel reads it at."""
-    from relax.helpers.projection import relion_coarse_relabel
+    from relax.projection.projection import relion_coarse_relabel
 
     relabel = relion_coarse_relabel(image_size, window, r_max)
     max_r = min(r_max, window // 2)
@@ -149,8 +149,8 @@ def test_coarse_relabel_is_relions_kernel_row_rule(image_size, window, r_max):
 def test_coarse_projection_in_the_band_projects_relions_relabelled_rows(compact):
     """In the band (window between 2 r_max and 2 s r_max) RELION projects the rows beyond maxR at
     ``i - window`` inside the sphere; the block projector must give those values, not zeros."""
-    from relax.helpers.optics_scale import coarse_rows_wrap_inside
-    from relax.helpers.projection import project_relion_projector_half_spectrum_centered_rows
+    from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows
+    from relax.relion.optics_scale import coarse_rows_wrap_inside
 
     rng = np.random.default_rng(0)
     r_max, window, scale = 8, 18, 1.3
@@ -203,7 +203,7 @@ def test_coarse_projection_band_refuses_routes_that_cannot_relabel():
 def test_sgd_kernel_projects_every_row_inside_the_sphere(scale, r_max):
     """VDAM's subtracted reference (RELION's SGD backprojection kernel) has no zero rows: the rows the
     fine kernel zeroes hold pixels inside the rotated sphere, which it projects."""
-    from relax.helpers.projection import project_relion_projector_half_spectrum_centered_rows
+    from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows
 
     window = 2 * int(np.ceil(0.5 * scale * 2 * r_max))
     assert relion_kernel_zero_rows(window, window, r_max, "sgd") is None
@@ -232,7 +232,7 @@ def test_sgd_kernel_projects_every_row_inside_the_sphere(scale, r_max):
 
 @pytest.mark.unit
 def test_sgd_residual_rows_are_the_reconstruction_pixels_the_fine_rule_zeroes():
-    from relax.sparse_pass2.resident_pass2 import _sgd_residual_rows
+    from relax.fine_pass.resident_pass2 import _sgd_residual_rows
 
     box, window, r_max = 112, 44, 19
     half_width = box // 2 + 1
@@ -256,7 +256,7 @@ def test_sgd_residual_rows_are_the_reconstruction_pixels_the_fine_rule_zeroes():
 @pytest.mark.unit
 def test_cached_block_projections_give_the_residual_its_sgd_rows():
     """The M-step keeps the cached (fine-rule) rows for the Wavg terms and takes the SGD rows for the residual."""
-    from relax.sparse_pass2.resident_pass2 import _cached_block_projections, _ChunkStageTables
+    from relax.fine_pass.resident_pass2 import _cached_block_projections, _ChunkStageTables
 
     rng = np.random.default_rng(2)
     union = jnp.asarray(rng.standard_normal((6, 5)) + 1j * rng.standard_normal((6, 5)), dtype=jnp.complex64)

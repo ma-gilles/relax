@@ -16,7 +16,7 @@ from helpers.float_compare import matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import _assemble_result
-from relax.helpers.types import make_relion_stats
+from relax.types import make_relion_stats
 
 # Real operands captured at row 20 of group 1, iteration 1, job 14028280.
 LARGE_OFFSET_CLASS_LOG_EVIDENCE = np.array(

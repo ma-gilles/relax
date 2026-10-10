@@ -98,8 +98,8 @@ def _load_recovar_volume(path: Path) -> np.ndarray:
 
 
 def _load_relax_volume(path: Path) -> np.ndarray:
-    """A relax output map; an unlabeled one predates the RELION map convention (relax.helpers.map_io)."""
-    from relax.helpers.map_io import load_relax_map
+    """A relax output map; an unlabeled one predates the RELION map convention (relax.io.map_io)."""
+    from relax.io.map_io import load_relax_map
 
     return np.asarray(load_relax_map(path, legacy_recovar_sign=True), dtype=np.float64)
 

@@ -7,8 +7,8 @@ import recovar.core.fourier_transform_utils as ftu
 from helpers.float_compare import assert_matches
 
 from relax import sampling
-from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
-from relax.local.local_layout import build_pass2_hypothesis_layout
+from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.local_search.layout import build_pass2_hypothesis_layout
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
     _per_image_pose_prior_block,

@@ -6,7 +6,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax import sampling
-from relax.local import local_layout
+from relax.local_search import layout as local_layout
 
 pytestmark = pytest.mark.unit
 

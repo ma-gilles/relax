@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.helpers.types import total_sumw
+from relax.types import total_sumw
 
 logger = logging.getLogger(__name__)
 

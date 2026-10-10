@@ -21,7 +21,7 @@ import pytest
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.sparse_pass2.resident_pass2 import _winner_take_all_cells
+from relax.fine_pass.resident_pass2 import _winner_take_all_cells
 
 pytestmark = pytest.mark.unit
 

@@ -13,10 +13,10 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.tiny_refinement import record_calls, run_tiny_refinement
 
-from relax.helpers.types import make_noise_stats
-from relax.reconstruction import noise_relion
+from relax.reconstruction import noise
 from relax.refinement import noise_updates
 from relax.refinement.refinement_options import RelionConsistencyOptions
+from relax.types import make_noise_stats
 
 pytestmark = pytest.mark.unit
 
@@ -56,7 +56,7 @@ def _summed_per_shell(box, current_size):
 
 @pytest.mark.parametrize("box,current_size", [(16, 8), (16, 12), (32, 16), (32, 30), (64, 32), (64, 48), (128, 64)])
 def test_summed_count_is_the_cropped_image_up_to_the_current_shell(box, current_size):
-    summed = noise_relion.summed_noise_pixels_per_shell((box, box), current_size)
+    summed = noise.summed_noise_pixels_per_shell((box, box), current_size)
     expected = _summed_per_shell(box, current_size)
     assert_matches(np.asarray(summed, dtype=np.int64), expected)
     full = _npix_per_shell(box)
@@ -71,12 +71,12 @@ def test_the_deficit_of_the_current_shell(box, current_size, summed, counted):
     """The audit's numbers: 7.1%, 5.3% and 3.6% of shell cs / 2 are counted but never summed."""
     shell = current_size // 2
     assert _summed_per_shell(box, current_size)[shell] == summed and _npix_per_shell(box)[shell] == counted
-    assert int(noise_relion.summed_noise_pixels_per_shell((box, box), current_size)[shell]) == summed
+    assert int(noise.summed_noise_pixels_per_shell((box, box), current_size)[shell]) == summed
 
 
 @pytest.mark.parametrize("box,current_size", [(16, 16), (32, None), (32, 32)])
 def test_at_the_box_the_two_counts_agree(box, current_size):
-    summed = noise_relion.summed_noise_pixels_per_shell((box, box), current_size)
+    summed = noise.summed_noise_pixels_per_shell((box, box), current_size)
     assert_matches(np.asarray(summed, dtype=np.int64), _npix_per_shell(box))
 
 
@@ -88,9 +88,9 @@ def test_sigma2_default_divides_by_relions_count_and_summed_by_the_summed_pixels
     sums = 2.0 * sumw * true_sigma2 * _summed_per_shell(box, current_size).astype(np.float64)
     residual, image_power = 0.25 * sums, 0.75 * sums
 
-    default = np.asarray(noise_relion.normalize_wsum_to_sigma2_noise(residual, image_power, sumw, (box, box)))
+    default = np.asarray(noise.normalize_wsum_to_sigma2_noise(residual, image_power, sumw, (box, box)))
     summed = np.asarray(
-        noise_relion.normalize_wsum_to_sigma2_noise(
+        noise.normalize_wsum_to_sigma2_noise(
             residual, image_power, sumw, (box, box), summed_current_size=current_size
         )
     )
@@ -136,7 +136,7 @@ def _model(n_groups=None):
 @pytest.mark.parametrize("summed_current_size", [None, 8])
 def test_every_noise_update_branch_hands_the_normalisation_the_size(monkeypatch, k_class, n_groups, summed_current_size):
     """K=1 per half, Class3D shared, and both with one spectrum per optics group."""
-    calls = record_calls(monkeypatch, noise_relion, "normalize_wsum_to_sigma2_noise")
+    calls = record_calls(monkeypatch, noise, "normalize_wsum_to_sigma2_noise")
     rng = np.random.default_rng(0)
     update = (
         noise_updates.update_class_posterior_noise_variance if k_class
@@ -177,17 +177,17 @@ def test_refinement_hands_the_noise_update_the_expectations_image_size(monkeypat
     """The image window of each numbered expectation reaches the K=1 noise update (None at the box)."""
     import dataclasses
 
-    from relax.refinement import local_sampling
+    from relax.local_search import sampling
 
     # plan_expectation_sampling (local_sampling.py) plans the windows the loop then reads.
-    plan = local_sampling.plan_expectation_windows
+    plan = sampling.plan_expectation_windows
     image_sizes = iter([6, 8])  # the 8-pixel mock box itself never plans a window below the box
 
     def plan_below_the_box(*args, **kwargs):
         return dataclasses.replace(plan(*args, **kwargs), image_current_size=next(image_sizes))
 
-    monkeypatch.setattr(local_sampling, "plan_expectation_windows", plan_below_the_box)
-    calls = record_calls(monkeypatch, noise_relion, "normalize_wsum_to_sigma2_noise")
+    monkeypatch.setattr(sampling, "plan_expectation_windows", plan_below_the_box)
+    calls = record_calls(monkeypatch, noise, "normalize_wsum_to_sigma2_noise")
 
     run_tiny_refinement(monkeypatch, consistency=RelionConsistencyOptions(noise_shell_count=count))
 

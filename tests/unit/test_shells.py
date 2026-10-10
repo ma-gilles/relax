@@ -1,10 +1,10 @@
-"""``relax.helpers.shells`` against the inline shell rules it replaced, grid kind by grid kind."""
+"""``relax.fourier.shells`` against the inline shell rules it replaced, grid kind by grid kind."""
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.helpers.shells import fourier_radius_sq, shell_index, shell_of_radius, shell_of_radius_sq
+from relax.fourier.shells import fourier_radius_sq, shell_index, shell_of_radius, shell_of_radius_sq
 from relax.relion.macros import relion_round_array
 
 SIZES_2D = [(2, 2), (3, 3), (7, 7), (8, 8), (16, 12), (33, 33), (64, 64), (101, 101), (128, 96)]

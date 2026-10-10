@@ -33,15 +33,15 @@ import numpy as np
 from relax import sampling
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
-from relax.helpers import oversampling
-from relax.helpers.batch_planning import (
+from relax.fine_pass.bucket_arrays import relion_parent_execution_key
+from relax.fourier.preprocessing import uses_relion_cuda_image_preprocessing
+from relax.fourier.resolution import compute_coarse_image_size
+from relax.helpers.convergence import healpix_angular_step
+from relax.refinement import optics_shapes
+from relax.runtime.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
-from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
-from relax.helpers.resolution import compute_coarse_image_size
-from relax.refinement import optics_shapes
-from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
+from relax.sampling import oversampling
 from relax.vdam.estep_common import (
     ENGINE_DISC_TYPE,
     SPA_META_PARTICLE_FIELDS,

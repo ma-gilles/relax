@@ -7,15 +7,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.helpers import optics_scale
-from relax.helpers.expected_accuracy import (
-    RELION_DEFAULT_SIGMA2_FUDGE,
-    Half1AccuracyInputs,
-    prepare_relion_half1_trial_order,
-)
-from relax.helpers.relion_random import GlibcRand, init_random_generator
-from relax.helpers.resolution import ImageGeometry
-from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
+from relax.fourier.resolution import ImageGeometry
+from relax.numerics.relion_random import GlibcRand, init_random_generator
+from relax.reconstruction.regularization import RELION_MINRES_MAP
 from relax.refinement.expectation_batches import BatchPlanner
 from relax.refinement.half_inputs import configure_half_image_preprocessing
 from relax.refinement.image_size_plans import RunOptics
@@ -36,10 +30,16 @@ from relax.refinement.refinement_options import (
     require_consistency_route,
 )
 from relax.refinement.tomo_half import TomoHalf
+from relax.relion import optics_scale
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
     REFERENCE_FILTER_EDGE_SHELLS,
+)
+from relax.sampling.expected_accuracy import (
+    RELION_DEFAULT_SIGMA2_FUDGE,
+    Half1AccuracyInputs,
+    prepare_relion_half1_trial_order,
 )
 
 # The set-up logs as part of the controller's run.
@@ -75,7 +75,7 @@ def checked_optics_group_ids(optics_group_ids_per_half, noise_variance_per_half,
     """Each half's per-image optics-group rows, or ``[None, None]`` for one group.
 
     A half's noise is a flat vector (one optics group) or ``[G, P]`` rows
-    (:mod:`relax.helpers.optics_noise`); with rows every image needs its group.
+    (:mod:`relax.relion.optics_noise`); with rows every image needs its group.
     """
 
     n_groups = 1 if noise_variance_per_half[0].ndim == 1 else int(noise_variance_per_half[0].shape[0])
@@ -100,7 +100,7 @@ def checked_optics_group_ids(optics_group_ids_per_half, noise_variance_per_half,
 def _internal_solvent_mask(path, box_size, pixel_size_angstrom):
     """RELION --solvent_mask on the model grid in relax's internal (z, y, x) frame, or None.
 
-    Map files hold RELION's axis order, the transpose of the internal frame (relax.helpers.map_io);
+    Map files hold RELION's axis order, the transpose of the internal frame (relax.io.map_io);
     a mask has no sign to undo.
     """
     if path is None:

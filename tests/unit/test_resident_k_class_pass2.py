@@ -19,8 +19,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_pass2_driver import _driver_fixture_args, requires_resident_gpu
 
-from relax.sparse_pass2 import resident_pass2 as rp
-from relax.sparse_pass2.resident_candidates import CapacityChunk
+from relax.fine_pass import resident_pass2 as rp
+from relax.fine_pass.resident_candidates import CapacityChunk
 
 pytestmark = pytest.mark.unit
 

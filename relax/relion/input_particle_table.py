@@ -31,7 +31,7 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 
-from relax.helpers.relion_random import check_init_random_generator_seeds, glibc_first_rand, glibc_rand_sequence
+from relax.numerics.relion_random import check_init_random_generator_seeds, glibc_first_rand, glibc_rand_sequence
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def relion_class3d_seed_classes(expectation_order, random_seed: int, n_classes: 
     ml_model.cpp:1007-1010): for the particle at sorted position ``j``,
     ``init_random_generator(random_seed + j)`` then ``rand() % K`` (ml_optimiser.cpp:4626-4633,
     :4880-4898). ``expectation_order[j]`` is the input row at sorted position ``j``
-    (``relax.helpers.expected_accuracy.relion_class3d_trial_layout``).
+    (``relax.sampling.expected_accuracy.relion_class3d_trial_layout``).
     """
     order = np.asarray(expectation_order, dtype=np.int64).reshape(-1)
     seeds = int(random_seed) + np.arange(order.size, dtype=np.int64)
@@ -330,7 +330,7 @@ def prepare_particle_group_layout(
             group_source = GroupParticleSource(None, None)
     relion_particles = group_source.particles
 
-    from relax.relion import relion_metadata
+    from relax.relion import metadata as relion_metadata
 
     if relion_particles is not None:
         group_particles = relion_particles
@@ -480,7 +480,7 @@ def _map_relion_half_rows(
     optics-group sort. Continuation and replay callers omit the seed
     and retain their existing row order.
     """
-    from relax.relion import relion_metadata
+    from relax.relion import metadata as relion_metadata
 
     our_row_by_identity = relion_metadata.particle_identity_rows(
         our_particles,
@@ -520,7 +520,7 @@ def _map_relion_half_rows(
             dtype=np.int64,
         )
     else:
-        from relax.helpers.expected_accuracy import relion_auto_refine_half_orders
+        from relax.sampling.expected_accuracy import relion_auto_refine_half_orders
 
         relion_optics = (
             np.asarray(relion_particles["rlnOpticsGroup"], dtype=np.int64)
@@ -604,7 +604,7 @@ def prepare_class3d_particle_layout(
         len(half1_idx),
     )
     # RELION's whole-vector Class3D shuffle picks the expected-accuracy trials.
-    from relax.helpers.expected_accuracy import relion_class3d_trial_layout
+    from relax.sampling.expected_accuracy import relion_class3d_trial_layout
 
     (
         expected_accuracy_half1_trial_order_local,

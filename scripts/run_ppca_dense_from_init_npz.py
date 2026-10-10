@@ -22,7 +22,7 @@ from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.reconstruction import noise as recon_noise
 from recovar.utils.json_utils import to_jsonable
 
-from relax.helpers.map_io import write_map_from_ft
+from relax.io.map_io import write_map_from_ft
 from relax.ppca_refinement.config import (
     GeometryConfig,
     ScheduleConfig,

@@ -1,6 +1,6 @@
 # relax/: package rules
 
-The root guide applies. This file holds the rules of the package; `relax/refinement/`, `relax/sparse_pass2/`
+The root guide applies. This file holds the rules of the package; `relax/refinement/`, `relax/fine_pass/`
 and `relax/ppca_refinement/` have their own guides.
 
 ## Imports and ownership

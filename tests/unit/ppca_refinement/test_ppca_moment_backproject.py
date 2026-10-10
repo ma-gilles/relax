@@ -8,9 +8,9 @@ import jax
 import jax.numpy as jnp
 from helpers.float_compare import assert_matches
 
-from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
-from relax.helpers.fourier_window import make_fourier_window_spec
+from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.ppca_refinement.residual_statistics import residual_statistics_from_moment_images
+from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
 
 IMAGE_SHAPE, VOLUME_SHAPE = (32, 32), (32, 32, 32)
 N_HALF, HALF = 32 * 17, 32 * 32 * 17

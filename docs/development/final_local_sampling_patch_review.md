@@ -1510,7 +1510,7 @@ wrapper, flag or JIT boundary is introduced. The unrelated unused private
 
 ### Complete shared implementation
 
-[relax/sparse_pass2/resident_candidates.py](../../relax/sparse_pass2/resident_candidates.py) (line 225):
+[relax/fine_pass/resident_candidates.py](../../relax/fine_pass/resident_candidates.py) (line 225):
 
 ```python
 def chunk_segment_offsets(tables, chunk, *, n_fine_trans: int) -> np.ndarray:
@@ -1533,7 +1533,7 @@ def chunk_segment_offsets(tables, chunk, *, n_fine_trans: int) -> np.ndarray:
 
 ### Actual global chunk preparation
 
-[relax/sparse_pass2/resident_pass2.py](../../relax/sparse_pass2/resident_pass2.py) (line 5239):
+[relax/fine_pass/resident_pass2.py](../../relax/fine_pass/resident_pass2.py) (line 5239):
 
 ```python
     image_capacity = int(chunk.image_capacity)
@@ -1547,7 +1547,7 @@ def chunk_segment_offsets(tables, chunk, *, n_fine_trans: int) -> np.ndarray:
 
 ### Actual local parent and fine callers
 
-[relax/sparse_pass2/resident_local_pass2.py](../../relax/sparse_pass2/resident_local_pass2.py) (line 1529):
+[relax/local_search/resident_pass2.py](../../relax/local_search/resident_pass2.py) (line 1529):
 
 ```python
         del score_proj, ops
@@ -1559,7 +1559,7 @@ def chunk_segment_offsets(tables, chunk, *, n_fine_trans: int) -> np.ndarray:
         )
 ```
 
-[relax/sparse_pass2/resident_local_pass2.py](../../relax/sparse_pass2/resident_local_pass2.py) (line 1965):
+[relax/local_search/resident_pass2.py](../../relax/local_search/resident_pass2.py) (line 1965):
 
 ```python
     # --- stage 4: segmented RELION float32 fine posterior -------------------
@@ -1792,7 +1792,7 @@ image_geometry = ImageGeometry(
 grid_size = image_geometry.box_size
 ```
 
-[relax/helpers/resolution.py](../../relax/helpers/resolution.py) (line 29):
+[relax/fourier/resolution.py](../../relax/fourier/resolution.py) (line 29):
 
 ```python
 class ImageGeometry:
@@ -2170,7 +2170,7 @@ def attach_projector_capture(
 ):
     """Attach one sealed live projector to its exact numbered replay slot."""
 
-    from relax.relion.relion_metadata import read_relion_model_metadata
+    from relax.relion.metadata import read_relion_model_metadata
 
     capture_iteration = int(capture_iteration)
     init_relion_iteration = int(init_relion_iteration)
@@ -3256,7 +3256,7 @@ def load_verified_dispatch_schedule(args, particles, *, strict_replay: bool) -> 
     Verify directory manifests before discovering the consumed optimiser and
     sampling files. See ``docs/math/relion_refinement_algorithm.md#command-admission``.
     """
-    from relax.relion.relion_worker_scale import (
+    from relax.relion.worker_scale import (
         load_relion_dispatch_schedule,
         relion_ordered_particle_sha256,
         verify_relion_dispatch_schedule_oracle,
@@ -3363,7 +3363,7 @@ def resolve_relion_runtime_controls(
     relion_firstiter_ini_high_angstrom = None
     relion_optimiser_metadata = None
     if optimiser_star is not None:
-        from relax.relion.relion_metadata import read_relion_optimiser_metadata
+        from relax.relion.metadata import read_relion_optimiser_metadata
 
         relion_optimiser_metadata = read_relion_optimiser_metadata(optimiser_star)
         expected_accuracy_do_ctf_correction = relion_optimiser_metadata.get("do_correct_ctf")
@@ -3390,7 +3390,7 @@ def resolve_relion_runtime_controls(
                 )
     max_significants_resolution = None
     if optimiser_star is not None and relion_optimiser_metadata is not None:
-        from relax.relion.relion_metadata import resolve_relion_runtime_max_significants
+        from relax.relion.metadata import resolve_relion_runtime_max_significants
 
         optimiser_max_significants = relion_optimiser_metadata.get(
             "maximum_significants_arg"
@@ -3422,7 +3422,7 @@ def resolve_relion_runtime_controls(
             optimiser_star,
         )
     if max_significants is None:
-        from relax.relion.relion_metadata import resolve_relion_runtime_max_significants
+        from relax.relion.metadata import resolve_relion_runtime_max_significants
 
         # Without a RELION optimiser STAR, use relion_refine's own --maxsig default of -1
         # (ml_optimiser.cpp:1109) and its runtime resolution (ml_optimiser.cpp:3692-3699).
@@ -3529,7 +3529,7 @@ all controller locals.
 
 ### Reporting result
 
-[relax/relion/relion_normalization.py](../../relax/relion/relion_normalization.py) (line 33):
+[relax/relion/normalization.py](../../relax/relion/normalization.py) (line 33):
 
 ```python
 @dataclass
@@ -7505,7 +7505,7 @@ def prepare_scoring_projector(
     projector cache entry written without it.
 
     The slabs come from the device projector setup
-    (:func:`relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power`);
+    (:func:`relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power`);
     RELION's own transform is a test oracle only.
     """
 
@@ -7516,7 +7516,7 @@ def prepare_scoring_projector(
 
     from recovar.core import fourier_transform_utils as ftu
 
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
+    from relax.relion.projector_setup import reference_to_relion_projector_half_maps_and_power
 
     refs_ft = np.asarray(references)
     if int(n_classes) == 1 and refs_ft.ndim == 1:
@@ -7722,7 +7722,7 @@ def _run_halves_overlapped(run_half, diagnostic_half_indices) -> None:
 
     import threading
 
-    from relax.sparse_pass2.sparse_pass2_budget import set_concurrent_device_shares
+    from relax.runtime.memory_budget import set_concurrent_device_shares
 
     errors: dict[int, BaseException] = {}
 
@@ -7795,7 +7795,7 @@ This private operation and its caller remain in the existing optics owner:
 def _merge_class_scores(summaries, classes, n_half, ref_box):
     """Merge class assignments, posterior sums and noise into one half's result."""
 
-    from relax.dense.score_outputs import ClassScoreSummary
+    from relax.refinement.score_outputs import ClassScoreSummary
 
     if all(summary is None for summary in summaries):
         return None

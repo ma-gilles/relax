@@ -56,7 +56,7 @@ def _variable_ctf_rows(_dataset, image_indices, image_shape, *, pixel_indices=No
 
 def _native_k1_args(monkeypatch, *, seed=20260918):
     """A full-support fixture with canonical CUDA preprocessing and exact BPref."""
-    from relax.relion import relion_ctf
+    from relax.relion import ctf as relion_ctf
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
@@ -126,7 +126,7 @@ def _assert_paired_native_noise(candidate, control):
 
 def _capture_chunk_norm(collector, original, stats, operands, tables, *, config):
     """Opt-in per-image norm boundary, using the same public statistics owners."""
-    from relax.sparse_pass2.resident_statistics import (
+    from relax.fine_pass.resident_statistics import (
         segment_sum_by_image, weighted_image_power_from_shells,
     )
 
@@ -165,7 +165,7 @@ def _capture_pre_scatter_norm(
     *, n_shells, image_capacity,
 ):
     """Save only scalar A2/XA rows and their existing F32 block scatters."""
-    from relax.sparse_pass2.resident_statistics import _flat_row_norm_and_scale_terms
+    from relax.fine_pass.resident_statistics import _flat_row_norm_and_scale_terms
 
     result = original(
         proj, proj_abs2, summed_masked, ctf_probs, noise_variance,
@@ -367,11 +367,11 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     from relax.dense.gemm_experiment import native_phase_table, native_relion_callbacks
     from relax.dense.gemm_experiment_kernels import score_tile
     from relax.dense.gemm_coarse_engine import _expanded_rotation_priors
-    from relax.sparse_pass2.resident_pass2 import _relion_native_fine_units_in_place
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_cuda_score_translation_angles_if_available
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import _compute_sparse_pass2_windowed_projections_block
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
-    from relax.sparse_pass2.sparse_pass2_window import _sparse_pass2_window_setup
+    from relax.fine_pass.resident_pass2 import _relion_native_fine_units_in_place
+    from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
+    from relax.fine_pass.projection_blocks import _compute_sparse_pass2_windowed_projections_block
+    from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+    from relax.fine_pass.window import _sparse_pass2_window_setup
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -475,13 +475,13 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
     """Keep actual fine-CC inputs and compare fine and GEMM scores at both winners."""
     from relax.dense.gemm_experiment import native_relion_callbacks
     from relax.dense.gemm_experiment_kernels import cc_score_tile
-    from relax.scoring.scoring import relion_coarse_gemm_terms
-    from relax.sparse_pass2.resident_pass2 import _relion_native_fine_units_in_place
-    from relax.sparse_pass2.sparse_pass2_scoring import (
+    from relax.scoring.coarse_kernels import relion_coarse_gemm_terms
+    from relax.fine_pass.resident_pass2 import _relion_native_fine_units_in_place
+    from relax.fine_pass.scoring import (
         _relion_cuda_fine_normalized_cc_score,
         _relion_cuda_fine_full_to_compact_lookup,
     )
-    from relax.sparse_pass2.sparse_pass2_window import _pass2_half_weights, _sparse_pass2_window_setup
+    from relax.fine_pass.window import _pass2_half_weights, _sparse_pass2_window_setup
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -594,7 +594,7 @@ def test_k1_full_grid_matches_resident_exact_operands(monkeypatch):
     """Both arms see the same unpruned child grid and RELION CUDA operands."""
     assert jax.default_backend() == "gpu"
     from relax.dense import gemm_coarse_engine
-    from relax.sparse_pass2 import resident_pass2
+    from relax.fine_pass import resident_pass2
 
     args = _native_k1_args(monkeypatch)
     from unit.test_resident_relion_reference import F32, _rel_l2
@@ -660,8 +660,8 @@ def test_k2_square_cc_full_grid_maps_wavg_and_keeps_one_winner(monkeypatch):
     assert jax.default_backend() == "gpu"
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
-    from relax.relion import relion_ctf
-    from relax.sparse_pass2 import resident_pass2
+    from relax.relion import ctf as relion_ctf
+    from relax.fine_pass import resident_pass2
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise
@@ -710,8 +710,8 @@ def test_public_k2_dense_engine_runs_joint_full_grid(monkeypatch):
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
     from relax.classification.k_class import run_dense_k_class_em_adaptive
-    from relax.relion import relion_ctf
-    from relax.sparse_pass2.engine_record import take_coarse_engine_calls
+    from relax.relion import ctf as relion_ctf
+    from relax.refinement.engine_record import take_coarse_engine_calls
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise
@@ -777,9 +777,9 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
     assert jax.default_backend() == "gpu"
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
-    from relax.relion import relion_ctf
+    from relax.relion import ctf as relion_ctf
     from relax.dense import gemm_coarse_engine
-    from relax.sparse_pass2 import resident_pass2
+    from relax.fine_pass import resident_pass2
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import F32, _ppref, _rel_l2, _tie_free_noise
@@ -851,7 +851,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
     control_norm_parts = []
     candidate_norm_parts = []
     if diagnostic_path:
-        from relax.sparse_pass2.resident_statistics import segment_sum_by_image
+        from relax.fine_pass.resident_statistics import segment_sum_by_image
 
         original_accumulate = resident_pass2._accumulate_chunk_image_terms
 
@@ -952,7 +952,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
 def test_k1_firstiter_cc_keeps_canonical_winner_and_statistics(monkeypatch):
     """The native first-iteration CC scorer selects one full-grid pose."""
     assert jax.default_backend() == "gpu"
-    from relax.sparse_pass2 import resident_pass2
+    from relax.fine_pass import resident_pass2
 
     args = _native_k1_args(monkeypatch, seed=20260930)
     from unit.test_resident_relion_reference import F32, _rel_l2
@@ -968,7 +968,7 @@ def test_k1_firstiter_cc_keeps_canonical_winner_and_statistics(monkeypatch):
     dense_capture = {}
     if diagnostic_path:
         from relax.dense import gemm_coarse_engine
-        from relax.sparse_pass2 import resident_operands, resident_scoring
+        from relax.fine_pass import resident_operands, resident_scoring
 
         original_cc_scorer = resident_scoring.score_resident_chunk_normalized_cc
 
@@ -1050,7 +1050,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
     # function; otherwise its first import can bind the temporary control
     # wrapper and record the dense rows twice.
     from relax.dense import gemm_coarse_statistics
-    from relax.sparse_pass2 import resident_pass2
+    from relax.fine_pass import resident_pass2
 
     args = _native_k1_args(monkeypatch, seed=20261001)
     from unit.test_resident_relion_reference import F32, _rel_l2

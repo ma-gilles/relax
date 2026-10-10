@@ -6,8 +6,8 @@ import recovar.core.fourier_transform_utils as ftu
 from helpers.dense_block_scores import _e_step_block_scores
 from helpers.float_compare import assert_matches
 
-from relax.helpers.half_spectrum import make_half_image_weights
-from relax.local.local_layout import LocalHypothesisLayout
+from relax.fourier.half_spectrum import make_half_image_weights
+from relax.local_search.layout import LocalHypothesisLayout
 from relax.ppca_refinement.config import (
     GeometryConfig,
     ScheduleConfig,
@@ -839,7 +839,7 @@ def test_direct_spatial_residual_matches_observed_score_derivative():
 
 
 def test_full_real_observation_has_dc_and_outside_support_noise():
-    from relax.helpers.half_spectrum import make_shell_indices_half
+    from relax.fourier.half_spectrum import make_shell_indices_half
     from relax.ppca_refinement.dense_dataset import (
         accumulate_dense_ppca_statistics,
         prepare_dense_ppca_dataset_inputs,

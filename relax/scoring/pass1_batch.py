@@ -6,9 +6,9 @@ from typing import Any, NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.image_shifts import apply_relion_integer_pre_shifts
-from relax.helpers.preprocessing import prepare_batch_preprocess_operands
-from relax.relion.relion_coarse_operands import repeat_pad_batch_axis
+from relax.fourier.image_shifts import apply_relion_integer_pre_shifts
+from relax.fourier.preprocessing import prepare_batch_preprocess_operands
+from relax.scoring.coarse_operands import repeat_pad_batch_axis
 
 
 def batch_image_count(batch_data) -> int:

@@ -24,12 +24,12 @@ def test_class_references_are_low_passed_in_the_header_pixel_size(tmp_path):
     # STAR's (often a rounded serialisation, 1.416667 for 544/384).
     import logging
 
-    from relax.relion import relion_metadata
+    from relax.relion import metadata
 
     rng = np.random.default_rng(5)
     shape = (16, 16, 16)
     paths = [_write_map(tmp_path / f"ref{k}.mrc", rng.standard_normal(shape), 544 / 384) for k in range(2)]
-    header = relion_metadata.read_relion_mrc_model_pixel_size(paths[0])
+    header = metadata.read_relion_mrc_model_pixel_size(paths[0])
     refs = startup_references.load_class_references(
         paths, volume_shape=shape, ini_high=10.0, real_for_projector=False, real_dtype=np.float32,
         complex_dtype=np.complex64, log=logging.getLogger(__name__),

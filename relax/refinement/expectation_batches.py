@@ -10,20 +10,20 @@ from types import SimpleNamespace
 import numpy as np
 
 from relax.classification.k_class_inputs import select_projector_half_for_class
-from relax.helpers.batch_planning import (
+from relax.projection.projection import host_relion_projector_texture_enabled
+from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+from relax.refinement import firstiter_bpref, shape_class_scoring
+from relax.refinement.precision import DensePrecisionPolicy
+from relax.refinement.refinement_options import ExecutionOptions
+from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
+from relax.runtime import memory_budget
+from relax.runtime.batch_planning import (
     RELION_EM_COMPACT_K1_FIXED_BASE_GB,
     estimate_relion_em_batch_sizes,
     plan_adaptive_dense_batch_sizes,
     safe_dense_k_class_rotation_block_size,
     safe_firstiter_cc_image_batch_size,
 )
-from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
-from relax.helpers.projection import host_relion_projector_texture_enabled
-from relax.refinement import shape_class_scoring
-from relax.refinement.refinement_options import ExecutionOptions
-from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
-from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
 
 
 @dataclass(frozen=True, eq=False, kw_only=True)
@@ -55,11 +55,11 @@ class BatchPlanner:
             # CUDA textures allocate outside XLA's reusable pool, so the physical reading bounds them; under a
             # pool limit (XLA_PYTHON_CLIENT_MEM_FRACTION, or a pool holding most of the card) the run may only
             # use what the allocator can still hand out, which is the smaller reading there (relax#44).
-            physical = sparse_pass2_budget._device_free_memory_bytes()
-            in_pool = sparse_pass2_budget.device_available_bytes(
+            physical = memory_budget._device_free_memory_bytes()
+            in_pool = memory_budget.device_available_bytes(
                 physical,
-                sparse_pass2_budget._jax_allocator_free_memory_bytes(),
-                sparse_pass2_budget._jax_allocator_pool_free_bytes(),
+                memory_budget._jax_allocator_free_memory_bytes(),
+                memory_budget._jax_allocator_pool_free_bytes(),
             )
             readings = [float(value) for value in (physical, in_pool) if value is not None]
             free_bytes = min(readings) if readings else None

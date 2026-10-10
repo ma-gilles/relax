@@ -50,19 +50,19 @@ pixi_env = (repo / ".pixi" / "envs" / "default").resolve()
 assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(repo) + "/"), __import__("relax").__file__
 assert str(jax_file).startswith(str(pixi_env) + "/"), (jax_file, pixi_env)
 for helper in (
-    "helpers.oversampling", "helpers.half_volume_mstep", "relion.relion_projector_setup",
-    "parity.relion_replay", "relion.relion_normalization", "refinement.projector_preparation",
-    "dense.score_outputs", "classification.k_class_results", "classification.k_class_inputs", "dense.scoring_policy", "helpers.resolution", "diagnostics.bpref_diagnostics",
-    "helpers.expected_accuracy", "scoring.significant_samples", "diagnostics.coarse_score_diagnostics", "scoring.sparse_bucket_arrays", "scoring.compact_candidates", "relion.relion_ctf", "helpers.scale_groups",
-    "relion.vdam_checkpoint", "local.local_layout", "diagnostics.local_debug",
+    "sampling.oversampling", "reconstruction.half_volume_mstep", "relion.projector_setup",
+    "parity.relion_replay", "relion.normalization", "refinement.projector_preparation",
+    "refinement.score_outputs", "classification.k_class_results", "classification.k_class_inputs", "refinement.scoring_policy", "fourier.resolution", "diagnostics.bpref_diagnostics",
+    "sampling.expected_accuracy", "scoring.significant_samples", "diagnostics.coarse_score_diagnostics", "fine_pass.bucket_arrays", "scoring.compact_candidates", "relion.ctf", "relion.scale_groups",
+    "relion.vdam_checkpoint", "local_search.layout", "diagnostics.local_debug",
 ):
     importlib.import_module(f"relax.{helper}")
 for diagnostic in ("iteration", "reconstruction"):
     importlib.import_module(f"relax.diagnostics.{diagnostic}")
 execution_modules = (
     "refinement.iteration_loop", "refinement.dense_half", "classification.k_class",
-    "scoring.significance", "sparse_pass2.resident_pass2", "sparse_pass2.dispatch",
-    "refinement.local_half",
+    "scoring.significance", "fine_pass.resident_pass2", "fine_pass.dispatch",
+    "local_search.half",
 )
 loaded = [name for name in execution_modules
           if f"relax.{name}" in sys.modules]

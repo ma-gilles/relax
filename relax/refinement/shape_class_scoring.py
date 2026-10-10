@@ -11,15 +11,15 @@ import dataclasses
 
 import numpy as np
 
-from relax.helpers import optics_scale
-from relax.helpers.orientation_priors import (
+from relax.fourier.resolution import relion_coarse_image_size
+from relax.refinement.optics_shapes import MultiShapeHalf, ShapeClass
+from relax.relion import optics_scale
+from relax.sampling.orientation_priors import (
     make_relion_translation_log_prior,
     relion_half_translation_prior_inputs,
     relion_translation_search_base,
 )
-from relax.helpers.oversampling import project_pass2_rotations
-from relax.helpers.resolution import relion_coarse_image_size
-from relax.refinement.optics_shapes import MultiShapeHalf, ShapeClass
+from relax.sampling.oversampling import project_pass2_rotations
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -262,7 +262,7 @@ def reconstruction_image_radius(reference_current_size, scale: float, magnificat
     ``r_max * s``, with the ``s`` RELION projects with
     (:func:`relax.relion.optics_aberrations.relion_projection_optics`: 1 within its identity
     tolerance). None keeps the engines' own bound (one grid). The M-step clip
-    (:func:`relax.helpers.adjoint.mstep_adjoint_max_r`) turns it into the kernel's radius.
+    (:func:`relax.projection.adjoint.mstep_adjoint_max_r`) turns it into the kernel's radius.
     """
     from relax.relion.optics_aberrations import relion_projection_optics
 
@@ -288,7 +288,7 @@ def engine_projection_inputs(dataset, *, scale, reference_current_size):
 
     ``magnification`` is the dataset's ``applyAnisoMag`` left factor (None without); with ``scale``
     (``applyScaleDifference``) it gives the projection matrices of the images' rows, which the
-    callers build by RELION's per-path rules (:func:`relax.helpers.oversampling.project_pass2_rotations`,
+    callers build by RELION's per-path rules (:func:`relax.sampling.oversampling.project_pass2_rotations`,
     :func:`relax.sampling.project_rows`). The kwargs are :func:`reference_grid_kwargs`. Every
     adaptive engine call of a shape class (half scoring and VDAM) takes its geometry here.
     """
@@ -362,7 +362,7 @@ def shape_class_engine_inputs(
     on the reference model grid. Parent maps and Euler overrides index the shared grids
     and pass through. Results merge with :func:`merge_k_class_engine_results`.
     ``rotation_source`` is the grid's provenance for RELION's per-path projection rules
-    (the keywords of :func:`relax.helpers.oversampling.project_pass2_rotations` after the rows).
+    (the keywords of :func:`relax.sampling.oversampling.project_pass2_rotations` after the rows).
     """
 
     n_half = half.n_units
@@ -582,7 +582,7 @@ def _sum(values):
 
 
 def _merge_noise_stats(stats, classes, n_half, model_box_size):
-    from relax.helpers.types import make_noise_stats
+    from relax.types import make_noise_stats
 
     if all(stat is None for stat in stats):
         return None
@@ -627,7 +627,7 @@ def _require_one_backprojector_layout(results) -> None:
 def merge_class_results(results, classes, n_half, model_box_size):
     """One ``HalfScoreResult`` for the half from its shape classes' results."""
 
-    from relax.dense.score_outputs import HalfScoreResult
+    from relax.refinement.score_outputs import HalfScoreResult
 
     first = results[0]
     _require_one_backprojector_layout(results)
@@ -668,7 +668,7 @@ def merge_class_results(results, classes, n_half, model_box_size):
 def _merge_class_scores(summaries, classes, n_half, model_box_size):
     """Merge class assignments, posterior sums and noise into one half's result."""
 
-    from relax.dense.score_outputs import ClassScoreSummary
+    from relax.refinement.score_outputs import ClassScoreSummary
 
     if all(summary is None for summary in summaries):
         return None
@@ -703,7 +703,7 @@ def _per_image_axis(values, classes, n_half, axis):
 
 
 def _merge_relion_stats(stats, classes, n_half):
-    from relax.helpers.types import RelionStats
+    from relax.types import RelionStats
 
     return RelionStats(
         log_evidence_per_image=place_by_index([s.log_evidence_per_image for s in stats], classes, n_half),
@@ -813,7 +813,7 @@ def require_exact_local_parent_windows(kwargs) -> None:
 
     The local parent pass (RELION's pass 1) projects in Python and zeroes the rows beyond
     ``maxR``. That is RELION's coarse kernel unless the class's pass-1 window lies strictly
-    between ``2 r_max`` and about ``2 s r_max`` (:func:`relax.helpers.optics_scale.coarse_rows_wrap_inside`).
+    between ``2 r_max`` and about ``2 s r_max`` (:func:`relax.relion.optics_scale.coarse_rows_wrap_inside`).
     """
 
     half = kwargs["experiment_dataset"]

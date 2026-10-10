@@ -125,7 +125,7 @@ def load_half_metadata(models, data_table, half_rows, *, voxel_size, base_transl
     scale for this controlled standalone continuation. RELION's in-memory
     scorer rank scale can differ from the leader's serialized value.
     """
-    from relax.helpers.orientation_priors import (
+    from relax.sampling.orientation_priors import (
         initial_direction_priors_from_snapshot,
         make_relion_translation_log_prior,
         relion_direction_log_priors_for_half,
@@ -184,15 +184,15 @@ def load_half_metadata(models, data_table, half_rows, *, voxel_size, base_transl
 
 def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, translations, rotation_tile, translation_tile):
     """Freeze a deterministic subset of the canonical checkpoint's full SO(3)/shift grid."""
-    from relax.dense import scoring_policy
     from relax.dense.gemm_experiment import native_phase_table, pad_grid
-    from relax.helpers.oversampling import prepare_adaptive_pass2_grids
+    from relax.fine_pass.bucket_io import relion_translation_angles_f32
+    from relax.fine_pass.window import _pass2_window_setup, _sparse_pass2_window_setup
+    from relax.refinement import scoring_policy
     from relax.refinement.trial_grids import build_initial_coarse_grids
+    from relax.relion.metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
     from relax.relion.optics_aberrations import projection_rotations
-    from relax.relion.relion_metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
+    from relax.sampling.oversampling import prepare_adaptive_pass2_grids
     from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
-    from relax.sparse_pass2.sparse_pass2_window import _pass2_window_setup, _sparse_pass2_window_setup
 
     sampling_path = model_dir / "run_it001_sampling.star"
     sampling_state = read_relion_sampling_metadata(sampling_path)
@@ -270,20 +270,20 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
 def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, local_indices, *, batch_capacity, sentinel_id):
     """Assemble one batch through the existing coarse and BPref operand owners."""
     from relax.dense.gemm_experiment import pad_batch
-    from relax.helpers.batch_fetch import iter_indexed_batches
-    from relax.helpers.half_spectrum import (
+    from relax.fine_pass.resident_operands import prepare_resident_half_operands
+    from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
+    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fourier.half_spectrum import (
         make_relion_noise_shell_indices_half,
         make_scoring_half_image_weights,
         mask_relion_noise_shell_indices_to_current_window,
     )
-    from relax.helpers.preprocessing import prepare_batch_preprocess_operands
-    from relax.relion.relion_coarse_operands import (
+    from relax.fourier.preprocessing import prepare_batch_preprocess_operands
+    from relax.io.batch_fetch import iter_indexed_batches
+    from relax.scoring.coarse_operands import (
         assemble_relion_exact_coarse_gaussian_operands,
         process_relion_exact_coarse_half_image,
     )
-    from relax.sparse_pass2.resident_operands import prepare_resident_half_operands
-    from relax.sparse_pass2.sparse_pass2_scoring import relion_cuda_powerclass_highres_xi2_half
-    from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle
 
     local_indices = np.asarray(local_indices, dtype=np.int32)
     if local_indices.ndim != 1 or len(local_indices) == 0 or len(local_indices) > batch_capacity:
@@ -387,7 +387,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
 
 def load_fixture_execution_state(data_dir, model_dir, *, rotations, translations, rotation_tile, translation_tile):
     """Resolve frozen STAR identities, native image backend and fixed grid."""
-    from relax.relion.relion_metadata import load_relion_mask_params
+    from relax.relion.metadata import load_relion_mask_params
 
     data_star = model_dir / "run_it001_data.star"
     dataset = load_dataset(
@@ -479,7 +479,7 @@ def probe_real_operands(args, model_dir):
 
 def _projector_slab(fourier_map, volume_shape, current_size):
     """Build the canonical RELION Projector data at the map-update boundary."""
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
+    from relax.relion.projector_setup import reference_to_relion_projector_half_maps_and_power
 
     real_map = jnp.real(ftu.get_idft3(jnp.asarray(fourier_map).reshape(volume_shape)))
     slabs, _power, radius = reference_to_relion_projector_half_maps_and_power(
@@ -493,7 +493,7 @@ def _projector_slab(fourier_map, volume_shape, current_size):
 
 def _finalize_and_reconstruct(result, checkpoint, half, volume_shape, bp_shape):
     """Use the existing BPref finalizer and RELION-style map solver."""
-    from relax.helpers.half_volume_mstep import (
+    from relax.reconstruction.half_volume_mstep import (
         finalize_half_volume_bpref,
         relion_x_half_accumulators_to_public_layout,
     )
@@ -692,10 +692,10 @@ def _resident_cuda_fixture_program(
         normalizer_logz,
         tile_normalizer,
     )
-    from relax.scoring.scoring import relion_coarse_gaussian_gemm_scores_jit
-    from relax.sparse_pass2.resident_pass2 import _resident_block_weighted_sums_kernel
-    from relax.sparse_pass2.sparse_pass2_adjoint import _accumulate_adjoint_block_chunked
-    from relax.sparse_pass2.sparse_pass2_budget import _max_adjoint_block_bytes_for_pass
+    from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
+    from relax.fine_pass.resident_pass2 import _resident_block_weighted_sums_kernel
+    from relax.runtime.memory_budget import _max_adjoint_block_bytes_for_pass
+    from relax.scoring.coarse_kernels import relion_coarse_gaussian_gemm_scores_jit
 
     qsize = args.rotation_tile
     image_capacity = args.images
@@ -838,9 +838,9 @@ def run_fixed_fixture_trajectory(args, model_dir):
         run_resident_iteration,
     )
     from relax.dense.gemm_experiment_kernels import empty_normalizer_table
-    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
-    from relax.helpers.projection import relion_projector_half_to_texture_full
-    from relax.reconstruction.regularization_relion import compute_relion_fsc_from_backprojector
+    from relax.projection.projection import relion_projector_half_to_texture_full
+    from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+    from relax.reconstruction.regularization import compute_relion_fsc_from_backprojector
 
     if jax.default_backend() != "gpu":
         raise RuntimeError("a fixed fixture trajectory requires a selected CUDA GPU")
@@ -1085,8 +1085,8 @@ def benchmark_fixed_fixture_batch(args, model_dir):
     from relax.cuda.kernels import RelionCapacityHalfTextureF32
     from relax.dense.gemm_experiment import DenseGemmTileConfig, make_batch_program, native_relion_callbacks
     from relax.dense.gemm_experiment_kernels import empty_normalizer_table
-    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
-    from relax.helpers.projection import relion_projector_half_to_texture_full
+    from relax.projection.projection import relion_projector_half_to_texture_full
+    from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
     benchmark_module = importlib.import_module(
         "scripts.benchmark_dense_gemm_em" if __package__ else "benchmark_dense_gemm_em"
     )

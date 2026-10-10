@@ -12,9 +12,9 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.helpers.host_memory import available_memory_bytes
 from relax.ppca_initial_model.checkpoint import file_hash
 from relax.ppca_initial_model.config import Config
+from relax.runtime.host_memory import available_memory_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -209,12 +209,12 @@ def refuse_unsupported_tilt_optics(particles_star):
     relion_refine applies CTF premultiplication, odd and even aberrations and anisotropic
     magnification to every tilt image; the per-tilt STAR relax reads carries none of them, so a
     particle STAR that uses one fails instead of being trained on silently wrong images
-    (:data:`relax.relion.relion_metadata.TOMO_PPCA_OPTICS_FEATURES`; subtomogram Refine3D/Class3D
+    (:data:`relax.relion.metadata.TOMO_PPCA_OPTICS_FEATURES`; subtomogram Refine3D/Class3D
     have their own set, ``TOMO_OPTICS_FEATURES``).
     """
     from recovar.data_io.starfile import read_star
 
-    from relax.relion.relion_metadata import TOMO_PPCA_OPTICS_FEATURES, refuse_unsupported_optics
+    from relax.relion.metadata import TOMO_PPCA_OPTICS_FEATURES, refuse_unsupported_optics
 
     _, optics = read_star(str(particles_star))
     refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_PPCA_OPTICS_FEATURES)
@@ -281,7 +281,7 @@ def source_identity():
     # Includes untracked implementation files; a clean HEAD alone is insufficient.
     files = sorted((repo / "relax/ppca_initial_model").glob("*.py"))
     files += sorted((repo / "relax/ppca_refinement").glob("*.py"))
-    files += [Path(__file__), repo / "relax/relion/relion_project.py"]
+    files += [Path(__file__), repo / "relax/relion/project.py"]
     # A plain file snapshot or an installed package has no lock file or git checkout; the file
     # hashes identify the source on their own.
     files += [path for path in (repo / "pixi.lock",) if path.is_file()]
@@ -310,7 +310,7 @@ def main(args=None):
 
     # The run's INFO lines (tile plans, compiled tile sizes, resumes) reach the job log, as in Refine3D.
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
-    from relax.helpers.compilation_cache import activate_recovar_compilation_cache
+    from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 
     activate_recovar_compilation_cache()
     if not os.environ.get("SLURM_JOB_ID"):

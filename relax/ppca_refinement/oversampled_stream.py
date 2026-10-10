@@ -14,7 +14,7 @@ stream over the child grid with each image's significant coarse samples as its c
 (``tests/unit/ppca_initial_model/test_oversampled_stream.py``).
 
 Pass 1 may run on a smaller image window than pass 2 (RELION's ``image_coarse_size``, matched to the coarse angular
-step; :func:`relax.helpers.resolution.compute_coarse_image_size`): ``pass1`` and ``pass2`` are then two streams of the
+step; :func:`relax.fourier.resolution.compute_coarse_image_size`): ``pass1`` and ``pass2`` are then two streams of the
 same model and grids at the two window sizes. A tile's images are read once, unshifted at the pass-2 window; the
 pass-1 operands are those pixels of them inside the pass-1 window times the coarse translations' phase factors
 (:func:`_pass1_tile`).
@@ -46,7 +46,7 @@ from recovar.ppca.triangular import tri_size
 
 from relax import sampling
 from relax.cuda.kernels import ppca_window_project_f32
-from relax.helpers.preprocessing import half_translation_phase_table
+from relax.fourier.preprocessing import half_translation_phase_table
 from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings
 from relax.ppca_refinement.full_row_stream import (
     _HIGHEST,
@@ -596,7 +596,7 @@ def _significant(ostream: OversampledStream, coarse_tile, coarse_layout, kept, p
 
 def _shift_phases(base: FullRowStream, layout, translations):
     """Phase factors ``(T, K, F)`` of ``translations`` on the stream's window, from the tile's reader (the
-    single-particle reader's :func:`relax.helpers.preprocessing.half_translation_phase_table` on the score window,
+    single-particle reader's :func:`relax.fourier.preprocessing.half_translation_phase_table` on the score window,
     which no tile enters), padded with ones to the GEMM window on GPU streams (the operands are zero there)."""
     translations = np.ascontiguousarray(translations, np.float32)
     pad = None if not base.static.cuda_kernels else int(base.arrays.gemm_window.shape[0])

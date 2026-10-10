@@ -22,9 +22,9 @@ from helpers.float_compare import assert_matches
 
 import relax.vdam as init_model
 from relax.commands.initial_model import GuiInitialModelDefaults
-from relax.diagnostics import vdam_mstep_replay
-from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
-from relax.relion import initial_model_io, reference_initialization, relion_projector_setup
+from relax.parity import vdam_mstep_replay
+from relax.relion import initial_model_io, projector_setup, reference_initialization
+from relax.sampling.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
 from relax.vdam import (
     adaptive_estep,
     driver,
@@ -90,7 +90,7 @@ def test_initial_model_estep_reuses_shared_dense_em_engine():
     implementation fail even if it is not wired in yet.
     """
     from relax.classification import k_class
-    from relax.helpers import expected_accuracy
+    from relax.sampling import expected_accuracy
 
     shared_callables = {
         "run_dense_k_class_em_adaptive": (
@@ -367,7 +367,7 @@ LOC_BUDGETS = {
     # it served (2026-09-30).
     "diagnostics": (1240, (
         "../diagnostics/gt_metrics.py", "../diagnostics/gt_registration.py",
-        "../diagnostics/vdam_mstep_replay.py", "../diagnostics/vdam_noise.py",
+        "../parity/vdam_mstep_replay.py", "../diagnostics/vdam_noise.py",
     )),
 }
 
@@ -385,7 +385,7 @@ def test_responsibility_loc_budget(responsibility):
     """Moving code must preserve its accounting; review growth before revising a cap."""
     from recovar.data_io.starfile import star_column
 
-    from relax.relion.relion_metadata import _relion_star_list_value
+    from relax.relion.metadata import _relion_star_list_value
 
     def source_lines(fn):
         return len(inspect.getsourcelines(fn)[0])
@@ -399,7 +399,7 @@ def test_responsibility_loc_budget(responsibility):
             "initial_low_pass_filter_references", "_relion_power_spectrum_3d",
             "relion_initial_tau2_and_data_vs_prior", "_relion_data_vs_prior",
         )),
-        "estep": 1 + sum(source_lines(getattr(relion_projector_setup, name)) + 2 for name in (
+        "estep": 1 + sum(source_lines(getattr(projector_setup, name)) + 2 for name in (
             "reference_to_relion_projector_half_maps", "reference_to_relion_projector_half_maps_and_power",
         )),
     }
@@ -507,7 +507,7 @@ def test_mstep_single_class_definition_ownership():
 def test_initial_model_serialization_owners_and_driver_imports():
     from recovar.data_io.starfile import star_column
 
-    from relax.relion import relion_ctf, relion_metadata, vdam_checkpoint
+    from relax.relion import ctf, metadata, vdam_checkpoint
 
     driver_src = inspect.getsource(driver)
     for owner, names in (
@@ -521,8 +521,8 @@ def test_initial_model_serialization_owners_and_driver_imports():
     assert driver.write_iteration_artifacts is output.write_iteration_artifacts
     assert output._write_data_star is initial_model_io._write_data_star
     assert output._write_model_star is initial_model_io._write_model_star
-    assert initial_model_io.star_column is relion_ctf.star_column is star_column
-    assert vdam_checkpoint._relion_star_list_value is relion_metadata._relion_star_list_value
+    assert initial_model_io.star_column is ctf.star_column is star_column
+    assert vdam_checkpoint._relion_star_list_value is metadata._relion_star_list_value
     assert not (PACKAGE_DIR / "star_io.py").exists()
 
 

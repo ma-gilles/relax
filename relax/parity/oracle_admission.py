@@ -13,7 +13,7 @@ from relax.refinement.command_options import find_relion_optimiser_star
 from relax.refinement.refinement_options import RestartProvenance
 
 if TYPE_CHECKING:
-    from relax.relion.relion_worker_scale import RelionDispatchSchedule
+    from relax.relion.worker_scale import RelionDispatchSchedule
 
 
 class VerifiedDispatchSchedule(NamedTuple):
@@ -31,7 +31,7 @@ def load_verified_dispatch_schedule(
     Verify directory manifests before discovering the consumed optimiser and
     sampling files. See ``docs/math/relion_refinement_algorithm.md#command-admission``.
     """
-    from relax.relion.relion_worker_scale import (
+    from relax.relion.worker_scale import (
         load_relion_dispatch_schedule,
         relion_ordered_particle_sha256,
         verify_relion_dispatch_schedule_oracle,
@@ -119,7 +119,7 @@ def admit_follower_routing(
     A capture is strict K>1 replay state only: it is admitted when the run replays or starts from a RELION
     directory, and the topology then follows it. ``group_source`` is the particle table the groups came from.
     """
-    from relax.relion.relion_worker_scale import prepare_follower_topology
+    from relax.relion.worker_scale import prepare_follower_topology
 
     strict_replay = bool(
         args.n_classes > 1

@@ -7,9 +7,9 @@ Pass ``history=RefinementHistory(...)``, ``maps=ModelMaps(...)`` and so on to se
 
 from __future__ import annotations
 
-from relax.helpers.iteration_history import RefinementHistory
+from relax.refinement.iteration_history import RefinementHistory
 from relax.refinement.refinement_result import ModelMaps, NumberedMetadata, RefinementResult, ReplayTelemetry
-from relax.relion.relion_worker_scale import FollowerScaleOutputs
+from relax.relion.worker_scale import FollowerScaleOutputs
 
 
 def numbered_metadata(**fields) -> NumberedMetadata:
