@@ -62,7 +62,11 @@ from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
 )
-from relax.relion.optics_aberrations import dataset_projection_magnification, reported_rotations
+from relax.relion.optics_aberrations import (
+    dataset_magnification_is_anisotropic,
+    dataset_projection_magnification,
+    reported_rotations,
+)
 from relax.sampling import (
     build_local_search_grid_metadata,
     project_rows,
@@ -1092,6 +1096,7 @@ def _score_half_dense(
 
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
+        sampling, optics = _single_shape_reconstruction_grid(experiment_half, sampling, optics)
         return _score_half_dense_one_shape(half, sampling, priors, batching, variant, execution, optics)
     _require_multi_shape_inputs(half, optics)
     if batching.class_batch_overrides is not None and len(batching.class_batch_overrides) != len(experiment_half.classes):
@@ -1474,6 +1479,30 @@ def _local_owners_for_shape(
     )
 
 
+def _single_shape_reconstruction_grid(dataset, sampling, optics: OpticsSpec):
+    """``(sampling, optics)`` of a one-shape half (dense or local sampling) the engine clips at the reference sphere.
+
+    With a scale difference (``optics.projection_scale`` is not 1, even by the float32 rounding of the
+    reference header's pixel) RELION's remap gives the images a current size above the model's, and
+    ``sampling.model_support_size`` arrives as the model's. Without magnification the engine builds
+    the exact-radius window of that size, which is RELION's support, and nothing changes here. With
+    anisotropic magnification (:func:`relax.relion.optics_aberrations.dataset_magnification_is_anisotropic`,
+    the predicate of the engines' ``reference_sphere_clip``) the engine keeps a rounded window and the
+    kernel clips: the window is then the model support on the image grid and the reference keeps the
+    model's size, as for a shape class (:func:`relax.refinement.optics_shapes.class_kwargs`, the same
+    ``group_current_size``). A rounded window of the model's size on the larger image crop is one the
+    Wavg rectangle refuses (relax#69).
+    """
+
+    from relax.helpers import optics_scale
+
+    reference_size = sampling.model_support_size
+    if reference_size is None or optics.projection_scale == 1.0 or not dataset_magnification_is_anisotropic(dataset):
+        return sampling, optics
+    window = optics_scale.group_current_size(reference_size, int(dataset.image_shape[0]), optics.projection_scale)
+    return replace(sampling, model_support_size=window), replace(optics, reference_current_size=int(reference_size))
+
+
 def _score_half_local(
     half: HalfScoringData,
     sampling: LocalSampling,
@@ -1489,6 +1518,7 @@ def _score_half_local(
 
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
+        sampling, optics = _single_shape_reconstruction_grid(experiment_half, sampling, optics)
         return _score_half_local_one_shape(half, sampling, priors, batching, execution, diagnostics, optics)
     _require_multi_shape_inputs(half, optics)
     optics_shapes.require_exact_local_parent_windows(
