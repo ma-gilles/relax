@@ -53,8 +53,8 @@ from relax.parity.state_swap_probe import (
     validate_state_swap_probe_application,
 )
 from relax.refinement import command_options, particle_loading, run_files, startup_noise, startup_references
+from relax.refinement.command_options import apply_k1_refine3d_env_defaults
 from relax.refinement.half_inputs import HalfPair
-from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
     RunReport,
     build_archive_metadata,

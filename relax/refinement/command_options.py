@@ -1614,3 +1614,20 @@ def resolve_k_class(args, *, random_seed: int, trial_order, resumed: bool) -> KC
             else None
         ),
     )
+
+
+# Program-count settings that K=1 Refine3D turns on by default since the resident flip. They
+# are exact (the same primitives in the same order), but the stage glue and the local ladder
+# are shared with VDAM, whose defaults its own qualification changes, so they are set at the
+# K=1 entry points rather than in the shared library defaults.
+K1_REFINE3D_ENV_DEFAULTS = {
+    "RELAX_EM_JIT_STAGE_GLUE": "1",
+    "RELAX_LOCAL_IMAGE_CAPACITY_LADDER": "1",
+}
+
+
+def apply_k1_refine3d_env_defaults() -> None:
+    """Set the K=1 Refine3D program defaults; an explicit environment value still wins."""
+
+    for name, value in K1_REFINE3D_ENV_DEFAULTS.items():
+        os.environ.setdefault(name, value)
