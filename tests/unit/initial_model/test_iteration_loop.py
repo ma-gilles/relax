@@ -16,7 +16,6 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import keep_tau2, projector_power_refresh
 
 from relax.diagnostics.vdam_observers import VdamDiagnosticObserver
-from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.iteration_loop import (
@@ -28,7 +27,7 @@ from relax.vdam.iteration_loop import (
 )
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.model_update import update_noise_from_estep, update_probabilities_from_estep
-from relax.vdam.native_options import VdamEnvironment
+from relax.vdam.native_options import VdamEnvironment, VdamPilotControls
 from relax.vdam.ports import NoProbe, VdamObserver
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.state import VdamAccumulator

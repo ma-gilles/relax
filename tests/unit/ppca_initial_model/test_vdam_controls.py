@@ -1,7 +1,6 @@
 import pytest
 
-from relax.ppca_initial_model.vdam_controls import VdamPilotControls
-from relax.vdam.native_options import NativeInitialModelOptions
+from relax.vdam.native_options import NativeInitialModelOptions, VdamPilotControls
 from relax.vdam.schedules import default_subset_sizes_for_3d_initial_model
 
 pytestmark = pytest.mark.unit

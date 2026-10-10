@@ -1619,7 +1619,7 @@ subset of the existing simulator fixture before training. An opt-in
 non-final subset count; iteration 60 still uses every particle. The VDAM
 comparison has opt-in fixed non-final subset and low-resolution Fourier and
 angular caps in the PPCA-owned
-[VdamPilotControls](../../relax/ppca_initial_model/vdam_controls.py), which the
+[VdamPilotControls](../../relax/vdam/native_options.py), which the
 VDAM controller holds as `pilot_controls` (`None` is native VDAM).
 Native frequency and angular adaptation remains active within those caps, so
 its effective per-iteration support must be reported rather than assumed equal

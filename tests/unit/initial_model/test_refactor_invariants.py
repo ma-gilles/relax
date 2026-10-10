@@ -295,7 +295,9 @@ LOC_BUDGETS = {
     # Optics groups on several image shapes (RELION S3b, 2026-10-05, etvdam): one dataset per image shape
     # (MultiShapeDataset), the refusal of features not wired for several shapes, and the class datasets'
     # scratch and mask setup: 1952 -> 1977 lines on main 7d7f3c92 (+25; ceiling +19).
-    "controller": (1977, (
+    # VdamPilotControls (relax/ppca_initial_model/vdam_controls.py, 57 lines) moved into native_options.py,
+    # which holds it as VdamEnvironment.pilot_controls (2026-10-10): +52 lines here, the file's exact growth.
+    "controller": (2029, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset_schedule.py", "ports.py",
     )),
