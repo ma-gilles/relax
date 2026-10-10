@@ -23,6 +23,8 @@ from relax.helpers.xla_memory_reserve import device_fits
 from relax.relion.macros import relion_round, relion_round_array
 
 _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS = 200_000_000
+# Elements of one host shell-statistics block (_numpy_bincount_shell_stats): about 0.5 GiB of temporaries.
+_SHELL_STATS_BLOCK = 1 << 24
 # Device bytes per padded-grid voxel of the device shell statistics: the two halves' weights, their combination and
 # its float64 copy (8 B each), and the radius, shell-index and mask grids of _padded_shell_sums_device.
 _SHELL_STATS_DEVICE_BYTES_PER_VOXEL = 48
@@ -639,14 +641,32 @@ def compute_relion_weight_shell_stats(
         return np.broadcast_to(keep.reshape(mask_shape), shape)
 
     def _numpy_bincount_shell_stats(labels, values, mask):
-        labels_np = np.asarray(labels, dtype=np.int64).reshape(-1)
+        """Per shell, the sum and the count of the masked ``values``: ``np.bincount`` over the flattened arrays.
+
+        Accumulated in blocks of :data:`_SHELL_STATS_BLOCK` elements, so the int64 labels and the selected
+        labels and values exist for one block at a time (three box-scale copies before: +20 GiB at EMPIAR-10202's
+        padded box, relax#39). Each block's ``bincount`` starts from the running sums: they are its first
+        weights, at labels ``0..n-1``, and ``bincount`` adds its weights in input order, so every shell's sum
+        continues exactly where the previous block left it and equals the single call's, bit for bit.
+        """
+
+        labels_np = np.asarray(labels).reshape(-1)
         values_np = np.asarray(values).reshape(-1)
         mask_np = np.asarray(mask, dtype=bool).reshape(-1)
-        labels_included = labels_np[mask_np]
-        return (
-            np.bincount(labels_included, weights=values_np[mask_np], minlength=n_shells)[:n_shells],
-            np.bincount(labels_included, minlength=n_shells).astype(np.float64)[:n_shells],
-        )
+        n_bins = max(int(n_shells), int(labels_np.max()) + 1 if labels_np.size else 0)
+        bins = np.arange(n_bins, dtype=np.int64)
+        sums = np.zeros(n_bins, dtype=np.float64)
+        counts = np.zeros(n_bins, dtype=np.int64)
+        for start in range(0, labels_np.size, _SHELL_STATS_BLOCK):
+            block = slice(start, start + _SHELL_STATS_BLOCK)
+            included = mask_np[block]
+            block_labels = labels_np[block][included].astype(np.int64, copy=False)
+            block_values = values_np[block][included].astype(np.float64, copy=False)
+            sums = np.bincount(
+                np.concatenate([bins, block_labels]), weights=np.concatenate([sums, block_values]), minlength=n_bins
+            )
+            counts += np.bincount(block_labels, minlength=n_bins)
+        return sums[:n_shells], counts.astype(np.float64)[:n_shells]
 
     if padding_factor > 1 and not native_layout:
         if is_half_layout:

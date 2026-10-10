@@ -250,3 +250,32 @@ def test_recovar_native_half_accumulator_counts_every_stored_entry(grid_name, re
     )
 
     _assert_relion_shell_stats({key: np.asarray(value) for key, value in stats.items()}, expected_sum, expected_count)
+
+
+@pytest.mark.parametrize("grid", ["odd_bpref_27_full_size", "even_padded_24_current_8"])
+def test_host_shell_statistics_do_not_depend_on_their_block_size(monkeypatch, grid):
+    """The host statistics accumulate in blocks, each starting from the running sums (relax#39): one block
+    and many give the same sums and counts."""
+
+    volume_shape, padding_factor, accumulator_volume_shape, r_max = _GRIDS[grid]
+    grid_shape = _grid_shape(volume_shape, padding_factor, accumulator_volume_shape)
+    weight = _anisotropic_relion_x_half_weight(grid_shape, seed=5)
+    native_half = half_volume_mstep.relion_x_half_volume_to_native_half(weight, grid_shape)
+    monkeypatch.setattr(regularization_relion, "_shell_stats_on_host", lambda size: True)
+
+    def statistics():
+        return regularization_relion.compute_relion_weight_shell_stats(
+            native_half,
+            volume_shape,
+            padding_factor=padding_factor,
+            r_max=r_max,
+            full_half_axis=_RELION_X_AXIS,
+            accumulator_volume_shape=accumulator_volume_shape,
+        )
+
+    whole = statistics()
+    monkeypatch.setattr(regularization_relion, "_SHELL_STATS_BLOCK", 97)
+    blocked = statistics()
+    assert len(whole) == len(blocked)
+    for one, many in zip(whole, blocked):
+        assert_matches(np.asarray(many), np.asarray(one))
