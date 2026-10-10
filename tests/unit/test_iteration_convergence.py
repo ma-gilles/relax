@@ -11,7 +11,7 @@ from relax.helpers.convergence import ExpectationStatistics, RefinementState, ha
 from relax.helpers.resolution import ImageGeometry
 from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 from relax.refinement.convergence import reset_follower_counter_once, update_iteration_convergence
-from relax.refinement.half_inputs import PoseComparison
+from relax.refinement.particle_poses import PoseComparison
 from relax.refinement.refinement_options import (
     CheckpointOptions,
     KClassOptions,

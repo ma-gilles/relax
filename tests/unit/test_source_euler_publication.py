@@ -15,7 +15,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_particle_pose_interpretation_preserves_metadata_and_offset_frame(monkeypatch, dtype):
-    from relax.refinement.half_inputs import resolve_particle_poses
+    from relax.refinement.particle_poses import resolve_particle_poses
 
     eulers = _source_eulers(2)
     rotations = np.asarray(utils.R_from_relion(eulers, degrees=True), dtype=dtype)
@@ -48,7 +48,7 @@ def test_particle_pose_interpretation_preserves_metadata_and_offset_frame(monkey
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_particle_pose_interpretation_decodes_dense_grid_ids(dtype):
-    from relax.refinement.half_inputs import resolve_particle_poses
+    from relax.refinement.particle_poses import resolve_particle_poses
 
     rotations = np.asarray(utils.R_from_relion(_source_eulers(3), degrees=True), dtype=dtype)
     translations = np.array([[0.25, -0.5], [1.0, 0.75]], dtype=dtype)
@@ -89,11 +89,8 @@ def test_pose_transition_preserves_half_identity_snapshots_and_offset_frames(
     dtype, dimension, second_half_count,
     has_previous,
 ):
-    from relax.refinement.half_inputs import (
-        HalfSet,
-        prepare_particle_pose_update,
-        prepare_pose_comparison,
-    )
+    from relax.refinement.half_inputs import HalfSet
+    from relax.refinement.particle_poses import prepare_particle_pose_update, prepare_pose_comparison
 
     counts = (2, second_half_count)
     scores = score_outputs.PerHalfOutputs()
@@ -158,7 +155,7 @@ def test_pose_transition_preserves_half_identity_snapshots_and_offset_frames(
 
 
 def test_pose_transition_snapshots_both_halves_before_resolving_either(monkeypatch):
-    from relax.refinement import half_inputs
+    from relax.refinement import half_inputs, particle_poses
 
     halves = [
         half_inputs.HalfSet(index=k, dataset=object(), translations=np.full((1, 2), k + 1.0))
@@ -169,14 +166,14 @@ def test_pose_transition_snapshots_both_halves_before_resolving_either(monkeypat
     def resolve(assignments, grid, *, previous_translations, **kwargs):
         calls.append(previous_translations.copy())
         halves[1].translations[:] = 100
-        return half_inputs.ParticlePoses(
+        return particle_poses.ParticlePoses(
             rotations=np.eye(3)[None, ...], eulers_deg=np.zeros((1, 3)),
             relative_translations_pixels=grid[:1], translations_pixels=previous_translations,
         )
 
-    monkeypatch.setattr(half_inputs, "resolve_particle_poses", resolve)
+    monkeypatch.setattr(particle_poses, "resolve_particle_poses", resolve)
     outputs = score_outputs.PerHalfOutputs(hard_assignments=[np.zeros(1, dtype=np.int32)] * 2)
-    update = half_inputs.prepare_particle_pose_update(
+    update = particle_poses.prepare_particle_pose_update(
         outputs, halves, np.zeros((1, 2)),
         previous_rotations=[None, None], local_sampling=None, dtype=np.float32,
     )

@@ -13,7 +13,8 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement import optics_shapes
-from relax.refinement.half_inputs import HalfSet, prepare_particle_pose_update
+from relax.refinement.half_inputs import HalfSet
+from relax.refinement.particle_poses import prepare_particle_pose_update
 
 pytestmark = pytest.mark.unit
 

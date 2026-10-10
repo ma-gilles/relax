@@ -21,7 +21,7 @@ from relax.helpers.resolution import ImageGeometry, shell_index_to_resolution_an
 from relax.refinement.ports import InputSource, OptimiserAccuracyReplay
 
 if TYPE_CHECKING:
-    from relax.refinement.half_inputs import PoseComparison
+    from relax.refinement.particle_poses import PoseComparison
     from relax.refinement.refinement_options import AdaptiveOptions, RefinementOptions
 
 

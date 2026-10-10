@@ -37,6 +37,7 @@ from relax.refinement import (
     maximization,
     noise_updates,
     numbered_reconstruction,
+    particle_poses,
     ports,
     projector_preparation,
     reference_state,
@@ -665,7 +666,7 @@ def refine_single_volume(
     # RELION measures the first iteration's orientation changes from the input angles, as its offset
     # changes from the input offsets (updateOverallChangesInHiddenVariables); they seed the smallest-change
     # trackers of the hidden-variable stall counter. An empty half keeps an empty stack, as the loop does.
-    previous_best_rotations = half_inputs.best_rotation_matrices(halves, dtype=ctx.scoring_dtype)
+    previous_best_rotations = particle_poses.best_rotation_matrices(halves, dtype=ctx.scoring_dtype)
     iteration = 0
     setup_phase_seconds["before_iterations"] = setup_clock.seconds
     logger.info(
@@ -1109,7 +1110,7 @@ def refine_single_volume(
         history.pixel_resolutions.append(resolution_estimate.scheduling_shell)
 
         # --- Update poses and noise (the previous best poses stay for RELION's change metrics, B3) ---
-        pose_update = half_inputs.prepare_particle_pose_update(
+        pose_update = particle_poses.prepare_particle_pose_update(
             expected.per_half, halves, carry.coarse_grids.translations, previous_rotations=carry.previous_best_rotations,
             local_sampling=plan.sampling_plan.local if use_local else None, dtype=ctx.scoring_dtype,
         )
@@ -1126,7 +1127,7 @@ def refine_single_volume(
             datasets=experiment_datasets,
         )
 
-        pose_comparison = half_inputs.prepare_pose_comparison(
+        pose_comparison = particle_poses.prepare_pose_comparison(
             pose_update, translation_dimension=ctx.offset_dims, dtype=ctx.scoring_dtype, log=logger,
         )
 
