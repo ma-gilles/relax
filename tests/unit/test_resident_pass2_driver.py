@@ -1637,7 +1637,7 @@ def test_stable_window_reference_volume_on_another_grid(monkeypatch):
 
     from relax.helpers.adjoint import ReferenceSphereClip, mstep_adjoint_max_r
     from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
-    from relax.refinement.optics_shapes import reconstruction_image_radius
+    from relax.refinement.shape_class_scoring import reconstruction_image_radius
 
     monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
     quantum = stable_fourier_window_quantum()

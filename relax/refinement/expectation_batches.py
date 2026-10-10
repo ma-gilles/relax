@@ -20,7 +20,7 @@ from relax.helpers.batch_planning import (
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
 from relax.helpers.projection import host_relion_projector_texture_enabled
-from relax.refinement import optics_shapes
+from relax.refinement import shape_class_scoring
 from relax.refinement.refinement_options import ExecutionOptions
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
@@ -117,7 +117,7 @@ def _class_adaptive_batch_overrides(
 
     overrides = []
     for shape_class in half.classes:
-        class_cs, class_coarse = optics_shapes.class_adaptive_sizes(
+        class_cs, class_coarse = shape_class_scoring.class_adaptive_sizes(
             shape_class, cs_for_engine, coarse_cs, coarse_sizing
         )
         class_plan = plan(image_shape=shape_class.dataset.image_shape, cs_for_engine=class_cs, coarse_cs=class_coarse)

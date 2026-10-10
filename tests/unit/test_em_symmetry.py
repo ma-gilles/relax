@@ -13,7 +13,7 @@ from helpers.refinement_specs import local_half_owners
 from helpers.run_options import stand_in
 
 from relax.dense import scoring_policy
-from relax.refinement import optics_shapes
+from relax.refinement import shape_class_scoring
 from relax.refinement.half_inputs import HalfScoringData, HalfSet
 from relax.refinement.refinement_options import ScoringVariants
 from relax.symmetry import (
@@ -910,7 +910,7 @@ def _symmetric_dense_owners(dense_half, values):
             else ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
             precision=scoring_policy.DENSE_PRECISION,
         ),
-        optics_shapes.OpticsSpec.single_shape(),
+        shape_class_scoring.OpticsSpec.single_shape(),
     )
     assert not values, f"unmapped dense owner values: {sorted(values)}"
     return owners

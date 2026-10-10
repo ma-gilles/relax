@@ -9,7 +9,7 @@ from relax.refinement import (
     local_half,
     local_sampling,
     local_search_iteration,
-    optics_shapes,
+    shape_class_scoring,
 )
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.ports import NoProbe
@@ -223,7 +223,7 @@ def local_half_owners(**values):
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
             probe=values.pop("probe", NoProbe()),
         ),
-        optics_shapes.OpticsSpec(
+        shape_class_scoring.OpticsSpec(
             noise_radial_k=values.pop("noise_radial_k", None),
             coarse_sizing=values.pop("coarse_sizing", None),
             class_translations=values.pop("class_translations", None),

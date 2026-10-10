@@ -17,7 +17,7 @@ import numpy as np
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.helpers.convergence import healpix_angular_step
 from relax.helpers.orientation_priors import relion_round_away_from_zero, relion_sigma_offset_prior_center
-from relax.refinement import optics_shapes
+from relax.refinement import shape_class_scoring
 from relax.relion.optics_aberrations import reported_rotations
 from relax.vdam import native_sampling
 from relax.vdam.estep_common import ENGINE_DISC_TYPE, InitialModelEstepConfig
@@ -52,7 +52,7 @@ def run_by_shape_class(
 ):
     """The adaptive route once per image shape of the subset, merged (RELION S3b).
 
-    Each shape class scores its images on its own grid (``optics_shapes.shape_class_engine_inputs``:
+    Each shape class scores its images on its own grid (``shape_class_scoring.shape_class_engine_inputs``:
     projection scale, remapped sizes, noise rows, reference-grid backprojector). Its translation
     grids are rebuilt in its pixels from the Angstrom grid, and its pre-shifts, prior centers and
     coarse ``pdf_offset`` from each particle's offset in its own pixels, rounded there
@@ -89,7 +89,7 @@ def run_by_shape_class(
     for shape_class in half.classes:
         factor = float(shape_class.translation_factor)
         grids = class_route(factor).grids
-        inputs = optics_shapes.shape_class_engine_inputs(
+        inputs = shape_class_scoring.shape_class_engine_inputs(
             shape_class,
             half,
             noise_radial=noise_radial,
@@ -154,5 +154,5 @@ def run_by_shape_class(
             np.asarray(pre_shifts, dtype=np.float64) + fine_translations[winners, :2]
         ) / factor
         results.append(class_result)
-    merged = optics_shapes.merge_k_class_engine_results(results, half.classes, half.n_units, int(half.image_shape[0]))
+    merged = shape_class_scoring.merge_k_class_engine_results(results, half.classes, half.n_units, int(half.image_shape[0]))
     return merged, new_offsets

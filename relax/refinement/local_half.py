@@ -42,12 +42,9 @@ from relax.refinement.local_search_iteration import (
     LocalSearchGridSpec,
     _run_local_search_iteration,
 )
-from relax.refinement.optics_shapes import (
-    OpticsSpec,
-    reconstruction_image_radius,
-)
 from relax.refinement.ports import ExpectationProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
+from relax.refinement.shape_class_scoring import OpticsSpec, reconstruction_image_radius
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -336,9 +333,9 @@ def _local_owners_for_shape(
 ) -> LocalShapeOwners:
     """Derive one exact-local shape class through the optics owner."""
 
-    from relax.refinement import optics_shapes
+    from relax.refinement import shape_class_scoring
 
-    shape_values = optics_shapes.class_kwargs(
+    shape_values = shape_class_scoring.class_kwargs(
         {
             "experiment_dataset": half.particles.dataset,
             "previous_best_rotation_eulers_k": half.particles.rotation_eulers,
@@ -376,7 +373,7 @@ def _local_owners_for_shape(
                 image_corrections=shape_values["image_corrections_k"],
                 scale_corrections=shape_values["scale_corrections_k"],
             ),
-            noise_variance=optics_shapes.class_noise_table(
+            noise_variance=shape_class_scoring.class_noise_table(
                 optics.noise_radial_k,
                 shape_class,
                 int(half.particles.dataset.image_shape[0]),
@@ -419,14 +416,14 @@ def _score_half_local(
 ) -> HalfScoreResult:
     """Exact-local scoring for one half; several shapes run per shape class."""
 
-    from relax.refinement import optics_shapes
+    from relax.refinement import optics_shapes, shape_class_scoring
 
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
         sampling, optics = single_shape_reconstruction_grid(experiment_half, sampling, optics)
         return _score_half_local_one_shape(half, sampling, priors, batching, execution, diagnostics, optics)
     require_multi_shape_inputs(half, optics)
-    optics_shapes.require_exact_local_parent_windows(
+    shape_class_scoring.require_exact_local_parent_windows(
         {
             "experiment_dataset": experiment_half,
             "cs_for_engine": sampling.image_window_size,

@@ -30,7 +30,7 @@ from relax.helpers.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement import half_inputs, iteration_planning, local_sampling, optics_shapes
+from relax.refinement import half_inputs, iteration_planning, local_sampling, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -787,7 +787,7 @@ def score_numbered_half(
             normalized_cc=phase.variant.score_mode == "normalized_cc",
         )
     elif use_local:
-        local_optics = optics_shapes.prepare_optics(
+        local_optics = shape_class_scoring.prepare_optics(
             particle_half.dataset,
             noise_radial=half.data.noise_radial,
             coarse_step_deg=coarse_size_step_deg,
@@ -841,7 +841,7 @@ def score_numbered_half(
     else:
         # Shared dense half-scoring operands; the adaptive branch adds its
         # pass-1 grid and batch/size overrides.
-        dense_optics = optics_shapes.prepare_optics(
+        dense_optics = shape_class_scoring.prepare_optics(
             particle_half.dataset,
             noise_radial=half.data.noise_radial,
             coarse_step_deg=coarse_size_step_deg,

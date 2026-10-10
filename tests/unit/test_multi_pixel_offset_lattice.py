@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import optics_shapes
+from relax.refinement import optics_shapes, shape_class_scoring
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.particle_poses import prepare_particle_pose_update
 
@@ -40,7 +40,7 @@ def test_trial_translations_are_one_angstrom_grid_for_every_pixel():
     half = _half([0, 1])
     grid_ref = np.array([[0.0, 0.0], [0.5, -1.0], [-1.5, 2.0]])  # model pixels, --offset_step 1 at oversampling 1
     for shape_class in half.classes:
-        out = optics_shapes.class_kwargs(
+        out = shape_class_scoring.class_kwargs(
             {"current_translations": grid_ref, "translation_step": 1.0}, shape_class, half.n_units
         )
         assert_matches(out["current_translations"] * shape_class.pixel_size, grid_ref * MODEL_PIXEL)

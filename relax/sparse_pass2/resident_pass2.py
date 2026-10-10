@@ -2303,7 +2303,7 @@ def _stable_reference_volume_class(volume_size: int, volume_current_size: int) -
 def _reference_image_radius_at(image_radius, volume_current_size: int, physical_volume_current_size: int):
     """The image-space radius of a physical reference-model size, or None on one grid.
 
-    :func:`relax.refinement.optics_shapes.reconstruction_image_radius` is
+    :func:`relax.refinement.shape_class_scoring.reconstruction_image_radius` is
     ``(current_size // 2) * s``; the physical class keeps the scale ``s``.
     """
 

@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from relax.helpers import optics_scale
-from relax.refinement import optics_shapes
+from relax.refinement import optics_shapes, shape_class_scoring
 from relax.sparse_pass2.resident_statistics import resolve_statistics_config
 
 pytestmark = pytest.mark.unit
@@ -99,7 +99,7 @@ def test_single_and_several_shape_paths_give_a_group_the_same_window_and_noise_s
         log=logging.getLogger("test"),
     ).image_current_size
     reference, _ = _classes(model_pixel)
-    several = optics_shapes.class_kwargs({"cs_for_engine": 50}, reference, 0)["cs_for_engine"]
+    several = shape_class_scoring.class_kwargs({"cs_for_engine": 50}, reference, 0)["cs_for_engine"]
     assert single == several
     assert _noise_shells(single) == _noise_shells(several)
 
@@ -173,7 +173,7 @@ def test_the_trial_grid_uses_the_model_pixel_and_stored_offsets_the_star_pixels(
     grid = np.array([[1.0, -2.0]])
     stored = np.array([[0.5, 1.5], [-3.0, 2.0]])  # one stored offset per image of the half
     for shape_class in (reference, diamond):
-        out = optics_shapes.class_kwargs(
+        out = shape_class_scoring.class_kwargs(
             {"current_translations": grid, "trans_prior_center": stored, "translation_step": 1.0}, shape_class, 2
         )
         assert out["current_translations"] == pytest.approx(grid * HEADER_PIXEL / shape_class.pixel_size, rel=1e-15)
@@ -210,7 +210,7 @@ def _local_grid(model_pixel, model_support_size=38):
         model_support_size=model_support_size,
     )
     dataset = SimpleNamespace(image_shape=(128, 128))
-    return dense_half.single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
+    return dense_half.single_shape_reconstruction_grid(dataset, sampling, shape_class_scoring.OpticsSpec.single_shape(scale))
 
 
 def _dense_grid(model_pixel, model_support_size=28):
@@ -224,7 +224,7 @@ def _dense_grid(model_pixel, model_support_size=28):
         model_support_size=model_support_size,
     )
     dataset = SimpleNamespace(image_shape=(128, 128))
-    return dense_half.single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
+    return dense_half.single_shape_reconstruction_grid(dataset, sampling, shape_class_scoring.OpticsSpec.single_shape(scale))
 
 
 def test_a_magnified_single_shape_local_half_reconstructs_on_the_remapped_window(magnified):
@@ -237,9 +237,9 @@ def test_a_magnified_single_shape_local_half_reconstructs_on_the_remapped_window
     sampling, optics = _local_grid(HEADER_PIXEL)
     assert (sampling.image_window_size, sampling.model_support_size, optics.reference_current_size) == (40, 40, 38)
     reference, _ = _classes(HEADER_PIXEL)
-    several = optics_shapes.class_kwargs({"cs_for_engine": 38}, reference, 0)
+    several = shape_class_scoring.class_kwargs({"cs_for_engine": 38}, reference, 0)
     assert (several["model_current_size_for_engine"], several["reference_current_size"]) == (40, 38)
-    assert optics_shapes.reconstruction_image_radius(optics.reference_current_size, optics.projection_scale) == 19.0
+    assert shape_class_scoring.reconstruction_image_radius(optics.reference_current_size, optics.projection_scale) == 19.0
 
     window, count = make_fourier_window_indices_np((128, 128), sampling.model_support_size, include_dc=True)
     assert int(count) == 653

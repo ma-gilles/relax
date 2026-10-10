@@ -5,7 +5,7 @@ initial_model`` for three iterations at a fixed Fourier radius of 50 (current si
 the 128-px model grid, 10.88 A). The 112-px group's Nyquist is 10.88 A, so its pass runs at
 its box and keeps the logical window, while the model-grid group runs a stable physical
 window (100 -> 120). Each shape class's E-step result is merged by
-relax.refinement.optics_shapes.merge_k_class_engine_results, which sums the classes'
+relax.refinement.shape_class_scoring.merge_k_class_engine_results, which sums the classes'
 BPref cubes; the multishape seed runs of af9e5870 failed there after iteration 110 when
 the model-grid class returned its physical cube (job 15071919). This reaches that state in
 the first iteration. An execution check; quality is a benchmark run against RELION.

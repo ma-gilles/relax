@@ -111,7 +111,7 @@ def stub_planning(monkeypatch):
         fine_rotation_block_size=2, coarse_image_batch_size=1, coarse_rotation_block_size=1,
         class_overrides=None,
     ))
-    monkeypatch.setattr(expectation.optics_shapes, 'prepare_optics', lambda *args, **kw: object())
+    monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', lambda *args, **kw: object())
 
 
 @pytest.mark.parametrize('local', [False, True])
@@ -139,7 +139,7 @@ def test_numbered_sizing_and_optics_consume_the_sampling_and_half_operands(
         return object()
 
     monkeypatch.setattr(expectation, 'prepare_half_batches', plan)
-    monkeypatch.setattr(expectation.optics_shapes, 'prepare_optics', optics)
+    monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', optics)
     monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', lambda *args: engine_result())
     monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', lambda **inputs: engine_result())
     score_flat(half, phase, **kwargs)
@@ -399,7 +399,7 @@ def test_tomography_seeding_uses_original_unit_rows_without_spa_optics(monkeypat
         raise AssertionError('tomography must not prepare SPA image priors or optics')
 
     monkeypatch.setattr(expectation, '_score_tomo_half_in_loop', score)
-    monkeypatch.setattr(expectation.optics_shapes, 'prepare_optics', reject)
+    monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', reject)
     monkeypatch.setattr(expectation, 'relion_half_translation_prior_inputs', reject)
     score_flat(half, phase, **kwargs)
     assert_matches(captured['unit_seed_classes'], [0, 2])

@@ -27,7 +27,7 @@ from relax.refinement import (
     local_half,
     local_sampling,
     local_search_iteration,
-    optics_shapes,
+    shape_class_scoring,
 )
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
@@ -92,7 +92,7 @@ def _dense_owners(**values):
             relion_x_half_mstep=ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
             precision=scoring_policy.DENSE_PRECISION,
         ),
-        optics_shapes.OpticsSpec.single_shape(),
+        shape_class_scoring.OpticsSpec.single_shape(),
     )
     assert not values, f"unmapped dense owner values: {sorted(values)}"
     return owners
@@ -214,7 +214,7 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
             dense_half.DenseBatchPolicy,
             dense_half.DenseVariantPolicy,
             dense_half.DenseExecutionPolicy,
-            optics_shapes.OpticsSpec,
+            shape_class_scoring.OpticsSpec,
         )
         for field in dataclasses.fields(owner)
     }
@@ -246,7 +246,7 @@ def test_local_half_core_keeps_owner_dependencies_visible():
             local_half.LocalBatchPolicy,
             local_half.LocalExecutionPolicy,
             local_half.LocalDiagnosticPolicy,
-            optics_shapes.OpticsSpec,
+            shape_class_scoring.OpticsSpec,
         )
         for field in dataclasses.fields(owner)
     }

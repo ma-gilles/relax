@@ -225,7 +225,7 @@ def test_single_shape_runs_project_with_the_model_pixel_scale():
 
 def test_the_mstep_radius_takes_the_scale_relion_projects_with():
     """A class within RELION's identity tolerance backprojects with the plain matrices: its image radius is r_max."""
-    from relax.refinement.optics_shapes import reconstruction_image_radius
+    from relax.refinement.shape_class_scoring import reconstruction_image_radius
 
     assert reconstruction_image_radius(28, STAR_1P4 / HEADER_1P4) == 14.0
     assert reconstruction_image_radius(28, 1.36 / HEADER_1P4) == 14.0 * (1.36 / HEADER_1P4)

@@ -42,7 +42,7 @@ from relax.helpers.resolution import (
     shell_index_to_resolution_angstrom,
 )
 from relax.helpers.timing import Stopwatch
-from relax.refinement import final_reconstruction, half_inputs, optics_shapes
+from relax.refinement import final_reconstruction, half_inputs, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -62,7 +62,7 @@ from relax.refinement.local_half import (
 )
 from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
-from relax.refinement.optics_shapes import OpticsSpec, image_translation_factors
+from relax.refinement.optics_shapes import image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource
 from relax.refinement.priors import join_half_accumulators_at_low_resolution
 from relax.refinement.projector_preparation import prepare_scoring_projector
@@ -70,6 +70,7 @@ from relax.refinement.reference_state import _class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
+from relax.refinement.shape_class_scoring import OpticsSpec
 from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop
 from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
@@ -872,7 +873,7 @@ def prepare_final_half(
         half_index=half.index,
         symmetry=symmetry,
     )
-    optics = optics_shapes.prepare_optics(
+    optics = shape_class_scoring.prepare_optics(
         half.dataset,
         noise_radial=noise_radial,
         coarse_step_deg=coarse_angular_step_deg,

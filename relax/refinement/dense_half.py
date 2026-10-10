@@ -33,11 +33,7 @@ from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.oversampling import AdaptivePass2Grids, prepare_adaptive_pass2_grids, project_pass2_rotations
 from relax.refinement.firstiter_cc import _score_kclass_firstiter_cc_pass2
 from relax.refinement.half_inputs import HalfScoringData
-from relax.refinement.optics_shapes import (
-    OpticsSpec,
-    engine_projection_inputs,
-    reference_grid_kwargs,
-)
+from relax.refinement.shape_class_scoring import OpticsSpec, engine_projection_inputs, reference_grid_kwargs
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -928,9 +924,9 @@ def _dense_owners_for_shape(
 ) -> DenseShapeOwners:
     """Derive one shape class without changing the shared scoring owners."""
 
-    from relax.refinement import optics_shapes
+    from relax.refinement import shape_class_scoring
 
-    shape_values = optics_shapes.class_kwargs(
+    shape_values = shape_class_scoring.class_kwargs(
         {
             "experiment_dataset": half.particles.dataset,
             "image_corrections_k": half.particles.image_corrections,
@@ -972,7 +968,7 @@ def _dense_owners_for_shape(
                 image_corrections=shape_values["image_corrections_k"],
                 scale_corrections=shape_values["scale_corrections_k"],
             ),
-            noise_variance=optics_shapes.class_noise_table(
+            noise_variance=shape_class_scoring.class_noise_table(
                 optics.noise_radial_k,
                 shape_class,
                 int(half.particles.dataset.image_shape[0]),
@@ -1022,9 +1018,9 @@ def require_multi_shape_inputs(half: HalfScoringData, optics: OpticsSpec) -> Non
 
 def merge_shape_class_results(results, experiment_half) -> HalfScoreResult:
     """One result for a multi-shape half from its shape classes' results, on the reference box."""
-    from relax.refinement import optics_shapes
+    from relax.refinement import shape_class_scoring
 
-    return optics_shapes.merge_class_results(
+    return shape_class_scoring.merge_class_results(
         results,
         experiment_half.classes,
         experiment_half.n_units,
@@ -1097,7 +1093,7 @@ def single_shape_reconstruction_grid(dataset, sampling, optics: OpticsSpec):
     anisotropic magnification (:func:`relax.relion.optics_aberrations.dataset_magnification_is_anisotropic`,
     the predicate of the engines' ``reference_sphere_clip``) the engine keeps a rounded window and the
     kernel clips: the window is then the model support on the image grid and the reference keeps the
-    model's size, as for a shape class (:func:`relax.refinement.optics_shapes.class_kwargs`, the same
+    model's size, as for a shape class (:func:`relax.refinement.shape_class_scoring.class_kwargs`, the same
     ``group_current_size``). A rounded window of the model's size on the larger image crop is one the
     Wavg rectangle refuses (relax#69).
     """
