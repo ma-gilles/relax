@@ -54,7 +54,7 @@ from relax.sampling import (
 logger = logging.getLogger("relax.dense.half_scoring")
 
 
-def _expand_significant_samples_to_full_parent_translations(
+def expand_significant_samples_to_full_parent_translations(
     significant_sample_indices,
     n_parent_translations: int,
 ):
@@ -1012,7 +1012,7 @@ def _dense_owners_for_shape(
     )
 
 
-def _require_multi_shape_inputs(half: HalfScoringData, optics: OpticsSpec) -> None:
+def require_multi_shape_inputs(half: HalfScoringData, optics: OpticsSpec) -> None:
     """A half with several image shapes needs reference-shell noise spectra and each image's optics group."""
     if optics.noise_radial_k is None:
         raise ValueError("a half with several image shapes needs reference-shell noise spectra")
@@ -1020,7 +1020,7 @@ def _require_multi_shape_inputs(half: HalfScoringData, optics: OpticsSpec) -> No
         raise ValueError("a half with several image shapes needs each image's optics group")
 
 
-def _merge_shape_class_results(results, experiment_half) -> HalfScoreResult:
+def merge_shape_class_results(results, experiment_half) -> HalfScoreResult:
     """One result for a multi-shape half from its shape classes' results, on the reference box."""
     from relax.refinement import optics_shapes
 
@@ -1047,9 +1047,9 @@ def _score_half_dense(
 
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
-        sampling, optics = _single_shape_reconstruction_grid(experiment_half, sampling, optics)
+        sampling, optics = single_shape_reconstruction_grid(experiment_half, sampling, optics)
         return _score_half_dense_one_shape(half, sampling, priors, batching, variant, execution, optics)
-    _require_multi_shape_inputs(half, optics)
+    require_multi_shape_inputs(half, optics)
     if batching.class_batch_overrides is not None and len(batching.class_batch_overrides) != len(experiment_half.classes):
         raise ValueError("class_batch_overrides needs one entry per shape class")
 
@@ -1069,7 +1069,7 @@ def _score_half_dense(
             # K1 shape merging retains common statistics, not class-prior summaries.
             result.classes = None
         results.append(result)
-    return _merge_shape_class_results(results, experiment_half)
+    return merge_shape_class_results(results, experiment_half)
 
 
 def _score_half_dense_in_bpref_scope(
@@ -1087,7 +1087,7 @@ def _score_half_dense_in_bpref_scope(
         return _score_half_dense(half, sampling, priors, batching, variant, execution, optics)
 
 
-def _single_shape_reconstruction_grid(dataset, sampling, optics: OpticsSpec):
+def single_shape_reconstruction_grid(dataset, sampling, optics: OpticsSpec):
     """``(sampling, optics)`` of a one-shape half (dense or local sampling) the engine clips at the reference sphere.
 
     With a scale difference (``optics.projection_scale`` is not 1, even by the float32 rounding of the

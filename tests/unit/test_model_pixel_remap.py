@@ -210,7 +210,7 @@ def _local_grid(model_pixel, model_support_size=38):
         model_support_size=model_support_size,
     )
     dataset = SimpleNamespace(image_shape=(128, 128))
-    return dense_half._single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
+    return dense_half.single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
 
 
 def _dense_grid(model_pixel, model_support_size=28):
@@ -224,7 +224,7 @@ def _dense_grid(model_pixel, model_support_size=28):
         model_support_size=model_support_size,
     )
     dataset = SimpleNamespace(image_shape=(128, 128))
-    return dense_half._single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
+    return dense_half.single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
 
 
 def test_a_magnified_single_shape_local_half_reconstructs_on_the_remapped_window(magnified):

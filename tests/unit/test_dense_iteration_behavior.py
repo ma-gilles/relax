@@ -496,7 +496,7 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
 
     monkeypatch.setattr(
         local_half,
-        "_expand_significant_samples_to_full_parent_translations",
+        "expand_significant_samples_to_full_parent_translations",
         fake_expand,
     )
     monkeypatch.setattr(

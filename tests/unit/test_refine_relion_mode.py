@@ -1781,7 +1781,7 @@ def test_expand_significant_samples_to_full_parent_translations_preserves_rotati
         np.zeros(0, dtype=np.int64),
     ]
 
-    expanded = dense_half._expand_significant_samples_to_full_parent_translations(
+    expanded = dense_half.expand_significant_samples_to_full_parent_translations(
         samples,
         n_parent_translations=3,
     )

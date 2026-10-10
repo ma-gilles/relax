@@ -30,10 +30,10 @@ from relax.local.local_layout import (
     restrict_local_layout_classes,
 )
 from relax.refinement.dense_half import (
-    _expand_significant_samples_to_full_parent_translations,
-    _merge_shape_class_results,
-    _require_multi_shape_inputs,
-    _single_shape_reconstruction_grid,
+    expand_significant_samples_to_full_parent_translations,
+    merge_shape_class_results,
+    require_multi_shape_inputs,
+    single_shape_reconstruction_grid,
 )
 from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.local_sampling import LocalSampling
@@ -201,7 +201,7 @@ def _prepare_local_adaptive_pass2_support(
             scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
         )
     elif support.rotation_only:
-        significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
+        significant_sample_indices = expand_significant_samples_to_full_parent_translations(
             significant_sample_indices,
             int(sampling.translations.shape[0]),
         )
@@ -232,7 +232,7 @@ def _prepare_local_adaptive_pass2_support(
             )
         else:
             denominator_significant_sample_indices = (
-                _expand_significant_samples_to_full_parent_translations(
+                expand_significant_samples_to_full_parent_translations(
                     pruned_parent_significant_sample_indices,
                     int(sampling.translations.shape[0]),
                 )
@@ -423,9 +423,9 @@ def _score_half_local(
 
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
-        sampling, optics = _single_shape_reconstruction_grid(experiment_half, sampling, optics)
+        sampling, optics = single_shape_reconstruction_grid(experiment_half, sampling, optics)
         return _score_half_local_one_shape(half, sampling, priors, batching, execution, diagnostics, optics)
-    _require_multi_shape_inputs(half, optics)
+    require_multi_shape_inputs(half, optics)
     optics_shapes.require_exact_local_parent_windows(
         {
             "experiment_dataset": experiment_half,
@@ -442,7 +442,7 @@ def _score_half_local(
                 owners.half, owners.sampling, owners.priors, batching, execution, diagnostics, owners.optics
             )
         )
-    return _merge_shape_class_results(results, experiment_half)
+    return merge_shape_class_results(results, experiment_half)
 
 
 def _score_half_local_one_shape(
