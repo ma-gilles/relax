@@ -325,8 +325,9 @@ def premultiplied_average_ctf2(parts, box_size: int, sumw: float):
     ``sumw`` is that sum: each image adds the posterior weights of its significant fine samples
     (``thr_sumw_group += p_weights[n]``, acc_ml_optimiser_impl.h:2842), which keep the top
     ``adaptive_fraction`` of its mass (:2522), so it is below the image count at soft posteriors.
-    The SPA callers pass the E-step's noise ``sumw``, the same sums the noise update divides by;
-    tilt-series callers pass their tilt-image count until relax#63 checks RELION's per-particle sum.
+    Every caller passes the E-step's noise ``sumw``, the same sums the noise update divides by. For
+    subtomograms ``parts`` holds the tilt images (RELION's numerator loops ``sp.nr_images``, :3590-3600)
+    while ``sumw`` adds once per particle, so the average is a particle's CTF^2 summed over its tilts.
     Each part is ``(dataset, scales, window, group_scale)``: a STAR-backed dataset on one image
     grid, its per-image scale corrections of this iteration's E-step (``None``: 1), its image
     current size and its scale difference ``s_g``. A part's shell sums (``Mresol_fine`` of its

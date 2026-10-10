@@ -385,8 +385,9 @@ def estimate_class_priors(
     # (setAverageCTF2; Class3D has no split halves and does not fix tau2). Its numerator sums
     # over images, so a subtomogram half counts its tilt images, each with its particle's scale,
     # and a half with several image shapes counts each shape class on its own grid. Its
-    # denominator is the E-step's significant weight (sumw_group), the noise update's sumw;
-    # tilt-series halves keep their tilt-image count until relax#63 checks RELION's.
+    # denominator is the E-step's significant weight (sumw_group), the noise update's sumw. A
+    # subtomogram adds it once per particle (acc_ml_optimiser_impl.h:2842), not per tilt image
+    # (relax#63), so there the average is the per-particle sum of CTF^2 over its tilts.
     ctf2_parts = []
     for half in halves:
         dataset, scales = half.dataset, half.scale_corrections
@@ -396,10 +397,7 @@ def estimate_class_priors(
         ctf2_parts += average_ctf2_parts(
             dataset, scales, current_size=current_size, image_current_size=image_current_size
         )
-    if any(isinstance(half.dataset, TomoHalf) for half in halves):
-        sumw = float(sum(int(part[0].n_units) for part in ctf2_parts))
-    else:
-        sumw = sum(total_sumw(stats.sumw) for stats in noise_stats_per_half if stats is not None)
+    sumw = sum(total_sumw(stats.sumw) for stats in noise_stats_per_half if stats is not None)
     average_ctf2 = relion_ctf.premultiplied_average_ctf2(ctf2_parts, settings.box_size, sumw)
     for class_idx in range(n_classes):
         log.info(

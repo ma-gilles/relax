@@ -204,16 +204,15 @@ def _native_expectation_step(
             )
             effective_image_batch_size = int(opts.image_batch_size)
             if premultiplied_ctf:
-                # setAverageCTF2: every tilt image counts once, also in the denominator until relax#63.
-                subset_images = dataset.subset(ids).images
+                # setAverageCTF2: the numerator over the tilt images, the denominator over the particles' sumw_group.
                 result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
                     average_ctf2_parts(
-                        subset_images,
+                        dataset.subset(ids).images,
                         None,
                         current_size=int(state.effective_current_size),
                         image_current_size=int(state.effective_current_size),
                     ),
-                    int(state.box_size), float(subset_images.n_units),
+                    int(state.box_size), float(np.sum(result.meta["noise_sumw"])),
                 )
         else:
             result = _spa_estep(
