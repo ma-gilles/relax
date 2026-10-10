@@ -152,7 +152,9 @@ def _compact_program():
         )
         ids = jnp.full((capacity,), -1, dtype=jnp.int32)
         ids = ids.at[position.reshape(-1)].set(sample_ids.reshape(-1), mode="drop")
-        return ids, counts, rot_any
+        # The same stored set as one bit per cell (PackedCoarseSignificanceCSR's mask rows).
+        packed = jnp.packbits(mask, axis=1, bitorder="little")
+        return ids, counts, rot_any, packed
 
     _compact_jitted = _run
     return _run
@@ -268,6 +270,35 @@ def significance_mask_bytes(n_samples: int) -> int:
     return (int(n_samples) + 7) // 8
 
 
+def rows_kept_as_masks(counts, n_samples: int) -> np.ndarray:
+    """The rows of ``counts`` stored ids that are smaller as a bit mask than as int32 ids."""
+
+    return 4 * np.asarray(counts, dtype=np.int64) > significance_mask_bytes(n_samples)
+
+
+def _ids_of_mask_rows(mask_rows: np.ndarray) -> np.ndarray:
+    """The set bits of each mask row, ascending, the rows concatenated in order (int32)."""
+
+    bits = np.unpackbits(mask_rows, axis=1, bitorder="little").view(np.bool_)
+    flat = np.flatnonzero(bits)
+    flat -= np.repeat(np.arange(bits.shape[0], dtype=np.int64) * bits.shape[1], np.count_nonzero(bits, axis=1))
+    return flat.astype(np.int32)
+
+
+@dataclass(frozen=True)
+class PackedSignificanceBatch:
+    """One batch's compacted support as the device packed it: the ids of its id rows and its mask rows' bits.
+
+    ``as_mask`` marks the batch's images kept as masks (:func:`rows_kept_as_masks`); ``n_ids`` is the batch's
+    stored ids in both encodings.
+    """
+
+    as_mask: np.ndarray  # bool [images]
+    id_values: np.ndarray  # int32 [ids of the id rows]
+    mask_rows: np.ndarray  # uint8 [mask rows, significance_mask_bytes(n_samples)]
+    n_ids: int
+
+
 @dataclass(frozen=True)
 class PackedCoarseSignificanceCSR:
     """A :class:`CoarseSignificanceCSR` whose rows are each stored in the smaller of two encodings.
@@ -357,11 +388,9 @@ class PackedCoarseSignificanceCSR:
         from_mask = np.repeat(as_mask, counts)
         ids = np.empty(int(counts.sum()), dtype=np.int32)
         ids[~from_mask] = id_part
-        bits = np.unpackbits(
-            self.mask_rows[int(self._mask_starts[start]) : int(self._mask_starts[stop])], axis=1, bitorder="little"
+        ids[from_mask] = _ids_of_mask_rows(
+            self.mask_rows[int(self._mask_starts[start]) : int(self._mask_starts[stop])]
         )
-        # Row-major: each mask row's set bits ascending, the rows in image order.
-        ids[from_mask] = np.nonzero(bits)[1]
         return ids
 
     def image_ids(self, image: int) -> np.ndarray:
@@ -479,7 +508,10 @@ def compact_batch_significance_classes(
     the images whose ids are their *excluded* cells (the host encoder's
     sparse-complement choice, taken for exactly the same images), ``ids`` is
     the concatenated image-major ascending id array, and ``rot_any`` marks the
-    coarse rotations carrying any significant sample.  The full mask never
+    coarse rotations carrying any significant sample. When an image's stored
+    set is smaller as a bit mask (:func:`rows_kept_as_masks`), ``ids`` is a
+    :class:`PackedSignificanceBatch` instead: those images' ids are dropped
+    here and their device-packed bits kept (relax#34).  The full mask never
     reaches the host, and the ids stored per image are always the smaller of
     the included and excluded sets. The classes' compactions are enqueued
     before their results are read back, a group of classes at a time, so the
@@ -532,7 +564,7 @@ def compact_batch_significance_classes(
             total = int(stored.sum(dtype=np.int64))
             padded_polarity = np.zeros(batch_size, dtype=bool)
             padded_polarity[:actual_batch_size] = store_excluded
-            ids, device_counts, rot_any = _compact_program()(
+            ids, device_counts, rot_any, packed = _compact_program()(
                 mask,
                 class_index,
                 image_valid,
@@ -543,9 +575,12 @@ def compact_batch_significance_classes(
             )
             # Only the power-of-two prefix holding the ids leaves the device.
             ids = ids[: min(capacity, csr_capacity_for_total(total))]
-            pending.append((n_significant, store_excluded, stored, total, ids, device_counts, rot_any))
-        fetched = jax.device_get([(ids, counts, rot_any) for *_, ids, counts, rot_any in pending])
-        for (n_significant, store_excluded, stored, total, *_), (ids, device_counts, rot_any) in zip(
+            as_mask = rows_kept_as_masks(stored, n_samples)
+            # The bit masks leave the device only for a batch with a row to keep as one.
+            packed = packed[:actual_batch_size] if bool(as_mask.any()) else None
+            pending.append((n_significant, store_excluded, stored, total, as_mask, ids, device_counts, rot_any, packed))
+        fetched = jax.device_get([entry[5:] for entry in pending])
+        for (n_significant, store_excluded, stored, total, as_mask, *_), (ids, device_counts, rot_any, packed) in zip(
             pending, fetched
         ):
             device_counts = np.asarray(device_counts, dtype=np.int32)[:actual_batch_size]
@@ -554,9 +589,19 @@ def compact_batch_significance_classes(
                     "the device significance compaction disagrees with the posterior's "
                     "significant-sample counts",
                 )
-            ids = np.asarray(ids, dtype=np.int32)[:total].copy()
+            ids = np.asarray(ids, dtype=np.int32)[:total]
             if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= n_samples):
                 raise RuntimeError("a compacted significance id is outside the coarse pose grid")
+            if packed is None:
+                ids = ids.copy()
+            else:
+                mask_rows = np.asarray(packed, dtype=np.uint8)[as_mask]
+                popcount = np.count_nonzero(np.unpackbits(mask_rows, axis=1), axis=1)
+                if not np.array_equal(popcount, stored[as_mask]):
+                    raise RuntimeError("the device's packed significance rows disagree with their counts")
+                ids = PackedSignificanceBatch(
+                    as_mask=as_mask, id_values=ids[~np.repeat(as_mask, stored)], mask_rows=mask_rows, n_ids=total
+                )
             results.append((n_significant, store_excluded, ids, np.asarray(rot_any, dtype=bool)))
     return results
 
@@ -604,11 +649,13 @@ def build_coarse_significance_csr(
     counts = np.where(
         store_excluded, n_samples - n_significant.astype(np.int64), n_significant,
     ).astype(np.int64)
-    if int(counts.sum()) != sum(int(np.size(block)) for block in ids_per_batch):
+    if int(counts.sum()) != sum(
+        block.n_ids if isinstance(block, PackedSignificanceBatch) else int(np.size(block)) for block in ids_per_batch
+    ):
         raise ValueError("compacted counts and ids disagree on the total support")
     # A row is kept as a bit mask when that is smaller than its int32 ids (PackedCoarseSignificanceCSR).
     mask_bytes = significance_mask_bytes(n_samples)
-    as_mask = 4 * counts > mask_bytes
+    as_mask = rows_kept_as_masks(counts, n_samples)
     packed = bool(as_mask.any())
     if not packed and counts.size and int(counts.sum()) > np.iinfo(np.int32).max:
         raise OverflowError("the half's compacted significance support overflows int32")
@@ -616,16 +663,24 @@ def build_coarse_significance_csr(
     mask_rows = np.zeros((int(as_mask.sum()), mask_bytes), dtype=np.uint8)
     image = filled = mask_filled = untrimmed = 0
     for index, block in enumerate(ids_per_batch):
-        block = np.asarray(block, dtype=np.int32).reshape(-1)
-        if packed:
-            n_block = int(np.size(n_significant_per_batch[index]))
-            block_counts, block_as_mask = counts[image : image + n_block], as_mask[image : image + n_block]
-            if int(block_counts.sum()) != block.size:
+        n_block = int(np.size(n_significant_per_batch[index]))
+        block_counts, block_as_mask = counts[image : image + n_block], as_mask[image : image + n_block]
+        image += n_block
+        n_mask = int(block_as_mask.sum())
+        if isinstance(block, PackedSignificanceBatch):
+            # The device packed this batch: its mask rows are already bits.
+            if not np.array_equal(block.as_mask, block_as_mask) or block.n_ids != int(block_counts.sum()):
+                raise ValueError("a packed batch disagrees with its compacted counts")
+            kept, block_bytes = block.id_values, block.id_values.nbytes + block.mask_rows.nbytes
+            mask_rows[mask_filled : mask_filled + n_mask] = block.mask_rows
+        else:
+            block = np.asarray(block, dtype=np.int32).reshape(-1)
+            block_bytes = block.nbytes
+            if packed and int(block_counts.sum()) != block.size:
                 raise ValueError("a batch's compacted counts and ids disagree")
-            image += n_block
-            from_mask = np.repeat(block_as_mask, block_counts)
-            n_mask = int(block_as_mask.sum())
+            kept = block
             if n_mask:
+                from_mask = np.repeat(block_as_mask, block_counts)
                 masked = block[from_mask]
                 row_start = np.zeros(masked.size, dtype=bool)
                 row_start[np.cumsum(block_counts[block_as_mask])[:-1]] = True
@@ -633,18 +688,15 @@ def build_coarse_significance_csr(
                     raise ValueError("a compacted significance row is not strictly ascending")
                 if int(masked.min()) < 0 or int(masked.max()) >= n_samples:
                     raise ValueError("a compacted significance id is outside the coarse grid")
-                del masked, row_start
                 bits = np.zeros((n_mask, 8 * mask_bytes), dtype=bool)
-                bits[np.repeat(np.cumsum(block_as_mask) - 1, block_counts)[from_mask], block[from_mask]] = True
+                bits[np.repeat(np.cumsum(block_as_mask) - 1, block_counts)[from_mask], masked] = True
                 mask_rows[mask_filled : mask_filled + n_mask] = np.packbits(bits, axis=1, bitorder="little")
-                mask_filled += n_mask
-                del bits
-            kept = block[~from_mask]
-        else:
-            kept = block
+                kept = block[~from_mask]
+                del bits, masked, row_start, from_mask
+        mask_filled += n_mask
         ids[filled : filled + kept.size] = kept
         filled += kept.size
-        untrimmed += block.nbytes
+        untrimmed += block_bytes
         ids_per_batch[index] = None
         del block, kept
         if untrimmed >= _CSR_TRIM_BYTES:
@@ -898,14 +950,22 @@ def csr_candidate_rows_per_image(
     rows = np.where(n_significant == 0, child_counts[0], int(child_counts.sum())).astype(np.int64)
     offsets = csr.offsets.astype(np.int64)
     n_trans = int(csr.n_coarse_trans)
+    packed = isinstance(csr, PackedCoarseSignificanceCSR)
+    as_mask = csr.as_mask if packed else np.zeros(int(csr.n_images), dtype=bool)
     steps = table_block_starts(offsets, cells_per_step)
     for step_start, stop in zip(steps[:-1].tolist(), steps[1:].tolist()):
         if not bool(sparse[step_start:stop].any()):
             continue
-        rot = csr.ids_of_images(step_start, stop).astype(np.int64) // n_trans
-        cell_image = np.repeat(
-            np.arange(stop - step_start, dtype=np.int64), np.diff(offsets[step_start : stop + 1])
+        step_as_mask = as_mask[step_start:stop]
+        # An id row's parents are the distinct coarse rotations of its ascending ids.
+        id_counts = np.where(step_as_mask, 0, np.diff(offsets[step_start : stop + 1]))
+        ids = (
+            csr.id_values[int(csr._id_starts[step_start]) : int(csr._id_starts[stop])]
+            if packed
+            else csr.ids[offsets[step_start] : offsets[stop]]
         )
+        rot = ids.astype(np.int64) // n_trans
+        cell_image = np.repeat(np.arange(stop - step_start, dtype=np.int64), id_counts)
         parent_start = np.ones(rot.size, dtype=bool)
         parent_start[1:] = (rot[1:] != rot[:-1]) | (cell_image[1:] != cell_image[:-1])
         # Row counts stay far below 2**53, so the float64 bincount is exact.
@@ -914,6 +974,15 @@ def csr_candidate_rows_per_image(
             weights=child_counts[rot[parent_start]].astype(np.float64),
             minlength=stop - step_start,
         ).astype(np.int64)
+        if bool(step_as_mask.any()):
+            # A mask row's parents are the rotations with any bit set, read from the bits.
+            bits = np.unpackbits(
+                csr.mask_rows[int(csr._mask_starts[step_start]) : int(csr._mask_starts[stop])],
+                axis=1,
+                bitorder="little",
+            )[:, :n_samples]
+            parent_present = bits.reshape(bits.shape[0], int(csr.n_coarse_rot), n_trans).any(axis=2)
+            block_rows[step_as_mask] = parent_present.astype(np.int64) @ child_counts
         rows[step_start:stop] = np.where(sparse[step_start:stop], block_rows, rows[step_start:stop])
     return rows
 

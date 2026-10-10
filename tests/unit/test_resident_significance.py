@@ -27,6 +27,7 @@ from relax.sparse_pass2.resident_significance import (
     CoarseSignificanceCSR,
     DeviceCompactedSignificantSamples,
     PackedCoarseSignificanceCSR,
+    PackedSignificanceBatch,
     build_coarse_significance_csr,
     build_resident_candidate_tables_from_csr,
     compact_batch_significance,
@@ -150,6 +151,17 @@ def _csr_from_supports(supports, *, n_coarse_rot, n_coarse_trans) -> CoarseSigni
     )
 
 
+def _batch_ids(result, *, n_coarse_rot, n_coarse_trans) -> np.ndarray:
+    """One batch's stored ids, image-major, whether the compaction returned them as ids or packed its dense rows."""
+
+    n_significant, store_excluded, ids, _rot_any = result
+    csr = build_coarse_significance_csr(
+        n_images=n_significant.size, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans,
+        n_significant_per_batch=[n_significant], store_excluded_per_batch=[store_excluded], ids_per_batch=[ids],
+    )
+    return csr.ids_of_images(0, csr.n_images)
+
+
 # --- The device compaction reproduces the host encoding --------------------
 
 
@@ -222,9 +234,12 @@ def test_class_compaction_matches_each_class_alone(monkeypatch):
             n_coarse_trans=N_COARSE_TRANS,
         )
         assert len(got) == n_classes
+        grid = dict(n_coarse_rot=N_COARSE_ROT, n_coarse_trans=N_COARSE_TRANS)
         for class_got, class_expected in zip(got, expected):
-            for value, reference in zip(class_got, class_expected):
-                assert_matches(value, reference)
+            for index in (0, 1, 3):
+                assert_matches(class_got[index], class_expected[index])
+            assert type(class_got[2]) is type(class_expected[2])
+            assert_matches(_batch_ids(class_got, **grid), _batch_ids(class_expected, **grid))
 
 
 def test_compaction_ignores_padded_image_rows():
@@ -339,13 +354,15 @@ def test_compaction_stores_the_complement_of_a_dense_support():
     mask = np.zeros((2, n_samples), dtype=bool)
     mask[0, : n_samples // 2 + 1] = True  # just over the threshold
     mask[1, : n_samples // 2] = True  # exactly on it: keep the included ids
-    n_significant, store_excluded, ids, _rot_any = compact_batch_significance(
+    result = compact_batch_significance(
         mask,
         actual_batch_size=2,
         n_coarse_rot=N_COARSE_ROT,
         n_coarse_trans=N_COARSE_TRANS,
         batch_n_sig=mask.sum(axis=1).astype(np.int32),
     )
+    n_significant, store_excluded, _ids, _rot_any = result
+    ids = _batch_ids(result, n_coarse_rot=N_COARSE_ROT, n_coarse_trans=N_COARSE_TRANS)
     assert list(store_excluded) == [True, False]
     assert_matches(n_significant, mask.sum(axis=1).astype(np.int32))
     split = n_samples - int(n_significant[0])
@@ -564,15 +581,18 @@ def test_compaction_fills_an_exactly_full_capacity():
     mask = np.zeros((2, n_samples), dtype=bool)
     mask[0, ids.astype(np.int64)] = True
 
-    _n_significant, _store_excluded, compacted, _rot_any = compact_batch_significance(
-        mask,
-        actual_batch_size=2,
-        n_coarse_rot=n_coarse_rot,
-        n_coarse_trans=n_coarse_trans,
-        batch_n_sig=mask.sum(axis=1).astype(np.int32),
+    from relax.sparse_pass2.resident_significance import _compact_program
+
+    # The program itself: the batch entry point keeps a row this dense as its bit mask and drops the ids.
+    compacted, counts, _rot_any, packed = _compact_program()(
+        mask, 0, np.ones(2, dtype=bool), np.zeros(2, dtype=bool),
+        capacity=capacity, n_coarse_trans=n_coarse_trans, n_classes=1,
     )
-    assert compacted.size == capacity
+    compacted = np.asarray(compacted)
+    assert compacted.size == capacity and list(np.asarray(counts)) == [capacity, 0]
     assert_matches(compacted, ids)
+    # The packed rows are the same stored set, bit ``id`` of the row little-endian within a byte.
+    np.testing.assert_array_equal(np.unpackbits(np.asarray(packed), axis=1, bitorder="little"), mask)
 
 
 def test_relion_parent_execution_key_uses_the_grid_direction_count():
@@ -651,7 +671,7 @@ def test_batches_of_one_shape_share_one_compaction_program():
     before = None
     for density in (0.01, 0.3):
         mask = rng.random((3, n_samples)) < density
-        n_significant, store_excluded, ids, _rot_any = compact_batch_significance(
+        result = compact_batch_significance(
             mask,
             actual_batch_size=3,
             n_coarse_rot=n_coarse_rot,
@@ -659,8 +679,12 @@ def test_batches_of_one_shape_share_one_compaction_program():
             batch_n_sig=mask.sum(axis=1).astype(np.int32),
         )
         expected = np.concatenate([np.flatnonzero(row).astype(np.int32) for row in mask])
-        assert not store_excluded.any()
-        np.testing.assert_array_equal(ids, expected)
+        assert not result[1].any()
+        # The sparse batch comes back as ids, the dense one with its rows packed on the device.
+        assert isinstance(result[2], PackedSignificanceBatch) == (density == 0.3)
+        np.testing.assert_array_equal(
+            _batch_ids(result, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans), expected
+        )
         size = _compact_program()._cache_size()
         if before is None:
             before = size
@@ -1023,3 +1047,34 @@ def test_support_rows_decode_on_access_and_are_not_kept():
     # Nothing decoded is stored: the list's own slots stay placeholders, which refuse to act as a row.
     with pytest.raises(TypeError, match="device-compacted support row"):
         np.asarray(list.__getitem__(support, 0))
+
+
+def test_device_packed_batches_build_the_table_plain_id_batches_build():
+    """Batches whose dense rows the device packed give the table the same supports give as id arrays, and a
+    padded final batch packs only its real images."""
+
+    n_samples = STD_N_COARSE_ROT * N_COARSE_TRANS
+    rng = np.random.default_rng(21)
+    grid = dict(n_coarse_rot=STD_N_COARSE_ROT, n_coarse_trans=N_COARSE_TRANS)
+    device, plain = dict(n=[], s=[], ids=[]), dict(n=[], s=[], ids=[])
+    for actual, densities in ((4, (0.0, 0.01, 0.2, 0.9)), (3, (0.4, 0.03, 1.0, 0.7))):
+        mask = np.stack([rng.random(n_samples) < density for density in densities])
+        n_significant, store_excluded, ids, _rot_any = compact_batch_significance(
+            mask, actual_batch_size=actual, batch_n_sig=mask.sum(axis=1).astype(np.int32), **grid
+        )
+        assert isinstance(ids, PackedSignificanceBatch) and ids.mask_rows.shape[1] == 45
+        stored = [np.flatnonzero(~row if excluded else row) for row, excluded in zip(mask[:actual], store_excluded)]
+        np.testing.assert_array_equal(ids.as_mask, [4 * row.size > 45 for row in stored])
+        device["n"].append(n_significant), device["s"].append(store_excluded), device["ids"].append(ids)
+        plain["n"].append(n_significant), plain["s"].append(store_excluded)
+        plain["ids"].append(np.concatenate(stored).astype(np.int32))
+    tables = [
+        build_coarse_significance_csr(
+            n_images=7, n_significant_per_batch=b["n"], store_excluded_per_batch=b["s"], ids_per_batch=b["ids"], **grid
+        )
+        for b in (device, plain)
+    ]
+    assert all(isinstance(table, PackedCoarseSignificanceCSR) for table in tables)
+    for name in ("offsets", "as_mask", "id_values", "mask_rows", "store_excluded", "n_significant"):
+        np.testing.assert_array_equal(getattr(tables[0], name), getattr(tables[1], name), err_msg=name)
+    assert device["ids"] == [None, None]
