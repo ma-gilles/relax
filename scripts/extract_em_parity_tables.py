@@ -191,6 +191,10 @@ CASE_METRICS = {
         ("kclass_coldstart_mean_corr", False, ".6f"),
         ("kclass_coldstart_worst_class_corr", False, ".6f"),
     ),
+    "kclass_local_cc": (
+        ("kclass_local_cc_mean_corr", False, ".6f"),
+        ("kclass_local_cc_worst_class_corr", False, ".6f"),
+    ),
     "kclass_strict": (
         ("kclass_strict_mean_corr", False, ".6f"),
         ("kclass_strict_worst_class_corr", False, ".6f"),
@@ -239,6 +243,7 @@ TIER_CASES = {
         "k1_gui60_coldstart",
         "k1_perturbreplay",
         "kclass_coldstart",
+        "kclass_local_cc",
         "kclass_strict",
         "kclass_strict_os1",
     ),
@@ -249,6 +254,7 @@ TIER_CASES = {
 PER_CLASS_METRICS = {
     "kclass_replay": ("kclass_replay_per_class_map_corr", 2),
     "kclass_coldstart": ("kclass_coldstart_per_class_corrs_after_hungarian", 4),
+    "kclass_local_cc": ("kclass_local_cc_per_class_corrs_after_hungarian", 4),
     "kclass_strict": ("kclass_strict_per_class_corrs_after_hungarian", 4),
     "kclass_strict_os1": ("kclass_strict_os1_per_class_corrs_after_hungarian", 4),
     "kclass_long": ("kclass_long_per_class_map_corr", 4),

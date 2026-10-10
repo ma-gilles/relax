@@ -76,6 +76,9 @@ CASES: dict[str, Case] = {
     # RELION's GUI-default command (--ini_high 60 above the 40 A half join, healpix 2, offsets 5/2).
     "k1_gui60_coldstart_standalone": _k1("k1_gui60_coldstart_standalone", "k1_5k128_relion_gui60", 3),
     "kclass_coldstart": _k4("kclass_coldstart", "k4_5k128_oracle_h2_os1"),
+    # Class3D local searches (--sigma_ang 3) from four given references: a normalized-CC iteration over every
+    # class, then two Gaussian local iterations.
+    "kclass_local_cc": _k4("kclass_local_cc", "k4_5k128_oracle_h3_sigma3_cc_os1"),
     "kclass_nonadaptive_replay": _k4("kclass_strict", "k4_5k128_oracle_h1_os1"),
     "kclass_strict_oversample_coldstart": _k4("kclass_strict_os1", "k4_5k128_oracle_h1_os1"),
 }
@@ -92,6 +95,7 @@ ORACLE_RUN = {
     "k2_5k128_relion_os0": "uninterrupted",
     "k4_5k128_oracle_h1_os1": "uninterrupted",
     "k4_5k128_oracle_h2_os1": "uninterrupted",
+    "k4_5k128_oracle_h3_sigma3_cc_os1": "uninterrupted",
     "multioptics_s3b_600_relion": "uninterrupted",
 }
 

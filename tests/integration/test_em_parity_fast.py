@@ -1087,6 +1087,99 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
     _assert_fsc_gate("kclass_coldstart", output_dir)
 
 
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_kclass_local_cc(tmp_path):
+    """Class3D local searches (``--sigma_ang 3``) from four given references, against RELION: K4, three iterations.
+
+    Iteration 1 is RELION's normalized-CC iteration, which with one reference per class scores every class
+    (relax#72); iterations 2 and 3 are Gaussian local searches (the class-expanded parent pass of relax#68 and
+    relax#70's parent-probe matrices). The run is standalone: the seed gives RELION's perturbation and the
+    start-up noise, tau2 and sigma are relax's own. The four iteration-3 class maps are Hungarian-matched to the
+    page-build RELION oracle of the same command and held to the case's FSC and Pmax floors.
+    """
+    from helpers.em_fixtures import fixture_dir
+
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k4_5k128_data", "k4_5k128_oracle_h3_sigma3_cc_os1")
+    relion_dir = fixture_dir("k4_5k128_oracle_h3_sigma3_cc_os1")
+    _require_fixture(K4_FIXTURE_DIR, relion_dir, K4_DATA_STAR)
+
+    output_dir = tmp_path / "kclass_local_cc"
+    output_dir.mkdir(parents=True)
+    cmd = [
+        sys.executable,
+        *CLASS3D_COMMAND,
+        "--data_dir",
+        str(K4_FIXTURE_DIR),
+        "--output",
+        str(output_dir),
+        "--n_classes",
+        "4",
+        "--max_iter",
+        "3",
+        "--healpix_order",
+        "3",
+        "--offset_range",
+        "6",
+        "--offset_step",
+        "2",
+        "--adaptive_oversampling",
+        "1",
+        "--tau2_fudge",
+        "4.0",
+        "--firstiter_cc",
+        "--init_resolution",
+        "30.0",
+        "--sigma_ang",
+        "3",
+        "--seed",
+        "1",
+    ]
+    logger.info("K-class local CC cmd: %s", " ".join(cmd))
+    t0 = time.time()
+    proc = run_selected_command(cmd, require_global=False, capture_output=True, text=True, env=gpu_subprocess_env())
+    elapsed = time.time() - t0
+    assert proc.returncode == 0, (
+        f"relax class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    log = proc.stdout + proc.stderr
+    headers = re.findall(r"=== RELION Iteration (\d+)/\d+: .*local_search=(\w+) ===", log)
+    assert headers == [(str(it), "True") for it in (1, 2, 3)], headers
+
+    from recovar.utils import helpers as _recovar_helpers
+    from scipy.optimize import linear_sum_assignment
+
+    relax_classes = [
+        np.asarray(load_relax_map(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64) for c in range(4)
+    ]
+    relion_classes = [
+        np.asarray(
+            _recovar_helpers.load_relion_volume(str(relion_dir / f"run_it003_class{c + 1:03d}.mrc")), dtype=np.float64
+        )
+        for c in range(4)
+    ]
+    M = np.zeros((4, 4))
+    for i in range(4):
+        for j in range(4):
+            M[i, j] = _map_correlation(relax_classes[i], relion_classes[j])
+    row, col = linear_sum_assignment(-M)
+    matched = [float(M[i, j]) for i, j in zip(row, col)]
+    payload = {
+        "kclass_local_cc_per_class_corrs_after_hungarian": matched,
+        "kclass_local_cc_mean_corr": float(np.mean(matched)),
+        "kclass_local_cc_worst_class_corr": float(np.min(matched)),
+        "kclass_local_cc_hungarian_assignment": [(int(i), int(j)) for i, j in zip(row, col)],
+        "kclass_local_cc_walltime_s": elapsed,
+    }
+    ledger = _write_quality_ledger("kclass_local_cc", payload, output_dir=output_dir)
+    logger.info("K-class local CC ledger: %s", ledger)
+
+    # NEVER widen tolerance to make a test pass. Fix the code instead.
+    _assert_fsc_gate("kclass_local_cc", output_dir)
+
+
 def _kclass_local_command(output_dir: Path, *, n_classes: int, max_iter: int) -> list[str]:
     """Class3D on the K4 fixture with local angular searches (``--sigma_ang 3``) from the STAR's angles."""
     return [

@@ -130,6 +130,14 @@ SETS: dict[str, tuple[str, list[str], list[str], str, list[str]]] = {
         "RELION K4 3-iteration oracle with dispatch capture, healpix 1 os 1 (Slurm 13605775)",
         ["../PROVENANCE.json", "../attempt/invocation.json"],
     ),
+    "k4_5k128_oracle_h3_sigma3_cc_os1": (
+        f"{FX}/k4_fast_oracles/h3_sigma3_cc_os1_15326549/oracle",
+        RUN,
+        [],
+        "RELION page-build K4 3-iteration oracle from four given references: local searches (--sigma_ang 3), healpix 3 os 1, --firstiter_cc (Slurm 15326549)",
+        ["../PROVENANCE.json"],
+    ),
+    "k4_5k128_oracle_h3_sigma3_cc_os1_repeat": (f"{FX}/k4_fast_oracles/h3_sigma3_cc_os1_15326549_repeat/oracle", RUN, [], "Second capture (Slurm 15326549) of the K4 local-search --firstiter_cc oracle: RELION repeat", ["../PROVENANCE.json"]),
     "k4_5k128_oracle_h2_os1_repeat": (f"{FX}/k4_fast_oracles/h2_os1_14248155", RUN, [], "Second RELION capture (Slurm 14248155) of the healpix 2 os 1 K4 oracle: RELION repeat", ["PROVENANCE.json"]),
     "k4_5k128_oracle_h1_os1_repeat": (f"{FX}/k4_fast_oracles/h1_os1_14248154", RUN, [], "Second RELION capture (Slurm 14248154) of the healpix 1 os 1 K4 oracle: RELION repeat", ["PROVENANCE.json"]),
     "k1_50k256_data": (
