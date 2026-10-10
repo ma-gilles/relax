@@ -26,11 +26,15 @@ from relax.sparse_pass2.resident_candidates import build_resident_candidate_tabl
 from relax.sparse_pass2.resident_significance import (
     CoarseSignificanceCSR,
     DeviceCompactedSignificantSamples,
+    PackedCoarseSignificanceCSR,
     build_coarse_significance_csr,
     build_resident_candidate_tables_from_csr,
     compact_batch_significance,
     compact_batch_significance_classes,
+    csr_candidate_rows_per_image,
     csr_capacity_for_total,
+    csr_restricted_to_images,
+    fine_rotation_children,
     host_support_rows,
     significant_coarse_parents,
 )
@@ -725,7 +729,7 @@ def test_seed_iteration_supports_without_a_csr_stay_plain_lists():
 def _parents_by_unique(csr, n_coarse_trans):
     """The previous whole-buffer route: np.unique of an int64 copy, with parent 0 for an empty support."""
 
-    parents = np.unique(np.asarray(csr.ids, dtype=np.int64) // int(n_coarse_trans))
+    parents = np.unique(np.asarray(csr.ids_of_images(0, csr.n_images), dtype=np.int64) // int(n_coarse_trans))
     if bool(np.any(np.asarray(csr.n_significant) == 0)):
         parents = np.union1d(parents, [0])
     return parents
@@ -801,7 +805,7 @@ def test_assembled_class_releases_its_per_batch_ids():
     samples = significant_samples_after_loop(outputs, plan)
 
     for class_index in range(2):
-        np.testing.assert_array_equal(samples[class_index].csr.ids, [0, 3, 5, 7])
+        np.testing.assert_array_equal(samples[class_index].csr.ids_of_images(0, 4), [0, 3, 5, 7])
         np.testing.assert_array_equal(samples[class_index].csr.offsets, [0, 1, 3, 3, 4])
         assert outputs.device_significance_ids[class_index] == []
         assert outputs.device_significance_counts[class_index] == []
@@ -816,6 +820,7 @@ def test_csr_consumes_its_id_blocks_and_holds_their_concatenation(monkeypatch):
     rng = np.random.default_rng(3)
     counts = [rng.integers(0, 6, size=n).astype(np.int32) for n in (4, 7, 1, 5)]
     blocks = [rng.integers(0, 12, size=int(c.sum())).astype(np.int32) for c in counts]
+    # 400 x 3 samples: no row is smaller as a bit mask, so the CSR holds the blocks as they are.
     expected = np.concatenate(blocks)
     trims = []
     monkeypatch.setattr(resident_significance, "_CSR_TRIM_BYTES", 16)
@@ -823,7 +828,7 @@ def test_csr_consumes_its_id_blocks_and_holds_their_concatenation(monkeypatch):
     ids_per_batch = list(blocks)
     csr = build_coarse_significance_csr(
         n_images=17,
-        n_coarse_rot=4,
+        n_coarse_rot=400,
         n_coarse_trans=3,
         n_significant_per_batch=counts,
         store_excluded_per_batch=[np.zeros(c.size, dtype=bool) for c in counts],
@@ -833,3 +838,158 @@ def test_csr_consumes_its_id_blocks_and_holds_their_concatenation(monkeypatch):
     assert csr.ids.dtype == np.int32 and np.array_equal(csr.ids, expected)
     assert np.array_equal(csr.offsets, np.r_[0, np.cumsum(np.concatenate(counts))])
     assert trims
+
+
+# --- Rows kept as bit masks (relax#34) ---------------------------------------
+
+
+def _mixed_encoding_case(seed=5, n_images=23):
+    """Per-batch compaction results whose rows span every regime, and the plain CSR of the same ids."""
+
+    rng = np.random.default_rng(seed)
+    n_samples = STD_N_COARSE_ROT * N_COARSE_TRANS  # 360 samples: a 45-byte mask, so rows above 11 ids are masks
+    sizes = rng.choice([0, 1, 5, 11, 12, 40, 170, 181, 300, n_samples], size=n_images)
+    n_significant = sizes.astype(np.int32)
+    store_excluded = 2 * sizes > n_samples
+    stored = []
+    for size, excluded in zip(sizes, store_excluded):
+        ids = np.sort(rng.choice(n_samples, size=int(size), replace=False))
+        stored.append((np.setdiff1d(np.arange(n_samples), ids) if excluded else ids).astype(np.int32))
+    edges = [0, 4, 4, 15, n_images]
+    batches = dict(
+        n_significant_per_batch=[n_significant[a:b] for a, b in zip(edges[:-1], edges[1:])],
+        store_excluded_per_batch=[store_excluded[a:b] for a, b in zip(edges[:-1], edges[1:])],
+        ids_per_batch=[
+            np.concatenate(stored[a:b]) if b > a else np.zeros(0, np.int32) for a, b in zip(edges[:-1], edges[1:])
+        ],
+    )
+    offsets = np.zeros(n_images + 1, dtype=np.int32)
+    offsets[1:] = np.cumsum([row.size for row in stored])
+    plain = CoarseSignificanceCSR(
+        n_images=n_images, n_coarse_rot=STD_N_COARSE_ROT, n_coarse_trans=N_COARSE_TRANS, offsets=offsets,
+        ids=np.concatenate(stored), store_excluded=store_excluded, n_significant=n_significant,
+    )
+    return batches, plain
+
+
+def _assert_same_csr(got: CoarseSignificanceCSR, expected: CoarseSignificanceCSR):
+    assert type(got) is CoarseSignificanceCSR
+    assert (got.n_images, got.n_coarse_rot, got.n_coarse_trans) == (
+        expected.n_images, expected.n_coarse_rot, expected.n_coarse_trans,
+    )
+    for name in ("offsets", "ids", "store_excluded", "n_significant"):
+        assert getattr(got, name).dtype == getattr(expected, name).dtype, name
+        np.testing.assert_array_equal(getattr(got, name), getattr(expected, name), err_msg=name)
+
+
+def _packed_and_plain():
+    batches, plain = _mixed_encoding_case()
+    packed = build_coarse_significance_csr(
+        n_images=plain.n_images, n_coarse_rot=plain.n_coarse_rot, n_coarse_trans=plain.n_coarse_trans, **batches
+    )
+    assert isinstance(packed, PackedCoarseSignificanceCSR)
+    return packed, plain
+
+
+def test_a_row_is_stored_in_the_smaller_of_ids_and_bit_mask_and_decodes_to_the_same_ids():
+    packed, plain = _packed_and_plain()
+    counts = plain.counts().astype(np.int64)
+
+    np.testing.assert_array_equal(packed.as_mask, 4 * counts > 45)
+    assert packed.as_mask.any() and not packed.as_mask.all()
+    assert packed.mask_rows.shape == (int(packed.as_mask.sum()), 45)
+    assert packed.nbytes == int(np.minimum(4 * counts, 45).sum()) < plain.nbytes
+    assert packed.n_ids == plain.n_ids
+    np.testing.assert_array_equal(packed.counts(), plain.counts())
+    for start, stop in [(0, plain.n_images), (0, 0), (3, 4), (2, 17), (9, plain.n_images)]:
+        got = packed.ids_of_images(start, stop)
+        assert got.dtype == np.int32
+        np.testing.assert_array_equal(got, plain.ids_of_images(start, stop))
+        _assert_same_csr(packed.image_block(start, stop), plain.image_block(start, stop))
+    for image in range(plain.n_images):
+        np.testing.assert_array_equal(packed.image_ids(image), plain.image_ids(image))
+
+
+def test_a_support_without_a_dense_row_stays_a_plain_csr():
+    counts = np.array([0, 3, 11], dtype=np.int32)
+    csr = build_coarse_significance_csr(
+        n_images=3, n_coarse_rot=STD_N_COARSE_ROT, n_coarse_trans=N_COARSE_TRANS,
+        n_significant_per_batch=[counts], store_excluded_per_batch=[np.zeros(3, dtype=bool)],
+        ids_per_batch=[np.arange(14, dtype=np.int32)],
+    )
+    assert type(csr) is CoarseSignificanceCSR
+
+
+def test_a_mask_row_must_be_strictly_ascending():
+    ids = np.arange(20, dtype=np.int32)
+    ids[[4, 5]] = ids[[5, 4]]
+    with pytest.raises(ValueError, match="strictly ascending"):
+        build_coarse_significance_csr(
+            n_images=1, n_coarse_rot=STD_N_COARSE_ROT, n_coarse_trans=N_COARSE_TRANS,
+            n_significant_per_batch=[np.array([20], dtype=np.int32)],
+            store_excluded_per_batch=[np.zeros(1, dtype=bool)], ids_per_batch=[ids],
+        )
+
+
+def test_packed_csr_consumers_give_the_plain_csr_results():
+    packed, plain = _packed_and_plain()
+    children = fine_rotation_children(
+        n_coarse_rot=STD_N_COARSE_ROT, nside_level=STD_NSIDE_LEVEL, oversampling_order=STD_OVERSAMPLING,
+        random_perturbation=0.0, fine_rotation_parent_override=None,
+    )
+    # Steps of a few images, so a step mixes id rows and mask rows.
+    np.testing.assert_array_equal(
+        csr_candidate_rows_per_image(packed, children[0], cells_per_step=200),
+        csr_candidate_rows_per_image(plain, children[0], cells_per_step=200),
+    )
+    table_kwargs = dict(
+        nside_level=STD_NSIDE_LEVEL, oversampling_order=STD_OVERSAMPLING, n_fine_trans=N_FINE_TRANS,
+        fine_translation_parent=FINE_TRANS_PARENT,
+        rotation_log_prior=np.linspace(-1.0, 1.0, STD_N_COARSE_ROT, dtype=np.float32), random_perturbation=0.0,
+        relion_parent_execution_order=True, dtype=np.float32, children=children,
+    )
+    _assert_tables_equal(
+        build_resident_candidate_tables_from_csr(packed, **table_kwargs),
+        build_resident_candidate_tables_from_csr(plain, **table_kwargs),
+    )
+    keep = np.arange(plain.n_images) % 3 != 1
+    restricted, expected = csr_restricted_to_images(packed, keep), csr_restricted_to_images(plain, keep)
+    assert isinstance(restricted, PackedCoarseSignificanceCSR)
+    _assert_same_csr(restricted.image_block(0, plain.n_images), expected)
+    sparse_only = ~plain.store_excluded & (plain.n_significant != plain.n_samples)
+    for images in (sparse_only, sparse_only & (plain.counts() <= 11)):
+        parents = [
+            significant_coarse_parents(
+                DeviceCompactedSignificantSamples(csr=csr_restricted_to_images(csr, images)),
+                n_images=plain.n_images, n_coarse_rot=STD_N_COARSE_ROT, n_coarse_trans=N_COARSE_TRANS,
+            )
+            for csr in (packed, plain)
+        ]
+        np.testing.assert_array_equal(parents[0], parents[1])
+    assert type(csr_restricted_to_images(packed, sparse_only & (plain.counts() <= 11))) is CoarseSignificanceCSR
+
+
+def test_support_rows_decode_on_access_and_are_not_kept():
+    packed, plain = _packed_and_plain()
+    expected = host_support_rows(plain)
+    support = DeviceCompactedSignificantSamples(csr=packed)
+
+    def same(row, reference):
+        if reference is None or row is None:
+            return row is reference
+        if isinstance(reference, ComplementSignificantSampleIndices):
+            return (
+                isinstance(row, ComplementSignificantSampleIndices)
+                and row.total_size == reference.total_size
+                and np.array_equal(row.excluded_indices, reference.excluded_indices)
+            )
+        return row.dtype == reference.dtype and np.array_equal(row, reference)
+
+    assert len(support) == plain.n_images
+    assert all(same(row, reference) for row, reference in zip(support, expected, strict=True))
+    assert all(same(support[image], expected[image]) for image in range(plain.n_images))
+    assert same(support[-1], expected[-1])
+    assert all(same(row, reference) for row, reference in zip(support[3:9], expected[3:9], strict=True))
+    # Nothing decoded is stored: the list's own slots stay placeholders, which refuse to act as a row.
+    with pytest.raises(TypeError, match="device-compacted support row"):
+        np.asarray(list.__getitem__(support, 0))

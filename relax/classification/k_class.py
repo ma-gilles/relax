@@ -1328,7 +1328,6 @@ def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int
     from relax.sparse_pass2.resident_significance import (
         DeviceCompactedSignificantSamples,
         build_coarse_significance_csr,
-        host_support_rows,
     )
 
     rows = [np.unique(np.asarray(samples, dtype=np.int32).reshape(-1)) for samples in class_supports]
@@ -1340,7 +1339,7 @@ def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int
         store_excluded_per_batch=[np.zeros(len(rows), dtype=bool)],
         ids_per_batch=[np.concatenate(rows) if rows else np.zeros(0, np.int32)],
     )
-    return DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+    return DeviceCompactedSignificantSamples(csr=csr)
 
 
 def _given_pose_class_supports(

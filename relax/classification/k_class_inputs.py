@@ -113,17 +113,20 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
     seeds = np.asarray(unit_seed_classes, dtype=np.int64).reshape(-1)
     if seeds.size != len(first_class_supports) or np.any((seeds < 0) | (seeds >= int(n_classes))):
         raise ValueError("a seed iteration gives every unit one class in range")
+    csr = getattr(first_class_supports, "csr", None)
+    if csr is not None:
+        from relax.sparse_pass2.resident_significance import (
+            DeviceCompactedSignificantSamples,
+            csr_restricted_to_images,
+        )
+
+        # The restricted CSR's rows are the lists below: a dropped image decodes to an empty support.
+        return [
+            DeviceCompactedSignificantSamples(csr=csr_restricted_to_images(csr, seeds == k))
+            for k in range(int(n_classes))
+        ]
     empty = np.zeros(0, dtype=np.int32)
-    by_class = [
+    return [
         [support if seeds[u] == k else empty for u, support in enumerate(first_class_supports)]
         for k in range(int(n_classes))
-    ]
-    csr = getattr(first_class_supports, "csr", None)
-    if csr is None:
-        return by_class
-    from relax.sparse_pass2.resident_significance import DeviceCompactedSignificantSamples, csr_restricted_to_images
-
-    return [
-        DeviceCompactedSignificantSamples(rows, csr=csr_restricted_to_images(csr, seeds == k))
-        for k, rows in enumerate(by_class)
     ]

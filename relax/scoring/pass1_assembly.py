@@ -102,17 +102,14 @@ def significant_samples_after_loop(outputs: Pass1Outputs, plan: OutputPlan):
             outputs.device_significance_starts,
         ):
             per_batch[class_index].clear()
-        samples[class_index] = DeviceCompactedSignificantSamples(
-            host_support_rows(coarse_significance_csr),
-            csr=coarse_significance_csr,
-        )
+        samples[class_index] = DeviceCompactedSignificantSamples(csr=coarse_significance_csr)
         logger.info(
             "Coarse significance compacted on the device (class %d): %d images, %d ids "
             "(%.2f MB) instead of a %.2f GB support mask",
             class_index,
             plan.n_images,
-            int(coarse_significance_csr.ids.size),
-            coarse_significance_csr.ids.nbytes / 1e6,
+            coarse_significance_csr.n_ids,
+            coarse_significance_csr.nbytes / 1e6,
             float(plan.n_images) * float(plan.n_rot) * float(plan.n_trans) / 1e9,
         )
     return samples
