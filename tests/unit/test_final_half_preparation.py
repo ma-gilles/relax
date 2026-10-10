@@ -9,7 +9,7 @@ from test_numbered_expectation import numbered_inputs
 
 from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement.expectation import prepare_final_half
-from relax.refinement.final_sampling import FinalSampling, FinalSamplingSettings
+from relax.refinement.trial_grids import FinalSampling, FinalSamplingSettings
 
 pytestmark = pytest.mark.unit
 

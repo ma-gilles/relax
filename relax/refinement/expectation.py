@@ -43,7 +43,6 @@ from relax.refinement.dense_half import (
     _score_half_dense_in_bpref_scope,
 )
 from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
-from relax.refinement.final_sampling import FinalSampling
 from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.local_half import (
     LocalBatchPolicy,
@@ -57,6 +56,7 @@ from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.refinement_options import RefinementOptions
 from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop as _score_tomo_half_in_loop
+from relax.refinement.trial_grids import FinalSampling
 from relax.sampling import TrialGrid, rotation_grid_size
 
 if TYPE_CHECKING:

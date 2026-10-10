@@ -23,7 +23,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `numbered_reconstruction.py`, `noise_updates.py` | the numbered and unregularized reconstructions with their settings, and the noise updates (the volume solver itself is `relax/reconstruction/volume_solver.py`) |
 | `map_postprocess.py` | what a numbered reconstruction does to its maps after the solve: initial low-pass, solvent mask and flattening, K=1 sign alignment |
 | `sigma_offset.py` | the translation prior width a run carries (`SigmaOffset`) and its update from an expectation's offsets |
-| `finalization.py`, `final_sampling.py`, `final_reconstruction.py` | the final all-data pass |
+| `finalization.py`, `final_reconstruction.py` (its sampling and grids: `trial_grids.py`) | the final all-data pass |
 | `run_files.py`, `result_files.py` | RELION's per-iteration run files and `--continue`; final archives and maps |
 | `refinement_result.py` | what the controller and the final pass return (`RefinementResult` and its records); `archive_fields()` is the saved flat mapping |
 | `optics_shapes.py`, `tomo_half.py`, `tomo_scoring.py`, `tomo_particles.py` | several optics groups with different pixel size or box; subtomogram particles |

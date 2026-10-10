@@ -52,12 +52,11 @@ from relax.parity.relion_replay import (
     select_final_sampling_star,
 )
 from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_state_swap_inputs
-from relax.refinement.final_sampling import FinalSamplingSettings, native_final_sampling_settings
 from relax.refinement.iteration_planning import CoarseImageSize
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState
 from relax.refinement.reference_state import class_mixture_from_weights
 from relax.refinement.sigma_offset import SigmaOffset
-from relax.refinement.trial_grids import CoarseGrids
+from relax.refinement.trial_grids import CoarseGrids, FinalSamplingSettings, native_final_sampling_settings
 from relax.relion.relion_metadata import read_relion_sampling_metadata
 
 # The controller's log: what the replay installs is logged under its name, as before.

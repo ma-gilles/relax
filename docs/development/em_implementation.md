@@ -81,7 +81,7 @@ the trial orientations, rebuilds the M-step rotations and shifts the translation
 grid. [`iteration_planning.build_initial_coarse_grids`](../../relax/refinement/iteration_planning.py)
 materializes the first exhaustive grid from a caller translation table or the
 RELION translation grid; `relax/parity/relion_replay_source.build_sealed_initial_coarse_grids` handles sealed
-captures. [`prepare_final_sampling`](../../relax/refinement/final_sampling.py)
+captures. [`prepare_final_sampling`](../../relax/refinement/trial_grids.py)
 resolves final native/replay settings and returns ready-to-score grids together
 with their metadata. It owns the final NumPy/JAX conversion boundary and preserves
 rounding before perturbation. [`test_initial_coarse_grid_owner.py`](../../tests/unit/test_initial_coarse_grid_owner.py)

@@ -874,7 +874,7 @@ the existing timing. Final angular/resolution/history writes remain explicit in
 the final controller. Production precision, reductions, RNG, Fourier layouts,
 serialization and reconstruction order are unchanged by this structural move.
 
-[`prepare_final_sampling`](../../relax/refinement/final_sampling.py) resolves
+[`prepare_final_sampling`](../../relax/refinement/trial_grids.py) resolves
 native or replayed final sampling, advances the selected perturbation source,
 and produces the scoring grids. The final translation base retains its existing
 conversion to scoring precision before perturbation; numbered iterations keep

@@ -10,7 +10,7 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
 from relax.parity import relion_replay_source
-from relax.refinement import final_sampling
+from relax.refinement import trial_grids
 from relax.refinement.ports import InputSource
 
 pytestmark = pytest.mark.unit
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.unit
 
 def test_image_geometry_preserves_host_precision_for_mask_radius():
     pixel_size = np.float32(2.125)
-    geometry = final_sampling.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=pixel_size)
+    geometry = trial_grids.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=pixel_size)
     radius = 200.0 / (2.0 * geometry.pixel_size_angstrom)
     assert isinstance(geometry.pixel_size_angstrom, float)
     assert_matches(radius, 200.0 / (2.0 * float(pixel_size)), rtol=1e-12)
@@ -29,7 +29,7 @@ def test_image_geometry_preserves_host_precision_for_mask_radius():
 @pytest.mark.parametrize("pixel_size", [0.0, -1.0, np.inf, np.nan])
 def test_image_geometry_rejects_invalid_physical_spacing(pixel_size):
     with pytest.raises(ValueError, match="finite and positive"):
-        final_sampling.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=pixel_size)
+        trial_grids.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=pixel_size)
 
 
 @pytest.fixture
@@ -40,15 +40,15 @@ def preparation(monkeypatch):
     # from before perturbation to after it.
     host_grid = np.array([[1.0 / 7.0, -1.0 / 3.0]], dtype=np.float64)
     events = []
-    monkeypatch.setattr(final_sampling, "_exhaustive_grid_order_for_state", lambda state: 3)
-    monkeypatch.setattr(final_sampling, "native_final_perturbation_healpix_order", lambda state, order: 5)
-    monkeypatch.setattr(final_sampling.sampling, "relion_base_translation_grid", lambda *a, **kw: host_grid)
-    monkeypatch.setattr(final_sampling.sampling, "relion_mstep_source_eulers", lambda eulers, *a, **kw: eulers)
-    monkeypatch.setattr(final_sampling.sampling, "relion_angular_sampling_deg", lambda *a, **kw: 7.5)
+    monkeypatch.setattr(trial_grids, "_exhaustive_grid_order_for_state", lambda state: 3)
+    monkeypatch.setattr(trial_grids, "native_final_perturbation_healpix_order", lambda state, order: 5)
+    monkeypatch.setattr(trial_grids.sampling, "relion_base_translation_grid", lambda *a, **kw: host_grid)
+    monkeypatch.setattr(trial_grids.sampling, "relion_mstep_source_eulers", lambda eulers, *a, **kw: eulers)
+    monkeypatch.setattr(trial_grids.sampling, "relion_angular_sampling_deg", lambda *a, **kw: 7.5)
 
     def perturb(**kwargs):
         events.append(("perturb", kwargs))
-        return final_sampling.sampling.TrialGrid(
+        return trial_grids.sampling.TrialGrid(
             rotations, kwargs["rotation_eulers"], rotations, kwargs["base_translations"],
         )
 
@@ -56,12 +56,12 @@ def preparation(monkeypatch):
         events.append(("advance", (previous, kwargs)))
         return 0.125, kwargs["perturb_seed"]
 
-    monkeypatch.setattr(final_sampling.sampling, "perturbed_trial_grid", perturb)
-    monkeypatch.setattr(final_sampling.sampling, "advance_relion_perturbation_for_iteration", advance)
+    monkeypatch.setattr(trial_grids.sampling, "perturbed_trial_grid", perturb)
+    monkeypatch.setattr(trial_grids.sampling, "advance_relion_perturbation_for_iteration", advance)
     inputs = dict(
         state=SimpleNamespace(translation_range=4.25, translation_step=1.416667),
-        image_geometry=final_sampling.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.5),
-        previous_rotation_grid=final_sampling.sampling.RotationGrid(
+        image_geometry=trial_grids.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.5),
+        previous_rotation_grid=trial_grids.sampling.RotationGrid(
             rotations=rotations, rotation_eulers=eulers, healpix_order=3, symmetry="C1",
         ),
         options=stand_in.options(schedule=stand_in.schedule(init_relion_iteration=10)),
@@ -91,7 +91,7 @@ def test_final_grids_are_ready_for_scoring_at_the_existing_rounding_boundary(pre
         dtype=dtype,
         options=replace(inputs["options"], parity=stand_in.parity(perturb_factor=perturb_factor, perturb_seed=7)),
     )
-    result = final_sampling.prepare_final_sampling(**inputs)
+    result = trial_grids.prepare_final_sampling(**inputs)
     assert result.base_rotations is inputs["previous_rotation_grid"].rotations
     assert isinstance(result.base_translations, jnp.ndarray)
     assert result.base_translations.dtype == dtype
@@ -117,7 +117,7 @@ def test_final_grids_are_ready_for_scoring_at_the_existing_rounding_boundary(pre
 
 def test_default_scoring_precision_is_float32(preparation):
     inputs, _, _ = preparation
-    result = final_sampling.prepare_final_sampling(**inputs)
+    result = trial_grids.prepare_final_sampling(**inputs)
     assert result.base_translations.dtype == np.float32
 
 
@@ -132,10 +132,10 @@ def test_changed_coarse_order_rebuilds_with_the_requested_precision_and_symmetry
 
     def build(order, **kwargs):
         calls.append((order, kwargs))
-        return final_sampling.sampling.RotationGrid(rotations=rebuilt, rotation_eulers=np.zeros((1, 3), dtype=np.float64), healpix_order=order, symmetry=kwargs.get("symmetry", "C1"))
+        return trial_grids.sampling.RotationGrid(rotations=rebuilt, rotation_eulers=np.zeros((1, 3), dtype=np.float64), healpix_order=order, symmetry=kwargs.get("symmetry", "C1"))
 
-    monkeypatch.setattr(final_sampling.sampling, "relion_scoring_rotation_grid", build)
-    result = final_sampling.prepare_final_sampling(**inputs)
+    monkeypatch.setattr(trial_grids.sampling, "relion_scoring_rotation_grid", build)
+    result = trial_grids.prepare_final_sampling(**inputs)
     assert result.base_rotations is rebuilt
     assert calls == [(3, dict(dtype=np.float64, symmetry="D2"))]
 
@@ -157,7 +157,7 @@ def test_replay_uses_its_sampling_iteration_without_advancing_native_rng(prepara
         return kwargs["star_value"], "star"
 
     monkeypatch.setattr(relion_replay_source, "_resolve_replay_random_perturbation", resolve)
-    result = final_sampling.prepare_final_sampling(**inputs)
+    result = trial_grids.prepare_final_sampling(**inputs)
     assert [name for name, _ in events] == ["perturb"]
     assert resolutions[0]["relion_iteration"] == replay_iteration
     assert result.settings.relion_iteration == 13
@@ -179,7 +179,7 @@ def test_missing_final_star_preserves_zero_application_and_rng_semantics(prepara
         final_sampling_replay_relion_dir=str(tmp_path),
     )
     monkeypatch.setattr(relion_replay_source, "select_final_sampling_star", lambda *a, **kw: (None, None, []))
-    result = final_sampling.prepare_final_sampling(**inputs)
+    result = trial_grids.prepare_final_sampling(**inputs)
     assert [name for name, _ in events] == (["perturb"] if applied else [])
     assert (result.settings.perturbation is not None) == applied
     assert_matches(result.settings.random_perturbation, 0.0)
@@ -189,5 +189,5 @@ def test_strict_final_replay_requires_its_files(preparation, tmp_path):
     inputs, events, _ = preparation
     _replay_source(inputs, star_directory=str(tmp_path), replay_iteration_overrides=[{}])
     with pytest.raises(RuntimeError, match="Strict RELION final all-data replay requires"):
-        final_sampling.prepare_final_sampling(**inputs)
+        trial_grids.prepare_final_sampling(**inputs)
     assert not events

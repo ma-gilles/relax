@@ -42,7 +42,6 @@ from relax.refinement.dense_half import (
     _score_half_dense_in_bpref_scope,
 )
 from relax.refinement.expectation import prepare_final_half
-from relax.refinement.final_sampling import prepare_final_sampling
 from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_half import (
@@ -64,6 +63,7 @@ from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop
+from relax.refinement.trial_grids import prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.relion.relion_metadata import relion_metadata_translations
 
