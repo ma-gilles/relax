@@ -50,6 +50,7 @@ from functools import partial
 
 import numpy as np
 
+from relax.helpers.host_memory import return_freed_heap
 from relax.helpers.shape_buckets import pow2_ceil
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.sparse_pass2.resident_candidates import (
@@ -388,6 +389,10 @@ def compact_batch_significance_classes(
     return results
 
 
+# Consumed id-block bytes after which build_coarse_significance_csr returns the freed heap to the system.
+_CSR_TRIM_BYTES = 1 << 30
+
+
 def build_coarse_significance_csr(
     *,
     n_images: int,
@@ -397,7 +402,14 @@ def build_coarse_significance_csr(
     store_excluded_per_batch: list[np.ndarray],
     ids_per_batch: list[np.ndarray],
 ) -> CoarseSignificanceCSR:
-    """Assemble one half's CSR from the per-batch compaction results."""
+    """Assemble one half's CSR from the per-batch compaction results.
+
+    ``ids_per_batch`` is consumed: each block is copied into the CSR's id array and its list slot set to None, and
+    the freed blocks are handed back to the system every :data:`_CSR_TRIM_BYTES` (they are below glibc's mmap
+    threshold, so freeing alone leaves them resident). Concatenating the list held a class's ids twice, and the
+    freed lists of earlier classes stayed resident under the later classes' arrays: Class3D K4 on 100k EMPIAR-10076
+    particles peaked at 42.8 GiB of host memory with 21 GB of ids (relax#34).
+    """
 
     n_significant = (
         np.concatenate([np.asarray(c, dtype=np.int32) for c in n_significant_per_batch])
@@ -409,11 +421,20 @@ def build_coarse_significance_csr(
         if store_excluded_per_batch
         else np.zeros(0, dtype=bool)
     )
-    ids = (
-        np.concatenate([np.asarray(i, dtype=np.int32) for i in ids_per_batch])
-        if ids_per_batch
-        else np.zeros(0, dtype=np.int32)
-    )
+    ids = np.empty(sum(int(np.size(block)) for block in ids_per_batch), dtype=np.int32)
+    filled = untrimmed = 0
+    for index, block in enumerate(ids_per_batch):
+        block = np.asarray(block, dtype=np.int32).reshape(-1)
+        ids[filled : filled + block.size] = block
+        filled += block.size
+        untrimmed += block.nbytes
+        ids_per_batch[index] = None
+        del block
+        if untrimmed >= _CSR_TRIM_BYTES:
+            return_freed_heap("a coarse significance CSR's consumed id blocks", level=logging.DEBUG)
+            untrimmed = 0
+    if untrimmed >= _CSR_TRIM_BYTES // 4:
+        return_freed_heap("a coarse significance CSR's consumed id blocks", level=logging.DEBUG)
     if n_significant.shape != (n_images,) or store_excluded.shape != (n_images,):
         raise ValueError(
             f"compacted counts cover {n_significant.shape[0]} images, expected {n_images}",

@@ -805,3 +805,31 @@ def test_assembled_class_releases_its_per_batch_ids():
         np.testing.assert_array_equal(samples[class_index].csr.offsets, [0, 1, 3, 3, 4])
         assert outputs.device_significance_ids[class_index] == []
         assert outputs.device_significance_counts[class_index] == []
+
+
+def test_csr_consumes_its_id_blocks_and_holds_their_concatenation(monkeypatch):
+    """The CSR's ids are the per-batch blocks in order; the blocks' list slots are emptied as they are copied, and
+    the freed heap is returned along the way, so the pass never holds a class's ids twice (relax#34)."""
+
+    from relax.sparse_pass2 import resident_significance
+
+    rng = np.random.default_rng(3)
+    counts = [rng.integers(0, 6, size=n).astype(np.int32) for n in (4, 7, 1, 5)]
+    blocks = [rng.integers(0, 12, size=int(c.sum())).astype(np.int32) for c in counts]
+    expected = np.concatenate(blocks)
+    trims = []
+    monkeypatch.setattr(resident_significance, "_CSR_TRIM_BYTES", 16)
+    monkeypatch.setattr(resident_significance, "return_freed_heap", lambda where, **kwargs: trims.append(where) or 0)
+    ids_per_batch = list(blocks)
+    csr = build_coarse_significance_csr(
+        n_images=17,
+        n_coarse_rot=4,
+        n_coarse_trans=3,
+        n_significant_per_batch=counts,
+        store_excluded_per_batch=[np.zeros(c.size, dtype=bool) for c in counts],
+        ids_per_batch=ids_per_batch,
+    )
+    assert ids_per_batch == [None, None, None, None]
+    assert csr.ids.dtype == np.int32 and np.array_equal(csr.ids, expected)
+    assert np.array_equal(csr.offsets, np.r_[0, np.cumsum(np.concatenate(counts))])
+    assert trims
