@@ -363,47 +363,6 @@ def initialize_halfsets(
     )
 
 
-@dataclass(frozen=True)
-class SigmaOffset:
-    """The translation prior width in Angstrom: the value the halves share and each half's own.
-
-    A producer supplies both; the shared value is not always the mean of the two. Without a pair, both halves
-    have the shared width.
-    """
-
-    shared_angstrom: float
-    per_half_angstrom: tuple[float, float] | None = None
-
-    def __post_init__(self):
-        shared = float(self.shared_angstrom)
-        pair = (shared, shared) if self.per_half_angstrom is None else self.per_half_angstrom
-        arr = np.asarray(pair, dtype=np.float64).reshape(-1)
-        if arr.size != 2:
-            raise ValueError(
-                f"translation_sigma_angstrom_per_half must contain exactly two values; got shape {np.asarray(pair).shape}"
-            )
-        if not np.all(np.isfinite(arr)):
-            raise ValueError("translation_sigma_angstrom_per_half must be finite")
-        object.__setattr__(self, "shared_angstrom", shared)
-        object.__setattr__(self, "per_half_angstrom", (float(arr[0]), float(arr[1])))
-
-    @classmethod
-    def from_halves(cls, widths) -> "SigmaOffset":
-        """Each half's width (a pair, or one width for both) with their mean as the shared value."""
-
-        arr = np.asarray(widths, dtype=np.float64).reshape(-1)
-        if arr.size == 1:
-            arr = np.repeat(arr, 2)
-        if arr.size != 2:
-            raise ValueError(
-                f"translation_sigma_angstrom_per_half must contain exactly two values; got shape {np.asarray(widths).shape}"
-            )
-        return cls(float(0.5 * (float(arr[0]) + float(arr[1]))), arr)
-
-    def for_half(self, half_index: int) -> float:
-        return self.per_half_angstrom[half_index]
-
-
 def configure_half_image_preprocessing(
     experiment_datasets,
     *,

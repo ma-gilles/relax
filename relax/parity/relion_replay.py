@@ -28,16 +28,13 @@ from relax.helpers.orientation_priors import (
     normalize_class_direction_prior_per_half,
     normalize_direction_prior_per_half,
 )
-from relax.refinement.half_inputs import (
-    HalfSet,
-    SigmaOffset,
-    optional_half_arrays,
-)
+from relax.refinement.half_inputs import HalfSet, optional_half_arrays
 from relax.refinement.noise_updates import (
     NoiseModel,
     noise_model_from_pixels,
 )
 from relax.refinement.ports import OptimiserAccuracyReplay
+from relax.refinement.sigma_offset import SigmaOffset
 from relax.relion import relion_metadata
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,

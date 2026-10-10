@@ -42,6 +42,7 @@ from relax.refinement import (
     refinement_options,
     refinement_result,
     setup_checks,
+    sigma_offset,
     startup_references,
 )
 from relax.relion import relion_normalization, relion_worker_scale
@@ -576,7 +577,7 @@ def refine_single_volume(
             else np.asarray(options.start.init_data_vs_prior, dtype=ctx.scoring_dtype)
         )
         # RELION's sigma2_offset in Angstrom^2 (min_sigma2_offset=2 A^2), updated each iteration from the data.
-        sigma_offset = half_inputs.SigmaOffset.from_halves(options.start.init_translation_sigma_angstrom)
+        start_sigma_offset = sigma_offset.SigmaOffset.from_halves(options.start.init_translation_sigma_angstrom)
         relion_incr_size = int(options.start.init_relion_incr_size)
         relion_has_high_fsc_at_limit = (
             bool(options.start.init_has_high_fsc_at_limit)
@@ -612,7 +613,7 @@ def refine_single_volume(
         previous_class_assignments = class_start.previous_class_assignments
         class_mixture = class_start.class_mixture
         previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=ctx.scoring_dtype)
-        sigma_offset = half_inputs.SigmaOffset.from_halves(resume.sigma_offset_angstrom)
+        start_sigma_offset = sigma_offset.SigmaOffset.from_halves(resume.sigma_offset_angstrom)
         relion_incr_size = int(resume.incr_size)
         relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
         direction_priors = iteration_snapshot.direction_priors_from_snapshot(
@@ -655,11 +656,11 @@ def refine_single_volume(
     )
     frozen_initial_scoring_state_sha256 = None
     source.scoring_state_bound(
-        ports.ScoringArrays(reference_model, noise_model, sigma_offset, halves, direction_priors, experiment_datasets)
+        ports.ScoringArrays(reference_model, noise_model, start_sigma_offset, halves, direction_priors, experiment_datasets)
     )
     carry = iteration_planning.IterationCarry(
         state=state, class_mixture=class_mixture, direction_priors=direction_priors, noise_model=noise_model,
-        sigma_offset=sigma_offset, coarse_grids=coarse_grids, random_perturbation=random_perturbation,
+        sigma_offset=start_sigma_offset, coarse_grids=coarse_grids, random_perturbation=random_perturbation,
         replay_saved_healpix_order=replay_saved_healpix_order, native_sampling_boundary=native_sampling_boundary,
         relion_incr_size=relion_incr_size, relion_has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
         previous_data_vs_prior_for_scheduling=previous_data_vs_prior_for_scheduling,
@@ -674,7 +675,7 @@ def refine_single_volume(
     # The carry is the only holder of the start-up values from here, so the loop's replacements release them
     # as the loop's reassignments did (code rule 3).
     del (
-        state, class_mixture, direction_priors, noise_model, sigma_offset, coarse_grids, random_perturbation,
+        state, class_mixture, direction_priors, noise_model, start_sigma_offset, coarse_grids, random_perturbation,
         replay_saved_healpix_order, native_sampling_boundary, relion_incr_size, relion_has_high_fsc_at_limit,
         previous_data_vs_prior_for_scheduling, previous_assignments, previous_class_assignments,
         previous_best_rotations, class_assignments, published_accuracy,
@@ -1178,12 +1179,12 @@ def refine_single_volume(
         history.frac_changed_trajectory.append(float(carry.state.fraction_changed))
 
         # --- sigma2_offset from the posterior-weighted offsets (RELION parity, C1) ---
-        sigma_offset_result = noise_updates.update_c1_sigma_offset_from_posterior(
+        sigma_offset_result = sigma_offset.update_c1_sigma_offset_from_posterior(
             expected.per_half, carry.sigma_offset, n_classes=options.k_class.n_classes,
             state_fallback_offsets_angstrom=carry.state.current_changes_optimal_offsets_angstrom,
             offset_dims=ctx.offset_dims,
         )
-        carry = replace(carry, sigma_offset=half_inputs.SigmaOffset(
+        carry = replace(carry, sigma_offset=sigma_offset.SigmaOffset(
             sigma_offset_result.current_sigma_offset_angstrom, sigma_offset_result.current_sigma_offset_angstrom_per_half,
         ))
         per_class_sigma_offset = sigma_offset_result.per_class_sigma_offset_angstrom

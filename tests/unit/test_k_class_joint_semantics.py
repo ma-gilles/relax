@@ -36,7 +36,7 @@ from relax.helpers.types import (
     make_noise_stats,
     make_relion_stats,
 )
-from relax.refinement.noise_updates import update_class_sigma_offset_from_posterior
+from relax.refinement.sigma_offset import update_class_sigma_offset_from_posterior
 from relax.relion.relion_metadata import read_relion_direction_priors
 from relax.scoring.pass1_results import Pass1Result
 from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
