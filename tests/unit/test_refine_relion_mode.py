@@ -55,10 +55,10 @@ import relax.helpers.expected_accuracy as expected_accuracy_module
 import relax.helpers.orientation_priors as orientation_priors_module
 import relax.local.local_layout as local_layout_module
 import relax.parity.relion_replay as relion_replay_module
-import relax.refinement.convergence as convergence_policy
 import relax.refinement.expectation as expectation_module
 import relax.refinement.iteration_loop as iteration_loop_module
 import relax.refinement.iteration_planning as iteration_planning_module
+import relax.refinement.numbered_transitions as convergence_policy
 import relax.refinement.projector_preparation as projector_preparation
 import relax.sampling as sampling_module
 from relax.classification.k_class_results import (

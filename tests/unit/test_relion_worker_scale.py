@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-import relax.refinement.convergence as convergence_policy
+import relax.refinement.numbered_transitions as convergence_policy
 import relax.relion.relion_worker_scale as relion_worker_scale
 from relax.helpers.types import NoiseStats
 from relax.parity.relion_replay import _apply_replay_correction_overrides

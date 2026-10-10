@@ -943,7 +943,7 @@ receipt. Existing candidates and queued/running jobs remain untouched.
 
 ### Numbered convergence policy boundary
 
-`refinement/convergence.py` now owns accuracy admission and replay/state-update
+`refinement/numbered_transitions.py` now owns accuracy admission and replay/state-update
 precedence, returning a named state/accuracy result to the controller. Its pose,
 geometry and options operands already have producers; no temporary input context
 was introduced. Review the [actual top boundary, update and consumers](final_local_sampling_patch_review.md#iteration-convergence-policy)

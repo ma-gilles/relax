@@ -26,7 +26,6 @@ import relax.parity.relion_replay as replay_policy
 from relax.diagnostics import bpref_diagnostics
 from relax.helpers import expected_accuracy, iteration_history, orientation_priors, resolution, timing
 from relax.refinement import (
-    convergence,
     expectation,
     finalization,
     half_inputs,
@@ -37,6 +36,7 @@ from relax.refinement import (
     maximization,
     noise_updates,
     numbered_reconstruction,
+    numbered_transitions,
     particle_poses,
     ports,
     projector_preparation,
@@ -219,7 +219,7 @@ class _K1Iteration:
 
     def after_convergence(self, carry, options, iteration):
         """RELION's one-time reset of the follower's counter after the convergence update."""
-        return replace(carry, state=convergence.reset_follower_counter_once(carry.state, options, iteration=iteration))
+        return replace(carry, state=numbered_transitions.reset_follower_counter_once(carry.state, options, iteration=iteration))
 
     def numbered_maps(self, reference_model, carry):
         return finalization.numbered_k1_maps(reference_model.maps)
@@ -728,7 +728,7 @@ def refine_single_volume(
         # expectation n-1.  If true, iteration n is the unnumbered joined
         # all-data pass rather than another numbered half-set iteration.
         if (
-            convergence.uses_native_auto_refine(
+            numbered_transitions.uses_native_auto_refine(
                 native_sampling_boundary=carry.native_sampling_boundary,
                 n_classes=options.k_class.n_classes,
             )
@@ -876,9 +876,9 @@ def refine_single_volume(
 
         # Accuracy and the preceding iteration's stall counters select this
         # expectation's grid; completed-iteration updates remain after M-step.
-        carry = replace(carry, state=convergence.advance_expectation_sampling(
+        carry = replace(carry, state=numbered_transitions.advance_expectation_sampling(
             carry.state, options.adaptive, iteration=iteration,
-            may_advance_natively=this_iteration.has_previous_iteration and convergence.uses_native_auto_refine(
+            may_advance_natively=this_iteration.has_previous_iteration and numbered_transitions.uses_native_auto_refine(
                 native_sampling_boundary=carry.native_sampling_boundary, n_classes=options.k_class.n_classes,
             ),
             log=logger,
@@ -1199,7 +1199,7 @@ def refine_single_volume(
         history.record_noise_and_tau2(noise_from_res, noise_from_res_per_half, mstep.tau2_update_details)
 
         # --- Convergence state: assignment changes, resolution stalls, angular-step refinement ---
-        updated_state, accuracy_replay = convergence.update_iteration_convergence(
+        updated_state, accuracy_replay = numbered_transitions.update_iteration_convergence(
             carry.state, pose_comparison, options, image_geometry=ctx.image_geometry, iteration=iteration,
             sampling_decision_now=mode.sampling_decision_now(carry), class_change_fraction=class_change_fraction,
             scheduling_resolution_shell=resolution_estimate.scheduling_shell, source=source,

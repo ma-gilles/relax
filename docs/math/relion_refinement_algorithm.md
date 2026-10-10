@@ -771,14 +771,14 @@ the flatten in `numbered_solvent_mask` and the FSC in `solvent_corrected_fsc` in
 
 ### Iteration convergence policy
 
-[`advance_expectation_sampling`](../../relax/refinement/convergence.py) applies
+[`advance_expectation_sampling`](../../relax/refinement/numbered_transitions.py) applies
 an explicit HEALPix schedule or native K1 sampling advancement after expected
 accuracy. Native advancement uses completed-iteration stall counters, including
 a resumed run's first loop iteration. Class3D never takes the native auto-refine
 transition. The controller checks convergence at the earlier loop top and
 records completed-iteration statistics after reconstruction/noise updates.
 
-[`update_iteration_convergence`](../../relax/refinement/convergence.py) converts
+[`update_iteration_convergence`](../../relax/refinement/numbered_transitions.py) converts
 the scheduling shell to angstroms, resolves accuracy admission, reads numbered
 optimiser accuracy, calls the unchanged mathematical state update, applies the
 fresh auto-refine follower reset, and finally applies optimiser controls.

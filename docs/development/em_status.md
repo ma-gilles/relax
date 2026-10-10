@@ -251,7 +251,7 @@ open. Existing sources/jobs are preserved; no new GPU submission or publication.
 
 The refactor is actively completing code before further production qualification,
 following the user's October 2 clarification. Angular-transition policy now
-belongs to `refinement/convergence.py`; numbered perturbation and scoring-window
+belongs to `refinement/numbered_transitions.py`; numbered perturbation and scoring-window
 planning belong to `refinement/iteration_planning.py`. The controller preserves
 pre-update coarse order, replay/accuracy timing, grid execution and explicit
 state writes. See the [complete calling flow](final_local_sampling_patch_review.md#numbered-sampling-policy-and-fourier-windows)

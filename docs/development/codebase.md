@@ -1,6 +1,6 @@
 # Codebase map for contributors
 
-Numbered convergence policy lives in [`refinement/convergence.py`](../../relax/refinement/convergence.py):
+Numbered convergence policy lives in [`refinement/numbered_transitions.py`](../../relax/refinement/numbered_transitions.py):
 physical-unit conversion, accuracy admission and optimiser replay precedence.
 The same owner selects native versus explicit angular sampling at the start of
 expectation, after accuracy and before the numbered grid is constructed.
