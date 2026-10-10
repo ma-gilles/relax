@@ -621,7 +621,7 @@ def refine_single_volume(
             log=logger,
             symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
         )
-        random_perturbation = iteration_planning.initial_random_perturbation(options, log=logger)
+        random_perturbation = trial_grids.initial_random_perturbation(options, log=logger)
         published_accuracy = expected_accuracy.PublishedAccuracy.before_first_estimate(options.k_class.n_classes)
     else:
         # --- A continued run starts from the run files of an earlier run (RELION --continue) ---
@@ -920,7 +920,7 @@ def refine_single_volume(
         # rotation applied after oversampling; at OS0 the coarse grid is the trial grid. ---
         perturbation = source.random_perturbation(iteration)
         if perturbation is None:
-            perturbation = iteration_planning.resolve_numbered_perturbation(
+            perturbation = trial_grids.resolve_numbered_perturbation(
                 carry.random_perturbation, options, iteration=iteration, rng=ctx.perturb_rng, log=logger,
             )
         carry = replace(carry, random_perturbation=perturbation)

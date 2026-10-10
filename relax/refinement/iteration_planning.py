@@ -1,16 +1,14 @@
-"""A numbered iteration's records and start-up state: the perturbation it scores with, the start-up
+"""A numbered iteration's records and start-up state: the start-up
 ``RefinementState``, the first-iteration and seeding policies and what one iteration carries to the next
-(image sizes: ``image_size_plans.py``; trial grids: ``trial_grids.py``)."""
+(image sizes: ``image_size_plans.py``; trial grids and their perturbation: ``trial_grids.py``)."""
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from relax import sampling
 from relax.helpers.convergence import RefinementState
 from relax.helpers.expected_accuracy import PublishedAccuracy
 from relax.helpers.resolution import (
@@ -24,70 +22,6 @@ from relax.refinement.ports import InputSource
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions
-
-
-def initial_random_perturbation(options: RefinementOptions, *, log: logging.Logger) -> float:
-    """A fresh run's sampling perturbation before its first iteration: RELION's value at
-    ``schedule.init_relion_iteration`` from ``parity.perturb_seed`` (logged), else 0.0.
-
-    RELION applies a random rigid rotation of the entire SO(3) trial grid at each iteration
-    (SamplingPerturbation, healpix_sampling.cpp:167-174): A -> A @ R_perturb with R_perturb =
-    R_from_relion([m,m,m]) and m = random_perturbation * angular_sampling; the perturbation advances per
-    iteration (``resolve_numbered_perturbation``). A replay reads _rlnSamplingPerturbInstance from RELION's
-    sampling.star instead (an input source's).
-    """
-    if options.parity.perturb_factor > 0 and options.parity.perturb_seed is not None:
-        random_perturbation = sampling.relion_sampling_perturbation_for_iteration(
-            options.parity.perturb_factor,
-            options.parity.perturb_seed,
-            options.schedule.init_relion_iteration,
-        )
-        log.info(
-            "Perturbation init: relion_iter=%d random_seed=%d rp=%+.5f",
-            int(options.schedule.init_relion_iteration),
-            int(options.parity.perturb_seed),
-            random_perturbation,
-        )
-    else:
-        random_perturbation = 0.0
-    return random_perturbation
-
-
-def resolve_numbered_perturbation(
-    previous_perturbation: float,
-    options: RefinementOptions,
-    *,
-    iteration: int,
-    rng,
-    log: logging.Logger,
-) -> float:
-    """The run's own sampling perturbation of this iteration: the native advance of the run RNG.
-
-    A RELION run's or a sealed sampling state's perturbation is an input source's
-    (``InputSource.random_perturbation``). Reads from ``options``: ``schedule.init_relion_iteration``;
-    ``parity.perturb_factor`` and ``perturb_seed``. See
-    ``docs/math/relion_refinement_algorithm.md#2-sampling-grids-and-units``.
-    """
-    parity = options.parity
-    init_relion_iteration = options.schedule.init_relion_iteration
-    if not parity.perturb_factor > 0:
-        return previous_perturbation
-    relion_iteration = init_relion_iteration + iteration + 1
-    perturbation, seed = sampling.advance_relion_perturbation_for_iteration(
-        previous_perturbation,
-        perturb_factor=parity.perturb_factor,
-        perturb_seed=parity.perturb_seed,
-        relion_iteration=relion_iteration,
-        rng=rng,
-    )
-    if seed is not None:
-        log.info(
-            "Perturbation advance: iter=%d relion_iter=%d seed=%d rp=%+.5f",
-            iteration + 1, relion_iteration, seed, perturbation,
-        )
-    else:
-        log.info("Perturbation advance: iter=%d rp=%+.5f", iteration + 1, perturbation)
-    return perturbation
 
 
 def initialize_refinement_state(
