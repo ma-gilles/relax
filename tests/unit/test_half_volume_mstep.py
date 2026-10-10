@@ -1399,3 +1399,20 @@ def test_physical_finalize_then_crop_matches_crop_then_finalize(logical, physica
     ]
     for g, e in zip(got, expected, strict=True):
         assert_matches(np.asarray(g), np.asarray(e))
+
+
+@pytest.mark.parametrize("volume_shape", [(8, 8, 8), (9, 9, 9)])
+def test_relion_x_half_host_repacks_do_not_depend_on_their_slab_size(monkeypatch, volume_shape):
+    """Both host repacks fill their output in slabs (relax#39): one slab and one column per slab agree."""
+
+    half_grid = _valid_relion_x_half_grid(volume_shape, seed=7).reshape(-1)
+    whole_native = half_volume_mstep._relion_x_half_volume_to_native_half_host(half_grid, volume_shape)
+    whole_full = half_volume_mstep._relion_x_half_volume_to_full_host(half_grid, volume_shape)
+    monkeypatch.setattr(half_volume_mstep, "_REPACK_SLAB_ELEMENTS", 1)
+    assert len(half_volume_mstep._slabs(5, 64)) == 5
+    slab_native = half_volume_mstep._relion_x_half_volume_to_native_half_host(half_grid, volume_shape)
+    slab_full = half_volume_mstep._relion_x_half_volume_to_full_host(half_grid, volume_shape)
+    assert slab_native.shape == whole_native.shape and slab_full.shape == whole_full.shape
+    assert slab_full.flags.c_contiguous and slab_native.flags.c_contiguous
+    assert_matches(slab_native, whole_native)
+    assert_matches(slab_full, whole_full)

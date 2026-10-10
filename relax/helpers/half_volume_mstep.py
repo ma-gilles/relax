@@ -477,6 +477,17 @@ def _crop_centered_cube(values, *, physical_size: int, logical_size: int):
     return grid[start : start + logical_size, start : start + logical_size, start : start + logical_size].reshape(-1)
 
 
+# Elements of one repack slab (complex64: 0.25 GiB).
+_REPACK_SLAB_ELEMENTS = 1 << 25
+
+
+def _slabs(n_columns: int, column_elements: int):
+    """Slices over ``n_columns`` whose slabs hold at most :data:`_REPACK_SLAB_ELEMENTS` elements (one column at least)."""
+
+    step = max(1, _REPACK_SLAB_ELEMENTS // max(1, int(column_elements)))
+    return [slice(start, start + step) for start in range(0, int(n_columns), step)]
+
+
 def _relion_x_half_volume_to_native_half_host(volume_flat, recon_volume_shape):
     """Host implementation of the RELION x-half to RECOVAR native-half repack."""
 
@@ -491,8 +502,12 @@ def _relion_x_half_volume_to_native_half_host(volume_flat, recon_volume_shape):
         dtype=np.intp,
     )
 
+    # Filled in slabs, straight into the output: the whole-array form held a gathered copy of the half and its
+    # conjugate next to the output (+13 GiB per half at EMPIAR-10202's padded box, relax#39). Copies and
+    # conjugations only, so the values are the whole-array form's.
     native_half = np.empty(half_shape, dtype=half_grid.dtype)
-    native_half[packed_idx, :, :] = half_grid[packed_idx, :, :].transpose(2, 1, 0)
+    for columns in _slabs(packed_idx.size, n0 * n1):
+        native_half[packed_idx[columns], :, :] = half_grid[packed_idx, :, columns].transpose(2, 1, 0)
 
     if n2 % 2 == 0:
         redundant = np.arange(1, ic2, dtype=np.intp)
@@ -502,10 +517,9 @@ def _relion_x_half_volume_to_native_half_host(volume_flat, recon_volume_shape):
         partner_i0 = ((n0 - (n0 % 2) - np.arange(n0)) % n0).astype(np.intp, copy=False)
         partner_i1 = ((n1 - (n1 % 2) - np.arange(n1)) % n1).astype(np.intp, copy=False)
         source_cols = ic2 - redundant
-        conjugate_source = np.conj(
-            half_grid[partner_i0[packed_idx][:, None], partner_i1[None, :], :]
-        )
-        native_half[redundant, :, :] = conjugate_source[:, :, source_cols].transpose(2, 1, 0)
+        for columns in _slabs(redundant.size, n0 * n1):
+            conjugate_source = np.conj(half_grid[np.ix_(partner_i0[packed_idx], partner_i1, source_cols[columns])])
+            native_half[redundant[columns], :, :] = conjugate_source.transpose(2, 1, 0)
 
     return np.ascontiguousarray(native_half)
 
@@ -523,8 +537,12 @@ def _relion_x_half_volume_to_full_host(volume_flat, recon_volume_shape):
         fourier_transform_utils.get_real_fft_packed_last_axis_indices(n2),
         dtype=np.intp,
     )
-    relion_full = np.zeros(recon_volume_shape, dtype=half_grid.dtype)
-    relion_full[:, :, packed_idx] = half_grid
+    # Written in slabs through a transposed view of the output: the whole-array form held the RELION-layout
+    # volume, a gathered copy of the half, its conjugate and the transposed copy at once (relax#39).
+    public_full = np.zeros(recon_volume_shape[::-1], dtype=half_grid.dtype)
+    relion_full = public_full.transpose(2, 1, 0)
+    for columns in _slabs(packed_idx.size, n0 * n1):
+        relion_full[:, :, packed_idx[columns]] = half_grid[:, :, columns]
 
     if n2 % 2 == 0:
         redundant = np.arange(1, ic2, dtype=np.intp)
@@ -534,10 +552,12 @@ def _relion_x_half_volume_to_full_host(volume_flat, recon_volume_shape):
         partner_i0 = ((n0 - (n0 % 2) - np.arange(n0)) % n0).astype(np.intp, copy=False)
         partner_i1 = ((n1 - (n1 % 2) - np.arange(n1)) % n1).astype(np.intp, copy=False)
         source_cols = ic2 - redundant
-        conj_partner = np.conj(half_grid[np.ix_(partner_i0, partner_i1, np.arange(half_shape[2]))])
-        relion_full[:, :, redundant] = conj_partner[:, :, source_cols]
+        for columns in _slabs(redundant.size, n0 * n1):
+            relion_full[:, :, redundant[columns]] = np.conj(
+                half_grid[np.ix_(partner_i0, partner_i1, source_cols[columns])]
+            )
 
-    return np.ascontiguousarray(relion_full.transpose(2, 1, 0))
+    return public_full
 
 
 def enforce_relion_half_volume_x0_hermitian(volume_flat, full_volume_shape):
