@@ -22,7 +22,6 @@ from relax.helpers.batch_planning import (
 from relax.helpers.types import NoiseStats, make_relion_stats
 from relax.refinement import (
     dense_half,
-    firstiter_cc,
     half_inputs,
     local_half,
     local_sampling,
@@ -146,7 +145,7 @@ def _firstiter_cc_dispatch(
         firstiter_coarse_current_size=coarse_current_size,
         firstiter_fine_current_size=fine_current_size,
     )
-    return firstiter_cc._score_kclass_firstiter_cc_pass2(
+    return dense_half._score_kclass_firstiter_cc_pass2(
         half,
         dataclasses.replace(sampling, effective_device_source=effective_device_source),
         priors,
@@ -160,7 +159,7 @@ def _firstiter_cc_dispatch(
 
 
 def test_firstiter_cc_core_keeps_owner_dependencies_visible():
-    function = firstiter_cc._score_kclass_firstiter_cc_pass2
+    function = dense_half._score_kclass_firstiter_cc_pass2
     assert tuple(inspect.signature(function).parameters) == (
         "half", "sampling", "priors", "batching", "variant", "execution",
         "projection_scale", "magnification", "em_kwargs",
@@ -392,8 +391,8 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
         captured.update(kwargs)
         return "result"
 
-    monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
-    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
     def fake_safe_batch_sizes(n_rot, n_trans, *, classes=None, image_shape_for_batch=None, current_size_for_batch=None):
         assert classes == 2
@@ -529,8 +528,8 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
             best_pose_rotation_ids=jnp.zeros(n_images, dtype=jnp.int32),
         )
 
-    monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
-    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
     monkeypatch.setattr(dense_half, "_score_kclass_firstiter_cc_pass2", capture_dispatch)
     means = jnp.zeros(4 if n_classes == 1 else (n_classes, 4), dtype=jnp.complex64)
@@ -784,9 +783,9 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
         captured["projection"] = kwargs
         return coarse / 2.0, fine / 2.0, mstep / 2.0
 
-    monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
-    monkeypatch.setattr(firstiter_cc, "project_pass2_rotations", fake_projection)
-    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(dense_half, "project_pass2_rotations", fake_projection)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
     source = object()
 
     _firstiter_cc_dispatch(

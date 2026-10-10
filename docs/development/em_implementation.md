@@ -454,7 +454,7 @@ this module does not import the iteration controller. Full iteration smoke tests
 remain in `test_refine_relion_mode.py`.
 
 The first-iteration winner-take-all dispatcher lives with its grid builder in
-`firstiter_cc.py`. It calls the batch planner and K-class engine directly for
+`dense_half.py`. It calls the batch planner and K-class engine directly for
 both K=1 and K-class scoring. The controller supplies its logger and chooses
 whether the batch clamp also updates the caller’s argument dictionary.
 

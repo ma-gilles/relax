@@ -11,7 +11,7 @@ from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 from helpers.float_compare import assert_matches
 from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
-from relax.refinement import dense_half, firstiter_cc
+from relax.refinement import dense_half
 from relax.refinement import particle_poses as particle_poses_module
 
 pytestmark = pytest.mark.unit
@@ -53,7 +53,7 @@ def _run(monkeypatch, tmp_path, command, data, output, *arguments):
         )
 
     monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", run)
-    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", run)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", run)
     _run_main(monkeypatch, command, data, tmp_path / output, [str(argument) for argument in arguments])
     return tmp_path / output
 
