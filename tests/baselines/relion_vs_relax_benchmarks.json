@@ -9529,7 +9529,7 @@
     "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
    },
    "quality_pass": true,
-   "quality_reason": "masked ref FSC-AUC: worst s61 −3.4e-4 vs same-seed RELION; inside across-seed band; against page-build (bpdouble) RELION; gaps under 3.8e-4 are inside the scorer's resolution at this box",
+   "quality_reason": "masked ref FSC-AUC: worst s61 −3.4e-4 vs same-seed RELION; s41/s61 inside the scorer's resolution 3.5e-4; inside across-seed band; against page-build (bpdouble) RELION",
    "history": [
     {
      "date": "2026-09-26",
@@ -9677,7 +9677,62 @@
      "quality_reason": "masked ref FSC-AUC: worst s61 −4.2e-4 vs same-seed RELION; inside across-seed band",
      "note": "verdict against build_patched RELION (float32 device BP), before the 2026-10-10 page-build re-reference"
     }
-   ]
+   ],
+   "scorer_resolution": {
+    "value": 0.000353,
+    "method": "largest change of a same-seed relax-minus-RELION gap between the 2-thread scoring (2026-10-09) and the published one-thread scoring of the same maps, 10 pairs (page-build and build_patched RELION)",
+    "evidence": {
+     "score_a": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/rerefs_20261009/scores_f_local/row28.json"
+     ],
+     "score_b": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/rerefs_20261009/scores_h_row28_page/row28_page.json"
+     ],
+     "metric": "weighted_masked_fsc_auc",
+     "pairs": [
+      [
+       "c0_relax_s29",
+       "page_relion_s29"
+      ],
+      [
+       "c0_relax_s41",
+       "page_relion_s41"
+      ],
+      [
+       "c0_relax_s53",
+       "page_relion_s53"
+      ],
+      [
+       "c0_relax_s61",
+       "page_relion_s61"
+      ],
+      [
+       "c0_relax_s67",
+       "page_relion_s67"
+      ],
+      [
+       "c0_relax_s29",
+       "c0_relion_s29"
+      ],
+      [
+       "c0_relax_s41",
+       "c0_relion_s41"
+      ],
+      [
+       "c0_relax_s53",
+       "c0_relion_s53"
+      ],
+      [
+       "c0_relax_s61",
+       "c0_relion_s61"
+      ],
+      [
+       "c0_relax_s67",
+       "c0_relion_s67"
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "empiar10076_10k256_initialmodel_vdam_k4_20it",
@@ -9995,7 +10050,7 @@
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
    },
    "quality_pass": true,
-   "quality_reason": "worst s53 −1.0e-6 vs same-seed RELION; inside across-seed band; against page-build (bpdouble) RELION",
+   "quality_reason": "worst s53 −1.0e-6 vs same-seed RELION; s29/s53 inside the scorer's resolution 1.1e-4; inside across-seed band; against page-build (bpdouble) RELION",
    "benchmark": false,
    "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)",
    "history": [
@@ -10374,7 +10429,42 @@
      "quality_reason": "worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band",
      "note": "verdict against build_patched RELION (float32 device BP), before the 2026-10-09 page-build re-reference"
     }
-   ]
+   ],
+   "scorer_resolution": {
+    "value": 0.000107,
+    "method": "largest change of a same-seed relax-minus-RELION gap between the published scorings and the one-thread scoring of the row's verdict arms with the page RELION arms in one invocation (job 15317203), 3 pairs",
+    "evidence": {
+     "score_a": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/e10076_k4_seeds_20261008/out/e10076_10k_k4_seeds.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/freeze_073740f/out/e10076_10k_k4_073740f.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/rerefs_20261009/scores_b/row29.json"
+     ],
+     "score_b": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/scorer_repeat_20261010/ft1main_row29_all/row29_all.json"
+     ],
+     "metric": "weighted_masked_fsc_auc",
+     "pairs": [
+      [
+       "fz4_relax_s29_073740f",
+       "bpdouble_s29",
+       "fz4_relax_s29_073740f",
+       "page_relion_s29"
+      ],
+      [
+       "ev_relax_s41_b61b191",
+       "bpdouble_s41",
+       "ev_relax_s41_b61b191",
+       "page_relion_s41"
+      ],
+      [
+       "ev_relax_s53_b61b191",
+       "bpdouble_s53",
+       "ev_relax_s53_b61b191",
+       "page_relion_s53"
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align",
@@ -20124,6 +20214,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Not separable at the scorer's resolution (2026-10-10, user decision): rescoring the same maps moves a same-seed relax-minus-RELION gap on this fixture by up to 9.5e-04, and all six same-seed gaps of the row (largest -7.7e-4 at seed 6) are inside that. The two programs' scores differ by less than the scorer can resolve here; the row is neither a hit nor a miss and takes no speed colour. Values are as published.",
     "Resolution of this row (2026-10-10): the same-seed relax-minus-RELION gaps (1e-4 to 8e-4) are at or below the scorer's own per-arm scatter on these maps (6e-4 between scoring settings), so the row does not separate the engines; the count of seeds below RELION is not evidence of a deficit. The maps of both engines on this fixture also register differently on a low band and on a higher band (0.85 degrees apart, both engines alike), which moves every arm by +0.030 without changing the gaps; the published values use the default registration.",
     "Rerun 2026-10-10 on relax main 98d6b95a (prw's VDAM stack: accuracy summation order and the several-shape SGD residual rows, relax#62) with relax repeats at s1/s2/s5; RELION runs reused, all rescored in one job: s1 relax 0.646420/0.645854 vs RELION 0.645844/0.646885; s2 relax 0.643938/0.643267 vs RELION 0.643620/0.643172; s3 relax 0.645692 vs RELION 0.646004; s4 relax 0.644826 vs RELION 0.645041; s5 relax 0.643947/0.643520 vs RELION 0.644830/0.643664; s6 relax 0.644757 vs RELION 0.645530; paired (first runs) -0.00021 ± 0.00024. Page verdict: hit (worst s6 −7.7e-4 vs same-seed RELION; run ranges compared at s1/s2/s5 (both engines repeated); inside across-seed band). Seed 1, 2.3e-3 below RELION on 411ed2c1, is inside RELION's range. Walls not re-measured (this job packed three rows on one node; relax sum over seeds 1-6 was 3363 s).",
     "Scoring caveat: rescoring the stored 411ed2c1 relax and RELION maps in this job moves their values by up to 6.6e-04 (largest: relax_411ed2c1_s6; the registration is refitted per job), comparable to the single-run gaps at s3/s4/s6; all values of this entry come from one scoring job (15303607).",
@@ -20233,8 +20324,8 @@
     }
    },
    "date": "2026-10-10",
-   "quality_pass": true,
-   "quality_reason": "worst s6 −7.7e-4 vs same-seed RELION; run ranges compared at s1/s2/s5 (both engines repeated); inside across-seed band; against patched GPU RELION (relax#12 fix)",
+   "quality_pass": null,
+   "quality_reason": "not separable at the scorer's resolution 9.5e-4: every same-seed gap is inside it (largest s6 −7.7e-4); run ranges compared at s1/s2/s5 (both engines repeated); against patched GPU RELION (relax#12 fix)",
    "feature_reference": "optics groups of several image shapes in VDAM InitialModel: GPU RELION 5.0.1 (mpiscale build, non-MPI --j 12, one H100), one run per seed, seeds 1-6; the only reference (user, 2026-10-06)",
    "time_check": {
     "a": "relax and GPU RELION each on 1 H100 + 12 CPUs; separate jobs: relax 15089781 (six arms on one node), GPU RELION 14868221 and 14971808",
@@ -20888,8 +20979,150 @@
      "quality_pass": true,
      "quality_reason": "worst s1 −0.0023 vs same-seed RELION; run ranges compared at s1/s2/s5 (both engines repeated); inside across-seed band; against patched GPU RELION (relax#12 fix)",
      "note": "relax 411ed2c1 arms with run ranges (2026-10-09, 00b55c77), before the 98d6b95a rerun"
+    },
+    {
+     "date": "2026-10-10",
+     "quality_pass": true,
+     "quality_reason": "worst s6 −7.7e-4 vs same-seed RELION; run ranges compared at s1/s2/s5 (both engines repeated); inside across-seed band; against patched GPU RELION (relax#12 fix)",
+     "note": "verdict before the scorer-resolution rule (user decision 2026-10-10): the row counted seeds as hit; its same-seed gaps are all inside the measured scorer resolution, so it now reads not separable. Published values unchanged."
     }
-   ]
+   ],
+   "scorer_resolution": {
+    "value": 0.000948,
+    "method": "largest change of a same-seed relax-minus-RELION gap between the published scoring (2 threads) and the one-thread scoring of the same 27 maps of this fixture, 30 same-seed pairs (relax 98d6b95a and 411ed2c1 arms)",
+    "evidence": {
+     "score_a": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/waves_20261009/scores_hi_98d6b95a/row58_out/mshape_vdam_k1_98d6b95a.json"
+     ],
+     "score_b": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/scorer_repeat_20261010/ft1_row58/mshape_vdam_k1_98d6b95a.json"
+     ],
+     "metric": "weighted_masked_fsc_auc",
+     "pairs": [
+      [
+       "relax_98d6b95a_s1",
+       "relion_patched_gpu_s1"
+      ],
+      [
+       "relax_98d6b95a_s1",
+       "relion_patched_gpu_s1_r2"
+      ],
+      [
+       "relax_98d6b95a_s1_r2",
+       "relion_patched_gpu_s1"
+      ],
+      [
+       "relax_98d6b95a_s1_r2",
+       "relion_patched_gpu_s1_r2"
+      ],
+      [
+       "relax_98d6b95a_s2",
+       "relion_patched_gpu_s2"
+      ],
+      [
+       "relax_98d6b95a_s2",
+       "relion_patched_gpu_s2_r2"
+      ],
+      [
+       "relax_98d6b95a_s2_r2",
+       "relion_patched_gpu_s2"
+      ],
+      [
+       "relax_98d6b95a_s2_r2",
+       "relion_patched_gpu_s2_r2"
+      ],
+      [
+       "relax_98d6b95a_s3",
+       "relion_patched_gpu_s3"
+      ],
+      [
+       "relax_98d6b95a_s4",
+       "relion_patched_gpu_s4"
+      ],
+      [
+       "relax_98d6b95a_s5",
+       "relion_patched_gpu_s5"
+      ],
+      [
+       "relax_98d6b95a_s5",
+       "relion_patched_gpu_s5_r2"
+      ],
+      [
+       "relax_98d6b95a_s5_r2",
+       "relion_patched_gpu_s5"
+      ],
+      [
+       "relax_98d6b95a_s5_r2",
+       "relion_patched_gpu_s5_r2"
+      ],
+      [
+       "relax_98d6b95a_s6",
+       "relion_patched_gpu_s6"
+      ],
+      [
+       "relax_411ed2c1_s1",
+       "relion_patched_gpu_s1"
+      ],
+      [
+       "relax_411ed2c1_s1",
+       "relion_patched_gpu_s1_r2"
+      ],
+      [
+       "relax_411ed2c1_s1_r2",
+       "relion_patched_gpu_s1"
+      ],
+      [
+       "relax_411ed2c1_s1_r2",
+       "relion_patched_gpu_s1_r2"
+      ],
+      [
+       "relax_411ed2c1_s2",
+       "relion_patched_gpu_s2"
+      ],
+      [
+       "relax_411ed2c1_s2",
+       "relion_patched_gpu_s2_r2"
+      ],
+      [
+       "relax_411ed2c1_s2_r2",
+       "relion_patched_gpu_s2"
+      ],
+      [
+       "relax_411ed2c1_s2_r2",
+       "relion_patched_gpu_s2_r2"
+      ],
+      [
+       "relax_411ed2c1_s3",
+       "relion_patched_gpu_s3"
+      ],
+      [
+       "relax_411ed2c1_s4",
+       "relion_patched_gpu_s4"
+      ],
+      [
+       "relax_411ed2c1_s5",
+       "relion_patched_gpu_s5"
+      ],
+      [
+       "relax_411ed2c1_s5",
+       "relion_patched_gpu_s5_r2"
+      ],
+      [
+       "relax_411ed2c1_s5_r2",
+       "relion_patched_gpu_s5"
+      ],
+      [
+       "relax_411ed2c1_s5_r2",
+       "relion_patched_gpu_s5_r2"
+      ],
+      [
+       "relax_411ed2c1_s6",
+       "relion_patched_gpu_s6"
+      ]
+     ]
+    }
+   },
+   "quality_state": "not_separable"
   },
   {
    "id": "cryoet_et09_box64_2000_64_tomo_vdam_k1_1a107f5",
