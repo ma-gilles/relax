@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
+    from relax.ppca_initial_class3d.command import add_args as add_class_args
+
+    add_class_args(parser)
     parser.add_argument("manifest", nargs="?", help="Training-only fixture manifest (single particles)")
     parser.add_argument("--ios", help="RELION 5 optimisation set of subtomogram particles (2D stacks) instead")
     parser.add_argument("--particle-diameter", type=float, help="Particle diameter in Angstrom (with --ios)")
@@ -305,6 +308,10 @@ def main(args=None):
         parser = argparse.ArgumentParser(description=__doc__)
         add_args(parser)
         args = parser.parse_args(args)
+    from relax.ppca_initial_class3d.command import dispatch
+
+    if dispatch(args):
+        return
     import os
     import sys
 
