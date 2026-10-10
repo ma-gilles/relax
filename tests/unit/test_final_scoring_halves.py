@@ -5,8 +5,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from relax.refinement.half_inputs import initialize_halfsets
-from relax.refinement.half_scoring import HalfScoringData
+from relax.refinement.half_inputs import HalfScoringData, initialize_halfsets
 
 pytestmark = pytest.mark.unit
 

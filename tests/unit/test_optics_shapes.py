@@ -18,7 +18,7 @@ from helpers.refinement_specs import local_half_owners
 from relax.dense import scoring_policy
 from relax.dense.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
 from relax.helpers.types import RelionStats, make_noise_stats
-from relax.refinement import half_scoring, optics_shapes
+from relax.refinement import half_inputs, half_scoring, optics_shapes
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
 
@@ -140,7 +140,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
     for group, shape_class in enumerate(half.classes):
         group_ids[shape_class.image_indices] = group
     return (
-        half_scoring.HalfScoringData(
+        half_inputs.HalfScoringData(
             particles=HalfSet(
                 index=0,
                 dataset=half,

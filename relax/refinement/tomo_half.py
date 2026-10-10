@@ -26,7 +26,7 @@ from relax.relion.geometry import (
 )
 
 if TYPE_CHECKING:
-    from relax.refinement.half_scoring import HalfScoringData
+    from relax.refinement.half_inputs import HalfScoringData
 
 
 def is_relion5_2d_stack_star(particles_star) -> bool:

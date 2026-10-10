@@ -22,6 +22,7 @@ from relax.helpers.batch_planning import (
 from relax.helpers.types import NoiseStats, make_relion_stats
 from relax.refinement import (
     firstiter_cc,
+    half_inputs,
     half_scoring,
     local_sampling,
     local_search_iteration,
@@ -37,7 +38,7 @@ def _dense_owners(**values):
 
     sampling_state = values.pop("state")
     owners = (
-        half_scoring.HalfScoringData(
+        half_inputs.HalfScoringData(
             particles=HalfSet(
                 index=values.pop("k"),
                 dataset=values.pop("experiment_dataset"),
@@ -177,7 +178,7 @@ def test_firstiter_cc_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            half_scoring.HalfScoringData,
+            half_inputs.HalfScoringData,
             half_scoring.DenseSamplingSpec,
             half_scoring.DensePriorSpec,
             half_scoring.DenseBatchPolicy,
@@ -206,7 +207,7 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            half_scoring.HalfScoringData,
+            half_inputs.HalfScoringData,
             half_scoring.DenseSamplingSpec,
             half_scoring.DensePriorSpec,
             half_scoring.DenseBatchPolicy,
@@ -238,7 +239,7 @@ def test_local_half_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            half_scoring.HalfScoringData,
+            half_inputs.HalfScoringData,
             local_sampling.LocalSampling,
             half_scoring.LocalPriorSpec,
             half_scoring.LocalBatchPolicy,

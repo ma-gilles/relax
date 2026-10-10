@@ -3,7 +3,7 @@
 import dataclasses
 
 from relax.dense import scoring_policy
-from relax.refinement import half_scoring, local_sampling, local_search_iteration, optics_shapes
+from relax.refinement import half_inputs, half_scoring, local_sampling, local_search_iteration, optics_shapes
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.ports import NoProbe
 from relax.refinement.projector_preparation import PreparedProjector
@@ -140,7 +140,7 @@ def local_half_owners(**values):
     projector_r_max = values.pop("relion_projector_r_max", None)
     projector = None if projector_data is None else PreparedProjector(data=projector_data, r_max=projector_r_max)
     owners = (
-        half_scoring.HalfScoringData(
+        half_inputs.HalfScoringData(
             particles=HalfSet(
                 index=values.pop("k"),
                 dataset=values.pop("experiment_dataset"),

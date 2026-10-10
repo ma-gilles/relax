@@ -8,6 +8,7 @@ import numpy as np
 from recovar import utils
 
 from relax.helpers.convergence import concatenate_pose_stacks_or_none
+from relax.refinement.projector_preparation import PreparedProjector
 
 logger = logging.getLogger(__name__)
 
@@ -425,3 +426,19 @@ def configure_half_image_preprocessing(
                 particle_diameter_angstrom,
                 width_mask_edge_px,
             )
+
+
+@dataclass(frozen=True, kw_only=True)
+class HalfScoringData:
+    """Persistent particle half and the model operands for one expectation."""
+
+    particles: HalfSet
+    reference: object
+    noise_variance: object
+    noise_radial: object | None = None
+    mean_variance: object | None = None
+    projector: PreparedProjector | None = None
+    scale_group_ids: object | None = None
+    scale_group_count: int | None = None
+    scale_correction_data_vs_prior: object | None = None
+    image_seed_classes: object | None = None

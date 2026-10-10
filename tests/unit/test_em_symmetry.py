@@ -14,7 +14,7 @@ from helpers.run_options import stand_in
 
 from relax.dense import scoring_policy
 from relax.refinement import optics_shapes
-from relax.refinement.half_inputs import HalfSet
+from relax.refinement.half_inputs import HalfScoringData, HalfSet
 from relax.refinement.refinement_options import ScoringVariants
 from relax.symmetry import (
     canonicalize_rotational_symmetry,
@@ -862,7 +862,7 @@ def _symmetric_dense_owners(half_scoring, values):
     values = dict(values)
     sampling_state = values.pop("state")
     owners = (
-        half_scoring.HalfScoringData(
+        HalfScoringData(
             particles=HalfSet(
                 index=values.pop("k"),
                 dataset=values.pop("experiment_dataset"),

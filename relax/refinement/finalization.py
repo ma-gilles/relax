@@ -35,13 +35,13 @@ from relax.helpers.timing import Stopwatch
 from relax.refinement import final_reconstruction
 from relax.refinement.expectation import prepare_final_half
 from relax.refinement.final_sampling import prepare_final_sampling
+from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.half_scoring import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
     DensePriorSpec,
     DenseSamplingSpec,
     DenseVariantPolicy,
-    HalfScoringData,
     LocalBatchPolicy,
     LocalDiagnosticPolicy,
     LocalExecutionPolicy,

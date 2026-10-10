@@ -42,7 +42,7 @@ from relax.local.local_layout import (
     restrict_local_layout_classes,
 )
 from relax.refinement.firstiter_cc import _score_kclass_firstiter_cc_pass2
-from relax.refinement.half_inputs import HalfSet
+from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.local_search_iteration import (
     LocalClassSearchResult,
@@ -56,7 +56,6 @@ from relax.refinement.optics_shapes import (
     reference_grid_kwargs,
 )
 from relax.refinement.ports import ExpectationProbe
-from relax.refinement.projector_preparation import PreparedProjector
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
@@ -105,22 +104,6 @@ def _expand_significant_samples_to_full_parent_translations(
         )
         expanded.append(expanded_samples.astype(np.int64, copy=False))
     return expanded
-
-
-@dataclass(frozen=True, kw_only=True)
-class HalfScoringData:
-    """Persistent particle half and the model operands for one expectation."""
-
-    particles: HalfSet
-    reference: object
-    noise_variance: object
-    noise_radial: object | None = None
-    mean_variance: object | None = None
-    projector: PreparedProjector | None = None
-    scale_group_ids: object | None = None
-    scale_group_count: int | None = None
-    scale_correction_data_vs_prior: object | None = None
-    image_seed_classes: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
