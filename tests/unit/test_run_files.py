@@ -13,7 +13,6 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar.core import fourier_transform_utils as ftu
 
-from relax.helpers.convergence import RefinementState
 from relax.reconstruction import regularization
 from relax.refinement import iteration_snapshot as iteration_snapshot_module
 from relax.refinement import setup_checks
@@ -26,6 +25,7 @@ from relax.refinement.iteration_snapshot import (
     refinement_state_fields,
     tau2_mean_variance,
 )
+from relax.refinement.refinement_state import RefinementState
 from relax.refinement.run_files import (
     RunFileWriter,
     RunSettings,

@@ -13,16 +13,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.fourier.fourier_window import quantize_current_size
-from relax.helpers.convergence import healpix_angular_step
 from relax.reconstruction.regularization import (
     compute_current_size_relion,
     fsc_to_relion_ssnr,
     resolution_from_data_vs_prior,
 )
+from relax.refinement.refinement_state import healpix_angular_step
 
 if TYPE_CHECKING:
-    from relax.helpers.convergence import RefinementState
     from relax.refinement.refinement_options import RefinementOptions
+    from relax.refinement.refinement_state import RefinementState
 
 
 @dataclass(frozen=True, kw_only=True)

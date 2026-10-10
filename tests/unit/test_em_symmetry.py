@@ -352,7 +352,7 @@ def test_empty_too_coarse_asymmetric_unit_fails_closed(label):
 def test_convergence_distance_minimizes_over_relion_symmetry_mates(label):
     from recovar import utils
 
-    from relax.helpers.convergence import (
+    from relax.refinement.refinement_state import (
         _relion_angular_distance_per_particle as relion_angular_distance_per_particle,
     )
 
@@ -373,7 +373,7 @@ def test_convergence_distance_minimizes_over_relion_symmetry_mates(label):
 def test_explicit_c1_convergence_distance_preserves_default_path():
     from recovar import utils
 
-    from relax.helpers.convergence import (
+    from relax.refinement.refinement_state import (
         _relion_angular_distance_per_particle as relion_angular_distance_per_particle,
     )
 

@@ -9,7 +9,7 @@ rules and the [current status](em_status.md) identifies reviewed source/evidence
 ## Dense and local EM ownership
 
 Pose-stack preparation for convergence belongs to
-[`helpers.convergence.concatenate_pose_stacks_or_none`](../../relax/helpers/convergence.py).
+[`helpers.convergence.concatenate_pose_stacks_or_none`](../../relax/refinement/refinement_state.py).
 The iteration controller supplies precision and logging context and retains the
 four current/previous rotation/translation call sites. Empty half-sets, missing
 poses, malformed-shape warnings and concatenation ownership are preserved.

@@ -29,9 +29,9 @@ from typing import Callable, Literal, Sequence
 
 import numpy as np
 
-from relax.helpers.convergence import _relion_optimizer_average_pmax
 from relax.reconstruction import regularization
 from relax.reconstruction.regularization import resolution_from_data_vs_prior
+from relax.refinement.refinement_state import _relion_optimizer_average_pmax
 from relax.relion.macros import relion_round
 from relax.vdam.estep_common import EstepSums, estep_sums
 from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class

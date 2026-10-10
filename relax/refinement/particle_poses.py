@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from recovar import utils
 
-from relax.helpers.convergence import concatenate_pose_stacks_or_none
+from relax.refinement.refinement_state import concatenate_pose_stacks_or_none
 
 
 def best_rotation_matrices(halves, *, dtype) -> list:

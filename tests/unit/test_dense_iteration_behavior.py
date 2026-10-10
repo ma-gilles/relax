@@ -11,11 +11,11 @@ from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
 from relax.diagnostics import local_debug
-from relax.helpers.convergence import native_final_perturbation_healpix_order
 from relax.local_search import half
 from relax.local_search.half import LocalSearchResult
 from relax.refinement import score_outputs, scoring_policy
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
+from relax.refinement.refinement_state import native_final_perturbation_healpix_order
 from relax.relion import normalization
 
 pytestmark = pytest.mark.unit

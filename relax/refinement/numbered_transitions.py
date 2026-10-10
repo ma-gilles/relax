@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from relax.fourier.resolution import ImageGeometry, shell_index_to_resolution_angstrom
-from relax.helpers.convergence import (
+from relax.refinement.ports import InputSource, OptimiserAccuracyReplay
+from relax.refinement.refinement_state import (
     ExpectationStatistics,
     RefinementState,
     apply_relion_healpix_order_oracle,
@@ -18,7 +19,6 @@ from relax.helpers.convergence import (
     update_angular_sampling,
     update_refinement_state,
 )
-from relax.refinement.ports import InputSource, OptimiserAccuracyReplay
 
 if TYPE_CHECKING:
     from relax.refinement.particle_poses import PoseComparison

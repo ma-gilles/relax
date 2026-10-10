@@ -15,8 +15,8 @@ from typing import Any
 import numpy as np
 
 from relax.classification.k_class import run_dense_k_class_em_adaptive
-from relax.helpers.convergence import healpix_angular_step
 from relax.refinement import shape_class_scoring
+from relax.refinement.refinement_state import healpix_angular_step
 from relax.relion.optics_aberrations import reported_rotations
 from relax.sampling.orientation_priors import relion_round_away_from_zero, relion_sigma_offset_prior_center
 from relax.vdam import native_sampling

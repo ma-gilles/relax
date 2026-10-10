@@ -23,7 +23,6 @@ from recovar.reconstruction.noise import make_radial_noise
 
 from relax import sampling
 from relax.fourier.resolution import relion_coarse_image_size
-from relax.helpers.convergence import healpix_angular_step
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
@@ -54,6 +53,7 @@ from relax.ppca_refinement.oversampled_stream import (
     significance_summary,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
+from relax.refinement.refinement_state import healpix_angular_step
 
 logger = logging.getLogger(__name__)
 

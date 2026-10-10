@@ -129,7 +129,7 @@ def test_dump_keeps_primitive_boundaries(transaction_bind, monkeypatch, tmp_path
 @pytest.mark.parametrize("K,pseudo", [(1, False), (1, True), (4, False), (4, True)])
 @pytest.mark.parametrize("current_size,padding", [(0, 1), (8, 1), (16, 2)])
 def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K, pseudo, current_size, padding, monkeypatch):
-    from relax.relion import vdam_mstep
+    from relax.vdam import relion_mstep
 
     state, accumulators = _case(K, pseudo, current_size, True, padding)
     original = deepcopy(state)
@@ -139,13 +139,13 @@ def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K,
                 grad_current_stepsize=0.3, tau2_fudge_factor=4.0, padding_factor=padding)
     expected = vdam_m_step_single_class(state, **args)
     calls = []
-    actual_host = vdam_mstep.relion_vdam_m_step_host
+    actual_host = relion_mstep.relion_vdam_m_step_host
 
     def counted(*a, **kw):
         calls.append(1)
         return actual_host(*a, **kw)
 
-    monkeypatch.setattr(vdam_mstep, "relion_vdam_m_step_host", counted)
+    monkeypatch.setattr(relion_mstep, "relion_vdam_m_step_host", counted)
     actual = vdam_m_step_single_class(state, **args)
     assert calls == [1]
     changed_arrays = {"Iref", "Igrad1", "Igrad2", "tau2_class", "sigma2_class",

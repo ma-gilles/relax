@@ -148,7 +148,7 @@ position in a newly shuffled subset. Also, averaging two separately
 preconditioned directions is generally different from preconditioning pooled
 statistics once.
 
-Sources: [device transaction](../../relax/relion/vdam_mstep.py),
+Sources: [device transaction](../../relax/vdam/relion_mstep.py),
 [native transaction wrapper](../../relax/vdam/m_step.py),
 [subset ordering](../../relax/vdam/subset_schedule.py).
 

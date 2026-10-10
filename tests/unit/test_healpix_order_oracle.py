@@ -2,7 +2,6 @@ import pytest
 from helpers.run_options import stand_in
 
 import relax.refinement.refinement_options as refinement_options
-from relax.helpers.convergence import RefinementState, apply_relion_healpix_order_oracle
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
     KClassOptions,
@@ -10,6 +9,7 @@ from relax.refinement.refinement_options import (
     _validate_relion_healpix_orders,
     with_validated_sampling_schedule,
 )
+from relax.refinement.refinement_state import RefinementState, apply_relion_healpix_order_oracle
 
 
 def test_validate_relion_healpix_orders_requires_complete_monotone_schedule():

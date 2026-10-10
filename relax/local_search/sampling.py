@@ -10,9 +10,9 @@ import numpy as np
 
 from relax import sampling
 from relax.fourier.resolution import relion_local_pass1_current_size
-from relax.helpers.convergence import direction_prior_healpix_order_for_scoring, healpix_angular_step
 from relax.refinement.image_size_plans import ExpectationWindows, RunOptics, plan_expectation_windows
 from relax.refinement.iteration_planning import IterationCarry
+from relax.refinement.refinement_state import direction_prior_healpix_order_for_scoring, healpix_angular_step
 from relax.refinement.trial_grids import (
     CoarseGrids,
     builds_coarse_pass1_rotations,

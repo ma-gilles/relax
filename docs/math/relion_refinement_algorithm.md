@@ -800,7 +800,7 @@ observed shell separate from the first-iteration `ini_high` scheduling override.
 The controller converts the scheduling shell to angstroms after noise updates and
 records convergence statistics at its original boundary.
 
-[`convergence.py`](../../relax/helpers/convergence.py)
+[`convergence.py`](../../relax/refinement/refinement_state.py)
 owns `RefinementState`, `update_refinement_state`, `update_angular_sampling`,
 `refine_angular_sampling` and `check_convergence`.
 

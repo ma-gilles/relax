@@ -351,7 +351,9 @@ LOC_BUDGETS = {
     "sgd_optimizer_noise": (309, ("sgd.py",)),
     # Optics groups on several image shapes (2026-10-05): each particle's pixel size and box in
     # NativeOpticsState: 549 -> 552 lines on main 7d7f3c92 (+3; ceiling +2).
-    "reconstruction_state": (552, ("m_step.py", "state.py")),
+    # relion/relion_vdam_mstep.py (475 lines) joined the package as relion_mstep.py (package layout, e4):
+    # 552 -> 1027, the relocated lines exactly.
+    "reconstruction_state": (1027, ("m_step.py", "state.py", "relion_mstep.py")),
     # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
     # size or box onto the model grid for the start-up noise (RELION resizeMap and
     # window, ml_optimiser.cpp:2934-2955; S3b multi-optics, 2026-09-24): a real raise.

@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers import convergence
-from relax.helpers.convergence import concatenate_assignments, concatenate_assignments_or_none
+from relax.refinement import refinement_state
+from relax.refinement.refinement_state import concatenate_assignments, concatenate_assignments_or_none
 
 pytestmark = pytest.mark.unit
 
@@ -46,23 +46,23 @@ def test_concatenate_assignments_or_none_matches_the_strict_join():
 
 def test_kclass_pmax_mass_is_the_retained_posterior_mass_per_half():
     class_posterior_per_half = [np.asarray([0.25, 0.5, 0.125], dtype=np.float32), np.asarray([1.0, 2.0], dtype=np.float64)]
-    result = convergence.relion_class_pmax_normalization_mass_per_half(class_posterior_per_half)
+    result = refinement_state.relion_class_pmax_normalization_mass_per_half(class_posterior_per_half)
     assert result == [0.875, 3.0]
     assert all(type(value) is float for value in result)
 
 
 def test_k1_pmax_mass_is_the_noise_sumw_or_none():
     noise_stats_per_half = [SimpleNamespace(sumw=np.float32(12.5)), None]
-    result = convergence.relion_k1_pmax_normalization_mass_per_half(noise_stats_per_half)
+    result = refinement_state.relion_k1_pmax_normalization_mass_per_half(noise_stats_per_half)
     assert result == [12.5, None]
     assert type(result[0]) is float
 
 
 def test_pmax_mass_feeds_the_optimizer_average():
     max_posterior_per_half = [np.asarray([0.5, 0.25], dtype=np.float32), np.asarray([1.0], dtype=np.float32)]
-    mass = convergence.relion_k1_pmax_normalization_mass_per_half(
+    mass = refinement_state.relion_k1_pmax_normalization_mass_per_half(
         [SimpleNamespace(sumw=3.0), SimpleNamespace(sumw=1.0)],
     )
-    combined, average, denominator = convergence._relion_optimizer_average_pmax(max_posterior_per_half, mass)
+    combined, average, denominator = refinement_state._relion_optimizer_average_pmax(max_posterior_per_half, mass)
     assert denominator == 3.0 and average == pytest.approx(0.25)
     assert combined.tolist() == [0.5, 0.25, 1.0]

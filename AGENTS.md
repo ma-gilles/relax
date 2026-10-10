@@ -86,7 +86,6 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 | `relax/ppca_refinement/` | pose-marginal PPCA refinement |
 | `relax/sampling/`, `relax/fourier/`, `relax/projection/` | grids, symmetry, priors, oversampling and expected accuracy; Fourier windows, shells, resolution and preprocessing; projection and its adjoint |
 | `relax/runtime/`, `relax/io/`, `relax/numerics/`, `relax/types.py` | environment flags, memory and batch planning, compile cache; map and particle I/O; deterministic sums and RELION's random stream; shared records |
-| `relax/helpers/convergence.py` | `RefinementState` and its convergence update |
 | `relax/cuda/` | CUDA kernels and their FFI (`librelax_cuda.so`) |
 | `relax/diagnostics/`, `relax/relion_bind/` | capture and replay; the RELION binding (never imported by production code) |
 | `tests/helpers/`, `tests/oracles/` | test helpers; independent EM references (earlier formulations, imported as `oracles.<module>`) |

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.helpers.convergence import RefinementState, healpix_angular_step
+from relax.refinement.refinement_state import RefinementState, healpix_angular_step
 from relax.sampling.orientation_priors import relion_local_search_sigmas
 
 pytestmark = pytest.mark.unit

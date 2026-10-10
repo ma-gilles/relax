@@ -234,7 +234,7 @@ def _run_m_step_transaction(
     across iterations: each update writes its slots into a new device array, so the previous state is
     never modified, and the host reads the volumes back only to write them.
     """
-    from relax.relion.vdam_mstep import relion_vdam_m_step_host
+    from relax.vdam.relion_mstep import relion_vdam_m_step_host
 
     host_options = dict(recovar_layout=True, device_volumes=True, average_ctf2=average_ctf2)
     if mstep_compute_dtype == "float32":
@@ -319,7 +319,7 @@ def vdam_m_step_single_class(
     average_ctf2=None,
 ) -> InitialModelState:
     """VDAM M-step for one class: the transaction of
-    :func:`relax.relion.vdam_mstep.relion_vdam_m_step_host`.
+    :func:`relax.vdam.relion_mstep.relion_vdam_m_step_host`.
 
     Pseudo-halfsets: FSC/noise-power is derived from the halfset-data difference
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.

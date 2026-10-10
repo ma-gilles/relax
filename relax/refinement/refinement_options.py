@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-from relax.helpers.convergence import APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
+from relax.refinement.refinement_state import APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
 from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
 from relax.runtime.env_flags import (
     parse_env_auto_flag,

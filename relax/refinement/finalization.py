@@ -19,7 +19,6 @@ from relax.fourier.resolution import (
     relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
-from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
 from relax.local_search.half import (
     LocalBatchPolicy,
     LocalDiagnosticPolicy,
@@ -48,6 +47,7 @@ from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.reference_state import _class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
+from relax.refinement.refinement_state import healpix_angular_step, update_angular_sampling
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.score_outputs import (
     PerHalfOutputs,

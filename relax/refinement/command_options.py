@@ -15,7 +15,6 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
-from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
 from relax.io.particle_io import add_particle_read_arguments
 from relax.parity import frozen_boundary_cli
 from relax.parity.state_swap_probe import add_state_swap_probe_arguments
@@ -34,6 +33,7 @@ from relax.refinement.refinement_options import (
     StartState,
     relax_mode_consistency,
 )
+from relax.refinement.refinement_state import LOCAL_SEARCH_HEALPIX_ORDER
 from relax.relion import input_poses
 
 if TYPE_CHECKING:

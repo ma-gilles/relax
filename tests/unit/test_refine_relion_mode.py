@@ -78,7 +78,6 @@ from relax.fourier.resolution import (
     relion_optics_image_current_sizes,
     shell_index_to_resolution_angstrom,
 )
-from relax.helpers.convergence import RefinementState, _relion_optimizer_average_pmax, healpix_angular_step
 from relax.local_search import half as local_half
 from relax.local_search import sampling as local_sampling
 from relax.local_search.half import LocalSearchResult
@@ -116,6 +115,7 @@ from relax.refinement.refinement_options import (
     StartState,
     SymmetryOptions,
 )
+from relax.refinement.refinement_state import RefinementState, _relion_optimizer_average_pmax, healpix_angular_step
 from relax.relion import ctf
 from relax.sampling import (
     _get_relion_rotation_grid_eulers_float64,

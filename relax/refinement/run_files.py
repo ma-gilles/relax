@@ -891,7 +891,7 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
 
 
 def _state_value(name, text):
-    from relax.helpers.convergence import RefinementState
+    from relax.refinement.refinement_state import RefinementState
 
     default = RefinementState.__dataclass_fields__[name].default
     if default is None:

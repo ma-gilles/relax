@@ -34,7 +34,7 @@ from relax.fourier.half_spectrum import _host_half_spectrum_plan
 from relax.reconstruction.noise import normalize_wsum_to_sigma2_noise
 from relax.relion.project import gridding_correct_volume_real
 from relax.relion.projector_setup import setup_relion_projector_uncorrected, swap_relion_volume_layout
-from relax.relion.vdam_mstep import _pad_moment
+from relax.vdam.relion_mstep import _pad_moment
 from relax.vdam.state import InitialModelState, VdamAccumulator
 
 MOMENTUM = 0.9

@@ -21,13 +21,13 @@ from relax.fourier.resolution import (
     relion_optics_image_current_sizes,
     zero_shells_past_current_size,
 )
-from relax.helpers.convergence import RefinementState, healpix_angular_step
 from relax.reconstruction.regularization import (
     compute_current_size_relion,
     fsc_to_relion_ssnr,
     resolution_from_data_vs_prior,
     update_relion_growth_state_from_fsc,
 )
+from relax.refinement.refinement_state import RefinementState, healpix_angular_step
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions

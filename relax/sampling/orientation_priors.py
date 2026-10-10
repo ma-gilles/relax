@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import healpy as hp
 import numpy as np
 
-from relax.helpers.convergence import healpix_angular_step
+from relax.refinement.refinement_state import healpix_angular_step
 from relax.relion.macros import relion_round_array
 from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
 

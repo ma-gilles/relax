@@ -18,13 +18,13 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.helpers.convergence import healpix_angular_step
 from relax.refinement.half_inputs import HalfSet, optional_half_arrays
 from relax.refinement.noise_updates import (
     NoiseModel,
     noise_model_from_pixels,
 )
 from relax.refinement.ports import OptimiserAccuracyReplay
+from relax.refinement.refinement_state import healpix_angular_step
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.relion import metadata as relion_metadata
 from relax.relion.initial_noise import (

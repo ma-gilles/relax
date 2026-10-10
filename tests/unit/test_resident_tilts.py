@@ -208,7 +208,7 @@ def test_subtomogram_translation_schedule_is_relions_s1_schedule():
     -> 1.0625 -> 0.6375 A with ranges 5x its offset changes (1.344198, 0.813644, 0.358909 A) and
     acc_trans 0.425 A at oversampling 1. The SPA rule would jump straight to 0.6375 A.
     """
-    from relax.helpers.convergence import RefinementState, _relion_next_translation_sampling_pixels
+    from relax.refinement.refinement_state import RefinementState, _relion_next_translation_sampling_pixels
 
     pixel = 4.25
     step_px, range_px = 1.0, 5.0

@@ -14,12 +14,12 @@ import numpy as np
 
 from relax import sampling
 from relax.fourier.resolution import ImageGeometry
-from relax.helpers.convergence import (
+from relax.refinement.ports import InputSource
+from relax.refinement.refinement_state import (
     RefinementState,
     _exhaustive_grid_order_for_state,
     native_final_perturbation_healpix_order,
 )
-from relax.refinement.ports import InputSource
 from relax.sampling import relion_adaptive_pass1_rotations
 
 if TYPE_CHECKING:

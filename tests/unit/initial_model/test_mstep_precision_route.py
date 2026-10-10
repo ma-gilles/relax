@@ -228,7 +228,7 @@ def test_float32_rejects_mixed_publication_state_before_execution(monkeypatch, f
 
 
 def test_real_host_device_transaction_publishes_f32_and_preserves_k4_other_slots(monkeypatch):
-    from relax.relion import vdam_mstep as helper
+    from relax.vdam import relion_mstep as helper
 
     state = m_step.prepare_mstep_state_precision(_state(4), "float32")
     state.Iref[:] = np.arange(1, 5, dtype=np.float32)[:, None, None, None]
@@ -263,9 +263,9 @@ def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field, monk
     result[bad_field] = result[bad_field].astype(
         np.float32 if bad_field == "tau2" else np.complex128 if "mom" in bad_field else np.float64
     )
-    from relax.relion import vdam_mstep
+    from relax.vdam import relion_mstep
 
-    monkeypatch.setattr(vdam_mstep, "relion_vdam_m_step_host", lambda *a, **options: result)
+    monkeypatch.setattr(relion_mstep, "relion_vdam_m_step_host", lambda *a, **options: result)
     with pytest.raises(ValueError, match="output|authoritative tau2"):
         m_step._run_m_step_transaction(
             state,

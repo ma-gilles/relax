@@ -21,8 +21,8 @@ from recovar.data_io import cryoem_dataset
 
 import relax.diagnostics.iteration as iteration_diagnostics
 import relax.diagnostics.reconstruction as reconstruction_diagnostics
-import relax.helpers.convergence as convergence_helpers
 import relax.parity.relion_replay as replay_policy
+import relax.refinement.refinement_state as convergence_helpers
 from relax.diagnostics import bpref_diagnostics
 from relax.fourier import resolution
 from relax.local_search import sampling as local_sampling
