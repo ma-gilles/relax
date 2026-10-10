@@ -9,7 +9,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.diagnostics import reconstruction as dumps
 from relax.refinement.iteration_planning import ClassImageSize
-from relax.refinement.mean_helpers import ClassPriorEstimate
+from relax.refinement.priors import ClassPriorEstimate
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit

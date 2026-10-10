@@ -394,9 +394,7 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
     ``max(low_resol_join_halves, 1 / current_resolution)`` (ml_optimiser_mpi.cpp:3280).
     At the GUI default of 60 A an unseeded start joined up to 40 A instead.
     """
-    from relax.refinement.mean_helpers import (
-        join_half_accumulators_at_low_resolution,
-    )
+    from relax.refinement.priors import join_half_accumulators_at_low_resolution
 
     grid_size, voxel_size = 32, 17.0
     state = SimpleNamespace(current_resolution=float("inf"), previous_resolution=float("inf"))

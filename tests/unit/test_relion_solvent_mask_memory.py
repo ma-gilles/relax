@@ -109,8 +109,8 @@ def test_box_scale_solvent_flatten_lifecycle_is_bitwise_exact(monkeypatch, volum
         rng.standard_normal(volume_shape) + 1j * rng.standard_normal(volume_shape)
     ).astype(np.complex64)
     solvent_mask = rng.uniform(0.0, 1.0, volume_shape).astype(np.float64)
-    expected = mean_helpers.fourier_transform_utils.get_dft3(
-        mean_helpers.fourier_transform_utils.get_idft3(jnp.asarray(volume_ft))
+    expected = map_postprocess.fourier_transform_utils.get_dft3(
+        map_postprocess.fourier_transform_utils.get_idft3(jnp.asarray(volume_ft))
         * jnp.asarray(solvent_mask),
     ).reshape(-1)
     expected.block_until_ready()

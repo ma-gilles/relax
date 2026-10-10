@@ -159,7 +159,7 @@ accepted, with the reason:
 | `result_files.build_archive_metadata` | 20 | One field each of many owners, written once into the archive; the replay provenance keys come as one dict (`relax/parity/archive_provenance.py`, deep2 c3). |
 | `expectation.score_numbered_half` | 17 | Takes `NumberedHalfInputs`, the phase and the options; the rest are the iteration's shared operands, bound once by the controller. |
 | `expectation_batches.prepare_half_batches` | 19 | Reads three fields of `RelionParityOptions` and two of `DenseVariantPolicy`: fields of a large object (rule 10). |
-| `mean_helpers.estimate_class_priors` | 19 | Array operands and iteration scalars; `reference_model` would add a mutable owner. |
+| `priors.estimate_class_priors` | 19 | Array operands and iteration scalars; `reference_model` would add a mutable owner. |
 | `expectation.prepare_numbered_expectation` | 18 | No record covers more than two of its inputs. |
 | `mean_helpers._reconstruct_volume_eager` | 18 | Six fields equal `ReconstructionSettings`'s at the production calls; those calls go through `ReconstructionSettings.reconstruct`, which forwards them. The solver keeps its raw-geometry signature for the 21 tests and the scripts that call it directly. |
 | `convergence.update_iteration_convergence` | 16 | Separate inputs of one update; the controller passes the K=1/Class3D differences as values (`sampling_decision_now`, `class_change_fraction`) and applies the K=1 follower-counter reset itself. |
@@ -169,8 +169,8 @@ accepted, with the reason:
 | `expectation.prepare_final_half` | 13 | Operands plus settings. |
 | `optics_shapes.shape_class_engine_inputs` | 13 | No production caller yet; kept for VDAM's multi-shape loop (`em_status.md`). |
 | `local_sampling.prepare_numbered_local_sampling` | 11 | `CoarseGrids` would cover two fields. |
-| `mean_helpers.join_half_accumulators_at_low_resolution` | 11 | Three fields equal `ReconstructionSettings`'s, but K=1 passes the raw pixel-size scalar the settings convert (rule 1). |
-| `mean_helpers.estimate_class_prior`, `estimate_split_half_prior` | 10-11 | Already take `ReconstructionSettings`; the rest are operands. |
+| `priors.join_half_accumulators_at_low_resolution` | 11 | Three fields equal `ReconstructionSettings`'s, but K=1 passes the raw pixel-size scalar the settings convert (rule 1). |
+| `priors.estimate_class_prior`, `estimate_split_half_prior` | 10-11 | Already take `ReconstructionSettings`; the rest are operands. |
 | `optics_shapes.prepare_optics` | 11 | `HalfSet` would cover two fields. |
 | `TomoHalf.__init__`, `RunFileWriter.__init__`, `BatchPlanner.__call__` | 10-11 | A record's own constructor; writer policy beside `RunSettings`; a per-pass query with defaults. |
 

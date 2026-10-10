@@ -18,7 +18,8 @@ from relax.reconstruction import regularization_relion
 
 if TYPE_CHECKING:
     from relax.refinement.iteration_planning import ClassImageSize
-    from relax.refinement.mean_helpers import ClassPriorEstimate, ReconstructionSettings
+    from relax.refinement.mean_helpers import ReconstructionSettings
+    from relax.refinement.priors import ClassPriorEstimate
 
 
 def check_half_accumulators_before_join(numerators, denominators, *, iteration, init_relion_iteration, log) -> None:

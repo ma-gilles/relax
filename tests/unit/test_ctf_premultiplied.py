@@ -375,7 +375,7 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
     noise sumw as the denominator: neither the tilt count nor the particle count."""
 
     from relax.helpers.types import NoiseStats
-    from relax.refinement import mean_helpers
+    from relax.refinement import priors
     from relax.refinement.tomo_half import TomoHalf
 
     class _Seen(Exception):
@@ -387,9 +387,9 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
         seen.update(parts=parts, box_size=box_size, sumw=sumw)
         raise _Seen
 
-    monkeypatch.setattr(mean_helpers.relion_ctf, "premultiplied_average_ctf2", average_ctf2)
+    monkeypatch.setattr(priors.relion_ctf, "premultiplied_average_ctf2", average_ctf2)
     monkeypatch.setattr(
-        mean_helpers, "average_ctf2_parts", lambda dataset, scales, **_: [(dataset, scales, BOX, 1.0)]
+        priors, "average_ctf2_parts", lambda dataset, scales, **_: [(dataset, scales, BOX, 1.0)]
     )
 
     def half(tilts_per_particle, scales, kept_mass):
@@ -405,7 +405,7 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
     half1, stats1 = half([3, 4], [0.9, 1.1], [0.999, 0.998])  # 2 particles, 7 tilt images
     half2, stats2 = half([2], [1.0], [0.0, 0.997])  # 1 particle, 2 tilt images
     with pytest.raises(_Seen):
-        mean_helpers.estimate_class_priors(
+        priors.estimate_class_priors(
             None, None, None, SimpleNamespace(box_size=BOX),
             half_denominators=None, halves=(half1, half2), noise_stats_per_half=(stats1, stats2), n_classes=2,
             iteration=0, current_size=BOX, image_current_size=BOX, accumulator_shape=None, full_half_axis=-1,

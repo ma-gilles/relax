@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.reconstruction import regularization_relion
-from relax.refinement import mean_helpers
+from relax.refinement import mean_helpers, priors
 from relax.refinement.mean_helpers import ReconstructionSettings
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ def compute_final_halfmap_prior(
     if settings.solvent_correct_fsc:
         # RELION corrects the joined iteration's FSC too (ml_optimiser_mpi.cpp:4028, iter -1); its
         # final resolution is then "already with masking".
-        fsc = mean_helpers.solvent_corrected_fsc(
+        fsc = priors.solvent_corrected_fsc(
             numerators,
             denominators,
             settings,
@@ -130,7 +130,7 @@ def compute_final_class_priors(
     data_vs_prior = []
     details = []
     for class_idx in range(n_classes):
-        prior = mean_helpers.estimate_class_prior(
+        prior = priors.estimate_class_prior(
             references,
             denominator,
             class_index=class_idx,
@@ -151,7 +151,7 @@ def compute_final_class_priors(
         data_vs_prior=np.stack(
             [np.asarray(value, dtype=np.float32) for value in data_vs_prior], axis=0,
         ),
-        details=mean_helpers._stack_class_tau2_update_details(details),
+        details=priors._stack_class_tau2_update_details(details),
     )
 
 

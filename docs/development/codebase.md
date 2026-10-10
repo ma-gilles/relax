@@ -164,7 +164,7 @@ for detailed module contracts. Start with the boundary being changed:
 | Class routing and joint result assembly | [`k_class.py`](../../relax/classification/k_class.py), [`k_class_results.py`](../../relax/classification/k_class_results.py) |
 | Replay selection and final all-data admission/execution | [`relion_replay.py`](../../relax/parity/relion_replay.py), [`finalization.py`](../../relax/refinement/finalization.py) |
 | Final native/replay sampling and prepared grids | [`final_sampling.py`](../../relax/refinement/final_sampling.py) |
-| Numbered prior/reconstruction and first-CC reporting | [`mean_helpers.py`](../../relax/refinement/mean_helpers.py): ordered Class3D replay/CTF/diagnostic aggregation, K1 split-half estimation, the K1 half-map and Class3D class-map regularized solve/capture/filter/flatten operations and reporting tapers. Controller installs maps/tau2 and publishes class scheduling/history before detail taper. Final retains distinct policies over shared primitives. |
+| Numbered prior/reconstruction and first-CC reporting | [`priors.py`](../../relax/refinement/priors.py): ordered Class3D replay/CTF/diagnostic aggregation, K1 split-half estimation and the reporting tapers; [`mean_helpers.py`](../../relax/refinement/mean_helpers.py): the K1 half-map and Class3D class-map regularized solve/capture operations, over [`volume_solver.py`](../../relax/reconstruction/volume_solver.py) and the filter/flatten operations of [`map_postprocess.py`](../../relax/refinement/map_postprocess.py). Controller installs maps/tau2 and publishes class scheduling/history before detail taper. Final retains distinct policies over shared primitives. |
 | Final reconstruction and half-map/class priors | [`final_reconstruction.py`](../../relax/refinement/final_reconstruction.py) |
 | Shared reference startup formulas | [`reference_initialization.py`](../../relax/relion/reference_initialization.py), used by refinement and VDAM |
 | Refinement mask widths and padding defaults | [`geometry.py`](../../relax/relion/geometry.py); VDAM retains its own padding and mask settings |
@@ -213,7 +213,7 @@ computation arrays from them. Required validation comes from the scoped guides,
 not from the size of this overview. Current evidence belongs in [EM status](em_status.md).
 
 Numbered K1 current-FSC and independent half-weight tau2 estimation live in
-`mean_helpers.estimate_split_half_prior` with its `SplitHalfPrior` result. The
+`priors.estimate_split_half_prior` with its `SplitHalfPrior` result. The
 controller retains joining, K1/Class3D policy, reference replacement and later
 CC taper/host parking. Raw FSC and corrected growth FSC remain distinct.
 The same `ReconstructionSettings` is constructed once for numbered/final prior

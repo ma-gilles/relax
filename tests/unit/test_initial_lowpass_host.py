@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import map_postprocess, mean_helpers
+from relax.refinement import map_postprocess
 from relax.relion.reference_initialization import initial_low_pass_filter_references
 
 pytestmark = pytest.mark.unit
@@ -18,7 +18,7 @@ VOLUME_SHAPE = (16, 16, 16)
 
 def _device_lowpass(volume_ft_flat, voxel_size, ini_high_angstrom, filter_edgewidth):
     """The earlier formulation: both transforms on the default device, the forward one in float64."""
-    ftu = mean_helpers.fourier_transform_utils
+    ftu = map_postprocess.fourier_transform_utils
     original = jnp.asarray(volume_ft_flat).reshape(VOLUME_SHAPE)
     volume_real = np.real(np.asarray(ftu.get_idft3(original))).astype(np.float64)
     filtered_real = initial_low_pass_filter_references(

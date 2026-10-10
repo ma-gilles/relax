@@ -19,7 +19,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.helpers.resolution import shell_index_to_resolution_angstrom
 from relax.reconstruction import regularization_relion
-from relax.refinement import mean_helpers
+from relax.refinement import mean_helpers, priors
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -67,7 +67,7 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diamete
     monkeypatch.setattr(regularization_relion, "compute_relion_fsc_from_backprojector", compute_fsc)
     monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_weights", compute_tau)
     log = Mock()
-    result = mean_helpers.estimate_split_half_prior(
+    result = priors.estimate_split_half_prior(
         numerators, denominators,
         reconstruction_settings(
             box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
@@ -126,9 +126,9 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
         assert_matches(settings.tau2_fudge, 4.0)
         return prior, details
 
-    monkeypatch.setattr(mean_helpers, "_class_tau2_from_iref_power_spectrum", estimate)
+    monkeypatch.setattr(priors, "_class_tau2_from_iref_power_spectrum", estimate)
     monkeypatch.setattr(regularization_relion, "compute_relion_weight_shell_stats", weights)
-    monkeypatch.setattr(mean_helpers, "_class_tau2_update_details", normalize)
+    monkeypatch.setattr(priors, "_class_tau2_update_details", normalize)
     settings = reconstruction_settings(
         box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
         padding_factor=PADDING_FACTOR, projection_padding_factor=2,
@@ -136,7 +136,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
         tau2_fudge=4.0, particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
-    result = mean_helpers.estimate_class_prior(
+    result = priors.estimate_class_prior(
         Stack("reference"), Stack("denominator"), class_index=2, settings=settings,
         current_size=GRID_SIZE, accumulator_shape=ACCUMULATOR_SHAPE,
         full_half_axis=-1, frame_scale=float(GRID_SIZE)**4,
@@ -169,20 +169,20 @@ def _random_accumulators(seed: int):
 class TestPreviousResolutionForHalfJoin:
     def test_last_positive_recorded_shell_wins(self):
         expected = shell_index_to_resolution_angstrom(3, GRID_SIZE, 1.5)
-        result = mean_helpers._previous_resolution_angstrom_for_half_join(
+        result = priors._previous_resolution_angstrom_for_half_join(
             [7, 3], 20.0, box_size=GRID_SIZE, voxel_size=1.5
         )
         assert result == expected
 
     def test_nonpositive_recorded_shell_leaves_join_uncapped(self):
         # The history takes precedence over a finite state resolution.
-        result = mean_helpers._previous_resolution_angstrom_for_half_join(
+        result = priors._previous_resolution_angstrom_for_half_join(
             [0], 20.0, box_size=GRID_SIZE, voxel_size=1.5
         )
         assert result is None
 
     def test_without_history_uses_finite_state_resolution(self):
-        result = mean_helpers._previous_resolution_angstrom_for_half_join(
+        result = priors._previous_resolution_angstrom_for_half_join(
             [], np.float32(12.5), box_size=GRID_SIZE, voxel_size=1.5
         )
         assert result == 12.5
@@ -190,7 +190,7 @@ class TestPreviousResolutionForHalfJoin:
 
     @pytest.mark.parametrize("current_resolution", [float("inf"), float("nan")])
     def test_without_history_or_finite_state_is_none(self, current_resolution):
-        result = mean_helpers._previous_resolution_angstrom_for_half_join(
+        result = priors._previous_resolution_angstrom_for_half_join(
             [], current_resolution, box_size=GRID_SIZE, voxel_size=1.5
         )
         assert result is None
@@ -198,7 +198,7 @@ class TestPreviousResolutionForHalfJoin:
 
 class TestJoinHalfAccumulatorsAtLowResolution:
     def test_signature_exposes_dependencies_without_call_only_owners(self):
-        function = mean_helpers.join_half_accumulators_at_low_resolution
+        function = priors.join_half_accumulators_at_low_resolution
         assert tuple(inspect.signature(function).parameters) == (
             "numerators_by_half",
             "denominators_by_half",
@@ -226,7 +226,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
 
         monkeypatch.setattr(regularization_relion, "join_halves_at_low_resolution", spy)
         ft_y, ft_ctf = _random_accumulators(0)
-        result = mean_helpers.join_half_accumulators_at_low_resolution(
+        result = priors.join_half_accumulators_at_low_resolution(
             ft_y,
             ft_ctf,
             accumulator_volume_shape=ACCUMULATOR_SHAPE,
@@ -257,7 +257,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
     )
     def test_matches_direct_regularization_call(self, pixel_resolutions, current_resolution):
         ft_y, ft_ctf = _random_accumulators(1)
-        expected_cap = mean_helpers._previous_resolution_angstrom_for_half_join(
+        expected_cap = priors._previous_resolution_angstrom_for_half_join(
             pixel_resolutions, current_resolution, box_size=GRID_SIZE, voxel_size=1.5
         )
         expected = regularization_relion.join_halves_at_low_resolution(
@@ -272,7 +272,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             current_resolution_angstrom=expected_cap,
             padding_factor=PADDING_FACTOR,
         )
-        result = mean_helpers.join_half_accumulators_at_low_resolution(
+        result = priors.join_half_accumulators_at_low_resolution(
             ft_y,
             ft_ctf,
             accumulator_volume_shape=ACCUMULATOR_SHAPE,
@@ -304,7 +304,7 @@ class TestClassTau2FromIrefPowerSpectrum:
 
         monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_iref_power_spectrum", fake)
         frame_scale = float(GRID_SIZE) ** 4
-        tau2, shells_relion, shells_recovar = mean_helpers._class_tau2_from_iref_power_spectrum(
+        tau2, shells_relion, shells_recovar = priors._class_tau2_from_iref_power_spectrum(
             iref,
             VOLUME_SHAPE,
             padding_factor=PADDING_FACTOR,
@@ -358,7 +358,7 @@ class TestClassTau2UpdateDetails:
 
     def test_matches_inline_record_layout_and_dtypes(self):
         ft_ctf, tau2_shells, shell_stats = self._inputs()
-        data_vs_prior, details = mean_helpers._class_tau2_update_details(
+        data_vs_prior, details = priors._class_tau2_update_details(
             ft_ctf,
             tau2_shells,
             shell_stats,
@@ -396,7 +396,7 @@ class TestClassTau2UpdateDetails:
             "fsc_shells": None,
             "ssnr_shells": np.asarray(expected_dvp, dtype=np.float64),
         }
-        assert list(details) == list(expected) == list(mean_helpers._CLASS_TAU2_DETAIL_KEYS)
+        assert list(details) == list(expected) == list(priors._CLASS_TAU2_DETAIL_KEYS)
         assert details["fsc_shells"] is None
         for key, want in expected.items():
             if want is None:
@@ -409,7 +409,7 @@ class TestClassTau2UpdateDetails:
         ft_ctf, tau2_shells, shell_stats = self._inputs()
         zero_stats = dict(shell_stats)
         zero_stats["avg_weight_shells"] = jnp.zeros_like(shell_stats["avg_weight_shells"])
-        _, details = mean_helpers._class_tau2_update_details(
+        _, details = priors._class_tau2_update_details(
             ft_ctf,
             tau2_shells,
             zero_stats,
@@ -426,15 +426,15 @@ def test_stack_class_tau2_update_details_keeps_key_layout():
     rng = np.random.default_rng(4)
     records = []
     for _ in range(3):
-        record = {key: rng.standard_normal(N_SHELLS) for key in mean_helpers._CLASS_TAU2_DETAIL_KEYS}
+        record = {key: rng.standard_normal(N_SHELLS) for key in priors._CLASS_TAU2_DETAIL_KEYS}
         record["fsc_shells"] = None
         records.append(record)
 
-    stacked = mean_helpers._stack_class_tau2_update_details(records)
+    stacked = priors._stack_class_tau2_update_details(records)
 
-    assert list(stacked) == list(mean_helpers._CLASS_TAU2_DETAIL_KEYS)
+    assert list(stacked) == list(priors._CLASS_TAU2_DETAIL_KEYS)
     assert stacked["fsc_shells"] is None
-    for key in mean_helpers._CLASS_TAU2_DETAIL_KEYS:
+    for key in priors._CLASS_TAU2_DETAIL_KEYS:
         if key == "fsc_shells":
             continue
         want = np.stack([record[key] for record in records], axis=0)

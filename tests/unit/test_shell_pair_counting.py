@@ -18,7 +18,7 @@ from helpers.tiny_refinement import record_calls, run_tiny_refinement
 
 from relax.helpers import half_volume_mstep
 from relax.reconstruction import regularization_relion as rr
-from relax.refinement import final_reconstruction, mean_helpers, startup_references
+from relax.refinement import final_reconstruction, priors, startup_references
 from relax.refinement.refinement_options import ReconstructionPrograms, RelionConsistencyOptions
 from relax.relion import reference_initialization
 from relax.relion import relion_projector_setup as setup
@@ -564,12 +564,12 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
 
     def estimate(references, denominators, *, settings, **kwargs):
         recorded.append(settings.shell_pair_counting)
-        return mean_helpers.ClassPriorEstimate(
+        return priors.ClassPriorEstimate(
             variance=jnp.ones(4), shells=jnp.ones(3), relion_shells=jnp.ones(3), data_vs_prior=jnp.ones(3),
-            details={key: np.ones(3) for key in mean_helpers._CLASS_TAU2_DETAIL_KEYS},
+            details={key: np.ones(3) for key in priors._CLASS_TAU2_DETAIL_KEYS},
         )
 
-    monkeypatch.setattr(mean_helpers, "estimate_class_prior", estimate)
+    monkeypatch.setattr(priors, "estimate_class_prior", estimate)
     settings = reconstruction_settings(
         box_size=8, voxel_size=1.0, volume_shape=(8, 8, 8), padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,

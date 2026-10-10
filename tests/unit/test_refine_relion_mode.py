@@ -4517,6 +4517,7 @@ class TestRelionModeSmokeTest:
     ):
         """The ini_high tau2 taper changes reported state, not reconstruction."""
         from relax.refinement import mean_helpers as mean_helpers_module
+        from relax.refinement import priors
 
         untapered_tau = [7.0, 11.0]
         taper = np.asarray([1.0, 0.5, 0.0, 0.0, 0.0], dtype=np.float64)
@@ -4551,7 +4552,7 @@ class TestRelionModeSmokeTest:
             fake_tau2_from_weights,
         )
         monkeypatch.setattr(
-            mean_helpers_module,
+            priors,
             "firstiter_cc_ini_high_tau2_taper",
             lambda *_args, **_kwargs: taper,
         )
@@ -6957,8 +6958,8 @@ class TestRelionModeSmokeTest:
 
         monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
         monkeypatch.setattr(map_postprocess, "_apply_relion_initial_lowpass_filter", fake_lowpass)
-        monkeypatch.setattr(mean_helpers_module.fourier_transform_utils, "get_idft3", fake_idft3)
-        monkeypatch.setattr(mean_helpers_module.fourier_transform_utils, "get_dft3", fake_dft3)
+        monkeypatch.setattr(map_postprocess.fourier_transform_utils, "get_idft3", fake_idft3)
+        monkeypatch.setattr(map_postprocess.fourier_transform_utils, "get_dft3", fake_dft3)
 
         monkeypatch.setattr(
             map_postprocess.mask, "raised_cosine_mask", fake_raised_cosine_mask,

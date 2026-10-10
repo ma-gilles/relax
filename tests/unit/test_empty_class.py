@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import iteration_loop, maximization, mean_helpers, reference_state
+from relax.refinement import iteration_loop, maximization, mean_helpers, priors, reference_state
 
 pytestmark = pytest.mark.unit
 
@@ -89,7 +89,7 @@ def test_class_maximization_freezes_the_curve_of_a_class_without_weight(monkeypa
     seen = {}
 
     def estimate_class_priors(*args, **kwargs):
-        return mean_helpers.ClassPriorAggregation(
+        return priors.ClassPriorAggregation(
             variance="variance", shells=["shells1", "shells2"], data_vs_prior=new_curve.copy(), details_per_class=[]
         )
 
