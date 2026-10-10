@@ -1087,6 +1087,92 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
     _assert_fsc_gate("kclass_coldstart", output_dir)
 
 
+def _kclass_local_command(output_dir: Path, *, n_classes: int, max_iter: int) -> list[str]:
+    """Class3D on the K4 fixture with local angular searches (``--sigma_ang 3``) from the STAR's angles."""
+    return [
+        sys.executable,
+        *CLASS3D_COMMAND,
+        "--data_dir",
+        str(K4_FIXTURE_DIR),
+        "--output",
+        str(output_dir),
+        "--n_classes",
+        str(n_classes),
+        "--max_iter",
+        str(max_iter),
+        "--healpix_order",
+        "3",
+        "--offset_range",
+        "6",
+        "--offset_step",
+        "2",
+        "--adaptive_oversampling",
+        "1",
+        "--tau2_fudge",
+        "4.0",
+        "--no-firstiter_cc",
+        "--init_resolution",
+        "30.0",
+        "--sigma_ang",
+        "3",
+    ]
+
+
+def _local_search_rows(log: str, *, iterations) -> tuple[list[int], list[int], list[int]]:
+    """Per iteration of ``log``: the parent pass's largest per-particle row count, and the pass-1 and pass-2
+    candidate rows. Asserts that ``iterations`` (numbered) all ran, each as a local search with both passes."""
+    headers = re.findall(r"=== RELION Iteration (\d+)/\d+: .*local_search=(\w+) ===", log)
+    assert headers == [(str(it), "True") for it in iterations], headers
+    parent_rows = [int(v) for v in re.findall(r"RELION local adaptive pass 1: parent_order=\d+ local_rot_max=(\d+)", log)]
+    pass1_rows = [int(v) for v in re.findall(r"Resident local pass-1 probe plan: \d+ images, (\d+) candidate rows", log)]
+    pass2_rows = [int(v) for v in re.findall(r"Resident local pass-2 plan: \d+ images, (\d+) candidate rows", log)]
+    assert len(parent_rows) == len(pass1_rows) == len(pass2_rows) == len(headers), (parent_rows, pass1_rows, pass2_rows)
+    return parent_rows, pass1_rows, pass2_rows
+
+
+def _star_loop_rows(lines: list[str], block: str) -> range:
+    """The line indices of the data rows of loop ``block`` in a STAR file's ``lines``."""
+    first = lines.index(f"data_{block}") + 1
+    while not lines[first].startswith("_"):
+        first += 1
+    while lines[first].startswith("_"):
+        first += 1
+    last = first
+    while last < len(lines) and lines[last].strip():
+        last += 1
+    return range(first, last)
+
+
+def _empty_class_in_model_star(path: Path, *, class_number: int, n_classes: int) -> None:
+    """Rewrite a relax model STAR as the run writes it once class ``class_number`` has emptied: its
+    ``rlnClassDistribution`` and its joint direction row (conditional times class weight) are 0, and the
+    other classes share the whole weight in their old proportions."""
+    lines = path.read_text().split("\n")
+    class_rows = _star_loop_rows(lines, "model_classes")
+    assert len(class_rows) == n_classes, len(class_rows)
+    dead_weight = float(lines[class_rows[class_number - 1]].split()[1])
+    assert 0.0 < dead_weight < 1.0, dead_weight
+    for k, index in enumerate(class_rows, start=1):
+        fields = lines[index].split()
+        fields[1] = repr(0.0 if k == class_number else float(fields[1]) / (1.0 - dead_weight))
+        lines[index] = " ".join(fields)
+        for row in _star_loop_rows(lines, f"model_pdf_orient_class_{k}"):
+            lines[row] = repr(0.0 if k == class_number else float(lines[row]) / (1.0 - dead_weight))
+    path.write_text("\n".join(lines))
+
+
+def _model_star_class_state(path: Path, *, n_classes: int) -> tuple[list[float], list[float]]:
+    """Each class's ``rlnClassDistribution`` and the sum of its joint direction row in a relax model STAR."""
+    lines = path.read_text().split("\n")
+    weights = [float(lines[index].split()[1]) for index in _star_loop_rows(lines, "model_classes")]
+    assert len(weights) == n_classes, weights
+    direction_mass = [
+        sum(abs(float(lines[row])) for row in _star_loop_rows(lines, f"model_pdf_orient_class_{k}"))
+        for k in range(1, n_classes + 1)
+    ]
+    return weights, direction_mass
+
+
 @pytest.mark.gpu
 @pytest.mark.integration
 @pytest.mark.slow
@@ -1107,33 +1193,7 @@ def test_em_parity_fast_kclass_local_coldstart(tmp_path):
 
     output_dir = tmp_path / "kclass_local_coldstart"
     output_dir.mkdir(parents=True)
-    cmd = [
-        sys.executable,
-        *CLASS3D_COMMAND,
-        "--data_dir",
-        str(K4_FIXTURE_DIR),
-        "--output",
-        str(output_dir),
-        "--n_classes",
-        str(n_classes),
-        "--max_iter",
-        str(n_iterations),
-        "--healpix_order",
-        "3",
-        "--offset_range",
-        "6",
-        "--offset_step",
-        "2",
-        "--adaptive_oversampling",
-        "1",
-        "--tau2_fudge",
-        "4.0",
-        "--no-firstiter_cc",
-        "--init_resolution",
-        "30.0",
-        "--sigma_ang",
-        "3",
-    ]
+    cmd = _kclass_local_command(output_dir, n_classes=n_classes, max_iter=n_iterations)
     logger.info("K-class local cold-start cmd: %s", " ".join(cmd))
     t0 = time.time()
     proc = run_selected_command(cmd, require_global=False, capture_output=True, text=True, env=gpu_subprocess_env())
@@ -1143,12 +1203,7 @@ def test_em_parity_fast_kclass_local_coldstart(tmp_path):
     )
     log = proc.stdout + proc.stderr
 
-    headers = re.findall(r"=== RELION Iteration (\d+)/\d+: .*local_search=(\w+) ===", log)
-    assert headers == [(str(it + 1), "True") for it in range(n_iterations)], headers
-    parent_rows = [int(v) for v in re.findall(r"RELION local adaptive pass 1: parent_order=\d+ local_rot_max=(\d+)", log)]
-    pass1_rows = [int(v) for v in re.findall(r"Resident local pass-1 probe plan: \d+ images, (\d+) candidate rows", log)]
-    pass2_rows = [int(v) for v in re.findall(r"Resident local pass-2 plan: \d+ images, (\d+) candidate rows", log)]
-    assert len(parent_rows) == len(pass1_rows) == len(pass2_rows) == n_iterations, (parent_rows, pass1_rows, pass2_rows)
+    parent_rows, pass1_rows, pass2_rows = _local_search_rows(log, iterations=range(1, n_iterations + 1))
     # Each particle's local orientations are repeated once per class in the parent pass.
     assert all(rows > 0 and rows % n_classes == 0 for rows in parent_rows + pass1_rows), (parent_rows, pass1_rows)
     assert all(rows > 0 for rows in pass2_rows), pass2_rows
@@ -1169,6 +1224,82 @@ def test_em_parity_fast_kclass_local_coldstart(tmp_path):
     logger.info(
         "K-class local cold-start: %.1f s, parent rows %s, pass-1 rows %s, pass-2 rows %s, occupancies %s",
         elapsed, parent_rows, pass1_rows, pass2_rows, occupancies,
+    )
+
+
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_kclass_local_dead_class(tmp_path):
+    """Class3D local searches with one class at weight exactly 0 (relax#68), as RELION's ``pdf_class == 0``.
+
+    The K4 fixture does not empty a class on its own, so the case makes one: it runs iteration 1, rewrites
+    that iteration's model STAR as the run writes it once class 4 has emptied (class weight 0 and a zero
+    joint direction row), and continues from it for two iterations with ``--continue``. The checks are
+    structural, with nothing compared with RELION: in both continued iterations the class keeps weight
+    exactly 0 and a zero joint direction row (no revival), the M-step skips it and leaves a zero map, the
+    other classes keep particles and no further class empties, and the local passes hold no rows for the
+    dead class (row counts are multiples of K - 1 and below the four-class iteration's).
+    """
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k4_5k128_data")
+    _require_fixture(K4_FIXTURE_DIR, K4_DATA_STAR)
+    n_classes, dead_class, last_iteration = 4, 4, 3
+    continued = range(2, last_iteration + 1)
+
+    output_dir = tmp_path / "kclass_local_dead_class"
+    output_dir.mkdir(parents=True)
+    logs = []
+    t0 = time.time()
+    for max_iter, extra in (
+        (1, []),
+        (last_iteration, ["--continue", str(output_dir / "run_it001_optimiser.star")]),
+    ):
+        # A continued run repeats the original command, seed included.
+        cmd = [*_kclass_local_command(output_dir, n_classes=n_classes, max_iter=max_iter), "--seed", "1", *extra]
+        logger.info("K-class local dead-class cmd: %s", " ".join(cmd))
+        proc = run_selected_command(cmd, require_global=False, capture_output=True, text=True, env=gpu_subprocess_env())
+        assert proc.returncode == 0, (
+            f"relax class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
+        logs.append(proc.stdout + proc.stderr)
+        if not extra:
+            _empty_class_in_model_star(
+                output_dir / "run_it001_model.star", class_number=dead_class, n_classes=n_classes
+            )
+    elapsed = time.time() - t0
+    cold_log, log = logs
+
+    cold_parent, cold_pass1, _ = _local_search_rows(cold_log, iterations=[1])
+    parent_rows, pass1_rows, pass2_rows = _local_search_rows(log, iterations=continued)
+    # The dead class is out of the class-expanded layouts: K - 1 copies of each particle's local orientations.
+    assert all(rows > 0 and rows % (n_classes - 1) == 0 for rows in parent_rows + pass1_rows), (parent_rows, pass1_rows)
+    assert all(rows < cold_parent[0] for rows in parent_rows), (parent_rows, cold_parent)
+    assert all(rows < cold_pass1[0] for rows in pass1_rows), (pass1_rows, cold_pass1)
+    assert all(rows > 0 for rows in pass2_rows), pass2_rows
+    # No other class empties, and the M-step skips the dead class in every continued iteration.
+    assert "received no particle weight" not in log
+    skipped = re.findall(r"Class3D reconstruction skipped: iter=\d+ class=(\d+)/\d+ received no weight", log)
+    assert skipped == [str(dead_class)] * len(continued), skipped
+
+    weights_by_iteration = []
+    for iteration in continued:
+        weights, direction_mass = _model_star_class_state(
+            output_dir / f"run_it{iteration:03d}_model.star", n_classes=n_classes
+        )
+        assert weights[dead_class - 1] == 0.0 and direction_mass[dead_class - 1] == 0.0, (weights, direction_mass)
+        assert all(w > 0.0 for k, w in enumerate(weights, start=1) if k != dead_class), weights
+        weights_by_iteration.append(weights)
+    for c in range(1, n_classes + 1):
+        class_map = np.asarray(load_relax_map(str(output_dir / f"final_class{c:03d}.mrc")), dtype=np.float64)
+        assert np.all(np.isfinite(class_map))
+        assert (np.linalg.norm(class_map) == 0) == (c == dead_class), (c, np.linalg.norm(class_map))
+
+    # No quality ledger, as for the cold-start case above.
+    logger.info(
+        "K-class local dead class: %.1f s, parent rows %s (four classes %s), pass-1 rows %s (four classes %s), "
+        "pass-2 rows %s, class weights %s",
+        elapsed, parent_rows, cold_parent, pass1_rows, cold_pass1, pass2_rows, weights_by_iteration,
     )
 
 
