@@ -23,7 +23,18 @@ shells 1..end, as scripts/evaluate_kclass_gt._normalized_fsc_auc. Resolution: fi
 shell.
 
 Usage: python scripts/score_initialmodel_maps.py CONFIG.json OUT_DIR [--cells a,b] [--workers N]
+           [--fit-threads N] [--reuse-fits SCORE.json ...]
 (--workers parallelizes the registrations inside a cell; spawned processes, PYTHONPATH at the checkout.)
+
+Reproducibility (2026-10-10). The registration has no random part and is bit-reproducible for one thread count on one
+node, but its stop point depends on floating-point summation order: the three low-pass starts end within 1e-6..7e-6 of each
+other, the best is kept, and the same map scored at 2 and at 8 BLAS threads differs by 5e-5 to 4e-4 in masked FSC-AUC (6.6e-4
+seen across nodes). So score every arm of a comparison in ONE invocation and do not compare values across scoring jobs; each
+output records its thread settings ("threads"). Two options, both off by default, change no stored value:
+--fit-threads 1 pins BLAS/OpenMP inside every registration, so a fresh fit does not depend on the process's thread count
+(--workers still parallelizes across fits).
+--reuse-fits takes earlier outputs of this script: an arm whose map sha256 values match reuses its stored transforms (no
+refit), so a stored value reproduces exactly at any thread count; other arms are fitted as usual.
 The benchmark rows of docs/benchmarks/relion_vs_relax.md were scored with configs listed in each row's evidence (CPU).
 """
 
@@ -136,9 +147,19 @@ class _Fitted:
         )
 
 
+# --fit-threads N: BLAS/OpenMP threads inside every registration (None: the process's own setting, as before 2026-10-10).
+FIT_THREADS = None
+
+
 def _register_both_hands(mv, tg, required=True):
     """{hand: record} from the shared registration (relax.diagnostics.gt_registration.fit_rigid_both_hands)."""
-    fits = fit_rigid_both_hands(mv, tg, relion_alignment_rotations(2))
+    if FIT_THREADS is None:
+        fits = fit_rigid_both_hands(mv, tg, relion_alignment_rotations(2))
+    else:
+        from threadpoolctl import threadpool_limits
+
+        with threadpool_limits(limits=FIT_THREADS):
+            fits = fit_rigid_both_hands(mv, tg, relion_alignment_rotations(2))
     if required and set(fits) != {"proper", "mirror"}:
         raise ValueError(f"registration failed in hand(s) {sorted({'proper', 'mirror'} - set(fits))}")
     return {
@@ -164,7 +185,8 @@ def _register_both_hands(mv, tg, required=True):
 def _fit_task(task):
     """One registration (both hands) of the moving map (a population-weighted sum of class maps, or one class map) onto the
     target (the mean of target maps in their frame). Runs in a worker process; reads its own maps. Returns [(key + hand, record)]."""
-    key, moving, weights, targets, frame, mean_path = task
+    global FIT_THREADS
+    key, moving, weights, targets, frame, mean_path, FIT_THREADS = task
     mv = np.tensordot(np.asarray(weights, dtype=np.float64), np.asarray([read(p)[0] for p in moving]), axes=1)
     tg = read(mean_path, frame)[0] if mean_path else np.mean([read(p, frame)[0] for p in targets], axis=0)
     try:
@@ -220,7 +242,35 @@ def _pair_class_matches(sh, a_fts, cons_b_vols, raw_b, via_ref_aucs, fit_class):
     return [(int(i), int(j), *best[(i, j)]) for i, j in zip(rows, cols)]
 
 
-def score_cell(cell, fit_workers=1):
+def _reusable_fits(cell, reuse, K):
+    """{arm label: {(label, kind, class index, hand): record}} for the arms whose maps (sha256) equal a stored arm's.
+
+    ``reuse`` maps a tuple of map sha256 values to that arm's stored entry of an earlier output of this script. Both
+    hands of the consensus fit and, for K > 1, every class fit must be present, or the arm is refitted."""
+    out = {}
+    for arm in cell["arms"]:
+        old = reuse.get(tuple(sha256(p) for p in arm["maps"]))
+        if old is None:
+            continue
+        chosen = {k: v for k, v in old["fit_to_reference"].items() if k not in ("hand", "other_hand")}
+        other = "mirror" if old["fit_to_reference"]["hand"] == "proper" else "proper"
+        recs = {
+            (arm["label"], "consensus", None, old["fit_to_reference"]["hand"]): chosen,
+            (arm["label"], "consensus", None, other): old["fit_to_reference"]["other_hand"],
+        }
+        for key, rec in old.get("class_fits", {}).items():
+            kind, i, hand = key.split(":")
+            recs[(arm["label"], kind, int(i) - 1, hand)] = rec
+        if K > 1 and not all(
+            (arm["label"], "class_to_mean", i, "proper") in recs or (arm["label"], "class_to_mean", i, "mirror") in recs
+            for i in range(K)
+        ):
+            continue
+        out[arm["label"]] = recs
+    return out
+
+
+def score_cell(cell, fit_workers=1, reuse=None):
     t0 = time.time()
     wanted = wanted_pairs(cell)  # validated before any registration
     K = int(cell["K"])
@@ -253,17 +303,38 @@ def score_cell(cell, fit_workers=1):
     # mean. Each (class, reference class) pair is scored with its best candidate transform (consensus or class fit, either
     # hand) by unmasked FSC-AUC before the Hungarian match.
     tasks, pops_by = [], {}
+    reused = _reusable_fits(cell, reuse or {}, K)
     for arm in cell["arms"]:
         if len(arm["maps"]) != K:
             raise ValueError(f"{cell['id']} {arm['label']}: {len(arm['maps'])} maps for K={K}")
         pops = model_populations(arm["model_star"], K) if K > 1 else np.array([1.0])
         pops_by[arm["label"]] = pops
         w = (pops / pops.sum()).tolist()
-        tasks.append(((arm["label"], "consensus", None), arm["maps"], w, ref_paths, frame, ref_mean_path))
+        if arm["label"] in reused:
+            continue
+        tasks.append(
+            (
+                (arm["label"], "consensus", None),
+                arm["maps"],
+                w,
+                ref_paths,
+                frame,
+                ref_mean_path,
+                FIT_THREADS,
+            )
+        )
         if K > 1:
             for i in range(K):
                 tasks.append(
-                    ((arm["label"], "class_to_mean", i), [arm["maps"][i]], [1.0], ref_paths, frame, ref_mean_path)
+                    (
+                        (arm["label"], "class_to_mean", i),
+                        [arm["maps"][i]],
+                        [1.0],
+                        ref_paths,
+                        frame,
+                        ref_mean_path,
+                        FIT_THREADS,
+                    )
                 )
     if fit_workers > 1:
         # spawn, not fork: the parent has initialized JAX (multithreaded), which a forked child may deadlock on
@@ -271,6 +342,8 @@ def score_cell(cell, fit_workers=1):
             fits = dict(r for rs in ex.map(_fit_task, tasks) for r in rs)
     else:
         fits = dict(r for rs in map(_fit_task, tasks) for r in rs)
+    for stored in reused.values():
+        fits.update(stored)
     for arm in cell["arms"]:
         lab = arm["label"]
         maps = [read(p)[0] for p in arm["maps"]]
@@ -441,6 +514,8 @@ def score_cell(cell, fit_workers=1):
         "mask": cell.get("mask"),
         "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
         "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; for K>1 each b class is also fitted on its own onto the a class its reference-frame map matches, and each matched class uses the better transform (2026-10-05); diagnostic_via_reference_frame uses the per-class reference-frame maps.",
+        "reused_fit_arms": sorted(reused),
+        "threads": _thread_record(fit_workers),
         "arms": arms,
         "pairs": pairs,
         "seconds": round(time.time() - t0, 1),
@@ -470,10 +545,42 @@ def _unconverged_fits(node, path=""):
     return found
 
 
-def _run(args):
-    cell, out, fit_workers = args
+def _thread_record(fit_workers):
+    """Thread settings of this invocation: values of one comparison must come from one such setting (see module docstring)."""
+    import os
+
+    rec = {
+        "fit_workers": int(fit_workers),
+        "env": {k: os.environ.get(k) for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")},
+    }
     try:
-        result = score_cell(cell, fit_workers)
+        from threadpoolctl import threadpool_info
+
+        rec["threadpools"] = [
+            {k: i.get(k) for k in ("user_api", "internal_api", "num_threads")} for i in threadpool_info()
+        ]
+    except ImportError:
+        rec["threadpools"] = None
+    rec["fit_threads"] = FIT_THREADS if FIT_THREADS is not None else "as threadpools"
+    return rec
+
+
+def _load_reuse(paths):
+    """{tuple of map sha256: stored arm entry} from earlier outputs of this script (--reuse-fits)."""
+    reuse = {}
+    for path in paths:
+        stored = json.loads(Path(path).read_text())
+        if "arms" not in stored:
+            raise ValueError(f"{path}: not an output of this script (no arms)")
+        for arm in stored["arms"].values():
+            reuse[tuple(arm["map_sha256"])] = arm
+    return reuse
+
+
+def _run(args):
+    cell, out, fit_workers, reuse = args
+    try:
+        result = score_cell(cell, fit_workers, reuse)
         # A fit that stopped on its budget is flagged here, never silently accepted (2026-10-03).
         result["unconverged_fits"] = _unconverged_fits({"arms": result["arms"], "pairs": result["pairs"]})
     except Exception as exc:  # recorded, never hidden
@@ -490,7 +597,19 @@ def main():
     p.add_argument("out_dir")
     p.add_argument("--cells", default="")
     p.add_argument("--workers", type=int, default=1)
+    p.add_argument(
+        "--fit-threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help="BLAS/OpenMP threads inside every registration; default: not set (the process's own thread setting, the "
+        "behaviour before this option). Use 1 for new scoring.",
+    )
+    p.add_argument("--reuse-fits", nargs="*", default=[], metavar="SCORE.json")
     a = p.parse_args()
+    global FIT_THREADS
+    FIT_THREADS = a.fit_threads
+    reuse = _load_reuse(a.reuse_fits)
     cells = json.loads(Path(a.config).read_text())["cells"]
     if a.cells:
         keep = set(a.cells.split(","))
@@ -499,7 +618,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     ok = True
     for c in cells:  # cells in sequence; --workers parallelizes the registrations inside a cell
-        cid, good = _run((c, str(out / f"{c['id']}.json"), a.workers))
+        cid, good = _run((c, str(out / f"{c['id']}.json"), a.workers, reuse))
         print(cid, "ok" if good else "ERROR", flush=True)
         ok &= good
     sys.exit(0 if ok else 1)
