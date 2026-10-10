@@ -11,8 +11,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.reconstruction import regularization_relion
-from relax.refinement import mean_helpers, priors
-from relax.refinement.mean_helpers import ReconstructionSettings
+from relax.refinement import numbered_reconstruction, priors
+from relax.refinement.numbered_reconstruction import ReconstructionSettings
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ def reconstruct_final_class_maps(
         axis=0,
     )
     return FinalMaps(
-        merged=mean_helpers.weighted_class_merge(class_means, class_weights),
+        merged=numbered_reconstruction.weighted_class_merge(class_means, class_weights),
         halves=[class_means, class_means],
     )
 

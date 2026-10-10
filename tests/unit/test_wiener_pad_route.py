@@ -7,7 +7,7 @@ from helpers.float_compare import assert_matches
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import volume_solver
-from relax.refinement import map_postprocess, mean_helpers
+from relax.refinement import map_postprocess, numbered_reconstruction
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -70,7 +70,7 @@ def test_cpu_route_matches_the_device_route(monkeypatch):
     results = {}
     for route in (False, True):
         monkeypatch.setattr(volume_solver, "_relion_pad_exceeds_device_working_set", lambda *_a, route=route, **_k: route)
-        results[route] = np.asarray(mean_helpers._reconstruct_volume_eager(ft_ctf, ft_y, volume_shape, 2, **common))
+        results[route] = np.asarray(numbered_reconstruction._reconstruct_volume_eager(ft_ctf, ft_y, volume_shape, 2, **common))
 
     assert len(calls) == 2  # both routes reach the staged pad, not another path
     assert results[True].dtype == results[False].dtype == np.complex64

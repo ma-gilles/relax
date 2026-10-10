@@ -18,7 +18,7 @@ from relax.reconstruction import regularization_relion
 from relax.relion.reference_initialization import initial_low_pass_filter_references
 
 if TYPE_CHECKING:
-    from relax.refinement.mean_helpers import ReconstructionSettings
+    from relax.refinement.numbered_reconstruction import ReconstructionSettings
 
 logger = logging.getLogger(__name__)
 

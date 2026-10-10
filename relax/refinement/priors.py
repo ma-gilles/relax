@@ -19,8 +19,8 @@ from relax.helpers.resolution import (
 from relax.helpers.timing import Stopwatch
 from relax.helpers.types import total_sumw
 from relax.reconstruction import regularization_relion
-from relax.refinement import mean_helpers
-from relax.refinement.mean_helpers import ReconstructionSettings
+from relax.refinement import numbered_reconstruction
+from relax.refinement.numbered_reconstruction import ReconstructionSettings
 from relax.refinement.optics_shapes import average_ctf2_parts
 from relax.refinement.ports import ClassPriorEstimated, MaximizationProbe, NoProbe
 from relax.refinement.tomo_half import TomoHalf
@@ -548,7 +548,7 @@ def solvent_corrected_fsc(numerators, denominators, settings, *, current_size, a
     """RELION's --solvent_correct_fsc curve in place of the backprojector FSC ``like``.
 
     The unregularised half maps are those relax writes as run_itNNN_half*_unfil.mrc
-    (``mean_helpers.reconstruct_unregularized_k1_halfmaps``), made from this iteration's accumulators after the
+    (``numbered_reconstruction.reconstruct_unregularized_k1_halfmaps``), made from this iteration's accumulators after the
     low-resolution join, as RELION reconstructs its BPref copies (ml_optimiser_mpi.cpp:3221-3300).
     The phases come from ``settings.solvent_phase_stream``, which this call advances; ``label`` names
     the iteration in the log.
@@ -557,7 +557,7 @@ def solvent_corrected_fsc(numerators, denominators, settings, *, current_size, a
     from relax.reconstruction.solvent_mask import solvent_corrected_fsc
 
     clock = Stopwatch()
-    unregularised = mean_helpers.reconstruct_unregularized_k1_halfmaps(
+    unregularised = numbered_reconstruction.reconstruct_unregularized_k1_halfmaps(
         numerators,
         denominators,
         settings,

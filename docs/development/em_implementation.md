@@ -162,7 +162,7 @@ module's logger. Review [replay-state tests](../../tests/unit/test_relion_replay
 and [controller tests](../../tests/unit/test_refine_relion_mode.py) for selection
 identity, missing-slot errors, cutoff behavior and cold-start finalization.
 
-[`mean_helpers`](../../relax/refinement/mean_helpers.py) owns two
+[`numbered_reconstruction`](../../relax/refinement/numbered_reconstruction.py) owns two
 M-step boundaries that the regular iterations and the final all-data pass used
 to repeat inline. `join_half_accumulators_at_low_resolution` applies RELION's
 `--low_resol_join_halves` to the K=1 half accumulators before the Wiener solve;
@@ -618,4 +618,4 @@ reporting tools; E/M execution, precision and quality gates are independent.
 Noise initialization, half-set aggregation and posterior updates live in
 [`refinement/noise_updates.py`](../../relax/refinement/noise_updates.py).
 The refinement controller and replay diagnostics import that owner directly;
-volume reconstruction remains in `refinement/mean_helpers.py`.
+volume reconstruction remains in `refinement/numbered_reconstruction.py`.

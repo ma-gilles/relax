@@ -10,7 +10,7 @@ from relax.refinement.refinement_options import ReconstructionPrograms
 
 jnp = pytest.importorskip("jax.numpy")
 mask = pytest.importorskip("recovar.core.mask")
-mean_helpers = pytest.importorskip("relax.refinement.mean_helpers")
+numbered_reconstruction = pytest.importorskip("relax.refinement.numbered_reconstruction")
 
 
 @pytest.mark.parametrize(
@@ -230,9 +230,9 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         masks.append(solvent_mask)
         return solvent_mask
 
-    monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", fake_reconstruct)
+    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", fake_reconstruct)
     monkeypatch.setattr(
-        mean_helpers,
+        numbered_reconstruction,
         "_finish_host_staged_reconstruction",
         lambda result, *_accumulators: result,
     )
@@ -256,7 +256,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         particle_diameter_angstrom=2.0,
         first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
-    means = mean_helpers.reconstruct_numbered_k1_halfmaps(
+    means = numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         (jnp.ones(volume_size, dtype=jnp.complex64), jnp.ones(volume_size, dtype=jnp.complex64)),
         (jnp.ones(volume_size, dtype=jnp.float32), jnp.ones(volume_size, dtype=jnp.float32)),
         [

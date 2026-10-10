@@ -17,7 +17,7 @@ from relax.helpers.orientation_priors import DirectionPrior, learn_class_directi
 from relax.helpers.resolution import _firstiter_cc_ini_high_tapered
 from relax.helpers.timing import Stopwatch
 from relax.refinement.iteration_planning import NumberedIteration
-from relax.refinement.mean_helpers import reconstruct_numbered_class_maps, reconstruct_numbered_k1_halfmaps
+from relax.refinement.numbered_reconstruction import reconstruct_numbered_class_maps, reconstruct_numbered_k1_halfmaps
 from relax.refinement.ports import ClassTau2
 from relax.refinement.priors import (
     _stack_class_tau2_update_details,

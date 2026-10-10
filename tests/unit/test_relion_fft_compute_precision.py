@@ -1,11 +1,13 @@
 """Explicit transform precision, with independent analytic DC checks."""
-from relax.refinement.refinement_options import ReconstructionPrograms
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from recovar.reconstruction.relion_functions import post_process_from_filter_v2
 from helpers.float_compare import assert_matches
+from recovar.reconstruction.relion_functions import post_process_from_filter_v2
+
+from relax.refinement.refinement_options import ReconstructionPrograms
+
 pytestmark = pytest.mark.unit
 
 
@@ -49,7 +51,7 @@ def test_reconstruction_fft_precision_and_exact_dc(dtype, packed):
 
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128], ids=["production-f32", "diagnostic-f64"])
 def test_em_reconstruction_keeps_fft_precision_with_double_tau_and_gridding(dtype):
-    from relax.refinement.mean_helpers import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
     numerator = jnp.ones(4096, dtype=dtype)
     weight = jnp.ones(4096, dtype=jnp.float32 if dtype == np.complex64 else jnp.float64)
     tau = jnp.linspace(0.1, 2.0, 512, dtype=jnp.float64)

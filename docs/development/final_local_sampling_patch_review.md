@@ -603,7 +603,7 @@ The whole M-step decision, from the ordering comment to the stage mark.
 
 ### Complete numbered Class3D prior result and operation
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 517):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 517):
 
 ```python
 class ClassPriorAggregation:
@@ -621,7 +621,7 @@ class ClassPriorAggregation:
     source: str
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 532):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 532):
 
 ```python
 def estimate_class_priors(
@@ -757,7 +757,7 @@ def estimate_class_priors(
 
 ### Complete regularized reconstruction and reporting tapers
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1154):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1154):
 
 ```python
 class ReconstructionSettings:
@@ -782,7 +782,7 @@ class ReconstructionSettings:
             object.__setattr__(self, "particle_diameter_angstrom", float(self.particle_diameter_angstrom))
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1262):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1262):
 
 ```python
 def _reconstruct_k1_maps(
@@ -839,7 +839,7 @@ def _reconstruct_k1_maps(
     return reconstructed_means
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1316):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1316):
 
 ```python
 def _reconstruct_class_maps(
@@ -897,7 +897,7 @@ def _reconstruct_class_maps(
     return shared_classes
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1371):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1371):
 
 ```python
 def _capture_premask_mean(mean, settings: ReconstructionSettings, *, half_index, iteration, current_size, n_classes):
@@ -913,7 +913,7 @@ def _capture_premask_mean(mean, settings: ReconstructionSettings, *, half_index,
         )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1384):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1384):
 
 ```python
 def _solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
@@ -921,7 +921,7 @@ def _solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
     return settings.particle_diameter_angstrom is not None and settings.particle_diameter_angstrom > 0
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1389):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1389):
 
 ```python
 def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
@@ -936,7 +936,7 @@ def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
     )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1401):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1401):
 
 ```python
 def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes):
@@ -956,7 +956,7 @@ def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes
     )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1418):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1418):
 
 ```python
 def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
@@ -970,7 +970,7 @@ def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
     return jnp.stack(flattened_classes, axis=0)
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1429):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1429):
 
 ```python
 def _log_first_cc_lowpass(settings: ReconstructionSettings) -> None:
@@ -982,7 +982,7 @@ def _log_first_cc_lowpass(settings: ReconstructionSettings) -> None:
         )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1438):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1438):
 
 ```python
 def reconstruct_numbered_k1_halfmaps(
@@ -1039,7 +1039,7 @@ def reconstruct_numbered_k1_halfmaps(
     return means
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1492):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1492):
 
 ```python
 def reconstruct_numbered_class_maps(
@@ -1086,7 +1086,7 @@ def reconstruct_numbered_class_maps(
     return means
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1537):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1537):
 
 ```python
 class K1ReportingPrior:
@@ -1097,7 +1097,7 @@ class K1ReportingPrior:
     details_per_half: list[dict]
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1545):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1545):
 
 ```python
 def taper_first_cc_k1_prior(
@@ -1150,7 +1150,7 @@ def taper_first_cc_k1_prior(
     return K1ReportingPrior(variance, variance_per_half, details_per_half)
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1596):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1596):
 
 ```python
 class ClassReportingPrior:
@@ -1160,7 +1160,7 @@ class ClassReportingPrior:
     details: dict
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1603):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1603):
 
 ```python
 def taper_first_cc_class_prior(
@@ -5089,7 +5089,7 @@ postprocesses. Untapered tau2 is used for MAP before first-CC reporting taper.
 K1 host parking follows the taper. Posterior/direction updates and convergence
 continue afterwards at their existing positions.
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1000):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1000):
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -5704,7 +5704,7 @@ precision, retained numerator donation is unchanged, and filtering still precede
 solvent flattening. Array creation, transfer, synchronization and deletion stay
 in their original operations.
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 445):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 445):
 
 ```python
 def estimate_class_prior(
@@ -5768,7 +5768,7 @@ def estimate_class_prior(
     )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1017):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1017):
 
 ```python
 @dataclass(frozen=True)
@@ -5783,7 +5783,7 @@ class SplitHalfPrior:
     details_per_half: list[dict]
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1029):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1029):
 
 ```python
 def estimate_split_half_prior(
@@ -5939,7 +5939,7 @@ def estimate_split_half_prior(
     )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1182):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1182):
 
 ```python
 def reconstruct_k1_means(
@@ -5997,7 +5997,7 @@ def reconstruct_k1_means(
     return reconstructed_means
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1237):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1237):
 
 ```python
 def reconstruct_class_means(
@@ -6056,7 +6056,7 @@ def reconstruct_class_means(
     return shared_classes
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1293):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1293):
 
 ```python
 def postprocess_reconstructed_means(
@@ -6152,7 +6152,7 @@ def postprocess_reconstructed_means(
         )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1391):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1391):
 
 ```python
 def reconstruct_unregularized_k1_halfmaps(
@@ -6180,7 +6180,7 @@ def reconstruct_unregularized_k1_halfmaps(
     ]
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1416):
+[relax/refinement/numbered_reconstruction.py](../../relax/refinement/numbered_reconstruction.py) (line 1416):
 
 ```python
 def reconstruct_unregularized_class_means(

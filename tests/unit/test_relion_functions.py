@@ -2025,7 +2025,7 @@ def test_large_odd_accumulator_crop_routes_directly_to_fftw(monkeypatch):
 def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
     from recovar.core import fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
     for compiled in (
@@ -2076,7 +2076,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
     )
     monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "never")
     device_staged = np.asarray(
-        mean_helpers._reconstruct_volume_eager(
+        numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf,
             f_ty,
             volume_shape,
@@ -2089,7 +2089,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
     )
     monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "always")
     host_staged = np.asarray(
-        mean_helpers._reconstruct_volume_eager(
+        numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf,
             f_ty,
             volume_shape,
@@ -2296,7 +2296,7 @@ def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
 
     from recovar.core import fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
     volume_shape = (4, 4, 4)
@@ -2336,7 +2336,7 @@ def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
         )
     )
     staged = np.asarray(
-        mean_helpers._reconstruct_volume_eager(
+        numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf,
             f_ty,
             volume_shape,
@@ -2402,7 +2402,7 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
 
     import recovar.core.fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
     monkeypatch.delenv("RECOVAR_RELION_POSTPROCESS_SINGLE_PRECISION_MIN_VOXELS", raising=False)
@@ -2460,7 +2460,7 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
     )
     caplog.set_level("INFO", logger=volume_solver.__name__)
 
-    result = mean_helpers._reconstruct_volume_eager(
+    result = numbered_reconstruction._reconstruct_volume_eager(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2491,7 +2491,7 @@ def test_compact_full_accumulator_repack_matches_historical_path(monkeypatch):
 
     import recovar.core.fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "auto")
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_SINGLE_PRECISION_MIN_VOXELS", "200")
@@ -2549,7 +2549,7 @@ def test_compact_full_accumulator_repack_matches_historical_path(monkeypatch):
         )
     )
     staged = np.asarray(
-        mean_helpers._reconstruct_volume_eager(
+        numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf_full,
             ft_y_full,
             volume_shape,
@@ -2570,7 +2570,7 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
 
     import recovar.core.fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
     monkeypatch.delenv("RECOVAR_RELION_POSTPROCESS_SINGLE_PRECISION_MIN_VOXELS", raising=False)
@@ -2629,7 +2629,7 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
     )
     caplog.set_level("INFO", logger=volume_solver.__name__)
 
-    result = mean_helpers._reconstruct_volume_eager(
+    result = numbered_reconstruction._reconstruct_volume_eager(
         ft_ctf_full,
         ft_y_full,
         volume_shape,
@@ -2655,7 +2655,7 @@ def test_large_device_accumulator_does_not_enter_host_staged_split(monkeypatch):
 
     import recovar.core.fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_SINGLE_PRECISION_MIN_VOXELS", "100")
@@ -2695,7 +2695,7 @@ def test_large_device_accumulator_does_not_enter_host_staged_split(monkeypatch):
         "finish_large_relion_postprocess_from_fftw_half",
         reject_split,
     )
-    returned = mean_helpers._reconstruct_volume_eager(
+    returned = numbered_reconstruction._reconstruct_volume_eager(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2714,7 +2714,7 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
 
     import recovar.core.fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_SINGLE_PRECISION_MIN_VOXELS", "100")
@@ -2765,7 +2765,7 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
         accumulator_shape,
         rf,
     )
-    result = mean_helpers._reconstruct_volume_eager(
+    result = numbered_reconstruction._reconstruct_volume_eager(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2814,7 +2814,7 @@ def test_pre_ifft_boundary_accepts_compact_accumulator_for_large_reconstruction(
 
 
 def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalization(monkeypatch):
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     reconstruction_shape = (1600, 1600, 1600)
     transform_size = int(np.prod(reconstruction_shape, dtype=np.int64))
@@ -2861,7 +2861,7 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
         fake_finish,
     )
 
-    result = mean_helpers._reconstruct_volume_eager(
+    result = numbered_reconstruction._reconstruct_volume_eager(
         np.ones((2, 2, 2), dtype=np.float32),
         np.ones((2, 2, 2), dtype=np.complex64),
         (2, 2, 2),
@@ -2904,7 +2904,7 @@ def test_padded_irfft_goes_to_the_host_when_its_device_working_set_exceeds_a_qua
 
 
 def test_large_host_irfft_is_already_normalized(monkeypatch):
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     reconstruction_shape = (1600, 1600, 1600)
     events = []
@@ -2965,7 +2965,7 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
         reject_double_normalization,
     )
 
-    result = mean_helpers._reconstruct_volume_eager(
+    result = numbered_reconstruction._reconstruct_volume_eager(
         np.ones((2, 2, 2), dtype=np.float32),
         np.ones((2, 2, 2), dtype=np.complex64),
         (2, 2, 2),
@@ -3318,7 +3318,7 @@ def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(t
     """
     from recovar.core import fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
+    from relax.refinement import numbered_reconstruction
 
     volume_shape = (16, 16, 16)
     accumulator_shape = (33, 33, 33)
@@ -3338,7 +3338,7 @@ def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(t
     )
 
     def saved_map(grid_correct):
-        ft = mean_helpers._reconstruct_volume_eager(
+        ft = numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf, f_ty, volume_shape, RECONSTRUCTION_PADDING_FACTOR, grid_correct=grid_correct, **common, programs=ReconstructionPrograms.from_environ()
         )
         return np.real(np.asarray(ftu.get_idft3(jnp.asarray(ft).reshape(volume_shape)))).astype(np.float32)

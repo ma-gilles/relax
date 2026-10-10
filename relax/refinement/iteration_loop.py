@@ -35,8 +35,8 @@ from relax.refinement import (
     local_sampling,
     map_postprocess,
     maximization,
-    mean_helpers,
     noise_updates,
+    numbered_reconstruction,
     ports,
     projector_preparation,
     reference_state,
@@ -171,7 +171,7 @@ class _K1Iteration:
     def unfiltered_maps(self, ctx, options, reference_model, mstep, accumulator_shape, needed):
         """The unregularized half-maps (when ``needed``), then each new map's sign aligned to the previous."""
         unreg_means = (
-            mean_helpers.reconstruct_unregularized_k1_halfmaps(
+            numbered_reconstruction.reconstruct_unregularized_k1_halfmaps(
                 mstep.Ft_y_per_half,
                 mstep.Ft_ctf_per_half,
                 ctx.reconstruction_settings,
@@ -226,7 +226,7 @@ class _K1Iteration:
         """Each half's own map, or (diagnostic) the merged map for both halves."""
         if not options.final_pass.merged_reference:
             return [reference_model.maps[0], reference_model.maps[1]]
-        final_merged_reference = mean_helpers.merged_half_map(reference_model.maps)
+        final_merged_reference = numbered_reconstruction.merged_half_map(reference_model.maps)
         logger.info(
             "Diagnostic %s=1: final all-data K=1 E-step uses merged reference for both halves",
             refinement_options.FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
@@ -369,7 +369,7 @@ class _ClassIteration:
     def unfiltered_maps(self, ctx, options, reference_model, mstep, accumulator_shape, needed):
         """The unregularized class means from the joined class sums (when ``needed``)."""
         return (
-            mean_helpers.reconstruct_unregularized_class_means(
+            numbered_reconstruction.reconstruct_unregularized_class_means(
                 mstep.Ft_y_combined,
                 mstep.Ft_ctf_combined,
                 ctx.reconstruction_settings,

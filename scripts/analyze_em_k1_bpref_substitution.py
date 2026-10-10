@@ -19,20 +19,19 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
 import starfile
 
 from scripts.analyze_em_k1_map_amplitude_trajectory import (
     centered_fourier,
     summarize_fourier_pair,
 )
-from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
 from scripts.compare_iter1_bpref_accum import (
     _apply_recovar_frame,
     downsample_recovar_accumulator,
     load_relion_dump,
 )
 from scripts.file_hash import sha256_file as _sha256
+from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
 
 OUTPUT_SCHEMA = "recovar.em_k1_bpref_substitution.v1"
 
@@ -117,7 +116,8 @@ def _reconstruct_and_flatten(
     particle_diameter_angstrom: float,
 ) -> np.ndarray:
     from recovar.core import fourier_transform_utils, mask
-    from relax.refinement.mean_helpers import _reconstruct_volume_eager
+
+    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
     from relax.refinement.refinement_options import ReconstructionPrograms
 
     reconstructed = _reconstruct_volume_eager(

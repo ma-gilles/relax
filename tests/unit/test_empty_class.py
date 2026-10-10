@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import iteration_loop, maximization, mean_helpers, priors, reference_state
+from relax.refinement import iteration_loop, maximization, numbered_reconstruction, priors, reference_state
 
 pytestmark = pytest.mark.unit
 
@@ -55,7 +55,7 @@ def test_a_class_without_weight_is_not_solved_and_keeps_or_zeroes_its_reference(
     numerators = [jnp.full(4, k, dtype=jnp.float32) for k in (1, 2, 3)]
     denominators = [jnp.ones(4, dtype=jnp.float32)] * 3
     kept = jnp.arange(4, dtype=jnp.float32) + 10.0
-    stack = mean_helpers._reconstruct_class_maps(
+    stack = numbered_reconstruction._reconstruct_class_maps(
         numerators, denominators, [None] * 3, _settings(calls), n_classes=3, iteration=4, current_size=8,
         accumulator_volume_shape=None, unsolved={0: kept, 2: None},
     )
@@ -63,13 +63,13 @@ def test_a_class_without_weight_is_not_solved_and_keeps_or_zeroes_its_reference(
     assert_matches(np.asarray(stack[0]), np.asarray(kept), rtol=0)  # emptied this iteration: previous reference
     assert_matches(np.asarray(stack[1]), np.full(4, 4.0), rtol=0)
     assert_matches(np.asarray(stack[2]), np.zeros(4), rtol=0)  # empty before: zero reference
-    solved_all = mean_helpers._reconstruct_class_maps(
+    solved_all = numbered_reconstruction._reconstruct_class_maps(
         numerators, denominators, [None] * 3, _settings([]), n_classes=3, iteration=4, current_size=8,
         accumulator_volume_shape=None,
     )
     assert_matches(np.asarray(solved_all[1]), np.asarray(stack[1]), rtol=0)  # the others are unchanged
     with pytest.raises(RuntimeError, match="every class is empty"):
-        mean_helpers._reconstruct_class_maps(
+        numbered_reconstruction._reconstruct_class_maps(
             numerators[:1], denominators[:1], [None], _settings([]), n_classes=1, iteration=4, current_size=8,
             accumulator_volume_shape=None, unsolved={0: None},
         )

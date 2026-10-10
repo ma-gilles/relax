@@ -640,7 +640,7 @@ owns packed-half conventions, the Hermitian `x=0` plane and conversions to
 public layouts. Do not assume all accumulators have the full native volume
 shape: padding and current-size backprojector grids change their dimensions.
 
-[`mean_helpers.py`](../../relax/refinement/mean_helpers.py) owns the numbered K1
+[`numbered_reconstruction.py`](../../relax/refinement/numbered_reconstruction.py) owns the numbered K1
 and class reconstruction operations (`reconstruct_numbered_k1_halfmaps` and
 `reconstruct_numbered_class_maps`), their unregularized counterparts and
 `align_k1_volume_signs`. Each numbered operation owns its private ordered solves
@@ -665,7 +665,7 @@ Class3D callers. `estimate_class_priors` owns numbered replay admission,
 premultiplied-CTF adaptation and the ordered class estimate/capture/aggregation.
 The controller publishes its scheduling curve before stacking detail records.
 Final first-iteration, replay, CTF and DVP precision policies remain distinct.
-[`estimate_split_half_prior`](../../relax/refinement/mean_helpers.py) owns the
+[`estimate_split_half_prior`](../../relax/refinement/numbered_reconstruction.py) owns the
 numbered K1 backprojector FSC and each half's weight-based tau2. RELION's
 `--solvent_correct_fsc` is not implemented, so the FSC used for priors and size
 growth is the raw reporting FSC, `SplitHalfPrior.fsc`. It supplies the shared/per-half variance,
@@ -764,7 +764,7 @@ rounding (`test_corrected_fsc_replays_relion_leader_stream`, relax#35).
 
 Implementation: [`read_solvent_mask` and `solvent_corrected_fsc`](../../relax/reconstruction/solvent_mask.py);
 the flatten in `_numbered_solvent_mask` and the FSC in `solvent_corrected_fsc` in
-[`mean_helpers.py`](../../relax/refinement/mean_helpers.py), on the unregularised maps of
+[`numbered_reconstruction.py`](../../relax/refinement/numbered_reconstruction.py), on the unregularised maps of
 `reconstruct_unregularized_k1_halfmaps` (the maps written as `run_itNNN_half*_unfil.mrc`). Tests: `tests/unit/test_solvent_mask.py`.
 
 ## 6. Sampling transitions and convergence

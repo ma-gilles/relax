@@ -1,6 +1,6 @@
 """One builder of ``ReconstructionSettings`` for unit tests."""
 
-from relax.refinement.mean_helpers import ReconstructionSettings
+from relax.refinement.numbered_reconstruction import ReconstructionSettings
 
 
 def reconstruction_settings(**fields) -> ReconstructionSettings:

@@ -20,7 +20,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `maximization.py` | the numbered M-steps (K=1 split-half, Class3D) the controller chooses, and their results |
 | `reference_state.py` | the reference model (half maps and tau2) and the class mixture a run carries between iterations |
 | `priors.py` | the numbered M-steps' priors: class priors, the K=1 split-half prior and FSC, the low-resolution half join, the first-iteration CC tapers |
-| `mean_helpers.py`, `noise_updates.py` | the numbered and unregularized reconstructions with their settings, and the noise updates (the volume solver itself is `relax/reconstruction/volume_solver.py`) |
+| `numbered_reconstruction.py`, `noise_updates.py` | the numbered and unregularized reconstructions with their settings, and the noise updates (the volume solver itself is `relax/reconstruction/volume_solver.py`) |
 | `map_postprocess.py` | what a numbered reconstruction does to its maps after the solve: initial low-pass, solvent mask and flattening, K=1 sign alignment |
 | `sigma_offset.py` | the translation prior width a run carries (`SigmaOffset`) and its update from an expectation's offsets |
 | `finalization.py`, `final_sampling.py`, `final_reconstruction.py` | the final all-data pass |
@@ -37,7 +37,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
    preceding iteration's state.
 3. An operation returns its result; the controller assigns state at the call site. Do not hide a write in a
    helper or an `apply` method.
-4. Split K=1 and Class3D by contract, not by flag (code rule 6). `mean_helpers.py` has the pattern:
+4. Split K=1 and Class3D by contract, not by flag (code rule 6). `numbered_reconstruction.py` has the pattern:
    `reconstruct_numbered_k1_halfmaps` and `reconstruct_numbered_class_maps` each spell out their sequence and
    call shared helpers that take no mode argument.
 5. Keep genuine scientific alternatives separate. The K=1 and Class3D prior formulas do not become one formula

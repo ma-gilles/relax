@@ -23,7 +23,7 @@ from relax.refinement import (
     final_reconstruction,
     finalization,
     iteration_loop,
-    mean_helpers,
+    numbered_reconstruction,
     projector_preparation,
 )
 from relax.refinement.ports import InputSource, RunObserver
@@ -236,7 +236,7 @@ def _accumulators(n, seed=1):
 def _reconstruct(n=8, **kwargs):
     ft_ctf, ft_y = _accumulators(n)
     return np.asarray(
-        mean_helpers._reconstruct_volume_eager(
+        numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf,
             ft_y,
             (n, n, n),
@@ -320,15 +320,15 @@ def test_every_k1_reconstruction_hands_the_solve_the_kernel(monkeypatch, kernel)
         calls.append(kwargs)
         return jnp.ones(8**3, dtype=jnp.complex64)
 
-    monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", solve)
-    monkeypatch.setattr(mean_helpers, "_finish_host_staged_reconstruction", lambda result, *_: result)
+    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
+    monkeypatch.setattr(numbered_reconstruction, "_finish_host_staged_reconstruction", lambda result, *_: result)
     settings = _settings(gridding_kernel=kernel)
     pair = ("a", "b")
-    mean_helpers.reconstruct_numbered_k1_halfmaps(
+    numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         pair, pair, (np.ones(5), np.ones(5)), settings,
         iteration=1, current_size=8, accumulator_volume_shape=None, relion_firstiter_cc_this_iter=False,
     )
-    mean_helpers.reconstruct_unregularized_k1_halfmaps(pair, pair, settings)
+    numbered_reconstruction.reconstruct_unregularized_k1_halfmaps(pair, pair, settings)
     final_reconstruction.reconstruct_unfiltered_halfmaps(
         pair, pair, settings=settings, current_size=8, accumulator_shape=None
     )
@@ -360,7 +360,7 @@ def test_class_runs_refuse_separable_before_any_reconstruction():
 @pytest.mark.parametrize("kernel", ["radial", "separable"])
 def test_refinement_hands_every_k1_site_the_kernel(monkeypatch, kernel):
     """Two numbered iterations and the final all-data pass of the real controller."""
-    reconstructions = record_calls(monkeypatch, mean_helpers, "_reconstruct_volume_eager")
+    reconstructions = record_calls(monkeypatch, numbered_reconstruction, "_reconstruct_volume_eager")
     numbered_projectors = record_calls(monkeypatch, projector_preparation, "prepare_scoring_projector")
     final_projectors = record_calls(monkeypatch, finalization, "prepare_scoring_projector")
     accuracy_kernels = []

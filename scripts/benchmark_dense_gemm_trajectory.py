@@ -497,7 +497,7 @@ def _finalize_and_reconstruct(result, checkpoint, half, volume_shape, bp_shape):
         finalize_half_volume_bpref,
         relion_x_half_accumulators_to_public_layout,
     )
-    from relax.refinement.mean_helpers import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
     from relax.refinement.refinement_options import ReconstructionPrograms
 
     numerator, denominator = finalize_half_volume_bpref(

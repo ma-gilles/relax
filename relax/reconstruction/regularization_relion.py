@@ -1938,7 +1938,7 @@ def join_halves_at_low_resolution(
         int(np.size(Ft_ctf_1)),
     )
     # The host/device decision counts the physical accumulator grid, the unit the
-    # reconstruction's large-grid boundary uses (mean_helpers.
+    # reconstruction's large-grid boundary uses (numbered_reconstruction.
     # _should_host_stage_large_relion_ifft): a packed half of a physically large
     # grid stores about half its voxels. Counting stored elements moved the host
     # half accumulators of a 611^3 grid (114M elements, 228M voxels) back to the

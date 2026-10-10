@@ -31,7 +31,7 @@ from relax.symmetry import canonicalize_rotational_symmetry, symmetry_operator_s
 if TYPE_CHECKING:
     from relax.helpers.convergence import RefinementState
     from relax.refinement.half_inputs import HalfSet, ParticlePoses
-    from relax.refinement.mean_helpers import ReconstructionSettings
+    from relax.refinement.numbered_reconstruction import ReconstructionSettings
     from relax.refinement.ports import DenseHalfScored
     from relax.relion.relion_normalization import NormScaleCorrectionReport
 

@@ -135,7 +135,7 @@ def _reconstruct_unregularized_map(replay, boundary):
         enforce_relion_half_volume_x0_hermitian_host,
         relion_x_half_volume_to_native_half,
     )
-    from relax.refinement.mean_helpers import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
     from relax.refinement.refinement_options import ReconstructionPrograms
 
     accumulator_shape = tuple(int(value) for value in np.asarray(boundary["volume_shape"]))

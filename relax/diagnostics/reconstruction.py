@@ -18,7 +18,7 @@ from relax.reconstruction import regularization_relion
 
 if TYPE_CHECKING:
     from relax.refinement.iteration_planning import ClassImageSize
-    from relax.refinement.mean_helpers import ReconstructionSettings
+    from relax.refinement.numbered_reconstruction import ReconstructionSettings
     from relax.refinement.priors import ClassPriorEstimate
 
 

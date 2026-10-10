@@ -563,7 +563,7 @@ The example covers particle-half ownership, prepared projectors, final sampling
 resolution, dense/local scoring inputs and final reconstruction stages. Shared
 startup formulas and adaptive grids have neutral owners used by refinement and
 VDAM. Reference maps/tau2, noise and direction priors now have persistent owners in
-`mean_helpers.py`, `noise_updates.py` and `orientation_priors.py`. Their producers,
+`numbered_reconstruction.py`, `noise_updates.py` and `orientation_priors.py`. Their producers,
 replay/restart paths, updates and consumers are shown in the existing review.
 Substantial controller operations remain the next design work.
 
@@ -804,7 +804,7 @@ Numerical and runtime qualification of latest source remains outstanding.
 
 | Package | Owners and boundaries to change | Reviewable outcome | Required checks |
 | --- | --- | --- | --- |
-| 1. Model-half lifecycle | `iteration_loop.py`, `noise_updates.py`, `mean_helpers.py`, replay/state-swap and `iteration_snapshot.py` | Reference maps/tau2 now have persistent ownership, completing the bounded direction-prior and noise lifecycle migration; array/order pairs remain together through restart, replay, reconstruction and updates. Final scoring reads those owners directly. | Noise/reconstruction/prior contracts, checkpoint/replay tests, fast guard, smoke; medium when numerical semantics change |
+| 1. Model-half lifecycle | `iteration_loop.py`, `noise_updates.py`, `numbered_reconstruction.py`, replay/state-swap and `iteration_snapshot.py` | Reference maps/tau2 now have persistent ownership, completing the bounded direction-prior and noise lifecycle migration; array/order pairs remain together through restart, replay, reconstruction and updates. Final scoring reads those owners directly. | Noise/reconstruction/prior contracts, checkpoint/replay tests, fast guard, smoke; medium when numerical semantics change |
 | 2. Optics preparation | `optics_shapes.py`, scoring input construction and shape adapters | Preparation returns typed optics operands directly; no intermediate dictionary followed by `.get` unpacking into another container. Shape transformations retain numerical meaning and subset identity. | Single/multiple shapes, pixel-unit conversion, noise remapping, scale routing, first-iteration and local/dense tests; smoke |
 | 3. Finalization orchestration | Controller final expectation, accumulation, reconstruction and reporting | A finalization entry point with explicit meaningful inputs and results; shared setup precedes per-half work, diagnostics remain visible and writes are applied explicitly. | Final-pass admission, merged weighted sums, local/global, K1/K4 and tomography paths, saved formats, fast guard and smoke |
 | 4. Precision and execution configuration | `scoring_policy.py`, dense/local engine adapters and diagnostic selectors | Effective settings resolved once at their proper scope; retire arbitrary forwarding dictionaries and duplicate defaults while retaining existing diagnostic capabilities and JIT specialization. | Production float32 and diagnostic precision contracts, engine routing, JIT/static inputs and native ABI checks; smoke and affected scientific tier |

@@ -481,6 +481,7 @@ def test_positive_one_based_class_parser():
 
 def test_k_class_replay_reconstructs_from_recorded_mstep_accumulator_shape():
     import inspect
+
     import scripts.run_k_class_parity as run_k_class_parity
 
     source = inspect.getsource(run_k_class_parity.main)
@@ -493,7 +494,8 @@ def test_k_class_replay_reconstructs_from_recorded_mstep_accumulator_shape():
 
 def test_cropped_x_half_accumulator_reconstructs_when_shape_is_explicit():
     from recovar.core import fourier_transform_utils
-    from relax.refinement.mean_helpers import _reconstruct_volume_eager
+
+    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
     from relax.refinement.refinement_options import ReconstructionPrograms
 
     volume_shape = (8, 8, 8)

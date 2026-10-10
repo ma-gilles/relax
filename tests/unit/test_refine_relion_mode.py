@@ -111,7 +111,7 @@ from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
 from relax.refinement import finalization, half_scoring, local_sampling, local_search_iteration
 from relax.refinement import maximization as maximization_module
-from relax.refinement import mean_helpers as mean_helpers_module
+from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.refinement.local_search_iteration import LocalSearchResult
 from relax.refinement.map_postprocess import _align_fourier_volume_sign_to_reference
@@ -527,7 +527,7 @@ def test_kclass_final_reconstruction_does_not_predivide_class_accumulators(monke
 
     trace = CallTrace(monkeypatch)
     trace.wrap(finalization.final_reconstruction, "reconstruct_final_class_maps", "final_classes")
-    trace.wrap(mean_helpers_module, "_reconstruct_volume_eager", "solve")
+    trace.wrap(numbered_reconstruction_module, "_reconstruct_volume_eager", "solve")
     run_tiny_refinement(monkeypatch, n_classes=2, converge_after=2)
 
     (final,) = trace.calls("final_classes")
@@ -4516,7 +4516,7 @@ class TestRelionModeSmokeTest:
         monkeypatch,
     ):
         """The ini_high tau2 taper changes reported state, not reconstruction."""
-        from relax.refinement import mean_helpers as mean_helpers_module
+        from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
         from relax.refinement import priors
 
         untapered_tau = [7.0, 11.0]
@@ -4556,7 +4556,7 @@ class TestRelionModeSmokeTest:
             "firstiter_cc_ini_high_tau2_taper",
             lambda *_args, **_kwargs: taper,
         )
-        monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
         monkeypatch.setattr(
             map_postprocess,
             "_apply_relion_initial_lowpass_filter",
@@ -5055,7 +5055,7 @@ class TestRelionModeSmokeTest:
     ):
         """The final joined reconstruction still scores each half against its own map."""
         original_update = convergence_policy.update_refinement_state
-        original_reconstruct = mean_helpers_module._reconstruct_volume_eager
+        original_reconstruct = numbered_reconstruction_module._reconstruct_volume_eager
         engine_calls = []
         reconstruction_calls = []
         expected_accuracy_current_sizes = []
@@ -5090,7 +5090,7 @@ class TestRelionModeSmokeTest:
             force_convergence_after_first_iter,
         )
         install_fake_adaptive_engine(monkeypatch, engine_calls, Ft_y=_random_half_maps(engine_calls))
-        monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", spy_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", spy_reconstruct)
         monkeypatch.setattr(
             expected_accuracy_module,
             "relion_half1_trial_order",
@@ -6929,7 +6929,7 @@ class TestRelionModeSmokeTest:
     def test_firstiter_cc_lowpass_runs_before_solvent_flatten(self, monkeypatch):
         """RELION applies iter-1 ini_high low-pass before solvent flatten."""
 
-        from relax.refinement import mean_helpers as mean_helpers_module
+        from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
         events = []
         reconstruct_calls = []
@@ -6956,7 +6956,7 @@ class TestRelionModeSmokeTest:
             solvent_mask_radii.append((radius, radius_p))
             return jnp.ones(volume_shape, dtype=jnp.float64)
 
-        monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
         monkeypatch.setattr(map_postprocess, "_apply_relion_initial_lowpass_filter", fake_lowpass)
         monkeypatch.setattr(map_postprocess.fourier_transform_utils, "get_idft3", fake_idft3)
         monkeypatch.setattr(map_postprocess.fourier_transform_utils, "get_dft3", fake_dft3)
@@ -6978,7 +6978,7 @@ class TestRelionModeSmokeTest:
             particle_diameter_angstrom=200.0,
             first_iteration_lowpass_angstrom=30.0, programs=ReconstructionPrograms.from_environ(),
         )
-        means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
+        means = numbered_reconstruction_module.reconstruct_numbered_k1_halfmaps(
             (jnp.ones(VOLUME_SIZE, dtype=jnp.complex64), jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)),
             (jnp.ones(VOLUME_SIZE, dtype=jnp.float32), jnp.ones(VOLUME_SIZE, dtype=jnp.float32)),
             [
@@ -7004,7 +7004,7 @@ class TestRelionModeSmokeTest:
     def test_kclass_reconstruction_uses_1d_tau_shell_prior(self, monkeypatch):
         """K-class M-step reconstruction should index RELION tau2 as shells."""
 
-        from relax.refinement import mean_helpers as mean_helpers_module
+        from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
         calls = []
 
@@ -7012,7 +7012,7 @@ class TestRelionModeSmokeTest:
             calls.append(kwargs)
             return jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)
 
-        monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
 
         n_classes = 2
         n_shells = VOLUME_SHAPE[0] // 2 + 1
@@ -7036,7 +7036,7 @@ class TestRelionModeSmokeTest:
             particle_diameter_angstrom=None,
             first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
         )
-        means = mean_helpers_module.reconstruct_numbered_class_maps(
+        means = numbered_reconstruction_module.reconstruct_numbered_class_maps(
             jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.complex64),
             jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32),
             tau_shells,
@@ -9522,7 +9522,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
     from recovar.reconstruction import relion_functions
 
     from relax.reconstruction import relion_functions_relion
-    from relax.refinement import mean_helpers as mean_helpers_module
+    from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
     events = []
     host_boundary = np.ones((4, 4, 3), dtype=np.complex64)
@@ -9593,7 +9593,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
     volume_shape = (2, 2, 2)
     accumulator_shape = (3, 3, 3)
     half_shape = ftu.volume_shape_to_half_volume_shape(accumulator_shape)
-    returned = mean_helpers_module._reconstruct_volume_eager(
+    returned = numbered_reconstruction_module._reconstruct_volume_eager(
         np.ones(half_shape, dtype=np.float32),
         np.ones(half_shape, dtype=np.complex64),
         volume_shape,
@@ -9624,9 +9624,9 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
         calls.append(np.asarray(numerator).copy())
         return numerator
 
-    monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", reconstruct)
+    monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", reconstruct)
     result = (
-        mean_helpers_module.reconstruct_unregularized_class_means(
+        numbered_reconstruction_module.reconstruct_unregularized_class_means(
             jnp.asarray(unregularized),
             jnp.ones_like(jnp.asarray(unregularized).real),
             reconstruction_settings(

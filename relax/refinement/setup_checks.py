@@ -20,7 +20,7 @@ from relax.refinement.expectation_batches import BatchPlanner
 from relax.refinement.half_inputs import configure_half_image_preprocessing
 from relax.refinement.iteration_planning import RunOptics
 from relax.refinement.iteration_snapshot import SnapshotCapture
-from relax.refinement.mean_helpers import ReconstructionSettings
+from relax.refinement.numbered_reconstruction import ReconstructionSettings
 from relax.refinement.optics_shapes import MultiShapeHalf
 from relax.refinement.ports import (
     ExpectationProbe,

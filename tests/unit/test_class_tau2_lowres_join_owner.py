@@ -1,6 +1,6 @@
 """Owner tests for the pre-Wiener half join and Class3D per-class tau2 statistics.
 
-``mean_helpers`` owns RELION's ``--low_resol_join_halves`` application and the
+``numbered_reconstruction`` owns RELION's ``--low_resol_join_halves`` application and the
 per-class tau2/data-vs-prior detail records that the regular and final
 all-data passes previously duplicated inline. These cases pin the argument
 mapping, the previous-resolution cap, dtypes and the detail-record layout.
@@ -19,7 +19,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.helpers.resolution import shell_index_to_resolution_angstrom
 from relax.reconstruction import regularization_relion
-from relax.refinement import mean_helpers, priors
+from relax.refinement import numbered_reconstruction, priors
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -212,9 +212,9 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             "preserve_inputs",
             "return_retained_first_numerator",
         )
-        assert not hasattr(mean_helpers, "HalfAccumulatorPair")
-        assert not hasattr(mean_helpers, "HalfJoinGeometry")
-        assert not hasattr(mean_helpers, "HalfJoinPolicy")
+        assert not hasattr(numbered_reconstruction, "HalfAccumulatorPair")
+        assert not hasattr(numbered_reconstruction, "HalfJoinGeometry")
+        assert not hasattr(numbered_reconstruction, "HalfJoinPolicy")
 
     def test_delegates_positional_layout_and_previous_resolution_cap(self, monkeypatch):
         calls = []
