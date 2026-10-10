@@ -231,3 +231,93 @@ def test_the_mstep_radius_takes_the_scale_relion_projects_with():
     assert reconstruction_image_radius(28, 1.36 / HEADER_1P4) == 14.0 * (1.36 / HEADER_1P4)
     assert reconstruction_image_radius(28, STAR_CELL9 / HEADER_CELL9) == 14.0 * (STAR_CELL9 / HEADER_CELL9)
     assert reconstruction_image_radius(None, 1.12) is None
+
+
+def _local_parent_layout():
+    """A local search's parent layout (id rows) on a perturbed order-2 grid, five images, float32."""
+    from relax.local.local_layout import build_local_hypothesis_layout
+
+    rng = np.random.default_rng(11)
+    eulers = np.column_stack([rng.uniform(0, 360, 5), rng.uniform(20, 160, 5), rng.uniform(0, 360, 5)])
+    translations = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
+    step = sampling.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
+    return build_local_hypothesis_layout(
+        eulers, None, 0.35, 0.35, ORDER, translations, np.zeros((5, 2), dtype=np.float32), 3.0, None, 1.0,
+        grid_metadata=sampling.build_local_search_grid_metadata(ORDER),
+        translation_prior_reference_translations=translations,
+        rotation_grid_random_perturbation=PERTURBATION, rotation_grid_angular_sampling_deg=step, dtype=np.float32,
+    )
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("scale, magnified", [(1.0, False), (1.0, True), (0.971, True)])
+def test_local_parent_rows_are_the_projector_plans_rows(scale, magnified):
+    """RELION's coarse pass scores a local search's parents with its plan's device-built matrices
+    (AccProjectorPlan::setup, coarse = true), with and without a left matrix: the rows of the global pass 1 for
+    the layout's own Euler rows, not the host inverse matrices the layout is built with.
+
+    The external evidence for the rule is a RELION score dump (relax#70: with these rows 0 of 50,220 poses
+    differ from RELION's score by more than 100 float32 steps, against 3.4% with the host rows); this test guards
+    the rule against regression."""
+    from relax.local.local_layout import (
+        _rotation_eulers_from_grid_metadata,
+        local_layout_device_rotations,
+        local_layout_host_rotations,
+    )
+
+    layout = _local_parent_layout()
+    left = relax_projection_magnification(MAG) if magnified else None
+    got = local_layout_device_rotations(layout, scale, left, use_float64=False)
+    assert got.dtype == np.float32 and got.shape == np.asarray(layout.rotations_flat).shape
+
+    eulers = _rotation_eulers_from_grid_metadata(
+        layout.rotation_ids_flat, sampling.build_local_search_grid_metadata(ORDER), dtype=np.float32
+    )
+    step = sampling.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
+    source = sampling.DevicePass1Source(np.asarray(eulers, dtype=np.float64), PERTURBATION, step, False)
+    plain = np.asarray(sampling.relion_adaptive_pass1_rotations(source.source_eulers_deg, PERTURBATION, step))
+    expected = plain
+    if left is not None or scale != 1.0:
+        expected = sampling.project_rows(plain, scale, left, device_source=source)
+    assert np.array_equal(got, np.asarray(expected))
+
+    # Independently of relax's builders: the plan kernel's statements in NumPy float32 (helpers.relion_plan_rows).
+    # Not bit for bit: the device contracts multiply-adds and has its own sincosf. Measured on an H100, in units
+    # of the float32 spacing at 1 (1.19e-7), of 17,280 elements: no left matrix 9,198 equal, 67 beyond one unit,
+    # largest 2; magnified 5,339 equal, 236 beyond one, largest 3; magnified and scaled 5,342 equal, 318 beyond
+    # one, largest 3. The bounds below are those measurements, not a tighter claim.
+    from helpers.relion_plan_rows import relion_plan_rows_f32
+
+    right = sampling.healpix_sampling.euler_angles_to_matrix(np.full((1, 3), PERTURBATION * step))[0]
+    kernel_left = None if left is None and scale == 1.0 else relion_projection_left_matrix(scale, left)
+    mirror = relion_plan_rows_f32(eulers, right, kernel_left)
+    unit = float(np.finfo(np.float32).eps)
+    plan_steps = np.abs(got.astype(np.float64) - mirror) / unit
+    assert plan_steps.max() <= 3.0, plan_steps.max()
+    assert (plan_steps > 1.0).mean() < 0.025, (plan_steps > 1.0).sum()
+
+    # They are the same matrices as the host rule's to float32 rounding, and not the same bits.
+    host = sampling.project_rows(
+        np.asarray(layout.rotations_flat),
+        scale,
+        left,
+        host_rows=lambda: local_layout_host_rotations(layout, mstep=False),
+    )
+    assert np.abs(got - np.asarray(host)).max() < 5e-6
+    assert not np.array_equal(got, np.asarray(host))
+    # The host rows are further from the plan kernel: 1,368 / 1,729 / 1,829 elements beyond one unit (five to
+    # twenty times the plan rows' count) and a largest difference of 4.75 units in all three cases.
+    host_steps = np.abs(np.asarray(host, dtype=np.float64) - mirror) / unit
+    assert (host_steps > 1.0).mean() > 0.05, (host_steps > 1.0).sum()
+    assert host_steps.max() > plan_steps.max()
+
+
+def test_only_a_parent_layouts_id_rows_have_a_projector_plan():
+    """Oversampled children are fine-pass rows (host rule): asking for their plan rows is an error."""
+    import dataclasses
+
+    from relax.local.local_layout import local_layout_device_rotations
+
+    layout = dataclasses.replace(_local_parent_layout(), oversampled_rows=True, id_rows_source=None)
+    with pytest.raises(ValueError, match="only a parent layout's id rows"):
+        local_layout_device_rotations(layout, 1.0, None, use_float64=False)

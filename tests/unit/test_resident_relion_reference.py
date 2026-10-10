@@ -679,6 +679,24 @@ def _local_parent_case(current_size: int, noise: float):
     case["noise_variance"] = jnp.asarray(noise_full.reshape(-1))
     parent, translations = _parent_layout()
     case.update(parent=parent, parent_translations=translations)
+    # RELION's coarse pass scores the parents with its projector plan's device-built matrices
+    # (AccProjectorPlan::setup, acc_projector_plan_impl.h:158-392), not with the layout's own rows, which are
+    # the host inverses of the fine pass. The reference gets them from the kernel's statements in NumPy
+    # (helpers.relion_plan_rows), not from relax's builder.
+    from helpers.relion_plan_rows import relion_plan_rows_f32
+
+    from relax import healpix_sampling
+    from relax.local.local_layout import _rotation_eulers_from_grid_metadata
+    from relax.sampling import build_local_search_grid_metadata
+
+    order, perturbation, angular_sampling_deg = parent.id_rows_source
+    parent_eulers = _rotation_eulers_from_grid_metadata(
+        parent.rotation_ids_flat, build_local_search_grid_metadata(order, symmetry=parent.symmetry), dtype=np.float32
+    )
+    right = None
+    if abs(perturbation) >= 1e-12:
+        right = healpix_sampling.euler_angles_to_matrix(np.full((1, 3), perturbation * angular_sampling_deg))[0]
+    plan_rows = relion_plan_rows_f32(parent_eulers, right, None)
     # A parent layout without posterior bins bins its posterior by its fine rotation ids.
     posterior_ids = (
         parent.rotation_ids_flat if parent.rotation_posterior_ids_flat is None else parent.rotation_posterior_ids_flat
@@ -694,7 +712,7 @@ def _local_parent_case(current_size: int, noise: float):
         image_cells.append(np.column_stack([rows[row], trans]))
     args = {
         "experiment_dataset": case["dataset"],
-        "fine_rotations_override": np.asarray(parent.rotations_flat),
+        "fine_rotations_override": np.asarray(plan_rows),
         "fine_rotation_parent_override": np.asarray(posterior_ids),
         "fine_translations_override": np.asarray(parent.translation_grid),
         "fine_translation_parent_override": np.zeros(n_trans, dtype=np.int64),

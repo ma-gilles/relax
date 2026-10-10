@@ -17,6 +17,7 @@ from relax.helpers.batch_planning import (
 from relax.helpers.orientation_priors import make_relion_translation_log_prior
 from relax.helpers.shape_buckets import coarse_bucket, power_bucket
 from relax.sampling import (
+    DevicePass1Source,
     _compute_oversampled_rotation_grid,
     _relion_mstep_rotations_from_eulers,
     _wrapped_abs_diff_deg,
@@ -26,6 +27,8 @@ from relax.sampling import (
     get_oversampled_rotation_grid_from_samples,
     get_oversampled_translation_grid,
     infer_translation_step,
+    project_rows,
+    relion_adaptive_pass1_rotations,
     rotation_grid_n_in_planes,
     rotation_grid_size,
     rotation_indices_to_relion_eulers,
@@ -910,6 +913,49 @@ def _selected_mstep_rotation_matrices(
         dtype=dtype,
     )
     return np.asarray(mstep_rotations, dtype=dtype)[inverse]
+
+
+def local_layout_device_rotations(layout: LocalHypothesisLayout, scale: float, magnification, *, use_float64: bool):
+    """A parent layout's scoring rows as RELION's pass-1 projector plan builds them, or None on the CPU.
+
+    RELION's coarse pass scores a local search's parent orientations through an ``AccProjectorPlan`` set up
+    with ``coarse = true`` (``getAllSquaredDifferencesCoarse``, acc_ml_optimiser_impl.h:1063-1145): the plan
+    forms ``L (A R)`` on the device in XFLOAT from the Euler angles, the perturbation matrix ``R`` and the
+    optics' left matrix ``L`` (``acc_make_eulers_3D``, acc_projector_plan_impl.h:158-392), as it does for a
+    global search. These are not the host inverse matrices of the fine pass and the weighted sums
+    (:func:`local_layout_host_rotations`): the two differ by a few float32 ulps in every row, which moves the
+    score of a few percent of the orientations by about 1e-4 and reorders near-tied parents.
+
+    The rows are those of the global pass 1 (:func:`relax.sampling.relion_adaptive_pass1_rotations` and, for
+    images on another grid or magnified, :func:`relax.sampling.project_rows` with the device source), built
+    from the unperturbed Euler rows of ``rotation_ids_flat`` in the layout's dtype, with the perturbation and
+    angular step the layout was built with. Only id rows have a plan: oversampled children are fine-pass rows.
+    """
+
+    if layout.oversampled_rows or layout.id_rows_source is None:
+        raise ValueError("only a parent layout's id rows are built by RELION's pass-1 projector plan")
+    healpix_order, random_perturbation, angular_sampling_deg = layout.id_rows_source
+    dtype = np.asarray(layout.rotations_flat).dtype
+    unique_ids, inverse = unique_nonnegative_ids(np.asarray(layout.rotation_ids_flat, dtype=np.int64).reshape(-1))
+    source_eulers = _rotation_eulers_from_grid_metadata(
+        unique_ids, build_local_search_grid_metadata(healpix_order, symmetry=layout.symmetry), dtype=dtype
+    )
+    source = DevicePass1Source(
+        source_eulers_deg=np.asarray(source_eulers, dtype=np.float64),
+        random_perturbation=float(random_perturbation),
+        angular_sampling_deg=0.0 if angular_sampling_deg is None else float(angular_sampling_deg),
+        use_float64=bool(use_float64),
+    )
+    rows = relion_adaptive_pass1_rotations(
+        source.source_eulers_deg,
+        source.random_perturbation,
+        source.angular_sampling_deg,
+        use_float64=source.use_float64,
+    )
+    if rows is None:
+        return None
+    rows = project_rows(np.asarray(rows), scale, magnification, device_source=source, what="local parent rows")
+    return np.asarray(rows, dtype=dtype)[inverse]
 
 
 def local_layout_host_rotations(layout: LocalHypothesisLayout, *, mstep: bool) -> np.ndarray:

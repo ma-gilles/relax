@@ -19,6 +19,7 @@ from relax.local.local_layout import (
     build_local_hypothesis_layout,
     drop_local_layout_classes,
     expand_local_layout_classes,
+    local_layout_device_rotations,
     local_layout_host_rotations,
     restrict_local_layout_classes,
 )
@@ -180,7 +181,27 @@ def _run_local_search_iteration(
         local_layout = drop_local_layout_classes(local_layout, grid.empty_classes)
     local_n_classes = local_layout.n_classes
     magnification = dataset_projection_magnification(data.experiment_dataset)
-    if kernel.projection_scale != 1.0 or magnification is not None:
+    # RELION's coarse pass scores the parents with its projector plan's device-built matrices, in a local
+    # search as in a global one; every other local row is a host-built row (below).
+    coarse_plan_rows = None
+    if kernel.projection_relion_kernel == "coarse":
+        coarse_plan_rows = local_layout_device_rotations(
+            local_layout, kernel.projection_scale, magnification, use_float64=kernel.use_float64_scoring
+        )
+    if coarse_plan_rows is not None:
+        local_layout = dataclasses.replace(local_layout, rotations_flat=coarse_plan_rows)
+        if kernel.projection_scale != 1.0 or magnification is not None:
+            local_layout = dataclasses.replace(
+                local_layout,
+                mstep_rotations_flat=project_rows(
+                    local_layout.mstep_rotations_flat,
+                    kernel.projection_scale,
+                    magnification,
+                    host_rows=lambda: local_layout_host_rotations(local_layout, mstep=True),
+                    what="local M-step rows",
+                ),
+            )
+    elif kernel.projection_scale != 1.0 or magnification is not None:
         # Images on another grid than the reference (RELION applyScaleDifference) or with an
         # anisotropic magnification (applyAnisoMag): only the projection and backprojection
         # matrices are transformed; priors and reported poses are not. The local rows are host-built
