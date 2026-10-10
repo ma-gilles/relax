@@ -8,8 +8,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.dense.gemm_experiment import DenseGemmTileConfig, make_batch_program, native_relion_callbacks
-from relax.dense.gemm_experiment_kernels import empty_normalizer_table
+from relax.dense.gemm_kernels import (
+    DenseGemmTileConfig,
+    empty_normalizer_table,
+    make_batch_program,
+    native_relion_callbacks,
+)
 from relax.projection.projection import relion_projector_half_to_texture_full
 from scripts.benchmark_dense_gemm_em import _direct_comparison, _make_case, _production_program, _run_once
 

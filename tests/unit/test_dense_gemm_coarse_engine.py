@@ -1,33 +1,28 @@
 """Small-grid checks for the exact joint-class dense GEMM core."""
 
+from types import SimpleNamespace
+from typing import NamedTuple
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from types import SimpleNamespace
-from typing import NamedTuple
+from helpers.float_compare import assert_matches
 
-from relax.dense.gemm_experiment import (
-    DenseGemmTileConfig,
-    make_joint_k_batch_program,
-    pad_batch,
-    pad_grid,
-)
-from relax.dense.gemm_experiment_kernels import score_tile
 from relax.dense.gemm_coarse_statistics import (
     DenseGemmStatisticsPlan,
     initial_statistics_carry,
     split_normalizer_metadata,
 )
+from relax.dense.gemm_kernels import DenseGemmTileConfig, make_joint_k_batch_program, pad_batch, pad_grid, score_tile
 from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
-from helpers.float_compare import assert_matches
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("exact_bpref", [False, True])
 def test_gemm_reconstruction_operands_follow_resident_preparation(exact_bpref):
     from relax.dense.gemm_coarse_engine import _dense_reconstruction_operands
-    from relax.fine_pass.resident_operands import _BatchWindowInputs, _batch_window_operands
+    from relax.fine_pass.resident_operands import _batch_window_operands, _BatchWindowInputs
 
     raw = jnp.asarray([[1 + 2j, 3 + 4j, 5 + 6j, 7 + 8j],
                        [2 + 1j, 4 + 3j, 6 + 5j, 8 + 7j],
@@ -72,7 +67,8 @@ def test_gemm_reconstruction_operands_follow_resident_preparation(exact_bpref):
 def test_complete_grid_local_slots_match_actual_resident_table(relion_order):
     from relax.dense.gemm_coarse_engine import _full_grid_local_rotation_slots
     from relax.fine_pass.resident_significance import (
-        CoarseSignificanceCSR, build_resident_candidate_tables_from_csr,
+        CoarseSignificanceCSR,
+        build_resident_candidate_tables_from_csr,
     )
 
     n_coarse, n_trans = 18, 3  # whole psi rows at HEALPix level 0

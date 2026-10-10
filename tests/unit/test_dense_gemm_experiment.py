@@ -5,14 +5,16 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.dense.gemm_experiment import (
+from relax.dense.gemm_kernels import (
     DenseGemmTileConfig,
+    empty_normalizer_table,
     make_batch_program,
     pad_batch,
     pad_grid,
     run_resident_iteration,
+    score_tile,
+    weighted_slices,
 )
-from relax.dense.gemm_experiment_kernels import empty_normalizer_table, score_tile, weighted_slices
 
 
 def _case():

@@ -23,7 +23,7 @@ from relax.dense.gemm_coarse_statistics import (
     initial_statistics_carry,
     make_statistics_callbacks,
 )
-from relax.dense.gemm_experiment import (
+from relax.dense.gemm_kernels import (
     DenseGemmTileConfig,
     make_joint_k_batch_program,
     native_phase_table,

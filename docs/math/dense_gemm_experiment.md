@@ -6,15 +6,15 @@ BPref backprojection. It does not change production defaults or implement VDAM's
 optimizer. The fixed-grid experiment is separate from production adaptive support
 selection.
 
-The implementation is [`make_batch_program`](../../relax/dense/gemm_experiment.py),
-with tile arithmetic in [`gemm_experiment_kernels.py`](../../relax/dense/gemm_experiment_kernels.py).
+The implementation is [`make_batch_program`](../../relax/dense/gemm_kernels.py),
+with tile arithmetic in the same file.
 The real-data adapter is
 [`benchmark_dense_gemm_trajectory.py`](../../scripts/benchmark_dense_gemm_trajectory.py).
 
 The selectable production EM/VDAM full-grid route is
 [`run_dense_gemm_full_grid`](../../relax/dense/gemm_coarse_engine.py), using the
 joint-class two-sweep program
-[`make_joint_k_batch_program`](../../relax/dense/gemm_experiment.py). It does not
+[`make_joint_k_batch_program`](../../relax/dense/gemm_kernels.py). It does not
 prune configured poses. The experimental trajectory adapter described above
 has a different lifetime and benchmark scope.
 

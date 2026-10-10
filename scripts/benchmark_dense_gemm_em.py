@@ -31,20 +31,18 @@ from relax.cuda.kernels import (
     relion_translate_score_f32,
     relion_translate_sum_flat_rows_f32,
 )
-from relax.dense.gemm_experiment import (
+from relax.dense.gemm_kernels import (
     DenseGemmBatchResult,
     DenseGemmTileConfig,
+    empty_normalizer_table,
     leading_tile_bytes,
     make_batch_program,
+    merge_normalizers,
     native_phase_table,
     native_relion_callbacks,
+    normalizer_logz,
     pad_batch,
     pad_grid,
-)
-from relax.dense.gemm_experiment_kernels import (
-    empty_normalizer_table,
-    merge_normalizers,
-    normalizer_logz,
     score_model_power,
     score_tile,
     tile_normalizer,
@@ -104,8 +102,7 @@ def _source_identity(root):
         return subprocess.check_output(["git", *args], cwd=root).decode().strip()
 
     paths = (
-        "relax/dense/gemm_experiment.py",
-        "relax/dense/gemm_experiment_kernels.py",
+        "relax/dense/gemm_kernels.py",
         "scripts/benchmark_dense_gemm_em.py",
     )
     return {

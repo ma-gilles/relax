@@ -184,7 +184,7 @@ def load_half_metadata(models, data_table, half_rows, *, voxel_size, base_transl
 
 def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, translations, rotation_tile, translation_tile):
     """Freeze a deterministic subset of the canonical checkpoint's full SO(3)/shift grid."""
-    from relax.dense.gemm_experiment import native_phase_table, pad_grid
+    from relax.dense.gemm_kernels import native_phase_table, pad_grid
     from relax.fine_pass.bucket_io import relion_translation_angles_f32
     from relax.fine_pass.window import _pass2_window_setup, _sparse_pass2_window_setup
     from relax.refinement import scoring_policy
@@ -269,7 +269,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
 
 def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, local_indices, *, batch_capacity, sentinel_id):
     """Assemble one batch through the existing coarse and BPref operand owners."""
-    from relax.dense.gemm_experiment import pad_batch
+    from relax.dense.gemm_kernels import pad_batch
     from relax.fine_pass.resident_operands import prepare_resident_half_operands
     from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
     from relax.fine_pass.wavg import _make_relion_wavg_rectangle
@@ -578,8 +578,8 @@ def _native_fixture_program(args, geometry, bp_shape, current_size, image_shape,
         relion_fused_x_half_backproject_particle_grid_indexed,
         relion_translate_sum_flat_rows_f32,
     )
-    from relax.dense.gemm_experiment import DenseGemmBatchResult
-    from relax.dense.gemm_experiment_kernels import (
+    from relax.dense.gemm_kernels import (
+        DenseGemmBatchResult,
         empty_normalizer_table,
         merge_normalizers,
         normalizer_logz,
@@ -685,8 +685,8 @@ def _resident_cuda_fixture_program(
     """
     from relax.cuda import kernels as cuda_backproject
     from relax.cuda.kernels import relion_translate_score_f32
-    from relax.dense.gemm_experiment import DenseGemmBatchResult
-    from relax.dense.gemm_experiment_kernels import (
+    from relax.dense.gemm_kernels import (
+        DenseGemmBatchResult,
         empty_normalizer_table,
         merge_normalizers,
         normalizer_logz,
@@ -831,13 +831,13 @@ def _resident_cuda_fixture_program(
 def run_fixed_fixture_trajectory(args, model_dir):
     """Execute two half maps on one unchanged dense pose grid for each iteration."""
     from relax.cuda.kernels import RelionCapacityHalfTextureF32
-    from relax.dense.gemm_experiment import (
+    from relax.dense.gemm_kernels import (
         DenseGemmTileConfig,
+        empty_normalizer_table,
         make_batch_program,
         native_relion_callbacks,
         run_resident_iteration,
     )
-    from relax.dense.gemm_experiment_kernels import empty_normalizer_table
     from relax.projection.projection import relion_projector_half_to_texture_full
     from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
     from relax.reconstruction.regularization import compute_relion_fsc_from_backprojector
@@ -1083,8 +1083,12 @@ def benchmark_fixed_fixture_batch(args, model_dir):
     trajectory reports remain responsible for changing maps across iterations.
     """
     from relax.cuda.kernels import RelionCapacityHalfTextureF32
-    from relax.dense.gemm_experiment import DenseGemmTileConfig, make_batch_program, native_relion_callbacks
-    from relax.dense.gemm_experiment_kernels import empty_normalizer_table
+    from relax.dense.gemm_kernels import (
+        DenseGemmTileConfig,
+        empty_normalizer_table,
+        make_batch_program,
+        native_relion_callbacks,
+    )
     from relax.projection.projection import relion_projector_half_to_texture_full
     from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
     benchmark_module = importlib.import_module(

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
-import os
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
 from helpers.float_compare import assert_matches
 
 
@@ -127,7 +126,8 @@ def _assert_paired_native_noise(candidate, control):
 def _capture_chunk_norm(collector, original, stats, operands, tables, *, config):
     """Opt-in per-image norm boundary, using the same public statistics owners."""
     from relax.fine_pass.resident_statistics import (
-        segment_sum_by_image, weighted_image_power_from_shells,
+        segment_sum_by_image,
+        weighted_image_power_from_shells,
     )
 
     image_capacity = int(operands.image_ids.shape[0])
@@ -364,12 +364,11 @@ def _save_k4_output_diagnostic(path, control, candidate, *, resident_mass_parts=
 def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     """Persist outputs first, then matched native/GEMM scores at both winners."""
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.dense.gemm_experiment import native_phase_table, native_relion_callbacks
-    from relax.dense.gemm_experiment_kernels import score_tile
     from relax.dense.gemm_coarse_engine import _expanded_rotation_priors
-    from relax.fine_pass.resident_pass2 import _relion_native_fine_units_in_place
+    from relax.dense.gemm_kernels import native_phase_table, native_relion_callbacks, score_tile
     from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
     from relax.fine_pass.projection_blocks import _compute_sparse_pass2_windowed_projections_block
+    from relax.fine_pass.resident_pass2 import _relion_native_fine_units_in_place
     from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
     from relax.fine_pass.window import _sparse_pass2_window_setup
 
@@ -473,15 +472,14 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
 
 def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chunks, control, candidate):
     """Keep actual fine-CC inputs and compare fine and GEMM scores at both winners."""
-    from relax.dense.gemm_experiment import native_relion_callbacks
-    from relax.dense.gemm_experiment_kernels import cc_score_tile
-    from relax.scoring.coarse_kernels import relion_coarse_gemm_terms
+    from relax.dense.gemm_kernels import cc_score_tile, native_relion_callbacks
     from relax.fine_pass.resident_pass2 import _relion_native_fine_units_in_place
     from relax.fine_pass.scoring import (
-        _relion_cuda_fine_normalized_cc_score,
         _relion_cuda_fine_full_to_compact_lookup,
+        _relion_cuda_fine_normalized_cc_score,
     )
     from relax.fine_pass.window import _pass2_half_weights, _sparse_pass2_window_setup
+    from relax.scoring.coarse_kernels import relion_coarse_gemm_terms
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -660,8 +658,9 @@ def test_k2_square_cc_full_grid_maps_wavg_and_keeps_one_winner(monkeypatch):
     assert jax.default_backend() == "gpu"
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
-    from relax.relion import ctf as relion_ctf
+
     from relax.fine_pass import resident_pass2
+    from relax.relion import ctf as relion_ctf
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise
@@ -709,9 +708,10 @@ def test_public_k2_dense_engine_runs_joint_full_grid(monkeypatch):
     assert jax.default_backend() == "gpu"
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
+
     from relax.classification.k_class import run_dense_k_class_em_adaptive
-    from relax.relion import ctf as relion_ctf
     from relax.refinement.engine_record import take_coarse_engine_calls
+    from relax.relion import ctf as relion_ctf
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise
@@ -777,9 +777,10 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
     assert jax.default_backend() == "gpu"
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
-    from relax.relion import ctf as relion_ctf
+
     from relax.dense import gemm_coarse_engine
     from relax.fine_pass import resident_pass2
+    from relax.relion import ctf as relion_ctf
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import F32, _ppref, _rel_l2, _tie_free_noise

@@ -59,7 +59,7 @@ unchanged. The lagged algorithm is an explicitly requested approximation.
 - Primary owns this plan, resource/job decisions, scientific acceptance, review
   and integration. One GPT-6 Sol agent at high reasoning owns implementation.
 - Initial writable files for Sol: new `relax/dense/gemm_experiment.py`,
-  `relax/dense/gemm_experiment_kernels.py`,
+  `relax/dense/gemm_kernels.py`,
   `scripts/benchmark_dense_gemm_em.py`,
   `tests/unit/test_dense_gemm_experiment.py`,
   `tests/integration/test_dense_gemm_experiment_gpu.py`, and artifact files
