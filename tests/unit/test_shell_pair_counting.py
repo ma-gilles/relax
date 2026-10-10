@@ -576,7 +576,7 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
         first_iteration_lowpass_angstrom=None, shell_pair_counting=counting, programs=ReconstructionPrograms.from_environ(),
     )
     final_reconstruction.compute_final_class_priors(
-        None, None, projector=None, n_classes=2, settings=settings, current_size=8, accumulator_shape=None,
+        None, None, projector_power_spectrum=None, n_classes=2, settings=settings, current_size=8, accumulator_shape=None,
         full_half_axis=0,
     )
     assert recorded == [counting, counting]

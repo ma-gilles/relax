@@ -316,26 +316,6 @@ def run_final_all_data(
         else:
             final_adaptive_pass1_current_size = None
             final_adaptive_pass2_current_size = None
-    # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
-    projector_clock = Stopwatch()
-    final_projectors = [
-        prepare_scoring_projector(
-            reference,
-            volume_shape=volume_shape,
-            current_size=final_current_size,
-            padding_factor=PROJECTION_PADDING_FACTOR,
-            n_classes=options.k_class.n_classes,
-            dump_label=f"final_half{half.index}",
-            gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
-        )
-        for half, reference in zip(halves, final_join_means, strict=True)
-    ]
-    logger.info(
-        "RELION final all-data: built exact Projector::data for scoring at current_size=%d r_max=%s in %.2fs",
-        final_current_size,
-        final_projectors[0].r_max,
-        projector_clock.seconds,
-    )
     logger.info("=== RELION final all-data Nyquist iteration ===")
     if final_use_local:
         final_local_batching = LocalBatchPolicy(
@@ -421,7 +401,32 @@ def run_final_all_data(
             precision=options.precision,
         )
     final_outs = PerHalfOutputs()
-    for half, projector in zip(halves, final_projectors, strict=True):
+    first_projector_power_spectrum = None
+    for half, reference in zip(halves, final_join_means, strict=True):
+        # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
+        # Each half's Projector::data is built when its pass starts and released when it ends: complex128, 33 GiB
+        # per half at EMPIAR-10202's box, and both were held for the whole final pass (relax#39).
+        projector_clock = Stopwatch()
+        projector = prepare_scoring_projector(
+            reference,
+            volume_shape=volume_shape,
+            current_size=final_current_size,
+            padding_factor=PROJECTION_PADDING_FACTOR,
+            n_classes=options.k_class.n_classes,
+            dump_label=f"final_half{half.index}",
+            gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
+        )
+        logger.info(
+            "RELION final all-data half-%d: built exact Projector::data for scoring at current_size=%d r_max=%s "
+            "in %.2fs",
+            half.index + 1,
+            final_current_size,
+            projector.r_max,
+            projector_clock.seconds,
+        )
+        if first_projector_power_spectrum is None:
+            first_projector_power_spectrum = projector.power_spectrum
+        scoring_half = None
         half = local_search_centre_half(half, (options.start.init_angle_priors or (None, None))[half.index], carry.state)
         bpref_diagnostics.clear_bpref_contribution_dump_context()
         final_half_clock = Stopwatch()
@@ -576,6 +581,8 @@ def run_final_all_data(
             reference_model=reference_model, noise_variance=carry.noise_model.variance_per_half[half.index],
             current_size=final_current_size, precision=final_precision, use_local=final_use_local,
         ))
+        # The pass is over: nothing below reads this half's Projector::data.
+        del projector, scoring_half
 
     final_mstep_accumulator_shape = resolve_mstep_accumulator_shape(
         final_outs.mstep_accumulator_shape,
@@ -617,7 +624,7 @@ def run_final_all_data(
         final_class_priors = final_reconstruction.compute_final_class_priors(
             final_ft_ctf,
             final_join_means[0],
-            projector=final_projectors[0],
+            projector_power_spectrum=first_projector_power_spectrum,
             n_classes=options.k_class.n_classes,
             settings=ctx.reconstruction_settings,
             current_size=final_current_size,

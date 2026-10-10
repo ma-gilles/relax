@@ -116,7 +116,7 @@ def compute_final_class_priors(
     denominator,
     references,
     *,
-    projector,
+    projector_power_spectrum,
     n_classes: int,
     settings: ReconstructionSettings,
     current_size: int,
@@ -139,7 +139,7 @@ def compute_final_class_priors(
             accumulator_shape=accumulator_shape,
             full_half_axis=full_half_axis,
             frame_scale=frame_scale,
-            projector_power_spectrum=None if projector is None else projector.power_spectrum,
+            projector_power_spectrum=projector_power_spectrum,
         )
         variances.append(prior.variance)
         shells.append(prior.shells)
