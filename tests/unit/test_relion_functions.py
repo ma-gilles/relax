@@ -1,18 +1,17 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
-from types import SimpleNamespace
 from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
-
-from recovar import jax_config
-from recovar import core
+from recovar import core, jax_config
 from recovar.reconstruction import regularization
-from relax.refinement.refinement_options import ReconstructionPrograms
-from relax.reconstruction import regularization_relion
 from recovar.reconstruction import relion_functions as rf
-from relax.reconstruction import relion_functions_relion
+
+from relax.reconstruction import regularization_relion, relion_functions_relion, volume_solver
+from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -1384,10 +1383,10 @@ def test_upscale_tau_gpu(gpu_device):
 def test_relion_kernel_batch_half_image_matches_full_reference():
     """New half-image relion_kernel_batch matches the output of
     the old full-image path (padded_dft + translate + full adjoint)."""
+    import recovar.core.forward as core_forward
+    from recovar.core import padding
     from recovar.core.configs import ForwardModelConfig
     from recovar.core.ctf import CTFEvaluator
-    from recovar.core import padding
-    import recovar.core.forward as core_forward
     from recovar.reconstruction import noise as noise_mod
 
     rng = np.random.default_rng(42)
@@ -1483,10 +1482,10 @@ def test_relion_kernel_batch_half_image_matches_full_reference():
 def test_relion_kernel_batch_complex_input_matches_full_reference():
     """relion_kernel_batch_from_fft with pre-processed complex images
     matches the full-image reference."""
+    import recovar.core.forward as core_forward
+    from recovar.core import padding
     from recovar.core.configs import ForwardModelConfig
     from recovar.core.ctf import CTFEvaluator
-    from recovar.core import padding
-    import recovar.core.forward as core_forward
     from recovar.reconstruction import noise as noise_mod
 
     rng = np.random.default_rng(99)
@@ -1612,9 +1611,9 @@ def test_relion_kernel_batch_accumulator_matches_sequential():
 @pytest.mark.gpu
 def test_relion_kernel_batch_half_volume_output_on_gpu(gpu_device):
     """relion_kernel_batch on GPU produces finite half-volume outputs."""
+    import recovar.core.fourier_transform_utils as ftu
     from recovar.core.configs import ForwardModelConfig
     from recovar.core.ctf import CTFEvaluator
-    import recovar.core.fourier_transform_utils as ftu
 
     rng = np.random.default_rng(55)
     grid_size = 8
@@ -1947,7 +1946,7 @@ def test_relion_direct_fftw_half_crop_matches_centered_path(old_dim, new_dim):
 @pytest.mark.parametrize(("old_dim", "new_dim"), [(11, 8), (11, 9), (12, 8), (12, 9)])
 def test_relion_host_fftw_half_crop_matches_device_crop(old_dim, new_dim):
     import recovar.core.fourier_transform_utils as ftu
-    from relax.refinement import mean_helpers
+
 
     rng = np.random.default_rng(1229 + old_dim + new_dim)
     old_shape = (old_dim, old_dim, old_dim)
@@ -1964,7 +1963,7 @@ def test_relion_host_fftw_half_crop_matches_device_crop(old_dim, new_dim):
             new_shape,
         )
     )
-    host_crop = mean_helpers._crop_relion_wiener_half_to_fftw_host(
+    host_crop = volume_solver._crop_relion_wiener_half_to_fftw_host(
         vol_half,
         old_shape,
         new_shape,
@@ -2025,6 +2024,7 @@ def test_large_odd_accumulator_crop_routes_directly_to_fftw(monkeypatch):
 @pytest.mark.usefixtures("_jax_cpu_default_device")
 def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
     from recovar.core import fourier_transform_utils as ftu
+
     from relax.refinement import mean_helpers
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
@@ -2132,7 +2132,7 @@ def test_host_irfft_center_crop_matches_jax_without_full_shift(
 ):
     from recovar.core import fourier_transform_utils as ftu
     from recovar.core import padding
-    from relax.refinement import mean_helpers
+
 
     reconstruction_shape = (reconstruction_size,) * 3
     output_shape = (output_size,) * 3
@@ -2153,7 +2153,7 @@ def test_host_irfft_center_crop_matches_jax_without_full_shift(
         raise AssertionError("host crop must not allocate a full shifted real volume")
 
     monkeypatch.setattr(np.fft, "ifftshift", reject_full_shift)
-    actual = mean_helpers._host_irfft_and_center_crop(
+    actual = volume_solver._host_irfft_and_center_crop(
         fftw_half.copy(),
         reconstruction_shape,
         output_shape,
@@ -2174,7 +2174,7 @@ def test_host_irfft_slabs_match_the_double_whole_volume_inverse(monkeypatch, rec
     double result rounded once; the slab copies run on one or several threads."""
 
     from recovar.core import fourier_transform_utils as ftu
-    from relax.refinement import mean_helpers
+
 
     reconstruction_shape = (reconstruction_size,) * 3
     output_shape = (output_size,) * 3
@@ -2187,8 +2187,8 @@ def test_host_irfft_slabs_match_the_double_whole_volume_inverse(monkeypatch, rec
         pad[0] : pad[0] + output_size, pad[1] : pad[1] + output_size, pad[2] : pad[2] + output_size
     ]
 
-    monkeypatch.setattr(mean_helpers, "_HOST_IRFFT_SLAB_ELEMENTS", 3 * reconstruction_size * reconstruction_size)
-    actual = mean_helpers._host_irfft_and_center_crop(fftw_half, reconstruction_shape, output_shape, workers=workers)
+    monkeypatch.setattr(volume_solver, "_HOST_IRFFT_SLAB_ELEMENTS", 3 * reconstruction_size * reconstruction_size)
+    actual = volume_solver._host_irfft_and_center_crop(fftw_half, reconstruction_shape, output_shape, workers=workers)
 
     assert actual.dtype == np.float32 and actual.flags.c_contiguous
     np.testing.assert_allclose(actual, expected.astype(np.float32), rtol=0, atol=1e-6 * np.abs(expected).max())
@@ -2197,7 +2197,7 @@ def test_host_irfft_slabs_match_the_double_whole_volume_inverse(monkeypatch, rec
 @pytest.mark.usefixtures("_jax_cpu_default_device")
 def test_host_unpadded_tail_matches_existing_fftw_half_finish():
     from recovar.core import fourier_transform_utils as ftu
-    from relax.refinement import mean_helpers
+
 
     for compiled in (
         relion_functions_relion.finish_large_relion_postprocess_from_unpadded_real,
@@ -2230,7 +2230,7 @@ def test_host_unpadded_tail_matches_existing_fftw_half_finish():
             **common,
         ),
     )
-    unpadded_real = mean_helpers._host_irfft_and_center_crop(
+    unpadded_real = volume_solver._host_irfft_and_center_crop(
         fftw_half.copy(),
         reconstruction_shape,
         volume_shape,
@@ -2264,7 +2264,6 @@ def test_host_route_matches_the_device_inverse_fft_on_the_gpu(gpu_device):
     import jax
     from recovar.core import fourier_transform_utils as ftu
 
-    from relax.refinement import mean_helpers
 
     volume_shape = (32, 32, 32)
     reconstruction_shape = rf._relion_reconstruction_padded_shape(volume_shape, 2)
@@ -2281,7 +2280,7 @@ def test_host_route_matches_the_device_inverse_fft_on_the_gpu(gpu_device):
                 jnp.asarray(fftw_half), volume_shape, 2, **common
             )
         )
-        unpadded_real = mean_helpers._host_irfft_and_center_crop(
+        unpadded_real = volume_solver._host_irfft_and_center_crop(
             fftw_half.copy(), reconstruction_shape, volume_shape, workers=1
         )
         host = np.asarray(
@@ -2296,6 +2295,7 @@ def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
     """Splitting before a larger iFFT preserves the compact-accumulator result."""
 
     from recovar.core import fourier_transform_utils as ftu
+
     from relax.refinement import mean_helpers
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
@@ -2362,17 +2362,16 @@ def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
 
 
 def test_large_irfft_normalization_boundary_uses_signed_int32_limit():
-    from relax.refinement import mean_helpers
 
-    assert not mean_helpers._large_irfft_requires_explicit_normalization((800, 800, 800))
-    assert mean_helpers._large_irfft_requires_explicit_normalization((1600, 1600, 1600))
+    assert not volume_solver._large_irfft_requires_explicit_normalization((800, 800, 800))
+    assert volume_solver._large_irfft_requires_explicit_normalization((1600, 1600, 1600))
 
 
 def test_giant_irfft_host_stage_does_not_require_a_large_accumulator(monkeypatch):
     """Early box-800 iterations must not bypass explicit iFFT normalization."""
 
     import recovar.core.fourier_transform_utils as ftu
-    from relax.refinement import mean_helpers
+
 
     monkeypatch.delenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", raising=False)
     monkeypatch.delenv("RECOVAR_RELION_POSTPROCESS_SINGLE_PRECISION_MIN_VOXELS", raising=False)
@@ -2388,7 +2387,7 @@ def test_giant_irfft_host_stage_does_not_require_a_large_accumulator(monkeypatch
     assert rf._large_grid_postprocess_single_precision_enabled(
         int(np.prod(volume_shape, dtype=np.int64)) * 8
     )
-    assert mean_helpers._should_host_stage_large_relion_ifft(
+    assert volume_solver._should_host_stage_large_relion_ifft(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2402,6 +2401,7 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
     """A compact device accumulator must still split and normalize a giant iFFT."""
 
     import recovar.core.fourier_transform_utils as ftu
+
     from relax.refinement import mean_helpers
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
@@ -2446,19 +2446,19 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
         lambda *_args, **_kwargs: reconstruction_shape,
     )
     monkeypatch.setattr(
-        mean_helpers,
+        volume_solver,
         "_large_relion_host_irfft_enabled",
         lambda *_args, **_kwargs: False,
     )
     # The device pad route (its CPU route for a 16 GB pool is tested in test_wiener_pad_route.py).
-    monkeypatch.setattr(mean_helpers, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(volume_solver, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_stage)
     monkeypatch.setattr(
         relion_functions_relion,
         "finish_large_relion_postprocess_from_fftw_half",
         fake_finish,
     )
-    caplog.set_level("INFO", logger=mean_helpers.__name__)
+    caplog.set_level("INFO", logger=volume_solver.__name__)
 
     result = mean_helpers._reconstruct_volume_eager(
         ft_ctf,
@@ -2490,6 +2490,7 @@ def test_compact_full_accumulator_repack_matches_historical_path(monkeypatch):
     """The repack is exact and changes the historical result only at f32 roundoff."""
 
     import recovar.core.fourier_transform_utils as ftu
+
     from relax.refinement import mean_helpers
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "auto")
@@ -2510,7 +2511,7 @@ def test_compact_full_accumulator_repack_matches_historical_path(monkeypatch):
         jnp.asarray(ft_y_half),
         accumulator_shape,
     ).reshape(-1)
-    repacked_ctf, repacked_y = mean_helpers._pack_compact_full_accumulators_for_large_relion_ifft(
+    repacked_ctf, repacked_y = volume_solver._pack_compact_full_accumulators_for_large_relion_ifft(
         ft_ctf_full,
         ft_y_full,
         volume_shape,
@@ -2568,6 +2569,7 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
     """The production full-layout compact accumulator must reach the giant-iFFT split."""
 
     import recovar.core.fourier_transform_utils as ftu
+
     from relax.refinement import mean_helpers
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
@@ -2613,19 +2615,19 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
         lambda *_args, **_kwargs: reconstruction_shape,
     )
     monkeypatch.setattr(
-        mean_helpers,
+        volume_solver,
         "_large_relion_host_irfft_enabled",
         lambda *_args, **_kwargs: False,
     )
     # The device pad route (its CPU route for a 16 GB pool is tested in test_wiener_pad_route.py).
-    monkeypatch.setattr(mean_helpers, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(volume_solver, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_stage)
     monkeypatch.setattr(
         relion_functions_relion,
         "finish_large_relion_postprocess_from_fftw_half",
         fake_finish,
     )
-    caplog.set_level("INFO", logger=mean_helpers.__name__)
+    caplog.set_level("INFO", logger=volume_solver.__name__)
 
     result = mean_helpers._reconstruct_volume_eager(
         ft_ctf_full,
@@ -2652,6 +2654,7 @@ def test_large_device_accumulator_does_not_enter_host_staged_split(monkeypatch):
     """A large device accumulator must use the existing earlier host-offload path."""
 
     import recovar.core.fourier_transform_utils as ftu
+
     from relax.refinement import mean_helpers
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
@@ -2666,7 +2669,7 @@ def test_large_device_accumulator_does_not_enter_host_staged_split(monkeypatch):
         int(np.prod(accumulator_shape, dtype=np.int64))
     )
 
-    assert not mean_helpers._should_host_stage_large_relion_ifft(
+    assert not volume_solver._should_host_stage_large_relion_ifft(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2710,6 +2713,7 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
     """A physically large device accumulator must not bypass giant-iFFT normalization."""
 
     import recovar.core.fourier_transform_utils as ftu
+
     from relax.refinement import mean_helpers
 
     monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "always")
@@ -2751,9 +2755,9 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
         "finish_large_relion_postprocess_from_fftw_half",
         reject_split,
     )
-    caplog.set_level("INFO", logger=mean_helpers.__name__)
+    caplog.set_level("INFO", logger=volume_solver.__name__)
 
-    assert not mean_helpers._should_host_stage_large_relion_ifft(
+    assert not volume_solver._should_host_stage_large_relion_ifft(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2829,17 +2833,17 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
         return jnp.asarray([2.0 + 0.0j], dtype=jnp.complex64)
 
     monkeypatch.setattr(
-        mean_helpers,
+        volume_solver,
         "_should_host_stage_large_relion_ifft",
         lambda *_args, **_kwargs: True,
     )
     monkeypatch.setattr(
-        mean_helpers,
+        volume_solver,
         "_large_relion_host_irfft_enabled",
         lambda *_args, **_kwargs: False,
     )
     # The device pad route (its CPU route for a 16 GB pool is tested in test_wiener_pad_route.py).
-    monkeypatch.setattr(mean_helpers, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(volume_solver, "_relion_pad_exceeds_device_working_set", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         rf,
         "_relion_reconstruction_padded_shape",
@@ -2882,7 +2886,6 @@ def test_padded_irfft_goes_to_the_host_when_its_device_working_set_exceeds_a_qua
     """At box 380 (a 760^3 padded grid, a 1.76 GB half) the device inverse FFT stays on 40 and 80 GB cards and
     moves to the host on a 16 GB card, where its cuFFT work area could not be found (relax#40)."""
 
-    from relax.refinement import mean_helpers
 
     monkeypatch.delenv("RELAX_RELION_HOST_IRFFT", raising=False)
     limit = int(limit_gib * 2**30)
@@ -2890,14 +2893,14 @@ def test_padded_irfft_goes_to_the_host_when_its_device_working_set_exceeds_a_qua
     def forced():
         return ReconstructionPrograms.from_environ().host_irfft
 
-    assert mean_helpers._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=forced()) is host
+    assert volume_solver._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=forced()) is host
     # Small grids stay on the device on every card; the int32-overflow grid always goes to the host.
-    assert mean_helpers._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=forced()) is False
-    assert mean_helpers._large_relion_host_irfft_enabled((1600, 1600, 1600), allocator_limit_bytes=limit, forced=forced()) is True
+    assert volume_solver._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=forced()) is False
+    assert volume_solver._large_relion_host_irfft_enabled((1600, 1600, 1600), allocator_limit_bytes=limit, forced=forced()) is True
     monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "0")
-    assert mean_helpers._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=forced()) is False
+    assert volume_solver._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=forced()) is False
     monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "1")
-    assert mean_helpers._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=forced()) is True
+    assert volume_solver._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=forced()) is True
 
 
 def test_large_host_irfft_is_already_normalized(monkeypatch):
@@ -2930,12 +2933,12 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
 
     monkeypatch.setenv("RELAX_RELION_HOST_FFT_WORKERS", "3")
     monkeypatch.setattr(
-        mean_helpers,
+        volume_solver,
         "_should_host_stage_large_relion_ifft",
         lambda *_args, **_kwargs: True,
     )
     monkeypatch.setattr(
-        mean_helpers,
+        volume_solver,
         "_large_relion_host_irfft_enabled",
         lambda *_args, **_kwargs: True,
     )
@@ -2950,14 +2953,14 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
         lambda *_args, **_kwargs: reconstruction_shape,
     )
     monkeypatch.setattr(rf, "post_process_from_filter_v2", fake_stage)
-    monkeypatch.setattr(mean_helpers, "_host_irfft_and_center_crop", fake_host_irfft)
+    monkeypatch.setattr(volume_solver, "_host_irfft_and_center_crop", fake_host_irfft)
     monkeypatch.setattr(
         relion_functions_relion,
         "finish_large_relion_postprocess_from_unpadded_real",
         fake_finish,
     )
     monkeypatch.setattr(
-        mean_helpers,
+        volume_solver,
         "_normalize_large_irfft_result_donate",
         reject_double_normalization,
     )

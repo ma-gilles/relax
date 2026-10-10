@@ -6,6 +6,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar.reconstruction import relion_functions as rf
 
+from relax.reconstruction import volume_solver
 from relax.refinement import mean_helpers
 from relax.refinement.refinement_options import ReconstructionPrograms
 
@@ -28,7 +29,7 @@ def test_pad_moves_to_the_cpu_only_when_two_halves_exceed_the_single_working_set
     reconstruction_shape, limit_gib, on_cpu
 ):
     limit = int(limit_gib * GIB)
-    assert mean_helpers._relion_pad_exceeds_device_working_set(reconstruction_shape, allocator_limit_bytes=limit) is on_cpu
+    assert volume_solver._relion_pad_exceeds_device_working_set(reconstruction_shape, allocator_limit_bytes=limit) is on_cpu
 
 
 def test_cpu_route_matches_the_device_route(monkeypatch):
@@ -68,7 +69,7 @@ def test_cpu_route_matches_the_device_route(monkeypatch):
 
     results = {}
     for route in (False, True):
-        monkeypatch.setattr(mean_helpers, "_relion_pad_exceeds_device_working_set", lambda *_a, route=route, **_k: route)
+        monkeypatch.setattr(volume_solver, "_relion_pad_exceeds_device_working_set", lambda *_a, route=route, **_k: route)
         results[route] = np.asarray(mean_helpers._reconstruct_volume_eager(ft_ctf, ft_y, volume_shape, 2, **common))
 
     assert len(calls) == 2  # both routes reach the staged pad, not another path

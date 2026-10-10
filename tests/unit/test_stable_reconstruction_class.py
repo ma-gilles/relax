@@ -12,6 +12,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+from relax.reconstruction import volume_solver
 from relax.refinement import mean_helpers
 from relax.refinement.refinement_options import ReconstructionPrograms
 
@@ -38,7 +39,7 @@ def test_stable_class_reconstruction_matches_the_logical_one(monkeypatch, half, 
         accumulator_volume_shape=accumulator_shape,
         tau_is_1d=True,
     )
-    assert mean_helpers._stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_shape, True)
+    assert volume_solver._stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_shape, True)
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", "0")
     logical = mean_helpers._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=ReconstructionPrograms.from_environ())
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", "1")
@@ -52,11 +53,11 @@ def test_every_current_size_shares_the_full_box_class_with_a_1d_prior(monkeypatc
     box_shape = relion_backprojector_volume_shape(vol_shape, 2, current_size=32)
     for current_size in (18, 24, 32):
         shape = relion_backprojector_volume_shape(vol_shape, 2, current_size=current_size)
-        assert mean_helpers._stable_reconstruction_class(current_size, vol_shape, 2, shape, True) == (32, box_shape)
+        assert volume_solver._stable_reconstruction_class(current_size, vol_shape, 2, shape, True) == (32, box_shape)
     shape_18 = relion_backprojector_volume_shape(vol_shape, 2, current_size=18)
-    assert mean_helpers._stable_reconstruction_class(18, vol_shape, 2, shape_18, False) is None
-    assert mean_helpers._stable_reconstruction_class(None, vol_shape, 2, shape_18, True) is None
-    assert mean_helpers._stable_reconstruction_class(18, vol_shape, 2, box_shape, True) is None
+    assert volume_solver._stable_reconstruction_class(18, vol_shape, 2, shape_18, False) is None
+    assert volume_solver._stable_reconstruction_class(None, vol_shape, 2, shape_18, True) is None
+    assert volume_solver._stable_reconstruction_class(18, vol_shape, 2, box_shape, True) is None
 
 
 @pytest.mark.parametrize("current_size", [18, 24])
@@ -83,7 +84,7 @@ def test_unregularized_reconstruction_in_the_box_class_matches_the_logical_one(m
     logical = mean_helpers._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=ReconstructionPrograms.from_environ())
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", "1")
     box_shape = relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=32)
-    assert mean_helpers._stable_unregularized_class(vol_shape, padding_factor, accumulator_shape, None, None) == box_shape
+    assert volume_solver._stable_unregularized_class(vol_shape, padding_factor, accumulator_shape, None, None) == box_shape
     stable = mean_helpers._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=ReconstructionPrograms.from_environ())
     assert_matches(np.asarray(stable), np.asarray(logical))
 
@@ -93,8 +94,8 @@ def test_the_unregularized_box_class_needs_no_prior_and_no_current_size(monkeypa
     vol_shape = (32, 32, 32)
     box_shape = relion_backprojector_volume_shape(vol_shape, 2, current_size=32)
     shape_18 = relion_backprojector_volume_shape(vol_shape, 2, current_size=18)
-    assert mean_helpers._stable_unregularized_class(vol_shape, 2, shape_18, None, None) == box_shape
-    assert mean_helpers._stable_unregularized_class(vol_shape, 2, shape_18, jnp.ones(17), None) is None
-    assert mean_helpers._stable_unregularized_class(vol_shape, 2, shape_18, None, 18) is None
-    assert mean_helpers._stable_unregularized_class(vol_shape, 2, box_shape, None, None) is None
-    assert mean_helpers._stable_unregularized_class(vol_shape, 2, None, None, None) is None
+    assert volume_solver._stable_unregularized_class(vol_shape, 2, shape_18, None, None) == box_shape
+    assert volume_solver._stable_unregularized_class(vol_shape, 2, shape_18, jnp.ones(17), None) is None
+    assert volume_solver._stable_unregularized_class(vol_shape, 2, shape_18, None, 18) is None
+    assert volume_solver._stable_unregularized_class(vol_shape, 2, box_shape, None, None) is None
+    assert volume_solver._stable_unregularized_class(vol_shape, 2, None, None, None) is None

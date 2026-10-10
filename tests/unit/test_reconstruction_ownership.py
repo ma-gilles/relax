@@ -11,7 +11,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import regularization_relion, volume_solver
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -267,7 +267,7 @@ class TestReconstructionOwnership:
         monkeypatch.setattr(relion_functions_relion, "divide_large_relion_half_numerator_donate_numerator", fake_divide)
         monkeypatch.setattr(relion_functions_relion, "finish_large_relion_postprocess_from_fftw_half", fake_finish)
         monkeypatch.setattr(mean_helpers_module.jax, "device_get", fake_device_get)
-        caplog.set_level("INFO", logger=mean_helpers_module.__name__)
+        caplog.set_level("INFO", logger=volume_solver.__name__)
         volume_shape = (2, 2, 2)
         accumulator_shape = (5, 5, 5)
         half_shape = ftu.volume_shape_to_half_volume_shape(accumulator_shape)
@@ -338,7 +338,7 @@ class TestReconstructionOwnership:
         monkeypatch.setattr(relion_functions_relion, "regularize_large_relion_half_filter_donate_ctf", fake_regularize)
         monkeypatch.setattr(relion_functions_relion, "divide_large_relion_half_numerator_donate_numerator", fake_divide)
         monkeypatch.setattr(relion_functions_relion, "finish_large_relion_postprocess_from_fftw_half", fake_finish)
-        caplog.set_level("INFO", logger=mean_helpers_module.__name__)
+        caplog.set_level("INFO", logger=volume_solver.__name__)
         half0 = mean_helpers_module._reconstruct_volume_eager(
             host_ctf,
             host_numerator,
@@ -527,14 +527,13 @@ def test_host_wiener_pad_equals_the_device_fftw_pad(old_dim, new_dim):
     """The host pad of a large accumulator's Wiener half (EMPIAR-10202, 823^3-1163^3
     into 1600^3) must write exactly what recovar's device pad writes."""
 
-    from relax.refinement import mean_helpers
 
     old_shape, new_shape = (old_dim,) * 3, (new_dim,) * 3
     half_shape = ftu.volume_shape_to_half_volume_shape(old_shape)
     rng = np.random.default_rng(old_dim * 100 + new_dim)
     wiener = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
     device = np.asarray(rf._relion_pad_centered_half_fourier_to_fftw(jnp.asarray(wiener), old_shape, new_shape))
-    host = mean_helpers._pad_relion_wiener_half_to_fftw_host(wiener, old_shape, new_shape, rf)
+    host = volume_solver._pad_relion_wiener_half_to_fftw_host(wiener, old_shape, new_shape, rf)
     assert host.dtype == device.dtype and host.shape == device.shape
     assert_matches(host, device)
     # Zero pattern (support and placement) is discrete: exact.

@@ -19,7 +19,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `expectation.py`, `expectation_batches.py`, `half_scoring.py`, `half_inputs.py`, `local_search_iteration.py`, `local_sampling.py`, `firstiter_cc.py` | preparing and running a half's expectation |
 | `maximization.py` | the numbered M-steps (K=1 split-half, Class3D) the controller chooses, and their results |
 | `reference_state.py` | the reference model (half maps and tau2) and the class mixture a run carries between iterations |
-| `mean_helpers.py`, `noise_updates.py` | numbered prior estimation, reconstruction and noise updates |
+| `mean_helpers.py`, `noise_updates.py` | numbered prior estimation, reconstruction and noise updates (the volume solver itself is `relax/reconstruction/volume_solver.py`) |
 | `sigma_offset.py` | the translation prior width a run carries (`SigmaOffset`) and its update from an expectation's offsets |
 | `finalization.py`, `final_sampling.py`, `final_reconstruction.py` | the final all-data pass |
 | `run_files.py`, `result_files.py` | RELION's per-iteration run files and `--continue`; final archives and maps |

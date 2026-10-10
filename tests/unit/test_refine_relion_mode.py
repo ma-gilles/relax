@@ -27,6 +27,7 @@ from relax.helpers.orientation_priors import (
     _combined_class_direction_prior_from_halves,
 )
 from relax.helpers.resolution import ImageGeometry
+from relax.reconstruction import volume_solver
 from relax.refinement.half_inputs import HalfPair, initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver
@@ -9592,7 +9593,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
         fake_finish,
     )
     monkeypatch.setattr(
-        mean_helpers_module,
+        volume_solver,
         "_crop_relion_wiener_half_to_fftw_host",
         reject_crop,
     )
