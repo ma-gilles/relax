@@ -6,7 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-from recovar.data_io.starfile import star_column, write_star
+from recovar.data_io.starfile import star_column, write_star_blocks
 from recovar.utils.helpers import R_from_relion, R_to_relion
 
 from relax import sampling
@@ -498,4 +498,7 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
         out_path.parent.mkdir(parents=True, exist_ok=True)
     # Rows written from the table's array: the same bytes as the per-row Series writer
     # (tests/unit/test_star_array_rows.py), 0.06 s instead of 0.5 s for 10k particles.
-    write_star(str(out_path), table, optics_star.copy() if optics_star is not None else None, array_rows=True)
+    from relax.refinement.run_files import initial_model_data_blocks
+
+    blocks = initial_model_data_blocks(getattr(dataset, "particles_star", None), optics_star, table)
+    write_star_blocks(str(out_path), blocks, array_rows=True)

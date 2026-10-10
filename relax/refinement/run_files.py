@@ -85,6 +85,44 @@ def _format_value(value) -> str:
     return text
 
 
+def input_general_block(input_star) -> dict | None:
+    """The input STAR's ``data_general`` block as :func:`read_star_blocks` text, or None without one.
+
+    A subtomogram particle STAR says it holds 2D stacks there (``rlnTomoSubTomosAre2DStacks``,
+    ``ParticleSet::read``), and relion_refine writes the block back to every ``run_itNNN_data.star``.
+    Both data-STAR writers write it back unchanged (:class:`RunFileWriter` for Refine3D and Class3D,
+    :func:`initial_model_data_blocks` for InitialModel), so a job's output starts the next job.
+    """
+
+    return read_star_blocks(input_star).get("general") or None
+
+
+def initial_model_data_blocks(input_star, optics, particles) -> dict:
+    """The blocks of InitialModel's data STAR for recovar's ``write_star_blocks``, in RELION's order.
+
+    ``optics`` and ``particles`` are the output tables (``optics`` None: the one-table RELION 3.0 form).
+    ``input_star`` is a subtomogram run's particle STAR (``TomoDataset.particles_star``; None for single
+    particles): its ``data_general`` block (:func:`input_general_block`) goes first.
+    """
+
+    if optics is None:
+        return {"data_": particles}
+    blocks = {"data_optics": optics.copy(), "data_particles": particles}
+    general = None if input_star is None else input_general_block(input_star)
+    if general:
+        import pandas as pd
+
+        columns = {f"_{label}": value for label, value in _general_columns(general).items()}
+        blocks = {"data_general": pd.DataFrame(columns), **blocks}
+    return blocks
+
+
+def _general_columns(general: dict) -> dict:
+    """``data_general`` as one-row loop columns, the form relion_refine writes, whichever form the input had."""
+
+    return {label: value if isinstance(value, list) else [value] for label, value in general.items()}
+
+
 class _FormattedColumn(list):
     """A column whose cells are already STAR text: :func:`_format_column` passes it through."""
 
@@ -258,7 +296,7 @@ class RunFileWriter:
         self.optics = input_blocks.get("optics")
         # A subtomogram STAR says so in data_general (rlnTomoSubTomosAre2DStacks, ParticleSet::read);
         # relion_refine writes the block back, and without it the output reads as single particles.
-        self.general = input_blocks.get("general")
+        self.general = input_blocks.get("general") or None
         if not self.particles or "rlnImageName" not in self.particles:
             raise ValueError(f"{input_star} has no particle table with rlnImageName")
         self.half_rows = [np.asarray(rows, dtype=np.int64) for rows in half_rows]
@@ -669,7 +707,7 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
     """``particles``/``optics``/``general`` are the input blocks as text (``read_star_blocks``).
 
     The one data-STAR writer of Refine3D and Class3D, single particles and subtomograms. ``general``
-    (the input's ``data_general``, a subtomogram STAR's 2D-stack flag) is written back unchanged.
+    (the input's ``data_general``, a subtomogram STAR's 2D-stack flag) is written back as a loop.
     ``rlnNormCorrection`` is in RELION's frame: the snapshot's average is relax's (RELION's times
     ``ori_size**2``, :mod:`relax.refinement.iteration_snapshot`) whoever the caller is; a
     single-particle run hands the average its M-step estimated, a subtomogram run (norm correction
@@ -734,8 +772,7 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
         table[label] = values
     blocks = []
     if general:
-        looped = isinstance(next(iter(general.values())), list)
-        blocks.append(_loop_block("general", general) if looped else _list_block("general", list(general.items())))
+        blocks.append(_loop_block("general", _general_columns(general)))
     if optics is not None:
         blocks.append(_loop_block("optics", optics))
     blocks.append(_loop_block("particles", table))

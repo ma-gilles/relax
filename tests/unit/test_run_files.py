@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
 
 import jax.numpy as jnp
 import numpy as np
@@ -590,8 +591,70 @@ def test_data_star_writes_the_input_general_block_back(tmp_path):
         _writer(directory, tomo, half_rows)(_k1_snapshot([4, 3], rng))
         blocks = read_star_blocks(directory / "out" / "run_it005_data.star")
         assert list(blocks)[0] == "general"
-        assert np.ravel(blocks["general"]["rlnTomoSubTomosAre2DStacks"]).tolist() in (["1"], list("1"))
+        assert blocks["general"] == {"rlnTomoSubTomosAre2DStacks": ["1"]}  # a loop, as relion_refine writes it
         assert blocks["particles"]["rlnImageName"] == read_star_blocks(plain)["particles"]["rlnImageName"]
+
+
+@pytest.mark.parametrize("looped", [True, False])
+def test_initial_model_data_star_starts_a_subtomogram_refinement(tmp_path, looped):
+    """The chain InitialModel -> Class3D/Refine3D: InitialModel's data.star of a subtomogram input keeps
+    data_general (rlnTomoSubTomosAre2DStacks), so the file reads as 2D stacks, and the refinement writer started
+    from it, untouched, writes the block again. A single-particle input gets no such block from either writer."""
+
+    from recovar.data_io.starfile import read_star
+
+    from relax.refinement import run_files
+    from relax.refinement.tomo_half import is_relion5_2d_stack_star
+    from relax.relion import initial_model_io
+    from relax.vdam.state import NativeParticleState
+
+    rng = np.random.default_rng(66)
+    plain = _write_input_star(tmp_path, 7)
+    block = (
+        "\n# version 50001\n\ndata_general\n\nloop_\n_rlnTomoSubTomosAre2DStacks #1\n1\n"
+        if looped
+        else "\n# version 50001\n\ndata_general\n\n_rlnTomoSubTomosAre2DStacks 1\n"
+    )
+    tomo = tmp_path / "tomo_particles.star"
+    tomo.write_text(block + plain.read_text())
+    state = NativeParticleState(
+        translation_offsets=rng.uniform(-2, 2, (7, 3)).astype(np.float32),
+        class_assignments=np.zeros(7, dtype=np.int32),
+        max_posterior=rng.random(7).astype(np.float32),
+    )
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+
+    for input_star, is_tomo in ((tomo, True), (plain, False)):
+        main, optics = read_star(str(input_star))
+        assert (run_files.input_general_block(input_star) is not None) == is_tomo
+        # A subtomogram dataset (TomoDataset) names its particle STAR; a single-particle dataset has none.
+        dataset = SimpleNamespace(voxel_size=2.5, n_images=7, **({"particles_star": str(input_star)} if is_tomo else {}))
+        vdam_out = tmp_path / f"vdam_{input_star.stem}" / "run_it003_data.star"
+        initial_model_io._write_data_star(str(vdam_out), main, optics, dataset, state)
+        assert is_relion5_2d_stack_star(str(vdam_out)) == is_tomo
+        written, written_optics = read_star(str(vdam_out))
+        assert written_optics is not None and len(written) == 7
+        assert sorted(written["_rlnImageName"]) == sorted(main["_rlnImageName"])
+        assert "_rlnOriginZAngst" in written
+
+        # The next job starts from InitialModel's file as written.
+        out = tmp_path / f"refine_{input_star.stem}"
+        rows = [np.sort(r) for r in half_rows]
+        RunFileWriter(out, settings=_run_settings(out / "run"), input_star=vdam_out, half_rows=rows, background=False)(
+            _k1_snapshot([4, 3], rng)
+        )
+        assert is_relion5_2d_stack_star(str(out / "run_it005_data.star")) == is_tomo
+        refined, initial = read_star_blocks(out / "run_it005_data.star"), read_star_blocks(vdam_out)
+        assert ("general" in refined) == ("general" in initial) == is_tomo
+        if is_tomo:
+            # The two writers cannot drift: the same block, first in the file, from either input form.
+            assert list(refined)[0] == list(initial)[0] == "general"
+            assert refined["general"] == initial["general"] == {"rlnTomoSubTomosAre2DStacks": ["1"]}
+            direct = tmp_path / f"direct_{looped}"
+            RunFileWriter(
+                direct, settings=_run_settings(direct / "run"), input_star=tomo, half_rows=rows, background=False
+            )(_k1_snapshot([4, 3], rng))
+            assert read_star_blocks(direct / "run_it005_data.star")["general"] == initial["general"]
 
 
 def test_healpix_cap_round_trips_and_the_continuing_run_keeps_its_own(tmp_path):

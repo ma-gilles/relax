@@ -82,6 +82,7 @@ class TomoDataset:
             raise ValueError("the per-tilt STAR's optics groups disagree with the particle STAR's")
         self.unit_optics_group = optics
         self.particle_names = names
+        self.particles_star = str(particles_star)  # its data_general block goes into every output data STAR
         self.images = images
         self.n_units = int(names.size)
         self.image_shape = tuple(int(size) for size in images.image_shape)
