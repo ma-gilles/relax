@@ -51,7 +51,7 @@ from relax.refinement.dense_half import (
     DenseVariantPolicy,
     _score_half_dense_in_bpref_scope,
 )
-from relax.refinement.half_inputs import HalfScoringData
+from relax.refinement.half_inputs import HalfScoringData, local_search_centre_half
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_half import (
     LocalBatchPolicy,
@@ -60,7 +60,7 @@ from relax.refinement.local_half import (
     LocalPriorSpec,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
+from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
 from relax.refinement.optics_shapes import OpticsSpec, image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource

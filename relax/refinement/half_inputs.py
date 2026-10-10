@@ -1,7 +1,7 @@
 """Particle-half ownership and a half's inputs to one expectation (poses: ``particle_poses.py``)."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import NamedTuple
 
 import numpy as np
@@ -229,3 +229,27 @@ class HalfScoringData:
     scale_group_count: int | None = None
     scale_correction_data_vs_prior: object | None = None
     image_seed_classes: object | None = None
+
+
+def local_search_centre_half(half, angle_priors, state):
+    """The half whose ``rotation_eulers`` centre this iteration's local angular searches.
+
+    relion_refine centres a local search on the particle's current angles, except while an orientational
+    prior from ``--sigma_ang`` is on below ``--auto_local_healpix_order`` in auto-refine: there each angle
+    with an ``rlnAngle*Prior`` is centred on that prior, every iteration, and the others on the current angle
+    (``getFourierTransformsAndCtfs``; non-helical). ``angle_priors`` is the half's ``[N, 3]`` priors in
+    degrees, NaN where absent, or None. Reads from ``state``: ``do_local_search``, ``auto_sampling``,
+    ``healpix_order`` and ``auto_local_healpix_order``.
+    See ``docs/math/relion_refinement_algorithm.md#iteration-convergence-policy`` (local searches from the start).
+    """
+
+    if (
+        angle_priors is None
+        or half.rotation_eulers is None
+        or not (state.do_local_search and state.auto_sampling)
+        or state.healpix_order >= state.auto_local_healpix_order
+    ):
+        return half
+    current = np.asarray(half.rotation_eulers)
+    centres = np.where(np.isnan(angle_priors), current, angle_priors).astype(current.dtype)
+    return replace(half, rotation_eulers=centres)

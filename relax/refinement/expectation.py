@@ -495,7 +495,7 @@ def numbered_half_inputs(
     return [
         NumberedHalfInputs(
             data=HalfScoringData(
-                particles=local_sampling.local_search_centre_half(
+                particles=half_inputs.local_search_centre_half(
                     halves[k], (options.start.init_angle_priors or (None, None))[k], carry.state
                 ),
                 reference=reference_model.maps[k],
