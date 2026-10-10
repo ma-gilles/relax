@@ -56,6 +56,7 @@ Resolution (Å) reads unmasked / masked; **a** unmasked half-map FSC, first thre
 | 🟢 | cryoet et09_box64 VDAM <sub>synthetic</sub> [notes](relion_vs_relax_provenance.md#cryoet_et09_box64_2000_64_tomo_vdam_k1_1a107f5) | 2,000 / 64 | 9.07 d / — | 9.07 d / — | worst s2 −9.0e-6 vs same-seed RELION; run ranges compared at s1/s2 (both engines repeated); inside or above across-seed band | 4:00 h | 1:45 h | 0.44x | 2026-10-06 |
 | 🟢 | cryoet et09 8 optics groups VDAM <sub>synthetic</sub> [notes](relion_vs_relax_provenance.md#cryoet_et09_ogtomo_2000_64_tomo_vdam_k1_1a107f5) | 2,000 / 64 | 9.07 d / — | 9.07 d / — | worst s2 +4.6e-5 vs same-seed RELION; run ranges compared at s2 (both engines repeated); inside across-seed band | 3:03 h | 1:26 h | 0.47x | 2026-10-10 |
 | 🟢 | cryoet et15 K=2, 4 optics groups VDAM <sub>synthetic</sub> [notes](relion_vs_relax_provenance.md#cryoet_et15_ogtomo_1000_64_tomo_vdam_k2_1a107f5) | 1,000 / 64 | 17.55 d / — | 17.55 d / — | worst s1 +1.5e-5 vs same-seed RELION; run ranges compared at s2 (both engines repeated); inside across-seed band | 10:46 h | 4:40 h | 0.43x | 2026-10-10 |
+| 🟠 | cryoet etob2 premultiplied VDAM <sub>synthetic</sub> [notes](relion_vs_relax_provenance.md#cryoet_etob2_premult_1000_64_tomo_vdam_k1_8fc3a2a8) | 1,000 / 64 | 8.77 d / — | 8.77 d / — | worst s3 −2.8e-4 vs same-seed RELION; inside across-seed band | 1:55 h | 1:11 h | 0.62x | 2026-10-10 |
 
 ## Feature checks
 
