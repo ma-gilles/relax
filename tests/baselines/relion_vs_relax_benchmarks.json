@@ -9864,6 +9864,20 @@
       0.062078,
       0.062074
      ]
+    },
+    "one_thread_check_20261010": {
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/scorer_repeat_20261010/ft1main_row29_all/row29_all.json",
+     "relax": {
+      "29": 0.05784,
+      "41": 0.03479,
+      "53": 0.062078
+     },
+     "relion_page": {
+      "29": 0.057846,
+      "41": 0.034484,
+      "53": 0.062076
+     },
+     "curated_relax_arms_s41_s53": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/e10076_k4_miss/seeds/runs/relax_s{41,53}"
     }
    },
    "cross_engine": null,
@@ -9879,6 +9893,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Resolution of this row (2026-10-10): with every verdict arm and the page RELION arms scored in one invocation at one thread (job 15317203), relax / RELION is s29 0.057840 / 0.057846 (-6e-06); s41 0.034790 / 0.034484 (+3e-04); s53 0.062078 / 0.062076 (+2e-06). The seed-29 and seed-53 gaps are a few 1e-6 and change sign between scoring jobs, and the page RELION seed-41 arm itself moved by 1.1e-04 between scoring jobs, so at seeds 29 and 53 the same-seed gaps are below the scorer's resolution and the row does not separate the engines there. The verdict is the same on both scorings; the published values are kept.",
     "Re-referenced 2026-10-09 (team-lead): the RELION runs behind the previous verdict used relion/build_patched, the old f2c1a38 debug-dump build with float32 device back-projection (relax#4), whose atomic adds drop sub-half-ulp increments; the SGD (--grad) kernel accumulates through the same float32 model (cuda_kernel_backproject3D_SGD), so the page build is the reference. New RELION runs (job 15282496), one per seed, the row's command: masked weighted FSC-AUC relax / page RELION s29 0.057842 / 0.057842; s41 0.034790 / 0.034591; s53 0.062078 / 0.062079 (build_patched: s29 0.057896/0.057907/0.057908/0.057907/0.057911/0.057913; s41 0.034816/0.034758/0.034669; s53 0.062079/0.062078/0.062074). Page verdict hit.",
     "Repeats 2026-10-08 (scorew, team-lead red-row re-judge): two more same-command runs of both programs at s41 and s53 (b61b1916 / build_patched, job 15241689): s41 relax 0.034790/0.034807/0.034706 vs RELION 0.034816/0.034758/0.034669; s53 relax 0.062078/0.062078/0.062078 vs RELION 0.062079/0.062078/0.062074; run ranges overlap at both seeds; verdict hit (worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band).",
     "Re-judged 2026-10-08 by majority of seeds (team-lead; page rule as on the other VDAM rows): s29 relax 0.057842 vs RELION 0.057896/0.057907/0.057908/0.057907/0.057911/0.057913; s41 relax 0.034790 vs RELION 0.034816/0.034758/0.034669; s53 relax 0.062078 vs RELION 0.062079/0.062078/0.062074; verdict hit (worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band). Seeds 41 and 53: etvdam job 15211368, both programs on one H100 node, the row command with only --random_seed changed, relax on the b61b1916 freeze snapshot (cand_b61b191 with cand_d046c0a's env and natives), RELION the row's build_patched relion_refine. Seed 29: relax keeps the 073740f0 freeze run; RELION adds etvdam's two same-build repeats. Relax repeats at a4396d8 (seed 29, not pooled: different commit) score 0.057843/0.057845/0.057842.",
