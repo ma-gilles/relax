@@ -18,6 +18,8 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 from recovar.data_io.starfile import read_star, star_column
@@ -39,22 +41,27 @@ def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
     ``freq_sq`` is ``k^2`` in 1/A^2 and ``dose`` in e/A^2. At ``k = 0`` ``Ne`` is
     infinite and the weight is 1. ``dose`` (and ``bfactor_per_electron_dose``) may be
     one value per image, shape ``(n,)``; the result is then ``(n, *freq_sq.shape)``.
+
+    One expression on two array backends, chosen by the inputs: NumPy for host arrays (the
+    start-up expected-accuracy estimate) and ``jax.numpy`` when any input is a JAX array or
+    tracer (the CTF program, :func:`relax.relion.relion_ctf._relion_ctf_program`). Both are
+    float64 and agree to the last units of a double (``pow`` and ``exp`` are glibc's or XLA's;
+    tests/unit/test_tomo_input.py).
     """
 
-    freq_sq = np.asarray(freq_sq, dtype=np.float64)
-    dose = np.asarray(dose, dtype=np.float64)
-    bfactor = np.broadcast_to(np.asarray(bfactor_per_electron_dose, dtype=np.float64), dose.shape)
+    # One formula for NumPy and JAX arrays (the CTF program damps with it, relion_ctf._relion_ctf_program).
+    xp = np
+    if any(isinstance(value, jax.Array) for value in (freq_sq, dose, bfactor_per_electron_dose)):
+        xp = jnp
+    freq_sq = xp.asarray(freq_sq, dtype=xp.float64)
+    dose = xp.asarray(dose, dtype=xp.float64)
+    bfactor = xp.broadcast_to(xp.asarray(bfactor_per_electron_dose, dtype=xp.float64), dose.shape)
     per_image = (...,) + (None,) * freq_sq.ndim
-    by_bfactor = bfactor > 0.0
-    damping = np.empty(dose.shape + freq_sq.shape)
-    if np.any(by_bfactor):
-        damping[by_bfactor] = np.exp(-0.25 * bfactor[by_bfactor][per_image] * dose[by_bfactor][per_image] * freq_sq)
-    if not np.all(by_bfactor):
-        with np.errstate(divide="ignore"):
-            critical_exposure = 0.245 * np.power(freq_sq, -0.8325) + 2.81
-        by_dose = ~by_bfactor
-        damping[by_dose] = np.exp(-0.5 * dose[by_dose][per_image] / critical_exposure)
-    return damping
+    with np.errstate(divide="ignore"):
+        critical_exposure = 0.245 * xp.power(freq_sq, -0.8325) + 2.81
+    by_bfactor = xp.exp(-0.25 * bfactor[per_image] * dose[per_image] * freq_sq)
+    by_dose = xp.exp(-0.5 * dose[per_image] / critical_exposure)
+    return xp.where((bfactor > 0.0)[per_image], by_bfactor, by_dose)
 
 
 def fftw_half_freq_sq(image_h: int, image_w: int, pixel_size: float, mag_matrix=None) -> np.ndarray:

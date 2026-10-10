@@ -156,7 +156,6 @@ from relax.sparse_pass2.resident_operands import (
 from relax.sparse_pass2.resident_scoring import (
     cache_dtype,
     cache_rows,
-    resident_row_projection_bytes,
     score_resident_chunk,
 )
 from relax.sparse_pass2.resident_significance import (
@@ -744,24 +743,6 @@ def resident_accumulator_bytes(volume_size: int, y_dtype, ctf_dtype, *, n_slots:
 
     per_slot = np.dtype(y_dtype).itemsize + np.dtype(ctf_dtype).itemsize
     return int(n_slots) * int(volume_size) * per_slot
-
-
-def ensure_pass_headroom(accumulator_bytes: int, *, min_row_capacity: int, n_score_pixels: int, n_recon_pixels: int) -> bool:
-    """Let the device CTF row caches yield if a pass's accumulators and smallest chunk would not fit.
-
-    Called once, just before the pass allocates its x-half accumulators (which
-    exist before its budgets read free memory): the accumulators plus the row
-    projections of the smallest row class must be allocatable, or
-    :func:`relax.relion.relion_ctf.ensure_device_headroom` releases the caches.
-    Returns whether it released them.
-    """
-
-    from relax.relion.relion_ctf import ensure_device_headroom
-
-    rows_bytes = int(min_row_capacity) * resident_row_projection_bytes(
-        n_score_pixels=int(n_score_pixels), n_recon_pixels=int(n_recon_pixels)
-    )
-    return ensure_device_headroom(int(accumulator_bytes) + rows_bytes)
 
 
 def chunk_translated_tile_pixels(
@@ -3345,14 +3326,6 @@ def _resident_pass2(
         )
     )
     accumulator_shape = (n_fine_rot, int(n_recon_windowed)) if presum_adjoint else (program_recon_volume_size,)
-    ensure_pass_headroom(
-        resident_accumulator_bytes(
-            int(np.prod(accumulator_shape)), recon_y_accum_dtype, recon_ctf_accum_dtype, n_slots=int(tables.n_slots)
-        ),
-        min_row_capacity=min(parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER)),
-        n_score_pixels=n_windowed,
-        n_recon_pixels=n_recon_windowed,
-    )
     # Every slot's two accumulators are zeroed by one program per shape class.
     zero_accumulators = _zero_block_partials(
         ((tuple(accumulator_shape), jnp.dtype(recon_y_accum_dtype)),) * tables.n_slots

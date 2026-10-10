@@ -166,7 +166,7 @@ def odd_phase(optics_row, box: int) -> np.ndarray:
 def relion_half_to_recovar_full(half: np.ndarray) -> np.ndarray:
     """RELION FFTW-half CTFs ``(B, N, N // 2 + 1)`` as RECOVAR's full centered ``(B, N * N)`` operand.
 
-    RECOVAR's frame negates RELION's CTF (relion_ctf._evaluate_exact_ctf_rows); the
+    RECOVAR's frame negates RELION's CTF (relion_ctf._relion_ctf_program); the
     CTF is point-symmetric, so a negative-x pixel takes its mirror's value.
     """
 

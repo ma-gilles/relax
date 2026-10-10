@@ -1210,10 +1210,6 @@ def align_k1_volume_signs(means, previous_means, unregularized_means, volume_sha
             logger.info("Aligned half-%d volume sign to the previous reference", k + 1)
 
 
-# The solvent flatten program of one complex64 map holds about two maps on the device (measured 2.0 class maps at
-# box 256; the eager statements held 5.0; test_class_stack_postprocess.py).
-_DEVICE_FLATTEN_MAPS = 2.0
-
 
 _LARGE_RELION_SOLVENT_MASK_COORDINATE_BYTES_LIMIT = 2 * 1024**3
 
@@ -1292,9 +1288,7 @@ def _apply_relion_solvent_flatten_k1(
     """Apply the K=1 solvent mask and host-stage box-scale FFT results."""
 
     # One program (_flatten_volume): the eager statements held four box-size shift copies and transforms at once, and
-    # at box 448 on a 16 GB card the fifth could not be placed (relax#49). The device CTF row caches yield if the
-    # device cannot hand out the program's working set now, as before the device inverse FFT.
-    relion_ctf.ensure_device_headroom(int(_DEVICE_FLATTEN_MAPS * np.prod(volume_shape) * 8))
+    # at box 448 on a 16 GB card the fifth could not be placed (relax#49).
     flattened = _flatten_volume(volume_ft_flat, solvent_mask, volume_shape=tuple(int(n) for n in volume_shape))
     if not _large_relion_solvent_mask_uses_compiled_builder(volume_shape):
         return flattened

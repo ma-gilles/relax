@@ -196,12 +196,11 @@ across image batches; each EM iteration creates its own adapter invocation.
 | Shared numerator and weight volumes | One complex64 and one float32 volume | All batches of an iteration; donated between batch calls |
 | Old/new normalizer pairs and flags | Per stable particle ID | Iterations |
 | Reference texture plus optional refresh staging | Projector capacity | Reused texture handle across iterations |
-| Existing exact CTF metadata cache | Cache budget, potentially all particle rows | Existing process-level owner |
+| Exact CTF rows of one request | `float64[B, requested pixels]` on the device | The request; evaluated again at the next one |
 
-The source-precision CTF cache is intentionally float64 metadata; EM scores,
-projections and accumulation remain float32/complex64. For the 5,000-particle,
-box-128 fixture it retains `float64[5000,8320]`, 317.4 MiB, even with B=100 image
-operands. This is not a full image bank. Include it in process memory budgets.
+The source-precision CTF rows are intentionally float64; EM scores, projections
+and accumulation remain float32/complex64. The rows are evaluated per request
+by `relion_ctf._relion_ctf_program` and kept by no cache (relax#39).
 
 The final real-data adapter fetches and stages each raw batch once and passes it
 to both canonical operand owners. The optional `staged_batch` input of

@@ -133,11 +133,9 @@ def set_concurrent_device_shares(shares: int) -> int:
     **This declaration covers device memory only.** Host-side caches are not
     fractions of a device and do not pass through this module, so they neither
     shrink nor are checked when the share count rises, while a second
-    concurrent worker doubles them just the same. Two at the time of writing:
-    the exact-CTF operand memo in ``recovar/em/relion/relion_ctf.py``, about
-    2.4-2.6 GB of host RAM for two half operands when enabled, and the image
-    loader's prefetch slots at roughly 65 MB each. Budget those on the host
-    side; nothing here will.
+    concurrent worker doubles them just the same. One at the time of writing:
+    the image loader's prefetch slots at roughly 65 MB each. Budget those on
+    the host side; nothing here will.
     """
 
     global _CONCURRENT_DEVICE_SHARES
@@ -327,8 +325,8 @@ def _device_free_memory_bytes() -> int | None:
     """Return current free memory for the selected physical GPU, if known.
 
     NVML answers in microseconds; the ``nvidia-smi`` subprocess it replaces took
-    15-20 ms and was read per chunk by the exact-CTF device cache's budget, 33 s
-    of two late Class3D K4 100k iterations (py-spy, job 14594324). The subprocess
+    15-20 ms and was read per chunk by a budget since removed, 33 s of two late
+    Class3D K4 100k iterations (py-spy, job 14594324). The subprocess
     stays the fallback where NVML cannot be loaded.
     """
 

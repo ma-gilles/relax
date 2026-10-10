@@ -312,11 +312,11 @@ The exact coarse Gaussian path in
 [`helpers/significance.py`](../../relax/scoring/significance.py)
 passes its existing host pixel indices to the shared source-precision CTF owner
 [`helpers/relion_ctf.py`](../../relax/relion/relion_ctf.py).
-Coarse, local and sparse scoring call that owner directly; its single process
-cache and native binding remain independent of the execution engines.
-That loader gathers each cached CTF row before stacking and device placement;
-index order and duplicates are preserved. Omitting pixel indices retains the
-full-grid contract and cache. Only scoring operands are compacted: full-image
+Coarse, local and sparse scoring call that owner directly; its parsed STAR
+tables and its one float64 CTF program remain independent of the execution engines.
+It evaluates the requested rows at the requested pixels on the device at every
+call and caches none; index order and duplicates are preserved. Omitting pixel
+indices evaluates the full grid. Only scoring operands are compacted: full-image
 powerClass inputs, source precision, scale correction and padding semantics
 remain intact. The [current evidence](em_status.md) separates operand equivalence
 and the allocation microbenchmark from pending full-runtime/trajectory checks.

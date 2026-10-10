@@ -16,7 +16,6 @@ from recovar.core import fourier_transform_utils
 
 from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, device_fits
 from relax.reconstruction import regularization_relion
-from relax.relion import relion_ctf
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import ReconstructionPrograms
@@ -152,12 +151,7 @@ def _reconstruct_volume_eager(
 
     from relax.reconstruction import relion_functions_relion
 
-    # The device CTF row caches yield if the device cannot hand out this reconstruction's largest working set now
-    # (the pad into the FFTW half: two halves), before any of its box-scale steps: after a pass, the cached rows left
-    # a 16 GB pool too fragmented for the 0.56-1.64 GiB pack and pad requests at box 380 and 448 (relax#49).
     padded_shape = relion_functions._relion_reconstruction_padded_shape(vol_shape, padding_factor)
-    padded_half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(padded_shape)
-    relion_ctf.ensure_device_headroom(int(_DEVICE_PAD_HALVES * np.prod(padded_half_shape) * 8))
     # A compact accumulator whose FFTW pad the device cannot hold (_relion_pad_exceeds_device_working_set) is solved
     # on the CPU backend from its repack on: after a pass the 16 GB pool could not place even the 0.69 GiB repacked
     # half at box 448 (relax#49). The accumulators go back to the device if the reconstruction is not host-staged.
@@ -506,9 +500,6 @@ def _reconstruct_volume_eager(
             gridding_padding_factor=projection_padding_factor,
         )
     else:
-        # The device CTF row caches yield if the device cannot hand out the transform's working set now, as a
-        # pass's accumulators make them yield (relax#40).
-        relion_ctf.ensure_device_headroom(int(_DEVICE_IRFFT_HALVES * packed_half_bytes))
         result = relion_functions_relion.finish_large_relion_postprocess_from_fftw_half(
             fftw_half_host,
             vol_shape,

@@ -275,8 +275,6 @@
 "tests/unit/test_relion_coarse_operand_programs.py": 6,
 "tests/unit/test_relion_cuda_preprocess_owner.py": 0,
 "tests/unit/test_relion_dispatch_patch.py": 0,
-"tests/unit/test_relion_exact_ctf_cache.py": 0,
-"tests/unit/test_relion_exact_ctf_result_cache.py": 0,
 "tests/unit/test_relion_f32_coarse_significance.py": 3,
 "tests/unit/test_relion_fft_compute_precision.py": 3,
 "tests/unit/test_relion_functions.py": 219,

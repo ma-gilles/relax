@@ -211,7 +211,7 @@ def _odd_phase_tables(experiment_dataset, image_shape):
             coefficients, odd_index_to_mn, size, angpix, box_size, optics_group_mag_matrix(row) if has_mag else None
         )
         # RECOVAR's centered half rows are the FFTW rows rolled by size // 2
-        # (relion_ctf._evaluate_exact_ctf_rows); the image values are otherwise RELION's.
+        # (relion_ctf._relion_ctf_program); the image values are otherwise RELION's.
         tables[group] = np.exp(-1j * np.fft.fftshift(phase, axes=0)).reshape(-1)
     _ODD_PHASE_CACHE[key] = tables
     return tables

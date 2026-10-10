@@ -1055,12 +1055,14 @@ how it was qualified.
   14851745), against 99.24% on the even Zernike fixture, where RELION CPU is 2.4-3.7e-3 below
   RELION GPU and relax (0.210942 vs 0.213352-0.214689).
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
-  `rlnCtfBfactor` and `rlnCtfScalefactor`) in its own host float64 code
-  (`relax/relion/relion_ctf.py`), cast to float32 before GPU scoring. Production CTF no longer
-  calls RELION code; the RELION binding is only the unit-test oracle
+  `rlnCtfBfactor` and `rlnCtfScalefactor`) with one float64 JAX program
+  (`relion_ctf._relion_ctf_program` in `relax/relion/relion_ctf.py`), per request, at the
+  requested pixels, on the default device; no row is cached on the host or the device
+  (relax#39). The rows are cast to float32 before GPU scoring. `sin` and `exp` are the
+  device's, so a value can differ from RELION's CPU double in the last unit. Production CTF
+  does not call RELION code; the RELION binding is only the unit-test oracle
   (`tests/unit/test_relion_ctf_formula.py`).
-- Follow-up: the exact-CTF device row cache (`relion_ctf._exact_ctf_device_rows`) still keeps
-  float64 rows on the GPU, and the elementwise ops on them run in float64 before the cast to
+- Follow-up: the elementwise operations on the float64 rows run in float64 before the cast to
   float32. They are cheap. Moving them to float32 is a parity-qualified change that has not
   been made yet.
 - Refused permanently, with a clear message: `rlnCtfDataAreCtfCorrected` and several different

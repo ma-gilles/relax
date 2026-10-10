@@ -563,14 +563,6 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
 
     import pandas as pd
 
-    monkeypatch.setattr(
-        relion_ctf,
-        "relion_ctf_fftw_half",
-        lambda params, *_a, finish, **_k: finish(
-            0, len(params), np.broadcast_to(np.arange(12, dtype=np.float64), (len(params), 12)).copy()
-        ),
-    )
-
     source = (tmp_path / "particles.star").resolve()
     cache_key = (str(source), (4, 4))
     particle = {
@@ -596,10 +588,8 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
         cache_key,
         {
             "particles": pd.DataFrame([particle]),
-            "optics": {1: optics},
-            "slots": np.asarray([-1], dtype=np.int64),
-            "rows": None,
-            "n_cached": 0,
+            "optics": {1: pd.Series(optics)},
+            "tomo": False,
         },
     )
     dataset = SimpleNamespace(
@@ -628,17 +618,15 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     assert host_result.dtype == np.float64
     assert isinstance(device_result, jax.Array)
     assert device_result.dtype == jnp.float64
-    assert_matches(
-        host_result[0],
-        -np.fft.fftshift(np.arange(12, dtype=np.float64).reshape(4, 3), axes=0).reshape(-1),
-    )
+    # RECOVAR's frame: centred rows and the opposite sign of RELION's FFTW rows.
+    fftw_rows = relion_ctf.relion_fftw_ctf_rows(dataset, np.asarray([0], dtype=np.int32), (4, 4))
+    assert_matches(host_result[0], -np.fft.fftshift(fftw_rows[0], axes=0).reshape(-1))
     assert_matches(np.asarray(device_result), host_result)
 
     assert compact_result.dtype == np.float64
     assert_matches(compact_result, host_result[[0, 0]][:, pixel_indices])
-    # Memoized operands are shared, so callers must not be able to corrupt them.
-    with pytest.raises(ValueError, match="read-only"):
-        compact_result[:] = 99.0
+    # Every request is evaluated anew: the caller owns its array.
+    compact_result[:] = 99.0
     assert_matches(
         relion_ctf.relion_exact_ctf_half_from_source_star_host(
             dataset,
@@ -1150,15 +1138,6 @@ def test_exact_ctf_compact_indices_reject_invalid_host_geometry(monkeypatch, tmp
 
     source = (tmp_path / "particles.star").resolve()
     monkeypatch.setattr(relion_ctf, "_relion_exact_ctf_source_star", lambda _: source)
-    monkeypatch.setitem(
-        relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE,
-        (str(source), (4, 4)),
-        {
-            "slots": np.asarray([0], dtype=np.int64),
-            "rows": np.ones((1, 12), dtype=np.float64),
-            "n_cached": 1,
-        },
-    )
     dataset = SimpleNamespace(original_image_indices_from_local=lambda indices: indices)
     with pytest.raises(ValueError):
         relion_ctf.relion_exact_ctf_half_from_source_star_host(
@@ -1178,15 +1157,6 @@ def test_exact_ctf_compact_indices_never_materialize_device_inputs(monkeypatch, 
 
     source = (tmp_path / "particles.star").resolve()
     monkeypatch.setattr(relion_ctf, "_relion_exact_ctf_source_star", lambda _: source)
-    monkeypatch.setitem(
-        relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE,
-        (str(source), (4, 4)),
-        {
-            "slots": np.asarray([0], dtype=np.int64),
-            "rows": np.ones((1, 12), dtype=np.float64),
-            "n_cached": 1,
-        },
-    )
     dataset = SimpleNamespace(original_image_indices_from_local=lambda indices: indices)
     for indices in (DeviceOnly(), jnp.asarray([0], dtype=jnp.int32)):
         with pytest.raises(TypeError, match="host NumPy array"):

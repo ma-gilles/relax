@@ -1727,24 +1727,6 @@ def test_accumulators_exist_before_the_chunk_budget_is_read():
         assert source.index("Ft_ctf_total = ") < first_budget_read
 
 
-def test_pass_headroom_asks_for_the_accumulators_and_the_smallest_chunks_rows(monkeypatch):
-    """Team-lead 2026-09-27 (a): before a pass allocates its accumulators, the CTF row
-    caches yield unless the accumulators and the smallest row class's projections fit."""
-
-    from relax.relion import relion_ctf
-    from relax.sparse_pass2 import resident_pass2
-    from relax.sparse_pass2.resident_scoring import resident_row_projection_bytes
-
-    asked = []
-    monkeypatch.setattr(relion_ctf, "ensure_device_headroom", lambda n_bytes: asked.append(n_bytes) or False)
-    accumulators = resident_pass2.resident_accumulator_bytes(1000, np.complex64, np.float32, n_slots=2)
-    assert accumulators == 2 * 1000 * 12
-    assert not resident_pass2.ensure_pass_headroom(
-        accumulators, min_row_capacity=1024, n_score_pixels=30, n_recon_pixels=20
-    )
-    assert asked == [accumulators + 1024 * resident_row_projection_bytes(n_score_pixels=30, n_recon_pixels=20)]
-
-
 def test_plan_counts_a_lone_overflow_chunk():
     """bigbox 14607861: the EMPIAR-10202 final pass planned 1024-row chunks (16.05 of a
     16.16 GiB budget) and ran out of memory projecting a 2048-row one-image chunk next to
@@ -2007,7 +1989,6 @@ def test_every_free_memory_budget_honours_the_allocator_pool(monkeypatch):
     """relax#41 audit: with physical free memory far above the pool (an 80 GB card at a 16 GB pool), every
     budget that reads free memory stays inside what the allocator can hand out."""
 
-    from relax.relion import relion_ctf
     from relax.sparse_pass2 import sparse_pass2_budget as budget
 
     gib = 1024**3
@@ -2016,9 +1997,7 @@ def test_every_free_memory_budget_honours_the_allocator_pool(monkeypatch):
         monkeypatch.setattr(module, "_device_free_memory_bytes", lambda: readings["physical"], raising=False)
         monkeypatch.setattr(module, "_jax_allocator_free_memory_bytes", lambda: readings["allocator"], raising=False)
         monkeypatch.setattr(module, "_jax_allocator_pool_free_bytes", lambda: readings["pool"], raising=False)
-    monkeypatch.delenv(relion_ctf._EXACT_CTF_DEVICE_GB_ENV, raising=False)
     assert rp._allocator_available_bytes() <= 10 * gib  # the K-class projection-sums choice
-    assert relion_ctf._exact_ctf_device_budget_bytes(0) <= 10 * gib  # the exact-CTF device row cache
 
 
 @requires_resident_gpu

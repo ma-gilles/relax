@@ -168,7 +168,6 @@ def test_exact_ctf_matches_simulated_tomo_ctf(project, monkeypatch):
     out, flat = project
     rows, optics = read_star(str(flat))
     monkeypatch.setenv("RELAX_K1_RELION_EXACT_CTF_STAR", str(flat))
-    relion_ctf.clear_exact_ctf_result_cache()
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     dataset = SimpleNamespace(particles_file=str(flat))
     indices = np.arange(len(rows), dtype=np.int64)
@@ -432,7 +431,6 @@ def test_exact_ctf_of_aberrated_tilts_matches_the_simulator(aberrated_project, m
     flat = aberrated_project
     rows, _ = read_star(str(flat))
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
-    relion_ctf.clear_exact_ctf_result_cache()
     dataset = SimpleNamespace(particles_file=str(flat))
     got = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, np.arange(len(rows)), (GRID, GRID))
     group = np.asarray(star_column(rows, "rlnOpticsGroup"), dtype=np.int64)
@@ -489,7 +487,6 @@ def test_uncached_fftw_ctf_rows_are_the_exact_rows(aberrated_project, monkeypatc
     flat = aberrated_project
     rows, _ = read_star(str(flat))
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
-    relion_ctf.clear_exact_ctf_result_cache()
     dataset = SimpleNamespace(particles_file=str(flat))
     indices = np.arange(len(rows))[::-1]
     cached = relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))

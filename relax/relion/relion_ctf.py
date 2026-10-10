@@ -1,17 +1,16 @@
 """Shared source-precision RELION CTF operands for coarse, local and sparse EM.
 
-The source STAR and native CTF cache retain their original per-process lifetime.
-Host callers can gather planned pixels before stacking; the device accessor
-places the full operand once. Native RFLOAT values, centered half-spectrum
-coordinates, signs and caller-selected cast boundaries are preserved.
+The source STAR's parsed tables keep their per-process lifetime; the CTF rows themselves are evaluated on
+demand, at the requested pixels, by one float64 JAX program (:func:`_relion_ctf_program`, which documents
+the last-ulp difference from RELION's CPU values) and kept by no cache, as RELION evaluates each particle's
+CTF in every expectation. Centered half-spectrum coordinates, signs and caller-selected cast boundaries
+are preserved.
 """
 
 from __future__ import annotations
 
-import collections
+import functools
 import os
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import jax
@@ -21,117 +20,9 @@ from recovar.data_io.starfile import star_column
 
 from relax.helpers.batch_fetch import original_image_indices
 from relax.helpers.shells import shell_of_radius_sq
-from relax.relion.tomo_input import fftw_half_freq_sq, relion_tomo_damping
+from relax.relion.tomo_input import relion_tomo_damping
 
 _RELION_EXACT_CTF_SOURCE_CACHE: dict[tuple[str, tuple[int, int]], dict] = {}
-
-# Assembled-operand memo. The per-image rows below are already cached, but the
-# stack that turns them into one operand is rebuilt on every call: pass 2 asks
-# for a whole half (4966 rows of 33024 float64 = 1.31 GB of host memcpy, 250 ms
-# per half per iteration), and the coarse pass asks for one image batch of
-# planned columns. Both requests repeat with identical inputs every iteration,
-# so the assembled array is a pure function of the key and the memo returns the
-# very same object: bit-for-bit by construction, not by re-derivation.
-_EXACT_CTF_RESULT_CACHE: "collections.OrderedDict[tuple, tuple]" = collections.OrderedDict()
-_EXACT_CTF_RESULT_BYTES = 0
-_EXACT_CTF_CACHE_GB_ENV = "RELAX_RELION_EXACT_CTF_CACHE_GB"
-
-
-def _exact_ctf_result_cache_budget_bytes() -> int:
-    """Host bytes the assembled-operand memo may hold; 0 disables it.
-
-    The default is 4 GB since the P4-I merge, which holds the two 1.31 GB
-    whole-half operands of the 256x256 fixture and costs about 2.5 GB of host
-    memory for 2.0 s of a steady hp3 iteration. Set the variable to 0 to
-    restore the unmemoized assembly, which stays the oracle.
-
-    The memo trades host memory for the repeated stack: a whole-half operand is
-    1.31 GB at 256x256, so a budget below that disables the pass-2 entry while
-    still holding the much smaller per-batch coarse entries.
-    """
-
-    token = os.environ.get(_EXACT_CTF_CACHE_GB_ENV, "4").strip()
-    try:
-        budget = float(token)
-    except ValueError as exc:
-        raise ValueError(f"{_EXACT_CTF_CACHE_GB_ENV} must be a number of gigabytes, got {token!r}") from exc
-    if budget < 0:
-        raise ValueError(f"{_EXACT_CTF_CACHE_GB_ENV} must not be negative, got {token!r}")
-    return int(budget * (1024 ** 3))
-
-
-def _exact_ctf_result_key(source_path, image_shape, original_indices, pixel_indices):
-    """A content key for the assembled operand, with the arrays kept for verification."""
-
-    import hashlib
-
-    digest = hashlib.blake2b(digest_size=16)
-    digest.update(np.ascontiguousarray(original_indices).view(np.uint8))
-    if pixel_indices is None:
-        pixel_tag = b"none"
-    else:
-        pixel_tag = np.ascontiguousarray(pixel_indices).view(np.uint8).tobytes()
-        digest.update(b"|pixels|")
-        digest.update(pixel_tag)
-    return (
-        str(source_path),
-        tuple(int(size) for size in image_shape),
-        int(original_indices.size),
-        None if pixel_indices is None else (str(pixel_indices.dtype), int(pixel_indices.size)),
-        digest.digest(),
-    )
-
-
-def _exact_ctf_result_lookup(key, original_indices, pixel_indices):
-    """Return the memoized operand for an exactly equal request, else None."""
-
-    entry = _EXACT_CTF_RESULT_CACHE.get(key)
-    if entry is None:
-        return None
-    cached_indices, cached_pixels, result = entry
-    # A digest match is not trusted on its own: compare the actual selectors, so
-    # a collision can never serve one image set's CTFs for another's.
-    if not np.array_equal(cached_indices, original_indices):
-        return None
-    if (cached_pixels is None) != (pixel_indices is None):
-        return None
-    if cached_pixels is not None and not np.array_equal(cached_pixels, pixel_indices):
-        return None
-    _EXACT_CTF_RESULT_CACHE.move_to_end(key)
-    return result
-
-
-def _exact_ctf_result_store(key, original_indices, pixel_indices, result):
-    """Memoize one assembled operand, evicting least-recently-used entries."""
-
-    global _EXACT_CTF_RESULT_BYTES
-
-    budget = _exact_ctf_result_cache_budget_bytes()
-    if budget <= 0 or result.nbytes > budget:
-        return result
-    # The memo hands the same object to every caller, so make it read-only: no
-    # caller mutates it today (each wraps it in np.asarray and uploads), and a
-    # future one must not silently corrupt a shared operand.
-    result.setflags(write=False)
-    _EXACT_CTF_RESULT_CACHE[key] = (
-        np.array(original_indices, copy=True),
-        None if pixel_indices is None else np.array(pixel_indices, copy=True),
-        result,
-    )
-    _EXACT_CTF_RESULT_BYTES += result.nbytes
-    while _EXACT_CTF_RESULT_BYTES > budget and len(_EXACT_CTF_RESULT_CACHE) > 1:
-        _, evicted = _EXACT_CTF_RESULT_CACHE.popitem(last=False)
-        _EXACT_CTF_RESULT_BYTES -= evicted[2].nbytes
-    return result
-
-
-def clear_exact_ctf_result_cache() -> None:
-    """Drop the assembled-operand memo (tests and long-lived processes)."""
-
-    global _EXACT_CTF_RESULT_BYTES
-
-    _EXACT_CTF_RESULT_CACHE.clear()
-    _EXACT_CTF_RESULT_BYTES = 0
 
 
 def dataset_optics_source_star(experiment_dataset) -> Path | None:
@@ -179,15 +70,6 @@ def _relion_exact_ctf_source_star(experiment_dataset) -> Path:
     return source_star
 
 
-def _relion_ctf_threads() -> int:
-    """Worker threads for the host CTF evaluation: the CPUs this process may use."""
-
-    try:
-        return max(1, len(os.sched_getaffinity(0)))
-    except AttributeError:  # pragma: no cover - non-Linux
-        return max(1, os.cpu_count() or 1)
-
-
 def _relion_ctf_column(cache, name: str, default: float | None, *, optics_only: bool = False) -> np.ndarray:
     """One CTF parameter for every particle, resolved as ``CTF::readValue`` resolves it."""
 
@@ -231,7 +113,7 @@ def premultiplied_ctf_rows(experiment_dataset, image_indices, image_shape) -> np
     RELION reads ``rlnCtfDataAreCtfPremultiplied`` per optics group
     (``ObservationModel::getCtfPremultiplied``). For such an image the exact CTF
     rows of this module already hold RELION's ``Fctf = CTF^2``
-    (:func:`_evaluate_exact_ctf_rows`); the backprojection operands then differ
+    (:func:`_exact_ctf_rows`); the backprojection operands then differ
     as well (:func:`relax.sparse_pass2.sparse_pass2_bucket_io.premultiplied_bpref_weights`).
     ``None`` keeps every ordinary dataset on its unchanged programs, as it does a dataset
     built in memory; a dataset whose optics are unknown raises (:func:`dataset_optics_source_star`).
@@ -307,7 +189,7 @@ def premultiplied_ctf2_shell_sums(experiment_dataset, image_indices, image_shape
     sums = np.zeros((image_indices.size, int(window) // 2 + 1), dtype=np.float64)
     for begin in range(0, image_indices.size, int(chunk)):
         block = image_indices[begin : begin + int(chunk)]
-        # RECOVAR's frame holds -Fctf (relion_ctf._evaluate_exact_ctf_rows).
+        # RECOVAR's frame holds -Fctf (relion_ctf._exact_ctf_rows).
         rows = -np.asarray(
             relion_exact_ctf_half_from_source_star_host(experiment_dataset, block, image_shape, pixel_indices=pixels),
             dtype=np.float64,
@@ -418,7 +300,7 @@ def _relion_ctf_batch_params(cache, original_indices: np.ndarray) -> np.ndarray:
 
 
 def exact_ctf_source_cache(experiment_dataset, image_shape):
-    """The source STAR, its parsed tables and the per-particle CTF row block."""
+    """The source STAR and its parsed tables."""
 
     source_path = _relion_exact_ctf_source_star(experiment_dataset)
     cache_key = (str(source_path), tuple(int(size) for size in image_shape))
@@ -432,11 +314,7 @@ def exact_ctf_source_cache(experiment_dataset, image_shape):
         optics_ids = np.asarray(star_column(optics, "rlnOpticsGroup", required=True), dtype=np.int64)
         if np.unique(optics_ids).size != optics_ids.size:
             raise ValueError(f"RELION source STAR has duplicate optics groups: {source_path}")
-        # Cached CTF rows live in one 2-D block rather than a dict of rows, so a
-        # batch is gathered with two vectorized indexing operations instead of a
-        # Python loop per particle. `slots` maps a particle's original index to its
-        # row in that block, with -1 meaning "not evaluated yet"; the block has a
-        # row for every particle and is allocated once.
+        # The parsed tables only; CTF rows are evaluated per request (_exact_ctf_rows).
         cache = {
             "particles": particles,
             "optics": {
@@ -445,45 +323,22 @@ def exact_ctf_source_cache(experiment_dataset, image_shape):
             },
             # Per-tilt rows of RELION tomo particles (tomo_input.flatten_relion5_tomo).
             "tomo": star_column(particles, "rlnMicrographPreExposure") is not None,
-            "slots": np.full(len(particles), -1, dtype=np.int64),
-            "rows": None,
-            "n_cached": 0,
         }
         _RELION_EXACT_CTF_SOURCE_CACHE[cache_key] = cache
 
     return source_path, cache
 
 
-# Particles per CTF evaluation chunk: 8 rows of a box-256 half grid are 2.1 MB of float64,
-# so a chunk and its scratch stay in one core's cache.
-_CTF_ROW_CHUNK = 8
+def _relion_ctf_constants(params) -> np.ndarray:
+    """Per-particle constants of ``CTF::getCTF``, ``(n, 9)`` float64 on the host.
 
-
-def _relion_ctf_grid(size: int, extent: float, mag):
-    """The pixel coordinates of ``CTF::getCTF`` on the FFTW half grid, shared by every particle.
-
-    ``x``, ``y``, ``u^2 = x^2 + y^2`` and ``u^4``, each flattened to ``size * (size // 2 + 1)``. getFftwImage (ctf.cpp:398-452): row i is frequency i up
-    to size / 2, i - size after, in units of 1 / (size * angpix); getCTF (ctf.h:184-257)
-    applies the magnification first.
+    Columns ``(Axx, 2 Axy, Ayy, K1, K2, K5, K3, K4, -scale)`` from CTF::initialise (ctf.cpp:211-262), with
+    ``K4 = -Bfac / 4``. ``params`` rows are :func:`relion_ctf_fftw_half`'s. Nine scalars per particle: the
+    per-pixel formula is :func:`_relion_ctf_program` alone.
     """
 
-    rows = np.arange(size)
-    y0 = (np.where(rows <= size // 2, rows, rows - size) / extent)[:, None]
-    x0 = (np.arange(size // 2 + 1) / extent)[None, :]
-    if mag is None:
-        x, y = np.broadcast_to(x0, (size, size // 2 + 1)), np.broadcast_to(y0, (size, size // 2 + 1))
-    else:
-        x, y = mag[0, 0] * x0 + mag[0, 1] * y0, mag[1, 0] * x0 + mag[1, 1] * y0
-    x, y = np.ascontiguousarray(x).reshape(-1), np.ascontiguousarray(y).reshape(-1)
-    u2 = x * x + y * y
-    return x, y, u2, u2 * u2
-
-
-def _relion_ctf_coefficients(params):
-    """Per-particle constants of gamma, ``(Axx, 2 Axy, Ayy, K1, K2, K5, K3)``, from CTF::initialise (ctf.cpp:211-262)."""
-
-    du, dv, angle, voltage, cs, q0 = (params[:, i] for i in range(6))
-    phase = params[:, 8]
+    params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
+    du, dv, angle, voltage, cs, q0, bfactor, scale, phase = (params[:, i] for i in range(9))
     volts = voltage * 1e3
     lam = 12.2643247 / np.sqrt(volts * (1.0 + volts * 0.978466e-6))
     k1 = np.pi / 2 * 2 * lam
@@ -496,97 +351,160 @@ def _relion_ctf_coefficients(params):
     axx = cos_az * cos_az * -du + sin_az * sin_az * -dv
     axy = cos_az * sin_az * -du - sin_az * cos_az * -dv
     ayy = sin_az * sin_az * -du + cos_az * cos_az * -dv
-    return axx, 2.0 * axy, ayy, k1, k2, k5, k3
+    return np.stack([axx, 2.0 * axy, ayy, k1, k2, k5, k3, -bfactor / 4.0, -scale], axis=1)
 
 
-def _relion_ctf_chunks(params, box_size: int, pixel_size: float, gamma_offset, mag_matrix, *, out=None, finish=None):
-    """Evaluate ``CTF::getFftwImage`` rows in chunks over host threads.
+@functools.partial(jax.jit, static_argnames=("size", "centered_rows"))
+def _relion_ctf_program(constants, pixels, extent, one, mag, offset, dose, square, *, size: int, centered_rows: bool):
+    """RELION's ``Fctf`` of ``n`` particles at ``P`` pixels, float64 ``(n, P)``: relax's one CTF formula.
 
-    A chunk of rows ``start:stop`` is computed into ``out[start:stop]`` (``(N, size * (size // 2 + 1))``
-    float64) or, without ``out``, into per-thread scratch; ``finish(start, stop, ctf)``, when
-    given, consumes it in the same worker. The pixel coordinates are computed once per call and
-    every chunk operation writes in place, in RELION's order of operations; NumPy releases
-    the GIL inside each operation, so the chunks run in parallel.
+    ``CTF::getCTF`` (`ctf.h <https://github.com/3dem/relion/blob/5.0.1/src/ctf.h#L184-L257>`_) on the
+    pixels of ``CTF::getFftwImage``
+    (`ctf.cpp <https://github.com/3dem/relion/blob/5.0.1/src/ctf.cpp#L398-L452>`_), with RELION's
+    damping and without CTF padding, as relion_refine evaluates it per particle
+    (`ml_optimiser.cpp <https://github.com/3dem/relion/blob/5.0.1/src/ml_optimiser.cpp#L6461-L6492>`_).
+
+    ``constants`` are the particles' :func:`_relion_ctf_constants`. ``pixels`` are flat indices into the
+    ``size x (size // 2 + 1)`` half grid (None: every pixel, in order): FFTW rows, or RECOVAR's centred
+    rows with ``centered_rows`` (its row ``r`` is FFTW's ``(r + size - size // 2) % size``), which also
+    returns RECOVAR's sign, the opposite of RELION's. ``extent`` is ``size * angpix``. The optional terms
+    are None when absent: ``mag``, the optics group's 2x2 anisotropic magnification, applied to the
+    frequency first (ctf.h:189-197); ``offset``, its even Zernike phase on the whole FFTW half grid,
+    flattened (``ObservationModel::getGammaOffset``); ``dose``, per particle the tilt's cumulative dose and
+    B-factor per electron dose (:func:`relax.relion.tomo_input.relion_tomo_damping`); ``square``, per
+    particle whether its optics group stores CTF-premultiplied images, whose ``Fctf`` RELION squares right
+    after getFftwImage (ml_optimiser.cpp:6486-6492).
+
+    Float64 by explicit dtypes, in RELION's order of operations (ctf.h:209-253): gamma, ``sin``, the
+    B-factor envelope, the scale, the ``|CTF| >= 1e-8`` floor. Every product that feeds a sum is first
+    multiplied by ``one``, the run-time value 1.0: that product is exact, so wherever a backend contracts
+    ``a * b * one + c`` into a fused multiply-add (XLA's CPU backend does, through an optimization barrier
+    too) the result is still the twice-rounded ``fl(fl(a * b) + c)`` and gamma is the double the
+    source expression gives, one operation at a time (a compiled RELION may itself contract: its gamma
+    then differs by one rounding, about 1e-13 at the edge of the grid). The dose damping multiplies after the scale and the floor, where RELION multiplies before
+    them (ctf.h:219-253): one product reordered and the floor moved, both below 1e-8 absolute.
+
+    Last-ulp difference from RELION: ``sin`` and ``exp`` (and the dose damping, its ``pow`` and one
+    unguarded sum) are XLA's float64 routines on the device that runs this program, where RELION's CPU
+    code calls glibc's libm (RELION's GPU code evaluates no CTF: it uploads the CPU image). Both are
+    accurate to about one unit in the last place but round differently, so a value may differ from
+    RELION's CPU double by a relative 1e-16 to 1e-15, and from one device type to another by as much. A
+    float32 operand derived from these rows changes only where the double sat within that distance of a
+    float32 rounding boundary: 5 of the 9.8e9 values of EMPIAR-10202's 30515 rows at box 800, against
+    the glibc evaluation (relax#39).
     """
 
-    params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
-    size = int(box_size)
-    x, y, u2, u4 = _relion_ctf_grid(size, float(size) * float(pixel_size), mag_matrix)
-    offset = None if gamma_offset is None else np.asarray(gamma_offset, dtype=np.float64).reshape(1, -1)
-    axx, axy2, ayy, k1, k2, k5, k3 = (c[:, None] for c in _relion_ctf_coefficients(params))
-    bfactor, neg_scale = params[:, 6, None], -params[:, 7, None]
-    n = params.shape[0]
-    local = threading.local()
-
-    def fill(start):
-        stop = min(start + _CTF_ROW_CHUNK, n)
-        rows = slice(start, stop)
-        if not hasattr(local, "tmp"):
-            local.tmp = np.empty((_CTF_ROW_CHUNK, x.size))
-            local.ctf = None if out is not None else np.empty((_CTF_ROW_CHUNK, x.size))
-        tmp = local.tmp[: stop - start]
-        ctf = out[rows] if out is not None else local.ctf[: stop - start]
-        # gamma = K1 * (Axx * X * X + 2.0 * Axy * X * Y + Ayy * Y * Y) + K2 * u4 - K5 - K3 (ctf.h:209-217).
-        np.multiply(axx[rows], x, out=ctf)
-        ctf *= x
-        np.multiply(axy2[rows], x, out=tmp)
-        tmp *= y
-        ctf += tmp
-        np.multiply(ayy[rows], y, out=tmp)
-        tmp *= y
-        ctf += tmp
-        ctf *= k1[rows]
-        ctf += np.multiply(k2[rows], u4, out=tmp)
-        ctf -= k5[rows]
-        ctf -= k3[rows]
-        if offset is not None:
-            ctf += offset
-        np.sin(ctf, out=ctf)
-        # do_damping (relion_refine always damps): the B-factor envelope exp(K4 u2), K4 = -Bfac / 4,
-        # before the scale (ctf.h:219-246). A dose-weighted (tomo) image is damped by its dose
-        # instead (relion_tomo_damping) and passes Bfac 0, for which the envelope is exactly 1,
-        # so chunks without a B-factor skip it.
-        if np.any(bfactor[rows]):
-            ctf *= np.exp(np.multiply(-bfactor[rows] / 4.0, u2, out=tmp), out=tmp)
-        ctf *= neg_scale[rows]  # CTF = -sin(gamma) * envelope * scale
-        # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143).
-        small = np.abs(ctf, out=tmp) < 1e-8
-        if small.any():
-            ctf[small] = np.where(ctf[small] >= 0, 1e-8, -1e-8)
-        if finish is not None:
-            finish(start, stop, ctf)
-
-    with ThreadPoolExecutor(max_workers=_relion_ctf_threads()) as pool:
-        list(pool.map(fill, range(0, n, _CTF_ROW_CHUNK)))
+    width = size // 2 + 1
+    if pixels is None:
+        pixels = jnp.arange(size * width, dtype=jnp.int32)
+    row, column = pixels // width, pixels % width
+    if centered_rows:
+        row = (row + (size - size // 2)) % size
+    if offset is not None:
+        offset = offset[row * width + column]
+    # getFftwImage: row i is frequency i up to size / 2, i - size after, in units of 1 / (size * angpix).
+    x = column.astype(jnp.float64) / extent
+    y = jnp.where(row <= size // 2, row, row - size).astype(jnp.float64) / extent
+    if mag is not None:
+        x, y = (
+            mag[0, 0] * x * one + mag[0, 1] * y * one,
+            mag[1, 0] * x * one + mag[1, 1] * y * one,
+        )
+    # Do not remove ``* one``. Without it XLA's CPU backend contracts a product and the sum it feeds into one
+    # fused multiply-add (an optimization barrier does not stop it): gamma moves by one ulp, the CTF by up to
+    # 3e-7 relative next to a zero, and 22 of 1.2e7 float32 casts of box-800 rows differed from the glibc
+    # evaluation (0 with it, on the CPU backend and on a GPU). ``one`` is a run-time 1.0, so the compiler
+    # keeps the product; it is exact, so a contraction of ``p * one + c`` returns ``fl(p + c)``.
+    u2 = x * x * one + y * y * one
+    u4 = u2 * u2
+    axx, axy2, ayy, k1, k2, k5, k3, k4, neg_scale = (constants[:, i, None] for i in range(9))
+    # gamma = K1 * (Axx * X * X + 2.0 * Axy * X * Y + Ayy * Y * Y) + K2 * u4 - K5 - K3 (ctf.h:209-217).
+    gamma = axx * x * x * one + axy2 * x * y * one
+    gamma = gamma + ayy * y * y * one
+    gamma = gamma * k1 * one + k2 * u4 * one
+    gamma = gamma - k5 - k3
+    if offset is not None:
+        gamma = gamma + offset
+    # do_damping: the B-factor envelope exp(K4 u2) before the scale (ctf.h:219-246); a particle without a
+    # B-factor multiplies by exp(-0.0) = 1. CTF = -sin(gamma) * envelope * scale.
+    ctf = jnp.sin(gamma) * jnp.exp(k4 * u2) * neg_scale
+    # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143).
+    ctf = jnp.where(jnp.abs(ctf) < 1e-8, jnp.where(ctf >= 0, 1e-8, -1e-8), ctf)
+    if dose is not None:
+        ctf = ctf * relion_tomo_damping(u2, dose[:, 0], dose[:, 1])
+    if square is not None:
+        ctf = jnp.where(square[:, None], ctf * ctf, ctf)
+    return -ctf if centered_rows else ctf
 
 
-def relion_ctf_fftw_half(params, box_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None, finish=None):
+# Elements of one CTF program call: 128 MB of float64 result, and a few times that while it runs.
+_CTF_BLOCK_ELEMENTS = 1 << 24
+# Particles of one CTF program call at most.
+_CTF_BLOCK_ROWS = 256
+
+
+def _relion_ctf_rows(
+    constants, size: int, extent: float, *, pixels=None, mag=None, offset=None, dose=None, square=None, centered_rows=False
+):
+    """:func:`_relion_ctf_program` of every row of ``constants``, a device ``(n, P)`` float64 array.
+
+    Evaluated now on the default JAX device (the CPU backend when that is the default) and kept nowhere.
+    The particles go through the program in blocks of a power of two of rows, a short block padded with
+    its last particle, so one request compiles a few row counts per pixel count; a block holds at most
+    :data:`_CTF_BLOCK_ELEMENTS` values. ``dose`` is ``(n, 2)`` and ``square`` ``(n,)`` (see the program).
+    """
+
+    if not jax.config.jax_enable_x64:
+        raise RuntimeError("RELION's CTF is evaluated in float64; JAX x64 must be enabled (recovar enables it)")
+    constants = np.ascontiguousarray(constants, dtype=np.float64).reshape(-1, 9)
+    n = constants.shape[0]
+    n_pixels = size * (size // 2 + 1) if pixels is None else int(np.asarray(pixels).size)
+    if n == 0:
+        return jnp.zeros((0, n_pixels), dtype=jnp.float64)
+    cap = max(1, min(_CTF_BLOCK_ROWS, _CTF_BLOCK_ELEMENTS // max(1, n_pixels)))
+    cap = 1 << (cap.bit_length() - 1)
+    shared = (
+        None if pixels is None else jnp.asarray(pixels, dtype=jnp.int32),
+        np.float64(extent),
+        np.float64(1.0),
+        None if mag is None else jnp.asarray(mag, dtype=jnp.float64).reshape(2, 2),
+        None if offset is None else jnp.asarray(offset, dtype=jnp.float64).reshape(-1),
+    )
+    blocks = []
+    for start in range(0, n, cap):
+        rows = min(cap, n - start)
+        padded = 1 << (rows - 1).bit_length()
+        take = np.minimum(np.arange(start, start + padded), n - 1)
+        block = _relion_ctf_program(
+            jnp.asarray(constants[take]),
+            *shared,
+            None if dose is None else jnp.asarray(np.asarray(dose, dtype=np.float64)[take]),
+            None if square is None else jnp.asarray(np.asarray(square, dtype=bool)[take]),
+            size=size,
+            centered_rows=bool(centered_rows),
+        )
+        blocks.append(block if padded == rows else jax.lax.slice_in_dim(block, 0, rows))
+    return blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=0)
+
+
+def relion_ctf_fftw_half(params, box_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None):
     """RELION's ``CTF::getFftwImage`` for particles of one optics group, ``(N, size, size // 2 + 1)`` float64.
 
-    relax's own host implementation of the CTF relion_refine evaluates per particle
-    (``setValuesByGroup`` + ``getFftwImage``, ml_optimiser.cpp:6461-6484) in RELION's
-    double precision, with its B-factor damping and without CTF padding.
-    ``params`` rows are defU, defV, defAng (degrees), voltage (kV), Cs (mm), Q0, the
-    particle's CTF B-factor (rlnCtfBfactor, A^2), scale (rlnCtfScalefactor), phase shift
-    (degrees). ``gamma_offset`` (the group's even Zernike phase on this grid,
-    ``ObservationModel::getGammaOffset``) and ``mag_matrix`` (its 2x2 anisotropic
-    magnification) are the optics-table terms. No RELION code runs here: the binding's
-    ``get_ctf_images_batch`` / ``optics_ctf_images_batch`` are the test oracles
-    (tests/unit/test_relion_ctf_formula.py). Rows are split over host threads. With
-    ``finish``, each chunk of rows is handed to ``finish(start, stop, ctf)`` in its worker
-    thread, ``ctf`` flattened to ``(stop - start, size * (size // 2 + 1))`` in per-thread
-    scratch, and nothing is returned.
+    The CTF relion_refine evaluates per particle (``setValuesByGroup`` + ``getFftwImage``,
+    ml_optimiser.cpp:6461-6484), by relax's one CTF program (:func:`_relion_ctf_program`; its last-ulp
+    note applies). ``params`` rows are defU, defV, defAng (degrees), voltage (kV), Cs (mm), Q0, the
+    particle's CTF B-factor (rlnCtfBfactor, A^2), scale (rlnCtfScalefactor), phase shift (degrees).
+    ``gamma_offset`` (the group's even Zernike phase on this grid, ``ObservationModel::getGammaOffset``)
+    and ``mag_matrix`` (its 2x2 anisotropic magnification) are the optics-table terms. No RELION code runs
+    here: the binding's ``get_ctf_images_batch`` / ``optics_ctf_images_batch`` are the test oracles
+    (tests/unit/test_relion_ctf_formula.py). Returns a host array the caller owns.
     """
 
-    params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
     size = int(box_size)
-    mag = None if mag_matrix is None else np.asarray(mag_matrix, dtype=np.float64)
-    if finish is not None:
-        _relion_ctf_chunks(params, size, pixel_size, gamma_offset, mag, finish=finish)
-        return None
-    out = np.empty((params.shape[0], size * (size // 2 + 1)), dtype=np.float64)
-    _relion_ctf_chunks(params, size, pixel_size, gamma_offset, mag, out=out)
-    return out.reshape(-1, size, size // 2 + 1)
+    rows = _relion_ctf_rows(
+        _relion_ctf_constants(params), size, float(size) * float(pixel_size), mag=mag_matrix, offset=gamma_offset
+    )
+    return np.array(rows).reshape(-1, size, size // 2 + 1)
 
 
 def _optics_group_ctf_geometry(cache, group: int, size: int):
@@ -618,381 +536,158 @@ def _optics_group_ctf_geometry(cache, group: int, size: int):
     return geometry[key]
 
 
-def _relion_fftw_ctf_by_group(cache, particles, image_h: int, image_w: int, write, *, square_premultiplied: bool = True):
-    """RELION's ``Fctf`` of ``particles`` (source-STAR rows sorted by optics group) on the FFTW half grid.
+def _ctf_particle_table(cache) -> dict:
+    """Per particle of the source STAR, the scalars its CTF rows need; built once with the parsed tables.
 
-    RELION's CTF of each particle, evaluated by relax on the host (relion_ctf_fftw_half), one call per
-    optics group: its pixel size, even Zernike gamma offset and anisotropic magnification
-    (ml_optimiser.cpp:6461-6484); tomo rows are damped by their tilt's dose. CTF-premultiplied images
-    get ``CTF^2`` when ``square_premultiplied`` (the scoring CTF; RELION's start-up bootstrap keeps the
-    plain CTF). ``write(rows, ctf)`` receives each chunk's positions in ``particles`` and its rows,
-    ``[n, image_h, image_w // 2 + 1]`` float64 in RELION's frame and sign.
+    ``groups`` (optics group), ``constants`` (:func:`_relion_ctf_constants`; a tomo row has no B-factor: it
+    is damped by its dose, as RELION does for dose >= 0), ``dose`` (``(N, 2)``, tomo only),
+    ``premultiplied``, and ``pixel_size`` per optics group.
+    """
+
+    table = cache.get("particle_table")
+    if table is None:
+        groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)
+        params = _relion_ctf_batch_params(cache, np.arange(groups.size))
+        columns = params[:, [0, 1, 2, 3, 4, 5, 6, 9, 8]]  # ..., Q0, Bfac, scale, phase shift
+        dose = None
+        if cache["tomo"]:
+            columns[:, 6] = 0.0
+            dose = np.stack(
+                [
+                    _relion_ctf_column(cache, "rlnMicrographPreExposure", None),
+                    _relion_ctf_column(cache, "rlnCtfBfactorPerElectronDose", 0.0),
+                ],
+                axis=1,
+            )
+        pixel_size = {}
+        for group in np.unique(groups):
+            pixel = np.unique(params[groups == group, 7])
+            if pixel.size != 1:
+                raise ValueError(f"optics group {int(group)} has several pixel sizes")
+            pixel_size[int(group)] = float(pixel[0])
+        table = {
+            "groups": groups,
+            "constants": _relion_ctf_constants(columns),
+            "dose": dose,
+            "premultiplied": _premultiplied_particles(cache),
+            "pixel_size": pixel_size,
+        }
+        cache["particle_table"] = table
+    return table
+
+
+def _exact_ctf_rows(
+    cache,
+    original_indices,
+    image_h: int,
+    image_w: int,
+    pixel_indices=None,
+    *,
+    centered_rows=True,
+    square_premultiplied=True,
+):
+    """The particles' RELION ``Fctf`` at ``pixel_indices``, evaluated now on the default JAX device, ``(n, P)``.
+
+    Row ``i`` is ``original_indices[i]``'s (order and duplicates kept). Per optics group: its pixel size,
+    even Zernike gamma offset and anisotropic magnification (ml_optimiser.cpp:6461-6484); a tomo row is
+    damped by its tilt's dose; a CTF-premultiplied image gets ``CTF^2`` when ``square_premultiplied`` (the
+    scoring CTF; RELION's start-up bootstrap keeps the plain CTF). With ``centered_rows`` the pixels and the
+    result are in RECOVAR's frame, centred rows and the opposite sign; otherwise RELION's FFTW frame and sign.
+
+    RELION evaluates each particle's CTF in every expectation and keeps it only for that particle's passes
+    (``getFourierTransformsAndCtfs``); nothing here outlives the call either. A cross-iteration row cache
+    held every particle's full float64 row, 73 GiB at EMPIAR-10202's box 800 (relax#39).
     """
 
     if image_h != image_w:
         raise ValueError("RELION's CTF rows need square images")
-    groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[particles]
-    if np.any(np.diff(groups) < 0):
-        raise ValueError("the particles must be sorted by optics group")
-    params = _relion_ctf_batch_params(cache, particles)
-    tomo = cache.get("tomo", False)
-    if tomo:
-        dose = _relion_ctf_column(cache, "rlnMicrographPreExposure", None)[particles]
-        dose_bfactor = _relion_ctf_column(cache, "rlnCtfBfactorPerElectronDose", 0.0)[particles]
-    premultiplied = _premultiplied_particles(cache)[particles] & bool(square_premultiplied)
-    for group in np.unique(groups):
-        first, last = np.searchsorted(groups, [group, group + 1])
-        pixel = np.unique(params[first:last, 7])
-        if pixel.size != 1:
-            raise ValueError(f"optics group {int(group)} has several pixel sizes")
+    original_indices = np.asarray(original_indices, dtype=np.int64)
+    table = _ctf_particle_table(cache)
+    groups = table["groups"][original_indices]
+    constants = table["constants"][original_indices]
+    dose = None if table["dose"] is None else table["dose"][original_indices]
+    square = table["premultiplied"][original_indices] if square_premultiplied else None
+    if square is not None and not square.any():
+        square = None
+
+    def evaluate(group, members):
         gamma, mag = _optics_group_ctf_geometry(cache, int(group), image_h)
-        columns = params[first:last][:, [0, 1, 2, 3, 4, 5, 6, 9, 8]]  # ..., Q0, Bfac, scale, phase shift
-        if tomo:
-            columns[:, 6] = 0.0  # dose-weighted: damped by the dose below, as RELION does for dose >= 0
-            freq_sq = fftw_half_freq_sq(image_h, image_w, float(pixel[0]), mag)
+        return _relion_ctf_rows(
+            constants[members],
+            image_h,
+            float(image_h) * table["pixel_size"][int(group)],
+            pixels=pixel_indices,
+            mag=mag,
+            offset=gamma,
+            dose=None if dose is None else dose[members],
+            square=None if square is None else square[members],
+            centered_rows=centered_rows,
+        )
 
-        def finish(start, stop, ctf, first=first):
-            chunk = slice(first + start, first + stop)
-            ctf = ctf.reshape(stop - start, image_h, image_w // 2 + 1)
-            if tomo:
-                # A RELION tomo image (one row per particle-tilt): relion_refine damps its
-                # CTF by the tilt's cumulative dose (tomo_input.relion_tomo_damping). RELION
-                # multiplies before the scale factor and before the |CTF| >= 1e-8 floor
-                # (src/ctf.h:219-253); applying it here reorders one product and moves the
-                # floor, both below 1e-8 absolute.
-                ctf *= relion_tomo_damping(freq_sq, dose[chunk], dose_bfactor[chunk])
-            if premultiplied[chunk].any():
-                # CTF-premultiplied images: RELION squares its CTF image right after
-                # getFftwImage and then uses the ordinary scoring kernels with it
-                # (ml_optimiser.cpp:6486-6492, acc_ml_optimiser_impl.h:840-847).
-                square = premultiplied[chunk]
-                ctf[square] = ctf[square] * ctf[square]
-            write(chunk, ctf)
-
-        relion_ctf_fftw_half(columns, image_h, float(pixel[0]), gamma_offset=gamma, mag_matrix=mag, finish=finish)
-
-
-def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int) -> np.ndarray:
-    """Evaluate the particles' missing CTF rows into the block; return their row slots."""
-
-    slots = cache["slots"]
-    missing = np.unique(original_indices[slots[original_indices] < 0])
-    if missing.size:
-        groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[missing]
-        # Each optics group fills one contiguous run of new cache rows.
-        missing = missing[np.argsort(groups, kind="stable")]
-        n_new = int(missing.size)
-        rows = cache["rows"]
-        used = cache["n_cached"]
-        width = image_h * (image_w // 2 + 1)
-        if rows is None:
-            # One block with a row for every particle of the source STAR; pages are
-            # touched only as rows are evaluated. Growing by doubling recopied the
-            # whole cache (17.5 s of a noise1 50k VDAM run, job 14523070).
-            rows = np.empty((slots.size, width), dtype=np.float64)
-        shift = image_h // 2            # np.fft.fftshift is np.roll(x, image_h // 2)
-        split = image_h - shift
-        block = rows[used : used + n_new].reshape(n_new, image_h, image_w // 2 + 1)
-
-        def write(chunk, ctf):
-            # RELION/FFTW stores y in standard order and uses the opposite CTF
-            # sign from RECOVAR's forward-model convention: one roll and negation
-            # of the row axis, written straight into the cache block.
-            np.negative(ctf[:, split:], out=block[chunk, :shift])
-            np.negative(ctf[:, :split], out=block[chunk, shift:])
-
-        _relion_fftw_ctf_by_group(cache, missing, image_h, image_w, write)
-        cache["rows"] = rows
-        cache["n_cached"] = used + n_new
-        slots[missing] = np.arange(used, used + n_new, dtype=np.int64)
-
-    batch_slots = slots[original_indices]
-    if np.any(batch_slots < 0):
-        raise RuntimeError("a requested RELION CTF row was not evaluated")
-    return batch_slots
+    present = np.unique(groups)
+    if present.size == 1:
+        return evaluate(present[0], slice(None))
+    n_pixels = image_h * (image_w // 2 + 1) if pixel_indices is None else int(np.asarray(pixel_indices).size)
+    rows = jnp.zeros((original_indices.size, n_pixels), dtype=jnp.float64)
+    for group in present:
+        members = np.flatnonzero(groups == group)
+        rows = rows.at[jnp.asarray(members)].set(evaluate(group, members))
+    return rows
 
 
 def relion_fftw_ctf_rows(experiment_dataset, image_indices, image_shape, *, square_premultiplied: bool = True):
-    """These images' RELION ``Fctf`` rows, ``[n, N, N // 2 + 1]`` float64 on the FFTW half grid in RELION's sign.
-
-    The rows the exact operands cache (:func:`_relion_fftw_ctf_by_group`: optics-group even Zernike terms,
-    magnification, tomo dose damping), evaluated uncached in ``image_indices`` order;
-    ``square_premultiplied=False`` keeps premultiplied groups' plain CTF, as RELION's start-up
-    bootstrap uses it (ml_optimiser.cpp:3036-3051).
+    """These images' RELION ``Fctf`` rows, ``[n, N, N // 2 + 1]`` float64 host array on the FFTW half grid in
+    RELION's sign (:func:`_exact_ctf_rows`); ``square_premultiplied=False`` keeps premultiplied groups' plain
+    CTF, as RELION's start-up bootstrap uses it (ml_optimiser.cpp:3036-3051).
     """
 
     image_h, image_w = (int(v) for v in image_shape)
     _, cache = exact_ctf_source_cache(experiment_dataset, (image_h, image_w))
-    original = np.asarray(
-        original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64)), dtype=np.int64
+    original = original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64))
+    rows = _exact_ctf_rows(
+        cache, original, image_h, image_w, centered_rows=False, square_premultiplied=square_premultiplied
     )
-    groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[original]
-    order = np.argsort(groups, kind="stable")
-    out = np.empty((original.size, image_h, image_w // 2 + 1), dtype=np.float64)
-
-    def write(chunk, ctf):
-        out[order[chunk]] = ctf
-
-    _relion_fftw_ctf_by_group(
-        cache, original[order], image_h, image_w, write, square_premultiplied=square_premultiplied
-    )
-    return out
+    return np.array(rows).reshape(-1, image_h, image_w // 2 + 1)
 
 
-def relion_exact_ctf_half_from_source_star_host(
-    experiment_dataset,
-    image_indices,
-    image_shape,
-    *,
-    pixel_indices=None,
-):
-    """Evaluate source-precision SPA CTFs into one host-native operand.
-
-    The result uses RECOVAR's centered-y half-spectrum coordinates and sign.
-    The source STAR is mandatory because the ordinary dataset metadata has
-    already been rounded to float32 before pass 2.  RELION's binding and the
-    source cache are host-native; callers that must pad on the image axis use
-    this helper so they place the final operand exactly once. Optional host
-    pixel indices gather the requested columns before stacking full CTF rows;
-    their order and duplicates are preserved without changing source precision.
-    """
-
-    source_path, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
-    original_indices = original_image_indices(
-        experiment_dataset,
-        np.asarray(image_indices, dtype=np.int64),
-    )
+def _checked_pixel_indices(pixel_indices, image_shape):
     image_h, image_w = (int(size) for size in image_shape)
     if image_h != image_w:
         raise ValueError("exact RELION CTF replay currently requires square images")
-    if pixel_indices is not None:
-        if not isinstance(pixel_indices, np.ndarray):
-            raise TypeError("CTF pixel indices must already be a host NumPy array")
-        if pixel_indices.ndim != 1 or pixel_indices.dtype.kind not in "iu":
-            raise ValueError("CTF pixel indices must be a one-dimensional integer array")
-        if np.any(pixel_indices < 0) or np.any(pixel_indices >= image_h * (image_w // 2 + 1)):
-            raise ValueError("CTF pixel indices are outside the full half-spectrum")
-    original_indices = np.asarray(original_indices, dtype=np.int64)
-    cache_key = _exact_ctf_result_key(source_path, image_shape, original_indices, pixel_indices)
-    memoized = _exact_ctf_result_lookup(cache_key, original_indices, pixel_indices)
-    if memoized is not None:
-        return memoized
-
-    batch_slots = _evaluate_exact_ctf_rows(cache, original_indices, image_h, image_w)
-    rows = cache["rows"]
-    # Gather rows and the planned columns in one step, so the intermediate is the
-    # size of the result rather than of the full half-spectrum.
-    gathered = (
-        rows[batch_slots]
-        if pixel_indices is None
-        else rows[np.ix_(batch_slots, np.asarray(pixel_indices, dtype=np.int64))]
-    )
-    assembled = np.asarray(gathered, dtype=np.float64)
-    return _exact_ctf_result_store(cache_key, original_indices, pixel_indices, assembled)
-
-
-def relion_exact_ctf_half_from_source_star(
-    experiment_dataset,
-    image_indices,
-    image_shape,
-    *,
-    pixel_indices=None,
-):
-    """Return the source-precision CTF rows of these images on the JAX device.
-
-    The binary64 rows are evaluated once per particle on the host
-    (:func:`_evaluate_exact_ctf_rows`) and served from a bounded device row
-    cache (:func:`_exact_ctf_device_rows`): a request uploads only the rows the
-    cache does not hold and is one device gather, optionally of planned pixel
-    columns, whose order and duplicates are preserved. The host path copied and
-    uploaded every requested row on each call, 72.6 s of main-thread gather in a
-    noise1 50k VDAM run (py-spy, job 14523070).
-    """
-
-    image_h, image_w = (int(size) for size in image_shape)
-    if image_h != image_w:
-        raise ValueError("exact RELION CTF replay currently requires square images")
-    width = image_h * (image_w // 2 + 1)
-    if pixel_indices is not None:
-        pixel_indices = np.asarray(pixel_indices)
-        if pixel_indices.ndim != 1 or pixel_indices.dtype.kind not in "iu":
-            raise ValueError("CTF pixel indices must be a one-dimensional integer array")
-        if np.any(pixel_indices < 0) or np.any(pixel_indices >= width):
-            raise ValueError("CTF pixel indices are outside the full half-spectrum")
-    _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
-    original_indices = np.asarray(
-        original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64)), dtype=np.int64
-    )
-    batch_slots = _evaluate_exact_ctf_rows(cache, original_indices, image_h, image_w)
-    block, device_rows = _exact_ctf_device_rows(cache, batch_slots, width)
-    return _gather_ctf_rows(block, device_rows, None if pixel_indices is None else pixel_indices.astype(np.int32))
-
-
-@jax.jit
-def _gather_ctf_rows(block, rows, pixel_indices):
-    """``block[rows]``, or ``block[rows][:, pixel_indices]``, as one program.
-
-    Loose advanced indexing builds its gather on the host at every call: 3.1 s of a 60 s window of late
-    10k VDAM iterations (py-spy, 510 coarse batches).
-    """
-
     if pixel_indices is None:
-        return jnp.take(block, rows, axis=0)
-    return block[rows[:, None], pixel_indices[None, :]]
+        return None
+    pixel_indices = np.asarray(pixel_indices)
+    if pixel_indices.ndim != 1 or pixel_indices.dtype.kind not in "iu":
+        raise ValueError("CTF pixel indices must be a one-dimensional integer array")
+    if np.any(pixel_indices < 0) or np.any(pixel_indices >= image_h * (image_w // 2 + 1)):
+        raise ValueError("CTF pixel indices are outside the full half-spectrum")
+    return pixel_indices
 
 
-_EXACT_CTF_DEVICE_GB_ENV = "RELAX_RELION_EXACT_CTF_DEVICE_GB"
-# The cache takes this share of what the allocator can still hand out (plus what
-# it already holds), so the passes that plan from free memory keep the rest.
-_EXACT_CTF_DEVICE_FREE_FRACTION = 0.25
-# Shrink only below this share of the current capacity, so small swings in free
-# memory do not rebuild the cache.
-_EXACT_CTF_DEVICE_SHRINK_BELOW = 0.75
-# Uploads go up in power-of-two row chunks of at most this many rows: few scatter
-# shapes compile and no padded rows travel (a box-800 row is 2.57 MB).
-_EXACT_CTF_DEVICE_UPLOAD_ROWS = 256
+def relion_exact_ctf_half_from_source_star(experiment_dataset, image_indices, image_shape, *, pixel_indices=None):
+    """These images' source-precision RELION CTF rows on the JAX device, ``(n, P)`` float64.
 
-
-def _exact_ctf_device_budget_bytes(held_bytes: int) -> int:
-    """Device bytes the CTF row cache may hold: ``RELAX_RELION_EXACT_CTF_DEVICE_GB``, else
-    ``_EXACT_CTF_DEVICE_FREE_FRACTION`` of the allocator's available bytes now plus the
-    ``held_bytes`` the cache already occupies (``device_available_bytes``); the held
-    bytes alone when the device reports nothing."""
-
-    token = os.environ.get(_EXACT_CTF_DEVICE_GB_ENV, "").strip()
-    if token:
-        try:
-            budget = float(token)
-        except ValueError as exc:
-            raise ValueError(f"{_EXACT_CTF_DEVICE_GB_ENV} must be a number of gigabytes, got {token!r}") from exc
-        if budget <= 0:
-            raise ValueError(f"{_EXACT_CTF_DEVICE_GB_ENV} must be positive, got {token!r}")
-        return int(budget * (1024**3))
-    from relax.sparse_pass2.sparse_pass2_budget import (
-        _device_free_memory_bytes,
-        _jax_allocator_free_memory_bytes,
-        _jax_allocator_pool_free_bytes,
-        device_available_bytes,
-    )
-
-    available = device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
-    )
-    if available is None:
-        return int(held_bytes)
-    return int((float(available) + held_bytes) * _EXACT_CTF_DEVICE_FREE_FRACTION)
-
-
-def release_exact_ctf_device_cache() -> None:
-    """Free every device CTF row cache; the next request rebuilds one at the budget then.
-
-    A pass whose fixed allocations need the memory the cache holds (for example a
-    box-800 reconstruction accumulator) calls this before allocating them.
+    RECOVAR's centred-y half-spectrum coordinates and sign; the source STAR is mandatory because the ordinary
+    dataset metadata has already been rounded to float32. Optional ``pixel_indices`` select the columns (order
+    and duplicates kept), and only those are evaluated. Evaluated now by :func:`_exact_ctf_rows`.
     """
 
-    for cache in _RELION_EXACT_CTF_SOURCE_CACHE.values():
-        cache.pop("device_cache", None)
+    pixel_indices = _checked_pixel_indices(pixel_indices, image_shape)
+    _, cache = exact_ctf_source_cache(experiment_dataset, image_shape)
+    original = original_image_indices(experiment_dataset, np.asarray(image_indices, dtype=np.int64))
+    image_h, image_w = (int(size) for size in image_shape)
+    return _exact_ctf_rows(cache, original, image_h, image_w, pixel_indices)
 
 
-def ensure_device_headroom(n_bytes: int) -> bool:
-    """Free the device CTF row caches only if the device cannot hand out ``n_bytes`` now.
+def relion_exact_ctf_half_from_source_star_host(experiment_dataset, image_indices, image_shape, *, pixel_indices=None):
+    """:func:`relion_exact_ctf_half_from_source_star` as a host array the caller owns, for callers that place
+    the operand themselves (padding on the image axis). The pixel indices must be a host array already: a
+    device array here would be read back at every call."""
 
-    For a pass about to allocate large fixed buffers (a box-800 reconstruction
-    accumulator): at 256 px it never fires, so the cache keeps its rows across
-    passes. Returns whether it released anything. Call it once before the
-    allocation, not per chunk.
-    """
-
-    from relax.sparse_pass2.sparse_pass2_budget import (
-        _device_free_memory_bytes,
-        _jax_allocator_free_memory_bytes,
-        _jax_allocator_pool_free_bytes,
-        device_available_bytes,
-    )
-
-    available = device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
-    )
-    held = any("device_cache" in cache for cache in _RELION_EXACT_CTF_SOURCE_CACHE.values())
-    if not held or available is None or available >= n_bytes:
-        return False
-    release_exact_ctf_device_cache()
-    return True
-
-
-def _exact_ctf_device_capacity(n_particles: int, request_rows: int, row_bytes: int, held_rows: int) -> int:
-    """Rows the cache should hold: the budget's rows, at least the request, at most one per particle."""
-
-    budget_rows = _exact_ctf_device_budget_bytes(held_rows * row_bytes) // row_bytes
-    return int(min(n_particles, max(request_rows, budget_rows)))
-
-
-def _exact_ctf_device_rows(cache, batch_slots: np.ndarray, width: int):
-    """The device row cache and the cache rows of ``batch_slots``.
-
-    The cache holds as many rows as :func:`_exact_ctf_device_budget_bytes` allows,
-    re-read at every request, and never fewer than the request needs nor more than
-    one per particle. It is rebuilt empty at the budget when a request does not fit
-    or the budget falls below ``_EXACT_CTF_DEVICE_SHRINK_BELOW`` of its capacity.
-    Rows a request needs and the cache lacks replace rows in clock order, skipping
-    rows the same request reads, and go up in place. It grows only when a request
-    does not fit (the first request of a pass, as batch sizes are fixed), never
-    because memory freed up, so it does not race a chunk loop's next allocation.
-    """
-
-    import jax
-
-    state = cache.get("device_cache")
-    n_particles = cache["slots"].size
-    row_bytes = width * 8
-    requested = np.unique(batch_slots)
-    capacity = 0 if state is None else state["block"].shape[0]
-    target = _exact_ctf_device_capacity(n_particles, requested.size, row_bytes, capacity)
-    if capacity < requested.size or target < _EXACT_CTF_DEVICE_SHRINK_BELOW * capacity:
-        cache.pop("device_cache", None)
-        state = None  # drop the old block before allocating the new one
-        state = {
-            "block": jnp.zeros((target, width), dtype=jnp.float64),
-            "row_of_slot": np.full(n_particles, -1, dtype=np.int64),
-            "slot_of_row": np.full(target, -1, dtype=np.int64),
-            "clock": 0,
-        }
-        cache["device_cache"] = state
-    capacity = state["block"].shape[0]
-    missing = requested[state["row_of_slot"][requested] < 0]
-    if missing.size:
-        keep = np.zeros(capacity, dtype=bool)
-        keep[state["row_of_slot"][requested[state["row_of_slot"][requested] >= 0]]] = True
-        order = (np.arange(capacity) + state["clock"]) % capacity
-        free = order[~keep[order]][: missing.size]
-        evicted = state["slot_of_row"][free]
-        state["row_of_slot"][evicted[evicted >= 0]] = -1
-        state["row_of_slot"][missing] = free
-        state["slot_of_row"][free] = missing
-        state["clock"] = int((free[-1] + 1) % capacity)
-        start = 0
-        while start < missing.size:
-            size = min(_EXACT_CTF_DEVICE_UPLOAD_ROWS, 1 << int(np.log2(missing.size - start)))
-            state["block"] = _scatter_exact_ctf_rows(
-                state["block"],
-                jax.device_put(free[start : start + size].astype(np.int32)),
-                jax.device_put(cache["rows"][missing[start : start + size]]),
-            )
-            start += size
-    return state["block"], state["row_of_slot"][batch_slots]
-
-
-def _scatter_exact_ctf_rows(block, positions, values):
-    import jax
-
-    global _scatter_exact_ctf_rows_program
-    if _scatter_exact_ctf_rows_program is None:
-        _scatter_exact_ctf_rows_program = jax.jit(
-            lambda block, positions, values: block.at[positions].set(values), donate_argnums=0
+    if pixel_indices is not None and not isinstance(pixel_indices, np.ndarray):
+        raise TypeError("CTF pixel indices must already be a host NumPy array")
+    return np.array(
+        relion_exact_ctf_half_from_source_star(
+            experiment_dataset, image_indices, image_shape, pixel_indices=pixel_indices
         )
-    return _scatter_exact_ctf_rows_program(block, positions, values)
-
-
-_scatter_exact_ctf_rows_program = None
-
-
+    )

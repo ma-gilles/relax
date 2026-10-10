@@ -58,9 +58,11 @@ static int zero_based_group(const ObservationModel &obs, int optics_group) {
  * CTF images of N particles, shape (N, oriydim, orixdim/2+1).
  *
  * params has one row per particle: defU, defV, defAng, Bfac, scale,
- * phase_shift, optics group (1-based, as rlnOpticsGroup). kV, Cs, Q0, the
- * pixel size, the magnification and the even Zernike terms come from the
- * optics table, exactly as relion_refine takes them.
+ * phase_shift, optics group (1-based, as rlnOpticsGroup) and, optionally, the
+ * cumulative dose of a tilt image (an eighth column; a dose >= 0 damps by the
+ * dose instead of the B-factor, ctf.h:219-233). kV, Cs, Q0, the pixel size,
+ * the magnification and the even Zernike terms come from the optics table,
+ * exactly as relion_refine takes them.
  */
 static py::array_t<double> optics_ctf_images_batch(
     const std::string &star_path,
@@ -70,15 +72,16 @@ static py::array_t<double> optics_ctf_images_batch(
     bool do_damping,
     int n_threads
 ) {
-    if (params.ndim() != 2 || params.shape(1) != 7) {
-        throw std::invalid_argument("params must have shape (N, 7)");
+    if (params.ndim() != 2 || (params.shape(1) != 7 && params.shape(1) != 8)) {
+        throw std::invalid_argument("params must have shape (N, 7) or (N, 8)");
     }
+    const long columns = params.shape(1);
     ObservationModel obs = read_optics(star_path);
     const long n = params.shape(0);
     const double *p = params.data();
     std::set<int> groups;
     for (long i = 0; i < n; ++i) {
-        groups.insert(zero_based_group(obs, (int) p[7 * i + 6]));
+        groups.insert(zero_based_group(obs, (int) p[columns * i + 6]));
     }
     // The gamma-offset cache is filled under an OpenMP critical section, which
     // is not compiled here: fill it for every group before the worker threads.
@@ -96,10 +99,10 @@ static py::array_t<double> optics_ctf_images_batch(
         py::gil_scoped_release release;
         auto run = [&](long start, long stop) {
             for (long i = start; i < stop; ++i) {
-                const double *r = p + 7 * i;
+                const double *r = p + columns * i;
                 const int group = (int) r[6] - 1;
                 CTF ctf;
-                ctf.setValuesByGroup(&obs, group, r[0], r[1], r[2], r[3], r[4], r[5], /*dose=*/-1.0);
+                ctf.setValuesByGroup(&obs, group, r[0], r[1], r[2], r[3], r[4], r[5], columns == 8 ? r[7] : -1.0);
                 MultidimArray<RFLOAT> result(oriydim, orixdim / 2 + 1);
                 ctf.getFftwImage(result, orixdim, oriydim, obs.getPixelSize(group),
                                  /*do_abs=*/false,
@@ -179,8 +182,9 @@ void init_optics_bindings(py::module_ &m) {
           py::arg("n_threads") = 1,
           R"doc(
 CTF::setValuesByGroup + getFftwImage for N rows of (defU, defV, defAng, Bfac,
-scale, phase_shift, optics group); kV, Cs, Q0, pixel size, magnification and
-even Zernike terms come from the STAR's optics table. Shape (N, oriydim, orixdim/2+1).
+scale, phase_shift, optics group[, dose]); kV, Cs, Q0, pixel size, magnification and
+even Zernike terms come from the STAR's optics table. A dose >= 0 damps by the dose
+(a tilt image) instead of the B-factor. Shape (N, oriydim, orixdim/2+1).
 )doc");
     m.def("optics_phase_correction", &optics_phase_correction,
           py::arg("star_path"), py::arg("optics_group"), py::arg("size"),
