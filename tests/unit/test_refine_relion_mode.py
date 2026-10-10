@@ -109,7 +109,7 @@ from relax.local.local_layout import (
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
-from relax.refinement import dense_half, finalization, local_half, local_sampling, local_search_iteration
+from relax.refinement import dense_half, finalization, local_half, local_sampling, local_search_iteration, trial_grids
 from relax.refinement import maximization as maximization_module
 from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 from relax.refinement.iteration_loop import refine_single_volume
@@ -6815,7 +6815,7 @@ class TestRelionModeSmokeTest:
         scoring_rotations = []
         scoring_grids = []
         monkeypatch.setattr(
-            iteration_planning_module, "relion_adaptive_pass1_rotations",
+            trial_grids, "relion_adaptive_pass1_rotations",
             lambda eulers, *args, **kwargs: euler_angles_to_matrix(eulers).astype(np.float32),
         )
         score_half = finalization._score_half_dense_in_bpref_scope

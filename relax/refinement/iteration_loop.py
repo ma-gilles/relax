@@ -46,6 +46,7 @@ from relax.refinement import (
     setup_checks,
     sigma_offset,
     startup_references,
+    trial_grids,
 )
 from relax.relion import relion_normalization, relion_worker_scale
 from relax.sparse_pass2 import engine_record
@@ -539,7 +540,7 @@ def refine_single_volume(
         voxel_size=ctx.source_pixel_size_angstrom, symmetry=options.symmetry.point_group,
     )
     if coarse_grids is None:
-        coarse_grids = iteration_planning.build_initial_coarse_grids(
+        coarse_grids = trial_grids.build_initial_coarse_grids(
             initial_grid_order, translations if resume is None else None,
             translation_range=options.schedule.init_translation_range if resume is None else state.translation_range,
             translation_step=options.schedule.init_translation_step if resume is None else state.translation_step,
@@ -901,7 +902,7 @@ def refine_single_volume(
             iteration, carry.coarse_grids, carry.state, voxel_size=ctx.source_pixel_size_angstrom,
             dtype=ctx.scoring_dtype,
         ))
-        carry = replace(carry, coarse_grids=iteration_planning.refresh_coarse_grids(
+        carry = replace(carry, coarse_grids=trial_grids.refresh_coarse_grids(
             carry.coarse_grids, carry.state, options, voxel_size=ctx.source_pixel_size_angstrom,
             dtype=ctx.scoring_dtype, log=logger,
         ))

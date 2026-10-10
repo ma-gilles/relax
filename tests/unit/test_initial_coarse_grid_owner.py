@@ -17,11 +17,11 @@ from helpers.float_compare import matches
 
 import relax.refinement.finalization as finalization
 import relax.refinement.iteration_loop as iteration_loop
-import relax.refinement.iteration_planning as iteration_planning
 import relax.sampling as sampling_module
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.parity import relion_replay_source
 from relax.parity.relion_replay import _sealed_sampling_base_grids
+from relax.refinement import trial_grids
 from relax.sampling import _translation_grid_for_class_count
 
 pytestmark = pytest.mark.unit
@@ -72,7 +72,7 @@ def _initial_grids(**overrides):
             symmetry=kwargs.get("symmetry", "C1"),
             log=logging.getLogger("test_initial_coarse_grid_owner"),
         )
-    return iteration_planning.build_initial_coarse_grids(
+    return trial_grids.build_initial_coarse_grids(
         kwargs.pop("healpix_order"),
         kwargs.pop("translations"),
         translation_range=translation_range,
@@ -138,7 +138,7 @@ def test_caller_translation_table_is_kept_as_the_base_grid(monkeypatch):
 
 
 def test_controller_materializes_explicit_coarse_grid_variants():
-    assert tuple(inspect.signature(iteration_planning.build_initial_coarse_grids).parameters) == (
+    assert tuple(inspect.signature(trial_grids.build_initial_coarse_grids).parameters) == (
         "healpix_order",
         "translations",
         "translation_range",
@@ -188,7 +188,7 @@ def test_controller_builds_one_initial_grid_and_one_final_sampling(monkeypatch, 
     from relax.parity.relion_replay_source import RelionReplay
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_planning, "build_initial_coarse_grids", "initial")
+    trace.wrap(trial_grids, "build_initial_coarse_grids", "initial")
     trace.wrap(relion_replay_source, "build_sealed_initial_coarse_grids", "sealed")
     trace.wrap(finalization, "run_final_all_data", "final")
     trace.wrap(finalization, "prepare_final_sampling", "final_sampling")

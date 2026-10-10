@@ -187,7 +187,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     from relax.dense import scoring_policy
     from relax.dense.gemm_experiment import native_phase_table, pad_grid
     from relax.helpers.oversampling import prepare_adaptive_pass2_grids
-    from relax.refinement.iteration_planning import build_initial_coarse_grids
+    from relax.refinement.trial_grids import build_initial_coarse_grids
     from relax.relion.optics_aberrations import projection_rotations
     from relax.relion.relion_metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
     from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout

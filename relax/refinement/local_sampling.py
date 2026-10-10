@@ -12,15 +12,12 @@ from relax import sampling
 from relax.helpers.convergence import direction_prior_healpix_order_for_scoring, healpix_angular_step
 from relax.helpers.orientation_priors import relion_direction_log_priors, relion_local_search_sigmas
 from relax.helpers.resolution import relion_local_pass1_current_size
-from relax.refinement.iteration_planning import (
+from relax.refinement.iteration_planning import ExpectationWindows, IterationCarry, RunOptics, plan_expectation_windows
+from relax.refinement.trial_grids import (
     CoarseGrids,
-    ExpectationWindows,
-    IterationCarry,
-    RunOptics,
     builds_coarse_pass1_rotations,
     coarse_pass1_rotations,
     iteration_trial_grid,
-    plan_expectation_windows,
 )
 
 if TYPE_CHECKING:
