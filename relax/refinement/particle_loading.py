@@ -30,6 +30,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# RELION's GUI default "Mask diameter (A)" (pipeline_jobs.cpp:4191 Refine3D, 3697 Class3D), the particle
+# diameter of a run that gives neither --particle_diameter_ang nor a RELION optimiser STAR.
+RELION_GUI_PARTICLE_DIAMETER_ANG = 200.0
+
 
 @dataclass(frozen=True)
 class LoadedParticles:
@@ -266,7 +270,7 @@ def _apply_relion_image_mask(ds, args, *, relion_half_sets_from_input: bool, sea
         )
         params = None if optimiser_star is None else relion_metadata.load_relion_mask_params(optimiser_star)
         if params is None:
-            params = (command_options.RELION_GUI_PARTICLE_DIAMETER_ANG, float(args.width_mask_edge_px))
+            params = (RELION_GUI_PARTICLE_DIAMETER_ANG, float(args.width_mask_edge_px))
             optimiser_star = "RELION GUI default"
 
     particle_diameter_ang, width_mask_edge_px = params
