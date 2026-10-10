@@ -969,21 +969,51 @@ def test_packed_csr_consumers_give_the_plain_csr_results():
     assert type(csr_restricted_to_images(packed, sparse_only & (plain.counts() <= 11))) is CoarseSignificanceCSR
 
 
+def _same_host_row(row, reference) -> bool:
+    if reference is None or row is None:
+        return row is reference
+    if isinstance(reference, ComplementSignificantSampleIndices):
+        return (
+            isinstance(row, ComplementSignificantSampleIndices)
+            and row.total_size == reference.total_size
+            and np.array_equal(row.excluded_indices, reference.excluded_indices)
+        )
+    return (
+        not isinstance(row, ComplementSignificantSampleIndices)
+        and row.dtype == reference.dtype
+        and np.array_equal(row, reference)
+    )
+
+
+@pytest.mark.parametrize("packed_table", [False, True])
+def test_seed_iteration_supports_from_the_csr_are_the_redistributed_host_rows(packed_table):
+    """A seed iteration's per-class supports, taken from the restricted CSR, are the rows the host form gives:
+    each image's first-class row in its seed class and an empty int32 row in the others, in either encoding."""
+
+    from relax.classification.k_class_inputs import seed_iteration_supports
+
+    packed, plain = _packed_and_plain()
+    first_rows = host_support_rows(plain)
+    seeds = np.random.default_rng(8).integers(0, 3, size=plain.n_images)
+    host_form = seed_iteration_supports(first_rows, seeds, 3)
+    assert all(type(rows) is list for rows in host_form)
+
+    by_class = seed_iteration_supports(
+        DeviceCompactedSignificantSamples(csr=packed if packed_table else plain), seeds, 3
+    )
+
+    for k in range(3):
+        assert len(by_class[k]) == plain.n_images
+        for image, (row, reference) in enumerate(zip(by_class[k], host_form[k], strict=True)):
+            assert _same_host_row(row, reference), (k, image)
+        np.testing.assert_array_equal(by_class[k].csr.counts(), np.where(seeds == k, plain.counts(), 0))
+
+
 def test_support_rows_decode_on_access_and_are_not_kept():
     packed, plain = _packed_and_plain()
     expected = host_support_rows(plain)
     support = DeviceCompactedSignificantSamples(csr=packed)
-
-    def same(row, reference):
-        if reference is None or row is None:
-            return row is reference
-        if isinstance(reference, ComplementSignificantSampleIndices):
-            return (
-                isinstance(row, ComplementSignificantSampleIndices)
-                and row.total_size == reference.total_size
-                and np.array_equal(row.excluded_indices, reference.excluded_indices)
-            )
-        return row.dtype == reference.dtype and np.array_equal(row, reference)
+    same = _same_host_row
 
     assert len(support) == plain.n_images
     assert all(same(row, reference) for row, reference in zip(support, expected, strict=True))
