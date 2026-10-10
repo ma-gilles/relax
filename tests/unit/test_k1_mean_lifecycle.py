@@ -13,7 +13,7 @@ from helpers.tiny_refinement import VOLUME_SHAPE, CallTrace, frame_holds, run_ti
 from relax.dense.score_outputs import PerHalfOutputs
 from relax.diagnostics.observers import IntermediatesObserver
 from relax.reconstruction import regularization_relion
-from relax.refinement import finalization, iteration_loop, maximization, mean_helpers
+from relax.refinement import finalization, iteration_loop, maximization, reference_state
 from relax.refinement.iteration_snapshot import IterationSnapshot
 from relax.refinement.refinement_options import CheckpointOptions
 
@@ -25,7 +25,7 @@ def test_snapshot_and_release_previous_k1_means_owns_host_copies(complex_dtype):
     first = np.arange(12, dtype=np.float64).astype(complex_dtype).reshape(3, 4)
     second = (first + complex_dtype(2.0 + 3.0j)).copy()
     means = [first, second]
-    snapshots = mean_helpers._snapshot_and_release_previous_k1_means(means)
+    snapshots = reference_state._snapshot_and_release_previous_k1_means(means)
 
     assert means == [None, None]
     for snapshot, original in zip(snapshots, (first, second), strict=True):
@@ -43,7 +43,7 @@ def test_snapshot_of_device_k1_means_is_their_host_value(complex_dtype):
     """A device map's snapshot is its one host transfer: a NumPy array of the same dtype and values."""
     expected = np.arange(12, dtype=np.float64).astype(complex_dtype)
     means = [jnp.asarray(expected), None]
-    snapshots = mean_helpers._snapshot_and_release_previous_k1_means(means)
+    snapshots = reference_state._snapshot_and_release_previous_k1_means(means)
 
     assert means == [None, None]
     assert snapshots[1] is None
@@ -151,7 +151,7 @@ def test_initial_half_references_reuse_immutable_shared_reference():
     from relax.refinement.half_inputs import HalfPair
 
     shared = jnp.arange(64, dtype=jnp.complex64)
-    got = mean_helpers.initial_half_references(HalfPair.shared(shared), n_classes=1)
+    got = reference_state.initial_half_references(HalfPair.shared(shared), n_classes=1)
 
     assert got[0] is got[1]
     assert_matches(np.asarray(got[0]), np.asarray(shared))
@@ -163,11 +163,11 @@ def test_initial_half_references_reuse_immutable_shared_reference():
 @pytest.mark.parametrize("complex_dtype", [np.complex64, np.complex128], ids=["production-f32", "diagnostic-f64"])
 def test_reference_owner_keeps_no_extra_map_alias_after_k1_release(complex_dtype):
     expected = np.arange(12, dtype=np.float64).astype(complex_dtype)
-    model = mean_helpers.ReferenceModel(
+    model = reference_state.ReferenceModel(
         maps=[expected.copy(), expected.copy()], tau2=None, tau2_per_half=[None, None],
     )
     references = [weakref.ref(value) for value in model.maps]
-    previous = mean_helpers._snapshot_and_release_previous_k1_means(model.maps)
+    previous = reference_state._snapshot_and_release_previous_k1_means(model.maps)
     assert model.maps == [None, None]
     assert all(reference() is None for reference in references)
     for value in previous:

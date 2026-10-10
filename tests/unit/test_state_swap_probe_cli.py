@@ -20,8 +20,8 @@ from relax.parity.state_swap_runtime import (
     _snapshot_state_swap_inputs,
 )
 from relax.refinement.half_inputs import initialize_halfsets
-from relax.refinement.mean_helpers import ReferenceModel
 from relax.refinement.noise_updates import NoiseModel
+from relax.refinement.reference_state import ReferenceModel
 
 pytestmark = pytest.mark.unit
 

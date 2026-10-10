@@ -57,8 +57,8 @@ from relax.refinement.full_refinement import (
     _use_fresh_auto_refine_particle_order,
 )
 from relax.refinement.half_inputs import HalfSet
-from relax.refinement.mean_helpers import ReferenceModel, _updated_mean_variance_per_half
 from relax.refinement.particle_loading import _apply_relion_image_mask, prepare_relion_halfset_inputs
+from relax.refinement.reference_state import ReferenceModel, _updated_mean_variance_per_half
 from relax.refinement.startup_noise import (
     estimate_startup_sigma2,
     scoring_noise_from_sigma2,

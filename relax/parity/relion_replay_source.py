@@ -55,8 +55,8 @@ from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_s
 from relax.refinement.final_sampling import FinalSamplingSettings, native_final_sampling_settings
 from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.iteration_planning import CoarseGrids, CoarseImageSize
-from relax.refinement.mean_helpers import class_mixture_from_weights
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState
+from relax.refinement.reference_state import class_mixture_from_weights
 from relax.refinement.refinement_options import (
     FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
     FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV,

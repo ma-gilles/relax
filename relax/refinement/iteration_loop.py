@@ -38,6 +38,7 @@ from relax.refinement import (
     noise_updates,
     ports,
     projector_preparation,
+    reference_state,
     refinement_options,
     refinement_result,
     setup_checks,
@@ -77,14 +78,14 @@ class _K1Iteration:
 
     def initial_reference_model(self, ctx, options, init_volume, init_mean_variance):
         """Each half's flat start-up reference with the shared or per-half tau2."""
-        return mean_helpers.initialize_reference_model(
-            mean_helpers.initial_half_references(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
+        return reference_state.initialize_reference_model(
+            reference_state.initial_half_references(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
             use_per_half_mean_variance=options.parity.use_per_half_mean_variance, dtype=ctx.scoring_dtype,
             log=logger,
         )
 
     def snapshot_reference_model(self, ctx, resume):
-        return mean_helpers.reference_model_from_snapshot(resume, ctx.volume_shape, dtype=ctx.scoring_dtype)
+        return reference_state.reference_model_from_snapshot(resume, ctx.volume_shape, dtype=ctx.scoring_dtype)
 
     def class_start_from_snapshot(self, resume, class_mixture):
         """One class: no assignments, the start-up class mixture."""
@@ -239,20 +240,20 @@ class _ClassIteration:
 
     def initial_reference_model(self, ctx, options, init_volume, init_mean_variance):
         """Each half's start-up class stack with the shared tau2."""
-        return mean_helpers.initialize_class_reference_model(
-            mean_helpers.initial_half_references(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
+        return reference_state.initialize_class_reference_model(
+            reference_state.initial_half_references(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
             use_per_half_mean_variance=options.parity.use_per_half_mean_variance,
         )
 
     def snapshot_reference_model(self, ctx, resume):
-        return mean_helpers.class_reference_model_from_snapshot(resume, ctx.volume_shape, dtype=ctx.scoring_dtype)
+        return reference_state.class_reference_model_from_snapshot(resume, ctx.volume_shape, dtype=ctx.scoring_dtype)
 
     def class_start_from_snapshot(self, resume, class_mixture):
         """The snapshot's class assignments (also the previous ones) and class weights."""
         class_assignments = [None if c is None else np.asarray(c) for c in resume.class_assignments]
         return _ClassStart(
             class_assignments, [None if c is None else c.copy() for c in class_assignments],
-            mean_helpers.class_mixture_from_weights(np.asarray(resume.class_weights, dtype=np.float64)),
+            reference_state.class_mixture_from_weights(np.asarray(resume.class_weights, dtype=np.float64)),
         )
 
     def record_direction_prior(self, history, direction_priors):
@@ -296,14 +297,14 @@ class _ClassIteration:
     def record_class_weights(self, carry, options, history, per_half):
         """The class weights from this expectation's posterior: installed, recorded with the full-posterior
         weights, and logged."""
-        carry = replace(carry, class_mixture=mean_helpers.class_mixture_from_weights(
-            mean_helpers._class_weights_from_posterior(
+        carry = replace(carry, class_mixture=reference_state.class_mixture_from_weights(
+            reference_state._class_weights_from_posterior(
                 per_half.class_posterior, options.k_class.n_classes, carry.class_mixture.weights,
             ),
         ))
         history.record_class_weights(
             carry.class_mixture.weights,
-            mean_helpers._class_weights_from_posterior(
+            reference_state._class_weights_from_posterior(
                 per_half.class_full_posterior, options.k_class.n_classes, carry.class_mixture.weights,
             ),
         )
@@ -486,7 +487,7 @@ def refine_single_volume(
         allow_state_swap_fresh_bpref_particle_order=source.swaps_state,
         continues_own_run=options.checkpoint.resume is not None,
     )
-    class_mixture = mean_helpers._initialize_class_log_priors(options.k_class.n_classes, options.start.init_direction_prior)
+    class_mixture = reference_state._initialize_class_log_priors(options.k_class.n_classes, options.start.init_direction_prior)
 
     setup_phase_seconds["mask_and_image_cache"] = setup_clock.seconds
 

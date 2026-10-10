@@ -18,12 +18,7 @@ from relax.helpers.resolution import _firstiter_cc_ini_high_tapered
 from relax.helpers.timing import Stopwatch
 from relax.refinement.iteration_planning import NumberedIteration
 from relax.refinement.mean_helpers import (
-    ClassMixture,
-    _host_tau2_volumes,
-    _snapshot_and_release_previous_k1_means,
     _stack_class_tau2_update_details,
-    _updated_mean_variance_per_half,
-    class_mixture_from_weights,
     estimate_class_priors,
     estimate_split_half_prior,
     join_half_accumulators_at_low_resolution,
@@ -33,6 +28,13 @@ from relax.refinement.mean_helpers import (
     taper_first_cc_k1_prior,
 )
 from relax.refinement.ports import ClassTau2
+from relax.refinement.reference_state import (
+    ClassMixture,
+    _host_tau2_volumes,
+    _snapshot_and_release_previous_k1_means,
+    _updated_mean_variance_per_half,
+    class_mixture_from_weights,
+)
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR, REFERENCE_FILTER_EDGE_SHELLS
 from relax.sampling import rotation_grid_size

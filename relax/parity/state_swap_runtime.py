@@ -15,8 +15,8 @@ import numpy as np
 
 from relax.helpers.orientation_priors import DirectionPrior
 from relax.parity.state_swap_probe import _STATE_SWAP_VARIANT_COMPONENTS
-from relax.refinement.mean_helpers import ReferenceModel
 from relax.refinement.noise_updates import NoiseModel
+from relax.refinement.reference_state import ReferenceModel
 
 # Keep the existing diagnostic log namespace for configured handlers/filters.
 logger = logging.getLogger("relax.diagnostics.state_swap_runtime")  # the name before the move to relax.parity: log rows keep it

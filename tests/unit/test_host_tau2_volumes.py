@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement.mean_helpers import _host_tau2_volumes
+from relax.refinement.reference_state import _host_tau2_volumes
 
 pytestmark = pytest.mark.unit
 

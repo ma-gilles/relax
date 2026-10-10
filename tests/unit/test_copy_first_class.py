@@ -7,7 +7,7 @@ import numpy as np
 
 from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement.maximization import ClassMaximization, copy_first_class_to_every_class
-from relax.refinement.mean_helpers import class_mixture_from_weights
+from relax.refinement.reference_state import class_mixture_from_weights
 
 
 def test_both_halves_share_one_copy_of_the_first_class():

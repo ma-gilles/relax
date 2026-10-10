@@ -1,11 +1,11 @@
 """relion_refine's --ref STAR for Class3D: reference paths and the fresh 1/K class distribution."""
 
 import numpy as np
+import pandas as pd
 import pytest
 import starfile
-import pandas as pd
 
-from relax.refinement.mean_helpers import _initialize_class_log_priors
+from relax.refinement.reference_state import _initialize_class_log_priors
 from relax.relion.relion_metadata import read_relion_reference_star
 
 pytestmark = pytest.mark.unit

@@ -52,7 +52,6 @@ from relax.refinement.half_scoring import (
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
 from relax.refinement.mean_helpers import (
-    _class_weights_from_posterior,
     join_half_accumulators_at_low_resolution,
     merged_half_map,
     weighted_class_merge,
@@ -60,6 +59,7 @@ from relax.refinement.mean_helpers import (
 from relax.refinement.optics_shapes import image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource
 from relax.refinement.projector_preparation import prepare_scoring_projector
+from relax.refinement.reference_state import _class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
