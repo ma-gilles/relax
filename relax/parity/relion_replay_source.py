@@ -56,15 +56,14 @@ from relax.refinement.final_sampling import FinalSamplingSettings, native_final_
 from relax.refinement.iteration_planning import CoarseGrids, CoarseImageSize
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState
 from relax.refinement.reference_state import class_mixture_from_weights
-from relax.refinement.refinement_options import (
-    FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
-    FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV,
-)
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.relion.relion_metadata import read_relion_sampling_metadata
 
 # The controller's log: what the replay installs is logged under its name, as before.
 logger = logging.getLogger("relax.refinement.iteration_loop")
+
+FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE"
+FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE"
 
 
 @dataclass(frozen=True)
