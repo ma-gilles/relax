@@ -822,13 +822,26 @@ def _reconstruct_class_maps(
     iteration,
     current_size,
     accumulator_volume_shape,
+    unsolved=None,
 ):
-    """Reconstruct the shared Class3D stack from combined accumulators."""
+    """Reconstruct the shared Class3D stack from combined accumulators.
+
+    ``unsolved`` maps a class that received no weight to the reference it keeps (None: zero), as RELION's
+    maximization does not reconstruct it (ml_optimiser.cpp:4958-5026).
+    """
 
     clock = Stopwatch()
     cs_int = int(current_size) if current_size is not None else None
     shared_class_maps = []
     for class_idx in range(n_classes):
+        if unsolved and class_idx in unsolved:
+            kept = unsolved[class_idx]
+            shared_class_maps.append(None if kept is None else jnp.asarray(kept).reshape(-1))
+            logger.info(
+                "Class3D reconstruction skipped: iter=%d class=%d/%d received no weight (%s)",
+                iteration + 1, class_idx + 1, n_classes, "zero reference" if kept is None else "previous reference kept",
+            )
+            continue
         logger.info(
             "Class3D reconstruction start: iter=%d class=%d/%d current_size=%s",
             iteration + 1,
@@ -852,7 +865,13 @@ def _reconstruct_class_maps(
             n_classes,
             clock.seconds,
         )
-    shared_classes = jnp.stack(shared_class_maps, axis=0)
+    solved = next((class_map for class_map in shared_class_maps if class_map is not None), None)
+    if solved is None:
+        raise RuntimeError("every class is empty: no class received any particle weight")
+    shared_classes = jnp.stack(
+        [jnp.zeros_like(solved) if class_map is None else class_map.astype(solved.dtype) for class_map in shared_class_maps],
+        axis=0,
+    )
     logger.info(
         "Class3D reconstruction stack complete: iter=%d classes=%d elapsed=%.1fs",
         iteration + 1,
@@ -1016,6 +1035,7 @@ def reconstruct_numbered_class_maps(
     accumulator_volume_shape,
     relion_firstiter_cc_this_iter,
     probe: MaximizationProbe | None = None,
+    unsolved=None,
 ) -> list:
     """Solve one numbered Class3D reference stack from combined partitions.
 
@@ -1038,6 +1058,7 @@ def reconstruct_numbered_class_maps(
         iteration=iteration,
         current_size=current_size,
         accumulator_volume_shape=accumulator_volume_shape,
+        unsolved=unsolved,
     )
     for k in range(2):
         probe.map_solved(

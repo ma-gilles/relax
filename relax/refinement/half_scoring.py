@@ -37,6 +37,7 @@ from relax.helpers.oversampling import AdaptivePass2Grids, prepare_adaptive_pass
 from relax.local.local_layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
+    drop_local_layout_classes,
     expand_local_layout_classes,
     restrict_local_layout_classes,
 )
@@ -1125,6 +1126,9 @@ class LocalPriorSpec:
     translation_search_base: object
     local_search_translation_prior_mode: str
     replay_prior_translations: object | None = None
+    # Class3D: the class log priors. A local search's weights carry no class prior, as RELION's, but a
+    # class at -inf (pdf_class == 0) is left out of the search.
+    class_log_priors: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1536,6 +1540,11 @@ def _score_half_local_one_shape(
     # Class3D local searches (--sigma_ang) score every class at each particle's local orientations.
     projector_slabs = None if half.projector is None else half.projector.data
     n_classes = int(np.shape(projector_slabs)[0]) if projector_slabs is not None and np.ndim(projector_slabs) == 4 else 1
+    empty_classes = (
+        ()
+        if n_classes == 1 or priors.class_log_priors is None
+        else tuple(int(k) for k in np.flatnonzero(np.isneginf(np.asarray(priors.class_log_priors, dtype=np.float64))))
+    )
 
     local_debug_iteration = (
         diagnostics.iteration + 1 if diagnostics.debug_iteration is None else int(diagnostics.debug_iteration)
@@ -1622,6 +1631,7 @@ def _score_half_local_one_shape(
             symmetry=sampling.search.symmetry,
             n_classes=n_classes,
             image_seed_classes=half.image_seed_classes if n_classes > 1 else None,
+            empty_classes=empty_classes,
     )
     local_kernel = LocalSearchKernelPolicy(
             disc_type=execution.disc_type,
@@ -1674,6 +1684,7 @@ def _score_half_local_one_shape(
             parent_layout = expand_local_layout_classes(parent_layout, n_classes)
             if half.image_seed_classes is not None:
                 parent_layout = restrict_local_layout_classes(parent_layout, half.image_seed_classes)
+            parent_layout = drop_local_layout_classes(parent_layout, empty_classes)
         parent_local_rot_max = (
             int(np.max(np.asarray(parent_layout.rotation_counts, dtype=np.int64)))
             if int(np.asarray(parent_layout.rotation_counts).size)

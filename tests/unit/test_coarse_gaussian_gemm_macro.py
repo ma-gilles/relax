@@ -1085,6 +1085,21 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     assert unique_support_pairs(translation_only) == ((0, 0), (0, 1), (0, 0))
     assert unique_support_pairs(clean) == ((1, 0), (0, 3), (0, 0))
 
+    # A class at zero prior (log prior -inf, RELION's pdf_class == 0, relax#68) wins no image and keeps no
+    # support, with finite results for the classes that remain.
+    for dead_class, live_class in ((0, 1), (1, 0)):
+        dead_prior = np.zeros(2, dtype=np.float64)
+        dead_prior[dead_class] = -np.inf
+        dead = run_with_priors(
+            dataset, class_prior=dead_prior, rotation_prior=zero_rotation_prior,
+            translation_prior=zero_translation_prior,
+        )
+        assert_matches(dead[3], [live_class] * 3)
+        for image_index in range(3):
+            assert len(significant_sample_ids(dead[4][dead_class][image_index], 6)) == 0
+            assert len(significant_sample_ids(dead[4][live_class][image_index], 6)) >= 1
+        assert np.all(np.isfinite(np.asarray(dead[2], dtype=np.float64)))
+
     poison_tail["enabled"] = True
     group_datasets = (dataset.subset([0, 2]), dataset.subset([1]))
     poisoned_groups = tuple(

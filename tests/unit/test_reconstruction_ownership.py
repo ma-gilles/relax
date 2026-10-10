@@ -31,7 +31,7 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_class_maps).parameters) == (
         "combined_numerators", "combined_denominators", "tau_by_class", "settings", "n_classes",
         "iteration", "current_size", "accumulator_volume_shape",
-        "relion_firstiter_cc_this_iter", "probe",
+        "relion_firstiter_cc_this_iter", "probe", "unsolved",
     )
     assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
         "box_size", "voxel_size", "volume_shape", "padding_factor",

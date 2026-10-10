@@ -888,6 +888,7 @@ def score_numbered_half(
                 translation_search_base=translation_search_base,
                 local_search_translation_prior_mode=(options.local_search.local_search_translation_prior_mode),
                 replay_prior_translations=replay_prior_translations,
+                class_log_priors=class_log_priors if k_class_enabled else None,
             ),
             batching=LocalBatchPolicy(
                 max_significants=options.adaptive.max_significants,

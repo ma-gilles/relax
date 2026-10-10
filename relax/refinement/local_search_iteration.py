@@ -17,6 +17,7 @@ from relax.helpers.timing import Stopwatch
 from relax.helpers.types import NoiseStats, RelionStats
 from relax.local.local_layout import (
     build_local_hypothesis_layout,
+    drop_local_layout_classes,
     expand_local_layout_classes,
     local_layout_host_rotations,
     restrict_local_layout_classes,
@@ -88,6 +89,8 @@ class LocalSearchGridSpec:
     # the first iteration from one reference, against each image's seed class only.
     n_classes: int = 1
     image_seed_classes: object | None = None
+    # Classes at zero weight (RELION's pdf_class == 0): not scored (drop_local_layout_classes).
+    empty_classes: tuple = ()
 
 
 def _run_local_search_iteration(
@@ -174,6 +177,7 @@ def _run_local_search_iteration(
         local_layout = expand_local_layout_classes(local_layout, int(grid.n_classes))
         if grid.image_seed_classes is not None:
             local_layout = restrict_local_layout_classes(local_layout, grid.image_seed_classes)
+        local_layout = drop_local_layout_classes(local_layout, grid.empty_classes)
     local_n_classes = local_layout.n_classes
     magnification = dataset_projection_magnification(data.experiment_dataset)
     if kernel.projection_scale != 1.0 or magnification is not None:

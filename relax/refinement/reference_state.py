@@ -131,9 +131,18 @@ class ClassMixture(NamedTuple):
 
 
 def class_mixture_from_weights(weights: np.ndarray) -> ClassMixture:
-    """The mixture whose log priors are the logarithm of ``weights``."""
+    """The mixture whose log priors are the logarithm of ``weights``; an empty class (weight 0) gets ``-inf``."""
 
-    return ClassMixture(np.log(weights), weights)
+    weights = np.asarray(weights, dtype=np.float64)
+    with np.errstate(divide="ignore"):
+        return ClassMixture(np.log(weights), weights)
+
+
+def emptied_classes(scored_weights, new_weights) -> list[int]:
+    """The classes scored with a positive weight that received none: empty from the next expectation on."""
+
+    scored, new = np.asarray(scored_weights, dtype=np.float64), np.asarray(new_weights, dtype=np.float64)
+    return [int(k) for k in np.flatnonzero((scored > 0.0) & (new == 0.0))]
 
 
 def _initialize_class_log_priors(n_classes: int, init_direction_prior=None) -> ClassMixture:
@@ -196,7 +205,14 @@ def initial_half_references(init_volume, n_classes: int) -> list:
 
 
 def _class_weights_from_posterior(class_posterior_per_half, n_classes: int, previous_weights: np.ndarray) -> np.ndarray:
-    """Normalize class posterior sums across both half-sets."""
+    """Normalize class posterior sums across both half-sets.
+
+    A class that received no weight gets exactly zero, as RELION's ``pdf_class`` does
+    (``wsum_model.pdf_class[iclass] / sum_weight``, ml_optimiser.cpp:5172-5180). RELION leaves a class
+    with ``pdf_class == 0`` out of every later expectation (acc_ml_optimiser_impl.h:1069, :1617, :2378),
+    so it never returns; here its log prior is ``-inf`` (:func:`class_mixture_from_weights`), which gives
+    every one of its samples zero weight.
+    """
 
     counts = np.zeros(n_classes, dtype=np.float64)
     for posterior in class_posterior_per_half:
@@ -205,5 +221,7 @@ def _class_weights_from_posterior(class_posterior_per_half, n_classes: int, prev
     total = float(np.sum(counts))
     if total <= 0.0:
         return np.asarray(previous_weights, dtype=np.float64)
-    weights = np.maximum(counts / total, 1e-12)
+    # No floor: a zero stays zero. The second normalisation is the one this function has always applied, kept so
+    # that a run in which no class empties is unchanged to the last bit.
+    weights = counts / total
     return weights / float(np.sum(weights))

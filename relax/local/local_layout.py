@@ -1291,6 +1291,48 @@ def restrict_local_layout_classes(layout: LocalHypothesisLayout, image_classes) 
     )
 
 
+def drop_local_layout_classes(layout: LocalHypothesisLayout, empty_classes) -> LocalHypothesisLayout:
+    """A class-expanded layout without the rows of ``empty_classes``.
+
+    RELION leaves a class with ``pdf_class == 0`` out of the expectation (acc_ml_optimiser_impl.h:1069,
+    :1617, :2378), also under local searches, whose weights carry no class prior
+    (``pdf_orientation = directions_prior * psi_prior``): the class is not scored, so it cannot win an
+    image, enter a per-particle minimum or return. Every image keeps its rows of the other classes.
+    """
+
+    empty = np.unique(np.asarray(list(empty_classes), dtype=np.int64))
+    if empty.size == 0:
+        return layout
+    if layout.n_classes == 1:
+        raise ValueError("only a class-expanded layout has classes to drop")
+    if empty.size >= layout.n_classes or empty.min() < 0 or empty.max() >= layout.n_classes:
+        raise ValueError(f"cannot drop classes {empty.tolist()} of {layout.n_classes}")
+    offsets = np.asarray(layout.rotation_offsets, dtype=np.int64)
+    counts = np.diff(offsets)
+    row_image = np.repeat(np.arange(counts.shape[0], dtype=np.int64), counts)
+    keep = ~np.isin(np.asarray(layout.row_class_flat, dtype=np.int64), empty)
+    new_counts = np.bincount(row_image[keep], minlength=counts.shape[0])
+
+    def take(values):
+        return None if values is None else np.asarray(values)[keep]
+
+    new_offsets = np.zeros(counts.shape[0] + 1, dtype=np.int64)
+    new_offsets[1:] = np.cumsum(new_counts, dtype=np.int64)
+    return replace(
+        layout,
+        rotation_offsets=new_offsets,
+        rotation_ids_flat=take(layout.rotation_ids_flat),
+        rotations_flat=take(layout.rotations_flat),
+        rotation_log_priors_flat=take(layout.rotation_log_priors_flat),
+        rotation_counts=new_counts.astype(np.asarray(layout.rotation_counts).dtype),
+        rotation_posterior_ids_flat=take(layout.rotation_posterior_ids_flat),
+        sample_mask_bits=take(layout.sample_mask_bits),
+        mstep_rotations_flat=take(layout.mstep_rotations_flat),
+        source_eulers_flat=take(layout.source_eulers_flat),
+        row_class_flat=take(layout.row_class_flat).astype(np.int32),
+    )
+
+
 def build_local_adaptive_pass2_hypothesis_layout(
     parent_layout: LocalHypothesisLayout,
     significant_sample_indices,

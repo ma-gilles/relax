@@ -153,11 +153,15 @@ def _pass1_block_update(
         raise ValueError(f"unknown coarse score kind {score_kind!r}")
     if rows < block_rows:
         scores = jnp.where(jnp.arange(block_rows)[None, :, None] < rows, scores, -jnp.inf)
-    raw_score_max = jnp.maximum(raw_score_max, jnp.max(scores.reshape(batch_size, -1), axis=1))
+    block_raw_max = jnp.max(scores.reshape(batch_size, -1), axis=1)
     pre_prior_scores = scores
     if score_kind == "gaussian":
         class_log_prior, rotation_log_prior_block = prior_terms
+        # RELION's min_diff2 is over the classes it evaluates: a class at pdf_class == 0 (log prior -inf) is
+        # skipped (acc_ml_optimiser_impl.h:1069), so its scores do not enter the pre-prior maximum.
+        block_raw_max = jnp.where(jnp.isneginf(class_log_prior), -jnp.inf, block_raw_max)
         scores = _add_coarse_prior_terms(scores, class_log_prior, rotation_log_prior_block, translation_log_prior)
+    raw_score_max = jnp.maximum(raw_score_max, block_raw_max)
     values = None
     if return_values:
         values = (pre_prior_scores if exact_weight_order else scores)[:, :rows, :].reshape(batch_size, -1)

@@ -522,6 +522,7 @@ def run_final_all_data(
                         current_sigma_offset_angstrom=final_sigma_offset_k,
                         translation_search_base=translation_search_base,
                         local_search_translation_prior_mode=options.local_search.local_search_translation_prior_mode,
+                        class_log_priors=carry.class_mixture.log_priors,
                     ),
                     batching=final_local_batching,
                     execution=final_local_execution,

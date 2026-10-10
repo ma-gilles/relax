@@ -6,7 +6,7 @@ history and installs them; each M-step writes the reference model in place, as i
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, NamedTuple
 
 import jax.numpy as jnp
@@ -150,6 +150,8 @@ def class_maximization(
     this_iteration: NumberedIteration,
     *,
     class_tau2: ClassTau2,
+    scored_class_weights,
+    previous_data_vs_prior,
 ) -> ClassMaximization:
     """RELION's Class3D M-step: one prior and one Wiener solve per class from the combined halves.
 
@@ -158,6 +160,11 @@ def class_maximization(
     reconstruction; after a first-iteration CC pass, taper the reported curves. The caller records the
     returned data-vs-prior curve in the history and installs it as the next iteration's scheduling curve.
     ``class_tau2`` is the prior an input source supplies (None shells: the previous references').
+    A class whose accumulators hold no weight is not solved, as in RELION's maximization
+    (ml_optimiser.cpp:4958-5026, gated on the ``pdf_class`` the expectation scored with,
+    ``scored_class_weights``): its ``data_vs_prior`` curve stays the previous one
+    (``previous_data_vs_prior``; ``updateSSNRarrays`` is not called), and its reference is the previous one
+    in the iteration that emptied it and zero afterwards (:5019-5023, without gradient refinement).
     Reads ``reference_model.maps``; from ``options``: ``k_class.n_classes`` and
     ``parity.relion_firstiter_ini_high_angstrom``; from ``ctx``: the reconstruction settings, scoring dtype,
     pixel size and M-step probe; from ``this_iteration``: its index and first-iteration CC.
@@ -202,6 +209,17 @@ def class_maximization(
         tau2_clock.seconds,
     )
     reference_model.tau2 = class_priors.variance
+    # RELION's (wsum_model.BPref[iclass].weight).sum() > XMIPP_EQUAL_ACCURACY: no particle weight reached the class.
+    unsolved = {
+        k: (previous_means[0][k] if float(np.asarray(scored_class_weights)[k]) > 0.0 else None)
+        for k in range(options.k_class.n_classes)
+        if not float(jnp.sum(jnp.abs(Ft_ctf_combined[k]))) > 0.0
+    }
+    if unsolved:
+        data_vs_prior = np.array(class_priors.data_vs_prior)
+        for k in unsolved:
+            data_vs_prior[k] = np.asarray(previous_data_vs_prior)[k]
+        class_priors = replace(class_priors, data_vs_prior=data_vs_prior)
 
     # --- Free previous-iteration means to reclaim GPU memory ---
     # (previous_means already snapshotted earlier for FSC sign alignment)
@@ -221,6 +239,7 @@ def class_maximization(
         accumulator_volume_shape=operands.accumulator_shape,
         relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
         probe=ctx.maximization_probe,
+        unsolved=unsolved,
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",

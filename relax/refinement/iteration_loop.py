@@ -51,6 +51,22 @@ from relax.sparse_pass2 import engine_record
 logger = logging.getLogger(__name__)
 
 
+# An iteration whose significant samples grow by more than this factor is reported: pass 2's cost follows them.
+SIGNIFICANT_SAMPLE_JUMP_FACTOR = 20.0
+
+
+def _warn_if_significant_samples_jumped(significant_counts, iteration: int) -> None:
+    """One warning when this iteration's significant samples exceed the previous iteration's by a large factor."""
+    if len(significant_counts) < 2 or significant_counts[-1] is None or significant_counts[-2] is None:
+        return
+    previous, current = (float(np.sum(counts, dtype=np.float64)) for counts in significant_counts[-2:])
+    if previous > 0.0 and current > SIGNIFICANT_SAMPLE_JUMP_FACTOR * previous:
+        logger.warning(
+            "Iteration %d kept %.0f significant samples, %.0f times the previous iteration's %.0f: its second pass "
+            "and the next iterations will be that much slower", iteration + 1, current, current / previous, previous,
+        )
+
+
 
 
 class _ClassStart(NamedTuple):
@@ -131,7 +147,9 @@ class _K1Iteration:
         """One class: no class weights to update."""
         return carry
 
-    def maximize(self, ctx, carry, options, history, this_iteration, operands, reference_model, source):
+    def maximize(
+        self, ctx, carry, options, history, this_iteration, operands, reference_model, source, scored_class_weights
+    ):
         """RELION's split-half M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct)."""
         mstep = maximization.k1_maximization(
             reference_model, operands, ctx, this_iteration, parity=options.parity,
@@ -298,11 +316,17 @@ class _ClassIteration:
     def record_class_weights(self, carry, options, history, per_half):
         """The class weights from this expectation's posterior: installed, recorded with the full-posterior
         weights, and logged."""
+        scored_weights = carry.class_mixture.weights
         carry = replace(carry, class_mixture=reference_state.class_mixture_from_weights(
             reference_state._class_weights_from_posterior(
                 per_half.class_posterior, options.k_class.n_classes, carry.class_mixture.weights,
             ),
         ))
+        for class_idx in reference_state.emptied_classes(scored_weights, carry.class_mixture.weights):
+            logger.warning(
+                "Class %d received no particle weight: it is empty and stays out of every later expectation "
+                "(RELION's pdf_class == 0)", class_idx + 1,
+            )
         history.record_class_weights(
             carry.class_mixture.weights,
             reference_state._class_weights_from_posterior(
@@ -315,12 +339,16 @@ class _ClassIteration:
         )
         return carry
 
-    def maximize(self, ctx, carry, options, history, this_iteration, operands, reference_model, source):
+    def maximize(
+        self, ctx, carry, options, history, this_iteration, operands, reference_model, source, scored_class_weights
+    ):
         """Class3D joins the halves per class, carries the previous Iref power spectrum forward as tau2 and
         solves once per class; its data-vs-prior curve is recorded and becomes the scheduling curve."""
         mstep = maximization.class_maximization(
             reference_model, operands, ctx, options, this_iteration,
             class_tau2=source.class_tau2(this_iteration.iteration, options.k_class.n_classes),
+            scored_class_weights=scored_class_weights,
+            previous_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
         )
         history.data_vs_prior_trajectory.append(mstep.data_vs_prior)
         carry = replace(carry, previous_data_vs_prior_for_scheduling=mstep.data_vs_prior)
@@ -975,6 +1003,7 @@ def refine_single_volume(
                 significant_count=expected.significance.recorded,
             )
             break
+        scored_class_weights = carry.class_mixture.weights  # the weights this expectation scored with
         carry = mode.record_class_weights(carry, options, history, expected.per_half)
         operands = maximization.mstep_operands(
             expected.per_half, padded_volume_shape=ctx.padded_volume_shape, halves=halves,
@@ -998,11 +1027,14 @@ def refine_single_volume(
         # --- RELION-exact M-step: K=1 on the split-half auto-refine path (compareTwoHalves -> updateSSNRarrays
         # -> reconstruct); Class3D joins the halves per class, carries the previous Iref power spectrum forward
         # as tau2 and solves once per class. mstep is the mode's record (ClassMaximization or K1Maximization). ---
-        carry, mstep = mode.maximize(ctx, carry, options, history, this_iteration, operands, reference_model, source)
+        carry, mstep = mode.maximize(
+            ctx, carry, options, history, this_iteration, operands, reference_model, source, scored_class_weights
+        )
         numerators, denominators = mode.solved_accumulators(mstep, operands)
         observer.stage_finished(iteration, "recon")
 
         history.significant_counts.append(expected.significance.recorded)
+        _warn_if_significant_samples_jumped(history.significant_counts, iteration)
 
         history.record_rotation_posterior(expected.per_half.rotation_posterior)
         # pdf_direction: each half's next direction prior from this iteration's posteriors (None: kept).
