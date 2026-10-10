@@ -494,8 +494,11 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   pass 2 scores its children (`resident_tilts.tilt_cc_scores`: each image's CC operands translated per
   slot). The tilt-series Class3D CC iteration is K=1 against class 0, which is RELION's rule when it
   seeds the classes from one reference (`do_generate_seeds`, ml_optimiser.cpp:4392-4401); with one
-  reference per class RELION scores every class, which the single-particle local pass does (relax#72)
-  and the tilt-series pass does not. Iteration 1 of
+  reference per class RELION scores every class, as the single-particle local pass does (relax#72) and
+  the tilt-series pass does since relax#75: each particle goes to the class of its best coarse sample
+  (the first class on an exact tie) and that class runs the K=1 pass over its particles
+  (`tomo_scoring._score_class_references_cc`). etob2_premult, K=2 from a reference STAR, against page-build
+  RELION: class, rotation and offset identical for 1000/1000 particles at iterations 1 and 2. Iteration 1 of
   et01_base seed 1 against RELION 5.0.1 (mpiscale build, MPI 3x4, H100), `run_it001_data.star`:
   orientations identical for 2000/2000 particles, offsets for 1998/2000
   (`em_work/cryoet_vdam_20261001/cc_it1`). Iteration 1 took 332 s in relax, about 60 min in RELION.

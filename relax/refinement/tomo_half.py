@@ -251,6 +251,29 @@ class TomoHalf:
         # Particle-STAR row of each unit, as a loaded dataset's index layout reports it.
         self._index_layout = RowLayout(np.asarray(rows, dtype=np.int64))
 
+    def subset(self, units):
+        """The :class:`TomoHalf` of these units (particles), in this order, with their tilt images."""
+
+        units = np.asarray(units, dtype=np.int64).reshape(-1)
+        images = (
+            np.concatenate([np.arange(self.unit_image_offsets[u], self.unit_image_offsets[u + 1]) for u in units])
+            if units.size
+            else np.zeros(0, dtype=np.int64)
+        )
+        return TomoHalf(
+            self.images.subset(images),
+            unit_image_offsets=np.concatenate([[0], np.cumsum(np.diff(self.unit_image_offsets)[units])]).astype(np.int64),
+            image_projections=self.image_projections[images],
+            image_left=self.image_left[images],
+            unit_optics_group=self.unit_optics_group[units],
+            rows=self._index_layout.rows[units],
+            image_shape=self.image_shape,
+            volume_shape=self.volume_shape,
+            voxel_size=self.voxel_size,
+            image_frames=self.image_frames[images],
+            unit_tomogram=self.unit_tomogram[units],
+        )
+
     def image_particle(self) -> np.ndarray:
         """Unit of every tilt image."""
 
