@@ -961,21 +961,72 @@ def test_cc_block_rows_divide_every_capacity():
         assert 1 <= block <= 128 and capacity % block == 0 and block & (block - 1) == 0
 
 
-def test_local_firstiter_cc_refuses_a_class3d_pass():
-    """RELION's --firstiter_cc iteration scores one reference; a local Class3D CC pass (a layout with
-    two classes) is refused before any device work."""
+@requires_resident_gpu
+def test_local_firstiter_cc_class3d_takes_the_winner_over_classes(monkeypatch, _resident_local_env):
+    """RELION's --firstiter_cc iteration of a local Class3D with given references scores every class
+    (do_generate_seeds is off, ml_optimiser.cpp:4392-4401) and keeps each particle's best sample over
+    classes and poses (relax#72: this pass was refused).
 
-    from types import SimpleNamespace
+    Two different references: each class's best score and pose are those of its own K=1 CC pass, and
+    the particle's whole posterior goes to the class with the larger best score.
+    """
 
-    with pytest.raises(rlp.ResidentConfigurationUnsupported, match="firstiter_cc iteration is K=1"):
-        rlp.compute_local_search_resident(
-            SimpleNamespace(experiment_dataset=MockDataset(n_images=2, seed=1)),
-            SimpleNamespace(n_classes=2),
-            SimpleNamespace(current_size=CURRENT_SIZE, wsum_current_size=None, firstiter_cc=True),
-            None,
-            translation_prior_centers=None,
-            symmetry_label="C1",
-        )
+    case = _case()
+    rng = np.random.default_rng(72)
+    other_projector = case["projector_half"] * jnp.asarray(
+        rng.uniform(0.5, 1.5, np.shape(case["projector_half"])), dtype=jnp.float32
+    )
+    singles = [
+        _run(case, monkeypatch=monkeypatch, firstiter_cc=True),
+        _run(dict(case, projector_half=other_projector), monkeypatch=monkeypatch, firstiter_cc=True),
+    ]
+    two = dict(
+        case,
+        volume=jnp.stack([case["volume"], case["volume"]]),
+        projector_half=jnp.stack([case["projector_half"], other_projector]),
+    )
+    joint = _run(two, monkeypatch=monkeypatch, firstiter_cc=True, n_classes=2).class_pass
+
+    best = np.stack([np.asarray(s.relion_stats.best_log_score_per_image, dtype=np.float64) for s in singles])
+    for k in range(2):
+        np.testing.assert_allclose(np.asarray(joint.class_best_log_score_per_image[k]), best[k], rtol=1e-5)
+        assert_matches(np.asarray(joint.per_class_hard_assignments[k]), np.asarray(singles[k].hard_assignment))
+    winner = np.argmax(best, axis=0)
+    assert set(winner.tolist()) == {0, 1}, "the case should give both classes a particle"
+    np.testing.assert_array_equal(np.asarray(joint.stats.max_posterior_per_image), 1.0)
+    np.testing.assert_allclose(
+        np.asarray(joint.class_reconstruction_posterior_sums), np.bincount(winner, minlength=2), atol=1e-6
+    )
+
+
+@requires_resident_gpu
+def test_local_firstiter_cc_identical_classes_give_the_first_class_everything(monkeypatch, _resident_local_env):
+    """An exact tie between classes goes to the first class: with two copies of one reference the first
+    class's BPref is the K=1 CC pass's and the second class has none.
+
+    RELION takes the CC winner as the device arg-min of the coarse weights
+    (acc_ml_optimiser_impl.h:2012-2026, ``getArgMinOnDevice`` = ``cub::DeviceReduce::ArgMin``,
+    cuda_utils_cub.cuh:66-84, which prefers the smaller offset on a tie), and that array is class-major
+    (``mapAllWeightsToMweights`` per class, acc_ml_optimiser_impl.h:1384-1392), so the lower class wins.
+    """
+
+    case = _case()
+    single = _run(case, monkeypatch=monkeypatch, firstiter_cc=True)
+    doubled = dict(
+        case,
+        volume=jnp.stack([case["volume"], case["volume"]]),
+        projector_half=jnp.stack([case["projector_half"], case["projector_half"]]),
+    )
+    joint = _run(doubled, monkeypatch=monkeypatch, firstiter_cc=True, n_classes=2).class_pass
+
+    def rel_l2(a, b):
+        a, b = np.asarray(a, dtype=np.complex128), np.asarray(b, dtype=np.complex128)
+        return float(np.linalg.norm(a - b) / np.linalg.norm(b))
+
+    np.testing.assert_allclose(np.asarray(joint.class_reconstruction_posterior_sums), [N_IMAGES, 0.0], atol=1e-6)
+    assert_matches(np.asarray(joint.per_class_hard_assignments[0]), np.asarray(single.hard_assignment))
+    assert rel_l2(joint.Ft_y[0], single.Ft_y) < 1e-5 and rel_l2(joint.Ft_ctf[0], single.Ft_ctf) < 1e-5
+    assert not np.asarray(joint.Ft_y[1]).any() and not np.asarray(joint.Ft_ctf[1]).any()
 
 
 @requires_resident_gpu

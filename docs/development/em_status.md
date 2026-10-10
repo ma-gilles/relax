@@ -492,7 +492,10 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   current-size crop (DC and x=0 column included), with RELION's 128 atomic additions per image, and
   keeps the first maximum in RELION's orientation order (`tomo_coarse.particle_coarse_cc_winners`);
   pass 2 scores its children (`resident_tilts.tilt_cc_scores`: each image's CC operands translated per
-  slot). Class3D's CC iteration is K=1 against class 0 (ml_optimiser.cpp:4389). Iteration 1 of
+  slot). The tilt-series Class3D CC iteration is K=1 against class 0, which is RELION's rule when it
+  seeds the classes from one reference (`do_generate_seeds`, ml_optimiser.cpp:4392-4401); with one
+  reference per class RELION scores every class, which the single-particle local pass does (relax#72)
+  and the tilt-series pass does not. Iteration 1 of
   et01_base seed 1 against RELION 5.0.1 (mpiscale build, MPI 3x4, H100), `run_it001_data.star`:
   orientations identical for 2000/2000 particles, offsets for 1998/2000
   (`em_work/cryoet_vdam_20261001/cc_it1`). Iteration 1 took 332 s in relax, about 60 min in RELION.

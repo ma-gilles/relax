@@ -456,6 +456,10 @@ def compute_local_search_resident(
     first iteration (``--sigma_ang``): both the parent probe and the fine pass score the
     normalized CC and keep only each image's best hidden variable (ml_optimiser.cpp:9266-9292),
     as the global ``--firstiter_cc`` pass does (resident_pass2 ``_resident_chunk_posterior_firstiter_cc``).
+    In a Class3D the best hidden variable is over the classes of the layout too: RELION scores every
+    class in its CC iteration when the references are given, and class 1 alone only when it generates
+    seeds from one reference (``do_generate_seeds``, ml_optimiser.cpp:4392-4401), a start whose layout
+    the caller has restricted to that class (``restrict_local_layout_classes``).
     """
 
     from recovar import cuda_backproject
@@ -475,10 +479,6 @@ def compute_local_search_resident(
     )
     wsum_current_size = current_size if kernel.wsum_current_size is None else int(kernel.wsum_current_size)
     score_mode = "normalized_cc" if kernel.firstiter_cc else "gaussian"
-    if kernel.firstiter_cc and local_layout.n_classes > 1:
-        raise ResidentConfigurationUnsupported(
-            "the local --firstiter_cc iteration is K=1: RELION's Class3D CC iteration scores one reference"
-        )
     try:
         (
             mstep_current_size,
@@ -2472,7 +2472,8 @@ def _start_resident_local_chunk(
                 block_rows=_cc_block_rows(chunk.row_capacity),
             )
         del score_proj
-        mark("score", scored.scores)
+        scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
+        mark("score", scores_flat)
         (
             log_z_out,
             best_log_score,
