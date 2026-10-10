@@ -946,7 +946,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         its four owners, with the accumulator layout, statistics and best poses the half reads."""
         from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
         from relax.helpers.types import NoiseStats, RelionStats
-        from relax.refinement.local_search_iteration import LocalSearchResult
+        try:
+            from relax.refinement.local_search_iteration import LocalSearchResult
+        except ImportError:  # a source in which the local search is local_half's own
+            from relax.refinement.local_half import LocalSearchResult
         from relax.sampling import rotation_grid_size
 
         fields = {f.name: getattr(owner, f.name) for owner in owners for f in dataclasses.fields(owner)}
