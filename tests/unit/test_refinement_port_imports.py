@@ -48,7 +48,7 @@ ALLOWED_IMPORTS = {
     ("relax.refinement.expectation", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
     ("relax.refinement.expectation", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
     ("relax.refinement.finalization", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.half_scoring", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
+    ("relax.refinement.dense_half", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
     ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
     ("relax.refinement.iteration_loop", "relax.diagnostics.iteration"): _INLINE_DUMP,
     ("relax.refinement.iteration_loop", "relax.diagnostics.reconstruction"): _INLINE_CHECK,

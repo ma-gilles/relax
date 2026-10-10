@@ -26,14 +26,14 @@ from relax.sampling import (
 from relax.symmetry import canonicalize_rotational_symmetry
 
 if TYPE_CHECKING:
-    from relax.refinement.half_inputs import HalfScoringData
-    from relax.refinement.half_scoring import (
+    from relax.refinement.dense_half import (
         DenseBatchPolicy,
         DenseExecutionPolicy,
         DensePriorSpec,
         DenseSamplingSpec,
         DenseVariantPolicy,
     )
+    from relax.refinement.half_inputs import HalfScoringData
 
 
 # The dispatch is a step of dense half scoring and logs under its logger.

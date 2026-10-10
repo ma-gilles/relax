@@ -21,9 +21,9 @@ from relax.helpers.batch_planning import (
 )
 from relax.helpers.types import NoiseStats, make_relion_stats
 from relax.refinement import (
+    dense_half,
     firstiter_cc,
     half_inputs,
-    half_scoring,
     local_half,
     local_sampling,
     local_search_iteration,
@@ -61,7 +61,7 @@ def _dense_owners(**values):
             image_window_size=values.pop("cs_for_engine"),
             coarse_rotation_ids=values.pop("coarse_rotation_ids", None),
         ),
-        half_scoring.DensePriorSpec(
+        dense_half.DensePriorSpec(
             rotation_log_prior_k=values.pop("rotation_log_prior_k"),
             class_rotation_log_prior_k=values.pop("class_rotation_log_prior_k"),
             translation_log_prior=values.pop("translation_log_prior"),
@@ -180,11 +180,11 @@ def test_firstiter_cc_core_keeps_owner_dependencies_visible():
         field.name
         for owner in (
             half_inputs.HalfScoringData,
-            half_scoring.DenseSamplingSpec,
-            half_scoring.DensePriorSpec,
-            half_scoring.DenseBatchPolicy,
-            half_scoring.DenseVariantPolicy,
-            half_scoring.DenseExecutionPolicy,
+            dense_half.DenseSamplingSpec,
+            dense_half.DensePriorSpec,
+            dense_half.DenseBatchPolicy,
+            dense_half.DenseVariantPolicy,
+            dense_half.DenseExecutionPolicy,
         )
         for field in dataclasses.fields(owner)
     }
@@ -192,7 +192,7 @@ def test_firstiter_cc_core_keeps_owner_dependencies_visible():
 
 
 def test_dense_half_core_keeps_owner_dependencies_visible():
-    function = half_scoring._score_half_dense_one_shape
+    function = dense_half._score_half_dense_one_shape
     assert tuple(inspect.signature(function).parameters) == (
         "half", "sampling", "priors", "batching", "variant", "execution", "optics",
     )
@@ -209,11 +209,11 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
         field.name
         for owner in (
             half_inputs.HalfScoringData,
-            half_scoring.DenseSamplingSpec,
-            half_scoring.DensePriorSpec,
-            half_scoring.DenseBatchPolicy,
-            half_scoring.DenseVariantPolicy,
-            half_scoring.DenseExecutionPolicy,
+            dense_half.DenseSamplingSpec,
+            dense_half.DensePriorSpec,
+            dense_half.DenseBatchPolicy,
+            dense_half.DenseVariantPolicy,
+            dense_half.DenseExecutionPolicy,
             optics_shapes.OpticsSpec,
         )
         for field in dataclasses.fields(owner)
@@ -437,7 +437,7 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
 def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, caplog, n_classes, separate_coarse):
     captured = {}
     dispatch = {}
-    original_dispatch = half_scoring._score_kclass_firstiter_cc_pass2
+    original_dispatch = dense_half._score_kclass_firstiter_cc_pass2
 
     def capture_dispatch(*owners, **values):
         dispatch.update(values)
@@ -532,11 +532,11 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
     monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
     monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
 
-    monkeypatch.setattr(half_scoring, "_score_kclass_firstiter_cc_pass2", capture_dispatch)
+    monkeypatch.setattr(dense_half, "_score_kclass_firstiter_cc_pass2", capture_dispatch)
     means = jnp.zeros(4 if n_classes == 1 else (n_classes, 4), dtype=jnp.complex64)
     coarse_ids = np.arange(576, dtype=np.int32)
 
-    result = half_scoring._score_half_dense(*_dense_owners(
+    result = dense_half._score_half_dense(*_dense_owners(
         k=0,
         experiment_dataset=TinyDataset(),
         means_k=means,
@@ -669,9 +669,9 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
         )
 
     monkeypatch.setattr(oversampling, "build_adaptive_pass2_grids", fake_grids)
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
-    result = half_scoring._score_half_dense(*_dense_owners(
+    result = dense_half._score_half_dense(*_dense_owners(
         k=0,
         experiment_dataset=TinyDataset(),
         means_k=jnp.zeros((4, 4), dtype=jnp.complex64),
@@ -715,7 +715,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
     assert result.ha.shape == (3,)
     # The keywords both adaptive dense routes pass the engine identically.
     assert captured["accumulate_noise"] is True
-    assert captured["adaptive_fraction"] == half_scoring.RELION_ADAPTIVE_FRACTION
+    assert captured["adaptive_fraction"] == dense_half.RELION_ADAPTIVE_FRACTION
     assert captured["max_significants"] == (-1 if max_significants is None else 5)
     assert captured["relion_fine_mstep_prune"] is True
     assert type(captured["coarse_healpix_order"]) is int and captured["coarse_healpix_order"] == 1

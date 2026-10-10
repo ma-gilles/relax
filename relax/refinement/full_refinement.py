@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 _CONCRETE_RECOVAR_PROVENANCE_MODULES = (
     "relax",
     "relax.refinement.iteration_loop",
-    "relax.refinement.half_scoring",
+    "relax.refinement.dense_half",
     "relax.dense.scoring_policy",
     "relax.classification.k_class",
     "relax.scoring.significance",

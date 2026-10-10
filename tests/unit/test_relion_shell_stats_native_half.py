@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 # The axis of the public layout that is RELION's x for an x-half M-step accumulator; the
 # production call sites pass it as ``full_half_axis`` for both public layouts
-# (``mstep_full_half_axis=0`` in relax/refinement/half_scoring.py and iteration_loop.py).
+# (``mstep_full_half_axis=0`` in relax/refinement/dense_half.py and iteration_loop.py).
 _RELION_X_AXIS = 0
 
 # (volume_shape, padding_factor, accumulator_volume_shape, r_max)

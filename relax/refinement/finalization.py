@@ -33,10 +33,7 @@ from relax.helpers.resolution import (
 )
 from relax.helpers.timing import Stopwatch
 from relax.refinement import final_reconstruction
-from relax.refinement.expectation import prepare_final_half
-from relax.refinement.final_sampling import prepare_final_sampling
-from relax.refinement.half_inputs import HalfScoringData
-from relax.refinement.half_scoring import (
+from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
     DensePriorSpec,
@@ -44,6 +41,9 @@ from relax.refinement.half_scoring import (
     DenseVariantPolicy,
     _score_half_dense_in_bpref_scope,
 )
+from relax.refinement.expectation import prepare_final_half
+from relax.refinement.final_sampling import prepare_final_sampling
+from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_half import (
     LocalBatchPolicy,

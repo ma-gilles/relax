@@ -230,7 +230,7 @@ def _run(
         scale_correction_data_vs_prior=np.full(case["n_shells"], 5.0, dtype=np.float64),
         mstep_relion_x_half=True,
         # The zero-oversampling route keeps every weight for the reconstruction
-        # and the statistics (half_scoring.py, local_reconstruct_significant_only).
+        # and the statistics (dense_half.py, local_reconstruct_significant_only).
         reconstruct_significant_only=not zero_oversampling,
         stats_use_reconstruction_probs=not zero_oversampling,
         adaptive_fraction=0.999,

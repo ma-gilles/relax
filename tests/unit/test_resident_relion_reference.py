@@ -737,7 +737,7 @@ def _local_parent_case(current_size: int, noise: float):
 
 
 def _run_local_parent_probe(case, current_size: int):
-    """The production pass-1 parent probe (half_scoring's score-only local call) at padding 2."""
+    """The production pass-1 parent probe (dense_half's score-only local call) at padding 2."""
 
     from test_resident_local_pass2 import N_IMAGES, PARENT_ORDER, _prior_eulers
 

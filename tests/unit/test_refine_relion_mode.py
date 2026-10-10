@@ -109,7 +109,7 @@ from relax.local.local_layout import (
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
-from relax.refinement import finalization, half_scoring, local_half, local_sampling, local_search_iteration
+from relax.refinement import dense_half, finalization, local_half, local_sampling, local_search_iteration
 from relax.refinement import maximization as maximization_module
 from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 from relax.refinement.iteration_loop import refine_single_volume
@@ -1781,7 +1781,7 @@ def test_expand_significant_samples_to_full_parent_translations_preserves_rotati
         np.zeros(0, dtype=np.int64),
     ]
 
-    expanded = half_scoring._expand_significant_samples_to_full_parent_translations(
+    expanded = dense_half._expand_significant_samples_to_full_parent_translations(
         samples,
         n_parent_translations=3,
     )
@@ -4481,7 +4481,7 @@ class TestRelionModeSmokeTest:
             assert np.any(prior < 0.0)
             raise PriorChecked
 
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", check_first_engine_call)
+        monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", check_first_engine_call)
         with pytest.raises(PriorChecked):
             refine_single_volume(
                 half_datasets, StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
@@ -5192,7 +5192,7 @@ class TestRelionModeSmokeTest:
             "update_refinement_state",
             force_convergence_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
+        monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
         monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_weights", spy_tau2)
 
         result = refine_single_volume(
@@ -5988,7 +5988,7 @@ class TestRelionModeSmokeTest:
             "update_refinement_state",
             force_convergence_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
+        monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
         monkeypatch.setattr(iteration_planning_module, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
         monkeypatch.setattr(finalization, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
 
@@ -6123,7 +6123,7 @@ class TestRelionModeSmokeTest:
             engine_calls.append(kwargs)
             return adaptive_result(experiment_dataset, means, fine_rotations, kwargs, max_posterior=pmax)
 
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
+        monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
         result = refine_single_volume(
             half_datasets,
             StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
@@ -7327,7 +7327,7 @@ class TestRelionModeSmokeTest:
             offset_wsum = noise_offset_wsums[min(idx, len(noise_offset_wsums) - 1)]
             return adaptive_result(experiment_dataset, means, fine_rotations, kwargs, sigma2_offset=offset_wsum)
 
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
+        monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
         result = refine_single_volume(
             half_datasets,
@@ -7374,7 +7374,7 @@ class TestRelionModeSmokeTest:
             captured_noise.append(np.asarray(noise_variance, dtype=np.float32))
             return adaptive_result(experiment_dataset, means, fine_rotations, kwargs)
 
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
+        monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
         refine_single_volume(
             half_datasets,
@@ -7519,7 +7519,7 @@ class TestRelionModeSmokeTest:
             )
 
         monkeypatch.setattr(oversampling_grids, "build_adaptive_pass2_grids", fake_build_pass2_grids)
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k1)
+        monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive_k1)
 
         result = refine_single_volume(
             half_datasets,
@@ -7712,7 +7712,7 @@ class TestRelionModeSmokeTest:
             )
 
         monkeypatch.setattr(oversampling_grids, "build_adaptive_pass2_grids", fake_build_pass2_grids)
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
+        monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
         monkeypatch.setattr(iteration_planning_module, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
         monkeypatch.setattr(finalization, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
 
@@ -8157,7 +8157,7 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -8278,7 +8278,7 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -8372,7 +8372,7 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -8485,7 +8485,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -8632,7 +8632,7 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
             best_pose_details,
         )
 
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -8711,7 +8711,7 @@ def test_relion_mode_writes_absolute_translations_from_previous_offset(
             best_pose_translations=np.repeat(chosen_trans[None, :], n_images, axis=0),
         )
 
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
     result = refine_single_volume(
         half_datasets,
@@ -8856,7 +8856,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         )
 
     monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_iref_power_spectrum", fake_iref_tau2)
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
 
     result = _refine_replaying(
         half_datasets,
@@ -9061,7 +9061,7 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
             best_pose_rotation_ids=jnp.zeros(n_images, dtype=jnp.int32),
         )
 
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
 
     result = refine_single_volume(
         half_datasets,
@@ -9213,7 +9213,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,

@@ -43,14 +43,14 @@ def test_concrete_em_imports_reject_wrong_repo(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("owner", ["half_scoring", "scoring_policy"])
+@pytest.mark.parametrize("owner", ["dense_half", "scoring_policy"])
 @pytest.mark.parametrize("missing_source", [False, True], ids=["foreign", "missing"])
 def test_concrete_em_imports_reject_unverified_scoring_owner(
     monkeypatch, tmp_path, owner, missing_source
 ):
     """A correct controller path must not mask a stale or unlocated scorer."""
     monkeypatch.setenv("RECOVAR_EXPECTED_REPO_ROOT", str(REPO_ROOT))
-    package = "refinement" if owner == "half_scoring" else "dense"
+    package = "refinement" if owner == "dense_half" else "dense"
     module_name = f"relax.{package}.{owner}"
     module = importlib.import_module(module_name)
     source_file = None if missing_source else str(tmp_path / f"{owner}.py")

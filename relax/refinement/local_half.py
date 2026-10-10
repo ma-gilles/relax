@@ -29,13 +29,13 @@ from relax.local.local_layout import (
     expand_local_layout_classes,
     restrict_local_layout_classes,
 )
-from relax.refinement.half_inputs import HalfScoringData
-from relax.refinement.half_scoring import (
+from relax.refinement.dense_half import (
     _expand_significant_samples_to_full_parent_translations,
     _merge_shape_class_results,
     _require_multi_shape_inputs,
     _single_shape_reconstruction_grid,
 )
+from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.local_search_iteration import (
     LocalClassSearchResult,

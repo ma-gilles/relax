@@ -664,7 +664,7 @@ def test_non_c1_zero_oversampling_reconstruction_fails_before_scoring(
     monkeypatch,
     n_classes,
 ):
-    from relax.refinement import half_scoring as iteration_loop
+    from relax.refinement import dense_half as iteration_loop
 
     monkeypatch.setattr(
         iteration_loop,
@@ -856,7 +856,7 @@ def _k1_symmetric_dense_half_kwargs(**overrides):
     return kwargs
 
 
-def _symmetric_dense_owners(half_scoring, values):
+def _symmetric_dense_owners(dense_half, values):
     """Build the seven dense-scoring owners from concise symmetry-test values."""
 
     values = dict(values)
@@ -884,7 +884,7 @@ def _symmetric_dense_owners(half_scoring, values):
             image_window_size=values.pop("cs_for_engine"),
             symmetry=values.pop("symmetry"),
         ),
-        half_scoring.DensePriorSpec(
+        dense_half.DensePriorSpec(
             rotation_log_prior_k=values.pop("rotation_log_prior_k"),
             class_rotation_log_prior_k=values.pop("class_rotation_log_prior_k"),
             translation_log_prior=values.pop("translation_log_prior"),
@@ -925,17 +925,17 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
     K=1 adaptive route must refuse instead of returning an unsymmetrized map.
     """
 
-    from relax.refinement import half_scoring
+    from relax.refinement import dense_half
 
     for name in ("prepare_adaptive_pass2_grids", "_score_kclass_firstiter_cc_pass2", "run_dense_k_class_em_adaptive"):
         monkeypatch.setattr(
-            half_scoring,
+            dense_half,
             name,
             lambda *_args, _name=name, **_kwargs: pytest.fail(f"unsupported non-C1 route reached {_name}"),
         )
     kwargs = _k1_symmetric_dense_half_kwargs(relion_firstiter_cc_this_iter=firstiter_cc, relion_x_half_mstep=False)
     with pytest.raises(RuntimeError, match="O reconstruction requires RELION x-half BPref accumulation"):
-        half_scoring._score_half_dense(*_symmetric_dense_owners(half_scoring, kwargs))
+        dense_half._score_half_dense(*_symmetric_dense_owners(dense_half, kwargs))
 
 
 def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monkeypatch):

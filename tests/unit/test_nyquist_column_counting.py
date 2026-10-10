@@ -218,7 +218,7 @@ def test_local_search_policies_carry_the_rule():
     """Every builder of the local policies names the rule: neither record defaults it."""
     import dataclasses
 
-    from relax.refinement.half_scoring import DenseExecutionPolicy
+    from relax.refinement.dense_half import DenseExecutionPolicy
     from relax.refinement.local_half import LocalExecutionPolicy
     from relax.sparse_pass2.local_search_records import LocalSearchKernelPolicy
 

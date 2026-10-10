@@ -4,8 +4,8 @@ import dataclasses
 
 from relax.dense import scoring_policy
 from relax.refinement import (
+    dense_half,
     half_inputs,
-    half_scoring,
     local_half,
     local_sampling,
     local_search_iteration,
@@ -238,7 +238,7 @@ def local_half_owners(**values):
 # RELION's values of the dense policy fields a test does not set: the production builders
 # (expectation.score_numbered_half, finalization.run_final_all_data) pass every field.
 def dense_sampling_spec(**fields):
-    return half_scoring.DenseSamplingSpec(**{"coarse_engine": "auto", "symmetry": "C1", **fields})
+    return dense_half.DenseSamplingSpec(**{"coarse_engine": "auto", "symmetry": "C1", **fields})
 
 
 def dense_batch_policy(**fields):
@@ -252,11 +252,11 @@ def dense_batch_policy(**fields):
             "class_batch_overrides",
         )
     )
-    return half_scoring.DenseBatchPolicy(**{**unset, **fields})
+    return dense_half.DenseBatchPolicy(**{**unset, **fields})
 
 
 def dense_variant_policy(**fields):
-    return half_scoring.DenseVariantPolicy(
+    return dense_half.DenseVariantPolicy(
         **{
             "coarse_window_size": None,
             "fine_window_size": None,
@@ -267,7 +267,7 @@ def dense_variant_policy(**fields):
 
 
 def dense_execution_policy(**fields):
-    return half_scoring.DenseExecutionPolicy(
+    return dense_half.DenseExecutionPolicy(
         **{
             "return_best_pose_details": True,
             "bpref_device_signature_active": False,

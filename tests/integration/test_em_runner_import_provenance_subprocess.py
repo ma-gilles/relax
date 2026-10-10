@@ -33,7 +33,7 @@ def test_module_entry_point_checks_concrete_imports(tmp_path):
     )
     assert accepted.returncode == 0, accepted.stderr
     assert "relax.refinement.iteration_loop=" in accepted.stderr
-    assert "relax.refinement.half_scoring=" in accepted.stderr
+    assert "relax.refinement.dense_half=" in accepted.stderr
     assert "relax.dense.scoring_policy=" in accepted.stderr
     assert "relax.classification.k_class=" in accepted.stderr
     assert "relax.scoring.significance=" in accepted.stderr

@@ -34,10 +34,7 @@ from relax.helpers.orientation_priors import (
 )
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement import half_inputs, iteration_planning, local_sampling, optics_shapes
-from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
-from relax.refinement.final_sampling import FinalSampling
-from relax.refinement.half_inputs import HalfScoringData
-from relax.refinement.half_scoring import (
+from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
     DensePriorSpec,
@@ -45,6 +42,9 @@ from relax.refinement.half_scoring import (
     DenseVariantPolicy,
     _score_half_dense_in_bpref_scope,
 )
+from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
+from relax.refinement.final_sampling import FinalSampling
+from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.local_half import (
     LocalBatchPolicy,
     LocalDiagnosticPolicy,

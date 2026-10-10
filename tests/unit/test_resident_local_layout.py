@@ -65,7 +65,7 @@ def _parent_layout(n_images=N_IMAGES, n_coarse_trans=4, seed=20260919):
 
 
 def _pass2_layout(significant_mode="mixed", seed=20260919):
-    """A pass-2 layout with the three support shapes half_scoring can produce.
+    """A pass-2 layout with the three support shapes dense_half can produce.
 
     ``mixed`` gives some images an explicit significant-sample list (so the
     layout carries a real per-row mask) and some ``None`` (full parent support).

@@ -125,7 +125,7 @@ and adaptive-support consumers read
 ## Actual proposed types and signatures
 
 Place these small inputs/results and the two computational functions in the
-existing [half_scoring.py](../../relax/refinement/half_scoring.py), alongside
+existing [half_scoring.py](../../relax/refinement/dense_half.py), alongside
 `LocalSamplingSpec`. This is the current owner of the consuming sampling
 interfaces and already imports sampling functions and the local-iteration owner.
 Add direct imports from `sampling`, `helpers.convergence`, `helpers.resolution`,

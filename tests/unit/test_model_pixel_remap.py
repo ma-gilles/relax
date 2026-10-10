@@ -187,20 +187,20 @@ def test_the_trial_grid_uses_the_model_pixel_and_stored_offsets_the_star_pixels(
 @pytest.fixture
 def magnified(monkeypatch):
     """Make the one-shape test halves anisotropically magnified (the engines' reference-sphere-clip predicate)."""
-    from relax.refinement import half_scoring
+    from relax.refinement import dense_half
 
-    monkeypatch.setattr(half_scoring, "dataset_magnification_is_anisotropic", lambda dataset: True)
+    monkeypatch.setattr(dense_half, "dataset_magnification_is_anisotropic", lambda dataset: True)
 
 
 @pytest.fixture
 def unmagnified(monkeypatch):
-    from relax.refinement import half_scoring
+    from relax.refinement import dense_half
 
-    monkeypatch.setattr(half_scoring, "dataset_magnification_is_anisotropic", lambda dataset: False)
+    monkeypatch.setattr(dense_half, "dataset_magnification_is_anisotropic", lambda dataset: False)
 
 
 def _local_grid(model_pixel, model_support_size=38):
-    from relax.refinement import half_scoring
+    from relax.refinement import dense_half
     from relax.refinement.local_sampling import LocalSampling
 
     scale = optics_scale.scale_difference(128, STAR_PIXEL, 128, model_pixel)
@@ -210,21 +210,21 @@ def _local_grid(model_pixel, model_support_size=38):
         model_support_size=model_support_size,
     )
     dataset = SimpleNamespace(image_shape=(128, 128))
-    return half_scoring._single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
+    return dense_half._single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
 
 
 def _dense_grid(model_pixel, model_support_size=28):
-    from relax.refinement import half_scoring
+    from relax.refinement import dense_half
 
     scale = optics_scale.scale_difference(128, STAR_PIXEL, 128, model_pixel)
-    sampling = half_scoring.DenseSamplingSpec(
+    sampling = dense_half.DenseSamplingSpec(
         effective_rotations=None, current_translations=None, base_translations=None, current_healpix_order=2,
         oversampling_order=1, translation_step=1.0, random_perturbation=0.0,
         image_window_size=optics_scale.group_current_size(28, 128, scale), coarse_engine="auto", symmetry="C1",
         model_support_size=model_support_size,
     )
     dataset = SimpleNamespace(image_shape=(128, 128))
-    return half_scoring._single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
+    return dense_half._single_shape_reconstruction_grid(dataset, sampling, optics_shapes.OpticsSpec.single_shape(scale))
 
 
 def test_a_magnified_single_shape_local_half_reconstructs_on_the_remapped_window(magnified):

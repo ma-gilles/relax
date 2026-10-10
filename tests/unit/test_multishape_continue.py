@@ -12,7 +12,7 @@ from helpers.float_compare import assert_matches
 from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
 import relax.refinement.half_inputs as half_inputs_module
-from relax.refinement import firstiter_cc, half_scoring
+from relax.refinement import dense_half, firstiter_cc
 
 pytestmark = pytest.mark.unit
 
@@ -35,7 +35,7 @@ def _run(monkeypatch, tmp_path, command, data, output, *arguments):
 
     _stand_in_device(monkeypatch)
     install_fake_adaptive_engine(monkeypatch)
-    engine = half_scoring.run_dense_k_class_em_adaptive
+    engine = dense_half.run_dense_k_class_em_adaptive
 
     def run(experiment_dataset, means, mean_variance, noise_variance, *args, **kwargs):
         result = engine(experiment_dataset, means, mean_variance, noise_variance, *args, **kwargs)
@@ -52,7 +52,7 @@ def _run(monkeypatch, tmp_path, command, data, output, *arguments):
             aggregate_noise_stats=follow(result.aggregate_noise_stats),
         )
 
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", run)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", run)
     monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", run)
     _run_main(monkeypatch, command, data, tmp_path / output, [str(argument) for argument in arguments])
     return tmp_path / output

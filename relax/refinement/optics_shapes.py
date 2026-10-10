@@ -246,7 +246,7 @@ def prepare_optics(
         noise_radial_k=noise_radial,
         coarse_sizing=coarse_sizing,
         class_translations=tuple(translations),
-        # The selected shape class sets its own (half_scoring's per-class replace).
+        # The selected shape class sets its own (dense_half's per-class replace).
         projection_scale=1.0,
         reference_current_size=None,
     )

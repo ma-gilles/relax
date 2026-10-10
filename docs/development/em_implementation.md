@@ -199,7 +199,7 @@ plus K2/exact-K4 pose, noise and class-summary settings. Returned arrays retain
 their layouts, dtypes and identities; saved refinement field names are unchanged.
 
 Per-half dispatch belongs to
-[`half_scoring`](../../relax/refinement/half_scoring.py).
+[`half_scoring`](../../relax/refinement/dense_half.py).
 Its dense and local adapters prepare engine arguments, retain adaptive/first-CC
 routing, and write class/pose fields into the caller-owned `PerHalfOutputs`.
 Every global K=1 and K-class scoring call runs the adaptive/sparse engine at the requested

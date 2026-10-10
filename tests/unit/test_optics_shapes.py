@@ -18,7 +18,7 @@ from helpers.refinement_specs import local_half_owners
 from relax.dense import scoring_policy
 from relax.dense.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
 from relax.helpers.types import RelionStats, make_noise_stats
-from relax.refinement import half_inputs, half_scoring, local_half, optics_shapes
+from relax.refinement import dense_half, half_inputs, local_half, optics_shapes
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
 
@@ -162,7 +162,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             random_perturbation=0.0,
             image_window_size=None,
         ),
-        half_scoring.DensePriorSpec(
+        dense_half.DensePriorSpec(
             rotation_log_prior_k=None,
             class_rotation_log_prior_k=None,
             translation_log_prior=None,
@@ -208,11 +208,11 @@ def test_shape_scoring_releases_unused_class_summaries_before_the_next_shape(mon
         summaries.append(weakref.ref(result.classes))
         return result
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
+    monkeypatch.setattr(dense_half, "_score_half_dense_one_shape", fake_score)
     owners = _dense_owners(
         half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
     )
-    merged = half_scoring._score_half_dense(*owners)
+    merged = dense_half._score_half_dense(*owners)
 
     assert len(summaries) == 2
     assert all(reference() is None for reference in summaries)
@@ -242,10 +242,10 @@ def test_dense_owner_shape_derivation_passes_class_translations_through_the_merg
             box=half.particles.dataset.image_shape[0],
         )
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
+    monkeypatch.setattr(dense_half, "_score_half_dense_one_shape", fake_score)
     owners = _dense_owners(half, optics)
 
-    merged = half_scoring._score_half_dense(*owners)
+    merged = dense_half._score_half_dense(*owners)
     outputs.update_from(0, merged)
 
     assert [getattr(item[0].particles.dataset, "_dataset", item[0].particles.dataset) for item in seen] == [
@@ -326,11 +326,11 @@ def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch, k
             result.best_pose_translations = class_outputs.best_pose_translations[0]
         return result
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
+    monkeypatch.setattr(dense_half, "_score_half_dense_one_shape", fake_score)
     owners = list(_dense_owners(half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4)))
     owners[4] = dataclasses.replace(owners[4], k_class_enabled=k_class_enabled)
 
-    merged = half_scoring._score_half_dense(*owners)
+    merged = dense_half._score_half_dense(*owners)
     outputs.update_from(0, merged)
 
     if k_class_enabled:
@@ -502,12 +502,12 @@ def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
         images = np.asarray(half.particles.image_corrections).astype(int)
         return _fake_result(images.size, images, 1.0, box=half.particles.dataset.image_shape[0])
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", score)
+    monkeypatch.setattr(dense_half, "_score_half_dense_one_shape", score)
     owners = _dense_owners(
         half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
         class_batch_overrides=overrides,
     )
-    half_scoring._score_half_dense(*owners)
+    dense_half._score_half_dense(*owners)
     assert received == [1000 // 32, 25]
 
 

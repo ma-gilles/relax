@@ -11,7 +11,7 @@ from recovar import cuda_backproject
 from relax.classification import k_class
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import bpref_diagnostics
-from relax.refinement import finalization, half_scoring, local_half
+from relax.refinement import dense_half, finalization, local_half
 from relax.refinement.refinement_options import ExecutionOptions, bpref_device_signature_target
 
 pytestmark = pytest.mark.unit
@@ -141,8 +141,8 @@ def test_target_dense_half_keeps_block_topology_inactive_for_live_work(monkeypat
         assert not cuda_backproject.relion_x_half_bp_block_topology_enabled()
         return "ordinary-live"
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense", fake_dense)
-    assert half_scoring._score_half_dense_in_bpref_scope(
+    monkeypatch.setattr(dense_half, "_score_half_dense", fake_dense)
+    assert dense_half._score_half_dense_in_bpref_scope(
         None,
         None,
         None,

@@ -61,7 +61,7 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
     float64 rows divided by s and cast once, rebuilt by the rule and arguments that built the layout.
 
     "oversampled children": parent oversampling makes the rows children on the fine grid, rebuilt from their
-    source Euler rows. "pass-1 probe": as half_scoring's adaptive local pass 1 does, the parent layout is built
+    source Euler rows. "pass-1 probe": as dense_half's adaptive local pass 1 does, the parent layout is built
     with the iteration's perturbation and handed in (``pass2_layout``) under a grid that states no perturbation.
     411ed2c1 rebuilt both from the caller's grid and raised RotationProvenanceError (by 0.04-0.07)."""
     from scipy.spatial.transform import Rotation

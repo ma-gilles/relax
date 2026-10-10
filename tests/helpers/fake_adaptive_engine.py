@@ -184,9 +184,9 @@ def fake_adaptive_engine(calls=None, **result_kwargs):
 def install_fake_adaptive_engine(monkeypatch, calls=None, **result_kwargs):
     """Route every global E-step (the adaptive and the --firstiter_cc dispatch) to the fake."""
 
-    from relax.refinement import firstiter_cc, half_scoring
+    from relax.refinement import dense_half, firstiter_cc
 
     fake = fake_adaptive_engine(calls, **result_kwargs)
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake)
     monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake)
     return fake

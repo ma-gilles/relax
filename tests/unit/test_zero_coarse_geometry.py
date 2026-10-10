@@ -15,7 +15,7 @@ from helpers.run_options import stand_in
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.dense import scoring_policy
-from relax.refinement import expectation, finalization, half_scoring, iteration_loop, local_half, local_sampling
+from relax.refinement import dense_half, expectation, finalization, iteration_loop, local_half, local_sampling
 from relax.sampling import DevicePass1Source
 
 pytestmark = pytest.mark.unit
@@ -50,16 +50,16 @@ def test_adaptive_dense_route_keeps_owner_inputs_visible(monkeypatch, n_classes)
     """The dispatcher hands its mode's adaptive scorer its own seven records and the point group."""
     scorer = {1: "_score_adaptive_k1_dense", 2: "_score_adaptive_kclass_dense"}[n_classes]
     records = ["half", "sampling", "priors", "batching", "variant", "execution", "optics"]
-    assert _parameters(half_scoring._score_half_dense_one_shape)[:7] == records
+    assert _parameters(dense_half._score_half_dense_one_shape)[:7] == records
     if n_classes == 1:
-        assert _parameters(half_scoring._score_adaptive_k1_dense) == [*records, "base_em_kwargs"]
-        assert [name for name, parameter in inspect.signature(half_scoring._score_adaptive_k1_dense).parameters.items()
+        assert _parameters(dense_half._score_adaptive_k1_dense) == [*records, "base_em_kwargs"]
+        assert [name for name, parameter in inspect.signature(dense_half._score_adaptive_k1_dense).parameters.items()
                 if parameter.kind is parameter.KEYWORD_ONLY] == ["symmetry"]
     else:
-        assert _parameters(half_scoring._score_adaptive_kclass_dense) == [*records, "em_kwargs", "symmetry"]
+        assert _parameters(dense_half._score_adaptive_kclass_dense) == [*records, "em_kwargs", "symmetry"]
     trace = CallTrace(monkeypatch)
-    trace.wrap(half_scoring, "_score_half_dense_one_shape", "dispatch")
-    trace.wrap(half_scoring, scorer, "scorer")
+    trace.wrap(dense_half, "_score_half_dense_one_shape", "dispatch")
+    trace.wrap(dense_half, scorer, "scorer")
     run_tiny_refinement(monkeypatch, n_classes=n_classes, final_after_max_iter=False)
     assert trace.labels() == ["dispatch", "scorer"] * 4
     for dispatch, call in zip(trace.calls("dispatch"), trace.calls("scorer"), strict=True):
@@ -128,9 +128,9 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, ex
     monkeypatch.setenv("RELAX_K1_RELION_X_HALF_MSTEP", "1" if xhalf else "0")
     _device_rotations_stand_in(monkeypatch)
     trace = CallTrace(monkeypatch)
-    trace.wrap(half_scoring, "_score_adaptive_k1_dense", "scorer")
-    trace.wrap(half_scoring, "prepare_adaptive_pass2_grids", "grids")
-    trace.wrap(half_scoring, "project_pass2_rotations", "projection")
+    trace.wrap(dense_half, "_score_adaptive_k1_dense", "scorer")
+    trace.wrap(dense_half, "prepare_adaptive_pass2_grids", "grids")
+    trace.wrap(dense_half, "project_pass2_rotations", "projection")
     run_tiny_refinement(
         monkeypatch, final_after_max_iter=False,
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
@@ -152,7 +152,7 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, ex
 
 def test_dense_float64_diagnostic_is_resolved_by_expectation_orchestration(monkeypatch):
     """The numbered and final execution policies carry the diagnostic switch their owner resolved."""
-    assert not hasattr(half_scoring, "_diagnostic_float64_pass2_matches")
+    assert not hasattr(dense_half, "_diagnostic_float64_pass2_matches")
     trace = CallTrace(monkeypatch)
     for module in (expectation, finalization):
         monkeypatch.setattr(module, "_diagnostic_float64_pass2_matches", lambda *args, **kwargs: True)
@@ -171,7 +171,7 @@ def test_local_adaptive_overrides_are_resolved_before_half_scoring():
     """
     for name in ("_local_adaptive_pass2_full_parent_enabled", "_local_adaptive_pass2_rotation_only_enabled",
                  "_local_adaptive_pass2_denominator_support_mode"):
-        assert not hasattr(half_scoring, name)
+        assert not hasattr(dense_half, name)
 
 
 class _Stop(Exception):

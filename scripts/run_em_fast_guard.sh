@@ -60,7 +60,7 @@ for helper in (
 for diagnostic in ("iteration", "reconstruction"):
     importlib.import_module(f"relax.diagnostics.{diagnostic}")
 execution_modules = (
-    "refinement.iteration_loop", "refinement.half_scoring", "classification.k_class",
+    "refinement.iteration_loop", "refinement.dense_half", "classification.k_class",
     "scoring.significance", "sparse_pass2.resident_pass2", "sparse_pass2.dispatch",
     "refinement.firstiter_cc", "refinement.local_search_iteration",
 )

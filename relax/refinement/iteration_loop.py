@@ -1,7 +1,7 @@
 """Orchestrate dense single-volume and K-class EM refinement.
 
 ``refine_single_volume`` validates options and manages refinement state and dispatch.
-``half_scoring`` owns the per-half dense/local engine calls; ``scoring_policy``
+``dense_half`` and ``local_half`` own the per-half dense and local engine calls; ``scoring_policy``
 owns their shared execution defaults and diagnostic selectors. Local chunks
 are implemented in ``local_search_iteration``; state-swap diagnostics belong
 to ``parity.state_swap_runtime``. Pure trial-grid construction belongs to

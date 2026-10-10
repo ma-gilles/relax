@@ -13,7 +13,7 @@ import pytest
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-from relax.refinement import half_scoring
+from relax.refinement import dense_half
 
 pytestmark = pytest.mark.unit
 
@@ -23,9 +23,9 @@ _ADAPTIVE_SCORER = {1: "_score_adaptive_k1_dense", 2: "_score_adaptive_kclass_de
 def _dense_route(monkeypatch, *, n_classes, oversampling):
     """The numbered dense scorings of a tiny run and the mode scorer called under each."""
     trace = CallTrace(monkeypatch)
-    trace.wrap(half_scoring, "_score_half_dense_one_shape", "dense")
+    trace.wrap(dense_half, "_score_half_dense_one_shape", "dense")
     for name in _ADAPTIVE_SCORER.values():
-        trace.wrap(half_scoring, name)
+        trace.wrap(dense_half, name)
     run_tiny_refinement(
         monkeypatch, n_classes=n_classes, final_after_max_iter=False,
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
@@ -37,7 +37,7 @@ def _dense_route(monkeypatch, *, n_classes, oversampling):
 @pytest.mark.parametrize("n_classes", [1, 2])
 def test_there_is_no_direct_dense_route_left(monkeypatch, n_classes, oversampling):
     for name in ("_dense_uses_adaptive_engine", "_score_direct_k1_dense", "_score_direct_kclass_dense", "run_em"):
-        assert not hasattr(half_scoring, name)
+        assert not hasattr(dense_half, name)
     trace = _dense_route(monkeypatch, n_classes=n_classes, oversampling=oversampling)
     dense = trace.calls("dense")
     assert len(dense) == 4
@@ -49,7 +49,7 @@ def test_there_is_no_direct_dense_route_left(monkeypatch, n_classes, oversamplin
 def _engine_sizes(monkeypatch, *, n_classes, oversampling):
     """Per numbered half scoring: the sampling's engine current size and the engine call's keywords."""
     engine_calls = []
-    trace = CallTrace(monkeypatch).wrap(half_scoring, "_score_half_dense_one_shape", "dense")
+    trace = CallTrace(monkeypatch).wrap(dense_half, "_score_half_dense_one_shape", "dense")
     run_tiny_refinement(
         monkeypatch, n_classes=n_classes, final_after_max_iter=False, engine_calls=engine_calls,
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),

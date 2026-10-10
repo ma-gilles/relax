@@ -3860,7 +3860,7 @@ remain in orchestration.
 
 ### Existing operand and sampling owners
 
-[relax/refinement/half_scoring.py](../../relax/refinement/half_scoring.py) (line 188):
+[relax/refinement/dense_half.py](../../relax/refinement/dense_half.py) (line 188):
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -3879,7 +3879,7 @@ class HalfScoringData:
     image_seed_classes: object | None = None
 ```
 
-[relax/refinement/half_scoring.py](../../relax/refinement/half_scoring.py) (line 204):
+[relax/refinement/dense_half.py](../../relax/refinement/dense_half.py) (line 204):
 
 ```python
 @dataclass(frozen=True, kw_only=True)
