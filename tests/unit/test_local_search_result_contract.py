@@ -7,7 +7,7 @@ import pytest
 from helpers.refinement_specs import local_iteration_owners
 
 from relax.helpers.types import LocalEMResult
-from relax.refinement import local_search_iteration
+from relax.refinement import local_half
 
 pytestmark = pytest.mark.unit
 
@@ -29,10 +29,10 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
             profile=profile,
         )
 
-    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", run_local)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", run_local)
     rotations = np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0)
     translations = np.zeros((2, 2), dtype=np.float32)
-    result = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    result = local_half._run_local_search_iteration(*local_iteration_owners(
         SimpleNamespace(image_shape=(2, 2), volume_shape=(2, 2, 2), particles_file=None),
         None, None, rotations, rotations,
         healpix_order=0, sigma_rot=1.0, sigma_psi=1.0,
@@ -85,7 +85,7 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
             stats=object(),
         )
 
-    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", run_local)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", run_local)
     prior = Rotation.random(3, random_state=7).as_matrix()
     translations = np.zeros((3, 2), dtype=np.float32)
     grid = dict(rotation_grid_random_perturbation=rp, rotation_grid_angular_sampling_deg=step)
@@ -103,7 +103,7 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
                 rotation_grid_random_perturbation=rp, rotation_grid_angular_sampling_deg=step,
             ),
         )
-    local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    local_half._run_local_search_iteration(*local_iteration_owners(
         SimpleNamespace(image_shape=(2, 2), volume_shape=(2, 2, 2), voxel_size=1.0, particles_file=None),
         None, None, prior, None,
         healpix_order=2, sigma_rot=0.2, sigma_psi=0.2,

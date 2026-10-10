@@ -109,11 +109,11 @@ from relax.local.local_layout import (
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
-from relax.refinement import dense_half, finalization, local_half, local_sampling, local_search_iteration, trial_grids
+from relax.refinement import dense_half, finalization, local_half, local_sampling, trial_grids
 from relax.refinement import maximization as maximization_module
 from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 from relax.refinement.iteration_loop import refine_single_volume
-from relax.refinement.local_search_iteration import LocalSearchResult
+from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.map_postprocess import _align_fourier_volume_sign_to_reference
 from relax.refinement.noise_updates import (
     _combined_noise_stats,
@@ -3319,7 +3319,6 @@ def test_half0_local_relion_accumulator_offload_skips_non_x_half():
 
 
 def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_prior(monkeypatch, rng):
-    from relax.refinement import local_search_iteration as local_iteration_module
 
     mock_dataset = MockDataset(1, rng)
     captured = {}
@@ -3393,15 +3392,15 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
         )
         return output
 
-    monkeypatch.setattr(local_iteration_module, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
-    monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_resident_local_search)
+    monkeypatch.setattr(local_half, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", fake_resident_local_search)
 
     prior_rotations = np.zeros((1, 3), dtype=np.float32)
     rotation_grid_rotations = get_relion_rotation_grid(0).astype(np.float32)
     translations = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
     reference_translations = np.array([[0.0, 0.0], [2.0, 0.0]], dtype=np.float32)
 
-    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    outputs = local_half._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -3442,7 +3441,6 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
 
 
 def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, rng):
-    from relax.refinement import local_search_iteration as local_iteration_module
 
     dataset = MockDataset(1, rng)
     score_grid = get_relion_rotation_grid(0).astype(np.float32)
@@ -3457,10 +3455,10 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
         captured["relion_exact_score_translation"] = kernel.relion_exact_score_translation
         raise DispatchCaptured
 
-    monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", capture_dispatch)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", capture_dispatch)
 
     with pytest.raises(DispatchCaptured):
-        local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+        local_half._run_local_search_iteration(*local_iteration_owners(
             dataset,
             jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -3501,7 +3499,6 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
 
 
 def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatch, rng):
-    from relax.refinement import local_search_iteration as local_iteration_module
 
     mock_dataset = MockDataset(2, rng)
     layout = LocalHypothesisLayout(
@@ -3533,9 +3530,9 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
             ),
         )
 
-    monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_resident_local_search)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", fake_resident_local_search)
 
-    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    outputs = local_half._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -3563,7 +3560,6 @@ def test_run_local_search_iteration_plumbs_normalization_log_evidence(monkeypatc
 
 
 def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkeypatch, rng):
-    from relax.refinement import local_search_iteration as local_iteration_module
 
     mock_dataset = MockDataset(2, rng)
     layout = LocalHypothesisLayout(
@@ -3594,9 +3590,9 @@ def test_run_local_search_iteration_plumbs_stats_use_reconstruction_probs(monkey
             ),
         )
 
-    monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_resident_local_search)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", fake_resident_local_search)
 
-    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    outputs = local_half._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -3630,7 +3626,6 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
 ):
     from recovar import utils
 
-    from relax.refinement import local_search_iteration as local_iteration_module
 
     mock_dataset = MockDataset(1, rng)
     captured = {}
@@ -3697,8 +3692,8 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
             ),
         )
 
-    monkeypatch.setattr(local_iteration_module, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
-    monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_resident_local_search)
+    monkeypatch.setattr(local_half, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", fake_resident_local_search)
 
     healpix_order = 1
     canonical_rotations = get_relion_rotation_grid(healpix_order).astype(np.float32)
@@ -3722,7 +3717,7 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
         == "full"
     )
 
-    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    outputs = local_half._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -3755,7 +3750,6 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
 
 
 def test_run_local_search_iteration_plumbs_score_only_to_the_resident_probe(monkeypatch, rng):
-    from relax.refinement import local_search_iteration as local_iteration_module
 
     mock_dataset = MockDataset(2, rng)
     layout = LocalHypothesisLayout(
@@ -3792,9 +3786,9 @@ def test_run_local_search_iteration_plumbs_score_only_to_the_resident_probe(monk
             profile={"score_only": support.score_only},
         )
 
-    monkeypatch.setattr(local_iteration_module, "compute_local_search_resident", fake_run_local_em_exact)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", fake_run_local_em_exact)
 
-    outputs = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    outputs = local_half._run_local_search_iteration(*local_iteration_owners(
         mock_dataset,
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),

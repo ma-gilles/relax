@@ -14,7 +14,7 @@ from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics import local_debug
 from relax.helpers.convergence import native_final_perturbation_healpix_order
 from relax.refinement import local_half
-from relax.refinement.local_search_iteration import LocalSearchResult
+from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
 from relax.relion import relion_normalization
 

@@ -102,7 +102,7 @@ scoring grid; the final pass sizes its parent pass with
 ([`test_local_fine_grid_owner.py`](../../tests/unit/test_local_fine_grid_owner.py)).
 Grid tests substitute primitives at their sampling owner; sealed-state replay remains
 at the refinement boundary. The exact local-search stage is implemented in
-[`local_search_iteration`](../../relax/refinement/local_search_iteration.py).
+[`local_half`](../../relax/refinement/local_half.py).
 That module builds local pose neighborhoods, asks
 [`batch_planning`](../../relax/helpers/batch_planning.py) for
 batch sizes, calls the selected kernel and returns `LocalSearchResult` (named accumulators,

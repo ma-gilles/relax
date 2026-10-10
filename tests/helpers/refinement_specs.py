@@ -8,7 +8,6 @@ from relax.refinement import (
     half_inputs,
     local_half,
     local_sampling,
-    local_search_iteration,
     shape_class_scoring,
 )
 from relax.refinement.half_inputs import HalfSet
@@ -57,7 +56,7 @@ def local_iteration_owners(*args, **values):
             image_pre_shifts=values.pop("image_pre_shifts", None),
             optics_group_ids=values.pop("optics_group_ids", None),
         ),
-        local_search_iteration.LocalSearchGridSpec(
+        local_half.LocalSearchGridSpec(
             prior_rotations=values.pop("prior_rotations"),
             rotation_grid_rotations=values.pop("rotation_grid_rotations"),
             healpix_order=values.pop("healpix_order"),

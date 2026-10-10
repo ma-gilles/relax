@@ -554,7 +554,7 @@ pads empty image segments with the valid end offset; drivers retain their
 existing device placement and posterior kernels.
 
 **Exact local search.**
-[`local_search_iteration.py`](../../relax/refinement/local_search_iteration.py)
+[`local_half.py`](../../relax/refinement/local_half.py)
 constructs per-image neighborhoods and runs both the fine pass and RELION's pass-1
 parent probe on the device-resident local driver.
 [`local_layout.py`](../../relax/local/local_layout.py)

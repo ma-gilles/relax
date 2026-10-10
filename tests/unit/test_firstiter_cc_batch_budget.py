@@ -25,7 +25,6 @@ from relax.refinement import (
     half_inputs,
     local_half,
     local_sampling,
-    local_search_iteration,
     shape_class_scoring,
 )
 from relax.refinement.half_inputs import HalfSet
@@ -253,7 +252,7 @@ def test_local_half_core_keeps_owner_dependencies_visible():
 
 
 def test_local_iteration_core_keeps_owner_dependencies_visible():
-    function = local_search_iteration._run_local_search_iteration
+    function = local_half._run_local_search_iteration
     assert tuple(inspect.signature(function).parameters) == (
         "data", "grid", "kernel", "support",
     )
@@ -270,7 +269,7 @@ def test_local_iteration_core_keeps_owner_dependencies_visible():
         field.name
         for owner in (
             local_search_records.LocalSearchData,
-            local_search_iteration.LocalSearchGridSpec,
+            local_half.LocalSearchGridSpec,
             local_search_records.LocalSearchKernelPolicy,
             local_search_records.LocalSearchSupportPolicy,
         )

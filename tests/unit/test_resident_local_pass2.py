@@ -3,7 +3,7 @@
 Ticket: ``em_parity_tickets_20260918/T12_resident_local_search.md``.
 
 The two engines are compared through the production dispatch
-(``local_search_iteration._run_local_search_iteration``) with the flag off and
+(``local_half._run_local_search_iteration``) with the flag off and
 on, so the test covers the wiring as well as the driver.
 
 What is compared, and against what
@@ -35,7 +35,7 @@ from relax.local.local_layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
-from relax.refinement import local_search_iteration
+from relax.refinement import local_half
 from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
 from relax.sampling import build_local_search_grid_metadata
 from relax.sparse_pass2 import resident_local_pass2 as rlp
@@ -198,7 +198,7 @@ def _run(
         image_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         scale_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         trans_centers = rng.uniform(-0.5, 0.5, (N_IMAGES, 2)).astype(np.float32)
-    return local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
         case["volume"],
         case["noise_variance"],
@@ -263,7 +263,7 @@ def _dispatched_arguments(monkeypatch, **run):
         bound.append((signature.bind(*args, **kwargs), set(kwargs)))
         raise _Dispatched
 
-    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", resident)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", resident)
     with pytest.raises(_Dispatched):
         _run(_case(), monkeypatch=monkeypatch, **run)
     (arguments, keywords), = bound

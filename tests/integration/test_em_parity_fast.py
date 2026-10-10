@@ -182,7 +182,7 @@ def _assert_fsc_gate(case: str, output_dir: Path) -> None:
 def _assert_resident_engines_ran(log: str, *, global_pass: bool, local_pass: bool, case: str) -> None:
     """The passes a case exists for must run on the resident drivers.
 
-    The routing logs its choice (dispatch.py, local_search_iteration.py), so a
+    The routing logs its choice (dispatch.py, local_half.py), so a
     case that ran another engine would fail here even if it met its RELION gates.
     """
 
