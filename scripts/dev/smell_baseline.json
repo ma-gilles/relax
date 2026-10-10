@@ -413,7 +413,6 @@
   "field-unread:relax.refinement.firstiter_bpref:_RelionFirstiterCompactBatchPlanningDecision.direct_peak_bytes",
   "field-unread:relax.refinement.ports:DenseHalfScored.previous_translations",
   "field-unread:relax.runtime.batch_planning:_RelionEMBatchPlan.runtime_free_estimate_gb",
-  "field-unread:relax.vdam.driver:NativeInitialModelResult.class_mrcs",
   "field-unread:relax.vdam.native_sampling:NativeSamplingState.offset_range_ori_angstrom",
   "field-unread:relax.vdam.native_sampling:NativeSamplingState.offset_step_ori_angstrom",
   "field-unread:relax.vdam.state:InitialModelState.Mavg",
