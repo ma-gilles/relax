@@ -25,7 +25,7 @@ arithmetic on the same CPU; it is a check for move-only commits, not a merge gat
 Printed lines are log rows (rule 2): their digits are masked, so a timing report shows as its template.
 
 Subtomograms (``--ios``) run on a simulated RELION 5 project (12 particles, seven tilts, two tomograms) with the
-tilt pass (``tomo_half.score_tomo_half`` and the pass-2 result builders of ``k_class``) replaced by a stand-in
+tilt pass (``tomo_scoring.score_tomo_half`` and the pass-2 result builders of ``k_class``) replaced by a stand-in
 seeded the same way; optics groups on two image shapes run each shape class's engine call through the same
 stand-in as single particles.
 
@@ -65,7 +65,7 @@ REFUSED_CASES = frozenset({"k1_refused_float64_scoring", "k1_refused_nan_tau2_fu
 
 NOT_COVERED = (
     "the real E-step engines and their numbers (stand-ins seeded by their operands replace "
-    "run_dense_k_class_em_adaptive and the subtomogram tilt pass, tomo_half.score_tomo_half)",
+    "run_dense_k_class_em_adaptive and the subtomogram tilt pass, tomo_scoring.score_tomo_half)",
     "the diagnostic optimiser continuation (--diagnostic-continue-optimiser) and iteration reference replay",
     "RELION's CUDA image preprocessing (the cases use --image-fourier-backend host_numpy)",
     "GPU operation order, peak memory and array lifetimes",
@@ -214,8 +214,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     import relax
     from relax.classification import k_class
     from relax.commands import initial_model as command
-    from relax.refinement import tomo_half
     from relax.vdam import adaptive_estep, driver, shape_class_estep
+
+    try:
+        from relax.refinement import tomo_scoring
+    except ImportError:  # a source from before tomo_scoring.py existed: the pass was tomo_half's
+        from relax.refinement import tomo_half as tomo_scoring
 
     assert relax.__file__.startswith(source), relax.__file__
 
@@ -330,7 +334,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                               rotation_log_prior, old_offsets_px, sigma_offset_angst, adaptive_fraction,
                               max_significants, unit_groups, padding_factor, reconstruction_group_ids,
                               reconstruction_group_count, **kwargs):
-        """CPU stand-in for the subtomogram pass (tomo_half.score_tomo_half and the pass-2 result builders):
+        """CPU stand-in for the subtomogram pass (tomo_scoring.score_tomo_half and the pass-2 result builders):
         the E-step result seeded by every operand it receives, as for single particles."""
         from relax.refinement.tomo_half import tomo_translation_grids
 
@@ -510,7 +514,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         patch(adaptive_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
         patch(shape_class_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
-        patch(tomo_half, "score_tomo_half", stand_in_tomo_scoring)
+        patch(tomo_scoring, "score_tomo_half", stand_in_tomo_scoring)
         patch(k_class, "single_class_pass2_em_result", stand_in_pass2_result)
         patch(k_class, "_class_segmented_em_result", stand_in_pass2_result)
         original_run = driver.run_native_initial_model

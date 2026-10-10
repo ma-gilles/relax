@@ -177,7 +177,7 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
     from types import SimpleNamespace
 
     from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
-    from relax.refinement import tomo_half
+    from relax.refinement import tomo_scoring
     from relax.sampling import rotation_grid_size
 
     captured = {}
@@ -189,7 +189,7 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
         captured.update(kwargs)
         raise Stop
 
-    monkeypatch.setattr(tomo_half, "score_tomo_half", score)
+    monkeypatch.setattr(tomo_scoring, "score_tomo_half", score)
     particles = SimpleNamespace(
         dataset=SimpleNamespace(n_units=2, voxel_size=1.0), translations=None, optics_group_ids=None,
         scale_corrections=None,
@@ -201,7 +201,7 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
     )
     sampling = SimpleNamespace(oversampling_order=1, healpix_order=0)
     with pytest.raises(Stop):
-        tomo_half.score_tomo_half_in_loop(
+        tomo_scoring.score_tomo_half_in_loop(
             data, use_adaptive=True, sampling=sampling,
             rotation_log_prior=np.zeros(rotation_grid_size(0, "C1"), dtype=np.float32), sigma_offset_angst=1.0,
             max_significants=None, reconstruction_current_size=4,

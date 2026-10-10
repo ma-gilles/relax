@@ -6,7 +6,7 @@ VDAM's three differences (:mod:`relax.vdam.adaptive_estep`): every tilt image ba
 residual ``shift(X_i) - CTF_i P_i V`` (BP.cuh ``backproject3D_SGD``), into the BPref slot
 ``class + K * (part_id % 2)`` of its particle (acc_ml_optimiser_impl.h:3391-3395), and the coarse
 pass keeps at most ``max_significants`` samples. The scoring is
-:func:`relax.refinement.tomo_half.score_tomo_half`, the subtomogram Refine3D/Class3D pass; this
+:func:`relax.refinement.tomo_scoring.score_tomo_half`, the subtomogram Refine3D/Class3D pass; this
 module turns its output into VDAM's accumulators and E-step metadata, as the single-particle
 route does (:func:`relax.vdam.adaptive_estep.run_adaptive_initial_model_estep`).
 """
@@ -108,7 +108,8 @@ def run_tomo_initial_model_estep(
     from relax.classification.k_class import _class_segmented_em_result, single_class_pass2_em_result
     from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
     from relax.refinement import tomo_particles
-    from relax.refinement.tomo_half import score_tomo_half, tomo_translation_grids
+    from relax.refinement.tomo_half import tomo_translation_grids
+    from relax.refinement.tomo_scoring import score_tomo_half
 
     particle_ids = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
     if particle_ids.size == 0:

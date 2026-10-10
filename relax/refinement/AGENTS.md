@@ -26,7 +26,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `finalization.py`, `final_sampling.py`, `final_reconstruction.py` | the final all-data pass |
 | `run_files.py`, `result_files.py` | RELION's per-iteration run files and `--continue`; final archives and maps |
 | `refinement_result.py` | what the controller and the final pass return (`RefinementResult` and its records); `archive_fields()` is the saved flat mapping |
-| `optics_shapes.py`, `tomo_half.py`, `tomo_particles.py` | several optics groups with different pixel size or box; subtomogram particles |
+| `optics_shapes.py`, `tomo_half.py`, `tomo_scoring.py`, `tomo_particles.py` | several optics groups with different pixel size or box; subtomogram particles |
 | `particle_loading.py`, `startup_references.py`, `startup_noise.py`, `projector_preparation.py` | input loading and half sets, start-up maps, prior and noise, projector slabs |
 
 ## Rules

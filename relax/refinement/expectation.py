@@ -56,7 +56,7 @@ from relax.refinement.optics_shapes import OpticsSpec
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.refinement_options import RefinementOptions
 from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
-from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
+from relax.refinement.tomo_scoring import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.sampling import TrialGrid, rotation_grid_size
 
 if TYPE_CHECKING:

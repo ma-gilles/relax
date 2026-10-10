@@ -62,7 +62,8 @@ from relax.refinement.reference_state import _class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
-from relax.refinement.tomo_half import local_tomo_sampling, score_tomo_half_in_loop
+from relax.refinement.tomo_half import local_tomo_sampling
+from relax.refinement.tomo_scoring import score_tomo_half_in_loop
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.relion.relion_metadata import relion_metadata_translations
 
