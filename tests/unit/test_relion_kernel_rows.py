@@ -95,7 +95,7 @@ def test_projection_block_applies_the_named_kernels_rule():
 @pytest.mark.unit
 @pytest.mark.parametrize("scale", [1.12, 1.3])
 def test_coarse_band_is_where_relion_projects_wrapped_rows(scale):
-    from relax.relion.optics_scale import coarse_rows_wrap_inside
+    from relax.relion.optics_groups import coarse_rows_wrap_inside
 
     r_max = 20
     matrix = Rotation.random(1, random_state=2).as_matrix()[0] / scale
@@ -150,7 +150,7 @@ def test_coarse_projection_in_the_band_projects_relions_relabelled_rows(compact)
     """In the band (window between 2 r_max and 2 s r_max) RELION projects the rows beyond maxR at
     ``i - window`` inside the sphere; the block projector must give those values, not zeros."""
     from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows
-    from relax.relion.optics_scale import coarse_rows_wrap_inside
+    from relax.relion.optics_groups import coarse_rows_wrap_inside
 
     rng = np.random.default_rng(0)
     r_max, window, scale = 8, 18, 1.3

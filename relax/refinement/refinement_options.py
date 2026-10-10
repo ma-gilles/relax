@@ -118,7 +118,7 @@ class OpticsGeometry:
     relion_optics_image_sizes: Any | None = None
     relion_optics_pixel_sizes: Any | None = None
     # Each half's per-image optics-group row (0 .. G-1) of a per-group noise table
-    # (relax.relion.optics_noise); required when the initial noise has G > 1 rows.
+    # (relax.relion.optics_groups); required when the initial noise has G > 1 rows.
     optics_group_ids_per_half: Any | None = None
     # The reference maps' pixel size (None: the image pixel size).
     relion_model_pixel_size: float | None = None

@@ -1,4 +1,6 @@
-"""Optics groups on another pixel size and box than the reference (RELION S3b rules).
+"""RELION optics groups: a group on another pixel size and box than the reference, and per-group noise spectra.
+
+**Another grid (RELION S3b rules).**
 
 The reference lives on optics group 0's grid (``ori_size`` pixels at ``angpix_ref``).
 A group with ``box_g`` pixels at ``angpix_g`` has the scale
@@ -15,12 +17,21 @@ A group with ``box_g`` pixels at ``angpix_g`` has the scale
   ``round(ires / s_g)`` for group shell ``ires`` (``:6840``), the M-step adds group shell
   ``i`` into reference shell ``round(i / s_g)`` (``:9100-9107``) and an empty shell takes
   the previous shell's value (``:5282-5285``).
+
+**Per-group noise spectra: table rows per image and sums per group.** RELION keeps one ``sigma2_noise``
+spectrum per optics group (``MlModel::sigma2_noise[optics_group]``). Every image scores and backprojects
+with its own group's spectrum, and adds its noise terms to that group's sums
+(``wsum_model.sigma2_noise[optics_group]``, ``sumw_group[optics_group]``). A noise operand is either one
+shared spectrum ``[P]`` (one optics group) or a table ``[G, P]``; ``image_optics_groups`` holds each
+dataset-local image's row (``0 .. G-1``). With one group every helper here returns its input unchanged, so
+single-group callers run exactly the arithmetic they ran before.
 """
 
 from __future__ import annotations
 
 import math
 
+import jax.numpy as jnp
 import numpy as np
 
 
@@ -83,3 +94,38 @@ def add_group_shells_to_reference(reference_sums, group_sums, scale) -> np.ndarr
     inside = index < reference_sums.shape[-1]
     np.add.at(reference_sums, index[inside], group_sums[inside])
     return reference_sums
+
+
+def noise_rows(noise, image_optics_groups, image_indices):
+    """The noise spectrum of each image in ``image_indices``.
+
+    ``noise`` is ``[P]`` (returned unchanged) or a ``[G, P]`` table, gathered to
+    ``[B, P]`` with ``image_optics_groups[image_indices]``.
+    """
+
+    if jnp.ndim(noise) == 1:
+        return noise
+    if image_optics_groups is None:
+        raise ValueError("a per-optics-group noise table needs each image's optics group")
+    groups = np.asarray(image_optics_groups, dtype=np.int32)[np.asarray(image_indices, dtype=np.int64)]
+    return jnp.asarray(noise)[jnp.asarray(groups)]
+
+
+def pixel_rows(values):
+    """``[P] -> [1, P]`` so it broadcasts over images; ``[B, P]`` rows unchanged."""
+
+    return values[None, :] if values.ndim == 1 else values
+
+
+def dense_optics_groups(optics_group_labels):
+    """RELION optics-group labels to dense row indices ``0 .. G-1`` and ``G``."""
+
+    labels = np.asarray(optics_group_labels, dtype=np.int64).reshape(-1)
+    unique, dense = np.unique(labels, return_inverse=True)
+    return dense.astype(np.int32), int(unique.size)
+
+
+def image_rotation_rows(values):
+    """``[P] -> [1, 1, P]``; per-image rows ``[B, P] -> [B, 1, P]`` for ``(image, rotation, pixel)`` terms."""
+
+    return values[None, None, :] if values.ndim == 1 else values[:, None, :]

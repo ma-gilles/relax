@@ -21,7 +21,7 @@ from relax.refinement.refinement_state import (
     compute_relion_orientation_changes,
     relion_mpi_hidden_variable_change_is_small,
 )
-from relax.relion import optics_scale
+from relax.relion import optics_groups
 from relax.relion.optics_aberrations import expected_accuracy_optics
 from relax.sampling.expected_accuracy import (
     ExpectedAccuracy,
@@ -531,10 +531,10 @@ def estimate_native_sampling_accuracy(
             # model-size projector (ml_optimiser.cpp:9336-9353).
             pixel = group_constant(optics_state.image_pixel_size, ids, "pixel size")
             box = int(group_constant(optics_state.image_box, ids, "box"))
-            scale = optics_scale.scale_difference(box, pixel, int(state.box_size), float(optics_state.pixel_size))
+            scale = optics_groups.scale_difference(box, pixel, int(state.box_size), float(optics_state.pixel_size))
             optics_kwargs["pixel_size"] = pixel
             grid_kwargs = dict(
-                current_image_size=optics_scale.group_current_size(current_image_size, box, scale),
+                current_image_size=optics_groups.group_current_size(current_image_size, box, scale),
                 group_grid=dict(
                     model_pixel_size=float(optics_state.pixel_size),
                     image_full_size=box,

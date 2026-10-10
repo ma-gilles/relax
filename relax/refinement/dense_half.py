@@ -586,7 +586,7 @@ def _score_half_dense_one_shape(
 
     ``half.particles.optics_group_ids`` gives each image's row of a
     per-optics-group ``noise_variance_k`` table
-    (:mod:`relax.relion.optics_noise`); only the K=1 adaptive route carries it,
+    (:mod:`relax.relion.optics_groups`); only the K=1 adaptive route carries it,
     every other engine refuses it.
 
     ``optics.projection_scale`` and ``reference_current_size`` describe
@@ -1109,12 +1109,12 @@ def single_shape_reconstruction_grid(dataset, sampling, optics: OpticsSpec):
     Wavg rectangle refuses (relax#69).
     """
 
-    from relax.relion import optics_scale
+    from relax.relion import optics_groups
 
     reference_size = sampling.model_support_size
     if reference_size is None or optics.projection_scale == 1.0 or not dataset_magnification_is_anisotropic(dataset):
         return sampling, optics
-    window = optics_scale.group_current_size(reference_size, int(dataset.image_shape[0]), optics.projection_scale)
+    window = optics_groups.group_current_size(reference_size, int(dataset.image_shape[0]), optics.projection_scale)
     return replace(sampling, model_support_size=window), replace(optics, reference_current_size=int(reference_size))
 
 

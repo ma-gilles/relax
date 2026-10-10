@@ -208,7 +208,7 @@ from relax.reconstruction.half_volume_mstep import (
 )
 from relax.relion import ctf
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
-from relax.relion.optics_noise import noise_rows, pixel_rows
+from relax.relion.optics_groups import noise_rows, pixel_rows
 from relax.relion.scale_groups import prepare_scale_correction_groups
 from relax.runtime.compile_ahead import (
     CompileAheadPool,

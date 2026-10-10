@@ -39,7 +39,7 @@ from relax.fourier.preprocessing import (
 )
 from relax.refinement.precision import DensePrecisionPolicy, audit_operand_precision
 from relax.relion import ctf
-from relax.relion.optics_noise import noise_rows, pixel_rows
+from relax.relion.optics_groups import noise_rows, pixel_rows
 from relax.runtime.env_flags import parse_env_binary_flag
 
 logger = logging.getLogger(__name__)
@@ -220,7 +220,7 @@ def _generic_inverse_noise_operands(noise_variance_half, *, optics_group_rows: b
     """Use the XFLOAT-reciprocal noise operand on the generic (non-exact) path.
 
     The shared one-dimensional spectrum and per-optics-group rows
-    (:mod:`relax.relion.optics_noise`) are handled here, so every group gets the
+    (:mod:`relax.relion.optics_groups`) are handled here, so every group gets the
     one-group arithmetic; other per-image noise keeps the historical division so
     its broadcasting is unchanged.
     """
@@ -351,7 +351,7 @@ def prepare_unshifted_bucket_operands(
     call would; the translation-dependent work stays in :func:`_prepare_bucket_io`.
 
     ``noise_variance_half`` is one shared spectrum or a per-optics-group table
-    whose rows ``noise_optics_groups`` selects per image (:mod:`relax.relion.optics_noise`).
+    whose rows ``noise_optics_groups`` selects per image (:mod:`relax.relion.optics_groups`).
 
     ``cc_power_weights`` (normalized CC only; one weight per score-window pixel) restricts
     the image power ``Xi2`` to the pixels the score counts. None is RELION's sum over the

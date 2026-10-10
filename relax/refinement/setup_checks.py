@@ -30,7 +30,7 @@ from relax.refinement.refinement_options import (
     require_consistency_route,
 )
 from relax.refinement.tomo_half import TomoHalf
-from relax.relion import optics_scale
+from relax.relion import optics_groups
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -75,7 +75,7 @@ def checked_optics_group_ids(optics_group_ids_per_half, noise_variance_per_half,
     """Each half's per-image optics-group rows, or ``[None, None]`` for one group.
 
     A half's noise is a flat vector (one optics group) or ``[G, P]`` rows
-    (:mod:`relax.relion.optics_noise`); with rows every image needs its group.
+    (:mod:`relax.relion.optics_groups`); with rows every image needs its group.
     """
 
     n_groups = 1 if noise_variance_per_half[0].ndim == 1 else int(noise_variance_per_half[0].shape[0])
@@ -182,7 +182,7 @@ def projection_scale_for_run(optics: RunOptics, *, subtomograms: bool) -> float:
     if optics.multi_shape_halves or subtomograms or optics.optics_pixel_sizes is None:
         return 1.0
     pixel, box = optics.first_optics_group_geometry()
-    scale = optics_scale.scale_difference(box, pixel, optics.image_geometry.box_size, optics.model_pixel_size)
+    scale = optics_groups.scale_difference(box, pixel, optics.image_geometry.box_size, optics.model_pixel_size)
     if scale != 1.0:
         logger.info("RELION single-shape scale difference: s=%.17g (model pixel %.12g)", scale, optics.model_pixel_size)
     return scale

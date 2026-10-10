@@ -16,7 +16,7 @@ from recovar import core
 from recovar.cuda_backproject import cuda_available as _cuda_projection_available
 
 from relax.fourier.half_spectrum import bin_shell_values_jax
-from relax.relion.optics_noise import image_rotation_rows
+from relax.relion.optics_groups import image_rotation_rows
 from relax.runtime.env_flags import parse_env_strict_flag
 
 logger = logging.getLogger(__name__)
@@ -302,7 +302,7 @@ def relion_kernel_zero_rows(box_size: int, projector_output_size: int, r_max, re
 
     This changes nothing for an image window within the model sphere
     (``imgY / 2 <= r_max``). For an image on a coarser grid than the reference
-    (scale ``1 < s < sqrt(2)``, :mod:`relax.relion.optics_scale`) the window is
+    (scale ``1 < s < sqrt(2)``, :mod:`relax.relion.optics_groups`) the window is
     wider, and each relabelled pixel lands outside the rotated sphere. RELION
     projects zeros there: rows ``maxR < label <= imgY/2`` for the coarse kernel,
     rows ``|label| > maxR`` for the fine kernels. The coarse kernel projects the
@@ -859,7 +859,7 @@ def compute_relion_projector_projections_block(
     coarse_relabel = None
     coarse_window = None
     if relion_kernel == "coarse" and zero_rows is not None and not isinstance(rotations_block, jax.core.Tracer):
-        from relax.relion.optics_scale import coarse_rows_wrap_inside
+        from relax.relion.optics_groups import coarse_rows_wrap_inside
 
         # RELION's window is the active current size, which a stable-shape caller passes as
         # its runtime mask size.

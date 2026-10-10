@@ -95,7 +95,7 @@ def test_coarse_gemm_operands_match_the_fused_relion_kernel_in_the_band(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.relion.optics_scale import coarse_rows_wrap_inside
+    from relax.relion.optics_groups import coarse_rows_wrap_inside
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)

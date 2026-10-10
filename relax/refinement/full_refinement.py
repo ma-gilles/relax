@@ -197,7 +197,7 @@ def _assert_expected_repo_imports() -> None:
 def _per_image_optics_groups(particles, layout) -> tuple[list, np.ndarray]:
     """Each half's dense optics-group row per image, for noise held as one spectrum per optics group, and the
     number of particles in each group."""
-    from relax.relion.optics_noise import dense_optics_groups
+    from relax.relion.optics_groups import dense_optics_groups
 
     image_optics_groups, _ = dense_optics_groups(particles["rlnOpticsGroup"])
     per_half = [image_optics_groups[layout.half1_rows], image_optics_groups[layout.half2_rows]]

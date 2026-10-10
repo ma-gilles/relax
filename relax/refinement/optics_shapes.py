@@ -3,7 +3,7 @@
 Images of different shapes cannot share one dataset or one compiled program, so a
 half is split into *shape classes* (optics groups with the same box and pixel size).
 Half scoring runs the unchanged single-shape route once per class on that class's
-dataset, with RELION's rules for a group on another grid (:mod:`relax.relion.optics_scale`):
+dataset, with RELION's rules for a group on another grid (:mod:`relax.relion.optics_groups`):
 
 - projection/backprojection matrices divided by the class scale ``s_g``
   (``applyScaleDifference``); poses stay unscaled everywhere else;
@@ -27,7 +27,7 @@ import math
 
 import numpy as np
 
-from relax.relion import optics_scale
+from relax.relion import optics_groups
 
 
 @dataclasses.dataclass(frozen=True)
@@ -126,7 +126,7 @@ def average_ctf2_parts(half, scales, *, current_size, image_current_size) -> lis
         (
             shape_class.dataset,
             None if scales is None else np.asarray(scales).reshape(-1)[shape_class.image_indices],
-            optics_scale.group_current_size(current_size, shape_class.box_size, shape_class.scale),
+            optics_groups.group_current_size(current_size, shape_class.box_size, shape_class.scale),
             shape_class.scale,
         )
         for shape_class in half.classes
@@ -151,7 +151,7 @@ def make_shape_classes(datasets_and_indices, *, model_box_size, ref_pixel, model
     for dataset, indices in datasets_and_indices:
         box_size = int(dataset.image_shape[0])
         pixel = float(dataset.voxel_size)
-        scale = optics_scale.scale_difference(
+        scale = optics_groups.scale_difference(
             box_size, pixel, model_box_size, ref_pixel if model_pixel is None else model_pixel
         )
         if scale >= math.sqrt(2.0):

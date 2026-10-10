@@ -987,7 +987,7 @@ def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_lo
     The binding runs once per shape class on that class's trials (the half's first
     ``max_trials`` in trial order), and class means recombine with trial counts.
     """
-    from relax.relion import optics_scale
+    from relax.relion import optics_groups
 
     eulers = np.asarray(best_eulers_deg, dtype=np.float64)
     n_particles = int(half.n_units)
@@ -1017,7 +1017,7 @@ def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_lo
                 best_eulers_deg=eulers[positions],
                 class_ids=np.asarray(class_ids).reshape(-1)[positions],
                 trial_order_local=np.concatenate([class_trials, rest]),
-                current_image_size=optics_scale.group_current_size(
+                current_image_size=optics_groups.group_current_size(
                     current_image_size, shape_class.box_size, shape_class.scale
                 ),
                 random_seed_particle_ids=particle_ids[positions],

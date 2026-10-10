@@ -13,7 +13,7 @@ import numpy as np
 
 from relax.fourier.resolution import relion_coarse_image_size
 from relax.refinement.optics_shapes import MultiShapeHalf, ShapeClass
-from relax.relion import optics_scale
+from relax.relion import optics_groups
 from relax.sampling.orientation_priors import (
     make_relion_translation_log_prior,
     relion_half_translation_prior_inputs,
@@ -225,7 +225,7 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
         out["translation_step"] = float(translation_step) * shape_class.trial_grid_factor()
     for name in IMAGE_SIZE_KWARGS:
         if out.get(name) is not None:
-            out[name] = optics_scale.group_current_size(out[name], shape_class.box_size, shape_class.scale)
+            out[name] = optics_groups.group_current_size(out[name], shape_class.box_size, shape_class.scale)
     if coarse_sizing is not None:
         for name in COARSE_SIZE_KWARGS:
             if kwargs.get(name) is not None:
@@ -236,7 +236,7 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     if reference_size is None:
         reference_size = kwargs.get("cs_for_engine")
     if reference_size is not None:
-        out["model_current_size_for_engine"] = optics_scale.group_current_size(
+        out["model_current_size_for_engine"] = optics_groups.group_current_size(
             reference_size, shape_class.box_size, shape_class.scale
         )
     half = kwargs.get("experiment_dataset")
@@ -392,7 +392,7 @@ def shape_class_engine_inputs(
         reference_current_size = int(half.image_shape[0]) if fine_current_size is None else int(fine_current_size)
     for name in ("current_size", "reconstruction_current_size"):
         if kwargs.get(name) is not None:
-            kwargs[name] = optics_scale.group_current_size(kwargs[name], shape_class.box_size, shape_class.scale)
+            kwargs[name] = optics_groups.group_current_size(kwargs[name], shape_class.box_size, shape_class.scale)
     dataset = _engine_dataset(shape_class, half.volume_shape)
     magnification, grid_kwargs = engine_projection_inputs(
         dataset, scale=shape_class.scale, reference_current_size=reference_current_size
@@ -486,10 +486,10 @@ def class_noise_table(noise_radial_ref, shape_class: ShapeClass, model_box_size:
     to_class = (float(shape_class.box_size) / float(model_box_size)) ** 4
     n_shells = shape_class.box_size // 2 + 1
     shape = (shape_class.box_size, shape_class.box_size)
-    beyond = optics_scale.reference_shell_of_group_shell(n_shells, shape_class.scale) >= radial.shape[-1]
+    beyond = optics_groups.reference_shell_of_group_shell(n_shells, shape_class.scale) >= radial.shape[-1]
     rows = []
     for row in radial:
-        group_row = optics_scale.group_noise_from_reference(row, n_shells, shape_class.scale)
+        group_row = optics_groups.group_noise_from_reference(row, n_shells, shape_class.scale)
         # RELION gives these shells (beyond the reference Nyquist) zero weight; they lie
         # outside every scored window, so hold the last reference shell there instead of
         # a zero variance that would turn the unused pixels into inf/nan.
@@ -506,7 +506,7 @@ def noise_sums_to_reference(values, shape_class: ShapeClass, model_box_size: int
     n_ref = model_box_size // 2 + 1
     return np.stack(
         [
-            optics_scale.add_group_shells_to_reference(np.zeros(n_ref), row * to_reference, shape_class.scale)
+            optics_groups.add_group_shells_to_reference(np.zeros(n_ref), row * to_reference, shape_class.scale)
             for row in values
         ]
     )
@@ -813,7 +813,7 @@ def require_exact_local_parent_windows(kwargs) -> None:
 
     The local parent pass (RELION's pass 1) projects in Python and zeroes the rows beyond
     ``maxR``. That is RELION's coarse kernel unless the class's pass-1 window lies strictly
-    between ``2 r_max`` and about ``2 s r_max`` (:func:`relax.relion.optics_scale.coarse_rows_wrap_inside`).
+    between ``2 r_max`` and about ``2 s r_max`` (:func:`relax.relion.optics_groups.coarse_rows_wrap_inside`).
     """
 
     half = kwargs["experiment_dataset"]
@@ -821,7 +821,7 @@ def require_exact_local_parent_windows(kwargs) -> None:
     reference_size = kwargs.get("cs_for_engine") or model_box_size
     for shape_class in half.classes:
         window = class_kwargs(kwargs, shape_class, half.n_units).get("local_pass1_current_size") or shape_class.box_size
-        if optics_scale.coarse_rows_wrap_inside(window, int(reference_size) // 2, shape_class.scale):
+        if optics_groups.coarse_rows_wrap_inside(window, int(reference_size) // 2, shape_class.scale):
             raise NotImplementedError(
                 f"optics group class of {shape_class.box_size} px at scale {shape_class.scale:.3f}: its local pass-1 "
                 f"window {window} lies between 2 r_max and 2 s r_max (r_max {int(reference_size) // 2}), where "

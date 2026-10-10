@@ -13,7 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.projection.projection import relion_coarse_relabel
-from relax.relion.optics_noise import pixel_rows
+from relax.relion.optics_groups import pixel_rows
 from relax.runtime.env_flags import parse_env_strict_flag
 from relax.scoring.coarse_gaussian_gemm import (
     _K1_RELION_F32_COARSE_SUPPORT_ENV,

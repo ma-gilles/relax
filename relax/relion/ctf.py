@@ -221,7 +221,7 @@ def premultiplied_average_ctf2(parts, box_size: int, sumw: float):
     ``data_vs_prior`` by ``avgctf2``.
     """
 
-    from relax.relion.optics_scale import add_group_shells_to_reference
+    from relax.relion.optics_groups import add_group_shells_to_reference
 
     n_shells = int(box_size) // 2 + 1
     numerator = np.zeros(n_shells, dtype=np.float64)

@@ -113,7 +113,7 @@ def optics_group_grids(optics_state, optics_group_ids, model_box):
 
     if optics_state is None or optics_state.image_box is None or optics_group_ids is None:
         return None
-    from relax.relion.optics_scale import scale_difference
+    from relax.relion.optics_groups import scale_difference
 
     groups = np.asarray(optics_group_ids)
     grids = {}
@@ -142,7 +142,7 @@ def relion_log_likelihood_contributions(
     (``remap_image_sizes``, ml_optimiser.cpp:9046-9055).
     """
     from relax.relion.ctf import _fftw_shell_labels
-    from relax.relion.optics_scale import group_current_size
+    from relax.relion.optics_groups import group_current_size
 
     shells = _fftw_shell_labels(int(box_size), int(current_size), centered_rows=False)
     sigma2 = np.atleast_2d(np.asarray(sigma2_noise, dtype=np.float64))

@@ -16,7 +16,7 @@ from relax.fine_pass.resident_statistics import make_resident_statistics, resolv
 from relax.fine_pass.wavg import image_power_shells
 from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half
 from relax.projection.projection import compute_noise_block, compute_noise_block_per_optics_group
-from relax.relion.optics_noise import dense_optics_groups, noise_rows, pixel_rows
+from relax.relion.optics_groups import dense_optics_groups, noise_rows, pixel_rows
 
 IMAGE_SHAPE = (16, 16)
 N_SHELLS = 9

@@ -118,7 +118,7 @@ def tilt_image_coarse_operands(
     from relax.fourier.preprocessing import prepare_batch_preprocess_operands
     from relax.io.batch_fetch import fetch_indexed_batch
     from relax.relion.ctf import relion_exact_ctf_half_from_source_star_host
-    from relax.relion.optics_noise import noise_rows
+    from relax.relion.optics_groups import noise_rows
     from relax.scoring.coarse_operands import (
         process_relion_exact_coarse_half_image,
         relion_exact_coarse_operands,

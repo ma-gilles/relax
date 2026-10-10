@@ -14,7 +14,7 @@ import pytest
 
 from relax.fine_pass.resident_statistics import resolve_statistics_config
 from relax.refinement import optics_shapes, shape_class_scoring
-from relax.relion import optics_scale
+from relax.relion import optics_groups
 
 pytestmark = pytest.mark.unit
 
@@ -41,7 +41,7 @@ def _noise_shells(current_size):
 
 def test_reference_group_remaps_against_the_header_pixel():
     reference, diamond = _classes(HEADER_PIXEL)
-    sizes = [optics_scale.group_current_size(50, c.box_size, c.scale) for c in (reference, diamond)]
+    sizes = [optics_groups.group_current_size(50, c.box_size, c.scale) for c in (reference, diamond)]
     assert sizes == [52, 50]
     assert _noise_shells(sizes[0]) == (26, 27)
     assert _noise_shells(sizes[1]) == (25, 26)
@@ -55,7 +55,7 @@ def test_translations_stay_on_the_star_pixels():
 def test_an_exact_header_pixel_keeps_the_reference_group_at_the_model_size():
     reference, _ = _classes(None)
     assert reference.scale == 1.0
-    assert optics_scale.group_current_size(50, reference.box_size, reference.scale) == 50
+    assert optics_groups.group_current_size(50, reference.box_size, reference.scale) == 50
 
 
 def test_halves_scale_against_the_dataset_model_pixel():
@@ -203,10 +203,10 @@ def _local_grid(model_pixel, model_support_size=38):
     from relax.local_search.sampling import LocalSampling
     from relax.refinement import dense_half
 
-    scale = optics_scale.scale_difference(128, STAR_PIXEL, 128, model_pixel)
+    scale = optics_groups.scale_difference(128, STAR_PIXEL, 128, model_pixel)
     sampling = LocalSampling(
         search=None, rotations=None, translations=None, base_translations=None, perturbation=0.0, angular_step_deg=None,
-        image_window_size=optics_scale.group_current_size(38, 128, scale), coarse_image_window_size=None,
+        image_window_size=optics_groups.group_current_size(38, 128, scale), coarse_image_window_size=None,
         model_support_size=model_support_size,
     )
     dataset = SimpleNamespace(image_shape=(128, 128))
@@ -216,11 +216,11 @@ def _local_grid(model_pixel, model_support_size=38):
 def _dense_grid(model_pixel, model_support_size=28):
     from relax.refinement import dense_half
 
-    scale = optics_scale.scale_difference(128, STAR_PIXEL, 128, model_pixel)
+    scale = optics_groups.scale_difference(128, STAR_PIXEL, 128, model_pixel)
     sampling = dense_half.DenseSamplingSpec(
         effective_rotations=None, current_translations=None, base_translations=None, current_healpix_order=2,
         oversampling_order=1, translation_step=1.0, random_perturbation=0.0,
-        image_window_size=optics_scale.group_current_size(28, 128, scale), coarse_engine="auto", symmetry="C1",
+        image_window_size=optics_groups.group_current_size(28, 128, scale), coarse_engine="auto", symmetry="C1",
         model_support_size=model_support_size,
     )
     dataset = SimpleNamespace(image_shape=(128, 128))

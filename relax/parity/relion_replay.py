@@ -2087,7 +2087,7 @@ def _build_replay_iteration_overrides(
         """One half's pixel noise: flat for one optics group, ``[G, P]`` rows for G > 1.
 
         RELION keeps ``sigma2_noise`` per optics group (subtomograms: one group
-        per tilt); ``[G, P]`` is the noise model's per-group layout (helpers/optics_noise.py).
+        per tilt); ``[G, P]`` is the noise model's per-group layout (relion/optics_groups.py).
         """
         radial_by_group = read_relion_sigma2_noise_by_group(
             model,

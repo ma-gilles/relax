@@ -65,7 +65,7 @@ from relax.numerics.deterministic_reduce import (
     fixed_order_segment_sum,
 )
 from relax.projection.projection import compute_noise_block
-from relax.relion.optics_noise import pixel_rows
+from relax.relion.optics_groups import pixel_rows
 from relax.runtime.env_flags import parse_env_flag
 from relax.runtime.shape_buckets import pow2_floor
 

@@ -67,7 +67,7 @@ as RELION does, for both the projection and the image shift. The coarse zeros ar
 RELION's only when the window is at least about \(2s\,\mathrm{maxR}\). A coarse
 window strictly between \(2\,\mathrm{maxR}\) and that bound makes RELION score the
 wrapped rows with nonzero references
-([`coarse_rows_wrap_inside`](../../relax/relion/optics_scale.py)). The non-fused
+([`coarse_rows_wrap_inside`](../../relax/relion/optics_groups.py)). The non-fused
 coarse projection and the local parent pass refuse that band; only the fused scorer
 reproduces it. Before this rule, the relabelled rows held nonzero reference values
 and the other-grid group's Pmax moved by about 0.01 per particle. Groups at
