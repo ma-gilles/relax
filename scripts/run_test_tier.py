@@ -99,6 +99,7 @@ FAST_CASES = {  # item name: pytest node id
     "k1_multioptics_coldstart": "test_em_parity_fast_k1_multioptics_coldstart",
     "k1_multioptics_firstiter_cc": "test_em_parity_fast_k1_multioptics_firstiter_cc",
     "kclass_coldstart": "test_em_parity_fast_kclass_coldstart",
+    "kclass_local_coldstart": "test_em_parity_fast_kclass_local_coldstart",
     "kclass_nonadaptive_replay": "test_em_parity_fast_kclass_nonadaptive_replay",
     "kclass_strict_oversample_coldstart": "test_em_parity_fast_kclass_strict_oversample_coldstart",
 }
@@ -120,6 +121,7 @@ FAST_CASE_SECONDS = {  # H100 walls of the last full fast tier (Q 14320189) and 
     "k1_multioptics_coldstart": 110,  # H100 relax wall 106 s cold (Slurm 14419909)
     "k1_multioptics_firstiter_cc": 50,  # H100 relax wall 43 s (Slurm 14746272)
     "kclass_coldstart": 180,
+    "kclass_local_coldstart": 40,  # H100 item wall 26 s (Slurm 15315108)
     "kclass_nonadaptive_replay": 90,
     "kclass_strict_oversample_coldstart": 110,
 }

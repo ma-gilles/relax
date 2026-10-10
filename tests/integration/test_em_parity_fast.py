@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 import time
 from pathlib import Path
@@ -1084,6 +1085,91 @@ def test_em_parity_fast_kclass_coldstart(tmp_path):
 
     # NEVER widen tolerance to make a test pass. Fix the code instead.
     _assert_fsc_gate("kclass_coldstart", output_dir)
+
+
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_kclass_local_coldstart(tmp_path):
+    """Class3D with local angular searches (``--sigma_ang``) from the input STAR's angles: K4, two iterations.
+
+    No other tier item or fingerprint case runs a Class3D local search (relax#68: the route ignored a class
+    at zero weight). There is no RELION ``--sigma_ang`` oracle for this fixture, so the maps are not compared
+    with RELION; the checks are structural. Both local passes run every iteration (the class-expanded parent
+    pass and pass 2), each particle's local rows are scored against every class (the row counts are multiples
+    of K, as RELION scores each class at the same local orientations), every class keeps particles, no class
+    is reported empty, and the class maps are finite.
+    """
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k4_5k128_data")
+    _require_fixture(K4_FIXTURE_DIR, K4_DATA_STAR)
+    n_classes, n_iterations = 4, 2
+
+    output_dir = tmp_path / "kclass_local_coldstart"
+    output_dir.mkdir(parents=True)
+    cmd = [
+        sys.executable,
+        *CLASS3D_COMMAND,
+        "--data_dir",
+        str(K4_FIXTURE_DIR),
+        "--output",
+        str(output_dir),
+        "--n_classes",
+        str(n_classes),
+        "--max_iter",
+        str(n_iterations),
+        "--healpix_order",
+        "3",
+        "--offset_range",
+        "6",
+        "--offset_step",
+        "2",
+        "--adaptive_oversampling",
+        "1",
+        "--tau2_fudge",
+        "4.0",
+        "--no-firstiter_cc",
+        "--init_resolution",
+        "30.0",
+        "--sigma_ang",
+        "3",
+    ]
+    logger.info("K-class local cold-start cmd: %s", " ".join(cmd))
+    t0 = time.time()
+    proc = run_selected_command(cmd, require_global=False, capture_output=True, text=True, env=gpu_subprocess_env())
+    elapsed = time.time() - t0
+    assert proc.returncode == 0, (
+        f"relax class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    log = proc.stdout + proc.stderr
+
+    headers = re.findall(r"=== RELION Iteration (\d+)/\d+: .*local_search=(\w+) ===", log)
+    assert headers == [(str(it + 1), "True") for it in range(n_iterations)], headers
+    parent_rows = [int(v) for v in re.findall(r"RELION local adaptive pass 1: parent_order=\d+ local_rot_max=(\d+)", log)]
+    pass1_rows = [int(v) for v in re.findall(r"Resident local pass-1 probe plan: \d+ images, (\d+) candidate rows", log)]
+    pass2_rows = [int(v) for v in re.findall(r"Resident local pass-2 plan: \d+ images, (\d+) candidate rows", log)]
+    assert len(parent_rows) == len(pass1_rows) == len(pass2_rows) == n_iterations, (parent_rows, pass1_rows, pass2_rows)
+    # Each particle's local orientations are repeated once per class in the parent pass.
+    assert all(rows > 0 and rows % n_classes == 0 for rows in parent_rows + pass1_rows), (parent_rows, pass1_rows)
+    assert all(rows > 0 for rows in pass2_rows), pass2_rows
+    assert "received no particle weight" not in log
+    assert "reconstruction skipped" not in log
+
+    occupancies = [
+        [float(v) for v in re.findall(r"class \d+=([0-9.]+)", line)]
+        for line in re.findall(r"K-class occupancies: (.*)", log)
+    ]
+    assert len(occupancies) == n_iterations and all(len(row) == n_classes for row in occupancies), occupancies
+    assert all(weight > 0.0 for row in occupancies for weight in row), occupancies
+    for c in range(n_classes):
+        class_map = np.asarray(load_relax_map(str(output_dir / f"final_class{c + 1:03d}.mrc")), dtype=np.float64)
+        assert np.all(np.isfinite(class_map)) and np.linalg.norm(class_map) > 0
+
+    # No quality ledger: the parity report lists only cases compared with RELION.
+    logger.info(
+        "K-class local cold-start: %.1f s, parent rows %s, pass-1 rows %s, pass-2 rows %s, occupancies %s",
+        elapsed, parent_rows, pass1_rows, pass2_rows, occupancies,
+    )
 
 
 @pytest.mark.gpu
