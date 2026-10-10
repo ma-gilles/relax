@@ -333,7 +333,7 @@ def test_every_k1_reconstruction_hands_the_solve_the_kernel(monkeypatch, kernel)
         pair, pair, settings=settings, current_size=8, accumulator_shape=None
     )
     final_reconstruction.reconstruct_final_halfmaps(
-        [pair, pair, pair], np.ones(5), settings=settings, current_size=8, accumulator_shape=None
+        [pair, pair], np.ones(5), settings=settings, current_size=8, accumulator_shape=None
     )
     assert [kwargs["gridding_kernel"] for kwargs in calls] == [kernel] * 9
 

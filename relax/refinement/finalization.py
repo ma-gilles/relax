@@ -760,16 +760,12 @@ def run_final_all_data(
             "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
             final_current_size, options.k_class.n_classes,
         )
-        # The merged map from the COMBINED accumulators (summed only now: 24.7 GB of host at box 800), each half
-        # map from its own, at full Nyquist. The list is the only owner; each slot is freed after its solve.
-        final_ft_y = final_Ft_y_0 + final_Ft_y_1
-        final_ft_ctf = final_Ft_ctf_0 + final_Ft_ctf_1
+        # Each half map from its own accumulators, then the merged map from their sum, at full Nyquist. The list
+        # is the only owner: the sum is formed in the first half's arrays after both half maps are solved.
         final_backprojections = [
-            (final_ft_ctf, final_ft_y),
             (final_Ft_ctf_0, final_Ft_y_0),
             (final_Ft_ctf_1, final_Ft_y_1),
         ]
-        del final_ft_ctf, final_ft_y
         del final_Ft_ctf_0, final_Ft_y_0, final_Ft_ctf_1, final_Ft_y_1
         final_maps = final_reconstruction.reconstruct_final_halfmaps(
             final_backprojections,

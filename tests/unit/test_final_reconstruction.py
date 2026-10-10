@@ -35,26 +35,32 @@ def reconstruction_settings(*, tau2_fudge=1.0):
     )
 
 
-def test_final_halfmaps_release_each_backprojection_before_the_next(monkeypatch):
+def test_final_halfmaps_solve_the_halves_then_their_sum_in_the_first_halfs_arrays(monkeypatch):
+    """The two half maps are solved from their own accumulators, then the merged map from the sum, which is
+    formed in the first half's arrays (no third pair of box-scale arrays, relax#39) after the second half's
+    are released."""
+
     backprojections = [
-        (np.ones(64, dtype=np.float32), np.full(64, index, dtype=np.complex64))
-        for index in range(3)
+        (np.full(64, 1.0 + index, dtype=np.float32), np.full(64, 1.0 + index, dtype=np.complex64))
+        for index in range(2)
     ]
+    first_arrays = [backprojections[0]]
     references = [(weakref.ref(ctf), weakref.ref(y)) for ctf, y in backprojections]
     prior = np.ones(64, dtype=np.float32)
     seen = []
 
     def reconstruct(ctf, y, volume_shape, padding_factor, *, tau, **kwargs):
         index = len(seen)
-        assert backprojections[index] is None
-        for previous in range(index):
-            assert references[previous][0]() is None
-            assert references[previous][1]() is None
         assert tau is prior
         assert_matches(kwargs["tau2_fudge"], 1.0)
         assert ctf.dtype == np.float32
         assert y.dtype == np.complex64
-        seen.append(index)
+        if index == 2:
+            # The merged solve: the caller's list is empty, the second half is gone, the sum is in the first's arrays.
+            assert backprojections == []
+            assert references[1][0]() is None and references[1][1]() is None
+            assert ctf is first_arrays[0][0] and y is first_arrays[0][1]
+        seen.append((float(ctf[0]), complex(y[0])))
         return y.copy().reshape(volume_shape)
 
     monkeypatch.setattr(final_reconstruction.mean_helpers, "_reconstruct_volume_eager", reconstruct)
@@ -65,12 +71,32 @@ def test_final_halfmaps_release_each_backprojection_before_the_next(monkeypatch)
         current_size=4,
         accumulator_shape=(8, 8, 8),
     )
-    assert seen == [0, 1, 2]
-    assert backprojections == [None, None, None]
+    assert seen == [(1.0, 1.0 + 0j), (2.0, 2.0 + 0j), (3.0, 3.0 + 0j)]
+    first_arrays.clear()
     assert all(ctf() is None and y() is None for ctf, y in references)
     assert isinstance(maps.merged, np.ndarray)
+    assert_matches(maps.merged, np.full(64, 3.0, dtype=np.complex64))
     assert len(maps.halves) == 2
     assert all(isinstance(value, np.ndarray) and value.dtype == np.complex64 for value in maps.halves)
+    assert_matches(maps.halves[0], np.full(64, 1.0, dtype=np.complex64))
+    assert_matches(maps.halves[1], np.full(64, 2.0, dtype=np.complex64))
+
+
+def test_final_halfmaps_sum_device_accumulators_without_writing_into_them(monkeypatch):
+    """Device accumulators are immutable: their sum is a new array and the half maps are unchanged."""
+
+    pairs = [(jnp.full(64, 1.0 + i, dtype=jnp.float32), jnp.full(64, 1.0 + i, dtype=jnp.complex64)) for i in range(2)]
+    kept = list(pairs)
+    monkeypatch.setattr(
+        final_reconstruction.mean_helpers,
+        "_reconstruct_volume_eager",
+        lambda ctf, y, volume_shape, padding_factor, **kwargs: np.asarray(y).reshape(volume_shape),
+    )
+    maps = final_reconstruction.reconstruct_final_halfmaps(
+        pairs, np.ones(64, dtype=np.float32), settings=reconstruction_settings(), current_size=4, accumulator_shape=(8, 8, 8)
+    )
+    assert_matches(maps.merged, np.full(64, 3.0, dtype=np.complex64))
+    assert_matches(np.asarray(kept[0][1]), np.full(64, 1.0, dtype=np.complex64))
 
 
 def test_final_k4_maps_preserve_classes_and_weighted_mean(monkeypatch):

@@ -5137,9 +5137,11 @@ class TestRelionModeSmokeTest:
         assert result.final_pass.acc_rot == pytest.approx(1.25)
 
         # Final reconstruction produces two unfiltered halves (first, from the
-        # pre-join accumulators, so the join can update them in place), then a
-        # merged map and two regularized halves, all at Nyquist. Check executed
-        # calls so grouping half pairs cannot silently omit or reorder a saved product.
+        # pre-join accumulators, so the join can update them in place), then the
+        # two regularized halves and the merged map (last: its accumulators are
+        # the halves' sum, formed in place once both half maps are solved), all at
+        # Nyquist. Check executed calls so grouping half pairs cannot silently
+        # omit or reorder a saved product.
         final_calls = reconstruction_calls[-5:]
         assert len(final_calls) == 5
         assert [call[0]["tau"] is None for call in final_calls] == [True, True, False, False, False]
@@ -5147,7 +5149,7 @@ class TestRelionModeSmokeTest:
         # The unfiltered halves take the solver's spherical mask and grid correction (its defaults).
         assert all(call[0].get("use_spherical_mask", True) is True for call in final_calls[:2])
         assert all(call[0].get("grid_correct", True) is True for call in final_calls[:2])
-        products = [*result.maps.unfiltered_means, result.maps.mean, *result.maps.means]
+        products = [*result.maps.unfiltered_means, *result.maps.means, result.maps.mean]
         for product, (_, reconstructed) in zip(products, final_calls, strict=True):
             assert_matches(np.asarray(product), np.asarray(reconstructed).reshape(-1))
 

@@ -187,30 +187,52 @@ def reconstruct_final_class_maps(
     )
 
 
+def _add_into_first(first, second):
+    """``first + second``; written into ``first`` when both are host arrays of the sum's dtype, so the sum of two
+    box-scale accumulators allocates nothing."""
+
+    if (
+        isinstance(first, np.ndarray)
+        and isinstance(second, np.ndarray)
+        and first.flags.writeable
+        and np.result_type(first, second) == first.dtype
+    ):
+        np.add(first, second, out=first)
+        return first
+    return first + second
+
+
 def reconstruct_final_halfmaps(
-    backprojections: list,
+    half_backprojections: list,
     prior,
     *,
     settings: ReconstructionSettings,
     current_size: int,
     accumulator_shape: tuple,
 ) -> FinalMaps:
-    """Consume merged/half backprojections in order, keeping maps on the host.
+    """Each half's map from its own backprojection, then the merged map from their sum, keeping maps on the host.
 
-    Each slot is a (denominator, numerator) pair: merged, half 1, half 2.
-    Clearing a slot before reconstruction and releasing its arrays afterwards
-    prevents retaining the large buffers after their last use.
+    ``half_backprojections`` holds the two halves' (denominator, numerator) pairs and is emptied here: this
+    function is their last reader. The halves are solved first, so the merged accumulators can then be formed
+    in the first half's arrays instead of beside both pairs (a third pair is 24.7 GB of host memory at
+    EMPIAR-10202's box 800, and sat in the final pass's peak; relax#39). A solve is a function of its own
+    accumulators and the prior (``settings.reconstruct``, which changes neither), so the three maps do not
+    depend on the order they are solved in, and ``a + b`` written into ``a`` is the same sum.
     """
-    maps = []
-    for index in range(3):
-        denominator, numerator = backprojections[index]
-        backprojections[index] = None
-        maps.append(
-            np.asarray(
-                settings.reconstruct(
-                    denominator, numerator, tau=prior, current_size=current_size, accumulator_volume_shape=accumulator_shape
-                ).reshape(-1)
-            )
+
+    def solve(denominator, numerator):
+        return np.asarray(
+            settings.reconstruct(
+                denominator, numerator, tau=prior, current_size=current_size, accumulator_volume_shape=accumulator_shape
+            ).reshape(-1)
         )
-        del denominator, numerator
-    return FinalMaps(merged=maps[0], halves=maps[1:])
+
+    halves = [solve(denominator, numerator) for denominator, numerator in half_backprojections]
+    (denominator, numerator), (other_denominator, other_numerator) = half_backprojections
+    half_backprojections.clear()
+    denominator = _add_into_first(denominator, other_denominator)
+    numerator = _add_into_first(numerator, other_numerator)
+    del other_denominator, other_numerator
+    merged = solve(denominator, numerator)
+    del denominator, numerator
+    return FinalMaps(merged=merged, halves=halves)
