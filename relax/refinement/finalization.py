@@ -6,7 +6,7 @@ post-convergence sampling/scoring/reconstruction sequence and its result.
 
 
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -24,15 +24,25 @@ from relax.diagnostics import bpref_diagnostics
 from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
 from relax.helpers.expected_accuracy import expected_accuracy_class_ids
-from relax.helpers.orientation_priors import relion_local_search_sigmas, relion_translation_search_base
+from relax.helpers.orientation_priors import (
+    DirectionPrior,
+    HalfDirectionLogPriors,
+    HalfTranslationPriorInputs,
+    make_relion_translation_log_prior,
+    relion_direction_log_priors_for_half,
+    relion_half_translation_prior_inputs,
+    relion_local_search_sigmas,
+    relion_translation_search_base,
+)
 from relax.helpers.resolution import (
+    ImageGeometry,
     class_current_resolution_shell,
     k1_current_resolution_shell,
     relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
 from relax.helpers.timing import Stopwatch
-from relax.refinement import final_reconstruction
+from relax.refinement import final_reconstruction, half_inputs, optics_shapes
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -41,7 +51,6 @@ from relax.refinement.dense_half import (
     DenseVariantPolicy,
     _score_half_dense_in_bpref_scope,
 )
-from relax.refinement.expectation import prepare_final_half
 from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_half import (
@@ -53,7 +62,7 @@ from relax.refinement.local_half import (
 )
 from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
-from relax.refinement.optics_shapes import image_translation_factors
+from relax.refinement.optics_shapes import OpticsSpec, image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource
 from relax.refinement.priors import join_half_accumulators_at_low_resolution
 from relax.refinement.projector_preparation import prepare_scoring_projector
@@ -63,7 +72,7 @@ from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop
-from relax.refinement.trial_grids import prepare_final_sampling
+from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.relion.relion_metadata import relion_metadata_translations
 
@@ -804,3 +813,77 @@ def run_final_all_data(
             gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
         ),
     )
+
+
+@dataclass(frozen=True)
+class PreparedFinalHalf:
+    """Priors and optics resolved on one final expectation's scoring frame."""
+
+    translations: HalfTranslationPriorInputs
+    translation_log_prior: object
+    directions: HalfDirectionLogPriors
+    optics: OpticsSpec
+
+
+def prepare_final_half(
+    half: half_inputs.HalfSet,
+    sampling: FinalSampling,
+    *,
+    image_geometry: ImageGeometry,
+    sigma_offset_angstrom,
+    noise_radial,
+    direction_prior: DirectionPrior,
+    n_classes: int,
+    use_local: bool,
+    coarse_angular_step_deg,
+    particle_diameter_angstrom,
+    sealed_sampling_state,
+    symmetry: str,
+    dtype,
+    projection_scale: float,
+) -> PreparedFinalHalf:
+    """Resolve SPA priors and optics in the final grid's image-pixel frame.
+
+    See docs/math/relion_refinement_algorithm.md, section 7.
+    """
+    translations = relion_half_translation_prior_inputs(
+        half.translations,
+        voxel_size=image_geometry.pixel_size_angstrom,
+        base_translations=sampling.base_translations,
+        current_translations=sampling.grid.translations,
+        dtype=dtype,
+    )
+    translation_log_prior = make_relion_translation_log_prior(
+        translations.prior_translations,
+        image_geometry.pixel_size_angstrom,
+        sigma_offset_angstrom,
+        translations.prior_center,
+        offset_range_pixels=None,
+        dtype=dtype,
+    )
+    directions = relion_direction_log_priors_for_half(
+        use_local=use_local,
+        scoring_healpix_order=None if use_local else sampling.settings.grid_order,
+        n_classes=n_classes,
+        prior=direction_prior,
+        sealed_sampling_state=sealed_sampling_state,
+        dtype=dtype,
+        log=logger,
+        half_index=half.index,
+        symmetry=symmetry,
+    )
+    optics = optics_shapes.prepare_optics(
+        half.dataset,
+        noise_radial=noise_radial,
+        coarse_step_deg=coarse_angular_step_deg,
+        particle_diameter_ang=particle_diameter_angstrom,
+        previous_translations=half.translations,
+        sigma_offset_angstrom=sigma_offset_angstrom,
+        base_translations=sampling.base_translations,
+        current_translations=sampling.grid.translations,
+        with_log_prior=not use_local,
+        zero_cold_center=False,
+        dtype=dtype,
+        single_shape_projection_scale=projection_scale,
+    )
+    return PreparedFinalHalf(translations, translation_log_prior, directions, optics)

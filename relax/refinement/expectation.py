@@ -1,4 +1,4 @@
-"""Prepare numbered and final half expectations without publishing model updates.
+"""Prepare numbered half expectations without publishing model updates.
 
 See docs/math/relion_refinement_algorithm.md, section 3.
 """
@@ -24,11 +24,8 @@ from relax.diagnostics import parity_dump as _parity_dump
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
 from relax.helpers.host_memory import return_freed_heap
 from relax.helpers.orientation_priors import (
-    DirectionPrior,
     HalfDirectionLogPriors,
-    HalfTranslationPriorInputs,
     make_relion_translation_log_prior,
-    relion_direction_log_priors_for_half,
     relion_half_translation_prior_inputs,
     relion_translation_search_base,
 )
@@ -51,12 +48,10 @@ from relax.refinement.local_half import (
     LocalPriorSpec,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.optics_shapes import OpticsSpec
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.refinement_options import RefinementOptions
 from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop as _score_tomo_half_in_loop
-from relax.refinement.trial_grids import FinalSampling
 from relax.sampling import TrialGrid, rotation_grid_size
 
 if TYPE_CHECKING:
@@ -521,80 +516,6 @@ def numbered_half_inputs(
         )
         for k in (0, 1)
     ]
-
-
-@dataclass(frozen=True)
-class PreparedFinalHalf:
-    """Priors and optics resolved on one final expectation's scoring frame."""
-
-    translations: HalfTranslationPriorInputs
-    translation_log_prior: object
-    directions: HalfDirectionLogPriors
-    optics: OpticsSpec
-
-
-def prepare_final_half(
-    half: half_inputs.HalfSet,
-    sampling: FinalSampling,
-    *,
-    image_geometry: ImageGeometry,
-    sigma_offset_angstrom,
-    noise_radial,
-    direction_prior: DirectionPrior,
-    n_classes: int,
-    use_local: bool,
-    coarse_angular_step_deg,
-    particle_diameter_angstrom,
-    sealed_sampling_state,
-    symmetry: str,
-    dtype,
-    projection_scale: float,
-) -> PreparedFinalHalf:
-    """Resolve SPA priors and optics in the final grid's image-pixel frame.
-
-    See docs/math/relion_refinement_algorithm.md, section 7.
-    """
-    translations = relion_half_translation_prior_inputs(
-        half.translations,
-        voxel_size=image_geometry.pixel_size_angstrom,
-        base_translations=sampling.base_translations,
-        current_translations=sampling.grid.translations,
-        dtype=dtype,
-    )
-    translation_log_prior = make_relion_translation_log_prior(
-        translations.prior_translations,
-        image_geometry.pixel_size_angstrom,
-        sigma_offset_angstrom,
-        translations.prior_center,
-        offset_range_pixels=None,
-        dtype=dtype,
-    )
-    directions = relion_direction_log_priors_for_half(
-        use_local=use_local,
-        scoring_healpix_order=None if use_local else sampling.settings.grid_order,
-        n_classes=n_classes,
-        prior=direction_prior,
-        sealed_sampling_state=sealed_sampling_state,
-        dtype=dtype,
-        log=logger,
-        half_index=half.index,
-        symmetry=symmetry,
-    )
-    optics = optics_shapes.prepare_optics(
-        half.dataset,
-        noise_radial=noise_radial,
-        coarse_step_deg=coarse_angular_step_deg,
-        particle_diameter_ang=particle_diameter_angstrom,
-        previous_translations=half.translations,
-        sigma_offset_angstrom=sigma_offset_angstrom,
-        base_translations=sampling.base_translations,
-        current_translations=sampling.grid.translations,
-        with_log_prior=not use_local,
-        zero_cold_center=False,
-        dtype=dtype,
-        single_shape_projection_scale=projection_scale,
-    )
-    return PreparedFinalHalf(translations, translation_log_prior, directions, optics)
 
 
 @dataclass(frozen=True, eq=False, kw_only=True)
