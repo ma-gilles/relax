@@ -361,7 +361,9 @@ LOC_BUDGETS = {
     # the shared start-up selection relion_startup_positions (+31).
     # Optics groups on several image shapes (2026-10-05): optics of a dataset on several shapes, 1379 -> 1385
     # lines on main 7d7f3c92 (+6; ceiling +3).
-    "input_output": (1385, (
+    # write_final_outputs returns a FinalOutputs record in place of a 3-tuple (2026-10-10): +9 lines in
+    # output.py, the record's exact size.
+    "input_output": (1394, (
         "output.py", "../relion/initial_model_io.py",
         "../relion/vdam_checkpoint.py", "../relion/initial_noise.py",
     )),

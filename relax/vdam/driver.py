@@ -725,15 +725,15 @@ def run_native_initial_model(
     profile.record("iterations")
     if opts.pilot_controls is not None:
         opts.pilot_controls.check_completed(final_state.iter, opts.nr_iter)
-    final_mrc, class_mrcs, align_report = write_final_outputs(
+    outputs = write_final_outputs(
         opts.outputname,
         final_state,
         sym_name=opts.sym_name,
         seed=int(opts.random_seed),
         written_iterations=frozenset(written_iterations),
     )
-    if "refined_rot_tilt_psi" in align_report:
-        print("InitialModel symmetry alignment: " + json.dumps(align_report, sort_keys=True), flush=True)
+    if "refined_rot_tilt_psi" in outputs.align_report:
+        print("InitialModel symmetry alignment: " + json.dumps(outputs.align_report, sort_keys=True), flush=True)
     final_model_star = f"{opts.outputname}_it{final_state.iter:03d}_model.star"
     profile.record("final_artifacts")
     profile.report("driver")
@@ -741,8 +741,8 @@ def run_native_initial_model(
         state=final_state,
         output_prefix=opts.outputname,
         final_model_star=final_model_star,
-        final_mrc=final_mrc,
-        class_mrcs=class_mrcs,
+        final_mrc=outputs.final_mrc,
+        class_mrcs=outputs.class_mrcs,
     )
 
 

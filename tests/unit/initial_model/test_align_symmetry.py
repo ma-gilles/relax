@@ -190,9 +190,8 @@ def test_final_output_is_the_largest_class_aligned_like_relion_gui(tmp_path, sym
     state = initialise_denovo_state(box_size=n, pixel_size=2.5, K=2, nr_iter=200, n_directions=4)
     state.iter, state.Iref, state.pdf_class = 200, maps, np.array([0.3, 0.7])
 
-    final_mrc, class_mrcs, report = output.write_final_outputs(
-        str(tmp_path / "run"), state, sym_name=sym_name, seed=29
-    )
+    outputs = output.write_final_outputs(str(tmp_path / "run"), state, sym_name=sym_name, seed=29)
+    final_mrc, class_mrcs, report = outputs.final_mrc, outputs.class_mrcs, outputs.align_report
 
     assert final_mrc == str(tmp_path / "initial_model.mrc") and len(class_mrcs) == 2
     written = np.asarray(mrcfile.read(final_mrc), dtype=np.float64)

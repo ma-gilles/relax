@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -152,6 +152,15 @@ def _json_ready(value):
     return value
 
 
+@dataclass(frozen=True)
+class FinalOutputs:
+    """What ``write_final_outputs`` wrote: ``initial_model.mrc``, the class maps, and the symmetry alignment's report."""
+
+    final_mrc: str
+    class_mrcs: tuple[str, ...]
+    align_report: dict
+
+
 def write_final_outputs(
     output_prefix: str,
     state: InitialModelState,
@@ -159,7 +168,7 @@ def write_final_outputs(
     sym_name: str,
     seed: int,
     written_iterations: frozenset[int] = frozenset(),
-) -> tuple[str, tuple[str, ...], dict]:
+) -> FinalOutputs:
     """Write the last iteration's class maps, model.star and ``initial_model.mrc``.
 
     RELION's write() always writes the last iteration's model (ml_optimiser.cpp:1361, 3489). The class maps
@@ -186,4 +195,4 @@ def write_final_outputs(
     aligned, report = align_symmetry(relion_map, sym_name, seed=seed)
     write_map(final_mrc, recovar_volume_to_relion(aligned).astype(np.float32), voxel_size=float(state.pixel_size))
     report["class"] = best_class + 1
-    return final_mrc, class_mrcs, report
+    return FinalOutputs(final_mrc, class_mrcs, report)
