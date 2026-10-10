@@ -12,6 +12,7 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import regularization_relion, volume_solver
+from relax.refinement import map_postprocess
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -80,7 +81,8 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
         ("_numbered_solvent_mask", "mask"), ("_make_relion_solvent_mask", "mask_builder"), (flatten, "flatten"),
         ("_log_first_cc_lowpass", "log"),
     ):
-        trace.wrap(mean_helpers_module, name, label)
+        # The solve is mean_helpers' own (or its name for the solver); the post-processing is map_postprocess's.
+        trace.wrap(mean_helpers_module if hasattr(mean_helpers_module, name) else map_postprocess, name, label)
     trace.wrap(observers.PremaskObserver, "map_solved", "capture")
     trace.wrap(observers, "write_premask_mean", "dump")
     run_tiny_refinement(
@@ -124,7 +126,7 @@ def test_unregularized_reconstruction_variants_expose_dependencies():
         "Ft_y_combined", "Ft_ctf_combined", "settings", "n_classes",
         "accumulator_volume_shape",
     )
-    assert tuple(inspect.signature(mean_helpers_module.align_k1_volume_signs).parameters) == (
+    assert tuple(inspect.signature(map_postprocess.align_k1_volume_signs).parameters) == (
         "means", "previous_means", "unregularized_means", "volume_shape",
     )
     for name in (
@@ -266,7 +268,7 @@ class TestReconstructionOwnership:
         monkeypatch.setattr(relion_functions_relion, "regularize_large_relion_half_filter_donate_ctf", fake_regularize)
         monkeypatch.setattr(relion_functions_relion, "divide_large_relion_half_numerator_donate_numerator", fake_divide)
         monkeypatch.setattr(relion_functions_relion, "finish_large_relion_postprocess_from_fftw_half", fake_finish)
-        monkeypatch.setattr(mean_helpers_module.jax, "device_get", fake_device_get)
+        monkeypatch.setattr(volume_solver.jax, "device_get", fake_device_get)
         caplog.set_level("INFO", logger=volume_solver.__name__)
         volume_shape = (2, 2, 2)
         accumulator_shape = (5, 5, 5)
@@ -309,7 +311,7 @@ class TestReconstructionOwnership:
         sentinel = jnp.asarray([7.0 + 0j], dtype=jnp.complex64)
 
         def fake_regularize(stage_filter, *_args):
-            assert isinstance(stage_filter, mean_helpers_module.jax.Array)
+            assert isinstance(stage_filter, volume_solver.jax.Array)
             stage_filter.delete()
             regularized = jnp.ones(half_shape, dtype=jnp.float32)
             regularized_filters.append(regularized)
@@ -322,7 +324,7 @@ class TestReconstructionOwnership:
             else:
                 assert retained_numerator.is_deleted()
                 assert stage_outputs[0].is_deleted()
-                assert isinstance(stage_numerator, mean_helpers_module.jax.Array)
+                assert isinstance(stage_numerator, volume_solver.jax.Array)
                 assert not isinstance(stage_numerator, np.ndarray)
             assert not stage_numerator.is_deleted()
             stage_inputs.append(stage_numerator)

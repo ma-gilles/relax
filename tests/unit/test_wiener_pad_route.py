@@ -7,7 +7,7 @@ from helpers.float_compare import assert_matches
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import volume_solver
-from relax.refinement import mean_helpers
+from relax.refinement import map_postprocess, mean_helpers
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -85,8 +85,8 @@ def test_sign_overlap_cpu_route_matches_the_device_route(monkeypatch, negate):
     volume = reference * (-0.7 if negate else 0.7) + 0.1 * jnp.asarray(rng.standard_normal(1728).astype(np.complex64))
     results = {}
     for route in (False, True):
-        monkeypatch.setattr(mean_helpers, "_sign_overlap_exceeds_device_headroom", lambda *_a, route=route: route)
-        results[route] = mean_helpers._align_fourier_volume_sign_to_reference(volume, reference, shape)
+        monkeypatch.setattr(map_postprocess, "_sign_overlap_exceeds_device_headroom", lambda *_a, route=route: route)
+        results[route] = map_postprocess._align_fourier_volume_sign_to_reference(volume, reference, shape)
     assert results[True][1] is results[False][1] is negate
     assert_matches(np.asarray(results[True][0]), np.asarray(results[False][0]))
 
@@ -131,11 +131,11 @@ def test_sign_overlap_and_pad_on_an_h100_at_box_800_stay_on_the_device(monkeypat
     box 448 on a 16 GB card that cannot place 2 GiB goes to the CPU."""
 
     _fake_gpu(monkeypatch, limit_gib=61.5, in_use_gib=31.5, largest_block_gib=30.0)
-    assert mean_helpers._sign_overlap_exceeds_device_headroom((800,) * 3) is False
+    assert map_postprocess._sign_overlap_exceeds_device_headroom((800,) * 3) is False
     _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=5.2, largest_block_gib=1.5)
-    assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is True
+    assert map_postprocess._sign_overlap_exceeds_device_headroom((448,) * 3) is True
     _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=3.0, largest_block_gib=4.0)
-    assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is False
+    assert map_postprocess._sign_overlap_exceeds_device_headroom((448,) * 3) is False
 
 
 def test_device_can_place_catches_only_out_of_memory(monkeypatch):

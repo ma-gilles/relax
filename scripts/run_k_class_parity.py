@@ -1938,7 +1938,7 @@ def main() -> None:
                 accumulator_volume_shape=result.mstep_accumulator_shape, programs=ReconstructionPrograms.from_environ(),
             ).reshape(-1)
             if apply_firstiter_lowpass:
-                from relax.refinement.mean_helpers import _apply_relion_initial_lowpass_filter
+                from relax.refinement.map_postprocess import _apply_relion_initial_lowpass_filter
 
                 class_ft = _apply_relion_initial_lowpass_filter(
                     class_ft,

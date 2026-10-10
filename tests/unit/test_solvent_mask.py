@@ -20,6 +20,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.helpers import relion_random
 from relax.reconstruction import solvent_mask
+from relax.refinement import map_postprocess
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -184,15 +185,14 @@ def _settings(**kwargs):
 
 
 def test_user_mask_replaces_the_diameter_sphere():
-    from relax.refinement import mean_helpers
 
     user = np.zeros((8, 8, 8))
     user[2:5, 3:6, 1:7] = 1.0
     settings = _settings(solvent_mask=user)
-    assert mean_helpers._solvent_flatten_requested(settings)
-    assert_matches(np.asarray(mean_helpers._numbered_solvent_mask(settings, dtype=np.float64)), user)
+    assert map_postprocess._solvent_flatten_requested(settings)
+    assert_matches(np.asarray(map_postprocess._numbered_solvent_mask(settings, dtype=np.float64)), user)
     # Without a diameter a user mask still flattens.
-    assert mean_helpers._solvent_flatten_requested(_settings(solvent_mask=user, particle_diameter_angstrom=None))
+    assert map_postprocess._solvent_flatten_requested(_settings(solvent_mask=user, particle_diameter_angstrom=None))
 
 
 def test_corrected_fsc_needs_a_mask_of_the_model_shape():

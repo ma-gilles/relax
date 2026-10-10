@@ -7,7 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
-from relax.refinement import mean_helpers
+from relax.refinement import map_postprocess, mean_helpers
 from relax.refinement.ports import RunObserver
 from relax.refinement.refinement_options import ReconstructionPrograms
 
@@ -77,10 +77,10 @@ class _Recorder:
                 capture(mean, half_index=half_index, n_classes=n_classes)
 
         self.observer = Observer()
-        monkeypatch.setattr(mean_helpers, "_apply_relion_initial_lowpass_filter", lowpass)
-        monkeypatch.setattr(mean_helpers, "_make_relion_solvent_mask", mask)
-        monkeypatch.setattr(mean_helpers, "_apply_relion_solvent_flatten_k1", flatten)
-        monkeypatch.setattr(mean_helpers, "_large_relion_solvent_mask_uses_compiled_builder", lambda _shape: False)
+        monkeypatch.setattr(map_postprocess, "_apply_relion_initial_lowpass_filter", lowpass)
+        monkeypatch.setattr(map_postprocess, "_make_relion_solvent_mask", mask)
+        monkeypatch.setattr(map_postprocess, "_apply_relion_solvent_flatten_k1", flatten)
+        monkeypatch.setattr(map_postprocess, "_large_relion_solvent_mask_uses_compiled_builder", lambda _shape: False)
 
         def flatten_class(class_maps, _mask, class_idx, *, volume_shape):
             self.events.append("flatten_class")
@@ -88,7 +88,7 @@ class _Recorder:
             assert volume_shape == (2, 2, 2)
             return class_maps
 
-        monkeypatch.setattr(mean_helpers, "_flatten_class_row", flatten_class)
+        monkeypatch.setattr(map_postprocess, "_flatten_class_row", flatten_class)
 
     def solved(self, numerator, kwargs):
         """Record one solve and return its map at the complex dtype of the run."""

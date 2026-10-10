@@ -33,6 +33,7 @@ from relax.refinement import (
     iteration_planning,
     iteration_snapshot,
     local_sampling,
+    map_postprocess,
     maximization,
     mean_helpers,
     noise_updates,
@@ -179,7 +180,7 @@ class _K1Iteration:
             if needed
             else [None, None]
         )
-        mean_helpers.align_k1_volume_signs(reference_model.maps, mstep.previous_means, unreg_means, ctx.volume_shape)
+        map_postprocess.align_k1_volume_signs(reference_model.maps, mstep.previous_means, unreg_means, ctx.volume_shape)
         return unreg_means
 
     def fsc(self, mstep):

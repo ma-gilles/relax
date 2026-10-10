@@ -28,6 +28,7 @@ from relax.helpers.orientation_priors import (
 )
 from relax.helpers.resolution import ImageGeometry
 from relax.reconstruction import volume_solver
+from relax.refinement import map_postprocess
 from relax.refinement.half_inputs import HalfPair, initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver
@@ -113,9 +114,7 @@ from relax.refinement import maximization as maximization_module
 from relax.refinement import mean_helpers as mean_helpers_module
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.refinement.local_search_iteration import LocalSearchResult
-from relax.refinement.mean_helpers import (
-    _align_fourier_volume_sign_to_reference,
-)
+from relax.refinement.map_postprocess import _align_fourier_volume_sign_to_reference
 from relax.refinement.noise_updates import (
     _combined_noise_stats,
     _normalize_noise_variance_per_half,
@@ -4558,7 +4557,7 @@ class TestRelionModeSmokeTest:
         )
         monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
         monkeypatch.setattr(
-            mean_helpers_module,
+            map_postprocess,
             "_apply_relion_initial_lowpass_filter",
             lambda volume, *_args, **_kwargs: volume,
         )
@@ -6957,12 +6956,12 @@ class TestRelionModeSmokeTest:
             return jnp.ones(volume_shape, dtype=jnp.float64)
 
         monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
-        monkeypatch.setattr(mean_helpers_module, "_apply_relion_initial_lowpass_filter", fake_lowpass)
+        monkeypatch.setattr(map_postprocess, "_apply_relion_initial_lowpass_filter", fake_lowpass)
         monkeypatch.setattr(mean_helpers_module.fourier_transform_utils, "get_idft3", fake_idft3)
         monkeypatch.setattr(mean_helpers_module.fourier_transform_utils, "get_dft3", fake_dft3)
 
         monkeypatch.setattr(
-            mean_helpers_module.mask, "raised_cosine_mask", fake_raised_cosine_mask,
+            map_postprocess.mask, "raised_cosine_mask", fake_raised_cosine_mask,
         )
 
         settings = reconstruction_settings(
@@ -9588,7 +9587,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
         "_crop_relion_wiener_half_to_fftw_host",
         reject_crop,
     )
-    monkeypatch.setattr(mean_helpers_module.jax, "device_get", fake_device_get)
+    monkeypatch.setattr(volume_solver.jax, "device_get", fake_device_get)
 
     volume_shape = (2, 2, 2)
     accumulator_shape = (3, 3, 3)

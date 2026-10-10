@@ -9,7 +9,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
-from relax.refinement import mean_helpers
+from relax.refinement import map_postprocess
 from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
@@ -32,7 +32,7 @@ def test_flatten_class_stack_matches_each_class_flattened_alone():
     expected = np.stack(
         [
             np.asarray(
-                mean_helpers._apply_relion_solvent_flatten_k1(
+                map_postprocess._apply_relion_solvent_flatten_k1(
                     jnp.asarray(stack[k]),
                     solvent_mask,
                     VOLUME_SHAPE,
@@ -42,7 +42,7 @@ def test_flatten_class_stack_matches_each_class_flattened_alone():
         ]
     )
 
-    result = mean_helpers._flatten_class_stack(jnp.asarray(stack), solvent_mask, VOLUME_SHAPE, N_CLASSES)
+    result = map_postprocess._flatten_class_stack(jnp.asarray(stack), solvent_mask, VOLUME_SHAPE, N_CLASSES)
 
     assert result.shape == stack.shape and result.dtype == stack.dtype
     assert_matches(np.asarray(result), expected)
@@ -67,7 +67,7 @@ def test_lowpass_class_stack_matches_each_class_filtered_alone():
     expected = np.stack(
         [
             np.asarray(
-                mean_helpers._apply_relion_initial_lowpass_filter(
+                map_postprocess._apply_relion_initial_lowpass_filter(
                     jnp.asarray(stack[k]),
                     VOLUME_SHAPE,
                     2.0,
@@ -79,7 +79,7 @@ def test_lowpass_class_stack_matches_each_class_filtered_alone():
         ]
     )
 
-    result = mean_helpers._lowpass_class_stack(jnp.asarray(stack), settings, N_CLASSES)
+    result = map_postprocess._lowpass_class_stack(jnp.asarray(stack), settings, N_CLASSES)
 
     assert result.shape == stack.shape and result.dtype == stack.dtype
     assert_matches(np.asarray(result), expected)
@@ -89,7 +89,7 @@ def test_lowpass_class_stack_matches_each_class_filtered_alone():
 
 _PEAK_CHILD = """
 import jax, jax.numpy as jnp, numpy as np
-from relax.refinement import mean_helpers
+from relax.refinement import map_postprocess
 box, n_classes = 256, 3
 shape = (box,) * 3
 rng = np.random.default_rng(0)
@@ -99,7 +99,7 @@ mask = jnp.asarray(rng.random(shape).astype(np.float32))
 stack.block_until_ready(); mask.block_until_ready()
 device = jax.devices()[0]
 before = device.memory_stats()["bytes_in_use"]
-out = mean_helpers._flatten_class_stack(stack, mask, shape, n_classes)
+out = map_postprocess._flatten_class_stack(stack, mask, shape, n_classes)
 out.block_until_ready()
 stats = device.memory_stats()
 print("EXTRA_PEAK_CLASS_MAPS", (stats["peak_bytes_in_use"] - before) / (box**3 * 8))
