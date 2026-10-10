@@ -43,11 +43,13 @@ from relax.refinement.half_scoring import (
     DensePriorSpec,
     DenseSamplingSpec,
     DenseVariantPolicy,
+    _score_half_dense_in_bpref_scope,
+)
+from relax.refinement.local_half import (
     LocalBatchPolicy,
     LocalDiagnosticPolicy,
     LocalExecutionPolicy,
     LocalPriorSpec,
-    _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
 from relax.refinement.optics_shapes import OpticsSpec

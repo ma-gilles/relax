@@ -24,6 +24,7 @@ from relax.refinement import (
     firstiter_cc,
     half_inputs,
     half_scoring,
+    local_half,
     local_sampling,
     local_search_iteration,
     optics_shapes,
@@ -223,7 +224,7 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
 
 
 def test_local_half_core_keeps_owner_dependencies_visible():
-    function = half_scoring._score_half_local_one_shape
+    function = local_half._score_half_local_one_shape
     assert tuple(inspect.signature(function).parameters) == (
         "half", "sampling", "priors", "batching", "execution", "diagnostics", "optics",
     )
@@ -241,10 +242,10 @@ def test_local_half_core_keeps_owner_dependencies_visible():
         for owner in (
             half_inputs.HalfScoringData,
             local_sampling.LocalSampling,
-            half_scoring.LocalPriorSpec,
-            half_scoring.LocalBatchPolicy,
-            half_scoring.LocalExecutionPolicy,
-            half_scoring.LocalDiagnosticPolicy,
+            local_half.LocalPriorSpec,
+            local_half.LocalBatchPolicy,
+            local_half.LocalExecutionPolicy,
+            local_half.LocalDiagnosticPolicy,
             optics_shapes.OpticsSpec,
         )
         for field in dataclasses.fields(owner)

@@ -937,7 +937,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
     from helpers.refinement_specs import local_half_owners
     from helpers.sparse_pass2_mock import MockDataset
 
-    from relax.refinement import half_scoring
+    from relax.refinement import local_half
     from relax.sampling import relion_angular_sampling_deg
 
     class Scored(Exception):
@@ -949,10 +949,10 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
         captured.update(support=support, kernel=kernel)
         raise Scored
 
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fine_pass)
-    monkeypatch.setattr(half_scoring, "build_local_search_grid_metadata", lambda _order, *, symmetry="C1": {})
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", fine_pass)
+    monkeypatch.setattr(local_half, "build_local_search_grid_metadata", lambda _order, *, symmetry="C1": {})
     monkeypatch.setattr(
-        half_scoring, "build_local_hypothesis_layout",
+        local_half, "build_local_hypothesis_layout",
         lambda *args, **kwargs: SimpleNamespace(rotation_counts=np.asarray([2])),
     )
     dataset = MockDataset(n_images=2, seed=3)
@@ -975,7 +975,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
         local_profile_history=[],
     )
     with pytest.raises(Scored):
-        half_scoring._score_half_local(*owners)
+        local_half._score_half_local(*owners)
     support = captured["support"]
     assert support.score_only is score_only
     assert captured["kernel"].accumulate_noise is (not score_only)

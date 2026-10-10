@@ -3,7 +3,14 @@
 import dataclasses
 
 from relax.dense import scoring_policy
-from relax.refinement import half_inputs, half_scoring, local_sampling, local_search_iteration, optics_shapes
+from relax.refinement import (
+    half_inputs,
+    half_scoring,
+    local_half,
+    local_sampling,
+    local_search_iteration,
+    optics_shapes,
+)
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.ports import NoProbe
 from relax.refinement.projector_preparation import PreparedProjector
@@ -174,17 +181,17 @@ def local_half_owners(**values):
             perturbation=values.pop("local_search_random_perturbation"),
             angular_step_deg=values.pop("local_search_angular_sampling_deg"),
         ),
-        half_scoring.LocalPriorSpec(
+        local_half.LocalPriorSpec(
             trans_prior_center=values.pop("trans_prior_center"),
             trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
             current_sigma_offset_angstrom=values.pop("current_sigma_offset_angstrom"),
             translation_search_base=values.pop("translation_search_base"),
             replay_prior_translations=values.pop("replay_prior_translations"),
         ),
-        half_scoring.LocalBatchPolicy(
+        local_half.LocalBatchPolicy(
             max_significants=values.pop("max_significants"),
         ),
-        half_scoring.LocalExecutionPolicy(
+        local_half.LocalExecutionPolicy(
             disc_type=values.pop("disc_type"),
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
@@ -208,7 +215,7 @@ def local_half_owners(**values):
             score_only=values.pop("diagnostic_score_only"),
             firstiter_cc=values.pop("firstiter_cc", False),
         ),
-        half_scoring.LocalDiagnosticPolicy(
+        local_half.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),
             debug_iteration=values.pop("debug_iteration", None),
             collect_local_search_profile=values.pop("collect_local_search_profile"),

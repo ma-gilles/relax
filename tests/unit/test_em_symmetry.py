@@ -941,10 +941,10 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
 def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monkeypatch):
     """Final Q a087087cc: exact-local reconstruction of a point group requires x-half accumulation."""
 
-    from relax.refinement import half_scoring
+    from relax.refinement import local_half
 
     monkeypatch.setattr(
-        half_scoring,
+        local_half,
         "_run_local_search_iteration",
         lambda *_args, **_kwargs: pytest.fail("unsupported non-C1 exact-local route was scored"),
     )
@@ -982,7 +982,7 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         relion_x_half_mstep=False,
     )
     with pytest.raises(RuntimeError, match="C4 exact-local reconstruction requires RELION x-half BPref"):
-        half_scoring._score_half_local(*local_half_owners(**kwargs))
+        local_half._score_half_local(*local_half_owners(**kwargs))
 
 
 @pytest.mark.parametrize("label", ["C4", "O", "I1"])

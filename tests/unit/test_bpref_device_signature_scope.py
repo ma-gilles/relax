@@ -11,7 +11,7 @@ from recovar import cuda_backproject
 from relax.classification import k_class
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import bpref_diagnostics
-from relax.refinement import finalization, half_scoring
+from relax.refinement import finalization, half_scoring, local_half
 from relax.refinement.refinement_options import ExecutionOptions, bpref_device_signature_target
 
 pytestmark = pytest.mark.unit
@@ -180,12 +180,12 @@ def test_target_half2_cannot_leak_into_local_search(monkeypatch):
         assert not cuda_backproject.relion_x_half_bp_block_topology_enabled()
         return "ordinary-local"
 
-    monkeypatch.setattr(half_scoring, "_score_half_local", fake_local)
-    assert half_scoring._score_half_local_in_bpref_scope(
+    monkeypatch.setattr(local_half, "_score_half_local", fake_local)
+    assert local_half._score_half_local_in_bpref_scope(
         None, None, None, None, None, SimpleNamespace(bpref_device_signature_active=False), None
     ) == "ordinary-local"
     with pytest.raises(RuntimeError, match="sparse adaptive pass 2"):
-        half_scoring._score_half_local_in_bpref_scope(
+        local_half._score_half_local_in_bpref_scope(
             None, None, None, None, None, SimpleNamespace(bpref_device_signature_active=True), None
         )
 

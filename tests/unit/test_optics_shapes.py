@@ -18,7 +18,7 @@ from helpers.refinement_specs import local_half_owners
 from relax.dense import scoring_policy
 from relax.dense.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
 from relax.helpers.types import RelionStats, make_noise_stats
-from relax.refinement import half_inputs, half_scoring, optics_shapes
+from relax.refinement import half_inputs, half_scoring, local_half, optics_shapes
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
 
@@ -388,7 +388,7 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
             box=half.particles.dataset.image_shape[0],
         )
 
-    monkeypatch.setattr(half_scoring, "_score_half_local_one_shape", fake_score)
+    monkeypatch.setattr(local_half, "_score_half_local_one_shape", fake_score)
     owners = local_half_owners(
         k=0,
         experiment_dataset=half,
@@ -424,7 +424,7 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         class_translations=optics.class_translations,
     )
 
-    merged = half_scoring._score_half_local(*owners)
+    merged = local_half._score_half_local(*owners)
     outputs.update_from(0, merged)
 
     assert [

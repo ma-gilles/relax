@@ -109,7 +109,7 @@ from relax.local.local_layout import (
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
-from relax.refinement import finalization, half_scoring, local_sampling, local_search_iteration
+from relax.refinement import finalization, half_scoring, local_half, local_sampling, local_search_iteration
 from relax.refinement import maximization as maximization_module
 from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 from relax.refinement.iteration_loop import refine_single_volume
@@ -766,7 +766,7 @@ def test_local_translation_prior_ignores_stale_replay_grid_shape():
     assert current_grid.shape[0] == 29
     assert stale_replay_grid.shape[0] == 25
 
-    chosen, source, mismatched = half_scoring._local_translation_prior_reference_translations(
+    chosen, source, mismatched = local_half._local_translation_prior_reference_translations(
         current_translations=current_grid + 0.125,
         base_translations=current_grid,
         replay_prior_translations=stale_replay_grid,
@@ -2109,11 +2109,11 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
         )
         raise StopAfterParentLayout
 
-    monkeypatch.setattr(half_scoring, "build_local_search_grid_metadata", lambda _order, *, symmetry='C1': {})
-    monkeypatch.setattr(half_scoring, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
+    monkeypatch.setattr(local_half, "build_local_search_grid_metadata", lambda _order, *, symmetry='C1': {})
+    monkeypatch.setattr(local_half, "build_local_hypothesis_layout", fake_build_local_hypothesis_layout)
 
     with pytest.raises(StopAfterParentLayout):
-        half_scoring._score_half_local(*local_half_owners(
+        local_half._score_half_local(*local_half_owners(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -2173,9 +2173,9 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
         replace(scoring_policy.DENSE_PRECISION, use_float64_projections=True),
     )
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", fake_run_local_search_iteration)
     with pytest.raises(DispatchCaptured):
-        half_scoring._score_half_local(*local_half_owners(
+        local_half._score_half_local(*local_half_owners(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -3836,12 +3836,12 @@ def test_local_adaptive_parent_support_probe_is_score_only(monkeypatch, rng):
         raise StopAfterParentProbe
 
     monkeypatch.setattr(
-        half_scoring, "_build_local_adaptive_parent_layout",
+        local_half, "_build_local_adaptive_parent_layout",
         lambda *args: (SimpleNamespace(rotation_counts=np.asarray([2])), 0),
     )
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", parent_probe)
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", parent_probe)
     with pytest.raises(StopAfterParentProbe):
-        half_scoring._score_half_local(*local_half_owners(
+        local_half._score_half_local(*local_half_owners(
             k=0,
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
@@ -5692,7 +5692,7 @@ class TestRelionModeSmokeTest:
             "rotation_grid_n_in_planes",
             fake_rotation_grid_n_in_planes,
         )
-        monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
+        monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
 
         result = refine_single_volume(
             half_datasets,
@@ -7860,7 +7860,7 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -8036,7 +8036,7 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
         fake_apply_relion_rotation_perturbation_to_eulers,
     )
     monkeypatch.setattr(recovar_utils, "R_to_relion", fake_r_to_relion)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -8158,7 +8158,7 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -8279,7 +8279,7 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -8373,7 +8373,7 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -8486,7 +8486,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -8633,7 +8633,7 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
         )
 
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
         "collapse_rotation_posterior_to_direction_prior",
@@ -9214,7 +9214,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
         "collapse_rotation_posterior_to_direction_prior",

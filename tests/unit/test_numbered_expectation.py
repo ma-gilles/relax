@@ -18,7 +18,7 @@ from relax.helpers.resolution import ImageGeometry
 from relax.refinement import expectation
 from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
 from relax.refinement.half_inputs import HalfScoringData, HalfSet
-from relax.refinement.half_scoring import LocalDiagnosticPolicy
+from relax.refinement.local_half import LocalDiagnosticPolicy
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import NoProbe
 from relax.refinement.tomo_half import TomoSampling

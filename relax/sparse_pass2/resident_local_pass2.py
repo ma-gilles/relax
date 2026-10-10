@@ -13,7 +13,7 @@ Scope
 :func:`compute_local_search_resident` is the **fine pass 2** of every K=1 local search
 and its pass-1 parent probe; the fine pass is also the pass the final all-data iteration runs (``iteration_loop.py``
 reaches it through the same ``local_outputs = _run_local_search_iteration`` call
-site in ``relax/refinement/half_scoring.py``). Any other configuration raises
+site in ``relax/refinement/local_half.py``). Any other configuration raises
 :class:`NotImplementedError` naming the missing piece: there is no other local
 fine-pass engine to fall back to.
 
