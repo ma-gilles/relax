@@ -7,7 +7,7 @@ from helpers.run_options import stand_in
 
 import relax.helpers.resolution as resolution_helpers
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement.iteration_planning import ExpectationWindows, RunOptics, plan_adaptive_image_size
+from relax.refinement.image_size_plans import ExpectationWindows, RunOptics, plan_adaptive_image_size
 
 pytestmark = pytest.mark.unit
 
@@ -48,11 +48,11 @@ def test_controller_sizes_pass1_from_the_incoming_order(monkeypatch):
     """The loop hands the pass-1 sizing the order RELION's expectation starts from, not the updated one."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import iteration_planning
+    from relax.refinement import image_size_plans
 
     trace = CallTrace(monkeypatch)
     trace.wrap(resolution_helpers, "relion_expectation_coarse_size_order", "incoming")
-    trace.wrap(iteration_planning, "plan_adaptive_image_size", "plan")
+    trace.wrap(image_size_plans, "plan_adaptive_image_size", "plan")
     run_tiny_refinement(monkeypatch, final_after_max_iter=False)
     assert trace.labels() == ["incoming", "plan"] * 2
     for incoming, plan in zip(trace.calls("incoming"), trace.calls("plan"), strict=True):

@@ -7,11 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
-from relax.refinement.iteration_planning import (
-    plan_class_image_size,
-    plan_halfmap_image_size,
-    plan_initial_image_size,
-)
+from relax.refinement.image_size_plans import plan_class_image_size, plan_halfmap_image_size, plan_initial_image_size
 from relax.refinement.refinement_options import StartState
 
 pytestmark = pytest.mark.unit

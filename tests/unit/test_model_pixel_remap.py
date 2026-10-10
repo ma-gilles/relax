@@ -85,7 +85,7 @@ def test_single_and_several_shape_paths_give_a_group_the_same_window_and_noise_s
     import logging
 
     from relax.helpers.resolution import ImageGeometry
-    from relax.refinement.iteration_planning import RunOptics, plan_expectation_windows
+    from relax.refinement.image_size_plans import RunOptics, plan_expectation_windows
 
     single = plan_expectation_windows(
         50,
@@ -112,7 +112,7 @@ def _single_shape_windows(current_size, *, model_pixel, star_pixel, box=256, opt
     import logging
 
     from relax.helpers.resolution import ImageGeometry
-    from relax.refinement.iteration_planning import RunOptics, plan_expectation_windows
+    from relax.refinement.image_size_plans import RunOptics, plan_expectation_windows
 
     return plan_expectation_windows(
         current_size,

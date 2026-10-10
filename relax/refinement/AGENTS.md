@@ -15,7 +15,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `command_options.py`, `refinement_options.py` | the flags, the RELION GUI job defaults, input-mode admission; the grouped options `refine_single_volume(options=...)` accepts |
 | `iteration_loop.py` | `refine_single_volume`: the numbered-iteration controller for K=1 and for K classes |
 | `setup_checks.py` | what the controller checks or resolves from its inputs before the first iteration |
-| `iteration_planning.py`, `trial_grids.py`, `numbered_transitions.py`, `iteration_snapshot.py` | start-up state, sampling and convergence transitions, the state one iteration hands to the next |
+| `iteration_planning.py`, `image_size_plans.py`, `trial_grids.py`, `numbered_transitions.py`, `iteration_snapshot.py` | start-up state, sampling and convergence transitions, the state one iteration hands to the next |
 | `expectation.py`, `expectation_batches.py`, `dense_half.py`, `local_half.py`, `half_inputs.py`, `particle_poses.py`, `local_sampling.py` | preparing and running a half's expectation |
 | `maximization.py` | the numbered M-steps (K=1 split-half, Class3D) the controller chooses, and their results |
 | `reference_state.py` | the reference model (half maps and tau2) and the class mixture a run carries between iterations |

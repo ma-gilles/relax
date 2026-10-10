@@ -52,7 +52,7 @@ from relax.parity.relion_replay import (
     select_final_sampling_star,
 )
 from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_state_swap_inputs
-from relax.refinement.iteration_planning import CoarseImageSize
+from relax.refinement.image_size_plans import CoarseImageSize
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState
 from relax.refinement.reference_state import class_mixture_from_weights
 from relax.refinement.sigma_offset import SigmaOffset

@@ -9,9 +9,9 @@ import pytest
 from helpers.run_options import stand_in
 
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement import iteration_planning
+from relax.refinement import image_size_plans
 from relax.refinement.command_options import parse_refinement_args, validate_strict_highres_exp
-from relax.refinement.iteration_planning import ExpectationWindows, relion_strict_highres_image_size
+from relax.refinement.image_size_plans import ExpectationWindows, relion_strict_highres_image_size
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ def test_size_is_relion_two_round_box_pixel_over_limit():
 
 
 def _optics(box=128, pixel=4.25):
-    return iteration_planning.RunOptics(
+    return image_size_plans.RunOptics(
         image_geometry=ImageGeometry(image_shape=(box, box), pixel_size_angstrom=pixel), model_pixel_size=pixel,
         optics_image_sizes=[box], optics_pixel_sizes=[pixel], multi_shape_halves=False,
     )
@@ -33,7 +33,7 @@ def _optics(box=128, pixel=4.25):
 
 @pytest.mark.parametrize("current_size, score", [(120, 90), (128, 90), (64, 64)])
 def test_windows_cap_only_the_e_step(current_size, score):
-    windows = iteration_planning.plan_expectation_windows(
+    windows = image_size_plans.plan_expectation_windows(
         current_size, _optics(), log=LOG, strict_highres_exp_angstrom=12.0
     )
     # M-step consumers (class_maximization's image_current_size, the summed noise shells) keep the current size.
@@ -41,7 +41,7 @@ def test_windows_cap_only_the_e_step(current_size, score):
     assert windows.score_window_size == score
     if score < current_size:
         assert windows.engine_model_window_size == current_size
-    off = iteration_planning.plan_expectation_windows(current_size, _optics(), log=LOG)
+    off = image_size_plans.plan_expectation_windows(current_size, _optics(), log=LOG)
     assert off.score_window_size == off.image_window_size
     assert off.engine_model_window_size == off.model_window_size
 
@@ -52,11 +52,11 @@ def test_cap_uses_the_image_pixel_size_without_optics_pixel_sizes():
     # runs have no per-optics pixel sizes and a model pixel size that may be the MRC header value (544/384 here)
     # instead of the STAR one (1.416667): 384 * 1.416667 / 8.704 = 62.50001 -> 126, 384 * 544/384 / 8.704 =
     # 62.49999 -> 124.
-    optics = iteration_planning.RunOptics(
+    optics = image_size_plans.RunOptics(
         image_geometry=ImageGeometry(image_shape=(384, 384), pixel_size_angstrom=1.416667),
         model_pixel_size=544 / 384, optics_image_sizes=None, optics_pixel_sizes=None, multi_shape_halves=False,
     )
-    windows = iteration_planning.plan_expectation_windows(384, optics, log=LOG, strict_highres_exp_angstrom=8.704)
+    windows = image_size_plans.plan_expectation_windows(384, optics, log=LOG, strict_highres_exp_angstrom=8.704)
     assert windows.score_size == relion_strict_highres_image_size(1.416667, 384, 8.704) == 126
 
 
@@ -89,7 +89,7 @@ def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_st
 
     trace = CallTrace(monkeypatch)
     trace.wrap(expectation, "prepare_numbered_expectation", "phase")
-    trace.wrap(iteration_planning, "plan_adaptive_image_size", "coarse")
+    trace.wrap(image_size_plans, "plan_adaptive_image_size", "coarse")
     trace.wrap(maximization, "class_maximization", "mstep")
     # 8 px at 1 A, limit 4 A: the E-step size is 2 * ROUND(2) = 4 while the current size is the box.
     engine_calls = []

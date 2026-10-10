@@ -18,7 +18,7 @@ from relax.helpers.resolution import ImageGeometry
 from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
 from relax.refinement.expectation_batches import BatchPlanner
 from relax.refinement.half_inputs import configure_half_image_preprocessing
-from relax.refinement.iteration_planning import RunOptics
+from relax.refinement.image_size_plans import RunOptics
 from relax.refinement.iteration_snapshot import SnapshotCapture
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
 from relax.refinement.optics_shapes import MultiShapeHalf

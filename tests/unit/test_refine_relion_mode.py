@@ -57,7 +57,6 @@ import relax.local.local_layout as local_layout_module
 import relax.parity.relion_replay as relion_replay_module
 import relax.refinement.expectation as expectation_module
 import relax.refinement.iteration_loop as iteration_loop_module
-import relax.refinement.iteration_planning as iteration_planning_module
 import relax.refinement.numbered_transitions as convergence_policy
 import relax.refinement.projector_preparation as projector_preparation
 import relax.sampling as sampling_module
@@ -110,6 +109,7 @@ from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
 from relax.refinement import dense_half, finalization, local_half, local_sampling, trial_grids
+from relax.refinement import image_size_plans as image_size_plans_module
 from relax.refinement import maximization as maximization_module
 from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 from relax.refinement.iteration_loop import refine_single_volume
@@ -5983,7 +5983,7 @@ class TestRelionModeSmokeTest:
             force_convergence_after_first_iter,
         )
         monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
-        monkeypatch.setattr(iteration_planning_module, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
+        monkeypatch.setattr(image_size_plans_module, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
         monkeypatch.setattr(finalization, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
 
         result = refine_single_volume(
@@ -6163,7 +6163,7 @@ class TestRelionModeSmokeTest:
             raise _Recorded
 
         monkeypatch.setattr(
-            iteration_planning_module,
+            image_size_plans_module,
             "relion_coarse_image_size",
             wrap_coarse_image_size,
         )
@@ -7707,7 +7707,7 @@ class TestRelionModeSmokeTest:
 
         monkeypatch.setattr(oversampling_grids, "build_adaptive_pass2_grids", fake_build_pass2_grids)
         monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
-        monkeypatch.setattr(iteration_planning_module, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
+        monkeypatch.setattr(image_size_plans_module, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
         monkeypatch.setattr(finalization, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
 
         result = refine_single_volume(

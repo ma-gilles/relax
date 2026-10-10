@@ -15,7 +15,7 @@ from helpers.float_compare import matches
 
 import relax.sampling as sampling_module
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement import finalization, iteration_planning, local_sampling
+from relax.refinement import finalization, image_size_plans, local_sampling
 from relax.refinement.local_sampling import prepare_final_local_sampling, prepare_numbered_local_sampling
 from relax.sampling import (
     _relion_mstep_rotations_from_eulers,
@@ -101,7 +101,7 @@ def test_reused_grid_without_mstep_rotations_rebuilds_them_from_source_angles(n_
 
 
 def _optics(image_sizes, pixel_sizes):
-    return iteration_planning.RunOptics(
+    return image_size_plans.RunOptics(
         image_geometry=ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=1.5), model_pixel_size=1.5,
         optics_image_sizes=image_sizes, optics_pixel_sizes=pixel_sizes, multi_shape_halves=False,
     )
@@ -181,9 +181,9 @@ def test_coarse_image_size_is_owned_by_the_adaptive_pass1_sizing(monkeypatch):
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_planning, "plan_adaptive_image_size", "numbered")
+    trace.wrap(image_size_plans, "plan_adaptive_image_size", "numbered")
     trace.wrap(finalization, "run_final_all_data", "final")
-    for module in (iteration_planning, finalization):
+    for module in (image_size_plans, finalization):
         trace.wrap(module, "relion_coarse_image_size", "size")
     run_tiny_refinement(monkeypatch, n_classes=2, converge_after=2)
     sizing = [(call.label, call.inside) for call in trace.calls_seen if call.label == "size"]

@@ -30,7 +30,7 @@ from relax.helpers.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement import half_inputs, iteration_planning, local_sampling, shape_class_scoring
+from relax.refinement import half_inputs, image_size_plans, iteration_planning, local_sampling, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -531,7 +531,7 @@ class NumberedExpectation:
 
 def prepare_numbered_expectation(
     grid: TrialGrid,
-    windows: iteration_planning.ExpectationWindows,
+    windows: image_size_plans.ExpectationWindows,
     *,
     local_sampling: local_sampling.LocalSampling | None,
     variant: DenseVariantPolicy,

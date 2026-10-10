@@ -8,7 +8,7 @@ from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.diagnostics import reconstruction as dumps
-from relax.refinement.iteration_planning import ClassImageSize
+from relax.refinement.image_size_plans import ClassImageSize
 from relax.refinement.priors import ClassPriorEstimate
 from relax.refinement.refinement_options import ReconstructionPrograms
 
