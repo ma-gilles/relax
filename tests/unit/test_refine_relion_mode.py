@@ -26,7 +26,7 @@ from relax.reconstruction import volume_solver
 from relax.refinement import map_postprocess
 from relax.refinement.half_inputs import HalfPair, initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
-from relax.refinement.ports import InputSource, RunObserver
+from relax.refinement.ports import InputSource, RunObserver, StartSeeds
 from relax.refinement.refinement_options import OpticsGeometry, ReconstructionPrograms
 from relax.refinement.startup_references import StartupHandoff
 from relax.sampling import oversampling as oversampling_grids
@@ -6836,6 +6836,8 @@ class TestRelionModeSmokeTest:
             initial_tau2 = jnp.stack([initial_tau2, 2 * initial_tau2])
 
         grid_size = int(np.sqrt(IMAGE_SIZE))
+        fsc_seeded_source = InputSource()
+        fsc_seeded_source.start_seeds = StartSeeds(fsc=np.ones(grid_size // 2))  # a start FSC, otherwise native
         refine_single_volume(
             half_datasets,
             StartupHandoff(HalfPair.shared(init_volume), initial_tau2),
@@ -6848,13 +6850,12 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                start=StartState(init_fsc=np.ones(grid_size // 2)),
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
                 parity=stand_in.parity(use_per_half_mean_variance=per_half),
             ),
             observer=IntermediatesObserver(tmp_path),
-            source=InputSource(),
+            source=fsc_seeded_source,
         )
 
         assert called["tau2"] >= 1

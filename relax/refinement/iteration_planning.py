@@ -66,13 +66,14 @@ def initialize_refinement_state(
     )
     # RELION's convergence counters are not initialized against an infinite
     # previous resolution.  They resume from the previous optimiser/model STAR
-    # in replay mode, or from the initial FSC/ini_high state in a fresh run.
+    # in replay mode, or from the source's start FSC (a frozen boundary's) or the ini_high state in a fresh run.
+    # The boundary's state fields are installed after either, over them.
     if source.restore_convergence_state(state):
         pass
-    elif options.start.init_fsc is not None:
+    elif source.start_seeds.fsc is not None:
         initialize_resolution_from_fsc(
-            state, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom,
-            dtype=dtype,
+            state, source.start_seeds.fsc, options, box_size=image_geometry.box_size,
+            voxel_size=image_geometry.pixel_size_angstrom, dtype=dtype,
         )
     elif init_relion_iteration == 0 and parity.relion_firstiter_ini_high_angstrom is not None:
         initialize_resolution_from_firstiter_ini_high(

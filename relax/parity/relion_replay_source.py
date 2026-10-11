@@ -51,7 +51,7 @@ from relax.parity.relion_replay import (
 )
 from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_state_swap_inputs
 from relax.refinement.image_size_plans import CoarseImageSize
-from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState
+from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState, StartSeeds
 from relax.refinement.reference_state import class_mixture_from_weights
 from relax.refinement.scoring_policy import _dense_global_scoring_dtype
 from relax.refinement.sigma_offset import SigmaOffset
@@ -83,7 +83,9 @@ class RelionReplay:
     the final pass; ``from_environ``, which the command calls, reads them.
     A frozen boundary (``--frozen-boundary-dir``): its ``sealed_sampling_state`` and ``sealed_scoring_context``,
     and its ``frozen_refinement_state_fields`` (with them, the source checks, right before the first iteration
-    scores, that the scoring state is the one bound before it). ``state_swap_probe``: the
+    scores, that the scoring state is the one bound before it). ``start_seeds``: the first FSC, Pmax, high-FSC
+    flag and RELION increment the first iteration starts from (a frozen boundary's, or the completed RELION
+    iteration's of scripts/run_multi_iter_parity.py; ``relax.refinement.ports.StartSeeds``). ``state_swap_probe``: the
     state-swap probe's settings (``relax.parity.state_swap_probe.build_state_swap_probe``).
     ``preserve_initial_direction_prior``: the run keeps its start-up direction priors (a frozen boundary's) instead
     of reloading them from the STAR replay's model files.
@@ -107,6 +109,7 @@ class RelionReplay:
     sealed_sampling_state: Any | None = None
     sealed_scoring_context: Any | None = None
     frozen_refinement_state_fields: Any | None = None
+    start_seeds: StartSeeds | None = None
     state_swap_probe: dict | None = None
     preserve_initial_direction_prior: bool = False
     follower_topology: Any | None = None
@@ -125,14 +128,20 @@ class RelionReplay:
     def from_frozen_boundary(cls, frozen_boundary, **fields) -> RelionReplay:
         """``fields`` and what a frozen boundary (``--frozen-boundary-dir``; None: none) replays: its
         ``RefinementState`` fields (whose presence also makes the source check that the scoring state is
-        unchanged before the first iteration), its start-up direction priors, kept, and (its fixed diagnostic arm
-        only) its sealed sampling state and scoring context."""
+        unchanged before the first iteration), its start seeds (first FSC, Pmax, high-FSC flag and RELION
+        increment), its start-up direction priors, kept, and (its fixed diagnostic arm only) its sealed sampling
+        state and scoring context."""
         if frozen_boundary is None:
             return cls(**fields)
         return cls(
             **fields,
             preserve_initial_direction_prior=True,
             frozen_refinement_state_fields=frozen_boundary.refinement_state_fields,
+            start_seeds=StartSeeds(
+                fsc=frozen_boundary.fsc, ave_pmax=frozen_boundary.ave_pmax,
+                has_high_fsc_at_limit=frozen_boundary.has_high_fsc_at_limit,
+                relion_incr_size=frozen_boundary.relion_incr_size,
+            ),
             sealed_sampling_state=frozen_boundary.sampling_state if frozen_boundary.fixed_diagnostic_arm else None,
             sealed_scoring_context=(
                 {
@@ -167,14 +176,16 @@ class RelionReplay:
     def replays_relion_state(self) -> bool:
         """Whether the run's state comes from a RELION run: override slots, a STAR replay directory, a final-pass
         replay (its override, reference maps or sampling directory), the forced last-numbered-state replay, a
-        frozen boundary (sealed sampling state, sealed scoring context, state fields) or a state-swap probe.
+        frozen boundary (sealed sampling state, sealed scoring context, state fields), start seeds or a state-swap
+        probe.
         The one field list: ``replays`` and the consistency refusal (``InputSource.replays_relion_state``) read it."""
         return any(
             value is not None
             for value in (
                 self.replay_iteration_overrides, self.perturb_replay_relion_dir, self.final_replay_override,
                 self.final_replay_reference_maps, self.final_sampling_replay_relion_dir, self.sealed_sampling_state,
-                self.sealed_scoring_context, self.frozen_refinement_state_fields, self.state_swap_probe,
+                self.sealed_scoring_context, self.frozen_refinement_state_fields, self.start_seeds,
+                self.state_swap_probe,
             )
         ) or self.final_all_data_replay_last_numbered_state
 
@@ -227,6 +238,10 @@ class RelionReplaySource(InputSource):
         return self.replay.sealed_scoring_context
 
     @property
+    def start_seeds(self):
+        return StartSeeds() if self.replay.start_seeds is None else self.replay.start_seeds
+
+    @property
     def swaps_state(self):
         return self.replay.state_swap_probe is not None
 
@@ -248,7 +263,8 @@ class RelionReplaySource(InputSource):
         return self.replay.replays_relion_state
 
     def restore_boundary_state(self, state):
-        """A frozen boundary's ``RefinementState`` fields, installed over the initial ones."""
+        """A frozen boundary's ``RefinementState`` fields, installed over the initial ones (the start FSC's
+        resolution among them)."""
         if self.replay.frozen_refinement_state_fields is not None:
             _restore_diagnostic_frozen_boundary_state(state, self.replay.frozen_refinement_state_fields)
 

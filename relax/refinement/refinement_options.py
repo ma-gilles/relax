@@ -632,12 +632,6 @@ class StartState:
     # RELION-unit data_vs_prior spectrum of the start-up model (initialiseDataVersusPrior);
     # it selects the iteration-1 scale-correction shells (ml_optimiser.cpp:10473).
     init_data_vs_prior: Any | None = None
-    # A frozen boundary's FSC, average Pmax, high-FSC flag and RELION size increment (None and RELION's
-    # increment otherwise).
-    init_fsc: Any | None = None
-    init_ave_Pmax: float | None = None
-    init_has_high_fsc_at_limit: bool | None = None
-    init_relion_incr_size: int = RELION_INCR_SIZE
 
 
 CLEAR_JAX_CACHES_BETWEEN_ITERATIONS_ENV = "RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"

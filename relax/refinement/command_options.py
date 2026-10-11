@@ -21,7 +21,6 @@ from relax.parity.state_swap_probe import add_state_swap_probe_arguments
 from relax.refinement.refinement_options import (
     FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN,
     RELAX_MODE_CONSISTENCY,
-    RELION_INCR_SIZE,
     RELION_WIDTH_MASK_EDGE_PX,
     AdaptiveOptions,
     ExecutionOptions,
@@ -1525,9 +1524,10 @@ def resolve_start_state(
     """The state the run starts from: the particles' groups, poses and corrections and the first iteration's
     resolution and translation-prior seeds.
 
-    A frozen boundary owns the first FSC, Pmax, high-FSC flag, RELION increment, translation sigma, the
-    corrections and the direction prior; a RELION-seeded start (``--relion_init_dir``) the sigma offset;
-    otherwise the flags and the input particles do.
+    A frozen boundary owns the translation sigma, the corrections and the direction prior (its first FSC, Pmax,
+    high-FSC flag and RELION increment reach the run through the input source,
+    ``relax.parity.relion_replay_source.RelionReplay.from_frozen_boundary``); a RELION-seeded start
+    (``--relion_init_dir``) the sigma offset; otherwise the flags and the input particles do.
     """
     poses = initial_poses.poses
     return StartState(
@@ -1555,10 +1555,6 @@ def resolve_start_state(
         ),
         ini_high_angstrom=ini_high_angstrom,
         init_data_vs_prior=init_data_vs_prior,
-        init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
-        init_ave_Pmax=None if frozen_boundary is None else frozen_boundary.ave_pmax,
-        init_has_high_fsc_at_limit=None if frozen_boundary is None else frozen_boundary.has_high_fsc_at_limit,
-        init_relion_incr_size=RELION_INCR_SIZE if frozen_boundary is None else frozen_boundary.relion_incr_size,
     )
 
 

@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, NamedTuple, Protocol
 
+from relax.refinement.refinement_options import RELION_INCR_SIZE
+
 
 @dataclass
 class OptimiserAccuracyReplay:
@@ -215,6 +217,28 @@ class FinalState(NamedTuple):
     noise_model: Any
 
 
+@dataclass(frozen=True)
+class StartSeeds:
+    """What the first iteration starts from when a RELION run's state (a frozen boundary) supplies it; the
+    defaults are a run's own start.
+
+    ``fsc``: the half-map FSC that seeds the start resolution and plans the first image size (None: the run's
+    ``--ini_high`` or bootstrap size does). ``ave_pmax`` and ``has_high_fsc_at_limit``: RELION's average Pmax
+    and its latch for a high FSC at the resolution limit, which choose the first size's growth step (None:
+    0 and unset). ``relion_incr_size``: RELION's size increment in shells, held as an int.
+    """
+
+    fsc: Any | None = None
+    ave_pmax: float | None = None
+    has_high_fsc_at_limit: bool | None = None
+    relion_incr_size: int = RELION_INCR_SIZE
+
+    def __post_init__(self):
+        object.__setattr__(self, "relion_incr_size", int(self.relion_incr_size))
+        if self.relion_incr_size <= 0:
+            raise ValueError("relion_incr_size must be positive")
+
+
 class InputSource:
     """The native source: every input is the one the run computed."""
 
@@ -225,6 +249,8 @@ class InputSource:
     # sizes) and the scoring context sealed with it; None natively. The sampling plan reads them.
     sealed_sampling_state = None
     sealed_scoring_context = None
+    # The first iteration's seeds taken from elsewhere (a frozen boundary's); natively the run's own start.
+    start_seeds = StartSeeds()
     # Whether a state-swap probe swaps state in some iteration (it then admits a fresh BPref particle order).
     swaps_state = False
     # Whether the run follows a RELION run's numbered STAR files or override slots, and whether it starts from a
@@ -242,8 +268,8 @@ class InputSource:
         return False
 
     def restore_boundary_state(self, state) -> None:
-        """After the initial resolution is set: install a frozen boundary's ``RefinementState`` fields in
-        ``state``."""
+        """After the initial resolution is set (from ``start_seeds.fsc`` where there is one): install a frozen
+        boundary's ``RefinementState`` fields in ``state``, over it."""
 
     def initial_coarse_grids(self, *, initialized_healpix_order: int, voxel_size, symmetry: str):
         """The first iteration's coarse grids taken from elsewhere (a ``CoarseGrids``), or None: the run builds

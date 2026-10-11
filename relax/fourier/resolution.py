@@ -298,11 +298,12 @@ def class_current_resolution_shell(data_vs_prior, *, current_size, box_size, dty
 
 
 def initialize_resolution_from_fsc(
-    state: RefinementState, options: RefinementOptions, *, box_size: int, voxel_size: float, dtype
+    state: RefinementState, fsc, options: RefinementOptions, *, box_size: int, voxel_size: float, dtype
 ) -> None:
-    """Seed current/previous resolution from a caller-provided initial FSC curve."""
+    """Seed current/previous resolution from the start FSC curve ``fsc`` (the input source's
+    ``start_seeds.fsc``)."""
     schedule = options.schedule
-    fsc = np.asarray(options.start.init_fsc, dtype=dtype).copy()
+    fsc = np.asarray(fsc, dtype=dtype).copy()
     previous_current_size = int(schedule.init_current_size)
     if previous_current_size < box_size:
         fsc[min(len(fsc), previous_current_size // 2) :] = 0.0

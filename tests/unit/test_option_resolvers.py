@@ -82,8 +82,8 @@ def test_schedule_takes_the_sampling_and_the_first_iteration_from_the_flags():
     assert (schedule.init_translation_range, schedule.init_translation_step) == (3.0, 1.0)
     assert schedule.init_current_size == 24 and schedule.particle_diameter_ang == 180.0
     start = _start_state(args)
-    assert (start.init_translation_sigma_angstrom, start.init_relion_incr_size) == (7.0, 10)
-    assert (start.ini_high_angstrom, start.init_data_vs_prior, start.init_fsc) == (30.0, "dvp", None)
+    assert start.init_translation_sigma_angstrom == 7.0
+    assert (start.ini_high_angstrom, start.init_data_vs_prior) == (30.0, "dvp")
     assert (start.init_image_corrections, start.init_scale_corrections) == ("image", "scale")
     assert _start_state(args, sigma_offset=1.5).init_translation_sigma_angstrom == 1.5
     # --continue: --max_iter counts the whole run; the run files' iteration is the first one.
@@ -96,8 +96,7 @@ def test_a_frozen_boundary_owns_its_start_state_fields():
                                translation_sigma_angstrom_per_half=(1.0, 2.0), image_corrections="frozen image",
                                scale_corrections="frozen scale", direction_prior_per_half="prior")
     start = _start_state(_args("--max_iter", "3"), frozen_boundary=boundary, sigma_offset=1.5)
-    assert (start.init_fsc, start.init_ave_Pmax, start.init_has_high_fsc_at_limit) == ("fsc", 0.5, True)
-    assert (start.init_relion_incr_size, start.init_translation_sigma_angstrom) == (6, (1.0, 2.0))
+    assert start.init_translation_sigma_angstrom == (1.0, 2.0)
     assert (start.init_image_corrections, start.init_direction_prior) == ("frozen image", "prior")
 
 
@@ -115,14 +114,20 @@ def test_class_seeds_are_drawn_only_for_a_fresh_class3d_run_from_one_reference()
 
 def test_a_frozen_boundary_replays_its_state_and_its_sealed_sampling_on_the_fixed_arm():
     from relax.parity.relion_replay_source import RelionReplay
+    from relax.refinement.ports import StartSeeds
 
     assert command_options.resolve_local_search(_args("--stop_after_local_search")).stops_after_local_search
     assert RelionReplay.from_frozen_boundary(None, perturb_replay_max_iter=2) == RelionReplay(perturb_replay_max_iter=2)
     boundary = SimpleNamespace(fixed_diagnostic_arm=True, sampling_state="sampling", schema="s", completed_relion_iteration=3,
                                consumer_relion_iteration=4, source_sha256="h", source_roles={}, runtime_config={},
-                               map_lineage=[], refinement_state_fields={"healpix_order": 2})
+                               map_lineage=[], refinement_state_fields={"healpix_order": 2}, fsc="fsc", ave_pmax=0.5,
+                               has_high_fsc_at_limit=True, relion_incr_size=6)
     sealed = RelionReplay.from_frozen_boundary(boundary, perturb_replay_max_iter=2)
     assert sealed.perturb_replay_max_iter == 2
+    # Its first FSC, Pmax, high-FSC flag and RELION increment are the source's start seeds.
+    assert sealed.start_seeds == StartSeeds(fsc="fsc", ave_pmax=0.5, has_high_fsc_at_limit=True, relion_incr_size=6)
+    with pytest.raises(ValueError, match="relion_incr_size must be positive"):
+        StartSeeds(relion_incr_size=0)
     assert sealed.sealed_sampling_state == "sampling"
     assert sealed.sealed_scoring_context["consumer_relion_iteration"] == 4
     assert sealed.frozen_refinement_state_fields == {"healpix_order": 2}

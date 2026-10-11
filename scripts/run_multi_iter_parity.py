@@ -1432,6 +1432,7 @@ def main():
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
+    from relax.refinement.ports import StartSeeds
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
         ExecutionOptions,
@@ -2466,9 +2467,6 @@ def main():
             init_previous_best_rotation_eulers=[euler_h1, euler_h2],
             init_direction_prior=direction_prior,
             init_translation_sigma_angstrom=sigma_offset_angst_per_half,
-            init_fsc=fsc,
-            init_ave_Pmax=ave_Pmax,
-            init_has_high_fsc_at_limit=has_high_fsc_at_limit,
         ),
         local_search=LocalSearchOptions(
             local_search_profile_mode=args.local_search_profile,
@@ -2500,6 +2498,8 @@ def main():
                     perturb_replay_max_iter=args.replay_override_max_iter,
                     replay_iteration_overrides=replay_iteration_overrides,
                     final_replay_override=explicit_final_replay_override,
+                    # The completed RELION iteration's FSC, Pmax and high-FSC latch start the first iteration.
+                    start_seeds=StartSeeds(fsc=fsc, ave_pmax=ave_Pmax, has_high_fsc_at_limit=has_high_fsc_at_limit),
                 ),
                 run_options,
             ),

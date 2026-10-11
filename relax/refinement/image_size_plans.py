@@ -339,6 +339,7 @@ class ClassImageSize:
 def plan_initial_image_size(
     options: RefinementOptions,
     *,
+    start_seeds,
     box_size,
     pixel_size_angstrom,
     incr_size,
@@ -348,8 +349,9 @@ def plan_initial_image_size(
 ) -> ImageSizeUpdate:
     """Resolve startup ini_high, initial FSC or bootstrap width in that order.
 
-    Reads from ``options``: ``schedule.init_relion_iteration``, ``init_fsc``, ``init_current_size`` and
-    ``init_ave_Pmax``; ``parity.relion_firstiter_ini_high_angstrom`` and ``tau2_fudge``.
+    ``start_seeds`` (the input source's ``StartSeeds``) gives the initial FSC and its average Pmax. Reads from
+    ``options``: ``schedule.init_relion_iteration`` and ``init_current_size``;
+    ``parity.relion_firstiter_ini_high_angstrom`` and ``tau2_fudge``.
     See ``docs/math/relion_refinement_algorithm.md`` for image-size scheduling.
     """
     schedule = options.schedule
@@ -371,10 +373,10 @@ def plan_initial_image_size(
             float(parity.relion_firstiter_ini_high_angstrom),
             current_size,
         )
-    elif options.start.init_fsc is not None:
+    elif start_seeds.fsc is not None:
         prev_cs = int(schedule.init_current_size)
         fsc_prev = zero_shells_past_current_size(
-            options.start.init_fsc,
+            start_seeds.fsc,
             current_size=prev_cs,
             box_size=box_size,
             dtype=dtype,
@@ -393,7 +395,7 @@ def plan_initial_image_size(
             incr_size=incr_size,
             has_high_fsc_at_limit=has_high_fsc_at_limit,
         )
-        _init_pmax = float(options.start.init_ave_Pmax) if options.start.init_ave_Pmax is not None else 0.0
+        _init_pmax = float(start_seeds.ave_pmax) if start_seeds.ave_pmax is not None else 0.0
         raw_cs = compute_current_size_relion(
             res_shell,
             box_size,

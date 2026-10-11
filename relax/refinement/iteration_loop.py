@@ -575,9 +575,6 @@ def refine_single_volume(
         scale_corrections=options.start.init_scale_corrections, group_ids=options.start.init_group_ids,
         group_count=options.start.init_group_count,
     )
-    if int(options.start.init_relion_incr_size) <= 0:
-        raise ValueError("init_relion_incr_size must be positive")
-
     expected_accuracy_inputs = setup_checks.expected_accuracy_inputs_for_run(
         options, experiment_datasets[0], ctx.volume_shape,
         optics_group_ids=optics_group_ids_per_half[0], gridding_kernel=ctx.consistency.gridding_kernel,
@@ -610,12 +607,10 @@ def refine_single_volume(
         )
         # RELION's sigma2_offset in Angstrom^2 (min_sigma2_offset=2 A^2), updated each iteration from the data.
         start_sigma_offset = sigma_offset.SigmaOffset.from_halves(options.start.init_translation_sigma_angstrom)
-        relion_incr_size = int(options.start.init_relion_incr_size)
-        relion_has_high_fsc_at_limit = (
-            bool(options.start.init_has_high_fsc_at_limit)
-            if options.start.init_has_high_fsc_at_limit is not None
-            else False
-        )
+        # RELION's size increment and high-FSC latch: the source's start seeds (a frozen boundary's; natively
+        # RELION's increment and an unset latch).
+        relion_incr_size = source.start_seeds.relion_incr_size
+        relion_has_high_fsc_at_limit = bool(source.start_seeds.has_high_fsc_at_limit)
         direction_priors = orientation_priors.initial_direction_priors_from_snapshot(
             options.start.init_direction_prior, n_classes=options.k_class.n_classes, dtype=ctx.scoring_dtype,
             log=logger,
@@ -759,7 +754,7 @@ def refine_single_volume(
         # and angular sampling select this expectation's grid.
         if not has_previous_iteration:
             image_size_plan = image_size_plans.plan_initial_image_size(
-                options, box_size=ctx.image_geometry.box_size, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
+                options, start_seeds=source.start_seeds, box_size=ctx.image_geometry.box_size, pixel_size_angstrom=ctx.source_pixel_size_angstrom,
                 incr_size=carry.relion_incr_size, has_high_fsc_at_limit=carry.relion_has_high_fsc_at_limit,
                 dtype=ctx.scoring_dtype, log=logger,
             )

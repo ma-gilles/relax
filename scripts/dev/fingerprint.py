@@ -813,17 +813,17 @@ MUTATIONS = (
     ("star_offset_range_doubled", '_relion_offset_range = float(_replay_meta["offset_range"]) / pixel_size_angstrom', '_relion_offset_range = 2 * float(_replay_meta["offset_range"]) / pixel_size_angstrom',
      "the STAR replay reads twice the translation range", True),
     # A frozen boundary's start seeds (k1_frozen_seeds*): each dropped, and the FSC installed out of order.
-    ("frozen_start_fsc_size_plan_dropped", "elif options.start.init_fsc is not None:\nprev_cs = int(schedule.init_current_size)", "elif False:\nprev_cs = int(schedule.init_current_size)",
+    ("frozen_start_fsc_size_plan_dropped", "elif start_seeds.fsc is not None:\nprev_cs = int(schedule.init_current_size)", "elif False:\nprev_cs = int(schedule.init_current_size)",
      "the first image size is planned without the frozen boundary's start FSC", True),
-    ("frozen_start_fsc_resolution_dropped", "elif options.start.init_fsc is not None:\ninitialize_resolution_from_fsc(", "elif False:\ninitialize_resolution_from_fsc(",
+    ("frozen_start_fsc_resolution_dropped", "elif source.start_seeds.fsc is not None:\ninitialize_resolution_from_fsc(", "elif False:\ninitialize_resolution_from_fsc(",
      "a frozen boundary's start FSC does not seed the start resolution", True),
-    ("frozen_start_fsc_after_state_fields", "source.restore_boundary_state(state)", "source.restore_boundary_state(state); options.start.init_fsc is None or initialize_resolution_from_fsc(state, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom, dtype=dtype)",
+    ("frozen_start_fsc_after_state_fields", "source.restore_boundary_state(state)", "source.restore_boundary_state(state); source.start_seeds.fsc is None or initialize_resolution_from_fsc(state, source.start_seeds.fsc, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom, dtype=dtype)",
      "the start FSC's resolution is installed after the frozen boundary's state fields instead of before", True),
-    ("frozen_start_pmax_dropped", "_init_pmax = float(options.start.init_ave_Pmax) if options.start.init_ave_Pmax is not None else 0.0", "_init_pmax = 0.0",
+    ("frozen_start_pmax_dropped", "_init_pmax = float(start_seeds.ave_pmax) if start_seeds.ave_pmax is not None else 0.0", "_init_pmax = 0.0",
      "the first image size is planned without the frozen boundary's Pmax", True),
-    ("frozen_start_high_fsc_flag_dropped", "bool(options.start.init_has_high_fsc_at_limit)\nif options.start.init_has_high_fsc_at_limit is not None", "False\nif options.start.init_has_high_fsc_at_limit is not None",
+    ("frozen_start_high_fsc_flag_dropped", "relion_has_high_fsc_at_limit = bool(source.start_seeds.has_high_fsc_at_limit)", "relion_has_high_fsc_at_limit = False",
      "the run starts without the frozen boundary's high-FSC-at-limit flag", True),
-    ("frozen_start_incr_size_dropped", "relion_incr_size = int(options.start.init_relion_incr_size)", "relion_incr_size = 10",
+    ("frozen_start_incr_size_dropped", "relion_incr_size = source.start_seeds.relion_incr_size", "relion_incr_size = 10",
      "the run starts from RELION's default size increment instead of the frozen boundary's", True),
     # The command entry (the main_* cases).
     ("main_max_iter_not_continued", "max_iter=int(max_iter) - (continued_iterations or 0),", "max_iter=int(max_iter),",
@@ -1321,8 +1321,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 init_fsc=np.asarray([1.0, 0.95, 0.9, 0.85, 0.8, 0.7, 0.6, 0.15, 0.1, 0.05, 0.02], dtype=np.float32),
                 init_ave_Pmax=0.5, init_has_high_fsc_at_limit=True, init_relion_incr_size=13,
             )
-            assert set(frozen_start_seeds) <= {f.name for f in dataclasses.fields(refinement_options.StartState)}
-            replay_fields.update(frozen_start_seeds)
+            if "init_fsc" in {f.name for f in dataclasses.fields(refinement_options.StartState)}:
+                # A source older than deep2 O S1 part 2: the seeds are start-state options.
+                replay_fields.update(frozen_start_seeds)
         if replay_fields:
             # The replay slots and the final-only replay are a ReplayState's on a source older than the replay
             # input source's settings (RelionReplay); run_case moves them there below otherwise. The record is
@@ -1384,6 +1385,13 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 source_fields["frozen_refinement_state_fields"] = frozen_state_fields
                 if "assert_scoring_state_unchanged" in {f.name for f in dataclasses.fields(replay_class)}:
                     source_fields["assert_scoring_state_unchanged"] = True
+            if frozen_seeds is not None and "start_seeds" in {f.name for f in dataclasses.fields(replay_class)}:
+                # The seeds enter through the input source, as the frozen boundary's other state does.
+                source_fields["start_seeds"] = importlib.import_module("relax.refinement.ports").StartSeeds(
+                    fsc=frozen_start_seeds["init_fsc"], ave_pmax=frozen_start_seeds["init_ave_Pmax"],
+                    has_high_fsc_at_limit=frozen_start_seeds["init_has_high_fsc_at_limit"],
+                    relion_incr_size=frozen_start_seeds["init_relion_incr_size"],
+                )
         if debug_fields:
             extra["debug"] = debug_class(**debug_fields)
         if perturb is not None:
