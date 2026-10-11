@@ -269,7 +269,6 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
 
 def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, local_indices, *, batch_capacity, sentinel_id):
     """Assemble one batch through the existing coarse and BPref operand owners."""
-    from relax.dense.gemm_kernels import pad_batch
     from relax.fine_pass.resident_operands import prepare_resident_half_operands
     from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
     from relax.fine_pass.wavg import _make_relion_wavg_rectangle
@@ -284,6 +283,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
         assemble_relion_exact_coarse_gaussian_operands,
         process_relion_exact_coarse_half_image,
     )
+    from scripts.lib.dense_gemm_experiment import pad_experiment_batch
 
     local_indices = np.asarray(local_indices, dtype=np.int32)
     if local_indices.ndim != 1 or len(local_indices) == 0 or len(local_indices) > batch_capacity:
@@ -373,7 +373,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     # Only requested rows belong to this trajectory batch.
     raw = jnp.asarray(resident.recon_image[: len(local_indices)], dtype=jnp.complex64)
     weighted_ctf = jnp.asarray(resident.recon_weight[: len(local_indices)], dtype=jnp.float32)
-    return pad_batch(
+    return pad_experiment_batch(
         exact.unshifted_corrected, exact.pixel_weight, exact.initial_diff2,
         raw * weighted_ctf, resident.ctf2_over_nv_recon[: len(local_indices)],
         np.broadcast_to(metadata.rotation_log_prior[geometry["rotation_ids"]],

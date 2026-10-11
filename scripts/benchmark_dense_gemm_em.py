@@ -37,7 +37,6 @@ from relax.dense.gemm_kernels import (
     merge_normalizers,
     native_phase_table,
     native_relion_callbacks,
-    pad_batch,
     pad_grid,
     score_model_power,
     score_tile,
@@ -50,6 +49,7 @@ from scripts.lib.dense_gemm_experiment import (
     leading_tile_bytes,
     make_batch_program,
     normalizer_logz,
+    pad_experiment_batch,
     weighted_slices,
 )
 
@@ -233,7 +233,7 @@ def _make_case(args):
     )
     rotation_prior = rng.uniform(-0.1, 0.1, (args.images, args.rotations)).astype(np.float32)
     translation_prior = rng.uniform(-0.1, 0.1, (args.images, args.translations)).astype(np.float32)
-    batch = pad_batch(
+    batch = pad_experiment_batch(
         score_image,
         score_weight,
         initial_diff2,

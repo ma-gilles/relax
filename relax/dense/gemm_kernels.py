@@ -303,7 +303,6 @@ class DenseGemmBatch(NamedTuple):
     rec_weight: jax.Array  # [B, Pr], native M-step CTF²/noise, float32
     rec_raw_image: jax.Array  # [B, Pr], unweighted BPref image for native translation control
     rec_weighted_ctf: jax.Array  # [B, Pr], BPref CTF/noise applied after native translation
-    rotation_prior: jax.Array  # [B, padded R]
     translation_prior: jax.Array  # [B, padded T]
     particle_ids: jax.Array  # [B], padding uses table's final sentinel index
     valid_images: jax.Array  # [B], bool
@@ -709,7 +708,6 @@ def pad_batch(
     initial_diff2,
     rec_image,
     rec_weight,
-    rotation_prior,
     translation_prior,
     particle_ids,
     *,
@@ -731,11 +729,9 @@ def pad_batch(
         or np.any(ids_host >= sentinel_id)
     ):
         raise ValueError("real particle IDs must be distinct and within the normalizer table")
-    # The joint-class program supplies its class prior separately.  A None
-    # placeholder avoids constructing an unused image-by-rotation table.
-    rcount = 0 if rotation_prior is None else np.shape(rotation_prior)[1]
+    # The joint-class program supplies its class rotation prior separately.
     tcount = np.shape(translation_prior)[1]
-    if rcount > grid.score_rotations.shape[0] or tcount > grid.score_phase.shape[0]:
+    if tcount > grid.score_phase.shape[0]:
         raise ValueError("prior exceeds padded grid")
     padding = image_capacity - count
     if (rec_raw_image is None) != (rec_weighted_ctf is None):
@@ -750,9 +746,6 @@ def pad_batch(
             raise ValueError("batch arrays must have matching image counts")
         return jnp.pad(array, ((0, padding),) + ((0, 0),) * (array.ndim - 1))
 
-    rprior = (jnp.zeros((1, 1), jnp.float32) if rotation_prior is None else jnp.pad(
-        jnp.asarray(rotation_prior, jnp.float32), ((0, padding), (0, grid.score_rotations.shape[0] - rcount))
-    ))
     tprior = jnp.pad(
         jnp.asarray(translation_prior, jnp.float32), ((0, padding), (0, grid.score_phase.shape[0] - tcount))
     )
@@ -764,7 +757,6 @@ def pad_batch(
         pad_rows(rec_weight, jnp.float32),
         pad_rows(rec_raw_image, jnp.complex64),
         pad_rows(rec_weighted_ctf, jnp.float32),
-        rprior,
         tprior,
         jnp.pad(jnp.asarray(particle_ids, jnp.int32), ((0, padding),), constant_values=sentinel_id),
         jnp.arange(image_capacity) < count,

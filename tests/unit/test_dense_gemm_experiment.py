@@ -8,12 +8,12 @@ import pytest
 from relax.dense.gemm_kernels import (
     DenseGemmTileConfig,
     empty_normalizer_table,
-    pad_batch,
     pad_grid,
     score_tile,
 )
 from scripts.lib.dense_gemm_experiment import (
     make_batch_program,
+    pad_experiment_batch,
     run_resident_iteration,
     weighted_slices,
 )
@@ -111,7 +111,7 @@ def _run(case, side, tile, *, mode="exact", old=None, particle_ids=(3, 1, 4)):
     rotations = np.zeros((r, 3, 3), np.float32)
     rotations[:, 0, 0] = np.arange(r)
     grid = pad_grid(rotations, rotations, phase, rec_phase, rotation_tile=2, translation_tile=tile)
-    batch = pad_batch(
+    batch = pad_experiment_batch(
         image,
         weight,
         initial,
@@ -234,7 +234,7 @@ def test_iteration_keeps_normalizers_by_particle_id_across_reordered_batches():
         for group in order:
             rows = np.asarray(group, dtype=np.int32)
             result.append(
-                pad_batch(
+                pad_experiment_batch(
                     image[rows], weight[rows], initial[rows], rec_image[rows], rec_weight[rows],
                     rp[rows], tp[rows], rows, image_capacity=2, grid=grid, sentinel_id=3,
                 )

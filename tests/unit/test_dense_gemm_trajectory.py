@@ -61,10 +61,11 @@ def test_failure_census_keeps_stable_ids_and_finite_ranges():
 def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypatch):
     """The selected GEMM scorer and resident row owner retain every pose."""
     from relax.cuda import kernels as cuda_kernels
-    from relax.dense.gemm_kernels import empty_normalizer_table, pad_batch, pad_grid
+    from relax.dense.gemm_kernels import empty_normalizer_table, pad_grid
     from relax.fine_pass import adjoint as sparse_pass2_adjoint
     from relax.fine_pass import resident_pass2
     from relax.scoring import coarse_kernels
+    from scripts.lib.dense_gemm_experiment import pad_experiment_batch
 
     selected = {"score_traces": 0, "row_traces": 0, "adjoint_traces": 0}
 
@@ -116,7 +117,7 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
         rotation_tile=2, translation_tile=1,
     )
     raw = jnp.asarray([[1], [2], [3]], dtype=jnp.complex64)
-    batch = pad_batch(
+    batch = pad_experiment_batch(
         jnp.zeros((3, 1), dtype=jnp.complex64),
         jnp.ones((3, 1), dtype=jnp.float32),
         jnp.zeros((3,), dtype=jnp.float32),

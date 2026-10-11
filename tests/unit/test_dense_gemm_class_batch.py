@@ -40,7 +40,7 @@ def _case(*, skewed, score_mode):
     batch = pad_batch(
         images, score_weight, np.zeros(b, np.float32),
         complex_values((b, pr)), rng.uniform(0.2, 1.0, (b, pr)).astype(np.float32),
-        None, np.zeros((b, t), np.float32), [0, 1],
+        np.zeros((b, t), np.float32), [0, 1],
         image_capacity=3, grid=grid, sentinel_id=2,
     )
     padded_priors = jnp.pad(

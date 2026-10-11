@@ -244,7 +244,7 @@ def test_joint_exact_normalizer_and_grouped_presums(n_classes, translation_tile,
     )
     batch = pad_batch(
         images, score_weight, initial, rec_image, rec_weight,
-        np.zeros((b, r), np.float32), translation_prior, [2, 0, 4],
+        translation_prior, [2, 0, 4],
         image_capacity=4, grid=grid, sentinel_id=5,
     )
     padded_class_prior = jnp.pad(
@@ -337,7 +337,7 @@ def test_joint_best_pose_ties_follow_canonical_rotation_translation_order():
     batch = pad_batch(
         np.ones((1, 1), np.complex64), np.ones((1, 1), np.float32), np.zeros(1, np.float32),
         np.zeros((1, 1), np.complex64), np.ones((1, 1), np.float32),
-        np.zeros((1, n_rot), np.float32), np.zeros((1, n_trans), np.float32), [0],
+        np.zeros((1, n_trans), np.float32), [0],
         image_capacity=1, grid=grid, sentinel_id=1,
     )
 
@@ -427,7 +427,7 @@ def test_gradient_presum_and_cc_winner_with_distinct_reconstruction_pixels(score
     batch = pad_batch(
         np.array([[2, 0]], np.complex64), np.ones((1, 2), np.float32), np.zeros(1, np.float32),
         np.array([[1, 2, 3]], np.complex64), np.array([[0.5, 0.75, 1.25]], np.float32),
-        np.zeros((1, 2), np.float32), np.zeros((1, 3), np.float32), [0],
+        np.zeros((1, 3), np.float32), [0],
         image_capacity=1, grid=grid, sentinel_id=1,
     )
 

@@ -525,7 +525,6 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
         batch = pad_batch(
             resident.score_input[:count], score_weight, initial_diff2,
             rec_image, rec_denominator,
-            None,
             resident.translation_prior[:count], image_ids,
             image_capacity=b, grid=grid, sentinel_id=n_images,
             **(

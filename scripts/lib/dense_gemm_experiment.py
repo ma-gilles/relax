@@ -13,19 +13,76 @@ from typing import Callable, NamedTuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from relax.dense.gemm_kernels import (
-    DenseGemmBatch,
     DenseGemmGrid,
     DenseGemmTileConfig,
     empty_normalizer_table,
     merge_normalizers,
+    pad_batch,
     score_model_power,
     score_tile,
     tile_normalizer,
     weighted_denominator_slices,
     weighted_numerator_slices,
 )
+
+
+class ExperimentBatch(NamedTuple):
+    """``DenseGemmBatch`` plus the per-image rotation prior the single-class programs read.
+
+    The production joint-class program takes its class rotation prior
+    separately, so only these experiment programs carry it on the batch.
+    """
+
+    score_image: jax.Array  # [B, Ps], unshifted corrected image, complex64
+    score_weight: jax.Array  # [B, Ps], exact coarse pixel weight, float32
+    initial_diff2: jax.Array  # [B], absolute out-of-window score term
+    rec_image: jax.Array  # [B, Pr], native M-step image, complex64
+    rec_weight: jax.Array  # [B, Pr], native M-step CTF²/noise, float32
+    rec_raw_image: jax.Array  # [B, Pr], unweighted BPref image for native translation control
+    rec_weighted_ctf: jax.Array  # [B, Pr], BPref CTF/noise applied after native translation
+    translation_prior: jax.Array  # [B, padded T]
+    particle_ids: jax.Array  # [B], padding uses table's final sentinel index
+    valid_images: jax.Array  # [B], bool
+    rotation_prior: jax.Array  # [B, padded R]
+
+
+def pad_experiment_batch(
+    score_image,
+    score_weight,
+    initial_diff2,
+    rec_image,
+    rec_weight,
+    rotation_prior,
+    translation_prior,
+    particle_ids,
+    *,
+    image_capacity,
+    grid: DenseGemmGrid,
+    sentinel_id: int,
+    rec_raw_image=None,
+    rec_weighted_ctf=None,
+) -> ExperimentBatch:
+    """Pad one fixed batch as ``relax.dense.gemm_kernels.pad_batch`` does, plus its rotation prior.
+
+    The rotation prior is zero-padded to ``image_capacity`` rows and to the
+    grid's padded rotation count.
+    """
+    rcount = np.shape(rotation_prior)[1]
+    if rcount > grid.score_rotations.shape[0]:
+        raise ValueError("prior exceeds padded grid")
+    batch = pad_batch(
+        score_image, score_weight, initial_diff2, rec_image, rec_weight, translation_prior, particle_ids,
+        image_capacity=image_capacity, grid=grid, sentinel_id=sentinel_id,
+        rec_raw_image=rec_raw_image, rec_weighted_ctf=rec_weighted_ctf,
+    )
+    padding = image_capacity - len(particle_ids)
+    rprior = jnp.pad(
+        jnp.asarray(rotation_prior, jnp.float32), ((0, padding), (0, grid.score_rotations.shape[0] - rcount))
+    )
+    return ExperimentBatch(**batch._asdict(), rotation_prior=rprior)
 
 
 def weighted_slices(q, rec_image, rec_weight, rec_phase, *, translation_side: str):
@@ -83,7 +140,7 @@ def make_batch_program(
 
     @partial(jax.jit, donate_argnames=("numerator", "denominator", "next_pair_table"))
     def run(
-        reference, numerator, denominator, old_pair_table, next_pair_table, batch: DenseGemmBatch, grid: DenseGemmGrid
+        reference, numerator, denominator, old_pair_table, next_pair_table, batch: ExperimentBatch, grid: DenseGemmGrid
     ):
         nrot = grid.score_rotations.shape[0] // qsize
         ntrans = grid.score_phase.shape[0] // usize
