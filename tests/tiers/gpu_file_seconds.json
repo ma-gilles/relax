@@ -259,7 +259,6 @@
 "tests/unit/test_relion_bind/test_e7_noise_accumulation.py": 0,
 "tests/unit/test_relion_bind/test_estep_composite_parity.py": 1,
 "tests/unit/test_relion_bind/test_initialmodel_bind.py": 2,
-"tests/unit/test_relion_bind/test_layout_validation.py": 0,
 "tests/unit/test_relion_bind/test_m1_gridding.py": 3,
 "tests/unit/test_relion_bind/test_m4_ssnr.py": 1,
 "tests/unit/test_relion_bind/test_m5_resolution.py": 0,

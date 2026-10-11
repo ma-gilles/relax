@@ -16,11 +16,15 @@ import pytest
 from helpers.float_compare import assert_matches
 from relax.relion_bind._relion_bind_core import compute_fourier_transform_map
 
-from relax.relion_bind.conversions import compute_relion_pad_size
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def compute_relion_pad_size(box_size: int, padding_factor: int = 1) -> int:
+    """RELION's Projector ``pad_size``: ``2 * (round(pf * (ori_size // 2)) + 1) + 1``."""
+    r_max = box_size // 2
+    return 2 * (round(padding_factor * r_max) + 1) + 1
 
 
 def _make_smooth_volume(N, rng):
