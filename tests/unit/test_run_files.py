@@ -860,14 +860,14 @@ def test_growth_state_update_is_idempotent():
 def test_host_map_transforms_follow_recovar_convention():
     """Maps are transformed on the host with recovar's centered DFT convention."""
 
-    from relax.refinement.run_files import _fourier_from_map, _real_from_fourier
+    from relax.refinement.run_files import _fourier_from_map, real_from_fourier
 
     rng = np.random.default_rng(5)
     real = rng.standard_normal((BOX, BOX, BOX)).astype(np.float32)
     expected_ft = np.asarray(ftu.get_dft3(jnp.asarray(real))).reshape(-1)
     assert_matches(_fourier_from_map(real, (BOX, BOX, BOX)), expected_ft.astype(np.complex64))
     back = np.asarray(ftu.get_idft3(jnp.asarray(expected_ft.reshape(BOX, BOX, BOX)))).real
-    assert_matches(_real_from_fourier(expected_ft, (BOX, BOX, BOX)), back.astype(np.float32))
+    assert_matches(real_from_fourier(expected_ft, (BOX, BOX, BOX)), back.astype(np.float32))
 
 
 def test_background_writer_hands_over_and_reports_errors(tmp_path):

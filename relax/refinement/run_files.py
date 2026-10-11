@@ -442,7 +442,7 @@ def _write_maps(root: Path, snapshot: IterationSnapshot) -> None:
     shape = (snapshot.box_size,) * 3
 
     def _write(path, volume_ft):
-        write_map(path, _real_from_fourier(volume_ft, shape), voxel_size=snapshot.pixel_size)
+        write_map(path, real_from_fourier(volume_ft, shape), voxel_size=snapshot.pixel_size)
 
     if snapshot.k_class:
         stack = np.asarray(snapshot.means[0]).reshape(int(snapshot.n_classes), -1)
@@ -1132,7 +1132,7 @@ def _fft_workers() -> int:
     return max(1, len(os.sched_getaffinity(0)) // 2)
 
 
-def _real_from_fourier(volume_ft, volume_shape) -> np.ndarray:
+def real_from_fourier(volume_ft, volume_shape) -> np.ndarray:
     import scipy.fft
 
     volume = np.asarray(volume_ft).reshape(volume_shape)

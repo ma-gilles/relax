@@ -17,16 +17,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import jax
-import jax.numpy as jnp
 import jaxlib
 import numpy as np
-from recovar.core import fourier_transform_utils as ftu
 
 from relax.diagnostics import parity_dump
 from relax.fourier.resolution import shell_index_to_resolution_angstrom
 from relax.refinement import iteration_history
 from relax.refinement.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.refinement.refinement_result import FinalPassResult, ModelMaps, RefinementResult
+from relax.refinement.run_files import real_from_fourier
 from relax.runtime.git_provenance import git_head_or_none, git_worktree_provenance
 
 if TYPE_CHECKING:
@@ -445,9 +444,9 @@ def write_final_maps(
         # Final maps are written in RELION's map convention (relax.io.map_io).
         from relax.io.map_io import write_map
 
+        # The same host inversion as the numbered run_it maps (run_files.real_from_fourier).
         def _ft_to_real_volume(ft_array):
-            ft_reshape = np.asarray(ft_array).reshape(volume_shape)
-            return np.real(np.array(ftu.get_idft3(jnp.asarray(ft_reshape)))).astype(np.float32)
+            return real_from_fourier(ft_array, volume_shape)
 
         final_mean_real = _ft_to_real_volume(maps.mean)
         write_map(os.path.join(output_dir, "final_merged.mrc"), final_mean_real, voxel_size=pixel_size_angstrom)
