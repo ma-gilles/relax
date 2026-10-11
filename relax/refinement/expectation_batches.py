@@ -21,8 +21,6 @@ from relax.runtime.batch_planning import (
     RELION_EM_COMPACT_K1_FIXED_BASE_GB,
     estimate_relion_em_batch_sizes,
     plan_adaptive_dense_batch_sizes,
-    safe_dense_k_class_rotation_block_size,
-    safe_firstiter_cc_image_batch_size,
 )
 
 
@@ -263,29 +261,8 @@ def prepare_half_batches(
                 coarse_cs=coarse_cs,
                 coarse_sizing=coarse_sizing,
             )
-    elif k_class_enabled:
-        k_class_image_batch_size, dense_k_class_rotation_block_size = planner(
-            rotations.shape[0],
-            translations.shape[0],
-            classes=n_classes,
-            image_shape_for_batch=dataset.image_shape,
-            current_size_for_batch=cs_for_engine,
-        )
-        k_class_image_batch_size = min(
-            k_class_image_batch_size,
-            safe_firstiter_cc_image_batch_size(
-                translations.shape[0],
-                dataset.image_shape,
-            ),
-        )
-        dense_k_class_rotation_block_size = min(
-            dense_k_class_rotation_block_size,
-            safe_dense_k_class_rotation_block_size(
-                translations.shape[0],
-                k_class_image_batch_size,
-            ),
-        )
-    if k_class_enabled:
+    # A non-adaptive half is given no batch sizes from this plan: its fine sizes stay the requested ones.
+    if k_class_enabled and use_adaptive:
         if k_class_image_batch_size != batching.image_batch_size:
             planner.log.info(
                 "STRICT-PARITY: clamping dense K-class image_batch_size from %d to %d",
@@ -298,7 +275,7 @@ def prepare_half_batches(
                 batching.rotation_block_size,
                 dense_k_class_rotation_block_size,
             )
-        if use_adaptive and (
+        if (
             significance_image_batch_size != k_class_image_batch_size
             or significance_rotation_block_size != dense_k_class_rotation_block_size
         ):

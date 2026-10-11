@@ -151,3 +151,15 @@ def test_diagnostic_precision_keeps_compact_planning_disabled(planner, monkeypat
     assert policy.safe_batch_sizes is planner
     assert not any(c["compact_k1_relion_layout"] for c in calls)
     assert all(c["use_float64_scoring"] == (precision != "projection") for c in calls)
+
+
+def test_non_adaptive_k_class_half_plans_no_clamp_that_nothing_reads(planner, monkeypatch):
+    """deep2 L-B2: only an adaptive half's sizes reach the engine, so a non-adaptive K>1 half plans none."""
+    calls = capture_estimates(monkeypatch)
+    messages = []
+    planner = replace(planner, n_classes=3, log=SimpleNamespace(info=lambda *args: messages.append(args[0])))
+    policy = prepare(planner, use_adaptive=False)
+    assert calls == []
+    assert not any("clamping" in message for message in messages)
+    assert (policy.fine_image_batch_size, policy.fine_rotation_block_size) == (200, 1000)
+    assert policy.coarse_image_batch_size is None and policy.safe_batch_sizes is planner
