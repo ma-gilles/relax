@@ -8,7 +8,7 @@ algorithm. It is intended as the first checklist for future RELION parity work.
 
 The discussion covers the dense single-volume RELION-parity code paths:
 
-- `recovar/em/`
+- `relax/`
 - `scripts/run_k_class_parity.py`
 - `relax/vdam/` and the current InitialModel unit/trajectory tests
 

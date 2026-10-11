@@ -1,6 +1,6 @@
 """Prerequisite test P2 for the PPCA-ab-initio v0 plan.
 
-Audits dtype propagation through recovar.em.reference.heterogeneity's
+Audits dtype propagation through oracles.heterogeneity's
 low-rank score path. Per the audit in
 docs/math/plan_ppca_abinitio_v0.md (Section "Audit 2"), the entire
 production E-step path runs at complex64 / float32, even though

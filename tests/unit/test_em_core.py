@@ -1,5 +1,5 @@
 """
-Unit tests for recovar.em.reference.core.
+Unit tests for oracles.core.
 
 Covers:
   crosscorr_from_ft  – output shape and self-correlation peak at (0,0)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """K-class GT FSC evaluation with best-permutation matching.
 
-Wraps :mod:`recovar.em.diagnostics.gt_metrics` to handle the K-class
+Wraps :mod:`relax.diagnostics.gt_metrics` to handle the K-class
 case end-to-end:
 
 * takes ``--volume`` MRCs (one per class) and ``--gt_volume`` MRCs (one

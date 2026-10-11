@@ -1,7 +1,7 @@
 """Phase-2 parity tests: Python InitialModel schedules / ordering vs the
 RELION C++ bindings.
 
-These tests verify that `recovar.em.vdam` produces byte-identical
+These tests verify that `relax.vdam` produces byte-identical
 trajectories against the corresponding RELION C++ functions compiled into
 `_relion_bind_core`.
 

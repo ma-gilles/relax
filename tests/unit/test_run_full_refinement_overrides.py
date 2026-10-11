@@ -1,4 +1,4 @@
-"""Unit tests for ``recovar.em.parity.relion_replay._build_replay_iteration_overrides``.
+"""Unit tests for ``relax.parity.relion_replay._build_replay_iteration_overrides``.
 
 Locks down the parity-critical contract that the per-iter replay override
 dict always carries ``translation_sigma_angstrom`` sourced from RELION's

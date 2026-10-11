@@ -1,5 +1,5 @@
 """
-Unit tests for recovar.em.reference.states.
+Unit tests for oracles.states.
 
 Covers construction and initial attribute values for:
   EMState, HeterogeneousEMState

@@ -1,4 +1,4 @@
-"""Numerical unit tests for recovar.em.reference.heterogeneity pure functions.
+"""Numerical unit tests for oracles.heterogeneity pure functions.
 
 Tests functions that require NO experiment_dataset mock:
   - compute_UPLambdainvPU
