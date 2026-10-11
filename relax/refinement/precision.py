@@ -123,26 +123,6 @@ class DensePrecisionPolicy:
     def projection_complex_dtype(self):
         return jnp.complex128 if self.use_float64_projections else None
 
-    @property
-    def normalization_real_dtype(self):
-        return jnp.float64 if self.use_float64_normalization else self.score_real_dtype
-
-    def cast_projection_volume(self, volume):
-        dtype = self.projection_complex_dtype
-        return volume if dtype is None else jnp.asarray(volume, dtype=dtype)
-
-    def cast_scoring_inputs(self, shifted_score_half, score_weight_half, shifted_recon_half):
-        shifted_score_half = shifted_score_half.astype(self.score_complex_dtype)
-        score_weight_half = score_weight_half.astype(self.score_real_dtype)
-        if self.use_float64_scoring:
-            shifted_recon_half = shifted_recon_half.astype(self.score_complex_dtype)
-        return shifted_score_half, score_weight_half, shifted_recon_half
-
-    def cast_projection_scores(self, proj_half, proj_abs2_half):
-        if self.use_float64_scoring:
-            return proj_half, proj_abs2_half
-        return proj_half.astype(jnp.complex64), proj_abs2_half.astype(jnp.float32)
-
     def cast_local_noise_projection_scores(self, proj_for_noise, proj_abs2_for_noise):
         if not self.use_float64_scoring:
             return proj_for_noise, proj_abs2_for_noise

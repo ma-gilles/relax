@@ -156,7 +156,10 @@ def compute_e_step_weights(
 
         # Pass 1: streaming logsumexp
         max_s = jnp.full(batch_size, -jnp.inf)
-        sum_exp = jnp.zeros(batch_size, dtype=precision_policy.normalization_real_dtype)
+        normalization_dtype = (
+            jnp.float64 if precision_policy.use_float64_normalization else precision_policy.score_real_dtype
+        )
+        sum_exp = jnp.zeros(batch_size, dtype=normalization_dtype)
 
         for block in _iter_dense_rotation_blocks(rotations_padded, n_rot, n_blocks, rotation_block_size):
             proj_half_b, proj_abs2_half_b = _compute_projections_block(

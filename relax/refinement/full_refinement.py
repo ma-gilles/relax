@@ -656,7 +656,7 @@ def main(command=None):
     # RELION's Image<RFLOAT>::read() widens a reference MRC (on-disk float32) to RFLOAT (double in the
     # ACC_DOUBLE_PRECISION oracle build); every later step, including the FFT that builds Projector::data,
     # runs at that precision. Narrowing here would defeat float64 projections however carefully later casts
-    # widen again (DensePrecisionPolicy.cast_projection_volume cannot recover it). Gated on
+    # widen again (a float32 volume cannot be recovered). Gated on
     # use_float64_projections alone, as projection_complex_dtype is, so float64 scoring alone costs no
     # projection memory. The process's precision policy owns the flag (RefinementOptions.precision is it).
     _init_volume_use_float64 = scoring_policy.DENSE_PRECISION.use_float64_projections

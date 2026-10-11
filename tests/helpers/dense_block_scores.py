@@ -37,10 +37,9 @@ def _score_rotation_block(
 
     proj_score = window_spec.score_values(proj_half)
     proj_abs2_score = window_spec.score_values(proj_abs2_half)
-    proj_score, proj_abs2_score = precision_policy.cast_projection_scores(
-        proj_score,
-        proj_abs2_score,
-    )
+    if not precision_policy.use_float64_scoring:
+        proj_score = proj_score.astype(jnp.complex64)
+        proj_abs2_score = proj_abs2_score.astype(jnp.float32)
     weights = window_spec.score_values(half_weights)
     proj_weighted = proj_score * weights
     proj_abs2_weighted = proj_abs2_score * weights
