@@ -117,29 +117,6 @@ class FourierWindowSpec:
     # and can be smaller than this window when the optics remap applies.
     image_current_size: int | None = None
 
-    def relion_projector_output_size(self) -> int | None:
-        """Return the crop RELION projects into for this window.
-
-        RELION projects references into the particle-image box
-        (``image_current_size``) and clips samples to the model sphere
-        separately.  Sizing the projector crop from ``2 * max_r`` instead uses
-        the reconstruction size, which is smaller than the particle window
-        whenever the optics pixel size differs from the model pixel size (for
-        example 200 versus 202 on EMPIAR-10073 at model current size 200).
-        Score/projection indices outside that smaller crop then alias onto
-        other pixels of the projection (the ``kx = crop/2 + 1`` column reads
-        the next row's ``kx = 0`` value), corrupting fine scores.  Callers that
-        gather projections at ``score_indices`` or ``projection_indices`` must
-        use this size, as the global sparse pass-2 path already does through
-        ``_projection_kwargs_for_relion_score_window``.
-        """
-
-        if not self.use_window:
-            return None
-        if self.image_current_size is not None:
-            return int(self.image_current_size)
-        return int(2 * self.max_r) if self.max_r is not None else None
-
     def projection_kwargs(self, *, return_abs2=None) -> dict:
         kwargs = {}
         if self.use_window:
@@ -212,44 +189,12 @@ class StableFourierWindowShapePlan:
         return int(self.physical_spec.n_recon)
 
     @property
-    def logical_projection_pixels(self) -> int:
-        return int(self.logical_spec.n_projection)
-
-    @property
-    def physical_projection_pixels(self) -> int:
-        return int(self.physical_spec.n_projection)
-
-    @property
     def logical_rectangle_pixels(self) -> int:
         return self.logical_current_size * (self.logical_current_size // 2 + 1)
 
     @property
     def physical_rectangle_pixels(self) -> int:
         return self.physical_current_size * (self.physical_current_size // 2 + 1)
-
-    @property
-    def physical_signature(self) -> tuple[int, ...]:
-        """Return the shape-only cache key; logical cutoffs are not included."""
-
-        return (
-            self.physical_current_size,
-            self.physical_reconstruction_current_size,
-            self.physical_score_pixels,
-            self.physical_reconstruction_pixels,
-            self.physical_projection_pixels,
-            self.physical_rectangle_pixels,
-        )
-
-    @property
-    def logical_loop_bounds(self) -> tuple[int, ...]:
-        """Return the bounds that exact score/Wavg/BPref kernels must retain."""
-
-        return (
-            self.logical_score_pixels,
-            self.logical_reconstruction_pixels,
-            self.logical_projection_pixels,
-            self.logical_rectangle_pixels,
-        )
 
     @staticmethod
     def _spec_indices(spec: FourierWindowSpec, name: str) -> np.ndarray:

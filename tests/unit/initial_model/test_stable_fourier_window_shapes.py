@@ -74,6 +74,28 @@ def _plan(
     )
 
 
+def _physical_shapes(plan):
+    """The plan's shapes (what a compiled program is keyed on); logical cutoffs are not included."""
+    return (
+        plan.physical_current_size,
+        plan.physical_reconstruction_current_size,
+        plan.physical_score_pixels,
+        plan.physical_reconstruction_pixels,
+        plan.physical_spec.n_projection,
+        plan.physical_rectangle_pixels,
+    )
+
+
+def _logical_bounds(plan):
+    """The bounds exact score/Wavg/BPref kernels must retain."""
+    return (
+        plan.logical_score_pixels,
+        plan.logical_reconstruction_pixels,
+        plan.logical_spec.n_projection,
+        plan.logical_rectangle_pixels,
+    )
+
+
 def _relion_lane_tree_sum(storage, logical_count):
     """Host float32 replay of the fine scorer's 256-lane issue order."""
 
@@ -384,10 +406,10 @@ def test_shape_policy_is_default_off():
 
     assert plan.logical_current_size == 70
     assert plan.physical_current_size == 70
-    assert plan.logical_loop_bounds == (
+    assert _logical_bounds(plan) == (
         plan.physical_score_pixels,
         plan.physical_reconstruction_pixels,
-        plan.physical_projection_pixels,
+        plan.physical_spec.n_projection,
         plan.physical_rectangle_pixels,
     )
 
@@ -396,8 +418,8 @@ def test_adjacent_cutoffs_share_one_physical_signature_but_keep_logical_bounds()
     plans = [_plan(current_size) for current_size in (68, 70, 72)]
 
     assert {plan.physical_current_size for plan in plans} == {72}
-    assert len({plan.physical_signature for plan in plans}) == 1
-    assert len({plan.logical_loop_bounds for plan in plans}) == 3
+    assert len({_physical_shapes(plan) for plan in plans}) == 1
+    assert len({_logical_bounds(plan) for plan in plans}) == 3
 
 
 def test_score_and_reconstruction_cutoffs_are_bucketed_independently():
@@ -407,7 +429,7 @@ def test_score_and_reconstruction_cutoffs_are_bucketed_independently():
     assert plan.physical_current_size == 72
     assert plan.logical_reconstruction_current_size == 84
     assert plan.physical_reconstruction_current_size == 88
-    assert plan.physical_projection_pixels >= plan.logical_projection_pixels
+    assert plan.physical_spec.n_projection >= plan.logical_spec.n_projection
 
 
 @pytest.mark.parametrize(
@@ -428,15 +450,15 @@ def test_gf46_checkpoint_projection_capacity(
     plan = _plan(current_size)
 
     assert plan.physical_current_size == physical_size
-    assert plan.logical_projection_pixels == logical_projection
-    assert plan.physical_projection_pixels == physical_projection
+    assert plan.logical_spec.n_projection == logical_projection
+    assert plan.physical_spec.n_projection == physical_projection
 
 
 def test_gf46_shape_trajectory_collapses_from_29_signatures_to_14():
     plans = [_plan(current_size) for current_size in _GF46_CURRENT_SIZES_THROUGH_80]
 
     assert len({plan.logical_current_size for plan in plans}) == 29
-    assert len({plan.physical_signature for plan in plans}) == 14
+    assert len({_physical_shapes(plan) for plan in plans}) == 14
     assert sorted({plan.physical_current_size for plan in plans}) == [
         32,
         40,
@@ -473,7 +495,7 @@ def test_larger_diagnostic_quantums_reduce_trajectory_shape_cardinality(
 
     assert sorted({plan.physical_current_size for plan in plans}) == expected_physical_sizes
     assert all(
-        plan.physical_projection_pixels >= plan.logical_projection_pixels
+        plan.physical_spec.n_projection >= plan.logical_spec.n_projection
         for plan in plans
     )
 
@@ -578,11 +600,11 @@ def test_packed_physical_spec_keeps_every_logical_stream_as_its_prefix():
 
     assert packed.n_score == plan.physical_score_pixels
     assert packed.n_recon == plan.physical_reconstruction_pixels
-    assert packed.n_projection == plan.physical_projection_pixels
+    assert packed.n_projection == plan.physical_spec.n_projection
     for name, logical_count in (
         ("score", plan.logical_score_pixels),
         ("recon", plan.logical_reconstruction_pixels),
-        ("projection", plan.logical_projection_pixels),
+        ("projection", plan.logical_spec.n_projection),
     ):
         assert_matches(
             getattr(packed, f"{name}_indices_np")[:logical_count],

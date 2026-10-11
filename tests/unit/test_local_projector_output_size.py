@@ -43,7 +43,6 @@ def test_spec_records_particle_image_window_and_projector_crop():
     assert spec.use_window
     assert spec.max_r == MODEL_CURRENT // 2
     assert spec.image_current_size == IMAGE_CURRENT
-    assert spec.relion_projector_output_size() == IMAGE_CURRENT
     # The model-size crop cannot hold the image-window indices ...
     with pytest.raises(ValueError, match="exceed projector crop"):
         projection._validate_centered_relion_projector_pixel_indices(
@@ -55,16 +54,15 @@ def test_spec_records_particle_image_window_and_projector_crop():
     projection._validate_centered_relion_projector_pixel_indices(
         spec.projection_indices_np,
         image_shape=(IMAGE, IMAGE),
-        projector_output_size=spec.relion_projector_output_size(),
+        projector_output_size=spec.image_current_size,
     )
 
 
-def test_unwindowed_spec_has_no_projector_crop():
+def test_unwindowed_spec_has_no_image_window():
     n_half = IMAGE * (IMAGE // 2 + 1)
     spec = fourier_window.make_fourier_window_spec((IMAGE, IMAGE), None, n_half)
     assert not spec.use_window
     assert spec.image_current_size is None
-    assert spec.relion_projector_output_size() is None
 
 
 def _synthetic_relion_half_projector(r_max, padding_factor):
@@ -116,7 +114,7 @@ def test_gather_at_image_window_indices_matches_full_projection_and_model_crop_a
             (IMAGE, IMAGE),
             projector_r_max,
             2,
-            spec.relion_projector_output_size(),
+            spec.image_current_size,
             spec.projection_indices_np,
         )
     )
