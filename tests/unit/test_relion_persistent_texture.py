@@ -414,7 +414,7 @@ def test_persistent_host_texture_matches_transient_and_rejects_stale_token(
             projector_max_r=7,
             device=gpu_device,
         )
-        handle = texture.owner_handle
+        handle = texture._owner_handle
         first = em_cuda_kernels.relion_projector_persistent_half_texture_f32(
             texture,
             rotations_jax[:4],
@@ -430,7 +430,7 @@ def test_persistent_host_texture_matches_transient_and_rejects_stale_token(
             projector_max_r=7,
         )
         persistent = jnp.concatenate((first, second), axis=0)
-        assert texture.owner_handle == handle
+        assert texture._owner_handle == handle
         assert_matches(
             np.asarray(persistent),
             np.asarray(transient),
@@ -473,7 +473,7 @@ def test_persistent_host_texture_matches_transient_and_rejects_stale_token(
             projector_max_r=7,
             device=gpu_device,
         )
-        assert second_texture.owner_handle != handle
+        assert second_texture._owner_handle != handle
         em_cuda_kernels.relion_projector_persistent_half_texture_f32(
             second_texture,
             same_shape,

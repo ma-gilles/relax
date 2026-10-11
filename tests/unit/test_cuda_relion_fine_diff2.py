@@ -237,7 +237,6 @@ def test_relion_fused_translate_cuda_source_pins_native_block_topology():
     assert "constexpr int kRelionFineDiff2Ref3dJobChunk = 4;" in source
     assert "template <bool FlatRows>" in source
     assert "relion_fine_diff2_fused_translate_rows_f32_kernel" in source
-    assert "relion_fine_diff2_fused_translate_rows_f32_kernel<false>" in source
     assert "relion_fine_diff2_fused_translate_rows_f32_kernel<true>" in source
     assert "row_image_ids[row]" in source
     assert "relion_score_translate_f32(" in source
@@ -247,7 +246,6 @@ def test_relion_fused_translate_cuda_source_pins_native_block_topology():
     assert "runtime_current_size[0]" in source
     assert "logical_full_pixel_count" in source
     assert "RelionFineDiff2FusedTranslateRuntimeFlatRowsF32" in source
-    assert "RelionFineDiff2FusedTranslateRuntimeRectangularF32" in source
 
     pair_start = source.index(
         "relion_fine_diff2_fused_translate_pairs_f32_kernel"
@@ -315,11 +313,6 @@ def test_relion_coarse_diff2_cuda_source_pins_production_topology():
     assert "threadIdx.x / translation_count" in block
     assert "pixel_in_chunk += active_lanes" in block
     assert "atomicAdd(" in block
-    f64_start = source.index("relion_coarse_diff2_rectangular_f64_kernel")
-    f64_block = source[f64_start : source.index("cudaError_t", f64_start)]
-    assert "double lane_sums" in f64_block
-    assert "relion_fine_diff2_update_f64" in f64_block
-    assert "atomicAdd(" in f64_block
 
 
     # The rectangular kernel and its runtime-size variant share exactly one
@@ -889,25 +882,18 @@ def test_relion_fine_diff2_fails_closed_without_gpu(monkeypatch, function_name):
         )
 
 
-@pytest.mark.parametrize("dtype", [jnp.float32, jnp.float64])
-def test_relion_coarse_diff2_fails_closed_without_gpu(monkeypatch, dtype):
+def test_relion_coarse_diff2_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
-    is_f64 = dtype == jnp.float64
-    function = (
-        em_cuda_kernels.relion_coarse_diff2_rectangular_f64
-        if is_f64
-        else em_cuda_kernels.relion_coarse_diff2_rectangular_f32
-    )
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        function.__wrapped__(
-            jnp.zeros((1, 2), dtype=jnp.complex128 if is_f64 else jnp.complex64),
-            jnp.zeros((1, 29, 2), dtype=jnp.complex128 if is_f64 else jnp.complex64),
-            jnp.ones((1, 2), dtype=dtype),
-            jnp.zeros((1,), dtype=dtype),
+        em_cuda_kernels.relion_coarse_diff2_rectangular_f32.__wrapped__(
+            jnp.zeros((1, 2), dtype=jnp.complex64),
+            jnp.zeros((1, 29, 2), dtype=jnp.complex64),
+            jnp.ones((1, 2), dtype=jnp.float32),
+            jnp.zeros((1,), dtype=jnp.float32),
             jnp.asarray([0, 1], dtype=jnp.int32),
         )
 
@@ -1086,23 +1072,6 @@ def test_sparse_pass2_fused_flag_routes_float64_to_f64_ffi(monkeypatch):
     assert actual.shape == (2, 3, 4)
     assert actual.dtype == jnp.float64
     assert calls == [(jnp.complex128, jnp.complex128, jnp.float64)]
-
-
-def test_relion_runtime_cutoff_fine_diff2_fails_closed_without_gpu(monkeypatch):
-    import recovar.cuda_backproject as cuda_backproject
-
-    from relax.cuda import kernels as em_cuda_kernels
-
-    monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
-    with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_rectangular_f32.__wrapped__(
-            jnp.zeros((1, 1, 1), dtype=jnp.complex64),
-            jnp.zeros((1, 1), dtype=jnp.complex64),
-            jnp.zeros((1, 2), dtype=jnp.float32),
-            jnp.ones((1, 1), dtype=jnp.float32),
-            jnp.asarray([0], dtype=jnp.int32),
-            jnp.asarray(2, dtype=jnp.int32),
-        )
 
 
 def test_relion_runtime_flat_rows_fails_closed_without_gpu(monkeypatch):

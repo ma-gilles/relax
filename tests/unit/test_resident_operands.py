@@ -332,10 +332,6 @@ def _gpu_case(monkeypatch, custom_cuda_lib):
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
     monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
-    if not em_cuda_kernels.relion_translate_sum_flat_rows_f32_supported():
-        pytest.skip("loaded CUDA library predates the translate-and-sum target")
-    from relax.cuda import kernels as em_cuda_kernels
-
     return em_cuda_kernels
 
 

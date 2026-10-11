@@ -1620,43 +1620,6 @@ def relion_coarse_diff2_projector_per_image_f32(
     )
 
 
-@jax.jit
-def relion_coarse_diff2_rectangular_f64(
-    reference: jax.Array,
-    shifted_image: jax.Array,
-    weight: jax.Array,
-    initial_diff2: jax.Array,
-    full_to_compact: jax.Array,
-) -> jax.Array:
-    """Evaluate RELION's coarse Gaussian CUDA topology in double precision."""
-
-    _validate_relion_fine_diff2_inputs(
-        reference, shifted_image, weight, full_to_compact, real_dtype=jnp.float64
-    )
-    if initial_diff2.dtype != jnp.float64:
-        raise TypeError(f"initial_diff2 must be float64, got {initial_diff2.dtype}")
-    if reference.ndim != 2 or shifted_image.ndim != 3 or weight.ndim != 2:
-        raise ValueError("rectangular coarse diff2 expects reference/image/weight ranks 2/3/2")
-    if (
-        shifted_image.shape[0] != weight.shape[0]
-        or reference.shape[1] != shifted_image.shape[2]
-        or reference.shape[1] != weight.shape[1]
-        or shifted_image.shape[1] <= 0
-        or shifted_image.shape[1] > 128
-        or initial_diff2.shape != (shifted_image.shape[0],)
-    ):
-        raise ValueError("rectangular coarse diff2 operands have inconsistent shapes")
-    out_type = jax.ShapeDtypeStruct(
-        (shifted_image.shape[0], reference.shape[0], shifted_image.shape[1]),
-        jnp.float64,
-    )
-    return jax.ffi.ffi_call(
-        _TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F64,
-        out_type,
-        vmap_method="sequential",
-    )(reference, shifted_image, weight, initial_diff2, full_to_compact)
-
-
 def _validate_relion_fine_rectangular_shapes(reference, shifted_image, weight):
     """Validate the rectangular candidate layout shared by both precisions."""
     if reference.ndim != 3 or shifted_image.ndim != 3 or weight.ndim != 2:
@@ -1818,71 +1781,6 @@ def relion_fine_diff2_rectangular_masked_f32(
     )(reference, shifted_image, weight, initial_diff2, full_to_compact, candidate_mask)
 
 
-def _prepare_relion_fine_diff2_fused_translate_rectangular_operands(
-    reference,
-    image,
-    translation_angles,
-    weight,
-    full_to_compact,
-    initial_diff2,
-):
-    """Validate operands shared by static- and runtime-cutoff fine scoring."""
-
-    reference = jnp.asarray(reference)
-    image = jnp.asarray(image)
-    translation_angles = jnp.asarray(translation_angles)
-    weight = jnp.asarray(weight)
-    full_to_compact = jnp.asarray(full_to_compact)
-    if reference.dtype != jnp.complex64 or image.dtype != jnp.complex64:
-        raise TypeError(
-            "fused RELION fine diff2 reference/image must be complex64, got "
-            f"{reference.dtype} and {image.dtype}"
-        )
-    if translation_angles.dtype != jnp.float32 or weight.dtype != jnp.float32:
-        raise TypeError(
-            "fused RELION fine diff2 angles/weight must be float32, got "
-            f"{translation_angles.dtype} and {weight.dtype}"
-        )
-    if full_to_compact.dtype != jnp.int32:
-        raise TypeError(
-            "fused RELION fine diff2 lookup must be int32, got "
-            f"{full_to_compact.dtype}"
-        )
-    if (
-        reference.ndim != 3
-        or image.ndim != 2
-        or translation_angles.ndim != 2
-        or translation_angles.shape[1] != 2
-        or weight.ndim != 2
-        or full_to_compact.ndim != 1
-        or reference.shape[0] != image.shape[0]
-        or reference.shape[0] != weight.shape[0]
-        or reference.shape[2] != image.shape[1]
-        or reference.shape[2] != weight.shape[1]
-        or reference.shape[0] <= 0
-        or reference.shape[1] <= 0
-        or reference.shape[2] <= 0
-        or translation_angles.shape[0] <= 0
-    ):
-        raise ValueError(
-            "fused RELION fine diff2 operands have inconsistent shapes: "
-            f"{reference.shape}, {image.shape}, {translation_angles.shape}, "
-            f"{weight.shape}, {full_to_compact.shape}"
-        )
-    if initial_diff2 is None:
-        initial_diff2 = jnp.zeros((reference.shape[0],), dtype=jnp.float32)
-    else:
-        initial_diff2 = jnp.asarray(initial_diff2)
-    if initial_diff2.dtype != jnp.float32 or initial_diff2.shape != (
-        reference.shape[0],
-    ):
-        raise ValueError(
-            "fused RELION fine diff2 initial_diff2 must be float32 with shape "
-            f"({reference.shape[0]},), got {initial_diff2.shape} {initial_diff2.dtype}"
-        )
-    return reference, image, translation_angles, weight, full_to_compact, initial_diff2
-
-
 def _prepare_relion_fine_diff2_fused_translate_flat_rows_operands(
     reference: jax.Array,
     row_image_ids: jax.Array,
@@ -1975,9 +1873,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
     """Evaluate packed rotation rows inside a fixed physical pixel capacity.
 
     The scalar logical size controls the exact RELION rectangle traversal;
-    physical-only score rows remain inert. This is the packed-row counterpart
-    of :func:`relion_fine_diff2_fused_translate_runtime_rectangular_f32` and
-    reaches the same templated CUDA scoring kernel.
+    physical-only score rows remain inert.
 
     ``translation_chunk_live`` (bool ``[rows, ceil(T / 4)]``, see
     :func:`relion_fine_diff2_translation_chunk_live`) names the chunks of four
@@ -2075,73 +1971,6 @@ def relion_fine_diff2_translation_chunk_live(candidate_mask: jax.Array) -> jax.A
     n_chunks = -(-int(n_translations) // chunk)
     padded = jnp.pad(candidate_mask, ((0, 0), (0, n_chunks * chunk - int(n_translations))))
     return jnp.any(padded.reshape(n_rows, n_chunks, chunk), axis=-1)
-
-
-@jax.jit
-def relion_fine_diff2_fused_translate_runtime_rectangular_f32(
-    reference: jax.Array,
-    image: jax.Array,
-    translation_angles: jax.Array,
-    weight: jax.Array,
-    full_to_compact: jax.Array,
-    logical_current_size: jax.Array,
-    initial_diff2: jax.Array | None = None,
-) -> jax.Array:
-    """Evaluate fine diff2 with a runtime cutoff inside fixed-capacity buffers.
-
-    ``reference``, ``image``, ``weight``, and ``full_to_compact`` may have a
-    shared physical capacity larger than the active logical window.  The
-    scalar ``logical_current_size`` controls both the rectangular issue count
-    and the native coordinates inside CUDA.  Pixels after that logical prefix
-    are never issued, so the 256-lane accumulation tree is unchanged.
-    """
-
-    (
-        reference,
-        image,
-        translation_angles,
-        weight,
-        full_to_compact,
-        initial_diff2,
-    ) = _prepare_relion_fine_diff2_fused_translate_rectangular_operands(
-        reference,
-        image,
-        translation_angles,
-        weight,
-        full_to_compact,
-        initial_diff2,
-    )
-    logical_current_size = jnp.asarray(logical_current_size, dtype=jnp.int32)
-    if logical_current_size.shape != ():
-        raise ValueError(
-            "runtime fused RELION fine diff2 logical_current_size must be a scalar, "
-            f"got {logical_current_size.shape}",
-        )
-    if jax.default_backend() != "gpu":
-        raise RuntimeError("runtime fused RELION fine diff2 requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError(
-            "runtime fused RELION fine diff2 was explicitly requested but custom CUDA is disabled"
-        )
-    _ensure_ffi()
-
-    out_type = jax.ShapeDtypeStruct(
-        (reference.shape[0], reference.shape[1], translation_angles.shape[0]),
-        jnp.float32,
-    )
-    return jax.ffi.ffi_call(
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_RECTANGULAR_F32,
-        out_type,
-        vmap_method="sequential",
-    )(
-        reference,
-        image,
-        translation_angles,
-        weight,
-        initial_diff2,
-        full_to_compact,
-        logical_current_size,
-    )
 
 
 @jax.jit
@@ -3572,12 +3401,6 @@ class RelionPersistentHalfTextureF32:
     def closed(self) -> bool:
         return self._owner_handle == 0
 
-    @property
-    def owner_handle(self) -> int:
-        if self.closed:
-            raise RuntimeError("persistent RELION half texture is closed")
-        return self._owner_handle
-
 
     def _require_live_geometry(
         self,
@@ -4335,11 +4158,6 @@ _TARGET_RELION_COARSE_NORMALIZED_CC_NATIVE_TEXTURE_PAIRS_F32 = (
 )
 
 
-_TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F64 = (
-    "cuda_relion_coarse_diff2_rectangular_f64"
-)
-
-
 _TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32 = (
     "cuda_relion_fine_diff2_rectangular_f32"
 )
@@ -4347,11 +4165,6 @@ _TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32 = (
 
 _TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32 = (
     "cuda_relion_fine_diff2_rectangular_masked_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RECTANGULAR_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_rectangular_f32"
 )
 
 
@@ -4367,11 +4180,6 @@ _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32 = (
 
 _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32 = (
     "cuda_relion_fine_diff2_fused_translate_runtime_masked_flat_rows_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_RECTANGULAR_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_runtime_rectangular_f32"
 )
 
 
@@ -4475,7 +4283,6 @@ _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32 = (
 )
 
 
-_TARGET_DUAL_WEIGHTED_SUMS_F32 = "cuda_dual_weighted_sums_f32"
 _TARGET_PPCA_MOMENT_SCATTER_F32 = "relax_ppca_moment_scatter_f32"
 _TARGET_PPCA_WINDOW_PROJECT_F32 = "relax_ppca_window_project_f32"
 _TARGET_PPCA_LATENT_EPILOGUE_F32 = "relax_ppca_latent_epilogue_f32"
@@ -4539,70 +4346,6 @@ def relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported() ->
     return _optional_target_supported(
         _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
     )
-
-
-def relion_translate_sum_flat_rows_f32_supported() -> bool:
-    """Return whether the loaded library exports the translate-and-sum target."""
-
-    return _optional_target_supported(_TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32)
-
-
-@jax.jit
-def dual_weighted_sums_f32(
-    probabilities: jax.Array,
-    first_values: jax.Array,
-    second_values: jax.Array,
-) -> tuple[jax.Array, jax.Array]:
-    """Compute two real-probability/complex-value contractions in one FFI call.
-
-    This is a guarded VDAM runtime primitive.  It deliberately keeps the two
-    output reductions independent so their float32 accumulation does not
-    change when the two pixel axes have different sizes.
-    """
-
-    _ensure_ffi()
-    probabilities = jnp.asarray(probabilities)
-    first_values = jnp.asarray(first_values)
-    second_values = jnp.asarray(second_values)
-    if probabilities.dtype != jnp.float32 or probabilities.ndim != 3:
-        raise ValueError(
-            "dual_weighted_sums_f32 expects float32 probabilities with shape "
-            "[batch, rotation, translation]"
-        )
-    if first_values.dtype not in (jnp.complex64, jnp.complex128):
-        raise ValueError(
-            "dual_weighted_sums_f32 expects complex64 or complex128 value arrays"
-        )
-    if second_values.dtype != first_values.dtype:
-        raise ValueError(
-            "dual_weighted_sums_f32 expects both value arrays to have the same dtype"
-        )
-    for name, values in (("first_values", first_values), ("second_values", second_values)):
-        if values.ndim != 3:
-            raise ValueError(
-                f"dual_weighted_sums_f32 expects {name} to be complex "
-                "[batch, translation, pixel]"
-            )
-        if values.shape[:2] != (probabilities.shape[0], probabilities.shape[2]):
-            raise ValueError(
-                f"dual_weighted_sums_f32 {name} batch/translation axes do not match "
-                f"probabilities: {values.shape} vs {probabilities.shape}"
-            )
-    output_types = (
-        jax.ShapeDtypeStruct(
-            (probabilities.shape[0], probabilities.shape[1], first_values.shape[2]),
-            first_values.dtype,
-        ),
-        jax.ShapeDtypeStruct(
-            (probabilities.shape[0], probabilities.shape[1], second_values.shape[2]),
-            second_values.dtype,
-        ),
-    )
-    return jax.ffi.ffi_call(
-        _TARGET_DUAL_WEIGHTED_SUMS_F32,
-        output_types,
-        vmap_method="sequential",
-    )(probabilities, first_values, second_values)
 
 
 def ppca_moment_scatter_f32(
@@ -4877,10 +4620,6 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
         "RelionVdamMstepFusedProjectorRuntimeXHalf",
     ),
     (
-        _TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F64,
-        "RelionCoarseDiff2RectangularF64",
-    ),
-    (
         _TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32,
         "RelionCoarseDiff2RectangularF32",
     ),
@@ -4905,20 +4644,12 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
         "RelionFineDiff2RectangularF32",
     ),
     (
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RECTANGULAR_F32,
-        "RelionFineDiff2FusedTranslateRectangularF32",
-    ),
-    (
         _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_FLAT_ROWS_F32,
         "RelionFineDiff2FusedTranslateFlatRowsF32",
     ),
     (
         _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
         "RelionFineDiff2FusedTranslateRuntimeFlatRowsF32",
-    ),
-    (
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_RECTANGULAR_F32,
-        "RelionFineDiff2FusedTranslateRuntimeRectangularF32",
     ),
     (
         _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_PAIRS_F32,
@@ -4973,7 +4704,6 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
         _TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_TRIPLET_F32,
         "RelionWavgSequentialRuntimeTripletF32",
     ),
-    (_TARGET_DUAL_WEIGHTED_SUMS_F32, "DualWeightedSumsF32"),
     (_TARGET_PPCA_MOMENT_SCATTER_F32, "PpcaMomentScatterF32"),
     (_TARGET_PPCA_WINDOW_PROJECT_F32, "PpcaWindowProjectF32"),
     (_TARGET_PPCA_LATENT_EPILOGUE_F32, "PpcaLatentEpilogueF32"),
