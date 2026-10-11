@@ -856,20 +856,118 @@ def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_l
     ) < 1e-6
 
 
+def _numerator_distance(explicit, unset) -> float:
+    """``|Ft_y(explicit) - Ft_y(unset)| / |Ft_y(explicit)|`` of two passes' backprojection numerators.
+
+    The distance is over the complex numerators. Until relax#71 the test cast them to float64, which kept the real
+    parts only; the complex distance is the stricter statistic at the same bound, and the distributions quoted in
+    :func:`_assert_the_same_pass` are of it.
+    """
+
+    a = np.asarray(explicit.Ft_y, dtype=np.complex128)
+    b = np.asarray(unset.Ft_y, dtype=np.complex128)
+    return float(np.linalg.norm(a - b) / np.linalg.norm(a))
+
+
+def _assert_the_same_pass(default_pairs, exact_pair):
+    """Two routes ran one pass: ``(explicit, unset)`` results, several pairs on the default path and one pair under
+    ``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1``.
+
+    The bound is ``sqrt(N_IMAGES) * float32 eps`` on the numerator's relative distance (8.06e-08 times its norm
+    for this case). What varies between two runs of the same pass is the float32 row-by-row backprojection sum,
+    whose order the GPU does not fix: about 330 of the 1331 voxels differ, most at the origin voxel and its two
+    x-neighbours, which every image and candidate adds into (7 to 8.5 float32 steps in the widest draws;
+    relax#65, relax#71). Everything upstream of that sum agrees: assignments, rotation posterior sums and noise
+    sums were identical in every one of 12,000 draws. As a fraction of the bound, one default-path pair measured
+    q50 0.38, q99 0.69, max 1.04 (1 of 1742 pairs above it; Slurm 15358610, 15359167, 15359175), so a single draw
+    fails about once in 1700 runs; with the partial pair of the exact-accumulation switch it measured q50 0.35,
+    q99 0.42, max 0.49 over 2613 draws (15359175). Hence:
+
+    - the default path's numerators are judged by the median of the pairs, and
+    - one pair is judged alone where the accumulation walk is removed.
+    """
+
+    bound = np.sqrt(N_IMAGES) * np.finfo(np.float32).eps
+    for explicit, unset in [*default_pairs, exact_pair]:
+        assert np.array_equal(np.asarray(explicit.hard_assignment), np.asarray(unset.hard_assignment))
+        assert_matches(
+            np.asarray(explicit.relion_stats.rotation_posterior_sums),
+            np.asarray(unset.relion_stats.rotation_posterior_sums),
+        )
+        assert_matches(
+            np.asarray(explicit.noise_stats.wsum_sigma2_noise), np.asarray(unset.noise_stats.wsum_sigma2_noise)
+        )
+    assert np.median([_numerator_distance(explicit, unset) for explicit, unset in default_pairs]) <= bound
+    assert _numerator_distance(*exact_pair) <= bound
+
+
 @requires_resident_gpu
 def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch, _resident_local_env):
     """A regular iteration at the full box passes current_size=None (MS2 box 512 it25,
-    bench 14641044, which the dispatcher refused); it is the box-size pass."""
+    bench 14641044, which the dispatcher refused); it is the box-size pass
+    (:func:`_assert_the_same_pass` says how the two results are compared)."""
+
+    from relax.reconstruction import half_volume_mstep as hvm
 
     case = _case()
     box = int(case["dataset"].image_shape[0])
-    unset = _run(case, monkeypatch=monkeypatch, current_size=None)
-    explicit = _run(case, monkeypatch=monkeypatch, current_size=box)
-    assert_matches(np.asarray(explicit.hard_assignment), np.asarray(unset.hard_assignment))
-    a = np.asarray(explicit.Ft_y, dtype=np.float64)
-    b = np.asarray(unset.Ft_y, dtype=np.float64)
-    # The same pass twice: only the float32 BPref atomics' order may differ.
-    assert np.linalg.norm(a - b) <= np.sqrt(N_IMAGES) * np.finfo(np.float32).eps * np.linalg.norm(a)
+
+    def pair():
+        unset = _run(case, monkeypatch=monkeypatch, current_size=None)
+        return _run(case, monkeypatch=monkeypatch, current_size=box), unset
+
+    default_pairs = [pair() for _ in range(5)]
+    with monkeypatch.context() as exact:
+        exact.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
+        exact_pair = pair()
+    _assert_the_same_pass(default_pairs, exact_pair)
+
+
+def _stand_in_pass(numerator, *, assignment=None, rotation_sums=None, noise_sums=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        Ft_y=numerator,
+        hard_assignment=np.arange(N_IMAGES, dtype=np.int32) if assignment is None else assignment,
+        relion_stats=SimpleNamespace(
+            rotation_posterior_sums=np.linspace(0.1, 1.0, 12) if rotation_sums is None else rotation_sums
+        ),
+        noise_stats=SimpleNamespace(
+            wsum_sigma2_noise=np.linspace(1.0, 2.0, 5, dtype=np.float32) if noise_sums is None else noise_sums
+        ),
+    )
+
+
+def test_same_pass_assertions_pass_accumulation_noise_and_catch_a_changed_pass():
+    """Stand-in results: the comparison accepts the measured accumulation noise, one wide draw included, and
+    fails when a route's pass differs (a numerator off by a few float32 steps throughout, on either
+    accumulation path, a changed posterior sum, noise sum or assignment)."""
+
+    rng = np.random.default_rng(71)
+    numerator = (rng.normal(size=1331) + 1j * rng.normal(size=1331)).astype(np.complex64)
+    eps = float(np.finfo(np.float32).eps)
+
+    def off_by(steps):
+        # Every voxel moved by ``steps`` float32 steps of its own magnitude: a relative distance of steps * eps.
+        return (numerator.astype(np.complex128) * (1.0 + steps * eps)).astype(np.complex128)
+
+    def pair(steps=0.0, **changed):
+        return _stand_in_pass(off_by(steps), **changed), _stand_in_pass(numerator)
+
+    # The bound is sqrt(8) = 2.83 steps. Default pairs at 0.38 of it with one draw above it; the exact pair at 0.35.
+    noise = [pair(1.1), pair(1.0), pair(3.0), pair(1.2), pair(0.9)]
+    _assert_the_same_pass(noise, pair(1.0))
+
+    broken = [
+        ([pair(4.0) for _ in range(5)], pair(1.0)),  # the default path's numerator, 4 steps off throughout
+        (noise, pair(4.0)),  # the exact-accumulation numerator
+        (noise, pair(1.0, rotation_sums=np.linspace(0.1, 1.0, 12) * (1.0 + 1e-9))),
+        ([*noise[:4], pair(0.9, noise_sums=np.linspace(1.0, 2.0, 5, dtype=np.float32) * np.float32(1.0 + 1e-4))], pair(1.0)),
+        (noise, pair(1.0, assignment=np.arange(N_IMAGES, dtype=np.int32)[::-1].copy())),
+    ]
+    for default_pairs, exact_pair in broken:
+        with pytest.raises(AssertionError):
+            _assert_the_same_pass(default_pairs, exact_pair)
 
 
 @requires_resident_gpu
