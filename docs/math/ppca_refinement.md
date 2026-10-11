@@ -66,7 +66,7 @@ augmented solve. Clean algorithmic experiments should use
 
 ## Bootstrap initialization
 
-Implementation: [initialization.py](../../relax/ppca_refinement/initialization.py).
+Implementation: [ppca_initialization.py](../../scripts/lib/ppca_initialization.py).
 
 The bootstrap initializer consumes already aligned or explicitly
 alignment-checked class/GT volumes:

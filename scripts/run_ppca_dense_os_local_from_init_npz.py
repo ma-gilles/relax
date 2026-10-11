@@ -33,11 +33,6 @@ from relax.ppca_refinement.config import (
     SparsePass2Config,
 )
 from relax.ppca_refinement.dense_dataset import compute_dense_ppca_adaptive_significance
-from relax.ppca_refinement.initialization import (
-    loading_row_norm_variance_prior,
-    pipeline_variance_W_prior,
-    volume_power_variance_prior,
-)
 from relax.ppca_refinement.mean_regularization import (
     KCLASS_RELION_MINRES_MAP,
     MeanRegularizationConfig,
@@ -49,6 +44,11 @@ from scripts.lib.highres_refinement import build_top_p_local_hypothesis_layout
 from scripts.lib.local_dataset import (
     run_local_ppca_fused_em_iteration,
     run_local_ppca_pose_scoring_iteration,
+)
+from scripts.lib.ppca_initialization import (
+    loading_row_norm_variance_prior,
+    pipeline_variance_W_prior,
+    volume_power_variance_prior,
 )
 from scripts.run_ppca_dense_from_init_npz import (
     _half_size,

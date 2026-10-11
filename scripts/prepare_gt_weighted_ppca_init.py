@@ -10,12 +10,12 @@ import pickle
 from pathlib import Path
 
 import numpy as np
-
 from recovar.core import fourier_transform_utils as ftu
-from relax.ppca_refinement.initialization import initialize_ppca_from_gt_volumes
 from recovar.simulation import solvent_contrast, synthetic_dataset
 from recovar.utils import helpers
 from recovar.utils.json_utils import to_jsonable
+
+from scripts.lib.ppca_initialization import initialize_ppca_from_gt_volumes
 
 
 def _load_simulation_info(path: Path):

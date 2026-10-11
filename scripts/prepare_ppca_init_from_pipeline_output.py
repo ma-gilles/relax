@@ -13,11 +13,11 @@ import pickle
 from pathlib import Path
 
 import numpy as np
-
 from recovar.core import fourier_transform_utils as ftu
-from relax.ppca_refinement.initialization import _average_half_values_over_shells
 from recovar.output.output import PipelineOutput
 from recovar.utils import helpers
+
+from scripts.lib.ppca_initialization import _average_half_values_over_shells
 
 
 def _load_rescaled_eigenvalues(po: PipelineOutput) -> np.ndarray:
@@ -87,7 +87,6 @@ def _recompute_mean_prior_from_saved(
     sufficient as a per-shell signal-variance prior for the W M-step Wiener form.
     """
     import jax.numpy as jnp
-
     from recovar.core import fourier_transform_utils as _ftu
     from recovar.reconstruction import regularization as _regularization
 

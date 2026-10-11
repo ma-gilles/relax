@@ -7,14 +7,13 @@ from helpers.float_compare import assert_matches
 from recovar.simulation import synthetic_dataset
 from recovar.utils import helpers as utils
 
-from relax.ppca_refinement.initialization import (
+from relax.ppca_refinement.initialization import real_volume_to_centered_fourier, real_volume_to_centered_fourier_half
+from scripts.lib.ppca_initialization import (
     initialize_ppca_from_gt_volumes,
     initialize_ppca_from_kclass_volumes,
     load_volume_stack,
     loading_row_norm_variance_prior,
     pipeline_variance_W_prior,
-    real_volume_to_centered_fourier,
-    real_volume_to_centered_fourier_half,
     volume_power_variance_prior,
 )
 from scripts.lib.schedule import loading_subspace_agreement

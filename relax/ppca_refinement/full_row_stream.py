@@ -1528,29 +1528,15 @@ def _top_pose_posterior(top_centered_score: np.ndarray, centered_logZ: np.ndarra
 
 
 @full_float32
-def accumulate_full_row_tile(
-    stream: FullRowStream,
-    image_indices,
-    significant_rows,
-    *,
-    enforce_x0: bool = True,
-) -> AugmentedPPCAStats:
-    """Accumulate unregularized PPCA statistics for one full-row image tile.
-
-    ``significant_rows`` holds the packed coarse significant pose ids (or
-    ``None``) of each tile image. Returns the same statistics and summary
-    diagnostics as the host-mask ``accumulate_dense_ppca_statistics`` call
-    with ``collect_residuals=True``, except the augmented RHS volume
-    (``rhs`` is ``None``): both InitialModel optimizers read only the LHS
-    metric and the direct residual gradient. A ``metric_trace_only`` stream
-    returns :class:`TracePPCAStats`, whose metric is the LHS trace alone.
-    """
-    return accumulate_full_row_tiles(stream, [(image_indices, significant_rows)], enforce_x0=enforce_x0)[0]
-
-
-@full_float32
 def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool = True) -> list[AugmentedPPCAStats]:
-    """:func:`accumulate_full_row_tile` for each ``(image_indices, significant_rows)`` in ``tiles``.
+    """Accumulate unregularized PPCA statistics for each ``(image_indices, significant_rows)`` in ``tiles``.
+
+    ``significant_rows`` holds the packed coarse significant pose ids (or ``None``) of each tile image.
+    Each result has the same statistics and summary diagnostics as the host-mask
+    ``accumulate_dense_ppca_statistics`` call with ``collect_residuals=True``, except the augmented RHS
+    volume (``rhs`` is ``None``): both InitialModel optimizers read only the LHS metric and the direct
+    residual gradient. A ``metric_trace_only`` stream returns :class:`TracePPCAStats`, whose metric is the
+    LHS trace alone.
 
     The tiles run largest first (results come back in the given order): the largest pose-kept buffer
     is allocated once, while the device memory is unfragmented, and reused by every tile of its size;

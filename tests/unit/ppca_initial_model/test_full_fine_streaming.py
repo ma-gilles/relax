@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import recovar.core.fourier_transform_utils as ftu
 from helpers.float_compare import assert_matches
+from helpers.full_row_tile import accumulate_full_row_tile
 
 from relax import sampling
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
@@ -19,7 +20,6 @@ from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
     TILE_FRAGMENTATION_HEADROOM,
     TracePPCAStats,
-    accumulate_full_row_tile,
     accumulate_full_row_tiles,
     coarse_support_mask,
     full_row_pose_log_prior,

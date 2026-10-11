@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from relax.ppca_refinement.initialization import (
+from scripts.lib.ppca_initialization import (
     PPCAInitialization,
     initialize_ppca_from_gt_volumes,
     initialize_ppca_from_kclass_volumes,

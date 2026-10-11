@@ -711,7 +711,7 @@ def accumulate_oversampled_tiles(ostream: OversampledStream, tiles, *, enforce_x
 def accumulate_oversampled_tile(ostream: OversampledStream, image_indices, significant_rows=None, *, enforce_x0=True):
     """Unregularized PPCA statistics of one tile with adaptive oversampling.
 
-    The same statistics and diagnostics as :func:`relax.ppca_refinement.full_row_stream.accumulate_full_row_tile`,
+    The same statistics and diagnostics as :func:`relax.ppca_refinement.full_row_stream.accumulate_full_row_tiles` on one tile,
     over each image's pass-2 poses; ``rotation_mass`` is per coarse rotation (children summed into their parent).
     The diagnostics add, per image, the packed coarse ids ``rotation T + translation`` of its significant samples
     (``significant_samples``), their count, the posterior mass they hold and whether ``max_significant`` stopped
