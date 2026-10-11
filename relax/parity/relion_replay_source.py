@@ -164,10 +164,11 @@ class RelionReplay:
         )
 
     @property
-    def replays(self) -> bool:
-        """Whether there is anything to replay: override slots, a STAR replay directory, a final-pass replay
-        (its override, reference maps or sampling directory), the forced last-numbered-state replay, a frozen
-        boundary or a state-swap probe."""
+    def replays_relion_state(self) -> bool:
+        """Whether the run's state comes from a RELION run: override slots, a STAR replay directory, a final-pass
+        replay (its override, reference maps or sampling directory), the forced last-numbered-state replay, a
+        frozen boundary (sealed sampling state, sealed scoring context, state fields) or a state-swap probe.
+        The one field list: ``replays`` and the consistency refusal (``InputSource.replays_relion_state``) read it."""
         return any(
             value is not None
             for value in (
@@ -175,7 +176,13 @@ class RelionReplay:
                 self.final_replay_reference_maps, self.final_sampling_replay_relion_dir, self.sealed_sampling_state,
                 self.sealed_scoring_context, self.frozen_refinement_state_fields, self.state_swap_probe,
             )
-        ) or self.final_all_data_replay_last_numbered_state or (
+        ) or self.final_all_data_replay_last_numbered_state
+
+    @property
+    def replays(self) -> bool:
+        """Whether there is anything to replay: RELION state (``replays_relion_state``) or a follower topology
+        (followers or a captured dispatch schedule), which emulates RELION's MPI layout on relax's own state."""
+        return self.replays_relion_state or (
             self.follower_topology is not None
             and (int(self.follower_topology.n_followers or 0) > 0 or self.follower_topology.replay is not None)
         )
@@ -238,15 +245,7 @@ class RelionReplaySource(InputSource):
         return self.replay.follower_topology
 
     def replays_relion_state(self):
-        replay = self.replay
-        return any(
-            value is not None
-            for value in (
-                replay.perturb_replay_relion_dir, replay.replay_iteration_overrides, replay.final_replay_override,
-                replay.final_replay_reference_maps, replay.frozen_refinement_state_fields,
-                replay.sealed_sampling_state, replay.state_swap_probe,
-            )
-        )
+        return self.replay.replays_relion_state
 
     def restore_boundary_state(self, state):
         """A frozen boundary's ``RefinementState`` fields, installed over the initial ones."""

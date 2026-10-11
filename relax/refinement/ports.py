@@ -236,9 +236,9 @@ class InputSource:
     follower_topology = None
 
     def replays_relion_state(self) -> bool:
-        """Whether the run's state comes from a RELION run (replayed slots, STAR files, final-pass state, a
-        frozen boundary or a state-swap probe), which options computed with relax's own rules cannot be
-        combined with."""
+        """Whether the run's state comes from a RELION run (replayed slots, STAR files, final-pass state or
+        sampling, a frozen boundary or a state-swap probe; a follower topology alone is not), which options
+        computed with relax's own rules cannot be combined with."""
         return False
 
     def restore_boundary_state(self, state) -> None:
