@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.jit_programs import clear_programs
 from recovar import cuda_backproject as cb
 from scipy.spatial.transform import Rotation
 
@@ -68,7 +69,7 @@ def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
         return call
 
     monkeypatch.setattr(jax.ffi, "ffi_call", fake_ffi)
-    em_cuda_kernels.project_relion_half_capacity.clear_cache()
+    cleared = clear_programs(em_cuda_kernels.project_relion_half_capacity)
     half, rotations, _ = _inputs()
     for radius in (15, 16, 0):
         result = em_cuda_kernels.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
@@ -79,7 +80,7 @@ def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
     assert rotshape == (1, 6)
     assert radius_aval.shape == () and radius_aval.dtype == np.dtype(np.int32)
     assert set(attrs) == {"image_h", "image_w", "padding_factor"}
-    assert em_cuda_kernels.project_relion_half_capacity._cache_size() == 1
+    assert em_cuda_kernels.project_relion_half_capacity._cache_size() - cleared == 1
     em_cuda_kernels.project_relion_half_capacity.clear_cache()
 
 
@@ -147,7 +148,7 @@ def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
     cb._ensure_ffi()
     rotations = _rotations()
     rng = np.random.default_rng(29)
-    em_cuda_kernels.project_relion_half_capacity.clear_cache()
+    cleared = clear_programs(em_cuda_kernels.project_relion_half_capacity)
     for radius in range(15, min(42, q // 2) + 1):
         size = 2 * pf * radius + 3
         # Nonzero random ghost planes and poisoned capacity catch support errors.
@@ -172,7 +173,7 @@ def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
             padding_factor=pf,
         )
         assert_matches(np.asarray(result), np.asarray(reference), err_msg=f"q={q}, pf={pf}, r={radius}")
-    assert em_cuda_kernels.project_relion_half_capacity._cache_size() == 1
+    assert em_cuda_kernels.project_relion_half_capacity._cache_size() - cleared == 1
 
 
 @pytest.mark.gpu

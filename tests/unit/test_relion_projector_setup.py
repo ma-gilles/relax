@@ -6,6 +6,7 @@ import jax
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.jit_programs import clear_programs
 
 from relax.relion.projector_setup import setup_relion_projector
 
@@ -97,7 +98,7 @@ def test_native_projector_and_power_fp64_and_consumer_cast(size, padding, full, 
 
 
 def test_radius_and_gridding_reuse_one_compiled_shape():
-    setup_relion_projector.clear_cache()
+    cleared = clear_programs(setup_relion_projector)
     reference = np.ones((8,) * 3, dtype=np.float64)
     outputs = []
     for radius, corrected in [(0, True), (2, True), (4, False), (-1, False)]:
@@ -106,7 +107,7 @@ def test_radius_and_gridding_reuse_one_compiled_shape():
         )
         jax.block_until_ready(result)
         outputs.append(result)
-    assert setup_relion_projector._cache_size() == 1
+    assert setup_relion_projector._cache_size() - cleared == 1
     assert all(value[0].shape == (19, 19, 10) and value[1].shape == (5,) for value in outputs)
     assert_matches(outputs[2][0], outputs[3][0])
 

@@ -21,20 +21,21 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.jit_programs import clear_programs
 
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
-
 from recovar.core.configs import ForwardModelConfig
-from relax.io.batch_fetch import fetch_indexed_batch
-from relax.fourier.half_spectrum import make_scoring_half_image_weights
-from relax.fourier.preprocessing import half_translation_phase_table
-from relax.scoring.compact_candidates import candidate_mask_to_dense
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from recovar.reconstruction import noise as noise_utils
+
 from relax.fine_pass import scoring as spb
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_io import (
+    _prepare_bucket_io,
+    _relion_cuda_score_translation_angles_if_available,
+)
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     materialize_chunk,
@@ -46,11 +47,11 @@ from relax.fine_pass.resident_scoring import (
     score_all_chunks,
     score_resident_chunk,
 )
-from relax.fine_pass.bucket_io import (
-    _prepare_bucket_io,
-    _relion_cuda_score_translation_angles_if_available,
-)
-from recovar.reconstruction import noise as noise_utils
+from relax.fourier.half_spectrum import make_scoring_half_image_weights
+from relax.fourier.preprocessing import half_translation_phase_table
+from relax.io.batch_fetch import fetch_indexed_batch
+from relax.scoring.compact_candidates import candidate_mask_to_dense
+from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 
 N_COARSE_ROT = 6
 CHILDREN = 2
@@ -360,11 +361,7 @@ def test_resident_program_compiles_once_per_capacity_class(
         )
         chunk_arrays = [materialize_chunk_device(case["tables"], chunk) for chunk in chunks]
 
-        score_resident_chunk._clear_cache()
-        # Count from the cleared value, not from 0: after a jax.clear_caches() earlier in the process (the
-        # memory-map fixture of tests/conftest.py) jaxlib reports an existing function's program count with
-        # a negative offset (-2 with no program), which _clear_cache() returns to.
-        cleared = score_resident_chunk._cache_size()
+        cleared = clear_programs(score_resident_chunk)
         for chunk, arrays in zip(chunks, chunk_arrays, strict=True):
             jax.block_until_ready(
                 score_resident_chunk(

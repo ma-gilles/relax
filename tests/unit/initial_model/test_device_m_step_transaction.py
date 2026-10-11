@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from helpers import natives
 from helpers.float_compare import assert_matches
+from helpers.jit_programs import clear_programs
 from helpers.vdam import relative_metrics
 
 from relax.vdam.relion_mstep import relion_vdam_m_step_device, relion_vdam_m_step_host
@@ -160,13 +161,13 @@ def test_branch_certificate_real_only_and_serial_order_like_native(bind):
 
 
 def test_dynamic_radius_reuses_device_executable(bind):
-    relion_vdam_m_step_device.clear_cache()
+    cleared = clear_programs(relion_vdam_m_step_device)
     for radius in (1, 2, 8, 0):
         case = _case(size=16, radius=radius or 8)
         case["r_max"] = radius
         result = relion_vdam_m_step_host(**case)
         assert np.all(np.isfinite(result["iref"]))
-    assert relion_vdam_m_step_device._cache_size() == 1
+    assert relion_vdam_m_step_device._cache_size() - cleared == 1
 
 
 @pytest.mark.parametrize("kind", ["tiny_sigma", "negative_tau", "nan_sigma", "nan_tau"])

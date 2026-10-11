@@ -19,6 +19,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
+from helpers.jit_programs import clear_programs
 
 from relax.fine_pass.resident_statistics import (
     ChunkStatisticsOperands,
@@ -640,7 +641,7 @@ def test_one_program_per_capacity_class():
     stats = make_resident_statistics(config, max_posterior_dtype=jnp.float32)
     from relax.fine_pass import resident_statistics as module
 
-    module._accumulate_chunk_statistics_jit.clear_cache()
+    cleared = clear_programs(module._accumulate_chunk_statistics_jit)
     for ids in ([0, 1, 2], [3, 4], [5, 6]):
         bucket = _make_bucket(
             rng, ids, n_rot=max(ROWS_PER_IMAGE[i] for i in ids), tables=tables
@@ -648,7 +649,7 @@ def test_one_program_per_capacity_class():
         operands = _chunk_from_buckets([bucket], row_capacity=32, image_capacity=4)
         stats = accumulate_chunk_statistics(stats, operands, resident_tables, config=config)
     jax.block_until_ready(stats.wsum_sigma2_noise)
-    assert module._accumulate_chunk_statistics_jit._cache_size() == 1
+    assert module._accumulate_chunk_statistics_jit._cache_size() - cleared == 1
 
 
 def test_finalize_rejects_a_winner_in_row_padding():
