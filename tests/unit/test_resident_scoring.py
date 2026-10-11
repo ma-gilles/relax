@@ -361,6 +361,10 @@ def test_resident_program_compiles_once_per_capacity_class(
         chunk_arrays = [materialize_chunk_device(case["tables"], chunk) for chunk in chunks]
 
         score_resident_chunk._clear_cache()
+        # Count from the cleared value, not from 0: after a jax.clear_caches() earlier in the process (the
+        # memory-map fixture of tests/conftest.py) jaxlib reports an existing function's program count with
+        # a negative offset (-2 with no program), which _clear_cache() returns to.
+        cleared = score_resident_chunk._cache_size()
         for chunk, arrays in zip(chunks, chunk_arrays, strict=True):
             jax.block_until_ready(
                 score_resident_chunk(
@@ -387,9 +391,8 @@ def test_resident_program_compiles_once_per_capacity_class(
                     n_score_pixels=int(case["operands"].n_score_pixels),
                 )
             )
-        assert score_resident_chunk._cache_size() == 1, (
-            f"expected one compiled program, got {score_resident_chunk._cache_size()}"
-        )
+        compiled = score_resident_chunk._cache_size() - cleared
+        assert compiled == 1, f"expected one compiled program, got {compiled}"
 
 
 @pytest.mark.gpu
