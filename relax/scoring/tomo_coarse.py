@@ -15,8 +15,8 @@ coarse operands, RELION's score translation, and the SPA coarse GEMM scorer (REL
 a block of a batch's images per call. The GEMM expansion rounds differently from RELION's
 direct square, so the rotations with a sample within the expansion's error bound of a particle's
 significance cut (or of its smallest diff2) are scored again by the fused direct-square kernel before the
-cut is taken (:mod:`relax.scoring.exact_cut`). :func:`tilt_image_coarse_diff2` (that kernel, one image) is
-the reference the tests compare the GEMM scorer with.
+cut is taken (:mod:`relax.scoring.exact_cut`). The tests compare the GEMM scorer with
+that kernel scored one image at a time (``oracles.tomo_coarse.tilt_image_coarse_diff2``).
 """
 
 from __future__ import annotations
@@ -31,9 +31,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
-from relax.scoring.exact_cut import (
-    FUSED_TRANSLATION_CAPACITY as _FUSED_TRANSLATION_CAPACITY,
-)
 from relax.scoring.exact_cut import (
     direct_rows_diff2,
     first_rows,
@@ -162,44 +159,6 @@ def tilt_image_coarse_operands(
         processed, image_shape=layout.image_shape, current_size=layout.current_size
     )
     return unshifted, pixel_weight, jnp.asarray(initial, dtype=jnp.float32)
-
-
-def tilt_image_coarse_diff2(
-    projector_full,
-    rotations,
-    unshifted,
-    pixel_weight,
-    initial_diff2,
-    translation_angles,
-    layout: CoarseScoreLayout,
-    *,
-    model_max_r: int,
-    padding_factor: int,
-    canonical_reduction: bool = True,
-):
-    """One tilt image's coarse diff2 ``[R, T]`` with its own matrices ``[R, 3, 3]`` and phases ``[T, 2]``."""
-
-    from relax.cuda import kernels as em_cuda_kernels
-
-    translation_angles = jnp.asarray(translation_angles, dtype=jnp.float32)
-    chunks = [
-        em_cuda_kernels.relion_coarse_diff2_projector_f32(
-            projector_full,
-            jnp.asarray(rotations, dtype=jnp.float32),
-            jnp.asarray(unshifted, dtype=jnp.complex64)[None],
-            translation_angles[start : start + _FUSED_TRANSLATION_CAPACITY],
-            jnp.asarray(pixel_weight, dtype=jnp.float32)[None],
-            jnp.asarray(initial_diff2, dtype=jnp.float32).reshape(1),
-            layout.full_to_compact,
-            current_size=layout.current_size,
-            physical_image_size=int(layout.image_shape[0]),
-            model_max_r=int(model_max_r),
-            padding_factor=int(padding_factor),
-            canonical_reduction=canonical_reduction,
-        )[0]
-        for start in range(0, int(translation_angles.shape[0]), _FUSED_TRANSLATION_CAPACITY)
-    ]
-    return jnp.concatenate(chunks, axis=1)
 
 
 # Bytes of per-image projections ([images, R, P]) and coarse diff2 ([images, R, T] float32) one call holds, at most

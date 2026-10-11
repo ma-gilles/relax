@@ -7,6 +7,7 @@ check_p3_p4.py) compares the whole pass with RELION's dumped coarse diff2 on the
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from oracles.tomo_coarse import tilt_image_coarse_diff2
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -69,7 +70,7 @@ def test_translations_are_scored_in_chunks_and_images_add_in_slot_order(monkeypa
     angles = rng.normal(size=(3, n_trans, 2)).astype(np.float32)
     initial = np.array([1.5, 2.5, 3.5], np.float32)
     per_image = [
-        tomo_coarse.tilt_image_coarse_diff2(
+        tilt_image_coarse_diff2(
             None,
             rotations[i],
             jnp.zeros(4, jnp.complex64),
@@ -395,7 +396,7 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
             padding_factor=pad,
         )
         for b in range(n_images):
-            single = tomo_coarse.tilt_image_coarse_diff2(
+            single = tilt_image_coarse_diff2(
                 projector,
                 rotations[b],
                 images[b],
@@ -487,7 +488,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
         rotations = f["rotations"].reshape(f["n_images"], f["n_rot"], 3, 3)
         for b in range(f["n_images"]):
             direct = np.asarray(
-                tomo_coarse.tilt_image_coarse_diff2(
+                tilt_image_coarse_diff2(
                     f["full"], rotations[b], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b], layout,
                     model_max_r=f["max_r"], padding_factor=f["pad"],
                 )
@@ -540,7 +541,7 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
         assert gemm.size >= 1_000_000
         for b in range(n_images):
             direct = np.asarray(
-                tomo_coarse.tilt_image_coarse_diff2(
+                tilt_image_coarse_diff2(
                     f["full"], rotations[b], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b], layout,
                     model_max_r=f["max_r"], padding_factor=f["pad"],
                 )
@@ -576,7 +577,7 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, mo
             for s_ in range(n_slots):
                 b = p_ * n_slots + s_
                 image = np.asarray(
-                    tomo_coarse.tilt_image_coarse_diff2(
+                    tilt_image_coarse_diff2(
                         f["full"], rotations[p_, s_], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b],
                         layout, model_max_r=f["max_r"], padding_factor=f["pad"],
                     )

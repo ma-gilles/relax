@@ -120,7 +120,6 @@
 "tests/unit/test_coarse_physical_pmax.py": 16,
 "tests/unit/test_coarse_projection_precision.py": 0,
 "tests/unit/test_compact_candidates.py": 0,
-"tests/unit/test_compact_pair_sparse_native_sums.py": 3,
 "tests/unit/test_compare_iter1_bpref_accum.py": 0,
 "tests/unit/test_compare_k1_relion_recovar_bpref_primitives.py": 0,
 "tests/unit/test_compare_k4_relion_recovar_bpref_factors.py": 0,
