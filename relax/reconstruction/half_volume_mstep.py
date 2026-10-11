@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
-from relax.runtime.env_flags import parse_env_flag
+from relax.runtime.env_flags import parse_env_binary_flag, parse_env_flag
 
 _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS = 200_000_000
 _RELION_X_HALF_FULL_HOST_MIN_VOXELS = 100_000_000
@@ -40,6 +40,128 @@ def relion_x_half_mstep_accumulator_dtypes(dataset_dtype, *, use_relion_x_half_m
             return np.dtype(np.complex128), np.dtype(np.float64)
         return np.dtype(np.complex64), np.dtype(np.float32)
     return base_dtype, base_dtype
+
+
+# Opt-in diagnostic, default off: exact float32 accumulation of the per-row backprojection, for one-to-one
+# comparison with RELION builds whose device backprojection accumulates in double. Production keeps the direct
+# accumulation, which loses the same low-resolution weight as stock GPU RELION (relax#65, user 2026-10-11).
+EXACT_FLOAT32_ACCUMULATION_ENV = "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
+
+
+def exact_float32_accumulation_enabled() -> bool:
+    """Read the opt-in; unset or ``0`` keeps one accumulator pair per pass (:func:`allocate_row_partial` asks once per pass)."""
+
+    return parse_env_binary_flag(EXACT_FLOAT32_ACCUMULATION_ENV)
+
+
+# A float32 accumulator loses an addend below half an ulp of the running total. With every row of a pass
+# scattered into one pair, the low shells of a soft pass lost 1e-2 of their weight (relax#65: 9.9e-3 and 1.5e-2
+# at shell 0 of a tilt-series VDAM iteration, 1.6e-2 at shell 0 of a Refine3D iteration 1 with 11.2M rows).
+# Under the switch, rows are scattered into a zeroed partial pair that is added into the totals every
+# ``ROW_PARTIAL_FLUSH_ROWS`` backprojected rows (a tilt row counts once per tilt image): at 32,768 rows the
+# weight missing at shell 0 was <= 2e-7 on the tilt case and <= 1.1e-5 on the Refine3D one, and the float32
+# total of the partials equals their float64 total to 5e-8 per shell.
+# Formulation and measurements: docs/math/relion_refinement_algorithm.md, "Exact float32 accumulation (diagnostic switch)".
+ROW_PARTIAL_FLUSH_ROWS = 32768
+# The partial is a second accumulator pair. Above this size the pass accumulates directly, as before
+# (22.9 GiB at box 800, padding 2, full size). A shape rule, so that numerics never depend on the card.
+ROW_PARTIAL_MAX_PAIR_BYTES = 4 * 1024**3
+
+
+def blocks_per_flush(block_rows: int) -> int:
+    """How many M-step row blocks fill one partial: a static count, so flush points follow the row order alone."""
+
+    return max(1, ROW_PARTIAL_FLUSH_ROWS // max(int(block_rows), 1))
+
+
+@partial(jax.jit, donate_argnums=(0, 1, 2, 3))
+def flush_partial(total_y, total_ctf, partial_y, partial_ctf):
+    """Add a partial pair into its totals and zero it: ``(total_y, total_ctf, partial_y, partial_ctf)``."""
+
+    return total_y + partial_y, total_ctf + partial_ctf, jnp.zeros_like(partial_y), jnp.zeros_like(partial_ctf)
+
+
+def flushed_block_loop(n_blocks, block, state, total_y, total_ctf, *, flush_blocks: int, get_pair, set_pair):
+    """``lax.fori_loop`` over ``n_blocks`` row blocks whose pair is a partial, flushed every ``flush_blocks``.
+
+    ``block(index, state)`` scatters into the pair ``get_pair(state)``, which enters zeroed. After every
+    ``flush_blocks`` blocks, and after the last one, the pair is added into ``(total_y, total_ctf)`` and
+    zeroed (``set_pair(state, y, ctf)``). Returns ``(state, total_y, total_ctf)`` with the pair zero again.
+    The traced counterpart of :class:`RowPartial`; both flush at the same blocks.
+    """
+
+    def group(index, carry):
+        state, total_y, total_ctf = carry
+        start = index * flush_blocks
+        state = jax.lax.fori_loop(start, jnp.minimum(start + flush_blocks, n_blocks), block, state)
+        partial_y, partial_ctf = get_pair(state)
+        state = set_pair(state, jnp.zeros_like(partial_y), jnp.zeros_like(partial_ctf))
+        return state, total_y + partial_y, total_ctf + partial_ctf
+
+    return jax.lax.fori_loop(0, (n_blocks + (flush_blocks - 1)) // flush_blocks, group, (state, total_y, total_ctf))
+
+
+class RowPartial:
+    """The partial accumulator pair of one pass: zero between flushes, shared by the pass's slots.
+
+    The pass allocates it with its totals (before it reads free device memory for the chunk budget) and hands
+    it to the row-block loops. A loop scatters its blocks into ``y``/``ctf`` in place of the totals, calls
+    :meth:`block_done` after each block and :meth:`flush` when it leaves a slot, so a partial never outlives
+    a slot's blocks of a chunk.
+    """
+
+    def __init__(self, volume_size: int, y_dtype, ctf_dtype):
+        self.y = jnp.zeros(int(volume_size), dtype=y_dtype)
+        self.ctf = jnp.zeros(int(volume_size), dtype=ctf_dtype)
+        self._blocks = 0
+
+    def bind(self, carry):
+        """``carry`` with its pair replaced by the (zero) partial."""
+
+        return carry._replace(Ft_y=self.y, Ft_ctf=self.ctf)
+
+    def block_done(self, carry, total_y, total_ctf, *, block_rows: int):
+        """After one block of ``block_rows`` rows: flush when the partial is full. Returns ``(carry, totals)``."""
+
+        self._blocks += 1
+        if self._blocks < blocks_per_flush(block_rows):
+            return carry, total_y, total_ctf
+        return self.flush(carry, total_y, total_ctf)
+
+    def flush(self, carry, total_y, total_ctf):
+        """Add the carry's pair into the totals; the carry gets the zeroed partial back."""
+
+        if self._blocks == 0:
+            return carry, total_y, total_ctf
+        self._blocks = 0
+        total_y, total_ctf, self.y, self.ctf = flush_partial(total_y, total_ctf, carry.Ft_y, carry.Ft_ctf)
+        return self.bind(carry), total_y, total_ctf
+
+
+def allocate_row_partial(volume_size: int, y_dtype, ctf_dtype) -> RowPartial | None:
+    """The pass's :class:`RowPartial` under ``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1``, else ``None`` (direct accumulation).
+
+    ``None`` without the switch (the default: nothing is allocated and every row-block loop runs as before), and
+    under it for a pair above ``ROW_PARTIAL_MAX_PAIR_BYTES``.
+
+    Above that size (a current size over about 440 at padding 2) the accumulation is unchanged from before
+    relax#65, and what it loses there has not been measured. Below it, one pair per pass lost 8.5e-3 of the
+    weight at shell 0 in the final pass of a 100k-image box-256 refinement. See "Exact float32 accumulation
+    (diagnostic switch)" in ``docs/math/relion_refinement_algorithm.md``.
+    """
+
+    if not exact_float32_accumulation_enabled():
+        return None
+    pair_bytes = int(volume_size) * (np.dtype(y_dtype).itemsize + np.dtype(ctf_dtype).itemsize)
+    if pair_bytes > ROW_PARTIAL_MAX_PAIR_BYTES:
+        logging.getLogger(__name__).info(
+            "%s=1: M-step accumulators of %.2f GiB a pair exceed %.0f GiB, rows are accumulated directly, without partials",
+            EXACT_FLOAT32_ACCUMULATION_ENV,
+            pair_bytes / float(1024**3),
+            ROW_PARTIAL_MAX_PAIR_BYTES / float(1024**3),
+        )
+        return None
+    return RowPartial(volume_size, y_dtype, ctf_dtype)
 
 
 def _large_grid_switch(flag_raw: str | None, min_voxels_raw: str | None, default_min_voxels: int, full_voxels: int) -> bool:

@@ -24,6 +24,7 @@ import numpy as np
 
 from relax.fine_pass.projection_blocks import project_rows_by_class
 from relax.fine_pass.wavg import weighted_image_power_from_shells
+from relax.reconstruction.half_volume_mstep import blocks_per_flush, flushed_block_loop
 from relax.refinement import tomo_particles
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
 
@@ -236,8 +237,12 @@ def run_tilt_chunk(
     slot_block: int | None = None,
     score_pixel_indices=None,
     mstep_census: TiltMstepCensus | None = None,
+    row_partial=None,
 ):
     """Score, weight and backproject one chunk of particles; return ``(Ft_y_total, Ft_ctf_total, stats)``.
+
+    ``row_partial`` is the pass's partial accumulator pair (``half_volume_mstep.RowPartial``), into which
+    the M-step program scatters its rows when the pass has one.
 
     ``Ft_y_total``/``Ft_ctf_total`` are the pass's BPref pairs, one per accumulator slot (class +
     K * group, resident_pass2); ``resident_operands`` hold the half's images from
@@ -563,8 +568,11 @@ def run_tilt_chunk(
         tables_b = stage_tables if whole is not None else block_tables(start, stop, project_block(start, stop))
         for accumulator in range(n_accumulators):
             slots = accumulator_slots[accumulator]
-            mstep = _tilt_mstep_program(
-                mstep._replace(Ft_y=Ft_y_out[accumulator], Ft_ctf=Ft_ctf_out[accumulator]),
+            mstep, *partial_pair = _tilt_mstep_program(
+                (
+                    mstep._replace(Ft_y=Ft_y_out[accumulator], Ft_ctf=Ft_ctf_out[accumulator]),
+                    *(() if row_partial is None else ((row_partial.y, row_partial.ctf),)),
+                ),
                 slots if whole is not None else _slot_tables_block(slots, start, stop),
                 operands,
                 tables_b,
@@ -577,6 +585,8 @@ def run_tilt_chunk(
                 slot_spec=slot_spec,
                 image_shape=tuple(int(n) for n in image_shape),
             )
+            if partial_pair:
+                row_partial.y, row_partial.ctf = partial_pair[0]
             if mstep.scale_xa_per_image is not None:
                 mstep = rp._fold_class_scale_sums(
                     mstep, stage_tables.wavg_scale_pixel_mask, rp._device_int32(accumulator % tables.n_classes)
@@ -808,7 +818,7 @@ def _slot_mstep_tables(
 
 @partial(jax.jit, static_argnames=("slot_spec", "image_shape"), donate_argnums=(0,))
 def _tilt_mstep_program(
-    mstep,
+    state,
     slots: SlotMstepTables,
     operands,
     stage_tables,
@@ -838,6 +848,11 @@ def _tilt_mstep_program(
     the blocks add each row's partials into a ``[C_R, recon pixels]`` pair at the row's own scale, and
     each row is backprojected once, as in one block (and in RELION, which sums an orientation's
     translations before it backprojects).
+
+    ``state`` is ``(mstep,)`` or ``(mstep, (partial_y, partial_ctf))`` and is returned in the same form. With
+    the pass's zeroed partial pair, the rows are scattered into it and it is added into the volumes every
+    ``blocks_per_flush`` blocks and at the end of every slot (relax#65): a row is one tilt image here, so
+    the flush counts tilt images.
     """
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -847,14 +862,21 @@ def _tilt_mstep_program(
     block_rows = int(slot_spec.mstep_block_rows)
     merge_row_partials = bool(slot_spec.presum_adjoint)
     fields = {name: getattr(operands, name) for name in _SLOT_VIEW_FIELDS}
+    flush_blocks = blocks_per_flush(block_rows)
+    mstep, *partial_pair = state
 
-    def one_slot(full, xs):
+    def one_slot(scan_carry, xs):
+        full, *pair = scan_carry
         slot, safe, valid, target, order, active, units, n_blocks, angles = xs
         ordered_posterior = row_posterior[order]
         gathered, window = _slot_view_gather(fields, wavg_window, safe, valid)
         kernel_row_image_ids = jnp.where(active, units, jnp.int32(-1))
         row_fine_rot = slot * jnp.int32(row_capacity) + order
         Ft_y, Ft_ctf = full.Ft_y, full.Ft_ctf
+        # With a partial pair the blocks scatter into it, and the loops carry the slot's volumes beside it.
+        flush_blocks_into_volumes = bool(pair) and not merge_row_partials
+        if flush_blocks_into_volumes:
+            Ft_y, Ft_ctf = pair[0]
         if merge_row_partials:
             # Each row's partials, by its visiting position, until the one adjoint below.
             n_recon = int(slot_spec.n_recon_pixels)
@@ -872,7 +894,8 @@ def _tilt_mstep_program(
         # One translation block at a time: a loop iteration's translated tiles are dead before the next
         # block translates its own, so the program holds one block's tiles, as mstep_translation_blocks
         # sizes them. Unrolled blocks let XLA schedule every block's translation first (all tiles live).
-        def translation_block(k, slot_carry):
+        def translation_block(k, loop_carry):
+            slot_carry, *volumes = loop_carry
             translated, translated_atomic = _slot_view_translate(
                 window, valid, angles[k], rect_indices, exact_positions, image_shape=image_shape
             )
@@ -904,8 +927,19 @@ def _tilt_mstep_program(
                     cuda_backproject=em_cuda_kernels,
                 )
 
-            slot_carry = jax.lax.fori_loop(0, n_blocks, block, slot_carry)
-            return rp._add_chunk_wavg_image_power(
+            if flush_blocks_into_volumes:
+                slot_carry, *volumes = flushed_block_loop(
+                    n_blocks,
+                    block,
+                    slot_carry,
+                    *volumes,
+                    flush_blocks=flush_blocks,
+                    get_pair=lambda carry: (carry.Ft_y, carry.Ft_ctf),
+                    set_pair=lambda carry, y, ctf: carry._replace(Ft_y=y, Ft_ctf=ctf),
+                )
+            else:
+                slot_carry = jax.lax.fori_loop(0, n_blocks, block, slot_carry)
+            slot_carry = rp._add_chunk_wavg_image_power(
                 slot_carry,
                 slot_operands,
                 slot_tables,
@@ -913,9 +947,18 @@ def _tilt_mstep_program(
                 blocks.kernel_row_image_ids,
                 spec=slot_spec,
             )
+            return (slot_carry, *volumes)
 
-        slot_carry = jax.lax.fori_loop(0, int(kept_index.shape[0]), translation_block, slot_carry)
+        slot_carry, *volumes = jax.lax.fori_loop(
+            0,
+            int(kept_index.shape[0]),
+            translation_block,
+            (slot_carry, full.Ft_y, full.Ft_ctf) if flush_blocks_into_volumes else (slot_carry,),
+        )
         Ft_y, Ft_ctf = slot_carry.Ft_y, slot_carry.Ft_ctf
+        if flush_blocks_into_volumes:
+            pair = [(Ft_y, Ft_ctf)]
+            Ft_y, Ft_ctf = volumes
         if merge_row_partials:
 
             def adjoint(i, volumes):
@@ -932,7 +975,20 @@ def _tilt_mstep_program(
                     spec=slot_spec,
                 )
 
-            Ft_y, Ft_ctf = jax.lax.fori_loop(0, n_blocks, adjoint, (full.Ft_y, full.Ft_ctf))
+            if pair:
+                pair_out, Ft_y, Ft_ctf = flushed_block_loop(
+                    n_blocks,
+                    adjoint,
+                    pair[0],
+                    full.Ft_y,
+                    full.Ft_ctf,
+                    flush_blocks=flush_blocks,
+                    get_pair=lambda volumes: volumes,
+                    set_pair=lambda volumes, y, ctf: (y, ctf),
+                )
+                pair = [pair_out]
+            else:
+                Ft_y, Ft_ctf = jax.lax.fori_loop(0, n_blocks, adjoint, (full.Ft_y, full.Ft_ctf))
         placed = _place_slot_partials(
             {name: getattr(full, name) for name in _SLOT_PARTIAL_FIELDS},
             {name: getattr(slot_carry, name) for name in _SLOT_PARTIAL_FIELDS},
@@ -940,7 +996,7 @@ def _tilt_mstep_program(
             slot_carry.noise_shells,
             target,
         )
-        return full._replace(Ft_y=Ft_y, Ft_ctf=Ft_ctf, **placed), None
+        return (full._replace(Ft_y=Ft_y, Ft_ctf=Ft_ctf, **placed), *pair), None
 
     xs = (
         slots.slot,
@@ -953,8 +1009,8 @@ def _tilt_mstep_program(
         slots.n_blocks,
         slots.angles,
     )
-    mstep, _ = jax.lax.scan(one_slot, mstep, xs)
-    return mstep
+    state, _ = jax.lax.scan(one_slot, (mstep, *partial_pair), xs)
+    return state
 
 
 class MstepTranslations(NamedTuple):

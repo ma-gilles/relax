@@ -79,6 +79,32 @@ def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  
 
 
 @requires_resident_gpu
+def test_exact_float32_accumulation_switch_runs_the_tilt_driver(_resident_production_env, monkeypatch):  # noqa: F811
+    """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the tilt M-step through the partial pair (relax#65).
+
+    With one image per particle the switched tilt pass must still reproduce the SPA pass, as the default one does.
+    """
+
+    from relax.fine_pass import resident_pass2 as rp
+    from relax.reconstruction import half_volume_mstep as hvm
+
+    args = dict(_driver_fixture_args(), score_with_masked_images=True)
+    spa = rp._resident_pass2(**args)
+    allocated = []
+    real_allocate = rp.allocate_row_partial
+
+    def allocate(*a, **kw):
+        allocated.append(real_allocate(*a, **kw))
+        return allocated[-1]
+
+    monkeypatch.setattr(rp, "allocate_row_partial", allocate)
+    monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
+    tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(args))
+    assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
+    _assert_tilt_pass_matches_spa(spa, tomo)
+
+
+@requires_resident_gpu
 def test_tilt_chunks_prepare_their_own_operands_when_the_half_does_not_fit(_resident_production_env, monkeypatch):  # noqa: F811
     """A half whose resident operands exceed the budget: each tilt chunk prepares its own images' operands."""
 

@@ -872,6 +872,13 @@ maintained callers migrate together; main heterogeneity APIs and serialized
 formats remain compatible. Production EM is float32; double precision is a
 labeled diagnostic only.
 
+Diagnostic switches, off by default: `RELAX_EM_DETERMINISTIC_REDUCTIONS=1` (fixed-order duplicate-index sums)
+and `RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1` (2026-10-11, relax#65: the per-row backprojection goes through a
+float32 partial pair flushed every 32,768 rows, for one-to-one comparison with RELION builds that backproject
+in double; production keeps the direct accumulation, which loses the same low-resolution weight as stock GPU
+RELION, 1e-2 at shell 0 of a soft pass; see "Exact float32 accumulation" in
+[the algorithm map](../math/relion_refinement_algorithm.md)).
+
 ## Feature gaps (moved from the README, 2026-09-29)
 
 The RELION 5 options and behaviours relax does not support yet, row by row with what each would take, are

@@ -505,7 +505,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
         )
         mstep = initial_carry(jnp.zeros(4), jnp.zeros(4), None, None, spec=None)
         lowered = resident_tilts._tilt_mstep_program.lower(
-            mstep,
+            (mstep,),
             slots,
             operands,
             tables,

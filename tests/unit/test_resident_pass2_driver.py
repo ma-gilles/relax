@@ -1064,6 +1064,34 @@ def test_global_chunks_prepare_their_own_unshifted_operands(_resident_production
 
 
 @requires_resident_gpu
+def test_exact_float32_accumulation_switch_runs_the_global_driver(_resident_production_env, monkeypatch):
+    """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the global pass through the partial pair (relax#65).
+
+    On this small case one accumulator loses nothing measurable, so the switched pass must agree with the
+    default one to the float32 atomic-order band; the loss itself is shown by test_row_partial_accumulator.py.
+    """
+
+    from relax.reconstruction import half_volume_mstep as hvm
+
+    args = _driver_fixture_args()
+    default = rp.compute_pass2_stats_resident(**args)
+    allocated = []
+    real_allocate = rp.allocate_row_partial
+
+    def allocate(*a, **kw):
+        allocated.append(real_allocate(*a, **kw))
+        return allocated[-1]
+
+    monkeypatch.setattr(rp, "allocate_row_partial", allocate)
+    monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
+    exact = rp.compute_pass2_stats_resident(**args)
+    assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
+    assert_matches(default.hard_assignment, exact.hard_assignment)
+    num = float(np.linalg.norm(np.asarray(default.Ft_y) - np.asarray(exact.Ft_y)))
+    assert num / float(np.linalg.norm(np.asarray(default.Ft_y))) < _float32_atomic_order_bound(args)
+
+
+@requires_resident_gpu
 def test_resident_driver_repeats_itself(_resident_production_env):
     """The resident driver's own repeat band, the reference for the table above."""
 

@@ -647,6 +647,34 @@ def test_driver_does_not_narrow_the_projector_slab():
 
 
 @requires_resident_gpu
+def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch, _resident_local_env):
+    """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the local pass through the partial pair (relax#65).
+
+    Too few rows here for one accumulator to lose weight, so the switched pass agrees with the default one to
+    the driver's own repeat band; the loss is shown by test_row_partial_accumulator.py.
+    """
+
+    from relax.reconstruction import half_volume_mstep as hvm
+
+    case = _case()
+    default = _run(case, monkeypatch=monkeypatch)
+    allocated = []
+    real_allocate = rlp.allocate_row_partial
+
+    def allocate(*a, **kw):
+        allocated.append(real_allocate(*a, **kw))
+        return allocated[-1]
+
+    monkeypatch.setattr(rlp, "allocate_row_partial", allocate)
+    monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
+    exact = _run(case, monkeypatch=monkeypatch)
+    assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
+    assert_matches(np.asarray(default.hard_assignment), np.asarray(exact.hard_assignment))
+    a, b = np.asarray(default.Ft_y, dtype=np.complex128), np.asarray(exact.Ft_y, dtype=np.complex128)
+    assert float(np.linalg.norm(a - b) / np.linalg.norm(a)) < 1e-6
+
+
+@requires_resident_gpu
 def test_resident_local_repeats_itself(monkeypatch, _resident_local_env):
     """The resident driver's own repeat band, the reference for the table above."""
 

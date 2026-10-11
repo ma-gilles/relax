@@ -132,6 +132,7 @@ from relax.projection.projection import (
     relion_scale_correction_pixel_mask as _relion_scale_correction_pixel_mask,
 )
 from relax.reconstruction.half_volume_mstep import (
+    allocate_row_partial,
     finalize_half_volume_bpref,
     half_volume_accumulator_shape,
     relion_backprojector_volume_shape,
@@ -915,6 +916,8 @@ def compute_local_search_resident(
             # One BPref per class (ml_optimiser.cpp, BPref[iclass]).
             Ft_y_total = [jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(tables.n_classes)]
             Ft_ctf_total = [jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(tables.n_classes)]
+        # Every local row is backprojected on its own: the rows go through one partial pair (relax#65).
+        row_partial = allocate_row_partial(recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype)
 
         # The operand family decides what a chunk holds, so it is chosen before the
         # plan; the per-chunk fallback in _start_resident_local_chunk stays as a guard.
@@ -1192,6 +1195,7 @@ def compute_local_search_resident(
                 class_projectors=class_projectors,
                 class_scale_masks_rect=class_scale_masks_rect,
                 lone_block_rows=lone_block_rows,
+                row_partial=row_partial,
             )
             if pending is not None:
                 Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
@@ -2215,6 +2219,7 @@ def _start_resident_local_chunk(
     class_projectors=None,
     class_scale_masks_rect=None,
     lone_block_rows=None,
+    row_partial=None,
 ):
     """Enqueue one local capacity chunk's front stages; return its ``finish``.
 
@@ -2691,6 +2696,7 @@ def _start_resident_local_chunk(
                 max_adjoint_block_bytes=max_adjoint_block_bytes,
                 cuda_backproject=cuda_backproject,
                 n_optics_groups=int(stats_config.n_optics_groups),
+                row_partial=row_partial,
             )
 
         class_fields = {}

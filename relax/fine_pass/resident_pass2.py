@@ -197,9 +197,13 @@ from relax.projection.projection import (
     relion_scale_correction_pixel_mask as _relion_scale_correction_pixel_mask,
 )
 from relax.reconstruction.half_volume_mstep import (
+    RowPartial,
+    allocate_row_partial,
+    blocks_per_flush,
     crop_public_full_volume,
     crop_relion_x_half_accumulator,
     finalize_half_volume_bpref,
+    flushed_block_loop,
     half_volume_accumulator_shape,
     physical_bpref_finalize_applies,
     relion_backprojector_volume_shape,
@@ -3326,6 +3330,13 @@ def _resident_pass2(
     Ft_y_total = tuple(zero_accumulators[:tables.n_slots])
     Ft_ctf_total = tuple(zero_accumulators[tables.n_slots:])
     del zero_accumulators
+    # Rows backprojected one by one go through a partial pair (relax#65); projection sums are backprojected
+    # once per pass and need none. Allocated here so that the chunk budget below counts it.
+    row_partial = (
+        None
+        if presum_adjoint
+        else allocate_row_partial(program_recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype)
+    )
     logger.info(
         "Resident pass-2 M-step adjoint: %s (per-projection sums %.2f GiB, %s GiB available to the allocator)",
         "per-projection sums, one backprojection per pass" if presum_adjoint else "per-row backprojection",
@@ -4313,7 +4324,7 @@ def _resident_pass2(
                                 coarse_reuse=coarse_reuse,
                                 window_logical=window_logical,
                             ),
-                            carry=(Ft_y_total, Ft_ctf_total, stats),
+                            carry=_chunk_carry(Ft_y_total, Ft_ctf_total, stats, row_partial),
                             translation_angles=jnp.asarray(
                                 relion_score_translation_angles, dtype=jnp.float32
                             ),
@@ -4541,6 +4552,7 @@ def _resident_pass2(
                 ),
                 slot_block=tilt_slot_block,
                 mstep_census=mstep_census,
+                row_partial=row_partial,
                 score_pixel_indices=None if window_indices is None else jnp.asarray(window_indices, dtype=jnp.int32),
             )
             Ft_y_total, Ft_ctf_total = Ft_y_chunk, Ft_ctf_chunk
@@ -4631,6 +4643,7 @@ def _resident_pass2(
             residual_sgd_take=residual_sgd_take,
             deferred=deferred,
             lone_block_rows=lone_block_rows(chunk.row_capacity, row_ladder) if alone else None,
+            row_partial=row_partial,
         )
         if not deferred:
             Ft_y_total, Ft_ctf_total, stats = result
@@ -8380,13 +8393,17 @@ def _run_resident_chunk_program(
     still skipping the padded blocks the per-stage loop breaks out of. A static
     trip count would instead run those blocks; at the hp3 state that is about
     half of the pixel-axis work, all of it multiplying a zero posterior.
+
+    A fourth carry entry is the pass's zeroed partial pair (:func:`_chunk_carry`): the blocks then scatter
+    into it and it is flushed at the per-stage path's blocks (``flushed_block_loop``, relax#65); it is
+    returned, zero again, as the fourth result.
     """
 
     from recovar import cuda_backproject
 
     from relax.cuda import kernels as em_cuda_kernels
 
-    Ft_y_total, Ft_ctf_total, stats = carry
+    Ft_y_total, Ft_ctf_total, stats, *partial_pair = carry
     posterior = _resident_chunk_posterior(
         rows, operands, tables, spec=spec, cuda_backproject=em_cuda_kernels
     )
@@ -8398,7 +8415,11 @@ def _run_resident_chunk_program(
     for slot_index in range(int(spec.n_slots)):
         # Each slot's blocks accumulate into its own volumes; the per-image
         # Wavg, noise and norm partials carry on across slots.
-        mstep = mstep._replace(Ft_y=Ft_y_total[slot_index], Ft_ctf=Ft_ctf_total[slot_index])
+        slot_y, slot_ctf = Ft_y_total[slot_index], Ft_ctf_total[slot_index]
+        if partial_pair:
+            mstep = mstep._replace(Ft_y=partial_pair[0][0], Ft_ctf=partial_pair[0][1])
+        else:
+            mstep = mstep._replace(Ft_y=slot_y, Ft_ctf=slot_ctf)
         class_blocks, first_block, n_blocks = _slot_mstep_blocks(blocks, slot_index, spec=spec)
         def block(block_index, carry_in, _blocks=class_blocks, _first=first_block):
             return _resident_mstep_block_at(
@@ -8411,21 +8432,43 @@ def _run_resident_chunk_program(
                 cuda_backproject=cuda_backproject,
             )
 
-        mstep = jax.lax.fori_loop(0, n_blocks, block, mstep)
+        if partial_pair:
+            mstep, slot_y, slot_ctf = flushed_block_loop(
+                n_blocks,
+                block,
+                mstep,
+                slot_y,
+                slot_ctf,
+                flush_blocks=blocks_per_flush(block_rows),
+                get_pair=lambda carry_in: (carry_in.Ft_y, carry_in.Ft_ctf),
+                set_pair=lambda carry_in, y, ctf: carry_in._replace(Ft_y=y, Ft_ctf=ctf),
+            )
+            partial_pair = [(mstep.Ft_y, mstep.Ft_ctf)]
+        else:
+            mstep = jax.lax.fori_loop(0, n_blocks, block, mstep)
+            slot_y, slot_ctf = mstep.Ft_y, mstep.Ft_ctf
         if mstep.scale_xa_per_image is not None:
             # Slot ``class + K * group``: the scale sums are masked by the slot's class.
             mstep = _fold_class_scale_sums(
                 mstep, tables.wavg_scale_pixel_mask, slot_index % int(spec.n_classes)
             )
-        Ft_y_out.append(mstep.Ft_y)
-        Ft_ctf_out.append(mstep.Ft_ctf)
+        Ft_y_out.append(slot_y)
+        Ft_ctf_out.append(slot_ctf)
     mstep = _add_chunk_wavg_image_power(
         mstep, operands, tables, posterior.row_posterior, posterior.kernel_row_image_ids, spec=spec
     )
     stats = _resident_chunk_statistics(
         stats, rows, operands, tables, posterior, mstep, spec=spec
     )
-    return tuple(Ft_y_out), tuple(Ft_ctf_out), stats
+    return (tuple(Ft_y_out), tuple(Ft_ctf_out), stats, *partial_pair)
+
+
+def _chunk_carry(Ft_y_total, Ft_ctf_total, stats, row_partial: RowPartial | None) -> tuple:
+    """The fused chunk program's carry: the totals and statistics, then the pass's partial pair if it has one."""
+
+    if row_partial is None:
+        return Ft_y_total, Ft_ctf_total, stats
+    return Ft_y_total, Ft_ctf_total, stats, (row_partial.y, row_partial.ctf)
 
 
 # Divisors of the M-step block for classes with few live rows. The pixel-axis
@@ -8461,6 +8504,7 @@ def _run_resident_chunk_stages(
     *,
     spec: _ChunkProgramSpec,
     timing_hook=None,
+    row_partial: RowPartial | None = None,
 ):
     """Per-stage oracle: the same stages, dispatched one at a time.
 
@@ -8477,7 +8521,7 @@ def _run_resident_chunk_stages(
 
     front = _resident_chunk_stages_front(rows, operands, tables, spec=spec, timing_hook=timing_hook)
     return _resident_chunk_stages_finish(
-        front, rows, operands, tables, carry, spec=spec, timing_hook=timing_hook
+        front, rows, operands, tables, carry, spec=spec, timing_hook=timing_hook, row_partial=row_partial
     )
 
 
@@ -8498,7 +8542,17 @@ def _resident_chunk_stages_front(rows, operands, tables, *, spec, timing_hook=No
 
 
 def _resident_chunk_stages_finish(
-    front, rows, operands, tables, carry, *, spec, timing_hook=None, block_projections=None, projection_dtypes=None
+    front,
+    rows,
+    operands,
+    tables,
+    carry,
+    *,
+    spec,
+    timing_hook=None,
+    block_projections=None,
+    projection_dtypes=None,
+    row_partial: RowPartial | None = None,
 ):
     """The per-stage path after its front: the live row ranges, the M-step blocks, the statistics.
 
@@ -8509,6 +8563,9 @@ def _resident_chunk_stages_finish(
     rows (:func:`_run_lone_resident_chunk`); ``projection_dtypes`` are then
     the ``(proj, |proj|^2)`` dtypes it returns, which the tables' caches
     (absent there) would otherwise give.
+
+    With ``row_partial`` the blocks scatter into the pass's partial pair, which is added into the slot's
+    totals every ``blocks_per_flush`` blocks and when the slot's blocks end (relax#65).
     """
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -8523,7 +8580,8 @@ def _resident_chunk_stages_finish(
     Ft_y_out, Ft_ctf_out = [], []
     for slot_index in range(int(spec.n_slots)):
         row_lo, row_hi = int(slot_offsets[slot_index]), int(slot_offsets[slot_index + 1])
-        mstep = mstep._replace(Ft_y=Ft_y_total[slot_index], Ft_ctf=Ft_ctf_total[slot_index])
+        slot_y, slot_ctf = Ft_y_total[slot_index], Ft_ctf_total[slot_index]
+        mstep = mstep._replace(Ft_y=slot_y, Ft_ctf=slot_ctf) if row_partial is None else row_partial.bind(mstep)
         class_blocks = blocks._replace(class_row_range=blocks.slot_offsets[slot_index : slot_index + 2])
         block_spec = _live_block_spec(spec, row_hi - row_lo)
         block_rows = int(block_spec.mstep_block_rows)
@@ -8540,23 +8598,29 @@ def _resident_chunk_stages_finish(
                 mstep = _resident_mstep_block_program(
                     _device_int32(start), start_blocks, operands, tables, mstep, spec=block_spec
                 )
-                continue
-            mstep = _resident_mstep_block_at(
-                _device_int32(start),
-                start_blocks,
-                operands,
-                tables,
-                mstep,
-                spec=block_spec,
-                cuda_backproject=em_cuda_kernels,
-            )
+            else:
+                mstep = _resident_mstep_block_at(
+                    _device_int32(start),
+                    start_blocks,
+                    operands,
+                    tables,
+                    mstep,
+                    spec=block_spec,
+                    cuda_backproject=em_cuda_kernels,
+                )
+            if row_partial is not None:
+                mstep, slot_y, slot_ctf = row_partial.block_done(mstep, slot_y, slot_ctf, block_rows=block_rows)
+        if row_partial is not None:
+            mstep, slot_y, slot_ctf = row_partial.flush(mstep, slot_y, slot_ctf)
+        else:
+            slot_y, slot_ctf = mstep.Ft_y, mstep.Ft_ctf
         if mstep.scale_xa_per_image is not None:
             # Slot ``class + K * group``: the scale sums are masked by the slot's class.
             mstep = _fold_class_scale_sums(
                 mstep, tables.wavg_scale_pixel_mask, _device_int32(slot_index % int(spec.n_classes))
             )
-        Ft_y_out.append(mstep.Ft_y)
-        Ft_ctf_out.append(mstep.Ft_ctf)
+        Ft_y_out.append(slot_y)
+        Ft_ctf_out.append(slot_ctf)
     if timing_hook is not None:
         timing_hook("mstep", (Ft_y_out, Ft_ctf_out))
 
@@ -8651,8 +8715,12 @@ def _run_resident_chunk(
     residual_sgd_take=None,
     deferred=False,
     lone_block_rows=None,
+    row_partial: RowPartial | None = None,
 ):
     """Run every resident stage for one capacity chunk.
+
+    ``row_partial`` is the pass's partial accumulator pair, when its rows are backprojected one by one
+    and the pair fits the size rule (``half_volume_mstep.allocate_row_partial``).
 
     ``lone_block_rows`` is set for one image's overflow chunk (a chunk past the
     plan's largest row class, :func:`chunk_runs_alone`), which runs alone and is
@@ -8923,6 +8991,7 @@ def _run_resident_chunk(
             stream_projection_fn=stream_projection_fn,
             deferred=deferred,
             carry=(Ft_y_total, Ft_ctf_total, stats),
+            row_partial=row_partial,
         )
 
     if submitted_keys is not None:
@@ -8934,14 +9003,22 @@ def _run_resident_chunk(
 
         def finish(Ft_y_total, Ft_ctf_total, stats):
             return _resident_chunk_stages_finish(
-                front, rows, operands, stage_tables, (Ft_y_total, Ft_ctf_total, stats), spec=spec
+                front,
+                rows,
+                operands,
+                stage_tables,
+                (Ft_y_total, Ft_ctf_total, stats),
+                spec=spec,
+                row_partial=row_partial,
             )
 
         return finish
     if use_jit:
-        Ft_y_total, Ft_ctf_total, stats = _run_resident_chunk_program(
-            rows, operands, stage_tables, (Ft_y_total, Ft_ctf_total, stats), spec=spec
+        Ft_y_total, Ft_ctf_total, stats, *partial_pair = _run_resident_chunk_program(
+            rows, operands, stage_tables, _chunk_carry(Ft_y_total, Ft_ctf_total, stats, row_partial), spec=spec
         )
+        if partial_pair:
+            row_partial.y, row_partial.ctf = partial_pair[0]
     else:
         def timing_hook(name, value):
             jax.block_until_ready(value)
@@ -8954,6 +9031,7 @@ def _run_resident_chunk(
             (Ft_y_total, Ft_ctf_total, stats),
             spec=spec,
             timing_hook=timing_hook if timing else None,
+            row_partial=row_partial,
         )
 
     if timing:
@@ -8998,6 +9076,7 @@ def _run_lone_resident_chunk(
     stream_projection_fn,
     deferred: bool,
     carry: tuple,
+    row_partial: RowPartial | None = None,
 ):
     """One image's overflow chunk, scored and reconstructed ``block_rows`` rows at a time.
 
@@ -9100,6 +9179,7 @@ def _run_lone_resident_chunk(
             spec=spec,
             block_projections=block_projections,
             projection_dtypes=projection_dtypes,
+            row_partial=row_partial,
         )
 
     return finish if deferred else finish(*carry)
@@ -9136,8 +9216,12 @@ def run_resident_mstep_blocks(
     row_ids=None,
     recon_pixel_indices=None,
     translation_angles=None,
+    row_partial: RowPartial | None = None,
 ):
     """Walk one chunk's pixel axis in row blocks: Wavg, noise and both adjoints.
+
+    With ``row_partial`` (the pass's partial accumulator pair) the blocks scatter into it, and it is added
+    into ``Ft_y_total``/``Ft_ctf_total`` every ``blocks_per_flush`` blocks and after the last (relax#65).
 
     Exactly one of ``block_projections`` and ``chunk_projections`` is given.
 
@@ -9301,8 +9385,8 @@ def run_resident_mstep_blocks(
 
     def start_carry(projections):
         return _initial_mstep_carry(
-            Ft_y_total,
-            Ft_ctf_total,
+            Ft_y_total if row_partial is None else row_partial.y,
+            Ft_ctf_total if row_partial is None else row_partial.ctf,
             operands,
             tables,
             spec=spec,
@@ -9343,6 +9427,10 @@ def run_resident_mstep_blocks(
                 carry,
                 spec=spec,
             )
+            if row_partial is not None:
+                carry, Ft_y_total, Ft_ctf_total = row_partial.block_done(
+                    carry, Ft_y_total, Ft_ctf_total, block_rows=block_rows
+                )
             continue
         carry = _resident_mstep_block(
             block_row_image=row_image_local[block],
@@ -9359,19 +9447,27 @@ def run_resident_mstep_blocks(
             spec=spec,
             cuda_backproject=cuda_backproject,
         )
+        if row_partial is not None:
+            carry, Ft_y_total, Ft_ctf_total = row_partial.block_done(
+                carry, Ft_y_total, Ft_ctf_total, block_rows=block_rows
+            )
     if carry is None:
         # A chunk with no live rows: the accumulators are the incoming ones and
         # the partials are the zeros the statistics program expects.
         carry = start_carry(
             block_projections(0, block_rows) if chunk_projections is None else None
         )
+    if row_partial is not None:
+        carry, Ft_y_total, Ft_ctf_total = row_partial.flush(carry, Ft_y_total, Ft_ctf_total)
+    else:
+        Ft_y_total, Ft_ctf_total = carry.Ft_y, carry.Ft_ctf
     carry = _add_chunk_wavg_image_power(
         carry, operands, tables, row_posterior, kernel_row_image_ids, spec=spec
     )
 
     return (
-        carry.Ft_y,
-        carry.Ft_ctf,
+        Ft_y_total,
+        Ft_ctf_total,
         carry.wavg_triplet_pixels,
         carry.noise_shells,
         carry.a2_per_image,
