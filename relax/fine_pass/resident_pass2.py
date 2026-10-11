@@ -199,11 +199,9 @@ from relax.projection.projection import (
 from relax.reconstruction.half_volume_mstep import (
     RowPartial,
     allocate_row_partial,
-    blocks_per_flush,
     crop_public_full_volume,
     crop_relion_x_half_accumulator,
     finalize_half_volume_bpref,
-    flushed_block_loop,
     half_volume_accumulator_shape,
     physical_bpref_finalize_applies,
     relion_backprojector_volume_shape,
@@ -253,13 +251,6 @@ _MSTEP_BLOCK_ROWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
 # offsets readbacks. The synchronisation perturbs the wall, so an arm with
 # this set is a diagnostic arm and never a timing arm.
 _CHUNK_TIMING_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING"
-# T14: the chunk body as one jitted program per capacity class. Opt-in; the
-# per-stage path is the default and the oracle both paths are compared against. ``..._CHUNK_STATIC_BLOCKS`` runs the M-step block loop over
-# the whole row capacity instead of the chunk's live blocks; both forms trace
-# one program per capacity class and are bitwise equal, because a padded block
-# carries a zero posterior and contributes exact zeros.
-_CHUNK_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT"
-_CHUNK_STATIC_BLOCKS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS"
 # T16: prepare the per-image operands once per half and keep them resident, and
 # take the M-step's weighted sums with T15's flat-row translate-and-sum kernel
 # instead of a gathered ``[images, translations, pixels]`` tile. Default on;
@@ -314,7 +305,7 @@ _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV = "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_B
 # they are indistinguishable (resident warm 67.6 / 60.4 versus 67.0 / 61.5 s,
 # occupancy 0.95-0.97 either way, jobs 14143902 and 14143904), while the dense
 # ladder costs 84 extra traced programs. Every extra class is one more program
-# per capacity-class stage, and with the chunk program one more program again.
+# per capacity-class stage.
 # The occupancy of each plan is still logged, so a future change has its number.
 # 524288 is for early low-SNR states, where each image keeps thousands of rows:
 # Class3D K4 100k/256 snr05 iteration 2 ran 8722 chunks of 131072 rows, 2028 of
@@ -4324,7 +4315,7 @@ def _resident_pass2(
                                 coarse_reuse=coarse_reuse,
                                 window_logical=window_logical,
                             ),
-                            carry=_chunk_carry(Ft_y_total, Ft_ctf_total, stats, row_partial),
+                            carry=(Ft_y_total, Ft_ctf_total, stats),
                             translation_angles=jnp.asarray(
                                 relion_score_translation_angles, dtype=jnp.float32
                             ),
@@ -5721,16 +5712,12 @@ def _make_chunk_stage_operands(recon, translation_sqdist_ang) -> _ChunkStageOper
 def chunk_program_path() -> str:
     """Which programs a chunk of this half will actually submit.
 
-    ``"fused"`` is the opt-in single chunk program, ``"per-stage"`` the default
-    path's three glue programs, ``"eager"`` the loose dispatch with no program
-    to warm. The compile-ahead warm-up reads this so it cannot warm a path the
-    loop does not take: warming the fused program while the loop runs the
-    per-stage one is not an error, it simply buys nothing, and it did exactly
-    that until 2026-09-20.
+    ``"per-stage"`` is the default path's three glue programs, ``"eager"`` the
+    loose dispatch with no program to warm. The compile-ahead warm-up reads this
+    so it cannot warm a path the loop does not take. (A third path, one fused
+    program per chunk, was removed in relax#76: nothing selected it.)
     """
 
-    if _chunk_jit_enabled():
-        return "fused"
     if _resident_glue_jit_enabled():
         return "per-stage"
     return "eager"
@@ -5795,12 +5782,11 @@ def chunk_programs_for_path(path: str) -> tuple:
     One list, read by the compile-ahead warm-up and asserted against the
     runners by `tests/unit/test_em_compile_ahead_consumer.py`. Warming a
     program the runner does not submit, or missing one it does, costs compile
-    time and buys nothing; that happened once, on the fused-versus-per-stage
-    split, and was found by reading a census rather than by a test.
+    time and buys nothing; that happened once, when a since-removed fused
+    chunk program was warmed while the loop ran the per-stage one, and was found
+    by reading a census rather than by a test.
     """
 
-    if path == "fused":
-        return (_run_resident_chunk_program,)
     if path == "per-stage":
         return (
             _resident_chunk_posterior_program,
@@ -5828,8 +5814,7 @@ def _make_mstep_block_inputs(rows, posterior, *, n_slots: int) -> "_MstepBlockIn
     for Class3D; a class and pseudo-halfset for VDAM, :class:`_ChunkMstepLayout`),
     live rows of a slot first in their chunk order, then every row that is not
     live; ``slot_offsets`` holds each slot's live run, so each slot is one run
-    of blocks (:func:`_slot_mstep_blocks`) and the rows of a boundary block
-    outside it get no weight. Grouping the live rows into fewer blocks changes
+    of blocks and the rows of a boundary block outside it get no weight. Grouping the live rows into fewer blocks changes
     which rows share a block, so the per-block partial sums are added in a
     different grouping; the contributions themselves are unchanged.
 
@@ -5854,32 +5839,6 @@ def _make_mstep_block_inputs(rows, posterior, *, n_slots: int) -> "_MstepBlockIn
         projections=None,
         slot_offsets=slot_offsets,
     )
-
-
-def _slot_mstep_blocks(blocks: "_MstepBlockInputs", slot_index: int, *, spec):
-    """Accumulator slot ``slot_index``'s M-step rows: ``(blocks, first block, block count)``.
-
-    A slot owns the live rows ``[lo, hi)`` of the M-step order
-    (:func:`_make_mstep_block_inputs`); its blocks are the ones that overlap
-    them, and :func:`_resident_mstep_block_at` gives the other rows of a
-    boundary block no weight. Under ``static_block_trip`` a single slot runs
-    the whole capacity instead. Block counts are device scalars, so the program
-    stays keyed on the capacity class.
-    """
-
-    block_rows = int(spec.mstep_block_rows)
-    offsets = blocks.slot_offsets
-    if int(spec.n_slots) == 1 and spec.static_block_trip:
-        return (
-            blocks._replace(class_row_range=offsets[0:2]),
-            jnp.int32(0),
-            jnp.int32(int(spec.row_capacity) // block_rows),
-        )
-    lo, hi = offsets[slot_index], offsets[slot_index + 1]
-    first = jax.lax.div(lo, jnp.int32(block_rows))
-    stop = jax.lax.div(hi + jnp.int32(block_rows - 1), jnp.int32(block_rows))
-    n_blocks = jnp.where(hi > lo, stop - first, jnp.int32(0))
-    return blocks._replace(class_row_range=offsets[slot_index : slot_index + 2]), first, n_blocks
 
 
 def _make_chunk_program_spec(
@@ -5913,7 +5872,7 @@ def _make_chunk_program_spec(
 ) -> _ChunkProgramSpec:
     """The static key of one chunk program.
 
-    The last four environment-read fields are the reason this is a function
+    The environment-read fields are the reason this is a function
     and not a literal at each call site: a warm-up that read them at a
     different moment, or not at all, would key its program differently from the
     loop's and warm nothing.
@@ -5939,7 +5898,6 @@ def _make_chunk_program_spec(
         bpref_recon_operand=bool(bpref_recon_operand),
         mstep_max_r=float(int(mstep_current_size) // 2) if mstep_max_r is None else mstep_max_r,
         kernel_ctf_probs=_kernel_ctf_probs_enabled(),
-        static_block_trip=_chunk_static_block_trip_enabled(),
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
         firstiter_cc=bool(firstiter_cc),
         n_slots=int(n_slots),
@@ -5970,7 +5928,7 @@ def _submit_resident_chunk_warmup(
     voxel_size,
     default_translation_sqdist,
 ):
-    """Queue one chunk program per capacity class the plan will run.
+    """Queue the chunk programs of every capacity class the plan will run.
 
     Called in the window between the admission check and the per-half operand
     preparation. The preparation is 2.4-5.8 s of host-bound device dispatch on
@@ -5991,13 +5949,10 @@ def _submit_resident_chunk_warmup(
 
     from relax.fine_pass.resident_operands import ResidentHalfOperands
 
-    # Warm the programs the configured path will actually submit. The fused
-    # chunk program is opt-in and off by default; the per-stage path with the
-    # glue JIT on is what production runs, and it is three programs. Warming the
-    # wrong one is not an error, it is simply useless, so the path is decided
-    # here, before any work, and named in the log line.
+    # Warm the programs the configured path will actually submit: the per-stage
+    # path with the glue JIT on is what production runs, and it is three
+    # programs. The path is decided here, before any work, and named in the log line.
     path = chunk_program_path()
-    use_chunk_jit = path == "fused"
     if path == "eager":
         return ()
 
@@ -6087,17 +6042,7 @@ def _submit_resident_chunk_warmup(
                 *present_avals,
             )
             operand_avals = _make_chunk_stage_operands(recon, _sq)
-            if use_chunk_jit:
-                return _checked(
-                    [
-                        (
-                            _run_resident_chunk_program,
-                            (_row, operand_avals, table_avals, carry_avals),
-                            {"spec": _spec},
-                        )
-                    ]
-                )
-            # The per-stage path is the default, and it runs three programs.
+            # The per-stage path runs three programs.
             # Their later inputs are earlier stages' outputs, so they are taken
             # by tracing those stages rather than described a second time.
             posterior_avals = jax.eval_shape(
@@ -6715,36 +6660,13 @@ def _global_chunk_loop_pipelined(stream_projections: bool) -> bool:
     exactly when the loop runs this way.
     """
 
-    return not _chunk_timing_enabled() and not _chunk_jit_enabled() and not stream_projections
+    return not _chunk_timing_enabled() and not stream_projections
 
 
 def _chunk_timing_enabled() -> bool:
     """Whether to log per-chunk occupancy, block count and synchronised wall."""
 
     return parse_env_flag(_CHUNK_TIMING_ENV, default=False)
-
-
-def _chunk_jit_enabled() -> bool:
-    """Whether the chunk body runs as one jitted program (T14).
-
-    Opt-in: ``RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT=1`` selects it, and the
-    per-stage path is both the default and the oracle. Both paths call the same
-    stage helpers on the same operands, so only the JIT boundary and the M-step
-    loop's trip mechanism differ.
-
-    Measured at 0bedf7672 on one H100 (jobs 14147789 hp3, 14147877 early,
-    14147878 end-to-end). The program removes the chunk body's eager dispatch
-    (267 -> 2 per chunk at hp3, 740 -> 2 at early) and 77% of its XLA glue
-    launches, and the warm chunk loop is 0.9% (hp3) to 4.2% (early) faster. It
-    is off by default because the end-to-end gate does not hold: with a cold
-    persistent cache the fused program compiles once per (capacity class, pixel
-    class) inside the chunk loop, and over the 16 iterations the 10k run took
-    with an identical trajectory that cost 22.5 s (+1.9%), 84% of it in the two
-    iterations that introduced a new pixel class. Turn it on with a warm
-    persistent cache, or after that first-use compile is cheaper.
-    """
-
-    return parse_env_flag(_CHUNK_JIT_ENV, default=False)
 
 
 def _kernel_ctf_probs_enabled() -> bool:
@@ -6980,21 +6902,8 @@ def _device_int32(value: int) -> jax.Array:
     return cached
 
 
-def _chunk_static_block_trip_enabled() -> bool:
-    """Whether the chunk program's M-step loop runs the whole row capacity.
-
-    Default off. The live-block bound skips blocks whose rows are all chunk
-    padding; at the hp3 state that is about a quarter of the pixel-axis work
-    (row occupancy 0.73 over the two measured iterations). Both forms are one
-    program per capacity class, and a padded block contributes exact zeros, so
-    the two are bitwise equal; the flag exists to measure that claim.
-    """
-
-    return parse_env_flag(_CHUNK_STATIC_BLOCKS_ENV, default=False)
-
-
 # ---------------------------------------------------------------------------
-# One program per chunk (T14)
+# The chunk's stages and their program spec
 # ---------------------------------------------------------------------------
 
 
@@ -7034,11 +6943,6 @@ class _ChunkProgramSpec:
     # XLA statement the per-chunk path used. Off by default: the kernel's own
     # translation mass is bitwise against ``jnp.sum`` only at some shapes.
     kernel_ctf_probs: bool
-    # Trip mechanism of the M-step block loop. False (default) bounds the loop
-    # by the chunk's live block count, a device scalar, so the padded blocks the
-    # per-stage loop breaks out of are skipped; True runs the full capacity as
-    # the ticket's literal form does. Both trace one program per capacity class.
-    static_block_trip: bool
     # Zero oversampling: the posterior keeps every weight, divides by the
     # retained coarse sum and reports the coarse winner and Pmax
     # (_CoarseNormalizationReuse). The tables carry the arrays.
@@ -8374,103 +8278,6 @@ def _resident_chunk_statistics(
     )
 
 
-@partial(jax.jit, static_argnames=("spec",), donate_argnums=(3,))
-def _run_resident_chunk_program(
-    rows: _ChunkRowArrays,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
-    carry: tuple,
-    *,
-    spec: _ChunkProgramSpec,
-):
-    """Every device stage of one capacity chunk in one program.
-
-    The Python chunk loop around this call contains only the host materialize,
-    the host padding and the operand preparation: no ``block_until_ready``, no
-    ``.item()``, no ``np.asarray`` of a device value. The M-step block loop is
-    a ``lax.fori_loop`` whose trip count is the chunk's *live* block count, a
-    device scalar, so the program is keyed on the capacity class alone while
-    still skipping the padded blocks the per-stage loop breaks out of. A static
-    trip count would instead run those blocks; at the hp3 state that is about
-    half of the pixel-axis work, all of it multiplying a zero posterior.
-
-    A fourth carry entry is the pass's zeroed partial pair (:func:`_chunk_carry`): the blocks then scatter
-    into it and it is flushed at the per-stage path's blocks (``flushed_block_loop``, relax#65); it is
-    returned, zero again, as the fourth result.
-    """
-
-    from recovar import cuda_backproject
-
-    from relax.cuda import kernels as em_cuda_kernels
-
-    Ft_y_total, Ft_ctf_total, stats, *partial_pair = carry
-    posterior = _resident_chunk_posterior(
-        rows, operands, tables, spec=spec, cuda_backproject=em_cuda_kernels
-    )
-
-    block_rows = int(spec.mstep_block_rows)
-    mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
-    blocks = _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
-    Ft_y_out, Ft_ctf_out = [], []
-    for slot_index in range(int(spec.n_slots)):
-        # Each slot's blocks accumulate into its own volumes; the per-image
-        # Wavg, noise and norm partials carry on across slots.
-        slot_y, slot_ctf = Ft_y_total[slot_index], Ft_ctf_total[slot_index]
-        if partial_pair:
-            mstep = mstep._replace(Ft_y=partial_pair[0][0], Ft_ctf=partial_pair[0][1])
-        else:
-            mstep = mstep._replace(Ft_y=slot_y, Ft_ctf=slot_ctf)
-        class_blocks, first_block, n_blocks = _slot_mstep_blocks(blocks, slot_index, spec=spec)
-        def block(block_index, carry_in, _blocks=class_blocks, _first=first_block):
-            return _resident_mstep_block_at(
-                (_first + block_index) * block_rows,
-                _blocks,
-                operands,
-                tables,
-                carry_in,
-                spec=spec,
-                cuda_backproject=cuda_backproject,
-            )
-
-        if partial_pair:
-            mstep, slot_y, slot_ctf = flushed_block_loop(
-                n_blocks,
-                block,
-                mstep,
-                slot_y,
-                slot_ctf,
-                flush_blocks=blocks_per_flush(block_rows),
-                get_pair=lambda carry_in: (carry_in.Ft_y, carry_in.Ft_ctf),
-                set_pair=lambda carry_in, y, ctf: carry_in._replace(Ft_y=y, Ft_ctf=ctf),
-            )
-            partial_pair = [(mstep.Ft_y, mstep.Ft_ctf)]
-        else:
-            mstep = jax.lax.fori_loop(0, n_blocks, block, mstep)
-            slot_y, slot_ctf = mstep.Ft_y, mstep.Ft_ctf
-        if mstep.scale_xa_per_image is not None:
-            # Slot ``class + K * group``: the scale sums are masked by the slot's class.
-            mstep = _fold_class_scale_sums(
-                mstep, tables.wavg_scale_pixel_mask, slot_index % int(spec.n_classes)
-            )
-        Ft_y_out.append(slot_y)
-        Ft_ctf_out.append(slot_ctf)
-    mstep = _add_chunk_wavg_image_power(
-        mstep, operands, tables, posterior.row_posterior, posterior.kernel_row_image_ids, spec=spec
-    )
-    stats = _resident_chunk_statistics(
-        stats, rows, operands, tables, posterior, mstep, spec=spec
-    )
-    return (tuple(Ft_y_out), tuple(Ft_ctf_out), stats, *partial_pair)
-
-
-def _chunk_carry(Ft_y_total, Ft_ctf_total, stats, row_partial: RowPartial | None) -> tuple:
-    """The fused chunk program's carry: the totals and statistics, then the pass's partial pair if it has one."""
-
-    if row_partial is None:
-        return Ft_y_total, Ft_ctf_total, stats
-    return Ft_y_total, Ft_ctf_total, stats, (row_partial.y, row_partial.ctf)
-
-
 # Divisors of the M-step block for classes with few live rows. The pixel-axis
 # block costs in proportion to its rows whether or not they carry weight, and
 # at 50k/256 one class of a chunk has about 40 live rows against a 2048-row
@@ -8506,15 +8313,13 @@ def _run_resident_chunk_stages(
     timing_hook=None,
     row_partial: RowPartial | None = None,
 ):
-    """Per-stage oracle: the same stages, dispatched one at a time.
+    """The chunk's stages, dispatched one at a time.
 
     The host block loop reads each accumulator slot's live row range back from
     the device once per chunk (:func:`_make_mstep_block_inputs`), so it
     launches only the blocks that carry weight.
 
-    Kept selectable by ``RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT=0`` so the
-    fused program can be compared against the path it replaces inside one
-    process. ``timing_hook(name)`` is called after each stage when the chunk
+    ``timing_hook(name)`` is called after each stage when the chunk
     timing diagnostic is on; it synchronizes, so an arm that passes it is a
     diagnostic arm.
     """
@@ -8997,8 +8802,7 @@ def _run_resident_chunk(
     if submitted_keys is not None:
         submitted_keys.update(chunk_program_keys(chunk_program_path(), spec))
 
-    use_jit = _chunk_jit_enabled()
-    if deferred and not use_jit and not timing:
+    if deferred and not timing:
         front = _resident_chunk_stages_front(rows, operands, stage_tables, spec=spec)
 
         def finish(Ft_y_total, Ft_ctf_total, stats):
@@ -9013,46 +8817,36 @@ def _run_resident_chunk(
             )
 
         return finish
-    if use_jit:
-        Ft_y_total, Ft_ctf_total, stats, *partial_pair = _run_resident_chunk_program(
-            rows, operands, stage_tables, _chunk_carry(Ft_y_total, Ft_ctf_total, stats, row_partial), spec=spec
-        )
-        if partial_pair:
-            row_partial.y, row_partial.ctf = partial_pair[0]
-    else:
-        def timing_hook(name, value):
-            jax.block_until_ready(value)
-            stage_t[name] = time.time() - chunk_t0
 
-        Ft_y_total, Ft_ctf_total, stats = _run_resident_chunk_stages(
-            rows,
-            operands,
-            stage_tables,
-            (Ft_y_total, Ft_ctf_total, stats),
-            spec=spec,
-            timing_hook=timing_hook if timing else None,
-            row_partial=row_partial,
-        )
+    def timing_hook(name, value):
+        jax.block_until_ready(value)
+        stage_t[name] = time.time() - chunk_t0
+
+    Ft_y_total, Ft_ctf_total, stats = _run_resident_chunk_stages(
+        rows,
+        operands,
+        stage_tables,
+        (Ft_y_total, Ft_ctf_total, stats),
+        spec=spec,
+        timing_hook=timing_hook if timing else None,
+        row_partial=row_partial,
+    )
 
     if timing:
         jax.block_until_ready((Ft_y_total, Ft_ctf_total, stats.wsum_sigma2_noise))
         total = time.time() - chunk_t0
         operands_s = stage_t.get("operands", 0.0)
-        if use_jit:
-            split = "program=%.3fs" % (total - operands_s)
-        else:
-            posterior_end = stage_t.get("posterior", operands_s)
-            mstep_end = stage_t.get("mstep", total)
-            split = "score+posterior=%.3fs mstep=%.3fs statistics=%.3fs" % (
-                posterior_end - operands_s,
-                mstep_end - posterior_end,
-                total - mstep_end,
-            )
+        posterior_end = stage_t.get("posterior", operands_s)
+        mstep_end = stage_t.get("mstep", total)
+        split = "score+posterior=%.3fs mstep=%.3fs statistics=%.3fs" % (
+            posterior_end - operands_s,
+            mstep_end - posterior_end,
+            total - mstep_end,
+        )
         blocks = sum(1 for s in range(0, chunk.row_capacity, int(mstep_block_rows)) if s < chunk.n_valid_rows)
         logger.info(
-            "Resident pass-2 chunk timing: jit=%d images=%d/%d rows=%d/%d occupancy=%.3f "
+            "Resident pass-2 chunk timing: images=%d/%d rows=%d/%d occupancy=%.3f "
             "mstep_blocks=%d/%d projections=%.3fs operands=%.3fs %s total=%.3fs",
-            int(use_jit),
             chunk.n_valid_images, chunk.image_capacity, chunk.n_valid_rows, chunk.row_capacity,
             chunk.n_valid_rows / max(chunk.row_capacity, 1),
             blocks, chunk.row_capacity // int(mstep_block_rows),
@@ -9313,7 +9107,6 @@ def run_resident_mstep_blocks(
         use_translate_sum_kernel=use_translate_sum_kernel,
         bpref_recon_operand=use_translate_sum_kernel and recon.get("recon_weight") is not None,
         kernel_ctf_probs=use_translate_sum_kernel and _kernel_ctf_probs_enabled(),
-        static_block_trip=False,
     )
     operands = _ChunkStageOperands(
         score_input=None,

@@ -657,8 +657,8 @@ backprojected on its own is scattered into a zeroed partial pair, which is added
 `flushed_block_loop` and `blocks_per_flush` in
 [`half_volume_mstep.py`](../../relax/reconstruction/half_volume_mstep.py)). No accumulator is double. The
 switch is read once per pass, when the pass allocates its accumulators; without it nothing is allocated and
-the four row-block loops run as before: `_resident_chunk_stages_finish` and `_run_resident_chunk_program`
-in [`fine_pass/resident_pass2.py`](../../relax/fine_pass/resident_pass2.py), `_tilt_mstep_program` in
+the three row-block loops run as before: `_resident_chunk_stages_finish` in
+[`fine_pass/resident_pass2.py`](../../relax/fine_pass/resident_pass2.py), `_tilt_mstep_program` in
 [`resident_tilts.py`](../../relax/fine_pass/resident_tilts.py) (a row is one tilt image there) and
 `run_resident_mstep_blocks` (local searches and the final pass, from
 [`local_search/resident_pass2.py`](../../relax/local_search/resident_pass2.py)). The flush points are a
@@ -686,8 +686,7 @@ pairs: 309 s against 309 s for three iterations of the 5k cold start and 786 s a
 box-256 refinement to convergence. Converged runs are trajectory-sensitive: one particle crossing the coarse
 significance threshold separates two runs by 1e-2 in map FSC-AUC twelve iterations later, between two RELION
 runs as between relax and RELION, so the switch gives agreement at matched iterations, not identical
-converged maps. The opt-in fused chunk program does not run (relax#76); its loop is checked by the CPU
-stand-in tests in `tests/unit/test_row_partial_accumulator.py` only.
+converged maps.
 
 [`numbered_reconstruction.py`](../../relax/refinement/numbered_reconstruction.py) owns the numbered K1
 and class reconstruction operations (`reconstruct_numbered_k1_halfmaps` and

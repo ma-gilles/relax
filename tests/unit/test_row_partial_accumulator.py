@@ -75,10 +75,8 @@ class _Spec:
     mstep_block_rows: int = BLOCK_ROWS
     n_slots: int = 1
     n_classes: int = 1
-    static_block_trip: bool = False
     row_capacity: int = N_ROWS
     presum_adjoint: bool = False
-    tag: str = ""  # a fresh value keys a fresh program for each test's stand-ins
 
 
 def _stage_driver(monkeypatch, weights, row_partial):
@@ -115,51 +113,6 @@ def _stage_driver(monkeypatch, weights, row_partial):
         row_partial=row_partial,
     )
     return Ft_y_out[0], Ft_ctf_out[0]
-
-
-def _fused_driver(monkeypatch, weights, with_partial, tag):
-    """The opt-in fused chunk program over one slot holding every row."""
-
-    n_rows = int(weights.shape[0])
-
-    def block_at(start, blocks, operands, tables, carry, *, spec, cuda_backproject):
-        return _add_rows(carry, jax.lax.dynamic_slice_in_dim(operands, start, BLOCK_ROWS))
-
-    def block_inputs(rows, posterior, *, n_slots):
-        return rp._MstepBlockInputs(
-            row_image_local=None,
-            kernel_row_image_ids=None,
-            row_posterior=None,
-            row_fine_rot=None,
-            projections=None,
-            slot_offsets=jnp.asarray([0, n_rows], jnp.int32),
-        )
-
-    monkeypatch.setattr(
-        rp,
-        "_resident_chunk_posterior",
-        lambda *a, **k: types.SimpleNamespace(row_posterior=None, kernel_row_image_ids=None),
-    )
-    monkeypatch.setattr(rp, "_make_mstep_block_inputs", block_inputs)
-    monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
-    monkeypatch.setattr(rp, "_initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
-    monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
-    monkeypatch.setattr(rp, "_resident_chunk_statistics", lambda stats, *a, **k: stats)
-    Ft_y, Ft_ctf = _totals()
-    row_partial = hvm.RowPartial(VOLUME, jnp.complex64, jnp.float32) if with_partial else None
-    out = rp._run_resident_chunk_program(
-        None,
-        jnp.asarray(weights),
-        None,
-        rp._chunk_carry((Ft_y,), (Ft_ctf,), jnp.zeros(()), row_partial),
-        spec=_Spec(row_capacity=n_rows, tag=tag),
-    )
-    assert len(out) == (4 if with_partial else 3)
-    if with_partial:
-        assert not np.any(np.asarray(out[3][0])) and not np.any(np.asarray(out[3][1])), (
-            "the partial leaves a chunk zeroed"
-        )
-    return out[0][0], out[1][0]
 
 
 def _local_driver(monkeypatch, weights, row_partial):
@@ -232,7 +185,7 @@ def test_flush_size_is_a_static_block_count():
 def test_flushed_float32_total_matches_the_float64_sum_where_one_accumulator_does_not(monkeypatch):
     """4.2M heavy-tailed rows: one float32 accumulator is off by more than 1e-3, the flushed one by less than 1e-6.
 
-    Every production driver is run on the same rows, with and without the pass's partial pair.
+    The per-stage and local drivers are run on the same rows, with and without the pass's partial pair.
     """
 
     weights = _weights()
@@ -244,9 +197,6 @@ def test_flushed_float32_total_matches_the_float64_sum_where_one_accumulator_doe
 
     drivers = {
         "per-stage": lambda partial: _stage_driver(monkeypatch, weights, partial),
-        "fused": lambda partial: _fused_driver(
-            monkeypatch, weights, partial is not None, tag=f"loss-{partial is not None}"
-        ),
         "local": lambda partial: _local_driver(monkeypatch, weights, partial),
     }
     for name, run in drivers.items():
@@ -269,12 +219,6 @@ def test_a_chunk_smaller_than_the_flush_size_is_the_direct_accumulation(monkeypa
     weights = _weights(n_blocks * BLOCK_ROWS)
     for name, run in (
         ("per-stage", lambda partial: _stage_driver(monkeypatch, weights, partial)),
-        (
-            "fused",
-            lambda partial: _fused_driver(
-                monkeypatch, weights, partial is not None, tag=f"small-{n_blocks}-{partial is not None}"
-            ),
-        ),
         ("local", lambda partial: _local_driver(monkeypatch, weights, partial)),
     ):
         direct = run(None)
@@ -349,13 +293,30 @@ def test_pairs_above_the_size_rule_get_no_partial(caplog, monkeypatch):
     assert 515 * 515 * 258 * pair_itemsize < hvm.ROW_PARTIAL_MAX_PAIR_BYTES < 1603 * 1603 * 802 * pair_itemsize
 
 
-def test_projection_sums_carry_no_partial():
-    """A pass that sums rows per projection (K>1) backprojects once per pass: its fused carry has three entries."""
+def test_the_traced_flush_loop_flushes_at_the_same_blocks_as_the_host_one():
+    """``flushed_block_loop`` (the tilt program's form) gives the NumPy partials-of-32,768-rows sum, bit for bit."""
 
-    assert rp._chunk_carry("y", "ctf", "stats", None) == ("y", "ctf", "stats")
-    row_partial = _partial()
-    carry = rp._chunk_carry("y", "ctf", "stats", row_partial)
-    assert carry[:3] == ("y", "ctf", "stats") and carry[3][0] is row_partial.y and carry[3][1] is row_partial.ctf
+    weights = _weights(1 << 20)
+    _, flushed32 = _float32_references(weights, hvm.ROW_PARTIAL_FLUSH_ROWS)
+    rows = jnp.asarray(weights)
+
+    def block(index, carry):
+        return _add_rows(carry, jax.lax.dynamic_slice_in_dim(rows, index * BLOCK_ROWS, BLOCK_ROWS))
+
+    carry, total_y, total_ctf = jax.jit(
+        lambda carry, total_y, total_ctf: hvm.flushed_block_loop(
+            jnp.int32(weights.size // BLOCK_ROWS),
+            block,
+            carry,
+            total_y,
+            total_ctf,
+            flush_blocks=hvm.blocks_per_flush(BLOCK_ROWS),
+            get_pair=lambda c: (c.Ft_y, c.Ft_ctf),
+            set_pair=lambda c, y, ctf: c._replace(Ft_y=y, Ft_ctf=ctf),
+        )
+    )(_carry(*_totals()), *_totals())
+    assert np.asarray(total_ctf)[0] == flushed32
+    assert not np.any(np.asarray(carry.Ft_ctf)) and not np.any(np.asarray(carry.Ft_y)), "the partial is left zeroed"
 
 
 @pytest.mark.parametrize("merge_row_partials", [False, True])

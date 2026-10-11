@@ -11,8 +11,6 @@ default band, while maps and noise sums change reduction order.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -172,20 +170,6 @@ def test_mstep_block_inputs_one_class_is_its_live_rows():
     blocks = _block_inputs(host, chunk, [(1, 2), (4, 0)], n_classes=1)
     assert_matches(np.asarray(blocks.slot_offsets), [0, 2])
     assert (np.asarray(blocks.row_fine_rot)[:2] - 100).tolist() == [1, 4]
-
-
-def test_slot_mstep_blocks_cover_each_slot_once():
-    """Every slot's live rows lie in its blocks; a boundary block is shared, not skipped."""
-
-    spec = SimpleNamespace(mstep_block_rows=4, static_block_trip=False, row_capacity=32, n_slots=2)
-    blocks = rp._MstepBlockInputs(None, None, None, None, None, slot_offsets=jnp.asarray([0, 9, 20], jnp.int32))
-    covered = []
-    for k in range(2):
-        class_blocks, first, n_blocks = rp._slot_mstep_blocks(blocks, k, spec=spec)
-        lo, hi = (int(v) for v in np.asarray(class_blocks.class_row_range))
-        starts = [(int(first) + i) * 4 for i in range(int(n_blocks))]
-        covered.append([r for s in starts for r in range(s, s + 4) if lo <= r < hi])
-    assert covered[0] == list(range(0, 9)) and covered[1] == list(range(9, 20))
 
 
 def test_live_block_spec_picks_the_smallest_block_holding_the_live_rows():

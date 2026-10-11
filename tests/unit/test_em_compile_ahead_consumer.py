@@ -329,19 +329,13 @@ class _Noop:
 
 
 def test_the_warm_up_reads_the_same_path_decision_as_the_chunk_loop(monkeypatch):
-    """The fused chunk program is opt-in; production runs the per-stage path.
+    """Production runs the per-stage path; `chunk_program_path` is the single statement both sides read.
 
-    The warm-up warmed the fused program regardless until 2026-09-20, so under
-    the production flag set it compiled three programs per capacity class that
-    the loop never called and bought nothing. `chunk_program_path` is the single
-    statement both sides now read.
+    The warm-up once warmed a fused chunk program (removed in relax#76) regardless of the path the loop
+    took, so it compiled programs the loop never called and bought nothing.
     """
 
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "1")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
-    assert rp.chunk_program_path() == "fused"
-
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "0")
     assert rp.chunk_program_path() == "per-stage"
 
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
@@ -349,16 +343,18 @@ def test_the_warm_up_reads_the_same_path_decision_as_the_chunk_loop(monkeypatch)
 
 
 def test_the_default_path_is_the_one_production_runs(monkeypatch):
-    """No flags set: the fused program is off, so the per-stage path is it."""
+    """No flags set: the per-stage path, and there is no fused chunk program to select (relax#76)."""
 
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT", raising=False)
-    assert rp._chunk_jit_enabled() is False
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", raising=False)
+    assert rp.chunk_program_path() == "per-stage"
+    assert not hasattr(rp, "_run_resident_chunk_program") and not hasattr(rp, "_chunk_jit_enabled")
+    with pytest.raises(ValueError, match="unknown chunk program path"):
+        rp.chunk_programs_for_path("fused")
 
 
 def test_nothing_is_queued_when_there_is_no_program_to_warm(monkeypatch):
     """The eager path submits no program, so the warm-up must submit no job."""
 
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT", "0")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
 
     class Refuse:
@@ -389,7 +385,7 @@ def test_nothing_is_queued_when_there_is_no_program_to_warm(monkeypatch):
 def test_every_program_a_runner_submits_is_one_the_warm_up_warms():
     """The list the warm-up reads must match what the runners actually call.
 
-    The warm-up warmed the fused chunk program while the per-stage runner was
+    The warm-up once warmed a fused chunk program (since removed) while the per-stage runner was
     the one submitting, for a whole commit. Nothing failed; the option simply
     bought nothing, and it took reading a compile census to notice. This reads
     the program names each runner references straight out of its bytecode and
@@ -400,13 +396,12 @@ def test_every_program_a_runner_submits_is_one_the_warm_up_warms():
         return {n for fn in fns for n in fn.__code__.co_names if n.endswith("_program")}
 
     # The per-stage runner is its front and finish halves (the pipelined loop
-    # calls them separately); the fused runner is one program.
+    # calls them separately).
     for path, runners in (
         (
             "per-stage",
             (rp._run_resident_chunk_stages, rp._resident_chunk_stages_front, rp._resident_chunk_stages_finish),
         ),
-        ("fused", (rp._run_resident_chunk,)),
     ):
         warmed = {f.__name__ for f in rp.chunk_programs_for_path(path)}
         assert warmed == referenced(*runners), (path, warmed, referenced(*runners))
@@ -447,10 +442,8 @@ def test_a_program_key_is_the_function_and_its_static_argument():
     }
 
 
-def test_the_fused_path_has_one_key_and_the_eager_path_none():
-    spec = _Spec("s")
-    assert len(rp.chunk_program_keys("fused", spec)) == 1
-    assert rp.chunk_program_keys("eager", spec) == frozenset()
+def test_the_eager_path_has_no_key():
+    assert rp.chunk_program_keys("eager", _Spec("s")) == frozenset()
 
 
 # --------------------------------------------- the spec prediction's unit ---
@@ -622,14 +615,14 @@ def test_the_environment_fields_are_read_by_the_constructor(monkeypatch):
     get two different values is to change the environment mid-iteration.
     """
 
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS", "0")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS", "0")
     one = rp._make_chunk_program_spec(
         row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
     )
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS", "1")
     two = rp._make_chunk_program_spec(
         row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
     )
-    assert one.static_block_trip != two.static_block_trip
+    assert one.kernel_ctf_probs != two.kernel_ctf_probs

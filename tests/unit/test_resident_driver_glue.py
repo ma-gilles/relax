@@ -56,7 +56,6 @@ def _spec(**overrides):
         use_translate_sum_kernel=False,
         bpref_recon_operand=False,
         kernel_ctf_probs=False,
-        static_block_trip=False,
     )
     kwargs.update(overrides)
     return rp._ChunkProgramSpec(**kwargs)
