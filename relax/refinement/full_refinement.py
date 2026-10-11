@@ -401,6 +401,7 @@ def main(command=None):
     job = command_options.resolve_job_defaults(args)
     relion_half_sets_from_input = command_options.resolve_standalone_k1_start(args)
     command_options.validate_sigma_ang(args)
+    command_options.validate_sigma_tilt(args)
     command_options.validate_strict_highres_exp(args)
     if (
         args.state_swap_target_relion_iteration is not None
@@ -1220,6 +1221,7 @@ def main(command=None):
                 offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
                 perturbation_factor=float(args.perturb_factor),
                 padding_factor=float(geometry.RECONSTRUCTION_PADDING_FACTOR),
+                sigma_tilt_deg=float(args.sigma_tilt or 0.0) if args.sigma_ang is None else 0.0,
                 do_solvent_fsc=bool(args.solvent_correct_fsc),
                 solvent_mask_name="None" if args.solvent_mask is None else str(args.solvent_mask),
                 command_line=" ".join(sys.orig_argv),

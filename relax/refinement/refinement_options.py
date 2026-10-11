@@ -328,6 +328,9 @@ class LocalSearchOptions:
     auto_local_healpix_order: int = LOCAL_SEARCH_HEALPIX_ORDER
     # RELION --sigma_ang in degrees: local angular searches from iteration 1 (None: global until the order above).
     sigma_ang_deg: float | None = None
+    # RELION --sigma_tilt in degrees: a prior on the tilt angle alone until the order above (None: no prior).
+    # Not with --sigma_ang, which sets all three widths and wins, as in relion_refine.
+    sigma_tilt_deg: float | None = None
     local_search_profile_mode: Literal["auto", "on", "off"] = "auto"
     # A probe run of the first local-search iteration: it returns after that iteration's expectation, with no
     # reconstruction (RefinementResult.profile_stop). ``..._profile`` also collects the search's profile;
@@ -336,6 +339,21 @@ class LocalSearchOptions:
     stop_after_local_search_profile: bool = False
     stop_after_local_search: bool = False
     stop_after_local_search_score_only: bool = False
+
+    def tilt_prior_deg(self, do_local_search: bool) -> float:
+        """Width in degrees of RELION's ``--sigma_tilt`` prior on the tilt angle alone this iteration; 0: none.
+
+        relion_refine holds ``sigma2_rot == sigma2_psi == 0 < sigma2_tilt`` from parseInitial until
+        updateAngularSampling reaches ``--auto_local_healpix_order``, where all three widths become twice
+        the angular step (ml_optimiser.cpp:9923-9931): the local search (``do_local_search``, the run
+        state's) then replaces the tilt prior for good. ``--sigma_ang`` sets all three widths and the tilt
+        width is not read (ml_optimiser.cpp:739-752). The width is run-constant, so it is an option and not
+        run state; degrees as given, since RELION compares angular distances in degrees with three widths
+        (docs/math/relion_refinement_algorithm.md, "A prior on the tilt angle alone").
+        """
+        if self.sigma_tilt_deg is None or self.sigma_ang_deg is not None or do_local_search:
+            return 0.0
+        return float(self.sigma_tilt_deg)
 
     @property
     def stops_after_local_search(self) -> bool:

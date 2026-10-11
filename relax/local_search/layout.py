@@ -506,6 +506,46 @@ def _chunk_local_supports(values, candidates, to_distance, cutoff_deg, sigma_deg
     return image, point.astype(np.int64), log_prior
 
 
+def _tilt_prior_direction_supports(prior_tilt_deg, grid_tilt_deg, mate_tilt_deg, cutoff_deg, sigma_deg):
+    """Each image's directions under a prior on the tilt angle alone, as ``(image, point, log_prior)``.
+
+    RELION's ``sigma_rot == 0 < sigma_tilt`` branch of
+    ``HealpixSampling::selectOrientationsWithNonZeroPriorProbability`` (healpix_sampling.cpp:841-879): a
+    direction's distance from the prior is ``|tilt - prior_tilt|`` (``|d - 360|`` above 180), the smallest
+    over the direction itself (its grid tilt, ``grid_tilt_deg``) and its symmetry mates
+    (``mate_tilt_deg[m]``, the tilt ``Euler_direction2angles`` gives mate ``m``); directions below
+    ``sigma_cutoff * sigma_tilt`` are kept with ``gaussian1D(distance, sigma_tilt)``, normalized to sum 1.
+
+    An image that keeps no direction keeps one with prior 1 (healpix_sampling.cpp:937-952). RELION names
+    it ``best_idir``, tracked with ``if (best_diffang < best_ang) {best_idir = idir; best_ang = diffang;}``:
+    the stored ``best_ang`` is the distance of the direction's last symmetry mate, not its smallest, so
+    with symmetry it is not always the nearest direction. That scan is reproduced as written.
+    """
+
+    prior_tilt_deg = np.asarray(prior_tilt_deg, dtype=np.float64).reshape(-1)
+
+    def wrapped(tilt):
+        diff = np.abs(np.asarray(tilt, dtype=np.float64)[None, :] - prior_tilt_deg[:, None])
+        return np.where(diff > 180.0, np.abs(diff - 360.0), diff)
+
+    own = wrapped(grid_tilt_deg)
+    best = own
+    last = own
+    for mate in mate_tilt_deg:
+        last = wrapped(mate)
+        best = np.minimum(best, last)
+    image, point, log_prior = _chunk_local_supports(best, None, None, cutoff_deg, sigma_deg)
+    kept = np.bincount(image, minlength=prior_tilt_deg.shape[0])
+    # _chunk_local_supports gave an image without a kept direction its nearest one; RELION's scan differs.
+    for row in np.flatnonzero((kept == 1) & ~(best < cutoff_deg).any(axis=1)):
+        best_idir, best_ang = -1, 9999.0
+        for idir in range(best.shape[1]):
+            if best[row, idir] < best_ang:
+                best_idir, best_ang = idir, last[row, idir]
+        point[np.flatnonzero(image == row)[0]] = best_idir
+    return image, point, log_prior
+
+
 def _chunk_uniform_supports(n_images: int, n_points: int, *, dtype):
     """Every grid point for every image with a uniform log prior, as ``(image, point, log_prior)``."""
 
@@ -546,8 +586,19 @@ def _build_factorized_local_entries(
     grid_metadata,
     *,
     dtype: np.dtype = np.float32,
+    sigma_tilt_deg: float = 0.0,
+    prior_tilt_deg: np.ndarray | None = None,
 ):
-    """Build exact per-image local supports for factorized HEALPix x psi grids."""
+    """Build exact per-image local supports for factorized HEALPix x psi grids.
+
+    ``sigma_rot`` is the width of the prior on the direction (RELION's ``sigma_rot == sigma_tilt``) and
+    ``sigma_psi`` of the in-plane angle; a zero width keeps every point of that axis with a uniform prior.
+    ``sigma_tilt_deg`` (with ``sigma_rot == 0``) is RELION's prior on the tilt angle alone, centred on
+    ``prior_tilt_deg`` per image (:func:`_tilt_prior_direction_supports`; ``--sigma_tilt``,
+    docs/math/relion_refinement_algorithm.md, "A prior on the tilt angle alone"). It is in degrees, the value the user gave: RELION compares
+    distances in degrees with ``3 * sigma_tilt``, HEALPix rings sit on that boundary for round widths,
+    and a radian round trip moves the boundary by one ulp.
+    """
 
     prior_eulers, prior_rotation_mats = _resolve_prior_rotations(prior_rotations, healpix_order, grid_metadata)
     dir_vecs = np.asarray(grid_metadata["dir_vecs"], dtype=np.float64)
@@ -564,6 +615,24 @@ def _build_factorized_local_entries(
 
     sigma_rot_deg = float(np.rad2deg(sigma_rot))
     sigma_psi_deg = float(np.rad2deg(sigma_psi))
+    sigma_tilt_deg = float(sigma_tilt_deg)
+    if sigma_tilt_deg > 0.0:
+        if sigma_rot_deg > 0.0:
+            # RELION's cone for both widths uses max(sigma_rot, sigma_tilt); this module has them equal.
+            raise NotImplementedError("a tilt prior with a separate rot prior is not implemented")
+        if prior_tilt_deg is None or np.shape(prior_tilt_deg) != (int(prior_eulers.shape[0]),):
+            raise ValueError("a tilt prior needs one prior tilt angle per image")
+        grid_tilt_deg = np.asarray(grid_metadata["tilt_deg"], dtype=np.float64)
+        # RELION's symmetry mates of a direction d are (d^T R)^T for the non-identity operators, in SymList
+        # order; Euler_direction2angles gives a mate the tilt acos(z).
+        mate_tilt_deg = (
+            []
+            if symmetry_operators is None
+            else [
+                np.rad2deg(np.arccos(np.clip(dir_vecs @ operator[:, 2], -1.0, 1.0)))
+                for operator in symmetry_operators[1:]
+            ]
+        )
     # RELION widens the direction cone with max(sigma_rot, sigma_tilt).
     # In this SPA path sigma_tilt == sigma_rot; sigma_psi only controls
     # in-plane support and must not widen directions.
@@ -584,9 +653,12 @@ def _build_factorized_local_entries(
         n_images,
         n_pixels,
         int(grid_metadata["n_psi"]),
-        sigma_rot_deg > 0.0,
+        sigma_rot_deg > 0.0 or sigma_tilt_deg > 0.0,
         sigma_psi_deg > 0.0,
     )
+    if sigma_tilt_deg > 0.0:
+        # The tilt distances are held once per symmetry mate.
+        chunk_size = max(1, chunk_size // (len(mate_tilt_deg) + 2))
     running_offset = 0
     # Without symmetry the direction cone is searched in the grid's latitude
     # band (_direction_cone_candidates) instead of against every direction.
@@ -644,6 +716,14 @@ def _build_factorized_local_entries(
                 cutoff_dir_deg,
                 biggest_sigma_deg,
             )
+        elif sigma_tilt_deg > 0.0:
+            dir_image, dir_ids, dir_log_prior = _tilt_prior_direction_supports(
+                np.asarray(prior_tilt_deg, dtype=np.float64)[chunk_start:chunk_stop],
+                grid_tilt_deg,
+                mate_tilt_deg,
+                3.0 * sigma_tilt_deg,
+                sigma_tilt_deg,
+            )
         else:
             dir_image, dir_ids, dir_log_prior = _chunk_uniform_supports(n_chunk, n_pixels, dtype=dtype)
         if sigma_psi_deg > 0.0:
@@ -684,6 +764,8 @@ def _build_parent_expanded_local_entries(
     generate_relion_mstep_rotations: bool = False,
     dtype: np.dtype = np.float32,
     symmetry: str = "C1",
+    sigma_tilt_deg: float = 0.0,
+    prior_tilt_deg: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
     """Build RELION-style local support by expanding selected coarse parents.
 
@@ -721,6 +803,8 @@ def _build_parent_expanded_local_entries(
         sigma_psi,
         parent_metadata,
         dtype=dtype,
+        sigma_tilt_deg=sigma_tilt_deg,
+        prior_tilt_deg=prior_tilt_deg,
     )
 
     n_images = int(parent_counts.shape[0])
@@ -1015,8 +1099,14 @@ def build_local_hypothesis_layout(
     rotation_grid_mstep_rotations: np.ndarray | None = None,
     generate_relion_mstep_rotations: bool = False,
     dtype: np.dtype = np.float32,
+    sigma_tilt_deg: float = 0.0,
+    prior_tilt_deg: np.ndarray | None = None,
 ) -> LocalHypothesisLayout:
     """Build exact per-image local neighborhoods and translation priors.
+
+    ``sigma_tilt_deg`` with ``prior_tilt_deg`` (and ``sigma_rot == sigma_psi == 0``) is RELION's prior on
+    the tilt angle alone (``--sigma_tilt``, in degrees as given): every in-plane angle and the directions
+    within three widths of the image's prior tilt (:func:`_tilt_prior_direction_supports`).
 
     ``dtype`` controls the precision of every rotation/translation/prior
     array built here (default float32, matching RELION's accelerated-GPU
@@ -1075,6 +1165,8 @@ def build_local_hypothesis_layout(
             generate_relion_mstep_rotations=generate_relion_mstep_rotations,
             dtype=dtype,
             symmetry=symmetry,
+            sigma_tilt_deg=sigma_tilt_deg,
+            prior_tilt_deg=prior_tilt_deg,
         )
     elif str(grid_metadata["mode"]) == "factorized":
         offsets, counts, rotation_ids_flat, rotation_log_priors_flat = _build_factorized_local_entries(
@@ -1084,8 +1176,12 @@ def build_local_hypothesis_layout(
             sigma_psi,
             grid_metadata,
             dtype=dtype,
+            sigma_tilt_deg=sigma_tilt_deg,
+            prior_tilt_deg=prior_tilt_deg,
         )
     else:
+        if float(sigma_tilt_deg) > 0.0:
+            raise NotImplementedError("a tilt prior needs the factorized HEALPix x psi grid")
         n_images = int(prior_rotations.shape[0])
         offsets = np.zeros(n_images + 1, dtype=np.int64)
         counts = np.zeros(n_images, dtype=np.int32)

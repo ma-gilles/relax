@@ -337,6 +337,7 @@ def load_particle_inputs(
     _double_image_preprocessing = parse_env_true_flag("RELAX_USE_FLOAT64_SCORING")
     particle_read_policy = ParticleReadPolicy.from_args(args)
     tomo_run = is_relion5_2d_stack_star(os.path.join(args.data_dir, "particles.star"))
+    command_options.validate_sigma_tilt_route(args, subtomograms=tomo_run)
     # A subtomogram particle STAR names no image stacks; load_tomo_dataset stages from its per-tilt STAR.
     particle_scratch = None if tomo_run else prepare_particle_reads(
         os.path.join(args.data_dir, "particles.star"), particle_read_policy

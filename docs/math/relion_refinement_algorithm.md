@@ -885,6 +885,68 @@ keep only each image's best hidden variable (ml_optimiser.cpp:9266-9292), as the
 does ([`compute_local_search_resident`](../../relax/local_search/resident_pass2.py) with
 `firstiter_cc`; relax#51).
 
+**A prior on the tilt angle alone (`--sigma_tilt`, subtomogram auto-refine).** For particles picked on
+a membrane or lattice the tilt of each particle is known roughly and its rot and in-plane angle are not.
+`relion_refine --sigma_tilt s` (with `rlnAngleTiltPrior` in the particle STAR; RELION's subtomogram
+tutorial runs its Refine3D with `--sigma_tilt 10` on priors of 90) restricts the otherwise global search
+to that tilt.
+
+- Parsing (`ml_optimiser.cpp:734-752`). `--sigma_ang > 0` sets all three widths and nothing else is read;
+  otherwise any of `--sigma_rot`, `--sigma_tilt`, `--sigma_psi` sets `PRIOR_ROTTILT_PSI` with the given
+  widths and 0 for the others. So `--sigma_tilt s` alone is `sigma2_rot = sigma2_psi = 0`,
+  `sigma2_tilt = s^2`, and `--sigma_tilt` next to `--sigma_ang` is ignored.
+  [`validate_sigma_ang`](../../relax/refinement/command_options.py) drops it with a warning;
+  the width is run-constant, so it stays an option
+  ([`LocalSearchOptions.tilt_prior_deg`](../../relax/refinement/refinement_options.py)) and adds nothing to
+  the run state or its files. relax has `--sigma_tilt` only, not `--sigma_rot` or `--sigma_psi`.
+- Centre (`ml_optimiser.cpp:5970-5995`, `acc_ml_optimiser_impl.h:130-170`). The particle's
+  `rlnAngleTiltPrior`; its current tilt where the label is absent (RELION's 999). RELION replaces a given
+  prior by the current angle only in a local angular search, which is auto-refine at or above
+  `--auto_local_healpix_order` or a classification with all three widths positive; with the tilt width
+  alone neither holds. [`tilt_prior_for_half`](../../relax/refinement/half_inputs.py).
+- Selection (`HealpixSampling::selectOrientationsWithNonZeroPriorProbability`,
+  `healpix_sampling.cpp:841-879`, the branch `sigma_rot == 0 < sigma_tilt`). For direction `d` of the
+  coarse grid with tilt `t_d`, the distance is
+
+  `delta_d = min over {d and its symmetry mates m} of wrap(|t_m - t_prior|)`, `wrap(x) = |x - 360|` for `x > 180`,
+
+  with `t_m = acos(z)` of the mate `(d^T R)^T` (`Euler_direction2angles`) for the group's non-identity
+  operators `R`. Directions with `delta_d < 3 s` are kept with weight
+  `exp(-delta_d^2 / (2 s^2))`, normalized to sum 1 over the kept directions. Every in-plane angle is kept
+  with weight `1 / n_psi`. A sample's orientation prior is the product, it replaces the model's
+  `pdf_direction` (`acc_ml_optimiser_impl.h:1968-1971`), and the oversampled children of a kept sample
+  inherit it. The comparison is in degrees against `3 s` with `s` as typed: HEALPix rings sit on that
+  boundary for round values (tilt 60 and 120 for a prior of 90 with `s = 10` are a few ulp inside it), so
+  relax carries the width in degrees and never through radians.
+  If no direction is within `3 s`, RELION keeps one direction with prior 1: `best_idir` of a scan that
+  stores, as the distance to beat, the distance of the last symmetry mate of the current best direction
+  rather than its smallest; with symmetry that is not always the nearest direction. relax reproduces the
+  scan. [`_tilt_prior_direction_supports`](../../relax/local_search/layout.py), inside the selector the
+  local searches use ([`_build_factorized_local_entries`](../../relax/local_search/layout.py)), tested
+  against a direct transcription of RELION's loop
+  ([`tests/unit/test_tilt_prior_selection.py`](../../tests/unit/test_tilt_prior_selection.py)).
+- Search. Each particle is scored over its own kept orientations and every translation, with its own
+  prior, on the global sampling of the iteration. In relax that is the subtomogram local-search pass
+  given these lists instead of a neighbourhood
+  ([`tomo_local_rotations`](../../relax/refinement/tomo_half.py),
+  [`score_numbered_half`](../../relax/refinement/expectation.py)).
+- Auto-refine (`ml_optimiser.cpp:9923-9931`). When `updateAngularSampling` reaches
+  `--auto_local_healpix_order` all three widths become twice the angular step, so the tilt prior ends
+  there and the ordinary local search around each particle's current angles takes over
+  (`LocalSearchOptions.tilt_prior_deg` is 0 once `do_local_search` is on). Below that order the width
+  stays as given.
+- Written back: `rlnOrientationalPriorMode 1`, `rlnSigmaPriorRotAngle 0`, `rlnSigmaPriorTiltAngle s`,
+  `rlnSigmaPriorPsiAngle 0` in the model STARs while the prior is in force; the particles'
+  `rlnAngleTiltPrior` is an input column and is carried through unchanged.
+- Final iteration. Convergence sets `has_converged`, `do_join_random_halves` and `do_use_all_data` and
+  nothing of the prior or the sampling (`ml_optimiser.cpp:10152-10160`), so a run that converges below
+  `--auto_local_healpix_order` scores its final all-data iteration with the tilt prior on the same
+  sampling. [`run_final_all_data`](../../relax/refinement/finalization.py) does the same for
+  subtomograms (without the option that final pass has no orientation prior to use and is refused).
+- Not implemented, refused with a message: single-particle refinement and classification (their global
+  pass scores every particle on one shared grid) and subtomogram Class3D (its K-class pass has no
+  per-particle orientation lists and does not implement `--sigma_ang` either).
+
 **Class3D with `--sigma_ang` (K>1).** Every iteration is a local search of that width at the fixed HEALPix
 order, centred on each particle's previous best angles (the input STAR's at iteration 1). RELION scores
 every class at the particle's local orientations and normalizes over classes and poses jointly; in prior

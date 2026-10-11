@@ -439,7 +439,64 @@ def run_final_all_data(
             final_inputs = None  # the half preparation below is single-particle only
             # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the
             # previous poses), with the merged reference for both halves.
-            if not final_use_local:
+            # RELION's final iteration keeps the orientational prior the run converged with: a local search,
+            # or below --auto_local_healpix_order the --sigma_tilt prior on the global sampling
+            # (the convergence branch sets has_converged, do_join_random_halves and do_use_all_data and
+            # nothing of the prior or the sampling, ml_optimiser.cpp:10152-10160).
+            tilt_prior = half_inputs.tilt_prior_for_half(
+                half,
+                (options.start.init_angle_priors or (None, None))[half.index],
+                options.local_search.tilt_prior_deg(carry.state.do_local_search),
+            )
+            if final_use_local:
+                tomo_final_sampling = local_tomo_sampling(
+                    fine_order=final_local_sampling.search.healpix_order,
+                    oversampling_order=final_local_sampling.search.oversampling_order,
+                    translation_range_px=final_sampling.settings.translation_range,
+                    translation_step_px=final_sampling.settings.translation_step,
+                    voxel_size=image_geometry.pixel_size_angstrom,
+                    random_perturbation=final_local_sampling.perturbation,
+                    pass1_size=final_local_sampling.coarse_image_window_size,
+                    current_size=final_current_size,
+                )
+                tomo_final_search = dict(
+                    previous_eulers_deg=half.rotation_eulers,
+                    sigma_rot=final_local_sampling.search.sigma_rot,
+                    sigma_psi=final_local_sampling.search.sigma_psi,
+                )
+            elif tilt_prior is not None:
+                logger.info(
+                    "RELION final all-data iteration under the --sigma_tilt prior: healpix_order=%d, sigma_tilt=%g deg",
+                    final_sampling.settings.grid_order, tilt_prior.sigma_deg,
+                )
+                tomo_final_sampling = local_tomo_sampling(
+                    fine_order=final_sampling.settings.grid_order + carry.state.adaptive_oversampling,
+                    oversampling_order=carry.state.adaptive_oversampling,
+                    translation_range_px=final_sampling.settings.translation_range,
+                    translation_step_px=final_sampling.settings.translation_step,
+                    voxel_size=image_geometry.pixel_size_angstrom,
+                    random_perturbation=final_sampling.settings.random_perturbation,
+                    pass1_size=relion_coarse_image_size(
+                        healpix_angular_step(final_sampling.settings.grid_order),
+                        image_geometry.pixel_size_angstrom,
+                        image_geometry.box_size,
+                        particle_diameter=options.schedule.particle_diameter_ang,
+                        current_size=final_current_size,
+                    ),
+                    current_size=final_current_size,
+                )
+                tomo_final_search = dict(
+                    previous_eulers_deg=(
+                        np.zeros((half.dataset.n_units, 3), dtype=np.float64)
+                        if half.rotation_eulers is None
+                        else half.rotation_eulers
+                    ),
+                    sigma_rot=0.0,
+                    sigma_psi=0.0,
+                    sigma_tilt_deg=tilt_prior.sigma_deg,
+                    prior_tilt_deg=tilt_prior.centre_deg,
+                )
+            else:
                 raise NotImplementedError(
                     "a subtomogram final all-data pass without local search needs the global direction priors"
                 )
@@ -453,22 +510,9 @@ def run_final_all_data(
                     scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
                     scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
                 ),
-                use_adaptive=final_local_sampling.search.oversampling_order > 0,
-                sampling=local_tomo_sampling(
-                    fine_order=final_local_sampling.search.healpix_order,
-                    oversampling_order=final_local_sampling.search.oversampling_order,
-                    translation_range_px=final_sampling.settings.translation_range,
-                    translation_step_px=final_sampling.settings.translation_step,
-                    voxel_size=image_geometry.pixel_size_angstrom,
-                    random_perturbation=final_local_sampling.perturbation,
-                    pass1_size=final_local_sampling.coarse_image_window_size,
-                    current_size=final_current_size,
-                ),
-                local_search=dict(
-                    previous_eulers_deg=half.rotation_eulers,
-                    sigma_rot=final_local_sampling.search.sigma_rot,
-                    sigma_psi=final_local_sampling.search.sigma_psi,
-                ),
+                use_adaptive=tomo_final_sampling.oversampling_order > 0,
+                sampling=tomo_final_sampling,
+                local_search=tomo_final_search,
                 rotation_log_prior=None,
                 sigma_offset_angst=final_sigma_offset_k,
                 max_significants=options.adaptive.max_significants,

@@ -346,6 +346,49 @@ def _continued_run_seed(args) -> int:
     return seed
 
 
+def validate_sigma_tilt(args) -> None:
+    """Admit RELION's --sigma_tilt on the parsed command line: a positive width, not with --skip_align, and
+    dropped when --sigma_ang is given, as relion_refine does (call after ``validate_sigma_ang``)."""
+    if args.sigma_tilt is None:
+        return
+    if not args.sigma_tilt > 0:
+        raise SystemExit(f"--sigma_tilt must be positive, got {args.sigma_tilt}")
+    if getattr(args, "skip_align", False):
+        raise SystemExit("--sigma_tilt has no effect with --skip_align, which searches no orientations")
+    if args.sigma_ang is not None:
+        # parseInitial: `if (_sigma_ang > 0.) ... else if (_sigma_rot > 0. || _sigma_tilt > 0. || ...)`.
+        logger.warning(
+            "--sigma_tilt %g is ignored: --sigma_ang %g sets the width of all three angles, as in relion_refine",
+            args.sigma_tilt, args.sigma_ang,
+        )
+        args.sigma_tilt = None
+
+
+def validate_sigma_tilt_route(args, *, subtomograms: bool) -> None:
+    """Refuse --sigma_tilt on the routes that do not implement it (after ``validate_sigma_tilt``).
+
+    Called where the particle loader learns the route. The loader is also driven with argument records that
+    hold only the fields it reads (as its ``skip_align`` reads allow), so an absent ``sigma_tilt`` is no option.
+
+    The prior needs each particle's own orientation list in a search that is otherwise global. Subtomogram
+    auto-refine has that pass (the local-search coarse pass, relax.scoring.tomo_coarse). The single-particle
+    global pass and the K-class subtomogram pass score every particle on one shared grid.
+    """
+
+    if getattr(args, "sigma_tilt", None) is None:
+        return
+    if not subtomograms:
+        raise SystemExit(
+            "--sigma_tilt is implemented for subtomogram particles (RELION 5 2D stacks) only: the "
+            "single-particle global search has no per-particle orientation prior"
+        )
+    if int(args.n_classes) > 1:
+        raise SystemExit(
+            "--sigma_tilt is implemented for subtomogram auto-refine only: the subtomogram Class3D pass has no "
+            "per-particle orientation lists (it does not implement --sigma_ang either)"
+        )
+
+
 def validate_tomo_args(args, frozen_boundary, double_image_preprocessing):
     """Refuse options the subtomogram (2D-stack) path does not implement."""
 
@@ -461,6 +504,17 @@ def parse_refinement_args(argv=None):
         "angles (the input STAR's at iteration 1, 0 where absent). The GUI's 'Local angular search range' R "
         "is --sigma_ang R/3. Auto-refine replaces it by twice the angular step when the sampling is next "
         "refined at or above --auto_local_healpix_order. Default: none (global searches until that order).",
+    )
+    parser.add_argument(
+        "--sigma_tilt",
+        type=float,
+        default=None,
+        help="RELION --sigma_tilt: standard deviation in degrees of a Gaussian prior on the tilt angle alone, "
+        "centred on each particle's rlnAngleTiltPrior (its current tilt where absent): directions within "
+        "+/-3 sigma of that tilt, every rot and in-plane angle. For particles picked on a membrane or lattice "
+        "(RELION's subtomogram tutorial uses 10). Auto-refine replaces it by the local angular search at "
+        "--auto_local_healpix_order. Ignored with --sigma_ang, as in relion_refine. Implemented for "
+        "subtomogram auto-refine (relax refine). Default: none.",
     )
     parser.add_argument(
         "--offset_range", type=float, default=5.0,
@@ -1504,6 +1558,7 @@ def resolve_local_search(args) -> LocalSearchOptions:
     return LocalSearchOptions(
         auto_local_healpix_order=args.auto_local_healpix_order,
         sigma_ang_deg=args.sigma_ang,
+        sigma_tilt_deg=args.sigma_tilt,
         local_search_profile_mode=args.local_search_profile,
         stop_after_local_search_profile=bool(args.stop_after_local_search_profile),
         stop_after_local_search=bool(args.stop_after_local_search),

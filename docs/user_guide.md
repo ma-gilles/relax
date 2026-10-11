@@ -190,6 +190,9 @@ needs no `rlnRandomSubset` (the run draws the halves from `--seed`, as `relion_r
 tilt-series STARs without `rlnCtfScalefactor` or `rlnTomoXTilt` take RELION's defaults (1 and 0).
 As for single particles, `--firstiter_cc` (the default) starts with RELION's cross-correlation
 iteration; pass `--no-firstiter_cc` when the reference is on the images' greyscale.
+For particles picked on a membrane or lattice, `--sigma_tilt S` is RELION's prior on the tilt angle:
+the search keeps the directions within 3 S degrees of each particle's `rlnAngleTiltPrior` (RELION's
+tutorial uses `--sigma_tilt 10`), until auto-refine switches to local searches.
 
 ## Subtomogram 3D initial model (VDAM)
 

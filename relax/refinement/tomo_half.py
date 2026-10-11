@@ -496,8 +496,13 @@ def tomo_local_rotations(
     random_perturbation: float,
     voxel_size: float,
     symmetry: str = "C1",
+    sigma_tilt_deg: float = 0.0,
+    prior_tilt_deg=None,
 ) -> TomoLocalRotations:
     """Every particle's local orientations and log priors around its previous pose (subtomogram local search).
+
+    With ``sigma_tilt_deg`` (and zero ``sigma_rot`` and ``sigma_psi``) the orientations are those of RELION's
+    ``--sigma_tilt``: every rot and in-plane angle within three widths of the particle's ``prior_tilt_deg``.
 
     The single-particle local search's neighbourhoods (relax.local_search.layout.build_local_hypothesis_layout,
     RELION's selectOrientationsWithNonZeroPriorProbability) with the particle's subtomogram-frame angles;
@@ -525,6 +530,8 @@ def tomo_local_rotations(
         rotation_grid_random_perturbation=float(random_perturbation),
         rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(int(healpix_order), adaptive_oversampling=0),
         dtype=np.float32,
+        sigma_tilt_deg=float(sigma_tilt_deg),
+        prior_tilt_deg=prior_tilt_deg,
     )
     offsets = np.asarray(layout.rotation_offsets, dtype=np.int64)
     ids = np.asarray(layout.rotation_ids_flat, dtype=np.int64)

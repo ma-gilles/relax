@@ -216,6 +216,14 @@ def configure_half_image_preprocessing(
 
 
 @dataclass(frozen=True, kw_only=True)
+class TiltPrior:
+    """RELION's ``--sigma_tilt`` prior of one half: its width and each particle's centre, in degrees."""
+
+    sigma_deg: float
+    centre_deg: np.ndarray
+
+
+@dataclass(frozen=True, kw_only=True)
 class HalfScoringData:
     """Persistent particle half and the model operands for one expectation."""
 
@@ -229,6 +237,32 @@ class HalfScoringData:
     scale_group_count: int | None = None
     scale_correction_data_vs_prior: object | None = None
     image_seed_classes: object | None = None
+    tilt_prior: TiltPrior | None = None
+
+
+def tilt_prior_for_half(half, angle_priors, sigma_deg: float) -> TiltPrior | None:
+    """The half's prior on the tilt angle alone this iteration, or None when the iteration has none.
+
+    ``sigma_deg`` is the iteration's width (``LocalSearchOptions.tilt_prior_deg``; 0: none). relion_refine
+    centres the prior on the particle's ``rlnAngleTiltPrior`` and, where the label is absent (999), on the
+    particle's current tilt (``getFourierTransformsAndCtfs``, ml_optimiser.cpp:5970-5995: with only
+    ``sigma2_tilt`` positive neither the auto-refine nor the classification local-search condition holds,
+    so a given prior is never replaced by the current angle). ``angle_priors`` is the half's ``[N, 3]``
+    priors in degrees, NaN where absent, or None.
+    See docs/math/relion_refinement_algorithm.md, "A prior on the tilt angle alone".
+    """
+
+    if not sigma_deg > 0.0:
+        return None
+    n_particles = int(half.dataset.n_units)
+    current = (
+        np.zeros(n_particles, dtype=np.float64)  # absent angles are read as 0 (exp_model.cpp:1103-1134)
+        if half.rotation_eulers is None
+        else np.asarray(half.rotation_eulers, dtype=np.float64)[:, 1]
+    )
+    given = None if angle_priors is None else np.asarray(angle_priors, dtype=np.float64)[:, 1]
+    centre = current if given is None else np.where(np.isnan(given), current, given)
+    return TiltPrior(sigma_deg=float(sigma_deg), centre_deg=np.ascontiguousarray(centre, dtype=np.float64))
 
 
 def local_search_centre_half(half, angle_priors, state):

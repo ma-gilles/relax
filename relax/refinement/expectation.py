@@ -495,6 +495,11 @@ def numbered_half_inputs(
                 particles=half_inputs.local_search_centre_half(
                     halves[k], (options.start.init_angle_priors or (None, None))[k], carry.state
                 ),
+                tilt_prior=half_inputs.tilt_prior_for_half(
+                    halves[k],
+                    (options.start.init_angle_priors or (None, None))[k],
+                    options.local_search.tilt_prior_deg(carry.state.do_local_search),
+                ),
                 reference=reference_model.maps[k],
                 mean_variance=reference_model.half_tau2(k),
                 noise_variance=carry.noise_model.variance_per_half[k],
@@ -762,6 +767,8 @@ def score_numbered_half(
         if single_class_iteration
         else None
     )
+    if half.data.tilt_prior is not None and not tomo_halves:
+        raise NotImplementedError("--sigma_tilt is implemented for subtomogram particles only")
     if tomo_halves:
         score_result = _score_tomo_half_in_loop(
             half.data,
@@ -774,6 +781,20 @@ def score_numbered_half(
                     sigma_psi=sampling.search.sigma_psi,
                 )
                 if use_local
+                # RELION's --sigma_tilt below the local-search order: each particle's own orientations, every
+                # rot and psi within three widths of its prior tilt, on the otherwise global sampling.
+                else dict(
+                    previous_eulers_deg=(
+                        np.zeros((particle_half.dataset.n_units, 3), dtype=np.float64)
+                        if particle_half.rotation_eulers is None
+                        else particle_half.rotation_eulers
+                    ),
+                    sigma_rot=0.0,
+                    sigma_psi=0.0,
+                    sigma_tilt_deg=half.data.tilt_prior.sigma_deg,
+                    prior_tilt_deg=half.data.tilt_prior.centre_deg,
+                )
+                if half.data.tilt_prior is not None
                 else None
             ),
             rotation_log_prior=half.direction_priors.rotation_log_prior,

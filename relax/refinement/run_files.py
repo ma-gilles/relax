@@ -256,6 +256,9 @@ class RunSettings:
     # The command's --mode, recorded beside the consistency options it resolved to (a label; the
     # options are what a continuation must repeat). RELION's mode writes nothing.
     mode: str
+    # RELION --sigma_tilt in degrees when the run has the prior on the tilt angle alone (not under
+    # --sigma_ang); 0: none. Written to the model STARs until the local searches start.
+    sigma_tilt_deg: float = 0.0
 
 
 class RunFileWriter:
@@ -531,6 +534,8 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
         current_resolution if np.isfinite(current_resolution) and current_resolution > 0 else 999.0
     )
     halves = (None,) if snapshot.k_class else (1, 2)
+    # RELION's --sigma_tilt alone, while it is in force (LocalSearchOptions.tilt_prior_deg).
+    tilt_prior_deg = 0.0 if state["do_local_search"] else float(settings.sigma_tilt_deg)
     paths = []
     for half in halves:
         h = 0 if half is None else half - 1
@@ -556,9 +561,10 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             ("rlnTau2FudgeFactor", float(snapshot.tau2_fudge)),
             ("rlnNormCorrectionAverage", float(snapshot.avg_norm_correction[h]) / norm_frame),
             ("rlnSigmaOffsetsAngst", float(snapshot.sigma_offset_angstrom[h])),
-            ("rlnOrientationalPriorMode", 1 if state["do_local_search"] else 0),
+            # PRIOR_ROTTILT_PSI under a local search or the --sigma_tilt prior (sigma2_rot = sigma2_psi = 0).
+            ("rlnOrientationalPriorMode", 1 if state["do_local_search"] or tilt_prior_deg > 0.0 else 0),
             ("rlnSigmaPriorRotAngle", float(np.degrees(state["sigma_rot"]))),
-            ("rlnSigmaPriorTiltAngle", float(np.degrees(state["sigma_rot"]))),
+            ("rlnSigmaPriorTiltAngle", tilt_prior_deg if tilt_prior_deg > 0.0 else float(np.degrees(state["sigma_rot"]))),
             ("rlnSigmaPriorPsiAngle", float(np.degrees(state["sigma_psi"]))),
             ("rlnLogLikelihood", 0.0),
             ("rlnAveragePmax", float(state["ave_Pmax"])),

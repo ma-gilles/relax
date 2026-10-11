@@ -88,3 +88,15 @@ def write_relion_form(project, out, *, drop_random_subset: bool = True) -> Path:
         text = drop_loop_column(text, "particles", "_rlnRandomSubset")
     (out / "particles.star").write_text(text)
     return out
+
+
+def add_particle_column(text: str, label: str, values) -> str:
+    """The particle STAR ``text`` with column ``label`` appended to ``data_particles``, one value per row."""
+
+    lines = text.split("\n")
+    _, first, end = _loop(lines, "particles")
+    values = [str(value) for value in values]
+    if len(values) != end - first:
+        raise ValueError(f"{len(values)} values for {end - first} particle rows")
+    rows = [f"{line} {value}" for line, value in zip(lines[first:end], values, strict=True)]
+    return "\n".join(lines[:first] + [label] + rows + lines[end:])
