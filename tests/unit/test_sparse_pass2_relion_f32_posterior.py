@@ -7,10 +7,7 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.fine_pass.posterior import (
-    _relion_f32_fine_reconstruction_probs,
-    relion_f32_fine_probabilities,
-)
+from relax.fine_pass.posterior import relion_f32_fine_probabilities
 
 pytestmark = pytest.mark.unit
 
@@ -76,10 +73,10 @@ def test_relion_f32_fine_posterior_matches_numpy_reference_with_cutoff_ties():
 
     actual = tuple(
         np.asarray(value)
-        for value in _relion_f32_fine_reconstruction_probs(
+        for value in relion_f32_fine_probabilities(
             jnp.asarray(scores),
             adaptive_fraction=adaptive_fraction,
-        )
+        )[1:]
     )
     expected = _numpy_relion_f32_reference(scores, adaptive_fraction)
 
@@ -106,18 +103,9 @@ def test_relion_f32_fine_posterior_exposes_full_joint_normalization():
             adaptive_fraction=0.8,
         )
     )
-    legacy = tuple(
-        np.asarray(value)
-        for value in _relion_f32_fine_reconstruction_probs(
-            scores,
-            adaptive_fraction=0.8,
-        )
-    )
 
     np.testing.assert_allclose(np.sum(full[0], axis=1), np.ones(1), rtol=2e-6)
     assert_matches(full[1], np.where(full[2], full[0], 0.0))
-    for actual, expected in zip(full[1:], legacy, strict=True):
-        assert_matches(actual, expected)
 
 
 def test_relion_f32_fine_posterior_reuses_external_coarse_sum_and_keeps_support():

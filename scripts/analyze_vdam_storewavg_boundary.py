@@ -585,9 +585,9 @@ def analyze(
         current_posterior = np.asarray(recovar["reconstruction_probs"])[particle_slot][
             active_rotation_rows
         ][rotation_map]
-    from relax.fine_pass.posterior import _relion_f32_fine_reconstruction_probs
+    from relax.fine_pass.posterior import relion_f32_fine_probabilities
 
-    replay_posterior, *_ = _relion_f32_fine_reconstruction_probs(
+    _, replay_posterior, *_ = relion_f32_fine_probabilities(
         jnp.asarray(np.asarray(recovar["candidate_combined_scores"])[particle_slot : particle_slot + 1]),
         adaptive_fraction=float(adaptive_fraction),
     )

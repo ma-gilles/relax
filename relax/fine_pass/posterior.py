@@ -151,24 +151,6 @@ def relion_f32_fine_probabilities(
 
 
 
-def _relion_f32_fine_reconstruction_probs(
-    scores,
-    *,
-    adaptive_fraction: float,
-    normalization_sum_weight=None,
-    keep_all: bool = False,
-):
-    """Return the legacy pruned view of :func:`relion_f32_fine_probabilities`."""
-
-    full = relion_f32_fine_probabilities(
-        scores,
-        adaptive_fraction=adaptive_fraction,
-        normalization_sum_weight=normalization_sum_weight,
-        keep_all=keep_all,
-    )
-    return full[1:]
-
-
 def relion_x_half_f32_fine_posterior_enabled(*, default: bool = False) -> bool:
     """Return whether the RELION float32 fine posterior is enabled.
 
