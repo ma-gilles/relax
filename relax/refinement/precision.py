@@ -100,7 +100,6 @@ class DensePrecisionPolicy:
 
     use_float64_scoring: bool = False
     use_float64_projections: bool = False
-    use_float64_normalization: bool = True
 
     def for_local_pass(self, iteration: int | None, *, pass_index: int):
         if pass_index == 2 and _diagnostic_float64_pass2_matches(iteration):
