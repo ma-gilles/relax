@@ -67,7 +67,8 @@ import fingerprint_cli  # noqa: E402  (the shared command line; it imports no ha
 SCHEMA = 1
 NOT_COVERED = (
     "in full_refinement.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
-    "STAR replays, --final-replay-relion-dir), frozen boundaries, state-swap probes, "
+    "STAR replays, --final-replay-relion-dir), schema-v3 frozen boundaries (the fixed diagnostic arm; "
+    "main_k1_frozen_boundary runs a schema-v2 one), state-swap probes, "
     "follower-scale topologies, noise or poses from an earlier archive, several optics groups, subtomograms",
     "the real E-step engines and their numbers (a stand-in seeded by its operands replaces the dense adaptive engine)",
     "local search with adaptive oversampling (its parent and fine local passes), Class3D local search and the "
@@ -691,6 +692,11 @@ def _cases() -> dict[str, tuple[str, dict]]:
              n_classes=2)
     add_main("main_k2_continue", "relax class3d --continue from the run files of one iteration", "class3d",
              ["--max_iter", "2", "--n_classes", "2"], n_classes=2, continue_after=1)
+    add_main("main_k1_frozen_boundary", "relax refine --frozen-boundary-dir: one iteration from a schema-v2 boundary "
+             "directory whose start seeds decide the first size (box 20)", "refine",
+             ["--frozen-boundary-dir", "<BOUNDARY>", "--relion_half_sets", "<HALVES>", "--perturb_replay_relion_dir",
+              "<RELION>", "--max_iter", "1", "--skip_final_iteration", "--init_relion_iteration", "1",
+              "--healpix_order", "2", "--adaptive_oversampling", "1"], frozen_boundary_box=20)
     add_main("main_refused_command", "relax refine asked for two classes (refused)", "refine",
              ["--max_iter", "2", "--n_classes", "2"], n_classes=2)
     add_main("main_refused_single_half", "--diagnostic_single_half without a local-search stop (refused)", "refine",
@@ -833,6 +839,13 @@ MUTATIONS = (
      "Class3D seeds random classes from per-class maps instead of from one reference", True),
     ("main_tau2_fudge_ignored", "parity=RelionParityOptions(\ntau2_fudge=effective_tau2_fudge,", "parity=RelionParityOptions(\ntau2_fudge=1.0,",
      "the controller is handed the default tau2 fudge instead of --tau2_fudge", True),
+    # A frozen boundary through the command (main_k1_frozen_boundary).
+    ("main_frozen_start_seeds_dropped", "fsc=frozen_boundary.fsc, ave_pmax=frozen_boundary.ave_pmax,\nhas_high_fsc_at_limit=frozen_boundary.has_high_fsc_at_limit,\nrelion_incr_size=frozen_boundary.relion_incr_size,", "fsc=None,\nhas_high_fsc_at_limit=None,\nrelion_incr_size=10,",
+     "the command's replay source drops the frozen boundary's start seeds", True),
+    ("main_frozen_corrections_ignored", "initial_poses.image_corrections if frozen_boundary is None else frozen_boundary.image_corrections", "initial_poses.image_corrections",
+     "the start state takes the input particles' image corrections instead of the frozen boundary's", True),
+    ("main_frozen_current_size_ignored", "int(frozen_boundary.current_size)\nif frozen_boundary is not None", "int(frozen_boundary.current_size)\nif False",
+     "the command starts a frozen boundary from --init_resolution's size instead of the boundary's", True),
     ("startup_lowpass_skipped", "real64 = _initial_lowpass_real(volume_real, volume_shape, pixel_size, ini_high)",
      "real64 = np.asarray(volume_real, dtype=np.float64)",
      "the start-up references (K=1 and Class3D, one step) are not low-pass filtered", True),
@@ -1084,16 +1097,17 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             return [None if o is None else one_prior(n_classes, o, seed + h) for h, o in enumerate(order)]
         return [one_prior(n_classes, order, seed), one_prior(n_classes, order, seed + 1)]
 
-    def write_relion_dir(n_classes, orders, max_iter, optimiser):
+    def write_relion_dir(n_classes, orders, max_iter, optimiser, seed=17):
         """RELION sampling and model STAR files for the replay directory; orders[i] is the prior written
-        after RELION iteration i+1 (None writes no model file for that iteration)."""
+        after RELION iteration i+1 (None writes no model file for that iteration). ``seed``: the run's
+        perturbation seed."""
         from relax.sampling import relion_sampling_perturbation_for_iteration
 
         root = Path(tempfile.mkdtemp(dir=tmp_root))
         for it in range(0, max_iter + 2):
             # The perturbation RELION's seed (the cases' perturb_seed, 17) gives at this iteration, unrounded:
             # the replay recovers it from the seed and checks the STAR value against it.
-            perturbation = float(relion_sampling_perturbation_for_iteration(0.5, 17, it))
+            perturbation = float(relion_sampling_perturbation_for_iteration(0.5, seed, it))
             (root / f"run_it{it:03d}_sampling.star").write_text(
                 "data_sampling_general\n\n_rlnHealpixOrder 2\n_rlnPsiStep 15.0\n_rlnOffsetRange 10.0\n"
                 f"_rlnOffsetStep 2.0\n_rlnSamplingPerturbInstance {perturbation!r}\n"
@@ -1545,6 +1559,84 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         star.write_text("".join(line for line in star.read_text().splitlines(True) if not line.startswith("# Created")))
         return root
 
+    def write_frozen_boundary_inputs(work, data, *, box):
+        """What ``--frozen-boundary-dir`` needs beside the data directory, written under ``work``: a RELION
+        half-set STAR (the particle STAR with alternating ``rlnRandomSubset``), a replay directory of RELION
+        STAR files, and a schema-v2 boundary directory (its NPZ and SHA-256 manifest) bound to the two STARs.
+        Returns ``{placeholder: path}`` for the case's arguments.
+
+        The boundary completes RELION iteration 1 at HEALPix order 2 and previous size 18 (not the size
+        --init_resolution gives, 16). Its start seeds are k1_frozen_seeds': an FSC of resolution shell 6 that is
+        not high at the limit shell, Pmax 0.5, the high-FSC flag and increment 13, so the first size is 16 only
+        with the Pmax and the flag (the box otherwise).
+        """
+        import starfile
+
+        from relax.parity import frozen_boundary
+
+        star = starfile.read(data / "particles.star", always_dict=True)
+        particles = star["particles"]
+        n_images = len(particles)
+        particles["rlnRandomSubset"] = 1 + np.arange(n_images) % 2
+        halves = work / "halves.star"
+        starfile.write(star, halves)
+        halves.write_text("".join(line for line in halves.read_text().splitlines(True) if not line.startswith("# Created")))
+        names = np.asarray(particles["rlnImageName"], dtype=str)
+        rows = [np.flatnonzero(np.asarray(particles["rlnRandomSubset"]) == half).astype(np.int64) for half in (1, 2)]
+        rng = np.random.default_rng(11)
+        n_shells, size = box // 2 + 1, box**3
+        values = {
+            "schema": np.asarray(frozen_boundary.FROZEN_BOUNDARY_SCHEMA_V2),
+            "completed_relion_iteration": np.int32(1),
+            "volume_shape": np.asarray([box, box, box], dtype=np.int32),
+            "current_size": np.int32(18), "healpix_order": np.int32(2),
+            "relion_incr_size": np.int32(13), "has_high_fsc_at_limit": np.bool_(True),
+            "mean_variance": np.full(size, 100.0, dtype=np.float32),
+            "fsc": np.asarray([1.0, 0.95, 0.9, 0.85, 0.8, 0.7, 0.6, 0.15, 0.1, 0.05, 0.02], dtype=np.float32)[:n_shells],
+            "ave_pmax": np.float64(0.5),
+            "state_current_resolution": np.float64(7.0), "state_previous_resolution": np.float64(9.0),
+            "state_nr_iter_wo_resol_gain": np.int32(1), "state_nr_iter_wo_assignment_changes": np.int32(2),
+            "state_nr_iter_wo_large_hidden_variable_changes": np.int32(3), "state_ave_Pmax": np.float64(0.3),
+            "state_current_changes_optimal_orientations": np.float64(9.0),
+            "state_current_changes_optimal_offsets_angstrom": np.float64(1.5),
+            "state_smallest_changes_optimal_orientations": np.float64(8.0),
+            "state_smallest_changes_optimal_offsets_angstrom": np.float64(1.25),
+            "state_acc_rot": np.float64(2.0), "state_acc_trans": np.float64(1.0),
+            "state_has_converged": np.bool_(False),
+            "source_job_id": np.int64(1), "source_arm": np.asarray("fingerprint"),
+            "source_map_serialization": np.asarray("in_memory_complex64"),
+            "bitwise_identity_to_original_in_memory_means": np.bool_(True),
+            "correction_state_owner": np.asarray("sealed_boundary"), "identity_schema": np.asarray("five_field.v1"),
+            "source_star_sha256": np.asarray(hashlib.sha256((data / "particles.star").read_bytes()).hexdigest()),
+            "relion_half_star_sha256": np.asarray(hashlib.sha256(halves.read_bytes()).hexdigest()),
+        }
+        for half, half_rows in enumerate(rows, start=1):
+            n = half_rows.size
+            values.update({
+                f"half{half}_mean_ft": np.asarray(
+                    fixtures._hermitian_volume((box, box, box), seed=60 + half), dtype=np.complex64).reshape(-1),
+                f"half{half}_noise_radial": 1.0 + 0.1 * half + np.arange(n_shells, dtype=np.float64) / n_shells,
+                f"half{half}_previous_best_rotation_eulers": rng.uniform(0.0, 90.0, (n, 3)).astype(np.float32),
+                f"half{half}_previous_best_translations": rng.integers(-1, 2, (n, 2)).astype(np.float32),
+                f"half{half}_image_corrections": (1.0 + 0.05 * rng.random(n)).astype(np.float32),
+                f"half{half}_scale_corrections": (1.0 + 0.05 * rng.random(n)).astype(np.float32),
+                f"half{half}_direction_prior": (0.5 + rng.random(192)).astype(np.float32) / 192.0,
+                f"half{half}_translation_sigma_angstrom": np.float64(4.0 + half),
+                f"half{half}_image_name": names[half_rows], f"half{half}_source_row": half_rows,
+                f"half{half}_random_subset": np.full(n, half, dtype=np.int8),
+                f"half{half}_half_index": np.full(n, half - 1, dtype=np.int8),
+                f"half{half}_half_local_index": np.arange(n, dtype=np.int64),
+            })
+        boundary = work / "boundary"
+        boundary.mkdir()
+        np.savez(boundary / frozen_boundary.FROZEN_BOUNDARY_FILENAME, **values)
+        digest = hashlib.sha256((boundary / frozen_boundary.FROZEN_BOUNDARY_FILENAME).read_bytes()).hexdigest()
+        (boundary / frozen_boundary.FROZEN_BOUNDARY_MANIFEST).write_text(
+            f"{digest}  {frozen_boundary.FROZEN_BOUNDARY_FILENAME}\n", encoding="utf-8")
+        # The command's seed (--seed 42); no model STAR for iteration 2, whose size would replace the planned one.
+        relion = write_relion_dir(1, [2, None], 1, True, seed=42)
+        return {"<BOUNDARY>": str(boundary), "<HALVES>": str(halves), "<RELION>": relion}
+
     def hash_output_files(base, out):
         """Every file under ``base``: archives by array, maps by data, text with its creation stamp dropped."""
         import mrcfile
@@ -1579,7 +1671,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 out[rel] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
         return out
 
-    def run_main_case(command, arguments, *, n_classes=1, converge_after=None, continue_after=None, first=None):
+    def run_main_case(command, arguments, *, n_classes=1, converge_after=None, continue_after=None, first=None,
+                      frozen_boundary_box=None):
         """``relax <command>`` (full_refinement.main) on a tiny data directory, the stand-in engine underneath.
 
         Records the operands main hands refine_single_volume, its result, and every file main writes.
@@ -1591,7 +1684,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         from relax.refinement import full_refinement
 
         work = Path(tempfile.mkdtemp(dir=tmp_root))
-        data = write_tiny_dataset(work / "data", n_classes=n_classes)
+        if frozen_boundary_box is None:
+            data, placeholders = write_tiny_dataset(work / "data", n_classes=n_classes), {}
+        else:
+            # A frozen boundary through the command: its box, and the files the command binds it to.
+            data = write_tiny_dataset(work / "data", n_classes=n_classes, box=frozen_boundary_box)
+            placeholders = write_frozen_boundary_inputs(work, data, box=frozen_boundary_box)
         environ = dict(os.environ)
         patches, calls = [], {"updates": 0}
         refine_inputs, refine_results = [], []
@@ -1635,6 +1733,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                     run_arguments += ["--continue", str(optimiser)]
                 run_arguments = [argument.replace("<DATA>", str(data)).replace("<OUTDIR>", str(output))
                                  .replace("<FIRST>", str(work / "first")) for argument in run_arguments]
+                run_arguments = [placeholders.get(argument, argument) for argument in run_arguments]
                 sys.argv = ["relax", "--data_dir", str(data), "--output", str(output), *run_arguments]
                 sys.orig_argv = ["python", "-m", f"relax.commands.{command}", *sys.argv[1:]]  # run files record it
                 try:
