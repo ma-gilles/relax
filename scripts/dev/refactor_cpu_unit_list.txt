@@ -181,5 +181,6 @@ tests/unit/test_summarize_em_k1_realdata_science_equivalence.py
 tests/unit/test_summarize_em_k4_class_fsc_auc_scorecard.py
 tests/unit/test_summarize_em_robustness_matrix.py
 tests/unit/test_tomo_input.py
+tests/unit/test_tomo_relion_star_forms.py
 tests/unit/test_xla_memory_reserve.py
 tests/unit/test_zero_coarse_geometry.py

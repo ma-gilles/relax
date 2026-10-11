@@ -100,6 +100,95 @@ def read_optimisation_set(path) -> tuple[Path, Path]:
     return root / str(np.asarray(particles)[0]), root / str(np.asarray(tomograms)[0])
 
 
+def _star_loop_bounds(lines: list[str], block: str) -> tuple[int, int, int]:
+    """``(first label line, first data row, end)`` of the ``loop_`` of STAR block ``data_<block>``."""
+
+    try:
+        start = next(i for i, line in enumerate(lines) if line.strip() == f"data_{block}")
+        loop = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "loop_")
+    except StopIteration:
+        raise ValueError(f"STAR text has no data_{block} loop") from None
+    first = loop + 1
+    while first < len(lines) and lines[first].strip().startswith("_rln"):
+        first += 1
+    end = first
+    while end < len(lines) and lines[end].strip() and not lines[end].strip().startswith("data_"):
+        end += 1
+    return loop + 1, first, end
+
+
+def _with_star_columns(path, block: str, defaults: dict[str, str]) -> str | None:
+    """The text of STAR ``path`` with each absent label of ``defaults`` added to ``data_<block>``'s loop.
+
+    Every row gets the default's token appended; every other token of the file is unchanged. ``None``
+    when the loop already has all the labels.
+    """
+
+    lines = Path(path).read_text().splitlines()
+    labels_at, first, end = _star_loop_bounds(lines, block)
+    present = {lines[i].split()[0] for i in range(labels_at, first)}
+    missing = [(label, value) for label, value in defaults.items() if label not in present]
+    if not missing:
+        return None
+    n_labels = first - labels_at
+    head = [f"{label} #{n_labels + 1 + k}" for k, (label, _) in enumerate(missing)]
+    tail = "".join(f" {value}" for _, value in missing)
+    return "\n".join(lines[:first] + head + [line + tail for line in lines[first:end]] + lines[end:]) + "\n"
+
+
+def _reader_inputs(particles_star, tomograms_star, output_star) -> tuple[Path, Path]:
+    """The particle and tomogram STARs RECOVAR's reader is given: RELION's files, or copies beside
+    ``output_star`` in which the values RELION takes for an absent label are written out (relax#79).
+
+    RECOVAR's reader needs these labels on every row; RELION's own tools leave them out:
+
+    - ``rlnRandomSubset`` (particles): ``relion_tomo_subtomo`` writes none. relion_refine draws the halves
+      itself (``Experiment::divideParticlesInRandomHalves``, where 0 means not assigned), and so does
+      relax, from the particle STAR (:func:`relax.relion.input_particle_table.relion_random_subsets`).
+      The copy carries 0.
+    - ``rlnCtfScalefactor`` and ``rlnTomoXTilt`` (each tilt-series STAR): 1 and 0 when absent
+      (``TomogramSet::loadTomogram``, jaz/tomography/tomogram_set.cpp:397-429). The copied tilt-series
+      STARs are named by absolute path in a copy of the tomogram STAR.
+
+    Every other token of the files is unchanged, and nothing is written into the project.
+    """
+
+    particles_star, tomograms_star, output_star = Path(particles_star), Path(tomograms_star), Path(output_star)
+    stem = output_star.stem
+    text = _with_star_columns(particles_star, "particles", {"_rlnRandomSubset": "0"})
+    if text is not None:
+        particles_star = output_star.with_name(f"{stem}_input_particles.star")
+        particles_star.parent.mkdir(parents=True, exist_ok=True)
+        particles_star.write_text(text)
+
+    tomograms, _ = read_star(str(tomograms_star))
+    copies, originals = {}, {}
+    for name, series in zip(
+        np.asarray(star_column(tomograms, "rlnTomoName", required=True)).astype(str),
+        np.asarray(star_column(tomograms, "rlnTomoTiltSeriesStarFile", required=True)).astype(str),
+    ):
+        text = _with_star_columns(
+            tomograms_star.parent / series, name, {"_rlnCtfScalefactor": "1.000000", "_rlnTomoXTilt": "0.000000"}
+        )
+        if text is not None:
+            copy = output_star.with_name(f"{stem}_input_tilt_series") / f"{name}.star"
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            copy.write_text(text)
+            copies[series] = str(copy.resolve())
+        else:
+            originals[series] = str((tomograms_star.parent / series).resolve())
+    if copies:
+        # The copy lives outside the project, so it names every tilt-series STAR by absolute path.
+        copies.update(originals)
+        lines = tomograms_star.read_text().splitlines()
+        _, first, end = _star_loop_bounds(lines, "global")  # TomogramSet's table name
+        for i in range(first, end):
+            lines[i] = "\t".join(copies.get(token, token) for token in lines[i].split())
+        tomograms_star = output_star.with_name(f"{stem}_input_tomograms.star")
+        tomograms_star.write_text("\n".join(lines) + "\n")
+    return particles_star, tomograms_star
+
+
 def flatten_relion5_tomo(particles_star, tomograms_star, output_star) -> Path:
     """Write the per-tilt STAR relax reads (RECOVAR's RELION 5 reader) and return it.
 
@@ -117,9 +206,10 @@ def flatten_relion5_tomo(particles_star, tomograms_star, output_star) -> Path:
 
     output_star = Path(output_star)
     output_star.parent.mkdir(parents=True, exist_ok=True)
-    convert(str(tomograms_star), str(particles_star), str(output_star))
-    rows, optics = read_star(str(output_star))
     particles, particle_optics = read_star(str(particles_star))
+    reader_particles, reader_tomograms = _reader_inputs(particles_star, tomograms_star, output_star)
+    convert(str(reader_tomograms), str(reader_particles), str(output_star))
+    rows, optics = read_star(str(output_star))
     changed = False
     tomograms, _ = read_star(str(tomograms_star))
     bfactor = star_column(tomograms, "rlnCtfBfactorPerElectronDose")

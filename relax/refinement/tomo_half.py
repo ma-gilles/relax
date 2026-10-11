@@ -25,7 +25,10 @@ def is_relion5_2d_stack_star(particles_star) -> bool:
 
     star = starfile.read(particles_star)
     general = star.get("general") if isinstance(star, dict) else None
-    if general is None or "rlnTomoSubTomosAre2DStacks" not in getattr(general, "columns", ()):
+    # RELION writes data_general as a list of label-value pairs (MetaDataTable::write of a one-object
+    # table, isList), which starfile returns as a dict; a one-row loop_ comes back as a DataFrame.
+    # Both are RELION-readable and ``in`` covers both: a dict's keys, a DataFrame's columns (relax#79).
+    if general is None or "rlnTomoSubTomosAre2DStacks" not in general:
         return False
     return bool(int(np.asarray(general["rlnTomoSubTomosAre2DStacks"]).ravel()[0]))
 
