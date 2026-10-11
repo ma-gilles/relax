@@ -602,6 +602,17 @@ def _cases() -> dict[str, tuple[str, dict]]:
     add("k2_star_optimiser", "K=2 STAR replay with optimiser files", n_classes=2, join=0.0, star_prior=[2, 2, 2, 2], star_optimiser=True, dump=False)
     add("k1_frozen", "K=1 frozen initial scoring-state assertion", n_classes=1, join=0.0, init_prior=2, frozen=True, dump=False)
     add("k2_frozen", "K=2 frozen assertion (the controller refuses it)", n_classes=2, join=0.0, init_prior=2, frozen=True, dump=False)
+    # A frozen boundary's start seeds, none at its default (run_case: frozen_seeds, the boundary's state fields).
+    seeds = dict(n_classes=1, join=0.0, init_prior=2, frozen=True, writer=True)
+    add(
+        "k1_frozen_seeds", "K=1 frozen boundary whose start FSC, Pmax, high-FSC flag and RELION increment decide the "
+        "first size, and whose state fields replace the FSC's current resolution", frozen_seeds={"current_resolution": 7.0},
+        **seeds,
+    )
+    add(
+        "k1_frozen_seeds_fsc_resolution", "K=1 frozen boundary with the same seeds and no state field: the start "
+        "FSC's resolution stays", frozen_seeds={}, dump=False, **seeds,
+    )
     add("k4_writer_dump", "K=4 with checkpoints and the intermediates dump", n_classes=4, join=0.0, writer=True)
     add("k1_cc_writer", "K=1 first-iteration CC with checkpoints", n_classes=1, join=40.0, cc=True, writer=True)
     add("k4_cc_writer", "K=4 first-iteration CC with checkpoints", n_classes=4, join=0.0, cc=True, writer=True)
@@ -801,6 +812,19 @@ MUTATIONS = (
      "the STAR replay returns its prior translations reversed", False),
     ("star_offset_range_doubled", '_relion_offset_range = float(_replay_meta["offset_range"]) / pixel_size_angstrom', '_relion_offset_range = 2 * float(_replay_meta["offset_range"]) / pixel_size_angstrom',
      "the STAR replay reads twice the translation range", True),
+    # A frozen boundary's start seeds (k1_frozen_seeds*): each dropped, and the FSC installed out of order.
+    ("frozen_start_fsc_size_plan_dropped", "elif options.start.init_fsc is not None:\nprev_cs = int(schedule.init_current_size)", "elif False:\nprev_cs = int(schedule.init_current_size)",
+     "the first image size is planned without the frozen boundary's start FSC", True),
+    ("frozen_start_fsc_resolution_dropped", "elif options.start.init_fsc is not None:\ninitialize_resolution_from_fsc(", "elif False:\ninitialize_resolution_from_fsc(",
+     "a frozen boundary's start FSC does not seed the start resolution", True),
+    ("frozen_start_fsc_after_state_fields", "source.restore_boundary_state(state)", "source.restore_boundary_state(state); options.start.init_fsc is None or initialize_resolution_from_fsc(state, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom, dtype=dtype)",
+     "the start FSC's resolution is installed after the frozen boundary's state fields instead of before", True),
+    ("frozen_start_pmax_dropped", "_init_pmax = float(options.start.init_ave_Pmax) if options.start.init_ave_Pmax is not None else 0.0", "_init_pmax = 0.0",
+     "the first image size is planned without the frozen boundary's Pmax", True),
+    ("frozen_start_high_fsc_flag_dropped", "bool(options.start.init_has_high_fsc_at_limit)\nif options.start.init_has_high_fsc_at_limit is not None", "False\nif options.start.init_has_high_fsc_at_limit is not None",
+     "the run starts without the frozen boundary's high-FSC-at-limit flag", True),
+    ("frozen_start_incr_size_dropped", "relion_incr_size = int(options.start.init_relion_incr_size)", "relion_incr_size = 10",
+     "the run starts from RELION's default size increment instead of the frozen boundary's", True),
     # The command entry (the main_* cases).
     ("main_max_iter_not_continued", "max_iter=int(max_iter) - (continued_iterations or 0),", "max_iter=int(max_iter),",
      "a continued run counts --max_iter from its own first iteration", True),
@@ -1172,7 +1196,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                  writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
                  iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
                  seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None,
-                 consistency=None, current_sizes=None, sealed=False, local=None):
+                 consistency=None, current_sizes=None, sealed=False, local=None, frozen_seeds=None):
         first_pass = None
         if continued:
             first_pass = run_case(n_classes, join, max_iter=1, converge_after=None, dump=False, cc=cc, writer=True,
@@ -1182,11 +1206,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 return {"status": {"error": "first pass failed"}, "result": {}, "files": {}, "checkpoints": {},
                         "trace": [], "first_pass": first_pass}
             resume = snapshots[-1]
-        rng = np.random.default_rng(fixtures.SEED)
-        n_half = fixtures.N_IMAGES // 2
-        halves = [Dataset(n_half, rng, 0), Dataset(n_half, rng, n_half)]
-        init_volume = fixtures._hermitian_volume(fixtures.VOLUME_SHAPE, seed=42)
-        translations = jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32)
         patches, calls = [], {"updates": 0}
         del trace[:]
 
@@ -1194,6 +1213,17 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             patches.append((owner, name, getattr(owner, name)))
             setattr(owner, name, replacement)
 
+        if frozen_seeds is not None:
+            # A box of 20 for this case (the unit-test fixtures' sizes, restored with the stand-ins): RELION's
+            # quarter-box growth step stays below the box only from 18 pixels on.
+            for name, value in (("IMAGE_SHAPE", (20, 20)), ("IMAGE_SIZE", 400), ("VOLUME_SHAPE", (20, 20, 20)),
+                                ("VOLUME_SIZE", 8000)):
+                patch(fixtures, name, value)
+        rng = np.random.default_rng(fixtures.SEED)
+        n_half = fixtures.N_IMAGES // 2
+        halves = [Dataset(n_half, rng, 0), Dataset(n_half, rng, n_half)]
+        init_volume = fixtures._hermitian_volume(fixtures.VOLUME_SHAPE, seed=42)
+        translations = jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32)
         install_stand_ins(patch, calls, converge_after=converge_after, accuracy=accuracy)
         for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR", "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"):
             os.environ.pop(name, None)
@@ -1277,6 +1307,22 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 init_image_corrections=[np.ones(n_half, dtype=np.float32) for _ in range(2)],
                 init_scale_corrections=[np.ones(n_half, dtype=np.float32) for _ in range(2)],
             )
+        init_current_size, frozen_state_fields = 4, {}
+        if frozen_seeds is not None:
+            # A frozen boundary's start seeds, none at its default, each deciding an output (box 20, previous
+            # size 16). The FSC gives resolution shell 6, which seeds the current resolution; the boundary's
+            # state fields (frozen_seeds) are installed after it, so one that names the current resolution
+            # replaces the FSC's and the order of the two shows. The FSC at the limit shell 7 (0.15) is not high,
+            # so the flag is the seed's; with it and the Pmax the first size grows by a quarter box (to 16),
+            # without either by the increment (to the box, 20). The increment is above the one the FSC implies
+            # (6) and is carried into the checkpoints.
+            init_current_size, frozen_state_fields = 16, dict(frozen_seeds)
+            frozen_start_seeds = dict(
+                init_fsc=np.asarray([1.0, 0.95, 0.9, 0.85, 0.8, 0.7, 0.6, 0.15, 0.1, 0.05, 0.02], dtype=np.float32),
+                init_ave_Pmax=0.5, init_has_high_fsc_at_limit=True, init_relion_incr_size=13,
+            )
+            assert set(frozen_start_seeds) <= {f.name for f in dataclasses.fields(refinement_options.StartState)}
+            replay_fields.update(frozen_start_seeds)
         if replay_fields:
             # The replay slots and the final-only replay are a ReplayState's on a source older than the replay
             # input source's settings (RelionReplay); run_case moves them there below otherwise. The record is
@@ -1335,7 +1381,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             if debug_fields.pop("assert_initial_scoring_state_immutable", False):
                 # A frozen boundary's (empty) RefinementState fields: with them the source checks the scoring
                 # state; a source older than deep2 O-D5 also takes its separate assert_scoring_state_unchanged.
-                source_fields["frozen_refinement_state_fields"] = {}
+                source_fields["frozen_refinement_state_fields"] = frozen_state_fields
                 if "assert_scoring_state_unchanged" in {f.name for f in dataclasses.fields(replay_class)}:
                     source_fields["assert_scoring_state_unchanged"] = True
         if debug_fields:
@@ -1364,7 +1410,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 replay_settings.update(source_fields)
             options = refinement_options.RefinementOptions(
                 schedule=refinement_options.RefinementSchedule(
-                    max_iter=max_iter, init_current_size=4, init_healpix_order=init_order, max_healpix_order=2,
+                    max_iter=max_iter, init_current_size=init_current_size, init_healpix_order=init_order,
+                    max_healpix_order=2,
                     init_translation_range=10.0,
                     **({} if resume is None else {"init_relion_iteration": int(resume.relion_iteration)}),
                     **({"skip_final_iteration": True} if skip_final else {}),
