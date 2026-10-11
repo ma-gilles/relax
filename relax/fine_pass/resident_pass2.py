@@ -3913,8 +3913,14 @@ def _resident_pass2(
     # chunk in translation blocks (resident_tilts.run_tilt_chunk, mstep_translation_blocks).
     plan_translations = n_fine_trans if tilt is None else int(tilt.slot_capacity)
     tilt_slot_block = None
+    # Set by plan_chunks: whether a tilt pass runs its over-budget particles in row blocks.
+    tilt_lone_row_blocks = False
     if tilt is not None:
-        from relax.fine_pass.resident_tilts import tilt_capacity_ladders, tilt_projection_slot_block
+        from relax.fine_pass.resident_tilts import (
+            tilt_capacity_ladders,
+            tilt_lone_row_bytes,
+            tilt_projection_slot_block,
+        )
 
         # A particle whose rows' projections over all its images do not fit is projected, scored and
         # backprojected a block of image slots at a time (resident_tilts.run_tilt_chunk).
@@ -3929,6 +3935,7 @@ def _resident_pass2(
             * gathered_row_copies,
             budget_bytes=resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes),
         )
+    whole_particle_slot_block = tilt_slot_block
     row_projection_factor = (1 if tilt is None else int(tilt_slot_block)) * gathered_row_copies
     if tilt is not None:
 
@@ -3942,6 +3949,7 @@ def _resident_pass2(
     )
 
     def plan_chunks(unshifted_operands: bool):
+        nonlocal tilt_slot_block, tilt_lone_row_blocks
         chunk_budget_bytes = resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
         image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
         if tilt is not None or not (unshifted_operands and chunk_budget_bytes is not None):
@@ -3963,40 +3971,80 @@ def _resident_pass2(
             max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
             row_capacity_ladder=row_ladder_start,
         )
-        memory_plan = plan_resident_chunk_memory(
-            row_capacity_ladder=row_ladder_start,
-            image_capacity_ladder=image_ladder,
-            mstep_block_rows=mstep_block_rows,
-            row_bytes=(
-                _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
-                if stream_projections
-                else gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize
+        def plan_memory(lone_row_bytes, projection_factor):
+            return plan_resident_chunk_memory(
+                row_capacity_ladder=row_ladder_start,
+                image_capacity_ladder=image_ladder,
+                mstep_block_rows=mstep_block_rows,
+                row_bytes=(
+                    _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
+                    if stream_projections
+                    else gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize
+                )
+                * projection_factor,
+                n_fine_trans=plan_translations,
+                n_recon_pixels=n_recon_windowed,
+                budget_bytes=chunk_budget_bytes,
+                rows_live_during_prepare=True,
+                pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
+                float32_posterior_buckets=(
+                    _FLOAT32_BUCKETED_IMAGE_SUMS
+                    and tilt is None
+                    and np.dtype(precision_policy.score_real_dtype) == np.dtype(np.float32)
+                ),
+                fixed_bytes=accumulator_bytes,
+                max_image_rows=max_image_rows(tables.row_offsets),
+                lone_row_bytes=lone_row_bytes,
+                **chunk_translated_tile_pixels(
+                    unshifted_operands=unshifted_operands,
+                    n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
+                    n_recon_pixels=n_recon_windowed if windowed_prepare else n_half_pixels,
+                    n_rect_pixels=n_rect,
+                    n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
+                    normalized_cc=bool(firstiter_cc),
+                    masked_scoring=bool(score_with_masked_images),
+                ),
             )
-            * row_projection_factor,
-            n_fine_trans=plan_translations,
-            n_recon_pixels=n_recon_windowed,
-            budget_bytes=chunk_budget_bytes,
-            rows_live_during_prepare=True,
-            pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
-            float32_posterior_buckets=(
-                _FLOAT32_BUCKETED_IMAGE_SUMS
-                and tilt is None
-                and np.dtype(precision_policy.score_real_dtype) == np.dtype(np.float32)
-            ),
-            fixed_bytes=accumulator_bytes,
-            max_image_rows=max_image_rows(tables.row_offsets),
-            # The tilt loop has no row-blocked lone chunk; its overflow chunks hold their rows.
-            lone_row_bytes=None if tilt is not None else lone_chunk_row_bytes(int(plan_translations)),
-            **chunk_translated_tile_pixels(
-                unshifted_operands=unshifted_operands,
-                n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
-                n_recon_pixels=n_recon_windowed if windowed_prepare else n_half_pixels,
-                n_rect_pixels=n_rect,
-                n_exact_rect_pixels=int(relion_wavg_rectangle.exact_positions.size),
-                normalized_cc=bool(firstiter_cc),
-                masked_scoring=bool(score_with_masked_images),
-            ),
-        )
+
+        if tilt is None:
+            memory_plan = plan_memory(lone_chunk_row_bytes(int(plan_translations)), row_projection_factor)
+        else:
+            tilt_slot_block, tilt_lone_row_blocks = whole_particle_slot_block, False
+            try:
+                # A particle past the largest row class is one chunk holding all of its rows, when that fits.
+                memory_plan = plan_memory(None, row_projection_factor)
+            except ResidentConfigurationUnsupported:
+                if firstiter_cc or not overflow_row_capacity(max_image_rows(tables.row_offsets), row_ladder_start):
+                    raise
+                # It does not: the particle runs alone in row blocks of the largest row class
+                # (resident_tilts.run_tilt_chunk), which hold rows x slot block x pixels projection values
+                # while every row keeps tilt_lone_row_bytes. The slot block is then sized for a block's rows,
+                # not for the particle's.
+                lone_slot_block = tilt_projection_slot_block(
+                    max(int(v) for v in row_ladder_start),
+                    slot_capacity=int(tilt.slot_capacity),
+                    slot_row_bytes=(
+                    _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
+                    if stream_projections
+                    else gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize
+                )
+                * gathered_row_copies,
+                    budget_bytes=chunk_budget_bytes,
+                )
+                memory_plan = plan_memory(
+                    tilt_lone_row_bytes(
+                        int(n_fine_trans), slot_capacity=int(tilt.slot_capacity), n_accumulators=int(tables.n_slots)
+                    ),
+                    int(lone_slot_block) * gathered_row_copies,
+                )
+                tilt_slot_block, tilt_lone_row_blocks = int(lone_slot_block), True
+                logger.info(
+                    "Resident pass-2 tilt particles past the largest row class run in row blocks: the largest "
+                    "(%d rows) does not fit one chunk; image slot block %d of %d",
+                    max_image_rows(tables.row_offsets),
+                    tilt_slot_block,
+                    int(tilt.slot_capacity),
+                )
         row_ladder = memory_plan.row_capacity_ladder
         image_ladder = memory_plan.image_capacity_ladder
         mstep_block_rows = memory_plan.mstep_block_rows
@@ -4522,7 +4570,15 @@ def _resident_pass2(
         )
         unit_image_offsets = np.asarray(tilt.unit_image_offsets, dtype=np.int64)
         mstep_census = TiltMstepCensus()
+        n_lone_chunks = 0
         for chunk in chunks:
+            # An over-budget particle of a row-blocked plan (plan_chunks) runs in blocks of a row class.
+            chunk_lone_block_rows = (
+                lone_block_rows(chunk.row_capacity, row_ladder)
+                if tilt_lone_row_blocks and chunk_runs_alone(chunk, row_ladder)
+                else None
+            )
+            n_lone_chunks += int(chunk_lone_block_rows is not None)
             chunk_operands, operand_image_start = resident_operands, 0
             if chunk_operands is None:
                 operand_image_start = int(unit_image_offsets[int(chunk.image_start)])
@@ -4559,10 +4615,13 @@ def _resident_pass2(
                 slot_block=tilt_slot_block,
                 mstep_census=mstep_census,
                 row_partial=row_partial,
+                lone_block_rows=chunk_lone_block_rows,
                 score_pixel_indices=None if window_indices is None else jnp.asarray(window_indices, dtype=jnp.int32),
             )
             Ft_y_total, Ft_ctf_total = Ft_y_chunk, Ft_ctf_chunk
         mstep_census.log()
+        if n_lone_chunks:
+            logger.info("Resident pass-2 ran %d lone overflow particle(s) in row blocks", n_lone_chunks)
     deferred = _global_chunk_loop_pipelined(stream_projections)
     pending = None
     pending_alone = False

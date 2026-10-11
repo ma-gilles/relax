@@ -394,6 +394,116 @@ def test_slot_blocked_tilt_projections_are_the_one_block_pass(_resident_producti
     _assert_noise_stats_match(whole.noise_stats, blocked.noise_stats)
 
 
+def _lone_tilt_runs(monkeypatch, args, tilt):
+    """One pass with the particles' overflow chunks held whole, and one where they do not fit the budget.
+
+    A 16-row ladder puts every particle of the fixture past the largest row class. The second pass has a chunk
+    budget between what its largest particle needs in row blocks and what it needs whole,
+    so the whole-chunk plan is refused and the row-blocked one taken.
+    Returns ``(whole, blocked, row blocks of each of the blocked pass's chunks)``.
+    """
+
+    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_tilts
+
+    monkeypatch.setattr(
+        resident_tilts, "tilt_capacity_ladders", lambda rows, images, **k: ((16,), tuple(sorted(set(images))))
+    )
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "16")
+    plans, lone_rows = [], []
+    real_plan, real_chunk = rp.plan_resident_chunk_memory, resident_tilts.run_tilt_chunk
+
+    def plan(**kwargs):
+        plans.append(kwargs)
+        return real_plan(**kwargs)
+
+    def chunk(tilt_chunk, *a, **k):
+        # Row blocks the chunk runs in (0: held whole).
+        lone_rows.append(int(tilt_chunk.row_capacity) // k["lone_block_rows"] if k.get("lone_block_rows") else 0)
+        return real_chunk(tilt_chunk, *a, **k)
+
+    monkeypatch.setattr(rp, "plan_resident_chunk_memory", plan)
+    monkeypatch.setattr(resident_tilts, "run_tilt_chunk", chunk)
+    whole = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt)
+    assert lone_rows and not any(lone_rows), "a particle that fits whole must not run in row blocks"
+    assert rp.overflow_row_capacity(plans[-1]["max_image_rows"], (16,)) > 16, "the fixture has no overflow particle"
+
+    # Shrink the budget until the whole-particle plan is refused (the planner first shrinks the slot block and
+    # the M-step block); the row-blocked plan must then fit, or the pass itself refuses and the test fails.
+    whole_peak = real_plan(**dict(plans[-1], budget_bytes=None)).peak_bytes
+    for fraction in (0.7, 0.5, 0.35, 0.25, 0.18, 0.12, 0.08, 0.05):
+        budget = int(whole_peak * fraction)
+        monkeypatch.setattr(rp, "resident_chunk_budget_bytes", lambda budget=budget, **k: budget)
+        del lone_rows[:]
+        blocked = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt)
+        if any(lone_rows):
+            print(f"row-blocked at a budget of {fraction} of the whole-particle peak ({whole_peak} bytes)")
+            return whole, blocked, list(lone_rows)
+    raise AssertionError("no budget made the whole-particle plan refuse while the row-blocked one fit")
+
+
+@requires_resident_gpu
+def test_lone_tilt_particle_in_row_blocks_is_the_one_chunk_pass(_resident_production_env, monkeypatch):  # noqa: F811
+    """A particle whose rows' projections exceed the chunk budget runs alone in row blocks (a real ribosome
+    tilt-series refinement refused at its first HEALPix-3 iteration: 294,912 rows, 82.8 GiB against 42.1).
+
+    Each row's diff2 keeps its slot order and the posterior is formed over all of the particle's rows, so the
+    discrete state is exact and the scores equal; the maps and sums differ only by the grouping of the M-step
+    blocks, inside the SPA lone-chunk tests' band. Two tilt images per particle exercise the slot axis.
+    """
+
+    args = dict(_driver_fixture_args(), score_with_masked_images=True)
+    tilt, n_units = _two_image_particles(args)
+    # The fixture's per-image supports and normalization, one per particle.
+    args = dict(
+        args,
+        significant_sample_indices=args["significant_sample_indices"][:n_units],
+        normalization_other_score_log_z=args["normalization_other_score_log_z"][:n_units],
+    )
+    whole, blocked, lone_rows = _lone_tilt_runs(monkeypatch, args, tilt)
+    # A flat-posterior particle is many blocks long (294,912 rows at HEALPix 3, millions at finer orders), not
+    # just past one: the fixture's largest runs in several 16-row blocks.
+    print("row blocks per chunk:", lone_rows)
+    assert max(lone_rows) >= 4, lone_rows
+    _assert_tilt_pass_matches_spa(whole, blocked)
+
+
+def test_lone_tilt_plan_fits_the_refused_real_configuration():
+    """The budget arithmetic of the refused pass: 294,912 rows, 41 image slots, 37 translations, 146.9 KiB per
+    projected row and two live copies of it, 7475 reconstruction pixels, a 42.14 GiB chunk budget.
+
+    Held whole, the particle's rows cost rows x slot block x row bytes even at one slot (82.8 GiB); in row
+    blocks it costs one block's chunk plus tilt_lone_row_bytes for each of its rows (under 1 GiB of them).
+    """
+
+    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass.policy import ResidentConfigurationUnsupported
+    from relax.fine_pass.resident_tilts import tilt_lone_row_bytes
+
+    gib = 1024**3
+    row_bytes = 2 * int(146.9 * 1024)
+    kwargs = dict(
+        row_capacity_ladder=(256, 1024, 4096),
+        image_capacity_ladder=(1, 2, 4),
+        mstep_block_rows=256,
+        row_bytes=row_bytes,
+        n_fine_trans=41,
+        n_recon_pixels=7475,
+        budget_bytes=int(42.14 * gib),
+        rows_live_during_prepare=True,
+        max_image_rows=294912,
+    )
+    assert 294912 * row_bytes > 82 * gib
+    with pytest.raises(ResidentConfigurationUnsupported, match="294912 rows, run alone"):
+        rp.plan_resident_chunk_memory(**kwargs)
+    lone_row_bytes = tilt_lone_row_bytes(37, slot_capacity=41)
+    assert lone_row_bytes == 37 * (rp._LONE_CHUNK_CELL_BYTES + 4) + 64 + 41 * 40
+    assert 294912 * lone_row_bytes < gib
+    plan = rp.plan_resident_chunk_memory(**kwargs, lone_row_bytes=lone_row_bytes)
+    assert plan.peak_bytes <= int(42.14 * gib)
+    assert max(plan.row_capacity_ladder) * row_bytes + 294912 * lone_row_bytes <= plan.peak_bytes
+
+
 @requires_resident_gpu
 def test_each_particles_own_translations_are_the_whole_grid_mstep(_resident_production_env, monkeypatch):  # noqa: F811
     """The M-step at each particle's translations with mass (unit_mstep_translations) is the whole-grid M-step.

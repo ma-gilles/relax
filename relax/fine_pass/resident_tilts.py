@@ -180,6 +180,27 @@ def tilt_projection_slot_block(max_rows: int, *, slot_capacity: int, slot_row_by
     return int(min(slot_capacity, max(1, (int(budget_bytes) // 2) // need)))
 
 
+def tilt_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators: int = 1) -> int:
+    """Device bytes each row of a row-blocked lone particle keeps beyond its block (:func:`run_tilt_chunk`).
+
+    A particle's chunk holds ``rows x image slots x pixels`` projection values at once (each row is projected
+    once per tilt image); when that does not fit for a particle run alone, its rows are projected, scored and
+    backprojected ``lone_block_rows`` at a time, and only these stay for all of its rows:
+
+    - its ``T`` posterior cells, as the SPA lone chunk counts them (``resident_pass2.lone_chunk_row_bytes``),
+      and its posterior at the particle's own translations (at most ``T`` float32 cells) per accumulator;
+    - per image slot, the row's float32 3x3 matrix ``inv(L_i A_r)`` and its int32 chunk image.
+    """
+
+    from relax.fine_pass.resident_pass2 import lone_chunk_row_bytes
+
+    return (
+        lone_chunk_row_bytes(int(n_fine_trans))
+        + int(n_fine_trans) * 4 * max(int(n_accumulators), 1)
+        + int(slot_capacity) * (36 + 4)
+    )
+
+
 def _slot_tables_block(slots: "SlotMstepTables", start: int, stop: int) -> "SlotMstepTables":
     """Slots ``start:stop`` of :func:`_slot_mstep_tables`, renumbered from 0 (their block's projections)."""
 
@@ -238,6 +259,7 @@ def run_tilt_chunk(
     score_pixel_indices=None,
     mstep_census: TiltMstepCensus | None = None,
     row_partial=None,
+    lone_block_rows: int | None = None,
 ):
     """Score, weight and backproject one chunk of particles; return ``(Ft_y_total, Ft_ctf_total, stats)``.
 
@@ -271,13 +293,28 @@ def run_tilt_chunk(
     - ``slot_block`` (:func:`tilt_projection_slot_block`): when the (slot, row) projections of every slot
       do not fit, they are made a block of slots at a time, for the scores (the running diff2 carried
       across blocks, so its slot order is kept) and again for the M-step.
+    - ``lone_block_rows`` (resident_pass2's plan, :func:`tilt_lone_row_bytes`): a particle run alone whose
+      rows' projections do not fit even one slot at a time (a flat coarse posterior keeps every fine
+      rotation: 294,912 rows at HEALPix 3) is projected and scored that many rows at a time, keeping only
+      the rows' ``[C_R, T]`` diff2; its posterior is formed over all of its rows as before, and the M-step
+      projects and backprojects its rows with posterior mass, that many at a time. Each row's diff2 keeps its
+      slot order and the posterior is the one-call chunk's; only the grouping of the projector calls and of
+      the M-step blocks changes.
     The per-stage (non-jitted) path.
     """
 
     from relax.cuda import kernels as em_cuda_kernels
     from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
     from relax.fine_pass.resident_scoring import tilt_image_rows_raw_diff2, tilt_rows_scores_from_raw
+
+    lone = lone_block_rows is not None
+    if lone and (bool(spec_kwargs.get("firstiter_cc")) or int(chunk.row_capacity) % int(lone_block_rows)):
+        raise ResidentConfigurationUnsupported(
+            "a particle past the largest row class runs in row blocks that divide its rows, which the "
+            "first-iteration cross-correlation pass does not implement"
+        )
 
     unit_capacity = int(chunk.image_capacity)
     n_slots = int(tilt.slot_capacity)
@@ -323,8 +360,16 @@ def run_tilt_chunk(
         entries = slice(start * chunk.row_capacity, stop * chunk.row_capacity)
         return project_slot_rows(project_rotations, slot_matrices[entries], entry_class[entries], n_classes=tables.n_classes)
 
+    def block_entries(start, stop, row_ids):
+        # Cache entries of slots start:stop for the chunk rows ``row_ids``, slot-major: ``slot * n + row``.
+        return (np.arange(start, stop)[:, None] * chunk.row_capacity + np.asarray(row_ids)[None, :]).reshape(-1)
+
+    def project_rows(start, stop, row_ids):
+        entries = block_entries(start, stop, row_ids)
+        return project_slot_rows(project_rotations, slot_matrices[entries], entry_class[entries], n_classes=tables.n_classes)
+
     # One block: the chunk's projections are made once, for the scores and the M-step.
-    whole = project_block(0, n_slots) if len(slot_blocks) == 1 else None
+    whole = project_block(0, n_slots) if len(slot_blocks) == 1 and not lone else None
     score_cache, recon_cache, recon_abs2_cache = (None, None, None) if whole is None else whole
 
     # --- per-image operands: the SPA gather, with each image's own phases ---
@@ -420,28 +465,52 @@ def run_tilt_chunk(
             kernel_row_image_ids=kernel_row_image_ids,
         )
     else:
-        raw_sum = None
-        for start, stop in slot_blocks:
-            block_score_cache = score_cache if whole is not None else project_block(start, stop)[0]
-            raw_sum = tilt_image_rows_raw_diff2(
-                block_score_cache,
-                slot_image_ids[start:stop],
-                operands.score_input,
-                operands.corr_img_score,
-                (
-                    jnp.zeros((image_capacity,), dtype=jnp.float32)
-                    if operands.highres_xi2_half is None
-                    else jnp.asarray(operands.highres_xi2_half, dtype=jnp.float32)
-                ),
-                candidate_mask,
-                row_is_valid,
-                half_weights=base_tables.half_weights,
-                image_translation_angles=image_angles,
-                full_to_compact=base_tables.full_to_compact,
-                logical_current_size=jnp.asarray(spec.current_size, dtype=jnp.int32),
-                running=raw_sum,
-            )
-            del block_score_cache
+        initial_diff2 = (
+            jnp.zeros((image_capacity,), dtype=jnp.float32)
+            if operands.highres_xi2_half is None
+            else jnp.asarray(operands.highres_xi2_half, dtype=jnp.float32)
+        )
+
+        def raw_diff2_of_rows(rows_of, project):
+            # The rows' diff2 summed over every slot in slot order, their projections made a slot block at a time.
+            running = None
+            for start, stop in slot_blocks:
+                block_score_cache = score_cache if whole is not None else project(start, stop)[0]
+                running = tilt_image_rows_raw_diff2(
+                    block_score_cache,
+                    slot_image_ids[start:stop, rows_of],
+                    operands.score_input,
+                    operands.corr_img_score,
+                    initial_diff2,
+                    candidate_mask[rows_of],
+                    row_is_valid[rows_of],
+                    half_weights=base_tables.half_weights,
+                    image_translation_angles=image_angles,
+                    full_to_compact=base_tables.full_to_compact,
+                    logical_current_size=jnp.asarray(spec.current_size, dtype=jnp.int32),
+                    running=running,
+                )
+                del block_score_cache
+            return running
+
+        if not lone:
+            raw_sum = raw_diff2_of_rows(slice(None), project_block)
+        else:
+            raw_blocks = []
+            for row_start in range(0, chunk.row_capacity, int(lone_block_rows)):
+                if row_start >= chunk.n_valid_rows:
+                    # Padding rows are never scored: their running sum is the zeros it starts from.
+                    raw_blocks.append(jnp.zeros((int(lone_block_rows), n_fine_trans), dtype=jnp.float32))
+                    continue
+                row_ids = np.arange(row_start, row_start + int(lone_block_rows))
+                raw_blocks.append(
+                    raw_diff2_of_rows(
+                        slice(row_start, row_start + int(lone_block_rows)),
+                        lambda start, stop, row_ids=row_ids: project_rows(start, stop, row_ids),
+                    )
+                )
+            raw_sum = jnp.concatenate(raw_blocks, axis=0)
+            del raw_blocks
         scored = tilt_rows_scores_from_raw(
             raw_sum,
             rows.row_image_local,
@@ -474,7 +543,9 @@ def run_tilt_chunk(
         Ft_y_total[0],
         Ft_ctf_total[0],
         operands,
-        stage_tables if whole is not None else block_tables(0, 1, project_block(0, 1)),
+        stage_tables
+        if whole is not None
+        else block_tables(0, 1, project_rows(0, 1, np.arange(int(lone_block_rows))) if lone else project_block(0, 1)),
         spec=spec,
     )
     # Only each particle's translations with posterior mass enter the M-step: a subtomogram's 3D grid
@@ -509,9 +580,11 @@ def run_tilt_chunk(
     # Several blocks merge each row's partials in a [C_R, recon pixels] pair before its one adjoint
     # (relax#27); the pair's bytes come out of the tiles' budget.
     merge_row_partials = len(translation_blocks) > 1
+    # The M-step program's rows: the chunk's, or one block of a lone particle's rows with posterior mass.
+    mstep_row_capacity = int(lone_block_rows) if lone else int(chunk.row_capacity)
     if merge_row_partials:
         row_sum_bytes = (
-            chunk.row_capacity
+            mstep_row_capacity
             * int(spec.n_recon_pixels)
             * (np.dtype(Ft_y_total[0].dtype).itemsize + np.dtype(Ft_ctf_total[0].dtype).itemsize)
         )
@@ -523,7 +596,7 @@ def run_tilt_chunk(
     if mstep_census is not None:
         mstep_census.add(n_unit_trans, translation_blocks[0].index.size, len(translation_blocks))
     slot_spec = rp._make_chunk_program_spec(
-        row_capacity=chunk.row_capacity,
+        row_capacity=mstep_row_capacity,
         image_capacity=unit_capacity,
         n_fine_trans=int(translation_blocks[0].index.size),
         presum_adjoint=merge_row_partials,
@@ -538,46 +611,49 @@ def run_tilt_chunk(
     row_accumulator = np.zeros(chunk.row_capacity, dtype=np.int64)
     if n_accumulators > 1:
         row_accumulator[:chunk.n_valid_rows] = np.asarray(host["row_slot"], dtype=np.int64)[:chunk.n_valid_rows]
-    accumulator_slots, accumulator_posteriors = [], []
-    for accumulator in range(n_accumulators):
-        in_accumulator = row_accumulator == accumulator
-        accumulator_slots.append(
-            _slot_mstep_tables(
-                unit_slot_images,
-                row_unit=host_row_unit,
-                row_has_mass=row_has_mass & in_accumulator[:chunk.n_valid_rows],
-                n_valid_rows=chunk.n_valid_rows,
-                row_capacity=chunk.row_capacity,
-                block_rows=block_rows,
-                image_angles=np.asarray(tilt.image_angles, dtype=np.float32),
-                layout_image_ids=np.asarray(layout.image_ids),
-                unit_translations=unit_translations.index,
-                translation_blocks=translation_blocks,
-                image_capacity=image_capacity,
-            )
+    in_accumulator = [row_accumulator == accumulator for accumulator in range(n_accumulators)]
+    accumulator_posteriors = [
+        unit_posterior
+        if n_accumulators == 1
+        else jnp.where(jnp.asarray(in_accumulator[accumulator])[:, None], unit_posterior, jnp.zeros((), unit_posterior.dtype))
+        for accumulator in range(n_accumulators)
+    ]
+
+    def slot_tables(accumulator, row_ids=None):
+        # The chunk's rows, or a lone particle's block ``row_ids`` (chunk rows, padded past its valid ones).
+        n_rows = chunk.n_valid_rows if row_ids is None else int(np.count_nonzero(row_ids >= 0))
+        rows_of = slice(None) if row_ids is None else np.maximum(row_ids, 0)
+        return _slot_mstep_tables(
+            unit_slot_images,
+            row_unit=host_row_unit[rows_of],
+            row_has_mass=(row_has_mass_padded & in_accumulator[accumulator])[rows_of][:n_rows],
+            n_valid_rows=n_rows,
+            row_capacity=mstep_row_capacity,
+            block_rows=block_rows,
+            image_angles=np.asarray(tilt.image_angles, dtype=np.float32),
+            layout_image_ids=np.asarray(layout.image_ids),
+            unit_translations=unit_translations.index,
+            translation_blocks=translation_blocks,
+            image_capacity=image_capacity,
         )
-        accumulator_posteriors.append(
-            unit_posterior
-            if n_accumulators == 1
-            else jnp.where(jnp.asarray(in_accumulator)[:, None], unit_posterior, jnp.zeros((), unit_posterior.dtype))
-        )
+
+    row_has_mass_padded = np.zeros(chunk.row_capacity, dtype=bool)
+    row_has_mass_padded[:chunk.n_valid_rows] = row_has_mass
     Ft_y_out, Ft_ctf_out = list(Ft_y_total), list(Ft_ctf_total)
-    # Each accumulator's slots are visited in slot order (block by block); an image is one slot's, so its
-    # per-image partials add over the accumulators in the same order with or without blocks.
-    for start, stop in slot_blocks:
-        tables_b = stage_tables if whole is not None else block_tables(start, stop, project_block(start, stop))
+
+    def mstep_slot_block(mstep, tables_b, slots_of, posteriors):
+        # One slot block's M-step for every accumulator, in accumulator order.
         for accumulator in range(n_accumulators):
-            slots = accumulator_slots[accumulator]
             mstep, *partial_pair = _tilt_mstep_program(
                 (
                     mstep._replace(Ft_y=Ft_y_out[accumulator], Ft_ctf=Ft_ctf_out[accumulator]),
                     *(() if row_partial is None else ((row_partial.y, row_partial.ctf),)),
                 ),
-                slots if whole is not None else _slot_tables_block(slots, start, stop),
+                slots_of(accumulator),
                 operands,
                 tables_b,
                 chunk_wavg_window,
-                accumulator_posteriors[accumulator],
+                posteriors[accumulator],
                 kept_index,
                 kept_valid,
                 rect_indices_device,
@@ -592,7 +668,59 @@ def run_tilt_chunk(
                     mstep, stage_tables.wavg_scale_pixel_mask, rp._device_int32(accumulator % tables.n_classes)
                 )
             Ft_y_out[accumulator], Ft_ctf_out[accumulator] = mstep.Ft_y, mstep.Ft_ctf
-        del tables_b
+        return mstep
+
+    if not lone:
+        accumulator_slots = [slot_tables(accumulator) for accumulator in range(n_accumulators)]
+        # Each accumulator's slots are visited in slot order (block by block); an image is one slot's, so its
+        # per-image partials add over the accumulators in the same order with or without blocks.
+        for start, stop in slot_blocks:
+            tables_b = stage_tables if whole is not None else block_tables(start, stop, project_block(start, stop))
+            mstep = mstep_slot_block(
+                mstep,
+                tables_b,
+                lambda accumulator: accumulator_slots[accumulator]
+                if whole is not None
+                else _slot_tables_block(accumulator_slots[accumulator], start, stop),
+                accumulator_posteriors,
+            )
+            del tables_b
+    else:
+        # Only the rows with posterior mass are projected again, a block of them at a time: each block is the
+        # M-step of a chunk holding those rows alone (its tables, posterior and projections are theirs).
+        mass_rows = np.flatnonzero(row_has_mass_padded)
+        for block_start in range(0, mass_rows.size, mstep_row_capacity):
+            row_ids = np.full(mstep_row_capacity, -1, dtype=np.int64)
+            block = mass_rows[block_start : block_start + mstep_row_capacity]
+            row_ids[: block.size] = block
+            safe_rows = np.maximum(row_ids, 0)
+            in_block = jnp.asarray(row_ids >= 0)[:, None]
+            block_posteriors = [
+                jnp.where(in_block, posterior_of[jnp.asarray(safe_rows, dtype=jnp.int32)], jnp.zeros((), posterior_of.dtype))
+                for posterior_of in accumulator_posteriors
+            ]
+            block_slots = [slot_tables(accumulator, row_ids) for accumulator in range(n_accumulators)]
+            for start, stop in slot_blocks:
+                tables_b = base_tables._replace(
+                    **dict(
+                        zip(
+                            ("projection_score_cache", "projection_recon_cache", "projection_recon_abs2_cache"),
+                            project_rows(start, stop, safe_rows),
+                        )
+                    ),
+                    mstep_grid=jnp.asarray(
+                        slot_matrices[block_entries(start, stop, safe_rows)], dtype=base_tables.mstep_grid.dtype
+                    ),
+                    translation_angles=image_angles,
+                    cache_slot_fine_rot=None,
+                )
+                mstep = mstep_slot_block(
+                    mstep,
+                    tables_b,
+                    lambda accumulator: _slot_tables_block(block_slots[accumulator], start, stop),
+                    block_posteriors,
+                )
+                del tables_b
 
     stats = accumulate_tilt_chunk_terms(
         stats,
