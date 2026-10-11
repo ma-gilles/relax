@@ -64,28 +64,23 @@ def test_prejoin_capture_routing(iteration, target, k_class_enabled, captured, s
 
 
 @pytest.mark.parametrize(('iteration', 'mode', 'expected_events'),
-                         [(0, 'off', ['mode']), (2, 'warn', ['mode', 'guard']), (2, 'raise', ['mode', 'guard'])])
+                         [(0, 'off', []), (2, 'warn', [('guard', 'warn')]), (2, 'raise', [('guard', 'raise')])])
 def test_half_accumulator_guard_routing(iteration, mode, expected_events, monkeypatch):
     events = []
     numerators = [np.array([1 + 2j]), np.array([3 + 4j])]
     denominators = [np.array([5.0]), np.array([6.0])]
     log = Mock()
 
-    def guard_mode():
-        events.append('mode')
-        return mode
-
-    def check(arrays, *, context):
-        events.append('guard')
+    def check(arrays, *, mode, context):
+        events.append(('guard', mode))
         assert tuple(arrays) == ('Ft_y_0', 'Ft_y_1', 'Ft_ctf_0', 'Ft_ctf_1')
         for actual, expected in zip(arrays.values(), numerators + denominators):
             assert actual is expected
         assert context == f'iteration={iteration} relion_iteration={12 + iteration + 1}'
 
-    monkeypatch.setattr(diagnostics.finite_check, 'half_accumulator_guard_mode', guard_mode)
     monkeypatch.setattr(diagnostics.finite_check, 'check_half_accumulators', check)
     diagnostics.check_half_accumulators_before_join(
-        numerators, denominators, iteration=iteration, init_relion_iteration=12, log=log,
+        numerators, denominators, guard_mode=mode, iteration=iteration, init_relion_iteration=12, log=log,
     )
     assert events == expected_events
     assert log.info.call_count == int(iteration == 0)
@@ -101,7 +96,6 @@ def test_malformed_capture_target_refuses_when_the_observers_are_built(monkeypat
 def test_capture_precedes_guard_failure(monkeypatch, tmp_path):
     events = []
     monkeypatch.setattr(observers, 'write_bpref_accumulators', lambda *args, **kwargs: events.append('capture'))
-    monkeypatch.setattr(diagnostics.finite_check, 'half_accumulator_guard_mode', lambda: 'raise')
 
     def check(*args, **kwargs):
         events.append('guard')

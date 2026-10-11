@@ -141,51 +141,92 @@ def test_tracked_maxima_survive_a_clean_pass_and_record_infinity(enabled):
     assert finite_check.report_tracked("again") is None
 
 
+def _guard_from_environ():
+    """The guard mode the command reads (``RefinementEnvironment.from_environ``)."""
+    from relax.refinement.refinement_options import RefinementEnvironment
+
+    return RefinementEnvironment.from_environ().half_accumulator_guard
+
+
 def test_half_accumulator_guard_is_on_by_default_and_names_the_half(monkeypatch):
     """The cheap once-per-iteration guard runs in production unless opted out."""
+    from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV, RefinementEnvironment
 
-    monkeypatch.delenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, raising=False)
+    monkeypatch.delenv(HALF_ACCUMULATOR_GUARD_ENV, raising=False)
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
-    assert finite_check.half_accumulator_guard_mode() == "raise"
+    assert _guard_from_environ() == "raise" == RefinementEnvironment().half_accumulator_guard
 
     poisoned = {"Ft_ctf_1": np.array([1.0, np.inf]), "Ft_y_0": np.array([1.0, 2.0])}
     with pytest.raises(finite_check.FiniteCheckError) as excinfo:
-        finite_check.check_half_accumulators(poisoned, context="relion_iteration=15")
+        finite_check.check_half_accumulators(poisoned, mode="raise", context="relion_iteration=15")
     message = str(excinfo.value)
     assert "relion_iteration=15" in message
     assert "Ft_ctf_1" in message and "nonfinite=1/2" in message
     # The clean half is not named, so the report points at the damage.
     assert "Ft_y_0" not in message
     # Clean accumulators cost one reduction each and report nothing.
-    assert finite_check.check_half_accumulators({"Ft_ctf_1": np.array([1.0, 2.0])}) is None
+    assert finite_check.check_half_accumulators({"Ft_ctf_1": np.array([1.0, 2.0])}, mode="raise") is None
 
 
 def test_half_accumulator_guard_opt_out_and_warn_modes(monkeypatch, caplog):
-    """``0`` switches the guard off, ``warn`` keeps going, anything else is an error."""
+    """``0`` switches the guard off, ``warn`` keeps going, anything else is refused when the options are built."""
+    from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV
 
     poisoned = {"Ft_ctf_1": np.array([1.0, np.inf])}
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
     for value in ("0", "off", "false", "no"):
-        monkeypatch.setenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, value)
-        assert finite_check.half_accumulator_guard_mode() == "off"
-        assert finite_check.check_half_accumulators(poisoned) is None
-    for value in ("1", "on", "raise", "  RAISE "):
-        monkeypatch.setenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, value)
-        assert finite_check.half_accumulator_guard_mode() == "raise"
+        monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, value)
+        assert _guard_from_environ() == "off"
+        assert finite_check.check_half_accumulators(poisoned, mode="off") is None
+    for value in ("1", "on", "raise", "  RAISE ", ""):
+        monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, value)
+        assert _guard_from_environ() == "raise"
 
-    monkeypatch.setenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, "warn")
-    assert finite_check.half_accumulator_guard_mode() == "warn"
+    monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "warn")
+    assert _guard_from_environ() == "warn"
     with caplog.at_level(logging.ERROR, logger=finite_check.__name__):
-        message = finite_check.check_half_accumulators(poisoned, context="relion_iteration=15")
+        message = finite_check.check_half_accumulators(poisoned, mode="warn", context="relion_iteration=15")
     assert message is not None and "Ft_ctf_1" in message and "relion_iteration=15" in message
     assert len(caplog.records) == 1
 
     # The per-bucket warn switch demotes the guard as well.
-    monkeypatch.setenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, "1")
+    monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "1")
     monkeypatch.setenv(finite_check.FINITE_CHECK_WARN_ENV, "1")
-    assert finite_check.half_accumulator_guard_mode() == "warn"
+    assert _guard_from_environ() == "warn"
 
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
-    monkeypatch.setenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, "maybe")
+    monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "maybe")
     with pytest.raises(ValueError, match="RELAX_EM_BPREF_FINITE_GUARD"):
-        finite_check.half_accumulator_guard_mode()
+        _guard_from_environ()
+
+
+def test_the_command_reads_the_guard_mode_into_the_options(monkeypatch, tmp_path):
+    """``relax refine`` reads RELAX_EM_BPREF_FINITE_GUARD once, into ``options.environment``."""
+    from helpers.tiny_main import controller_inputs
+
+    from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV
+
+    monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
+    monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "warn")
+    inputs = controller_inputs(monkeypatch, tmp_path, "refine")
+    assert inputs["options"].environment.half_accumulator_guard == "warn"
+
+
+def test_the_controller_hands_the_options_guard_mode_to_the_guard(monkeypatch):
+    """The controller passes ``options.environment``'s mode, not the environment, to the pre-join guard."""
+    from helpers.tiny_refinement import run_tiny_refinement
+
+    from relax.diagnostics import reconstruction
+    from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV, RefinementEnvironment
+
+    monkeypatch.delenv(HALF_ACCUMULATOR_GUARD_ENV, raising=False)
+    modes = []
+    monkeypatch.setattr(
+        reconstruction.finite_check, "check_half_accumulators",
+        lambda accumulators, *, mode, context: modes.append(mode),
+    )
+    run_tiny_refinement(
+        monkeypatch, max_iter=1, final_after_max_iter=False,
+        environment=RefinementEnvironment(half_accumulator_guard="warn"),
+    )
+    assert modes == ["warn"]

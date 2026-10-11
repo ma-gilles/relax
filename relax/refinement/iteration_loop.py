@@ -1019,8 +1019,8 @@ def refine_single_volume(
             pixel_size_angstrom=ctx.source_pixel_size_angstrom,
         )
         reconstruction_diagnostics.check_half_accumulators_before_join(
-            operands.numerators, operands.denominators, iteration=iteration,
-            init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
+            operands.numerators, operands.denominators, guard_mode=options.environment.half_accumulator_guard,
+            iteration=iteration, init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
         )
 
         # --- RELION-exact M-step: K=1 on the split-half auto-refine path (compareTwoHalves -> updateSSNRarrays

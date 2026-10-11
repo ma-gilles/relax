@@ -13,7 +13,7 @@ back one boolean per field, so it costs a reduction and a synchronisation
 rather than a transfer, but it still serialises the pass it watches. An arm
 with it set is a diagnostic arm and never a timing arm. The once-per-iteration
 accumulator guard (:func:`check_half_accumulators`) is the exception: it is on
-by default, see :func:`half_accumulator_guard_mode`.
+by default, see ``relax.refinement.refinement_options.half_accumulator_guard_mode``.
 
 On the first non-finite value it reports the half, the bucket, the field, how
 many entries are bad, the first bad flat index, and the operands at that index,
@@ -24,7 +24,6 @@ collect every occurrence.
 from __future__ import annotations
 
 import logging
-import os
 from functools import lru_cache
 
 import numpy as np
@@ -47,17 +46,11 @@ __all__ = [
     "describe_context",
     "finite_check_enabled",
     "finite_check_warn_only",
-    "half_accumulator_guard_mode",
     "check_half_accumulators",
     "report_tracked",
     "track_max",
     "track_max_host",
 ]
-
-HALF_ACCUMULATOR_GUARD_ENV = "RELAX_EM_BPREF_FINITE_GUARD"
-HALF_ACCUMULATOR_GUARD_MODES = ("raise", "warn", "off")
-_GUARD_OFF_VALUES = frozenset({"0", "false", "no", "off"})
-_GUARD_RAISE_VALUES = frozenset({"", "1", "true", "yes", "on", "raise"})
 
 # ``reconstruction_probs`` are ``raw_weight / sum_weight`` where the numerator
 # is one of the terms of the denominator, so every entry is at most one and a
@@ -520,39 +513,7 @@ def track_max_host(name: str, value: float) -> None:
         _TRACKED[name] = value
 
 
-def half_accumulator_guard_mode() -> str:
-    """How the once-per-iteration accumulator guard behaves: raise, warn or off.
-
-    The guard is on by default in ``raise`` mode. Job 14193291 (P4-D,
-    2026-09-20) measured its cost on an interleaved off/on pair of twelve
-    one-iteration arms at current size 74 on one H100: in the eight arms that
-    ran without a co-located cold compile the medians were 218.0 s off and
-    218.3 s on, inside the 217.4 to 219.1 s same-source spread, so production
-    pays nothing measurable for stopping where the damage is instead of four
-    stages later.
-
-    ``RELAX_EM_BPREF_FINITE_GUARD=0`` (also ``off``, ``false``, ``no``) opts
-    out; ``warn`` logs the offending accumulators and continues;
-    ``RELAX_EM_FINITE_CHECK_WARN=1`` demotes it to ``warn`` as well, as it
-    does the per-bucket checks. Any other value is a configuration error and
-    raises, rather than silently running with a guard the caller did not ask
-    for.
-    """
-
-    raw = os.environ.get(HALF_ACCUMULATOR_GUARD_ENV, "").strip().lower()
-    if raw in _GUARD_OFF_VALUES:
-        return "off"
-    if raw == "warn":
-        return "warn"
-    if raw not in _GUARD_RAISE_VALUES:
-        raise ValueError(
-            f"{HALF_ACCUMULATOR_GUARD_ENV}={raw!r}: expected one of 1/on/raise "
-            "(the default), warn, or 0/off"
-        )
-    return "warn" if finite_check_warn_only() else "raise"
-
-
-def check_half_accumulators(accumulators: dict, *, context: str = ""):
+def check_half_accumulators(accumulators: dict, *, mode: str, context: str = ""):
     """Fail where the damage is, not four stages later.
 
     Job 14178118's compact control wrote a non-finite BPref accumulator, then
@@ -564,12 +525,11 @@ def check_half_accumulators(accumulators: dict, *, context: str = ""):
     Unlike the per-bucket checks this costs one reduction per accumulator and
     one synchronisation per iteration, against a pass that takes tens of
     seconds, so it is affordable in production and runs by default in raise
-    mode (:func:`half_accumulator_guard_mode`; ``RELAX_EM_BPREF_FINITE_GUARD=0``
+    ``mode`` (``refinement_options.half_accumulator_guard_mode``; ``RELAX_EM_BPREF_FINITE_GUARD=0``
     opts out, ``warn`` logs and continues). Turning it off restores the
     earlier behaviour of failing four stages later on ``wsum_norm_correction``.
     """
 
-    mode = half_accumulator_guard_mode()
     if mode == "off":
         return None
     offenders = _non_finite_names(accumulators)

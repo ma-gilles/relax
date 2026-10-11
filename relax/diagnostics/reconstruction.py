@@ -15,6 +15,7 @@ from recovar.core import fourier_transform_utils
 
 from relax.diagnostics import finite_check
 from relax.reconstruction import regularization
+from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV
 
 if TYPE_CHECKING:
     from relax.refinement.image_size_plans import ClassImageSize
@@ -22,18 +23,19 @@ if TYPE_CHECKING:
     from relax.refinement.priors import ClassPriorEstimate
 
 
-def check_half_accumulators_before_join(numerators, denominators, *, iteration, init_relion_iteration, log) -> None:
+def check_half_accumulators_before_join(
+    numerators, denominators, *, guard_mode: str, iteration, init_relion_iteration, log
+) -> None:
     """The finite guard of the native half accumulators, before any cross-half join.
 
-    ``RELAX_EM_BPREF_FINITE_GUARD`` (``finite_check.half_accumulator_guard_mode``) selects off, warn or raise;
+    ``guard_mode`` (``RELAX_EM_BPREF_FINITE_GUARD``, ``RefinementEnvironment.half_accumulator_guard``) is off, warn or raise;
     the mode is logged at the first iteration. Run before the join, so a report names the half that is
     actually damaged rather than the one the join copied it into.
     """
-    guard_mode = finite_check.half_accumulator_guard_mode()
     if iteration == 0:
         log.info(
             "BPref accumulator guard (%s): mode=%s",
-            finite_check.HALF_ACCUMULATOR_GUARD_ENV,
+            HALF_ACCUMULATOR_GUARD_ENV,
             guard_mode,
         )
     if guard_mode != "off":
@@ -44,6 +46,7 @@ def check_half_accumulators_before_join(numerators, denominators, *, iteration, 
                 "Ft_ctf_0": denominators[0],
                 "Ft_ctf_1": denominators[1],
             },
+            mode=guard_mode,
             context=finite_check.describe_context(
                 iteration=iteration,
                 relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
