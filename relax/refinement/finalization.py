@@ -337,6 +337,8 @@ def run_final_all_data(
             local_profile_history=history.local_profile_history,
         )
     else:
+        # Resolved once: the batch plan and the execution policy read the same answer.
+        diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(final_sampling.settings.relion_iteration)
         final_dense_sampling = DenseSamplingSpec(
             effective_rotations=final_sampling.grid.rotations,
             current_translations=final_sampling.grid.translations,
@@ -351,7 +353,7 @@ def run_final_all_data(
         )
         final_dense_batching = DenseBatchPolicy(
             image_batch_size=options.execution.image_batch_size,
-            safe_batch_sizes=ctx.batch_planner,
+            safe_batch_sizes=ctx.batch_planner.for_expectation(diagnostic_float64_pass2=diagnostic_float64_pass2),
             max_significants=options.adaptive.max_significants,
             significance_safe_batch_sizes=None,
             k_class_image_batch_size_override=None,
@@ -376,9 +378,7 @@ def run_final_all_data(
             # the two pass builders differ here, and no parity run has checked which one RELION follows.
             bpref_device_signature_active=False,
             debug_iteration=final_sampling.settings.relion_iteration,
-            diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
-                final_sampling.settings.relion_iteration
-            ),
+            diagnostic_float64_pass2=diagnostic_float64_pass2,
             preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
             # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,

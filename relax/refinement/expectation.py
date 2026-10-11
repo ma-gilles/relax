@@ -671,6 +671,8 @@ def score_numbered_half(
     translation_search_base = relion_translation_search_base(
         previous_translations_k, dtype=scoring_dtype
     )
+    # Resolved once per half: the batch plan and the execution policy read the same answer.
+    diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(numbered_relion_iteration)
     half_batching = prepare_half_batches(
         particle_half.dataset,
         half.data.projector,
@@ -691,6 +693,7 @@ def score_numbered_half(
         use_relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
         multi_shape_halves=multi_shape_halves,
         coarse_sizing=(coarse_size_step_deg, particle_diameter_ang) if phase.use_adaptive and multi_shape_halves else None,
+        diagnostic_float64_pass2=diagnostic_float64_pass2,
     )
     # RELION translation priors: relion_half_translation_prior_inputs
     # documents the pdf_offset / wsum_sigma2_offset centers, the
@@ -883,9 +886,7 @@ def score_numbered_half(
             return_best_pose_details=True,
             bpref_device_signature_active=bpref_device_signature_active,
             debug_iteration=numbered_relion_iteration,
-            diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
-                numbered_relion_iteration
-            ),
+            diagnostic_float64_pass2=diagnostic_float64_pass2,
             preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,

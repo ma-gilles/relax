@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from functools import partial
 from types import SimpleNamespace
@@ -41,13 +40,10 @@ class BatchPlanner:
         current_size_for_batch=None, compact_k1_relion_layout=False,
         compact_k1_relion_score_bpref_overlap=False,
         model_current_size_for_batch=None, score_projector_staging_bytes=0,
-        windowed_translation=False,
+        windowed_translation=False, diagnostic_float64_pass2=False,
     ):
         """Reduce batch sizes using the selected phase's pending allocations."""
-        use_float64_scoring_for_batch = bool(
-            self.precision.use_float64_scoring
-            or os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
-        )
+        use_float64_scoring_for_batch = self.precision.use_float64_scoring or diagnostic_float64_pass2
         runtime_free_memory_gb = None
         if compact_k1_relion_layout:
             # CUDA textures allocate outside XLA's reusable pool, so the physical reading bounds them; under a
@@ -96,6 +92,11 @@ class BatchPlanner:
             logger=self.log,
         )
         return plan.image_batch_size, plan.rotation_block_size
+
+    def for_expectation(self, *, diagnostic_float64_pass2: bool):
+        """The planner of one expectation: itself, or float64 sizes when the scoring side runs this iteration's
+        pass 2 in float64 (``precision._diagnostic_float64_pass2_matches`` of the same iteration)."""
+        return partial(self, diagnostic_float64_pass2=True) if diagnostic_float64_pass2 else self
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -164,11 +165,14 @@ def prepare_half_batches(
     use_relion_x_half_mstep: bool,
     multi_shape_halves,
     coarse_sizing,
+    diagnostic_float64_pass2: bool,
 ) -> HalfBatchPlan:
     """Resolve compact staging and coarse/fine batches before one half scores.
 
     Grids are inspected only in the branches that need them. Dense scoring uses
     the safe-size callbacks and the coarse/fine sizes; local scoring sizes its own tiles.
+    ``diagnostic_float64_pass2``: this iteration's pass 2 scores in float64 (a listed iteration of
+    RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS), so its plan is sized for float64 and is not compact.
     """
     batching = planner.requested
     n_classes = planner.n_classes
@@ -178,15 +182,15 @@ def prepare_half_batches(
     dense_k_class_rotation_block_size = batching.rotation_block_size
     significance_image_batch_size = None
     significance_rotation_block_size = None
-    safe_batch_sizes_for_half = planner
-    significance_safe_batch_sizes_for_half = planner
+    safe_batch_sizes_for_half = planner.for_expectation(diagnostic_float64_pass2=diagnostic_float64_pass2)
+    significance_safe_batch_sizes_for_half = safe_batch_sizes_for_half
     projector_half = select_projector_half_for_class(
         None if projector is None else projector.data, 0, n_classes,
     )
     compact_precision = not (
         planner.precision.use_float64_scoring
         or planner.precision.use_float64_projections
-        or os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
+        or diagnostic_float64_pass2
     )
     if (
         use_adaptive and not use_local and not k_class_enabled
