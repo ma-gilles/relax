@@ -147,7 +147,6 @@ def test_half_accumulator_guard_is_on_by_default_and_names_the_half(monkeypatch)
     monkeypatch.delenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, raising=False)
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
     assert finite_check.half_accumulator_guard_mode() == "raise"
-    assert finite_check.half_accumulator_guard_enabled()
 
     poisoned = {"Ft_ctf_1": np.array([1.0, np.inf]), "Ft_y_0": np.array([1.0, 2.0])}
     with pytest.raises(finite_check.FiniteCheckError) as excinfo:
@@ -169,7 +168,6 @@ def test_half_accumulator_guard_opt_out_and_warn_modes(monkeypatch, caplog):
     for value in ("0", "off", "false", "no"):
         monkeypatch.setenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, value)
         assert finite_check.half_accumulator_guard_mode() == "off"
-        assert not finite_check.half_accumulator_guard_enabled()
         assert finite_check.check_half_accumulators(poisoned) is None
     for value in ("1", "on", "raise", "  RAISE "):
         monkeypatch.setenv(finite_check.HALF_ACCUMULATOR_GUARD_ENV, value)

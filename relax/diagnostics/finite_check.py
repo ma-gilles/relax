@@ -47,7 +47,6 @@ __all__ = [
     "describe_context",
     "finite_check_enabled",
     "finite_check_warn_only",
-    "half_accumulator_guard_enabled",
     "half_accumulator_guard_mode",
     "check_half_accumulators",
     "report_tracked",
@@ -551,12 +550,6 @@ def half_accumulator_guard_mode() -> str:
             "(the default), warn, or 0/off"
         )
     return "warn" if finite_check_warn_only() else "raise"
-
-
-def half_accumulator_guard_enabled() -> bool:
-    """Whether the cheap once-per-iteration accumulator guard runs (default: yes)."""
-
-    return half_accumulator_guard_mode() != "off"
 
 
 def check_half_accumulators(accumulators: dict, *, context: str = ""):
