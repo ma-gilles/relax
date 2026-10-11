@@ -145,6 +145,7 @@ def test_a_dead_class_scored_in_the_coarse_pass_does_not_shift_the_live_classes(
     (here by hundreds of units and by 1e6): the pre-prior maximum, and with it the float32 frame of the
     weights, the significance cut and the best pose, must equal those of the run without the dead class."""
     from relax.scoring import coarse_publication, pass1_program
+    from relax.scoring.pass1_scores import ProgramStatics
 
     batch, rows, n_trans = 3, 4, 2
     rng = np.random.default_rng(68)
@@ -161,8 +162,11 @@ def test_a_dead_class_scored_in_the_coarse_pass_does_not_shift_the_live_classes(
         return pass1_program._pass1_block_update(
             state, jnp.full((rows, 1), class_index, jnp.complex64), jnp.zeros((batch, n_trans, 1), jnp.complex64),
             None, None, batch, (jnp.asarray(class_log_prior, jnp.float32), None), None, class_index, 0,
-            rows=rows, block_rows=rows, n_trans=n_trans, image_shape=(4, 4), volume_shape=(4, 4, 4), float64=False,
-            score_kind="gaussian", exact_weight_order=False, return_class_best=True, track_class_second=False,
+            rows=rows, block_rows=rows,
+            statics=ProgramStatics(
+                n_trans=n_trans, image_shape=(4, 4), volume_shape=(4, 4, 4), float64=False, score_kind="gaussian",
+                exact_weight_order=False, return_class_best=True, track_class_second=False,
+            ),
         )
 
     def initial(n_classes):

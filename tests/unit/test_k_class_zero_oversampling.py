@@ -103,7 +103,7 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
     from relax.classification.k_class_results import _assemble_result
     from relax.types import make_relion_stats
     from relax.scoring import significance
-    from relax.scoring.pass1_results import Pass1Result
+    from relax.scoring.pass1_results import Pass1Result, Pass1Stats
 
     coarse_calls, fine_calls = [], []
     coarse_sum = np.asarray([123.0], dtype=np.float32)
@@ -115,8 +115,9 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
         return Pass1Result(
             None, np.ones(1, dtype=np.int32), coarse_pose, np.zeros(1, dtype=np.int32),
             [[np.asarray([0], dtype=np.int32)] for _ in range(n_classes)],
-            {"significant_cutoff_counts": np.ones(1, dtype=np.int32),
-             "relion_f32_sum_weight": coarse_sum, "relion_f32_max_posterior": coarse_pmax},
+            Pass1Stats(**{name: None for name in Pass1Stats.__dataclass_fields__}
+                       | {"significant_cutoff_counts": np.ones(1, dtype=np.int32),
+                          "relion_f32_sum_weight": coarse_sum, "relion_f32_max_posterior": coarse_pmax}),
         )
 
     stats = make_relion_stats(
