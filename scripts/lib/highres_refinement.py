@@ -7,20 +7,12 @@ from __future__ import annotations
 
 import numpy as np
 
+from relax.classification.k_class_results import _logsumexp_np
 from relax.local_search.layout import (
     LocalHypothesisLayout,
     build_local_hypothesis_layout,
 )
 from relax.sampling import build_local_search_grid_metadata
-
-
-def _logsumexp_np(values: np.ndarray, axis: int) -> np.ndarray:
-    values = np.asarray(values, dtype=np.float64)
-    max_value = np.max(values, axis=axis, keepdims=True)
-    safe_max = np.where(np.isfinite(max_value), max_value, 0.0)
-    summed = np.sum(np.exp(np.where(np.isfinite(values), values - safe_max, -np.inf)), axis=axis)
-    with np.errstate(divide="ignore"):
-        return np.squeeze(safe_max, axis=axis) + np.log(summed)
 
 
 def build_top_p_local_hypothesis_layout(
@@ -116,7 +108,10 @@ def build_top_p_local_hypothesis_layout(
             priors[inverse_idx] = np.logaddexp(priors[inverse_idx], float(local.rotation_log_priors_flat[local_idx]))
         priors = (priors - np.log(max(1, center_ids.size))).astype(np.float32)
         rotations_selected = np.asarray(local.rotations_flat, dtype=np.float32)[first_idx]
-        trans_prior = _logsumexp_np(np.asarray(local.translation_log_priors, dtype=np.float32), axis=0)
+        # The library's reduction keeps its input dtype: reduce the float32 priors in float64, as this script did.
+        trans_prior = _logsumexp_np(
+            np.asarray(local.translation_log_priors, dtype=np.float32).astype(np.float64), axis=0
+        )
         trans_prior = (trans_prior - np.log(max(1, center_ids.size))).astype(np.float32)
 
         counts[image_idx] = int(unique_ids.shape[0])
