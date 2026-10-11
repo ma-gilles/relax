@@ -2876,3 +2876,30 @@ def test_log_likelihood_contribution_of_a_group_on_another_grid():
         np.array([5.0]), sigma2_noise=sigma2, groups=[1], n_images=[1], box_size=ori, current_size=cs
     )
     assert abs(plain[0] - got[0]) > 1.0
+
+
+def test_run_metadata_records_the_library_settings_the_options_read(monkeypatch, tmp_path):
+    """The options file's allocator and JAX cache entries come from ``VdamEnvironment`` (read when the options are
+    built), not from the process environment at write time; unset variables give "default", None and None."""
+    names = ("TF_GPU_ALLOCATOR", "JAX_COMPILATION_CACHE_DIR", "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS")
+
+    def written(tag):
+        opts = native_options.NativeInitialModelOptions(fn_img="x", outputname=str(tmp_path / tag / "run"))
+        for name in names:  # what the environment holds after the options are built must not matter
+            monkeypatch.setenv(name, "changed-later")
+        output.write_initial_run_metadata(opts, None)
+        return json.loads((tmp_path / tag / "run_native_options.json").read_text())
+
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+    unset = written("unset")
+    assert (unset["resolved_cuda_allocator"], unset["jax_compilation_cache_enabled"]) == ("default", False)
+    assert (unset["jax_compilation_cache_dir"], unset["jax_persistent_cache_min_compile_time_secs"]) == (None, None)
+    assert "environment" not in unset
+
+    monkeypatch.setenv("TF_GPU_ALLOCATOR", "cuda_malloc_async")
+    monkeypatch.setenv("JAX_COMPILATION_CACHE_DIR", "/cache/dir")
+    monkeypatch.setenv("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS", "0.5")
+    set_ = written("set")
+    assert (set_["resolved_cuda_allocator"], set_["jax_compilation_cache_enabled"]) == ("cuda_malloc_async", True)
+    assert (set_["jax_compilation_cache_dir"], set_["jax_persistent_cache_min_compile_time_secs"]) == ("/cache/dir", "0.5")

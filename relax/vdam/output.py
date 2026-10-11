@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -42,18 +41,11 @@ def write_initial_run_metadata(opts, continuation) -> None:
     config_path = f"{opts.outputname}_native_options.json"
     native_options = asdict(opts)
     del native_options["environment"]  # the saved options keep their format
-    native_options["resolved_cuda_allocator"] = os.environ.get(
-        "TF_GPU_ALLOCATOR",
-        "default",
-    )
-    native_options["jax_compilation_cache_enabled"] = bool(
-        os.environ.get("JAX_COMPILATION_CACHE_DIR")
-    )
-    native_options["jax_compilation_cache_dir"] = os.environ.get(
-        "JAX_COMPILATION_CACHE_DIR"
-    )
-    native_options["jax_persistent_cache_min_compile_time_secs"] = os.environ.get(
-        "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"
+    native_options["resolved_cuda_allocator"] = opts.environment.cuda_allocator
+    native_options["jax_compilation_cache_enabled"] = bool(opts.environment.jax_compilation_cache_dir)
+    native_options["jax_compilation_cache_dir"] = opts.environment.jax_compilation_cache_dir
+    native_options["jax_persistent_cache_min_compile_time_secs"] = (
+        opts.environment.jax_persistent_cache_min_compile_time_secs
     )
     with open(config_path, "w") as f:
         json.dump(native_options, f, indent=2, sort_keys=True)

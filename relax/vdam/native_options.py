@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from relax.io.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
-from relax.runtime.env_flags import parse_env_strict_flag
+from relax.runtime.env_flags import parse_env_strict_flag, read_env_text
 from relax.sampling.symmetry import is_identity_symmetry
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
@@ -92,6 +92,9 @@ class VdamEnvironment:
     empty keeps the engine's RELION 0.999) and ``subtract_projected_reference`` (``False`` when
     RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is on, a strict flag: back-project the images, not the residuals).
     A strict flag is ``env_flags.parse_env_strict_flag``: 1/true/yes/on, 0/false/no/off, anything else refused.
+    Three settings of the libraries, which the run's options file records as they are: ``cuda_allocator``
+    (TF_GPU_ALLOCATOR; "default" when unset), ``jax_compilation_cache_dir`` (JAX_COMPILATION_CACHE_DIR) and
+    ``jax_persistent_cache_min_compile_time_secs`` (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS); None when unset.
     """
 
     clear_jax_caches_per_iteration: bool = False
@@ -99,6 +102,9 @@ class VdamEnvironment:
     isolate_expected_accuracy: bool = False
     adaptive_fraction: float | None = None
     subtract_projected_reference: bool = True
+    cuda_allocator: str = "default"
+    jax_compilation_cache_dir: str | None = None
+    jax_persistent_cache_min_compile_time_secs: str | None = None
 
     @classmethod
     def from_environ(cls) -> VdamEnvironment:
@@ -115,7 +121,10 @@ class VdamEnvironment:
                    strict("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"),
                    strict("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"),
                    float(adaptive_fraction) if (adaptive_fraction := env.get("RELAX_ADAPTIVE_FRACTION")) else None,
-                   not parse_env_strict_flag("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"))
+                   not parse_env_strict_flag("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"),
+                   read_env_text("TF_GPU_ALLOCATOR", "default"),
+                   read_env_text("JAX_COMPILATION_CACHE_DIR"),
+                   read_env_text("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"))
 
 
 @dataclass(frozen=True, kw_only=True)

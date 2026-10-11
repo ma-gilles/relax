@@ -181,6 +181,11 @@ def parse_env_positive_float(name: str) -> float | None:
     return value
 
 
+def read_env_text(name: str, default: str | None = None) -> str | None:
+    """A variable's text as it is set (a path, a library's own setting); ``default`` when it is unset."""
+    return os.environ.get(name, default)
+
+
 def parse_env_flag(name: str, *, default: bool = False) -> bool:
     """Read a boolean override; unset or blank values use the caller default."""
     raw = os.environ.get(name)
