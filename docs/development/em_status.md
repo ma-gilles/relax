@@ -430,8 +430,10 @@ rounded pre-shift, applied to the particle's prepared images as a phase (`image_
 resident pass, `prepare_unshifted_bucket_operands`), with the one zero translation scored. The direction
 prior is kept (ml_optimiser.cpp:5198); sigma_offset is still updated (:8690). With `--firstiter_cc`
 (RELION's GUI default) the first iteration scores each particle by normalized cross-correlation at its
-given pose against the one reference (:4989, :8021, :4389-4402). Refused for now: `--firstiter_cc` from
-several references, `--continue`, K=1, several image shapes, subtomograms.
+given pose against the one reference (:4989, :8021, :4389-4402), or, from one reference per class,
+against every class, the class of the best CC taking the particle (relax#78: only `do_generate_seeds`
+restricts that iteration to one reference, :4392-4401). Refused for now: `--continue`, K=1, several
+image shapes, subtomograms.
 
 - Gate (team-lead 2026-10-05: iterations 1-5 trajectory, RELION 5.0.1 patched non-MPI GPU, same-seed
   RELION runs bit-identical, seed rule over seeds 1-3; script `em_work/relax_onengine_20260926/skipalign_20261004/gate.py`).
@@ -445,6 +447,21 @@ several references, `--continue`, K=1, several image shapes, subtomograms.
   0, 0, +0.0025 +/- 0.0010, +0.0041 +/- 0.0023, +0.0095 +/- 0.0049, 0 (all pass); agreement 0.983-1.000
   at it3-5, map FSC-AUC at least 0.9996. On the offsets fixture agreement at least 0.992 and map FSC-AUC
   at least 0.9998 through it25.
+- `--firstiter_cc` from one reference per class (relax#78, October 11, 2026): data_pdb_k4_5k_128, its four
+  references, 5 iterations, seed 1, page-build RELION (same-seed RELION runs bit-identical). Class assignments
+  equal RELION's for all 5000 particles at every iteration; class maps within 1.2e-6 relative L2 at iteration 1
+  and 4.6e-4 at iterations 2-5; at most 3 particles with a Pmax difference above 1e-3 (largest 3.2e-3). The
+  winner class is found by scoring every image against each class in turn and then scoring the winners'
+  subsets, K + 1 passes of one sample per image (Slurm 15358774).
+- A class that empties on its own (the same list with class 3's reference replaced by white noise, so the
+  cross-correlation iteration gives it no particle): RELION sets its `pdf_class` to 0 and leaves it out. relax
+  stopped at iteration 2 of such a run with "class_log_priors must be finite" in the global and the given-pose
+  engine (the local-search route already took the class, relax#68); the engine now takes the minus-infinite log
+  prior. Global search (healpix 1, offsets 4/2, oversampling 1): assignments equal RELION's for all 5000
+  particles at iterations 1-5, live class maps within 1.3e-6, no Pmax difference above 1e-3. `--skip_align`:
+  one particle differs at iteration 2 and none at 1, 3, 4 and 5, live maps within 4.1e-4, at most 9 Pmax
+  differences above 1e-3 (largest 6.1e-3). Slurm 15358774 (RELION `--skip_align`) and 15358819. Tier item
+  `kclass_emptied_class` runs both searches with structural checks.
 - Offset handling: the same images with STAR offsets drawn in (-1.6, 1.6) px (seed 20261005, rows at
   exactly 0.5 and 1.5 px; the offsets do not describe the images, so this row tests parity, not accuracy
   against ground truth). Iteration-1 class maps relax vs RELION 1.1e-4 relative L2 (9e-5 without offsets);

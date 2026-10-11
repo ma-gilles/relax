@@ -263,9 +263,6 @@ def validate_skip_align_args(args) -> None:
     reasons = []
     if int(args.n_classes) <= 1:
         reasons.append("it classifies, so it needs --n_classes > 1")
-    if args.firstiter_cc and (getattr(args, "ref_star", None) or getattr(args, "init_class_volumes", None)):
-        # RELION's cross-correlation iteration starts from one reference (ml_optimiser.cpp:4389-4402).
-        reasons.append("the cross-correlation first iteration at given poses starts from one --init_volume")
     if args.continue_optimiser_star is not None:
         reasons.append("--continue is not implemented for it")
     if args.initial_pose_source == "none" or args.relion_init_dir is not None or args.init_previous_best_poses_npz is not None:

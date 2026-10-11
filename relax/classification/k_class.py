@@ -1087,12 +1087,14 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
     accumulate_noise: bool,
     return_best_pose_details: bool,
     pass2_kwargs: dict,
+    given_pose_evidence: np.ndarray | None = None,
 ) -> KClassEMResult:
     """Sparse RELION firstiter_cc fine pass over global-winner image subsets.
 
     ``coarse_result`` None is the pass at given poses (``--skip_align``): there is no coarse probe, each
     image's one sample is its only candidate, and a class's evidence for its images is the fine pass's
-    own (the coarse and the fine sample are the same).
+    own (the coarse and the fine sample are the same). ``given_pose_evidence`` (float64 ``[K, N]``) then
+    receives that evidence as the pass reduced it, before the result's cast to the score dtype.
     """
 
     from relax.fine_pass.dispatch import compute_pass2_stats_sparse
@@ -1265,6 +1267,10 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             class_log_evidence[class_index, image_indices] = np.asarray(
                 result.relion_stats.log_evidence_per_image, dtype=class_log_evidence.dtype
             )
+            if given_pose_evidence is not None:
+                given_pose_evidence[class_index, image_indices] = np.asarray(
+                    result.relion_stats.log_evidence_per_image, dtype=np.float64
+                )
         hard_full = np.zeros(n_images, dtype=np.int32)
         hard_full[image_indices] = sparse_pose_ids_to_fine_grid(
             result.hard_assignment, result.best_rotation_indices, n_fine_trans
@@ -1350,14 +1356,13 @@ def _given_pose_class_supports(
     No pose search, so no pass 1 (ml_optimiser.cpp:8454, pdf_orientation = pdf_class): every class is
     scored on each image's own sample, or only its seed class in a seed iteration. RELION's
     ``--firstiter_cc`` iteration from one reference scores every particle against it alone
-    (:4389-4402), so its winner at a given pose is the seed class. Returns the supports by class, each
-    image's sample count and, for that iteration, each image's class.
+    (:4389-4402), so its winner at a given pose is the seed class; from one reference per class it scores
+    every class and the caller finds the winner (:func:`_given_pose_cc_classes`). Returns the supports by
+    class, each image's sample count and, for the seeded cross-correlation iteration, each image's class.
     """
 
     if n_classes == 1 or len(given_supports) != n_images:
         raise ValueError("given supports are one coarse sample list per image of a K-class pass")
-    if firstiter_cc and image_seed_classes is None:
-        raise NotImplementedError("the cross-correlation iteration at given poses starts from one reference")
     supports = [np.asarray(samples, dtype=np.int32).reshape(-1) for samples in given_supports]
     by_class = (
         [list(supports) for _ in range(n_classes)]
@@ -1367,8 +1372,45 @@ def _given_pose_class_supports(
     return (
         [_given_support_csr(rows, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans) for rows in by_class],
         np.asarray([samples.size for samples in supports], dtype=np.int32),
-        np.asarray(image_seed_classes, dtype=np.int32) if firstiter_cc else None,
+        np.asarray(image_seed_classes, dtype=np.int32) if firstiter_cc and image_seed_classes is not None else None,
     )
+
+
+def classes_of_best_given_pose_cc(cc_by_class) -> np.ndarray:
+    """Each image's class in a ``--firstiter_cc`` iteration at given poses from K references (relax#78).
+
+    RELION takes the device arg-min of the float32 ``diff2 = -CC`` over one class-major weight array
+    (acc_ml_optimiser_impl.h:1384-1392 and 2012-2026; cuda_utils_cub.cuh:66-84), so the class of the best
+    normalized CC wins and equal scores go to the lowest class. ``cc_by_class`` is ``[K, N]``, each image's
+    float32 CC of every class, or that plus an offset of the image's own (the pass's evidence): the offset is
+    0.5 |image|^2, about 2^21, and a float64 keeps a float32 CC below 1 added to it apart from its neighbours,
+    so the order and the exact ties are the float32 CC's.
+    """
+
+    return np.argmax(np.asarray(cc_by_class, dtype=np.float64), axis=0).astype(np.int32)
+
+
+def _given_pose_cc_classes(score_class, n_classes: int, n_images: int) -> np.ndarray:
+    """The winner class of each image's given pose under normalized CC, from one reference per class.
+
+    Nothing restricts RELION's ``--firstiter_cc`` iteration to one reference under ``--skip_align``
+    (``do_generate_seeds`` alone does, ml_optimiser.cpp:4392-4401), so each particle's one sample is scored
+    against every class. ``score_class(assignments, evidence)`` is the winner-subset pass, here with every
+    image assigned one class; it fills that class's row of ``evidence``, at one sample per image the sample's
+    normalized CC less an offset of the image's own.
+    """
+
+    cc = np.full((n_classes, n_images), -np.inf, dtype=np.float64)
+    for class_index in range(n_classes):
+        score_class(np.full(n_images, class_index, dtype=np.int32), cc)
+    if not np.all(np.isfinite(cc)):
+        raise RuntimeError("a given-pose normalized CC is not finite")
+    winners = classes_of_best_given_pose_cc(cc)
+    logger.info(
+        "RELION --skip_align --firstiter_cc from %d references: images per class %s",
+        n_classes, np.bincount(winners, minlength=n_classes).tolist(),
+    )
+    return winners
 
 
 def run_dense_k_class_em_adaptive(
@@ -1986,29 +2028,37 @@ def run_dense_k_class_em_adaptive(
                 "dataset with subset(); the dense global-winner fallback was removed on 2026-10-03"
             )
         pass2_t0 = time.time()
-        result = _run_sparse_firstiter_global_winner_subset_pass2(
-            experiment_dataset,
-            means_array,
-            mean_variance,
-            noise_variance,
-            coarse_translations_np,
-            fine_rotations_np,
-            fine_mstep_rotations_np,
-            sparse_fine_translations_np,
-            rot_parent_map_np,
-            trans_parent_map_np,
-            sig_sample_indices_by_class,
-            disc_type,
-            coarse_result=coarse_result,
-            coarse_class_assignments=coarse_class_assignments,
-            n_rot_coarse=n_rot_coarse,
-            n_fine_trans=n_trans_fine,
-            healpix_order=_resolved_coarse_healpix_order(),
-            oversampling_order=_resolved_oversampling_order(),
-            accumulate_noise=accumulate_noise,
-            return_best_pose_details=return_best_pose_details,
-            pass2_kwargs=pass2_kwargs,
-        )
+
+        def _winner_subset_pass2(class_assignments, given_pose_evidence=None):
+            return _run_sparse_firstiter_global_winner_subset_pass2(
+                experiment_dataset,
+                means_array,
+                mean_variance,
+                noise_variance,
+                coarse_translations_np,
+                fine_rotations_np,
+                fine_mstep_rotations_np,
+                sparse_fine_translations_np,
+                rot_parent_map_np,
+                trans_parent_map_np,
+                sig_sample_indices_by_class,
+                disc_type,
+                coarse_result=coarse_result,
+                coarse_class_assignments=class_assignments,
+                n_rot_coarse=n_rot_coarse,
+                n_fine_trans=n_trans_fine,
+                healpix_order=_resolved_coarse_healpix_order(),
+                oversampling_order=_resolved_oversampling_order(),
+                accumulate_noise=accumulate_noise,
+                return_best_pose_details=return_best_pose_details,
+                pass2_kwargs=pass2_kwargs,
+                given_pose_evidence=given_pose_evidence,
+            )
+
+        if coarse_class_assignments is None:
+            # Given poses from one reference per class: no coarse probe named the winners.
+            coarse_class_assignments = _given_pose_cc_classes(_winner_subset_pass2, n_classes, n_images)
+        result = _winner_subset_pass2(coarse_class_assignments)
         pass2_s = time.time() - pass2_t0
         logger.info(
             "Adaptive K-class EM profile: classes=%d images=%d coarse=(rot=%d,trans=%d) sparse_firstiter_fine=(rot=%d,trans=%d) pass1=%.1fs mask=%.1fs pass2=%.1fs total=%.1fs",

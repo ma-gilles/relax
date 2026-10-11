@@ -18,8 +18,9 @@ def _class_log_priors(n_classes: int, class_log_priors) -> np.ndarray:
     priors = np.asarray(class_log_priors, dtype=np.float64)
     if priors.shape != (n_classes,):
         raise ValueError(f"class_log_priors must have shape ({n_classes},), got {priors.shape}")
-    if not np.all(np.isfinite(priors)):
-        raise ValueError("class_log_priors must be finite")
+    # A class at -inf is RELION's pdf_class == 0: an emptied class, left out of every expectation.
+    if np.any(np.isnan(priors) | np.isposinf(priors)) or not np.any(np.isfinite(priors)):
+        raise ValueError("class_log_priors must be finite, or -inf for an emptied class beside a live one")
     return priors
 
 

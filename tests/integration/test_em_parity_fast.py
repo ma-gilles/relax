@@ -1396,6 +1396,93 @@ def test_em_parity_fast_kclass_local_dead_class(tmp_path):
     )
 
 
+def _noise_reference_list(directory: Path, *, noise_class: int, n_classes: int) -> Path:
+    """The K4 fixture's reference list with one class's reference replaced by white noise, as a reference STAR.
+
+    The noise map keeps the fixture reference's header and its ``_relion`` name (the sign convention of the list).
+    """
+    import shutil
+
+    import mrcfile
+
+    names = [K4_FIXTURE_DIR / f"reference_init_class{c:03d}_relion.mrc" for c in range(1, n_classes + 1)]
+    noise = directory / f"reference_noise_class{noise_class:03d}_relion.mrc"
+    shutil.copy(names[noise_class - 1], noise)
+    with mrcfile.open(noise, "r+") as handle:
+        voxel_size = handle.voxel_size.copy()
+        handle.set_data((0.01 * np.random.default_rng(20261011).standard_normal(handle.data.shape)).astype(np.float32))
+        handle.voxel_size = voxel_size
+    names[noise_class - 1] = noise
+    star = directory / "reference_classes_noise.star"
+    rows = "".join(f"{name}\t{1.0 / n_classes:.6f}\n" for name in names)
+    star.write_text(f"\ndata_model_classes\n\nloop_\n_rlnReferenceImage #1\n_rlnClassDistribution #2\n{rows}\n")
+    return star
+
+
+@pytest.mark.gpu
+@pytest.mark.integration
+@pytest.mark.slow
+def test_em_parity_fast_kclass_emptied_class(tmp_path):
+    """A single-particle Class3D class that empties on its own, in a global search and at given poses: K4.
+
+    One of four references is white noise, so the ``--firstiter_cc`` iteration (which from one reference per
+    class scores every class; at given poses relax#78) gives it no particle and its weight becomes exactly 0,
+    RELION's ``pdf_class == 0``. Two more iterations then run with the class left out (relax#68), once with a
+    global search and once with ``--skip_align``. The checks are structural, with nothing compared with RELION
+    here (page-build RELION empties the same class and both runs agreed with it particle for particle, Slurm
+    15358774 and 15358819): the class empties in iteration 1 and no other does, later iterations keep its
+    weight at 0 and skip its M-step, no particle is ever assigned to it, its map is zero and the others' are not.
+    """
+    _assert_parity_ancestors_or_skip()
+    require_fixture_sets("k4_5k128_data")
+    _require_fixture(K4_FIXTURE_DIR, K4_DATA_STAR)
+    n_classes, dead_class, last_iteration = 4, 3, 3
+    references = _noise_reference_list(tmp_path, noise_class=dead_class, n_classes=n_classes)
+
+    walls = {}
+    for name, search in (
+        ("global", ["--healpix_order", "1", "--offset_range", "4", "--offset_step", "2", "--adaptive_oversampling", "1"]),
+        ("given_poses", ["--skip_align"]),
+    ):
+        output_dir = tmp_path / f"kclass_emptied_class_{name}"
+        output_dir.mkdir(parents=True)
+        cmd = [
+            sys.executable, *CLASS3D_COMMAND, "--data_dir", str(K4_FIXTURE_DIR), "--output", str(output_dir),
+            "--ref_star", str(references), "--n_classes", str(n_classes), "--max_iter", str(last_iteration),
+            "--tau2_fudge", "4.0", "--firstiter_cc", "--init_resolution", "30.0", "--particle_diameter_ang", "200",
+            "--seed", "1", *search,
+        ]  # fmt: skip
+        logger.info("K-class emptied class (%s) cmd: %s", name, " ".join(cmd))
+        t0 = time.time()
+        proc = run_selected_command(cmd, require_global=False, capture_output=True, text=True, env=gpu_subprocess_env())
+        walls[name] = time.time() - t0
+        assert proc.returncode == 0, (
+            f"relax class3d ({name}) exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
+        log = proc.stdout + proc.stderr
+        emptied = re.findall(r"Class (\d+) received no particle weight", log)
+        assert emptied == [str(dead_class)], (name, emptied)
+        skipped = re.findall(r"Class3D reconstruction skipped: iter=(\d+) class=(\d+)/\d+ received no weight", log)
+        assert skipped == [(str(it), str(dead_class)) for it in range(1, last_iteration + 1)], (name, skipped)
+        if name == "given_poses":
+            assert f"--skip_align --firstiter_cc from {n_classes} references" in log
+        for iteration in range(1, last_iteration + 1):
+            model = starfile.read(output_dir / f"run_it{iteration:03d}_model.star", always_dict=True)
+            weights = [float(w) for w in model["model_classes"]["rlnClassDistribution"]]
+            assert len(weights) == n_classes and weights[dead_class - 1] == 0.0, (name, iteration, weights)
+            assert all(w > 0.0 for k, w in enumerate(weights, start=1) if k != dead_class), (name, iteration, weights)
+            particles = starfile.read(output_dir / f"run_it{iteration:03d}_data.star", always_dict=True)["particles"]
+            counts = np.bincount(np.asarray(particles["rlnClassNumber"], dtype=np.int64), minlength=n_classes + 1)[1:]
+            assert counts[dead_class - 1] == 0 and counts.sum() == len(particles), (name, iteration, counts)
+        for c in range(1, n_classes + 1):
+            class_map = np.asarray(load_relax_map(str(output_dir / f"final_class{c:03d}.mrc")), dtype=np.float64)
+            assert np.all(np.isfinite(class_map))
+            assert (np.linalg.norm(class_map) == 0) == (c == dead_class), (name, c, np.linalg.norm(class_map))
+
+    # No quality ledger, as for the structural cases above.
+    logger.info("K-class emptied class: walls %s", {name: round(wall, 1) for name, wall in walls.items()})
+
+
 @pytest.mark.gpu
 @pytest.mark.integration
 @pytest.mark.slow
