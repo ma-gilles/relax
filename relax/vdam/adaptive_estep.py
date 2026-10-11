@@ -243,6 +243,26 @@ def recovar_order_prior(prior, relion_of_recovar: np.ndarray):
     return prior[..., relion_of_recovar]
 
 
+def dead_classes_out_of_the_coarse_pass(class_log_priors, class_rotation_log_prior):
+    """The engine's class log priors with ``-inf`` for a class whose whole direction-prior row is ``-inf``.
+
+    VDAM's class prior travels in the joint class/direction prior, and the engine's own class log priors are
+    zero. A class at ``pdf_class == 0`` has a row of ``-inf`` there, so it takes no weight; RELION does not
+    evaluate it at all (acc_ml_optimiser_impl.h:1069), so its scores are not in ``min_diff2`` either. The
+    engine leaves a class at ``-inf`` out of that pre-prior maximum (``pass1_program._pass1_block_update``;
+    relax#68), which the zero prior did not tell it.
+    """
+
+    if class_rotation_log_prior is None or np.ndim(class_rotation_log_prior) != 2:
+        return class_log_priors
+    dead = np.all(np.isneginf(np.asarray(class_rotation_log_prior)), axis=1)
+    if not dead.any():
+        return class_log_priors
+    if dead.all():
+        raise ValueError("every class has a zero direction prior")
+    return np.where(dead, -np.inf, np.asarray(class_log_priors, dtype=np.float64))
+
+
 def run_adaptive_initial_model_estep(
     experiment_dataset,
     state: InitialModelState,
@@ -288,6 +308,7 @@ def run_adaptive_initial_model_estep(
         engine_kwargs.get("class_rotation_log_prior"), route.relion_of_recovar
     )
     rotation_log_prior = recovar_order_prior(engine_kwargs.get("rotation_log_prior"), route.relion_of_recovar)
+    class_log_priors = dead_classes_out_of_the_coarse_pass(class_log_priors, class_rotation_log_prior)
     significance_image_batch_size = _safe_coarse_significance_image_batch_size(
         config.image_batch_size,
         n_classes=state.K,

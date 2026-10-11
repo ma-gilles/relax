@@ -97,9 +97,9 @@ class _ReplaceableNamespace(SimpleNamespace):
         return type(self)(**{**vars(self), **updates})
 
 
-@pytest.mark.parametrize("n_classes", [2, 4])
+@pytest.mark.parametrize("n_classes,dead_class", [(2, None), (4, None), (2, 1), (4, 2)])
 @pytest.mark.parametrize("coarse_engine", ["auto", "gemm_hybrid", "gemm_dense"])
-def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_classes, coarse_engine):
+def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_classes, dead_class, coarse_engine):
     """VDAM K>1: one adaptive pass over the subset; each particle's half is its slot group.
 
     RELION backprojects particle p of class k into BPref[k + (part_id % 2) * K]
@@ -120,6 +120,9 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     )
     key = adaptive_estep.relion_order_of_recovar_rotations(1)
     prior_relion = np.arange(n_classes * key.size, dtype=np.float32).reshape(n_classes, key.size)
+    if dead_class is not None:
+        # The end state of a run whose class emptied (pdf_class == 0): its whole class/direction row is -inf.
+        prior_relion[dead_class] = -np.inf
     # One coarse translation prior row per image of the whole dataset.
     translation_prior = np.arange(4 * len(plan.coarse_translations), dtype=np.float32).reshape(4, -1)
 
@@ -200,6 +203,11 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     assert calls[0]["max_significants"] == 200
     assert calls[0]["mstep_subtract_ctf_projection"] is True
     assert_matches(calls[0]["class_rotation_log_prior"], prior_relion[:, key])
+    # The engine's own class log priors are zero, and minus infinity for a class at zero (relax#68).
+    expected_class_priors = np.zeros(n_classes)
+    if dead_class is not None:
+        expected_class_priors[dead_class] = -np.inf
+    assert_matches(calls[0]["class_log_priors"], expected_class_priors, rtol=0)
     # The subset's rows, in subset order; RELION reuses them for every oversampled child.
     assert_matches(calls[0]["translation_log_prior"], translation_prior[[3, 0, 2]])
     assert accumulator_calls[0]["half_count"] == 2
@@ -290,3 +298,18 @@ def test_route_perturbs_the_coarse_grid_by_relions_euler_route(oversampling_orde
     assert np.asarray(route.pass1_rotations).dtype == expected.dtype == np.float32
     if oversampling_order == 0:
         np.testing.assert_array_equal(np.asarray(route.grids.fine_rotations), expected)
+
+
+def test_a_class_with_a_zero_direction_prior_row_is_out_of_the_coarse_pass():
+    """VDAM's class prior is in the joint class/direction prior; a class at zero there reaches the engine as a
+    minus-infinite class log prior, so its scores stay out of the pre-prior maximum (relax#68)."""
+    live = np.zeros(3)
+    prior = np.log(np.array([[0.25, 0.75], [0.0, 0.0], [0.5, 0.5]]))
+    assert_matches(adaptive_estep.dead_classes_out_of_the_coarse_pass(live, prior), [0.0, -np.inf, 0.0], rtol=0)
+    # A direction at zero does not empty a class, and without the joint prior nothing changes.
+    partly = np.log(np.array([[0.0, 1.0], [1.0, 0.0], [0.5, 0.5]]))
+    assert adaptive_estep.dead_classes_out_of_the_coarse_pass(live, partly) is live
+    assert adaptive_estep.dead_classes_out_of_the_coarse_pass(live, None) is live
+    assert adaptive_estep.dead_classes_out_of_the_coarse_pass(live, prior[0]) is live
+    with pytest.raises(ValueError, match="every class"):
+        adaptive_estep.dead_classes_out_of_the_coarse_pass(live, np.full((3, 2), -np.inf))
