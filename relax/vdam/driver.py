@@ -200,6 +200,7 @@ def _native_expectation_step(
                 sigma_offset_angstrom=sigma_offset_angstrom,
                 particle_diameter_ang=float(opts.particle_diameter),
                 padding_factor=int(opts.padding_factor),
+                environment=opts.environment,
                 optics_group_ids=optics_group_ids,
             )
             effective_image_batch_size = int(opts.image_batch_size)

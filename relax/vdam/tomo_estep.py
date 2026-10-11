@@ -92,6 +92,7 @@ def run_tomo_initial_model_estep(
     sigma_offset_angstrom: float,
     particle_diameter_ang: float,
     padding_factor: int,
+    environment,
     optics_group_ids=None,
     pass1_healpix_order: int | None = None,
 ) -> InitialModelEstepResult:
@@ -102,7 +103,9 @@ def run_tomo_initial_model_estep(
     ``class_rotation_log_prior`` ``[K, R]`` VDAM's joint class/direction prior in RELION's
     direction-major order. With several optics groups ``noise_variance`` is ``[G, N^2]`` and
     ``optics_group_ids`` gives every particle-STAR row's group. The metadata carries the particles' new offsets
-    (``tomo_offsets_px``: RELION's rounded old offset plus the winning shift).
+    (``tomo_offsets_px``: RELION's rounded old offset plus the winning shift). ``environment`` is the run's
+    ``VdamEnvironment``, read for its two engine diagnostics: ``adaptive_fraction`` None keeps RELION's 0.999,
+    ``subtract_projected_reference`` False back-projects the tilt images instead of their residuals.
     """
 
     from relax.classification.k_class import _class_segmented_em_result, single_class_pass2_em_result
@@ -144,7 +147,9 @@ def run_tomo_initial_model_estep(
         rotation_log_prior=prior if state.K > 1 else prior[0],
         old_offsets_px=old,
         sigma_offset_angst=float(sigma_offset_angstrom),
-        adaptive_fraction=RELION_ADAPTIVE_FRACTION,
+        adaptive_fraction=(
+            RELION_ADAPTIVE_FRACTION if environment.adaptive_fraction is None else environment.adaptive_fraction
+        ),
         max_significants=int(max_significants),
         unit_groups=(
             np.zeros(particle_ids.size, dtype=np.int32)
@@ -154,7 +159,7 @@ def run_tomo_initial_model_estep(
         padding_factor=int(padding_factor),
         reconstruction_group_ids=group_ids,
         reconstruction_group_count=2,
-        mstep_subtract_ctf_projection=True,
+        mstep_subtract_ctf_projection=environment.subtract_projected_reference,
     )
     counts = np.asarray(scored.significant_counts)
     logger.info(
