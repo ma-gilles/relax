@@ -217,7 +217,7 @@ def test_projector_refresh_updates_tau2_of_all_classes(bind):
 
     from relax.vdam.estep_setup import IterationProjectorContext
 
-    out = IterationProjectorContext().refresh(state, padding_factor=1)
+    out = IterationProjectorContext(projector_dump_dir=None).refresh(state, padding_factor=1)
 
     assert out is not state
     assert out.tau2_class.shape == (2, ori // 2 + 1)

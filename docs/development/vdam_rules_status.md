@@ -31,12 +31,11 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
 
 1. **Environment reads that stay where they are used (rule 5).** Each is a diagnostic dump or a parity
    hook owned below the controller:
-   - `estep_setup._finish_relion_projector_class_inputs`: `RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR`
-     (called through the projector context, which has no options);
    - `estep_common.arrays_to_accumulators`: `RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR`;
    - `output.write_initial_run_metadata`: records the CUDA allocator and JAX cache variables as provenance.
-   Moving them into `VdamEnvironment` costs plumbing through the projector context and the accuracy
-   helpers. Not an exception: `RELAX_USE_FLOAT64_SCORING`, read once by `VdamEnvironment` only to refuse it;
+   Moving them into `VdamEnvironment` costs plumbing through the accuracy helpers. The projector dump
+   (`RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR`) is `VdamEnvironment.projector_dump_dir`, handed to the projector
+   context by the driver. Not an exception: `RELAX_USE_FLOAT64_SCORING`, read once by `VdamEnvironment` only to refuse it;
    `RELAX_INITIAL_IREF_OVERRIDE` (RELION's start-up references in place of the bootstrap,
    `VdamInputSource.startup_references`), `RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE` and the native M-step replay
    variables, read once by the command,

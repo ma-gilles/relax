@@ -427,7 +427,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
-    prepared, _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+    prepared, _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1, projector_dump_dir=None)
     half, r_max = prepared.half_by_class, prepared.r_max
     config = InitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
@@ -471,17 +471,31 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
 
 
 def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_path):
+    """RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR is read once into VdamEnvironment; the iteration's projector context
+    hands it to the dump; unset or blank dumps nothing."""
+    from relax.vdam.estep_setup import IterationProjectorContext
+    from relax.vdam.native_options import VdamEnvironment
+
     projector_half = np.arange(54, dtype=np.float32).reshape(1, 3, 3, 6)[..., :2].astype(np.complex64)
     monkeypatch.setattr(
         "relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power",
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
-    monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", str(tmp_path))
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     state.iter = 7
     state.current_size = 4
+    for unset in (None, "  "):
+        if unset is None:
+            monkeypatch.delenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", raising=False)
+        else:
+            monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", unset)
+        assert VdamEnvironment.from_environ().projector_dump_dir is None
+    assert VdamEnvironment().projector_dump_dir is None
+    monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", f" {tmp_path} ")
+    environment = VdamEnvironment.from_environ()
+    assert environment.projector_dump_dir == str(tmp_path)
 
-    prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+    IterationProjectorContext(projector_dump_dir=environment.projector_dump_dir).refresh(state, padding_factor=1)
 
     with np.load(tmp_path / "iter007_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], projector_half)

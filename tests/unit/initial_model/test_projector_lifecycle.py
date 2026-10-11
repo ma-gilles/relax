@@ -39,9 +39,8 @@ def test_shared_device_projector_matches_both_native_calls(
         return native_projector(*args)
 
     monkeypatch.setattr(bind, "compute_fourier_transform_map", counted_projector)
-    monkeypatch.setenv(adapter._RELION_PROJECTOR_DUMP_DIR_ENV, str(tmp_path))
     inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(
-        state, padding_factor=padding
+        state, padding_factor=padding, projector_dump_dir=str(tmp_path)
     )
     assert not builds  # VDAM prepares the projector on the device only.
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
@@ -76,12 +75,13 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
     )
     calls = []
 
-    def prepare(current, *, padding_factor):
+    def prepare(current, *, padding_factor, projector_dump_dir):
+        assert projector_dump_dir is None
         calls.append((current.iter, current.Iref.copy()))
         return adapter.RelionProjectorInputs(current.Iref.copy(), 4), np.full((1, 5), current.iter)
 
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power", prepare)
-    ctx = adapter.IterationProjectorContext()
+    ctx = adapter.IterationProjectorContext(projector_dump_dir=None)
     for iteration in (1, 2):
         state = replace(state, iter=iteration, Iref=state.Iref + 1)
         before = state.tau2_class.copy()
@@ -105,7 +105,7 @@ def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
     )
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power",
                         lambda *a, **k: (adapter.RelionProjectorInputs(None, 4), np.ones((1, 5))))
-    ctx = adapter.IterationProjectorContext()
+    ctx = adapter.IterationProjectorContext(projector_dump_dir=None)
     current = ctx.refresh(state, padding_factor=1)
     kwargs = {"padding_factor": 1}
     if change == "reference":

@@ -43,9 +43,6 @@ from relax.vdam.state import InitialModelState
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE = 256
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB = 32
 
-_RELION_PROJECTOR_DUMP_DIR_ENV = "RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -59,8 +56,9 @@ class RelionProjectorInputs:
 
 @dataclass
 class IterationProjectorContext:
-    """One refresh-to-E-step handoff; never a cache across iterations."""
+    """One refresh-to-E-step handoff; never a cache across iterations. ``projector_dump_dir``: VdamEnvironment's."""
 
+    projector_dump_dir: str | None
     prepared: RelionProjectorInputs | None = None
     reference: np.ndarray | None = None
     geometry: tuple | None = None
@@ -68,7 +66,9 @@ class IterationProjectorContext:
     def refresh(self, state, *, padding_factor):
         # Clear even if construction fails, so stale data cannot survive a retry.
         self.prepared = self.reference = self.geometry = None
-        inputs, power = prepare_relion_projector_class_inputs_and_power(state, padding_factor=padding_factor)
+        inputs, power = prepare_relion_projector_class_inputs_and_power(
+            state, padding_factor=padding_factor, projector_dump_dir=self.projector_dump_dir
+        )
         self.prepared = inputs
         self.reference = state.Iref
         self.geometry = (
@@ -286,14 +286,16 @@ def prepare_relion_projector_class_inputs_and_power(
     state: InitialModelState,
     *,
     padding_factor: int,
+    projector_dump_dir: str | None,
 ) -> tuple[RelionProjectorInputs, np.ndarray]:
-    """Produce scoring operands and tau2 from the identical corrected FFT (RELION's linear interpolator)."""
+    """Produce scoring operands and tau2 from the identical corrected FFT (RELION's linear interpolator); dump
+    the projector to ``projector_dump_dir`` (``VdamEnvironment.projector_dump_dir``) unless it is None."""
     half_maps, power, r_max = projector_setup.reference_to_relion_projector_half_maps_and_power(
         state.Iref,
         current_size=state.effective_current_size,
         padding_factor=padding_factor,
     )
-    return _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max), power
+    return _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max, projector_dump_dir), power
 
 
 def _finish_relion_projector_class_inputs(
@@ -301,9 +303,9 @@ def _finish_relion_projector_class_inputs(
     padding_factor: int,
     projector_half_by_class: np.ndarray,
     projector_r_max: int,
+    projector_dump_dir: str | None,
 ) -> RelionProjectorInputs:
-    projector_dump_dir = os.environ.get(_RELION_PROJECTOR_DUMP_DIR_ENV, "").strip()
-    if projector_dump_dir:
+    if projector_dump_dir is not None:
         os.makedirs(projector_dump_dir, exist_ok=True)
         np.savez_compressed(
             os.path.join(projector_dump_dir, f"iter{int(state.iter):03d}_relion_projector_half.npz"),

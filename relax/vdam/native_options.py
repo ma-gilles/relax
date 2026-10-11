@@ -95,6 +95,7 @@ class VdamEnvironment:
     Three settings of the libraries, which the run's options file records as they are: ``cuda_allocator``
     (TF_GPU_ALLOCATOR; "default" when unset), ``jax_compilation_cache_dir`` (JAX_COMPILATION_CACHE_DIR) and
     ``jax_persistent_cache_min_compile_time_secs`` (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS); None when unset.
+    ``projector_dump_dir`` (RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR, stripped; None when unset or blank) dumps each projector.
     """
 
     clear_jax_caches_per_iteration: bool = False
@@ -105,6 +106,7 @@ class VdamEnvironment:
     cuda_allocator: str = "default"
     jax_compilation_cache_dir: str | None = None
     jax_persistent_cache_min_compile_time_secs: str | None = None
+    projector_dump_dir: str | None = None
 
     @classmethod
     def from_environ(cls) -> VdamEnvironment:
@@ -124,7 +126,8 @@ class VdamEnvironment:
                    not parse_env_strict_flag("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"),
                    read_env_text("TF_GPU_ALLOCATOR", "default"),
                    read_env_text("JAX_COMPILATION_CACHE_DIR"),
-                   read_env_text("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"))
+                   read_env_text("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"),
+                   read_env_text("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", "").strip() or None)
 
 
 @dataclass(frozen=True, kw_only=True)

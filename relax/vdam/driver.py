@@ -600,7 +600,7 @@ def run_native_initial_model(
             ),
         )
     profile.record("state_setup")
-    projector_context = estep_setup.IterationProjectorContext()
+    projector_context = estep_setup.IterationProjectorContext(projector_dump_dir=opts.environment.projector_dump_dir)
     expectation_step = _native_expectation_step(
         dataset,
         opts,

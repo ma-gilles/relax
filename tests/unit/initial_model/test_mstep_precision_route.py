@@ -131,6 +131,8 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
         assert current.tau2_class is state.tau2_class
         masked = kwargs["post_mstep_update"](current, 1, {})
         assert masked.Iref.dtype == expected
+        # The options' projector dump directory reaches the iteration's projector context.
+        assert kwargs["projector_refresh_fn"].__self__.projector_dump_dir == str(tmp_path / "dump")
         raise AtLoop
 
     monkeypatch.setattr(driver, "run_vdam_iterations", at_loop)
@@ -141,6 +143,7 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
                 outputname=str(tmp_path / "run"),
                 nr_iter=2,
                 mstep_compute_dtype=dtype,
+                environment=native_options.VdamEnvironment(projector_dump_dir=str(tmp_path / "dump")),
             )
         )
 

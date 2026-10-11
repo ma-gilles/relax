@@ -121,11 +121,13 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
 
     def native_inputs():
         half, r_max = native_reference_to_relion_projector_half_maps(state.Iref, current_size=8, padding_factor=1)
-        return adapter._finish_relion_projector_class_inputs(state, 1, half, r_max)
+        return adapter._finish_relion_projector_class_inputs(state, 1, half, r_max, None)
 
-    def candidate_inputs():
+    def candidate_inputs(projector_dump_dir=None):
         # The E-step's projector, as the iteration's refresh prepares it.
-        prepared, _ = adapter.prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+        prepared, _ = adapter.prepare_relion_projector_class_inputs_and_power(
+            state, padding_factor=1, projector_dump_dir=projector_dump_dir
+        )
         return adapter._resolve_class_inputs(
             state,
             replace(config, relion_projector_half_by_class=prepared.half_by_class, relion_projector_r_max=prepared.r_max),
@@ -133,15 +135,16 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
 
     natives = [native_inputs() for _ in range(2)]
     candidate2 = candidate_inputs()
-    monkeypatch.setenv(adapter._RELION_PROJECTOR_DUMP_DIR_ENV, str(tmp_path))
-    candidate = candidate_inputs()
+    candidate = candidate_inputs(str(tmp_path))
     assert candidate[3] == natives[0].r_max == 4
     assert candidate[2].dtype == np.complex64
     _assert_existing_consumer_policy(natives[0].half_by_class, candidate[2], candidate2[2], natives[1].half_by_class)
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], candidate[2])
         assert int(dumped["current_size"]) == 8
-    inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+    inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(
+        state, padding_factor=1, projector_dump_dir=None
+    )
     assert_matches(inputs.half_by_class, candidate[2])
     assert power.shape == (1, 5)
 
