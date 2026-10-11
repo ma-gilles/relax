@@ -127,7 +127,8 @@ def test_firstiter_cc_retains_noise_buffers_and_history_precision():
 
 
 @pytest.mark.unit
-def test_k1_update_replaces_pixels_in_the_owned_list():
+def test_k1_update_leaves_the_previous_model_unchanged():
+    """deep2 M-B7: the update returns a model with its own pixel list; the frozen input keeps its rows."""
     model = noise_updates.noise_model_from_pixels(
         [np.ones(256, dtype=np.float32), np.ones(256, dtype=np.float32)], SHAPE, dtype=np.float32,
     )
@@ -137,7 +138,8 @@ def test_k1_update_replaces_pixels_in_the_owned_list():
         model, SHAPE, firstiter_cc=False,
         ctf_premultiplied=False, summed_current_size=None, nyquist_column_counting="relion",
     )
-    assert result.model.variance_per_half is model.variance_per_half
+    assert result.model.variance_per_half is not model.variance_per_half
+    assert all(a is b for a, b in zip(model.variance_per_half, original_pixels, strict=True))
     assert all(a is not b for a, b in zip(result.model.variance_per_half, original_pixels, strict=True))
     assert result.model.radial_per_half is result.noise_from_res_per_half
 
