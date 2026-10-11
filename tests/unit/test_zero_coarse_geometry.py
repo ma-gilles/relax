@@ -83,7 +83,7 @@ def _device_rotations_stand_in(monkeypatch):
 # whether iterations 1 and 2 generate RELION's coarse device rotations.
 _GATE_CASES = {
     "os0_k1": ((0, 1, False, False), [True, True]),
-    "os0_kclass": ((0, 2, False, False), [False, False]),
+    "os0_kclass": ((0, 2, False, False), [True, True]),  # as one class since relax#73
     "os0_k1_cc": ((0, 1, True, False), [False, True]),
     "os0_k1_float64": ((0, 1, False, True), [False, False]),
     "os1_k1": ((1, 1, False, False), [True, True]),

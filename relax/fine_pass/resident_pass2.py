@@ -1975,6 +1975,7 @@ def _coarse_normalization_reuse(
     fine_rotation_parent,
     fine_translation_parent,
     max_posterior_dtype,
+    relion_coarse_class_assignment=None,
 ) -> _CoarseNormalizationReuse | None:
     """The retained coarse normalization of a zero-oversampling pass, on the device.
 
@@ -2004,6 +2005,7 @@ def _coarse_normalization_reuse(
         relion_coarse_hard_assignment,
         fine_rotation_parent=fine_rotation_parent,
         fine_translation_parent=fine_translation_parent,
+        coarse_classes=relion_coarse_class_assignment,
     )
     # Stored at the image capacity like every per-image device array, so the
     # chunk programs that read them are not keyed on the subset size. Chunks
@@ -2514,6 +2516,7 @@ def _resident_pass2(
     relion_f32_normalization_sum_weight=None,
     relion_coarse_hard_assignment=None,
     relion_coarse_max_posterior=None,
+    relion_coarse_class_assignment=None,
     normalization_other_score_log_z=None,
     normalization_score_mode=None,
     return_score_log_z=False,
@@ -2653,14 +2656,25 @@ def _resident_pass2(
             raise ValueError("a K-class pass needs K >= 2 supports and rotation priors")
     n_classes = len(class_supports)
     if n_classes > 1:
-        # RELION's Class3D E-step; the zero-oversampling reuse and the
-        # --firstiter_cc winner are the auto-refine K=1 iterations.
+        # RELION's Class3D E-step; the --firstiter_cc winner is a K=1 pass per class.
         if not dense_gemm_full_grid:
             _require(not firstiter_cc, "the K-class resident pass scores the Gaussian likelihood")
+        # Zero oversampling (relax#73): the coarse sum, Pmax and winner come with the winner's class.
         _require(
-            relion_f32_normalization_sum_weight is None,
-            "the K-class resident pass has no zero-oversampling coarse reuse",
+            (relion_f32_normalization_sum_weight is None) == (relion_coarse_class_assignment is None),
+            "the K-class zero-oversampling pass reuses the coarse normalization with the coarse winner's class",
         )
+        _require(
+            relion_f32_normalization_sum_weight is None
+            or (
+                relion_coarse_hard_assignment is not None
+                and relion_coarse_max_posterior is not None
+                and int(oversampling_order) == 0
+            ),
+            "the coarse normalization sum is reused with the coarse winner and Pmax, at zero oversampling only",
+        )
+    else:
+        _require(relion_coarse_class_assignment is None, "a coarse winner class belongs to a K-class pass")
 
     n_images = int(experiment_dataset.n_units)
     # Subtomogram particles (S4.2, resident_tilts): the posterior unit is the particle; the dataset's
@@ -3057,6 +3071,7 @@ def _resident_pass2(
         fine_rotation_parent=fine_rotation_parent_override,
         fine_translation_parent=fine_translation_parent,
         max_posterior_dtype=precision_policy.score_real_dtype,
+        relion_coarse_class_assignment=relion_coarse_class_assignment,
     )
 
     # ---- window / weights / lookups (unchanged) ---------------------------
@@ -5086,6 +5101,8 @@ class ResidentKClassPass2Output(NamedTuple):
     per_class_best_pose_eulers_deg: tuple | None
     profile: dict | None = None
     uncast_log_evidence_per_image: np.ndarray | None = None
+    # Zero oversampling with the coarse state kept: each image's class, the coarse winner's. None otherwise.
+    coarse_class_assignments: np.ndarray | None = None
 
 
 def compute_k_class_pass2_stats_resident(
@@ -5134,6 +5151,15 @@ def compute_k_class_pass2_stats_resident(
     source_eulers = options.get("fine_source_eulers_override")
     rotation_ids = per_class.best_fine_rotation_indices
     translation_ids = per_class.best_translation_indices
+    coarse_classes = options.get("relion_coarse_class_assignment")
+    if coarse_classes is not None:
+        # Zero oversampling keeps the coarse winner (acc_ml_optimiser_impl.h:1984-1988): its class is the
+        # image's, and that class's pose is the winner's one fine child, not the best fine sample.
+        coarse_classes = np.asarray(coarse_classes, dtype=np.int64)
+        images = np.arange(coarse_classes.size)
+        rotation_ids, translation_ids = np.array(rotation_ids), np.array(translation_ids)
+        rotation_ids[coarse_classes, images] = finalized.best_fine_rotation_indices
+        translation_ids[coarse_classes, images] = finalized.best_translation_indices
     has_pose = rotation_ids >= 0
     safe_rotation = np.where(has_pose, rotation_ids, 0)
     safe_translation = np.where(has_pose, translation_ids, 0)
@@ -5166,6 +5192,7 @@ def compute_k_class_pass2_stats_resident(
             if source_eulers is None
             else tuple(np.asarray(source_eulers, dtype=np.float64)[safe_rotation[k]] for k in range(n_classes))
         ),
+        coarse_class_assignments=None if coarse_classes is None else coarse_classes.astype(np.int32),
     )
 
 

@@ -12,10 +12,12 @@ texture interpolation can amplify these small matrix differences.
 and the separate perturbation matrix. The OS0 result is transported as
 `coarse_scoring_rotations`, not substituted for `effective_rotations`.
 `half_scoring._score_half_dense` applies it only to the coarse operand of
-the soft-Gaussian F32 K1 sparse x-half engine. Fine grids, pose metadata and
+the soft-Gaussian F32 sparse x-half engine, with one class or several (relax#73:
+RELION sets up every class's pass-0 plan with `coarse = true`,
+acc_ml_optimiser_impl.h:1067-1129). Fine grids, pose metadata and
 M-step rotations retain their original values. CPU fallback remains unchanged.
-Nonzero oversampling, local search, firstiter_cc/hard first iteration,
-K4, and diagnostic-double behavior are not expanded by this repair.
+Nonzero oversampling, local search, firstiter_cc/hard first iteration
+and diagnostic-double behavior are not expanded by this repair.
 
 The stack6 matrix-only discriminator on frozen ac9 and the actual-source
 replay on peer commit 84fb5867 agree: centered raw-score maximum absolute

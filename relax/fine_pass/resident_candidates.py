@@ -561,6 +561,7 @@ def coarse_winner_cells(
     *,
     fine_rotation_parent,
     fine_translation_parent,
+    coarse_classes=None,
 ) -> np.ndarray:
     """Segment-relative cell ``r_local * T + t`` of each image's retained coarse winner.
 
@@ -569,7 +570,9 @@ def coarse_winner_cells(
     the coarse pass's winner (acc_ml_optimiser_impl.h:3268-3269). This locates
     that child among an image's candidate rows, the resident counterpart of
     :func:`relax.fine_pass.bucket_arrays.coarse_winner_local_pose_ids`, and
-    refuses a winner that is not a unique, selected candidate.
+    refuses a winner that is not a unique, selected candidate. A K-class table
+    (``tables.row_class``) needs ``coarse_classes``, each winner's class: the
+    winner is that class's row of the rotation, in the image's class-major segment.
     """
 
     poses = np.asarray(coarse_pose_ids)
@@ -588,7 +591,15 @@ def coarse_winner_cells(
 
     row_image = np.asarray(tables.row_unit, dtype=np.int64)
     row_parent_rot = np.asarray(fine_rotation_parent, dtype=np.int64)[np.asarray(tables.row_fine_rot, dtype=np.int64)]
-    winner_rows = np.flatnonzero(row_parent_rot == winner_rot[row_image])
+    is_winner_row = row_parent_rot == winner_rot[row_image]
+    if tables.row_class is not None:
+        classes = None if coarse_classes is None else np.asarray(coarse_classes)
+        if classes is None or classes.shape != (tables.n_images,):
+            raise ValueError("a K-class table needs each coarse winner's class")
+        is_winner_row &= np.asarray(tables.row_class, dtype=np.int64) == classes.astype(np.int64)[row_image]
+    elif coarse_classes is not None:
+        raise ValueError("coarse winner classes belong to a K-class table")
+    winner_rows = np.flatnonzero(is_winner_row)
     counts = np.bincount(row_image[winner_rows], minlength=tables.n_images)
     if np.any(counts != 1):
         raise ValueError("zero-oversampling coarse winner must have exactly one selected fine child")

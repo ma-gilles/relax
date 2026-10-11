@@ -38,9 +38,10 @@ in both bucket modes. The CPU test substitutes only the final CUDA deposition;
 it does not qualify the native scatter or reconstructed maps.
 
 [`run_dense_k_class_em_adaptive`](../../relax/classification/k_class.py) activates this state only for zero-oversampling,
-soft Gaussian K1 with F32 scoring and sparse x-half reconstruction. Nonzero
-oversampling, K4, firstiter_cc/hard winners and double scoring keep their previous
-routes. The dense fallback is excluded only for this active sparse-state path.
+soft Gaussian scoring in F32 with sparse x-half reconstruction: always for K1, and for several classes when
+the caller passes `zero_oversampling_coarse_state_for_classes` (Class3D and InitialModel do; relax#73). Nonzero
+oversampling, firstiter_cc/hard winners, double scoring, a seed iteration (Class3D from one reference) and
+given poses keep their previous routes. The dense fallback is excluded only for this active sparse-state path.
 The coarse winner is mapped through the selected parent rotation and translation
 IDs into the existing canonical source Euler rows, without inverse conversion
 from rounded rotation matrices. Missing or ambiguous children fail closed.
@@ -71,3 +72,16 @@ the reconstruction and the statistics (`reconstruct_significant_only=False`),
 following RELION's symbolic second pass (`significant_weight = sorted[0]`,
 acc_ml_optimiser_impl.h:2532). Engine tests:
 [`test_resident_zero_oversampling.py`](../../tests/unit/test_resident_zero_oversampling.py).
+
+With several classes (relax#73) an image's posterior segment spans its classes, and so does the coarse sum
+(RELION's `op.sum_weight` runs over every sample of every class with `pdf_class > 0`,
+acc_ml_optimiser_impl.h:2274): the same segmented posterior divides every class's fine weights by it, so a
+particle's class shares (`wsum pdf_class`, :2843) add up to the retained share of the coarse sum, not to 1.
+The coarse winner comes with its class (`relion_coarse_class_assignment`): the winner cell is that class's row
+of the winning rotation in the class-major segment, the particle's class is the winner's, and that class's
+pose is the winner's one fine child
+([`compute_k_class_pass2_stats_resident`](../../relax/fine_pass/resident_pass2.py)). Pass 1 scores RELION's
+device-built coarse rows for any number of classes
+([`builds_coarse_pass1_rotations`](../../relax/refinement/trial_grids.py)). Tests against a NumPy reference
+written from RELION's lines:
+[`test_k_class_zero_oversampling.py`](../../tests/unit/test_k_class_zero_oversampling.py).

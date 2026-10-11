@@ -388,10 +388,12 @@ def _run_sparse_k_class_adaptive_pass2(
     if base_engine_kwargs.get("wsum_current_size") is not None:
         # --strict_highres_exp: the weighted sums' image size, above the E-step's (the resident engine).
         common["wsum_current_size"] = int(base_engine_kwargs["wsum_current_size"])
-    if n_classes == 1 and base_engine_kwargs.get("relion_f32_normalization_sum_weight") is not None:
+    if base_engine_kwargs.get("relion_f32_normalization_sum_weight") is not None:
         common["relion_f32_normalization_sum_weight"] = base_engine_kwargs["relion_f32_normalization_sum_weight"]
         common["relion_coarse_hard_assignment"] = base_engine_kwargs.get("relion_coarse_hard_assignment")
         common["relion_coarse_max_posterior"] = base_engine_kwargs.get("relion_coarse_max_posterior")
+        if n_classes > 1:
+            common["relion_coarse_class_assignment"] = base_engine_kwargs["relion_coarse_class_assignment"]
     preserve_bpref_particle_order = _apply_bpref_particle_order_policy(
         common,
         base_engine_kwargs,
@@ -610,6 +612,8 @@ def _run_resident_k_class_pass2(
         host_accumulators=True,
         mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
         mstep_accumulator_shape=mstep_accumulator_shape,
+        # Zero oversampling: the particle's class is the coarse winner's (docs/math/zero_oversampling.md).
+        class_assignments_override=output.coarse_class_assignments,
     )
 
 
@@ -1458,6 +1462,7 @@ def run_dense_k_class_em_adaptive(
     fill_fine_rows=None,
     given_supports=None,
     given_image_translations=None,
+    zero_oversampling_coarse_state_for_classes: bool = False,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + sparse fine pass 2.
@@ -1497,6 +1502,11 @@ def run_dense_k_class_em_adaptive(
         :func:`relax.refinement.given_poses.given_pose_grids`). Pass 1 is skipped
         and pass 2 scores every class on these samples, so the posterior is over the
         classes alone.
+    zero_oversampling_coarse_state_for_classes : bool
+        At ``oversampling_order`` 0 with K > 1, hand pass 2 the coarse pass's sum of weights, Pmax and
+        winner (class and pose), as RELION's GPU code keeps them (acc_ml_optimiser_impl.h:1984-1988,
+        docs/math/zero_oversampling.md; relax#73). K = 1 always does. Off, K > 1 normalizes pass 2 on the
+        retained samples.
     given_image_translations : np.ndarray or None
         ``[n_images, 2]`` with ``given_supports``: each image's own translation sample
         (pixels), applied to its images by pass 2 (``image_translations`` of the resident
@@ -1655,6 +1665,7 @@ def run_dense_k_class_em_adaptive(
             "relion_f32_normalization_sum_weight",
             "relion_coarse_hard_assignment",
             "relion_coarse_max_posterior",
+            "relion_coarse_class_assignment",
         ):
             dense_kwargs.pop(field, None)
         dense_kwargs["mstep_relion_x_half"] = True
@@ -1714,7 +1725,11 @@ def run_dense_k_class_em_adaptive(
 
     coarse_class_assignments = None
     reuse_zero_oversampling_coarse_state = bool(
-        n_classes == 1
+        (
+            n_classes == 1
+            # Classes take RELION's route on request; a seed iteration and given poses have no joint pass 1.
+            or (zero_oversampling_coarse_state_for_classes and image_seed_classes is None and given_supports is None)
+        )
         and _resolved_oversampling_order() == 0
         and engine_kwargs.get("mstep_relion_x_half", False)
         and not firstiter_cc_pass2_only_best_coarse
@@ -1962,6 +1977,8 @@ def run_dense_k_class_em_adaptive(
         pass2_kwargs["relion_f32_normalization_sum_weight"] = _full_coarse_stats["relion_f32_sum_weight"]
         pass2_kwargs["relion_coarse_max_posterior"] = _full_coarse_stats["relion_f32_max_posterior"]
         pass2_kwargs["relion_coarse_hard_assignment"] = pass1_result.hard_assignment
+        if n_classes > 1:
+            pass2_kwargs["relion_coarse_class_assignment"] = pass1_result.class_assignment
     if pass2_use_float64_scoring is not None:
         pass2_kwargs["use_float64_scoring"] = bool(pass2_use_float64_scoring)
     if pass2_use_float64_projections is not None:

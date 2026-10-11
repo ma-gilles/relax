@@ -382,6 +382,8 @@ def run_adaptive_initial_model_estep(
         fine_current_size=current_size,
         coarse_healpix_order=healpix_order,
         oversampling_order=oversampling_order,
+        # Zero oversampling with classes keeps the coarse pass's sum, Pmax and winner, as K=1 does (relax#73).
+        **({"zero_oversampling_coarse_state_for_classes": True} if int(oversampling_order) == 0 else {}),
         coarse_translation_log_prior=coarse_translation_log_prior,
         relion_fine_mstep_prune=True,
         relion_projector_half=relion_projector_half_by_class,

@@ -275,6 +275,7 @@ def _assemble_result(
     aggregate_noise_stats_override=None,
     uncast_log_evidence_per_image=None,
     joint_max_posterior_per_image=None,
+    class_assignments_override=None,
     firstiter_winner_take_all: bool = False,
     host_accumulators: bool = False,
     host_stats_publication: bool = False,
@@ -382,6 +383,11 @@ def _assemble_result(
         axis=0,
     )
     class_assignments = np.argmax(best_scores, axis=0).astype(np.int32)
+    if class_assignments_override is not None:
+        # Zero oversampling: the winner is the coarse pass's, not the best fine sample.
+        class_assignments = np.asarray(class_assignments_override, dtype=np.int32)
+        if class_assignments.shape != (n_images,) or class_assignments.min() < 0 or class_assignments.max() >= n_classes:
+            raise ValueError(f"class assignments must be one class in [0, {n_classes}) per image")
     image_indices = np.arange(class_assignments.shape[0])
     pose_assignments = np.asarray(per_class_hard_assignments)[class_assignments, image_indices]
     global_best_scores = np.max(best_scores, axis=0)

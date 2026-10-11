@@ -275,13 +275,22 @@ def _score_adaptive_kclass_dense(
         scale=optics.projection_scale,
         reference_current_size=optics.reference_current_size,
     )
+    # Zero oversampling: pass 1 scores RELION's device-built coarse rows, as the K=1 route does, and pass 2
+    # keeps its sum, Pmax and winner (relax#73; docs/math/zero_oversampling.md).
+    coarse_scoring = (
+        sampling.coarse_scoring_rotations is not None
+        and adaptive_os == 0
+        and execution.relion_x_half_mstep
+        and variant.score_mode == "gaussian"
+        and not execution.diagnostic_float64_pass2
+    )
     projected_coarse, projected_fine, projected_mstep = project_pass2_rotations(
-        pass2_grids.coarse_rotations,
+        sampling.coarse_scoring_rotations if coarse_scoring else pass2_grids.coarse_rotations,
         pass2_grids.fine_rotations,
         pass2_grids.fine_mstep_rotations,
         scale=optics.projection_scale,
         magnification=magnification,
-        **sampling.rotation_source(adaptive_os, symmetry),
+        **sampling.rotation_source(adaptive_os, symmetry, coarse_scoring=coarse_scoring),
     )
     adaptive_em_kwargs.update(grid_kwargs)
     result = run_dense_k_class_em_adaptive(
@@ -302,6 +311,8 @@ def _score_adaptive_kclass_dense(
         fine_current_size=fine_current_size,
         oversampling_order=adaptive_os,
         image_seed_classes=half.image_seed_classes,
+        # Zero oversampling only, so every other iteration hands the engine the operands it did.
+        **({"zero_oversampling_coarse_state_for_classes": True} if adaptive_os == 0 else {}),
         class_log_priors=priors.class_log_priors,
         accumulate_noise=True,
         adaptive_fraction=RELION_ADAPTIVE_FRACTION,
