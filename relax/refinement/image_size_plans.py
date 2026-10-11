@@ -366,7 +366,7 @@ def plan_initial_image_size(
     else:
         seeded_cs = None
     if seeded_cs is not None:
-        current_size = int(seeded_cs)
+        current_size = seeded_cs
         data_vs_prior_iter = None
         log.info(
             "RELION init bootstrap: seeding iter-1 current_size from ini_high=%.2f A -> %d",
