@@ -11,11 +11,13 @@ import pytest
 from relax.dense.gemm_kernels import (
     DenseGemmTileConfig,
     empty_normalizer_table,
-    make_batch_program,
     native_relion_callbacks,
 )
 from relax.projection.projection import relion_projector_half_to_texture_full
 from scripts.benchmark_dense_gemm_em import _direct_comparison, _make_case, _production_program, _run_once
+from scripts.lib.dense_gemm_experiment import (
+    make_batch_program,
+)
 
 
 @pytest.mark.gpu

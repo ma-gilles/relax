@@ -8,11 +8,13 @@ import pytest
 from relax.dense.gemm_kernels import (
     DenseGemmTileConfig,
     empty_normalizer_table,
-    make_batch_program,
     pad_batch,
     pad_grid,
-    run_resident_iteration,
     score_tile,
+)
+from scripts.lib.dense_gemm_experiment import (
+    make_batch_program,
+    run_resident_iteration,
     weighted_slices,
 )
 

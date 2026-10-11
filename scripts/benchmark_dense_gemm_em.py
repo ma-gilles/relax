@@ -32,24 +32,26 @@ from relax.cuda.kernels import (
     relion_translate_sum_flat_rows_f32,
 )
 from relax.dense.gemm_kernels import (
-    DenseGemmBatchResult,
     DenseGemmTileConfig,
     empty_normalizer_table,
-    leading_tile_bytes,
-    make_batch_program,
     merge_normalizers,
     native_phase_table,
     native_relion_callbacks,
-    normalizer_logz,
     pad_batch,
     pad_grid,
     score_model_power,
     score_tile,
     tile_normalizer,
-    weighted_slices,
 )
 from relax.projection.projection import relion_projector_half_to_texture_full
 from relax.relion.projector_setup import setup_relion_projector
+from scripts.lib.dense_gemm_experiment import (
+    DenseGemmBatchResult,
+    leading_tile_bytes,
+    make_batch_program,
+    normalizer_logz,
+    weighted_slices,
+)
 
 
 def arguments():

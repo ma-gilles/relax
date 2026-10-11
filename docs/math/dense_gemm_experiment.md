@@ -6,8 +6,8 @@ BPref backprojection. It does not change production defaults or implement VDAM's
 optimizer. The fixed-grid experiment is separate from production adaptive support
 selection.
 
-The implementation is [`make_batch_program`](../../relax/dense/gemm_kernels.py),
-with tile arithmetic in the same file.
+The implementation is [`make_batch_program`](../../scripts/lib/dense_gemm_experiment.py),
+with tile arithmetic in [`gemm_kernels.py`](../../relax/dense/gemm_kernels.py).
 The real-data adapter is
 [`benchmark_dense_gemm_trajectory.py`](../../scripts/benchmark_dense_gemm_trajectory.py).
 

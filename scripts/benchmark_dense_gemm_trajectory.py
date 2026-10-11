@@ -579,11 +579,13 @@ def _native_fixture_program(args, geometry, bp_shape, current_size, image_shape,
         relion_translate_sum_flat_rows_f32,
     )
     from relax.dense.gemm_kernels import (
-        DenseGemmBatchResult,
         empty_normalizer_table,
         merge_normalizers,
-        normalizer_logz,
         tile_normalizer,
+    )
+    from scripts.lib.dense_gemm_experiment import (
+        DenseGemmBatchResult,
+        normalizer_logz,
     )
 
     qsize = args.rotation_tile
@@ -686,16 +688,18 @@ def _resident_cuda_fixture_program(
     from relax.cuda import kernels as cuda_backproject
     from relax.cuda.kernels import relion_translate_score_f32
     from relax.dense.gemm_kernels import (
-        DenseGemmBatchResult,
         empty_normalizer_table,
         merge_normalizers,
-        normalizer_logz,
         tile_normalizer,
     )
     from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
     from relax.fine_pass.resident_pass2 import _resident_block_weighted_sums_kernel
     from relax.runtime.memory_budget import _max_adjoint_block_bytes_for_pass
     from relax.scoring.coarse_kernels import relion_coarse_gaussian_gemm_scores_jit
+    from scripts.lib.dense_gemm_experiment import (
+        DenseGemmBatchResult,
+        normalizer_logz,
+    )
 
     qsize = args.rotation_tile
     image_capacity = args.images
@@ -834,13 +838,15 @@ def run_fixed_fixture_trajectory(args, model_dir):
     from relax.dense.gemm_kernels import (
         DenseGemmTileConfig,
         empty_normalizer_table,
-        make_batch_program,
         native_relion_callbacks,
-        run_resident_iteration,
     )
     from relax.projection.projection import relion_projector_half_to_texture_full
     from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
     from relax.reconstruction.regularization import compute_relion_fsc_from_backprojector
+    from scripts.lib.dense_gemm_experiment import (
+        make_batch_program,
+        run_resident_iteration,
+    )
 
     if jax.default_backend() != "gpu":
         raise RuntimeError("a fixed fixture trajectory requires a selected CUDA GPU")
@@ -1086,11 +1092,13 @@ def benchmark_fixed_fixture_batch(args, model_dir):
     from relax.dense.gemm_kernels import (
         DenseGemmTileConfig,
         empty_normalizer_table,
-        make_batch_program,
         native_relion_callbacks,
     )
     from relax.projection.projection import relion_projector_half_to_texture_full
     from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+    from scripts.lib.dense_gemm_experiment import (
+        make_batch_program,
+    )
     benchmark_module = importlib.import_module(
         "scripts.benchmark_dense_gemm_em" if __package__ else "benchmark_dense_gemm_em"
     )
