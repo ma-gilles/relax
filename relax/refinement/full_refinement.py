@@ -51,6 +51,7 @@ from relax.parity.state_swap_probe import (
 from relax.refinement import (
     command_options,
     particle_loading,
+    refinement_options,
     run_files,
     scoring_policy,
     startup_noise,
@@ -990,7 +991,6 @@ def main(command=None):
     from relax.refinement.refinement_options import (
         CheckpointOptions,
         ExpectedAccuracyOptions,
-        FinalPassOptions,
         OpticsGeometry,
         RefinementOptions,
         RelionParityOptions,
@@ -1259,7 +1259,8 @@ def main(command=None):
             continued_iterations=None if resume_snapshot is None else continued_iterations,
         ),
         execution=command_options.resolve_execution(args),
-        final_pass=FinalPassOptions.from_environ(),
+        final_pass=refinement_options.FinalPassOptions.from_environ(),
+        environment=refinement_options.RefinementEnvironment.from_environ(),
         adaptive=adaptive_options,
         optics_geometry=OpticsGeometry(
             relion_optics_image_sizes=half_sets.optics_image_sizes,

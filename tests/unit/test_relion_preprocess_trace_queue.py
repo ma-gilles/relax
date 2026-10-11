@@ -41,7 +41,7 @@ def _run_expectation(run_half):
     # Each half's inputs are its index; the score is run_half and nothing is finished.
     run_numbered_halves(
         run_half, lambda half, result: None, (0, 1), (0, 1), SimpleNamespace(combine=lambda: combined.append(1)),
-        overlap_halves=False, log=logging.getLogger(__name__),
+        overlap_halves=False, armed_bpref_dumps=(), log=logging.getLogger(__name__),
     )
     return combined
 

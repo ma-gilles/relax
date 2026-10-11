@@ -28,17 +28,17 @@ def test_overlap_is_off_by_default():
 
 
 def test_overlap_requires_the_request():
-    assert _half_overlap_active(False, diagnostic_half_indices=(0, 1), log=LOG) is False
+    assert _half_overlap_active(False, armed_bpref_dumps=(), diagnostic_half_indices=(0, 1), log=LOG) is False
 
 
 def test_overlap_runs_when_both_halves_are_scored():
-    assert _half_overlap_active(True, diagnostic_half_indices=(0, 1), log=LOG) is True
+    assert _half_overlap_active(True, armed_bpref_dumps=(), diagnostic_half_indices=(0, 1), log=LOG) is True
 
 
 @pytest.mark.parametrize("halves", [(0,), (1,), ()])
 def test_overlap_refuses_a_half_subset(halves):
     """Nothing to overlap when only one half is being scored."""
-    assert _half_overlap_active(True, diagnostic_half_indices=halves, log=LOG) is False
+    assert _half_overlap_active(True, armed_bpref_dumps=(), diagnostic_half_indices=halves, log=LOG) is False
 
 
 @pytest.mark.parametrize(
@@ -50,14 +50,64 @@ def test_overlap_refuses_a_half_subset(halves):
     ],
 )
 def test_overlap_refuses_while_a_bpref_dump_is_armed(monkeypatch, tmp_path, env_var):
-    """The dump context is process-global and set per half, so it wins."""
+    """The dump context is process-global and set per half, so it wins. The command reads the variable once."""
+    from relax.refinement.refinement_options import BPREF_DUMP_ENV_VARS, RefinementEnvironment
+
+    for name in BPREF_DUMP_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(env_var, str(tmp_path))
-    assert _half_overlap_active(True, diagnostic_half_indices=(0, 1), log=LOG) is False
+    armed = RefinementEnvironment.from_environ().armed_bpref_dumps
+    assert armed == (env_var,)
+    assert _half_overlap_active(True, armed_bpref_dumps=armed, diagnostic_half_indices=(0, 1), log=LOG) is False
 
 
-def test_overlap_ignores_a_blank_dump_variable(monkeypatch):
+def test_overlap_ignores_a_blank_or_unset_dump_variable(monkeypatch):
+    from relax.refinement.refinement_options import BPREF_DUMP_ENV_VARS, RefinementEnvironment
+
+    for name in BPREF_DUMP_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    assert RefinementEnvironment.from_environ() == RefinementEnvironment()
     monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "   ")
-    assert _half_overlap_active(True, diagnostic_half_indices=(0, 1), log=LOG) is True
+    armed = RefinementEnvironment.from_environ().armed_bpref_dumps
+    assert armed == ()
+    assert _half_overlap_active(True, armed_bpref_dumps=armed, diagnostic_half_indices=(0, 1), log=LOG) is True
+
+
+def test_the_command_reads_the_armed_dumps_into_the_options(monkeypatch, tmp_path):
+    """``relax refine`` reads the dump variables once, into ``options.environment``."""
+    from helpers.tiny_main import controller_inputs
+
+    from relax.refinement.refinement_options import BPREF_DUMP_ENV_VARS
+
+    for name in BPREF_DUMP_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_DIR", str(tmp_path / "dump"))
+    inputs = controller_inputs(monkeypatch, tmp_path, "refine")
+    assert inputs["options"].environment.armed_bpref_dumps == ("RELAX_BPREF_MEMBERSHIP_DUMP_DIR",)
+
+
+def test_the_expectation_hands_the_options_armed_dumps_to_the_guard(monkeypatch):
+    """The numbered expectation passes ``options.environment``, not the environment, to the overlap guard."""
+    from helpers.tiny_refinement import N_IMAGES, N_ROTATIONS, run_tiny_refinement
+
+    from relax.refinement import expectation
+    from relax.refinement.refinement_options import BPREF_DUMP_ENV_VARS, RefinementEnvironment
+
+    for name in BPREF_DUMP_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    seen = []
+
+    def guard(requested, *, armed_bpref_dumps, diagnostic_half_indices, log):
+        seen.append((requested, armed_bpref_dumps))
+        return False
+
+    monkeypatch.setattr(expectation, "_half_overlap_active", guard)
+    run_tiny_refinement(
+        monkeypatch, max_iter=1, final_after_max_iter=False,
+        execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS, overlap_halves=True),
+        environment=RefinementEnvironment(armed_bpref_dumps=("RELAX_BPREF_CONTRIBUTION_DUMP_DIR",)),
+    )
+    assert seen and set(seen) == {(True, ("RELAX_BPREF_CONTRIBUTION_DUMP_DIR",))}
 
 
 def test_dispatcher_runs_every_half_once():
@@ -278,7 +328,7 @@ def test_each_half_is_finished_by_its_own_thread_right_after_it_is_scored(overla
     combined = []
     run_numbered_halves(
         score, finish, ("half 0", "half 1"), (0, 1), SimpleNamespace(combine=lambda: combined.append(1)),
-        overlap_halves=overlap, log=LOG,
+        overlap_halves=overlap, armed_bpref_dumps=(), log=LOG,
     )
     assert combined == [1]
     for k in (0, 1):

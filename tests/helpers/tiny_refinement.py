@@ -269,6 +269,7 @@ def run_tiny_refinement(
     from relax.refinement.refinement_options import (
         FinalPassOptions,
         KClassOptions,
+        RefinementEnvironment,
     )
     from relax.refinement.startup_references import StartupHandoff
 
@@ -315,6 +316,7 @@ def run_tiny_refinement(
     option_groups["final_pass"] = replace(
         FinalPassOptions.from_environ(), after_max_iter=final_after_max_iter and n_classes == 1,
     )
+    option_groups.setdefault("environment", RefinementEnvironment.from_environ())
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
     option_groups.setdefault("adaptive", stand_in.adaptive(adaptive_oversampling=1))

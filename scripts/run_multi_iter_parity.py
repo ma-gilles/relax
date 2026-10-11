@@ -1456,6 +1456,7 @@ def main():
         FinalPassOptions,
         LocalSearchOptions,
         OpticsGeometry,
+        RefinementEnvironment,
         RefinementOptions,
         RefinementSchedule,
         RelionParityOptions,
@@ -2447,6 +2448,7 @@ def main():
             rotation_block_size=args.rotation_block_size,
         ),
         final_pass=FinalPassOptions.from_environ(),
+        environment=RefinementEnvironment.from_environ(),
         adaptive=AdaptiveOptions(
             adaptive_oversampling=oversampling, max_significants=max_significants,
             coarse_engine=args.coarse_engine,

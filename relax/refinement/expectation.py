@@ -4,7 +4,6 @@ See docs/math/relion_refinement_algorithm.md, section 3.
 """
 
 import logging
-import os
 from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import TYPE_CHECKING
@@ -165,13 +164,6 @@ def record_numbered_half(
     )
 
 
-_BPREF_DUMP_ENV_VARS = (
-    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
-    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
-    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-)
-
-
 @dataclass(frozen=True)
 class NumberedHalfInputs:
     """What scoring one half of a numbered iteration reads that differs between the halves.
@@ -250,14 +242,16 @@ def _score_and_finish_half(score_half, finish_half, half_inputs, k) -> None:
     return_freed_heap(f"half {k + 1}'s E-step")
 
 
-def _half_overlap_active(requested: bool, *, diagnostic_half_indices, log) -> bool:
+def _half_overlap_active(
+    requested: bool, *, armed_bpref_dumps: tuple[str, ...], diagnostic_half_indices, log
+) -> bool:
     """Decide whether the two halves' E-steps may run concurrently.
 
     Refuses rather than degrades. Each guard is a place where running the two
     halves at once would change what is observed, not merely when:
 
     * a subset of halves is being scored, so there is nothing to overlap;
-    * a BPref dump is armed. The dump context is process-global and is set per
+    * a BPref dump is armed (``armed_bpref_dumps``, ``RefinementEnvironment``). The dump context is process-global and is set per
       half at the top of the half's work, so two halves in flight would write
       each other's context. The dump is a diagnostic, so the overlap yields.
     """
@@ -267,9 +261,8 @@ def _half_overlap_active(requested: bool, *, diagnostic_half_indices, log) -> bo
     if tuple(diagnostic_half_indices) != (0, 1):
         log.info("Half overlap off: scoring halves %s, not both", tuple(diagnostic_half_indices))
         return False
-    armed = [name for name in _BPREF_DUMP_ENV_VARS if os.environ.get(name, "").strip()]
-    if armed:
-        log.info("Half overlap off: a BPref dump is armed (%s)", ", ".join(armed))
+    if armed_bpref_dumps:
+        log.info("Half overlap off: a BPref dump is armed (%s)", ", ".join(armed_bpref_dumps))
         return False
     log.info("Half overlap ON: the two halves' E-steps run in one thread each")
     return True
@@ -331,6 +324,7 @@ def run_numbered_halves(
     significance: SignificanceStatistics,
     *,
     overlap_halves: bool,
+    armed_bpref_dumps: tuple[str, ...],
     log: logging.Logger,
 ) -> None:
     """Score the halves of a numbered iteration and close its expectation.
@@ -347,6 +341,7 @@ def run_numbered_halves(
 
     _overlap_active = _half_overlap_active(
         overlap_halves,
+        armed_bpref_dumps=armed_bpref_dumps,
         diagnostic_half_indices=diagnostic_half_indices,
         log=log,
     )
@@ -468,7 +463,8 @@ def run_numbered_expectation(
             use_local=use_local, dtype=ctx.scoring_dtype,
         ),
         half_inputs, diagnostic_half_indices, significance,
-        overlap_halves=options.execution.overlap_halves, log=logger,
+        overlap_halves=options.execution.overlap_halves,
+        armed_bpref_dumps=options.environment.armed_bpref_dumps, log=logger,
     )
     return NumberedExpectationResult(per_half=per_half, significance=significance)
 

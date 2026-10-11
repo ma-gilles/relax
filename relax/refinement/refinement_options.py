@@ -27,6 +27,7 @@ from relax.runtime.env_flags import (
     parse_env_optional_flag,
     parse_env_true_flag,
     parse_env_worker_count,
+    read_env_text,
 )
 from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
@@ -670,6 +671,33 @@ class ExecutionOptions:
         )
 
 
+BPREF_DUMP_ENV_VARS = (
+    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class RefinementEnvironment:
+    """The controller's switches of the process environment, read once by :meth:`from_environ`, which the
+    command calls when it builds the run's options (code rule 5); nothing below reads these variables again.
+    The default instance is the unset environment.
+
+    ``armed_bpref_dumps``: the BPref dump variables of ``BPREF_DUMP_ENV_VARS`` (RELAX_BPREF_MEMBERSHIP_DUMP_DIR,
+    RELAX_BPREF_CONTRIBUTION_DUMP_DIR, RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR) set to a non-blank value, in that
+    order; while one is armed the two halves' E-steps do not overlap (``expectation._half_overlap_active``).
+    """
+
+    armed_bpref_dumps: tuple[str, ...] = ()
+
+    @classmethod
+    def from_environ(cls) -> RefinementEnvironment:
+        return cls(
+            armed_bpref_dumps=tuple(name for name in BPREF_DUMP_ENV_VARS if read_env_text(name, "").strip()),
+        )
+
+
 @dataclass(frozen=True, kw_only=True)
 class CheckpointOptions:
     """RELION's per-iteration run files and ``--continue``.
@@ -705,6 +733,8 @@ class RefinementOptions:
     consistency: RelionConsistencyOptions = field(default_factory=RelionConsistencyOptions)
     # The command reads it from the environment (FinalPassOptions.from_environ); nothing below reads it again.
     final_pass: FinalPassOptions = field(default_factory=FinalPassOptions)
+    # The command reads it from the environment (RefinementEnvironment.from_environ); nothing below reads it again.
+    environment: RefinementEnvironment = field(default_factory=RefinementEnvironment)
     solvent: SolventOptions = field(default_factory=SolventOptions)
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # The dense scoring precision, taken when the options are built (code rule 5); see _process_dense_precision.
