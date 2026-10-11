@@ -1032,3 +1032,26 @@ def test_replay_reads_every_optics_groups_noise():
     assert pair.half1.shape == pair.half2.shape == (2, n * n)
     with pytest.raises(ValueError, match="numbered 1..G"):
         read_model_sigma2_noise({"model_optics_group_2": two}, context="test")
+
+
+def test_replay_source_starts_from_the_relion_iterations_seeds(tmp_path):
+    """The script's replay source carries the completed RELION iteration's FSC, Pmax and high-FSC latch."""
+    from relax.parity.relion_replay_source import RelionReplaySource
+    from relax.refinement.ports import StartSeeds
+    from scripts.run_multi_iter_parity import replay_source
+
+    seeds = StartSeeds(fsc=np.linspace(1.0, 0.0, 9), ave_pmax=0.25, has_high_fsc_at_limit=True)
+    source = replay_source(
+        None,
+        relion_dir=tmp_path,
+        run_prefix="run",
+        max_iter=None,
+        iteration_overrides=[None],
+        final_replay_override=None,
+        start_seeds=seeds,
+    )
+
+    assert isinstance(source, RelionReplaySource)
+    assert source.start_seeds is seeds
+    assert source.replay.perturb_replay_relion_dir == str(tmp_path)
+

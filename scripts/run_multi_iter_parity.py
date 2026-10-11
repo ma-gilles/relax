@@ -1031,6 +1031,24 @@ def apply_iteration_normalization_factor_overrides(
     return corrected, applied
 
 
+def replay_source(run_options, *, relion_dir, run_prefix, max_iter, iteration_overrides, final_replay_override, start_seeds):
+    """The run's input source: the RELION run's numbered state, with the completed RELION iteration's FSC,
+    Pmax and high-FSC latch (``start_seeds``) starting the first iteration."""
+    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
+
+    return RelionReplaySource.for_run(
+        RelionReplay.from_environ(
+            perturb_replay_relion_dir=str(relion_dir),
+            perturb_replay_relion_prefix=run_prefix,
+            perturb_replay_max_iter=max_iter,
+            replay_iteration_overrides=iteration_overrides,
+            final_replay_override=final_replay_override,
+            start_seeds=start_seeds,
+        ),
+        run_options,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--relion_dir", required=True)
@@ -1429,7 +1447,6 @@ def main():
 
     from relax.diagnostics import observers
     from relax.io.map_io import write_map_from_ft
-    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
     from relax.refinement.ports import StartSeeds
@@ -2491,17 +2508,14 @@ def main():
                 ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
                 + observers.observers_from_environment()
             ),
-            source=RelionReplaySource.for_run(
-                RelionReplay.from_environ(
-                    perturb_replay_relion_dir=str(relion_dir),
-                    perturb_replay_relion_prefix=run_prefix,
-                    perturb_replay_max_iter=args.replay_override_max_iter,
-                    replay_iteration_overrides=replay_iteration_overrides,
-                    final_replay_override=explicit_final_replay_override,
-                    # The completed RELION iteration's FSC, Pmax and high-FSC latch start the first iteration.
-                    start_seeds=StartSeeds(fsc=fsc, ave_pmax=ave_Pmax, has_high_fsc_at_limit=has_high_fsc_at_limit),
-                ),
+            source=replay_source(
                 run_options,
+                relion_dir=relion_dir,
+                run_prefix=run_prefix,
+                max_iter=args.replay_override_max_iter,
+                iteration_overrides=replay_iteration_overrides,
+                final_replay_override=explicit_final_replay_override,
+                start_seeds=StartSeeds(fsc=fsc, ave_pmax=ave_Pmax, has_high_fsc_at_limit=has_high_fsc_at_limit),
             ),
         )
     del run_options
