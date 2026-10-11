@@ -679,7 +679,7 @@ def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
     dataset, mu, W, stream, host = tile_problem
     reference = build_pass2_hypothesis_layout(PRUNED, **LAYOUT_KWARGS)
     actual = accumulate_full_row_tile(stream, np.arange(3), PRUNED)
-    assert actual.diagnostics["supported_image_rows"] == reference.total_local_rotations == 32
+    assert actual.diagnostics["supported_image_rows"] == reference.rotation_ids_flat.shape[0] == 32
     assert actual.diagnostics["scored_image_rows"] == 3 * 20  # union of 16 rows in four 5-row blocks
     parts = []
     for image in range(3):

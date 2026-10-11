@@ -103,7 +103,7 @@ def test_tables_mirror_the_layout_row_for_row():
     tables = rll.tables_from_local_layout(layout)
 
     assert tables.n_images == layout.n_images
-    assert tables.n_rows == layout.total_local_rotations
+    assert tables.n_rows == layout.rotation_ids_flat.shape[0]
     assert tables.n_trans == int(layout.translation_grid.shape[0])
     assert_matches(tables.row_offsets, layout.rotation_offsets)
     assert_matches(tables.rotations, layout.rotations_flat)
@@ -272,7 +272,7 @@ def test_adapter_rejects_a_mask_of_the_wrong_width():
         **{
             **{field: getattr(layout, field) for field in layout.__dataclass_fields__},
             "sample_mask_bits": np.zeros(
-                (layout.total_local_rotations, 1), dtype=np.uint8
+                (layout.rotation_ids_flat.shape[0], 1), dtype=np.uint8
             ),
         }
     )

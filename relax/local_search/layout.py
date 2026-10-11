@@ -328,10 +328,6 @@ class LocalHypothesisLayout:
     def n_images(self) -> int:
         return int(self.rotation_counts.shape[0])
 
-    @property
-    def total_local_rotations(self) -> int:
-        return int(self.rotation_ids_flat.shape[0])
-
 
 @dataclass(frozen=True)
 class LocalBucketSpec:
