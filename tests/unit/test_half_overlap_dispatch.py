@@ -168,7 +168,7 @@ def test_runner_wires_the_flag_into_the_option_group(monkeypatch, tmp_path, flag
 
 
 def test_device_share_defaults_to_the_whole_device():
-    from relax.runtime.memory_budget import concurrent_device_shares
+    from helpers.device_shares import concurrent_device_shares
 
     assert concurrent_device_shares() == 1
 
@@ -203,7 +203,7 @@ def test_device_share_rejects_a_nonsense_count():
 
 def test_dispatcher_declares_and_restores_the_share():
     """The share must be declared for the run and put back afterwards."""
-    from relax.runtime.memory_budget import concurrent_device_shares
+    from helpers.device_shares import concurrent_device_shares
 
     seen = []
 
@@ -216,7 +216,7 @@ def test_dispatcher_declares_and_restores_the_share():
 
 
 def test_dispatcher_restores_the_share_after_a_failure():
-    from relax.runtime.memory_budget import concurrent_device_shares
+    from helpers.device_shares import concurrent_device_shares
 
     def run_half(k):
         raise RuntimeError("boom")

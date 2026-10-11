@@ -145,12 +145,6 @@ def set_concurrent_device_shares(shares: int) -> int:
     return previous
 
 
-def concurrent_device_shares() -> int:
-    """How many workers are currently declared to share this device."""
-
-    return _CONCURRENT_DEVICE_SHARES
-
-
 def _jax_allocator_limit_bytes() -> int | None:
     """The JAX GPU allocator's limit (``bytes_limit``), if reported.
 
