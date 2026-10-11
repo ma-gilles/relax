@@ -10,7 +10,7 @@ The discussion covers the dense single-volume RELION-parity code paths:
 
 - `recovar/em/`
 - `scripts/run_k_class_parity.py`
-- `recovar/em/vdam/` and the current InitialModel unit/trajectory tests
+- `relax/vdam/` and the current InitialModel unit/trajectory tests
 
 It does not describe the older generic homogeneous EM API or the low-rank
 heterogeneity pipeline except where those paths share conventions.

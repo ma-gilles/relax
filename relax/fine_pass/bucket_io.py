@@ -55,7 +55,7 @@ def _scaled_half_lattice_cached(image_shape):
     """
 
     # RELION's label for the packed Nyquist row of an uncropped half image; see
-    # recovar/em/helpers/preprocessing.py::relion_half_translation_lattice.
+    # relax/fourier/preprocessing.py::relion_half_translation_lattice.
     return jnp.asarray(
         relion_half_translation_lattice(tuple(int(size) for size in image_shape))
     )
@@ -276,7 +276,7 @@ class UnshiftedBucketOperands(NamedTuple):
     and pre-centers each image, and a translation half that tiles the result over
     the fine translations. Only the first half is per-image pure, so it is the
     half the device-resident driver hoists to once per pass over a set of images
-    (:mod:`recovar.em.sparse_pass2.resident_operands`). This record is that half's
+    (:mod:`relax.fine_pass.resident_operands`). This record is that half's
     output, named exactly as the locals it replaced; :func:`_prepare_bucket_io`
     consumes it and appends the translation half unchanged.
     """

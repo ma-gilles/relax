@@ -542,7 +542,7 @@ important blocks are:
   convergence counters and accuracy estimates used by replay code.
 
 RECOVAR parsing helpers for this state are concentrated in
-[`recovar/em/sampling.py`](../../relax/sampling/__init__.py). In particular,
+[`relax/sampling/__init__.py`](../../relax/sampling/__init__.py). In particular,
 `read_relion_model_metadata` reads current image size/resolution,
 `read_relion_optimiser_metadata` reads optimiser counters, and
 `read_relion_direction_prior` reads `model_pdf_orient_class_1`.
@@ -594,7 +594,7 @@ where the Python reconstruction path receives an explicit tau spectrum.
 ### Standard EM/Class3D tau2 path
 
 The dense single-volume RELION-parity loop in
-[`recovar/em/refinement/iteration_loop.py`](../../relax/refinement/iteration_loop.py)
+[`relax/refinement/iteration_loop.py`](../../relax/refinement/iteration_loop.py)
 does use explicit tau2-like arrays. `_reconstruct_volume_eager` calls
 [`relion_functions.post_process_from_filter_v2`](https://github.com/ma-gilles/recovar/blob/c60e3c26f893b6aa88e0f78db4f50c76352afedc/recovar/reconstruction/relion_functions.py)
 with `tau=mean_variance`, `tau2_fudge`, `use_spherical_mask=True`,

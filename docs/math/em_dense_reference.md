@@ -8,7 +8,7 @@ Primary files reviewed:
 - `recovar/em/reference/core.py`
 - `recovar/em/reference/iterations.py`
 - `recovar/em/reference/states.py`
-- `recovar/em/sampling.py`
+- `relax/sampling/__init__.py`
 - `recovar/core/configs.py`
 - `recovar/core/slicing.py`
 - `recovar/core/geometry.py`

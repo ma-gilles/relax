@@ -293,7 +293,7 @@ must be handled at the K-class level, not inferred from independently normalized
 single-class probabilities.
 
 Scale-group ID validation and full-axis sizing have one host owner,
-[`helpers/scale_groups.py`](../../relax/relion/scale_groups.py).
+[`relion/scale_groups.py`](../../relax/relion/scale_groups.py).
 Local EM, both sparse scorers and the K-class subset router use it. Explicit
 counts retain groups absent from a class subset; missing IDs disable engine
 scale-statistics allocation, while routing still retains an explicit count.
@@ -309,9 +309,9 @@ dtype conversion and path-specific errors. Radius requirements, pixel selection,
 interpolation, masking and projection execution stay with the callers.
 
 The exact coarse Gaussian path in
-[`helpers/significance.py`](../../relax/scoring/significance.py)
+[`scoring/significance.py`](../../relax/scoring/significance.py)
 passes its existing host pixel indices to the shared source-precision CTF owner
-[`helpers/relion_ctf.py`](../../relax/relion/ctf.py).
+[`relion/ctf.py`](../../relax/relion/ctf.py).
 Coarse, local and sparse scoring call that owner directly; its parsed STAR
 tables and its one float64 CTF program remain independent of the execution engines.
 It evaluates the requested rows at the requested pixels on the device at every
@@ -447,7 +447,7 @@ Its materialized dense posterior implementation is preserved in
 The adaptive-oversampling tests still compare its complete posterior with active
 significance paths. This reference keeps separate orchestration but shares
 production preprocessing/scoring kernels; it does not independently validate
-those kernels. Production significance belongs to `helpers/significance.py`.
+those kernels. Production significance belongs to `scoring/significance.py`.
 
 Pure convergence-policy cases live in `tests/unit/test_convergence.py`; collecting
 this module does not import the iteration controller. Full iteration smoke tests
@@ -458,12 +458,12 @@ The first-iteration winner-take-all dispatcher lives with its grid builder in
 both K=1 and K-class scoring. The controller supplies its logger and chooses
 whether the batch clamp also updates the caller’s argument dictionary.
 
-Precision selectors belong to `helpers/dtype_policy.py`. The controller passes
+Precision selectors belong to `refinement/precision.py`. The controller passes
 its existing static argument mapping; diagnostic iteration selection still
 reads the environment at call time. Moving the selectors does not evaluate a
 second set of import-time defaults or change any selected dtype.
 
-Angular-grid order policies belong to `helpers/convergence.py`: exhaustive-grid
+Angular-grid order policies belong to `refinement/refinement_state.py`: exhaustive-grid
 capping, final parent/fine orders, perturbation order and direction-prior order.
 The controller supplies the active state and captured final-sampling metadata;
 the helpers preserve their distinct order choices.
@@ -518,9 +518,9 @@ checkout merely because the same report can still be rendered.
 
 ### Replay state diagnostics
 
-`helpers/state_swap_probe.py` owns the supported component variants and CLI
+`parity/state_swap_probe.py` owns the supported component variants and CLI
 validation. It can enumerate variants without importing the refinement
-controller. `helpers/state_swap_runtime.py` owns snapshot copying, map-amplitude
+controller. `parity/state_swap_runtime.py` owns snapshot copying, map-amplitude
 scaling and restoration of the selected components. The controller still owns
 when the snapshot is taken and applies it after the RELION replay override.
 
@@ -543,7 +543,7 @@ scheduling, adaptive search, parity behavior, local search, class setup, replay,
 diagnostics and batching. `refinement_options.with_validated_sampling_schedule`
 owns explicit current-size/HEALPix schedule admission and shallow option copies;
 the entry point invokes it before starting the loop. Option construction does
-not trigger these checks. `helpers/iteration_history.py` owns the per-iteration
+not trigger these checks. `refinement/iteration_history.py` owns the per-iteration
 history lists and their established result-dictionary keys. Its noise/tau2 recorder
 also owns host diagnostic formatting: it prepares all float64 shell fields
 before appending, retains aliases to existing float64 shell arrays, and stacks
@@ -558,7 +558,7 @@ do not import the controller to discover runtime settings. PR180's numerical
 changes and their qualification state are tracked on the
 [EM status page](em_status.md).
 
-`helpers/convergence.py` owns angular-refinement state transitions, including
+`refinement/refinement_state.py` owns angular-refinement state transitions, including
 validation and application of explicit HEALPix schedules used for oracle runs.
 The controller selects the iteration's requested order; the convergence helper
 advances through the existing angular and translation updates without coarsening
@@ -567,7 +567,7 @@ It also owns the approximate-accuracy convergence gate and its environment
 overrides. The controller supplies its logger so malformed-override warnings
 keep their existing routing.
 
-`helpers/resolution.py` owns current-size growth inputs and first-iteration
+`fourier/resolution.py` owns current-size growth inputs and first-iteration
 resolution rules: the inclusive FSC/data-vs-prior boundary, raw versus corrected
 K1 scheduling, the initial high-resolution cutoff, and the tau2 reporting taper.
 It also owns expectation-boundary coarse sizing: replay selects the incoming

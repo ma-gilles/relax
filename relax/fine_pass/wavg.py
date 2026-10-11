@@ -408,7 +408,7 @@ def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
     :func:`_replace_low_shell_noise_with_relion_wavg_direct_residual`; written
     for the device-resident statistics stage, which must keep the whole bucket
     tail inside one traced program instead of pulling per-bucket shells to the
-    host (see ``recovar/em/sparse_pass2/resident_statistics.py``).
+    host (see ``relax/fine_pass/resident_statistics.py``).
 
     The only difference from the numpy original is the association order of
     the float64 shell sum: the original adds one image row at a time through

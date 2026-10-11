@@ -620,7 +620,7 @@ Expectation batch preparation now has an operation owner in
 `expectation_batches.py`. It resolves compact allocation admission, separate
 coarse/fine callbacks and per-shape batch plans. Numbered and final scoring share
 the same run planner; available memory is read at invocation time. The existing
-memory estimator remains in `helpers/batch_planning.py`. The controller still
+memory estimator remains in `runtime/batch_planning.py`. The controller still
 selects the engine and constructs its policy explicitly. This is a bounded
 part of expectation, not the completed expectation stage. Its actual caller,
 implementation and consumers are in the existing review; GPU qualification of

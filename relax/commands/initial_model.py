@@ -452,7 +452,7 @@ def _configure_jax_compilation_cache(*, enabled: bool, requested_dir: str) -> di
         "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
         "0",
     )
-    # Importing ``recovar.em.vdam.schedules`` executes the package
+    # Importing ``relax.vdam.schedules`` executes the package
     # initializer, which may import JAX before CLI parsing reaches this point.
     # Update the live config as well as the environment so the cache is active
     # for this process, not merely its children.

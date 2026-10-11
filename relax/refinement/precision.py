@@ -53,7 +53,7 @@ def _real_component_bytes(dtype) -> int | None:
 def audit_operand_precision(policy, operands: Mapping[str, object], *, where: str, mode: str | None = None):
     """Report operands carried wider than the precision policy allows.
 
-    Production EM precision is float32 (``recovar/em/CLAUDE.md``). The ``cast_*``
+    Production EM precision is float32 (``relax/AGENTS.md``). The ``cast_*``
     helpers above narrow the score operands unconditionally but narrow the
     reconstruction operands only when float64 scoring is *on*, so a single
     float64 factor upstream -- a binary64 sigma2 spectrum, say -- silently

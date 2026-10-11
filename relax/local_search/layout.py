@@ -85,7 +85,7 @@ def resolve_local_image_capacity_ladder(explicit=None) -> tuple[int, ...]:
     comma-separated string of positive capacities.
 
     The bucket planners below treat ``None`` as off, because they are also called by
-    ``recovar/em/ppca_refinement/local_dataset.py``, a pipeline with its own
+    ``scripts/lib/local_dataset.py``, a pipeline with its own
     validation that an EM-scoped environment variable must not re-bucket.
     """
 

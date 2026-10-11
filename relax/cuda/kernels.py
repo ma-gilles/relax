@@ -3051,7 +3051,7 @@ def relion_translate_sum_flat_rows_f32(
 
     ``ctf_probs[r, p] = probs_sum_t[r] != 0 ? probs_sum_t[r] * ctf2[id, p] : 0``
 
-    which is :func:`recovar.em.local.local_backprojection.compute_local_ctf_sums_from_probs_sum_t`
+    which is :func:`relax.fine_pass.local_backprojection.compute_local_ctf_sums_from_probs_sum_t`
     term for term, including its predicate on the mass rather than on the
     product, and bitwise against it on the same ``probs_sum_t``. Omitted, the
     call returns the three-output form and reads no CTF operand.
@@ -4789,7 +4789,7 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
 
 
 # ──────────────────────────────────────────────────────────────────────
-# EM CUDA library (relax split seam S3/S4): librelax_cuda.so, built from recovar/em/cuda
+# EM CUDA library (relax split seam S3/S4): librelax_cuda.so, built from relax/cuda
 # ──────────────────────────────────────────────────────────────────────
 
 _RELAX_CUDA_LIB_ENV = "RELAX_CUDA_LIB"

@@ -164,13 +164,13 @@ def _per_pose_stats_block(Y1, proj_aug, ctf2_over_noise, y_norm):
     the real parts of the Hermitian inner products. The ``.real``
     projections are exact (not approximations) provided the half-image
     weights are baked into ``Y1``, ``ctf2_over_noise``, and ``y_norm``
-    upstream. They are: ``recovar.em.helpers.preprocessing.preprocess_batch``
+    upstream. They are: ``relax.fourier.preprocessing.preprocess_batch``
     computes ``y_norm = Σ_f (|y|²/σ²) · w_f``, and
     :func:`iter_dense_ppca_dataset_blocks` bakes
     ``score_mask = window_mask × half_weights`` into both ``Y1`` and
     ``ctf2_over_noise``. The weights are ``w_f = 2`` for non-DC /
     non-Nyquist Fourier pixels and ``w_f = 1`` for DC and Nyquist (see
-    :func:`recovar.em.helpers.half_spectrum.make_half_image_weights`),
+    :func:`relax.fourier.half_spectrum.make_half_image_weights`),
     so each einsum below is the **full-Fourier** inner product and its
     real part is exact under the Hermitian symmetry of real-space volumes.
     """

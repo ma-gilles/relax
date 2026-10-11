@@ -48,11 +48,11 @@ RELION references are from `/home/mg6942/myscratch/relion/src/`, mainly:
 
 recovar references are mainly:
 
-- `recovar/em/refinement/iteration_loop.py`
+- `relax/refinement/iteration_loop.py`
 - `recovar/em/dense/em_engine.py`
 - `recovar/em/adaptive.py`
 - `recovar/em/convergence.py`
-- `recovar/em/sampling.py`
+- `relax/sampling/__init__.py`
 - `recovar/reconstruction/regularization.py`
 - `recovar/reconstruction/relion_functions.py`
 
@@ -854,7 +854,7 @@ It does *not yet* emit all RELION sufficient statistics, especially:
 - scale and norm accumulators
 - weighted direction sums needed for RELION's learned global `pdf_direction`
 
-### `recovar/em/refinement/iteration_loop.py`
+### `relax/refinement/iteration_loop.py`
 
 This is the RELION-mode control loop.
 
@@ -879,7 +879,7 @@ It currently supports:
 - translation oversampling
 - RELION-style child orientation generation from parent samples
 
-### `recovar/em/sampling.py`
+### `relax/sampling/__init__.py`
 
 This file contains the orientation-grid semantics.
 

@@ -1,7 +1,7 @@
 // Fused sparse pass-2 posterior for RECOVAR's RELION-parity K=1 path.
 //
 // Two runtime-shaped XLA FFI handlers replace the per-shape XLA glue of
-// recovar/em/sparse_pass2/sparse_pass2_posterior.py:
+// relax/fine_pass/posterior.py:
 //
 //   SparsePass2LogZF64      <-> _logsumexp_pass2_bucket_score_only
 //   SparsePass2PosteriorF32 <-> _normalize_pass2_bucket_with_log_z followed by

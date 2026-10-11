@@ -466,7 +466,7 @@ The implementation owners are:
 | --- | --- |
 | Image/CTF/noise preparation and translation phases | [`preprocessing.py`](../../relax/fourier/preprocessing.py), `preprocess_batch` and `preprocess_batch_firstiter_cc` |
 | Projection and projection-dependent residual statistics | [`projection.py`](../../relax/projection/projection.py), `compute_projections_block` and `compute_relion_projector_projections_block` |
-| Gaussian and normalized-CC block scores | [`scoring.py`](../../relax/scoring/coarse_kernels.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
+| Gaussian and normalized-CC block scores | [`coarse_kernels.py`](../../relax/scoring/coarse_kernels.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
 | Scoring weights for the selected Fourier convention | [`half_spectrum.py`](../../relax/fourier/half_spectrum.py), `make_scoring_half_image_weights` |
 
 The half-image layout has `H * (W//2 + 1)` entries. RELION half-sum scoring and
@@ -482,7 +482,7 @@ and bit for bit when `N²` is a power of two, but not in float32 pixel products
 otherwise. The fresh K=1 exact-Gaussian pass therefore scores native-unit
 operands (condition `_relion_native_fine_units_enabled`): each complex operand
 divided by `N²` in binary64 and rounded once
-([`sparse_pass2_scoring.py`](../../relax/fine_pass/scoring.py),
+([`scoring.py`](../../relax/fine_pass/scoring.py),
 `_relion_native_fine_units`), and RELION's own `corr_img` before its `N⁻⁴`
 conversion, with the zero origin of `Minvsigma2`
 (`_relion_native_score_corr_img`). The device-resident driver divides the unshifted image,
@@ -554,10 +554,10 @@ pads empty image segments with the valid end offset; drivers retain their
 existing device placement and posterior kernels.
 
 **Exact local search.**
-[`local_half.py`](../../relax/local_search/half.py)
+[`half.py`](../../relax/local_search/half.py)
 constructs per-image neighborhoods and runs both the fine pass and RELION's pass-1
 parent probe on the device-resident local driver.
-[`local_layout.py`](../../relax/local_search/layout.py)
+[`layout.py`](../../relax/local_search/layout.py)
 builds the per-image hypothesis layout. This route does not use the retired
 sort-and-split union helper formerly described on this page.
 
@@ -745,7 +745,7 @@ well as accumulators. The input noise representation can be a per-pixel array
 or separate half-set inputs; radial statistics and group corrections have
 explicit conversion/update paths.
 
-[`relion_normalization.py`](../../relax/relion/normalization.py)
+[`normalization.py`](../../relax/relion/normalization.py)
 owns `prepare_norm_scale_update`, the unchanged numerical
 `update_relion_norm_scale_corrections`, their existing result type and reporting.
 Preparation adapts persistent half corrections/cardinality and audits particle
@@ -848,7 +848,7 @@ observed shell separate from the first-iteration `ini_high` scheduling override.
 The controller converts the scheduling shell to angstroms after noise updates and
 records convergence statistics at its original boundary.
 
-[`convergence.py`](../../relax/refinement/refinement_state.py)
+[`refinement_state.py`](../../relax/refinement/refinement_state.py)
 owns `RefinementState`, `update_refinement_state`, `update_angular_sampling`,
 `refine_angular_sampling` and `check_convergence`.
 

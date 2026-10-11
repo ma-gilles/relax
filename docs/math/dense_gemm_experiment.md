@@ -41,7 +41,7 @@ its batch; it does not need one volume per image.
 
 Do not replace canonical image/CTF/noise conventions with a generic Euclidean
 metric. The existing
-[`relion_coarse_operands.py`](../../relax/scoring/coarse_operands.py) owns
+[`coarse_operands.py`](../../relax/scoring/coarse_operands.py) owns
 corrections, masks, Fourier weights, zero-CTF handling and `d[i]`.
 
 The implementation stores a float32 pair `(m[i], l[i])`, where

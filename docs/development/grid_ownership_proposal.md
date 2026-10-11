@@ -22,7 +22,7 @@ assumptions in the earlier final-search examples, not the agreed principles.
    `:2137–2170`. Model support is remapped to particle windows using each optics
    grid. The existing `None` convention is overloaded: full model support can
    accidentally become the particle cutoff unless stated explicitly.
-4. `helpers/fourier_window.py` implements support restrictions using original
+4. `fourier/fourier_window.py` implements support restrictions using original
    frequency coordinates and gathered/scattered indices. A smaller working
    array does not imply a newly sampled physical image grid.
 5. `helpers/half_volume_mstep.py:118` derives a padded, odd backprojector shape
