@@ -28,6 +28,7 @@ from relax.refinement.refinement_options import (
     RefinementOptions,
     RelionConsistencyOptions,
     require_consistency_route,
+    require_final_pass_route,
 )
 from relax.refinement.tomo_half import TomoHalf
 from relax.relion import optics_groups
@@ -347,6 +348,7 @@ def build_run_context(
         options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves,
         replays_relion_state=replays_relion_state,
     )
+    require_final_pass_route(options)
     relion_translation_angle_scale = translation_angle_scale_for_run(optics, subtomograms=tomo_halves)
     relion_projection_scale = projection_scale_for_run(optics, subtomograms=tomo_halves)
     reconstruction_settings = reconstruction_settings_for_run(options, image_geometry, volume_shape, consistency)

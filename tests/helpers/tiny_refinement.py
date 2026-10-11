@@ -311,7 +311,10 @@ def run_tiny_refinement(
         monkeypatch.delenv(name, raising=False)
     # K=1: run the final all-data pass after the last numbered iteration without waiting for convergence
     # (RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER); the rest of the environment is read as the command does.
-    option_groups["final_pass"] = replace(FinalPassOptions.from_environ(), after_max_iter=final_after_max_iter)
+    # Class3D refuses the option at set-up (require_final_pass_route), so only K=1 sets it.
+    option_groups["final_pass"] = replace(
+        FinalPassOptions.from_environ(), after_max_iter=final_after_max_iter and n_classes == 1,
+    )
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
     option_groups.setdefault("adaptive", stand_in.adaptive(adaptive_oversampling=1))

@@ -96,7 +96,7 @@ def _should_run_final_all_data_iteration(
     """Return whether to run RELION's final all-data reconstruction pass.
 
     ``after_max_iter``: run it after the last numbered iteration without convergence (K=1's
-    ``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``; Class3D passes ``class_after_max_iter``'s False).
+    ``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``; Class3D passes False, and refuses the option at set-up).
     """
 
     if force_max_iter_after_convergence:
@@ -109,23 +109,6 @@ def _should_run_final_all_data_iteration(
     ):
         return False
     return True
-
-
-def class_after_max_iter(state, options: RefinementOptions, *, iteration: int) -> bool:
-    """Class3D never runs the final pass after max_iter exhaustion (only after convergence): False, with a
-    warning where ``final_pass.after_max_iter`` asks for it at exhaustion."""
-    if (
-        not options.schedule.force_max_iter_after_convergence
-        and not state.has_converged
-        and options.final_pass.after_max_iter
-        and int(iteration) >= int(options.schedule.max_iter)
-    ):
-        logger.warning(
-            "Ignoring %s=1 for K-class after max_iter exhaustion; final all-data "
-            "is only valid for K-class after convergence",
-            FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
-        )
-    return False
 
 
 def final_pass_due(state, options: RefinementOptions, *, iteration: int, after_max_iter: bool) -> bool:

@@ -513,13 +513,19 @@ def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch, cap
     assert should_run(has_converged=True) is True
     assert should_run(iteration=4, after_max_iter=True) is False
     assert should_run(after_max_iter=True, force=True) is False
-    # Class3D never admits the pass after exhaustion; it warns where the option asks for it.
-    class_options = stand_in.options(
-        schedule=stand_in.schedule(max_iter=5), final_pass=FinalPassOptions(after_max_iter=True),
-    )
-    caplog.clear()
-    assert finalization.class_after_max_iter(SimpleNamespace(has_converged=False), class_options, iteration=5) is False
-    assert "Ignoring RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER=1 for K-class" in caplog.text
+    # Class3D never admits the pass after exhaustion: the option is refused at set-up (deep2 P-B9), K=1 keeps it.
+    from relax.refinement.refinement_options import require_final_pass_route
+
+    def options_for(n_classes, after_max_iter):
+        return stand_in.options(
+            schedule=stand_in.schedule(max_iter=5), final_pass=FinalPassOptions(after_max_iter=after_max_iter),
+            k_class=KClassOptions(n_classes=n_classes),
+        )
+
+    with pytest.raises(NotImplementedError, match="RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER .* K=1 only; .*n_classes=3"):
+        require_final_pass_route(options_for(3, True))
+    require_final_pass_route(options_for(3, False))
+    require_final_pass_route(options_for(1, True))
 
 
 def test_kclass_final_reconstruction_does_not_predivide_class_accumulators(monkeypatch):
@@ -5834,7 +5840,7 @@ class TestRelionModeSmokeTest:
             assert np.asarray(half_classes).shape == (N_IMAGES // 2,)
         assert final_all_data_pass_count == 1
 
-    def test_relion_k4_does_not_finalize_after_max_iter_even_when_diagnostic_force_enabled(
+    def test_relion_k4_refuses_the_final_pass_after_max_iter_at_setup(
         self,
         fake_global_estep,
         half_datasets,
@@ -5842,7 +5848,8 @@ class TestRelionModeSmokeTest:
         translations,
         monkeypatch,
     ):
-        """K-class max-iteration exhaustion never enables final all-data."""
+        """K-class max-iteration exhaustion never enables final all-data: asking for it is refused before any
+        iteration runs (deep2 P-B9), not warned about and ignored at the end of the run."""
         final_all_data_pass_count = 0
         original_run_final_all_data = iteration_loop_module.finalization.run_final_all_data
 
@@ -5858,26 +5865,25 @@ class TestRelionModeSmokeTest:
         )
 
         n_classes = 4
-        result = refine_single_volume(
-            half_datasets,
-            StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
-            HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
-            translations,
-            options=stand_in.options(
-                schedule=stand_in.schedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
-                k_class=KClassOptions(
-                    n_classes=n_classes,
+        with pytest.raises(NotImplementedError, match="RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER .* K=1 only"):
+            refine_single_volume(
+                half_datasets,
+                StartupHandoff(HalfPair.shared(init_volume), jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0),
+                HalfPair.shared(jnp.ones(IMAGE_SIZE, dtype=jnp.float32)),
+                translations,
+                options=stand_in.options(
+                    schedule=stand_in.schedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
+                    execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                    parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
+                    k_class=KClassOptions(
+                        n_classes=n_classes,
+                    ),
+                    final_pass=FinalPassOptions(after_max_iter=True),
                 ),
-                final_pass=FinalPassOptions(after_max_iter=True),
-            ),
-            observer=RunObserver(), source=InputSource(),
-        )
+                observer=RunObserver(), source=InputSource(),
+            )
 
-        assert result.convergence_state.has_converged is False
-        assert result.final_all_data_ran is False
-        assert np.asarray(result.maps.class_means).shape == (n_classes, VOLUME_SIZE)
+        assert fake_global_estep == []  # refused at set-up, before any E-step
         assert final_all_data_pass_count == 0
 
     def test_relion_final_iteration_k_class_adaptive_uses_sparse_pass2_route(

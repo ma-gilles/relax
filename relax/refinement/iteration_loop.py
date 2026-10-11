@@ -291,11 +291,8 @@ class _ClassIteration:
         return convergence_helpers.relion_class_pmax_normalization_mass_per_half(per_half.class_posterior)
 
     def final_pass_due(self, state, options, iteration):
-        """Class3D runs the final pass only after convergence."""
-        return finalization.final_pass_due(
-            state, options, iteration=iteration,
-            after_max_iter=finalization.class_after_max_iter(state, options, iteration=iteration),
-        )
+        """Class3D runs the final pass only after convergence (``final_pass.after_max_iter`` is refused at set-up)."""
+        return finalization.final_pass_due(state, options, iteration=iteration, after_max_iter=False)
 
     def plan_image_size(self, ctx, carry, options, history, observer, *, previous_size, resume, iteration):
         """The image size from the shared per-class curve; the observer sees the plan (the carry is unchanged)."""

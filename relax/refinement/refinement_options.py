@@ -406,7 +406,8 @@ class FinalPassOptions:
     ``from_environ``, which the command calls. They change what the run does, so they are run options (code rule 9).
 
     ``after_max_iter`` (``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``): K=1 runs the final pass after the last
-    numbered iteration even without convergence. ``merged_reference``
+    numbered iteration even without convergence; Class3D refuses it at set-up
+    (``require_final_pass_route``). ``merged_reference``
     (``RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE``): its K=1 E-step scores both halves against the merged map.
     """
 
@@ -418,6 +419,16 @@ class FinalPassOptions:
         return cls(
             after_max_iter=parse_env_flag_or_false(FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, logger=logging.getLogger(__name__)),
             merged_reference=parse_env_true_flag(FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV),
+        )
+
+
+def require_final_pass_route(options: RefinementOptions) -> None:
+    """Refuse ``final_pass.after_max_iter`` for Class3D, which runs the final pass only after convergence."""
+    if options.final_pass.after_max_iter and options.k_class.n_classes > 1:
+        raise NotImplementedError(
+            f"{FINAL_ALL_DATA_AFTER_MAX_ITER_ENV} (the final all-data pass after the iteration cap, without "
+            f"convergence) is implemented for K=1 only; this run has n_classes={options.k_class.n_classes}, and "
+            f"Class3D runs the final pass only after convergence. Unset {FINAL_ALL_DATA_AFTER_MAX_ITER_ENV}."
         )
 
 
