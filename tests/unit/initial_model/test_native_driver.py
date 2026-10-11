@@ -2197,7 +2197,10 @@ def test_engine_diagnostic_switches_are_read_once_with_the_options(monkeypatch):
     assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, True)
 
     monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "")  # empty is unset, as the E-step read it
-    monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "0")  # any value disables
+    monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "0")  # a false token leaves it on
+    environment = native_options.NativeInitialModelOptions(fn_img="x").environment
+    assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, True)
+    monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "1")
     environment = native_options.NativeInitialModelOptions(fn_img="x").environment
     assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, False)
 
@@ -2208,6 +2211,25 @@ def test_engine_diagnostic_switches_are_read_once_with_the_options(monkeypatch):
 
     monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "most")
     with pytest.raises(ValueError):
+        native_options.NativeInitialModelOptions(fn_img="x")
+
+
+@pytest.mark.parametrize(
+    "name, field, on",
+    [
+        ("RELAX_CLEAR_JAX_CACHES_PER_ITER", "clear_jax_caches_per_iteration", True),
+        ("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "subtract_projected_reference", False),
+    ],
+)
+def test_environment_flags_take_the_shared_tokens_and_refuse_a_malformed_value(monkeypatch, name, field, on):
+    """deep2 V2-4: one flag parser (env_flags.parse_env_strict_flag); ``=0`` is off and a typo is an error."""
+    monkeypatch.delenv(name, raising=False)
+    assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is (not on)
+    for token, expected in (("1", on), ("yes", on), ("True", on), ("0", not on), ("false", not on), ("off", not on)):
+        monkeypatch.setenv(name, token)
+        assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is expected
+    monkeypatch.setenv(name, "maybe")
+    with pytest.raises(ValueError, match=name):
         native_options.NativeInitialModelOptions(fn_img="x")
 
 

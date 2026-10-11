@@ -167,6 +167,20 @@ def parse_env_nonnegative_int(name: str) -> int | None:
     return value
 
 
+def parse_env_positive_float(name: str) -> float | None:
+    """Read a positive finite number; unset or empty values have no override, anything else is refused."""
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return None
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive number, got {raw!r}") from exc
+    if not 0 < value < float("inf"):
+        raise ValueError(f"{name} must be a positive number, got {raw!r}")
+    return value
+
+
 def parse_env_flag(name: str, *, default: bool = False) -> bool:
     """Read a boolean override; unset or blank values use the caller default."""
     raw = os.environ.get(name)

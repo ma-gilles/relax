@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from relax.io.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
+from relax.runtime.env_flags import parse_env_strict_flag
 from relax.sampling.symmetry import is_identity_symmetry
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
@@ -83,13 +84,14 @@ class VdamEnvironment:
     """The InitialModel's switches of the process environment, read once when the options are built.
 
     :meth:`from_environ` reads them; the default instance has every switch off.
-    ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: 1, true or TRUE) releases JAX's
+    ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: a strict flag) releases JAX's
     buffers after each iteration (CUFFT_ALLOC_FAILED at 50k x 256^2); ``skip_expected_accuracy`` and
     ``isolate_expected_accuracy`` (RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY and
     RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS: 0 or 1) skip the estimate or run it in a spawned process.
     Two engine diagnostics: ``adaptive_fraction`` (RELAX_ADAPTIVE_FRACTION, a float; ``None`` when unset or
     empty keeps the engine's RELION 0.999) and ``subtract_projected_reference`` (``False`` when
-    RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE has any value: back-project the images, not the residuals).
+    RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is on, a strict flag: back-project the images, not the residuals).
+    A strict flag is ``env_flags.parse_env_strict_flag``: 1/true/yes/on, 0/false/no/off, anything else refused.
     """
 
     clear_jax_caches_per_iteration: bool = False
@@ -99,8 +101,8 @@ class VdamEnvironment:
     subtract_projected_reference: bool = True
 
     @classmethod
-    def from_environ(cls, environ=None) -> VdamEnvironment:
-        env = os.environ if environ is None else environ
+    def from_environ(cls) -> VdamEnvironment:
+        env = os.environ
         if env.get("RELAX_USE_FLOAT64_SCORING", "").strip().lower() in {"1", "true", "yes", "on"}:
             raise NotImplementedError("RELAX_USE_FLOAT64_SCORING: InitialModel's resident E-step scores in float32 only")
 
@@ -109,11 +111,11 @@ class VdamEnvironment:
                 raise ValueError(f"{name} must be 0 or 1")
             return value == "1"
 
-        return cls(env.get("RELAX_CLEAR_JAX_CACHES_PER_ITER", "") in ("1", "true", "TRUE"),
+        return cls(parse_env_strict_flag("RELAX_CLEAR_JAX_CACHES_PER_ITER"),
                    strict("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"),
                    strict("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"),
                    float(adaptive_fraction) if (adaptive_fraction := env.get("RELAX_ADAPTIVE_FRACTION")) else None,
-                   not env.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"))
+                   not parse_env_strict_flag("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"))
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -17,7 +17,7 @@ import subprocess
 import jax
 import numpy as np
 
-from relax.runtime.env_flags import parse_env_nonnegative_int
+from relax.runtime.env_flags import parse_env_nonnegative_int, parse_env_positive_float
 from relax.runtime.xla_memory_reserve import _nvidia_smi_visible_device_memory_bytes
 
 logger = logging.getLogger(__name__)
@@ -190,14 +190,10 @@ def _device_memory_limit_bytes() -> int | None:
     # ``RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB`` overrides the nvidia-smi probe.
     # Keep this as a manual escape hatch for reserving headroom on shared GPUs
     # or working around inaccurate allocator/device probes.
-    _override = os.environ.get("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB")
-    if _override is not None:
-        try:
-            override_gb = float(_override.strip())
-            if override_gb > 0:
-                return _share(int(override_gb * (1024 ** 3)))
-        except ValueError:
-            pass
+    # A value that is not a positive number is refused, not ignored.
+    override_gb = parse_env_positive_float("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB")
+    if override_gb is not None:
+        return _share(int(override_gb * (1024 ** 3)))
 
     # NVML answers in microseconds; the nvidia-smi subprocess (the fallback below) took about 40 ms
     # per pass, 1.25 s of a 60 s window of late 10k VDAM iterations (py-spy). nvidia-smi prints the
