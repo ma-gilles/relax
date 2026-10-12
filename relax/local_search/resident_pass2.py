@@ -2077,7 +2077,7 @@ def _sum_class_mstep_terms(
     ``class_terms`` are each class's ``(wavg triplet, noise shells, A2, XA)`` from its own M-step. The
     noise residual and the norm terms add over classes; each class's Wavg XA/AA enter the scale sums
     only under its own ``data_vs_prior_class > 3`` mask (acc_ml_optimiser_impl.h:4893-4912), so they are
-    folded here and cleared from the triplet, as ``resident_pass2._fold_class_scale_sums`` does for
+    folded here and cleared from the triplet, as ``resident_chunk_stages.fold_class_scale_sums`` does for
     the global pass. A class's winner is a row of the layout's flat order, ``row * T + t``.
     """
 

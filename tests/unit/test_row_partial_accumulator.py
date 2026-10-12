@@ -23,10 +23,10 @@ from relax.fine_pass import (
     policy,
     resident_block_programs,
     resident_chunk_records,
+    resident_chunk_stages,
     resident_mstep_blocks,
     resident_tilts,
 )
-from relax.fine_pass import resident_pass2 as rp
 from relax.reconstruction import half_volume_mstep as hvm
 
 pytestmark = pytest.mark.unit
@@ -97,7 +97,7 @@ def _stage_driver(monkeypatch, weights, row_partial):
     monkeypatch.setattr(resident_mstep_blocks, "resident_mstep_block_at", block_at)
     monkeypatch.setattr(resident_mstep_blocks, "initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
-    monkeypatch.setattr(rp, "_resident_chunk_statistics", lambda stats, *a, **k: stats)
+    monkeypatch.setattr(resident_chunk_stages, "_resident_chunk_statistics", lambda stats, *a, **k: stats)
     n_rows = int(weights.shape[0])
     blocks = resident_chunk_records.MstepBlockInputs(
         row_image_local=None,
@@ -109,7 +109,7 @@ def _stage_driver(monkeypatch, weights, row_partial):
     )
     posterior = types.SimpleNamespace(row_posterior=None, kernel_row_image_ids=None)
     Ft_y, Ft_ctf = _totals()
-    Ft_y_out, Ft_ctf_out, _ = rp._resident_chunk_stages_finish(
+    Ft_y_out, Ft_ctf_out, _ = resident_chunk_stages.resident_chunk_stages_finish(
         (posterior, blocks),
         None,
         jnp.asarray(weights),

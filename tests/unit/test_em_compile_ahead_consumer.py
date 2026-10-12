@@ -34,7 +34,7 @@ from test_resident_candidates import (  # noqa: E402
 )
 
 import relax.fine_pass.resident_pass2 as rp  # noqa: E402
-from relax.fine_pass import resident_chunk_records
+from relax.fine_pass import resident_chunk_records, resident_chunk_stages
 from relax.fine_pass.resident_candidates import (  # noqa: E402
     CandidateTableBlocks,
     plan_capacity_chunks,
@@ -401,7 +401,7 @@ def test_every_program_a_runner_submits_is_one_the_warm_up_warms():
     for path, runners in (
         (
             "per-stage",
-            (rp._run_resident_chunk_stages, rp._resident_chunk_stages_front, rp._resident_chunk_stages_finish),
+            (resident_chunk_stages.run_resident_chunk_stages, resident_chunk_stages.resident_chunk_stages_front, resident_chunk_stages.resident_chunk_stages_finish),
         ),
     ):
         warmed = {f.__name__ for f in rp.chunk_programs_for_path(path)}

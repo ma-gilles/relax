@@ -17,7 +17,13 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_pass2_driver import _driver_fixture_args, requires_resident_gpu
 
-from relax.fine_pass import policy, resident_chunk_records, resident_mstep_blocks, resident_projections
+from relax.fine_pass import (
+    policy,
+    resident_chunk_records,
+    resident_chunk_stages,
+    resident_mstep_blocks,
+    resident_projections,
+)
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.resident_candidates import CapacityChunk
 
@@ -181,12 +187,12 @@ def test_live_block_spec_picks_the_smallest_block_holding_the_live_rows():
         mstep_block_rows: int
 
     spec = Spec(2048)
-    assert rp._live_block_spec(spec, 0).mstep_block_rows == 32
-    assert rp._live_block_spec(spec, 32).mstep_block_rows == 32
-    assert rp._live_block_spec(spec, 33).mstep_block_rows == 256
-    assert rp._live_block_spec(spec, 257).mstep_block_rows == 2048
-    assert rp._live_block_spec(spec, 5000) is spec
-    assert rp._live_block_spec(Spec(128), 3).mstep_block_rows == 16
+    assert resident_chunk_stages._live_block_spec(spec, 0).mstep_block_rows == 32
+    assert resident_chunk_stages._live_block_spec(spec, 32).mstep_block_rows == 32
+    assert resident_chunk_stages._live_block_spec(spec, 33).mstep_block_rows == 256
+    assert resident_chunk_stages._live_block_spec(spec, 257).mstep_block_rows == 2048
+    assert resident_chunk_stages._live_block_spec(spec, 5000) is spec
+    assert resident_chunk_stages._live_block_spec(Spec(128), 3).mstep_block_rows == 16
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +417,7 @@ def test_fold_class_scale_sums_masks_each_class_and_clears_its_channels():
     mask = np.asarray([True, False, True, True, False])
     # The class's row of the mask table, selected inside the program.
     masks = np.stack([~mask, mask])
-    folded = rp._fold_class_scale_sums(carry, jnp.asarray(masks), jnp.int32(1))
+    folded = resident_chunk_stages.fold_class_scale_sums(carry, jnp.asarray(masks), jnp.int32(1))
     host = np.asarray(triplet, dtype=np.float64)
     assert_matches(np.asarray(folded.scale_xa_per_image), 1.0 + host[:, mask, 0].sum(axis=1))
     assert_matches(np.asarray(folded.scale_aa_per_image), host[:, mask, 1].sum(axis=1))
@@ -439,7 +445,7 @@ def test_fold_class_scale_sums_keeps_the_slot_accumulators():
 
     carry = _fold_carry(4, 7, 64)
     masks = jnp.asarray(np.ones((2, 7), dtype=bool))
-    folded = rp._fold_class_scale_sums(carry, masks, jnp.int32(0))
+    folded = resident_chunk_stages.fold_class_scale_sums(carry, masks, jnp.int32(0))
     assert folded.Ft_y is carry.Ft_y
     assert folded.Ft_ctf is carry.Ft_ctf
     assert folded.noise_shells is carry.noise_shells
@@ -456,10 +462,10 @@ def test_fold_class_scale_sums_allocates_no_accumulator_on_the_device():
     accumulator_voxels = 64 << 20  # 512 MiB complex64 + 256 MiB float32
     carry = _fold_carry(32, 1024, accumulator_voxels)
     masks = jnp.asarray(np.ones((2, 1024), dtype=bool))
-    jax.block_until_ready(rp._fold_class_scale_sums(carry, masks, jnp.int32(0)))  # compile outside the measure
+    jax.block_until_ready(resident_chunk_stages.fold_class_scale_sums(carry, masks, jnp.int32(0)))  # compile outside the measure
     jax.block_until_ready(carry)
     before = device.memory_stats()["bytes_in_use"]
-    folded = rp._fold_class_scale_sums(carry, masks, jnp.int32(1))
+    folded = resident_chunk_stages.fold_class_scale_sums(carry, masks, jnp.int32(1))
     jax.block_until_ready(folded)
     grown = device.memory_stats()["bytes_in_use"] - before
     small_outputs = int(carry.wavg_triplet_pixels.nbytes) + 2 * int(carry.scale_xa_per_image.nbytes)

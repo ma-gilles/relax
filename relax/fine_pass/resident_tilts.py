@@ -306,7 +306,12 @@ def run_tilt_chunk(
     The per-stage (non-jitted) path.
     """
 
-    from relax.fine_pass import resident_chunk_posterior, resident_chunk_records, resident_mstep_blocks
+    from relax.fine_pass import (
+        resident_chunk_posterior,
+        resident_chunk_records,
+        resident_chunk_stages,
+        resident_mstep_blocks,
+    )
     from relax.fine_pass import resident_pass2 as rp
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
@@ -665,7 +670,7 @@ def run_tilt_chunk(
             if partial_pair:
                 row_partial.y, row_partial.ctf = partial_pair[0]
             if mstep.scale_xa_per_image is not None:
-                mstep = rp._fold_class_scale_sums(
+                mstep = resident_chunk_stages.fold_class_scale_sums(
                     mstep, stage_tables.wavg_scale_pixel_mask, resident_chunk_records.device_int32(accumulator % tables.n_classes)
                 )
             Ft_y_out[accumulator], Ft_ctf_out[accumulator] = mstep.Ft_y, mstep.Ft_ctf

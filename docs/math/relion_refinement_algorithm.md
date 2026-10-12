@@ -658,8 +658,8 @@ backprojected on its own is scattered into a zeroed partial pair, which is added
 `flushed_block_loop` and `blocks_per_flush` in
 [`half_volume_mstep.py`](../../relax/reconstruction/half_volume_mstep.py)). No accumulator is double. The
 switch is read once per pass, when the pass allocates its accumulators; without it nothing is allocated and
-the three row-block loops run as before: `_resident_chunk_stages_finish` in
-[`fine_pass/resident_pass2.py`](../../relax/fine_pass/resident_pass2.py), `_tilt_mstep_program` in
+the three row-block loops run as before: `resident_chunk_stages_finish` in
+[`fine_pass/resident_chunk_stages.py`](../../relax/fine_pass/resident_chunk_stages.py), `_tilt_mstep_program` in
 [`resident_tilts.py`](../../relax/fine_pass/resident_tilts.py) (a row is one tilt image there) and
 `run_resident_mstep_blocks` (local searches and the final pass, from
 [`local_search/resident_pass2.py`](../../relax/local_search/resident_pass2.py)). The flush points are a

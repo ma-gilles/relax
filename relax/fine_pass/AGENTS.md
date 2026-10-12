@@ -19,6 +19,7 @@ accumulation it feeds. It is the only pass-2 engine and it needs a CUDA GPU.
 | `resident_chunk_inputs.py` | host inputs of one chunk: the capacity batch fetch and its reused buffers, the per-chunk reconstruction operands, the unshifted operands from the resident half, and their verification arm |
 | `resident_chunk_posterior.py` | the posterior stage of a chunk: the segmented float32 fine posterior (per image or per class sub-segment), the first-iteration CC winner-take-all, and its program |
 | `resident_mstep_blocks.py` | the M-step of a chunk walked in row blocks: block projections, the block program and its static carry, and `run_resident_mstep_blocks` for the local pass |
+| `resident_chunk_stages.py` | a chunk's stages in order: the enqueued front (posterior, M-step row order), the finish (live blocks per slot, the class scale-sum fold) and the chunk statistics stage |
 | `resident_candidates.py`, `resident_significance.py` | the candidate tables and their fixed-capacity chunks; device compaction of the coarse significance mask |
 | `resident_operands.py`, `resident_scoring.py`, `resident_statistics.py`, `resident_tilts.py` | per-image operands kept on the device; the scoring stage; the float64 device accumulators; tilt images of subtomogram particles |
 | `window.py`, `scoring.py`, `posterior.py`, `projection_blocks.py`, `wavg.py`, `adjoint.py`, `bucket_io.py`, `bucket_arrays.py`, `local_backprojection.py`, `policy.py` | shared pieces the drivers import, and `policy.py` (the environment switches) |

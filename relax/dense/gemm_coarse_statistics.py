@@ -24,8 +24,8 @@ from relax.fine_pass.resident_block_programs import (
     resident_block_wavg_algebraic_terms,
     resident_block_weighted_sums_kernel,
 )
+from relax.fine_pass.resident_chunk_stages import fold_class_scale_sums
 from relax.fine_pass.resident_image_terms import ChunkImageOperands, ChunkImageTables, accumulate_chunk_image_terms
-from relax.fine_pass.resident_pass2 import _fold_class_scale_sums
 from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
 from relax.fine_pass.wavg import (
     _relion_wavg_shifted_power,
@@ -210,7 +210,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
     def finish_class(carry, ops, class_id):
         if plan.n_classes == 1:
             return carry
-        return _fold_class_scale_sums(carry, ops.wavg_scale_pixel_mask, class_id)
+        return fold_class_scale_sums(carry, ops.wavg_scale_pixel_mask, class_id)
 
     if plan.n_optics_groups == 1 and plan.use_rfloat_ctf_wavg:
         def factorized_step(carry, ops, posterior, rec_projection, _class_id, rot_start, trans_start, batch, grid):
