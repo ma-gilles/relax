@@ -21,7 +21,6 @@ class CoarseGaussianSquareLayout(NamedTuple):
     physical_square_count: int
     score_indices_np: np.ndarray
     score_active_mask_np: np.ndarray
-    logical_projector_mask_np: np.ndarray
     full_to_compact_np: np.ndarray
 
 
@@ -44,7 +43,6 @@ def plan_coarse_gaussian_square_layout(
     from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup
     from relax.fourier.fourier_window import (
         make_fourier_window_indices_np,
-        make_frequency_coords_half_np,
         stable_fourier_window_current_size,
         stable_fourier_window_quantum,
     )
@@ -114,14 +112,6 @@ def plan_coarse_gaussian_square_layout(
     score_active_mask_np = np.isin(score_indices_np, active_score_indices)
     if physical_count > logical_count:
         score_active_mask_np[logical_count:] = False
-    compact_coords = np.rint(
-        make_frequency_coords_half_np(image_shape)[score_indices_np],
-    ).astype(np.int64)
-    logical_projector_mask_np = np.sum(compact_coords**2, axis=1) <= (
-        logical_current_size // 2
-    ) ** 2
-    if physical_count > logical_count:
-        logical_projector_mask_np[logical_count:] = False
 
     return CoarseGaussianSquareLayout(
         logical_current_size=logical_current_size,
@@ -130,10 +120,6 @@ def plan_coarse_gaussian_square_layout(
         physical_square_count=physical_count,
         score_indices_np=score_indices_np,
         score_active_mask_np=np.asarray(score_active_mask_np, dtype=np.bool_),
-        logical_projector_mask_np=np.asarray(
-            logical_projector_mask_np,
-            dtype=np.bool_,
-        ),
         full_to_compact_np=full_to_compact_np,
     )
 

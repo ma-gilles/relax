@@ -150,6 +150,15 @@ def test_stable_window_runtime_quantum_is_diagnostic_and_fail_closed(monkeypatch
             stable_fourier_window_quantum()
 
 
+def _logical_projector_mask(layout, logical_size):
+    """The layout's compact rows inside the logical current-size disk; its physical-only capacity rows are outside."""
+
+    coords = np.rint(make_frequency_coords_half_np(_IMAGE_SHAPE)).astype(np.int64)
+    mask = np.sum(coords[layout.score_indices_np] ** 2, axis=1) <= (logical_size // 2) ** 2
+    mask[layout.logical_square_count :] = False
+    return mask
+
+
 def _active_coarse_score_indices(current_size: int) -> np.ndarray:
     plan = make_stable_fourier_window_shape_plan(
         _IMAGE_SHAPE,
@@ -213,17 +222,6 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
             current_size=logical_size + 2,
         )
     assert not np.any(layout.score_active_mask_np[logical_count:])
-    coords = np.rint(make_frequency_coords_half_np(_IMAGE_SHAPE)).astype(np.int64)
-    expected_projector_mask = (
-        np.sum(coords[layout.score_indices_np] ** 2, axis=1)
-        <= (logical_size // 2) ** 2
-    )
-    expected_projector_mask[logical_count:] = False
-    assert_matches(
-        layout.logical_projector_mask_np,
-        expected_projector_mask,
-    )
-    assert not np.any(layout.logical_projector_mask_np[logical_count:])
 
 
 def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
@@ -291,7 +289,8 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
         3741,
     ]
     assert np.all(layout.score_active_mask_np[just_outside])
-    assert not np.any(layout.logical_projector_mask_np[just_outside])
+    projector_mask = _logical_projector_mask(layout, logical_size)
+    assert not np.any(projector_mask[just_outside])
 
     projection_crop = np.ones(
         (2, layout.physical_square_count),
@@ -309,7 +308,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
     )
     masked = np.asarray(masked)
     assert_matches(masked[:, just_outside], np.complex64(0))
-    assert_matches(masked[:, layout.logical_projector_mask_np], np.complex64(1))
+    assert_matches(masked[:, projector_mask], np.complex64(1))
 
     # By default the native texture kernel owns image clipping
     # (docs/math/sparse_projection_radius.md): the physical-size-96 projection
@@ -393,11 +392,6 @@ def test_disabled_coarse_square_layout_is_legacy_exact(monkeypatch):
     assert layout.logical_square_count == layout.physical_square_count == legacy_count
     assert_matches(layout.score_indices_np, legacy_indices)
     assert_matches(layout.score_active_mask_np, np.isin(legacy_indices, active))
-    coords = np.rint(make_frequency_coords_half_np(_IMAGE_SHAPE)).astype(np.int64)
-    assert_matches(
-        layout.logical_projector_mask_np,
-        np.sum(coords[legacy_indices] ** 2, axis=1) <= (current_size // 2) ** 2,
-    )
     assert_matches(layout.full_to_compact_np, legacy_lookup)
 
 
