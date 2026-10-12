@@ -208,7 +208,7 @@ def test_chunk_statistics_take_the_shell_cutoff_from_the_tables():
 
     The resident chunk programs are keyed on the physical window class; the
     logical current size, and with it RELION's powerClass cutoff and the direct
-    noise stop, arrive as a device scalar (resident_pass2._WindowLogicalSizes).
+    noise stop, arrive as a device scalar (resident_chunk_records.WindowLogicalSizes).
     """
 
     capacity, n_rect = 6, 20

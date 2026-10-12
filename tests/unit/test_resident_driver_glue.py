@@ -30,7 +30,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.fine_pass import policy
+from relax.fine_pass import policy, resident_chunk_records
 from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
@@ -59,7 +59,7 @@ def _spec(**overrides):
         kernel_ctf_probs=False,
     )
     kwargs.update(overrides)
-    return rp._ChunkProgramSpec(**kwargs)
+    return resident_chunk_records.ChunkProgramSpec(**kwargs)
 
 
 def _operands(spec, *, tile_dtype=jnp.complex64, ctf_dtype=jnp.float32):
@@ -67,7 +67,7 @@ def _operands(spec, *, tile_dtype=jnp.complex64, ctf_dtype=jnp.float32):
 
     shape = (spec.image_capacity, spec.n_fine_trans, spec.n_recon_pixels)
     tiles = jnp.zeros(shape, dtype=tile_dtype)
-    return rp._ChunkStageOperands(
+    return resident_chunk_records.ChunkStageOperands(
         score_input=None,
         corr_img_score=None,
         highres_xi2_half=None,
@@ -92,12 +92,12 @@ def _operands(spec, *, tile_dtype=jnp.complex64, ctf_dtype=jnp.float32):
 
 
 def _tables(spec, *, noise_dtype=jnp.float32):
-    fields = {name: None for name in rp._ChunkStageTables._fields}
+    fields = {name: None for name in resident_chunk_records.ChunkStageTables._fields}
     fields["noise_variance_for_noise"] = jnp.ones(
         (spec.n_recon_pixels,), dtype=noise_dtype
     )
     fields["shell_indices_noise"] = jnp.zeros((spec.n_recon_pixels,), dtype=jnp.int32)
-    return rp._ChunkStageTables(**fields)
+    return resident_chunk_records.ChunkStageTables(**fields)
 
 
 @pytest.mark.parametrize("proj_dtype", [jnp.complex64, jnp.complex128])
@@ -202,7 +202,7 @@ def test_block_dynamic_slice_picks_the_python_slice_rows(row_capacity):
     values = jnp.arange(row_capacity, dtype=jnp.int32)
     for start in range(0, row_capacity, block_rows):
         taken = jax.lax.dynamic_slice_in_dim(
-            values, rp._device_int32(start), block_rows, axis=0
+            values, resident_chunk_records.device_int32(start), block_rows, axis=0
         )
         expected = values[start : start + block_rows]
         assert_matches(np.asarray(taken), np.asarray(expected))
@@ -211,13 +211,13 @@ def test_block_dynamic_slice_picks_the_python_slice_rows(row_capacity):
 def test_device_row_offsets_are_made_once_per_value():
     """The block offsets must not put an eager dispatch back per block."""
 
-    rp._DEVICE_INT32_CACHE.clear()
-    first = rp._device_int32(4096)
-    second = rp._device_int32(4096)
+    resident_chunk_records._DEVICE_INT32_CACHE.clear()
+    first = resident_chunk_records.device_int32(4096)
+    second = resident_chunk_records.device_int32(4096)
     assert first is second
     assert int(first) == 4096
     assert first.dtype == jnp.int32
-    assert rp._device_int32(8192) is not first
+    assert resident_chunk_records.device_int32(8192) is not first
 
 
 def test_glue_jit_is_on_by_default_and_reads_the_environment(monkeypatch):
@@ -247,9 +247,9 @@ def test_the_block_program_is_keyed_on_the_capacity_class_not_the_offset():
         )
 
     values = jnp.arange(spec.row_capacity, dtype=jnp.int32)
-    first = slice_block(rp._device_int32(0), values)
+    first = slice_block(resident_chunk_records.device_int32(0), values)
     assert len(traces) == 1
-    second = slice_block(rp._device_int32(spec.mstep_block_rows), values)
+    second = slice_block(resident_chunk_records.device_int32(spec.mstep_block_rows), values)
     assert len(traces) == 1, "a second block offset must not retrace the program"
     assert_matches(
         np.asarray(first), np.asarray(values[: spec.mstep_block_rows])

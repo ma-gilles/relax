@@ -118,7 +118,7 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
 
     import jax.numpy as jnp
 
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_chunk_records
 
     offsets = validate_unit_image_offsets([0, 3, 4, 6], 3)
     layout = resident_tilts.chunk_tilt_layout(
@@ -135,7 +135,7 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
     visited = views[views >= 0]
     np.testing.assert_array_equal(np.sort(visited), np.arange(layout.n_valid_images))
 
-    full = rp._ChunkMstepCarry(
+    full = resident_chunk_records.ChunkMstepCarry(
         Ft_y=jnp.zeros(2),
         Ft_ctf=jnp.zeros(2),
         wavg_triplet_pixels=jnp.zeros((12, 1, 3)),
@@ -144,7 +144,7 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
         xa_per_image=jnp.zeros(12),
     )
     for slot in range(3):
-        partial = rp._ChunkMstepCarry(
+        partial = resident_chunk_records.ChunkMstepCarry(
             Ft_y=jnp.full(2, slot + 1.0),
             Ft_ctf=jnp.full(2, slot + 1.0),
             wavg_triplet_pixels=jnp.arange(4, dtype=jnp.float32)[:, None, None] * jnp.ones((4, 1, 3)) + 10 * slot,
@@ -427,12 +427,12 @@ def test_slot_views_take_every_per_image_operand():
     CTF-premultiplied tilt images backprojected another image's CTF weight (2026-10-03).
     """
 
-    from relax.fine_pass.resident_pass2 import _ChunkStageOperands
+    from relax.fine_pass.resident_chunk_records import ChunkStageOperands
 
     view = set(resident_tilts._SLOT_VIEW_FIELDS)
     chunk_only = set(resident_tilts._SLOT_CHUNK_ONLY_FIELDS)
     assert not view & chunk_only
-    assert set(_ChunkStageOperands._fields) == view | chunk_only
+    assert set(ChunkStageOperands._fields) == view | chunk_only
     assert "bpref_ctf2_over_nv_recon" in view
 
 
@@ -450,7 +450,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
 
     import jax.numpy as jnp
 
-    from relax.fine_pass import resident_block_programs
+    from relax.fine_pass import resident_block_programs, resident_chunk_records
     from relax.fine_pass import resident_pass2 as rp
 
     units, rows, translations, window = 8, 16, 32, 512
@@ -468,7 +468,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
         return carry._replace(Ft_ctf=carry.Ft_ctf + jnp.sum(jnp.abs(operands.raw_translated_wavg_for_atomic)))
 
     def initial_carry(Ft_y, Ft_ctf, operands, tables, *, spec):
-        return rp._ChunkMstepCarry(
+        return resident_chunk_records.ChunkMstepCarry(
             Ft_y=Ft_y,
             Ft_ctf=Ft_ctf,
             wavg_triplet_pixels=jnp.zeros((units, 1, 3), jnp.float32),
@@ -481,11 +481,11 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
     monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", image_power)
     monkeypatch.setattr(rp, "_initial_mstep_carry", initial_carry)
-    fields = rp._ChunkStageOperands._fields
-    operands = rp._ChunkStageOperands(
+    fields = resident_chunk_records.ChunkStageOperands._fields
+    operands = resident_chunk_records.ChunkStageOperands(
         **{name: (jnp.ones((units, 4), jnp.float32) if name in resident_tilts._SLOT_VIEW_FIELDS else None) for name in fields}
     )
-    tables = rp._ChunkStageTables(**{name: None for name in rp._ChunkStageTables._fields})
+    tables = resident_chunk_records.ChunkStageTables(**{name: None for name in resident_chunk_records.ChunkStageTables._fields})
 
     @dataclasses.dataclass(frozen=True)
     class Spec:

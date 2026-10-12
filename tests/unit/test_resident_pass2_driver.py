@@ -35,6 +35,7 @@ from oracles.wavg import relion_wavg_rectangle_triplet_terms
 from relax.fine_pass import (
     resident_block_programs,
     resident_chunk_memory,
+    resident_chunk_records,
     resident_configuration,
     resident_projections,
     resident_stable_windows,
@@ -1378,7 +1379,7 @@ def test_streamed_chunk_projections_gather_the_cached_arrays():
     cache = project(fine_grid)
     host_ids = np.asarray([7, 3, 7, 41, 3, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.int32)
     n_valid = 6
-    rows = rp._ChunkRowArrays(
+    rows = resident_chunk_records.ChunkRowArrays(
         row_image_local=jnp.zeros(row_capacity, jnp.int32),
         row_fine_rot=jnp.asarray(host_ids),
         row_log_prior=jnp.zeros(row_capacity, jnp.float32),

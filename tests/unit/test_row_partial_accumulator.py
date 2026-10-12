@@ -19,7 +19,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.fine_pass import policy, resident_block_programs, resident_tilts
+from relax.fine_pass import policy, resident_block_programs, resident_chunk_records, resident_tilts
 from relax.fine_pass import resident_pass2 as rp
 from relax.reconstruction import half_volume_mstep as hvm
 
@@ -56,7 +56,7 @@ def _add_rows(carry, block_weights):
 
 
 def _carry(Ft_y, Ft_ctf):
-    return rp._ChunkMstepCarry(
+    return resident_chunk_records.ChunkMstepCarry(
         Ft_y=Ft_y,
         Ft_ctf=Ft_ctf,
         wavg_triplet_pixels=jnp.zeros((1, 1, 3), jnp.float32),
@@ -93,7 +93,7 @@ def _stage_driver(monkeypatch, weights, row_partial):
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
     monkeypatch.setattr(rp, "_resident_chunk_statistics", lambda stats, *a, **k: stats)
     n_rows = int(weights.shape[0])
-    blocks = rp._MstepBlockInputs(
+    blocks = resident_chunk_records.MstepBlockInputs(
         row_image_local=None,
         kernel_row_image_ids=None,
         row_posterior=None,
@@ -353,7 +353,7 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
     monkeypatch.setattr(
         rp,
         "_initial_mstep_carry",
-        lambda Ft_y, Ft_ctf, operands, tables, *, spec: rp._ChunkMstepCarry(
+        lambda Ft_y, Ft_ctf, operands, tables, *, spec: resident_chunk_records.ChunkMstepCarry(
             Ft_y=Ft_y,
             Ft_ctf=Ft_ctf,
             wavg_triplet_pixels=jnp.zeros((units, 1, 3), jnp.float32),
@@ -362,13 +362,13 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
             xa_per_image=jnp.zeros(units, jnp.float32),
         ),
     )
-    operands = rp._ChunkStageOperands(
+    operands = resident_chunk_records.ChunkStageOperands(
         **{
             name: (jnp.ones((units, 4), jnp.float32) if name in resident_tilts._SLOT_VIEW_FIELDS else None)
-            for name in rp._ChunkStageOperands._fields
+            for name in resident_chunk_records.ChunkStageOperands._fields
         }
     )
-    tables = rp._ChunkStageTables(**{name: None for name in rp._ChunkStageTables._fields})
+    tables = resident_chunk_records.ChunkStageTables(**{name: None for name in resident_chunk_records.ChunkStageTables._fields})
 
     @dataclasses.dataclass(frozen=True)
     class Spec:

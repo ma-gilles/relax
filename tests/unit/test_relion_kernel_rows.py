@@ -256,22 +256,23 @@ def test_sgd_residual_rows_are_the_reconstruction_pixels_the_fine_rule_zeroes():
 @pytest.mark.unit
 def test_cached_block_projections_give_the_residual_its_sgd_rows():
     """The M-step keeps the cached (fine-rule) rows for the Wavg terms and takes the SGD rows for the residual."""
-    from relax.fine_pass.resident_pass2 import _cached_block_projections, _ChunkStageTables
+    from relax.fine_pass.resident_chunk_records import ChunkStageTables
+    from relax.fine_pass.resident_pass2 import _cached_block_projections
 
     rng = np.random.default_rng(2)
     union = jnp.asarray(rng.standard_normal((6, 5)) + 1j * rng.standard_normal((6, 5)), dtype=jnp.complex64)
     sgd = jnp.asarray(rng.standard_normal((6, 2)) + 1j * rng.standard_normal((6, 2)), dtype=jnp.complex64)
-    fields = {name: None for name in _ChunkStageTables._fields}
+    fields = {name: None for name in ChunkStageTables._fields}
     fields.update(
         projection_score_cache=union,
         mstep_grid=jnp.asarray(rng.standard_normal((6, 3, 3)), dtype=jnp.float32),
         union_recon_take=jnp.asarray([4, 1, 3, 0], jnp.int32),
     )
     rows = jnp.asarray([5, 2, 2], jnp.int32)
-    plain = _cached_block_projections(_ChunkStageTables(**fields), rows)
+    plain = _cached_block_projections(ChunkStageTables(**fields), rows)
     assert len(plain) == 3
     fields.update(residual_sgd_cache=sgd, residual_sgd_take=jnp.asarray([1, 3], jnp.int32))
-    recon, recon_abs2, rotations, residual = _cached_block_projections(_ChunkStageTables(**fields), rows)
+    recon, recon_abs2, rotations, residual = _cached_block_projections(ChunkStageTables(**fields), rows)
     assert_matches(recon, plain[0])
     assert_matches(recon_abs2, plain[1])
     assert_matches(rotations, plain[2])

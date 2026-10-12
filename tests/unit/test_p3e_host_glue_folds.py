@@ -31,6 +31,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
+from relax.fine_pass import resident_chunk_records
 from relax.fine_pass import resident_operands as ro
 from relax.fine_pass import resident_pass2 as rp
 
@@ -83,7 +84,7 @@ def _same(left, right) -> bool:
 @pytest.mark.parametrize("dtype", [jnp.int32, jnp.int64])
 def test_scalar_operand_matches_jnp_asarray_bitwise(dtype):
     value = np.int32(4231)
-    folded = rp._scalar_operand(value, dtype)
+    folded = resident_chunk_records._scalar_operand(value, dtype)
     loose = jnp.asarray(value, dtype=dtype)
     assert folded.dtype == loose.dtype
     assert folded.shape == loose.shape == ()
@@ -93,9 +94,9 @@ def test_scalar_operand_matches_jnp_asarray_bitwise(dtype):
 
 def test_scalar_operand_issues_no_eager_dispatch():
     value = np.int32(17)
-    rp._scalar_operand(value, jnp.int32)  # warm any first-call machinery
+    resident_chunk_records._scalar_operand(value, jnp.int32)  # warm any first-call machinery
     with _DispatchCounter() as folded:
-        rp._scalar_operand(value, jnp.int32)
+        resident_chunk_records._scalar_operand(value, jnp.int32)
     with _DispatchCounter() as loose:
         jnp.asarray(value, dtype=jnp.int32)
     assert folded.count == 0, folded.by_primitive

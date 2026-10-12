@@ -34,6 +34,7 @@ from test_resident_candidates import (  # noqa: E402
 )
 
 import relax.fine_pass.resident_pass2 as rp  # noqa: E402
+from relax.fine_pass import resident_chunk_records
 from relax.fine_pass.resident_candidates import (  # noqa: E402
     CandidateTableBlocks,
     plan_capacity_chunks,
@@ -83,7 +84,7 @@ def test_the_aval_placement_matches_the_device_placement():
     tables, chunks = _chunks()
     for chunk in chunks:
         real = rp._make_chunk_row_arrays(
-            tables, chunk, N_FINE_TRANS, place=rp._PLACE_ON_DEVICE
+            tables, chunk, N_FINE_TRANS, place=resident_chunk_records.PLACE_ON_DEVICE
         )
         predicted = rp._make_chunk_row_arrays(
             tables, chunk, N_FINE_TRANS, place=rp._PLACE_AS_AVAL

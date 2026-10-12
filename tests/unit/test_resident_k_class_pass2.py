@@ -17,7 +17,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_pass2_driver import _driver_fixture_args, requires_resident_gpu
 
-from relax.fine_pass import policy, resident_projections
+from relax.fine_pass import policy, resident_chunk_records, resident_projections
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.resident_candidates import CapacityChunk
 
@@ -63,7 +63,7 @@ def _chunk(row_counts_by_image_and_class, *, row_capacity, image_capacity, image
 def test_class_layout_sub_segments():
     counts = [(2, 0, 1), (0, 3, 2), (1, 1, 0)]
     host, chunk = _chunk(counts, row_capacity=16, image_capacity=4)
-    layout = rp._chunk_class_layout(host, chunk, n_classes=3, n_fine_trans=5, place=rp._PLACE_ON_DEVICE)
+    layout = rp._chunk_class_layout(host, chunk, n_classes=3, n_fine_trans=5, place=resident_chunk_records.PLACE_ON_DEVICE)
 
     flat = np.zeros(4 * 3, dtype=np.int64)
     flat[:9] = np.asarray(counts).reshape(-1)
@@ -80,7 +80,7 @@ def test_class_layout_refuses_rows_out_of_hidden_space_order():
     host, chunk = _chunk([(1, 1)], row_capacity=4, image_capacity=2)
     host["row_class"][:2] = [1, 0]
     with pytest.raises(ValueError, match="image-major, then class-major"):
-        rp._chunk_class_layout(host, chunk, n_classes=2, n_fine_trans=3, place=rp._PLACE_ON_DEVICE)
+        rp._chunk_class_layout(host, chunk, n_classes=2, n_fine_trans=3, place=resident_chunk_records.PLACE_ON_DEVICE)
 
 
 def _block_inputs(host, chunk, live_cells, *, n_classes, n_slots=None, n_fine_trans=3):
@@ -95,9 +95,9 @@ def _block_inputs(host, chunk, live_cells, *, n_classes, n_slots=None, n_fine_tr
     classes = (
         None
         if n_classes == 1
-        else rp._chunk_class_layout(host, chunk, n_classes=n_classes, n_fine_trans=n_fine_trans, place=rp._PLACE_ON_DEVICE)
+        else rp._chunk_class_layout(host, chunk, n_classes=n_classes, n_fine_trans=n_fine_trans, place=resident_chunk_records.PLACE_ON_DEVICE)
     )
-    rows = rp._ChunkRowArrays(
+    rows = resident_chunk_records.ChunkRowArrays(
         row_image_local=jnp.asarray(host["row_image_local"], dtype=jnp.int32),
         row_fine_rot=jnp.arange(row_capacity, dtype=jnp.int32) + 100,
         row_log_prior=None,
@@ -110,10 +110,10 @@ def _block_inputs(host, chunk, live_cells, *, n_classes, n_slots=None, n_fine_tr
         image_row_start=None,
         image_row_count=None,
         classes=classes,
-        mstep=None if n_slots == 1 else rp._chunk_mstep_layout(host, place=rp._PLACE_ON_DEVICE),
+        mstep=None if n_slots == 1 else rp._chunk_mstep_layout(host, place=resident_chunk_records.PLACE_ON_DEVICE),
     )
     row_is_valid = np.arange(row_capacity) < n_valid
-    posterior_out = rp._ChunkPosterior(
+    posterior_out = resident_chunk_records.ChunkPosterior(
         row_posterior=jnp.asarray(posterior),
         min_diff2=None,
         class_log_z=None,
@@ -398,7 +398,7 @@ def test_fold_class_scale_sums_masks_each_class_and_clears_its_channels():
 
     rng = np.random.default_rng(3)
     triplet = jnp.asarray(rng.normal(size=(3, 5, 3)), dtype=jnp.float32)
-    carry = rp._ChunkMstepCarry(
+    carry = resident_chunk_records.ChunkMstepCarry(
         Ft_y=None,
         Ft_ctf=None,
         wavg_triplet_pixels=triplet,
@@ -422,7 +422,7 @@ def test_fold_class_scale_sums_masks_each_class_and_clears_its_channels():
 
 def _fold_carry(n_images, n_rect, accumulator_voxels):
     rng = np.random.default_rng(11)
-    return rp._ChunkMstepCarry(
+    return resident_chunk_records.ChunkMstepCarry(
         Ft_y=jnp.zeros(accumulator_voxels, dtype=jnp.complex64),
         Ft_ctf=jnp.zeros(accumulator_voxels, dtype=jnp.float32),
         wavg_triplet_pixels=jnp.asarray(rng.normal(size=(n_images, n_rect, 3)), dtype=jnp.float32),

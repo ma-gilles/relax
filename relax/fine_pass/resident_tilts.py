@@ -306,6 +306,7 @@ def run_tilt_chunk(
     The per-stage (non-jitted) path.
     """
 
+    from relax.fine_pass import resident_chunk_records
     from relax.fine_pass import resident_pass2 as rp
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
@@ -325,7 +326,7 @@ def run_tilt_chunk(
     n_accumulators = len(Ft_y_total)
     if n_accumulators != int(tables.n_slots):
         raise ValueError(f"{n_accumulators} BPref pairs for the tables' {int(tables.n_slots)} accumulator slots")
-    rows = rp._make_chunk_row_arrays(tables, chunk, n_fine_trans, place=rp._PLACE_ON_DEVICE, n_fine_rot=n_fine_rot)
+    rows = rp._make_chunk_row_arrays(tables, chunk, n_fine_trans, place=resident_chunk_records.PLACE_ON_DEVICE, n_fine_rot=n_fine_rot)
     _block_tables, host, _local_chunk = rp._chunk_host_rows(tables, chunk)
     layout = chunk_tilt_layout(
         tilt.unit_image_offsets,
@@ -665,7 +666,7 @@ def run_tilt_chunk(
                 row_partial.y, row_partial.ctf = partial_pair[0]
             if mstep.scale_xa_per_image is not None:
                 mstep = rp._fold_class_scale_sums(
-                    mstep, stage_tables.wavg_scale_pixel_mask, rp._device_int32(accumulator % tables.n_classes)
+                    mstep, stage_tables.wavg_scale_pixel_mask, resident_chunk_records.device_int32(accumulator % tables.n_classes)
                 )
             Ft_y_out[accumulator], Ft_ctf_out[accumulator] = mstep.Ft_y, mstep.Ft_ctf
         return mstep
@@ -983,7 +984,7 @@ def _tilt_mstep_program(
     the flush counts tilt images.
     """
 
-    from relax.fine_pass import resident_block_programs
+    from relax.fine_pass import resident_block_programs, resident_chunk_records
     from relax.fine_pass import resident_pass2 as rp
 
     row_capacity = int(row_posterior.shape[0])
@@ -1035,7 +1036,7 @@ def _tilt_mstep_program(
             block_posterior = jnp.where(
                 kept_valid[k][None, :], ordered_posterior[:, kept_index[k]], jnp.zeros((), row_posterior.dtype)
             )
-            blocks = rp._MstepBlockInputs(
+            blocks = resident_chunk_records.MstepBlockInputs(
                 row_image_local=units,
                 kernel_row_image_ids=kernel_row_image_ids,
                 row_posterior=jnp.where(active[:, None], block_posterior, jnp.zeros((), block_posterior.dtype)),
@@ -1335,7 +1336,7 @@ def accumulate_tilt_chunk_terms(
     operands,  # _ChunkStageOperands over the chunk's images (image_noise_scale set)
     tables,  # _ChunkStageTables
     mstep,  # _ChunkMstepCarry after every slot's blocks (noise and norm partials already scaled)
-    posterior,  # resident_pass2._ChunkPosterior over the chunk's particles
+    posterior,  # resident_chunk_records.ChunkPosterior over the chunk's particles
     rows,
     spec,
 ):

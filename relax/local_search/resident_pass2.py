@@ -71,7 +71,13 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
-from relax.fine_pass import policy, resident_chunk_memory, resident_configuration, resident_image_terms
+from relax.fine_pass import (
+    policy,
+    resident_chunk_memory,
+    resident_chunk_records,
+    resident_configuration,
+    resident_image_terms,
+)
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
@@ -2604,7 +2610,7 @@ def _start_resident_local_chunk(
         # evidence and winner here, and each class's live rows for its own BPref.
         n_classes = len(class_projectors)
         class_layout = rp._chunk_class_layout(
-            host_chunk, chunk, n_classes=n_classes, n_fine_trans=int(n_fine_trans), place=rp._PLACE_ON_DEVICE
+            host_chunk, chunk, n_classes=n_classes, n_fine_trans=int(n_fine_trans), place=resident_chunk_records.PLACE_ON_DEVICE
         )
         class_posterior = rp._class_sub_segment_posterior(
             scores_flat.reshape(chunk.row_capacity, int(n_fine_trans)),

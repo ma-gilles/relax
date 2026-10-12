@@ -64,7 +64,6 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
 from functools import lru_cache, partial
 from typing import Callable, NamedTuple
@@ -78,6 +77,7 @@ from relax.fine_pass import (
     policy,
     resident_block_programs,
     resident_chunk_memory,
+    resident_chunk_records,
     resident_configuration,
     resident_image_terms,
     resident_projections,
@@ -519,7 +519,7 @@ def _coarse_normalization_reuse(
     fine_translation_parent,
     max_posterior_dtype,
     relion_coarse_class_assignment=None,
-) -> _CoarseNormalizationReuse | None:
+) -> resident_chunk_records.CoarseNormalizationReuse | None:
     """The retained coarse normalization of a zero-oversampling pass, on the device.
 
     ``None`` unless the caller supplied the coarse float32 sum; the production
@@ -554,7 +554,7 @@ def _coarse_normalization_reuse(
     # chunk programs that read them are not keyed on the subset size. Chunks
     # only read real image ids.
     padding = resident_image_capacity(tables.n_images) - tables.n_images
-    return _CoarseNormalizationReuse(
+    return resident_chunk_records.CoarseNormalizationReuse(
         sum_weight=jnp.asarray(np.pad(sum_weight, (0, padding)), dtype=jnp.float64),
         max_posterior=jnp.asarray(np.pad(max_posterior, (0, padding)), dtype=max_posterior_dtype),
         winner_cell=jnp.asarray(np.pad(np.asarray(winner_cell), (0, padding), constant_values=-1), dtype=jnp.int64),
@@ -2551,7 +2551,7 @@ def _resident_pass2(
         current_size=current_size,
         recon_pixels=logical_recon_pixels,
         rect_pixels=logical_rect_pixels,
-        place=_PLACE_ON_DEVICE,
+        place=resident_chunk_records.PLACE_ON_DEVICE,
         wsum_current_size=None if wsum_current_size == current_size else wsum_current_size,
         # The capacity cube's adjoint clips at RELION's radius: its compact
         # trilinear bound and 3-D radius check read it (recovar backproject_indexed).
@@ -3507,47 +3507,7 @@ def compute_k_class_pass2_stats_resident(
     )
 
 
-class _Placement(NamedTuple):
-    """How a chunk constructor turns host values into program inputs.
-
-    The chunk loop places them on the device; the compile-ahead warm-up places
-    their shape and dtype only. Having one constructor with two placements
-    rather than two constructors means a warm-up cannot describe a program the
-    loop does not run, which is the failure a hit rate would only report after
-    the compile time had already been spent.
-    """
-
-    array: object
-    scalar: object
-    # ``{name: (value, dtype)} -> {name: placed}`` for a chunk's arrays and
-    # scalars together.
-    many: object
-
-
-def _device_put_many(items: dict) -> dict:
-    """Upload a chunk's host values in one ``device_put`` instead of one each.
-
-    Each value becomes a NumPy array of its dtype first, so the transfer is
-    the one ``jnp.asarray`` (or, for a scalar, :func:`_scalar_operand`) makes:
-    the same dtype, shape and value, never weakly typed. Eleven separate puts
-    per chunk took 137 s of the main thread over the full 10097 global
-    iterations.
-    """
-
-    return jax.device_put({name: np.asarray(value, dtype=jnp.dtype(dtype)) for name, (value, dtype) in items.items()})
-
-
-_PLACE_ON_DEVICE = _Placement(
-    array=lambda value, dtype: jnp.asarray(value, dtype=dtype),
-    # ``np.asarray`` first: a NumPy *scalar* reaches the device through one
-    # eager ``convert_element_type`` per chunk, a 0-d NumPy *array* of the same
-    # dtype through a plain transfer. Same dtype, shape, weak type and value
-    # either way.
-    scalar=lambda value, dtype: _scalar_operand(value, dtype),
-    many=_device_put_many,
-)
-
-_PLACE_AS_AVAL = _Placement(
+_PLACE_AS_AVAL = resident_chunk_records.Placement(
     array=lambda value, dtype: jax.ShapeDtypeStruct(np.shape(value), jnp.dtype(dtype)),
     scalar=lambda value, dtype: jax.ShapeDtypeStruct((), jnp.dtype(dtype)),
     many=lambda items: {
@@ -3579,7 +3539,7 @@ def _row_projection_ids(host_chunk, n_fine_rot: int | None, slot_of_projection=N
     return slots
 
 
-def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int, place) -> _ChunkClassLayout:
+def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int, place) -> resident_chunk_records.ChunkClassLayout:
     """The (slot, class) posterior sub-segments of one chunk."""
 
     n_segments = chunk.image_capacity * int(n_classes)
@@ -3593,7 +3553,7 @@ def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int,
         raise ValueError("chunk rows must be image-major, then class-major")
     segment_rows = np.bincount(row_segment[:chunk.n_valid_rows], minlength=n_segments)
     segment_row_start = np.concatenate([[0], np.cumsum(segment_rows)])
-    return _ChunkClassLayout(
+    return resident_chunk_records.ChunkClassLayout(
         row_class=place.array(row_class, jnp.int32),
         row_segment=place.array(row_segment, jnp.int32),
         segment_offsets=place.array(segment_row_start * int(n_fine_trans), jnp.int32),
@@ -3601,7 +3561,7 @@ def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int,
     )
 
 
-def _chunk_mstep_layout(host_chunk, *, place) -> _ChunkMstepLayout:
+def _chunk_mstep_layout(host_chunk, *, place) -> resident_chunk_records.ChunkMstepLayout:
     """The chunk's accumulator slot per row (docs/development/resident_segments.md).
 
     Slot ``a = class + K * slot_offset[unit]``: a class's rows (Class3D, RELION's
@@ -3611,7 +3571,7 @@ def _chunk_mstep_layout(host_chunk, *, place) -> _ChunkMstepLayout:
     (:func:`_make_mstep_block_inputs`).
     """
 
-    return _ChunkMstepLayout(row_slot=place.array(host_chunk["row_slot"], jnp.int32))
+    return resident_chunk_records.ChunkMstepLayout(row_slot=place.array(host_chunk["row_slot"], jnp.int32))
 
 
 def _chunk_host_rows(tables: CandidateTableBlocks, chunk):
@@ -3629,7 +3589,7 @@ def _chunk_host_rows(tables: CandidateTableBlocks, chunk):
 
 def _make_chunk_row_arrays(
     tables, chunk, n_fine_trans, *, place, n_fine_rot=None, slot_of_projection=None
-) -> _ChunkRowArrays:
+) -> resident_chunk_records.ChunkRowArrays:
     """One chunk's row-aligned inputs, on the device or as avals.
 
     Everything here is host NumPy over the plan, so the aval placement costs
@@ -3676,7 +3636,7 @@ def _make_chunk_row_arrays(
             "image_row_count": (image_row_count_np, jnp.int64),
         }
     )
-    return _ChunkRowArrays(**placed, classes=classes, mstep=mstep)
+    return resident_chunk_records.ChunkRowArrays(**placed, classes=classes, mstep=mstep)
 
 
 def _make_chunk_translation_sqdist(
@@ -3714,7 +3674,7 @@ def _make_chunk_translation_sqdist(
     return jnp.asarray(sqdist_np)
 
 
-def _make_chunk_stage_operands(recon, translation_sqdist_ang) -> _ChunkStageOperands:
+def _make_chunk_stage_operands(recon, translation_sqdist_ang) -> resident_chunk_records.ChunkStageOperands:
     """Name one chunk's operands out of whatever produced them.
 
     ``recon`` is the per-chunk preparation's dict, the once-per-half gather's
@@ -3722,7 +3682,7 @@ def _make_chunk_stage_operands(recon, translation_sqdist_ang) -> _ChunkStageOper
     ``jax.eval_shape``, which is a dict of the same keys holding avals.
     """
 
-    return _ChunkStageOperands(
+    return resident_chunk_records.ChunkStageOperands(
         score_input=recon["score_input"],
         corr_img_score=recon["corr_img_score"],
         highres_xi2_half=recon["highres_xi2_half"],
@@ -3838,7 +3798,7 @@ def chunk_programs_for_path(path: str) -> tuple:
 
 
 @partial(jax.jit, static_argnames=("n_slots",))
-def _make_mstep_block_inputs(rows, posterior, *, n_slots: int) -> "_MstepBlockInputs":
+def _make_mstep_block_inputs(rows, posterior, *, n_slots: int) -> "resident_chunk_records.MstepBlockInputs":
     """The M-step block program's row inputs, from the chunk and its posterior.
 
     Only rows the pruned posterior keeps enter the M-step. RELION backprojects
@@ -3870,7 +3830,7 @@ def _make_mstep_block_inputs(rows, posterior, *, n_slots: int) -> "_MstepBlockIn
     slot_offsets = jnp.concatenate(
         [jnp.zeros((1,), dtype=jnp.int32), jnp.cumsum(live_per_slot).astype(jnp.int32)]
     )
-    return _MstepBlockInputs(
+    return resident_chunk_records.MstepBlockInputs(
         row_image_local=rows.row_image_local[order],
         kernel_row_image_ids=posterior.kernel_row_image_ids[order],
         row_posterior=posterior.row_posterior[order],
@@ -3908,7 +3868,7 @@ def _make_chunk_program_spec(
     stable_window=False,
     union_native_fft_size=0,
     presum_adjoint=False,
-) -> _ChunkProgramSpec:
+) -> resident_chunk_records.ChunkProgramSpec:
     """The static key of one chunk program.
 
     The environment-read fields are the reason this is a function
@@ -3917,7 +3877,7 @@ def _make_chunk_program_spec(
     loop's and warm nothing.
     """
 
-    return _ChunkProgramSpec(
+    return resident_chunk_records.ChunkProgramSpec(
         row_capacity=int(row_capacity),
         image_capacity=int(image_capacity),
         n_fine_trans=int(n_fine_trans),
@@ -4161,7 +4121,7 @@ def _make_chunk_stage_tables(
     union_recon_take=None,
     residual_sgd_cache=None,
     residual_sgd_take=None,
-) -> _ChunkStageTables:
+) -> resident_chunk_records.ChunkStageTables:
     """Assemble the iteration-global tables every chunk of a half reads.
 
     One builder, called by the chunk loop with the real arrays and by the
@@ -4171,7 +4131,7 @@ def _make_chunk_stage_tables(
     compile time and is invisible unless someone reads the hit rate.
     """
 
-    return _ChunkStageTables(
+    return resident_chunk_records.ChunkStageTables(
         projection_score_cache=projection_score_cache,
         projection_recon_cache=projection_recon_cache,
         projection_recon_abs2_cache=projection_recon_abs2_cache,
@@ -4740,23 +4700,6 @@ def _verify_resident_chunk_operands(
     )
 
 
-_DEVICE_INT32_CACHE: dict[int, jax.Array] = {}
-
-
-def _scalar_operand(value, dtype) -> jax.Array:
-    """Put a host scalar on the device without an eager conversion.
-
-    ``jnp.asarray(np.int32(7), dtype=jnp.int32)`` dispatches a
-    ``convert_element_type`` because a NumPy scalar is not an array; the same
-    value wrapped in a 0-d NumPy array of the target dtype is transferred with
-    no primitive at all. The chunk driver builds two of these per chunk, so on
-    the early state that was 834 eager dispatches over two iterations for two
-    integers whose value never leaves the host.
-    """
-
-    return jnp.asarray(np.asarray(value, dtype=jnp.dtype(dtype)))
-
-
 @jax.jit
 def _times_logical_mask(values, n_logical):
     """``values`` times the mask of its first ``n_logical`` pixels (last axis); one program per physical class.
@@ -4783,93 +4726,9 @@ def _mask_recon_tail(shell_indices_noise, noise_variance_for_noise, n_logical, *
     )
 
 
-def _device_int32(value: int) -> jax.Array:
-    """A device int32 scalar, made once per distinct value for the process.
-
-    The M-step block program takes its row offset as a device operand so that
-    one program serves every block of a capacity class. Building that scalar
-    with ``jnp.asarray`` inside the loop would put one eager dispatch back per
-    block, which is the cost this program exists to remove; the offsets are a
-    handful of multiples of the block size, so they are made once and reused.
-    Single-device only, which is what the EM engines run on; a multi-device
-    process falls through to a fresh array.
-    """
-
-    key = int(value)
-    if len(jax.devices()) != 1:
-        return jnp.asarray(key, dtype=jnp.int32)
-    cached = _DEVICE_INT32_CACHE.get(key)
-    if cached is None:
-        cached = jnp.asarray(key, dtype=jnp.int32)
-        _DEVICE_INT32_CACHE[key] = cached
-    return cached
-
-
 # ---------------------------------------------------------------------------
 # The chunk's stages and their program spec
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class _ChunkProgramSpec:
-    """Everything the chunk program is keyed on.
-
-    Only capacity classes, pixel counts and resolved configuration appear here,
-    so two chunks of one class share a program whatever their occupancy: the
-    valid row and image counts travel as device scalars.
-    """
-
-    row_capacity: int
-    image_capacity: int
-    n_fine_trans: int
-    n_score_pixels: int
-    n_recon_pixels: int
-    n_rect: int
-    mstep_block_rows: int
-    adaptive_fraction: float
-    current_size: int
-    mstep_current_size: int
-    image_shape: tuple
-    # The M-step adjoint's max_r: mstep_current_size // 2 on one grid, a ReferenceSphereClip
-    # for images on another grid (relax.projection.adjoint).
-    mstep_max_r: object
-    recon_volume_shape: tuple
-    max_adjoint_block_bytes: int
-    stats_config: object
-    use_rfloat_ctf_wavg: bool
-    # T16: whether the M-step's weighted sums come from the translate-and-sum
-    # kernel on unshifted operands, and whether its reconstruction operand takes
-    # the BPref convention (a weight) or the score convention (no weight).
-    use_translate_sum_kernel: bool
-    bpref_recon_operand: bool
-    # Whether ``ctf_probs`` comes from the kernel's fourth output instead of the
-    # XLA statement the per-chunk path used. Off by default: the kernel's own
-    # translation mass is bitwise against ``jnp.sum`` only at some shapes.
-    kernel_ctf_probs: bool
-    # Zero oversampling: the posterior keeps every weight, divides by the
-    # retained coarse sum and reports the coarse winner and Pmax
-    # (_CoarseNormalizationReuse). The tables carry the arrays.
-    reuse_coarse_normalization: bool = False
-    # RELION --firstiter_cc: normalized-CC scores and a winner-take-all
-    # posterior (ml_optimiser.cpp:8844-8858, :9266-9293).
-    firstiter_cc: bool = False
-    n_slots: int = 1
-    # VDAM (--grad): BPref takes the residual shift(img) - ctf * proj, RELION's
-    # cuda_kernel_backproject3D_SGD (BP.cuh:406-560); see _resident_block_residual.
-    mstep_subtract_ctf_projection: bool = False
-    # RELION Class3D classes; rows carry the class axis when there is more than one.
-    n_classes: int = 1
-    # Stable Fourier windows: the pixel axes are a physical class and the
-    # M-step masks their tail past the logical window (_WindowLogicalSizes).
-    stable_window: bool = False
-    # Union projection cache (_ChunkStageTables.union_score_take): RELION's
-    # native-unit division of the score rows, applied after the gather; 0 keeps
-    # RECOVAR units.
-    union_native_fft_size: int = 0
-    # The M-step carry holds per-projection row sums instead of BPref volumes;
-    # the pass backprojects them once after its chunk loop
-    # (_backproject_projection_sums).
-    presum_adjoint: bool = False
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
@@ -4887,215 +4746,16 @@ class _MstepOnlyStatsConfig(NamedTuple):
     float32_bucketed_image_sums: bool = False
 
 
-class _ChunkRowArrays(NamedTuple):
-    """One chunk's row-aligned tables and its runtime extents."""
-
-    row_image_local: jax.Array  # int32 [C_R]
-    # int32 [C_R]: the row's fine rotation; with K>1 classes its projection id
-    # class * n_fine_rot + rotation; with streamed projections its cache slot.
-    row_fine_rot: jax.Array
-    row_log_prior: jax.Array  # float32 [C_R]
-    row_mask_bits: jax.Array  # uint32 [C_R, n_mask_words], coarse-translation bitset per row
-    row_mask_mode: jax.Array  # int8 [C_R]
-    image_ids: jax.Array  # int32 [C_B], global image id, -1 when padded
-    n_valid_rows: jax.Array  # int32 []
-    n_valid_images: jax.Array  # int32 []
-    segment_offsets: jax.Array  # int32 [C_B + 1], cell offsets
-    image_row_start: jax.Array  # int64 [C_B], chunk-local first row of a slot
-    image_row_count: jax.Array  # int64 [C_B], rows owned by a slot
-    # K>1 only: the class axis of the chunk's rows.
-    classes: "_ChunkClassLayout | None" = None
-    # More than one accumulator slot only: the slot-major M-step order.
-    mstep: "_ChunkMstepLayout | None" = None
-
-
-class _ChunkClassLayout(NamedTuple):
-    """The class axis of one chunk (K>1; docs/development/resident_segments.md).
-
-    An image slot's rows are class-major, so each (slot, class) pair owns a
-    contiguous sub-segment ``s = slot * K + class`` of the slot's posterior
-    segment: the per-class evidence and winner are reductions over it. The
-    M-step order is :class:`_ChunkMstepLayout`'s.
-    """
-
-    row_class: jax.Array  # int32 [C_R], 0 on padded rows
-    row_segment: jax.Array  # int32 [C_R], slot * K + class; C_B * K on padded rows
-    segment_offsets: jax.Array  # int32 [C_B * K + 1], cell offsets of each (slot, class)
-    segment_row_start: jax.Array  # int64 [C_B * K], chunk-local first row of each (slot, class)
-
-
-class _ChunkMstepLayout(NamedTuple):
-    """The M-step visits a chunk's rows slot-major, so each accumulator slot's blocks write one BPref pair.
-
-    Slot ``a = class + K * slot_offset[unit]`` (docs/development/resident_segments.md).
-    """
-
-    row_slot: jax.Array  # int32 [C_R], 0 on padded rows
-
-
-class _ChunkStageOperands(NamedTuple):
-    """One chunk's per-image operands, already padded to the image capacity."""
-
-    score_input: jax.Array
-    corr_img_score: jax.Array
-    highres_xi2_half: jax.Array | None
-    translation_prior: jax.Array
-    # Exactly one reconstruction operand pair is populated. The per-chunk
-    # preparation fills the pre-shifted ``[C_B, T, P]`` tiles; the once-per-half
-    # preparation fills the unshifted ``[C_B, P]`` images T15's kernel takes,
-    # with ``recon_weight`` set only in the exact-BPref configuration.
-    shifted_recon: jax.Array | None
-    shifted_noise: jax.Array | None
-    recon_image: jax.Array | None
-    recon_weight: jax.Array | None
-    noise_image: jax.Array | None
-    ctf2_over_nv_recon: jax.Array
-    direct_ctf_rfloat_recon: jax.Array | None
-    image_power_shells: jax.Array | None  # float64 [C_B, n_shells]
-    relion_norm_high_shell: jax.Array
-    raw_translated_wavg_rectangle: jax.Array
-    raw_translated_wavg_for_atomic: jax.Array
-    scale: jax.Array
-    group_ids: jax.Array
-    translation_sqdist_ang: jax.Array | None
-    # int32 [C_B] optics-group row of each image, only with a [G, P] noise table.
-    optics_groups: jax.Array | None = None
-    # RELION --firstiter_cc only: the translated corrected score tile
-    # [C_B, T, P_score] and 0.5 * |image|^2 per image (the evidence offset).
-    score_shifted_cc: jax.Array | None = None
-    cc_half_batch_norm: jax.Array | None = None
-    # Tilt images (S4.2) only: each image's 1 / n_images of its particle. RELION divides a
-    # subtomogram's noise and norm sums, not its backprojection, by the particle's image count
-    # (acc_ml_optimiser_impl.h:3490-3491, :3512-3516; resident_tilts).
-    image_noise_scale: jax.Array | None = None
-    # CTF-premultiplied images only: the backprojected CTF weight [C_B, P]
-    # (sparse_pass2_bucket_io.premultiplied_bpref_weights). None: ctf2_over_nv_recon
-    # is both the backprojected weight and the noise statistics' CTF^2 / sigma2.
-    bpref_ctf2_over_nv_recon: jax.Array | None = None
-
-
-class _CoarseNormalizationReuse(NamedTuple):
-    """The coarse pass's float32 normalization, winner and Pmax, per image of the half.
-
-    With ``--adaptive_oversampling 0`` RELION's fine pass keeps the coarse
-    ``sum_weight`` and max (acc_ml_optimiser_impl.h:2868), keeps every weight
-    (``significant_weight = sorted[0]``, :3590) and reports Pmax as the coarse
-    ``max_weight / sum_weight`` (:3268-3269, :4223). See docs/math/zero_oversampling.md.
-    """
-
-    sum_weight: jax.Array  # float64 [n_images]
-    max_posterior: jax.Array  # [n_images]
-    winner_cell: jax.Array  # int64 [image capacity], segment-relative r_local * T + t
-
-
-class _WindowLogicalSizes(NamedTuple):
-    """RELION's exact window sizes as device scalars, not program keys.
-
-    The chunk programs are keyed on the physical pixel capacities in
-    :class:`_ChunkProgramSpec`; the logical current size and pixel counts the
-    kernels stop at and the statistics cut at travel here, so a program is
-    reused across the current sizes that share one physical class.
-    """
-
-    current_size: jax.Array  # int32 []
-    recon_pixels: jax.Array  # int32 [], the logical prefix of the recon window
-    rect_pixels: jax.Array  # int32 [], the logical prefix of the Wavg rectangle
-    # float32 [], RELION's M-step adjoint radius; None keeps the spec's.
-    mstep_max_r: jax.Array | None = None
-    # int32 [], the weighted sums' image size (the norm cutoff); None is current_size.
-    wsum_current_size: jax.Array | None = None
-
-
 def _window_logical_sizes(
     *, current_size, recon_pixels, rect_pixels, place, mstep_max_r=None, wsum_current_size=None
-) -> _WindowLogicalSizes:
-    return _WindowLogicalSizes(
+) -> resident_chunk_records.WindowLogicalSizes:
+    return resident_chunk_records.WindowLogicalSizes(
         current_size=place.scalar(int(current_size), jnp.int32),
         recon_pixels=place.scalar(int(recon_pixels), jnp.int32),
         rect_pixels=place.scalar(int(rect_pixels), jnp.int32),
         mstep_max_r=None if mstep_max_r is None else place.scalar(float(mstep_max_r), jnp.float32),
         wsum_current_size=None if wsum_current_size is None else place.scalar(int(wsum_current_size), jnp.int32),
     )
-
-
-class _ChunkStageTables(NamedTuple):
-    """Iteration-global device tables every chunk of a half reads."""
-
-    projection_score_cache: jax.Array
-    projection_recon_cache: jax.Array
-    projection_recon_abs2_cache: jax.Array
-    mstep_grid: jax.Array
-    coarse_parent_grid: jax.Array
-    fine_translation_parent: jax.Array
-    half_weights: jax.Array
-    translation_angles: jax.Array
-    full_to_compact: jax.Array
-    noise_variance_for_noise: jax.Array
-    shell_indices_noise: jax.Array
-    exact_positions: jax.Array
-    recon_pixel_indices: jax.Array
-    relion_x_half_recon_indices: jax.Array
-    shell_indices_half: jax.Array
-    wavg_shell_indices: jax.Array
-    wavg_scale_pixel_mask: jax.Array
-    # Streamed projections: the global fine rotation id of each chunk-local
-    # cache slot (rows then carry slots, not ids). None when the caches are the
-    # per-iteration fine-grid caches, where the slot is the id.
-    cache_slot_fine_rot: jax.Array | None = None
-    # Zero oversampling only: the retained coarse normalization (None otherwise).
-    coarse_reuse: _CoarseNormalizationReuse | None = None
-    # The logical window sizes; None takes the spec's (logical == physical).
-    window_logical: _WindowLogicalSizes | None = None
-    # Union projection cache: projection_score_cache holds the union of the
-    # score and reconstruction windows, and these take each window out of a
-    # gathered row (the recon caches are then None). None for the three-cache
-    # layout.
-    union_score_take: jax.Array | None = None
-    union_recon_take: jax.Array | None = None
-    # VDAM's subtracted reference on an image window wider than the model sphere
-    # (_sgd_residual_rows): the union rows' projections at the reconstruction
-    # pixels the fine and wavg kernels zero, [projection, P_sgd], and those pixels'
-    # positions in the reconstruction window. None when no such pixel exists.
-    residual_sgd_cache: jax.Array | None = None
-    residual_sgd_take: jax.Array | None = None
-
-
-class _ChunkPosterior(NamedTuple):
-    """Stages 1-4 of one chunk."""
-
-    row_posterior: jax.Array  # float32 [C_R, T]
-    min_diff2: jax.Array  # real [C_B]
-    class_log_z: jax.Array  # float64 [C_B]
-    best_log_score: jax.Array  # float32 [C_B]
-    best_cell_index: jax.Array  # int64 [C_B]
-    max_posterior: jax.Array  # real [C_B]
-    kernel_row_image_ids: jax.Array  # int32 [C_R], -1 on padded rows
-    row_is_valid: jax.Array  # bool [C_R]
-    # K>1 only: the (slot, class) sub-segment reductions.
-    classes: "_ChunkClassPosterior | None" = None
-
-
-class _ChunkClassPosterior(NamedTuple):
-    """Each (image slot, class) sub-segment's log-Z and own winner, flat ``slot * K + class``."""
-
-    log_z: jax.Array  # float64 [C_B * K], -inf for a class without candidates
-    best_log_score: jax.Array  # float32 [C_B * K]
-    best_cell_index: jax.Array  # int64 [C_B * K], sub-segment-relative r_local * T + t
-
-
-class _ChunkMstepCarry(NamedTuple):
-    """Loop carry of the M-step block loop."""
-
-    Ft_y: jax.Array
-    Ft_ctf: jax.Array
-    wavg_triplet_pixels: jax.Array  # float32 [C_B, P_rect, 3]
-    noise_shells: jax.Array  # float64 [n_shells], [G, n_shells] with G optics groups
-    a2_per_image: jax.Array  # real [C_B]
-    xa_per_image: jax.Array  # real [C_B]
-    # K>1 only: each image's scale sums, every class masked by its own
-    # data_vs_prior_class > 3 (:func:`_fold_class_scale_sums`).
-    scale_xa_per_image: jax.Array | None = None  # float64 [C_B]
-    scale_aa_per_image: jax.Array | None = None  # float64 [C_B]
 
 
 @jax.jit
@@ -5109,7 +4769,7 @@ def _fold_class_scale_sums_program(triplet, scale_xa_per_image, scale_aa_per_ima
     return triplet.at[:, :, :2].set(zero), scale_xa_per_image + xa, scale_aa_per_image + aa
 
 
-def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_masks_rect, class_index) -> "_ChunkMstepCarry":
+def _fold_class_scale_sums(mstep: "resident_chunk_records.ChunkMstepCarry", class_masks_rect, class_index) -> "resident_chunk_records.ChunkMstepCarry":
     """Move one class's Wavg XA/AA into the per-image scale sums under its own mask.
 
     ``class_masks_rect`` is every class's mask and ``class_index`` a device (or
@@ -5134,19 +4794,19 @@ def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_masks_rect, class_in
     return mstep._replace(wavg_triplet_pixels=triplet, scale_xa_per_image=scale_xa, scale_aa_per_image=scale_aa)
 
 
-def _logical_current_size(tables: _ChunkStageTables, spec: _ChunkProgramSpec):
+def _logical_current_size(tables: resident_chunk_records.ChunkStageTables, spec: resident_chunk_records.ChunkProgramSpec):
     if tables.window_logical is None:
         return jnp.asarray(spec.current_size, dtype=jnp.int32)
     return tables.window_logical.current_size
 
 
 def _resident_chunk_posterior(
-    rows: _ChunkRowArrays,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
+    rows: resident_chunk_records.ChunkRowArrays,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
-) -> _ChunkPosterior:
+    spec: resident_chunk_records.ChunkProgramSpec,
+) -> resident_chunk_records.ChunkPosterior:
     """Gather, cached projection, score and the segmented RELION posterior.
 
     Identical calls to the per-stage path; factored out so the jitted program
@@ -5205,13 +4865,13 @@ def _resident_chunk_posterior(
 
 def _chunk_posterior_from_scores(
     scored,
-    rows: _ChunkRowArrays,
-    tables: _ChunkStageTables,
+    rows: resident_chunk_records.ChunkRowArrays,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
     row_is_valid,
     kernel_row_image_ids,
-) -> _ChunkPosterior:
+) -> resident_chunk_records.ChunkPosterior:
     """The segmented RELION posterior of a scored chunk (:func:`_resident_chunk_posterior`'s tail)."""
 
     from relax.cuda import posterior as cuda_posterior
@@ -5273,7 +4933,7 @@ def _chunk_posterior_from_scores(
             n_segments=spec.image_capacity * int(spec.n_classes),
             n_classes=int(spec.n_classes),
         )
-    return _ChunkPosterior(
+    return resident_chunk_records.ChunkPosterior(
         row_posterior=jnp.asarray(reconstruction_probs, dtype=jnp.float32).reshape(
             spec.row_capacity, spec.n_fine_trans
         ),
@@ -5313,7 +4973,7 @@ def _class_sub_segment_posterior(scores, rows, row_is_valid, *, n_segments: int,
         layout.segment_offsets,
         image_capacity=n_segments,
     )
-    return _ChunkClassPosterior(
+    return resident_chunk_records.ChunkClassPosterior(
         log_z=jnp.asarray(log_z, dtype=jnp.float64),
         best_log_score=best_log_score,
         best_cell_index=best_cell_index,
@@ -5354,14 +5014,14 @@ def _winner_take_all_cells(scores, row_image_local, row_is_valid, segment_offset
 
 
 def _resident_chunk_posterior_firstiter_cc(
-    rows: _ChunkRowArrays,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
+    rows: resident_chunk_records.ChunkRowArrays,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
     row_is_valid,
     kernel_row_image_ids,
-) -> _ChunkPosterior:
+) -> resident_chunk_records.ChunkPosterior:
     """RELION's ``--firstiter_cc`` iteration: normalized-CC scores, winner takes all.
 
     RELION zeroes every weight but the best one (ml_optimiser.cpp:9266-9293;
@@ -5402,7 +5062,7 @@ def _resident_chunk_posterior_firstiter_cc(
 
 def _winner_take_all_posterior(
     scored, rows, *, image_capacity: int, row_is_valid, kernel_row_image_ids
-) -> _ChunkPosterior:
+) -> resident_chunk_records.ChunkPosterior:
     """The ``--firstiter_cc`` posterior of a chunk's normalized-CC scores (one segment per image or particle)."""
 
     from relax.cuda import posterior as cuda_posterior
@@ -5421,7 +5081,7 @@ def _winner_take_all_posterior(
         image_capacity=image_capacity,
     )
     has_winner = jnp.isfinite(best_log_score)
-    return _ChunkPosterior(
+    return resident_chunk_records.ChunkPosterior(
         row_posterior=winner,
         min_diff2=scored.min_diff2,
         class_log_z=jnp.asarray(log_z, dtype=jnp.float64),
@@ -5433,7 +5093,7 @@ def _winner_take_all_posterior(
     )
 
 
-def _cached_block_projections(tables: _ChunkStageTables, block_fine_rot):
+def _cached_block_projections(tables: resident_chunk_records.ChunkStageTables, block_fine_rot):
     """The global pass's block projections: three gathers by fine-rotation id.
 
     Split out so the M-step block body takes its projections as operands. The
@@ -5470,11 +5130,11 @@ def _resident_mstep_block(
     block_posterior,
     block_projections,
     block_sum_ids=None,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
-    carry: _ChunkMstepCarry,
-    spec: _ChunkProgramSpec,
-) -> _ChunkMstepCarry:
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
+    carry: resident_chunk_records.ChunkMstepCarry,
+    spec: resident_chunk_records.ChunkProgramSpec,
+) -> resident_chunk_records.ChunkMstepCarry:
     """One pixel-axis row block: weighted sums, Wavg, noise, both adjoints.
 
     Statement for statement the body the per-stage loop ran inline; every path
@@ -5663,10 +5323,10 @@ def _backproject_block_rows(summed, ctf_probs, block_mstep_rotations, Ft_y, Ft_c
 
 
 def _mstep_block_operand_dtypes(
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
     projection_dtypes=None,
 ) -> dict:
     """Dtypes of the M-step block's intermediates, by promotion arithmetic.
@@ -5746,9 +5406,9 @@ def _mstep_block_operand_dtypes(
 
 
 def _probe_mstep_block_output_avals(
-    tables: _ChunkStageTables,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
     dtypes: dict,
 ):
     """``jax.eval_shape`` of the block's noise/norm stage, for the aval check.
@@ -5795,9 +5455,9 @@ def _probe_mstep_block_output_avals(
 
 
 def _check_mstep_carry_avals(
-    tables: _ChunkStageTables,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
     dtypes: dict,
 ) -> None:
     """Raise when the static dtypes disagree with the traced block stages."""
@@ -5854,12 +5514,12 @@ def _noise_shell_shape(stats_config) -> tuple:
 def _initial_mstep_carry(
     Ft_y,
     Ft_ctf,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
     projection_dtypes=None,
-) -> _ChunkMstepCarry:
+) -> resident_chunk_records.ChunkMstepCarry:
     """Zero-initialized block accumulators with the block stages' own dtypes.
 
     The per-image ``A2``/``XA`` partials take whatever dtype the noise and
@@ -5892,7 +5552,7 @@ def _initial_mstep_carry(
     class_scale = {}
     if n_class_scale:
         class_scale = dict(scale_xa_per_image=scale_sums[0], scale_aa_per_image=scale_sums[1])
-    return _ChunkMstepCarry(
+    return resident_chunk_records.ChunkMstepCarry(
         Ft_y=Ft_y,
         Ft_ctf=Ft_ctf,
         wavg_triplet_pixels=wavg_triplet_pixels,
@@ -5903,42 +5563,15 @@ def _initial_mstep_carry(
     )
 
 
-class _MstepBlockInputs(NamedTuple):
-    """Chunk-wide row arrays the M-step block program slices its block out of.
-
-    ``row_fine_rot`` and ``projections`` are alternatives, and exactly one is
-    populated: the global pass hands the fine-rotation ids and the program
-    gathers the block's projections out of the per-iteration caches, while
-    local search has no cacheable fine grid and hands the block's projections
-    directly. ``None`` is a pytree structure, so the two callers key different
-    programs without a flag.
-    """
-
-    row_image_local: jax.Array  # int32 [C_R]
-    kernel_row_image_ids: jax.Array  # int32 [C_R]
-    row_posterior: jax.Array  # float32 [C_R, T]
-    row_fine_rot: jax.Array | None  # int32 [C_R]
-    projections: tuple | None  # (proj, |proj|^2, M-step rotations) of one block
-    # The rows [start, stop) of the accumulator slot these blocks accumulate;
-    # the rows of a boundary block outside it get no weight. None where the
-    # caller hands the block its rows directly (local search).
-    class_row_range: jax.Array | None = None  # int32 [2]
-    # Each slot's live rows in this order (:func:`_make_mstep_block_inputs`).
-    slot_offsets: jax.Array | None = None  # int32 [n_slots + 1]
-    # With ``spec.presum_adjoint``, each row's sum slot when it is not its projection id: a tilt slot's
-    # visiting position, so the row's translation-block partials merge before one adjoint (relax#27).
-    row_sum_ids: jax.Array | None = None  # int32 [C_R]
-
-
 def _resident_mstep_block_at(
     block_start,
-    blocks: _MstepBlockInputs,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
-    carry: _ChunkMstepCarry,
+    blocks: resident_chunk_records.MstepBlockInputs,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
+    carry: resident_chunk_records.ChunkMstepCarry,
     *,
-    spec: _ChunkProgramSpec,
-) -> _ChunkMstepCarry:
+    spec: resident_chunk_records.ChunkProgramSpec,
+) -> resident_chunk_records.ChunkMstepCarry:
     """Slice one block out of the chunk's row arrays and run the block body.
 
     The per-stage loop did these four slices and three gathers as loose eager
@@ -5996,13 +5629,13 @@ def _resident_mstep_block_at(
 @partial(jax.jit, static_argnames=("spec",), donate_argnums=(4,))
 def _resident_mstep_block_program(
     block_start,
-    blocks: _MstepBlockInputs,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
-    carry: _ChunkMstepCarry,
+    blocks: resident_chunk_records.MstepBlockInputs,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
+    carry: resident_chunk_records.ChunkMstepCarry,
     *,
-    spec: _ChunkProgramSpec,
-) -> _ChunkMstepCarry:
+    spec: resident_chunk_records.ChunkProgramSpec,
+) -> resident_chunk_records.ChunkMstepCarry:
     """One M-step block as one program, keyed on the capacity and pixel class.
 
     Same statements, same order, same dtypes as the loose dispatch; the only
@@ -6023,12 +5656,12 @@ def _resident_mstep_block_program(
 
 @partial(jax.jit, static_argnames=("spec",))
 def _resident_chunk_posterior_program(
-    rows: _ChunkRowArrays,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
+    rows: resident_chunk_records.ChunkRowArrays,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
-) -> _ChunkPosterior:
+    spec: resident_chunk_records.ChunkProgramSpec,
+) -> resident_chunk_records.ChunkPosterior:
     """:func:`_resident_chunk_posterior` as one program per capacity class.
 
     The stage's own arithmetic is unchanged; what leaves the chunk loop is the
@@ -6043,13 +5676,13 @@ def _resident_chunk_posterior_program(
 @partial(jax.jit, static_argnames=("spec",), donate_argnums=(0,))
 def _resident_chunk_statistics_program(
     stats,
-    rows: _ChunkRowArrays,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
-    posterior: _ChunkPosterior,
-    mstep: _ChunkMstepCarry,
+    rows: resident_chunk_records.ChunkRowArrays,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
+    posterior: resident_chunk_records.ChunkPosterior,
+    mstep: resident_chunk_records.ChunkMstepCarry,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
 ):
     """The chunk's Wavg image power, then :func:`_resident_chunk_statistics`, as one program per capacity class.
 
@@ -6070,13 +5703,13 @@ def _resident_chunk_statistics_program(
 
 def _resident_chunk_statistics(
     stats,
-    rows: _ChunkRowArrays,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
-    posterior: _ChunkPosterior,
-    mstep: _ChunkMstepCarry,
+    rows: resident_chunk_records.ChunkRowArrays,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
+    posterior: resident_chunk_records.ChunkPosterior,
+    mstep: resident_chunk_records.ChunkMstepCarry,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
 ):
     """Fold one chunk's image-level terms and its padding sanity counter."""
 
@@ -6177,7 +5810,7 @@ _LIVE_BLOCK_DIVISORS = (64, 8, 1)
 _MIN_LIVE_BLOCK_ROWS = 16
 
 
-def _live_block_spec(spec: "_ChunkProgramSpec", n_live_rows: int) -> "_ChunkProgramSpec":
+def _live_block_spec(spec: "resident_chunk_records.ChunkProgramSpec", n_live_rows: int) -> "resident_chunk_records.ChunkProgramSpec":
     """The chunk spec whose M-step block is the smallest ladder size holding ``n_live_rows``.
 
     The ladder is the configured block divided by 64, by 8 and by 1 (no smaller
@@ -6195,12 +5828,12 @@ def _live_block_spec(spec: "_ChunkProgramSpec", n_live_rows: int) -> "_ChunkProg
 
 
 def _run_resident_chunk_stages(
-    rows: _ChunkRowArrays,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
+    rows: resident_chunk_records.ChunkRowArrays,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
     carry: tuple,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
     timing_hook=None,
     row_partial: RowPartial | None = None,
 ):
@@ -6286,11 +5919,11 @@ def _resident_chunk_stages_finish(
             )
             if glue_jit:
                 mstep = _resident_mstep_block_program(
-                    _device_int32(start), start_blocks, operands, tables, mstep, spec=block_spec
+                    resident_chunk_records.device_int32(start), start_blocks, operands, tables, mstep, spec=block_spec
                 )
             else:
                 mstep = _resident_mstep_block_at(
-                    _device_int32(start),
+                    resident_chunk_records.device_int32(start),
                     start_blocks,
                     operands,
                     tables,
@@ -6306,7 +5939,7 @@ def _resident_chunk_stages_finish(
         if mstep.scale_xa_per_image is not None:
             # Slot ``class + K * group``: the scale sums are masked by the slot's class.
             mstep = _fold_class_scale_sums(
-                mstep, tables.wavg_scale_pixel_mask, _device_int32(slot_index % int(spec.n_classes))
+                mstep, tables.wavg_scale_pixel_mask, resident_chunk_records.device_int32(slot_index % int(spec.n_classes))
             )
         Ft_y_out.append(slot_y)
         Ft_ctf_out.append(slot_ctf)
@@ -6448,7 +6081,7 @@ def _run_resident_chunk(
         chunk_t0 = time.time()
 
     rows = _make_chunk_row_arrays(
-        tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot,
+        tables, chunk, n_fine_trans, place=resident_chunk_records.PLACE_ON_DEVICE, n_fine_rot=n_fine_rot,
         slot_of_projection=slot_of_projection,
     )
     lone = lone_block_rows is not None
@@ -6741,11 +6374,11 @@ def _run_resident_chunk(
 
 
 def _run_lone_resident_chunk(
-    rows: _ChunkRowArrays,
-    operands: _ChunkStageOperands,
-    tables: _ChunkStageTables,
+    rows: resident_chunk_records.ChunkRowArrays,
+    operands: resident_chunk_records.ChunkStageOperands,
+    tables: resident_chunk_records.ChunkStageTables,
     *,
-    spec: _ChunkProgramSpec,
+    spec: resident_chunk_records.ChunkProgramSpec,
     host_projection_ids,
     n_valid_rows: int,
     block_rows: int,
@@ -6964,7 +6597,7 @@ def run_resident_mstep_blocks(
                     f"capacity is {int(row_capacity)}."
                 )
 
-    spec = _ChunkProgramSpec(
+    spec = resident_chunk_records.ChunkProgramSpec(
         row_capacity=int(row_capacity),
         image_capacity=int(image_capacity),
         n_fine_trans=int(row_posterior.shape[1]),
@@ -6987,7 +6620,7 @@ def run_resident_mstep_blocks(
         bpref_recon_operand=use_translate_sum_kernel and recon.get("recon_weight") is not None,
         kernel_ctf_probs=use_translate_sum_kernel and policy.kernel_ctf_probs_enabled(),
     )
-    operands = _ChunkStageOperands(
+    operands = resident_chunk_records.ChunkStageOperands(
         score_input=None,
         corr_img_score=None,
         highres_xi2_half=None,
@@ -7009,7 +6642,7 @@ def run_resident_mstep_blocks(
         optics_groups=recon.get("optics_groups"),
         bpref_ctf2_over_nv_recon=recon.get("bpref_ctf2_over_nv_recon"),
     )
-    tables = _ChunkStageTables(
+    tables = resident_chunk_records.ChunkStageTables(
         projection_score_cache=None,
         # P3-G: the chunk's own row arrays stand where the global pass keeps
         # its per-iteration fine-rotation caches, so the block program reads
@@ -7086,8 +6719,8 @@ def run_resident_mstep_blocks(
             carry = start_carry(projections)
         if glue_jit:
             carry = _resident_mstep_block_program(
-                _device_int32(start),
-                _MstepBlockInputs(
+                resident_chunk_records.device_int32(start),
+                resident_chunk_records.MstepBlockInputs(
                     row_image_local=row_image_local,
                     kernel_row_image_ids=kernel_row_image_ids,
                     row_posterior=row_posterior,
