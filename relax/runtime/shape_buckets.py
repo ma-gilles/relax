@@ -30,5 +30,3 @@ def pow2_floor(value: int) -> int:
     if value < 1:
         raise ValueError(f"pow2_floor needs a positive value, got {value}")
     return 1 << (int(value).bit_length() - 1)
-
-

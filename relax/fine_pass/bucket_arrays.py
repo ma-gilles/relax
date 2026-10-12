@@ -663,5 +663,3 @@ def _prepare_per_image_pass2_inputs(
             max((int(np.asarray(u).shape[0]) for u in per_image_unique_rot), default=1), minimum=64
         ),
     }
-
-

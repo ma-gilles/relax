@@ -123,5 +123,3 @@ def dense_optics_groups(optics_group_labels):
     labels = np.asarray(optics_group_labels, dtype=np.int64).reshape(-1)
     unique, dense = np.unique(labels, return_inverse=True)
     return dense.astype(np.int32), int(unique.size)
-
-

@@ -1110,5 +1110,3 @@ def project_resident_live_rows(
             )
         del proj_block
     return score_proj, recon_proj, recon_abs2, n_projected
-
-

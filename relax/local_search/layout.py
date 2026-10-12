@@ -1640,5 +1640,3 @@ def build_pass2_hypothesis_layout(
         sample_mask_bits=sample_mask_bits,
         symmetry=symmetry,
     )
-
-

@@ -85,5 +85,3 @@ def _dense_candidate_mask_from_spec(mask: SparseCandidateMask) -> np.ndarray:
                     dense[np.ix_(rows, cols)] = False
         return dense
     raise ValueError(f"Unknown sparse candidate mask mode {mask.mode!r}")
-
-

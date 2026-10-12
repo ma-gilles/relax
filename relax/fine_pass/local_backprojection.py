@@ -45,5 +45,3 @@ def compute_local_ctf_sums_from_probs_sum_t(probs_sum_t, ctf2_over_nv):
         probs_sum_t[..., None] * ctf2_over_nv[:, None, :],
         0.0,
     )
-
-
