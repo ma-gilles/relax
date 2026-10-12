@@ -250,6 +250,7 @@ def test_join_halves_at_low_resolution_uses_explicit_padding_for_current_size_ac
         1.0,
         native_shape[0],
         8.0,
+        route=_join_route(),
     )
     np.testing.assert_allclose(
         np.asarray(legacy_join[0]).reshape(accumulator_shape)[joined_only_with_explicit_padding],
@@ -266,6 +267,7 @@ def test_join_halves_at_low_resolution_uses_explicit_padding_for_current_size_ac
         native_shape[0],
         8.0,
         padding_factor=padding_factor,
+        route=_join_route(),
     )
     expected = np.complex64(0.5 + 0.5j)
     np.testing.assert_allclose(
@@ -838,3 +840,8 @@ def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
     )
     for array, copy in zip(numerators + denominators, before, strict=True):
         assert_matches(array, copy)
+
+
+def _join_route():
+    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
+    return ReconstructionPrograms.from_environ().lowres_join

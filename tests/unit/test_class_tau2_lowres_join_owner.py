@@ -211,6 +211,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             "current_resolution",
             "preserve_inputs",
             "return_retained_first_numerator",
+            "route",
         )
         assert not hasattr(numbered_reconstruction, "HalfAccumulatorPair")
         assert not hasattr(numbered_reconstruction, "HalfJoinGeometry")
@@ -237,6 +238,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             pixel_resolutions=[2],
             current_resolution=float("inf"),
             preserve_inputs=True,
+            route=_join_route(),
         )
 
         assert result is sentinel
@@ -249,6 +251,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             "padding_factor": PADDING_FACTOR,
             "preserve_inputs": True,
             "return_retained_first_numerator": False,
+            "route": _join_route(),
         }
 
     @pytest.mark.parametrize(
@@ -271,6 +274,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             40.0,
             current_resolution_angstrom=expected_cap,
             padding_factor=PADDING_FACTOR,
+            route=_join_route(),
         )
         result = priors.join_half_accumulators_at_low_resolution(
             ft_y,
@@ -283,6 +287,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             pixel_resolutions=pixel_resolutions,
             current_resolution=current_resolution,
             preserve_inputs=True,
+            route=_join_route(),
         )
         assert len(result) == 4
         for got, want in zip(result, expected):
@@ -440,3 +445,8 @@ def test_stack_class_tau2_update_details_keeps_key_layout():
         want = np.stack([record[key] for record in records], axis=0)
         assert stacked[key].shape == (3, N_SHELLS)
         assert_matches(stacked[key], want, strict=True)
+
+
+def _join_route():
+    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
+    return ReconstructionPrograms.from_environ().lowres_join

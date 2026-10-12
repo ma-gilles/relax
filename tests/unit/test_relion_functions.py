@@ -966,6 +966,7 @@ def test_join_halves_at_low_resolution_half_matches_full():
         box_size=volume_shape[0],
         low_resol_join_halves_angstrom=12.0,
         current_resolution_angstrom=18.0,
+        route=_join_route(),
     )
     half_joined = regularization_relion.join_halves_at_low_resolution(
         jnp.array(ft_y_0_half),
@@ -977,6 +978,7 @@ def test_join_halves_at_low_resolution_half_matches_full():
         box_size=volume_shape[0],
         low_resol_join_halves_angstrom=12.0,
         current_resolution_angstrom=18.0,
+        route=_join_route(),
     )
 
     for full_arr, half_arr in zip(full_joined, half_joined):
@@ -1008,6 +1010,7 @@ def test_join_halves_at_low_resolution_uses_relion_squared_radius_boundary():
         voxel_size=10.0,
         box_size=4,
         low_resol_join_halves_angstrom=40.0,
+        route=_join_route(),
     )
 
     joined0 = np.asarray(joined0).reshape(volume_shape)
@@ -1047,6 +1050,7 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
         jnp.array(ft_ctf_0.reshape(-1)),
         jnp.array(ft_ctf_1.reshape(-1)),
         **kwargs,
+        route=_join_route(),
     )
 
     monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
@@ -1056,6 +1060,7 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
         jnp.array(ft_ctf_0.reshape(-1)),
         jnp.array(ft_ctf_1.reshape(-1)),
         **kwargs,
+        route=_join_route(),
     )
 
     assert all(isinstance(arr, np.ndarray) for arr in host_joined)
@@ -1086,10 +1091,12 @@ def test_low_resolution_join_host_fallback_auto_catches_padded_384(monkeypatch):
     assert not regularization_relion._low_resolution_join_host_fallback_enabled_for_size(
         unpadded_384_half_size,
         1,
+        route=_join_route(),
     )
     assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(
         padded_384_half_size,
         1,
+        route=_join_route(),
     )
 
 
@@ -3185,6 +3192,7 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
         padding_factor=1,
         preserve_inputs=False,
         return_retained_first_numerator=True,
+        route=_join_route(),
     )
 
     assert len(joined) == 5
@@ -3206,6 +3214,7 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
         padding_factor=1,
         preserve_inputs=False,
         return_retained_first_numerator=True,
+        route=_join_route(),
     )
     assert all(isinstance(value, np.ndarray) for value in padding_joined[:4])
     assert padding_joined[4] is None
@@ -3242,6 +3251,7 @@ def test_join_halves_host_fallback_reserves_joined_numpy_half0_for_crop(monkeypa
         padding_factor=2,
         preserve_inputs=False,
         return_retained_first_numerator=True,
+        route=_join_route(),
     )
 
     assert joined[0] is ft_y_0
@@ -3293,6 +3303,7 @@ def test_join_halves_at_low_resolution_host_fallback_can_reuse_numpy_storage(mon
         box_size=4,
         low_resol_join_halves_angstrom=40.0,
         preserve_inputs=False,
+        route=_join_route(),
     )
 
     assert joined[0] is ft_y_0
@@ -3379,3 +3390,8 @@ def test_device_projection_padding_keeps_the_input_precision_with_gridding():
     padded, _ = relion_functions_relion.pad_volume_for_projection(ft, (8, 8, 8), 2, do_gridding_correction=True)
     host, _ = relion_functions_relion._pad_volume_for_projection_host(np.asarray(ft), (8, 8, 8), 2, do_gridding_correction=True)
     assert padded.dtype == jnp.complex64 == np.asarray(host).dtype
+
+
+def _join_route():
+    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
+    return ReconstructionPrograms.from_environ().lowres_join

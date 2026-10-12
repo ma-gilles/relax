@@ -46,12 +46,14 @@ class ReconstructionPrograms:
     ``SLURM_CPUS_PER_TASK``, else 1): that transform's threads. ``fsc_packed_stream_min_elements``
     (``RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS``, an integer, default 0): the smallest packed half whose
     backprojector FSC takes the streamed reduction instead of the full expansion (the two FSCs are equal).
+    ``lowres_join`` (``regularization.LowResolutionJoinRoute``): where the low-resolution half join runs.
     """
 
     stable_windows: bool
     host_irfft: bool | None
     host_fft_workers: int
     fsc_packed_stream_min_elements: int
+    lowres_join: regularization.LowResolutionJoinRoute
 
     @classmethod
     def from_environ(cls) -> ReconstructionPrograms:
@@ -66,6 +68,13 @@ class ReconstructionPrograms:
                 "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
                 str(regularization.RELION_FSC_PACKED_STREAM_MIN_ELEMENTS),
             )),
+            lowres_join=regularization.LowResolutionJoinRoute(
+                forced_host=parse_env_auto_flag("RELAX_LOWRES_JOIN_HOST_FALLBACK", logger=log),
+                host_min_elements=int(read_env_text(
+                    "RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS",
+                    str(regularization.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS),
+                )),
+            ),
         )
 
 

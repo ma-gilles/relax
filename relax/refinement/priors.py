@@ -63,6 +63,7 @@ def join_half_accumulators_at_low_resolution(
     current_resolution,
     preserve_inputs: bool,
     return_retained_first_numerator=False,
+    route: regularization.LowResolutionJoinRoute,
 ):
     """Apply RELION's ``--low_resol_join_halves`` to K=1 half accumulators before the Wiener solve.
 
@@ -97,6 +98,7 @@ def join_half_accumulators_at_low_resolution(
         padding_factor=padding_factor,
         preserve_inputs=preserve_inputs,
         return_retained_first_numerator=return_retained_first_numerator,
+        route=route,
     )
 
 

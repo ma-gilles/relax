@@ -7,6 +7,7 @@ path changed.  See pr179_coordination/relax_split_plan_20260923/PLAN.md.
 import functools
 import os
 import pathlib
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
@@ -19,7 +20,6 @@ from recovar.reconstruction.regularization import (  # noqa: F401  (staying help
 
 from relax.numerics.shells import shell_of_radius
 from relax.relion.macros import relion_round, relion_round_array
-from relax.runtime.env_flags import parse_env_auto_flag
 from relax.runtime.xla_memory_reserve import device_fits
 
 _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS = 200_000_000
@@ -58,7 +58,21 @@ def _shell_stats_on_host(n_voxels: int) -> bool:
     )
 
 
-_LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS = 200_000_000
+LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS = 200_000_000
+
+
+@dataclass(frozen=True)
+class LowResolutionJoinRoute:
+    """Where the low-resolution half join runs; no effect on its values (``ReconstructionPrograms.lowres_join``).
+
+    ``forced_host`` (``RELAX_LOWRES_JOIN_HOST_FALLBACK``, ``env_flags.parse_env_auto_flag``): True on the host,
+    False on the device, None by size; ``host_min_elements`` (``RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS``,
+    default :data:`LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS`): the accumulator size from which it runs on
+    the host.
+    """
+
+    forced_host: bool | None
+    host_min_elements: int
 
 
 def _unscaled_fft_frequency_grid_np(n):
@@ -106,7 +120,9 @@ def _low_resolution_join_flat_indices(volume_shape, half_layout, lowres_r2_max):
     return np.concatenate(flat_chunks).astype(np.int32, copy=False)
 
 
-def _low_resolution_join_host_fallback_enabled_for_size(values_size, join_size, *, itemsize: int = 8):
+def _low_resolution_join_host_fallback_enabled_for_size(
+    values_size, join_size, *, route: LowResolutionJoinRoute, itemsize: int = 8
+):
     """Whether the low-resolution half join runs on the host.
 
     Physically large accumulators (the host-staged reconstruction's grids) always do. Otherwise the device join
@@ -114,23 +130,16 @@ def _low_resolution_join_host_fallback_enabled_for_size(values_size, join_size, 
     that does not fit the device (``xla_memory_reserve.device_fits``): at box 448 on a 16 GB card the 710 MiB
     scatter could not be placed in a fragmented pool (relax#49).
     """
-    forced = parse_env_auto_flag("RELAX_LOWRES_JOIN_HOST_FALLBACK", logger=logger)
-    if forced is not None:
-        return forced
+    if route.forced_host is not None:
+        return route.forced_host
     if int(join_size) >= int(values_size):
         return False
-    threshold = int(
-        os.environ.get(
-            "RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS",
-            _LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS,
-        )
-    )
-    return int(values_size) >= threshold or not device_fits(2 * int(values_size) * int(itemsize))
+    return int(values_size) >= route.host_min_elements or not device_fits(2 * int(values_size) * int(itemsize))
 
 
-def _low_resolution_join_host_fallback_enabled(values_0, flat_indices):
+def _low_resolution_join_host_fallback_enabled(values_0, flat_indices, route: LowResolutionJoinRoute):
     return _low_resolution_join_host_fallback_enabled_for_size(
-        np.size(values_0), np.size(flat_indices), itemsize=np.dtype(values_0.dtype).itemsize
+        np.size(values_0), np.size(flat_indices), route=route, itemsize=np.dtype(values_0.dtype).itemsize
     )
 
 
@@ -222,14 +231,14 @@ def _join_half_pair_at_indices_host(
     return values_0_np, values_1_np, retained_first_device
 
 
-def _join_half_pair_at_indices(values_0, values_1, flat_indices):
+def _join_half_pair_at_indices(values_0, values_1, flat_indices, route: LowResolutionJoinRoute):
     values_0_flat = values_0.reshape(-1)
     values_1_flat = values_1.reshape(-1)
     if int(flat_indices.size) >= int(values_0_flat.size):
         average = 0.5 * (values_0_flat + values_1_flat)
         return average.reshape(values_0.shape), average.reshape(values_1.shape)
 
-    if _low_resolution_join_host_fallback_enabled(values_0_flat, flat_indices):
+    if _low_resolution_join_host_fallback_enabled(values_0_flat, flat_indices, route):
         logger.info(
             "Low-resolution half-join using host fallback: elements=%d joined=%d dtype=%s",
             int(values_0_flat.size),
@@ -1782,8 +1791,11 @@ def join_halves_at_low_resolution(
     padding_factor=None,
     preserve_inputs=True,
     return_retained_first_numerator=False,
+    *,
+    route: LowResolutionJoinRoute,
 ):
-    """RELION's ``--low_resol_join_halves`` operation on Fourier accumulators.
+    """RELION's ``--low_resol_join_halves`` operation on Fourier accumulators (on the host or the device, as
+    ``route``, ``ReconstructionPrograms.lowres_join``, decides).
 
     Mirrors ``MlOptimiserMpi::joinTwoHalvesAtLowResolution`` in
     ``relion/src/ml_optimiser_mpi.cpp:3112-3219``: at low resolutions where
@@ -1933,7 +1945,7 @@ def join_halves_at_low_resolution(
     # device, and the reconstruction then took its monolithic device 1600^3
     # inverse FFT and failed to create the cuFFT plan (EMPIAR-10202 it3, 14456981).
     if _low_resolution_join_host_fallback_enabled_for_size(
-        max(max_input_size, full_size), join_indices_np.size
+        max(max_input_size, full_size), join_indices_np.size, route=route,
     ):
         retain_first_device = (
             return_retained_first_numerator
@@ -1977,7 +1989,7 @@ def join_halves_at_low_resolution(
     Ft_ctf_1_arr = jnp.asarray(Ft_ctf_1)
     join_indices = jnp.asarray(join_indices_np)
 
-    Ft_y_0_joined, Ft_y_1_joined = _join_half_pair_at_indices(Ft_y_0_arr, Ft_y_1_arr, join_indices)
-    Ft_ctf_0_joined, Ft_ctf_1_joined = _join_half_pair_at_indices(Ft_ctf_0_arr, Ft_ctf_1_arr, join_indices)
+    Ft_y_0_joined, Ft_y_1_joined = _join_half_pair_at_indices(Ft_y_0_arr, Ft_y_1_arr, join_indices, route)
+    Ft_ctf_0_joined, Ft_ctf_1_joined = _join_half_pair_at_indices(Ft_ctf_0_arr, Ft_ctf_1_arr, join_indices, route)
 
     return _format_result((Ft_y_0_joined, Ft_y_1_joined, Ft_ctf_0_joined, Ft_ctf_1_joined))

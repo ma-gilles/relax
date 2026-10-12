@@ -761,6 +761,7 @@ def run_final_all_data(
                 pixel_resolutions=history.pixel_resolutions,
                 current_resolution=carry.state.current_resolution,
                 preserve_inputs=False,
+                route=options.variants.reconstruction.lowres_join,
             )
         # The unfiltered maps are made; drop the pass outputs' references so the
         # pre-join accumulators live only as long as the joined ones do.

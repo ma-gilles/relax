@@ -446,6 +446,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         padding_factor=2,
         preserve_inputs=False,
         return_retained_first_numerator=True,
+        route=_join_route(),
     )
     retained_half0 = joined[4]
     assert retained_half0 is not None
@@ -516,10 +517,14 @@ def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypat
         low_resol_join_halves_angstrom=40.0,
         padding_factor=2,
     )
-    host = regularization.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
+    host = regularization.join_halves_at_low_resolution(
+        ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs, route=_join_route(),
+    )
     assert all(isinstance(value, np.ndarray) for value in host)
     monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "never")
-    device = regularization.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
+    device = regularization.join_halves_at_low_resolution(
+        ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs, route=_join_route(),
+    )
     for h, d in zip(host, device, strict=True):
         np.testing.assert_allclose(np.asarray(h), np.asarray(d), rtol=1e-6, atol=0)
 
@@ -540,3 +545,8 @@ def test_host_wiener_pad_equals_the_device_fftw_pad(old_dim, new_dim):
     assert_matches(host, device)
     # Zero pattern (support and placement) is discrete: exact.
     assert np.array_equal(host == 0, device == 0)
+
+
+def _join_route():
+    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
+    return ReconstructionPrograms.from_environ().lowres_join

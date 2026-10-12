@@ -175,3 +175,38 @@ def test_fsc_packed_stream_threshold_reaches_the_fsc(monkeypatch):
     seen = _received(monkeypatch, regularization, "compute_relion_fsc_from_backprojector", "packed_stream_min_elements",
                      RefinementEnvironment(), variants=variants)
     assert seen and set(seen) == {7}
+
+
+@pytest.mark.parametrize(("forced", "minimum", "expected_forced", "expected_minimum"),
+                         [(None, None, None, 200_000_000), ("always", "5", True, 5), ("never", None, False, 200_000_000),
+                          ("auto", None, None, 200_000_000)])
+def test_lowres_join_route_is_read_once(monkeypatch, forced, minimum, expected_forced, expected_minimum):
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+
+    for name, value in (("RELAX_LOWRES_JOIN_HOST_FALLBACK", forced), ("RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS", minimum)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    route = ReconstructionPrograms.from_environ().lowres_join
+    assert (route.forced_host, route.host_min_elements) == (expected_forced, expected_minimum)
+
+
+def test_lowres_join_route_reaches_the_command(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
+    options = controller_inputs(monkeypatch, tmp_path, "refine")["options"]
+    assert options.variants.reconstruction.lowres_join.forced_host is True
+
+
+def test_lowres_join_route_reaches_the_join(monkeypatch):
+    from dataclasses import replace
+
+    from relax.reconstruction import regularization
+    from relax.refinement.refinement_options import ScoringVariants
+
+    route = regularization.LowResolutionJoinRoute(forced_host=False, host_min_elements=11)
+    variants = ScoringVariants.from_environ()
+    variants = replace(variants, reconstruction=replace(variants.reconstruction, lowres_join=route))
+    seen = _received(monkeypatch, regularization, "join_halves_at_low_resolution", "route",
+                     RefinementEnvironment(), variants=variants, parity={"low_resol_join_halves_angstrom": 40.0})
+    assert seen and set(seen) == {route}

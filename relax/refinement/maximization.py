@@ -330,6 +330,7 @@ def k1_maximization(
             current_resolution=current_resolution,
             preserve_inputs=False,
             return_retained_first_numerator=True,
+            route=ctx.reconstruction_settings.programs.lowres_join,
         )
     previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
     ctx.maximization_probe.k1_accumulators_joined(

@@ -8,6 +8,7 @@ from helpers.float_compare import assert_matches
 
 from relax.reconstruction import regularization
 from relax.reconstruction import resolution as resolution_helpers
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import iteration_planning
 
 pytestmark = pytest.mark.unit
@@ -422,6 +423,7 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
         pixel_resolutions=[],
         current_resolution=state.current_resolution,
         preserve_inputs=True,
+        route=_join_route(),
     )
     joined0 = np.asarray(joined0).reshape(volume_shape)
     joined1 = np.asarray(joined1).reshape(volume_shape)
@@ -502,3 +504,8 @@ def test_class_iteration_resolution_keeps_observed_and_firstiter_scheduling_sign
     assert estimate.observed_shell == 6
     assert_matches(estimate.scheduling_shell, 2.0 if relion_iteration == 1 else 6.0)
     assert_matches(estimate.data_vs_prior, class_curves)
+
+
+def _join_route():
+    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
+    return ReconstructionPrograms.from_environ().lowres_join
