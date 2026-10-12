@@ -42,10 +42,7 @@ ALLOWED_IMPORTS = {
     ("relax.refinement.iteration_loop", "relax.parity.relion_replay"): _REPLAY,
     ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _INLINE_DUMP,
     ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): "the run report's timing rows (" + _INLINE_DUMP + ")",
-    ("relax.relion.normalization", "relax.diagnostics.finite_check"): _INLINE_CHECK,
     ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.firstiter_bpref", "relax.diagnostics.finite_check"): _INLINE_CHECK,
-    ("relax.fine_pass.bucket_io", "relax.diagnostics.finite_check"): _INLINE_CHECK,
     ("relax.fine_pass.bucket_io", "relax.diagnostics.sparse_pass2_dump"): _INLINE_DUMP,
 }
 
@@ -118,4 +115,4 @@ def test_the_command_does_import_the_observers_and_the_input_sources():
     )
     assert out.stdout.strip().splitlines()[-1] == "True"
     edges = {target for _, target in _diagnostic_imports()}
-    assert "relax.diagnostics.finite_check" in edges and "relax.parity.relion_replay" in edges
+    assert "relax.diagnostics.reconstruction" in edges and "relax.parity.relion_replay" in edges

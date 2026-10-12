@@ -14,7 +14,7 @@ import logging
 import numpy as np
 import pytest
 
-from relax.diagnostics import finite_check
+from relax.numerics import finite_check
 
 
 @pytest.fixture

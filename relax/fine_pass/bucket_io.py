@@ -17,7 +17,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics import finite_check
 from relax.diagnostics.sparse_pass2_dump import _add_sparse_group_timing
 from relax.fine_pass.scoring import (
     _relion_cuda_corr_img_from_native_noise_variance,
@@ -35,6 +34,7 @@ from relax.fourier.preprocessing import (
     half_translation_phase_table,
     relion_half_translation_lattice,
 )
+from relax.numerics import finite_check
 from relax.numerics.precision import DensePrecisionPolicy, audit_operand_precision
 from relax.relion import ctf
 from relax.relion.image_preprocessing import prepare_batch_preprocess_operands, process_half_image

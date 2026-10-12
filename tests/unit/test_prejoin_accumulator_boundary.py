@@ -11,6 +11,7 @@ from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 import relax.diagnostics.reconstruction as reconstruction_diagnostics
 from relax.diagnostics import observers
 from relax.diagnostics import reconstruction as diagnostics
+from relax.numerics import finite_check
 from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import maximization
 from relax.steps import score_outputs
@@ -79,7 +80,7 @@ def test_half_accumulator_guard_routing(iteration, mode, expected_events, monkey
             assert actual is expected
         assert context == f'iteration={iteration} relion_iteration={12 + iteration + 1}'
 
-    monkeypatch.setattr(diagnostics.finite_check, 'check_half_accumulators', check)
+    monkeypatch.setattr(finite_check, 'check_half_accumulators', check)
     diagnostics.check_half_accumulators_before_join(
         numerators, denominators, guard_mode=mode, iteration=iteration, init_relion_iteration=12, log=log,
     )
@@ -100,10 +101,10 @@ def test_capture_precedes_guard_failure(monkeypatch, tmp_path):
 
     def check(*args, **kwargs):
         events.append('guard')
-        raise diagnostics.finite_check.FiniteCheckError('half 2 poisoned')
+        raise finite_check.FiniteCheckError('half 2 poisoned')
 
-    monkeypatch.setattr(diagnostics.finite_check, 'check_half_accumulators', check)
-    with pytest.raises(diagnostics.finite_check.FiniteCheckError, match='half 2 poisoned'):
+    monkeypatch.setattr(finite_check, 'check_half_accumulators', check)
+    with pytest.raises(finite_check.FiniteCheckError, match='half 2 poisoned'):
         run_tiny_refinement(monkeypatch, final_after_max_iter=False,
                             observer=observers.BpRefAccumulatorObserver(prejoin_dir=str(tmp_path)))
     assert events == ['capture', 'guard']

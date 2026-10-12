@@ -43,7 +43,6 @@ _E = "E: a module in the wrong layer (layout S2, S6, S8d, S9)"
 ALLOWED_UPWARD = {
     ("relax.classification.k_class", "relax.refinement.engine_record"): _A,
     ("relax.fine_pass.bucket_arrays", "relax.local_search.layout"): _D,
-    ("relax.fine_pass.bucket_io", "relax.diagnostics.finite_check"): _B,
     ("relax.fine_pass.bucket_io", "relax.diagnostics.sparse_pass2_dump"): _B,
     ("relax.fine_pass.dispatch", "relax.refinement.engine_record"): _A,
     ("relax.refinement.dense_half", "relax.diagnostics.parity_dump"): _B,
@@ -51,14 +50,12 @@ ALLOWED_UPWARD = {
     ("relax.refinement.expectation", "relax.diagnostics.parity_dump"): _B,
     ("relax.refinement.finalization", "relax.diagnostics.bpref_diagnostics"): _B,
     ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _B,
-    ("relax.refinement.firstiter_bpref", "relax.diagnostics.finite_check"): _B,
     ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _B,
     ("relax.refinement.iteration_loop", "relax.diagnostics.iteration"): _B,
     ("relax.refinement.iteration_loop", "relax.diagnostics.reconstruction"): _B,
     ("relax.refinement.iteration_loop", "relax.parity.relion_replay"): _B,
     ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _B,
     ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): _B,
-    ("relax.relion.normalization", "relax.diagnostics.finite_check"): _B,
     ("relax.vdam.estep_setup", "relax.refinement.engine_record"): _A,
 }
 

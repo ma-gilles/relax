@@ -9,13 +9,15 @@ import logging
 import os
 from typing import NamedTuple
 
-logger = logging.getLogger(__name__)
 import jax
 import numpy as np
 
-from relax.diagnostics import bpref_diagnostics, finite_check
+from relax.diagnostics import bpref_diagnostics
+from relax.numerics import finite_check
 from relax.runtime import memory_budget
 from relax.runtime.env_flags import parse_env_flag as _env_flag_enabled
+
+logger = logging.getLogger(__name__)
 
 _RELION_FIRSTITER_FUSED_BPREF_ENV = "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF"
 _RELION_FIRSTITER_DEFERRED_BPREF_ENV = "RELAX_RELION_FIRSTITER_DEFERRED_BPREF"

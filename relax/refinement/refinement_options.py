@@ -685,7 +685,7 @@ def half_accumulator_guard_mode(raw: str | None, *, warn_only: bool) -> str:
     """How the once-per-iteration accumulator guard behaves: raise, warn or off.
 
     ``raw`` is the text of ``RELAX_EM_BPREF_FINITE_GUARD`` (None when unset) and ``warn_only`` the flag
-    ``RELAX_EM_FINITE_CHECK_WARN`` (``relax.diagnostics.finite_check.finite_check_warn_only``), both read once
+    ``RELAX_EM_FINITE_CHECK_WARN`` (``relax.numerics.finite_check.finite_check_warn_only``), both read once
     by :meth:`RefinementEnvironment.from_environ`; ``finite_check.check_half_accumulators`` runs in this mode.
 
     The guard is on by default in ``raise`` mode. Job 14193291 (P4-D,

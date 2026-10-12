@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.diagnostics import finite_check
+from relax.numerics import finite_check
 from relax.reconstruction import regularization
 from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV
 

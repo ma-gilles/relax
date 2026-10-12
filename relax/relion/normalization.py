@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics import finite_check
+from relax.numerics import finite_check
 from relax.types import total_sumw
 
 
