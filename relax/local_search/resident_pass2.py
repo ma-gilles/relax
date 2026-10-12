@@ -79,6 +79,7 @@ from relax.fine_pass import (
     resident_chunk_records,
     resident_configuration,
     resident_image_terms,
+    resident_mstep_blocks,
 )
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_io import (
@@ -2671,7 +2672,7 @@ def _start_resident_local_chunk(
                     block_rows = rows.row_ids[start:stop]
                     return recon_proj[block_rows], recon_abs2[block_rows], mstep_rotations[block_rows]
 
-            return rp.run_resident_mstep_blocks(
+            return resident_mstep_blocks.run_resident_mstep_blocks(
                 block_projections,
                 chunk_projections=chunk_projections,
                 row_capacity=chunk.row_capacity,

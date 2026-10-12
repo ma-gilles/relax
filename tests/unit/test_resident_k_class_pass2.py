@@ -17,7 +17,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_pass2_driver import _driver_fixture_args, requires_resident_gpu
 
-from relax.fine_pass import policy, resident_chunk_records, resident_projections
+from relax.fine_pass import policy, resident_chunk_records, resident_mstep_blocks, resident_projections
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.resident_candidates import CapacityChunk
 
@@ -123,7 +123,7 @@ def _block_inputs(host, chunk, live_cells, *, n_classes, n_slots=None, n_fine_tr
         kernel_row_image_ids=jnp.asarray(np.where(row_is_valid, host["row_image_local"], -1), dtype=jnp.int32),
         row_is_valid=jnp.asarray(row_is_valid),
     )
-    return rp._make_mstep_block_inputs(rows, posterior_out, n_slots=n_slots)
+    return resident_mstep_blocks.make_mstep_block_inputs(rows, posterior_out, n_slots=n_slots)
 
 
 def test_mstep_block_inputs_keep_only_live_rows_class_major():

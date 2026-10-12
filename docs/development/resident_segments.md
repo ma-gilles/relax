@@ -66,7 +66,7 @@ images.
 - **M-step.** Each scored (image, h, t) backprojects with weight `posterior(h, t)`, with the image's own
   `L_i R`, CTF and dose, into class `row_class`'s accumulator (RELION's `BPref[iclass]`, ml_optimiser.cpp:8962). The M-step visits only
   the rows the pruned posterior keeps (a row with no positive cell adds exact zeros), slot-major
-  (`_make_mstep_block_inputs`, on the device), so each slot's blocks write one accumulator; a block that
+  (`make_mstep_block_inputs`, on the device), so each slot's blocks write one accumulator; a block that
   straddles two slots is run once per slot, and its rows of the other slot get no weight. The per-image Wavg,
   noise and norm partials run on across slots.
 - **Accumulator slots (VDAM).** The M-step accumulator axis is `[n_slots]`, slot

@@ -33,8 +33,7 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
-from relax.fine_pass import policy, resident_chunk_memory, resident_image_terms
-from relax.fine_pass import resident_pass2 as rp
+from relax.fine_pass import policy, resident_chunk_memory, resident_image_terms, resident_mstep_blocks
 from relax.local_search import resident_pass2 as rlp
 from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
@@ -727,7 +726,7 @@ def test_mstep_adapter_refuses_unshifted_operands_without_the_kernel_tables():
         "scale": object(),
     }
     with pytest.raises(ValueError, match="translate-sum kernel"):
-        rp.run_resident_mstep_blocks(
+        resident_mstep_blocks.run_resident_mstep_blocks(
             lambda start, stop: None,
             row_capacity=64,
             n_valid_rows=8,
@@ -773,13 +772,13 @@ def test_local_chunk_runs_with_the_once_per_half_operand_flag(
 
     case = _case()
     calls = []
-    real_mstep_blocks = rp.run_resident_mstep_blocks
+    real_mstep_blocks = resident_mstep_blocks.run_resident_mstep_blocks
 
     def counting_mstep_blocks(*args, **kwargs):
         calls.append(kwargs.get("image_capacity"))
         return real_mstep_blocks(*args, **kwargs)
 
-    monkeypatch.setattr(rp, "run_resident_mstep_blocks", counting_mstep_blocks)
+    monkeypatch.setattr(resident_mstep_blocks, "run_resident_mstep_blocks", counting_mstep_blocks)
 
     on = _run(case, monkeypatch=monkeypatch, resident_operands=True)
     assert calls, "the local pass must reach run_resident_mstep_blocks"

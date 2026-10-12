@@ -31,9 +31,8 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.fine_pass import resident_chunk_inputs, resident_chunk_records
+from relax.fine_pass import resident_chunk_inputs, resident_chunk_records, resident_mstep_blocks
 from relax.fine_pass import resident_operands as ro
-from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
 
@@ -128,7 +127,7 @@ def test_zero_block_partials_match_jnp_zeros_bitwise():
         ((7,), jnp.dtype(jnp.float64)),
         ((7,), jnp.dtype(jnp.float32)),
     )
-    folded = rp._zero_block_partials(key)()
+    folded = resident_mstep_blocks.zero_block_partials(key)()
     loose = tuple(jnp.zeros(shape, dtype=dtype) for shape, dtype in key)
     assert len(folded) == len(loose)
     for got, want in zip(folded, loose):
@@ -137,7 +136,7 @@ def test_zero_block_partials_match_jnp_zeros_bitwise():
 
 def test_zero_block_partials_issue_no_eager_dispatch_and_return_fresh_buffers():
     key = (((4, 2, 3), jnp.dtype(jnp.float32)), ((5,), jnp.dtype(jnp.float64)))
-    build = rp._zero_block_partials(key)
+    build = resident_mstep_blocks.zero_block_partials(key)
     build()  # compile
     with _DispatchCounter() as counter:
         first = build()
@@ -150,9 +149,9 @@ def test_zero_block_partials_issue_no_eager_dispatch_and_return_fresh_buffers():
 
 def test_zero_block_partials_reuses_one_program_per_class():
     key = (((6,), jnp.dtype(jnp.float32)),)
-    assert rp._zero_block_partials(key) is rp._zero_block_partials(key)
+    assert resident_mstep_blocks.zero_block_partials(key) is resident_mstep_blocks.zero_block_partials(key)
     other = (((7,), jnp.dtype(jnp.float32)),)
-    assert rp._zero_block_partials(other) is not rp._zero_block_partials(key)
+    assert resident_mstep_blocks.zero_block_partials(other) is not resident_mstep_blocks.zero_block_partials(key)
 
 
 # -------------------------------------------------- chunk operand row prep ---

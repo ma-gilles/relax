@@ -306,7 +306,7 @@ def run_tilt_chunk(
     The per-stage (non-jitted) path.
     """
 
-    from relax.fine_pass import resident_chunk_posterior, resident_chunk_records
+    from relax.fine_pass import resident_chunk_posterior, resident_chunk_records, resident_mstep_blocks
     from relax.fine_pass import resident_pass2 as rp
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
@@ -540,7 +540,7 @@ def run_tilt_chunk(
     # Each slot backprojects the C_U images that are its units' s-th images (a slot view of the chunk's
     # operands, indexed by unit), and its per-image partials land on those images' chunk rows.
     # The carry's dtypes follow the projections' (one slot's when they are made per block).
-    mstep = rp._initial_mstep_carry(
+    mstep = resident_mstep_blocks.initial_mstep_carry(
         Ft_y_total[0],
         Ft_ctf_total[0],
         operands,
@@ -984,8 +984,7 @@ def _tilt_mstep_program(
     the flush counts tilt images.
     """
 
-    from relax.fine_pass import resident_block_programs, resident_chunk_records
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_block_programs, resident_chunk_records, resident_mstep_blocks
 
     row_capacity = int(row_posterior.shape[0])
     block_rows = int(slot_spec.mstep_block_rows)
@@ -1011,8 +1010,8 @@ def _tilt_mstep_program(
             n_recon = int(slot_spec.n_recon_pixels)
             Ft_y = jnp.zeros((row_capacity, n_recon), dtype=full.Ft_y.dtype)
             Ft_ctf = jnp.zeros((row_capacity, n_recon), dtype=full.Ft_ctf.dtype)
-        # The block stages' dtypes follow from the gathered operands alone (rp._mstep_block_operand_dtypes).
-        slot_carry = rp._initial_mstep_carry(
+        # The block stages' dtypes follow from the gathered operands alone (resident_mstep_blocks._mstep_block_operand_dtypes).
+        slot_carry = resident_mstep_blocks.initial_mstep_carry(
             Ft_y,
             Ft_ctf,
             operands._replace(**gathered),
@@ -1046,7 +1045,7 @@ def _tilt_mstep_program(
             )
 
             def block(i, carry):
-                return rp._resident_mstep_block_at(
+                return resident_mstep_blocks.resident_mstep_block_at(
                     i * jnp.int32(block_rows),
                     blocks,
                     slot_operands,
@@ -1093,8 +1092,8 @@ def _tilt_mstep_program(
                 def take(values):
                     return jax.lax.dynamic_slice_in_dim(values, i * jnp.int32(block_rows), block_rows, axis=0)
 
-                rotations = rp._cached_block_projections(stage_tables, take(row_fine_rot))[2]
-                return rp._backproject_block_rows(
+                rotations = resident_mstep_blocks.cached_block_projections(stage_tables, take(row_fine_rot))[2]
+                return resident_mstep_blocks.backproject_block_rows(
                     take(slot_carry.Ft_y),
                     take(slot_carry.Ft_ctf),
                     rotations,

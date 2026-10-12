@@ -450,8 +450,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
 
     import jax.numpy as jnp
 
-    from relax.fine_pass import resident_block_programs, resident_chunk_records
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_block_programs, resident_chunk_records, resident_mstep_blocks
 
     units, rows, translations, window = 8, 16, 32, 512
 
@@ -478,9 +477,9 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
         )
 
     monkeypatch.setattr(resident_tilts, "_slot_view_translate", translate)
-    monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
+    monkeypatch.setattr(resident_mstep_blocks, "resident_mstep_block_at", block_at)
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", image_power)
-    monkeypatch.setattr(rp, "_initial_mstep_carry", initial_carry)
+    monkeypatch.setattr(resident_mstep_blocks, "initial_mstep_carry", initial_carry)
     fields = resident_chunk_records.ChunkStageOperands._fields
     operands = resident_chunk_records.ChunkStageOperands(
         **{name: (jnp.ones((units, 4), jnp.float32) if name in resident_tilts._SLOT_VIEW_FIELDS else None) for name in fields}

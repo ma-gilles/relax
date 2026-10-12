@@ -610,7 +610,7 @@ def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight(_resid
 
     from types import SimpleNamespace
 
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_mstep_blocks
 
     n, n_rows = 8, 200_000
     spec = SimpleNamespace(
@@ -630,7 +630,7 @@ def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight(_resid
 
     def backproject(rows, volume):
         rows = jnp.asarray(rows, dtype=jnp.float32)[:, None]
-        _, Ft_ctf = rp._backproject_block_rows(
+        _, Ft_ctf = resident_mstep_blocks.backproject_block_rows(
             rows.astype(jnp.complex64),
             rows,
             rotations,

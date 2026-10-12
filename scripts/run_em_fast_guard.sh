@@ -61,7 +61,7 @@ for diagnostic in ("iteration", "reconstruction"):
     importlib.import_module(f"relax.diagnostics.{diagnostic}")
 execution_modules = (
     "refinement.iteration_loop", "refinement.dense_half", "classification.k_class",
-    "scoring.significance", "fine_pass.resident_pass2", "fine_pass.resident_chunk_posterior", "fine_pass.resident_chunk_inputs", "fine_pass.resident_chunk_records", "fine_pass.resident_image_terms", "fine_pass.resident_block_programs", "fine_pass.resident_projections", "fine_pass.resident_stable_windows", "fine_pass.resident_chunk_memory", "fine_pass.resident_configuration", "fine_pass.dispatch",
+    "scoring.significance", "fine_pass.resident_pass2", "fine_pass.resident_mstep_blocks", "fine_pass.resident_chunk_posterior", "fine_pass.resident_chunk_inputs", "fine_pass.resident_chunk_records", "fine_pass.resident_image_terms", "fine_pass.resident_block_programs", "fine_pass.resident_projections", "fine_pass.resident_stable_windows", "fine_pass.resident_chunk_memory", "fine_pass.resident_configuration", "fine_pass.dispatch",
     "refinement.local_half",
 )
 loaded = [name for name in execution_modules

@@ -19,7 +19,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.fine_pass import policy, resident_block_programs, resident_chunk_records, resident_tilts
+from relax.fine_pass import (
+    policy,
+    resident_block_programs,
+    resident_chunk_records,
+    resident_mstep_blocks,
+    resident_tilts,
+)
 from relax.fine_pass import resident_pass2 as rp
 from relax.reconstruction import half_volume_mstep as hvm
 
@@ -88,8 +94,8 @@ def _stage_driver(monkeypatch, weights, row_partial):
         return add_block(carry, operands, start)
 
     monkeypatch.setattr(policy, "resident_glue_jit_enabled", lambda: False)
-    monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
-    monkeypatch.setattr(rp, "_initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
+    monkeypatch.setattr(resident_mstep_blocks, "resident_mstep_block_at", block_at)
+    monkeypatch.setattr(resident_mstep_blocks, "initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
     monkeypatch.setattr(rp, "_resident_chunk_statistics", lambda stats, *a, **k: stats)
     n_rows = int(weights.shape[0])
@@ -124,8 +130,8 @@ def _local_driver(monkeypatch, weights, row_partial):
         return add_rows(carry, block_row_image)
 
     monkeypatch.setattr(policy, "resident_glue_jit_enabled", lambda: False)
-    monkeypatch.setattr(rp, "_resident_mstep_block", block)
-    monkeypatch.setattr(rp, "_initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
+    monkeypatch.setattr(resident_mstep_blocks, "_resident_mstep_block", block)
+    monkeypatch.setattr(resident_mstep_blocks, "initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
     n_rows = int(weights.shape[0])
     recon = dict.fromkeys(
@@ -141,7 +147,7 @@ def _local_driver(monkeypatch, weights, row_partial):
     )
     recon.update(shifted_recon=object(), shifted_noise=object())
     Ft_y, Ft_ctf = _totals()
-    out = rp.run_resident_mstep_blocks(
+    out = resident_mstep_blocks.run_resident_mstep_blocks(
         lambda start, stop: (jnp.zeros(1, jnp.complex64), jnp.zeros(1, jnp.float32), None),
         row_capacity=n_rows,
         n_valid_rows=n_rows,
@@ -346,13 +352,13 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
         return Ft_y.at[0].add(jnp.sum(summed)), Ft_ctf.at[0].add(jnp.sum(ctf_probs))
 
     monkeypatch.setattr(resident_tilts, "_slot_view_translate", translate)
-    monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
-    monkeypatch.setattr(rp, "_backproject_block_rows", backproject_block_rows)
-    monkeypatch.setattr(rp, "_cached_block_projections", lambda tables, ids: (None, None, ids))
+    monkeypatch.setattr(resident_mstep_blocks, "resident_mstep_block_at", block_at)
+    monkeypatch.setattr(resident_mstep_blocks, "backproject_block_rows", backproject_block_rows)
+    monkeypatch.setattr(resident_mstep_blocks, "cached_block_projections", lambda tables, ids: (None, None, ids))
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda carry, *a, **k: carry)
     monkeypatch.setattr(
-        rp,
-        "_initial_mstep_carry",
+        resident_mstep_blocks,
+        "initial_mstep_carry",
         lambda Ft_y, Ft_ctf, operands, tables, *, spec: resident_chunk_records.ChunkMstepCarry(
             Ft_y=Ft_y,
             Ft_ctf=Ft_ctf,
@@ -389,7 +395,7 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
     )
 
     def run(with_partial):
-        mstep = rp._initial_mstep_carry(*_totals(), None, None, spec=None)
+        mstep = resident_mstep_blocks.initial_mstep_carry(*_totals(), None, None, spec=None)
         pair = ((jnp.zeros(VOLUME, jnp.complex64), jnp.zeros(VOLUME, jnp.float32)),) if with_partial else ()
         return resident_tilts._tilt_mstep_program(
             (mstep, *pair),

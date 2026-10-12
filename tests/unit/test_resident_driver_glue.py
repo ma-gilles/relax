@@ -30,7 +30,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.fine_pass import policy, resident_chunk_records
+from relax.fine_pass import policy, resident_chunk_records, resident_mstep_blocks
 from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
@@ -52,7 +52,7 @@ def _spec(**overrides):
         image_shape=(16, 16),
         recon_volume_shape=(16, 16, 16),
         max_adjoint_block_bytes=1 << 30,
-        stats_config=rp._MstepOnlyStatsConfig(n_shells=9),
+        stats_config=resident_mstep_blocks._MstepOnlyStatsConfig(n_shells=9),
         use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=False,
         bpref_recon_operand=False,
@@ -112,16 +112,16 @@ def test_static_carry_dtypes_match_the_traced_block_stages(
     proj_abs2_dtype = jnp.zeros((), dtype=proj_dtype).real.dtype
     operands = _operands(spec)
     tables = _tables(spec, noise_dtype=noise_dtype)
-    dtypes = rp._mstep_block_operand_dtypes(
+    dtypes = resident_mstep_blocks._mstep_block_operand_dtypes(
         operands,
         tables,
         spec=spec,
         projection_dtypes=(proj_dtype, proj_abs2_dtype),
     )
     # Raises if the arithmetic and the probe disagree.
-    rp._check_mstep_carry_avals(tables, spec=spec, dtypes=dtypes)
+    resident_mstep_blocks._check_mstep_carry_avals(tables, spec=spec, dtypes=dtypes)
 
-    shells, a2, xa = rp._probe_mstep_block_output_avals(
+    shells, a2, xa = resident_mstep_blocks._probe_mstep_block_output_avals(
         tables, spec=spec, dtypes=dtypes
     )
     assert shells.shape == (spec.stats_config.n_shells,)
@@ -136,9 +136,9 @@ def test_initial_mstep_carry_has_the_probed_shapes_and_no_probe_by_default(monke
 
     monkeypatch.delenv(policy._CARRY_AVAL_PROBE_ENV, raising=False)
     calls = []
-    original = rp._probe_mstep_block_output_avals
+    original = resident_mstep_blocks._probe_mstep_block_output_avals
     monkeypatch.setattr(
-        rp,
+        resident_mstep_blocks,
         "_probe_mstep_block_output_avals",
         lambda *a, **k: (calls.append(1), original(*a, **k))[1],
     )
@@ -148,7 +148,7 @@ def test_initial_mstep_carry_has_the_probed_shapes_and_no_probe_by_default(monke
     tables = _tables(spec)
     Ft_y = jnp.zeros((4, 4, 4), dtype=jnp.complex64)
     Ft_ctf = jnp.zeros((4, 4, 4), dtype=jnp.float32)
-    carry = rp._initial_mstep_carry(
+    carry = resident_mstep_blocks.initial_mstep_carry(
         Ft_y,
         Ft_ctf,
         operands,
@@ -167,7 +167,7 @@ def test_initial_mstep_carry_has_the_probed_shapes_and_no_probe_by_default(monke
     assert not np.any(np.asarray(carry.wavg_triplet_pixels))
 
     monkeypatch.setenv(policy._CARRY_AVAL_PROBE_ENV, "1")
-    rp._initial_mstep_carry(
+    resident_mstep_blocks.initial_mstep_carry(
         Ft_y,
         Ft_ctf,
         operands,
@@ -184,13 +184,13 @@ def test_the_carry_aval_check_rejects_a_wrong_dtype():
     spec = _spec()
     operands = _operands(spec)
     tables = _tables(spec)
-    dtypes = rp._mstep_block_operand_dtypes(
+    dtypes = resident_mstep_blocks._mstep_block_operand_dtypes(
         operands, tables, spec=spec, projection_dtypes=(jnp.complex64, jnp.float32)
     )
     wrong = dict(dtypes)
     wrong["a2"] = jnp.dtype(jnp.float64)
     with pytest.raises(AssertionError, match="disagree with the traced block stages"):
-        rp._check_mstep_carry_avals(tables, spec=spec, dtypes=wrong)
+        resident_mstep_blocks._check_mstep_carry_avals(tables, spec=spec, dtypes=wrong)
 
 
 @pytest.mark.parametrize("row_capacity", rp._DEFAULT_ROW_CAPACITY_LADDER)
