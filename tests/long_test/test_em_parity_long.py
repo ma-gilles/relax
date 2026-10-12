@@ -73,7 +73,7 @@ def _require_fixture(*paths: Path) -> None:
         pytest.fail("Missing parity fixture file(s):\n  " + "\n  ".join(missing))
 
 
-def _assert_parity_ancestors_or_skip() -> None:
+def _assert_parity_ancestors_or_fail() -> None:
     from scripts.lib.parity_provenance import (
         ParityAncestryError,
         assert_parity_ancestors,
@@ -295,7 +295,7 @@ def test_em_parity_long_k1_full(tmp_path, start):
       * Per-iter |ΔPmax| < 1e-3 vs RELION at every iteration ≥ 3
         (iters 1–2 may diverge during initial cold start)
     """
-    _assert_parity_ancestors_or_skip()
+    _assert_parity_ancestors_or_fail()
     relion_optimiser = K1_LONG_RELION_DIR / "run_it000_optimiser.star"
     require_fixture_sets("k1_50k256_data", "k1_50k256_relion_os0")
     _require_fixture(K1_LONG_FIXTURE_DIR, K1_LONG_RELION_DIR, K1_LONG_DATA_STAR, K1_LONG_RELION_DATA_STAR)
@@ -529,7 +529,7 @@ def test_em_parity_long_k1_native_initialmodel_quality(tmp_path):
     The thresholds are relative to the configured RELION fixture, not a magic
     absolute score, so fixture or preprocessing changes keep this guard useful.
     """
-    _assert_parity_ancestors_or_skip()
+    _assert_parity_ancestors_or_fail()
     require_fixture_sets("k1_50k256_data", "k1_50k256_relion_initialmodel_it008")
     _require_fixture(
         ABINITIO_SCRIPT,
@@ -768,7 +768,7 @@ def test_em_parity_long_kclass_full(tmp_path, start):
     import starfile
     from scipy.optimize import linear_sum_assignment
 
-    _assert_parity_ancestors_or_skip()
+    _assert_parity_ancestors_or_fail()
     final_iter = 15
     n_classes = 4
     relion_optimiser = K4_LONG_RELION_DIR / "run_it000_optimiser.star"
@@ -1011,7 +1011,7 @@ def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
     from relax.io.map_io import load_relax_map
     from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
 
-    _assert_parity_ancestors_or_skip()
+    _assert_parity_ancestors_or_fail()
     require_fixture_sets("empiar_10097_hp3_state", "empiar_10097_particle_stack")
     state = fixture_root("empiar_10097_hp3_state")
     relion_dir = state / "refine"
@@ -1090,7 +1090,7 @@ def test_em_parity_long_class3d_hp4_global(tmp_path):
     from relax.io.map_io import load_relax_map
     from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
 
-    _assert_parity_ancestors_or_skip()
+    _assert_parity_ancestors_or_fail()
     require_fixture_sets("k4_5k128_data", "k4_5k128_class3d_hp4_relion")
     n_classes, final_iter = 4, 2
     relion_a, relion_b = CLASS3D_HP4_RELION / "relion_a", CLASS3D_HP4_RELION / "relion_b"
