@@ -785,15 +785,15 @@ def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
 
 def test_operand_peak_counts_the_smallest_preparation_batch():
     from relax.fine_pass.resident_operands import resident_prepare_reserved_bytes
-    from relax.fine_pass.resident_pass2 import _resident_half_operand_sizes
+    from relax.fine_pass.resident_projections import resident_half_operand_sizes
     from relax.numerics.precision import DensePrecisionPolicy
 
     common = dict(
         n_images=1000, n_windowed=600, n_recon_windowed=580, n_rect=800, n_shells=40, n_fine_trans=9,
         precision_policy=DensePrecisionPolicy(use_float64_scoring=False), resolved_spectrum_norm=False,
     )
-    small_bytes, small_peak = _resident_half_operand_sizes(**common, image_shape=(64, 64))
-    large_bytes, large_peak = _resident_half_operand_sizes(**common, image_shape=(380, 380))
+    small_bytes, small_peak = resident_half_operand_sizes(**common, image_shape=(64, 64))
+    large_bytes, large_peak = resident_half_operand_sizes(**common, image_shape=(380, 380))
     assert small_bytes == large_bytes
     assert large_peak - small_peak == resident_prepare_reserved_bytes((380, 380)) - resident_prepare_reserved_bytes(
         (64, 64)

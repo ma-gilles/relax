@@ -32,7 +32,7 @@ import jax
 import jax.numpy as jnp
 from oracles.wavg import relion_wavg_rectangle_triplet_terms
 
-from relax.fine_pass import resident_chunk_memory, resident_configuration, resident_stable_windows
+from relax.fine_pass import resident_chunk_memory, resident_configuration, resident_projections, resident_stable_windows
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_candidates import (
@@ -659,7 +659,7 @@ def test_k_class_projection_cache_is_built_in_place():
         return rows
 
     baseline = sum(a.nbytes for a in jax.live_arrays() if a.dtype == jnp.complex64)
-    cache = rp.build_projection_cache_in_place(
+    cache = resident_projections.build_projection_cache_in_place(
         project_rows, n_classes=n_classes, n_rows_per_class=n_rows, n_pixels=n_pixels,
         rows_per_call=per_call, dtype=jnp.complex64,
     )
@@ -1019,7 +1019,7 @@ def test_global_chunks_prepare_their_own_unshifted_operands(_resident_production
 
     chunk_calls, tile_calls = [], []
     real_chunk, real_tiles = rp.unshifted_chunk_operands, rp._prepare_chunk_reconstruction_operands
-    monkeypatch.setattr(rp, "_resident_operands_fit", lambda *a, **k: False)
+    monkeypatch.setattr(resident_projections, "resident_operands_fit", lambda *a, **k: False)
     monkeypatch.setattr(
         rp, "unshifted_chunk_operands", lambda *a, **k: chunk_calls.append(1) or real_chunk(*a, **k)
     )
@@ -1385,7 +1385,7 @@ def test_streamed_chunk_projections_gather_the_cached_arrays():
         image_row_start=jnp.zeros(2, jnp.int64),
         image_row_count=jnp.zeros(2, jnp.int64),
     )
-    new_rows, slot_ids, caches, mstep_local, parent_local = rp._stream_chunk_projections(
+    new_rows, slot_ids, caches, mstep_local, parent_local = resident_projections.stream_chunk_projections(
         rows,
         host_ids,
         n_valid_rows=n_valid,
@@ -1410,13 +1410,13 @@ def test_streamed_chunk_projections_gather_the_cached_arrays():
 
 
 def test_streamed_row_ladder_keeps_capacities_whose_cache_fits():
-    assert rp._stream_row_capacity_ladder(
+    assert resident_projections.stream_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_rotation=300e3, max_projection_bytes=20 * 1024**3
     ) == (8192, 32768)
     # A configuration refusal (there is no other pass-2 engine) only once even the planned floor does not fit,
     # and it says what to change.
     with pytest.raises(ResidentConfigurationUnsupported, match="GPU with more memory"):
-        rp._stream_row_capacity_ladder(
+        resident_projections.stream_row_capacity_ladder(
             (8192,), bytes_per_rotation=1e9, max_projection_bytes=20 * 1024**3
         )
 
@@ -1426,19 +1426,19 @@ def test_streamed_row_ladder_halves_below_its_smallest_class_when_none_fits():
     rows against a 3.78 GiB budget and was refused; the smallest class now halves, as the chunk plan does."""
 
     gib = 1024**3
-    per_rotation = 4.43 * gib / (rp._STREAM_PEAK_COPIES * 8192)
+    per_rotation = 4.43 * gib / (resident_projections.STREAM_PEAK_COPIES * 8192)
     ladder = (8192, 32768, 131072, 524288)
-    assert rp._stream_row_capacity_ladder(
+    assert resident_projections.stream_row_capacity_ladder(
         ladder, bytes_per_rotation=per_rotation, max_projection_bytes=int(3.78 * gib)
     ) == (4096,)
     # Where a default class fits (every 80 GB run), the ladder is unchanged.
-    assert rp._stream_row_capacity_ladder(
+    assert resident_projections.stream_row_capacity_ladder(
         ladder, bytes_per_rotation=per_rotation, max_projection_bytes=int(30 * gib)
     ) == (8192, 32768)
     # The floor is the chunk plan's.
-    assert rp._stream_row_capacity_ladder(
+    assert resident_projections.stream_row_capacity_ladder(
         ladder,
-        bytes_per_rotation=1.0 / rp._STREAM_PEAK_COPIES,
+        bytes_per_rotation=1.0 / resident_projections.STREAM_PEAK_COPIES,
         max_projection_bytes=resident_chunk_memory.MIN_PLANNED_ROW_CAPACITY,
     ) == (resident_chunk_memory.MIN_PLANNED_ROW_CAPACITY,)
 
@@ -1450,24 +1450,24 @@ def test_cached_row_ladder_bounds_the_gathered_chunk():
 
     row_bytes = 36514 * 8
     gib = 1024**3
-    assert rp._cached_row_capacity_ladder(
+    assert resident_projections.cached_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_row=row_bytes, max_gather_bytes=30 * gib
     ) == (8192, 32768)
     # A 256-pixel-class workload keeps the whole ladder.
-    assert rp._cached_row_capacity_ladder(
+    assert resident_projections.cached_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_row=6000 * 8, max_gather_bytes=30 * gib
     ) == (8192, 32768, 131072)
     # Below the smallest class the capacity halves until the gathered block fits.
-    assert rp._cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1 * gib) == (2048,)
+    assert resident_projections.cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1 * gib) == (2048,)
     # A named configuration refusal (there is no other pass-2 engine), not a crash.
     with pytest.raises(rp.ResidentConfigurationUnsupported, match="GPU with more memory"):
-        rp._cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1024**2)
+        resident_projections.cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1024**2)
 
 
 def test_stream_slot_count_quantises_and_caps():
-    assert rp._stream_slot_count(1, 131072) == rp._STREAM_SLOT_QUANTUM
-    assert rp._stream_slot_count(8193, 131072) == 2 * rp._STREAM_SLOT_QUANTUM
-    assert rp._stream_slot_count(200000, 32768) == 32768
+    assert resident_projections._stream_slot_count(1, 131072) == resident_projections._STREAM_SLOT_QUANTUM
+    assert resident_projections._stream_slot_count(8193, 131072) == 2 * resident_projections._STREAM_SLOT_QUANTUM
+    assert resident_projections._stream_slot_count(200000, 32768) == 32768
 
 
 @requires_resident_gpu
@@ -1516,18 +1516,18 @@ def test_resident_operand_reservation_and_admission_share_one_predicate(monkeypa
 
     monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", raising=False)
     gib = 1024**3
-    assert rp._resident_operands_fit(10 * gib, 20 * gib)
-    assert not rp._resident_operands_fit(10 * gib + 1, 20 * gib)
+    assert resident_projections.resident_operands_fit(10 * gib, 20 * gib)
+    assert not resident_projections.resident_operands_fit(10 * gib + 1, 20 * gib)
     # EMPIAR-10202 iteration 2 (box 800): 50.9 GiB of operands against a 51 GiB reading stay per chunk.
-    assert not rp._resident_operands_fit(int(50.9 * gib), 51 * gib)
+    assert not resident_projections.resident_operands_fit(int(50.9 * gib), 51 * gib)
     # An unknown reading falls back to the fixed budget.
-    assert rp._resident_operands_fit(6 * gib, None)
-    assert not rp._resident_operands_fit(6 * gib + 1, None)
+    assert resident_projections.resident_operands_fit(6 * gib, None)
+    assert not resident_projections.resident_operands_fit(6 * gib + 1, None)
 
 
 def test_stream_projection_budget_is_capped_by_measured_free_memory():
     gib = 1024**3
-    budget = rp._stream_projection_budget_bytes
+    budget = resident_projections.stream_projection_budget_bytes
     # Unknown readings do not cap.
     assert budget(20 * gib, physical_free_bytes=None, allocator_free_bytes=None) == 20 * gib
     # Allocator headroom caps; the device bound is physical free plus the pool's unused bytes.
@@ -1555,13 +1555,13 @@ def test_stream_projection_budget_counts_the_allocator_pool_as_free():
     gib = 1024**3
     kwargs = dict(physical_free_bytes=int(13.37 * gib), allocator_free_bytes=int(70.04 * gib))
     share = int(19.91 * gib)
-    assert rp._stream_projection_budget_bytes(
+    assert resident_projections.stream_projection_budget_bytes(
         share, pool_free_bytes=int(56.0 * gib), reserved_bytes=int(14.0 * gib), **kwargs
     ) == share
     # A pool that holds little unused memory still bounds it through the device.
-    assert rp._stream_projection_budget_bytes(
+    assert resident_projections.stream_projection_budget_bytes(
         share, pool_free_bytes=int(1.0 * gib), reserved_bytes=int(4.0 * gib), **kwargs
-    ) == int((14.37 - 4.0) * gib * rp._STREAM_FREE_MEMORY_FRACTION)
+    ) == int((14.37 - 4.0) * gib * resident_projections._STREAM_FREE_MEMORY_FRACTION)
 
 
 def test_streamed_row_ladder_counts_the_padded_copy():
@@ -1569,7 +1569,7 @@ def test_streamed_row_ladder_counts_the_padded_copy():
     19.9 GiB budget once but not with its padded copy alive; it is now excluded."""
 
     per_rotation = 122.3 * 1024
-    kept = rp._stream_row_capacity_ladder(
+    kept = resident_projections.stream_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_rotation=per_rotation, max_projection_bytes=19.91 * 1024**3
     )
     assert kept == (8192, 32768)
@@ -1867,21 +1867,21 @@ def test_projection_cache_allocation_refusal_streams_and_other_errors_raise(monk
     """The union cache is allocated before it is built: an allocator refusal returns None
     (EMPIAR-10345 it13, bench 14643272), so the pass streams; any other error is raised."""
 
-    cache = rp._allocate_projection_cache(3, 5, np.complex64)
+    cache = resident_projections._allocate_projection_cache(3, 5, np.complex64)
     assert cache.shape == (3, 5) and cache.dtype == np.complex64
 
     def refuse(*a, **k):
         raise RuntimeError("RESOURCE_EXHAUSTED: Out of memory while trying to allocate 20.19GiB.")
 
     monkeypatch.setattr(rp.jnp, "zeros", refuse)
-    assert rp._allocate_projection_cache(3, 5, np.complex64) is None
+    assert resident_projections._allocate_projection_cache(3, 5, np.complex64) is None
 
     def broken(*a, **k):
         raise RuntimeError("INTERNAL: something else")
 
     monkeypatch.setattr(rp.jnp, "zeros", broken)
     with pytest.raises(RuntimeError, match="INTERNAL"):
-        rp._allocate_projection_cache(3, 5, np.complex64)
+        resident_projections._allocate_projection_cache(3, 5, np.complex64)
 
 
 def test_projection_cache_row_blocks_gather_the_one_array_rows(monkeypatch):
@@ -1892,12 +1892,12 @@ def test_projection_cache_row_blocks_gather_the_one_array_rows(monkeypatch):
     from relax.fine_pass.resident_scoring import cache_dtype, cache_rows
 
     n_rows, n_pixels = 10, 4
-    real_allocate = rp._allocate_projection_cache
+    real_allocate = resident_projections._allocate_projection_cache
     monkeypatch.setattr(
-        rp, "_allocate_projection_cache",
+        resident_projections, "_allocate_projection_cache",
         lambda rows, pixels, dtype: None if rows > 3 else real_allocate(rows, pixels, dtype),
     )
-    blocks = rp._allocate_projection_cache_blocks(n_rows, n_pixels, np.complex64)
+    blocks = resident_projections.allocate_projection_cache_blocks(n_rows, n_pixels, np.complex64)
     assert isinstance(blocks, tuple) and len(blocks) == 4 and all(b.shape == (3, n_pixels) for b in blocks)
     rng = np.random.default_rng(5)
     full = (rng.standard_normal((n_rows, n_pixels)) + 1j * rng.standard_normal((n_rows, n_pixels))).astype(np.complex64)
@@ -1905,19 +1905,19 @@ def test_projection_cache_row_blocks_gather_the_one_array_rows(monkeypatch):
     def project_rows(class_index, start, stop):
         return jnp.asarray(full[class_index * 5 + start : class_index * 5 + stop])
 
-    built = rp.build_projection_cache_in_place(
+    built = resident_projections.build_projection_cache_in_place(
         project_rows, n_classes=2, n_rows_per_class=5, n_pixels=n_pixels, rows_per_call=2,
         dtype=np.complex64, cache=blocks,
     )
     ids = np.array([0, 9, 3, 4, 7, 2, 2, 5], dtype=np.int32)
     np.testing.assert_allclose(np.asarray(cache_rows(built, ids)), full[ids], rtol=0, atol=0)
     assert cache_dtype(built) == np.complex64
-    whole = rp.build_projection_cache_in_place(
+    whole = resident_projections.build_projection_cache_in_place(
         project_rows, n_classes=2, n_rows_per_class=5, n_pixels=n_pixels, rows_per_call=2, dtype=np.complex64,
     )
     np.testing.assert_allclose(np.asarray(cache_rows(whole, ids)), full[ids], rtol=0, atol=0)
-    monkeypatch.setattr(rp, "_allocate_projection_cache", lambda rows, pixels, dtype: None)
-    assert rp._allocate_projection_cache_blocks(n_rows, n_pixels, np.complex64) is None
+    monkeypatch.setattr(resident_projections, "_allocate_projection_cache", lambda rows, pixels, dtype: None)
+    assert resident_projections.allocate_projection_cache_blocks(n_rows, n_pixels, np.complex64) is None
 
 
 @requires_resident_gpu
@@ -1926,14 +1926,14 @@ def test_row_blocked_projection_cache_matches_the_one_array_pass(_resident_produ
 
     args = _driver_fixture_args()
     whole = rp.compute_pass2_stats_resident(**args)
-    real_allocate = rp._allocate_projection_cache
+    real_allocate = resident_projections._allocate_projection_cache
     heights = []
 
     def refuse_whole(rows, pixels, dtype):
         heights.append(int(rows))
         return None if len(heights) == 1 else real_allocate(rows, pixels, dtype)
 
-    monkeypatch.setattr(rp, "_allocate_projection_cache", refuse_whole)
+    monkeypatch.setattr(resident_projections, "_allocate_projection_cache", refuse_whole)
     blocked = rp.compute_pass2_stats_resident(**args)
     assert len(heights) >= 3, "the pass must allocate its cache in row blocks"
 
@@ -1997,16 +1997,16 @@ def test_the_projection_sums_choice_reads_the_allocator_not_the_physical_free_me
     from relax.runtime import memory_budget as budget
 
     gib = 1024**3
-    monkeypatch.setattr(rp, "_device_free_memory_bytes", lambda: 62 * gib)
-    monkeypatch.setattr(rp, "_jax_allocator_free_memory_bytes", lambda: 10 * gib)
-    monkeypatch.setattr(rp, "_jax_allocator_pool_free_bytes", lambda: 1 * gib)
-    assert rp._allocator_available_bytes() == pytest.approx(10 * gib)
+    monkeypatch.setattr(resident_projections, "_device_free_memory_bytes", lambda: 62 * gib)
+    monkeypatch.setattr(resident_projections, "_jax_allocator_free_memory_bytes", lambda: 10 * gib)
+    monkeypatch.setattr(resident_projections, "_jax_allocator_pool_free_bytes", lambda: 1 * gib)
+    assert resident_projections.allocator_available_bytes() == pytest.approx(10 * gib)
     sums = 3.76 * gib
-    assert sums > rp._PRESUM_ADJOINT_FREE_FRACTION * rp._allocator_available_bytes()
-    assert sums <= rp._PRESUM_ADJOINT_FREE_FRACTION * 62 * gib  # the old physical reading would have taken them
+    assert sums > resident_projections.PRESUM_ADJOINT_FREE_FRACTION * resident_projections.allocator_available_bytes()
+    assert sums <= resident_projections.PRESUM_ADJOINT_FREE_FRACTION * 62 * gib  # the old physical reading would have taken them
     # On a small physical card the device bounds the allocator's headroom.
-    monkeypatch.setattr(rp, "_device_free_memory_bytes", lambda: 2 * gib)
-    assert rp._allocator_available_bytes() == pytest.approx(3 * gib)
+    monkeypatch.setattr(resident_projections, "_device_free_memory_bytes", lambda: 2 * gib)
+    assert resident_projections.allocator_available_bytes() == pytest.approx(3 * gib)
     assert budget.device_available_bytes(None, None, None) is None
 
 
@@ -2018,11 +2018,11 @@ def test_every_free_memory_budget_honours_the_allocator_pool(monkeypatch):
 
     gib = 1024**3
     readings = dict(physical=62 * gib, allocator=10 * gib, pool=1 * gib)
-    for module in (rp, resident_chunk_memory, budget):
+    for module in (rp, resident_chunk_memory, resident_projections, budget):
         monkeypatch.setattr(module, "_device_free_memory_bytes", lambda: readings["physical"], raising=False)
         monkeypatch.setattr(module, "_jax_allocator_free_memory_bytes", lambda: readings["allocator"], raising=False)
         monkeypatch.setattr(module, "_jax_allocator_pool_free_bytes", lambda: readings["pool"], raising=False)
-    assert rp._allocator_available_bytes() <= 10 * gib  # the K-class projection-sums choice
+    assert resident_projections.allocator_available_bytes() <= 10 * gib  # the K-class projection-sums choice
 
 
 @requires_resident_gpu
@@ -2035,10 +2035,11 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
     import subprocess
 
     probe = (
-        "import json, jax, jax.numpy as jnp; from relax.fine_pass import resident_pass2 as rp; "
+        "import json, jax, jax.numpy as jnp; from relax.fine_pass import resident_projections; "
+        "from relax.runtime import memory_budget; "
         "x = jnp.zeros((1 << 20,), jnp.float32).block_until_ready(); "
         "s = jax.devices()[0].memory_stats(); "
-        "print(json.dumps({'available': rp._allocator_available_bytes(), 'physical': rp._device_free_memory_bytes(), "
+        "print(json.dumps({'available': resident_projections.allocator_available_bytes(), 'physical': memory_budget._device_free_memory_bytes(), "
         "'limit': s['bytes_limit']}))"
     )
     from conftest import repo_python_command, repo_subprocess_env

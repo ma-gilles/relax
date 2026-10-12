@@ -1312,7 +1312,7 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
     """
 
     from relax.fine_pass import projection_blocks as sparse_pass2_projection_blocks
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_projections
     from relax.fine_pass.projection_blocks import project_rows_by_class
     from relax.runtime.memory_budget import _projection_cache_transient_bytes
 
@@ -1381,7 +1381,7 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
     ) + _projection_cache_transient_bytes(
         1, int(recon_indices.size), projection_complex_dtype=np.complex64, include_abs2=True
     )
-    plan_bytes = rp._STREAM_PEAK_COPIES * row_capacity * bytes_per_rotation
+    plan_bytes = resident_projections.STREAM_PEAK_COPIES * row_capacity * bytes_per_rotation
     # The live arrays at a projector call: the outputs, the call's padded rotations, the
     # previous chunk being dropped. The concatenate-and-gather held every class's whole call.
     assert peak[0] <= plan_bytes, (peak[0], plan_bytes)

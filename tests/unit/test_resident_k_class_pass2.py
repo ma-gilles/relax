@@ -17,7 +17,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_pass2_driver import _driver_fixture_args, requires_resident_gpu
 
-from relax.fine_pass import policy
+from relax.fine_pass import policy, resident_projections
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.resident_candidates import CapacityChunk
 
@@ -337,21 +337,21 @@ def test_projection_sums_yield_to_the_resident_operands(monkeypatch, operand_pea
 
     gib = float(1024**3)
     monkeypatch.setattr(policy, "resident_operands_requested", lambda: True)
-    monkeypatch.setattr(rp, "_resident_half_operand_sizes", lambda **_: (0, int(operand_peak_gib * gib)))
-    monkeypatch.setattr(rp, "device_available_bytes", lambda *_: 60.0 * gib)
-    monkeypatch.setattr(rp, "resident_operands_max_bytes", lambda available: 0.5 * float(available))
-    assert rp._projection_sums_displace_resident_operands(int(sums_gib * gib)) is displaced
+    monkeypatch.setattr(resident_projections, "resident_half_operand_sizes", lambda **_: (0, int(operand_peak_gib * gib)))
+    monkeypatch.setattr(resident_projections, "device_available_bytes", lambda *_: 60.0 * gib)
+    monkeypatch.setattr(resident_projections, "resident_operands_max_bytes", lambda available: 0.5 * float(available))
+    assert resident_projections.projection_sums_displace_resident_operands(int(sums_gib * gib)) is displaced
 
 
 def _count_projection_sum_flushes(monkeypatch):
     flushes = []
-    backproject = rp._backproject_projection_sums
+    backproject = resident_projections.backproject_projection_sums
 
     def counted(*args, **kwargs):
         flushes.append(1)
         return backproject(*args, **kwargs)
 
-    monkeypatch.setattr(rp, "_backproject_projection_sums", counted)
+    monkeypatch.setattr(resident_projections, "backproject_projection_sums", counted)
     return flushes
 
 
@@ -368,7 +368,7 @@ def test_projection_sums_backproject_like_every_row(_resident_production_env, mo
     flushes = _count_projection_sum_flushes(monkeypatch)
     summed = _resident(*_k_class_args(3))
     assert flushes, "the fixture's projection sums must fit, so the pass takes that route"
-    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    monkeypatch.setattr(resident_projections, "PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     flushes.clear()
     per_row = _resident(*_k_class_args(3))
     assert not flushes
@@ -479,7 +479,7 @@ def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(_resident_produ
     if streamed:
         monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
     # The per-row adjoint, which the streamed lone chunk implements.
-    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    monkeypatch.setattr(resident_projections, "PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     whole = run()
     lone_calls = []
     real_lone = rp._run_lone_resident_chunk

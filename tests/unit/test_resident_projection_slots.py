@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from relax.fine_pass import resident_pass2 as rp
-from relax.fine_pass import resident_stable_windows
+from relax.fine_pass import resident_projections, resident_stable_windows
 from relax.fine_pass.resident_significance import (
     CoarseSignificanceCSR,
     build_resident_candidate_tables_from_csr,
@@ -44,7 +44,7 @@ def _csr(per_image_cells, *, full_images=()):
 
 
 def _slots(supports, n_images):
-    return rp._significant_projection_slots(
+    return resident_projections.significant_projection_slots(
         supports,
         n_images=n_images,
         n_coarse_rot=N_COARSE,
@@ -78,7 +78,7 @@ def _table_rotations(csr):
 
 @pytest.fixture
 def small_slots(monkeypatch):
-    monkeypatch.setattr(rp, "_MIN_PROJECTION_SLOTS", 8)
+    monkeypatch.setattr(resident_projections, "_MIN_PROJECTION_SLOTS", 8)
 
 
 def test_the_cache_rows_are_exactly_the_candidate_rows_rotations(small_slots):
@@ -120,10 +120,10 @@ def test_supports_that_take_every_parent_cache_the_whole_grid(small_slots):
 
 def test_a_refinement_reuses_a_larger_capacity_it_already_compiled(small_slots):
     with resident_stable_windows.stable_window_class_history():
-        assert rp._projection_slot_capacity(40, 144) == 64
-        assert rp._projection_slot_capacity(20, 144) == 64  # 32 is new, 64 within twice it was used
-        assert rp._projection_slot_capacity(10, 144) == 16
-        assert rp._projection_slot_capacity(100, 144) is None  # 128 rows: more than half the grid's 144
+        assert resident_projections._projection_slot_capacity(40, 144) == 64
+        assert resident_projections._projection_slot_capacity(20, 144) == 64  # 32 is new, 64 within twice it was used
+        assert resident_projections._projection_slot_capacity(10, 144) == 16
+        assert resident_projections._projection_slot_capacity(100, 144) is None  # 128 rows: more than half the grid's 144
 
 
 
@@ -132,5 +132,5 @@ def test_the_cache_holds_each_classs_capacity_not_its_whole_grid(small_slots):
     before the pass split it into row blocks, ab_lazy 14914828); the cache holds the slots only."""
     classes = [_csr([[0, 4, 5], [21, 22, 50], []]), _csr([[7], [52, 53], [9]])]
     slots = _slots([SimpleNamespace(csr=csr) for csr in classes], 3)
-    assert rp.projection_cache_rows(2, PARENT.size, slots) == 2 * slots.capacity == slots.slot_projection.size
-    assert rp.projection_cache_rows(2, PARENT.size, None) == 2 * PARENT.size
+    assert resident_projections.projection_cache_rows(2, PARENT.size, slots) == 2 * slots.capacity == slots.slot_projection.size
+    assert resident_projections.projection_cache_rows(2, PARENT.size, None) == 2 * PARENT.size

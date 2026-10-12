@@ -8,6 +8,7 @@
   "relax/commands/refinement_particles.py": ["tests/integration/test_scratch_dir_image_names.py"],
   "relax/steps/optics_shapes.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_pass2.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/fine_pass/resident_projections.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_stable_windows.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_chunk_memory.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_configuration.py": ["tests/integration/test_vdam_multishape_smoke.py"],

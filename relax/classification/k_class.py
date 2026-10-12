@@ -1342,7 +1342,7 @@ def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int
     """A class's given per-image sample lists with the compacted CSR pass 1 would have produced.
 
     The resident pass reads the CSR for its candidate tables and to cache only the rotations the
-    supports use (``resident_pass2._significant_projection_slots``); a plain list makes it project the
+    supports use (``resident_projections.significant_projection_slots``); a plain list makes it project the
     whole grid.
     """
 

@@ -227,7 +227,7 @@ def cache_rows(cache, row_ids):
     """Rows ``row_ids`` of a projection cache: one array, or a tuple of equal-height row blocks.
 
     A whole-grid cache the allocator cannot hand out as one block is held as
-    row blocks (:func:`relax.fine_pass.resident_pass2._allocate_projection_cache_blocks`);
+    row blocks (:func:`relax.fine_pass.resident_projections.allocate_projection_cache_blocks`);
     each block is gathered at the row's in-block position and the row's own
     block is selected, so the rows are the one-array gather's.
     """

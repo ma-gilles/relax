@@ -109,10 +109,11 @@ def test_tilt_chunks_prepare_their_own_operands_when_the_half_does_not_fit(_resi
     """A half whose resident operands exceed the budget: each tilt chunk prepares its own images' operands."""
 
     from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_projections
 
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
     spa = rp._resident_pass2(**args)
-    monkeypatch.setattr(rp, "_resident_operands_fit", lambda *a, **k: False)
+    monkeypatch.setattr(resident_projections, "resident_operands_fit", lambda *a, **k: False)
     tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(args))
     _assert_tilt_pass_matches_spa(spa, tomo)
 
@@ -164,9 +165,9 @@ def test_one_image_particles_reproduce_the_spa_k_class_pass(_resident_production
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_projections
 
-    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    monkeypatch.setattr(resident_projections, "PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     args, volumes, supports, priors = _k_class_args(2)
     args = dict(args, score_with_masked_images=True)
     spa = _resident(args, volumes, supports, priors)
@@ -319,8 +320,9 @@ def test_one_image_particles_reproduce_the_spa_vdam_pass(_resident_production_en
     """
 
     from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_projections
 
-    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    monkeypatch.setattr(resident_projections, "PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
     n_images = args["experiment_dataset"].n_units
     vdam = dict(args, **_vdam_options(n_images))
@@ -346,9 +348,9 @@ def test_one_image_particles_reproduce_the_spa_k_class_vdam_pass(_resident_produ
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_projections
 
-    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    monkeypatch.setattr(resident_projections, "PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     args, volumes, supports, priors = _k_class_args(2)
     args = dict(args, score_with_masked_images=True)
     vdam = dict(args, **_vdam_options(args["experiment_dataset"].n_units))
@@ -373,10 +375,9 @@ def test_slot_blocked_tilt_projections_are_the_one_block_pass(_resident_producti
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.fine_pass import resident_pass2 as rp
-    from relax.fine_pass import resident_tilts
+    from relax.fine_pass import resident_projections, resident_tilts
 
-    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    monkeypatch.setattr(resident_projections, "PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     args, volumes, supports, priors = _k_class_args(2)
     args = dict(args, score_with_masked_images=True)
     tilt, n_units = _two_image_particles(args)
