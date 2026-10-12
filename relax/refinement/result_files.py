@@ -29,8 +29,7 @@ from relax.refinement.run_files import real_from_fourier
 from relax.runtime.git_provenance import git_head_or_none, git_worktree_provenance
 
 if TYPE_CHECKING:
-    from relax.refinement.command_options import RandomSeed
-    from relax.refinement.refinement_options import InitialSampling, RestartProvenance
+    from relax.refinement.refinement_options import InitialSampling, RandomSeed, RestartProvenance
     from relax.star.input_poses import PoseProvenance
     from relax.star.metadata import MaxSignificantsResolution
 

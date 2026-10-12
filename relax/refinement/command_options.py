@@ -25,8 +25,10 @@ from relax.refinement.refinement_options import (
     AdaptiveOptions,
     ExecutionOptions,
     InitialSampling,
+    JobDefaults,
     KClassOptions,
     LocalSearchOptions,
+    RandomSeed,
     RefinementSchedule,
     RelionConsistencyOptions,
     StartState,
@@ -140,16 +142,6 @@ def resolve_initial_sampling(
         max_order=max_order,
         max_order_source=source,
     )
-
-
-@dataclasses.dataclass(frozen=True)
-class JobDefaults:
-    """The arguments whose default depends on the job type, resolved (``--max_iter``,
-    ``--image-fourier-backend``, ``--apply-initial-lowpass``)."""
-
-    max_iter: int
-    image_fourier_backend: str
-    apply_initial_lowpass: bool
 
 
 def resolve_job_defaults(args) -> JobDefaults:
@@ -299,14 +291,6 @@ def validate_continue_args(args) -> None:
         conflicts.append("--diagnostic_single_half")
     if conflicts:
         raise SystemExit("--continue cannot be combined with " + ", ".join(conflicts))
-
-
-@dataclasses.dataclass(frozen=True)
-class RandomSeed:
-    """The run's random seed (RELION's ``--random_seed``) and where it came from (stored in the archive)."""
-
-    value: int
-    source: str
 
 
 def resolve_seed(args, optimiser_star, *, sealed: bool) -> RandomSeed:

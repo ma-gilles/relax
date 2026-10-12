@@ -19,6 +19,7 @@ from relax.refinement.iteration_history import (
     _pose_history_by_image,
     add_significant_count_artifacts,
 )
+from relax.refinement.refinement_options import RandomSeed
 from relax.refinement.result_files import _rotation_posterior_arrays, profile_rows_for_json
 from relax.sampling import (
     advance_relion_perturbation_from_seed,
@@ -441,7 +442,7 @@ def test_a_continued_run_keeps_its_run_files_seed_and_refuses_another(tmp_path):
         perturb_replay_relion_dir=None,
     )
     # Recorded as an explicit seed, as the run's archive has always stored it.
-    assert command_options.resolve_seed(args, None, sealed=False) == command_options.RandomSeed(1713, "explicit CLI")
+    assert command_options.resolve_seed(args, None, sealed=False) == RandomSeed(1713, "explicit CLI")
     args.seed = 1713
     assert command_options.resolve_seed(args, None, sealed=False).value == 1713
     args.seed = 5

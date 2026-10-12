@@ -398,6 +398,24 @@ class RestartProvenance(NamedTuple):
     sha256: str | None
 
 
+@dataclass(frozen=True)
+class JobDefaults:
+    """The arguments whose default depends on the job type, resolved (``--max_iter``,
+    ``--image-fourier-backend``, ``--apply-initial-lowpass``)."""
+
+    max_iter: int
+    image_fourier_backend: str
+    apply_initial_lowpass: bool
+
+
+@dataclass(frozen=True)
+class RandomSeed:
+    """The run's random seed (RELION's ``--random_seed``) and where it came from (stored in the archive)."""
+
+    value: int
+    source: str
+
+
 @dataclass(frozen=True, kw_only=True)
 class ExpectedAccuracyOptions:
     """Half 1's particle order, optics groups, ids and CTFs for RELION's expected-accuracy estimate.

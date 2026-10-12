@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from relax.refinement import command_options, particle_loading
+from relax.refinement.refinement_options import RandomSeed
 
 pytestmark = pytest.mark.unit
 
@@ -76,11 +77,11 @@ def test_seed_defaults_to_the_time_like_relion(monkeypatch):
         seed=None, continue_optimiser_star=None, relion_optimiser=None, relion_init_dir=None,
         perturb_replay_relion_dir=None,
     )
-    assert command_options.resolve_seed(args, None, sealed=False) == command_options.RandomSeed(
+    assert command_options.resolve_seed(args, None, sealed=False) == RandomSeed(
         1234567890, "RELION default -1: the time"
     )
     args.seed = 7
-    assert command_options.resolve_seed(args, None, sealed=False) == command_options.RandomSeed(7, "explicit CLI")
+    assert command_options.resolve_seed(args, None, sealed=False) == RandomSeed(7, "explicit CLI")
 
 
 def test_mask_diameter_falls_back_to_the_gui_default(monkeypatch):
