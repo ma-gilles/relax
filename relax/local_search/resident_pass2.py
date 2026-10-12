@@ -71,6 +71,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
+from relax.fine_pass import policy
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
@@ -332,7 +333,7 @@ def _local_chunk_loop_pipelined() -> bool:
 def _unshifted_operands_route(bucket_io_kwargs, *, window_indices, recon_window_indices) -> bool:
     """Whether this pass's chunks take the unshifted per-image operands (T16) or the translated tiles."""
 
-    if not rp._resident_operands_requested():
+    if not policy.resident_operands_requested():
         return False
     try:
         require_unshifted_operand_support(

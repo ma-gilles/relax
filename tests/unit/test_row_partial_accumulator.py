@@ -19,8 +19,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from relax.fine_pass import policy, resident_tilts
 from relax.fine_pass import resident_pass2 as rp
-from relax.fine_pass import resident_tilts
 from relax.reconstruction import half_volume_mstep as hvm
 
 pytestmark = pytest.mark.unit
@@ -87,7 +87,7 @@ def _stage_driver(monkeypatch, weights, row_partial):
     def block_at(start, blocks, operands, tables, carry, *, spec):
         return add_block(carry, operands, start)
 
-    monkeypatch.setattr(rp, "_resident_glue_jit_enabled", lambda: False)
+    monkeypatch.setattr(policy, "resident_glue_jit_enabled", lambda: False)
     monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
     monkeypatch.setattr(rp, "_initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
     monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
@@ -123,7 +123,7 @@ def _local_driver(monkeypatch, weights, row_partial):
     def block(*, block_row_image, carry, **kwargs):
         return add_rows(carry, block_row_image)
 
-    monkeypatch.setattr(rp, "_resident_glue_jit_enabled", lambda: False)
+    monkeypatch.setattr(policy, "resident_glue_jit_enabled", lambda: False)
     monkeypatch.setattr(rp, "_resident_mstep_block", block)
     monkeypatch.setattr(rp, "_initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
     monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)

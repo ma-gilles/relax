@@ -77,6 +77,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
+from relax.fine_pass import policy
 from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.bucket_io import (
@@ -247,42 +248,6 @@ _ROW_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES"
 _FLOAT32_BUCKETED_IMAGE_SUMS = False
 _IMAGE_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES"
 _MSTEP_BLOCK_ROWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
-# Attribution only, default off. Logs one line per chunk with its occupancy,
-# its M-step block count and a device-synchronised wall, and counts the T7
-# offsets readbacks. The synchronisation perturbs the wall, so an arm with
-# this set is a diagnostic arm and never a timing arm.
-_CHUNK_TIMING_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING"
-# T16: prepare the per-image operands once per half and keep them resident, and
-# take the M-step's weighted sums with T15's flat-row translate-and-sum kernel
-# instead of a gathered ``[images, translations, pixels]`` tile. Default on;
-# ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=0`` selects the per-chunk
-# ``_prepare_bucket_io`` preparation and the XLA tile reduction, which stay as
-# the oracle both forms are compared against.
-_RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
-# Diagnostic, default off. For the first chunk of a half it also runs the
-# per-chunk preparation and checks, on that chunk's real operands, that
-# translating the resident per-image arrays reproduces the pre-shifted tiles
-# bitwise and that the kernel's weighted sums equal the XLA reduction. It
-# doubles that chunk's preparation cost, so an arm with it set is a diagnostic
-# arm, never a timing arm.
-_RESIDENT_OPERANDS_VERIFY_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY"
-# Take ``ctf_probs`` from the translate-and-sum kernel's fourth output instead
-# of the XLA statement. Measurement only: see
-# ``_resident_block_weighted_sums_kernel`` for why it is not the default.
-_KERNEL_CTF_PROBS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
-# P3-A: dispatch the per-stage chunk loop's three stages as jitted programs
-# keyed on the capacity class instead of as loose eager operations. Default on.
-# ``RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT=0`` restores the loose dispatch,
-# which stays the oracle every bitwise comparison of this change is made
-# against. The stage bodies are the same functions in both settings, so the
-# flag changes only where the JIT boundary sits.
-_RESIDENT_GLUE_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
-# Diagnostic, default off. Checks the statically computed M-step carry avals
-# against a ``jax.eval_shape`` probe of the same block stages, once per
-# capacity class. The probes are what this change removes from the chunk loop;
-# the flag exists so a test, or a suspicious run, can prove the arithmetic
-# still agrees with them.
-_CARRY_AVAL_PROBE_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE"
 # Relative band the racing shell-binning scatter is allowed in the verification
 # arm: 12x the measured same-call spread of 5.8e-8, still far inside one
 # float32 ulp of the accumulated shell power.
@@ -3608,7 +3573,7 @@ def _resident_pass2(
     # iteration 2 (box 800, bigbox 14446465).
     reserved_operand_bytes = 0
     # A tilt pass's CC iteration translates each image's resident CC operands per image slot (resident_tilts).
-    if _resident_operands_requested() and (not firstiter_cc or tilt is not None):
+    if policy.resident_operands_requested() and (not firstiter_cc or tilt is not None):
         operand_bytes, operand_peak_bytes = _resident_half_operand_sizes(
             n_images=n_images,
             n_windowed=n_windowed,
@@ -4254,7 +4219,7 @@ def _resident_pass2(
     # normalized-CC tiles, which only the per-chunk preparation builds; it is
     # one iteration at a small current size.
     # A tilt pass's CC iteration translates each image's resident CC operands per image slot (resident_tilts).
-    if _resident_operands_requested() and (not firstiter_cc or tilt is not None):
+    if policy.resident_operands_requested() and (not firstiter_cc or tilt is not None):
         operand_bytes, operand_peak_bytes = _resident_half_operand_sizes(
             n_images=n_images,
             n_windowed=n_windowed,
@@ -4506,7 +4471,7 @@ def _resident_pass2(
         logger.info("Resident pass-2 plans its chunks again for the per-chunk operand preparation")
         memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan = plan_chunks(False)
 
-    verify_operands = resident_operands is not None and _resident_operands_verify_enabled()
+    verify_operands = resident_operands is not None and policy.resident_operands_verify_enabled()
 
     # ---- chunk loop --------------------------------------------------------
     # With the warm-up on, collect the (program, spec) keys the loop actually
@@ -4853,7 +4818,7 @@ def _projection_sums_displace_resident_operands(sums_bytes, **operand_size_kwarg
     (_resident_operands_fit), read before either is allocated.
     """
 
-    if not _resident_operands_requested():
+    if not policy.resident_operands_requested():
         return False
     _, operand_peak_bytes = _resident_half_operand_sizes(**operand_size_kwargs)
     available = device_available_bytes(
@@ -5797,7 +5762,7 @@ def chunk_program_path() -> str:
     program per chunk, was removed in relax#76: nothing selected it.)
     """
 
-    if _resident_glue_jit_enabled():
+    if policy.resident_glue_jit_enabled():
         return "per-stage"
     return "eager"
 
@@ -5976,7 +5941,7 @@ def _make_chunk_program_spec(
         use_translate_sum_kernel=bool(use_translate_sum_kernel),
         bpref_recon_operand=bool(bpref_recon_operand),
         mstep_max_r=float(int(mstep_current_size) // 2) if mstep_max_r is None else mstep_max_r,
-        kernel_ctf_probs=_kernel_ctf_probs_enabled(),
+        kernel_ctf_probs=policy.kernel_ctf_probs_enabled(),
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
         firstiter_cc=bool(firstiter_cc),
         n_slots=int(n_slots),
@@ -6256,7 +6221,7 @@ def _chunk_unshifted_operands_supported(
     which only the translated preparation builds.
     """
 
-    if not _resident_operands_requested() or firstiter_cc:
+    if not policy.resident_operands_requested() or firstiter_cc:
         return False
     try:
         require_unshifted_operand_support(
@@ -6739,25 +6704,7 @@ def _global_chunk_loop_pipelined(stream_projections: bool) -> bool:
     exactly when the loop runs this way.
     """
 
-    return not _chunk_timing_enabled() and not stream_projections
-
-
-def _chunk_timing_enabled() -> bool:
-    """Whether to log per-chunk occupancy, block count and synchronised wall."""
-
-    return parse_env_flag(_CHUNK_TIMING_ENV, default=False)
-
-
-def _kernel_ctf_probs_enabled() -> bool:
-    """Whether the M-step's ``ctf_probs`` comes from the kernel's fourth output."""
-
-    return parse_env_flag(_KERNEL_CTF_PROBS_ENV, default=False)
-
-
-def _resident_operands_verify_enabled() -> bool:
-    """Whether to check the first chunk of a half against the per-chunk path."""
-
-    return parse_env_flag(_RESIDENT_OPERANDS_VERIFY_ENV, default=False)
+    return not policy.chunk_timing_enabled() and not stream_projections
 
 
 def _verify_resident_chunk_operands(
@@ -6886,35 +6833,6 @@ def _verify_resident_chunk_operands(
         int(bpref_recon_operand),
         int(deterministic_reductions_enabled()),
     )
-
-
-def _resident_operands_requested() -> bool:
-    """Whether the per-image operands are prepared once per half (T16).
-
-    Default on. ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=0`` keeps the per-chunk
-    ``_prepare_bucket_io`` preparation and the XLA tile reduction, which are the
-    oracle for every bitwise comparison of the new path.
-    """
-
-    return parse_env_flag(_RESIDENT_OPERANDS_ENV, default=True)
-
-
-def _resident_glue_jit_enabled() -> bool:
-    """Whether the chunk loop's three stages are dispatched as jitted programs.
-
-    Default on. With the flag off every stage runs as the loose sequence of
-    eager operations the per-stage path used before P3-A: the same functions,
-    the same order, only without the enclosing ``jax.jit``. That form is the
-    oracle for the bitwise comparison, so it is kept rather than deleted.
-    """
-
-    return parse_env_flag(_RESIDENT_GLUE_JIT_ENV, default=True)
-
-
-def _carry_aval_probe_enabled() -> bool:
-    """Whether to check the static carry avals against a shape probe."""
-
-    return parse_env_flag(_CARRY_AVAL_PROBE_ENV, default=False)
 
 
 _DEVICE_INT32_CACHE: dict[int, jax.Array] = {}
@@ -8053,7 +7971,7 @@ def _initial_mstep_carry(
     dtypes = _mstep_block_operand_dtypes(
         operands, tables, spec=spec, projection_dtypes=projection_dtypes
     )
-    if _carry_aval_probe_enabled():
+    if policy.carry_aval_probe_enabled():
         _check_mstep_carry_avals(tables, spec=spec, dtypes=dtypes)
     n_class_scale = 2 if int(getattr(spec, "n_classes", 1)) > 1 else 0
     # K>1: the per-image class scale sums are zeroed in the same program.
@@ -8401,7 +8319,7 @@ def _run_resident_chunk_stages(
 def _resident_chunk_stages_front(rows, operands, tables, *, spec, timing_hook=None):
     """The per-stage path's posterior and M-step row order, enqueued; no host read."""
 
-    if _resident_glue_jit_enabled():
+    if policy.resident_glue_jit_enabled():
         posterior = _resident_chunk_posterior_program(rows, operands, tables, spec=spec)
     else:
         posterior = _resident_chunk_posterior(rows, operands, tables, spec=spec)
@@ -8437,7 +8355,7 @@ def _resident_chunk_stages_finish(
     totals every ``blocks_per_flush`` blocks and when the slot's blocks end (relax#65).
     """
 
-    glue_jit = _resident_glue_jit_enabled()
+    glue_jit = policy.resident_glue_jit_enabled()
     posterior, blocks = front
     Ft_y_total, Ft_ctf_total, stats = carry
     mstep = _initial_mstep_carry(
@@ -8617,7 +8535,7 @@ def _run_resident_chunk(
     # The operands' powerClass terms sum above the weighted sums' size (--strict_highres_exp).
     operand_current_size = current_size if wsum_current_size is None else wsum_current_size
     image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
-    timing = _chunk_timing_enabled()
+    timing = policy.chunk_timing_enabled()
     chunk_t0 = time.time()
     stage_t = {}
     if timing:
@@ -9162,7 +9080,7 @@ def run_resident_mstep_blocks(
         # inside the reduction; pre-shifted tiles take the XLA statement.
         use_translate_sum_kernel=use_translate_sum_kernel,
         bpref_recon_operand=use_translate_sum_kernel and recon.get("recon_weight") is not None,
-        kernel_ctf_probs=use_translate_sum_kernel and _kernel_ctf_probs_enabled(),
+        kernel_ctf_probs=use_translate_sum_kernel and policy.kernel_ctf_probs_enabled(),
     )
     operands = _ChunkStageOperands(
         score_input=None,
@@ -9218,7 +9136,7 @@ def run_resident_mstep_blocks(
 
     block_rows = int(mstep_block_rows)
     carry = None
-    glue_jit = _resident_glue_jit_enabled()
+    glue_jit = policy.resident_glue_jit_enabled()
     if chunk_projections is None:
         chunk_row_ids = None
         projection_dtypes = None

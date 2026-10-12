@@ -30,6 +30,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
+from relax.fine_pass import policy
 from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
@@ -133,7 +134,7 @@ def test_static_carry_dtypes_match_the_traced_block_stages(
 def test_initial_mstep_carry_has_the_probed_shapes_and_no_probe_by_default(monkeypatch):
     """The carry the loop starts from, built without tracing anything."""
 
-    monkeypatch.delenv(rp._CARRY_AVAL_PROBE_ENV, raising=False)
+    monkeypatch.delenv(policy._CARRY_AVAL_PROBE_ENV, raising=False)
     calls = []
     original = rp._probe_mstep_block_output_avals
     monkeypatch.setattr(
@@ -165,7 +166,7 @@ def test_initial_mstep_carry_has_the_probed_shapes_and_no_probe_by_default(monke
     assert not np.any(np.asarray(carry.a2_per_image))
     assert not np.any(np.asarray(carry.wavg_triplet_pixels))
 
-    monkeypatch.setenv(rp._CARRY_AVAL_PROBE_ENV, "1")
+    monkeypatch.setenv(policy._CARRY_AVAL_PROBE_ENV, "1")
     rp._initial_mstep_carry(
         Ft_y,
         Ft_ctf,
@@ -220,12 +221,12 @@ def test_device_row_offsets_are_made_once_per_value():
 
 
 def test_glue_jit_is_on_by_default_and_reads_the_environment(monkeypatch):
-    monkeypatch.delenv(rp._RESIDENT_GLUE_JIT_ENV, raising=False)
-    assert rp._resident_glue_jit_enabled() is True
-    monkeypatch.setenv(rp._RESIDENT_GLUE_JIT_ENV, "0")
-    assert rp._resident_glue_jit_enabled() is False
-    monkeypatch.setenv(rp._RESIDENT_GLUE_JIT_ENV, "1")
-    assert rp._resident_glue_jit_enabled() is True
+    monkeypatch.delenv(policy._RESIDENT_GLUE_JIT_ENV, raising=False)
+    assert policy.resident_glue_jit_enabled() is True
+    monkeypatch.setenv(policy._RESIDENT_GLUE_JIT_ENV, "0")
+    assert policy.resident_glue_jit_enabled() is False
+    monkeypatch.setenv(policy._RESIDENT_GLUE_JIT_ENV, "1")
+    assert policy.resident_glue_jit_enabled() is True
 
 
 def test_the_block_program_is_keyed_on_the_capacity_class_not_the_offset():

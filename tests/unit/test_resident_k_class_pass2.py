@@ -17,6 +17,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_pass2_driver import _driver_fixture_args, requires_resident_gpu
 
+from relax.fine_pass import policy
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.resident_candidates import CapacityChunk
 
@@ -335,7 +336,7 @@ def test_projection_sums_yield_to_the_resident_operands(monkeypatch, operand_pea
     """The sums are refused only when they alone would push admitted operands out of budget."""
 
     gib = float(1024**3)
-    monkeypatch.setattr(rp, "_resident_operands_requested", lambda: True)
+    monkeypatch.setattr(policy, "resident_operands_requested", lambda: True)
     monkeypatch.setattr(rp, "_resident_half_operand_sizes", lambda **_: (0, int(operand_peak_gib * gib)))
     monkeypatch.setattr(rp, "device_available_bytes", lambda *_: 60.0 * gib)
     monkeypatch.setattr(rp, "resident_operands_max_bytes", lambda available: 0.5 * float(available))
