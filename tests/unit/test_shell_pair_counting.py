@@ -359,6 +359,7 @@ def test_backprojector_fsc_follows_the_counting_rule_on_both_layouts(grid_name, 
             padding_factor=padding_factor, r_max=r_max, accumulator_volume_shape=accumulator_volume_shape,
             output_dtype=jnp.float64, shell_pair_counting=counting,
             packed_stream_min_elements=0,
+            fsc_dump=None,
         )
         assert_matches(np.asarray(fsc), expected, rtol=1e-12, err_msg=layout)
     # The final pass's route: a Hermitian full layout reduced through its packed half.
@@ -368,6 +369,7 @@ def test_backprojector_fsc_follows_the_counting_rule_on_both_layouts(grid_name, 
         padding_factor=padding_factor, r_max=r_max, accumulator_volume_shape=accumulator_volume_shape,
         output_dtype=jnp.float64, full_is_hermitian=True, shell_pair_counting=counting,
         packed_stream_min_elements=0,
+        fsc_dump=None,
     )
     assert_matches(np.asarray(fsc), expected, rtol=1e-12)
 
@@ -385,7 +387,7 @@ def test_backprojector_fsc_counting_changes_the_curve_and_the_default_is_relions
     )
     kwargs = dict(
         padding_factor=padding_factor, r_max=r_max, accumulator_volume_shape=accumulator_volume_shape,
-        output_dtype=jnp.float64, packed_stream_min_elements=0,
+        output_dtype=jnp.float64, packed_stream_min_elements=0, fsc_dump=None,
     )
     default = rr.compute_relion_fsc_from_backprojector(y0, y1, w0, w1, volume_shape, **kwargs)
     assert_matches(np.asarray(default), relion, rtol=1e-12)

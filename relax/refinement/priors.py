@@ -495,6 +495,7 @@ def estimate_split_half_prior(
         output_dtype=scoring_dtype,
         shell_pair_counting=settings.shell_pair_counting,
         packed_stream_min_elements=settings.programs.fsc_packed_stream_min_elements,
+        fsc_dump=settings.programs.fsc_dump,
     )
     log.info(
         "Computed iter-%d FSC for tau2 (RELION backprojector path): %.1fs",

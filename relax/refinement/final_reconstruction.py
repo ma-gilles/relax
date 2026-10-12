@@ -80,6 +80,7 @@ def compute_final_halfmap_prior(
         full_is_hermitian=True,
         shell_pair_counting=settings.shell_pair_counting,
         packed_stream_min_elements=settings.programs.fsc_packed_stream_min_elements,
+        fsc_dump=settings.programs.fsc_dump,
     )
     if settings.solvent_correct_fsc:
         # RELION corrects the joined iteration's FSC too (ml_optimiser_mpi.cpp:4028, iter -1); its

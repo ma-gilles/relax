@@ -211,6 +211,7 @@ def test_compute_fsc_from_bpref_matches_scheduler_emulation():
             r_max=r_max,
             accumulator_volume_shape=(pad_size,) * 3,
             packed_stream_min_elements=0,
+            fsc_dump=None,
         )
     )
 
@@ -498,6 +499,7 @@ def test_streamed_packed_half_fsc_matches_relion_binding(monkeypatch):
             r_max=r_max,
             accumulator_volume_shape=accumulator_shape,
             packed_stream_min_elements=0,
+            fsc_dump=None,
         )
     )
 

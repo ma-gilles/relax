@@ -47,6 +47,8 @@ class ReconstructionPrograms:
     (``RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS``, an integer, default 0): the smallest packed half whose
     backprojector FSC takes the streamed reduction instead of the full expansion (the two FSCs are equal).
     ``lowres_join`` (``regularization.LowResolutionJoinRoute``): where the low-resolution half join runs.
+    ``fsc_dump`` (``regularization.FscDump``, :func:`_fsc_dump`; None: none): where the backprojector FSC writes its
+    shell sums.
     """
 
     stable_windows: bool
@@ -54,6 +56,7 @@ class ReconstructionPrograms:
     host_fft_workers: int
     fsc_packed_stream_min_elements: int
     lowres_join: regularization.LowResolutionJoinRoute
+    fsc_dump: regularization.FscDump | None
 
     @classmethod
     def from_environ(cls) -> ReconstructionPrograms:
@@ -75,7 +78,22 @@ class ReconstructionPrograms:
                     str(regularization.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS),
                 )),
             ),
+            fsc_dump=_fsc_dump(),
         )
+
+
+def _fsc_dump() -> regularization.FscDump | None:
+    """The backprojector FSC dump: None unless RELAX_MSTEP_FSC_DUMP_DIR is set and not empty; its tag
+    RELAX_MSTEP_FSC_DUMP_TAG (default ``recovar``), its averages with RELAX_MSTEP_FSC_DUMP_AVG (1/true/yes/on, any
+    case)."""
+    directory = read_env_text("RELAX_MSTEP_FSC_DUMP_DIR")
+    if not directory:
+        return None
+    return regularization.FscDump(
+        directory=directory,
+        tag=read_env_text("RELAX_MSTEP_FSC_DUMP_TAG", "recovar"),
+        average=read_env_text("RELAX_MSTEP_FSC_DUMP_AVG", "").lower() in {"1", "true", "yes", "on"},
+    )
 
 
 def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d):

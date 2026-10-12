@@ -420,6 +420,7 @@ def main() -> None:
                 r_max=max_shell,
                 accumulator_volume_shape=recovar["accumulator_shape"],
                 packed_stream_min_elements=0,
+                fsc_dump=None,
             ),
             dtype=np.float64,
         )
@@ -434,6 +435,7 @@ def main() -> None:
                 r_max=max_shell,
                 accumulator_volume_shape=recovar["accumulator_shape"],
                 packed_stream_min_elements=0,
+                fsc_dump=None,
             ),
             dtype=np.float64,
         )

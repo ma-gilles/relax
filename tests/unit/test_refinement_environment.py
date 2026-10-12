@@ -253,3 +253,43 @@ def test_projector_dump_dir_writes_the_numbered_projectors(monkeypatch, tmp_path
                         environment=RefinementEnvironment(projector_files=ProjectorFiles(dump_dir=str(tmp_path))))
     assert sorted(path.name for path in tmp_path.glob("iter000_half*_relion_projector_half.npz")) == [
         "iter000_half0_relion_projector_half.npz", "iter000_half1_relion_projector_half.npz"]
+
+
+def test_fsc_dump_is_read_once(monkeypatch):
+    from relax.reconstruction.regularization import FscDump
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+
+    for name in ("RELAX_MSTEP_FSC_DUMP_TAG", "RELAX_MSTEP_FSC_DUMP_AVG"):
+        monkeypatch.delenv(name, raising=False)
+    for unset in (None, ""):
+        if unset is None:
+            monkeypatch.delenv("RELAX_MSTEP_FSC_DUMP_DIR", raising=False)
+        else:
+            monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_DIR", unset)
+        assert ReconstructionPrograms.from_environ().fsc_dump is None
+    monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_DIR", "/fsc")
+    assert ReconstructionPrograms.from_environ().fsc_dump == FscDump(directory="/fsc", tag="recovar", average=False)
+    monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_TAG", "relax")
+    monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_AVG", "TRUE")
+    assert ReconstructionPrograms.from_environ().fsc_dump == FscDump(directory="/fsc", tag="relax", average=True)
+
+
+def test_fsc_dump_reaches_the_command(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_DIR", str(tmp_path / "fsc"))
+    options = controller_inputs(monkeypatch, tmp_path, "refine")["options"]
+    assert options.variants.reconstruction.fsc_dump.directory == str(tmp_path / "fsc")
+
+
+def test_fsc_dump_writes_the_split_half_fsc(monkeypatch, tmp_path):
+    from dataclasses import replace
+
+    from relax.reconstruction.regularization import FscDump
+    from relax.refinement.refinement_options import ScoringVariants
+
+    monkeypatch.delenv("RELAX_MSTEP_FSC_DUMP_DIR", raising=False)
+    variants = ScoringVariants.from_environ()
+    variants = replace(variants, reconstruction=replace(
+        variants.reconstruction, fsc_dump=FscDump(directory=str(tmp_path), tag="tiny", average=False)))
+    run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False, environment=RefinementEnvironment(),
+                        variants=variants)
+    assert (tmp_path / "tiny_downsampled_fsc.txt").exists()

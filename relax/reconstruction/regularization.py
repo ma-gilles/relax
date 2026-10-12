@@ -5,7 +5,6 @@ path changed.  See pr179_coordination/relax_split_plan_20260923/PLAN.md.
 """
 
 import functools
-import os
 import pathlib
 from dataclasses import dataclass
 
@@ -59,6 +58,18 @@ def _shell_stats_on_host(n_voxels: int) -> bool:
 
 
 LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS = 200_000_000
+
+
+@dataclass(frozen=True)
+class FscDump:
+    """Where :func:`compute_relion_fsc_from_backprojector` writes its shell sums (``<tag>_downsampled_fsc.txt``) and,
+    with ``average``, the downsampled half averages, which take the full-expansion route (the same FSC); no effect
+    on the FSC. ``ReconstructionPrograms.fsc_dump``: RELAX_MSTEP_FSC_DUMP_DIR, RELAX_MSTEP_FSC_DUMP_TAG (default
+    ``recovar``) and RELAX_MSTEP_FSC_DUMP_AVG (1/true/yes/on)."""
+
+    directory: str
+    tag: str
+    average: bool
 
 
 @dataclass(frozen=True)
@@ -1278,8 +1289,10 @@ def compute_relion_fsc_from_backprojector(
     full_is_hermitian=False,
     shell_pair_counting="relion",
     packed_stream_min_elements: int,
+    fsc_dump: FscDump | None,
 ):
-    """Compute RELION's gold-standard FSC from backprojector accumulators.
+    """Compute RELION's gold-standard FSC from backprojector accumulators (``fsc_dump``: where its sums are
+    written, None for nowhere).
 
     A packed half of at least ``packed_stream_min_elements`` (``ReconstructionPrograms``) takes the streamed
     reduction; the FSC is the same.
@@ -1337,10 +1350,7 @@ def compute_relion_fsc_from_backprojector(
             for value in (Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1)
         )
         input_sizes = (half_size,) * 4
-    dump_dir = os.environ.get("RELAX_MSTEP_FSC_DUMP_DIR")
-    dump_avg = bool(dump_dir) and os.environ.get(
-        "RELAX_MSTEP_FSC_DUMP_AVG", ""
-    ).lower() in {"1", "true", "yes", "on"}
+    dump_avg = fsc_dump is not None and fsc_dump.average
     packed_stream_eligible = (
         half_size < full_size
         and input_sizes == (half_size, half_size, half_size, half_size)
@@ -1369,11 +1379,10 @@ def compute_relion_fsc_from_backprojector(
             r_max=r_max,
             pair_once=pair_once,
         )
-        if dump_dir:
-            pathlib.Path(dump_dir).mkdir(parents=True, exist_ok=True)
-            tag = os.environ.get("RELAX_MSTEP_FSC_DUMP_TAG", "recovar")
+        if fsc_dump is not None:
+            pathlib.Path(fsc_dump.directory).mkdir(parents=True, exist_ok=True)
             np.savetxt(
-                pathlib.Path(dump_dir) / f"{tag}_downsampled_fsc.txt",
+                pathlib.Path(fsc_dump.directory) / f"{fsc_dump.tag}_downsampled_fsc.txt",
                 np.column_stack(
                     [np.arange(fsc.size), numerator, denom0, denom1, fsc]
                 ),
@@ -1477,16 +1486,14 @@ def compute_relion_fsc_from_backprojector(
     fsc[nonzero] = numerator[nonzero] / np.sqrt(denom0[nonzero] * denom1[nonzero])
     fsc[0] = 1.0
 
-    dump_dir = os.environ.get("RELAX_MSTEP_FSC_DUMP_DIR")
-    if dump_dir:
-        pathlib.Path(dump_dir).mkdir(parents=True, exist_ok=True)
-        tag = os.environ.get("RELAX_MSTEP_FSC_DUMP_TAG", "recovar")
+    if fsc_dump is not None:
+        pathlib.Path(fsc_dump.directory).mkdir(parents=True, exist_ok=True)
         np.savetxt(
-            pathlib.Path(dump_dir) / f"{tag}_downsampled_fsc.txt",
+            pathlib.Path(fsc_dump.directory) / f"{fsc_dump.tag}_downsampled_fsc.txt",
             np.column_stack([np.arange(shell_count), numerator, denom0, denom1, fsc]),
             header="shell num den1 den2 fsc",
         )
-        if os.environ.get("RELAX_MSTEP_FSC_DUMP_AVG", "").lower() in {"1", "true", "yes", "on"}:
+        if fsc_dump.average:
             coords = np.column_stack(
                 [
                     rz[shell_valid].reshape(-1).astype(np.int64),
@@ -1500,7 +1507,7 @@ def compute_relion_fsc_from_backprojector(
             ):
                 avg_flat = avg[shell_valid].reshape(-1)
                 np.savetxt(
-                    pathlib.Path(dump_dir) / f"{tag}_downsampled_avg_{suffix}.txt",
+                    pathlib.Path(fsc_dump.directory) / f"{fsc_dump.tag}_downsampled_avg_{suffix}.txt",
                     np.column_stack(
                         [
                             coords,
