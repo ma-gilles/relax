@@ -715,6 +715,7 @@ def score_numbered_half(
                 # A search local from iteration 1 (--sigma_ang) scores RELION's --firstiter_cc
                 # iteration with the normalized CC, as the subtomogram local path above does.
                 firstiter_cc=phase.variant.score_mode == "normalized_cc",
+                engine_tuning=options.environment.engine,
             ),
             diagnostics=replace(
                 phase.local_diagnostics, bpref_device_signature_active=bpref_device_signature_active,

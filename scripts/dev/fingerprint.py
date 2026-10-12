@@ -303,6 +303,8 @@ def digest_operands(*values) -> int:
             h.update(repr(value).encode())
         elif isinstance(value, dict):
             for key in sorted(value, key=str):
+                if type(value[key]).__name__ == "EngineTuning":
+                    continue  # not an operand (see below), so not its key either
                 h.update(str(key).encode())
                 feed(value[key], depth + 1)
         elif isinstance(value, (list, tuple)):
@@ -316,6 +318,10 @@ def digest_operands(*values) -> int:
             h.update(np.ascontiguousarray(host).tobytes())
         elif callable(value):
             h.update(b"<callable>")
+        elif type(value).__name__ == "EngineTuning":
+            # How the engines execute (relax.runtime.engine_tuning, rule 5 env slice): no value depends on it, and
+            # an older tree reads the same settings from the environment, so it is not an operand.
+            return
         elif dataclasses.is_dataclass(value) and not isinstance(value, type) and depth < 4:
             feed({f.name: getattr(value, f.name) for f in dataclasses.fields(value)}, depth + 1)
         else:

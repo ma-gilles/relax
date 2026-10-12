@@ -71,6 +71,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
+import relax.runtime.engine_tuning
 from relax.fine_pass import (
     policy,
     resident_chunk_inputs,
@@ -78,7 +79,6 @@ from relax.fine_pass import (
     resident_chunk_posterior,
     resident_chunk_programs,
     resident_chunk_records,
-    resident_configuration,
     resident_image_terms,
     resident_mstep_blocks,
 )
@@ -318,16 +318,18 @@ def require_resident_local_configuration(**kwargs) -> None:
         "the resident local pass scores RELION's radial window; a full-rectangle "
         "support is not RELION's scoring support and is not implemented here",
     )
-    for name in resident_configuration.DIAGNOSTIC_DIR_ENVS:
+    _refuse_requested_diagnostics(kwargs["requested_diagnostics"])
+
+
+def _refuse_requested_diagnostics(requested_diagnostics) -> None:
+    """Refuse the first diagnostic dump or arm that is set (``EngineTuning.resident_diagnostics``)."""
+
+    for name in requested_diagnostics:
         _require(
-            not os.environ.get(name, "").strip(),
+            name not in relax.runtime.engine_tuning.RESIDENT_DIAGNOSTIC_DIR_ENVS,
             f"the diagnostic dump {name} is set; this driver emits no dumps",
         )
-    for name in resident_configuration.DIAGNOSTIC_FLAG_ENVS:
-        _require(
-            not parse_env_flag(name, default=False),
-            f"the diagnostic flag {name} is set; this driver has no such arm",
-        )
+        _require(False, f"the diagnostic flag {name} is set; this driver has no such arm")
 
 
 def _local_chunk_loop_pipelined() -> bool:
@@ -389,16 +391,7 @@ def _require_parent_probe_configuration(**kwargs) -> None:
         "an externally supplied normalizer belongs to the broad-denominator probe",
     )
     _require(bool(kwargs["use_window"]), "the probe scores RELION's current-size window")
-    for name in resident_configuration.DIAGNOSTIC_DIR_ENVS:
-        _require(
-            not os.environ.get(name, "").strip(),
-            f"the diagnostic dump {name} is set; this driver emits no dumps",
-        )
-    for name in resident_configuration.DIAGNOSTIC_FLAG_ENVS:
-        _require(
-            not parse_env_flag(name, default=False),
-            f"the diagnostic flag {name} is set; this driver has no such arm",
-        )
+    _refuse_requested_diagnostics(kwargs["requested_diagnostics"])
 
 
 def _cap_row_capacity_ladder(
@@ -534,6 +527,7 @@ def compute_local_search_resident(
         direct_noise_only_default=True,
     )
     require_resident_local_configuration(
+        requested_diagnostics=support.engine_tuning.resident_diagnostics,
         score_only=support.score_only,
         disable_adjoint_y=support.disable_adjoint_y,
         disable_adjoint_ctf=support.disable_adjoint_ctf,

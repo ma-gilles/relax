@@ -47,6 +47,7 @@ from relax.relion.optics_aberrations import (
     reported_rotations,
 )
 from relax.runtime.engine_record import record_pass_engine
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.timing import Stopwatch
 from relax.sampling.device_rotations import project_rows
 from relax.sampling.grids import build_local_search_grid_metadata, relion_angular_sampling_deg
@@ -108,6 +109,8 @@ class LocalExecutionPolicy:
     score_only: bool
     # RELION's --firstiter_cc iteration when the search is local from iteration 1 (--sigma_ang).
     firstiter_cc: bool
+    # How the engines execute (RefinementEnvironment.engine, read by the command).
+    engine_tuning: EngineTuning
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -649,6 +652,7 @@ def _score_half_local_one_shape(
             adaptive_fraction=RELION_ADAPTIVE_FRACTION,
             max_significants=batching.max_significants,
             return_profile=diagnostics.collect_local_search_profile,
+            engine_tuning=execution.engine_tuning,
     )
     pass2 = LocalPass2Layouts(layout=None, significant_counts=None, denominator_layout=None)
     local_normalization_log_evidence = None

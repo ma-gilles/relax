@@ -318,6 +318,7 @@ def test_dispatch_call_keywords_are_resident_parameters(monkeypatch):
         ({"use_window": False}, "radial window"),
         ({"max_significants": 500}, "maximum_significants cap"),
         ({"stats_use_reconstruction_probs": False}, "same \\(pruned or complete\\) weights"),
+        ({"requested_diagnostics": ("RELAX_BPREF_MEMBERSHIP_DUMP_DIR",)}, "diagnostic dump"),
     ],
 )
 def test_gate_names_the_missing_piece(override, expected):
@@ -343,6 +344,7 @@ def test_gate_names_the_missing_piece(override, expected):
         relion_wavg_atomic_scale_aa=True,
         relion_wavg_atomic_direct_noise=True,
         relion_wavg_atomic_direct_norm=False,
+        requested_diagnostics=(),
     )
     kwargs.update(override)
     with pytest.raises(NotImplementedError, match=expected):
@@ -350,6 +352,7 @@ def test_gate_names_the_missing_piece(override, expected):
 
 
 _PROBE_KWARGS = dict(
+    requested_diagnostics=(),
     score_only=True,
     disable_adjoint_y=True,
     disable_adjoint_ctf=True,
@@ -391,6 +394,8 @@ def test_parent_probe_configuration_is_accepted_without_the_mstep_pieces():
         ({"relion_projector_half": None}, "PPref projector"),
         ({"normalization_log_evidence": np.zeros(3)}, "externally supplied normalizer"),
         ({"use_window": False}, "current-size window"),
+        ({"requested_diagnostics": ("RELAX_PASS2_DUMP_DIR",)}, "diagnostic dump RELAX_PASS2_DUMP_DIR"),
+        ({"requested_diagnostics": ("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",)}, "diagnostic flag"),
     ],
 )
 def test_parent_probe_gate_names_the_missing_piece(override, expected):

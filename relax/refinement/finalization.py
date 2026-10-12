@@ -333,6 +333,7 @@ def run_final_all_data(
             fine_precision=final_precision,
             score_only=False,
             firstiter_cc=False,
+            engine_tuning=options.environment.engine,
         )
         final_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration + 1,

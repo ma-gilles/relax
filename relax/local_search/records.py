@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from relax.runtime.engine_tuning import EngineTuning
+
 
 @dataclass(frozen=True, kw_only=True)
 class LocalSearchData:
@@ -82,6 +84,8 @@ class LocalSearchSupportPolicy:
     stats_use_reconstruction_probs: bool = False
     score_only: bool = False
     return_profile: bool
+    # How the resident engine executes (EngineTuning, read by the command).
+    engine_tuning: EngineTuning
 
     @property
     def applied_max_significants(self) -> int | None:
