@@ -1398,7 +1398,7 @@ def project_resident_live_rows(
     :func:`project_resident_rows` makes for it. At the 10097 local iterations a
     chunk's valid rows are about 30% of its capacity.
     ``relion_projector_capacity_texture`` (a
-    :class:`~relax.cuda.kernels.RelionCapacityHalfTextureF32` of
+    :class:`~relax.cuda.projector.RelionCapacityHalfTextureF32` of
     ``relion_projector_half``) projects without restaging the texture per call.
     ``window_union`` (:func:`projection_window_union` of the two windows) has
     the RELION projector compute only the windows' pixels, as

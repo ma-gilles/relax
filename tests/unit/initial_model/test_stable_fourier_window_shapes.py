@@ -315,7 +315,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
     # (docs/math/sparse_projection_radius.md): the physical-size-96 projection
     # must hand the kernel the logical size-86 radius, and the embedding helper
     # must then preserve the kernel's values.
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import projector as cuda_projector
     from relax.projection import projection
 
     kernel_calls = []
@@ -327,7 +327,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
         kernel_calls.append((tuple(image_shape), int(image_r_max)))
         return kernel_crop
 
-    monkeypatch.setattr(em_cuda_kernels, "project_relion_half_capacity", capture_capacity_kernel)
+    monkeypatch.setattr(cuda_projector, "project_relion_half_capacity", capture_capacity_kernel)
     default_route = np.asarray(
         projection._project_relion_projector_texture(
             np.zeros((5, 5, 3), dtype=np.complex64),

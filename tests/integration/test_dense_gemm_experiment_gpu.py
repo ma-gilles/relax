@@ -82,7 +82,7 @@ def test_lagged_bootstrap_uses_native_program_and_exposes_mass():
 
 @pytest.mark.gpu
 def test_compiled_batch_reuses_capacity_texture_until_concrete_completion():
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
     from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     args = SimpleNamespace(
@@ -137,7 +137,7 @@ def test_compiled_batch_reuses_capacity_texture_until_concrete_completion():
 
 @pytest.mark.gpu
 def test_capacity_texture_refresh_reuses_compiled_projection_and_matches_new_owner():
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
 
     args = SimpleNamespace(
         seed=20260928, images=3, rotations=3, translations=5,

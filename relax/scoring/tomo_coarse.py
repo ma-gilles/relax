@@ -194,7 +194,7 @@ def _coarse_capacity_texture(
         relion_texture_interp=True,
     ):
         return None
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
 
     texture, completion = _CLASS_TEXTURES.pop(int(class_index), (None, None))
     if (

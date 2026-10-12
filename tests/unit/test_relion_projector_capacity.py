@@ -11,8 +11,8 @@ from helpers.jit_programs import clear_programs
 from recovar import cuda_backproject as cb
 from scipy.spatial.transform import Rotation
 
-from relax.cuda import kernels as em_cuda_kernels
 from relax.cuda import library
+from relax.cuda import projector as cuda_projector
 from relax.projection.projection import relion_projector_half_to_texture_full
 
 pytestmark = pytest.mark.unit
@@ -46,7 +46,7 @@ def test_invalid_operands_rejected_before_loading_cuda(monkeypatch, which, value
     args = list(_inputs())
     args[which] = value
     with pytest.raises(ValueError, match=message):
-        em_cuda_kernels.project_relion_half_capacity(*args, image_shape=(32, 32))
+        cuda_projector.project_relion_half_capacity(*args, image_shape=(32, 32))
 
 
 @pytest.mark.parametrize("shape,pf", [((31, 31), 1), ((32, 30), 1), ((32, 32), 3)])
@@ -54,7 +54,7 @@ def test_invalid_static_geometry(monkeypatch, shape, pf):
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
     monkeypatch.setattr(library, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
     with pytest.raises(ValueError):
-        em_cuda_kernels.project_relion_half_capacity(*_inputs(), image_shape=shape, padding_factor=pf)
+        cuda_projector.project_relion_half_capacity(*_inputs(), image_shape=shape, padding_factor=pf)
 
 
 def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
@@ -70,10 +70,10 @@ def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
         return call
 
     monkeypatch.setattr(jax.ffi, "ffi_call", fake_ffi)
-    cleared = clear_programs(em_cuda_kernels.project_relion_half_capacity)
+    cleared = clear_programs(cuda_projector.project_relion_half_capacity)
     half, rotations, _ = _inputs()
     for radius in (15, 16, 0):
-        result = em_cuda_kernels.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
+        result = cuda_projector.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
         assert_matches(result, np.full(result.shape, radius, np.complex64))
     assert len(records) == 1
     target, _, rotshape, radius_aval, attrs = records[0]
@@ -81,8 +81,8 @@ def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
     assert rotshape == (1, 6)
     assert radius_aval.shape == () and radius_aval.dtype == np.dtype(np.int32)
     assert set(attrs) == {"image_h", "image_w", "padding_factor"}
-    assert em_cuda_kernels.project_relion_half_capacity._cache_size() - cleared == 1
-    em_cuda_kernels.project_relion_half_capacity.clear_cache()
+    assert cuda_projector.project_relion_half_capacity._cache_size() - cleared == 1
+    cuda_projector.project_relion_half_capacity.clear_cache()
 
 
 @pytest.mark.parametrize(
@@ -149,7 +149,7 @@ def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
     cb._ensure_ffi()
     rotations = _rotations()
     rng = np.random.default_rng(29)
-    cleared = clear_programs(em_cuda_kernels.project_relion_half_capacity)
+    cleared = clear_programs(cuda_projector.project_relion_half_capacity)
     for radius in range(15, min(42, q // 2) + 1):
         size = 2 * pf * radius + 3
         # Nonzero random ghost planes and poisoned capacity catch support errors.
@@ -166,7 +166,7 @@ def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
             max_r=float(radius),
             relion_texture_interp=True,
         )
-        result = em_cuda_kernels.project_relion_half_capacity(
+        result = cuda_projector.project_relion_half_capacity(
             jnp.asarray(_pad_with_poison(logical, q, pf)),
             rotations,
             jnp.asarray(radius, jnp.int32),
@@ -174,14 +174,14 @@ def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
             padding_factor=pf,
         )
         assert_matches(np.asarray(result), np.asarray(reference), err_msg=f"q={q}, pf={pf}, r={radius}")
-    assert em_cuda_kernels.project_relion_half_capacity._cache_size() - cleared == 1
+    assert cuda_projector.project_relion_half_capacity._cache_size() - cleared == 1
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("radius", [-1, 17, np.iinfo(np.int32).max])
 def test_gpu_invalid_runtime_radius_is_nonfinite_without_oob(radius):
     half, rotations, _ = _inputs()
-    result = em_cuda_kernels.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
+    result = cuda_projector.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
     assert np.isnan(np.asarray(result)).all()
 
 
@@ -202,9 +202,9 @@ def test_gpu_staged_capacity_texture_is_the_per_call_projector(q, radius, pf, im
     # Once at the exact slab (the local pass's) and once inside poisoned capacity.
     for half in (jnp.asarray(logical), jnp.asarray(_pad_with_poison(logical, q, pf))):
         radius_kwargs = {} if image_r_max is None else {"image_r_max": jnp.asarray(image_r_max, jnp.int32)}
-        with em_cuda_kernels.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
+        with cuda_projector.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
             for rotations in (_rotations(), _rotations()[::-1]):
-                expected = em_cuda_kernels.project_relion_half_capacity(
+                expected = cuda_projector.project_relion_half_capacity(
                     half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(q, q), padding_factor=pf, **radius_kwargs
                 )
                 staged = texture.project(rotations, image_shape=(q, q), **radius_kwargs)
@@ -237,12 +237,12 @@ def test_gpu_projection_block_with_a_staged_texture_matches_the_per_call_block(m
         logical, r_max=radius, padding_factor=pf, projector_output_size=2 * radius, relion_texture_interp=True
     )
     expected, _ = compute_relion_projector_projections_block(logical, _rotations(), **common)
-    with em_cuda_kernels.RelionCapacityHalfTextureF32(logical, radius, padding_factor=pf) as texture:
+    with cuda_projector.RelionCapacityHalfTextureF32(logical, radius, padding_factor=pf) as texture:
         staged, _ = compute_relion_projector_projections_block(logical, _rotations(), capacity_texture=texture, **common)
         assert_matches(np.asarray(staged), np.asarray(expected))
     # A texture of another slab is refused rather than projected.
     other = jnp.asarray(_pad_with_poison(np.asarray(logical), 40, pf))
-    with em_cuda_kernels.RelionCapacityHalfTextureF32(other, radius, padding_factor=pf) as texture:
+    with cuda_projector.RelionCapacityHalfTextureF32(other, radius, padding_factor=pf) as texture:
         with pytest.raises(ValueError, match="does not hold this projector"):
             compute_relion_projector_projections_block(logical, _rotations(), capacity_texture=texture, **common)
 
@@ -268,17 +268,17 @@ def test_gpu_wide_slab_takes_the_half_storage_kernel_and_matches_the_persistent_
     half = jnp.asarray(logical)
     rotations = _rotations()
     image_r_max = jnp.asarray(q // 2, jnp.int32)
-    per_call = em_cuda_kernels.project_relion_half_capacity(
+    per_call = cuda_projector.project_relion_half_capacity(
         half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(q, q), padding_factor=pf, image_r_max=image_r_max
     )
-    with em_cuda_kernels.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
+    with cuda_projector.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
         staged = texture.project(rotations, image_shape=(q, q), image_r_max=image_r_max)
         staged = np.asarray(staged)
     assert_matches(staged, np.asarray(per_call))
-    with em_cuda_kernels.RelionPersistentHalfTextureF32(
+    with cuda_projector.RelionPersistentHalfTextureF32(
         logical, padding_factor=pf, projector_max_r=radius
     ) as persistent:
-        wide = em_cuda_kernels.relion_projector_persistent_half_texture_f32(
+        wide = cuda_projector.relion_projector_persistent_half_texture_f32(
             persistent, rotations, current_size=q, padding_factor=pf, projector_max_r=radius
         )
     # The persistent path applies no image radius; compare inside the image disk

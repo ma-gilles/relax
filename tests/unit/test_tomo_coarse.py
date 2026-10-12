@@ -35,7 +35,7 @@ def _coarse_gemm_projections(
 
     The projection the SPA coarse GEMM scorer reads (significance.py ``_project_relion_compact_score_rows``):
     RELION's texture interpolation with the coarse diff2 kernel's row rule, in ``layout``'s score pixels.
-    ``texture`` is the half's :class:`relax.cuda.kernels.RelionCapacityHalfTextureF32`, staged once per pass.
+    ``texture`` is the half's :class:`relax.cuda.projector.RelionCapacityHalfTextureF32`, staged once per pass.
     """
 
     return tomo_coarse._score_window_projections(

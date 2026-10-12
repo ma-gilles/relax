@@ -57,7 +57,7 @@ def _compute_sparse_pass2_projections_block(
     scalars, with ``relion_projector_r_max`` the static sentinel 0) project a
     center-padded capacity slab into a ``projector_output_size`` capacity crop with
     the logical model and image radii as runtime values
-    (:func:`~relax.cuda.kernels.project_relion_half_capacity`), so the programs
+    (:func:`~relax.cuda.projector.project_relion_half_capacity`), so the programs
     keep one shape across logical current sizes; the logical pixels hold the
     logical projection (``relax/relion/project.py``).
     """

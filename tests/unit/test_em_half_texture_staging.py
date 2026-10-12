@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, default_rtol
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import projector as cuda_projector
 from relax.projection import projection as p
 
 pytestmark = pytest.mark.unit
@@ -50,7 +50,7 @@ def test_half_staging_preserves_current_crop_mask_and_scaling(
         calls.append(padding_factor)
         return raw
 
-    monkeypatch.setattr(em_cuda_kernels, "project_relion_half_capacity", direct)
+    monkeypatch.setattr(cuda_projector, "project_relion_half_capacity", direct)
     monkeypatch.setattr(
         p, "relion_projector_half_to_texture_full", lambda *_: pytest.fail("full cubic staging on eligible half input")
     )
@@ -127,8 +127,8 @@ def test_geometry_outside_the_capacity_kernel_keeps_its_staging_route(
         return jnp.zeros((1, output_size * (output_size // 2 + 1)), dtype=jnp.complex64)
 
     monkeypatch.setattr(p, "relion_projector_half_to_texture_full", full_stage)
-    monkeypatch.setattr(em_cuda_kernels, "project_relion_half_capacity", lambda *a, **kw: pytest.fail("unqualified route"))
-    monkeypatch.setattr(em_cuda_kernels, "relion_projector_half_texture_f32", half_texture)
+    monkeypatch.setattr(cuda_projector, "project_relion_half_capacity", lambda *a, **kw: pytest.fail("unqualified route"))
+    monkeypatch.setattr(cuda_projector, "relion_projector_half_texture_f32", half_texture)
     monkeypatch.setattr(
         p,
         "project_half_spectrum",

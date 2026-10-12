@@ -621,7 +621,7 @@ def _half_storage_projection(volume_relion_half, *, r_max, padding_factor, proje
 def relion_capacity_texture_serves(
     volume_relion_half, *, r_max, padding_factor, projector_output_size, relion_texture_interp=None
 ) -> bool:
-    """Whether :class:`~relax.cuda.kernels.RelionCapacityHalfTextureF32` can serve this slab's projections.
+    """Whether :class:`~relax.cuda.projector.RelionCapacityHalfTextureF32` can serve this slab's projections.
 
     It serves exactly the fixed-radius projections that
     :func:`compute_relion_projector_projections_block` sends to the
@@ -675,7 +675,7 @@ def _project_relion_projector_texture(
             raise ValueError("persistent texture requires a fixed current-image radius")
         if runtime_r_max is not None or image_r_max is not None:
             raise ValueError("persistent texture requires a fixed model and image radius")
-        from relax.cuda.kernels import relion_projector_persistent_half_texture_f32
+        from relax.cuda.projector import relion_projector_persistent_half_texture_f32
         projection_crop = relion_projector_persistent_half_texture_f32(
             persistent_texture, jnp.asarray(rotations_block, dtype=jnp.float32),
             current_size=int(projector_output_size), padding_factor=int(padding_factor),
@@ -684,7 +684,7 @@ def _project_relion_projector_texture(
     elif image_r_max is not None:
         if mask_current_image_disk:
             raise ValueError("rotated image radius cannot be combined with an exact image-disk mask")
-        from relax.cuda.kernels import project_relion_half_capacity
+        from relax.cuda.projector import project_relion_half_capacity
 
         projection_crop = project_relion_half_capacity(
             volume_relion_half, rotations_block,
@@ -706,7 +706,7 @@ def _project_relion_projector_texture(
         # The half-storage kernel stages the same texels without a cubic
         # transpose/zero-fill buffer. Output image extent is independent of
         # model radius; keep crop, mask, gather and scaling unchanged below.
-        from relax.cuda.kernels import project_relion_half_capacity
+        from relax.cuda.projector import project_relion_half_capacity
 
         image_radius_kwargs = (
             {"image_r_max": jnp.asarray(projector_output_size // 2, jnp.int32)}
@@ -760,7 +760,7 @@ def _project_relion_projector_texture(
     ):
         # Geometry the half-storage kernel does not take (an odd output size, a
         # padding factor other than 1 or 2); every slab size it takes goes there.
-        from relax.cuda.kernels import relion_projector_half_texture_f32
+        from relax.cuda.projector import relion_projector_half_texture_f32
         projection_crop = relion_projector_half_texture_f32(
             volume_relion_half, rotations_block,
             current_size=int(projector_output_size), padding_factor=int(padding_factor),
@@ -779,7 +779,7 @@ def _project_relion_projector_texture(
             relion_texture_interp=True,
         )
     else:
-        from relax.cuda.kernels import project_relion_half_capacity
+        from relax.cuda.projector import project_relion_half_capacity
 
         projection_crop = project_relion_half_capacity(
             volume_relion_half, rotations_block, runtime_r_max,

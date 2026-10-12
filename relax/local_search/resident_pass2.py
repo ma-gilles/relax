@@ -2000,7 +2000,7 @@ def _open_capacity_texture(
 
     Every chunk projects the same slab, and the per-call projector stages its
     texture and synchronizes the stream each time
-    (:func:`~relax.cuda.kernels.project_relion_half_capacity`). Where that
+    (:func:`~relax.cuda.projector.project_relion_half_capacity`). Where that
     half-storage kernel is the one the projection takes
     (:func:`~relax.projection.projection.relion_capacity_texture_serves`), the
     texture is staged once here instead; the caller closes it after the loop.
@@ -2018,7 +2018,7 @@ def _open_capacity_texture(
         relion_texture_interp=projection_kwargs.get("relion_texture_interp"),
     ):
         return None
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
 
     return RelionCapacityHalfTextureF32(
         relion_projector_half,

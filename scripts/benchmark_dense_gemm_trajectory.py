@@ -833,7 +833,7 @@ def _resident_cuda_fixture_program(
 
 def run_fixed_fixture_trajectory(args, model_dir):
     """Execute two half maps on one unchanged dense pose grid for each iteration."""
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
     from relax.dense.gemm_kernels import (
         DenseGemmTileConfig,
         empty_normalizer_table,
@@ -1087,7 +1087,7 @@ def benchmark_fixed_fixture_batch(args, model_dir):
     The frozen map/operands isolate the native and GEMM operator comparison;
     trajectory reports remain responsible for changing maps across iterations.
     """
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
     from relax.dense.gemm_kernels import (
         DenseGemmTileConfig,
         empty_normalizer_table,

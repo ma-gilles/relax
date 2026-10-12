@@ -940,11 +940,11 @@ def test_relion_coarse_normalized_cc_native_texture_fails_closed_without_gpu(
 def test_relion_projector_half_texture_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import projector as cuda_projector
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_projector_half_texture_f32.__wrapped__(
+        cuda_projector.relion_projector_half_texture_f32.__wrapped__(
             jnp.zeros((5, 5, 3), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             current_size=2,
@@ -1148,7 +1148,7 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import projector as cuda_projector
     from relax.projection.projection import (
         compute_relion_projector_projections_block,
         relion_projector_half_to_texture_full,
@@ -1201,7 +1201,7 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
             max_r=float(projector_max_r),
             relion_texture_interp=True,
         )
-        compact = em_cuda_kernels.relion_projector_half_texture_f32(
+        compact = cuda_projector.relion_projector_half_texture_f32(
             projector_half_jax,
             rotations_jax,
             current_size=current_size,
@@ -1220,7 +1220,7 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
             max_r=float(projector_max_r),
             relion_texture_interp=True,
         )
-        compact_native_scaled = em_cuda_kernels.relion_projector_half_texture_f32(
+        compact_native_scaled = cuda_projector.relion_projector_half_texture_f32(
             projector_half_jax,
             rotations_jax,
             current_size=current_size,
@@ -1366,7 +1366,7 @@ def test_relion_half_texture_projection_uses_native_rotated_image_radius_cutoff(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import projector as cuda_projector
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -1397,7 +1397,7 @@ def test_relion_half_texture_projection_uses_native_rotated_image_radius_cutoff(
     )
 
     with jax.default_device(gpu_device):
-        projected = em_cuda_kernels.relion_projector_half_texture_f32(
+        projected = cuda_projector.relion_projector_half_texture_f32(
             jnp.asarray(projector),
             jnp.asarray(rotations),
             current_size=20,

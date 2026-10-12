@@ -3001,7 +3001,7 @@ def test_texture_projector_compact_indices_bypass_full_scatter(monkeypatch):
 
 
 def test_texture_projector_compact_implementation_never_builds_full_box(monkeypatch):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import projector as cuda_projector
     from relax.projection import projection as projection_helpers
 
     crop = jnp.asarray([[0.0 + 1.0j, 1.0 + 2.0j, 2.0 + 3.0j, 3.0 + 4.0j]])
@@ -3017,7 +3017,7 @@ def test_texture_projector_compact_implementation_never_builds_full_box(monkeypa
         lambda *args, **kwargs: crop,
     )
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_projector,
         "project_relion_half_capacity",
         lambda *args, **kwargs: crop,
     )
