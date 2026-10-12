@@ -10,7 +10,7 @@ Tests:
 1. Direction count matches for orders 0-4
 2. Direction sets match (as rotation matrices) after sorting
 3. Oversampled sub-grid: RELION's nest2xyf splitting matches recovar's grid
-4. Perturbation: RELION vs recovar's apply_relion_rotation_perturbation
+4. Perturbation: RELION vs the matrix-space apply_relion_rotation_perturbation (tests/helpers)
 """
 
 import numpy as np
@@ -377,7 +377,7 @@ class TestPerturbation:
     """Compare RELION perturbation against recovar's apply_relion_rotation_perturbation."""
 
     def test_perturbation_vs_recovar(self):
-        from relax.sampling.perturbation import apply_relion_rotation_perturbation
+        from helpers.rotation_perturbation import apply_relion_rotation_perturbation
 
         order = 2
         random_pert = 0.3

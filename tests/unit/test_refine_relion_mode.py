@@ -19,6 +19,7 @@ from helpers.float_compare import assert_matches, matches
 from helpers.pass1_programs import clear_pass1_programs
 from helpers.pass1_stats import make_pass1_stats
 from helpers.reconstruction_settings import reconstruction_settings
+from helpers.rotation_perturbation import apply_relion_rotation_perturbation
 from helpers.tiny_refinement import unconverged_accuracy
 
 import relax.refinement.noise_updates as noise_updates
@@ -148,7 +149,7 @@ from relax.sampling.oversampled_grids import (
     get_oversampled_rotation_grid_from_samples,
     get_oversampled_translation_grid,
 )
-from relax.sampling.perturbation import apply_relion_rotation_perturbation, apply_relion_rotation_perturbation_to_eulers
+from relax.sampling.perturbation import apply_relion_rotation_perturbation_to_eulers
 from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores
 from relax.scoring.pass1_results import Pass1Result
 from relax.scoring.significance import _compute_k_class_significance_batched

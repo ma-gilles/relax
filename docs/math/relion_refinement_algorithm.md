@@ -416,7 +416,7 @@ and RELION Euler metadata use degrees. `relion_angular_sampling_deg` includes
 oversampling when requested.
 
 `advance_relion_perturbation` and the seed/replay helpers determine the scalar
-sampling perturbation. `apply_relion_rotation_perturbation` and
+sampling perturbation. `apply_relion_rotation_perturbation_to_eulers` and
 `apply_relion_translation_perturbation` apply it to their respective grids.
 Preserve the seed, iteration number, unperturbed grid and perturbation together
 when reproducing a scoring boundary.
