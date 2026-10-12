@@ -26,6 +26,7 @@ from relax.classification.k_class_results import (
     _expand_subset_noise_stats,
     _zero_subset_noise_stats,
 )
+from relax.classification.probes import NoProbe
 from relax.fine_pass.bucket_io import relion_translation_angles_f32
 from relax.refinement.sigma_offset import update_class_sigma_offset_from_posterior
 from relax.sampling.orientation_priors import (
@@ -757,6 +758,7 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
         jnp.ones(1, dtype=jnp.float32),
         np.zeros((5, 3, 3), dtype=np.float32),
         np.zeros((3, 2), dtype=np.float32),
+        probe=NoProbe(),
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,
@@ -1569,6 +1571,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
         jnp.ones(1, dtype=jnp.float32),
         np.zeros((1, 3, 3), dtype=np.float32),
         np.zeros((1, 2), dtype=np.float32),
+        probe=NoProbe(),
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,

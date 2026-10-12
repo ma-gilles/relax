@@ -15,6 +15,7 @@ from recovar import utils
 
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
+from relax.classification.probes import KClassProbe
 from relax.cuda import backprojection as cuda_backprojection
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.numerics.precision import DensePrecisionPolicy
@@ -210,6 +211,8 @@ class DenseExecutionPolicy:
     relion_x_half_mstep: bool
     # The run's dense precision (RefinementOptions.precision): engine precision and the pose dtype.
     precision: DensePrecisionPolicy
+    # The K-class E-step's diagnostics (relax.classification.probes.KClassProbe): they observe, never steer.
+    k_class_probe: KClassProbe
 
 
 def _score_adaptive_kclass_dense(
@@ -323,6 +326,7 @@ def _score_adaptive_kclass_dense(
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
+        probe=execution.k_class_probe,
         **adaptive_em_kwargs,
     )
     return result, pass2_grids
@@ -443,6 +447,7 @@ def _score_kclass_at_given_poses(
         return_best_pose_details=True,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
+        probe=execution.k_class_probe,
         image_seed_classes=half.image_seed_classes,
         firstiter_cc_pass2_only_best_coarse=bool(firstiter_cc),
         given_supports=grids.supports,
@@ -580,6 +585,7 @@ def _score_adaptive_k1_dense(
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
+        probe=execution.k_class_probe,
         **adaptive_em_kwargs,
     )
     return k1_adaptive_result, pass2_grids
@@ -1325,6 +1331,7 @@ def _score_kclass_firstiter_cc_pass2(
         ),
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
+        probe=execution.k_class_probe,
         coarse_translation_phase_source=(
             coarse_translation_phase_source if n_classes == 1 else None
         ),

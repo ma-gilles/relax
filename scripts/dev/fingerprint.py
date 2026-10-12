@@ -177,7 +177,19 @@ def engine_kwargs_without_defaults(kwargs: dict) -> dict:
         default = ENGINE_KWARG_DEFAULTS[key]
         return value is None if default is None else type(value) is type(default) and value == default
 
-    return {key: value for key, value in kwargs.items() if not at_default(key, value)}
+    return {key: value for key, value in without_probe(kwargs).items() if not at_default(key, value)}
+
+
+def without_probe(kwargs: dict) -> dict:
+    """``kwargs`` less ``probe``, the K-class engine's diagnostics (layout S15): they observe the pass and never steer
+    it, and a tree from before S15 passes none. Refuses a ``probe`` that is not a probe (or None), so no other value
+    can leave the digest under that name."""
+
+    probe = kwargs.get("probe")
+    assert probe is None or all(
+        callable(getattr(probe, hook, None)) for hook in ("score_dump_requested", "support_audit", "firstiter_winners_scored")
+    ), f"the engine's probe keyword holds {type(probe).__name__}, not a K-class probe"
+    return {key: value for key, value in kwargs.items() if key != "probe"}
 
 
 

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from relax.classification.probes import KClassProbe
 from relax.numerics.relion_random import GlibcRand, init_random_generator
 from relax.reconstruction.regularization import RELION_MINRES_MAP
 from relax.reconstruction.resolution import ImageGeometry
@@ -310,6 +311,8 @@ class RunContext:
     # The run observer's mid-step hooks, the only part of it a step sees (relax.refinement.ports).
     expectation_probe: ExpectationProbe
     maximization_probe: MaximizationProbe
+    # The K-class E-step's diagnostics (relax.classification.probes), the command's: they observe its passes.
+    k_class_probe: KClassProbe
 
     @property
     def offset_dims(self) -> int:
@@ -323,6 +326,7 @@ def build_run_context(
     *,
     replays_relion_state: bool,
     observer: RunObserver,
+    k_class_probe: KClassProbe,
 ) -> RunContext:
     """Resolve the run's context from its two half datasets and validated ``options``, refusing unsupported
     routes, and configure the datasets' image preprocessing (Fourier backend and masks) in place: the datasets'
@@ -330,7 +334,7 @@ def build_run_context(
 
     ``replays_relion_state`` whether the input source replays a RELION run's state (the consistency options are
     refused then); ``observer`` is the run's observer: the context keeps its mid-step hooks as probes and
-    whether it asks for the local searches' profiles.
+    whether it asks for the local searches' profiles. ``k_class_probe`` is the K-class E-step's diagnostics.
     """
     volume_shape = experiment_datasets[0].volume_shape
     # Keep the input scalar type for host arithmetic; geometry validates its value.
@@ -387,4 +391,5 @@ def build_run_context(
         perturb_rng=None if options.parity.perturb_seed is not None else np.random.default_rng(),
         expectation_probe=ObserverExpectationProbe(observer),
         maximization_probe=ObserverMaximizationProbe(observer),
+        k_class_probe=k_class_probe,
     )

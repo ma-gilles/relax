@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from relax.classification.probes import KClassProbe
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.numerics.precision import _diagnostic_float64_pass2_matches
@@ -452,6 +453,7 @@ def run_numbered_expectation(
             relion_translation_angle_scale=ctx.relion_translation_angle_scale,
             relion_projection_scale=ctx.relion_projection_scale, iteration=this_iteration.iteration,
             numbered_relion_iteration=this_iteration.numbered_relion_iteration, probe=ctx.expectation_probe,
+            k_class_probe=ctx.k_class_probe,
         ),
         partial(
             finish_numbered_half,
@@ -634,6 +636,7 @@ def score_numbered_half(
     iteration: int,
     numbered_relion_iteration: int,
     probe: ExpectationProbe,
+    k_class_probe: KClassProbe,
 ) -> HalfScoreResult:
     """Build half-specific priors/batches and accumulate an empty, SPA or tomography half.
 
@@ -912,6 +915,7 @@ def score_numbered_half(
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
             precision=options.precision,
+            k_class_probe=k_class_probe,
         )
         dense_result = _score_half_dense_in_bpref_scope(
             dense_half,

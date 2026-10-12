@@ -303,6 +303,7 @@ def _native_expectation_step(
         )
         config.engine_kwargs["class_rotation_log_prior"] = class_rotation_log_prior
         config.engine_kwargs["debug_iteration"] = iteration
+        config.engine_kwargs["k_class_probe"] = probe
         result = run_initial_model_estep(
             dataset, state, config, particle_ids=particle_ids, halfset_ids=halfset_ids
         )

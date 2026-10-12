@@ -1647,6 +1647,7 @@ def main() -> None:
     # for pass-2 only. Pass 2 evaluates only the children of the coarse
     # samples that survive pass-1's adaptive_fraction pruning.
     from relax.classification.k_class import run_dense_k_class_em_adaptive
+    from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
     from relax.sampling import (
         get_oversampled_rotation_grid_from_samples,
     )
@@ -1720,6 +1721,7 @@ def main() -> None:
         args.disc_type,
         coarse_engine=args.coarse_engine,
         adaptive_fraction=args.significance_adaptive_fraction,
+        probe=KClassDiagnostics(),
         max_significants=int(max_significants.active_max_significants),
         coarse_current_size=coarse_engine_current_size,
         fine_current_size=current_size,

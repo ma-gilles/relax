@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
+from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
 from relax.diagnostics.vdam_noise import dump_noise_failure_meta, dump_noise_update_boundary
 from relax.vdam.ports import NoIterationProfile, NoProbe, NoStageProfile, VdamObserver
 
@@ -108,10 +109,15 @@ class NoiseDumps(NoProbe):
         return dump_noise_failure_meta(self.failure_dir, state, meta, summaries)
 
 
+class KClassEstepDiagnostics(KClassDiagnostics, NoProbe):
+    """The E-step's probe of a command: the K-class engine's diagnostics (:class:`KClassDiagnostics`, each switched
+    on by the environment when it is called), and no expected-accuracy dump."""
+
+
 @dataclass(frozen=True)
-class ExpectedAccuracyDump(NoProbe):
+class ExpectedAccuracyDump(KClassEstepDiagnostics):
     """Each single-particle expected-accuracy estimate's inputs of ``iterations`` (empty: every iteration) in
-    ``directory``, as the E-step's probe."""
+    ``directory``, as the E-step's probe, besides the K-class engine's diagnostics."""
 
     directory: str
     iterations: frozenset[int]
@@ -185,7 +191,7 @@ class VdamDiagnosticObserver(VdamObserver):
 
     def expectation_probe(self):
         if self.expected_accuracy_dir is None:
-            return NoProbe()
+            return KClassEstepDiagnostics()
         return ExpectedAccuracyDump(self.expected_accuracy_dir, self.expected_accuracy_iterations)
 
     def maximization_probe(self):
@@ -195,7 +201,9 @@ class VdamDiagnosticObserver(VdamObserver):
 
 
 def vdam_command_observer(environ=None) -> VdamObserver:
-    """The observer the environment of a ``relax initial_model`` command asks for (``VdamObserver()``: none)."""
+    """The observer the environment of a ``relax initial_model`` command asks for. With no variable set it observes
+    nothing but the K-class engine's own switches (its E-step probe, :class:`KClassEstepDiagnostics`, reads them at
+    each call and writes nothing when they are unset)."""
 
     env = os.environ if environ is None else environ
     dumps = VdamDiagnosticObserver(
@@ -206,6 +214,4 @@ def vdam_command_observer(environ=None) -> VdamObserver:
         noise_failure_dir=env.get(NOISE_FAILURE_DUMP_DIR_ENV) or None,
         profile=bool(env.get(PROFILE_ENV)),
     )
-    if dumps == VdamDiagnosticObserver():
-        return VdamObserver()
     return dumps

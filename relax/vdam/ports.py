@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from relax.classification import probes as k_class_probes
 from relax.vdam.m_step import vdam_m_step_single_class
 from relax.vdam.state import InitialModelState, VdamAccumulator
 
@@ -58,9 +59,9 @@ class NoIterationProfile:
     def finish(self) -> None: ...
 
 
-class ExpectationProbe(Protocol):
-    """The hook the E-step calls mid-step with the expected-accuracy estimate's inputs
-    (``native_sampling.AccuracyEstimateInputs``) and result. Steps receive this, never the observer."""
+class ExpectationProbe(k_class_probes.KClassProbe, Protocol):
+    """The hooks the E-step calls mid-step: the expected-accuracy estimate's inputs (``native_sampling``) and result,
+    and the K-class engine's diagnostics (``KClassProbe``). Steps receive this, never the observer."""
 
     def expected_accuracy_estimated(self, inputs, accuracy) -> None: ...
 
@@ -75,7 +76,7 @@ class MaximizationProbe(Protocol):
     def noise_sums_nonfinite(self, state: InitialModelState, meta: dict, summaries) -> str | None: ...
 
 
-class NoProbe:
+class NoProbe(k_class_probes.NoProbe):
     """The no-op :class:`ExpectationProbe` and :class:`MaximizationProbe`."""
 
     def expected_accuracy_estimated(self, inputs, accuracy) -> None: ...

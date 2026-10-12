@@ -661,3 +661,11 @@ def _expand_subset_pose_details(best_rots, best_trans, best_rot_ids, image_indic
     return best_rots_full, best_trans_full, best_rot_ids_full
 
 
+def _with_coarse_significance_diagnostics(result, *, support_audit: dict | None):
+    """Propagate exact coarse-support telemetry to InitialModel."""
+
+    if support_audit is None:
+        return result
+    profile_summary = dict(result.profile_summary or {})
+    profile_summary["coarse_significance_support_audit"] = dict(support_audit)
+    return result._replace(profile_summary=profile_summary)

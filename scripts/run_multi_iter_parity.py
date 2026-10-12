@@ -1446,6 +1446,7 @@ def main():
     from recovar.utils import helpers
 
     from relax.diagnostics import observers
+    from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
     from relax.io.map_io import write_map_from_ft
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.ports import StartSeeds
@@ -2506,6 +2507,7 @@ def main():
             init_noise_variance=noise_variance,
             translations=None,
             options=run_options,
+            k_class_probe=KClassDiagnostics(),
             observer=observers.combine(
                 ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
                 + observers.observers_from_environment()

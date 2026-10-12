@@ -11,6 +11,7 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
 import relax.refinement.noise_updates as noise_updates
+from relax.classification.probes import NoProbe as KClassNoProbe
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import expectation
@@ -81,7 +82,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
                                                 probe=NoProbe()) if local else None,
         replay_prior_translations=None, initial_class_assignments=None, single_class_iteration=False,
         scoring_dtype=np.float32, relion_translation_angle_scale=1., relion_projection_scale=1.,
-        iteration=0, numbered_relion_iteration=1, probe=NoProbe(),
+        iteration=0, numbered_relion_iteration=1, probe=NoProbe(), k_class_probe=KClassNoProbe(),
     )
     phase = expectation.NumberedExpectation(
         grid=grid, sampling=kwargs.pop('sampling'), variant=kwargs.pop('variant'),

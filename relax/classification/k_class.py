@@ -27,13 +27,10 @@ from relax.classification.k_class_results import (
     _expand_subset_noise_stats,
     _expand_subset_pose_details,
     _full_stats_from_subset,
+    _with_coarse_significance_diagnostics,
     _zero_subset_noise_stats,
 )
-from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostics
-from relax.diagnostics.coarse_score_diagnostics import (
-    _with_coarse_significance_diagnostics,
-)
-from relax.diagnostics.local_debug import score_dump_label
+from relax.classification.probes import KClassProbe, NoProbe
 from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 from relax.relion.scale_groups import prepare_scale_correction_groups
@@ -736,10 +733,10 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     translations,
     *,
     engine_kwargs: dict,
+    probe: KClassProbe,
 ) -> _DenseKClassScoreProbeResult:
-    """Score RELION firstiter-CC K-class coarse poses in one shared pass."""
+    """Score RELION firstiter-CC K-class coarse poses in one shared pass; ``probe`` observes it."""
 
-    from relax.diagnostics.coarse_gaussian_diagnostics import significance_debug_dump_matches
     from relax.projection.projection import compact_relion_projector_half_for_centered_indices
     from relax.scoring.pass1_plan import global_pass1_relion_projector_texture_enabled
     from relax.scoring.significance import _compute_k_class_significance_batched
@@ -839,23 +836,21 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         firstiter_cc_support=engine_kwargs.get("firstiter_cc_support", "relion"),
         nyquist_column_counting=engine_kwargs.get("nyquist_column_counting", "relion"),
         tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
-        collect_significance=significance_debug_dump_matches(
+        collect_significance=probe.score_dump_requested(
             current_size=engine_kwargs.get("current_size"),
             debug_iteration=engine_kwargs.get("debug_iteration"),
         ),
         return_class_best=True,
-        return_class_second=bool(os.environ.get("RELAX_GLOBAL_WINNER_SUMMARY_PATH", "").strip()),
+        return_class_second=probe.wants_class_runner_up(),
         debug_iteration=engine_kwargs.get("debug_iteration"),
-        probe=SignificanceDiagnostics(),
+        probe=probe,
         coarse_healpix_order=engine_kwargs.get("coarse_healpix_order"),
         coarse_rotation_ids=engine_kwargs.get("coarse_rotation_ids"),
         translation_phase_source=engine_kwargs.get("translation_phase_source"),
         **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(engine_kwargs),
     )
-    from relax.diagnostics.global_winner_summary import maybe_dump_global_winner_summary
-
-    maybe_dump_global_winner_summary(
+    probe.firstiter_winners_scored(
         experiment_dataset=experiment_dataset,
         stats=pass1_result.stats,
         class_assignments=pass1_result.class_assignment,
@@ -1479,6 +1474,7 @@ def run_dense_k_class_em_adaptive(
     given_supports=None,
     given_image_translations=None,
     zero_oversampling_coarse_state_for_classes: bool = False,
+    probe: KClassProbe | None = None,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + sparse fine pass 2.
@@ -1527,6 +1523,10 @@ def run_dense_k_class_em_adaptive(
         ``[n_images, 2]`` with ``given_supports``: each image's own translation sample
         (pixels), applied to its images by pass 2 (``image_translations`` of the resident
         pass); the translation grids are then the one zero translation.
+    probe : KClassProbe or None
+        The diagnostics that observe the pass (:mod:`relax.classification.probes`: score dumps, the support audit,
+        the first-iteration winner summary); None is the :class:`~relax.classification.probes.NoProbe`, which
+        observes nothing. No result depends on it.
     coarse_healpix_order, oversampling_order : int or None
         RELION sampling metadata for sparse pass-2 diagnostics.  When omitted,
         the values are inferred from exact HEALPix grid sizes for compatibility
@@ -1542,6 +1542,7 @@ def run_dense_k_class_em_adaptive(
         defers to ``RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP``;
         the strict-parity default is RELION texture interpolation.
     """
+    probe = NoProbe() if probe is None else probe
     if "relion_exact_coarse" in engine_kwargs:
         raise TypeError(
             "relion_exact_coarse was removed on 2026-10-02: pass 1 always scores RELION's exact coarse operands"
@@ -1825,7 +1826,7 @@ def run_dense_k_class_em_adaptive(
                 coarse_probe_kwargs["class_rotation_log_prior"] = seed_iteration_first_class(
                     means_array, class_rotation_prior
                 )[1]
-        with score_dump_label("coarse"):
+        with probe.coarse_score_dump_label():
             with nvtx.annotate("kclass.adaptive.coarse_probe", color="yellow", domain=NVTX_DOMAIN_EM):
                 coarse_result = _run_dense_k_class_joint_firstiter_score_probe(
                     experiment_dataset,
@@ -1834,6 +1835,7 @@ def run_dense_k_class_em_adaptive(
                     coarse_rotations_np,
                     coarse_translations_np,
                     engine_kwargs=coarse_probe_kwargs,
+                    probe=probe,
                 )
         coarse_actual_backend = coarse_result.coarse_score_backend
         # ``per_class_hard_assignments[k, i]`` is class k's best coarse pose
@@ -1891,7 +1893,7 @@ def run_dense_k_class_em_adaptive(
             relion_projector_r_max=relion_projector_r_max,
             relion_projector_texture_interp=coarse_relion_projector_texture_interp,
             debug_iteration=debug_iteration,
-            probe=SignificanceDiagnostics(),
+            probe=probe,
             translation_phase_source=coarse_translation_phase_source,
             tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),

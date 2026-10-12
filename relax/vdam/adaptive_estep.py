@@ -383,6 +383,7 @@ def run_adaptive_initial_model_estep(
         preserve_bpref_particle_order=fresh_k1,
         source_faithful_spectrum_norm=fresh_k1,
         debug_iteration=group_kwargs.get("debug_iteration"),
+        probe=group_kwargs.get("k_class_probe"),
         reconstruction_group_ids=group_ids,
         reconstruction_group_count=2 if grouped else None,
     )

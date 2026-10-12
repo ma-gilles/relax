@@ -58,6 +58,7 @@ from fingerprint import (  # noqa: E402
     flatten,
     log_row,
     mutated_tree,
+    without_probe,
 )
 
 # The cases whose run is a refusal (fingerprint.case_errors).
@@ -268,7 +269,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def stand_in_engine(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
                         coarse_translations, fine_rotations, fine_translations, rot_parent_map, trans_parent_map,
                         disc_type, **kwargs):
-        """CPU stand-in for run_dense_k_class_em_adaptive: a result seeded by every operand it receives."""
+        """CPU stand-in for run_dense_k_class_em_adaptive: a result seeded by every operand it receives (not the
+        diagnostics probe: ``fingerprint.without_probe``)."""
+        kwargs = without_probe(kwargs)
         seed = digest_operands(means, mean_variance, noise_variance, coarse_rotations, coarse_translations,
                                fine_rotations, fine_translations, rot_parent_map, trans_parent_map, disc_type, kwargs)
         record("call", "engine", f"seed={seed:016x}", "kwargs=" + ",".join(sorted(kwargs)))

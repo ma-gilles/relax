@@ -23,6 +23,7 @@ import relax.diagnostics.iteration as iteration_diagnostics
 import relax.diagnostics.reconstruction as reconstruction_diagnostics
 import relax.parity.relion_replay as replay_policy
 import relax.refinement.refinement_state as convergence_helpers
+from relax.classification.probes import KClassProbe, NoProbe
 from relax.diagnostics import bpref_diagnostics
 from relax.reconstruction import resolution
 from relax.refinement import (
@@ -455,6 +456,7 @@ def refine_single_volume(
     options: refinement_options.RefinementOptions,
     observer: ports.RunObserver,
     source: ports.InputSource,
+    k_class_probe: KClassProbe | None = None,
 ) -> refinement_result.RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
 
@@ -482,6 +484,9 @@ def refine_single_volume(
         and never change it (``RunObserver()``: one that does nothing).
     source : the run's ``InputSource`` (``relax.refinement.ports``): what a comparison run takes from
         elsewhere (a RELION run) instead of computing it (``InputSource()``: the native computation).
+    k_class_probe : the K-class E-step's diagnostics (``relax.classification.probes.KClassProbe``), which observe
+        its passes and never change them; the commands build ``relax.diagnostics.k_class_diagnostics.KClassDiagnostics``
+        (None: the ``NoProbe`` that observes nothing).
 
     Returns
     -------
@@ -501,7 +506,7 @@ def refine_single_volume(
 
     ctx = setup_checks.build_run_context(
         experiment_datasets, options, replays_relion_state=source.replays_relion_state(),
-        observer=observer,
+        observer=observer, k_class_probe=NoProbe() if k_class_probe is None else k_class_probe,
     )
     observer.run_started(ctx)
     # The run's one mode decision: the K=1 or the Class3D run's own set-up and iteration statements.

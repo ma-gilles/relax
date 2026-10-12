@@ -41,10 +41,6 @@ _REPLAY = "a replay policy called by the controller; it needs an InputSource met
 
 # (importing module, imported module) -> why the edge is still there.
 ALLOWED_IMPORTS = {
-    ("relax.classification.k_class", "relax.diagnostics.coarse_gaussian_diagnostics"): _INLINE_DUMP,
-    ("relax.classification.k_class", "relax.diagnostics.coarse_score_diagnostics"): _INLINE_DUMP,
-    ("relax.classification.k_class", "relax.diagnostics.global_winner_summary"): _INLINE_DUMP,
-    ("relax.classification.k_class", "relax.diagnostics.local_debug"): _INLINE_DUMP,
     ("relax.refinement.expectation", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
     ("relax.refinement.expectation", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
     ("relax.refinement.finalization", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,

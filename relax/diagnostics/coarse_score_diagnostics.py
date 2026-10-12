@@ -150,15 +150,3 @@ def coarse_significance_support_audit(significant_sample_indices, *, samples_per
             include_ids=_coarse_significance_support_audit_ids_enabled(),
         )
     return support_audit
-
-
-def _with_coarse_significance_diagnostics(result, *, support_audit: dict | None):
-    """Propagate exact coarse-support telemetry to InitialModel."""
-
-    if support_audit is None:
-        return result
-    profile_summary = dict(result.profile_summary or {})
-    profile_summary["coarse_significance_support_audit"] = dict(support_audit)
-    return result._replace(profile_summary=profile_summary)
-
-

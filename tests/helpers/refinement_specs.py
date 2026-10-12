@@ -2,6 +2,7 @@
 
 import dataclasses
 
+from relax.classification.probes import NoProbe as KClassNoProbe
 from relax.local_search import records
 from relax.refinement import dense_half, local_half, local_sampling
 from relax.refinement.ports import NoProbe
@@ -272,6 +273,7 @@ def dense_execution_policy(**fields):
             "firstiter_cc_tree_rescore_max_margin": None,
             "firstiter_cc_support": "relion",
             "nyquist_column_counting": "relion",
+            "k_class_probe": KClassNoProbe(),
             **fields,
         }
     )

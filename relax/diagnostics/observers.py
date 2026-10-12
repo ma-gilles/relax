@@ -26,6 +26,7 @@ from relax.diagnostics.iteration import (
     write_final_half_manifest,
     write_numbered_half_manifest,
 )
+from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
 from relax.diagnostics.reconstruction import (
     write_bpref_accumulators,
     write_class_image_size,
@@ -331,3 +332,11 @@ def command_observer(args) -> RunObserver:
             args.save_intermediates_dir, skip_unregularized=bool(args.save_intermediates_skip_unregularized),
         ))
     return combine(observers + observers_from_environment())
+
+
+def command_k_class_probe() -> KClassDiagnostics:
+    """The K-class E-step's diagnostics a refinement command hands the run (``refine_single_volume``'s
+    ``k_class_probe``): the environment's pass-1 dumps, support audit, score-dump labels and winner summary, each
+    read when its hook is called."""
+
+    return KClassDiagnostics()

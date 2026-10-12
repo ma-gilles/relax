@@ -390,6 +390,7 @@ def run_final_all_data(
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
             precision=options.precision,
+            k_class_probe=ctx.k_class_probe,
         )
     final_outs = PerHalfOutputs()
     first_projector_power_spectrum = None

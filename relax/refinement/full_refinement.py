@@ -1332,6 +1332,7 @@ def main(command=None):
             translations=translations_jnp,
             options=run_options,
             observer=observers.command_observer(args),
+            k_class_probe=observers.command_k_class_probe(),
             source=relion_replay_source.RelionReplaySource.for_run(
                 relion_replay_source.RelionReplay.from_environ(
                     frozen_boundary,
