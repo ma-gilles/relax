@@ -22,6 +22,8 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils as ftu
 
+from relax.relion.geometry import soft_mask_weights
+
 PPCA_POSTPROCESS_HEURISTIC_WARNING = "heuristic_post_solve_mask_grid_correction_not_masked_pcg_objective"
 
 
@@ -86,28 +88,13 @@ def _half_volume_frequency_mask(volume_shape, max_r: float, *, dtype):
 
 
 def _soft_mask_and_background_weights(volume_shape, *, mask_radius_px: float | None, cosine_width_px: float, dtype):
+    """RELION's soft mask (``1 - w``) and background weight (``w``, :func:`soft_mask_weights`) in ``dtype``; the
+    radius defaults to half the largest side, rounded down."""
     radius = -1 if mask_radius_px is None else float(mask_radius_px)
     if radius < 0:
-        radius = np.max(np.array(volume_shape) // 2)
-    cosine_width = float(cosine_width_px)
-    radius_p = radius + cosine_width
-
-    volume_coords = ftu.get_k_coordinate_of_each_pixel(volume_shape, voxel_size=1, scaled=False).reshape(
-        list(volume_shape) + [len(list(volume_shape))]
-    )
-    r = jnp.linalg.norm(volume_coords, axis=-1)
-    mask1 = r < radius
-    mask2 = (r >= radius) & (r <= radius_p)
-    mask3 = r > radius_p
-    raised_cos = 0.5 + 0.5 * jnp.cos(jnp.pi * (radius_p - r) / cosine_width)
-
-    soft_mask = jnp.zeros(volume_shape, dtype=dtype)
-    soft_mask = jnp.where(mask1, 1, soft_mask)
-    soft_mask = jnp.where(mask2, 1 - raised_cos, soft_mask)
-    background_weight = jnp.zeros_like(soft_mask)
-    background_weight = jnp.where(mask3, 1, background_weight)
-    background_weight = jnp.where(mask2, raised_cos, background_weight)
-    return soft_mask.astype(dtype), background_weight.astype(dtype)
+        radius = float(np.max(np.array(volume_shape) // 2))
+    background_weight = soft_mask_weights(tuple(volume_shape), radius, float(cosine_width_px))
+    return jnp.asarray(1.0 - background_weight, dtype), jnp.asarray(background_weight, dtype)
 
 
 def _gridding_kernel(

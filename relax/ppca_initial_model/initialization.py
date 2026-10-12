@@ -14,6 +14,7 @@ from scipy.spatial.transform import Rotation
 from relax.ppca_initial_model.noise import relion_to_coefficient_variance
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import compute_ini_high_shell
+from relax.relion.geometry import soft_mask_weights
 from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2
 
 
@@ -45,10 +46,9 @@ def seed_maps_to_model(volumes, *, compute_dtype=jnp.float32):
 
 
 def support_mask(n, diameter_px, edge=5):
-    coords = jnp.arange(n, dtype=jnp.float32) - n // 2
-    radius = jnp.sqrt(sum(x * x for x in jnp.meshgrid(coords, coords, coords, indexing="ij")))
-    phase = jnp.clip((radius - diameter_px / 2) / edge, 0, 1)
-    return (1 + jnp.cos(jnp.pi * phase)) / 2
+    """The particle's soft spherical support on an ``n``-cube, float32: 1 within ``diameter_px / 2``, a raised-cosine
+    fall to 0 over ``edge`` voxels (RELION's soft mask, ``1 - soft_mask_weights``)."""
+    return jnp.asarray(1.0 - soft_mask_weights((n, n, n), diameter_px / 2, edge), jnp.float32)
 
 
 def bandlimit_and_mask(theta, shape, radius, mask):
