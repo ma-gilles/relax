@@ -5,7 +5,8 @@
 
 A mutation of ``scripts/dev/fingerprint.py`` replaces a piece of controller text. A refactor that rewrites
 that text leaves the mutation with nothing to replace, and the selftest would then fail only after minutes
-of runs. This applies each mutation to the tracked ``relax/*.py`` files, without running anything, and
+of runs. This applies each mutation to the tracked ``relax/*.py`` files (every ``relax/**/*.py`` in a tree
+without git, such as a ``git archive`` export, where every file is a tracked one), without running anything, and
 reports the ones whose number of replacements is not the expected one. Run it after every edit of a
 fingerprinted module (``docs/development/refactor_procedure.md``).
 """
@@ -27,9 +28,12 @@ MUTATIONS = (*fingerprint.MUTATIONS, *vdam_fingerprint.MUTATIONS, *pass1_fingerp
 
 def stale_mutations(root: Path = REPO_ROOT) -> list[tuple[str, int, int]]:
     """``(name, replacements found, replacements expected)`` for each mutation that no longer applies."""
-    listed = subprocess.run(
-        ["git", "ls-files", "relax/*.py"], cwd=root, check=True, capture_output=True, text=True
-    ).stdout.split()
+    if (root / ".git").exists():
+        listed = subprocess.run(
+            ["git", "ls-files", "relax/*.py"], cwd=root, check=True, capture_output=True, text=True
+        ).stdout.split()
+    else:
+        listed = sorted(str(path.relative_to(root)) for path in root.glob("relax/**/*.py"))
     sources = [(root / name).read_text() for name in listed]
     stale = []
     for mutation in MUTATIONS:

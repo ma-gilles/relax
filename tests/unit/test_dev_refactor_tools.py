@@ -42,6 +42,17 @@ def test_every_selftest_mutation_finds_its_anchor_in_this_checkout():
     assert check_mutation_anchors.stale_mutations(REPO_ROOT) == []
 
 
+def test_mutation_anchors_are_checked_in_an_exported_tree(tmp_path):
+    """A ``git archive`` export (the refactor chain's per-revision copy) has no .git; its relax files are read from
+    disk, and the anchors resolve as in the checkout."""
+    import subprocess
+
+    archive = subprocess.run(["git", "archive", "HEAD", "relax"], cwd=REPO_ROOT, check=True, capture_output=True)
+    subprocess.run(["tar", "-x", "-C", str(tmp_path)], input=archive.stdout, check=True)
+    assert not (tmp_path / ".git").exists()
+    assert check_mutation_anchors.stale_mutations(tmp_path) == check_mutation_anchors.stale_mutations(REPO_ROOT)
+
+
 def test_the_cpu_unit_list_names_existing_test_files():
     lines = (REPO_ROOT / "scripts/dev/refactor_cpu_unit_list.txt").read_text().splitlines()
     files = [line for line in lines if line and not line.startswith("#")]
