@@ -1706,7 +1706,7 @@ def configure_half_image_preprocessing(
         mask_pixel_size = ds.voxel_size if multi_shape_halves else pixel_size_angstrom
         if hasattr(backend, "set_relion_fourier_backend"):
             from relax.cuda import (
-                kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
+                preprocess as _relion_cuda_preprocessor_registration,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
             )
 
             backend.set_relion_fourier_backend(fourier_backend)
@@ -2625,7 +2625,7 @@ Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf
 
 # E-step + per-half M-step accumulators are now both populated.
 _parity_dump.mark_stage(iteration, "e_step")
-from relax.cuda.kernels import drain_relion_preprocess_checks
+from relax.cuda.preprocess import drain_relion_preprocess_checks
 drain_relion_preprocess_checks()
 significance.combine()
 ```
@@ -4059,7 +4059,7 @@ Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf
 
 # E-step + per-half M-step accumulators are now both populated.
 _parity_dump.mark_stage(iteration, "e_step")
-from relax.cuda.kernels import drain_relion_preprocess_checks
+from relax.cuda.preprocess import drain_relion_preprocess_checks
 drain_relion_preprocess_checks()
 significance.combine()
 ```
@@ -4799,7 +4799,7 @@ Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf
 
 # E-step + per-half M-step accumulators are now both populated.
 _parity_dump.mark_stage(iteration, "e_step")
-from relax.cuda.kernels import drain_relion_preprocess_checks
+from relax.cuda.preprocess import drain_relion_preprocess_checks
 drain_relion_preprocess_checks()
 significance.combine()
 ```

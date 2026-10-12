@@ -1262,7 +1262,7 @@ posterior, the winner, Pmax and the rotation mask; the device CTF row gather is 
 (`relion_ctf._gather_ctf_rows`); a batch's host read-backs (`publish_batch` in
 `relax/scoring/pass1_publish.py`, called by `significance._compute_k_class_significance_batched`) run once the next batch's operands are on the device and
 before that batch's score program, and the image preprocess kernel's finite check is read at the end of the loop
-(`kernels.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. That
+(`preprocess.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. That
 check's queue belongs to the loop: a failure names pass 1 and each batch with an invalid image (batch number, positions
 in the pass, dataset image range; the kernel reports a count per call), it is raised before pass 1 returns, and a loop
 that fails for another reason drops its unread checks. The check reads the soft-mask background, so it sees a

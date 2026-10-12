@@ -189,7 +189,7 @@ def configure_half_image_preprocessing(
         mask_pixel_size = ds.voxel_size if multi_shape_halves else pixel_size_angstrom
         if hasattr(backend, "set_relion_fourier_backend"):
             from relax.cuda import (
-                kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
+                preprocess as _relion_cuda_preprocessor_registration,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
             )
 
             backend.set_relion_fourier_backend(fourier_backend)

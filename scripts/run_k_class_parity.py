@@ -1423,7 +1423,9 @@ def main() -> None:
         backend.image_mask_mode = "relion_background_fill"
     if not hasattr(backend, "set_relion_fourier_backend"):
         raise ValueError("Dataset backend does not support image Fourier backend selection")
-    from relax.cuda import kernels as _em_cuda_kernels  # noqa: F401  (registers the relion_cuda preprocessor, seam S2)
+    from relax.cuda import (
+        preprocess as _relion_cuda_preprocessor_registration,  # noqa: F401  (registers the relion_cuda preprocessor, seam S2)
+    )
 
     backend.set_relion_fourier_backend(args.image_fourier_backend)
     print(f"  image Fourier backend: {args.image_fourier_backend}")

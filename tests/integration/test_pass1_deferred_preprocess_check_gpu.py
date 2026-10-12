@@ -87,7 +87,7 @@ def test_pass1_non_finite_image_fails_before_pass2(monkeypatch, inside_mask):
     """A NaN image raises from the real pass-1 batch loop, named by batch and image, before pass 2 accumulates
     anything; the pixel may lie inside the particle mask (relax#16)."""
     assert jax.default_backend() == "gpu"
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import preprocess as cuda_preprocess
 
     run, pass2_calls, dataset = _run_adaptive_k2(monkeypatch)
     result = run()
@@ -95,7 +95,7 @@ def test_pass1_non_finite_image_fails_before_pass2(monkeypatch, inside_mask):
     assert np.all(np.isfinite(np.asarray(result.stats.log_evidence_per_image)))
     # Pass 2's unmasked preparation queues its counts for the iteration loop's drain after the E-step;
     # this test calls the E-step directly, so it drains them as the loop does.
-    assert em_cuda_kernels.drain_relion_preprocess_checks() > 0
+    assert cuda_preprocess.drain_relion_preprocess_checks() > 0
 
     def poison(dataset):
         # A corner lies in the soft-mask background; the centre is inside the mask, which the background sums
@@ -112,5 +112,5 @@ def test_pass1_non_finite_image_fails_before_pass2(monkeypatch, inside_mask):
     assert message.count("batch ") == 1
     assert pass2_calls == []
     # Nothing is left for a later pass to report.
-    assert em_cuda_kernels._RELION_PREPROCESS_DEFERRED_SCOPES == []
-    assert em_cuda_kernels.pending_relion_preprocess_checks() == 0
+    assert cuda_preprocess._RELION_PREPROCESS_DEFERRED_SCOPES == []
+    assert cuda_preprocess.pending_relion_preprocess_checks() == 0

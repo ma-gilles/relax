@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.cuda import (
-    kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
+    preprocess as _relion_cuda_preprocessor_registration,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
 )
 from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import (
@@ -366,7 +366,7 @@ def prepare_batch_preprocess_operands(
     )
     relion_preprocess_kwargs = None
     if relion_cuda_preprocess:
-        from relax.cuda.kernels import note_relion_preprocess_batch
+        from relax.cuda.preprocess import note_relion_preprocess_batch
 
         # An invalid image of this batch is reported by its dataset index (relax#16).
         note_relion_preprocess_batch(image_indices_np)

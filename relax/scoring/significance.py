@@ -36,7 +36,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
     batch_starts = []
     loop_start = time.time()
     pending_batch = None
-    from relax.cuda.kernels import deferred_relion_preprocess_checks
+    from relax.cuda.preprocess import deferred_relion_preprocess_checks
 
     # The image preprocess kernel's finite check is read at the end of the loop: read at each call, it
     # waits for the previous batch's score program inside the next batch's preparation.

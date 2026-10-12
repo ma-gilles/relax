@@ -17,10 +17,10 @@ import numpy as np
 from recovar.reconstruction.noise import make_radial_noise
 from recovar.utils.helpers import get_gpu_memory_total
 
-# Importing relax.cuda.kernels registers RELION's CUDA image preprocessing with recovar's relion_cuda image
+# Importing relax.cuda.preprocess registers RELION's CUDA image preprocessing with recovar's relion_cuda image
 # backend (relax split seam S2), which configure_relion_image_mask can select. relax.fourier.preprocessing, which
 # the adaptive E-step imports, does the same; this module names the registration it relies on.
-from relax.cuda import kernels as _relion_cuda_preprocessor_registration  # noqa: F401
+from relax.cuda import preprocess as _relion_cuda_preprocessor_registration  # noqa: F401
 from relax.refinement.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.relion import projector_setup

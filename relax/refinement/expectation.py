@@ -333,10 +333,10 @@ def run_numbered_halves(
     finished accumulators can leave the device first). The halves run one after another, or one thread each
     (score then finish) when ``overlap_halves`` is requested and allowed. A run that scored a subset of the
     halves for a diagnostic stops here. Then the deferred preprocess checks are drained (dropped when the halves
-    raise, :func:`relax.cuda.kernels.expectation_relion_preprocess_checks`) and the halves' significant-sample
+    raise, :func:`relax.cuda.preprocess.expectation_relion_preprocess_checks`) and the halves' significant-sample
     counts combined; the caller marks the end of the expectation for its observer.
     """
-    from relax.cuda.kernels import expectation_relion_preprocess_checks
+    from relax.cuda.preprocess import expectation_relion_preprocess_checks
 
     _overlap_active = _half_overlap_active(
         overlap_halves,
