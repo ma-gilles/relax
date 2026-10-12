@@ -636,7 +636,12 @@ def main(command=None):
         particle_groups,
         random_seed=seed.value,
         max_iter=job.max_iter,
-        relion_half_sets_from_input=relion_half_sets_from_input,
+        # The optimiser the arguments locate, which a dispatch capture's oracle manifest must hold.
+        discovered_optimiser=(
+            command_options.find_relion_optimiser_star(args, relion_half_sets_from_input=relion_half_sets_from_input)
+            if args.relion_dispatch_schedule is not None
+            else None
+        ),
         log=logger,
     )
     relion_dispatch_schedule = follower_routing.schedule

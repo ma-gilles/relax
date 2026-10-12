@@ -9,7 +9,6 @@ frozen boundary replays is ``RelionReplay.from_frozen_boundary``.
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
-from relax.refinement.command_options import find_relion_optimiser_star
 from relax.refinement.refinement_options import RestartProvenance
 
 if TYPE_CHECKING:
@@ -24,12 +23,14 @@ class VerifiedDispatchSchedule(NamedTuple):
 
 
 def load_verified_dispatch_schedule(
-    args, particles, *, strict_replay: bool, relion_half_sets_from_input: bool
+    args, particles, *, strict_replay: bool, discovered_optimiser: Path | None
 ) -> VerifiedDispatchSchedule:
     """Admit a CLI dispatch capture only against its oracle and particle order.
 
-    Verify directory manifests before discovering the consumed optimiser and
-    sampling files. See ``docs/math/relion_refinement_algorithm.md#command-admission``.
+    Verify directory manifests before admitting the consumed optimiser and sampling files.
+    ``discovered_optimiser`` is the RELION optimiser STAR the command's arguments locate
+    (the command's ``find_relion_optimiser_star``), or None; it must belong to a verified
+    oracle's manifest. See ``docs/math/relion_refinement_algorithm.md#command-admission``.
     """
     from relax.refinement.follower_scale import (
         load_relion_dispatch_schedule,
@@ -75,9 +76,6 @@ def load_verified_dispatch_schedule(
                     f"{label} must belong to a verified RELION oracle directory: {resolved_path}"
                 )
 
-            discovered_optimiser = find_relion_optimiser_star(
-                args, relion_half_sets_from_input=relion_half_sets_from_input
-            )
             if discovered_optimiser is not None:
                 _require_manifested_oracle_file(
                     discovered_optimiser,
@@ -112,12 +110,13 @@ class FollowerRouting(NamedTuple):
 
 
 def admit_follower_routing(
-    args, group_source, particle_groups, *, random_seed: int, max_iter: int, relion_half_sets_from_input: bool, log
+    args, group_source, particle_groups, *, random_seed: int, max_iter: int, discovered_optimiser: Path | None, log
 ) -> FollowerRouting:
     """Admit the followers' dispatch capture against its oracle and build their topology.
 
     A capture is strict K>1 replay state only: it is admitted when the run replays or starts from a RELION
-    directory, and the topology then follows it. ``group_source`` is the particle table the groups came from.
+    directory, and the topology then follows it. ``group_source`` is the particle table the groups came from;
+    ``discovered_optimiser`` is as in :func:`load_verified_dispatch_schedule`.
     """
     from relax.refinement.follower_scale import prepare_follower_topology
 
@@ -129,7 +128,7 @@ def admit_follower_routing(
         args,
         group_source.particles,
         strict_replay=strict_replay,
-        relion_half_sets_from_input=relion_half_sets_from_input,
+        discovered_optimiser=discovered_optimiser,
     )
     topology = prepare_follower_topology(
         args.relion_scale_followers,

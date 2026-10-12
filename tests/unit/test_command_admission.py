@@ -21,6 +21,14 @@ pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
 
 
+def _admit(args, particles):
+    """Admit the fixture's capture with the optimiser the arguments locate, as the command does."""
+    return oracle_admission.load_verified_dispatch_schedule(
+        args, particles, strict_replay=True,
+        discovered_optimiser=command_options.find_relion_optimiser_star(args, relion_half_sets_from_input=False),
+    )
+
+
 @pytest.fixture
 def dispatch_inputs(tmp_path):
     oracle = tmp_path / "oracle"
@@ -68,7 +76,7 @@ def dispatch_inputs(tmp_path):
 
 def test_no_dispatch_reads_no_oracle_or_particle_metadata():
     admitted = oracle_admission.load_verified_dispatch_schedule(
-        SimpleNamespace(relion_dispatch_schedule=None), object(), strict_replay=False, relion_half_sets_from_input=False,
+        SimpleNamespace(relion_dispatch_schedule=None), object(), strict_replay=False, discovered_optimiser=None,
     )
     assert admitted.schedule is None
     assert admitted.oracle_dirs == []
@@ -81,7 +89,7 @@ def test_dispatch_refuses_non_replay_before_loading(monkeypatch):
     monkeypatch.setattr(follower_scale, "load_relion_dispatch_schedule", forbidden)
     with pytest.raises(SystemExit, match="strict K>1 RELION replay/init state only"):
         oracle_admission.load_verified_dispatch_schedule(
-            SimpleNamespace(relion_dispatch_schedule="absent.npz"), object(), strict_replay=False, relion_half_sets_from_input=False,
+            SimpleNamespace(relion_dispatch_schedule="absent.npz"), object(), strict_replay=False, discovered_optimiser=None,
         )
 
 
@@ -98,7 +106,7 @@ def test_verified_dispatch_keeps_particle_identity_and_root_order(dispatch_input
         copy = tmp_path / "relocated"
         shutil.copytree(oracle, copy)
         args.relion_init_dir = copy
-    admitted = oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True, relion_half_sets_from_input=False)
+    admitted = _admit(args, particles)
     expected_roots = [oracle.resolve()]
     if other_root == "relocated":
         expected_roots.append(args.relion_init_dir.resolve())
@@ -146,31 +154,30 @@ def test_dispatch_refuses_unbound_consumed_inputs(dispatch_inputs, tmp_path, dam
         particles = particles.copy()
         particles.loc[0, "rlnGroupNumber"] = 99
     with pytest.raises(SystemExit, match=message) as failure:
-        oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True, relion_half_sets_from_input=False)
+        _admit(args, particles)
     assert isinstance(failure.value.__cause__, ValueError)
 
 
-def test_dispatch_verifies_all_roots_before_discovering_inputs(dispatch_inputs, tmp_path, monkeypatch):
+def test_dispatch_verifies_all_roots_before_admitting_the_discovered_optimiser(dispatch_inputs, tmp_path, monkeypatch):
     args, particles, oracle = dispatch_inputs
     copy = tmp_path / "other"
     shutil.copytree(oracle, copy)
     args.relion_init_dir = copy
+    outside = tmp_path / "outside.star"
+    outside.write_text("other optimiser\n")
     events = []
     verify = follower_scale.verify_relion_dispatch_schedule_oracle
-    discover = command_options.find_relion_optimiser_star
 
     def record_verify(schedule, root):
         events.append(("verify", root))
         verify(schedule, root)
 
-    def record_discover(request, **kwargs):
-        events.append(("discover", request))
-        return discover(request, **kwargs)
-
     monkeypatch.setattr(follower_scale, "verify_relion_dispatch_schedule_oracle", record_verify)
-    monkeypatch.setattr(oracle_admission, "find_relion_optimiser_star", record_discover)
-    oracle_admission.load_verified_dispatch_schedule(args, particles, strict_replay=True, relion_half_sets_from_input=False)
-    assert events == [("verify", oracle.resolve()), ("verify", copy.resolve()), ("discover", args)]
+    with pytest.raises(SystemExit, match="consumed RELION optimiser must belong"):
+        oracle_admission.load_verified_dispatch_schedule(
+            args, particles, strict_replay=True, discovered_optimiser=outside,
+        )
+    assert events == [("verify", oracle.resolve()), ("verify", copy.resolve())]
 
 
 @pytest.mark.parametrize("failure, wrapped", [(OSError("read failure"), True), (RuntimeError("unexpected"), False)])
@@ -181,7 +188,7 @@ def test_dispatch_preserves_exception_scope(monkeypatch, failure, wrapped):
     monkeypatch.setattr(follower_scale, "load_relion_dispatch_schedule", fail)
     with pytest.raises(SystemExit if wrapped else RuntimeError) as caught:
         oracle_admission.load_verified_dispatch_schedule(
-            SimpleNamespace(relion_dispatch_schedule="capture.npz"), object(), strict_replay=True, relion_half_sets_from_input=False,
+            SimpleNamespace(relion_dispatch_schedule="capture.npz"), object(), strict_replay=True, discovered_optimiser=None,
         )
     if wrapped:
         assert caught.value.__cause__ is failure
@@ -276,7 +283,8 @@ def test_follower_routing_hands_the_admitted_capture_and_its_oracle_to_the_topol
     groups = object()
     routing = oracle_admission.admit_follower_routing(
         args, SimpleNamespace(particles=particles, path=oracle / "run_it000_data.star"), groups,
-        random_seed=9, max_iter=1, relion_half_sets_from_input=False, log=LOG,
+        random_seed=9, max_iter=1,
+        discovered_optimiser=command_options.find_relion_optimiser_star(args, relion_half_sets_from_input=False), log=LOG,
     )
     _, schedule, routed_groups, kwargs = calls[0]
     assert schedule is routing.schedule and schedule is not None and routing.topology is topology

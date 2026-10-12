@@ -1161,8 +1161,9 @@ order. Result-file ownership does not change convergence or finalization timing.
 
 [`load_verified_dispatch_schedule`](../../relax/parity/oracle_admission.py)
 admits a captured dispatch schedule only in the existing strict Class3D
-init/replay mode. It verifies unique resolved oracle roots before discovering the
-consumed optimiser and sampling files; all consumed files must be manifested and
+init/replay mode. It verifies unique resolved oracle roots before admitting the
+consumed optimiser (located by the command's arguments and passed in) and sampling
+files; all consumed files must be manifested and
 the selected authoritative particle order/group labels must match. Relocated
 identical roots are valid. Unknown files, changed manifest bytes and changed
 particle identities retain the existing refusals. The admitted result pairs the
