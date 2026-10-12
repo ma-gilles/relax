@@ -36,7 +36,7 @@ def prepare(planner, **overrides):
         source_faithful_spectrum_norm=True, preserve_bpref_particle_order=True,
         use_relion_x_half_mstep=False,
         multi_shape_halves=False, coarse_sizing=(30.0, 100.0), diagnostic_float64_pass2=False,
-        bpref_half=NumberedBPrefHalf(0, 0, False, NoProbe()),
+        bpref_half=NumberedBPrefHalf(0, 0, False, NoProbe(), fused_request=None),
     )
     options.update(overrides)
     return batches.prepare_half_batches(

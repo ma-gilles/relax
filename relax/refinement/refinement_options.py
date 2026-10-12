@@ -23,6 +23,7 @@ from relax.refinement.refinement_state import APPROX_ACC_ROT_CONVERGENCE_ENV, LO
 from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
 from relax.runtime.env_flags import (
     parse_env_choice,
+    parse_env_flag,
     parse_env_flag_or_false,
     parse_env_optional_flag,
     parse_env_true_flag,
@@ -713,6 +714,15 @@ def half_accumulator_guard_mode(raw: str | None, *, warn_only: bool) -> str:
     return "warn" if warn_only else "raise"
 
 
+FIRSTITER_FUSED_BPREF_ENV = "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF"
+
+
+def _optional_env_flag(name: str) -> bool | None:
+    """None when ``name`` is unset or blank (the route decides), else ``env_flags.parse_env_flag``: 0/false/no/off
+    off, any other text on."""
+    return None if not read_env_text(name, "").strip() else parse_env_flag(name)
+
+
 @dataclass(frozen=True, kw_only=True)
 class RefinementEnvironment:
     """The controller's switches of the process environment, read once by :meth:`from_environ`, which the
@@ -723,9 +733,13 @@ class RefinementEnvironment:
     (the default), "warn" or "off", from RELAX_EM_BPREF_FINITE_GUARD (1/true/yes/on/raise or unset/blank:
     raise; 0/false/no/off: off; warn; anything else refused) demoted to "warn" by RELAX_EM_FINITE_CHECK_WARN
     (``env_flags.parse_env_true_flag``); see :func:`half_accumulator_guard_mode`.
+    ``firstiter_fused_bpref`` (RELAX_K1_RELION_FIRSTITER_FUSED_BPREF, :func:`_optional_env_flag`; None: the
+    first-iteration BPref takes its fused kernel wherever it is supported; False: never; True: required there,
+    refused elsewhere; ``firstiter_bpref._relion_firstiter_fused_bpref_enabled``).
     """
 
     half_accumulator_guard: str = "raise"
+    firstiter_fused_bpref: bool | None = None
 
     @classmethod
     def from_environ(cls) -> RefinementEnvironment:
@@ -734,6 +748,7 @@ class RefinementEnvironment:
                 read_env_text(HALF_ACCUMULATOR_GUARD_ENV),
                 warn_only=parse_env_true_flag("RELAX_EM_FINITE_CHECK_WARN"),  # finite_check.FINITE_CHECK_WARN_ENV
             ),
+            firstiter_fused_bpref=_optional_env_flag(FIRSTITER_FUSED_BPREF_ENV),
         )
 
 

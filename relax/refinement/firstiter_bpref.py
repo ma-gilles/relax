@@ -15,12 +15,12 @@ import numpy as np
 
 from relax.numerics import finite_check
 from relax.refinement.ports import ExpectationProbe
+from relax.refinement.refinement_options import FIRSTITER_FUSED_BPREF_ENV
 from relax.runtime import memory_budget
 from relax.runtime.env_flags import parse_env_flag as _env_flag_enabled
 
 logger = logging.getLogger(__name__)
 
-_RELION_FIRSTITER_FUSED_BPREF_ENV = "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF"
 _RELION_FIRSTITER_DEFERRED_BPREF_ENV = "RELAX_RELION_FIRSTITER_DEFERRED_BPREF"
 _RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES_ENV = "RELAX_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES"
 _AUTO_DEFERRED_FIRSTITER_BPREF_DEVICE_FRACTION = 0.500
@@ -29,6 +29,7 @@ _DEFAULT_DEFERRED_FIRSTITER_BPREF_MAX_HOST_BYTES = 128 * 1024**3
 
 def _relion_firstiter_fused_bpref_enabled(
     *,
+    requested: bool | None,
     fresh_k1_guard: bool,
     winner_take_all: bool,
     preserve_bpref_particle_order: bool,
@@ -38,7 +39,8 @@ def _relion_firstiter_fused_bpref_enabled(
     first_numbered_iteration: bool,
 ) -> bool:
     """Route only fresh single-class firstiter BPref through its native kernel, in the run's first numbered
-    iteration (``first_numbered_iteration``)."""
+    iteration (``first_numbered_iteration``). ``requested`` is ``RefinementEnvironment.firstiter_fused_bpref``:
+    None takes the kernel wherever it is supported, False never, True refuses where it is not supported."""
 
     supported = bool(
         fresh_k1_guard
@@ -49,13 +51,11 @@ def _relion_firstiter_fused_bpref_enabled(
         and not score_only
         and first_numbered_iteration
     )
-    raw = os.environ.get(_RELION_FIRSTITER_FUSED_BPREF_ENV)
-    if raw is None or not raw.strip():
+    if requested is None:
         return supported
-    requested = _env_flag_enabled(_RELION_FIRSTITER_FUSED_BPREF_ENV)
     if requested and not supported:
         raise ValueError(
-            f"{_RELION_FIRSTITER_FUSED_BPREF_ENV}=1 requires the fresh K=1 "
+            f"{FIRSTITER_FUSED_BPREF_ENV}=1 requires the fresh K=1 "
             "iteration-1 winner-take-all x-half path"
         )
     return bool(requested and supported)
@@ -170,13 +170,15 @@ def _relion_firstiter_compact_batch_planning_safe(
 @dataclass(frozen=True)
 class NumberedBPrefHalf:
     """The numbered half a first-iteration BPref plan is for: ``iteration`` and ``half_index`` (zero-based), whether
-    the run's BPref device-signature target is this half (``device_signature_active``), and the run's expectation
-    probe, which says whether a BPref diagnostic is armed for it (asked only where a plan needs the answer)."""
+    the run's BPref device-signature target is this half (``device_signature_active``), the run's expectation
+    probe, which says whether a BPref diagnostic is armed for it (asked only where a plan needs the answer), and the
+    run's fused-kernel request (``fused_request``, ``RefinementEnvironment.firstiter_fused_bpref``)."""
 
     iteration: int
     half_index: int
     device_signature_active: bool
     probe: ExpectationProbe
+    fused_request: bool | None
 
     def diagnostics_armed(self) -> bool:
         return self.probe.bpref_diagnostics_armed(
@@ -201,7 +203,8 @@ def relion_firstiter_compact_batch_planning_decision(
     fixed_base_bytes: int,
     half: NumberedBPrefHalf,
 ) -> _RelionFirstiterCompactBatchPlanningDecision:
-    """Preflight compact planning through the authoritative BPref gates, for the numbered ``half``."""
+    """Preflight compact planning through the authoritative BPref gates, for the numbered ``half``.
+    The fused-kernel request is the half's (``half.fused_request``)."""
 
     if projector_half is None:
         return _RelionFirstiterCompactBatchPlanningDecision(False, False, 0)
@@ -215,6 +218,7 @@ def relion_firstiter_compact_batch_planning_decision(
     fresh_k1_guard = bool(source_faithful_spectrum_norm)
     relion_exact_bpref_operands = fresh_k1_guard
     relion_firstiter_fused_bpref = _relion_firstiter_fused_bpref_enabled(
+        requested=half.fused_request,
         fresh_k1_guard=fresh_k1_guard,
         winner_take_all=winner_take_all,
         preserve_bpref_particle_order=preserve_bpref_particle_order,

@@ -550,7 +550,10 @@ def score_numbered_half(
         multi_shape_halves=multi_shape_halves,
         coarse_sizing=(coarse_size_step_deg, particle_diameter_ang) if phase.use_adaptive and multi_shape_halves else None,
         diagnostic_float64_pass2=diagnostic_float64_pass2,
-        bpref_half=NumberedBPrefHalf(iteration, particle_half.index, bpref_device_signature_active, probe),
+        bpref_half=NumberedBPrefHalf(
+            iteration, particle_half.index, bpref_device_signature_active, probe,
+            fused_request=options.environment.firstiter_fused_bpref,
+        ),
     )
     # RELION translation priors: relion_half_translation_prior_inputs
     # documents the pdf_offset / wsum_sigma2_offset centers, the

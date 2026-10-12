@@ -5,8 +5,8 @@ from relax.refinement.firstiter_bpref import _relion_firstiter_fused_bpref_enabl
 
 
 def test_firstiter_fused_bpref_defaults_only_inside_complete_fresh_k1_guard(monkeypatch):
-    monkeypatch.delenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", raising=False)
     kwargs = dict(
+        requested=None,
         fresh_k1_guard=True,
         winner_take_all=True,
         preserve_bpref_particle_order=True,
@@ -33,10 +33,10 @@ def test_firstiter_fused_bpref_override_can_disable_but_not_expand_scope(monkeyp
         score_only=False,
         first_numbered_iteration=True,
     )
-    monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
+    kwargs["requested"] = False
     assert not _relion_firstiter_fused_bpref_enabled(**kwargs)
 
-    monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "1")
+    kwargs["requested"] = True
     with pytest.raises(ValueError, match="requires the fresh K=1"):
         _relion_firstiter_fused_bpref_enabled(
             **{**kwargs, "fresh_k1_guard": False}

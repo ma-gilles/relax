@@ -205,7 +205,7 @@ def _box800_plan(**overrides):
     kwargs.update(overrides)
     return estimate_relion_em_batch_sizes(**kwargs)
 
-def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64):
+def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64, fused_bpref_request=None):
     sparse = firstiter_bpref
     return sparse.relion_firstiter_compact_batch_planning_decision(
         source_faithful_spectrum_norm=True,
@@ -217,7 +217,9 @@ def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64)
         recon_volume_size=1603 * 1603 * 802,
         fixed_base_bytes=4_000_000_000,
         # Iteration 1's first half; the command's BPref observer reads the diagnostic variables.
-        half=firstiter_bpref.NumberedBPrefHalf(0, 0, False, ObserverExpectationProbe(observers.BpRefDiagnosticsObserver())),
+        half=firstiter_bpref.NumberedBPrefHalf(
+            0, 0, False, ObserverExpectationProbe(observers.BpRefDiagnosticsObserver()), fused_request=fused_bpref_request,
+        ),
     )
 
 def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch):
@@ -284,8 +286,7 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
     assert disabled_deferred.deferred_firstiter_bpref is False
 
     monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF")
-    monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
-    disabled_fused = _compact_route_decision(projector_half=host_projector)
+    disabled_fused = _compact_route_decision(projector_half=host_projector, fused_bpref_request=False)
     assert disabled_fused.enabled is False
 
 @pytest.mark.parametrize("diagnostic_env", ["RELAX_EM_FINITE_CHECK", "RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR"])
@@ -370,7 +371,7 @@ def test_compact_planning_asks_the_probe_about_its_numbered_half(monkeypatch):
     )
     decide = firstiter_bpref.relion_firstiter_compact_batch_planning_decision
     half = firstiter_bpref.NumberedBPrefHalf
-    assert decide(**common, half=half(0, 1, False, Probe(False))).enabled
-    assert not decide(**common, half=half(0, 1, False, Probe(True))).enabled
-    assert not decide(**common, half=half(1, 0, False, Probe(False))).enabled
+    assert decide(**common, half=half(0, 1, False, Probe(False), fused_request=None)).enabled
+    assert not decide(**common, half=half(0, 1, False, Probe(True), fused_request=None)).enabled
+    assert not decide(**common, half=half(1, 0, False, Probe(False), fused_request=None)).enabled
     assert asked == [(0, 1, False), (0, 1, False), (1, 0, False)]
