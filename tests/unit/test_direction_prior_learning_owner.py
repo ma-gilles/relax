@@ -11,7 +11,7 @@ from helpers.float_compare import assert_matches
 
 from relax.refinement.iteration_history import RefinementHistory
 from relax.sampling import orientation_priors as op
-from relax.sampling import rotation_grid_size
+from relax.sampling.grids import rotation_grid_size
 
 pytestmark = pytest.mark.unit
 ORDER = 1

@@ -19,6 +19,7 @@ from relax.refinement.trial_grids import (
     coarse_pass1_rotations,
     iteration_trial_grid,
 )
+from relax.sampling import grids
 from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import relion_direction_log_priors, relion_local_search_sigmas
 
@@ -35,7 +36,7 @@ EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS = 3_000_000
 def _precompute_exact_local_fine_grid_enabled(healpix_order: int, symmetry: str) -> bool:
     """Return whether exact local search should materialize the fine grid once."""
 
-    return sampling.rotation_grid_size(healpix_order, symmetry) <= EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS
+    return grids.rotation_grid_size(healpix_order, symmetry) <= EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -105,7 +106,7 @@ def relion_local_pass1_current_size(
 
 def prepare_numbered_local_sampling(
     search: LocalSearchSettings,
-    grid: sampling.TrialGrid,
+    grid: grids.TrialGrid,
     optics,
     *,
     base_translations,
@@ -127,14 +128,14 @@ def prepare_numbered_local_sampling(
     """
     coarse_image_window_size = image_window_size
     coarse_angular_step_deg = None
-    if grid.rotations.shape[0] != sampling.rotation_grid_size(search.healpix_order, symmetry=search.symmetry):
+    if grid.rotations.shape[0] != grids.rotation_grid_size(search.healpix_order, symmetry=search.symmetry):
         logger.info(
             "Using lazy fine local-search grid: order=%d (%d rotations) from capped base order=%d",
             search.healpix_order,
-            sampling.rotation_grid_size(search.healpix_order, symmetry=search.symmetry),
+            grids.rotation_grid_size(search.healpix_order, symmetry=search.symmetry),
             base_healpix_order,
         )
-        angular_step_deg = sampling.relion_angular_sampling_deg(search.healpix_order, adaptive_oversampling=0)
+        angular_step_deg = grids.relion_angular_sampling_deg(search.healpix_order, adaptive_oversampling=0)
         if search.oversampling_order == 0 and _precompute_exact_local_fine_grid_enabled(
             search.healpix_order, symmetry=search.symmetry,
         ):
@@ -217,7 +218,7 @@ def prepare_final_local_sampling(
     rotation_dtype,
 ) -> LocalSampling:
     """Prepare final local sampling; None perturbation differs from applied zero."""
-    angular_step_deg = sampling.relion_angular_sampling_deg(search.healpix_order, adaptive_oversampling=0)
+    angular_step_deg = grids.relion_angular_sampling_deg(search.healpix_order, adaptive_oversampling=0)
 
     if search.oversampling_order > 0:
         coarse_angular_step_deg = angular_sampling_deg(search.parent_order)
@@ -273,7 +274,7 @@ class ExpectationSampling:
 
 
 def plan_expectation_sampling(
-    trial_grid: sampling.TrialGrid,
+    trial_grid: grids.TrialGrid,
     coarse_grids,
     state,
     options,
@@ -355,7 +356,7 @@ class NumberedSamplingPlan:
     """
 
     coarse_grids: CoarseGrids
-    trial_grid: sampling.TrialGrid
+    trial_grid: grids.TrialGrid
     adaptive_pass1: tuple | None
     sampling_plan: ExpectationSampling
     direction_prior_healpix_order: int

@@ -147,7 +147,7 @@ def lowpass_volume_by_shell(
 
 def relion_alignment_rotations(healpix_order: int) -> np.ndarray:
     """Return the RELION/RECOVAR SO(3) search grid for GT alignment."""
-    from relax.sampling import get_rotation_grid_at_order
+    from relax.sampling.grids import get_rotation_grid_at_order
 
     return np.asarray(get_rotation_grid_at_order(int(healpix_order), matrices=True), dtype=np.float64)
 

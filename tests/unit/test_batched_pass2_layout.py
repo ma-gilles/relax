@@ -7,6 +7,7 @@ from helpers.float_compare import assert_matches
 
 from relax import sampling
 from relax.local_search import layout as local_layout
+from relax.sampling import grids
 
 pytestmark = pytest.mark.unit
 
@@ -15,7 +16,7 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize("index_order", ["recovar", "relion", "relion_hidden"])
 @pytest.mark.parametrize("perturbation", [0.0, -0.43747416138648987])
 def test_batched_pass2_matches_independent_image_layouts(order, index_order, perturbation):
-    n_rotations = sampling.rotation_grid_size(0)
+    n_rotations = grids.rotation_grid_size(0)
     samples = [
         np.array([2 * 3, 2 * 3 + 1, 5 * 3 + 2, 2 * 3]),
         np.array([1 * 3 + 2, 5 * 3, (n_rotations - 1) * 3]),
@@ -103,7 +104,7 @@ def test_packed_mask_preserves_boolean_rows_and_bucket_padding(n_translations):
 
 def _unequal_support_layout():
     """A layout whose images have deliberately unequal local supports."""
-    n = sampling.rotation_grid_size(0)
+    n = grids.rotation_grid_size(0)
     return local_layout.build_pass2_hypothesis_layout(
         [np.arange(1), np.arange(3), np.arange(n)],
         n_coarse_rotations=n,

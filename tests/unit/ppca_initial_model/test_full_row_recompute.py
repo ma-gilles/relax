@@ -112,11 +112,11 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
     eulers = np.zeros((3, 3), np.float32)
     shifts = np.zeros((2, 2), np.float32)
     monkeypatch.setattr(
-        iteration_loop.sampling,
+        iteration_loop.grids,
         "get_relion_hidden_rotation_grid",
         lambda _hp, *, matrices: rotations if matrices else eulers,
     )
-    monkeypatch.setattr(iteration_loop.sampling, "get_relion_translation_grid", lambda **_kw: shifts)
+    monkeypatch.setattr(iteration_loop.grids, "get_relion_translation_grid", lambda **_kw: shifts)
     monkeypatch.setattr(iteration_loop, "make_radial_noise", lambda _noise, _shape: np.ones((n, n // 2 + 1)))
     data = SimpleNamespace(grid_size=n, image_shape=(n, n), volume_shape=(n, n, n))
     state = SimpleNamespace(
@@ -311,7 +311,7 @@ def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, ca
     n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
     monkeypatch.setattr(iteration_loop, "support_mask", lambda *_args: jnp.ones(shape, jnp.float32))
     monkeypatch.setattr(iteration_loop, "bandlimit_and_mask", lambda value, *_args: value)
-    monkeypatch.setattr(iteration_loop.sampling, "get_relion_hidden_rotation_grid", lambda *_a, **_k: np.zeros((1, 3)))
+    monkeypatch.setattr(iteration_loop.grids, "get_relion_hidden_rotation_grid", lambda *_a, **_k: np.zeros((1, 3)))
 
     def groups(_dataset, _state, _config, halves, _iteration, **_kwargs):
         return [

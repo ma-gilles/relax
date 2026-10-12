@@ -359,8 +359,8 @@ host-double source angles until its existing scoring cast; working Euler rows
 retain scoring precision for perturbation. Startup/rebuild/final preparation share
 that owner without changing sampling or RNG progression.
 
-[`sampling.py`](../../relax/sampling/__init__.py) owns rotation and translation grids,
-Euler conversions, oversampled children and perturbations. For the full C1 grid,
+[`sampling/grids.py`](../../relax/sampling/grids.py) owns rotation and translation grids and
+Euler conversions; [`sampling`](../../relax/sampling/__init__.py) owns oversampled children and perturbations. For the full C1 grid,
 `rotation_grid_n_in_planes` and `rotation_grid_size` give
 
 ```text

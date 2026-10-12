@@ -39,6 +39,7 @@ from relax.relion.image_preprocessing import uses_relion_cuda_image_preprocessin
 from relax.runtime.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
+from relax.sampling import grids as sampling_grids
 from relax.sampling import oversampling
 from relax.sampling.healpix import angular_sampling_deg
 from relax.steps import optics_shapes
@@ -130,7 +131,7 @@ def sparse_pass2_estep_meta(
 def relion_order_of_recovar_rotations(healpix_order: int) -> np.ndarray:
     """RELION direction-major coarse id of each RECOVAR-order coarse rotation."""
 
-    n_rot = int(sampling.rotation_grid_size(int(healpix_order)))
+    n_rot = int(sampling_grids.rotation_grid_size(int(healpix_order)))
     return relion_parent_execution_key(
         np.arange(n_rot, dtype=np.int64), n_coarse_rot=n_rot, nside_level=int(healpix_order)
     )
@@ -168,8 +169,8 @@ def adaptive_route_grids(
     """
 
     order = int(healpix_order)
-    angular_sampling = sampling.relion_angular_sampling_deg(order)
-    source_eulers = sampling._get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
+    angular_sampling = sampling_grids.relion_angular_sampling_deg(order)
+    source_eulers = sampling_grids.get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
     host_rotations = np.asarray(
         sampling.apply_relion_rotation_perturbation_to_eulers(source_eulers, float(random_perturbation), angular_sampling)[0],
         dtype=np.float32,
@@ -303,7 +304,7 @@ def run_adaptive_initial_model_estep(
     ):
         raise RuntimeError("the adaptive route's fine translations differ from VDAM's sampling plan")
     n_coarse_rot = int(grids.coarse_rotations.shape[0])
-    n_psi = int(sampling.rotation_grid_n_in_planes(healpix_order))
+    n_psi = int(sampling_grids.rotation_grid_n_in_planes(healpix_order))
     class_rotation_log_prior = recovar_order_prior(
         engine_kwargs.get("class_rotation_log_prior"), route.relion_of_recovar
     )

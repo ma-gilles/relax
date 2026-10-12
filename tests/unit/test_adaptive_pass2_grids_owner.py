@@ -7,7 +7,8 @@ import pytest
 from helpers.float_compare import matches
 
 from relax.refinement import dense_half
-from relax.sampling import apply_relion_translation_perturbation, rotation_grid_size
+from relax.sampling import apply_relion_translation_perturbation
+from relax.sampling.grids import rotation_grid_size
 from relax.sampling.oversampling import build_adaptive_pass2_grids
 
 pytestmark = pytest.mark.unit

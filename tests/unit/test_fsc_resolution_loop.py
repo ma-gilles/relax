@@ -10,7 +10,7 @@ Hermitian volume, so the half-map FSC is finite and below one.
 import numpy as np
 import pytest
 
-import relax.sampling as sampling_module
+from relax.sampling import grids as grids_module
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -43,7 +43,7 @@ SEED = 42
 
 def _assert_relion_hard_assignments_in_range(result, n_translations):
     """Validate pose IDs against the generated RELION grid."""
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     final_order = result.history.healpix_order_trajectory[-1]
     n_total_poses = rotation_grid_size(final_order) * int(n_translations)
@@ -214,13 +214,13 @@ def generated_relion_rotation_grid(monkeypatch):
 
     def fake_scoring_rotation_grid(order, dtype=None, *, symmetry="C1"):
         del dtype
-        n_rotations = sampling_module.rotation_grid_size(order, symmetry=symmetry)
+        n_rotations = grids_module.rotation_grid_size(order, symmetry=symmetry)
         rotations = np.repeat(np.eye(3, dtype=np.float32)[None], n_rotations, axis=0)
         eulers = np.zeros((n_rotations, 3), dtype=np.float32)
-        return sampling_module.RotationGrid(rotations=rotations, rotation_eulers=eulers, healpix_order=order, symmetry=symmetry)
+        return grids_module.RotationGrid(rotations=rotations, rotation_eulers=eulers, healpix_order=order, symmetry=symmetry)
 
     monkeypatch.setattr(
-        sampling_module,
+        grids_module,
         "relion_scoring_rotation_grid",
         fake_scoring_rotation_grid,
     )

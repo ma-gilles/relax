@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from oracles.core import translations_to_indices
 from oracles.m_step import sum_up_translate_one_image
 
-from relax.sampling import get_translation_grid
+from relax.sampling.grids import get_translation_grid
 
 pytestmark = pytest.mark.unit
 

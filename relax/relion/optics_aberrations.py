@@ -307,7 +307,7 @@ def relax_projection_magnification(mag_matrix) -> np.ndarray:
 
     RELION projects and backprojects with ``inv(M3) A``, ``M3`` the 2x2 magnification
     embedded in a 3x3 identity (acc_ml_optimiser_impl.h:1098, 1721, 3221). relax's
-    projection matrices are ``inv(A)^T`` (``sampling._relion_mstep_rotations_from_eulers``),
+    projection matrices are ``inv(A)^T`` (``sampling.grids.relion_mstep_rotations_from_eulers``),
     so the magnified ones are ``inv(inv(M3) A)^T = M3^T inv(A)^T``: ``M3^T`` on the left.
     """
 

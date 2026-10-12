@@ -23,7 +23,6 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from relax import sampling
 from relax.parity.frozen_boundary import (
     _assert_frozen_scoring_state_unchanged,
     _frozen_scoring_state_arrays,
@@ -56,6 +55,7 @@ from relax.refinement.setup_checks import _has_numbered_replay_iteration_overrid
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.refinement.trial_grids import CoarseGrids, FinalSamplingSettings, native_final_sampling_settings
 from relax.runtime.env_flags import parse_env_true_flag
+from relax.sampling import grids as sampling_grids
 from relax.star.metadata import read_relion_sampling_metadata
 from relax.steps.scoring_policy import _dense_global_scoring_dtype
 
@@ -294,7 +294,7 @@ class RelionReplaySource(InputSource):
         current_translations = grids.translations
         # Translation params may have changed under replay without an
         # hp_order bump. Regenerate the translation grid to match RELION.
-        _new_t_source = sampling.relion_base_translation_grid(
+        _new_t_source = sampling_grids.relion_base_translation_grid(
             state.translation_range,
             state.translation_step,
             n_classes=self.options.k_class.n_classes,
@@ -742,7 +742,7 @@ def build_sealed_initial_coarse_grids(
         int(current_translations.shape[0]),
     )
     return CoarseGrids(
-        rotation_grid=sampling.RotationGrid(
+        rotation_grid=sampling_grids.RotationGrid(
             rotations=rotations, rotation_eulers=rotation_eulers,
             healpix_order=healpix_order, symmetry=symmetry,
         ),
@@ -777,11 +777,11 @@ def _log_replayed_translation_grid_change(settings, *, replay_dir, replay_prefix
     numbered = read_relion_sampling_metadata(numbered_path)
     numbered_range = numbered["offset_range"] / settings.pixel_size_angstrom
     numbered_step = numbered["offset_step"] / settings.pixel_size_angstrom
-    numbered_grid = sampling.relion_base_translation_grid(
+    numbered_grid = sampling_grids.relion_base_translation_grid(
         numbered_range, numbered_step,
         n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
     ).astype(np.float32)
-    final_grid = sampling.relion_base_translation_grid(
+    final_grid = sampling_grids.relion_base_translation_grid(
         settings.translation_range, settings.translation_step,
         n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
     ).astype(np.float32)

@@ -54,8 +54,8 @@ pipeline PPCA path currently rejects tilt-series input. Consult the
 on pose refinement, and the [paper-data runbook](della.md) for pinned inputs.
 
 Unperturbed exhaustive rotation matrices, working Euler rows, HEALPix order and
-point group are produced together as `sampling.RotationGrid` in
-[`sampling.py`](../../relax/sampling/__init__.py). Initial planning and numbered replacement
+point group are produced together as `sampling.grids.RotationGrid` in
+[`sampling/grids.py`](../../relax/sampling/grids.py). Initial planning and numbered replacement
 retain that owner; final sampling consumes it. The command and numbered controllers
 remain unfinished; the [current review](final_local_sampling_patch_review.md#rotation-grid-ownership-and-remaining-controller-work)
 shows the actual producer, updates and final consumer.

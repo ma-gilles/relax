@@ -10,7 +10,7 @@ from pathlib import Path
 
 import starfile
 
-from relax import sampling
+from relax.sampling import grids
 
 _ITERATION_RE = re.compile(r"run_it(\d+)_recovar_meta\.json$")
 
@@ -71,7 +71,7 @@ def _native_translation_count(
     pixel_size: float,
     oversampling: int,
 ) -> int:
-    coarse = sampling.get_relion_translation_grid(
+    coarse = grids.get_relion_translation_grid(
         float(native["offset_range_angstrom"]) / pixel_size,
         float(native["offset_step_angstrom"]) / pixel_size,
         source_units_per_pixel=pixel_size,

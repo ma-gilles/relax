@@ -15,7 +15,7 @@ import jax.numpy as jnp
 
 from recovar.core import fourier_transform_utils as ftu
 from relax.io.map_io import load_relax_map
-from relax.sampling import get_rotation_grid_at_order, get_translation_grid
+from relax.sampling.grids import get_rotation_grid_at_order, get_translation_grid
 from recovar.simulation import solvent_contrast, synthetic_dataset
 from recovar.utils import helpers
 from recovar.utils.json_utils import to_jsonable

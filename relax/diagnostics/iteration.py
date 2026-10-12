@@ -24,7 +24,7 @@ from relax.diagnostics import parity_dump as _parity_dump
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.runtime.env_flags import parse_int_set
-from relax.sampling import rotation_grid_size
+from relax.sampling.grids import rotation_grid_size
 from relax.sampling.symmetry import canonicalize_rotational_symmetry, symmetry_operator_sha256
 from relax.star.metadata import _relion_half_plane_shell_counts
 

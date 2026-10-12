@@ -181,7 +181,7 @@ def test_half_image_preprocessing_masks_with_the_resolved_edge():
 def test_iteration_one_translations_are_relions_grid(monkeypatch, tmp_path, n_classes):
     # Iteration 1 used floor(range / step): 5.5 / 1.1 px gave 77 translations where RELION's
     # setTranslations (healpix_sampling.cpp:344, 413-454: CEIL, x^2 + y^2 < range^2 + 0.001 in A^2) gives 81.
-    from relax.sampling import get_relion_translation_grid
+    from relax.sampling.grids import get_relion_translation_grid
 
     command = ["refine"] if n_classes == 1 else ["class3d", "--n_classes", str(n_classes)]
     kwargs = controller_inputs(

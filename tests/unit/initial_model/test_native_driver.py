@@ -16,12 +16,11 @@ from recovar.data_io.starfile import read_star
 from recovar.utils.helpers import R_from_relion, write_relion_mrc
 
 import relax.vdam.driver as driver
-from relax import sampling
 from relax.commands import initial_model
 from relax.diagnostics.vdam_observers import vdam_command_observer
 from relax.io.particle_io import ParticleReadPolicy
 from relax.parity import vdam_replay
-from relax.sampling import healpix
+from relax.sampling import grids, healpix
 from relax.sampling.orientation_priors import relion_round_away_from_zero
 from relax.steps.expected_accuracy import ExpectedAccuracy
 from relax.steps.tomo_half import TiltImageAccuracyInputs
@@ -1511,7 +1510,7 @@ def test_uniform_local_orientation_prior_replaces_learned_direction_prior():
 
     prior = native_sampling.class_rotation_log_prior_for_sampling(state, sampling_state, healpix_order=0)
 
-    n_rot = sampling.rotation_grid_size(0)
+    n_rot = grids.rotation_grid_size(0)
     assert prior.shape == (2, n_rot)
     assert_matches(prior, np.full_like(prior, np.log(1.0 / n_rot)))
 
@@ -1548,7 +1547,7 @@ def test_direction_prior_preserves_relion_absolute_log_scale_and_cutoff_tie():
     state.pdf_direction[0, 10] = 0.0206643770425
 
     prior = native_sampling._class_direction_rotation_log_prior(state, healpix_order=0)
-    n_psi = sampling.rotation_grid_n_in_planes(0)
+    n_psi = grids.rotation_grid_n_in_planes(0)
 
     expected_9 = np.float32(np.log(state.pdf_direction[0, 9]))
     expected_10 = np.float32(np.log(state.pdf_direction[0, 10]))
@@ -1931,8 +1930,8 @@ def test_update_particle_state_preserves_best_pose_metadata():
 
 
 def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():
-    grid_eulers = sampling.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
-    grid_rotations = sampling.get_relion_rotation_grid(1, rotation_index_order="relion")
+    grid_eulers = grids.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
+    grid_rotations = grids.get_relion_rotation_grid(1, rotation_index_order="relion")
     perturbed_euler = np.asarray([[33.0, 44.0, 55.0]], dtype=np.float64)
     perturbed_rotation = healpix.euler_angles_to_matrix(perturbed_euler)[0].astype(np.float32)
     particle_state = NativeParticleState(
@@ -2715,7 +2714,7 @@ def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, mo
     )
 
     data, _ = read_star(str(out))
-    expected_eulers = sampling.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
+    expected_eulers = grids.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
     assert data["_rlnImageName"].tolist() == ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"]
     assert_matches(data["_rlnClassNumber"].astype(int).to_numpy(), [0, 1, 1])
     assert_matches(data["_rlnRandomSubset"].astype(int).to_numpy(), [1, 2, 1])

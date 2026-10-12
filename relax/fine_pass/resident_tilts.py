@@ -103,7 +103,7 @@ def tilt_slot_rotations(
     entry ``s * C_R + r``.
     """
 
-    from relax.sampling import _relion_mstep_rotations_from_eulers
+    from relax.sampling.grids import relion_mstep_rotations_from_eulers
     from relax.sampling.tomo_particles import relion_left_matrices
 
     n_slots, n_rows = layout.slot_image_ids.shape
@@ -118,7 +118,7 @@ def tilt_slot_rotations(
     left, applies = relion_left_matrices(np.asarray(image_left, dtype=np.float64)[images])
     with_left = valid & applies
     if np.any(with_left):
-        out[with_left] = _relion_mstep_rotations_from_eulers(
+        out[with_left] = relion_mstep_rotations_from_eulers(
             np.asarray(row_source_eulers, dtype=np.float64)[rows[with_left]],
             dtype=dtype,
             left_matrices=left[with_left],
@@ -128,7 +128,7 @@ def tilt_slot_rotations(
         out[spa] = (
             np.asarray(row_spa_matrices, dtype=dtype)[rows[spa]]
             if row_spa_matrices is not None
-            else _relion_mstep_rotations_from_eulers(
+            else relion_mstep_rotations_from_eulers(
                 np.asarray(row_source_eulers, dtype=np.float64)[rows[spa]], dtype=dtype
             )
         )

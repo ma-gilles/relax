@@ -1121,8 +1121,8 @@ the binding in `tests/unit/test_*_vs_relion_bind.py` (and `tests/unit/initial_mo
 | Module | Function | Binding call | Runs that use it | What it computes | Status |
 | --- | --- | --- | --- | --- | --- |
 | `symmetry.py` | `_operators_float64` | `get_symmetry_operators` | every run (C1 hash/point-group code; operators for non-C1) | RELION `SymList` ordered L/R operators and point-group code | ported (`symmetry._operators_float64`) |
-| `sampling.py` | `_get_relion_grid_metadata` | `get_healpix_directions` (C1), `get_healpix_sampling_metadata` (non-C1) | every run | HEALPix NEST directions (rot, tilt), retained pixel ids, psi grid; asymmetric-unit pruning for non-C1 | ported (`healpix_sampling.py`) |
-| `sampling.py` | `get_relion_rotation_grid`, `_get_relion_rotation_grid_eulers_float64` | `get_coarse_orientations` | every run | the coarse (direction, psi) Euler grid in RELION order | ported (`healpix_sampling.py`) |
+| `sampling/grids.py` | `get_relion_grid_metadata` | `get_healpix_directions` (C1), `get_healpix_sampling_metadata` (non-C1) | every run | HEALPix NEST directions (rot, tilt), retained pixel ids, psi grid; asymmetric-unit pruning for non-C1 | ported (`healpix_sampling.py`) |
+| `sampling/grids.py` | `get_relion_rotation_grid`, `get_relion_rotation_grid_eulers_float64` | `get_coarse_orientations` | every run | the coarse (direction, psi) Euler grid in RELION order | ported (`healpix_sampling.py`) |
 | `sampling.py` | oversampled-orientation builder | `get_oversampled_orientations_batch` (NumPy fallback for C1; required for non-C1) | every run (fine pass) | `HealpixSampling::getOrientations` children with random perturbation | ported (`healpix_sampling.py`) |
 | `sampling.py` | inverse scoring matrices | `euler_angles_to_inverse_matrices` (NumPy fallback exists) | every run | `Euler_angles2matrix` then `Matrix2D::inv` | ported (`healpix_sampling.py`) |
 | `sampling.py` | device scoring perturbation | `euler_angles_to_matrix` (NumPy fallback exists) | every run with perturbation | perturbation Euler matrix | ported (`healpix_sampling.py`) |

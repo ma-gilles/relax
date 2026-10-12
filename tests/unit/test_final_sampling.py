@@ -42,13 +42,13 @@ def preparation(monkeypatch):
     events = []
     monkeypatch.setattr(trial_grids, "_exhaustive_grid_order_for_state", lambda state: 3)
     monkeypatch.setattr(trial_grids, "native_final_perturbation_healpix_order", lambda state, order: 5)
-    monkeypatch.setattr(trial_grids.sampling, "relion_base_translation_grid", lambda *a, **kw: host_grid)
-    monkeypatch.setattr(trial_grids.sampling, "relion_mstep_source_eulers", lambda eulers, *a, **kw: eulers)
-    monkeypatch.setattr(trial_grids.sampling, "relion_angular_sampling_deg", lambda *a, **kw: 7.5)
+    monkeypatch.setattr(trial_grids.sampling_grids, "relion_base_translation_grid", lambda *a, **kw: host_grid)
+    monkeypatch.setattr(trial_grids.sampling_grids, "relion_mstep_source_eulers", lambda eulers, *a, **kw: eulers)
+    monkeypatch.setattr(trial_grids.sampling_grids, "relion_angular_sampling_deg", lambda *a, **kw: 7.5)
 
     def perturb(**kwargs):
         events.append(("perturb", kwargs))
-        return trial_grids.sampling.TrialGrid(
+        return trial_grids.sampling_grids.TrialGrid(
             rotations, kwargs["rotation_eulers"], rotations, kwargs["base_translations"],
         )
 
@@ -61,7 +61,7 @@ def preparation(monkeypatch):
     inputs = dict(
         state=SimpleNamespace(translation_range=4.25, translation_step=1.416667),
         image_geometry=trial_grids.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.5),
-        previous_rotation_grid=trial_grids.sampling.RotationGrid(
+        previous_rotation_grid=trial_grids.sampling_grids.RotationGrid(
             rotations=rotations, rotation_eulers=eulers, healpix_order=3, symmetry="C1",
         ),
         options=stand_in.options(schedule=stand_in.schedule(init_relion_iteration=10)),
@@ -132,9 +132,9 @@ def test_changed_coarse_order_rebuilds_with_the_requested_precision_and_symmetry
 
     def build(order, **kwargs):
         calls.append((order, kwargs))
-        return trial_grids.sampling.RotationGrid(rotations=rebuilt, rotation_eulers=np.zeros((1, 3), dtype=np.float64), healpix_order=order, symmetry=kwargs.get("symmetry", "C1"))
+        return trial_grids.sampling_grids.RotationGrid(rotations=rebuilt, rotation_eulers=np.zeros((1, 3), dtype=np.float64), healpix_order=order, symmetry=kwargs.get("symmetry", "C1"))
 
-    monkeypatch.setattr(trial_grids.sampling, "relion_scoring_rotation_grid", build)
+    monkeypatch.setattr(trial_grids.sampling_grids, "relion_scoring_rotation_grid", build)
     result = trial_grids.prepare_final_sampling(**inputs)
     assert result.base_rotations is rebuilt
     assert calls == [(3, dict(dtype=np.float64, symmetry="D2"))]

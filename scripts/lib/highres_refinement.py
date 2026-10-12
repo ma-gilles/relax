@@ -12,7 +12,7 @@ from relax.local_search.layout import (
     LocalHypothesisLayout,
     build_local_hypothesis_layout,
 )
-from relax.sampling import build_local_search_grid_metadata
+from relax.sampling.grids import build_local_search_grid_metadata
 
 
 def build_top_p_local_hypothesis_layout(

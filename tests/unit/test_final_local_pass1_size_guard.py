@@ -35,7 +35,7 @@ def _optics(optics_pixel_sizes=None, optics_image_sizes=None, model_pixel_size=1
 @pytest.fixture
 def preparation(monkeypatch):
     calls = []
-    monkeypatch.setattr(local_sampling.sampling, "relion_angular_sampling_deg", lambda *a, **kw: 3.0)
+    monkeypatch.setattr(local_sampling.grids, "relion_angular_sampling_deg", lambda *a, **kw: 3.0)
     monkeypatch.setattr(local_sampling, "angular_sampling_deg", lambda order: 6.0)
 
     def size_parent(**kwargs):

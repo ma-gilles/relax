@@ -17,12 +17,9 @@ import relax.sampling as sampling_module
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import finalization, image_size_plans, local_sampling
 from relax.refinement.local_sampling import prepare_final_local_sampling, prepare_numbered_local_sampling
-from relax.sampling import (
-    _relion_mstep_rotations_from_eulers,
-    apply_relion_rotation_perturbation_to_eulers,
-    relion_angular_sampling_deg,
-    rotation_grid_size,
-)
+from relax.sampling import apply_relion_rotation_perturbation_to_eulers
+from relax.sampling import grids as grids_module
+from relax.sampling.grids import relion_angular_sampling_deg, relion_mstep_rotations_from_eulers, rotation_grid_size
 
 pytestmark = pytest.mark.unit
 
@@ -38,7 +35,7 @@ def _canonical_eulers(order, *, symmetry='C1'):
 
 def _fake_grid(order, dtype=np.float32, *, symmetry='C1'):
     source = _canonical_eulers(order)
-    return sampling_module.RotationGrid(rotations=_relion_mstep_rotations_from_eulers(source, dtype=dtype), rotation_eulers=source.astype(dtype), healpix_order=order, symmetry=symmetry)
+    return grids_module.RotationGrid(rotations=relion_mstep_rotations_from_eulers(source, dtype=dtype), rotation_eulers=source.astype(dtype), healpix_order=order, symmetry=symmetry)
 
 
 def _same(x, y):
@@ -49,8 +46,8 @@ def _same(x, y):
 
 @pytest.fixture(autouse=True)
 def _fake_canonical_grid(monkeypatch):
-    monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", _canonical_eulers)
-    monkeypatch.setattr(sampling_module, "relion_scoring_rotation_grid", _fake_grid)
+    monkeypatch.setattr(grids_module, "get_relion_rotation_grid_eulers_float64", _canonical_eulers)
+    monkeypatch.setattr(grids_module, "relion_scoring_rotation_grid", _fake_grid)
 
 
 @pytest.mark.parametrize("random_perturbation", [0.3, -0.125, 0.0])
@@ -95,7 +92,7 @@ def test_reused_grid_without_mstep_rotations_rebuilds_them_from_source_angles(n_
     eulers = (np.arange(3 * n_rows, dtype=np.float64).reshape(n_rows, 3) / 3.0).astype(np.float32)
     got = sampling_module.local_search_mstep_rotations(None, eulers, ORDER)
     expected, _ = apply_relion_rotation_perturbation_to_eulers(
-        sampling_module.relion_mstep_source_eulers(eulers, ORDER), 0.0, ANGULAR_SAMPLING,
+        grids_module.relion_mstep_source_eulers(eulers, ORDER), 0.0, ANGULAR_SAMPLING,
     )
     assert _same(got, expected) and got.shape == (n_rows, 3, 3)
 
@@ -111,7 +108,7 @@ def _numbered_local_inputs(*, reuse=False, oversampling=0, symmetry="C1"):
     _rotation_grid_rotations = _fake_grid(ORDER) if symmetry == "C1" else _fake_reduced_grid(ORDER, symmetry=symmetry)
     rotations = _rotation_grid_rotations.rotations
     eulers = _rotation_grid_rotations.rotation_eulers
-    grid = sampling_module.TrialGrid(
+    grid = grids_module.TrialGrid(
         rotations=rotations if reuse else rotations[:1],
         rotation_eulers=eulers,
         mstep_rotations=rotations,
@@ -251,15 +248,15 @@ def _fake_reduced_eulers(order, *, symmetry="C1"):
 
 def _fake_reduced_grid(order, dtype=np.float32, *, symmetry="C1"):
     source = _fake_reduced_eulers(order, symmetry=symmetry)
-    return sampling_module.RotationGrid(rotations=_relion_mstep_rotations_from_eulers(source, dtype=dtype), rotation_eulers=source.astype(dtype), healpix_order=order, symmetry=symmetry)
+    return grids_module.RotationGrid(rotations=relion_mstep_rotations_from_eulers(source, dtype=dtype), rotation_eulers=source.astype(dtype), healpix_order=order, symmetry=symmetry)
 
 
 @pytest.mark.parametrize("random_perturbation", [0.3, None])
 def test_point_group_fine_grid_uses_the_reduced_grid_and_its_source_angles(monkeypatch, random_perturbation):
     """Final Q a087087cc: a non-C1 lazy local fine grid is the point-group grid, not the C1 grid."""
 
-    monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", _fake_reduced_eulers)
-    monkeypatch.setattr(sampling_module, "relion_scoring_rotation_grid", _fake_reduced_grid)
+    monkeypatch.setattr(grids_module, "get_relion_rotation_grid_eulers_float64", _fake_reduced_eulers)
+    monkeypatch.setattr(grids_module, "relion_scoring_rotation_grid", _fake_reduced_grid)
     rotations, eulers, mstep = sampling_module.exact_local_fine_grid(
         healpix_order=ORDER,
         angular_sampling_deg=ANGULAR_SAMPLING,
@@ -285,7 +282,7 @@ def test_point_group_fine_grid_uses_the_reduced_grid_and_its_source_angles(monke
 
 
 def test_point_group_reused_grid_rebuilds_mstep_rotations_from_reduced_source_angles(monkeypatch):
-    monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", _fake_reduced_eulers)
+    monkeypatch.setattr(grids_module, "get_relion_rotation_grid_eulers_float64", _fake_reduced_eulers)
     source = _fake_reduced_eulers(ORDER, symmetry="C4")
     got = sampling_module.local_search_mstep_rotations(None, source.astype(np.float32), ORDER, symmetry="C4")
     expected, _ = apply_relion_rotation_perturbation_to_eulers(source, 0.0, ANGULAR_SAMPLING)
@@ -295,8 +292,8 @@ def test_point_group_reused_grid_rebuilds_mstep_rotations_from_reduced_source_an
 @pytest.mark.parametrize("route", sorted(_LOCAL_ROUTES))
 def test_local_grid_owners_receive_the_point_group(monkeypatch, route):
     """Every local-search grid owner of each route is called with the search's point group (final Q a087087cc)."""
-    monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", _fake_reduced_eulers)
-    monkeypatch.setattr(sampling_module, "relion_scoring_rotation_grid", _fake_reduced_grid)
+    monkeypatch.setattr(grids_module, "get_relion_rotation_grid_eulers_float64", _fake_reduced_eulers)
+    monkeypatch.setattr(grids_module, "relion_scoring_rotation_grid", _fake_reduced_grid)
     preparer, inputs, owners = _LOCAL_ROUTES[route]
     arguments = inputs(symmetry="C4")
     trace = _trace_local_grid_owners(monkeypatch)
@@ -316,7 +313,7 @@ def test_controller_passes_the_point_group_to_every_grid_owner(monkeypatch):
     trace = CallTrace(monkeypatch)
     trace.wrap(local_sampling, "iteration_trial_grid", "numbered")
     trace.wrap(finalization, "prepare_final_sampling", "final")
-    trace.wrap(sampling_module, "relion_mstep_source_eulers", "source_eulers")
+    trace.wrap(grids_module, "relion_mstep_source_eulers", "source_eulers")
     # A point group other than C1 requires the x-half M-step, which defaults off without a GPU.
     monkeypatch.setenv("RELAX_K1_RELION_X_HALF_MSTEP", "1")
     run_tiny_refinement(monkeypatch, parity=dict(perturb_factor=0.5), symmetry=SymmetryOptions(point_group="C4"))
@@ -348,7 +345,7 @@ def test_fine_perturbation_releases_the_unperturbed_grid_before_mstep(monkeypatc
         perturbations.append(True)
         return perturb(*args, **kwargs)
 
-    monkeypatch.setattr(sampling_module, "relion_scoring_rotation_grid", grid)
+    monkeypatch.setattr(grids_module, "relion_scoring_rotation_grid", grid)
     monkeypatch.setattr(sampling_module, "apply_relion_rotation_perturbation_to_eulers", record_perturbation)
     rotations, eulers, mstep = sampling_module.exact_local_fine_grid(
         healpix_order=ORDER, angular_sampling_deg=ANGULAR_SAMPLING,

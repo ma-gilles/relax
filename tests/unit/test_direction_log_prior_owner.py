@@ -17,7 +17,7 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
 from relax.sampling import orientation_priors as op
-from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
 
 pytestmark = pytest.mark.unit
 

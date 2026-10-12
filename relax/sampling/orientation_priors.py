@@ -12,7 +12,7 @@ import healpy as hp
 import numpy as np
 
 from relax.relion.macros import relion_round_array
-from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
 from relax.sampling.healpix import angular_sampling_deg
 
 
@@ -274,7 +274,7 @@ def _sealed_direction_log_prior(direction_prior, sealed_sampling_state, *, dtype
     direction_ids = np.asarray(sealed_sampling_state["directions_ipix"], dtype=np.int64)
     n_psi = int(np.asarray(sealed_sampling_state["psi_angles_deg"]).size)
     if symmetry != "C1":
-        from relax.sampling import build_local_search_grid_metadata
+        from relax.sampling.grids import build_local_search_grid_metadata
 
         metadata = build_local_search_grid_metadata(
             int(sealed_sampling_state["healpix_order_original"]), symmetry=symmetry
@@ -413,7 +413,7 @@ def infer_direction_prior_healpix_order(
 
     symmetry = canonicalize_rotational_symmetry(symmetry)
     if symmetry != "C1":
-        from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+        from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
 
         def _direction_count(order: int) -> int | None:
             try:
@@ -570,7 +570,7 @@ def class_weights_from_direction_prior(direction_prior, n_classes):
 def _fold_direction_vectors_to_asu(query_vectors, target_order, symmetry):
     """Map direction vectors to compact RELION ASU rows at ``target_order``."""
 
-    from relax.sampling import build_local_search_grid_metadata
+    from relax.sampling.grids import build_local_search_grid_metadata
     from relax.sampling.symmetry import rotational_operators
 
     query_vectors = np.asarray(query_vectors, dtype=np.float64).reshape(-1, 3)

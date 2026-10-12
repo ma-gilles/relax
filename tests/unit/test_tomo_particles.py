@@ -131,21 +131,20 @@ def test_image_slots_visit_each_particles_images_in_order():
 def test_tilt_row_matrices_are_relions_host_inverse_of_aproj_times_euler():
     """generateEulerMatrices with L = Aproj: inv(L A) (acc_helper_functions_impl.h:248-255), from the native binding
     when it is built and from the NumPy fallback otherwise; with L = I both equal the SPA matrices."""
-    from relax import sampling
-    from relax.sampling import healpix
+    from relax.sampling import grids, healpix
 
     rng = np.random.default_rng(5)
     eulers = rng.uniform([-180, 0, -180], [180, 180, 180], size=(6, 3))
     left = Rotation.random(6, random_state=rng).as_matrix()
-    got = sampling._relion_mstep_rotations_from_eulers(eulers, dtype=np.float64, left_matrices=left)
+    got = grids.relion_mstep_rotations_from_eulers(eulers, dtype=np.float64, left_matrices=left)
     relion = np.stack([healpix.euler_angles_to_matrix(e[None])[0] for e in eulers])
     # RECOVAR frame: the transpose of RELION's inverse.
     expected = np.swapaxes(np.linalg.inv(left @ relion), 1, 2)
     assert_matches(got, expected)
-    identity = sampling._relion_mstep_rotations_from_eulers(
+    identity = grids.relion_mstep_rotations_from_eulers(
         eulers, dtype=np.float64, left_matrices=np.broadcast_to(np.eye(3), (6, 3, 3))
     )
-    assert_matches(identity, sampling._relion_mstep_rotations_from_eulers(eulers, dtype=np.float64))
+    assert_matches(identity, grids.relion_mstep_rotations_from_eulers(eulers, dtype=np.float64))
 
 
 def test_identity_tilt_keeps_the_spa_matrices():
@@ -177,7 +176,7 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
     # float(0.999); the tomo pass takes the one constant the SPA routes use.
     from types import SimpleNamespace
 
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
     from relax.steps import tomo_scoring
     from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
 

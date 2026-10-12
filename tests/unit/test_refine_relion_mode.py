@@ -125,15 +125,18 @@ from relax.refinement.refinement_options import (
 from relax.refinement.refinement_state import RefinementState
 from relax.relion import ctf
 from relax.sampling import (
-    _get_relion_rotation_grid_eulers_float64,
     apply_relion_rotation_perturbation,
     apply_relion_rotation_perturbation_to_eulers,
-    build_local_search_grid_metadata,
     get_local_rotation_grid_fast,
     get_oversampled_rotation_grid_from_samples,
     get_oversampled_translation_grid,
+)
+from relax.sampling import grids as grids_module
+from relax.sampling.grids import (
+    build_local_search_grid_metadata,
     get_relion_rotation_grid,
     get_relion_rotation_grid_eulers,
+    get_relion_rotation_grid_eulers_float64,
     get_translation_grid,
     relion_angular_sampling_deg,
     rotation_grid_n_in_planes,
@@ -334,7 +337,7 @@ def test_relion_scoring_rotation_grid_honors_explicit_float64_dtype(monkeypatch)
     """``relion_scoring_rotation_grid``'s working operands follow ``dtype``.
 
     Regression for the bug the coarse pass-1 grid shared with the already-fixed
-    ``relion_adaptive_pass1_rotations``/``_relion_mstep_rotations_from_eulers``:
+    ``relion_adaptive_pass1_rotations``/``relion_mstep_rotations_from_eulers``:
     an unconditional ``.astype(np.float32)`` on the scorer rotation matrices
     even when the caller runs float64 scoring, though RELION's own
     ``ACC_DOUBLE_PRECISION`` build never narrows this matrix.
@@ -344,15 +347,15 @@ def test_relion_scoring_rotation_grid_honors_explicit_float64_dtype(monkeypatch)
         [[13.123456789, 47.987654321, 91.234567891]], dtype=np.float64
     )
     monkeypatch.setattr(
-        sampling_module,
-        "_get_relion_rotation_grid_eulers_float64",
+        grids_module,
+        "get_relion_rotation_grid_eulers_float64",
         lambda _order, *, symmetry='C1': source_eulers,
     )
 
-    _rotation_grid_rotations_f32 = sampling_module.relion_scoring_rotation_grid(2)
+    _rotation_grid_rotations_f32 = grids_module.relion_scoring_rotation_grid(2)
     rotations_f32 = _rotation_grid_rotations_f32.rotations
     eulers_f32 = _rotation_grid_rotations_f32.rotation_eulers
-    _rotation_grid_rotations_f64 = sampling_module.relion_scoring_rotation_grid(2, dtype=np.float64)
+    _rotation_grid_rotations_f64 = grids_module.relion_scoring_rotation_grid(2, dtype=np.float64)
     rotations_f64 = _rotation_grid_rotations_f64.rotations
     eulers_f64 = _rotation_grid_rotations_f64.rotation_eulers
 
@@ -722,18 +725,18 @@ def test_translation_grid_matches_relion_ceil_boundary_for_every_class_count(mon
     rounded_range = 4.25 / 1.4166666666666667
     rounded_step = 1.416667 / 1.4166666666666667
 
-    k1_grid = sampling_module._translation_grid_for_class_count(
+    k1_grid = grids_module._translation_grid_for_class_count(
         rounded_range,
         rounded_step,
         n_classes=1,
     )
-    k4_grid = sampling_module._translation_grid_for_class_count(
+    k4_grid = grids_module._translation_grid_for_class_count(
         rounded_range,
         rounded_step,
         n_classes=4,
     )
     monkeypatch.setenv("RELAX_K1_RELION_EXACT_TRANSLATION_GRID", "0")
-    diagnostic_control_grid = sampling_module._translation_grid_for_class_count(
+    diagnostic_control_grid = grids_module._translation_grid_for_class_count(
         rounded_range,
         rounded_step,
         n_classes=1,
@@ -764,7 +767,7 @@ def test_k4_translation_grid_matches_relions_recorded_count():
     log = fixture_file("k4_5k128_relion_os0", "relion_run.log").read_text()
     recorded = {int(n) for step, n in re.findall(r"TranslationalSampling= (\S+) NrTranslations= (\d+)", log)
                 if float(step) == offset_step}
-    grid = sampling_module._translation_grid_for_class_count(
+    grid = grids_module._translation_grid_for_class_count(
         offset_range / offset_step, 1.0, n_classes=4, source_units_per_pixel=offset_step
     )
     assert recorded == {grid.shape[0]} == {29}
@@ -773,7 +776,7 @@ def test_k4_translation_grid_matches_relions_recorded_count():
 def test_k1_translation_grid_rejects_invalid_diagnostic_switch(monkeypatch):
     monkeypatch.setenv("RELAX_K1_RELION_EXACT_TRANSLATION_GRID", "sometimes")
     with pytest.raises(ValueError, match="must be a boolean value"):
-        sampling_module._translation_grid_for_class_count(3.0, 1.0, n_classes=1)
+        grids_module._translation_grid_for_class_count(3.0, 1.0, n_classes=1)
 
 
 def test_local_translation_prior_ignores_stale_replay_grid_shape():
@@ -2426,7 +2429,7 @@ def test_selected_rotation_matrices_match_full_perturbed_grid():
         angular_sampling_deg,
     )
     full_mstep_rotations, _ = apply_relion_rotation_perturbation_to_eulers(
-        _get_relion_rotation_grid_eulers_float64(healpix_order),
+        get_relion_rotation_grid_eulers_float64(healpix_order),
         random_perturbation,
         angular_sampling_deg,
     )
@@ -2458,7 +2461,7 @@ def test_selected_rotation_matrices_match_full_perturbed_grid():
 
 def test_relion_mstep_generation_keeps_source_eulers_float64_until_host_inverse():
     healpix_order = 0
-    source_eulers = _get_relion_rotation_grid_eulers_float64(healpix_order)
+    source_eulers = get_relion_rotation_grid_eulers_float64(healpix_order)
     public_eulers = get_relion_rotation_grid_eulers(healpix_order)
     angular_sampling_deg = relion_angular_sampling_deg(healpix_order)
 
@@ -3221,8 +3224,8 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
     monkeypatch.setattr(expected_accuracy_module.Half1AccuracyInputs, "estimate", accuracy)
     monkeypatch.setattr(expectation_module, "score_numbered_half", score)
     monkeypatch.setattr(
-        sampling_module, "relion_scoring_rotation_grid",
-        lambda order, dtype=None, *, symmetry="C1": sampling_module.RotationGrid(
+        grids_module, "relion_scoring_rotation_grid",
+        lambda order, dtype=None, *, symmetry="C1": grids_module.RotationGrid(
             rotations=np.asarray(rotations, dtype=dtype),
             rotation_eulers=np.zeros((len(rotations), 3), dtype=dtype),
             healpix_order=order, symmetry=symmetry,
@@ -4471,8 +4474,8 @@ class TestRelionModeSmokeTest:
         # NumPy scorer path runs. Do not inherit a caller's RECOVAR_DISABLE_CUDA.
         monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
         monkeypatch.setattr(
-            sampling_module, "relion_scoring_rotation_grid",
-            lambda order, dtype, *, symmetry='C1': sampling_module.RotationGrid(rotations=np.asarray(rotations, dtype=dtype), rotation_eulers=np.zeros((N_ROTATIONS, 3), dtype=dtype), healpix_order=order, symmetry=symmetry),
+            grids_module, "relion_scoring_rotation_grid",
+            lambda order, dtype, *, symmetry='C1': grids_module.RotationGrid(rotations=np.asarray(rotations, dtype=dtype), rotation_eulers=np.zeros((N_ROTATIONS, 3), dtype=dtype), healpix_order=order, symmetry=symmetry),
         )
         for dataset in half_datasets:
             dataset.voxel_size = voxel_size
@@ -5389,9 +5392,9 @@ class TestRelionModeSmokeTest:
         install_fake_adaptive_engine(monkeypatch, engine_calls)
         monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
         monkeypatch.setattr(
-            sampling_module,
+            grids_module,
             "relion_scoring_rotation_grid",
-            lambda _order, dtype=None, *, symmetry='C1': sampling_module.RotationGrid(rotations=np.asarray(rotations, dtype=np.float32), rotation_eulers=custom_eulers, healpix_order=_order, symmetry=symmetry),
+            lambda _order, dtype=None, *, symmetry='C1': grids_module.RotationGrid(rotations=np.asarray(rotations, dtype=np.float32), rotation_eulers=custom_eulers, healpix_order=_order, symmetry=symmetry),
         )
         # Direction-prior learning and scoring expansion share their owner.
         monkeypatch.setattr(
@@ -5561,7 +5564,7 @@ class TestRelionModeSmokeTest:
         def fake_scoring_rotation_grid(order, dtype=None, *, symmetry="C1"):
             del dtype
             n_rotations = fake_rotation_grid_size(order, symmetry=symmetry)
-            return sampling_module.RotationGrid(rotations=np.repeat(np.eye(3, dtype=np.float32)[None, :, :], n_rotations, axis=0), rotation_eulers=np.zeros((n_rotations, 3), dtype=np.float32), healpix_order=order, symmetry=symmetry)
+            return grids_module.RotationGrid(rotations=np.repeat(np.eye(3, dtype=np.float32)[None, :, :], n_rotations, axis=0), rotation_eulers=np.zeros((n_rotations, 3), dtype=np.float32), healpix_order=order, symmetry=symmetry)
 
         def fake_get_relion_rotation_grid_eulers(order, *args, **kwargs):
             del args, kwargs
@@ -5679,13 +5682,13 @@ class TestRelionModeSmokeTest:
         install_fake_adaptive_engine(monkeypatch, engine_calls)
         monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
         monkeypatch.setattr(
-            sampling_module,
+            grids_module,
             "relion_scoring_rotation_grid",
             fake_scoring_rotation_grid,
         )
         monkeypatch.setattr(
-            sampling_module,
-            "_get_relion_rotation_grid_eulers_float64",
+            grids_module,
+            "get_relion_rotation_grid_eulers_float64",
             lambda order, *, symmetry='C1': fake_get_relion_rotation_grid_eulers(order).astype(np.float64),
         )
         monkeypatch.setattr(
@@ -7447,9 +7450,9 @@ class TestRelionModeSmokeTest:
         rotations_many = _make_rotations(20, seed=333)
 
         monkeypatch.setattr(
-            sampling_module,
+            grids_module,
             "relion_scoring_rotation_grid",
-            lambda _order, dtype=None, *, symmetry='C1': sampling_module.RotationGrid(rotations=rotations_many, rotation_eulers=np.zeros((len(rotations_many), 3), dtype=np.float32), healpix_order=_order, symmetry=symmetry),
+            lambda _order, dtype=None, *, symmetry='C1': grids_module.RotationGrid(rotations=rotations_many, rotation_eulers=np.zeros((len(rotations_many), 3), dtype=np.float32), healpix_order=_order, symmetry=symmetry),
         )
         monkeypatch.setattr(
             projector_preparation,
@@ -7594,9 +7597,9 @@ class TestRelionModeSmokeTest:
         install_fake_adaptive_engine(monkeypatch, engine_calls)
         rotations_many = _make_rotations(20, seed=334)
         monkeypatch.setattr(
-            sampling_module,
+            grids_module,
             "relion_scoring_rotation_grid",
-            lambda _order, dtype=None, *, symmetry='C1': sampling_module.RotationGrid(rotations=rotations_many, rotation_eulers=np.zeros((len(rotations_many), 3), dtype=np.float32), healpix_order=_order, symmetry=symmetry),
+            lambda _order, dtype=None, *, symmetry='C1': grids_module.RotationGrid(rotations=rotations_many, rotation_eulers=np.zeros((len(rotations_many), 3), dtype=np.float32), healpix_order=_order, symmetry=symmetry),
         )
 
         result = refine_single_volume(
@@ -7883,9 +7886,9 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
     monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda order, **kw: False)
     monkeypatch.setattr(
-        sampling_module,
+        grids_module,
         "relion_scoring_rotation_grid",
-        lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
+        lambda order, *, dtype=np.float32, symmetry="C1": grids_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
@@ -8047,13 +8050,13 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
     monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda order, **kw: False)
     monkeypatch.setattr(
-        sampling_module,
+        grids_module,
         "relion_scoring_rotation_grid",
-        lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
+        lambda order, *, dtype=np.float32, symmetry="C1": grids_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(
-        sampling_module,
-        "_get_relion_rotation_grid_eulers_float64",
+        grids_module,
+        "get_relion_rotation_grid_eulers_float64",
         lambda order, *, symmetry='C1': fake_get_grid_eulers(order).astype(np.float64),
     )
     monkeypatch.setattr(sampling_module, "advance_relion_perturbation", fake_advance_relion_perturbation)
@@ -8180,9 +8183,9 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
     monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda order, **kw: False)
     monkeypatch.setattr(
-        sampling_module,
+        grids_module,
         "relion_scoring_rotation_grid",
-        lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
+        lambda order, *, dtype=np.float32, symmetry="C1": grids_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
@@ -8301,9 +8304,9 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
     monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda order, **kw: False)
     monkeypatch.setattr(
-        sampling_module,
+        grids_module,
         "relion_scoring_rotation_grid",
-        lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
+        lambda order, *, dtype=np.float32, symmetry="C1": grids_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
@@ -8395,9 +8398,9 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
 
     monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(
-        sampling_module,
+        grids_module,
         "relion_scoring_rotation_grid",
-        lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
+        lambda order, *, dtype=np.float32, symmetry="C1": grids_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
@@ -8508,9 +8511,9 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
 
     monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(
-        sampling_module,
+        grids_module,
         "relion_scoring_rotation_grid",
-        lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
+        lambda order, *, dtype=np.float32, symmetry="C1": grids_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
@@ -9236,9 +9239,9 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
 
     monkeypatch.setattr(maximization_module, "rotation_grid_size", fake_rotation_grid_size)
     monkeypatch.setattr(
-        sampling_module,
+        grids_module,
         "relion_scoring_rotation_grid",
-        lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
+        lambda order, *, dtype=np.float32, symmetry="C1": grids_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
     monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
@@ -9297,7 +9300,7 @@ def test_canonical_rotation_grid_reuses_relion_euler_table(monkeypatch):
         raise AssertionError("generic R_to_relion should not be called for canonical grids")
 
     monkeypatch.setattr(recovar_utils, "R_to_relion", fail_r_to_relion)
-    _rotation_grid_ = sampling_module.relion_scoring_rotation_grid(order)
+    _rotation_grid_ = grids_module.relion_scoring_rotation_grid(order)
     _ = _rotation_grid_.rotations
     got = _rotation_grid_.rotation_eulers
     assert_matches(got, expected_eulers)

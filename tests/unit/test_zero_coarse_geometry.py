@@ -190,7 +190,7 @@ def _local_one_shape(monkeypatch, *, parent_probe):
     from helpers.refinement_specs import local_half_owners
     from helpers.sparse_pass2_mock import MockDataset
 
-    from relax.sampling import relion_angular_sampling_deg
+    from relax.sampling.grids import relion_angular_sampling_deg
 
     dataset = MockDataset(n_images=2, seed=3)
     layout = SimpleNamespace(rotation_counts=np.asarray([2]))

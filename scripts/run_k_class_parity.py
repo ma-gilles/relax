@@ -132,7 +132,7 @@ def _relion_adaptive_coarse_image_size(
     """Return RELION's adaptive pass-1 ``image_coarse_size``."""
 
     from relax.reconstruction.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
-    from relax.sampling import relion_angular_sampling_deg
+    from relax.sampling.grids import relion_angular_sampling_deg
 
     coarse_size = compute_coarse_image_size(
         relion_angular_sampling_deg(healpix_order, adaptive_oversampling=0),
@@ -716,7 +716,8 @@ def _relion_bpref_maps_from_sparse_support(
     from relax.io.batch_fetch import fetch_indexed_batch
     from relax.projection.projection import compute_projections_block as _compute_projections_block
     from relax.relion_bind import _relion_bind_core as bind
-    from relax.sampling import get_oversampled_translation_grid, rotation_grid_size
+    from relax.sampling import get_oversampled_translation_grid
+    from relax.sampling.grids import rotation_grid_size
 
     image_shape = tuple(map(int, experiment_dataset.image_shape))
     volume_shape = tuple(map(int, experiment_dataset.volume_shape))
@@ -1303,13 +1304,8 @@ def main() -> None:
     from relax.reconstruction.regularization import RELION_MINRES_MAP
     from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
-    from relax.sampling import (
-        apply_relion_rotation_perturbation_to_eulers,
-        apply_relion_translation_perturbation,
-        get_relion_rotation_grid_eulers,
-        get_translation_grid,
-        relion_angular_sampling_deg,
-    )
+    from relax.sampling import apply_relion_rotation_perturbation_to_eulers, apply_relion_translation_perturbation
+    from relax.sampling.grids import get_relion_rotation_grid_eulers, get_translation_grid, relion_angular_sampling_deg
     from relax.sampling.orientation_priors import (
         make_relion_direction_log_prior,
         make_relion_translation_log_prior,

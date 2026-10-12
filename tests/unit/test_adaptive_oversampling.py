@@ -897,10 +897,8 @@ class TestOversampledGridGeneration:
         """Two coarse samples on the same pixel but different psi get distinct children."""
         import healpy as hp
 
-        from relax.sampling import (
-            get_oversampled_rotation_grid_from_samples,
-            rotation_grid_size,
-        )
+        from relax.sampling import get_oversampled_rotation_grid_from_samples
+        from relax.sampling.grids import rotation_grid_size
 
         nside_level = 2
         n_pixels = hp.nside2npix(2**nside_level)
@@ -925,10 +923,8 @@ class TestOversampledGridGeneration:
         from recovar import utils
         from relax.relion_bind._relion_bind_core import get_oversampled_orientations
 
-        from relax.sampling import (
-            get_oversampled_rotation_grid_from_samples,
-            rotation_grid_n_in_planes,
-        )
+        from relax.sampling import get_oversampled_rotation_grid_from_samples
+        from relax.sampling.grids import rotation_grid_n_in_planes
 
         nside_level = 2
         parent_rotations = np.array([0, 5, 10, 193], dtype=np.int64)

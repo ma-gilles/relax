@@ -10,10 +10,10 @@ from helpers.vdam import initial_model_state_stub, keep_tau2
 from recovar.data_io.image_backends import _apply_relion_soft_image_mask_numpy, _centered_rfft2_numpy
 from recovar.reconstruction.noise import make_radial_noise
 
-from relax import sampling
 from relax.commands.initial_model import _native_options_dict, make_parser
 from relax.fourier.half_spectrum import _host_half_spectrum_plan
 from relax.relion.projector_setup import setup_relion_projector, swap_relion_volume_layout
+from relax.sampling import grids as sampling_grids
 from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
@@ -313,7 +313,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
         requested_orders.append((order, rotation_index_order))
         return np.zeros((12, 3), dtype=np.float64)
 
-    monkeypatch.setattr(sampling, "_get_relion_rotation_grid_eulers_float64", coarse_eulers)
+    monkeypatch.setattr(sampling_grids, "get_relion_rotation_grid_eulers_float64", coarse_eulers)
     grids = [
         build_sampling_plan(
             opts[name], sampling_state=initial_sampling_state(opts[name], pixel_size=1.0), iteration=iteration

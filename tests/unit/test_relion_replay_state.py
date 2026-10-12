@@ -386,7 +386,7 @@ def test_class_final_boundary_rejects_a_mismatched_source_and_reference_maps(ref
 
 
 def _old_grid_prior(symmetry, old_order):
-    from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+    from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
 
     count = rotation_grid_size(old_order, symmetry) // rotation_grid_n_in_planes(old_order)
     prior = np.zeros(count, dtype=np.float32)

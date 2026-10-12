@@ -21,7 +21,6 @@ from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.triangular import unpack_tri_to_full
 from recovar.reconstruction.noise import make_radial_noise
 
-from relax import sampling
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
@@ -53,6 +52,7 @@ from relax.ppca_refinement.oversampled_stream import (
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import relion_coarse_image_size
+from relax.sampling import grids
 from relax.sampling.healpix import angular_sampling_deg
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ def _json(value):
 @functools.lru_cache(maxsize=4)
 def _rotation_grid(hp):
     """The HEALPix order's float32 rotation matrices (read-only); HP4 takes about 0.3 s to build."""
-    rotations = sampling.get_relion_hidden_rotation_grid(hp, matrices=True).astype(np.float32)
+    rotations = grids.get_relion_hidden_rotation_grid(hp, matrices=True).astype(np.float32)
     rotations.flags.writeable = False
     return rotations
 
@@ -77,7 +77,7 @@ def _rotation_grid(hp):
 @functools.lru_cache(maxsize=4)
 def _direction_ids(hp):
     """Index of each rotation's (rot, tilt) direction on the order-``hp`` grid (read-only; a sort of every rotation)."""
-    eulers = sampling.get_relion_hidden_rotation_grid(hp, matrices=False)
+    eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
     _, direction_ids = np.unique(eulers[:, :2], axis=0, return_inverse=True)
     direction_ids = direction_ids.reshape(-1)
     direction_ids.flags.writeable = False
@@ -239,7 +239,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     schedule = ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size)
     scoring = ScoringConfig(relion_texture_interp=False, full_real_observation=True)
     rotations = _rotation_grid(hp)
-    canonical_eulers = sampling.get_relion_hidden_rotation_grid(hp, matrices=False)
+    canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
     rotation_prior = (
         np.asarray(state.direction_prior, np.float32)
         if state.direction_order == hp and state.direction_prior is not None
@@ -251,9 +251,9 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
     translations = (
         # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
-        sampling.get_relion_translation_grid_3d(config.shift_range, config.shift_step)
+        grids.get_relion_translation_grid_3d(config.shift_range, config.shift_step)
         if tilts
-        else sampling.get_relion_translation_grid(max_pixel=config.shift_range, pixel_offset=config.shift_step)
+        else grids.get_relion_translation_grid(max_pixel=config.shift_range, pixel_offset=config.shift_step)
     ).astype(np.float32)
     prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * state.offset_variance)
     prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))

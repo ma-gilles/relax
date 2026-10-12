@@ -146,6 +146,7 @@ def score_tomo_half(
         compute_k_class_pass2_stats_resident,
         compute_tilt_pass2_stats_resident,
     )
+    from relax.sampling import grids
     from relax.scoring import tomo_coarse
 
     # RELION's float projector, as the SPA passes read it: the refinement builds complex128, and a complex128
@@ -205,12 +206,12 @@ def score_tomo_half(
     if local_rotations is not None and rotation_log_prior is not None:
         raise ValueError("a local search's priors are the particles' own")
     coarse_ids = (
-        np.arange(int(relax_sampling.rotation_grid_size(sampling.healpix_order, symmetry)))
+        np.arange(int(grids.rotation_grid_size(sampling.healpix_order, symmetry)))
         if local_rotations is None
         else local_rotations.coarse_rotation_ids
     )
     n_rot = int(coarse_ids.size)
-    coarse_eulers_deg = relax_sampling.rotation_indices_to_relion_eulers(
+    coarse_eulers_deg = grids.rotation_indices_to_relion_eulers(
         coarse_ids, sampling.healpix_order, rotation_index_order="recovar", symmetry=symmetry
     )
     fine_rot, rot_parent, fine_mstep, fine_eulers = relax_sampling.get_oversampled_rotation_grid_from_samples(
@@ -264,7 +265,7 @@ def score_tomo_half(
             unit_old_offsets_px=old_offsets_px,
             coarse_eulers_deg=coarse_eulers_deg,
             random_perturbation=sampling.random_perturbation,
-            angular_sampling_deg=relax_sampling.relion_angular_sampling_deg(sampling.healpix_order),
+            angular_sampling_deg=grids.relion_angular_sampling_deg(sampling.healpix_order),
             coarse_translations_px=coarse_px,
             projector_half=(
                 jnp.asarray(coarse_halves)
@@ -420,11 +421,11 @@ def tilt_coarse_cc_winners(
     ``rotation * T + translation`` and its normalized CC (:func:`relax.scoring.tomo_coarse.particle_coarse_cc_winners`).
     ``scale_corrections`` are per particle."""
 
-    from relax import sampling as relax_sampling
     from relax.fine_pass.bucket_arrays import relion_parent_execution_key
+    from relax.sampling import grids
     from relax.scoring import tomo_coarse
 
-    coarse_ids = np.arange(int(relax_sampling.rotation_grid_size(sampling.healpix_order, "C1")))
+    coarse_ids = np.arange(int(grids.rotation_grid_size(sampling.healpix_order, "C1")))
     _, coarse_px, _, _ = tomo_translation_grids(sampling, float(half.voxel_size))
     return tomo_coarse.particle_coarse_cc_winners(
         half.images,
@@ -432,14 +433,14 @@ def tilt_coarse_cc_winners(
         image_projections=half.image_projections,
         image_left=half.image_left,
         unit_old_offsets_px=np.asarray(old_offsets_px, dtype=np.float64).reshape(half.n_units, 3),
-        coarse_eulers_deg=relax_sampling.rotation_indices_to_relion_eulers(
+        coarse_eulers_deg=grids.rotation_indices_to_relion_eulers(
             coarse_ids, sampling.healpix_order, rotation_index_order="recovar", symmetry="C1"
         ),
         relion_order=relion_parent_execution_key(
             np.asarray(coarse_ids, dtype=np.int64), n_coarse_rot=int(coarse_ids.size), nside_level=sampling.healpix_order
         ),
         random_perturbation=sampling.random_perturbation,
-        angular_sampling_deg=relax_sampling.relion_angular_sampling_deg(sampling.healpix_order),
+        angular_sampling_deg=grids.relion_angular_sampling_deg(sampling.healpix_order),
         coarse_translations_px=coarse_px,
         relion_projector_half=relion_projector_half,
         relion_projector_r_max=int(relion_projector_r_max),
@@ -694,7 +695,7 @@ def score_tomo_half_in_loop(
     """
 
     from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
     from relax.steps.score_outputs import HalfScoreResult
 
     half = data.particles.dataset

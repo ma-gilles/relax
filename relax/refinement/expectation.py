@@ -34,7 +34,7 @@ from relax.refinement.local_half import (
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe, NumberedHalfRecorded
 from relax.refinement.refinement_options import RefinementOptions
 from relax.runtime.host_memory import return_freed_heap
-from relax.sampling import TrialGrid, rotation_grid_size
+from relax.sampling.grids import TrialGrid, rotation_grid_size
 from relax.sampling.orientation_priors import (
     HalfDirectionLogPriors,
     make_relion_translation_log_prior,

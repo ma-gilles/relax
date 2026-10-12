@@ -29,10 +29,8 @@ from relax.relion.initial_noise import (
     relion_mpi_process_start_scoring_noise_pair,
 )
 from relax.runtime.env_flags import parse_env_flag_or_false
-from relax.sampling import (
-    _translation_grid_for_class_count,
-    relion_sampling_perturbation_for_iteration,
-)
+from relax.sampling import relion_sampling_perturbation_for_iteration
+from relax.sampling.grids import _translation_grid_for_class_count
 from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import (
     DirectionPrior,
@@ -811,9 +809,9 @@ def _sealed_sampling_base_grids(sealed_sampling_state, *, voxel_size_angstrom, d
         ],
         axis=1,
     )
-    from relax.sampling import _relion_mstep_rotations_from_eulers
+    from relax.sampling.grids import relion_mstep_rotations_from_eulers
 
-    rotations = _relion_mstep_rotations_from_eulers(source_eulers, dtype=dtype)
+    rotations = relion_mstep_rotations_from_eulers(source_eulers, dtype=dtype)
     eulers = source_eulers.astype(dtype)
     voxel_size = float(voxel_size_angstrom)
     if not np.isfinite(voxel_size) or voxel_size <= 0.0:

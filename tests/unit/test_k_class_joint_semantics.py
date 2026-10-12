@@ -867,7 +867,7 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
     It takes the K=1 production arithmetic of the resident pass 2.
     """
     from relax.fine_pass import dispatch as sparse_dispatch
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     probe_calls = []
     sparse_calls = []
@@ -1079,7 +1079,7 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch, d
     from recovar import cuda_backproject
 
     from relax.fine_pass import dispatch as sparse_dispatch
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     calls = []
     n_images = 2
@@ -1306,9 +1306,9 @@ def test_class_direction_prior_normalizes_relion_joint_rows():
 def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch):
     """Class3D replay uses run_itNNN_model.star when half-model files are absent."""
 
-    from relax import sampling
     from relax.parity import relion_replay
     from relax.parity.relion_replay import apply_iter_replay_overrides
+    from relax.sampling import grids
 
     (tmp_path / "run_it001_model.star").touch()
     (tmp_path / "run_it002_model.star").touch()
@@ -1332,7 +1332,7 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
         "read_relion_model_metadata",
         lambda _path: {"current_image_size": 8},
     )
-    monkeypatch.setattr(sampling, "get_translation_grid", lambda _range, _step: np.zeros((1, 2), dtype=np.float32))
+    monkeypatch.setattr(grids, "get_translation_grid", lambda _range, _step: np.zeros((1, 2), dtype=np.float32))
     calls = []
 
     def fake_read_priors(path, n_classes, *, dtype=np.float32):

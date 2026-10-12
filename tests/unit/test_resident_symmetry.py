@@ -113,7 +113,7 @@ def _rotation_diagnostics(ctf_public_flat) -> dict:
 def test_c4_tables_from_csr_match_the_host_path_on_the_generated_grid(execution_order):
     """The generator branch of the CSR tables follows the asymmetric-unit grid."""
 
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     nside_level = 1
     n_coarse_rot = rotation_grid_size(nside_level, SYMMETRY)
@@ -205,7 +205,7 @@ def _c4_driver_args(seed=20260924):
 
     from test_resident_pass2_driver import _driver_fixture_args, _z_rotation
 
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     args = _driver_fixture_args(seed=seed)
     nside_level = int(args["nside_level"])
@@ -261,7 +261,7 @@ def _c4_local_case(monkeypatch):
         build_local_adaptive_pass2_hypothesis_layout,
         build_local_hypothesis_layout,
     )
-    from relax.sampling import build_local_search_grid_metadata
+    from relax.sampling.grids import build_local_search_grid_metadata
 
     seed = 20260919
     case = local_tests._case(seed)

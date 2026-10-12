@@ -20,7 +20,7 @@ from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
 from relax.refinement.local_half import LocalDiagnosticPolicy
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import NoProbe, ObserverExpectationProbe
-from relax.sampling import TrialGrid
+from relax.sampling.grids import TrialGrid
 from relax.sampling.orientation_priors import HalfDirectionLogPriors
 from relax.steps.half_inputs import HalfScoringData, HalfSet
 from relax.steps.score_outputs import HalfScoreResult, PerHalfOutputs

@@ -760,13 +760,13 @@ MUTATIONS = (
      "the accuracy estimate's shared projector is built two pixels small", True),
     ("accuracy_status", 'exact_accuracy_status_this_iter = "ok"', 'exact_accuracy_status_this_iter = "okay"',
      "a successful accuracy estimate reports another status", True),
-    ("coarse_translation_range", "base_translations = sampling.relion_base_translation_grid(\nstate.translation_range,", "base_translations = sampling.relion_base_translation_grid(\nstate.translation_range * 2,",
+    ("coarse_translation_range", "base_translations = sampling_grids.relion_base_translation_grid(\nstate.translation_range,", "base_translations = sampling_grids.relion_base_translation_grid(\nstate.translation_range * 2,",
      "a rebuilt coarse translation grid has twice the range", True),
     ("replay_translations_reversed", "base_translations = _new_t_source", "base_translations = _new_t_source[::-1]",
      "a translation grid rebuilt under replay is installed reversed", True),
     ("trial_grid_step", "translation_step=float(state.translation_step),\nrandom_perturbation=random_perturbation,\nangular_sampling_deg=angsamp_deg,", "translation_step=2 * float(state.translation_step),\nrandom_perturbation=random_perturbation,\nangular_sampling_deg=angsamp_deg,",
      "the perturbed trial grid shifts translations by twice the step", True),
-    ("pass1_angular_sampling", "sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),", "sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=1),",
+    ("pass1_angular_sampling", "sampling_grids.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),", "sampling_grids.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=1),",
      "the pass-1 coarse rotations are perturbed by the oversampled step", True),
     ("projector_not_reused", "reusable=reusable_half1 if half.index == 0 else None,", "reusable=None,",
      "half 1's scoring projector is rebuilt instead of reusing the accuracy projector", True),
@@ -1014,7 +1014,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 from relax.refinement.local_half import LocalSearchResult
             except ImportError:  # the source in which local_half was relax/local_search/half.py (layout S7)
                 from relax.local_search.half import LocalSearchResult
-        from relax.sampling import rotation_grid_size
+        # The harness runs on both sides of a base/head comparison, so it imports from either sampling layout.
+        try:
+            from relax.sampling.grids import rotation_grid_size
+        except ImportError:  # the source before relax/sampling was split into topic modules
+            from relax.sampling import rotation_grid_size
 
         fields = {f.name: getattr(owner, f.name) for owner in owners for f in dataclasses.fields(owner)}
         seed = digest_operands(*owners)

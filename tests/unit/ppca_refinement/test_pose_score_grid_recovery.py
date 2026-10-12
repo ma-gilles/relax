@@ -9,7 +9,7 @@ from relax.ppca_refinement.dense_dataset import _project_augmented_half_volumes,
 from relax.ppca_refinement.engine import _score_gamma_and_moments, dense_pose_ppca_score_stats_blocked
 from relax.ppca_refinement.initialization import real_volume_to_centered_fourier_half
 from relax.relion.image_preprocessing import preprocess_batch
-from relax.sampling import get_rotation_grid_at_order
+from relax.sampling.grids import get_rotation_grid_at_order
 from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit

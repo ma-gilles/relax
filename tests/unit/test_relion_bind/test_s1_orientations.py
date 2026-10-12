@@ -31,7 +31,7 @@ from relax.relion_bind._relion_bind_core import (
 
 
 def test_mstep_rotation_helper_uses_exact_relion_host_inverse():
-    from relax.sampling import _relion_mstep_rotations_from_eulers
+    from relax.sampling.grids import relion_mstep_rotations_from_eulers
 
     angles = np.asarray(
         [
@@ -41,7 +41,7 @@ def test_mstep_rotation_helper_uses_exact_relion_host_inverse():
         dtype=np.float64,
     )
     expected = np.swapaxes(euler_angles_to_inverse_matrices(angles), 1, 2)
-    actual = _relion_mstep_rotations_from_eulers(angles, dtype=np.float64)
+    actual = relion_mstep_rotations_from_eulers(angles, dtype=np.float64)
     assert_matches(actual, expected)
 
 
@@ -168,7 +168,7 @@ class TestDirectionCount:
         angular_step = get_angular_sampling(order)
         n_psi_relion = int(np.ceil(360.0 / angular_step))
 
-        from relax.sampling import rotation_grid_n_in_planes
+        from relax.sampling.grids import rotation_grid_n_in_planes
 
         n_psi_recovar = rotation_grid_n_in_planes(order)
         assert n_psi_relion == n_psi_recovar, (
@@ -214,7 +214,7 @@ class TestRotationMatrices:
         """
         from recovar.utils.helpers import R_from_relion
 
-        from relax.sampling import get_rotation_grid
+        from relax.sampling.grids import get_rotation_grid
 
         relion_coarse = get_coarse_orientations(order)
         n_total = relion_coarse.shape[0]
@@ -327,11 +327,8 @@ class TestOversampledGrid:
     @pytest.mark.parametrize("random_perturbation", [0.0, 0.461207])
     def test_recovar_sampled_oversampling_matches_relion_binding_order(self, oversampling_order, random_perturbation):
         """RECOVAR's sampled oversampling path must preserve RELION child order."""
-        from relax.sampling import (
-            get_oversampled_rotation_grid_from_samples,
-            healpix,
-            rotation_grid_n_in_planes,
-        )
+        from relax.sampling import get_oversampled_rotation_grid_from_samples, healpix
+        from relax.sampling.grids import rotation_grid_n_in_planes
 
         order = 2
         n_pixels = healpy.nside2npix(2**order)

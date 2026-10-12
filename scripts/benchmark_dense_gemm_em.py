@@ -79,7 +79,8 @@ def arguments():
 
 def _rotations(count, seed):
     """Representative SO(3) poses with distinct canonical score/M-step matrices."""
-    from relax.sampling import _relion_device_scoring_rotations_f32, _relion_mstep_rotations_from_eulers
+    from relax.sampling import _relion_device_scoring_rotations_f32
+    from relax.sampling.grids import relion_mstep_rotations_from_eulers
 
     rng = np.random.default_rng(seed + 19)
     eulers = np.column_stack(
@@ -92,7 +93,7 @@ def _rotations(count, seed):
     score = _relion_device_scoring_rotations_f32(eulers)
     if score is None:
         raise RuntimeError("SO(3) benchmark requires the native CUDA RELION scoring rotations")
-    return score, _relion_mstep_rotations_from_eulers(eulers)
+    return score, relion_mstep_rotations_from_eulers(eulers)
 
 
 def _source_identity(root):

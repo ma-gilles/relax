@@ -9,7 +9,7 @@ import pytest
 from relax.refinement.expectation import empty_half_rotation_count
 from relax.refinement.local_sampling import LocalSearchSettings
 from relax.refinement.refinement_state import RefinementState, direction_prior_healpix_order_for_scoring
-from relax.sampling import rotation_grid_size
+from relax.sampling.grids import rotation_grid_size
 
 pytestmark = pytest.mark.unit
 

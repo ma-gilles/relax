@@ -78,6 +78,7 @@ from relax.ppca_refinement.full_row_stream import (
     tile_support,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
+from relax.sampling import grids as sampling_grids
 
 logger = logging.getLogger(__name__)
 OVERSAMPLED_ENGINE = "full_row_adaptive_oversampling"
@@ -122,7 +123,7 @@ def relion_child_grids(order: int, translations, translation_step: float):
 @lru_cache(maxsize=8)
 def _child_grids(order: int, translation_bytes: bytes, translation_shape, translation_step: float):
     translations = np.frombuffer(translation_bytes, np.float32).reshape(translation_shape)
-    n_rotations = sampling.rotation_grid_size(order)
+    n_rotations = sampling_grids.rotation_grid_size(order)
     rotations, rotation_parent = sampling.get_oversampled_rotation_grid_from_samples(
         np.arange(n_rotations), order, 1, rotation_index_order="relion"
     )[:2]

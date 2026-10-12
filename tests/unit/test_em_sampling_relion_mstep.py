@@ -5,14 +5,14 @@ import inspect
 import numpy as np
 from helpers.float_compare import assert_matches
 
-import relax.sampling as sampling_module
 from relax.sampling import (
-    _relion_mstep_rotations_from_eulers,
     apply_relion_rotation_perturbation_to_eulers,
     get_oversampled_rotation_grid_from_samples,
     relion_adaptive_pass1_rotations,
     relion_sampling_perturbation_for_iteration,
 )
+from relax.sampling import grids as grids_module
+from relax.sampling.grids import relion_mstep_rotations_from_eulers
 from relax.sampling.healpix import euler_angles_to_matrix
 
 
@@ -192,7 +192,7 @@ _K4_RESTART_MSTEP_ROTATIONS = np.asarray(
 
 
 def test_relion_mstep_rotation_helper_matches_captured_float32_rotations():
-    rotations = _relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64)
+    rotations = relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64)
 
     assert rotations.dtype == np.float32
     assert_matches(rotations, _RELION_MSTEP_ROTATIONS)
@@ -228,7 +228,7 @@ def test_k4_restart_uses_seed_exact_perturbation_for_captured_mstep_rotations():
 
 
 def test_relion_mstep_rotation_helper_preserves_matrix2d_inverse_source_order():
-    source = inspect.getsource(_relion_mstep_rotations_from_eulers)
+    source = inspect.getsource(relion_mstep_rotations_from_eulers)
     cofactor_assignments = [
         "inverse[:, 0, 0] = matrix[:, 2, 2] * matrix[:, 1, 1] - matrix[:, 2, 1] * matrix[:, 1, 2]",
         "inverse[:, 0, 1] = -(matrix[:, 2, 2] * matrix[:, 0, 1] - matrix[:, 2, 1] * matrix[:, 0, 2])",
@@ -248,11 +248,11 @@ def test_relion_mstep_rotation_helper_preserves_matrix2d_inverse_source_order():
 
 def test_relion_mstep_rotation_helper_defaults_to_float32_but_accepts_float64():
     """``dtype`` only changes the final cast -- the float32 default still matches the capture."""
-    default_result = _relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64)
+    default_result = relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64)
     assert default_result.dtype == np.float32
     assert_matches(default_result, _RELION_MSTEP_ROTATIONS)
 
-    f64_result = _relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64, dtype=np.float64)
+    f64_result = relion_mstep_rotations_from_eulers(_RELION_FINE_EULERS_F64, dtype=np.float64)
     assert f64_result.dtype == np.float64
     np.testing.assert_allclose(f64_result.astype(np.float32), default_result, rtol=0.0, atol=1e-6)
 
@@ -292,28 +292,28 @@ def test_unperturbed_scorer_and_mstep_share_host_generated_path():
         7.5,
     )
 
-    expected = _relion_mstep_rotations_from_eulers(_UNPERTURBED_FINE_EULERS_F64[:1])
+    expected = relion_mstep_rotations_from_eulers(_UNPERTURBED_FINE_EULERS_F64[:1])
     assert_matches(rotations, expected)
 
 
 def test_relion_global_grid_preserves_source_euler_precision_until_matrix_cast(monkeypatch):
     source_eulers = _UNPERTURBED_FINE_EULERS_F64[:2]
     monkeypatch.setattr(
-        sampling_module,
-        "_get_relion_rotation_grid_eulers_float64",
+        grids_module,
+        "get_relion_rotation_grid_eulers_float64",
         lambda _order, *, symmetry='C1': source_eulers,
     )
 
-    _rotation_grid_rotations = sampling_module.relion_scoring_rotation_grid(3)
+    _rotation_grid_rotations = grids_module.relion_scoring_rotation_grid(3)
     rotations = _rotation_grid_rotations.rotations
     returned_eulers = _rotation_grid_rotations.rotation_eulers
 
-    assert_matches(rotations, _relion_mstep_rotations_from_eulers(source_eulers))
+    assert_matches(rotations, relion_mstep_rotations_from_eulers(source_eulers))
     assert_matches(returned_eulers, source_eulers.astype(np.float32))
     # A late float32 cast of the Euler angles moves the matrices by 6.2e-8
     # relative, inside the float32 band, so that difference is not asserted.
 
-    _rotation_grid_rotations_f64 = sampling_module.relion_scoring_rotation_grid(
+    _rotation_grid_rotations_f64 = grids_module.relion_scoring_rotation_grid(
         3, dtype=np.float64
     )
     rotations_f64 = _rotation_grid_rotations_f64.rotations
@@ -321,7 +321,7 @@ def test_relion_global_grid_preserves_source_euler_precision_until_matrix_cast(m
     assert_matches(returned_eulers_f64, source_eulers)
     assert_matches(
         rotations_f64,
-        _relion_mstep_rotations_from_eulers(source_eulers, dtype=np.float64),
+        relion_mstep_rotations_from_eulers(source_eulers, dtype=np.float64),
     )
 
 

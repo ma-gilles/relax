@@ -231,13 +231,13 @@ def test_subtomogram_translation_schedule_is_relions_s1_schedule():
 @pytest.mark.unit
 def test_mstep_source_eulers_never_build_a_grid_of_another_size(monkeypatch):
     """A final local search at order 9 (subtomograms) keeps its own angles without building the order-9 grid."""
-    from relax import sampling
+    from relax.sampling import grids
 
     eulers = np.zeros((10, 3))
     monkeypatch.setattr(
-        sampling, "_get_relion_rotation_grid_eulers_float64", lambda *a, **k: pytest.fail("built the full grid")
+        grids, "get_relion_rotation_grid_eulers_float64", lambda *a, **k: pytest.fail("built the full grid")
     )
-    out = sampling.relion_mstep_source_eulers(eulers, 9)
+    out = grids.relion_mstep_source_eulers(eulers, 9)
     assert out.shape == (10, 3)
 
 

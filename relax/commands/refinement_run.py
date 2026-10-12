@@ -756,7 +756,7 @@ def main(command=None):
     logger.info("Half-sets: %d + %d images", ds_half1.n_units, ds_half2.n_units)
 
     # ---- Set up rotation and translation grids ----
-    from relax.sampling import relion_base_translation_grid, rotation_grid_size
+    from relax.sampling.grids import relion_base_translation_grid, rotation_grid_size
 
     initial_sampling = refinement_arguments.resolve_initial_sampling(
         args.healpix_order,

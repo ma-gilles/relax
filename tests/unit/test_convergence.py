@@ -36,10 +36,7 @@ from relax.refinement.refinement_state import (
     update_angular_sampling,
     update_refinement_state,
 )
-from relax.sampling import (
-    get_rotation_grid,
-    get_rotation_grid_at_order,
-)
+from relax.sampling.grids import get_rotation_grid, get_rotation_grid_at_order
 from relax.sampling.healpix import angular_sampling_deg
 from relax.steps.convergence import relion_mpi_hidden_variable_change_is_small
 

@@ -18,20 +18,22 @@ from relax.runtime.batch_planning import (
 from relax.sampling import (
     DevicePass1Source,
     _compute_oversampled_rotation_grid,
-    _relion_mstep_rotations_from_eulers,
-    _wrapped_abs_diff_deg,
     apply_relion_rotation_perturbation_to_eulers,
-    build_local_search_grid_metadata,
     get_local_rotation_grid_fast,
     get_oversampled_rotation_grid_from_samples,
     get_oversampled_translation_grid,
     infer_translation_step,
     project_rows,
     relion_adaptive_pass1_rotations,
+    unique_nonnegative_ids,
+)
+from relax.sampling.grids import (
+    build_local_search_grid_metadata,
+    relion_mstep_rotations_from_eulers,
     rotation_grid_n_in_planes,
     rotation_grid_size,
     rotation_indices_to_relion_eulers,
-    unique_nonnegative_ids,
+    wrapped_abs_diff_deg,
 )
 from relax.sampling.healpix import euler_angles_to_matrix
 from relax.sampling.orientation_priors import make_relion_translation_log_prior
@@ -622,7 +624,7 @@ def _build_factorized_local_entries(
             dots = None
 
         if sigma_psi_deg > 0.0:
-            diffpsi_chunk = _wrapped_abs_diff_deg(
+            diffpsi_chunk = wrapped_abs_diff_deg(
                 psi_deg_grid[None, :],
                 prior_psi_deg[chunk_start:chunk_stop, None],
             )
@@ -973,7 +975,7 @@ def local_layout_host_rotations(layout: LocalHypothesisLayout, *, mstep: bool) -
     if layout.oversampled_rows:
         if layout.source_eulers_flat is None:
             raise ValueError("oversampled local rows carry no source Euler rows to rebuild them from")
-        return _relion_mstep_rotations_from_eulers(np.asarray(layout.source_eulers_flat), dtype=np.float64)
+        return relion_mstep_rotations_from_eulers(np.asarray(layout.source_eulers_flat), dtype=np.float64)
     if layout.id_rows_source is None:
         raise ValueError("local rows record no builder arguments to rebuild them from")
     healpix_order, random_perturbation, angular_sampling_deg = layout.id_rows_source

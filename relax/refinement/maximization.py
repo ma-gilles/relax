@@ -34,7 +34,7 @@ from relax.refinement.reference_state import (
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR, REFERENCE_FILTER_EDGE_SHELLS
 from relax.runtime.timing import Stopwatch
-from relax.sampling import rotation_grid_size
+from relax.sampling.grids import rotation_grid_size
 from relax.sampling.orientation_priors import DirectionPrior, learn_class_direction_priors, learn_k1_direction_priors
 from relax.steps import score_outputs
 

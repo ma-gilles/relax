@@ -1691,7 +1691,7 @@ depth-corrected CTF with `rlnCtfScalefactor` and cumulative-dose damping
 pose `phi = (R, t)` with `t` a 3D shift in pixels, one latent `z_i`, and unit
 contrast (as SPA PPCA's first version). Tilt `k` is sliced at the rotation
 `Aproj_ik R` (in RECOVAR's convention this is the matrix product of the two
-RELION matrices; `_relion_mstep_rotations_from_eulers` with `left_matrices`
+RELION matrices; `relion_mstep_rotations_from_eulers` with `left_matrices`
 returns the same) and shifted by `s_ik(t) = [Aproj_ik t]_{1,2}`
 (`tilt_image_shifts`):
 

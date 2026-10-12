@@ -16,9 +16,8 @@ from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.reconstruction import noise as recon_noise
 
 from relax.ppca_refinement.dense_dataset import run_dense_ppca_fused_em_iteration
-from relax.sampling import (
-    apply_relion_rotation_perturbation_to_eulers,
-    apply_relion_translation_perturbation,
+from relax.sampling import apply_relion_rotation_perturbation_to_eulers, apply_relion_translation_perturbation
+from relax.sampling.grids import (
     get_relion_rotation_grid_eulers,
     get_rotation_grid_at_order,
     get_translation_grid,

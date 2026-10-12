@@ -29,6 +29,7 @@ from relax.ppca_refinement.oversampled_stream import (
     prepare_oversampled_stream,
     relion_child_grids,
 )
+from relax.sampling import grids
 
 pytestmark = pytest.mark.unit
 
@@ -44,8 +45,8 @@ def _spa_stream(*, metric_trace_only=False, order=0, n_images=4, device=None, cu
     images[:, 0] += 30.0  # a mean image the model partly explains, so posteriors are not flat
     mu = _half_volume(rng)
     W = np.stack([_half_volume(rng, 0.3), _half_volume(rng, 0.2)], axis=1)
-    rotations = sampling.get_relion_hidden_rotation_grid(order, matrices=True).astype(np.float32)
-    translations = sampling.get_relion_translation_grid(max_pixel=1, pixel_offset=1).astype(np.float32)
+    rotations = grids.get_relion_hidden_rotation_grid(order, matrices=True).astype(np.float32)
+    translations = grids.get_relion_translation_grid(max_pixel=1, pixel_offset=1).astype(np.float32)
     rotation_prior = np.log(rng.dirichlet(np.ones(len(rotations)))).astype(np.float32)
     translation_prior = (-np.sum(translations**2, axis=-1) / 2.0).astype(np.float32)
     coarse = prepare_full_row_stream(

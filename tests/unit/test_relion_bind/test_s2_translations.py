@@ -35,7 +35,7 @@ class TestCoarseTranslations:
         ],
     )
     def test_grid_matches_recovar(self, offset_range, offset_step):
-        from relax.sampling import get_translation_grid
+        from relax.sampling.grids import get_translation_grid
 
         relion_grid = get_coarse_translations(offset_range, offset_step)
         recovar_grid = get_translation_grid(offset_range, offset_step)
@@ -57,7 +57,7 @@ class TestCoarseTranslations:
 
     def test_rounded_star_integer_boundary_matches_k1_exact_grid(self):
         """Fixed-decimal STAR values must not drop RELION's outer axial rows."""
-        from relax.sampling import get_relion_translation_grid, get_translation_grid
+        from relax.sampling.grids import get_relion_translation_grid, get_translation_grid
 
         offset_range_angstrom = 4.25
         offset_step_angstrom = 1.416667
@@ -83,7 +83,7 @@ class TestCoarseTranslations:
 
     def test_squared_radius_tolerance_is_applied_before_pixel_conversion(self):
         """The source-unit tolerance must not admit near-boundary pixel rows."""
-        from relax.sampling import get_relion_translation_grid
+        from relax.sampling.grids import get_relion_translation_grid
 
         offset_range_angstrom = 6.707714
         offset_step_angstrom = 3.0
@@ -156,11 +156,8 @@ class TestOversampledTranslations:
     @pytest.mark.parametrize("random_perturbation", [0.0, 0.461207])
     def test_recovar_oversampled_grid_matches_relion_binding_order(self, oversampling_order, random_perturbation):
         """RECOVAR must preserve RELION's translation child order and perturbation."""
-        from relax.sampling import (
-            apply_relion_translation_perturbation,
-            get_oversampled_translation_grid,
-            get_translation_grid,
-        )
+        from relax.sampling import apply_relion_translation_perturbation, get_oversampled_translation_grid
+        from relax.sampling.grids import get_translation_grid
 
         offset_range = 10.0
         offset_step = 2.0

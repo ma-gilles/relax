@@ -482,10 +482,10 @@ def test_update_noise_keeps_groups_without_images():
 
 def test_controller_noise_groups_match_brute_force():
     """Two noise groups with different spectra: the controller's per-group streams against the dense joint model."""
-    from relax import sampling
     from relax.ppca_initial_model import iteration_loop
     from relax.ppca_initial_model.config import Config
     from relax.ppca_initial_model.state import State
+    from relax.sampling import grids
 
     particles, stream, arrays = make_problem(seed=9)
     particles = TiltParticles(**{**particles.__dict__, "noise_group": np.asarray([1, 0, 1])})
@@ -520,8 +520,8 @@ def test_controller_noise_groups_match_brute_force():
     finally:
         iteration_loop._rotation_grid.cache_clear()
         iteration_loop._direction_ids.cache_clear()
-    rotations = sampling.get_relion_hidden_rotation_grid(0, matrices=True).astype(np.float32)
-    translations = sampling.get_relion_translation_grid_3d(1, 1).astype(np.float32)
+    rotations = grids.get_relion_hidden_rotation_grid(0, matrices=True).astype(np.float32)
+    translations = grids.get_relion_translation_grid_3d(1, 1).astype(np.float32)
     translation_prior = -np.sum(translations.astype(np.float64) ** 2, axis=-1) / 4.0
     truth = brute_force(
         particles,

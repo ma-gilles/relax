@@ -204,7 +204,7 @@ def _infer_healpix_order_from_rotation_count(
     n_rot: int,
     symmetry_label: str = "C1",
 ) -> int:
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     for order in range(16):
         try:

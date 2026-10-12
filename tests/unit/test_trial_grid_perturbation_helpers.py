@@ -12,12 +12,9 @@ import pytest
 from helpers.float_compare import assert_matches, matches
 
 import relax.sampling as sampling_module
-from relax.sampling import (
-    apply_relion_rotation_perturbation_to_eulers,
-    apply_relion_translation_perturbation,
-    relion_angular_sampling_deg,
-    rotation_grid_size,
-)
+from relax.sampling import apply_relion_rotation_perturbation_to_eulers, apply_relion_translation_perturbation
+from relax.sampling import grids as grids_module
+from relax.sampling.grids import relion_angular_sampling_deg, rotation_grid_size
 
 pytestmark = pytest.mark.unit
 
@@ -33,12 +30,12 @@ def _canonical_eulers(order, *, symmetry='C1'):
 
 @pytest.fixture(autouse=True)
 def _fake_canonical_grid(monkeypatch):
-    monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", _canonical_eulers)
+    monkeypatch.setattr(grids_module, "get_relion_rotation_grid_eulers_float64", _canonical_eulers)
 
 
 def test_mstep_source_uses_the_canonical_grid_at_matching_size():
     eulers = np.zeros((N_ROT, 3), dtype=np.float32)
-    source = sampling_module.relion_mstep_source_eulers(eulers, ORDER)
+    source = grids_module.relion_mstep_source_eulers(eulers, ORDER)
     expected = _canonical_eulers(ORDER)
     assert source.dtype == np.float64
     assert_matches(source, expected)
@@ -46,16 +43,16 @@ def test_mstep_source_uses_the_canonical_grid_at_matching_size():
 
 def test_mstep_source_falls_back_to_the_grid_angles_when_sizes_differ():
     eulers = np.arange(15, dtype=np.float32).reshape(5, 3)
-    source = sampling_module.relion_mstep_source_eulers(eulers, ORDER)
+    source = grids_module.relion_mstep_source_eulers(eulers, ORDER)
     assert source.dtype == np.float64 and source.tolist() == eulers.astype(np.float64).tolist()
 
 
 def test_sealed_grid_supplies_its_own_angles(monkeypatch):
     eulers = np.arange(3 * N_ROT, dtype=np.float32).reshape(-1, 3)
     monkeypatch.setattr(
-        sampling_module, "_get_relion_rotation_grid_eulers_float64", lambda order, *, symmetry='C1': pytest.fail("canonical grid must not be built")
+        grids_module, "get_relion_rotation_grid_eulers_float64", lambda order, *, symmetry='C1': pytest.fail("canonical grid must not be built")
     )
-    source = sampling_module.relion_mstep_source_eulers(eulers, ORDER, use_grid_eulers=True)
+    source = grids_module.relion_mstep_source_eulers(eulers, ORDER, use_grid_eulers=True)
     assert source.dtype == np.float64 and source.tolist() == eulers.astype(np.float64).tolist()
 
 
@@ -131,10 +128,10 @@ def test_point_group_mstep_source_uses_the_reduced_grid_rfloat_angles(monkeypatc
         calls.append((order, symmetry))
         return _reduced_source_eulers(order, symmetry) if symmetry != "C1" else _canonical_eulers(order)
 
-    monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", fake)
+    monkeypatch.setattr(grids_module, "get_relion_rotation_grid_eulers_float64", fake)
     expected = _reduced_source_eulers(ORDER, "C4")
     scoring_eulers = expected.astype(np.float32)
-    source = sampling_module.relion_mstep_source_eulers(scoring_eulers, ORDER, symmetry="C4")
+    source = grids_module.relion_mstep_source_eulers(scoring_eulers, ORDER, symmetry="C4")
     assert calls == [(ORDER, "C4")]
     assert source.dtype == np.float64
     assert_matches(source, expected)
@@ -148,8 +145,8 @@ def test_point_group_label_is_canonicalized_and_c1_is_passed_explicitly(monkeypa
         calls.append((order, kwargs))
         return _canonical_eulers(order)
 
-    monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", fake)
+    monkeypatch.setattr(grids_module, "get_relion_rotation_grid_eulers_float64", fake)
     eulers = np.zeros((N_ROT, 3), dtype=np.float32)
-    sampling_module.relion_mstep_source_eulers(eulers, ORDER, symmetry="c1")
-    sampling_module.relion_mstep_source_eulers(eulers, ORDER)
+    grids_module.relion_mstep_source_eulers(eulers, ORDER, symmetry="c1")
+    grids_module.relion_mstep_source_eulers(eulers, ORDER)
     assert calls == [(ORDER, {"symmetry": "C1"}), (ORDER, {"symmetry": "C1"})]

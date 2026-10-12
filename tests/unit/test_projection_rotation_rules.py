@@ -13,6 +13,7 @@ import pytest
 
 from relax import sampling
 from relax.relion.optics_aberrations import relax_projection_magnification, relion_projection_left_matrix
+from relax.sampling import grids
 from relax.sampling.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 
 pytestmark = pytest.mark.unit
@@ -23,8 +24,8 @@ PERTURBATION = 0.37
 
 
 def _grids(oversampling):
-    rotation_grid = sampling.relion_scoring_rotation_grid(ORDER, dtype=np.float32)
-    step = sampling.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
+    rotation_grid = grids.relion_scoring_rotation_grid(ORDER, dtype=np.float32)
+    step = grids.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
     coarse, _eulers = sampling.apply_relion_rotation_perturbation_to_eulers(
         np.asarray(rotation_grid.rotation_eulers, dtype=np.float64), PERTURBATION, step
     )
@@ -36,7 +37,7 @@ def _grids(oversampling):
 
 def _host64(oversampling, mstep):
     outputs = sampling.get_oversampled_rotation_grid_from_samples(
-        np.arange(sampling.rotation_grid_size(ORDER), dtype=np.int64),
+        np.arange(grids.rotation_grid_size(ORDER), dtype=np.int64),
         ORDER,
         oversampling_order=oversampling,
         random_perturbation=PERTURBATION,
@@ -137,11 +138,11 @@ def test_left_matrix_is_relions_mbl():
 def test_device_rows_are_relions_float32_left_kernel(scale):
     """Pass-1 rows: RELION's float32 ``MBL (A R)`` and adjugate, the kernel tilt images' ``MBL`` use too."""
 
-    rotation_grid = sampling.relion_scoring_rotation_grid(ORDER, dtype=np.float32)
+    rotation_grid = grids.relion_scoring_rotation_grid(ORDER, dtype=np.float32)
     source = sampling.DevicePass1Source(
         np.asarray(rotation_grid.rotation_eulers, dtype=np.float64),
         PERTURBATION,
-        sampling.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0),
+        grids.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0),
         False,
     )
     plain = np.asarray(
@@ -240,10 +241,10 @@ def _local_parent_layout():
     rng = np.random.default_rng(11)
     eulers = np.column_stack([rng.uniform(0, 360, 5), rng.uniform(20, 160, 5), rng.uniform(0, 360, 5)])
     translations = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
-    step = sampling.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
+    step = grids.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
     return build_local_hypothesis_layout(
         eulers, None, 0.35, 0.35, ORDER, translations, np.zeros((5, 2), dtype=np.float32), 3.0, None, 1.0,
-        grid_metadata=sampling.build_local_search_grid_metadata(ORDER),
+        grid_metadata=grids.build_local_search_grid_metadata(ORDER),
         translation_prior_reference_translations=translations,
         rotation_grid_random_perturbation=PERTURBATION, rotation_grid_angular_sampling_deg=step, dtype=np.float32,
     )
@@ -271,9 +272,9 @@ def test_local_parent_rows_are_the_projector_plans_rows(scale, magnified):
     assert got.dtype == np.float32 and got.shape == np.asarray(layout.rotations_flat).shape
 
     eulers = _rotation_eulers_from_grid_metadata(
-        layout.rotation_ids_flat, sampling.build_local_search_grid_metadata(ORDER), dtype=np.float32
+        layout.rotation_ids_flat, grids.build_local_search_grid_metadata(ORDER), dtype=np.float32
     )
-    step = sampling.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
+    step = grids.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
     source = sampling.DevicePass1Source(np.asarray(eulers, dtype=np.float64), PERTURBATION, step, False)
     plain = np.asarray(sampling.relion_adaptive_pass1_rotations(source.source_eulers_deg, PERTURBATION, step))
     expected = plain

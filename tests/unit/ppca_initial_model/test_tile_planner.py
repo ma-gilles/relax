@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from relax import sampling
 from relax.ppca_initial_model.tomo import TiltParticles, load_tilt_tile
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.full_row_stream import (
@@ -18,6 +17,7 @@ from relax.ppca_refinement.full_row_stream import (
     tile_bytes,
     tile_program_bytes,
 )
+from relax.sampling import grids
 
 pytestmark = pytest.mark.unit
 
@@ -40,7 +40,7 @@ def _tilt_stream(radius=31, order=3):
         group_frames=(np.asarray(frames, np.float64),),
         read=lambda ids: (None, jnp.zeros((len(ids), n_half), jnp.complex64), jnp.ones((len(ids), n_half))),
     )
-    translations = np.asarray(sampling.get_relion_translation_grid_3d(2, 1), np.float32)
+    translations = np.asarray(grids.get_relion_translation_grid_3d(2, 1), np.float32)
     return _stream(particles, radius, order, translations, q=2, tile_loader=load_tilt_tile)
 
 
@@ -67,12 +67,12 @@ class _ImageShapes:
 
 def _spa_stream(radius, order):
     """The EMPIAR-10076 PPCA stages: box 64, q 4, shift range 6 px in 2 px steps."""
-    translations = np.asarray(sampling.get_relion_translation_grid(max_pixel=6, pixel_offset=2), np.float32)
+    translations = np.asarray(grids.get_relion_translation_grid(max_pixel=6, pixel_offset=2), np.float32)
     return _stream(_ImageShapes(), radius, order, translations, q=4, tile_loader=None)
 
 
 def _stream(particles, radius, order, translations, *, q, tile_loader):
-    rotations = np.asarray(sampling.get_relion_hidden_rotation_grid(order, matrices=True), np.float32)
+    rotations = np.asarray(grids.get_relion_hidden_rotation_grid(order, matrices=True), np.float32)
     n_volume = BOX * BOX * (BOX // 2 + 1)
     return prepare_full_row_stream(
         particles,

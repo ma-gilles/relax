@@ -71,7 +71,7 @@ both passes ([`test_local_search_sigma_owner.py`](../../tests/unit/test_local_se
 
 The [refinement controller](../../relax/refinement/iteration_loop.py)
 owns iteration history, half-set dispatch, sampling updates, convergence and
-finalization scheduling/state mutation. The existing [sampling module](../../relax/sampling/__init__.py)
+finalization scheduling/state mutation. The existing [sampling grids module](../../relax/sampling/grids.py)
 owns pure grid construction. Its helpers
 `_relion_mstep_source_eulers` and `_perturbed_trial_grid` hold the two sampling rules
 both passes share: the exact M-step rotations are seeded from the sealed grid's own

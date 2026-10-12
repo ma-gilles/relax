@@ -431,7 +431,7 @@ def infer_relion_coarse_healpix_order(
 ) -> int | None:
     """Infer a complete RELION coarse-grid order, or return ``None``."""
 
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     for order in range(9):
         try:
@@ -457,7 +457,7 @@ def _relion_coarse_pose_tie_break_keys(
 ):
     """Map RECOVAR pose ids to RELION's direction-major coarse order."""
 
-    from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+    from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
 
     candidate_pose_ids = np.asarray(candidate_pose_ids, dtype=np.int64)
     if candidate_pose_ids.ndim != 2:

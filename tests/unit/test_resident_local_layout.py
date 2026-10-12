@@ -23,7 +23,7 @@ from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
-from relax.sampling import build_local_search_grid_metadata
+from relax.sampling.grids import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
 

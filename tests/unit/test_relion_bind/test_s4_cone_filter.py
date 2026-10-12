@@ -18,20 +18,16 @@ reproduce the formula exactly.
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-
-healpy = pytest.importorskip("healpy")
-
+from recovar.utils.helpers import R_from_relion
 from relax.relion_bind._relion_bind_core import (
     get_angular_sampling,
     get_healpix_directions,
 )
 
-from relax.sampling import (
-    get_local_rotation_grid_fast,
-    rotation_grid_size,
-    rotation_indices_to_relion_eulers,
-)
-from recovar.utils.helpers import R_from_relion
+from relax.sampling import get_local_rotation_grid_fast
+from relax.sampling.grids import rotation_grid_size, rotation_indices_to_relion_eulers
+
+healpy = pytest.importorskip("healpy")
 
 
 def _relion_direction_vector(rot_deg, tilt_deg):
@@ -47,7 +43,7 @@ def _relion_direction_vector(rot_deg, tilt_deg):
     )
 
 
-def _wrapped_abs_diff_deg(values_deg, ref_deg):
+def wrapped_abs_diff_deg(values_deg, ref_deg):
     diff = np.abs(np.asarray(values_deg, dtype=np.float64) - float(ref_deg))
     return np.where(diff > 180.0, np.abs(diff - 360.0), diff)
 
@@ -90,7 +86,7 @@ def _relion_expected_single_prior(
     angular_step = get_angular_sampling(healpix_order)
     n_psi = int(np.ceil(360.0 / angular_step))
     psi_deg = (360.0 / n_psi) * np.arange(n_psi, dtype=np.float64)
-    diffpsi = _wrapped_abs_diff_deg(psi_deg, float(np.mod(prior_psi_deg, 360.0)))
+    diffpsi = wrapped_abs_diff_deg(psi_deg, float(np.mod(prior_psi_deg, 360.0)))
     psi_mask = diffpsi < float(sigma_cutoff) * sigma_psi_deg
     selected_ipsi = np.flatnonzero(psi_mask).astype(np.int64)
     if selected_ipsi.size == 0:

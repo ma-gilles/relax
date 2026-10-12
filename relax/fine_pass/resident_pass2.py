@@ -2619,11 +2619,8 @@ def _resident_pass2(
         _pass2_projection_budget,
         _pass2_relion_flags,
     )
-    from relax.sampling import (
-        get_oversampled_translation_grid,
-        infer_translation_step,
-        rotation_grid_size,
-    )
+    from relax.sampling import get_oversampled_translation_grid, infer_translation_step
+    from relax.sampling.grids import rotation_grid_size
     from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
     _require_gpu_pass2()

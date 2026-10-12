@@ -261,7 +261,6 @@ def run_tiny_refinement(
     (``perturb_replay_relion_dir``, ``perturb_replay_max_iter``, ...) are moved into it.
     """
 
-    import relax.sampling as sampling
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement import iteration_loop
     from relax.refinement.ports import RunObserver
@@ -271,6 +270,7 @@ def run_tiny_refinement(
         RefinementEnvironment,
     )
     from relax.refinement.startup_references import StartupHandoff
+    from relax.sampling import grids
     from relax.steps.half_inputs import HalfPair
 
     calls = [] if engine_calls is None else engine_calls
@@ -282,15 +282,15 @@ def run_tiny_refinement(
     install_fake_adaptive_engine(monkeypatch, calls, Ft_y=random_half_map, noise_fields=engine_noise_fields)
 
     def identity_rotation_grid(order, dtype=None, *, symmetry="C1"):
-        n_rotations = sampling.rotation_grid_size(order, symmetry=symmetry)
-        return sampling.RotationGrid(
+        n_rotations = grids.rotation_grid_size(order, symmetry=symmetry)
+        return grids.RotationGrid(
             rotations=np.repeat(np.eye(3, dtype=np.float32)[None], n_rotations, axis=0),
             rotation_eulers=np.zeros((n_rotations, 3), dtype=np.float32),
             healpix_order=order,
             symmetry=symmetry,
         )
 
-    monkeypatch.setattr(sampling, "relion_scoring_rotation_grid", identity_rotation_grid)
+    monkeypatch.setattr(grids, "relion_scoring_rotation_grid", identity_rotation_grid)
     if converge_after is not None:
         import sys
 

@@ -482,7 +482,7 @@ def relion_parent_execution_key(parent_ids, *, n_coarse_rot: int, nside_level: i
     CSR tables both order rows with this key.
     """
 
-    from relax.sampling import rotation_grid_n_in_planes
+    from relax.sampling.grids import rotation_grid_n_in_planes
 
     n_psi = int(rotation_grid_n_in_planes(nside_level))
     if n_coarse_rot <= 0 or n_coarse_rot % n_psi:
@@ -540,10 +540,8 @@ def _prepare_per_image_pass2_inputs(
     image over that image's significant coarse rotations in ascending order (RELION's local
     orientation prior is the particle's own).
     """
-    from relax.sampling import (
-        get_oversampled_rotation_grid_from_samples,
-        rotation_grid_size,
-    )
+    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.grids import rotation_grid_size
 
     if per_image_rotation_log_prior is not None and rotation_log_prior is not None:
         raise ValueError("a pass takes one shared rotation prior or one per image, not both")

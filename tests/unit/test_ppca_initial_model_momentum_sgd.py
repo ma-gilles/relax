@@ -207,7 +207,7 @@ def test_controller_pools_direct_residual_and_restarts_with_velocity(tmp_path, m
     # A soft support operation must act once on each output, not twice on the new step.
     monkeypatch.setattr(iteration_loop, "bandlimit_and_mask", lambda value, *_args: value * 0.5)
     monkeypatch.setattr(
-        iteration_loop.sampling, "get_relion_hidden_rotation_grid", lambda *_args, **_kwargs: np.zeros((1, 3))
+        iteration_loop.grids, "get_relion_hidden_rotation_grid", lambda *_args, **_kwargs: np.zeros((1, 3))
     )
 
     def expectation(_dataset, _state, _config, ids, _iteration, *, embeddings_only=False, diameter_ang=None):

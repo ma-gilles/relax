@@ -36,7 +36,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from relax.sampling import rotation_grid_size
+from relax.sampling.grids import rotation_grid_size
 
 # HEALPix orders a list of given poses may be padded to (order 6 holds 18.9 million rotations in C1).
 _MAX_ORDER = 6

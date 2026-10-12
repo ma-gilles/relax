@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from relax.local_search.layout import _build_factorized_local_entries, build_local_hypothesis_layout
-from relax.sampling import build_local_search_grid_metadata
+from relax.sampling.grids import build_local_search_grid_metadata
 from relax.sampling.symmetry import relion_symmetry_operators
 
 

@@ -17,7 +17,7 @@ import logging
 
 import numpy as np
 
-from relax import sampling
+from relax.sampling import grids
 from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.vdam.adaptive_estep import (
     direction_posterior_stats,
@@ -128,7 +128,7 @@ def run_tomo_initial_model_estep(
         state, sampling_plan, particle_diameter_ang=particle_diameter_ang, pass1_healpix_order=pass1_healpix_order
     )
     order = int(tomo_sampling.healpix_order)
-    n_coarse_rot = int(sampling.rotation_grid_size(order))
+    n_coarse_rot = int(grids.rotation_grid_size(order))
     relion_of_recovar = relion_order_of_recovar_rotations(order)
     prior = np.asarray(recovar_order_prior(np.asarray(class_rotation_log_prior), relion_of_recovar), dtype=np.float32)
     if prior.shape != (state.K, n_coarse_rot):
@@ -201,7 +201,7 @@ def run_tomo_initial_model_estep(
         result,
         n_coarse_rot=n_coarse_rot,
         rot_parent_map=np.arange(n_coarse_rot, dtype=np.int64),
-        n_psi=int(sampling.rotation_grid_n_in_planes(order)),
+        n_psi=int(grids.rotation_grid_n_in_planes(order)),
     )
     accumulators = arrays_to_accumulators(
         result.Ft_y,

@@ -46,10 +46,10 @@ def _inputs(supports, *, n_coarse_rot, fine_ids, prior, **extra):
 
 
 def test_compact_grid_with_image_priors_equals_the_full_grid():
-    from relax import sampling
+    from relax.sampling import grids
 
     rng = np.random.default_rng(7)
-    n_rot, n_trans = int(sampling.rotation_grid_size(1)), 3
+    n_rot, n_trans = int(grids.rotation_grid_size(1)), 3
     prior = rng.normal(size=n_rot).astype(np.float32)
     per_image_prior = [rng.normal(size=n_rot).astype(np.float32) for _ in range(4)]
     global_supports = [

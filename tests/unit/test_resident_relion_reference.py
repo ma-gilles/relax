@@ -687,7 +687,8 @@ def _local_parent_case(current_size: int, noise: float):
     from helpers.relion_plan_rows import relion_plan_rows_f32
 
     from relax.local_search.layout import _rotation_eulers_from_grid_metadata
-    from relax.sampling import build_local_search_grid_metadata, healpix
+    from relax.sampling import healpix
+    from relax.sampling.grids import build_local_search_grid_metadata
 
     order, perturbation, angular_sampling_deg = parent.id_rows_source
     parent_eulers = _rotation_eulers_from_grid_metadata(

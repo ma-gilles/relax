@@ -364,19 +364,19 @@ def local_tomo_sampling(
 def tomo_translation_grids(sampling: TomoSampling, pixel_size: float):
     """RELION's coarse 3D grid in Angstrom and pixels and its oversampled children (healpix_sampling.cpp)."""
 
-    from relax import sampling as relax_sampling
+    from relax.sampling import grids
 
-    coarse_angst = relax_sampling.get_relion_translation_grid_3d(
+    coarse_angst = grids.get_relion_translation_grid_3d(
         sampling.offset_range_angst, sampling.offset_step_angst
     )
-    coarse_px, _ = relax_sampling.relion_translations_in_pixel_3d(
+    coarse_px, _ = grids.relion_translations_in_pixel_3d(
         coarse_angst,
         sampling.offset_step_angst,
         oversampling_order=0,
         pixel_size=pixel_size,
         random_perturbation=sampling.random_perturbation,
     )
-    fine_px, parent = relax_sampling.relion_translations_in_pixel_3d(
+    fine_px, parent = grids.relion_translations_in_pixel_3d(
         coarse_angst,
         sampling.offset_step_angst,
         oversampling_order=sampling.oversampling_order,
@@ -510,7 +510,7 @@ def tomo_local_rotations(
     """
 
     from relax.local_search.layout import build_local_hypothesis_layout
-    from relax.sampling import build_local_search_grid_metadata, relion_angular_sampling_deg
+    from relax.sampling.grids import build_local_search_grid_metadata, relion_angular_sampling_deg
 
     eulers = np.asarray(previous_eulers_deg, dtype=np.float64)
     n_units = int(eulers.shape[0])

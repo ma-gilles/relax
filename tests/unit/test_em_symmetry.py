@@ -162,7 +162,7 @@ def test_symmetry_reduced_coarse_grid_matches_relion_binding(label):
         get_healpix_sampling_metadata,
     )
 
-    from relax import sampling
+    from relax.sampling import grids
 
     order = 3
     source = get_healpix_sampling_metadata(order, -1.0, label)
@@ -172,23 +172,23 @@ def test_symmetry_reduced_coarse_grid_matches_relion_binding(label):
     n_directions = len(source["rot"])
     n_psi = len(source["psi"])
 
-    native_eulers = sampling.get_relion_rotation_grid_eulers(
+    native_eulers = grids.get_relion_rotation_grid_eulers(
         order, rotation_index_order="relion", symmetry=label
     )
-    native_rotations = sampling.get_relion_rotation_grid(
+    native_rotations = grids.get_relion_rotation_grid(
         order, rotation_index_order="relion", symmetry=label
     )
-    recovar_rotations = sampling.get_relion_rotation_grid(
+    recovar_rotations = grids.get_relion_rotation_grid(
         order, rotation_index_order="recovar", symmetry=label
     )
-    metadata = sampling.build_local_search_grid_metadata(order, symmetry=label)
+    metadata = grids.build_local_search_grid_metadata(order, symmetry=label)
 
     assert n_directions > 0
     assert native_eulers.shape == source_eulers.shape == (
         n_directions * n_psi,
         3,
     )
-    assert sampling.rotation_grid_size(order, label) == n_directions * n_psi
+    assert grids.rotation_grid_size(order, label) == n_directions * n_psi
     # The public Euler table is intentionally float32; pin that conversion
     # exactly while testing the matrix path against source-precision rows.
     assert_matches(native_eulers, source_eulers.astype(np.float32))
@@ -340,7 +340,7 @@ def test_parent_expanded_local_layout_maps_non_c1_children_to_reduced_parent_ids
 
 @pytest.mark.parametrize("label", ["I2", "I3"])
 def test_empty_too_coarse_asymmetric_unit_fails_closed(label):
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     with pytest.raises(ValueError, match="increase the initial HEALPix order"):
         rotation_grid_size(1, label)
@@ -394,7 +394,7 @@ def test_explicit_c1_convergence_distance_preserves_default_path():
     "label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
 )
 def test_symmetry_direction_prior_collapse_and_expansion(label):
-    from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+    from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
     from relax.sampling.orientation_priors import (
         collapse_rotation_posterior_to_direction_prior,
         make_relion_direction_log_prior,
@@ -431,11 +431,7 @@ def test_symmetry_direction_prior_collapse_and_expansion(label):
     "label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
 )
 def test_symmetry_direction_prior_geometry_expansion_matches_canonical_ids(label):
-    from relax.sampling import (
-        get_relion_rotation_grid,
-        rotation_grid_n_in_planes,
-        rotation_grid_size,
-    )
+    from relax.sampling.grids import get_relion_rotation_grid, rotation_grid_n_in_planes, rotation_grid_size
     from relax.sampling.orientation_priors import (
         make_relion_direction_log_prior,
     )
@@ -473,10 +469,8 @@ def test_refinement_symmetry_options_canonicalize_at_construction(requested, can
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_firstiter_cc_fine_grid_uses_reduced_asymmetric_unit_ids(label):
-    from relax.sampling import (
-        get_oversampled_rotation_grid_from_samples,
-        get_relion_rotation_grid,
-    )
+    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.grids import get_relion_rotation_grid
     from relax.sampling.oversampling import (
         build_adaptive_pass2_grids,
     )
@@ -510,10 +504,8 @@ def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
     from relax.fine_pass.bucket_arrays import (
         _prepare_per_image_pass2_inputs,
     )
-    from relax.sampling import (
-        get_oversampled_rotation_grid_from_samples,
-        rotation_grid_size,
-    )
+    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.grids import rotation_grid_size
 
     order = 3
     n_coarse_rotations = rotation_grid_size(order, label)
@@ -544,7 +536,7 @@ def test_sparse_pass2_rejects_c1_sized_parent_grid_for_i1():
     from relax.fine_pass.bucket_arrays import (
         _prepare_per_image_pass2_inputs,
     )
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     with pytest.raises(ValueError, match="I1 sparse pass-2 coarse rotation count mismatch"):
         _prepare_per_image_pass2_inputs(
@@ -563,7 +555,7 @@ def test_sparse_pass2_rejects_c1_sized_parent_grid_for_i1():
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_symmetry_reduced_coarse_tie_break_uses_relion_direction_major_order(label):
-    from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+    from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
     from relax.scoring.coarse_operands import (
         _relion_coarse_pose_tie_break_keys,
         infer_relion_coarse_healpix_order,
@@ -719,7 +711,7 @@ def test_kclass_healpix_order_inference_uses_symmetry_reduced_grid(label):
     from relax.classification.k_class import (
         _infer_healpix_order_from_rotation_count,
     )
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     # Very coarse grids can retain no ASU direction for some icosahedral
     # conventions. Order three is the production global-search start and is
@@ -787,7 +779,7 @@ def test_iteration_debug_metadata_records_symmetry_reduced_local_grid(
     tmp_path,
     monkeypatch,
 ):
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     metadata = _write_iteration_debug_metadata(
         tmp_path / "i1",
@@ -988,14 +980,14 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
 def test_point_group_mstep_source_angles_are_the_relion_binary64_rows(label):
     """The scoring grid is float32; the M-step source angles stay RELION's RFLOAT rows (final Q a087087cc)."""
 
-    from relax import sampling
+    from relax.sampling import grids
 
     order = 2
-    _rotation_grid_ = sampling.relion_scoring_rotation_grid(order, symmetry=label)
+    _rotation_grid_ = grids.relion_scoring_rotation_grid(order, symmetry=label)
     _ = _rotation_grid_.rotations
     scoring_eulers = _rotation_grid_.rotation_eulers
-    exact = sampling._get_relion_rotation_grid_eulers_float64(order, symmetry=label)
-    source = sampling.relion_mstep_source_eulers(scoring_eulers, order, symmetry=label)
+    exact = grids.get_relion_rotation_grid_eulers_float64(order, symmetry=label)
+    source = grids.relion_mstep_source_eulers(scoring_eulers, order, symmetry=label)
     assert source.dtype == np.float64 and source.shape == exact.shape
     assert_matches(source, exact, strict=True)
     assert not matches(source, scoring_eulers.astype(np.float64))

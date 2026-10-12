@@ -20,6 +20,7 @@ from relax.refinement.refinement_state import (
     _exhaustive_grid_order_for_state,
     native_final_perturbation_healpix_order,
 )
+from relax.sampling import grids as sampling_grids
 from relax.sampling import relion_adaptive_pass1_rotations
 
 if TYPE_CHECKING:
@@ -37,7 +38,7 @@ class CoarseGrids:
     iteration's perturbed copy, while ``base_translations`` keeps the unperturbed host coordinates.
     """
 
-    rotation_grid: sampling.RotationGrid
+    rotation_grid: sampling_grids.RotationGrid
     base_translations: np.ndarray
     translations: jnp.ndarray
 
@@ -55,13 +56,13 @@ def build_initial_coarse_grids(
 ) -> CoarseGrids:
     """Pair RELION's canonical initial rotations with its translation grid, in the scoring ``dtype``."""
 
-    rotation_grid = sampling.relion_scoring_rotation_grid(
+    rotation_grid = sampling_grids.relion_scoring_rotation_grid(
         healpix_order,
         dtype=dtype,
         symmetry=symmetry,
     )
     if translations is None:
-        translations = sampling.relion_base_translation_grid(
+        translations = sampling_grids.relion_base_translation_grid(
             translation_range,
             translation_step,
             n_classes=n_classes,
@@ -104,7 +105,7 @@ def refresh_coarse_grids(
                 current_rotation_grid.healpix_order,
                 new_order,
             )
-            current_rotation_grid = sampling.relion_scoring_rotation_grid(
+            current_rotation_grid = sampling_grids.relion_scoring_rotation_grid(
                 new_order, dtype=dtype,
                 symmetry=symmetry,
             )
@@ -115,7 +116,7 @@ def refresh_coarse_grids(
                 current_rotation_grid.healpix_order,
             )
 
-        base_translations = sampling.relion_base_translation_grid(
+        base_translations = sampling_grids.relion_base_translation_grid(
             state.translation_range,
             state.translation_step,
             n_classes=options.k_class.n_classes,
@@ -141,7 +142,7 @@ def iteration_trial_grid(
     perturbation_order: int | None,
     sealed_grid: bool,
     dtype,
-) -> sampling.TrialGrid:
+) -> sampling_grids.TrialGrid:
     """This iteration's trial grid: the coarse grid, under RELION's sampling perturbation where one applies.
 
     ``perturbation_order`` is the HEALPix order whose angular sampling scales the perturbation, or None when
@@ -156,16 +157,16 @@ def iteration_trial_grid(
         dtype=dtype,
     )
     if perturbation_order is None:
-        return sampling.TrialGrid(
+        return sampling_grids.TrialGrid(
             rotations=rotation_grid.rotations,
             rotation_eulers=rotation_eulers,
             mstep_rotations=None,
             translations=grids.translations,
         )
-    angsamp_deg = sampling.relion_angular_sampling_deg(perturbation_order, adaptive_oversampling=0)
+    angsamp_deg = sampling_grids.relion_angular_sampling_deg(perturbation_order, adaptive_oversampling=0)
     return sampling.perturbed_trial_grid(
         rotation_eulers=rotation_eulers,
-        mstep_source_eulers=sampling.relion_mstep_source_eulers(
+        mstep_source_eulers=sampling_grids.relion_mstep_source_eulers(
             rotation_eulers,
             perturbation_order,
             use_grid_eulers=sealed_grid,
@@ -199,7 +200,7 @@ def builds_coarse_pass1_rotations(
 
 
 def coarse_pass1_rotations(
-    rotation_grid: sampling.RotationGrid,
+    rotation_grid: sampling_grids.RotationGrid,
     random_perturbation: float,
     options: RefinementOptions,
     *,
@@ -220,7 +221,7 @@ def coarse_pass1_rotations(
     source = sampling.DevicePass1Source(
         source_eulers_deg=source_eulers,
         random_perturbation=random_perturbation if perturbation_order is not None else 0.0,
-        angular_sampling_deg=sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),
+        angular_sampling_deg=sampling_grids.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),
         use_float64=options.precision.use_float64_scoring,
     )
     adaptive_pass1_rotations = relion_adaptive_pass1_rotations(
@@ -266,7 +267,7 @@ class FinalSampling:
     settings: FinalSamplingSettings
     base_rotations: np.ndarray
     base_translations: jnp.ndarray
-    grid: sampling.TrialGrid
+    grid: sampling_grids.TrialGrid
 
 
 def advance_final_perturbation(previous_perturbation: float, options: RefinementOptions, *, relion_iteration: int, rng):
@@ -325,7 +326,7 @@ def prepare_final_sampling(
     image_geometry: ImageGeometry,
     options: RefinementOptions,
     *,
-    previous_rotation_grid: sampling.RotationGrid,
+    previous_rotation_grid: sampling_grids.RotationGrid,
     numbered_iteration_count: int,
     source: InputSource,
     previous_perturbation: float,
@@ -346,7 +347,7 @@ def prepare_final_sampling(
     if grid_order == previous_rotation_grid.healpix_order:
         rotation_grid = previous_rotation_grid
     else:
-        rotation_grid = sampling.relion_scoring_rotation_grid(
+        rotation_grid = sampling_grids.relion_scoring_rotation_grid(
             grid_order, dtype=dtype, symmetry=symmetry,
         )
     rotations = rotation_grid.rotations
@@ -362,24 +363,24 @@ def prepare_final_sampling(
         ),
     )
     base_translations = jnp.asarray(
-        sampling.relion_base_translation_grid(
+        sampling_grids.relion_base_translation_grid(
             settings.translation_range, settings.translation_step,
             n_classes=options.k_class.n_classes, voxel_size=settings.pixel_size_angstrom,
         ),
         dtype=dtype,
     )
     if settings.perturbation is None:
-        grid = sampling.TrialGrid(rotations, eulers, None, base_translations)
+        grid = sampling_grids.TrialGrid(rotations, eulers, None, base_translations)
     else:
         grid = sampling.perturbed_trial_grid(
             rotation_eulers=eulers,
-            mstep_source_eulers=sampling.relion_mstep_source_eulers(
+            mstep_source_eulers=sampling_grids.relion_mstep_source_eulers(
                 eulers, settings.perturbation_order, symmetry=symmetry,
             ),
             base_translations=base_translations,
             translation_step=settings.translation_step,
             random_perturbation=settings.perturbation,
-            angular_sampling_deg=sampling.relion_angular_sampling_deg(
+            angular_sampling_deg=sampling_grids.relion_angular_sampling_deg(
                 settings.perturbation_order, adaptive_oversampling=0,
             ),
             dtype=dtype,

@@ -804,7 +804,7 @@ def _driver_fixture_args(seed=20260918):
     from helpers.em_arrays import _hermitian_volume
     from test_sparse_pass2_bucketed_parity import IMAGE_SHAPE, IMAGE_SIZE, VOLUME_SHAPE, MockDataset
 
-    from relax.sampling import rotation_grid_size
+    from relax.sampling.grids import rotation_grid_size
 
     nside_level = 1
     n_coarse_rot = rotation_grid_size(nside_level)

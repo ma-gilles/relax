@@ -7,6 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax import sampling
+from relax.sampling import grids
 from relax.types import make_relion_stats
 from relax.vdam import adaptive_estep, native_options, native_sampling
 
@@ -15,8 +16,8 @@ pytestmark = pytest.mark.unit
 
 @pytest.mark.parametrize("order", [0, 1, 2])
 def test_recovar_order_permutation_selects_the_same_rotations(order):
-    relion = sampling._get_relion_rotation_grid_eulers_float64(order, rotation_index_order="relion")
-    recovar = sampling._get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
+    relion = grids.get_relion_rotation_grid_eulers_float64(order, rotation_index_order="relion")
+    recovar = grids.get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
     key = adaptive_estep.relion_order_of_recovar_rotations(order)
     assert sorted(key.tolist()) == list(range(relion.shape[0]))
     assert_matches(relion[key], recovar)
@@ -46,7 +47,7 @@ def test_route_translations_match_the_vdam_sampling_plan(order, oversampling, pe
     )
     assert_matches(route.grids.coarse_translations, plan.coarse_translations)
     assert_matches(route.grids.fine_translations.astype(np.float32), plan.translations)
-    n_rot = sampling.rotation_grid_size(order)
+    n_rot = grids.rotation_grid_size(order)
     assert route.grids.fine_rotations.shape[0] == n_rot * 8**oversampling
     assert route.fine_source_eulers.shape == (route.grids.fine_rotations.shape[0], 3)
 
@@ -63,8 +64,8 @@ def test_rotation_priors_move_to_recovar_order():
 @pytest.mark.parametrize("fine", [False, True])
 def test_direction_sums_bin_recovar_order_rotations(fine):
     order = 0
-    n_psi = sampling.rotation_grid_n_in_planes(order)
-    n_rot = sampling.rotation_grid_size(order)
+    n_psi = grids.rotation_grid_n_in_planes(order)
+    n_rot = grids.rotation_grid_size(order)
     n_dir = n_rot // n_psi
     rng = np.random.default_rng(0)
     coarse = rng.random(n_rot)
@@ -289,8 +290,8 @@ def test_route_perturbs_the_coarse_grid_by_relions_euler_route(oversampling_orde
         coarse_base_translations=np.zeros((1, 2)),
         translation_step=2.0,
     )
-    source = sampling._get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
-    expected = sampling._relion_mstep_rotations_from_eulers(
+    source = grids.get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
+    expected = grids.relion_mstep_rotations_from_eulers(
         healpix.perturb_orientations(source, random_perturbation, order)
     )
     # Bitwise: the two routes differ by float32 ulps, which flip near-tied winners.

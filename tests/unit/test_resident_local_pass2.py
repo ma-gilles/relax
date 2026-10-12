@@ -39,7 +39,7 @@ from relax.local_search.layout import (
 )
 from relax.refinement import local_half
 from relax.relion.projector_setup import reference_to_relion_projector_half_maps
-from relax.sampling import build_local_search_grid_metadata
+from relax.sampling.grids import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
 

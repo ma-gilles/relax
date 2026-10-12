@@ -9,7 +9,7 @@ import numpy as np
 from recovar.data_io.starfile import star_column, write_star_blocks
 from recovar.utils.helpers import R_from_relion, R_to_relion
 
-from relax import sampling
+from relax.sampling import grids as sampling_grids
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState, ParticleOptics
 
 
@@ -472,7 +472,7 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
                 if rotation_orders is None:
                     max_rotations = int(np.max(rotation_ids[valid_rot])) + 1
                     inferred_order = next(
-                        (o for o in range(16) if sampling.rotation_grid_size(o) >= max_rotations), None
+                        (o for o in range(16) if sampling_grids.rotation_grid_size(o) >= max_rotations), None
                     )
                     if inferred_order is None:
                         raise ValueError(
@@ -483,7 +483,7 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
                     if order < 0:
                         continue
                     order_mask = valid_rot & (rotation_orders == order)
-                    eulers = sampling.get_relion_rotation_grid_eulers(order, rotation_index_order="relion")
+                    eulers = sampling_grids.get_relion_rotation_grid_eulers(order, rotation_index_order="relion")
                     angle_rot[order_mask] = eulers[rotation_ids[order_mask], 0]
                     angle_tilt[order_mask] = eulers[rotation_ids[order_mask], 1]
                     angle_psi[order_mask] = eulers[rotation_ids[order_mask], 2]

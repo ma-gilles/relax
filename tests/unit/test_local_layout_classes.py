@@ -13,7 +13,7 @@ from relax.local_search.layout import (
     expand_local_layout_classes,
 )
 from relax.local_search.resident_layout import materialize_local_chunk, tables_from_local_layout
-from relax.sampling import build_local_search_grid_metadata
+from relax.sampling.grids import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
 

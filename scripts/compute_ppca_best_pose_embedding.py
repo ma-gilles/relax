@@ -25,7 +25,7 @@ from relax.ppca_refinement.dense_dataset import (
     _project_augmented_half_volumes,
     prepare_dense_ppca_dataset_inputs,
 )
-from relax.sampling import get_rotation_grid_at_order, get_translation_grid
+from relax.sampling.grids import get_rotation_grid_at_order, get_translation_grid
 from recovar.reconstruction import noise as noise_utils
 from recovar.utils.json_utils import to_jsonable
 

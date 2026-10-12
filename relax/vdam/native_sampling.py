@@ -17,6 +17,7 @@ from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 from relax import sampling
 from relax.relion import optics_groups
 from relax.relion.optics_aberrations import expected_accuracy_optics
+from relax.sampling import grids
 from relax.steps.convergence import (
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
@@ -89,7 +90,7 @@ class NativeSamplingPlan:
     def n_rotations(self) -> int:
         if self.rotations is not None:
             return int(self.rotations.shape[0])
-        return int(sampling.rotation_grid_size(self.healpix_order)) * 8 ** int(self.oversampling)
+        return int(grids.rotation_grid_size(self.healpix_order)) * 8 ** int(self.oversampling)
 
 
 @dataclass
@@ -139,7 +140,7 @@ class NativeSamplingState:
 
 def n_directions_for_healpix_order(healpix_order: int) -> int:
     return int(
-        sampling.rotation_grid_size(int(healpix_order)) // sampling.rotation_grid_n_in_planes(int(healpix_order))
+        grids.rotation_grid_size(int(healpix_order)) // grids.rotation_grid_n_in_planes(int(healpix_order))
     )
 
 
@@ -209,7 +210,7 @@ def _relion_update_native_sampling_state(
     HEALPix growth stops before the local-search order; translation range/step
     follow the RELION formulas.
     """
-    old_angular_step = sampling.relion_angular_sampling_deg(
+    old_angular_step = grids.relion_angular_sampling_deg(
         sampling_state.healpix_order,
         sampling_state.adaptive_oversampling,
     )
@@ -345,7 +346,7 @@ def _best_eulers_from_particle_state(
             resolved[matrix_rows] = True
     if not np.all(resolved) and particle_state.best_pose_rotation_ids is not None:
         best_ids = np.asarray(particle_state.best_pose_rotation_ids, dtype=np.int64)[ids]
-        eulers = sampling.get_relion_rotation_grid_eulers(int(rotation_grid_order), rotation_index_order="relion")
+        eulers = grids.get_relion_rotation_grid_eulers(int(rotation_grid_order), rotation_index_order="relion")
         grid_rows = ~resolved & (best_ids >= 0) & (best_ids < len(eulers))
         result[grid_rows] = eulers[best_ids[grid_rows]]
         resolved[grid_rows] = True
@@ -651,7 +652,7 @@ def record_native_sampling_assignment_changes(
             smallest_orientations_deg=(
                 sampling_state.smallest_changes_optimal_orientations
             ),
-            mpi_leader_angular_step_deg=sampling.relion_angular_sampling_deg(
+            mpi_leader_angular_step_deg=grids.relion_angular_sampling_deg(
                 sampling_state.healpix_order,
                 sampling_state.adaptive_oversampling,
             ),
@@ -698,7 +699,7 @@ def build_sampling_plan(
     random_perturbation = _random_perturbation_for_iteration(opts, iteration)
     perturbed = abs(random_perturbation) > 1e-12
 
-    metadata_coarse_translations = sampling.get_relion_translation_grid(
+    metadata_coarse_translations = grids.get_relion_translation_grid(
         max_pixel=offset_range_px,
         pixel_offset=offset_step_px,
         source_units_per_pixel=float(sampling_state.pixel_size),
@@ -718,9 +719,9 @@ def build_sampling_plan(
         # (healpix_sampling.cpp:1909-1934); the unperturbed grid is those matrices too.
         rotations = np.asarray(
             sampling.apply_relion_rotation_perturbation_to_eulers(
-                sampling._get_relion_rotation_grid_eulers_float64(healpix_order, rotation_index_order="relion"),
+                grids.get_relion_rotation_grid_eulers_float64(healpix_order, rotation_index_order="relion"),
                 random_perturbation if perturbed else 0.0,
-                sampling.relion_angular_sampling_deg(healpix_order),
+                grids.relion_angular_sampling_deg(healpix_order),
             )[0],
             dtype=np.float32,
         )
@@ -737,7 +738,7 @@ def build_sampling_plan(
         rotations = None
         if not defer_fine_rotations:
             rotations, _ = sampling.get_oversampled_relion_hidden_rotation_grid_from_samples(
-                np.arange(sampling.rotation_grid_size(healpix_order), dtype=np.int64),
+                np.arange(grids.rotation_grid_size(healpix_order), dtype=np.int64),
                 parent_nside_level=healpix_order,
                 oversampling_order=oversampling,
                 random_perturbation=random_perturbation,
@@ -840,7 +841,7 @@ def _class_direction_rotation_log_prior(state: InitialModelState, healpix_order:
     adaptive-significance ties.
     """
 
-    n_psi = int(sampling.rotation_grid_n_in_planes(int(healpix_order)))
+    n_psi = int(grids.rotation_grid_n_in_planes(int(healpix_order)))
     n_dir = n_directions_for_healpix_order(int(healpix_order))
     n_rot = int(n_dir * n_psi)
     pdf_direction = np.asarray(state.pdf_direction, dtype=np.float64)
@@ -863,6 +864,6 @@ def class_rotation_log_prior_for_sampling(
     """The live RELION orientation prior; zero prior widths give 1/(n_dir n_psi) (healpix_sampling.cpp:837-842)."""
 
     if bool(sampling_state.uniform_local_orientation_prior):
-        n_rot = int(sampling.rotation_grid_size(int(healpix_order)))
+        n_rot = int(grids.rotation_grid_size(int(healpix_order)))
         return np.full((int(state.K), n_rot), np.log(1.0 / float(n_rot)), dtype=np.float32)
     return _class_direction_rotation_log_prior(state, int(healpix_order))

@@ -33,7 +33,7 @@ from relax.ppca_refinement.mean_regularization import (
     relion_style_mean_precision_from_stats,
 )
 from relax.ppca_refinement.postprocess import PostprocessConfig
-from relax.sampling import get_relion_rotation_grid
+from relax.sampling.grids import get_relion_rotation_grid
 from scripts.lib.local_dataset import (
     run_local_ppca_fused_em_iteration,
     run_local_ppca_pose_scoring_iteration,

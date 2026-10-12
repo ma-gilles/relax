@@ -48,11 +48,8 @@ from relax.relion.optics_aberrations import (
 )
 from relax.runtime.engine_record import record_pass_engine
 from relax.runtime.timing import Stopwatch
-from relax.sampling import (
-    build_local_search_grid_metadata,
-    project_rows,
-    relion_angular_sampling_deg,
-)
+from relax.sampling import project_rows
+from relax.sampling.grids import build_local_search_grid_metadata, relion_angular_sampling_deg
 from relax.steps import scoring_policy
 from relax.steps.half_inputs import HalfScoringData
 from relax.steps.score_outputs import (
