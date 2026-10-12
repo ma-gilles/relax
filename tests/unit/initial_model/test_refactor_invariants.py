@@ -23,6 +23,7 @@ from helpers.float_compare import assert_matches
 import relax.vdam as init_model
 from relax.commands.initial_model import GuiInitialModelDefaults
 from relax.parity import vdam_mstep_replay
+from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.relion import initial_model_io, projector_setup, reference_initialization
 from relax.sampling.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
 from relax.vdam import (
@@ -39,7 +40,7 @@ from relax.vdam import (
     state,
     subset_schedule,
 )
-from relax.vdam.bootstrap_iref import compute_current_size_for_denovo, compute_ini_high_angstrom, compute_ini_high_shell
+from relax.vdam.bootstrap_iref import compute_current_size_for_denovo, compute_ini_high_angstrom
 from relax.vdam.estep_common import relion_bpref_frame_scales
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
@@ -317,7 +318,9 @@ LOC_BUDGETS = {
     # Optics groups on several image shapes (2026-10-05): each group's pixel size, start-up images soft-masked
     # at their own pixel and resized and windowed to the model grid before the noise and the bootstrap
     # (ml_optimiser.cpp:2905-2955): 1141 -> 1185 lines on main 7d7f3c92 (+44).
-    "initialization": (1185, ("bootstrap_iref.py", "bootstrap_reconstruction.py")),
+    # Layout S6 (2026-10-11): compute_ini_high_shell and INI_HIGH_DIGITAL_FREQ move to
+    # reconstruction/resolution.py, which PPCA also imports: 1185 -> 1176 (-9, bootstrap_iref.py's net change).
+    "initialization": (1176, ("bootstrap_iref.py", "bootstrap_reconstruction.py")),
     # Subtomogram InitialModel: tilt-image expected accuracy and the 3D-offset step rule (+24).
     # Several optics groups (2026-10-01): the expected accuracy once per group, recombined (+29).
     # Optics features (2026-10-02): the trials' optics-table CTFs in the expected accuracy (+6).

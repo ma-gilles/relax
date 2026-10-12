@@ -27,10 +27,10 @@ from helpers.vdam import (
     minvsigma2_with_dc_zero,
 )
 
+from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.vdam.bootstrap_iref import (
     compute_current_size_for_denovo,
     compute_ini_high_angstrom,
-    compute_ini_high_shell,
     initialise_data_vs_prior_from_references,
     initialise_denovo_state,
     with_sigma2_noise,

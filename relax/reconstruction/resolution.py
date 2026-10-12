@@ -7,6 +7,7 @@ iteration controller selects when to apply these rules.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -178,6 +179,15 @@ def relion_coarse_image_size(
     return clamp_relion_coarse_image_size(
         coarse_size, current_size, box_size if clamp_box_size is None else clamp_box_size
     )
+
+
+# RELION's 0.07 digital-frequency low-pass for do_average_unaligned (ml_optimiser.cpp:2513-2518).
+INI_HIGH_DIGITAL_FREQ: float = 0.07
+
+
+def compute_ini_high_shell(box_size: int) -> int:
+    """``ROUND(0.07 * ori_size)`` (initial resolution shell)."""
+    return int(math.floor(INI_HIGH_DIGITAL_FREQ * box_size + 0.5))
 
 
 def bootstrap_current_size_relion(init_current_size: int, box_size: int, incr_size: int = 10) -> int:

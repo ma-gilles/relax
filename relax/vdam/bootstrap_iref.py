@@ -10,12 +10,12 @@ start-up) comes first.
 
 from __future__ import annotations
 
-import math
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.relion import initial_model_io
 from relax.relion.initial_model_io import _experiment_read_order
@@ -28,15 +28,6 @@ from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_co
 
 if TYPE_CHECKING:
     from relax.vdam.ports import NoStageProfile, VdamInputSource
-
-# RELION's 0.07 digital-frequency low-pass for do_average_unaligned (ml_optimiser.cpp:2513-2518).
-INI_HIGH_DIGITAL_FREQ: float = 0.07
-
-
-def compute_ini_high_shell(box_size: int) -> int:
-    """``ROUND(0.07 * ori_size)`` (initial resolution shell)."""
-    return int(math.floor(INI_HIGH_DIGITAL_FREQ * box_size + 0.5))
-
 
 def compute_ini_high_angstrom(box_size: int, pixel_size: float) -> float:
     """Initial low-pass in Ångström (1/getResolution(ini_shell))."""

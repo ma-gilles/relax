@@ -63,8 +63,6 @@ ALLOWED_UPWARD = {
     ("relax.fine_pass.resident_tilts", "relax.refinement.tomo_particles"): _A,
     ("relax.fine_pass.window", "relax.refinement.precision"): _A,
     ("relax.ppca_initial_model.config", "relax.vdam.schedules"): _E,
-    ("relax.ppca_initial_model.initialization", "relax.vdam.bootstrap_iref"): _E,
-    ("relax.ppca_initial_model.tomo", "relax.vdam.bootstrap_iref"): _E,
     ("relax.reconstruction.volume_solver", "relax.refinement.refinement_options"): _A,
     ("relax.refinement.command_options", "relax.parity.frozen_boundary_cli"): _B,
     ("relax.refinement.command_options", "relax.parity.state_swap_probe"): _B,
