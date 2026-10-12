@@ -363,7 +363,6 @@
   "field-test-only:relax.scoring.coarse_gaussian_gemm:CoarseGaussianGemmResources.compact_projection_bytes",
   "field-test-only:relax.scoring.coarse_gaussian_gemm:CoarseGaussianGemmResources.full_centered_projection_bytes",
   "field-test-only:relax.scoring.coarse_layout:CoarseGaussianSquareLayout.logical_projector_mask_np",
-  "field-test-only:relax.vdam.driver:NativeInitialModelResult.output_prefix",
   "field-unread:relax.diagnostics.gt_registration:RigidFitReceipt.boundary_mode",
   "field-unread:relax.diagnostics.gt_registration:RigidFitReceipt.coarse_score",
   "field-unread:relax.diagnostics.gt_registration:RigidFitReceipt.coarse_shift_at_linear_boundary",

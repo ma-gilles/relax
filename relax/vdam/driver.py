@@ -78,7 +78,6 @@ class NativeInitialModelResult:
     """Summary returned by ``run_native_initial_model``."""
 
     state: InitialModelState
-    output_prefix: str
     final_model_star: str
     final_mrc: str
     class_mrcs: tuple[str, ...]
@@ -740,7 +739,6 @@ def run_native_initial_model(
     profile.report("driver")
     return NativeInitialModelResult(
         state=final_state,
-        output_prefix=opts.outputname,
         final_model_star=final_model_star,
         final_mrc=outputs.final_mrc,
         class_mrcs=outputs.class_mrcs,
