@@ -11,8 +11,7 @@ pytest.importorskip("healpy")
 import oracles.iterations as em_iterations
 from oracles.core import translations_to_indices
 
-import relax.sampling as em_sampling
-from relax.sampling import grids, perturbation
+from relax.sampling import grids, oversampled_grids, perturbation
 from relax.star import metadata as relion_metadata
 
 pytestmark = pytest.mark.unit
@@ -229,7 +228,7 @@ def test_local_rotation_grid_fast_uses_exact_prior_rotation_angles():
 
     coarse_order = 2
     fine_order = 3
-    child_rotations, _ = em_sampling.get_oversampled_rotation_grid_from_samples(
+    child_rotations, _ = oversampled_grids.get_oversampled_rotation_grid_from_samples(
         np.array([0], dtype=np.int64),
         coarse_order,
         oversampling_order=1,
@@ -238,7 +237,7 @@ def test_local_rotation_grid_fast_uses_exact_prior_rotation_angles():
     prior_idx = np.argmin(np.abs(child_eulers[:, 2] - 3.75))
     prior_rotation = child_rotations[prior_idx : prior_idx + 1]
 
-    selected_indices, log_prior = em_sampling.get_local_rotation_grid_fast(
+    selected_indices, log_prior = oversampled_grids.get_local_rotation_grid_fast(
         prior_rotation,
         sigma_rot=np.deg2rad(0.2),
         sigma_psi=np.deg2rad(2.0),
@@ -294,7 +293,7 @@ def test_local_rotation_grid_fast_respects_provided_perturbed_grid():
     perturbed_eulers = utils.R_to_relion(perturbed_rotations, degrees=True).astype(np.float32)
     grid_metadata = grids.build_local_search_grid_metadata(order, perturbed_eulers)
 
-    selected_indices, log_prior = em_sampling.get_local_rotation_grid_fast(
+    selected_indices, log_prior = oversampled_grids.get_local_rotation_grid_fast(
         perturbed_eulers[prior_index : prior_index + 1],
         sigma_rot=sigma_rot,
         sigma_psi=sigma_psi,
@@ -453,7 +452,7 @@ def test_local_rotation_grid_fast_full_mode_matches_reference_loop():
     )
     priors = perturbed_rotations[[5, 137, 911]]
 
-    selected_indices, log_prior = em_sampling.get_local_rotation_grid_fast(
+    selected_indices, log_prior = oversampled_grids.get_local_rotation_grid_fast(
         priors,
         sigma_rot=sigma_rot,
         sigma_psi=sigma_psi,
@@ -501,7 +500,7 @@ def test_local_rotation_grid_fast_factorized_support_stays_in_cone():
     prior_euler = relion_eulers[prior_index : prior_index + 1]
     prior_matrix = utils.R_from_relion(prior_euler, degrees=True)[0]
 
-    selected_indices, log_prior = em_sampling.get_local_rotation_grid_fast(
+    selected_indices, log_prior = oversampled_grids.get_local_rotation_grid_fast(
         prior_euler,
         sigma_rot=np.deg2rad(sigma_deg),
         sigma_psi=np.deg2rad(sigma_deg),
@@ -542,7 +541,7 @@ def test_local_rotation_grid_fast_uses_sigma_rot_not_sigma_psi_for_direction_con
     prior_matrix = utils.R_from_relion(prior_euler, degrees=True)[0]
     prior_view = prior_matrix[2, :] / np.linalg.norm(prior_matrix[2, :])
 
-    selected_indices, _ = em_sampling.get_local_rotation_grid_fast(
+    selected_indices, _ = oversampled_grids.get_local_rotation_grid_fast(
         prior_euler,
         sigma_rot=np.deg2rad(sigma_rot_deg),
         sigma_psi=np.deg2rad(sigma_psi_deg),
@@ -570,7 +569,7 @@ def test_local_rotation_grid_fast_per_image_priors_prefer_each_image_peak():
     full_grid = grids.get_rotation_grid(fine_order, matrices=True)
     prior_rotations = full_grid[prior_indices]
 
-    selected_indices, log_prior = em_sampling.get_local_rotation_grid_fast(
+    selected_indices, log_prior = oversampled_grids.get_local_rotation_grid_fast(
         prior_rotations,
         sigma_rot=np.deg2rad(0.2),
         sigma_psi=np.deg2rad(2.0),
@@ -584,7 +583,7 @@ def test_local_rotation_grid_fast_per_image_priors_prefer_each_image_peak():
 
     reference_best = []
     for i in range(2):
-        ref_indices, ref_log_prior = em_sampling.get_local_rotation_grid_fast(
+        ref_indices, ref_log_prior = oversampled_grids.get_local_rotation_grid_fast(
             prior_rotations[i : i + 1],
             sigma_rot=np.deg2rad(0.2),
             sigma_psi=np.deg2rad(2.0),

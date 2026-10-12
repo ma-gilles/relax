@@ -15,14 +15,6 @@ from relax.fine_pass.significant_samples import significant_sample_ids
 from relax.runtime.batch_planning import (
     plan_consecutive_padded_batches,
 )
-from relax.sampling import (
-    _compute_oversampled_rotation_grid,
-    get_local_rotation_grid_fast,
-    get_oversampled_rotation_grid_from_samples,
-    get_oversampled_translation_grid,
-    infer_translation_step,
-    unique_nonnegative_ids,
-)
 from relax.sampling.device_rotations import DevicePass1Source, project_rows, relion_adaptive_pass1_rotations
 from relax.sampling.grids import (
     build_local_search_grid_metadata,
@@ -34,6 +26,14 @@ from relax.sampling.grids import (
 )
 from relax.sampling.healpix import euler_angles_to_matrix
 from relax.sampling.orientation_priors import make_relion_translation_log_prior
+from relax.sampling.oversampled_grids import (
+    _compute_oversampled_rotation_grid,
+    get_local_rotation_grid_fast,
+    get_oversampled_rotation_grid_from_samples,
+    get_oversampled_translation_grid,
+    infer_translation_step,
+    unique_nonnegative_ids,
+)
 from relax.sampling.perturbation import apply_relion_rotation_perturbation_to_eulers
 from relax.sampling.symmetry import canonicalize_rotational_symmetry, rotational_operators
 
@@ -965,7 +965,7 @@ def local_layout_host_rotations(layout: LocalHypothesisLayout, *, mstep: bool) -
 
     The rows of images on another grid or magnified are composed from these and cast once
     (:func:`relax.sampling.device_rotations.project_rows`). Oversampled children are the host inverse matrices of their
-    source Euler rows (:func:`relax.sampling.get_oversampled_rotation_grid_from_samples`); other rows are
+    source Euler rows (:func:`relax.sampling.oversampled_grids.get_oversampled_rotation_grid_from_samples`); other rows are
     rebuilt from ``rotation_ids_flat`` with the grid and perturbation the layout was built with
     (``id_rows_source``), not the caller's.
     """

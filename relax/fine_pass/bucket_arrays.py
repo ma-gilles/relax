@@ -540,8 +540,8 @@ def _prepare_per_image_pass2_inputs(
     image over that image's significant coarse rotations in ascending order (RELION's local
     orientation prior is the particle's own).
     """
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
     from relax.sampling.grids import rotation_grid_size
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     if per_image_rotation_log_prior is not None and rotation_log_prior is not None:
         raise ValueError("a pass takes one shared rotation prior or one per image, not both")

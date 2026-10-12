@@ -14,7 +14,6 @@ from helpers.full_row_tile import accumulate_full_row_tile
 from scipy.spatial.transform import Rotation
 from test_full_fine_streaming import IMAGE_SHAPE, N_HALF, _half_volume, _TinyData
 
-from relax import sampling
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.full_row_stream import (
     _normalize,
@@ -29,7 +28,7 @@ from relax.ppca_refinement.oversampled_stream import (
     prepare_oversampled_stream,
     relion_child_grids,
 )
-from relax.sampling import grids
+from relax.sampling import grids, oversampled_grids
 
 pytestmark = pytest.mark.unit
 
@@ -231,7 +230,7 @@ def test_pass2_accumulates_the_significant_fine_samples(monkeypatch, fine_fracti
         perturb = Rotation.from_rotvec(np.random.default_rng(1).normal(scale=0.05, size=(8, 3))).as_matrix()
         fine_rotations = np.einsum("rab,cbd->rcad", np.asarray(coarse.arrays.rotations[:-1]), perturb)
         fine_rotations = fine_rotations.reshape(-1, 3, 3).astype(np.float32)
-        fine_translations, _ = sampling.get_oversampled_translation_grid(tomo.TRANSLATIONS, 1.5, 1)
+        fine_translations, _ = oversampled_grids.get_oversampled_translation_grid(tomo.TRANSLATIONS, 1.5, 1)
         ids = np.arange(3)
     else:
         coarse, (fine_rotations, fine_translations) = _spa_stream()
@@ -301,7 +300,7 @@ def test_subtomogram_children_equal_the_dense_child_grid(planned):
     perturb = Rotation.from_rotvec(np.random.default_rng(1).normal(scale=0.05, size=(8, 3))).as_matrix()
     coarse_rotations = np.asarray(coarse.arrays.rotations[:-1])
     fine_rotations = np.einsum("rab,cbd->rcad", coarse_rotations, perturb).reshape(-1, 3, 3).astype(np.float32)
-    fine_translations, parent = sampling.get_oversampled_translation_grid(tomo.TRANSLATIONS, 1.5, 1)
+    fine_translations, parent = oversampled_grids.get_oversampled_translation_grid(tomo.TRANSLATIONS, 1.5, 1)
     assert fine_translations.shape == (8 * len(tomo.TRANSLATIONS), 3)
     np.testing.assert_array_equal(parent, np.repeat(np.arange(len(tomo.TRANSLATIONS)), 8))
     ostream = prepare_oversampled_stream(
@@ -361,7 +360,7 @@ def test_pass1_tile_from_the_pass2_tile_is_the_readers(tilts):
         coarse = coarse._replace(tile_images=8)
         pass2, ids = coarse, np.arange(3)
         fine_rotations = np.repeat(np.asarray(coarse.arrays.rotations[:-1]), 8, axis=0)
-        fine_translations, _ = sampling.get_oversampled_translation_grid(tomo.TRANSLATIONS, 1.5, 1)
+        fine_translations, _ = oversampled_grids.get_oversampled_translation_grid(tomo.TRANSLATIONS, 1.5, 1)
     else:
         coarse, (fine_rotations, fine_translations) = _spa_stream(current_size=4)
         pass2, ids = _spa_stream(current_size=6)[0], np.arange(4)

@@ -14,11 +14,11 @@ pytestmark = pytest.mark.unit
 
 
 def _inputs(supports, *, n_coarse_rot, fine_ids, prior, **extra):
-    from relax import sampling
     from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+    from relax.sampling import oversampled_grids
 
     order, n_trans = 1, 3
-    fine_rot, parent, _mstep, eulers = sampling.get_oversampled_rotation_grid_from_samples(
+    fine_rot, parent, _mstep, eulers = oversampled_grids.get_oversampled_rotation_grid_from_samples(
         fine_ids,
         order,
         oversampling_order=1,

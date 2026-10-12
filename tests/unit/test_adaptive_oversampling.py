@@ -876,7 +876,7 @@ class TestOversampledGridGeneration:
 
     def test_oversampled_rotation_grid_from_samples_size(self):
         """Each coarse orientation sample should expand to 8 children at order 1."""
-        from relax.sampling import get_oversampled_rotation_grid_from_samples
+        from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
         nside_level = 2
         parent_rotations = np.array([0, 5, 10])
@@ -897,8 +897,8 @@ class TestOversampledGridGeneration:
         """Two coarse samples on the same pixel but different psi get distinct children."""
         import healpy as hp
 
-        from relax.sampling import get_oversampled_rotation_grid_from_samples
         from relax.sampling.grids import rotation_grid_size
+        from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
         nside_level = 2
         n_pixels = hp.nside2npix(2**nside_level)
@@ -923,8 +923,8 @@ class TestOversampledGridGeneration:
         from recovar import utils
         from relax.relion_bind._relion_bind_core import get_oversampled_orientations
 
-        from relax.sampling import get_oversampled_rotation_grid_from_samples
         from relax.sampling.grids import rotation_grid_n_in_planes
+        from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
         nside_level = 2
         parent_rotations = np.array([0, 5, 10, 193], dtype=np.int64)
@@ -981,7 +981,7 @@ class TestOversampledGridGeneration:
         from recovar import utils
         from relax.relion_bind._relion_bind_core import get_oversampled_orientations
 
-        from relax.sampling import get_oversampled_rotation_grid_from_samples
+        from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
         nside_level = 3
         parent_rotations = np.array([0, 1, 777, 1025], dtype=np.int64)
@@ -1022,7 +1022,7 @@ class TestOversampledGridGeneration:
 
     def test_oversampled_translation_grid_size(self):
         """get_oversampled_translation_grid should produce 4x translations."""
-        from relax.sampling import get_oversampled_translation_grid
+        from relax.sampling.oversampled_grids import get_oversampled_translation_grid
 
         parent_translations = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
         pixel_offset = 1.0
@@ -1037,7 +1037,7 @@ class TestOversampledGridGeneration:
 
     def test_oversampled_translation_grid_centering(self):
         """Child translations should be centered around parent translations."""
-        from relax.sampling import get_oversampled_translation_grid
+        from relax.sampling.oversampled_grids import get_oversampled_translation_grid
 
         parent_translations = np.array([[10.0, 20.0]])
         pixel_offset = 2.0
@@ -1053,7 +1053,7 @@ class TestOversampledGridGeneration:
 
     def test_oversampled_translation_grid_matches_relion_child_order(self):
         """Child translations should be ordered x-outer, y-inner like RELION."""
-        from relax.sampling import get_oversampled_translation_grid
+        from relax.sampling.oversampled_grids import get_oversampled_translation_grid
 
         fine_trans, parent_map = get_oversampled_translation_grid(
             np.array([[0.0, 0.0]], dtype=np.float32),

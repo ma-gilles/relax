@@ -7,13 +7,13 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax import sampling
 from relax.classification import k_class_results
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.local_search.layout import (
     bucket_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
 )
+from relax.sampling import oversampled_grids
 from relax.types import make_relion_stats
 
 pytestmark = pytest.mark.unit
@@ -30,8 +30,8 @@ def test_native_source_triplet_and_legacy_arrays(dtype, tmp_path):
         return_mstep_rotations=True,
         dtype=dtype,
     )
-    old = sampling.get_oversampled_rotation_grid_from_samples([37 + 3 * 48], 1, **kwargs)
-    new = sampling.get_oversampled_rotation_grid_from_samples([37 + 3 * 48], 1, return_source_eulers=True, **kwargs)
+    old = oversampled_grids.get_oversampled_rotation_grid_from_samples([37 + 3 * 48], 1, **kwargs)
+    new = oversampled_grids.get_oversampled_rotation_grid_from_samples([37 + 3 * 48], 1, return_source_eulers=True, **kwargs)
     assert len(old) == 4 and len(new) == 5
     for a, b in zip(old, new[:4], strict=True):
         assert a.dtype == b.dtype
@@ -102,7 +102,7 @@ def test_local_union_and_bucket_source_alignment():
     )
     for i in range(2):
         parents = np.unique([7, 3] if i == 0 else [3])
-        expected = sampling.get_oversampled_rotation_grid_from_samples(
+        expected = oversampled_grids.get_oversampled_rotation_grid_from_samples(
             parents, 0, random_perturbation=0.13, return_source_eulers=True, rotation_index_order="relion_hidden"
         )[-1]
         start, stop = layout.rotation_offsets[i : i + 2]

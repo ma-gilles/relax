@@ -14,10 +14,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
-from relax import sampling
 from relax.relion import optics_groups
 from relax.relion.optics_aberrations import expected_accuracy_optics
-from relax.sampling import grids, perturbation
+from relax.sampling import grids, oversampled_grids, perturbation
 from relax.steps.convergence import (
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
@@ -737,16 +736,16 @@ def build_sampling_plan(
     else:
         rotations = None
         if not defer_fine_rotations:
-            rotations, _ = sampling.get_oversampled_relion_hidden_rotation_grid_from_samples(
+            rotations, _ = oversampled_grids.get_oversampled_relion_hidden_rotation_grid_from_samples(
                 np.arange(grids.rotation_grid_size(healpix_order), dtype=np.int64),
                 parent_nside_level=healpix_order,
                 oversampling_order=oversampling,
                 random_perturbation=random_perturbation,
             )
-        oversampled_trans, translation_parent = sampling.get_oversampled_translation_grid(
+        oversampled_trans, translation_parent = oversampled_grids.get_oversampled_translation_grid(
             coarse_translations, pixel_offset=offset_step_px, oversampling_order=oversampling
         )
-        metadata_translations, _metadata_translation_parent = sampling.get_oversampled_translation_grid(
+        metadata_translations, _metadata_translation_parent = oversampled_grids.get_oversampled_translation_grid(
             metadata_coarse_translations,
             pixel_offset=offset_step_px,
             oversampling_order=oversampling,

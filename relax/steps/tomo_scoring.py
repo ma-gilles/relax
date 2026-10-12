@@ -140,13 +140,12 @@ def score_tomo_half(
     import jax.numpy as jnp
     from recovar.reconstruction import noise as recon_noise
 
-    from relax import sampling as relax_sampling
     from relax.classification.k_class_inputs import seed_iteration_first_class, seed_iteration_supports
     from relax.fine_pass.resident_pass2 import (
         compute_k_class_pass2_stats_resident,
         compute_tilt_pass2_stats_resident,
     )
-    from relax.sampling import grids
+    from relax.sampling import grids, oversampled_grids
     from relax.scoring import tomo_coarse
 
     # RELION's float projector, as the SPA passes read it: the refinement builds complex128, and a complex128
@@ -214,7 +213,7 @@ def score_tomo_half(
     coarse_eulers_deg = grids.rotation_indices_to_relion_eulers(
         coarse_ids, sampling.healpix_order, rotation_index_order="recovar", symmetry=symmetry
     )
-    fine_rot, rot_parent, fine_mstep, fine_eulers = relax_sampling.get_oversampled_rotation_grid_from_samples(
+    fine_rot, rot_parent, fine_mstep, fine_eulers = oversampled_grids.get_oversampled_rotation_grid_from_samples(
         coarse_ids,
         sampling.healpix_order,
         oversampling_order=sampling.oversampling_order,

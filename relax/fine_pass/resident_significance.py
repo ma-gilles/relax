@@ -903,7 +903,7 @@ def fine_rotation_children(
         child_offsets[1:] = np.cumsum(counts)
         return child_offsets, order.astype(np.int64, copy=False)
 
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     _rotations, parent_map, child_ids = get_oversampled_rotation_grid_from_samples(
         np.arange(n_coarse_rot, dtype=np.int64),

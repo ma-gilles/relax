@@ -5,11 +5,11 @@ import inspect
 import numpy as np
 from helpers.float_compare import assert_matches
 
-from relax.sampling import get_oversampled_rotation_grid_from_samples
 from relax.sampling import grids as grids_module
 from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
 from relax.sampling.grids import relion_mstep_rotations_from_eulers
 from relax.sampling.healpix import euler_angles_to_matrix
+from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 from relax.sampling.perturbation import (
     apply_relion_rotation_perturbation_to_eulers,
     relion_sampling_perturbation_for_iteration,

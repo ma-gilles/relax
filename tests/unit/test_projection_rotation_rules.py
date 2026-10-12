@@ -13,7 +13,7 @@ import pytest
 
 from relax import sampling
 from relax.relion.optics_aberrations import relax_projection_magnification, relion_projection_left_matrix
-from relax.sampling import device_rotations, grids, perturbation
+from relax.sampling import device_rotations, grids, oversampled_grids, perturbation
 from relax.sampling.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 
 pytestmark = pytest.mark.unit
@@ -36,7 +36,7 @@ def _grids(oversampling):
 
 
 def _host64(oversampling, mstep):
-    outputs = sampling.get_oversampled_rotation_grid_from_samples(
+    outputs = oversampled_grids.get_oversampled_rotation_grid_from_samples(
         np.arange(grids.rotation_grid_size(ORDER), dtype=np.int64),
         ORDER,
         oversampling_order=oversampling,

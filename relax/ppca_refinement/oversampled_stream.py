@@ -44,7 +44,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.ppca.triangular import tri_size
 
-from relax import sampling
 from relax.cuda.ppca import ppca_window_project_f32
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings
@@ -79,6 +78,7 @@ from relax.ppca_refinement.full_row_stream import (
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.sampling import grids as sampling_grids
+from relax.sampling import oversampled_grids
 
 logger = logging.getLogger(__name__)
 OVERSAMPLED_ENGINE = "full_row_adaptive_oversampling"
@@ -112,8 +112,8 @@ def relion_child_grids(order: int, translations, translation_step: float):
     """RELION's order-1 children of the order-``order`` hidden rotation grid and of a translation grid.
 
     Returns the child rotations ``(8 R, 3, 3)`` and translations ``(T_c T, D)``, parent-major
-    (:func:`relax.sampling.get_oversampled_rotation_grid_from_samples`,
-    :func:`relax.sampling.get_oversampled_translation_grid`). A stage's grids are the same (read-only) arrays at
+    (:func:`relax.sampling.oversampled_grids.get_oversampled_rotation_grid_from_samples`,
+    :func:`relax.sampling.oversampled_grids.get_oversampled_translation_grid`). A stage's grids are the same (read-only) arrays at
     every update.
     """
     translations = np.ascontiguousarray(translations, np.float32)
@@ -124,13 +124,13 @@ def relion_child_grids(order: int, translations, translation_step: float):
 def _child_grids(order: int, translation_bytes: bytes, translation_shape, translation_step: float):
     translations = np.frombuffer(translation_bytes, np.float32).reshape(translation_shape)
     n_rotations = sampling_grids.rotation_grid_size(order)
-    rotations, rotation_parent = sampling.get_oversampled_rotation_grid_from_samples(
+    rotations, rotation_parent = oversampled_grids.get_oversampled_rotation_grid_from_samples(
         np.arange(n_rotations), order, 1, rotation_index_order="relion"
     )[:2]
     children = rotations.shape[0] // n_rotations
     if not np.array_equal(rotation_parent, np.repeat(np.arange(n_rotations), children)):
         raise ValueError("Child rotations must be parent-major")
-    fine_translations, translation_parent = sampling.get_oversampled_translation_grid(
+    fine_translations, translation_parent = oversampled_grids.get_oversampled_translation_grid(
         np.asarray(translations), float(translation_step), 1
     )
     grids = np.array(rotations, np.float32), np.array(fine_translations, np.float32)

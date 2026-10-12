@@ -401,7 +401,7 @@ def audit(args: argparse.Namespace) -> dict[str, object]:
         bool(relion_validation["classification_ready"]),
         "RELION capture validation is not classification-ready",
     )
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     coarse_indices = np.arange(args.coarse_rotation_count, dtype=np.int64)
     expected_relion_fine_rotations, _ = get_oversampled_rotation_grid_from_samples(

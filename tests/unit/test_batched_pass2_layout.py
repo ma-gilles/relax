@@ -5,9 +5,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax import sampling
 from relax.local_search import layout as local_layout
-from relax.sampling import grids
+from relax.sampling import grids, oversampled_grids
 
 pytestmark = pytest.mark.unit
 
@@ -50,7 +49,7 @@ def test_batched_pass2_matches_independent_image_layouts(order, index_order, per
         # Compare matrices directly to the mature per-image sampler as well.
         parents = (np.arange(n_rotations) if sample is None else
                    np.unique(sample // 3) if sample.size else np.array([0]))
-        rotations, _, ids = sampling.get_oversampled_rotation_grid_from_samples(
+        rotations, _, ids = oversampled_grids.get_oversampled_rotation_grid_from_samples(
             parents, 0, order, random_perturbation=perturbation,
             return_rotation_indices=True, rotation_index_order=index_order,
         )

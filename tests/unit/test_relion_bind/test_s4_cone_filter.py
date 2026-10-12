@@ -24,8 +24,8 @@ from relax.relion_bind._relion_bind_core import (
     get_healpix_directions,
 )
 
-from relax.sampling import get_local_rotation_grid_fast
 from relax.sampling.grids import rotation_grid_size, rotation_indices_to_relion_eulers
+from relax.sampling.oversampled_grids import get_local_rotation_grid_fast
 
 healpy = pytest.importorskip("healpy")
 

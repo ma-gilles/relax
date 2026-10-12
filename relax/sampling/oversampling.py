@@ -81,7 +81,10 @@ def build_adaptive_pass2_grids(
     parent-major layout; :func:`fill_adaptive_fine_rotation_rows` then fills the
     rows of the parents a pass reads.
     """
-    from relax.sampling import get_oversampled_rotation_grid_from_samples, get_oversampled_translation_grid
+    from relax.sampling.oversampled_grids import (
+        get_oversampled_rotation_grid_from_samples,
+        get_oversampled_translation_grid,
+    )
     from relax.sampling.perturbation import apply_relion_translation_perturbation
     coarse_rot_np = np.asarray(coarse_rotations)
     coarse_trans_np = np.asarray(coarse_translations)
@@ -193,8 +196,8 @@ def project_pass2_rotations(
     """
 
     from relax.relion.optics_aberrations import relion_projection_optics
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
     from relax.sampling.device_rotations import project_rows
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     scale, magnification = relion_projection_optics(scale, magnification)
     if scale == 1.0 and magnification is None:
@@ -266,10 +269,10 @@ def fill_adaptive_fine_rotation_rows(
     Each fine row depends on its coarse parent alone and the grid is
     parent-major, ``8**oversampling`` children per parent, so a parent's rows
     computed on their own are the rows the whole grid holds
-    (:func:`relax.sampling.get_oversampled_rotation_grid_from_samples`).
+    (:func:`relax.sampling.oversampled_grids.get_oversampled_rotation_grid_from_samples`).
     ``filled`` [n_coarse] marks the parents already filled.
     """
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     parents = np.flatnonzero(~filled) if parents is None else np.unique(np.asarray(parents, dtype=np.int64))
     parents = parents[~filled[parents]]
@@ -332,7 +335,7 @@ def adaptive_fine_rows(grids, coarse_healpix_order: int, adaptive_oversampling: 
     fills them per coarse parent: pass 2 reads only its significant parents' rows.
     Without, the filler is None and the Euler rows are the coarse grid's.
     """
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     if int(adaptive_oversampling) > 0:
         fill = DeferredFineRows(grids, coarse_healpix_order, adaptive_oversampling, random_perturbation)

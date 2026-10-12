@@ -123,11 +123,6 @@ from relax.refinement.refinement_options import (
 )
 from relax.refinement.refinement_state import RefinementState
 from relax.relion import ctf
-from relax.sampling import (
-    get_local_rotation_grid_fast,
-    get_oversampled_rotation_grid_from_samples,
-    get_oversampled_translation_grid,
-)
 from relax.sampling import grids as grids_module
 from relax.sampling import perturbation as perturbation_module
 from relax.sampling.grids import (
@@ -149,6 +144,11 @@ from relax.sampling.orientation_priors import (
     relion_sigma_offset_prior_center,
     relion_translation_prior_center,
     relion_translation_search_base,
+)
+from relax.sampling.oversampled_grids import (
+    get_local_rotation_grid_fast,
+    get_oversampled_rotation_grid_from_samples,
+    get_oversampled_translation_grid,
 )
 from relax.sampling.perturbation import apply_relion_rotation_perturbation, apply_relion_rotation_perturbation_to_eulers
 from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores

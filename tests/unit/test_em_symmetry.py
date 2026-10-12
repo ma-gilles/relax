@@ -219,7 +219,7 @@ def test_symmetry_oversampling_matches_relion_binding(label):
         get_oversampled_orientations,
     )
 
-    from relax import sampling
+    from relax.sampling import oversampled_grids
 
     order = 3
     source = get_healpix_sampling_metadata(order, -1.0, label)
@@ -231,7 +231,7 @@ def test_symmetry_oversampling_matches_relion_binding(label):
         [psi_index * n_directions + direction_index], dtype=np.int64
     )
 
-    actual, parent_map = sampling.get_oversampled_rotation_grid_from_samples(
+    actual, parent_map = oversampled_grids.get_oversampled_rotation_grid_from_samples(
         parent_index,
         order,
         oversampling_order=1,
@@ -469,8 +469,8 @@ def test_refinement_symmetry_options_canonicalize_at_construction(requested, can
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_firstiter_cc_fine_grid_uses_reduced_asymmetric_unit_ids(label):
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
     from relax.sampling.grids import get_relion_rotation_grid
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
     from relax.sampling.oversampling import (
         build_adaptive_pass2_grids,
     )
@@ -504,8 +504,8 @@ def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
     from relax.fine_pass.bucket_arrays import (
         _prepare_per_image_pass2_inputs,
     )
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
     from relax.sampling.grids import rotation_grid_size
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     order = 3
     n_coarse_rotations = rotation_grid_size(order, label)

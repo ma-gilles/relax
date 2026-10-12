@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from relax.sampling import get_oversampled_rotation_grid_from_samples
 from relax.sampling.grids import get_relion_rotation_grid
+from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 from relax.sampling.oversampling import DeferredFineRows, prepare_adaptive_pass2_grids
 
 pytestmark = pytest.mark.unit

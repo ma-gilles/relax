@@ -61,7 +61,7 @@ def test_batched_oversampled_orientations_match_individual_calls_exactly():
 
 
 def test_sampled_grid_uses_native_eulers_and_inverse_exactly():
-    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     order = 2
     n_pixels = 12 * (4**order)
@@ -271,7 +271,7 @@ class TestOversampledGrid:
 
     def test_full_precision_seeded_perturbation_matches_accelerated_matrix_dump(self):
         """STAR-rounded perturbation must not replace RELION's live seeded value."""
-        from relax.sampling import get_oversampled_rotation_grid_from_samples
+        from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
         from relax.sampling.perturbation import relion_sampling_perturbation_for_iteration
 
         parent_sample = np.asarray([47 * 768 + 149], dtype=np.int64)
@@ -325,8 +325,9 @@ class TestOversampledGrid:
     @pytest.mark.parametrize("random_perturbation", [0.0, 0.461207])
     def test_recovar_sampled_oversampling_matches_relion_binding_order(self, oversampling_order, random_perturbation):
         """RECOVAR's sampled oversampling path must preserve RELION child order."""
-        from relax.sampling import get_oversampled_rotation_grid_from_samples, healpix
+        from relax.sampling import healpix
         from relax.sampling.grids import rotation_grid_n_in_planes
+        from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
         order = 2
         n_pixels = healpy.nside2npix(2**order)

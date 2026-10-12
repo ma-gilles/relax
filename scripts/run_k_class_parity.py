@@ -157,7 +157,7 @@ def _relion_adaptive_fine_translation_grid(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return RELION pass-2 fine translations and fine-to-coarse parent map."""
 
-    from relax.sampling import get_oversampled_translation_grid
+    from relax.sampling.oversampled_grids import get_oversampled_translation_grid
     from relax.sampling.perturbation import apply_relion_translation_perturbation
 
     fine_base_translations, trans_parent_map = get_oversampled_translation_grid(
@@ -714,8 +714,8 @@ def _relion_bpref_maps_from_sparse_support(
     from relax.io.batch_fetch import fetch_indexed_batch
     from relax.projection.projection import compute_projections_block as _compute_projections_block
     from relax.relion_bind import _relion_bind_core as bind
-    from relax.sampling import get_oversampled_translation_grid
     from relax.sampling.grids import rotation_grid_size
+    from relax.sampling.oversampled_grids import get_oversampled_translation_grid
 
     image_shape = tuple(map(int, experiment_dataset.image_shape))
     volume_shape = tuple(map(int, experiment_dataset.volume_shape))
@@ -1636,9 +1636,7 @@ def main() -> None:
     # samples that survive pass-1's adaptive_fraction pruning.
     from relax.classification.k_class import run_dense_k_class_em_adaptive
     from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
-    from relax.sampling import (
-        get_oversampled_rotation_grid_from_samples,
-    )
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     adaptive_os = int(args.adaptive_oversampling)
     all_coarse_rot_indices = np.arange(int(rotations.shape[0]), dtype=np.int64)

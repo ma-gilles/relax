@@ -542,8 +542,8 @@ important blocks are:
 - `run_itNNN_optimiser.star`: stores optimiser/control metadata, including
   convergence counters and accuracy estimates used by replay code.
 
-RECOVAR parsing helpers for this state are concentrated in
-[`relax/sampling/__init__.py`](../../relax/sampling/__init__.py). In particular,
+The relax parsing helpers for this state are in
+[`relax/star/metadata.py`](../../relax/star/metadata.py). In particular,
 `read_relion_model_metadata` reads current image size/resolution,
 `read_relion_optimiser_metadata` reads optimiser counters, and
 `read_relion_direction_prior` reads `model_pdf_orient_class_1`.

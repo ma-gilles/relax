@@ -8,7 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.vdam import PreparedProjector
 
-from relax import sampling
+from relax.sampling import oversampled_grids
 from relax.vdam import driver, native_options, native_sampling
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.ports import NoProbe
@@ -35,7 +35,7 @@ def test_deferred_plan_preserves_geometry(monkeypatch, order, oversampling, pert
     def forbidden(*args, **kwargs):
         raise AssertionError("Unused full fine grid was materialized")
 
-    monkeypatch.setattr(sampling, "get_oversampled_relion_hidden_rotation_grid_from_samples", forbidden)
+    monkeypatch.setattr(oversampled_grids, "get_oversampled_relion_hidden_rotation_grid_from_samples", forbidden)
     sparse = native_sampling.build_sampling_plan(
         opts,
         sampling_state=native_sampling.initial_sampling_state(opts, pixel_size=1.0),
@@ -78,7 +78,7 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("Sparse E-step built a full fine grid")
 
-    monkeypatch.setattr(sampling, "get_oversampled_relion_hidden_rotation_grid_from_samples", forbidden)
+    monkeypatch.setattr(oversampled_grids, "get_oversampled_relion_hidden_rotation_grid_from_samples", forbidden)
     dataset = SimpleNamespace(image_shape=(8, 8), voxel_size=1.0, n_images=2)
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=3, n_directions=3)
     state.iter = 3

@@ -7,7 +7,6 @@ import recovar.core.fourier_transform_utils as ftu
 from helpers.float_compare import assert_matches
 from helpers.full_row_tile import accumulate_full_row_tile
 
-from relax import sampling
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.local_search.layout import build_pass2_hypothesis_layout
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
@@ -29,6 +28,7 @@ from relax.ppca_refinement.full_row_stream import (
     tile_bytes,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
+from relax.sampling import oversampled_grids
 
 pytestmark = pytest.mark.unit
 
@@ -51,7 +51,7 @@ LAYOUT_KWARGS = dict(
 def _layouts():
     reference = build_pass2_hypothesis_layout(SIGNIFICANT, **LAYOUT_KWARGS)
     shared = build_pass2_hypothesis_layout([None], **LAYOUT_KWARGS)
-    fine_translations, parent = sampling.get_oversampled_translation_grid(TRANSLATIONS, 2.0, oversampling_order=1)
+    fine_translations, parent = oversampled_grids.get_oversampled_translation_grid(TRANSLATIONS, 2.0, oversampling_order=1)
     assert np.array_equal(np.asarray(fine_translations, np.float32), shared.translation_grid)
     return reference, shared, np.asarray(parent, np.int32)
 
