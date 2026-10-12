@@ -53,20 +53,19 @@ def _rectangular_operands(rng, *, batch_size, rotation_count, translation_count,
 def _cuda_backproject(monkeypatch, custom_cuda_lib):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
     monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
-    if not em_cuda_kernels.relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported():
+    if not cuda_fine.relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported():
         pytest.skip("loaded CUDA library predates the flat-row Wavg targets")
     if not (
-        em_cuda_kernels.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
+        cuda_fine.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
     ):
         pytest.skip("loaded CUDA library predates the flat-row Wavg atomics")
-    from relax.cuda import kernels as em_cuda_kernels
 
-    return em_cuda_kernels
+    return cuda_fine
 
 
 @pytest.mark.gpu
@@ -311,11 +310,11 @@ def test_flat_rows_wavg_all_padding_rows_leave_operands_untouched(
 def test_flat_rows_wavg_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_wavg_sequential_runtime_flat_rows_triplet_f32.__wrapped__(
+        cuda_fine.relion_wavg_sequential_runtime_flat_rows_triplet_f32.__wrapped__(
             jnp.zeros((1, 1), dtype=jnp.complex64),
             jnp.zeros((1,), dtype=jnp.int32),
             jnp.zeros((1, 1), dtype=jnp.float32),
@@ -338,7 +337,7 @@ def test_flat_rows_wavg_fails_closed_without_gpu(monkeypatch):
     ],
 )
 def test_flat_rows_wavg_rejects_inconsistent_operands(mutate, message):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     args = [
         jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -351,7 +350,7 @@ def test_flat_rows_wavg_rejects_inconsistent_operands(mutate, message):
     ]
     mutate(args)
     with pytest.raises(ValueError, match=message):
-        em_cuda_kernels.relion_wavg_sequential_runtime_flat_rows_triplet_f32.__wrapped__(*args)
+        cuda_fine.relion_wavg_sequential_runtime_flat_rows_triplet_f32.__wrapped__(*args)
 
 
 @pytest.mark.parametrize(
@@ -363,7 +362,7 @@ def test_flat_rows_wavg_rejects_inconsistent_operands(mutate, message):
     ],
 )
 def test_flat_rows_wavg_atomics_reject_inconsistent_operands(mutate, message):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     args = [
         jnp.zeros((1, 1, 3), dtype=jnp.float32),
@@ -374,7 +373,7 @@ def test_flat_rows_wavg_atomics_reject_inconsistent_operands(mutate, message):
     mutate(args)
     with pytest.raises(ValueError, match=message):
         wrapped = (
-            em_cuda_kernels
+            cuda_fine
             .relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32
             .__wrapped__
         )

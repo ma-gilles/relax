@@ -16,7 +16,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from relax.cuda import kernels as cuda_backproject
+from relax.cuda import fine as cuda_fine
 from relax.cuda import translate as cuda_translate
 from relax.fine_pass.resident_pass2 import (
     _accumulate_chunk_image_terms,
@@ -165,7 +165,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
             proj_abs2 = (jnp.abs(row_proj) ** 2).astype(jnp.float32)
             row_optics = None if ops.optics_groups is None else ops.optics_groups[image_slot]
             if plan.use_rfloat_ctf_wavg:
-                exact = cuda_backproject.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
+                exact = cuda_fine.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
                     jnp.asarray(row_proj, jnp.complex64), kernel_ids,
                     jnp.asarray(ops.direct_ctf_rfloat_recon, jnp.float32),
                     jnp.asarray(ops.scale, jnp.float32),
@@ -177,7 +177,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
                     row_proj, proj_abs2, summed_masked, ctf_probs,
                     ops.noise_variance, ops.scale, image_slot, row_optics,
                 )
-            wavg = cuda_backproject.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
+            wavg = cuda_fine.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
                 jnp.asarray(exact, jnp.float32), kernel_ids, ops.exact_positions,
                 partial.wavg_triplet_pixels, ops.logical_rect_pixels,
             )

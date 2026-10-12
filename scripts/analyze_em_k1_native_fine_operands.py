@@ -47,7 +47,7 @@ def _diff2_gpu_ffi(reference: np.ndarray, shifted: np.ndarray, weight: np.ndarra
     import jax
     import jax.numpy as jnp
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     reference = np.asarray(reference, dtype=np.complex64)
     shifted = np.asarray(shifted, dtype=np.complex64)
@@ -55,7 +55,7 @@ def _diff2_gpu_ffi(reference: np.ndarray, shifted: np.ndarray, weight: np.ndarra
     if reference.shape != shifted.shape or weight.shape != (reference.shape[-1],):
         raise ValueError("GPU FFI diff2 operands have incompatible shapes")
     lookup = np.arange(reference.shape[-1], dtype=np.int32)
-    result = em_cuda_kernels.relion_fine_diff2_pairs_f32(
+    result = cuda_fine.relion_fine_diff2_pairs_f32(
         jnp.asarray(reference[None]),
         jnp.asarray(shifted[None]),
         jnp.asarray(weight[None]),

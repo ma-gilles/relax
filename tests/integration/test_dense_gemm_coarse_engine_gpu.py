@@ -363,7 +363,7 @@ def _save_k4_output_diagnostic(path, control, candidate, *, resident_mass_parts=
 
 def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     """Persist outputs first, then matched native/GEMM scores at both winners."""
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
     from relax.dense.gemm_coarse_engine import _expanded_rotation_priors
     from relax.dense.gemm_kernels import native_phase_table, native_relion_callbacks, score_tile
     from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
@@ -429,7 +429,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     native_project_index = inverse.reshape(-1)
 
     def native_scores(projected):
-        raw = em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
+        raw = cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
             projected[native_project_index], jnp.asarray(native_row_image), batch.score_image,
             jnp.asarray(angles, jnp.float32), batch.score_weight,
             jnp.asarray(full_to_compact, jnp.int32), jnp.asarray(state.current_size, jnp.int32),

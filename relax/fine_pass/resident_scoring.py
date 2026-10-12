@@ -20,7 +20,7 @@ one rectangular ``(B, R, T)`` program per bucket shape; this module dispatches
 one flat ``(C_R, T)`` program per capacity class, with ``row_image_ids``
 carrying the row-to-image addressing. ``n_valid_rows`` / ``n_valid_images`` are
 runtime int32 operands, and the RELION current size is the runtime scalar of
-:func:`recovar.em.cuda.kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32`,
+:func:`relax.cuda.fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32`,
 so a chunk's program is keyed only on
 ``(row_capacity, image_capacity, n_fine_trans, n_score_pixels)``.
 
@@ -820,9 +820,9 @@ def _translation_chunk_live(candidate_mask, row_is_valid):
 
     if candidate_mask is None:
         return None
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
-    return em_cuda_kernels.relion_fine_diff2_translation_chunk_live(candidate_mask & row_is_valid[:, None])
+    return cuda_fine.relion_fine_diff2_translation_chunk_live(candidate_mask & row_is_valid[:, None])
 
 
 def _flat_rows_kernel_diff2(
@@ -840,12 +840,12 @@ def _flat_rows_kernel_diff2(
 ):
     """RELION's fine diff2 of every flat row against its image: the flat-row CUDA kernel."""
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     weights = _relion_cuda_fine_pixel_weights(
         chunk_corr, jnp.asarray(half_weights)[None, :]
     ).astype(jnp.float32)
-    return em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
+    return cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
         reference,
         kernel_row_image_ids,
         chunk_image,

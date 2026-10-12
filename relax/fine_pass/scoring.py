@@ -140,7 +140,7 @@ def _relion_cuda_fine_diff2_sum(
         _RELION_FINE_DIFF2_FUSED_FFI_ENV,
         default=False,
     ):
-        from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import fine as cuda_fine
 
         if reference.ndim == 4:
             if (
@@ -159,11 +159,11 @@ def _relion_cuda_fine_diff2_sum(
             if (
                 candidate_mask is not None
                 and real_dtype == jnp.float32
-                and em_cuda_kernels.relion_fine_diff2_rectangular_masked_supported()
+                and cuda_fine.relion_fine_diff2_rectangular_masked_supported()
             ):
                 # RELION-style pair pruning: skip (row, translation) cells the
                 # candidate mask excludes.  Valid cells stay bitwise identical.
-                return em_cuda_kernels.relion_fine_diff2_rectangular_masked_f32(
+                return cuda_fine.relion_fine_diff2_rectangular_masked_f32(
                     reference[:, :, 0, :],
                     shifted_image[:, 0, :, :],
                     pixel_weight[:, 0, 0, :],
@@ -171,9 +171,9 @@ def _relion_cuda_fine_diff2_sum(
                     jnp.asarray(candidate_mask, dtype=bool),
                 )
             fine_diff2_rectangular = (
-                em_cuda_kernels.relion_fine_diff2_rectangular_f64
+                cuda_fine.relion_fine_diff2_rectangular_f64
                 if real_dtype == jnp.float64
-                else em_cuda_kernels.relion_fine_diff2_rectangular_f32
+                else cuda_fine.relion_fine_diff2_rectangular_f32
             )
             return fine_diff2_rectangular(
                 reference[:, :, 0, :],
@@ -188,9 +188,9 @@ def _relion_cuda_fine_diff2_sum(
                 and reference.shape[0] == pixel_weight.shape[0]
             ):
                 fine_diff2_pairs = (
-                    em_cuda_kernels.relion_fine_diff2_pairs_f64
+                    cuda_fine.relion_fine_diff2_pairs_f64
                     if real_dtype == jnp.float64
-                    else em_cuda_kernels.relion_fine_diff2_pairs_f32
+                    else cuda_fine.relion_fine_diff2_pairs_f32
                 )
                 return fine_diff2_pairs(
                     reference,
@@ -204,9 +204,9 @@ def _relion_cuda_fine_diff2_sum(
                 and pixel_weight.shape[:2] == (1, 1)
             ):
                 fine_diff2_rectangular = (
-                    em_cuda_kernels.relion_fine_diff2_rectangular_f64
+                    cuda_fine.relion_fine_diff2_rectangular_f64
                     if real_dtype == jnp.float64
-                    else em_cuda_kernels.relion_fine_diff2_rectangular_f32
+                    else cuda_fine.relion_fine_diff2_rectangular_f32
                 )
                 return fine_diff2_rectangular(
                     reference[:, 0, :][None, :, :],

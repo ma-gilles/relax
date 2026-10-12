@@ -68,11 +68,11 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
     """A library without the optional symbol must not break the default path."""
     import numpy as np
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
     from relax.fine_pass import scoring
 
     monkeypatch.setattr(
-        em_cuda_kernels, "relion_fine_diff2_rectangular_masked_supported", lambda: False
+        cuda_fine, "relion_fine_diff2_rectangular_masked_supported", lambda: False
     )
     called = {}
 
@@ -83,9 +83,9 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
     def _masked(*args, **kwargs):  # pragma: no cover - must not be reached
         raise AssertionError("masked target used although the library lacks it")
 
-    monkeypatch.setattr(em_cuda_kernels, "relion_fine_diff2_rectangular_f32", _unmasked)
+    monkeypatch.setattr(cuda_fine, "relion_fine_diff2_rectangular_f32", _unmasked)
     monkeypatch.setattr(
-        em_cuda_kernels, "relion_fine_diff2_rectangular_masked_f32", _masked
+        cuda_fine, "relion_fine_diff2_rectangular_masked_f32", _masked
     )
     rng = np.random.default_rng(5)
     reference, shifted, weight, _initial, lookup = _operands(rng, 2, 3, 4, 17, 21)
@@ -102,7 +102,7 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
 
 def test_masked_support_probe_reports_false_without_a_library(monkeypatch):
     from recovar import cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
     from relax.cuda import library
 
     monkeypatch.setattr(
@@ -114,7 +114,7 @@ def test_masked_support_probe_reports_false_without_a_library(monkeypatch):
     monkeypatch.setattr(
         library, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
-    assert em_cuda_kernels.relion_fine_diff2_rectangular_masked_supported() is False
+    assert cuda_fine.relion_fine_diff2_rectangular_masked_supported() is False
 
 
 def test_fine_diff2_sum_jax_path_ignores_candidate_mask(monkeypatch):
@@ -149,7 +149,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -165,7 +165,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
     mask[1, :, 0] = True  # a fully included translation column
     with jax.default_device(gpu_device):
         dense = np.asarray(
-            em_cuda_kernels.relion_fine_diff2_rectangular_f32(
+            cuda_fine.relion_fine_diff2_rectangular_f32(
                 jnp.asarray(reference),
                 jnp.asarray(shifted),
                 jnp.asarray(weight),
@@ -174,7 +174,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
             )
         )
         masked = np.asarray(
-            em_cuda_kernels.relion_fine_diff2_rectangular_masked_f32(
+            cuda_fine.relion_fine_diff2_rectangular_masked_f32(
                 jnp.asarray(reference),
                 jnp.asarray(shifted),
                 jnp.asarray(weight),

@@ -1386,7 +1386,7 @@ def _add_wavg_rectangle_image_power(
     rectangle's ``diff2`` slot with each row's posterior-weighted image power
     and overwrites the exact-radius positions with the projected triplet; the
     M-step blocks add only their rows' exact terms
-    (:func:`~relax.cuda.kernels.relion_wavg_exact_atomic_flat_rows_triplet_add_f32`).
+    (:func:`~relax.cuda.fine.relion_wavg_exact_atomic_flat_rows_triplet_add_f32`).
     RELION adds these per-orientation sums with atomics (wavg.cuh:147-149), so
     the grouping of the additions is not RELION's either way.
 
@@ -7662,7 +7662,7 @@ def _resident_mstep_block(
     local search passes a slice of the projections it computed for this chunk.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     proj, proj_abs2, block_mstep_rotations = block_projections[:3]
     # The SGD residual's projection when it differs from the Wavg one (_cached_block_projections).
@@ -7738,7 +7738,7 @@ def _resident_mstep_block(
             block_optics_groups,
         )
     else:
-        exact_terms = em_cuda_kernels.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
+        exact_terms = cuda_fine.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
             jnp.asarray(proj, dtype=jnp.complex64),
             block_kernel_ids,
             jnp.asarray(operands.direct_ctf_rfloat_recon, dtype=jnp.float32),
@@ -7750,7 +7750,7 @@ def _resident_mstep_block(
     # The image power is added once per chunk after the block walk
     # (_add_chunk_wavg_image_power); the blocks add their rows' exact terms at
     # their rectangle positions, the rest of the rectangle receiving nothing.
-    wavg_triplet_pixels = em_cuda_kernels.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
+    wavg_triplet_pixels = cuda_fine.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
         jnp.asarray(exact_terms, dtype=jnp.float32),
         block_kernel_ids,
         jnp.asarray(tables.exact_positions, dtype=jnp.int32),
