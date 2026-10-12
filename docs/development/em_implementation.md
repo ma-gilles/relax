@@ -264,7 +264,7 @@ In [`significance`](../../relax/scoring/significance.py),
 default only when the supplied RELION projector operands exist; a dense pass
 without a projector keeps the JAX coarse path and an explicit environment request
 still fails closed.
-`preprocessing.uses_relion_cuda_image_preprocessing` (with `relion_preprocess_backend`,
+`image_preprocessing.uses_relion_cuda_image_preprocessing` (with `relion_preprocess_backend`,
 which follows subset parents) is the one detection of RELION's CUDA image path; the
 local engine, the InitialModel adapter and the controller's early fresh-K=1 check use
 it ([`test_relion_cuda_preprocess_owner.py`](../../tests/unit/test_relion_cuda_preprocess_owner.py)).

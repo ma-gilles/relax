@@ -17,7 +17,6 @@ from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import (
     apply_half_translation_phases,
     half_translation_phase_table,
-    image_preprocess_backend,
 )
 from relax.runtime.env_flags import parse_env_strict_flag
 
@@ -38,6 +37,31 @@ def jit_stage_glue_enabled(*, default: bool = False) -> bool:
     """
 
     return parse_env_strict_flag(_JIT_STAGE_GLUE_ENV, default=default)
+
+
+def image_preprocess_backend(experiment_dataset):
+    image_source = getattr(experiment_dataset, "image_source", None)
+    return getattr(image_source, "backend", image_source)
+
+
+def relion_preprocess_backend(experiment_dataset):
+    """Root image backend of a dataset, following subset ``parent`` links."""
+
+    image_source = getattr(experiment_dataset, "image_source", None)
+    while hasattr(image_source, "parent"):
+        image_source = image_source.parent
+    return getattr(image_source, "backend", image_source)
+
+
+def uses_relion_cuda_image_preprocessing(experiment_dataset) -> bool:
+    """Whether the dataset's root backend runs RELION's CUDA image preprocessing.
+
+    The fresh K=1 refinement defaults (source-faithful powerClass
+    normalization, exact BPref operands, exact coarse operands) score from
+    that preprocessing and fail closed without it.
+    """
+
+    return getattr(relion_preprocess_backend(experiment_dataset), "relion_fourier_backend", None) == "relion_cuda"
 
 
 def _cast_shift_inputs(

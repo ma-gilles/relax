@@ -498,7 +498,7 @@ def test_the_optional_operands_against_a_star_backed_preparation(
     from relax.fine_pass.scoring import (
         relion_powerclass_noise_dtypes,
     )
-    from relax.fourier.preprocessing import image_preprocess_backend
+    from relax.relion.image_preprocessing import image_preprocess_backend
 
     star = os.environ.get("RELAX_P4J_STAR_FIXTURE", "").strip()
     if not star:

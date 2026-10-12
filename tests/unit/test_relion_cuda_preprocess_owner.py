@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import pytest
 
-from relax.fourier import preprocessing
+from relax.relion import image_preprocessing
 from relax.vdam import adaptive_estep
 
 pytestmark = pytest.mark.unit
@@ -23,18 +23,18 @@ def _dataset(backend_name, *, depth=0):
 
 @pytest.mark.parametrize("depth", [0, 1, 3])
 def test_detection_follows_subset_parents(depth):
-    assert preprocessing.uses_relion_cuda_image_preprocessing(_dataset("relion_cuda", depth=depth)) is True
-    assert preprocessing.uses_relion_cuda_image_preprocessing(_dataset("host_numpy", depth=depth)) is False
-    assert preprocessing.relion_preprocess_backend(_dataset("relion_cuda", depth=depth)).relion_fourier_backend == "relion_cuda"
+    assert image_preprocessing.uses_relion_cuda_image_preprocessing(_dataset("relion_cuda", depth=depth)) is True
+    assert image_preprocessing.uses_relion_cuda_image_preprocessing(_dataset("host_numpy", depth=depth)) is False
+    assert image_preprocessing.relion_preprocess_backend(_dataset("relion_cuda", depth=depth)).relion_fourier_backend == "relion_cuda"
 
 
 def test_datasets_without_a_backend_are_not_cuda():
-    assert preprocessing.uses_relion_cuda_image_preprocessing(SimpleNamespace()) is False
-    assert preprocessing.uses_relion_cuda_image_preprocessing(SimpleNamespace(image_source=object())) is False
+    assert image_preprocessing.uses_relion_cuda_image_preprocessing(SimpleNamespace()) is False
+    assert image_preprocessing.uses_relion_cuda_image_preprocessing(SimpleNamespace(image_source=object())) is False
 
 
 def test_initial_model_patch_point_is_the_owner():
-    assert adaptive_estep.uses_relion_cuda_image_preprocessing is preprocessing.uses_relion_cuda_image_preprocessing
+    assert adaptive_estep.uses_relion_cuda_image_preprocessing is image_preprocessing.uses_relion_cuda_image_preprocessing
 
 
 def _fake_preprocess(monkeypatch, invalid_counts):

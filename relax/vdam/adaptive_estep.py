@@ -34,10 +34,10 @@ from relax import sampling
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
 from relax.fine_pass.bucket_arrays import relion_parent_execution_key
-from relax.fourier.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.fourier.resolution import compute_coarse_image_size
 from relax.refinement import optics_shapes
 from relax.refinement.refinement_state import healpix_angular_step
+from relax.relion.image_preprocessing import uses_relion_cuda_image_preprocessing
 from relax.runtime.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )

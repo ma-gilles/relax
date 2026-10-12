@@ -1,7 +1,8 @@
 """Half-spectrum translation phases for dense EM engines (RELION's lattice labels, the phase table and its
-application) and the image-backend selectors.
+application).
 
-The batch preprocessing that reads the dataset's optics is :mod:`relax.relion.image_preprocessing`.
+The batch preprocessing that reads the dataset's optics, and the image-backend selectors, are
+:mod:`relax.relion.image_preprocessing`.
 """
 
 from __future__ import annotations
@@ -91,28 +92,3 @@ def _half_translation_phase_table(translations, image_shape, real_dtype):
         precision=jax.lax.Precision.HIGHEST,
     )
     return jnp.exp(jnp.asarray(-2j * jnp.pi, dtype=complex_dtype) * phase_arg)
-
-
-def image_preprocess_backend(experiment_dataset):
-    image_source = getattr(experiment_dataset, "image_source", None)
-    return getattr(image_source, "backend", image_source)
-
-
-def relion_preprocess_backend(experiment_dataset):
-    """Root image backend of a dataset, following subset ``parent`` links."""
-
-    image_source = getattr(experiment_dataset, "image_source", None)
-    while hasattr(image_source, "parent"):
-        image_source = image_source.parent
-    return getattr(image_source, "backend", image_source)
-
-
-def uses_relion_cuda_image_preprocessing(experiment_dataset) -> bool:
-    """Whether the dataset's root backend runs RELION's CUDA image preprocessing.
-
-    The fresh K=1 refinement defaults (source-faithful powerClass
-    normalization, exact BPref operands, exact coarse operands) score from
-    that preprocessing and fail closed without it.
-    """
-
-    return getattr(relion_preprocess_backend(experiment_dataset), "relion_fourier_backend", None) == "relion_cuda"
