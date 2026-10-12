@@ -19,6 +19,8 @@ from relax.runtime.compile_ahead import (
 )
 from relax.runtime.env_flags import read_env_text
 
+DEFAULT_PREPARE_IMAGE_BATCH = 256
+
 
 @dataclass(frozen=True, kw_only=True)
 class EngineTuning:
@@ -28,13 +30,16 @@ class EngineTuning:
     :func:`relax.runtime.compile_ahead.parse_compile_ahead_config`): the resident pass 2's helper-thread warm-up.
     ``pass2_projection_cache`` (RELAX_SPARSE_PASS2_PROJECTION_CACHE, :func:`parse_projection_cache_request`): the
     resident pass 2's projection cache, None for its default (on, except for an operand dump).
-    ``resident_operand_max_bytes`` (RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES, :func:`parse_positive_bytes`):
-    the resident operands' byte budget, None for the allocator-derived one.
+    ``resident_operand_max_bytes`` (RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES, :func:`parse_positive_override`):
+    the resident operands' byte budget, None for the allocator-derived one. ``prepare_image_batch``
+    (RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH, :func:`parse_positive_override`; default
+    :data:`DEFAULT_PREPARE_IMAGE_BATCH`): images per resident operand preparation call (no value depends on it).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
     pass2_projection_cache: bool | None = None
     resident_operand_max_bytes: int | None = None
+    prepare_image_batch: int = DEFAULT_PREPARE_IMAGE_BATCH
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -43,14 +48,18 @@ class EngineTuning:
                 read_env_text(COMPILE_AHEAD_ENV, ""), read_env_text(COMPILE_AHEAD_MAX_ENV, ""),
             ),
             pass2_projection_cache=parse_projection_cache_request(read_env_text(PROJECTION_CACHE_ENV)),
-            resident_operand_max_bytes=parse_positive_bytes(
+            resident_operand_max_bytes=parse_positive_override(
                 "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES",
                 read_env_text("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", ""),
             ),
+            prepare_image_batch=parse_positive_override(
+                "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH",
+                read_env_text("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", ""),
+            ) or DEFAULT_PREPARE_IMAGE_BATCH,
         )
 
 
-def parse_positive_bytes(name: str, raw: str) -> int | None:
+def parse_positive_override(name: str, raw: str) -> int | None:
     """A positive integer override (stripped): blank is None; ``int()`` refuses a non-integer, and a value that is
     not positive is refused naming ``name``."""
     raw = raw.strip()

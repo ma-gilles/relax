@@ -47,7 +47,6 @@ refuses and for the ``...RESIDENT_OPERANDS=0`` comparison arm.
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
@@ -86,8 +85,6 @@ RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 # class accumulators and the chunk working set.
 _RESIDENT_OPERAND_AVAILABLE_FRACTION = 0.5
 _DEFAULT_RESIDENT_OPERAND_MAX_BYTES = 6 * 1024**3
-_PREPARE_IMAGE_BATCH_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH"
-_DEFAULT_PREPARE_IMAGE_BATCH = 256
 # Device bytes one image holds while a preparation call processes it, per pixel of its packed half image
 # (H x (W // 2 + 1)): the processed image, its CTF and the operands before the window gather. Measured at box 380
 # (Class3D K3, robustness cell 15, A100 under 16 GB ballast): the preparation's high-water rose 2.35 GiB from 64 to
@@ -502,25 +499,16 @@ def resident_prepare_reserved_bytes(image_shape) -> int:
     return _MIN_PREPARE_IMAGE_BATCH * resident_prepare_image_bytes(image_shape)
 
 
-def resident_prepare_batch_size(free_bytes: float, image_shape) -> int:
-    """Images per preparation call: the configured batch, lowered until its working set fits ``free_bytes``.
+def resident_prepare_batch_size(free_bytes: float, image_shape, configured_batch: int) -> int:
+    """Images per preparation call: the configured batch (``EngineTuning.prepare_image_batch``), lowered until its
+    working set fits ``free_bytes``.
 
     Never below ``_MIN_PREPARE_IMAGE_BATCH``, whose working set the operand admission already counts. The batch
     does not change any value (:func:`prepare_resident_half_operands`).
     """
 
     fitting = int(max(0.0, float(free_bytes)) // resident_prepare_image_bytes(image_shape))
-    return max(_MIN_PREPARE_IMAGE_BATCH, min(_prepare_image_batch_size(), fitting))
-
-
-def _prepare_image_batch_size() -> int:
-    raw = os.environ.get(_PREPARE_IMAGE_BATCH_ENV, "").strip()
-    if not raw:
-        return _DEFAULT_PREPARE_IMAGE_BATCH
-    value = int(raw)
-    if value <= 0:
-        raise ValueError(f"{_PREPARE_IMAGE_BATCH_ENV} must be positive, got {value}")
-    return value
+    return max(_MIN_PREPARE_IMAGE_BATCH, min(configured_batch, fitting))
 
 
 def _require_supported(condition: bool, message: str) -> None:
@@ -737,7 +725,7 @@ def prepare_resident_half_operands(
     scale_corrections_np=None,
     group_ids_np=None,
     precision_policy: DensePrecisionPolicy | None = None,
-    image_batch_size: int | None = None,
+    image_batch_size: int,
     optics_groups_np=None,
     relion_native_fine_units: bool = False,
     log_summary: bool = True,
@@ -844,7 +832,6 @@ def prepare_resident_half_operands(
         "relion_norm_high_shell": None,
         "cc_half_batch_norm": None,
     }
-    batch_size = int(image_batch_size or _prepare_image_batch_size())
     if staged_batch is not None:
         if not isinstance(staged_batch, tuple) or len(staged_batch) != 3:
             raise ValueError("staged_batch must be (device_images, ctf_params, image_indices)")
@@ -853,7 +840,7 @@ def prepare_resident_half_operands(
             raise ValueError("staged_batch images must be one concrete JAX image array [B,H,W]")
         if staged_images.shape != (n_images, *tuple(image_shape)):
             raise ValueError("staged_batch image shape must match requested IDs and image_shape")
-        if n_images > batch_size:
+        if n_images > image_batch_size:
             raise ValueError("staged_batch must fit one image preparation batch")
         staged_indices = np.asarray(staged_indices)
         if staged_indices.shape != image_indices.shape or not np.array_equal(staged_indices, image_indices):
@@ -861,7 +848,7 @@ def prepare_resident_half_operands(
         ctf_shape = np.shape(staged_ctf)
         if not ctf_shape or ctf_shape[0] != n_images:
             raise ValueError("staged_batch CTF row count must match requested image IDs")
-    buffer_rows = -(-image_capacity // batch_size) * batch_size
+    buffer_rows = -(-image_capacity // image_batch_size) * image_batch_size
     native_fft_size = int(np.prod(image_shape))
     if relion_native_fine_units:
         _require_supported(
@@ -869,11 +856,11 @@ def prepare_resident_half_operands(
             "native-unit fine scores without RELION's RFLOAT CTF operand",
         )
 
-    starts = range(0, n_images, batch_size)
+    starts = range(0, n_images, image_batch_size)
     # The host reads run ahead on a worker thread (RELAX_EM_PREFETCH_BATCHES,
     # default 2), as in the coarse pass; the batches and their order are unchanged.
     fetches = (
-        fetch_indexed_batch(experiment_dataset, image_indices[start : start + batch_size])
+        fetch_indexed_batch(experiment_dataset, image_indices[start : start + image_batch_size])
         for start in starts
     )
     source = (
@@ -885,12 +872,12 @@ def prepare_resident_half_operands(
         for start, (batch_data, ctf_params, fetched_indices) in zip(starts, fetched_batches, strict=True):
             fetched_indices = np.asarray(fetched_indices)
             n_fetched = int(fetched_indices.shape[0])
-            if n_fetched < batch_size:
+            if n_fetched < image_batch_size:
                 # The last batch repeats its first image up to the batch size, as the
                 # per-chunk path pads a capacity class, so every batch of the half
                 # runs the same preparation programs. The preparation is per image;
                 # the repeated rows land in padding no chunk addresses.
-                pad = np.concatenate([np.arange(n_fetched), np.zeros(batch_size - n_fetched, dtype=np.int64)])
+                pad = np.concatenate([np.arange(n_fetched), np.zeros(image_batch_size - n_fetched, dtype=np.int64)])
                 batch_data = (
                     jnp.take(batch_data, pad, axis=0)
                     if staged_batch is not None
@@ -962,7 +949,7 @@ def prepare_resident_half_operands(
             extra_arrays = {}
             if score_mode == "normalized_cc":
                 extra_arrays["cc_half_batch_norm"] = (
-                    0.5 * jnp.reshape(unshifted.batch_norm, (batch_size,)).real
+                    0.5 * jnp.reshape(unshifted.batch_norm, (image_batch_size,)).real
                 ).astype(jnp.float32)
 
             extra_arrays["image_power_shells"] = image_power_shells(
@@ -1104,7 +1091,7 @@ def prepare_resident_half_operands(
         operands.n_recon_pixels,
         operands.n_rect_pixels,
         operands.nbytes()["total"] / float(1024**3),
-        (n_images + batch_size - 1) // batch_size,
+        (n_images + image_batch_size - 1) // image_batch_size,
     )
     # A separate line, not an addition to the one above: the census parsers key
     # on that line's text. The batch size and the last batch's remainder are
@@ -1113,8 +1100,8 @@ def prepare_resident_half_operands(
     logger.info(
         "Resident pass-2 per-half operand batching: image_batch_size=%d, "
         "last_batch_images=%d, image_capacity=%d",
-        batch_size,
-        n_images - batch_size * ((n_images - 1) // batch_size) if n_images else 0,
+        image_batch_size,
+        n_images - image_batch_size * ((n_images - 1) // image_batch_size) if n_images else 0,
         image_capacity,
     )
     return operands

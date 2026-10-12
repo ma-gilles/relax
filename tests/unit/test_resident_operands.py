@@ -318,6 +318,7 @@ def test_unmasked_scoring_is_refused():
             image_shape=case["image_shape"],
             current_size=case["current_size"],
             n_fine_trans=N_FINE_TRANS,
+            image_batch_size=256,
             use_exact_relion_gaussian=False,
             accumulate_noise=False,
             source_faithful_spectrum_norm=False,
@@ -778,18 +779,25 @@ def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
         resident_prepare_image_bytes,
         resident_prepare_reserved_bytes,
     )
+    from relax.runtime.engine_tuning import EngineTuning
 
     monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", raising=False)
+    configured = EngineTuning.from_environ().prepare_image_batch
+    assert configured == 256 == EngineTuning().prepare_image_batch
     box = (380, 380)
     per_image = resident_prepare_image_bytes(box)
     assert per_image == 192 * 380 * 191
     assert resident_prepare_reserved_bytes(box) == 16 * per_image
-    assert resident_prepare_batch_size(100 * per_image + 1, box) == 100
-    assert resident_prepare_batch_size(10_000 * per_image, box) == 256
+    assert resident_prepare_batch_size(100 * per_image + 1, box, configured) == 100
+    assert resident_prepare_batch_size(10_000 * per_image, box, configured) == 256
     # The admission already counted the smallest batch, so the batch never drops below it.
-    assert resident_prepare_batch_size(0, box) == 16
+    assert resident_prepare_batch_size(0, box, configured) == 16
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", "64")
-    assert resident_prepare_batch_size(10_000 * per_image, box) == 64
+    assert resident_prepare_batch_size(10_000 * per_image, box, EngineTuning.from_environ().prepare_image_batch) == 64
+    for bad in ("0", "x"):
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", bad)
+        with pytest.raises(ValueError):
+            EngineTuning.from_environ()
 
 
 def test_operand_peak_counts_the_smallest_preparation_batch():

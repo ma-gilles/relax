@@ -2543,7 +2543,8 @@ def _resident_pass2(
                 operands_t0 = time.time()
                 # The admission counted the smallest batch's working set; the batch takes what the budget leaves.
                 prepare_batch = resident_prepare_batch_size(
-                    budget_bytes - operand_peak_bytes + resident_prepare_reserved_bytes(image_shape), image_shape
+                    budget_bytes - operand_peak_bytes + resident_prepare_reserved_bytes(image_shape), image_shape,
+                    engine_tuning.prepare_image_batch,
                 )
                 try:
                     resident_operands = prepare_resident_half_operands(
@@ -2697,6 +2698,7 @@ def _resident_pass2(
                 chunk_operands = prepare_resident_half_operands(
                     experiment_dataset,
                     np.arange(operand_image_start, operand_image_stop, dtype=np.int64),
+                    image_batch_size=engine_tuning.prepare_image_batch,
                     **resident_operand_kwargs,
                 )
             tilt_spec_kwargs.update(
