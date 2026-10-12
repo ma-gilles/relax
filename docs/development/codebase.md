@@ -142,7 +142,7 @@ keep previous/current frames together. The controller installs state and records
 history/particle files between those two operations, preserving their timing.
 
 Post-reconstruction observed/scheduling resolution shells belong to
-[`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`](../../relax/fourier/resolution.py);
+[`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`](../../relax/reconstruction/resolution.py);
 the controller passes each its mode's curve. Their result
 is consumed by diagnostics, history, next-iteration planning and convergence while
 the controller retains the timing of state writes and native convergence checks.
@@ -174,7 +174,7 @@ for detailed module contracts. Start with the boundary being changed:
 | Particle pose interpretation and persistent half state | [`refinement/particle_poses.py`](../../relax/refinement/particle_poses.py), [`refinement/half_inputs.py`](../../relax/refinement/half_inputs.py); resolves explicit or grid poses into computed matrices/Euler rows and relative/absolute pixel shifts. The controller installs state and records history. |
 | Strict RELION follower topology preparation | [`refinement/follower_scale.py`](../../relax/refinement/follower_scale.py); validates MPI admission, replay and numbered particle ownership before execution |
 | Particle-table source and group identity | [`relion/input_particle_table.py`](../../relax/relion/input_particle_table.py); admits half-set STAR schema/optics geometry and produces authoritative group source plus matching physical/optics axes in half image order |
-| Input geometry and replay units | `ImageGeometry` in [`helpers/resolution.py`](../../relax/fourier/resolution.py); fixed shape and validated physical pixel size. [`parity/relion_replay.py`](../../relax/parity/relion_replay.py) consumes geometry directly. Controller retains the borrowed source pixel scalar where host promotion requires its original type; changing windows/model support have separate owners. |
+| Input geometry and replay units | `ImageGeometry` in [`reconstruction/resolution.py`](../../relax/reconstruction/resolution.py); fixed shape and validated physical pixel size. [`parity/relion_replay.py`](../../relax/parity/relion_replay.py) consumes geometry directly. Controller retains the borrowed source pixel scalar where host promotion requires its original type; changing windows/model support have separate owners. |
 | Refinement memory planning | [`helpers/batch_planning.py`](../../relax/runtime/batch_planning.py) and [`refinement/expectation_batches.py`](../../relax/refinement/expectation_batches.py); live dense/local/compact budgets and half adaptation. The disconnected future whole-local descriptor/fingerprint family is retired; supported batch decisions are unchanged. |
 | Numbered half expectation preparation, execution and recording | [`refinement/expectation.py`](../../relax/refinement/expectation.py); `NumberedExpectation` and `prepare_numbered_expectation` bind the shared canonical grid, dense/local support and diagnostic policy. The same owner prepares per-half priors/batches/optics, dispatches, and records profiles/captures and ordered counts. Controller retains modes, tomography adaptation, publication, offloading, serial/overlap choice and release. |
 | Final SPA half prior/optics preparation | `prepare_final_half` in the same expectation owner; local/dense scoring and manifest export consume its prepared operands |

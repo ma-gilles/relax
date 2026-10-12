@@ -23,7 +23,7 @@ def test_invalid_particle_spacing_rejected_even_with_model_override(pixel_size):
 
 
 def _optics(optics_pixel_sizes=None, optics_image_sizes=None, model_pixel_size=1.5):
-    from relax.fourier.resolution import ImageGeometry
+    from relax.reconstruction.resolution import ImageGeometry
     from relax.refinement.image_size_plans import RunOptics
 
     return RunOptics(

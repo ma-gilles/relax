@@ -1792,7 +1792,7 @@ image_geometry = ImageGeometry(
 grid_size = image_geometry.box_size
 ```
 
-[relax/fourier/resolution.py](../../relax/fourier/resolution.py) (line 29):
+[relax/reconstruction/resolution.py](../../relax/reconstruction/resolution.py) (line 29):
 
 ```python
 class ImageGeometry:

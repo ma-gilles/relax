@@ -24,7 +24,7 @@ import relax.diagnostics.reconstruction as reconstruction_diagnostics
 import relax.parity.relion_replay as replay_policy
 import relax.refinement.refinement_state as convergence_helpers
 from relax.diagnostics import bpref_diagnostics
-from relax.fourier import resolution
+from relax.reconstruction import resolution
 from relax.refinement import (
     engine_record,
     expectation,

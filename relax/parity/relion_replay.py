@@ -53,7 +53,7 @@ from relax.sampling.orientation_priors import (
 )
 
 if TYPE_CHECKING:
-    from relax.fourier.resolution import ImageGeometry
+    from relax.reconstruction.resolution import ImageGeometry
 
 
 logger = logging.getLogger("relax.diagnostics.relion_replay")  # the name before the move to relax.parity: log rows keep it

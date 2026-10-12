@@ -43,7 +43,7 @@ See [iteration loop](../../relax/refinement/iteration_loop.py),
 [Fourier windows](../../relax/fourier/fourier_window.py),
 [accumulator geometry](../../relax/reconstruction/half_volume_mstep.py),
 [optics grouping](../../relax/refinement/optics_shapes.py),
-[resolution helpers](../../relax/fourier/resolution.py), and
+[resolution helpers](../../relax/reconstruction/resolution.py), and
 [input loading](../../relax/refinement/full_refinement.py).
 
 ## Proposed ownership

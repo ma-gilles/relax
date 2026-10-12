@@ -22,8 +22,8 @@ from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import unconverged_accuracy
 
 import relax.refinement.noise_updates as noise_updates
-from relax.fourier.resolution import ImageGeometry
 from relax.reconstruction import volume_solver
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import map_postprocess
 from relax.refinement.half_inputs import HalfPair, initialize_halfsets
 from relax.refinement.local_sampling import relion_local_pass1_current_size
@@ -68,17 +68,7 @@ from relax.classification.k_class_results import (
     _sum_noise_stats,
 )
 from relax.diagnostics.observers import IntermediatesObserver
-from relax.fourier import resolution as resolution_helpers
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
-from relax.fourier.resolution import (
-    bootstrap_current_size_from_ini_high_relion,
-    bootstrap_current_size_relion,
-    clamp_relion_coarse_image_size,
-    compute_coarse_image_size,
-    relion_expectation_coarse_size_order,
-    relion_optics_image_current_sizes,
-    shell_index_to_resolution_angstrom,
-)
 from relax.local_search.layout import (
     EXACT_LOCAL_BUCKET_RADIX_ENV,
     LocalHypothesisLayout,
@@ -92,8 +82,18 @@ from relax.local_search.layout import (
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization as regularization_relion
+from relax.reconstruction import resolution as resolution_helpers
 from relax.reconstruction.half_volume_mstep import (
     relion_backprojector_volume_shape,
+)
+from relax.reconstruction.resolution import (
+    bootstrap_current_size_from_ini_high_relion,
+    bootstrap_current_size_relion,
+    clamp_relion_coarse_image_size,
+    compute_coarse_image_size,
+    relion_expectation_coarse_size_order,
+    relion_optics_image_current_sizes,
+    shell_index_to_resolution_angstrom,
 )
 from relax.refinement import (
     dense_half,

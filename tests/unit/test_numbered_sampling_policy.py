@@ -8,7 +8,7 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
 from relax import sampling
-from relax.fourier.resolution import ImageGeometry
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans, numbered_transitions, trial_grids
 from relax.refinement.refinement_state import RefinementState
 

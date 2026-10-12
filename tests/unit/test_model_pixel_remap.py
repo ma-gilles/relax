@@ -84,7 +84,7 @@ def test_single_and_several_shape_paths_give_a_group_the_same_window_and_noise_s
     shells 26/27 vs 25/26 on EMPIAR-10299)."""
     import logging
 
-    from relax.fourier.resolution import ImageGeometry
+    from relax.reconstruction.resolution import ImageGeometry
     from relax.refinement.image_size_plans import RunOptics, plan_expectation_windows
 
     single = plan_expectation_windows(
@@ -111,7 +111,7 @@ CELL9_HEADER_PIXEL = float(np.float32(1.6374975))  # its reference header, 1.637
 def _single_shape_windows(current_size, *, model_pixel, star_pixel, box=256, optics=True):
     import logging
 
-    from relax.fourier.resolution import ImageGeometry
+    from relax.reconstruction.resolution import ImageGeometry
     from relax.refinement.image_size_plans import RunOptics, plan_expectation_windows
 
     return plan_expectation_windows(

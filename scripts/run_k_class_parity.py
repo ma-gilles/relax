@@ -131,7 +131,7 @@ def _relion_adaptive_coarse_image_size(
 ) -> int:
     """Return RELION's adaptive pass-1 ``image_coarse_size``."""
 
-    from relax.fourier.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
+    from relax.reconstruction.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
     from relax.sampling import relion_angular_sampling_deg
 
     coarse_size = compute_coarse_image_size(

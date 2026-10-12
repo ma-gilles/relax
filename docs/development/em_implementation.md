@@ -567,7 +567,7 @@ It also owns the approximate-accuracy convergence gate and its environment
 overrides. The controller supplies its logger so malformed-override warnings
 keep their existing routing.
 
-`fourier/resolution.py` owns current-size growth inputs and first-iteration
+`reconstruction/resolution.py` owns current-size growth inputs and first-iteration
 resolution rules: the inclusive FSC/data-vs-prior boundary, raw versus corrected
 K1 scheduling, the initial high-resolution cutoff, and the tau2 reporting taper.
 It also owns expectation-boundary coarse sizing: replay selects the incoming

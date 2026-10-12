@@ -202,7 +202,7 @@ def test_single_shape_runs_project_with_the_model_pixel_scale():
     rounded 1.4 A header does not."""
     import logging
 
-    from relax.fourier.resolution import ImageGeometry
+    from relax.reconstruction.resolution import ImageGeometry
     from relax.refinement.image_size_plans import RunOptics
     from relax.refinement.setup_checks import projection_scale_for_run
     from relax.relion.optics_aberrations import relion_projection_optics

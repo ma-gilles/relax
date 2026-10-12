@@ -11,7 +11,7 @@ import dataclasses
 
 import numpy as np
 
-from relax.fourier.resolution import relion_coarse_image_size
+from relax.reconstruction.resolution import relion_coarse_image_size
 from relax.refinement.optics_shapes import MultiShapeHalf, ShapeClass
 from relax.relion import optics_groups
 from relax.sampling.orientation_priors import (

@@ -21,7 +21,7 @@ import jaxlib
 import numpy as np
 
 from relax.diagnostics import parity_dump
-from relax.fourier.resolution import shell_index_to_resolution_angstrom
+from relax.reconstruction.resolution import shell_index_to_resolution_angstrom
 from relax.refinement import iteration_history
 from relax.refinement.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.refinement.refinement_result import FinalPassResult, ModelMaps, RefinementResult

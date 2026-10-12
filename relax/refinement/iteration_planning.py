@@ -9,11 +9,11 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from relax.fourier.resolution import (
+from relax.reconstruction.regularization import fsc_to_relion_ssnr, resolution_from_data_vs_prior
+from relax.reconstruction.resolution import (
     ImageGeometry,
-    initialize_resolution_from_firstiter_ini_high,
-    initialize_resolution_from_fsc,
-    initialize_resolution_from_ini_high,
+    _firstiter_cc_ini_high_resolution_shell,
+    shell_index_to_resolution_angstrom,
 )
 from relax.refinement.iteration_snapshot import validate_resume_snapshot
 from relax.refinement.ports import InputSource
@@ -218,3 +218,52 @@ class IterationCarry:
     class_assignments: list
     hard_assignments: list
     published_accuracy: PublishedAccuracy
+
+
+def initialize_resolution_from_fsc(
+    state: RefinementState, fsc, options: RefinementOptions, *, box_size: int, voxel_size: float, dtype
+) -> None:
+    """Seed current/previous resolution from the start FSC curve ``fsc`` (the input source's
+    ``start_seeds.fsc``)."""
+    schedule = options.schedule
+    fsc = np.asarray(fsc, dtype=dtype).copy()
+    previous_current_size = int(schedule.init_current_size)
+    if previous_current_size < box_size:
+        fsc[min(len(fsc), previous_current_size // 2) :] = 0.0
+    data_vs_prior = np.asarray(fsc_to_relion_ssnr(fsc, tau2_fudge=options.parity.tau2_fudge))
+    resolution_shell = resolution_from_data_vs_prior(data_vs_prior, box_size=box_size, allow_high_res_recovery=True)
+    resolution_angstrom = shell_index_to_resolution_angstrom(resolution_shell, box_size, voxel_size)
+    if np.isfinite(resolution_angstrom) and resolution_angstrom > 0.0:
+        state.current_resolution = float(resolution_angstrom)
+        state.previous_resolution = float(resolution_angstrom)
+
+
+def initialize_resolution_from_firstiter_ini_high(
+    state: RefinementState, options: RefinementOptions, *, box_size: int, voxel_size: float
+) -> None:
+    """Seed current/previous resolution from the first-iteration ini_high lowpass."""
+    initialize_resolution_from_ini_high(
+        state,
+        options.parity.relion_firstiter_ini_high_angstrom,
+        box_size=box_size,
+        voxel_size=voxel_size,
+    )
+
+
+def initialize_resolution_from_ini_high(
+    state: RefinementState, ini_high_angstrom: float, *, box_size: int, voxel_size: float
+) -> None:
+    """Seed current/previous resolution with RELION's start-up ``--ini_high`` shell.
+
+    ``MlOptimiserMpi::iterate`` calls ``updateCurrentResolution`` before iteration 1
+    (ml_optimiser_mpi.cpp:4028); with ``ini_high > 0`` at ``iter == 0`` it sets
+    ``current_resolution`` to the shell ``ROUND(ori_size pixel_size / ini_high)``
+    (ml_optimiser.cpp:6768-6770). Iteration 1 then joins the half accumulators up to
+    ``max(low_resol_join_halves, 1 / current_resolution)`` (ml_optimiser_mpi.cpp:3280)
+    and compares its own resolution with it for the stall counter (ml_optimiser.cpp:6835).
+    """
+    pixel_size = float(voxel_size if voxel_size > 0 else 1.0)
+    shell = _firstiter_cc_ini_high_resolution_shell(box_size, pixel_size, ini_high_angstrom)
+    resolution_angstrom = shell_index_to_resolution_angstrom(shell, box_size, pixel_size)
+    state.current_resolution = float(resolution_angstrom)
+    state.previous_resolution = float(resolution_angstrom)

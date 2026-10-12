@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax import sampling
-from relax.fourier.resolution import relion_coarse_image_size
+from relax.reconstruction.resolution import relion_coarse_image_size
 from relax.refinement.image_size_plans import ExpectationWindows, RunOptics, plan_expectation_windows
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.refinement_state import direction_prior_healpix_order_for_scoring

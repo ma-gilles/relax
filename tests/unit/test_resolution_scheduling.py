@@ -6,8 +6,9 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.fourier import resolution as resolution_helpers
 from relax.reconstruction import regularization
+from relax.reconstruction import resolution as resolution_helpers
+from relax.refinement import iteration_planning
 
 pytestmark = pytest.mark.unit
 
@@ -266,7 +267,7 @@ def test_initial_fsc_seeding_preserves_input_and_sets_both_resolution_fields(dty
     options = SimpleNamespace(
         schedule=SimpleNamespace(init_current_size=32), parity=SimpleNamespace(tau2_fudge=1.0),
     )
-    resolution_helpers.initialize_resolution_from_fsc(
+    iteration_planning.initialize_resolution_from_fsc(
         state, fsc, options, box_size=128, voxel_size=3.28, dtype=dtype,
     )
     # Initial FSC seeding truncates at shell16; the last supported shell is15.
@@ -285,7 +286,7 @@ def test_initial_fsc_without_resolved_shell_seeds_minres_map(dtype):
     options = SimpleNamespace(
         schedule=SimpleNamespace(init_current_size=128), parity=SimpleNamespace(tau2_fudge=1.0),
     )
-    resolution_helpers.initialize_resolution_from_fsc(
+    iteration_planning.initialize_resolution_from_fsc(
         state, np.zeros(65, dtype=dtype), options, box_size=128, voxel_size=3.28, dtype=dtype,
     )
     assert state.current_resolution == state.previous_resolution == 128 * 3.28 / 5
@@ -299,7 +300,7 @@ def test_initial_fsc_without_resolved_shell_seeds_minres_map(dtype):
 def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel, ini_high, expected):
     state = SimpleNamespace(current_resolution=100.0, previous_resolution=200.0)
     options = SimpleNamespace(parity=SimpleNamespace(relion_firstiter_ini_high_angstrom=ini_high))
-    resolution_helpers.initialize_resolution_from_firstiter_ini_high(
+    iteration_planning.initialize_resolution_from_firstiter_ini_high(
         state, options, box_size=128, voxel_size=pixel,
     )
     assert state.current_resolution == state.previous_resolution == expected
@@ -395,7 +396,7 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
 
     grid_size, voxel_size = 32, 17.0
     state = SimpleNamespace(current_resolution=float("inf"), previous_resolution=float("inf"))
-    resolution_helpers.initialize_resolution_from_ini_high(
+    iteration_planning.initialize_resolution_from_ini_high(
         state, ini_high, box_size=grid_size, voxel_size=voxel_size,
     )
 

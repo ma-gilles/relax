@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.diagnostics import bpref_diagnostics
-from relax.fourier.resolution import (
+from relax.reconstruction.resolution import (
     ImageGeometry,
     class_current_resolution_shell,
     k1_current_resolution_shell,

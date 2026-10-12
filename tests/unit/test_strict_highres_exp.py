@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from helpers.run_options import stand_in
 
-from relax.fourier.resolution import ImageGeometry
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans
 from relax.refinement.command_options import parse_refinement_args, validate_strict_highres_exp
 from relax.refinement.image_size_plans import ExpectationWindows, relion_strict_highres_image_size

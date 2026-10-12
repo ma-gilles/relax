@@ -17,8 +17,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
-from relax.fourier.resolution import shell_index_to_resolution_angstrom
 from relax.reconstruction import regularization
+from relax.reconstruction.resolution import shell_index_to_resolution_angstrom
 from relax.refinement import numbered_reconstruction, priors
 from relax.refinement.refinement_options import ReconstructionPrograms
 

@@ -2118,7 +2118,7 @@ def test_fresh_kclass_selects_only_run_it000_translations():
 def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
     # RELION's first iteration at ini_high 60 A on 128 px / 4.25 A runs at current size 38
     # (2 * (ROUND(9.07) + incr_size 10)); the old 32-pixel floor gave 52.
-    from relax.fourier.resolution import bootstrap_current_size_relion
+    from relax.reconstruction.resolution import bootstrap_current_size_relion
     from relax.refinement.full_refinement import _initial_current_size
 
     assert _initial_current_size(4.25, 128, 60.0) == 18

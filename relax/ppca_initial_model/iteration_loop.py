@@ -22,7 +22,6 @@ from recovar.ppca.triangular import unpack_tri_to_full
 from recovar.reconstruction.noise import make_radial_noise
 
 from relax import sampling
-from relax.fourier.resolution import relion_coarse_image_size
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
@@ -53,6 +52,7 @@ from relax.ppca_refinement.oversampled_stream import (
     significance_summary,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
+from relax.reconstruction.resolution import relion_coarse_image_size
 from relax.sampling.healpix import angular_sampling_deg
 
 logger = logging.getLogger(__name__)
@@ -220,7 +220,7 @@ def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_
 
 def pass1_image_size(order, dataset, current_size, diameter_ang):
     """RELION's pass-1 image size of adaptive oversampling at HEALPix ``order``: the window the coarse angular step
-    resolves, at most ``current_size`` (:func:`relax.fourier.resolution.compute_coarse_image_size`)."""
+    resolves, at most ``current_size`` (:func:`relax.reconstruction.resolution.compute_coarse_image_size`)."""
     return relion_coarse_image_size(
         angular_sampling_deg(order),
         dataset.voxel_size,

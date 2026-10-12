@@ -11,12 +11,12 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.fourier.resolution import (
+from relax.reconstruction import regularization
+from relax.reconstruction.resolution import (
     _firstiter_cc_ini_high_tapered,
     firstiter_cc_ini_high_tau2_taper,
     shell_index_to_resolution_angstrom,
 )
-from relax.reconstruction import regularization
 from relax.refinement import numbered_reconstruction
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
 from relax.refinement.optics_shapes import average_ctf2_parts

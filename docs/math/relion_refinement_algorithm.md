@@ -838,7 +838,7 @@ next permitted loop top. Exhausting the iteration cap does not synthesize a
 finalization boundary. Approximate support accuracy remains diagnostic by default.
 
 
-[`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`](../../relax/fourier/resolution.py)
+[`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`](../../relax/reconstruction/resolution.py)
 take the K1 reconstruction SSNR and the Class3D prior curves respectively,
 preserving current-window truncation and the minimum shell 5. K1 applies the
 split-half high-resolution recheck; Class3D takes the maximum shell over
@@ -1009,7 +1009,7 @@ the actual returned fields instead of assuming one fixed four-item tuple.
 `convergence_state.current_resolution` follows RELION's
 `updateCurrentResolution`: the last shell before data_vs_prior drops below 1,
 computed by `k1_current_resolution_shell` and `class_current_resolution_shell` in
-[`resolution.py`](../../relax/fourier/resolution.py). In numbered split-half
+[`resolution.py`](../../relax/reconstruction/resolution.py). In numbered split-half
 iterations the K=1 curve is the half-map SSNR `fsc / (1 - fsc)`, so the
 crossing is at FSC 0.5. RELION also runs the update after the final all-data
 iteration, where `updateSSNRarrays` converts the FSC to whole-data form
@@ -1051,7 +1051,7 @@ GPU pass or array lifetime change. CLI mask-source precedence is unchanged.
 
 ### Fixed input geometry and replay units
 
-[`ImageGeometry`](../../relax/fourier/resolution.py) validates physical particle
+[`ImageGeometry`](../../relax/reconstruction/resolution.py) validates physical particle
 pixel size once as a finite, positive Python float. Numbered replay receives
 that geometry directly for angstrom-to-pixel translation conversion and noise
 image shape. Its valid-input pixel value is the former `float(dataset.voxel_size)`;

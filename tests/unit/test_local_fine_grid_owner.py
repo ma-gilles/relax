@@ -14,7 +14,7 @@ import pytest
 from helpers.float_compare import matches
 
 import relax.sampling as sampling_module
-from relax.fourier.resolution import ImageGeometry
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import finalization, image_size_plans, local_sampling
 from relax.refinement.local_sampling import prepare_final_local_sampling, prepare_numbered_local_sampling
 from relax.sampling import (

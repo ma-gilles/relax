@@ -14,7 +14,7 @@ stream over the child grid with each image's significant coarse samples as its c
 (``tests/unit/ppca_initial_model/test_oversampled_stream.py``).
 
 Pass 1 may run on a smaller image window than pass 2 (RELION's ``image_coarse_size``, matched to the coarse angular
-step; :func:`relax.fourier.resolution.compute_coarse_image_size`): ``pass1`` and ``pass2`` are then two streams of the
+step; :func:`relax.reconstruction.resolution.compute_coarse_image_size`): ``pass1`` and ``pass2`` are then two streams of the
 same model and grids at the two window sizes. A tile's images are read once, unshifted at the pass-2 window; the
 pass-1 operands are those pixels of them inside the pass-1 window times the coarse translations' phase factors
 (:func:`_pass1_tile`).

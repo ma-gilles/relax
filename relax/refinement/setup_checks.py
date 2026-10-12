@@ -7,9 +7,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.fourier.resolution import ImageGeometry
 from relax.numerics.relion_random import GlibcRand, init_random_generator
 from relax.reconstruction.regularization import RELION_MINRES_MAP
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.expectation_batches import BatchPlanner
 from relax.refinement.half_inputs import configure_half_image_preprocessing
 from relax.refinement.image_size_plans import RunOptics

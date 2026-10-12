@@ -11,7 +11,7 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
 import relax.refinement.noise_updates as noise_updates
-from relax.fourier.resolution import ImageGeometry
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import expectation
 from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
 from relax.refinement.half_inputs import HalfScoringData, HalfSet

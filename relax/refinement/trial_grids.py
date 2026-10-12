@@ -13,7 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax import sampling
-from relax.fourier.resolution import ImageGeometry
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.ports import InputSource
 from relax.refinement.refinement_state import (
     RefinementState,

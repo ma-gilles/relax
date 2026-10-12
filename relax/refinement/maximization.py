@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fourier.resolution import _firstiter_cc_ini_high_tapered
+from relax.reconstruction.resolution import _firstiter_cc_ini_high_tapered
 from relax.refinement import score_outputs
 from relax.refinement.iteration_planning import NumberedIteration
 from relax.refinement.numbered_reconstruction import reconstruct_numbered_class_maps, reconstruct_numbered_k1_halfmaps

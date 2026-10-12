@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from relax.fourier.resolution import ImageGeometry, shell_index_to_resolution_angstrom
+from relax.reconstruction.resolution import ImageGeometry, shell_index_to_resolution_angstrom
 from relax.refinement.ports import InputSource, OptimiserAccuracyReplay
 from relax.refinement.refinement_state import (
     ExpectationStatistics,

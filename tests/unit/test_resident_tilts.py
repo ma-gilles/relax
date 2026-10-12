@@ -312,7 +312,7 @@ def test_numbered_iteration_tomo_sampling_reads_the_state_grid_or_local_search(l
     oversampling order below its fine order with its own. A window of None is the full image."""
     from types import SimpleNamespace
 
-    from relax.fourier.resolution import ImageGeometry
+    from relax.reconstruction.resolution import ImageGeometry
     from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 
     sampling = numbered_iteration_tomo_sampling(

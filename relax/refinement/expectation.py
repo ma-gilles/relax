@@ -12,7 +12,7 @@ import numpy as np
 
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
-from relax.fourier.resolution import ImageGeometry
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import half_inputs, image_size_plans, iteration_planning, local_sampling, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,

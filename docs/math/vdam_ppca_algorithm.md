@@ -1294,7 +1294,7 @@ scientific contract; runnable code alone does not establish recovery.
   As in RELION, pass 1 runs on a smaller image window than pass 2: the coarse
   image size the coarse angular step resolves, `2 ceil(pixel ori_size /
   (step/360 pi diameter / 1.2))`, at most the stage's
-  ([compute_coarse_image_size](../../relax/fourier/resolution.py), with RELION's
+  ([compute_coarse_image_size](../../relax/reconstruction/resolution.py), with RELION's
   clamp; 50 against 62 pixels at the eleven-state HP3 stage). A tile's images are
   read once, unshifted at the pass-2 window: the pass-1 operands are their pixels
   inside the pass-1 window times the coarse shifts' phase factors, and a job's
