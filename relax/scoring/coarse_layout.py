@@ -69,8 +69,6 @@ def plan_coarse_gaussian_square_layout(
         square=True,
         include_dc=True,
     )
-    logical_indices = np.asarray(logical_indices, dtype=np.int32)
-    physical_indices = np.asarray(physical_indices, dtype=np.int32)
     expected_logical_count = logical_current_size * (logical_current_size // 2 + 1)
     expected_physical_count = physical_current_size * (physical_current_size // 2 + 1)
     if logical_count != expected_logical_count or physical_count != expected_physical_count:
