@@ -110,9 +110,9 @@ def run_tomo_initial_model_estep(
 
     from relax.classification.k_class import _class_segmented_em_result, single_class_pass2_em_result
     from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
-    from relax.refinement import tomo_particles
     from relax.refinement.tomo_half import tomo_translation_grids
     from relax.refinement.tomo_scoring import score_tomo_half
+    from relax.sampling import tomo_particles
 
     particle_ids = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
     if particle_ids.size == 0:

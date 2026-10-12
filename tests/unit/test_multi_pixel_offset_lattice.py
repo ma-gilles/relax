@@ -89,7 +89,7 @@ def test_subtomogram_offsets_keep_their_rounding():
     # A subtomogram half is one grid (a TomoHalf, never a MultiShapeHalf): no factors, and its 3D offsets keep the
     # whole-pixel rounding of RELION's GPU path (tomo_particles.relion_gpu_old_offsets), unchanged by relax#52.
     from relax.refinement.tomo_half import TomoHalf
-    from relax.refinement.tomo_particles import relion_gpu_old_offsets
+    from relax.sampling.tomo_particles import relion_gpu_old_offsets
     from relax.star.metadata import relion_metadata_translations
 
     assert not issubclass(TomoHalf, optics_shapes.MultiShapeHalf)

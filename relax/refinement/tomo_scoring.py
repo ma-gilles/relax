@@ -9,7 +9,6 @@ import logging
 
 import numpy as np
 
-from relax.refinement import tomo_particles
 from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.refinement.tomo_half import TomoHalf, TomoSampling, tomo_local_rotations, tomo_translation_grids
@@ -17,6 +16,7 @@ from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
 )
+from relax.sampling import tomo_particles
 
 logger = logging.getLogger(__name__)
 

@@ -173,7 +173,7 @@ def tilt_tiles(particles: TiltParticles, ids, tile_size: int) -> list[np.ndarray
 def tilt_shifts(frames, translations) -> np.ndarray:
     """2D shift ``[Aproj t]_{1,2}`` of each frame for each 3D shift, ``(K, T, 2)`` float32.
 
-    RELION's ``Experiment::getTranslationInTiltSeries`` (:func:`relax.refinement.tomo_particles.tilt_image_shifts`).
+    RELION's ``Experiment::getTranslationInTiltSeries`` (:func:`relax.sampling.tomo_particles.tilt_image_shifts`).
     """
     frames = np.asarray(frames, dtype=np.float64)
     return np.einsum("kab,tb->kta", frames[:, :2, :], np.asarray(translations, dtype=np.float64)).astype(np.float32)

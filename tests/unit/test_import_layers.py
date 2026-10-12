@@ -58,7 +58,6 @@ ALLOWED_UPWARD = {
     ("relax.fine_pass.resident_pass2", "relax.dense.gemm_coarse_engine"): _D,
     ("relax.fine_pass.resident_scoring", "relax.local_search.resident_layout"): _D,
     ("relax.fine_pass.resident_significance", "relax.scoring.significant_samples"): _D,
-    ("relax.fine_pass.resident_tilts", "relax.refinement.tomo_particles"): _A,
     ("relax.ppca_initial_model.config", "relax.vdam.schedules"): _E,
     ("relax.refinement.command_options", "relax.parity.frozen_boundary_cli"): _B,
     ("relax.refinement.command_options", "relax.parity.state_swap_probe"): _B,
@@ -91,7 +90,6 @@ ALLOWED_UPWARD = {
     ("relax.scoring.pass1_assembly", "relax.diagnostics.coarse_score_diagnostics"): _B,
     ("relax.scoring.pass1_dump", "relax.diagnostics.coarse_gaussian_diagnostics"): _B,
     ("relax.scoring.pass1_publish", "relax.diagnostics.coarse_gaussian_diagnostics"): _B,
-    ("relax.scoring.tomo_coarse", "relax.refinement.tomo_particles"): _A,
     ("relax.scoring.tree_rescore", "relax.diagnostics.coarse_gaussian_diagnostics"): _B,
     ("relax.vdam.adaptive_estep", "relax.refinement.optics_shapes"): _A,
     ("relax.vdam.bootstrap_iref", "relax.refinement.optics_shapes"): _A,
@@ -107,7 +105,6 @@ ALLOWED_UPWARD = {
     ("relax.vdam.shape_class_estep", "relax.refinement.shape_class_scoring"): _A,
     ("relax.vdam.tomo_estep", "relax.refinement.scoring_policy"): _A,
     ("relax.vdam.tomo_estep", "relax.refinement.tomo_half"): _A,
-    ("relax.vdam.tomo_estep", "relax.refinement.tomo_particles"): _A,
     ("relax.vdam.tomo_estep", "relax.refinement.tomo_scoring"): _A,
 }
 

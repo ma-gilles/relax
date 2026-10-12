@@ -25,8 +25,8 @@ import numpy as np
 from relax.fine_pass.projection_blocks import project_rows_by_class
 from relax.fine_pass.wavg import weighted_image_power_from_shells
 from relax.reconstruction.half_volume_mstep import blocks_per_flush, flushed_block_loop
-from relax.refinement import tomo_particles
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
+from relax.sampling import tomo_particles
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +103,8 @@ def tilt_slot_rotations(
     entry ``s * C_R + r``.
     """
 
-    from relax.refinement.tomo_particles import relion_left_matrices
     from relax.sampling import _relion_mstep_rotations_from_eulers
+    from relax.sampling.tomo_particles import relion_left_matrices
 
     n_slots, n_rows = layout.slot_image_ids.shape
     out = np.tile(np.eye(3, dtype=dtype), (n_slots * n_rows, 1, 1))

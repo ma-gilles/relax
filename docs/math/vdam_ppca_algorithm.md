@@ -1675,7 +1675,7 @@ changing rank does not change the optimizer schedule or observation model.
 sections 4-15 for RELION 5 subtomograms (2D tilt stacks), with both optimizers,
 on the streamed engine of section 14. Tomographic input, geometry, CTF and dose
 follow the subtomogram Refine3D/VDAM path that relax qualifies against RELION
-([tomo_particles.py](../../relax/refinement/tomo_particles.py),
+([tomo_particles.py](../../relax/sampling/tomo_particles.py),
 [tomo_half.py](../../relax/refinement/tomo_half.py),
 [tomo_input.py](../../relax/star/tomo_input.py)). RECOVAR's known-pose
 cryo-ET PPCA (shared latent and contrast per particle) is prior art for the

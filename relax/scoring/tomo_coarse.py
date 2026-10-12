@@ -829,7 +829,7 @@ def _batch_scoring_rotations(
     rotations beyond its own count repeat its last one, and padded slots and particles are zero.
     """
 
-    from relax.refinement import tomo_particles
+    from relax.sampling import tomo_particles
 
     counts = np.diff(offsets)[np.asarray(units)]
     slot = np.arange(slots)[None, :]
@@ -904,7 +904,7 @@ def particle_coarse_supports(
     its ``Aproj`` with the optics group's magnification, :func:`relax.refinement.tomo_half.tilt_left_matrices`;
     :func:`relax.sampling.relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts of ``Aproj``
     (``image_projections``) plus
-    the rounded old offset (:func:`relax.refinement.tomo_particles.tilt_translation_angles`) and its own
+    the rounded old offset (:func:`relax.sampling.tomo_particles.tilt_translation_angles`) and its own
     CTF and noise; the images' diff2 is summed in ``img_id`` order and the particle's weights are cut
     once (:func:`particle_coarse_significance`). Dataset images ``unit_image_offsets[u]:[u+1]`` are
     particle ``u``'s, in ``img_id`` order.
@@ -922,8 +922,7 @@ def particle_coarse_supports(
     """
 
     from relax.projection.projection import relion_projector_half_to_texture_full
-    from relax.refinement import tomo_particles
-    from relax.sampling import relion_adaptive_pass1_rotations
+    from relax.sampling import relion_adaptive_pass1_rotations, tomo_particles
 
     class_projectors = tuple(projector_half) if isinstance(projector_half, (tuple, list)) else (projector_half,)
     n_classes = len(class_projectors)
@@ -1446,8 +1445,7 @@ def particle_coarse_cc_winners(
     from relax.fourier.fourier_window import make_fourier_window_spec
     from relax.fourier.half_spectrum import make_scoring_half_image_weights
     from relax.projection.projection import compute_relion_projector_projections_block
-    from relax.refinement import tomo_particles
-    from relax.sampling import relion_adaptive_pass1_rotations
+    from relax.sampling import relion_adaptive_pass1_rotations, tomo_particles
 
     image_shape = tuple(int(n) for n in experiment_dataset.image_shape)
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)

@@ -15,7 +15,7 @@ import jax.numpy as jnp
 
 from relax.cuda import fine as cuda_fine
 from relax.fine_pass import resident_scoring
-from relax.refinement import tomo_particles
+from relax.sampling import tomo_particles
 
 pytestmark = pytest.mark.unit
 

@@ -193,7 +193,7 @@ accepted, with the reason:
 - **Rule 11: met, with exceptions.** Fixed: the controller no longer imports the command
   (`configure_half_image_preprocessing` moved to `half_inputs`); `InitialSampling` and `RestartProvenance`
   moved to `refinement_options`; `relax.parity.relion_replay` imports two now-public `half_inputs`
-  helpers. Accepted until those packages are refactored: `relax/refinement/tomo_particles.py` (numpy only)
+  helpers. Accepted until those packages are refactored: `relax/sampling/tomo_particles.py` (numpy only)
   is imported by two engines and three other workflows, and its home moves with them; 62 imports of
   private names from `relax.helpers`, `relax.diagnostics` and `relax.relion` stay until those modules make
   them public.

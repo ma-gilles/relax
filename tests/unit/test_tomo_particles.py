@@ -10,7 +10,7 @@ from helpers import tomo_particles_reference as tomo_ref
 from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
-from relax.refinement import tomo_particles
+from relax.sampling import tomo_particles
 
 pytestmark = pytest.mark.unit
 
