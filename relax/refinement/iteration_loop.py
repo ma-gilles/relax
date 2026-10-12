@@ -43,7 +43,6 @@ from relax.refinement import (
     numbered_transitions,
     particle_poses,
     ports,
-    projector_preparation,
     reference_state,
     refinement_options,
     refinement_result,
@@ -54,7 +53,8 @@ from relax.refinement import (
 )
 from relax.relion import normalization
 from relax.runtime import timing
-from relax.sampling import expected_accuracy, orientation_priors
+from relax.sampling import orientation_priors
+from relax.steps import expected_accuracy, projector_preparation
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-"""The E-step and M-step of a subtomogram half (:class:`relax.refinement.tomo_half.TomoHalf`): the coarse pass
+"""The E-step and M-step of a subtomogram half (:class:`relax.steps.tomo_half.TomoHalf`): the coarse pass
 per particle (:mod:`relax.scoring.tomo_coarse`) and the resident fine pass and M-step over tilt units
 (``resident_pass2._resident_pass2(tilt=...)``), and the numbered iteration's call of them."""
 
@@ -10,13 +10,13 @@ import logging
 import numpy as np
 
 from relax.refinement.half_inputs import HalfScoringData
-from relax.refinement.tomo_half import TomoHalf, TomoSampling, tomo_local_rotations, tomo_translation_grids
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
 )
 from relax.sampling import tomo_particles
 from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
+from relax.steps.tomo_half import TomoHalf, TomoSampling, tomo_local_rotations, tomo_translation_grids
 
 logger = logging.getLogger(__name__)
 

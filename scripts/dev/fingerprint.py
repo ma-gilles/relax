@@ -876,9 +876,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     import relax
     try:
-        from relax.sampling import expected_accuracy
-    except ImportError:  # the source before the package layout move
-        from relax.helpers import expected_accuracy
+        from relax.steps import expected_accuracy
+    except ImportError:  # the source before the estimator moved to steps (layout S8b)
+        try:
+            from relax.sampling import expected_accuracy
+        except ImportError:  # the source before the package layout move
+            from relax.helpers import expected_accuracy
     from relax.refinement import iteration_loop, refinement_options
 
     assert relax.__file__.startswith(source), relax.__file__

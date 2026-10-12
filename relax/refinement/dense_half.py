@@ -603,7 +603,7 @@ def _score_half_dense_one_shape(
 
     ``optics.projection_scale`` and ``reference_current_size`` describe
     images on another grid than the reference (one shape class of
-    :mod:`relax.refinement.optics_shapes`): the projection and backprojection
+    :mod:`relax.steps.optics_shapes`): the projection and backprojection
     matrices are divided by the scale and the backprojector keeps the reference
     model size; reported poses stay unscaled.
 
@@ -1062,7 +1062,7 @@ def _score_half_dense(
 ) -> HalfScoreResult:
     """Dense E+M scoring for one half; several image shapes run per shape class."""
 
-    from relax.refinement import optics_shapes
+    from relax.steps import optics_shapes
 
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):

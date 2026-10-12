@@ -115,7 +115,7 @@ rounded image support (\(\text{max\_r}=r_{\max}+1/2\)). It masks each row's pixe
 RELION's integer-truncated \(r^2\) (relax/cuda/relion_scoring.cuh:464).
 
 Optics groups with different `rlnMagMat` (relax#48) are split into shape classes like groups on
-other grids ([`optics_shape_class_rows`](../../relax/refinement/optics_shapes.py)), so each class
+other grids ([`optics_shape_class_rows`](../../relax/steps/optics_shapes.py)), so each class
 applies one matrix and the mask above reads that class's \(A=s\,M_3^{-1}A_{\mathrm{proj}}R\). A class
 on another grid (image radius \(r_{\max}s\)) keeps its own rounded support in its recon window, so the
 image clip only has to cover that window: \(r_{\max}+1/2\) for \(s\le 1\) and \(r_{\max}s+1\) above

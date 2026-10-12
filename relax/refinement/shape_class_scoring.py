@@ -1,4 +1,4 @@
-"""Scoring a half one shape class at a time (:mod:`relax.refinement.optics_shapes` has the classes).
+"""Scoring a half one shape class at a time (:mod:`relax.steps.optics_shapes` has the classes).
 
 Half scoring runs the unchanged single-shape route once per class on that class's dataset. This module maps
 the route's operands to a class (matrices divided by the class scale, translations in class pixels, remapped
@@ -12,7 +12,6 @@ import dataclasses
 import numpy as np
 
 from relax.reconstruction.resolution import relion_coarse_image_size
-from relax.refinement.optics_shapes import MultiShapeHalf, ShapeClass
 from relax.relion import optics_groups
 from relax.sampling.orientation_priors import (
     make_relion_translation_log_prior,
@@ -20,6 +19,7 @@ from relax.sampling.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.sampling.oversampling import project_pass2_rotations
+from relax.steps.optics_shapes import MultiShapeHalf, ShapeClass
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)

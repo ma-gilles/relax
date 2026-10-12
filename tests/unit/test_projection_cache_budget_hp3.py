@@ -9,6 +9,7 @@ These checks pin the admission rule that lets an 80 GB device cache the
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.runtime.memory_budget import (
     _projection_cache_fits_budget,
@@ -16,7 +17,6 @@ from relax.runtime.memory_budget import (
     _projection_cache_transient_bytes,
     _projection_call_max_bytes_for_pass,
 )
-from helpers.float_compare import assert_matches
 
 _HP3_FINE_ROTATIONS = 294912
 _CS92_HALF_PIXELS = 3386  # windowed half-spectrum score pixels at current_size 92, 256^2
@@ -160,7 +160,7 @@ def test_projector_build_log_reports_the_slab_dtype(monkeypatch, caplog):
 
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import projector_preparation
+    from relax.steps import projector_preparation
 
     trace = CallTrace(monkeypatch).wrap(projector_preparation, "prepare_scoring_projector", "build")
     with caplog.at_level(logging.INFO, logger="relax.refinement.iteration_loop"):

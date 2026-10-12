@@ -116,7 +116,7 @@ def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_st
 def test_capped_accuracy_projects_at_the_current_size(monkeypatch):
     # RELION's calculateExpectedAngularErrors projects through PPref at r_max = current_size / 2 and caps only the
     # image; the capped estimate must keep the projector size, the uncapped one leaves it to the image size.
-    from relax.sampling import expected_accuracy
+    from relax.steps import expected_accuracy
 
     calls = []
     monkeypatch.setattr(expected_accuracy, "estimate_relion_expected_accuracy", lambda **kw: calls.append(kw))

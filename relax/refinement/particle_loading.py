@@ -17,11 +17,11 @@ import numpy as np
 
 from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement import command_options
-from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
-from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star, load_tomo_dataset
 from relax.relion.ctf import refuse_generic_ctf_for_optics
 from relax.runtime.env_flags import parse_env_true_flag
 from relax.star import metadata
+from relax.steps.optics_shapes import MultiShapeDataset, optics_shape_class_rows
+from relax.steps.tomo_half import TomoDataset, is_relion5_2d_stack_star, load_tomo_dataset
 
 if TYPE_CHECKING:
     from recovar.data_io.cryoem_dataset import CryoEMDataset
@@ -100,7 +100,7 @@ def prepare_relion_halfset_inputs(
         ) = startup_noise.auto_refine_noise_order(our_particles, relion_particles)
     if not tomographic:
         # Subtomogram particles have one CTF per tilt image; their expected accuracy reads
-        # those from the tomo half (relax.refinement.tomo_half).
+        # those from the tomo half (relax.steps.tomo_half).
         from recovar.data_io import metadata_readers
 
         relion_ctf_with_apix = metadata_readers.parse_ctf_from_star(

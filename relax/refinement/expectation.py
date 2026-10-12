@@ -34,7 +34,6 @@ from relax.refinement.local_half import (
 )
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.refinement_options import RefinementOptions
-from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.runtime.host_memory import return_freed_heap
 from relax.sampling import TrialGrid, rotation_grid_size
@@ -52,6 +51,7 @@ from relax.steps.score_outputs import (
     empty_half_result,
 )
 from relax.steps.scoring_policy import local_precision
+from relax.steps.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext

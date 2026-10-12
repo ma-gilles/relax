@@ -320,7 +320,7 @@ def dataset_optics_mag_matrices(experiment_dataset) -> dict | None:
     """Each optics group's 2x2 ``rlnMagMat`` among the dataset's own images, or None without magnification.
 
     Only the groups the dataset's images belong to count: a shape class
-    (:func:`relax.refinement.optics_shapes.optics_shape_class_rows`) holds one
+    (:func:`relax.steps.optics_shapes.optics_shape_class_rows`) holds one
     magnification matrix even when the source STAR has several. A dataset without a
     RELION source STAR or without magnification columns has none.
     """
@@ -348,7 +348,7 @@ def dataset_projection_magnification(experiment_dataset) -> np.ndarray | None:
     The projection matrices are transformed per scoring call, so the dataset's images
     must share one magnification matrix. Optics groups with different matrices are
     split into shape classes, one matrix each, as groups on other grids are
-    (:func:`relax.refinement.optics_shapes.optics_shape_class_rows`, relax#48).
+    (:func:`relax.steps.optics_shapes.optics_shape_class_rows`, relax#48).
     """
 
     matrices = dataset_optics_mag_matrices(experiment_dataset)

@@ -68,7 +68,7 @@ def test_setup_agrees_with_relion_to_double_precision(padding_factor):
 
 
 def test_the_projector_cache_round_trips(tmp_path, monkeypatch):
-    from relax.refinement.projector_preparation import prepare_scoring_projector
+    from relax.steps.projector_preparation import prepare_scoring_projector
 
     monkeypatch.setenv("RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
     rng = np.random.default_rng(1)
@@ -88,7 +88,7 @@ def test_the_projector_cache_round_trips(tmp_path, monkeypatch):
 def test_accuracy_projector_reuse_bypasses_conversion_cache_and_dump(
     monkeypatch, tmp_path, current_size, cached_size,
 ):
-    from relax.refinement.projector_preparation import (
+    from relax.steps.projector_preparation import (
         PreparedProjector,
         ProjectorReuse,
         prepare_scoring_projector,
@@ -131,7 +131,7 @@ def test_accuracy_projector_reuse_misses_build_the_requested_transform(
     monkeypatch, n_classes, same_reference, current_size, cached_size, transform_size,
 ):
     import relax.relion.projector_setup as setup
-    from relax.refinement.projector_preparation import (
+    from relax.steps.projector_preparation import (
         PreparedProjector,
         ProjectorReuse,
         prepare_scoring_projector,

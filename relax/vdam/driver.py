@@ -21,23 +21,23 @@ from recovar.data_io.starfile import read_star
 from relax.fine_pass.resident_pass2 import stable_window_class_history
 from relax.fourier.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
-from relax.refinement.optics_shapes import (
-    MultiShapeDataset,
-    average_ctf2_parts,
-    optics_shape_class_rows,
-    shape_datasets,
-)
-from relax.refinement.tomo_half import (
-    TiltImageAccuracyInputs,
-    TomoDataset,
-    load_tomo_dataset,
-    tilt_image_accuracy_inputs,
-)
 from relax.relion import ctf
 from relax.star.metadata import (
     INITIAL_MODEL_OPTICS_FEATURES,
     TOMO_INITIAL_MODEL_OPTICS_FEATURES,
     refuse_unsupported_optics,
+)
+from relax.steps.optics_shapes import (
+    MultiShapeDataset,
+    average_ctf2_parts,
+    optics_shape_class_rows,
+    shape_datasets,
+)
+from relax.steps.tomo_half import (
+    TiltImageAccuracyInputs,
+    TomoDataset,
+    load_tomo_dataset,
+    tilt_image_accuracy_inputs,
 )
 from relax.vdam import estep_setup, initial_model_io, native_sampling, output, particle_update, schedules
 from relax.vdam.bootstrap_iref import (

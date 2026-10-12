@@ -27,7 +27,7 @@ def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra
     reference_init_class00K_relion.mrc. ``extra_columns`` adds particle STAR columns.
 
     ``second_shape=(box, pixel_size)`` puts every other particle in a second optics group of that image box and
-    pixel size, in its own stack: a run on several image shapes (relax.refinement.optics_shapes).
+    pixel size, in its own stack: a run on several image shapes (relax.steps.optics_shapes).
     """
 
     import mrcfile

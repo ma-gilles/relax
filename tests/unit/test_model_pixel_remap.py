@@ -13,8 +13,9 @@ import numpy as np
 import pytest
 
 from relax.fine_pass.resident_statistics import resolve_statistics_config
-from relax.refinement import optics_shapes, shape_class_scoring
+from relax.refinement import shape_class_scoring
 from relax.relion import optics_groups
+from relax.steps import optics_shapes
 
 pytestmark = pytest.mark.unit
 

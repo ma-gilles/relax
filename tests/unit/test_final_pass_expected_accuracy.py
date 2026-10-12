@@ -5,7 +5,7 @@ import pytest
 from helpers.tiny_refinement import N_IMAGES, run_tiny_refinement
 
 from relax.refinement.refinement_options import ExpectedAccuracyOptions
-from relax.sampling import expected_accuracy
+from relax.steps import expected_accuracy
 
 pytestmark = pytest.mark.unit
 

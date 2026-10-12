@@ -2693,7 +2693,7 @@ def _resident_pass2(
     # rotation override already holds its children.
     n_coarse_rot = rotation_grid_size(nside_level, symmetry_label)
     if coarse_rotation_ids is not None or unit_rotation_log_prior is not None:
-        # A subtomogram local search (relax.refinement.tomo_half): its coarse grid is the union of the
+        # A subtomogram local search (relax.steps.tomo_half): its coarse grid is the union of the
         # particles' local rotations (coarse id c is grid rotation coarse_rotation_ids[c]) and each
         # particle carries its own orientation prior over its support's coarse rotations.
         _require(tilt is not None and classes is None, "a compact coarse grid is the subtomogram local search's")

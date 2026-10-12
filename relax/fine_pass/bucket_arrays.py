@@ -535,7 +535,7 @@ def _prepare_per_image_pass2_inputs(
 
     ``coarse_rotation_ids`` makes the coarse grid a compact subset of the HEALPix grid at
     ``nside_level`` (coarse id ``c`` is grid rotation ``coarse_rotation_ids[c]``; subtomogram
-    local searches, relax.refinement.tomo_half); RELION's parent execution order is then the
+    local searches, relax.steps.tomo_half); RELION's parent execution order is then the
     grid's. ``per_image_rotation_log_prior`` replaces ``rotation_log_prior`` by one prior per
     image over that image's significant coarse rotations in ascending order (RELION's local
     orientation prior is the particle's own).

@@ -298,7 +298,7 @@ def _pose_history_half_arrays(iter_entry, *, dtype=np.float32):
 def _pose_history_by_image(iter_entry, half_indices, n_images, *, dtype=np.float32):
     """One half-ordered pose array per half, placed in image order; the trailing shape is the data's.
 
-    Translations are 2D for SPA and 3D for subtomograms (relax.refinement.tomo_half).
+    Translations are 2D for SPA and 3D for subtomograms (relax.steps.tomo_half).
     """
 
     half_arrays = _pose_history_half_arrays(iter_entry, dtype=dtype)

@@ -19,10 +19,10 @@ from relax.refinement.half_inputs import HalfScoringData, HalfSet
 from relax.refinement.local_half import LocalDiagnosticPolicy
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import NoProbe
-from relax.refinement.tomo_half import TomoSampling
 from relax.sampling import TrialGrid
 from relax.sampling.orientation_priors import HalfDirectionLogPriors
 from relax.steps.score_outputs import HalfScoreResult, PerHalfOutputs
+from relax.steps.tomo_half import TomoSampling
 
 pytestmark = pytest.mark.unit
 

@@ -629,7 +629,7 @@ def test_tilt_geometry_edit_refuses_resume(tmp_path, monkeypatch):
     from relax.ppca_initial_model.checkpoint import load, save
     from relax.ppca_initial_model.config import Config
     from relax.ppca_initial_model.state import State
-    from relax.refinement import tomo_half
+    from relax.steps import tomo_half
 
     (tmp_path / "tilt_series").mkdir()
     (tmp_path / "optimisation_set.star").write_text(

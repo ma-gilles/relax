@@ -986,7 +986,7 @@ def test_numbered_projectors_skip_the_empty_diagnostic_half(monkeypatch, caplog)
     import logging
     from types import SimpleNamespace
 
-    from relax.refinement import projector_preparation
+    from relax.steps import projector_preparation
 
     built = []
     monkeypatch.setattr(

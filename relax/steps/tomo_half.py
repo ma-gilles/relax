@@ -15,7 +15,7 @@ import dataclasses
 
 import numpy as np
 
-from relax.refinement.optics_shapes import RowLayout
+from relax.steps.optics_shapes import RowLayout
 
 
 def is_relion5_2d_stack_star(particles_star) -> bool:

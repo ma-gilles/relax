@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.reconstruction.resolution import compute_ini_high_shell
-from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2, relion_startup_positions
 from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
+from relax.steps.optics_shapes import MultiShapeDataset
 from relax.vdam import bootstrap_reconstruction, initial_model_io
 from relax.vdam.initial_model_io import _experiment_read_order
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -470,7 +470,7 @@ def initial_state_from_particles(
 def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInitialModelOptions):
     """The de novo start of subtomogram particles (RELION 5 2D stacks): noise, bootstrap and priors.
 
-    ``dataset`` is a :class:`relax.refinement.tomo_half.TomoDataset`; its units are the particles.
+    ``dataset`` is a :class:`relax.steps.tomo_half.TomoDataset`; its units are the particles.
     RELION's start-up loop (calculateSumOfPowerSpectraAndAverageImage, ml_optimiser.cpp:2806-3080)
     counts tilt images against ``minimum_nr_particles_sigma2_noise`` (10 for subtomograms, :2574), so
     the first particle of each optics group fills it: its images give the noise spectrum and the
@@ -480,10 +480,10 @@ def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInit
     ``data_vs_prior`` counts particles (ml_model.cpp:1609-1617). Returns ``(state, optics_group_by_particle)``.
     """
 
-    from relax.refinement.tomo_half import tilt_image_accuracy_inputs
     from relax.relion.ctf import relion_fftw_ctf_rows
     from relax.relion.optics_aberrations import dataset_needs_exact_ctf
-    from relax.sampling.expected_accuracy import _trial_ctf_images
+    from relax.steps.expected_accuracy import _trial_ctf_images
+    from relax.steps.tomo_half import tilt_image_accuracy_inputs
 
     box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)

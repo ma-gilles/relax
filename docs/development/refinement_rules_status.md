@@ -52,9 +52,8 @@ reason; the sections after this one hold the detail.
    the run are observers (`relax.refinement.ports.RunObserver`, rule 15), built at the command from flags
    and the environment (`relax.diagnostics.observers`): the intermediates, the parity capture and timings,
    the BPref accumulator captures and the noise-update terms. Still read where used, each with its reason:
-   - `projector_preparation.prepare_scoring_projector`: `RELAX_RELION_PROJECTOR_CACHE_DIR` and
-     `RELAX_RELION_PROJECTOR_DUMP_DIR`; `relax/sampling/expected_accuracy.py` calls it too, outside this
-     package.
+   - `projector_preparation.prepare_scoring_projector` (`relax/steps` since layout S8b): `RELAX_RELION_PROJECTOR_CACHE_DIR`
+     and `RELAX_RELION_PROJECTOR_DUMP_DIR`; `relax/steps/expected_accuracy.py` calls it too.
    - `local_search_iteration`: the x-half batch guard; `half_scoring`: hides the local engine's dump
      variables during the denominator pass; `expectation`: whether a BPref dump of the engines is armed. The
      variables belong to the engine packages, which read them.
@@ -142,7 +141,7 @@ Not yet through the ports, each still read where it was:
   the replay's fields. `FinalSamplingSettings.sampling_star`/`sampling_star_source` (set only by the replay
   source) reach the archive through `RefinementResult`.
 - The projector disk cache (`RELAX_RELION_PROJECTOR_CACHE_DIR`, deep2 M S43) is read in
-  `prepare_scoring_projector`, which `relax/sampling/expected_accuracy.py` also calls.
+  `prepare_scoring_projector` (`relax/steps/projector_preparation.py`), which `relax/steps/expected_accuracy.py` also calls.
 - `parity.use_per_half_mean_variance` (deep2 O S2, checked): set only on a frozen boundary's fixed arm, it is a
   variant of the algorithm (each half scores against its own tau2), not a replaced input; it stays a run option.
 

@@ -287,7 +287,7 @@ def test_mstep_translation_blocks_stay_within_the_kernel_table_limit():
 @pytest.mark.parametrize("pass1_size", [None, 64])
 def test_final_pass_local_tomo_sampling_without_a_parent_pass_size(pass1_size):
     """The final all-data pass at order 9 has no parent-pass size (14506700 crashed on it): coarse = current."""
-    from relax.refinement.tomo_half import local_tomo_sampling
+    from relax.steps.tomo_half import local_tomo_sampling
 
     sampling = local_tomo_sampling(
         fine_order=10,
@@ -313,7 +313,7 @@ def test_numbered_iteration_tomo_sampling_reads_the_state_grid_or_local_search(l
     from types import SimpleNamespace
 
     from relax.reconstruction.resolution import ImageGeometry
-    from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
+    from relax.steps.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 
     sampling = numbered_iteration_tomo_sampling(
         SimpleNamespace(adaptive_oversampling=1, translation_range=0.4, translation_step=0.15),

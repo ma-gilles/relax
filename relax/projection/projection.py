@@ -309,7 +309,7 @@ def relion_kernel_zero_rows(box_size: int, projector_output_size: int, r_max, re
     Nyquist row at ``-imgY/2``; its ``x = 0`` pixel stays inside the sphere only if
     ``imgY/2`` equals ``s * maxR`` to within the integer radius test, which
     this mask does not reproduce. For ``s >= sqrt(2)`` the moved fine pixel can
-    fall inside the sphere; :func:`relax.refinement.optics_shapes.make_shape_classes`
+    fall inside the sphere; :func:`relax.steps.optics_shapes.make_shape_classes`
     refuses those grids. For unscaled rotations every one of these rows is already
     outside the sphere, so either rule changes nothing there.
 

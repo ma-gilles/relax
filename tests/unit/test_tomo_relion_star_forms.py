@@ -21,8 +21,8 @@ from helpers.relion_tomo_form import RELION_GENERAL, write_relion_form
 from recovar.data_io.starfile import read_star, star_column
 from recovar.simulation import relion_tomo
 
-from relax.refinement.tomo_half import is_relion5_2d_stack_star
 from relax.star import tomo_input
+from relax.steps.tomo_half import is_relion5_2d_stack_star
 
 TUTORIAL = Path(__file__).resolve().parents[1] / "fixtures" / "relion5_tomo_tutorial"
 # The particle STAR as relion_tomo_subtomo wrote it: RELION 5.0-beta-2 (shipped) and 5.0.1 (re-extracted).
@@ -206,7 +206,7 @@ def test_simulated_project_in_relions_forms_loads_the_same_dataset(simulated, tm
     project: the units and their tilt images, RELION's ``Aproj`` and left matrix per image, the frames,
     tomograms and optics groups, the CTF rows and every pixel."""
 
-    from relax.refinement.tomo_half import load_tomo_dataset
+    from relax.steps.tomo_half import load_tomo_dataset
 
     project, relion_form = simulated
     loaded = {

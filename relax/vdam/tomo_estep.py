@@ -43,7 +43,7 @@ __all__ = ["run_tomo_initial_model_estep", "tomo_initial_model_sampling"]
 def tomo_initial_model_sampling(
     state: InitialModelState, sampling_plan, *, particle_diameter_ang: float, pass1_healpix_order: int | None = None
 ):
-    """The iteration's :class:`relax.refinement.tomo_half.TomoSampling` from VDAM's sampling plan.
+    """The iteration's :class:`relax.steps.tomo_half.TomoSampling` from VDAM's sampling plan.
 
     The coarse size is RELION's ``image_coarse_size`` for the pass-1 order, as for single particles
     (:func:`relax.vdam.adaptive_estep.resolve_sparse_pass1_current_size`); the fine size is the
@@ -51,7 +51,7 @@ def tomo_initial_model_sampling(
     RELION sets the sizes (expectationSetup step A) before it updates the sampling (step D).
     """
 
-    from relax.refinement.tomo_half import TomoSampling
+    from relax.steps.tomo_half import TomoSampling
 
     fine_size = int(state.effective_current_size)
     order = int(sampling_plan.healpix_order)
@@ -110,9 +110,9 @@ def run_tomo_initial_model_estep(
 
     from relax.classification.k_class import _class_segmented_em_result, single_class_pass2_em_result
     from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
-    from relax.refinement.tomo_half import tomo_translation_grids
     from relax.refinement.tomo_scoring import score_tomo_half
     from relax.sampling import tomo_particles
+    from relax.steps.tomo_half import tomo_translation_grids
 
     particle_ids = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
     if particle_ids.size == 0:

@@ -89,7 +89,7 @@ def _refine_stubs(halves, name, value, relion_replay=None, **groups):
 
 @NON_DEFAULT
 def test_subtomograms_refuse_the_option(name, value):
-    from relax.refinement.tomo_half import TomoHalf
+    from relax.steps.tomo_half import TomoHalf
 
     with pytest.raises(NotImplementedError, match="subtomogram particles"):
         _refine_stubs([_stub_half(TomoHalf), _stub_half(TomoHalf)], name, value)
@@ -97,7 +97,7 @@ def test_subtomograms_refuse_the_option(name, value):
 
 @NON_DEFAULT
 def test_optics_groups_on_several_image_shapes_refuse_the_option(name, value):
-    from relax.refinement.optics_shapes import MultiShapeHalf
+    from relax.steps.optics_shapes import MultiShapeHalf
 
     with pytest.raises(NotImplementedError, match="several image shapes"):
         _refine_stubs([_stub_half(MultiShapeHalf), _stub_half(MultiShapeHalf)], name, value)

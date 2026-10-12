@@ -22,12 +22,12 @@ from recovar.utils.helpers import get_gpu_memory_total
 # the adaptive E-step imports, does the same; this module names the registration it relies on.
 from relax.cuda import preprocess as _relion_cuda_preprocessor_registration  # noqa: F401
 from relax.refinement.engine_record import take_coarse_engine_calls, take_pass_engines
-from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.relion import projector_setup
 from relax.sampling.orientation_priors import (
     relion_round_away_from_zero,
     relion_sigma_offset_prior_center,
 )
+from relax.steps.optics_shapes import MultiShapeDataset
 from relax.vdam import native_sampling
 from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (

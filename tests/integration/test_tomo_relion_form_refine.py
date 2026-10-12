@@ -51,7 +51,7 @@ def test_subtomograms_in_relions_star_forms_refine(tmp_path: Path):
     from recovar import utils
     from recovar.simulation import relion_tomo
 
-    from relax.refinement.tomo_half import is_relion5_2d_stack_star
+    from relax.steps.tomo_half import is_relion5_2d_stack_star
 
     with mrcfile.new(tmp_path / "vol0000.mrc", overwrite=True) as mrc:
         mrc.set_data(_volume().astype(np.float32))

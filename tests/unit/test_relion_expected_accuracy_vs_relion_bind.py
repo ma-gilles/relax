@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement.tomo_half import TiltImageAccuracyInputs
 from relax.sampling.relion_expected_accuracy import expected_angular_errors
+from relax.steps.tomo_half import TiltImageAccuracyInputs
 
 bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
 
@@ -392,7 +392,7 @@ def test_optics_group_on_another_grid_matches():
 def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
     """The production entry point, with relax's own CTF and projector, against the binding."""
 
-    from relax.sampling.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
+    from relax.steps.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
 
     size, n_particles = 32, 30
     rng = np.random.default_rng(51 + current_size)
@@ -466,7 +466,7 @@ def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
 def test_prepared_inputs_with_optics_rows_match(magnified):
     """The caller's CTF rows (premultiplied, Zernike, magnification) and ``inv(M3)`` against the binding."""
 
-    from relax.sampling.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
+    from relax.steps.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
 
     size, current_size = 32, 24
     rng = np.random.default_rng(71)

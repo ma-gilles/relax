@@ -15,7 +15,6 @@ import numpy as np
 from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 from relax import sampling
-from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.refinement.refinement_state import (
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
@@ -23,12 +22,13 @@ from relax.refinement.refinement_state import (
 )
 from relax.relion import optics_groups
 from relax.relion.optics_aberrations import expected_accuracy_optics
-from relax.sampling.expected_accuracy import (
+from relax.steps.expected_accuracy import (
     ExpectedAccuracy,
     _combine_group_expected_accuracies,
     estimate_relion_expected_accuracy_from_prepared_inputs,
     estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
 )
+from relax.steps.optics_shapes import MultiShapeDataset
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.schedules import relion_sampling_cadence
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from relax.vdam.ports import ExpectationProbe
 
 if TYPE_CHECKING:
-    from relax.refinement.tomo_half import TiltImageAccuracyInputs
+    from relax.steps.tomo_half import TiltImageAccuracyInputs
 
 RELION_INITIALMODEL_LOCAL_SEARCH_HEALPIX_ORDER = 4
 
@@ -416,7 +416,7 @@ def estimate_native_sampling_accuracy(
 ) -> SamplingAccuracyEstimate | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
-    Subtomogram particles pass ``tilt_images`` (:func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`
+    Subtomogram particles pass ``tilt_images`` (:func:`relax.steps.tomo_half.tilt_image_accuracy_inputs`
     of every particle, in particle-STAR row order) and no ``optics_state``: each trial sums its tilt
     images, each with its own ``Aproj`` and dose-damped CTF. With several optics groups
     (``optics_group_ids``, each particle's zero-based group) every trial takes its group's noise

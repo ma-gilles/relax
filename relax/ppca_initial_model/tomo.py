@@ -85,7 +85,7 @@ class TiltParticles:
 
 
 def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
-    """:class:`TiltParticles` of a :class:`relax.refinement.tomo_half.TomoDataset`.
+    """:class:`TiltParticles` of a :class:`relax.steps.tomo_half.TomoDataset`.
 
     Particles of one tomogram form one group when every image's ``Aproj`` equals its frame's
     matrix in the tomogram (one subtomogram matrix); a particle that disagrees forms its own group.

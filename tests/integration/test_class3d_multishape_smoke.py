@@ -3,7 +3,7 @@
 The S3b fixture (600 particles; 128 px at 4.25 A and 112 px at 5.44 A, scale 1.12) runs
 the default ``relax class3d`` command: iteration 1 is the first-iteration CC route,
 iterations 2-4 the adaptive Gaussian route, each half scored once per shape class and
-merged (relax.refinement.optics_shapes). Every per-image and per-class input and output
+merged (relax.steps.optics_shapes). Every per-image and per-class input and output
 of those routes is sliced and merged on the real code path, so a slicing or merge error
 fails here in minutes. This is an execution check; the quality comparison against stock
 RELION on the CPU is a benchmark run.

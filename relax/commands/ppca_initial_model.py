@@ -228,8 +228,8 @@ def load_tilt_training(ios, output):
     enter training; the particles' input angles and offsets are not read.
     """
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
-    from relax.refinement.tomo_half import load_tomo_dataset
     from relax.star.tomo_input import read_optimisation_set
+    from relax.steps.tomo_half import load_tomo_dataset
 
     particles_star, tomograms_star = read_optimisation_set(ios)
     refuse_unsupported_tilt_optics(particles_star)

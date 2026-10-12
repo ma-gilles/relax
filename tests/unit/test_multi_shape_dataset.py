@@ -14,9 +14,9 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
-from relax.refinement import optics_shapes
-from relax.refinement.optics_shapes import MultiShapeDataset, MultiShapeHalf
 from relax.relion import initial_noise
+from relax.steps import optics_shapes
+from relax.steps.optics_shapes import MultiShapeDataset, MultiShapeHalf
 
 pytestmark = pytest.mark.unit
 

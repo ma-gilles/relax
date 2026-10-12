@@ -21,10 +21,10 @@ from relax.commands import initial_model
 from relax.diagnostics.vdam_observers import vdam_command_observer
 from relax.io.particle_io import ParticleReadPolicy
 from relax.parity import vdam_replay
-from relax.refinement.tomo_half import TiltImageAccuracyInputs
 from relax.sampling import healpix
-from relax.sampling.expected_accuracy import ExpectedAccuracy
 from relax.sampling.orientation_priors import relion_round_away_from_zero
+from relax.steps.expected_accuracy import ExpectedAccuracy
+from relax.steps.tomo_half import TiltImageAccuracyInputs
 from relax.vdam import (
     bootstrap_iref,
     estep_setup,

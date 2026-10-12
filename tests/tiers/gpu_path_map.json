@@ -6,7 +6,7 @@
   "relax/vdam/*.py": ["tests/integration/test_vdam_multishape_smoke.py", "tests/integration/test_scratch_dir_image_names.py"],
   "relax/io/particle_io.py": ["tests/integration/test_scratch_dir_image_names.py"],
   "relax/refinement/particle_loading.py": ["tests/integration/test_scratch_dir_image_names.py"],
-  "relax/refinement/optics_shapes.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/steps/optics_shapes.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_pass2.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/dispatch.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fourier/fourier_window.py": ["tests/integration/test_vdam_multishape_smoke.py"]

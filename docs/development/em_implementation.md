@@ -580,7 +580,7 @@ The controller retains their timing within the refinement loop. The pure
 scheduling cases live in `tests/unit/test_resolution_scheduling.py`; the
 reconstruction/taper ordering check remains with the controller tests.
 
-`refinement/projector_preparation.py` prepares RELION reference slabs
+`steps/projector_preparation.py` prepares RELION reference slabs
 for the controller's scoring calls. It owns native reference conversion, cache
 keys and files and optional dumps. (Replaying a captured RELION `Projector::data`
 was retired; its code is at git tag `retired/captured-projector-20261006`.)

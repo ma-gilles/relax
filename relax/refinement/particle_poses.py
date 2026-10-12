@@ -51,7 +51,7 @@ def resolve_particle_poses(
 
     Supplied Euler metadata stays float64; deferred local matrices stay float32.
     ``own_pixel_factors`` are the images' reference -> own pixel factors
-    (:func:`relax.refinement.optics_shapes.image_translation_factors`; None on one grid): the
+    (:func:`relax.steps.optics_shapes.image_translation_factors`; None on one grid): the
     previous offset is rounded in each image's own pixels, as RELION does.
     See ``docs/math/relion_refinement_algorithm.md``, section 3.
     """
@@ -140,7 +140,7 @@ def prepare_particle_pose_update(
     precision and frames. See ``docs/math/relion_refinement_algorithm.md``,
     section 3. The controller owns publication and diagnostic ordering.
     """
-    from relax.refinement.optics_shapes import image_translation_factors
+    from relax.steps.optics_shapes import image_translation_factors
 
     previous_rotations_snapshot = [
         np.asarray(rot).copy() if rot is not None else None for rot in previous_rotations

@@ -15,7 +15,6 @@ from relax.refinement.half_inputs import configure_half_image_preprocessing
 from relax.refinement.image_size_plans import RunOptics
 from relax.refinement.iteration_snapshot import SnapshotCapture
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
-from relax.refinement.optics_shapes import MultiShapeHalf
 from relax.refinement.ports import (
     ExpectationProbe,
     MaximizationProbe,
@@ -30,18 +29,16 @@ from relax.refinement.refinement_options import (
     require_consistency_route,
     require_final_pass_route,
 )
-from relax.refinement.tomo_half import TomoHalf
 from relax.relion import optics_groups
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
     REFERENCE_FILTER_EDGE_SHELLS,
 )
-from relax.sampling.expected_accuracy import (
-    RELION_DEFAULT_SIGMA2_FUDGE,
-    Half1AccuracyInputs,
-    prepare_relion_half1_trial_order,
-)
+from relax.sampling.expected_accuracy import prepare_relion_half1_trial_order
+from relax.steps.expected_accuracy import RELION_DEFAULT_SIGMA2_FUDGE, Half1AccuracyInputs
+from relax.steps.optics_shapes import MultiShapeHalf
+from relax.steps.tomo_half import TomoHalf
 
 # The set-up logs as part of the controller's run.
 logger = logging.getLogger("relax.refinement.iteration_loop")

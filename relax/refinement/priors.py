@@ -19,11 +19,11 @@ from relax.reconstruction.resolution import (
 )
 from relax.refinement import numbered_reconstruction
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
-from relax.refinement.optics_shapes import average_ctf2_parts
 from relax.refinement.ports import ClassPriorEstimated, MaximizationProbe, NoProbe
-from relax.refinement.tomo_half import TomoHalf
 from relax.relion import ctf
 from relax.runtime.timing import Stopwatch
+from relax.steps.optics_shapes import average_ctf2_parts
+from relax.steps.tomo_half import TomoHalf
 from relax.types import total_sumw
 
 logger = logging.getLogger(__name__)

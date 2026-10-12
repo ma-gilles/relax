@@ -315,7 +315,7 @@ def test_average_ctf2_is_none_without_premultiplied_images(tmp_path, monkeypatch
 def _shape_class_half(star, scale_b):
     """A two-shape half over the four STAR rows: class A rows (0, 3) on the model grid, class B rows (2, 1) at s_g."""
 
-    from relax.refinement.optics_shapes import MultiShapeHalf, ShapeClass
+    from relax.steps.optics_shapes import MultiShapeHalf, ShapeClass
 
     def dataset(rows):
         return SimpleNamespace(
@@ -335,7 +335,7 @@ def test_average_ctf2_of_several_image_shapes_is_relions_remapped_sumw_ctf2(tmp_
     shell i onto model shell ROUND(i / s_g) (acc_ml_optimiser_impl.h:3612-3626)."""
 
     from relax.refinement.noise_updates import datasets_store_premultiplied_ctf
-    from relax.refinement.optics_shapes import average_ctf2_parts
+    from relax.steps.optics_shapes import average_ctf2_parts
 
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     star = _write_star(tmp_path / "particles.star")
@@ -375,7 +375,7 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
     noise sumw as the denominator: neither the tilt count nor the particle count."""
 
     from relax.refinement import priors
-    from relax.refinement.tomo_half import TomoHalf
+    from relax.steps.tomo_half import TomoHalf
     from relax.types import NoiseStats
 
     class _Seen(Exception):

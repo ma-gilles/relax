@@ -336,7 +336,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                               reconstruction_group_count, **kwargs):
         """CPU stand-in for the subtomogram pass (tomo_scoring.score_tomo_half and the pass-2 result builders):
         the E-step result seeded by every operand it receives, as for single particles."""
-        from relax.refinement.tomo_half import tomo_translation_grids
+        try:
+            from relax.steps.tomo_half import tomo_translation_grids
+        except ImportError:  # the source before tomo_half moved to steps (layout S8b)
+            from relax.refinement.tomo_half import tomo_translation_grids
 
         scalars = dict(kwargs, relion_projector_r_max=relion_projector_r_max, sampling=repr(sampling),
                        sigma_offset_angst=sigma_offset_angst, adaptive_fraction=adaptive_fraction,

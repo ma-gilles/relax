@@ -40,22 +40,18 @@ from relax.refinement.local_half import (
 )
 from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
-from relax.refinement.optics_shapes import image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource
 from relax.refinement.priors import join_half_accumulators_at_low_resolution
-from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.reference_state import _class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.refinement_state import update_angular_sampling
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.shape_class_scoring import OpticsSpec
-from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop
 from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.runtime.timing import Stopwatch
-from relax.sampling.expected_accuracy import expected_accuracy_class_ids
 from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import (
     DirectionPrior,
@@ -68,6 +64,9 @@ from relax.sampling.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.star.metadata import relion_metadata_translations
+from relax.steps.expected_accuracy import expected_accuracy_class_ids
+from relax.steps.optics_shapes import image_translation_factors
+from relax.steps.projector_preparation import prepare_scoring_projector
 from relax.steps.score_outputs import (
     PerHalfOutputs,
     _record_score_profile,
@@ -77,6 +76,7 @@ from relax.steps.score_outputs import (
 from relax.steps.scoring_policy import (
     local_precision,
 )
+from relax.steps.tomo_half import local_tomo_sampling
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext

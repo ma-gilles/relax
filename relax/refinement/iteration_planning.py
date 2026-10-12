@@ -18,7 +18,7 @@ from relax.reconstruction.resolution import (
 from relax.refinement.iteration_snapshot import validate_resume_snapshot
 from relax.refinement.ports import InputSource
 from relax.refinement.refinement_state import RefinementState
-from relax.sampling.expected_accuracy import PublishedAccuracy
+from relax.steps.expected_accuracy import PublishedAccuracy
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions

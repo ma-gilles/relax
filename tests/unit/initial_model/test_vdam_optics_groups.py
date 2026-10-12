@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from relax.relion.initial_noise import relion_startup_positions
-from relax.sampling.expected_accuracy import ExpectedAccuracy
+from relax.steps.expected_accuracy import ExpectedAccuracy
 from relax.vdam import bootstrap_reconstruction as br
 from relax.vdam import estep_setup, initial_model_io, native_sampling
 from relax.vdam.bootstrap_iref import initialise_denovo_state

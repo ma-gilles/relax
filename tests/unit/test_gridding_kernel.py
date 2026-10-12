@@ -24,7 +24,6 @@ from relax.refinement import (
     finalization,
     iteration_loop,
     numbered_reconstruction,
-    projector_preparation,
 )
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
@@ -32,7 +31,7 @@ from relax.refinement.refinement_options import (
     RelionConsistencyOptions,
 )
 from relax.relion import projector_setup as setup
-from relax.sampling import expected_accuracy
+from relax.steps import expected_accuracy, projector_preparation
 
 pytestmark = pytest.mark.unit
 
@@ -202,7 +201,7 @@ def test_expected_accuracy_inputs_hand_the_estimator_the_kernel(monkeypatch, ker
 
 
 def test_expected_accuracy_refuses_separable_for_subtomograms():
-    from relax.refinement.tomo_half import TomoHalf
+    from relax.steps.tomo_half import TomoHalf
 
     with pytest.raises(NotImplementedError, match="subtomogram"):
         expected_accuracy.estimate_relion_expected_accuracy(

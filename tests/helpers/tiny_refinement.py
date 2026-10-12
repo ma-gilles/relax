@@ -414,7 +414,7 @@ def unconverged_accuracy(n_classes: int = 1):
     """
     import numpy as np
 
-    from relax.sampling.expected_accuracy import ExpectedAccuracy
+    from relax.steps.expected_accuracy import ExpectedAccuracy
 
     return ExpectedAccuracy(
         acc_rot=999.0,

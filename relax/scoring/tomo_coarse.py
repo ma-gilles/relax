@@ -901,7 +901,7 @@ def particle_coarse_supports(
 
     RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1190-1402): every tilt image is
     scored with its own device matrices (``make_eulers_3D`` with the image's left matrix ``image_left``,
-    its ``Aproj`` with the optics group's magnification, :func:`relax.refinement.tomo_half.tilt_left_matrices`;
+    its ``Aproj`` with the optics group's magnification, :func:`relax.steps.tomo_half.tilt_left_matrices`;
     :func:`relax.sampling.relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts of ``Aproj``
     (``image_projections``) plus
     the rounded old offset (:func:`relax.sampling.tomo_particles.tilt_translation_angles`) and its own

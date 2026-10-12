@@ -606,7 +606,7 @@ precision. The shared `_relion_metadata_translations` formula adds the rounded
 previous pre-shift to the selected relative shift. The previous offset is rounded
 in each image's own pixels (RELION `xoff_A / my_pixel_size`, then `selfROUND`), so
 an optics group whose pixel differs from the model's
-([`image_translation_factors`](../../relax/refinement/optics_shapes.py)) keeps its
+([`image_translation_factors`](../../relax/steps/optics_shapes.py)) keeps its
 rounded offset in its own pixels while the trial grid stays one Angstrom grid
 (relax#52). The controller installs
 each half's Euler rows/absolute offsets before noise and convergence updates.
@@ -928,7 +928,7 @@ to that tilt.
 - Search. Each particle is scored over its own kept orientations and every translation, with its own
   prior, on the global sampling of the iteration. In relax that is the subtomogram local-search pass
   given these lists instead of a neighbourhood
-  ([`tomo_local_rotations`](../../relax/refinement/tomo_half.py),
+  ([`tomo_local_rotations`](../../relax/steps/tomo_half.py),
   [`score_numbered_half`](../../relax/refinement/expectation.py)).
 - Auto-refine (`ml_optimiser.cpp:9923-9931`). When `updateAngularSampling` reaches
   `--auto_local_healpix_order` all three widths become twice the angular step, so the tilt prior ends
@@ -961,7 +961,7 @@ backprojects each class into its own BPref
 from one reference scores each particle against its seed class only
 ([`restrict_local_layout_classes`](../../relax/local_search/layout.py)).
 
-[`expected_accuracy.py`](../../relax/sampling/expected_accuracy.py)
+[`expected_accuracy.py`](../../relax/steps/expected_accuracy.py)
 owns the RELION-style accuracy trial calculation. The approximate posterior
 helper `calculate_expected_angular_errors` is a different route. Likewise,
 `convergence._relion_optimizer_average_pmax` uses the split-half optimizer's

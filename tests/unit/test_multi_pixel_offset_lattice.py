@@ -12,9 +12,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import optics_shapes, shape_class_scoring
+from relax.refinement import shape_class_scoring
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.particle_poses import prepare_particle_pose_update
+from relax.steps import optics_shapes
 
 pytestmark = pytest.mark.unit
 
@@ -88,9 +89,9 @@ def test_image_translation_factors():
 def test_subtomogram_offsets_keep_their_rounding():
     # A subtomogram half is one grid (a TomoHalf, never a MultiShapeHalf): no factors, and its 3D offsets keep the
     # whole-pixel rounding of RELION's GPU path (tomo_particles.relion_gpu_old_offsets), unchanged by relax#52.
-    from relax.refinement.tomo_half import TomoHalf
     from relax.sampling.tomo_particles import relion_gpu_old_offsets
     from relax.star.metadata import relion_metadata_translations
+    from relax.steps.tomo_half import TomoHalf
 
     assert not issubclass(TomoHalf, optics_shapes.MultiShapeHalf)
     old = np.array([[1.5, -2.49, 0.51], [-0.5, 3.2, -1.7]])

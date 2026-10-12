@@ -422,7 +422,8 @@ def _score_half_local(
 ) -> HalfScoreResult:
     """Exact-local scoring for one half; several shapes run per shape class."""
 
-    from relax.refinement import optics_shapes, shape_class_scoring
+    from relax.refinement import shape_class_scoring
+    from relax.steps import optics_shapes
 
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):

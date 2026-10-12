@@ -603,7 +603,7 @@ def test_initial_model_data_star_starts_a_subtomogram_refinement(tmp_path, loope
 
     from recovar.data_io.starfile import read_star
 
-    from relax.refinement.tomo_half import is_relion5_2d_stack_star
+    from relax.steps.tomo_half import is_relion5_2d_stack_star
     from relax.vdam import initial_model_io
     from relax.vdam.state import NativeParticleState
 

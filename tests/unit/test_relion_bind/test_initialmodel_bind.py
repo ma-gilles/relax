@@ -336,7 +336,7 @@ class TestRandomiseParticlesOrderBinding:
 
 class TestAutoRefineExpectedAccuracyBinding:
     def test_spawned_expected_accuracy_matches_direct_result(self, bind):
-        from relax.sampling.expected_accuracy import (
+        from relax.steps.expected_accuracy import (
             estimate_relion_expected_accuracy_from_prepared_inputs,
             estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
         )
@@ -386,7 +386,7 @@ class TestAutoRefineExpectedAccuracyBinding:
         from recovar.utils.helpers import relion_volume_to_recovar
 
         from relax.relion.projector_setup import reference_to_relion_projector_half_maps_and_power
-        from relax.sampling.expected_accuracy import (
+        from relax.steps.expected_accuracy import (
             estimate_relion_expected_accuracy_from_prepared_inputs,
         )
 

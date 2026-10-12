@@ -27,11 +27,11 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `finalization.py`, `final_reconstruction.py` (its sampling and grids: `trial_grids.py`) | the final all-data pass |
 | `run_files.py`, `result_files.py` | RELION's per-iteration run files and `--continue`; final archives and maps |
 | `refinement_result.py` | what the controller and the final pass return (`RefinementResult` and its records); `archive_fields()` is the saved flat mapping |
-| `optics_shapes.py`, `shape_class_scoring.py` | optics groups with different pixel size or box: the shape classes and their datasets; scoring a half one shape class at a time and merging the results |
-| `tomo_half.py`, `tomo_scoring.py` | subtomogram particles (RELION 5 2D stacks): the dataset, half and sampling records (also read by VDAM and PPCA); the E-step and M-step of a subtomogram half. The per-tilt-image arithmetic (shifts, offsets, the 3D offset prior, tilt projection matrices) is `relax/sampling/tomo_particles.py` |
-| `particle_loading.py`, `startup_references.py`, `startup_noise.py`, `projector_preparation.py` | input loading and half sets, start-up maps, prior and noise, projector slabs |
+| `shape_class_scoring.py` | optics groups with different pixel size or box: scoring a half one shape class at a time and merging the results |
+| `tomo_scoring.py` | subtomogram particles (RELION 5 2D stacks): the E-step and M-step of a subtomogram half. The per-tilt-image arithmetic (shifts, offsets, the 3D offset prior, tilt projection matrices) is `relax/sampling/tomo_particles.py` |
+| `particle_loading.py`, `startup_references.py`, `startup_noise.py` | input loading and half sets, start-up maps, prior and noise |
 
-Steps this controller shares with VDAM live in `relax/steps/`: `score_outputs.py` (a half's score records) and `scoring_policy.py` (the scoring execution defaults and diagnostic selectors).
+Steps this controller shares with VDAM live in `relax/steps/`: `score_outputs.py` (a half's score records), `scoring_policy.py` (the scoring execution defaults and diagnostic selectors), `optics_shapes.py` (the shape classes of optics groups with different pixel size or box, and their datasets), `tomo_half.py` (the subtomogram dataset, half and sampling records, also read by PPCA), `projector_preparation.py` (projector slabs) and `expected_accuracy.py` (RELION's expected-accuracy estimate; its trial order is `relax/sampling/expected_accuracy.py`).
 
 ## Rules
 

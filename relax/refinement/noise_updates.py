@@ -288,9 +288,9 @@ def datasets_store_premultiplied_ctf(experiment_datasets) -> bool:
     A subtomogram half is asked through its flat per-tilt dataset (``half.images``), a half
     with several image shapes through its shape classes' datasets.
     """
-    from relax.refinement.optics_shapes import shape_datasets
-    from relax.refinement.tomo_half import TomoHalf
     from relax.relion import ctf
+    from relax.steps.optics_shapes import shape_datasets
+    from relax.steps.tomo_half import TomoHalf
 
     return any(
         ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))

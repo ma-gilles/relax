@@ -59,10 +59,11 @@ import relax.parity.relion_replay as relion_replay_module
 import relax.refinement.expectation as expectation_module
 import relax.refinement.iteration_loop as iteration_loop_module
 import relax.refinement.numbered_transitions as convergence_policy
-import relax.refinement.projector_preparation as projector_preparation
 import relax.sampling as sampling_module
-import relax.sampling.expected_accuracy as expected_accuracy_module
+import relax.sampling.expected_accuracy as accuracy_trial_order_module
 import relax.sampling.orientation_priors as orientation_priors_module
+import relax.steps.expected_accuracy as expected_accuracy_module
+import relax.steps.projector_preparation as projector_preparation
 from relax.classification.k_class_results import (
     KClassEMResult,
     _resolve_class_mstep_posterior_sums,
@@ -5101,7 +5102,7 @@ class TestRelionModeSmokeTest:
         install_fake_adaptive_engine(monkeypatch, engine_calls, Ft_y=_random_half_maps(engine_calls))
         monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", spy_reconstruct)
         monkeypatch.setattr(
-            expected_accuracy_module,
+            accuracy_trial_order_module,
             "relion_half1_trial_order",
             lambda n_particles, *_args, **_kwargs: np.arange(n_particles, dtype=np.int64),
         )

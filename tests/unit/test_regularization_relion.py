@@ -638,7 +638,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
     from helpers.em_fixtures import fixture_file
     from recovar.utils.helpers import load_relion_volume, recovar_volume_to_relion
 
-    from relax.refinement.projector_preparation import prepare_scoring_projector
+    from relax.steps.projector_preparation import prepare_scoring_projector
 
     volume_path = fixture_file("k4_5k128_relion_os0", "run_it000_class001.mrc")
     vol_recovar = np.asarray(load_relion_volume(str(volume_path)), dtype=np.float64)

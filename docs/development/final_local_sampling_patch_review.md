@@ -1366,7 +1366,7 @@ def prepare_relion_halfset_inputs(
         ) = startup_noise.auto_refine_noise_order(our_particles, relion_particles)
     if not tomographic:
         # Subtomogram particles have one CTF per tilt image; their expected accuracy reads
-        # those from the tomo half (relax.refinement.tomo_half).
+        # those from the tomo half (relax.steps.tomo_half).
         from recovar.data_io import metadata_readers
 
         relion_ctf_with_apix = metadata_readers.parse_ctf_from_star(

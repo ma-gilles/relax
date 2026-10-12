@@ -1448,7 +1448,6 @@ def main():
     from relax.diagnostics import observers
     from relax.io.map_io import write_map_from_ft
     from relax.refinement.iteration_loop import refine_single_volume
-    from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
     from relax.refinement.ports import StartSeeds
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
@@ -1469,6 +1468,7 @@ def main():
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,
     )
+    from relax.steps.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 
     def _rotation_matrices_from_eulers_deg(eulers_deg):
         return utils.R_from_relion(np.asarray(eulers_deg, dtype=np.float64))
