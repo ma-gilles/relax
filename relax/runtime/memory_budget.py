@@ -601,3 +601,12 @@ def device_available_bytes(physical_free_bytes, allocator_free_bytes, pool_free_
         elif available is None:
             available = float(physical_free_bytes)
     return available
+
+
+def current_device_available_bytes() -> float | None:
+    """:func:`device_available_bytes` of the readings taken now: the physically free memory, the allocator's
+    headroom and its pool's unused bytes, read in that order; ``None`` when nothing is known."""
+
+    return device_available_bytes(
+        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+    )

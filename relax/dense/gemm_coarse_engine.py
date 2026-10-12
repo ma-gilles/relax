@@ -50,17 +50,9 @@ def _memory_tiles(
 
     from relax.fine_pass.resident_operands import resident_half_operand_bytes
     from relax.fine_pass.resident_statistics import posterior_translation_bucket_scratch_bytes
-    from relax.runtime.memory_budget import (
-        _device_free_memory_bytes,
-        _jax_allocator_free_memory_bytes,
-        _jax_allocator_pool_free_bytes,
-        device_available_bytes,
-    )
+    from relax.runtime.memory_budget import current_device_available_bytes
 
-    available = device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(),
-        _jax_allocator_pool_free_bytes(),
-    )
+    available = current_device_available_bytes()
     budget = int(available * 0.60) if available is not None else 4 << 30
     k = len(state.class_volumes)
     r = int(np.asarray(state.fine_rotations).shape[0])

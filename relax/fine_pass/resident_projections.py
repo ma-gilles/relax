@@ -27,25 +27,11 @@ from relax.fine_pass.resident_operands import (
 from relax.fine_pass.resident_significance import significant_coarse_parents
 from relax.fine_pass.resident_statistics import resident_image_capacity
 from relax.fine_pass.scoring import relion_powerclass_noise_dtypes
-from relax.runtime.memory_budget import (
-    _device_free_memory_bytes,
-    _jax_allocator_free_memory_bytes,
-    _jax_allocator_pool_free_bytes,
-    device_available_bytes,
-)
+from relax.runtime.memory_budget import current_device_available_bytes, device_available_bytes
 from relax.runtime.shape_buckets import pow2_ceil
-
 
 # Per-projection M-step row sums replace the per-slot BPref volumes of a pass
 # while they take at most this share of the free device memory.
-def allocator_available_bytes() -> float | None:
-    """Bytes the JAX allocator can still hand out now (:func:`device_available_bytes` of the three readings)."""
-
-    return device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
-    )
-
-
 PRESUM_ADJOINT_FREE_FRACTION = 0.2
 
 
@@ -69,9 +55,7 @@ def projection_sums_displace_resident_operands(sums_bytes, **operand_size_kwargs
     if not policy.resident_operands_requested():
         return False
     _, operand_peak_bytes = resident_half_operand_sizes(**operand_size_kwargs)
-    available = device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
-    )
+    available = current_device_available_bytes()
     if available is None:
         return False
     return resident_operands_fit(operand_peak_bytes, available) and not resident_operands_fit(

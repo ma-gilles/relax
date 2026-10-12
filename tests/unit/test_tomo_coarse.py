@@ -169,7 +169,7 @@ def test_the_coarse_pass_budget_is_one_reading_shared_by_block_batch_and_flushes
 
     gib = 1 << 30
     reading = None if available_gb is None else available_gb * gib
-    monkeypatch.setattr(tomo_coarse, "_device_available_bytes", lambda: reading)
+    monkeypatch.setattr(tomo_coarse.memory_budget, "current_device_available_bytes", lambda: reading)
     resident = 650 << 20  # two classes' full projectors at box 192
     budget = tomo_coarse._coarse_pass_budget(resident)
     if reading is None:
@@ -200,7 +200,7 @@ def test_flush_plan_keeps_two_flushes_and_their_cut_within_the_flush_budget(monk
     flush budget less its rescore share; on an 80 GB card et09's flush is the 512 MB diff2 flush as before and
     w2_09's 1000 particles are one flush."""
 
-    monkeypatch.setattr(tomo_coarse, "_device_available_bytes", lambda: available_gb * 2**30)
+    monkeypatch.setattr(tomo_coarse.memory_budget, "current_device_available_bytes", lambda: available_gb * 2**30)
     flush_bytes = tomo_coarse._coarse_pass_budget(0).flush
     for sizes in (_ET09, _W2_09):
         particles, rescore, by_diff2, by_device = tomo_coarse._flush_plan(

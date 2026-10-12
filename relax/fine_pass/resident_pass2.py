@@ -188,6 +188,7 @@ from relax.runtime.memory_budget import (
     _projection_cache_fits_budget,
     _projection_cache_max_bytes_for_pass,
     _projection_cache_transient_bytes,
+    current_device_available_bytes,
     device_available_bytes,
 )
 from relax.sampling.translation_prior import validate_translation_prior_centers
@@ -1417,7 +1418,7 @@ def _resident_pass2(
     # limit (XLA_PYTHON_CLIENT_MEM_FRACTION, or a smaller card's pool) the physical reading counted an
     # 80 GB card's 62 GiB and chose 3.76 GiB of sums at a 16 GB pool, which then ran out preparing the
     # half's operands (relax#41, EMPIAR-10073 box 380 Class3D K3).
-    free_bytes = resident_projections.allocator_available_bytes()
+    free_bytes = current_device_available_bytes()
     # A tilt chunk backprojects each (image, row) with its own matrix (resident_tilts), never per projection.
     presum_adjoint = (
         n_classes > 1
@@ -2391,11 +2392,7 @@ def _resident_pass2(
         # Measured as the streamed projection budget is, after this pass's
         # projection cache exists: what the allocator can still hand out. Same
         # predicate as the reservation before the cache decision.
-        available_bytes = device_available_bytes(
-            _device_free_memory_bytes(),
-            _jax_allocator_free_memory_bytes(),
-            _jax_allocator_pool_free_bytes(),
-        )
+        available_bytes = current_device_available_bytes()
         budget_bytes = resident_operands_max_bytes(available_bytes)
         if stream_keeps_chunk_operands:
             logger.info(

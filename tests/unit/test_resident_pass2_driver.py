@@ -2008,16 +2008,16 @@ def test_the_projection_sums_choice_reads_the_allocator_not_the_physical_free_me
     from relax.runtime import memory_budget as budget
 
     gib = 1024**3
-    monkeypatch.setattr(resident_projections, "_device_free_memory_bytes", lambda: 62 * gib)
-    monkeypatch.setattr(resident_projections, "_jax_allocator_free_memory_bytes", lambda: 10 * gib)
-    monkeypatch.setattr(resident_projections, "_jax_allocator_pool_free_bytes", lambda: 1 * gib)
-    assert resident_projections.allocator_available_bytes() == pytest.approx(10 * gib)
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 62 * gib)
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 10 * gib)
+    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 1 * gib)
+    assert budget.current_device_available_bytes() == pytest.approx(10 * gib)
     sums = 3.76 * gib
-    assert sums > resident_projections.PRESUM_ADJOINT_FREE_FRACTION * resident_projections.allocator_available_bytes()
+    assert sums > resident_projections.PRESUM_ADJOINT_FREE_FRACTION * budget.current_device_available_bytes()
     assert sums <= resident_projections.PRESUM_ADJOINT_FREE_FRACTION * 62 * gib  # the old physical reading would have taken them
     # On a small physical card the device bounds the allocator's headroom.
-    monkeypatch.setattr(resident_projections, "_device_free_memory_bytes", lambda: 2 * gib)
-    assert resident_projections.allocator_available_bytes() == pytest.approx(3 * gib)
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 2 * gib)
+    assert budget.current_device_available_bytes() == pytest.approx(3 * gib)
     assert budget.device_available_bytes(None, None, None) is None
 
 
@@ -2033,7 +2033,7 @@ def test_every_free_memory_budget_honours_the_allocator_pool(monkeypatch):
         monkeypatch.setattr(module, "_device_free_memory_bytes", lambda: readings["physical"], raising=False)
         monkeypatch.setattr(module, "_jax_allocator_free_memory_bytes", lambda: readings["allocator"], raising=False)
         monkeypatch.setattr(module, "_jax_allocator_pool_free_bytes", lambda: readings["pool"], raising=False)
-    assert resident_projections.allocator_available_bytes() <= 10 * gib  # the K-class projection-sums choice
+    assert budget.current_device_available_bytes() <= 10 * gib  # the K-class projection-sums choice
 
 
 @requires_resident_gpu
@@ -2046,11 +2046,10 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
     import subprocess
 
     probe = (
-        "import json, jax, jax.numpy as jnp; from relax.fine_pass import resident_projections; "
-        "from relax.runtime import memory_budget; "
+        "import json, jax, jax.numpy as jnp; from relax.runtime import memory_budget; "
         "x = jnp.zeros((1 << 20,), jnp.float32).block_until_ready(); "
         "s = jax.devices()[0].memory_stats(); "
-        "print(json.dumps({'available': resident_projections.allocator_available_bytes(), 'physical': memory_budget._device_free_memory_bytes(), "
+        "print(json.dumps({'available': memory_budget.current_device_available_bytes(), 'physical': memory_budget._device_free_memory_bytes(), "
         "'limit': s['bytes_limit']}))"
     )
     from conftest import repo_python_command, repo_subprocess_env

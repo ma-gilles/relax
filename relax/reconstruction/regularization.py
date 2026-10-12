@@ -48,18 +48,11 @@ def _shell_stats_on_host(n_voxels: int) -> bool:
 
     if int(n_voxels) > _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS:
         return True
-    from relax.runtime.memory_budget import (
-        _device_free_memory_bytes,
-        _jax_allocator_free_memory_bytes,
-        _jax_allocator_pool_free_bytes,
-        device_available_bytes,
-    )
+    from relax.runtime.memory_budget import current_device_available_bytes
 
     if jax.default_backend() != "gpu":
         return False
-    available = device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
-    )
+    available = current_device_available_bytes()
     return available is not None and (
         int(n_voxels) * _SHELL_STATS_DEVICE_BYTES_PER_VOXEL > _SHELL_STATS_DEVICE_SHARE * float(available)
     )

@@ -30,6 +30,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from relax.runtime import memory_budget
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
 from relax.scoring.exact_cut import (
     direct_rows_diff2,
@@ -593,21 +594,6 @@ _OPERAND_IMAGE_BATCH = 1024
 _COARSE_OPERAND_BLOCK_BYTES = 4 << 30
 
 
-def _device_available_bytes() -> float | None:
-    """What the JAX allocator can still hand out on the device (``None`` when unknown)."""
-
-    from relax.runtime.memory_budget import (
-        _device_free_memory_bytes,
-        _jax_allocator_free_memory_bytes,
-        _jax_allocator_pool_free_bytes,
-        device_available_bytes,
-    )
-
-    return device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
-    )
-
-
 class CoarsePassBudget(NamedTuple):
     """Device bytes of one coarse pass: its operand block, its GEMM batch and its flushes (with their cuts)."""
 
@@ -626,7 +612,7 @@ def _coarse_pass_budget(resident_bytes: int) -> CoarsePassBudget:
     card the block and the batch keep their fixed caps.
     """
 
-    available = _device_available_bytes()
+    available = memory_budget.current_device_available_bytes()
     if available is None:
         return CoarsePassBudget(_COARSE_OPERAND_BLOCK_BYTES, _COARSE_BATCH_BYTES, 1 << 62)
     usable = 0.75 * max(float(available) - float(resident_bytes), 0.0)

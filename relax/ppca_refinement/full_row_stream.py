@@ -1382,11 +1382,7 @@ def _available_bytes(stream):
         return host - resident_bytes(), host
     from relax.runtime import memory_budget as budget
 
-    available = budget.device_available_bytes(
-        budget._device_free_memory_bytes(),
-        budget._jax_allocator_free_memory_bytes(),
-        budget._jax_allocator_pool_free_bytes(),
-    )
+    available = budget.current_device_available_bytes()
     return available, None
 
 

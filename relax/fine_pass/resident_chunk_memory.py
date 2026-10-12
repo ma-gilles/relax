@@ -16,12 +16,7 @@ import numpy as np
 
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_statistics import posterior_translation_bucket_scratch_bytes
-from relax.runtime.memory_budget import (
-    _device_free_memory_bytes,
-    _jax_allocator_free_memory_bytes,
-    _jax_allocator_pool_free_bytes,
-    device_available_bytes,
-)
+from relax.runtime.memory_budget import current_device_available_bytes
 from relax.runtime.shape_buckets import pow2_floor
 
 _MSTEP_BLOCK_ROWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
@@ -572,11 +567,7 @@ def format_budget_gib(budget_bytes: int | None) -> str:
 def resident_chunk_budget_bytes(*, reserved_bytes: int = 0) -> int | None:
     """The joint chunk budget from the device readings now; ``None`` when nothing is known."""
 
-    available = device_available_bytes(
-        _device_free_memory_bytes(),
-        _jax_allocator_free_memory_bytes(),
-        _jax_allocator_pool_free_bytes(),
-    )
+    available = current_device_available_bytes()
     if available is None:
         return None
     return int(max(0.0, float(available) - float(reserved_bytes)) * _RESIDENT_CHUNK_FREE_MEMORY_FRACTION)
