@@ -1427,6 +1427,7 @@ def _resident_pass2(
         and sums_bytes <= resident_projections.PRESUM_ADJOINT_FREE_FRACTION * float(free_bytes)
         and not resident_projections.projection_sums_displace_resident_operands(
             sums_bytes,
+            operand_max_bytes=engine_tuning.resident_operand_max_bytes,
             n_images=n_images,
             n_windowed=n_windowed,
             n_recon_windowed=n_recon_windowed,
@@ -1742,6 +1743,7 @@ def _resident_pass2(
         if resident_projections.resident_operands_fit(
             operand_peak_bytes,
             device_available_bytes(physical_free_bytes, allocator_free_bytes, pool_free_bytes),
+            engine_tuning.resident_operand_max_bytes,
         ):
             reserved_operand_bytes = operand_bytes
     stream_projection_budget_bytes = resident_projections.stream_projection_budget_bytes(
@@ -2393,7 +2395,7 @@ def _resident_pass2(
         # projection cache exists: what the allocator can still hand out. Same
         # predicate as the reservation before the cache decision.
         available_bytes = current_device_available_bytes()
-        budget_bytes = resident_operands_max_bytes(available_bytes)
+        budget_bytes = resident_operands_max_bytes(available_bytes, engine_tuning.resident_operand_max_bytes)
         if stream_keeps_chunk_operands:
             logger.info(
                 "Resident pass-2 keeps the per-chunk operand preparation: %s, and one half's "
@@ -2403,7 +2405,9 @@ def _resident_pass2(
                 else "the whole-grid projection cache fits only without them",
                 operand_bytes / float(1024**3),
             )
-        elif not resident_projections.resident_operands_fit(operand_peak_bytes, available_bytes):
+        elif not resident_projections.resident_operands_fit(
+            operand_peak_bytes, available_bytes, engine_tuning.resident_operand_max_bytes
+        ):
             logger.info(
                 "Resident pass-2 keeps the per-chunk operand preparation: one half's resident "
                 "operands would take %.2f GiB (%.2f GiB while preparing) against a %.2f GiB budget",

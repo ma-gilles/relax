@@ -42,7 +42,9 @@ def projection_sums_bytes(*, n_slots, n_fine_rot, n_recon_pixels, y_dtype, ctf_d
     return int(n_slots) * int(n_fine_rot) * per_row
 
 
-def projection_sums_displace_resident_operands(sums_bytes, **operand_size_kwargs) -> bool:
+def projection_sums_displace_resident_operands(
+    sums_bytes, *, operand_max_bytes: int | None, **operand_size_kwargs
+) -> bool:
     """Whether the sums would push one half's resident operands out of their budget.
 
     The resident operands are worth more than the sums: at Class3D K4 100k/256
@@ -58,8 +60,8 @@ def projection_sums_displace_resident_operands(sums_bytes, **operand_size_kwargs
     available = current_device_available_bytes()
     if available is None:
         return False
-    return resident_operands_fit(operand_peak_bytes, available) and not resident_operands_fit(
-        operand_peak_bytes, float(available) - float(sums_bytes)
+    return resident_operands_fit(operand_peak_bytes, available, operand_max_bytes) and not resident_operands_fit(
+        operand_peak_bytes, float(available) - float(sums_bytes), operand_max_bytes
     )
 
 
@@ -164,14 +166,15 @@ def resident_half_operand_sizes(
     return operand_bytes, peak_bytes
 
 
-def resident_operands_fit(operand_peak_bytes, available_bytes) -> bool:
-    """Whether one half's resident operands are admitted at this reading.
+def resident_operands_fit(operand_peak_bytes, available_bytes, max_bytes_override: int | None) -> bool:
+    """Whether one half's resident operands are admitted at this reading (``max_bytes_override``:
+    ``EngineTuning.resident_operand_max_bytes``).
 
     The one predicate for both the reservation before the projection cache
     decision and the admission after it.
     """
 
-    return int(operand_peak_bytes) <= resident_operands_max_bytes(available_bytes)
+    return int(operand_peak_bytes) <= resident_operands_max_bytes(available_bytes, max_bytes_override)
 
 
 def stream_projection_budget_bytes(

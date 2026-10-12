@@ -348,8 +348,8 @@ def test_projection_sums_yield_to_the_resident_operands(monkeypatch, operand_pea
     monkeypatch.setattr(policy, "resident_operands_requested", lambda: True)
     monkeypatch.setattr(resident_projections, "resident_half_operand_sizes", lambda **_: (0, int(operand_peak_gib * gib)))
     monkeypatch.setattr(resident_projections, "current_device_available_bytes", lambda: 60.0 * gib)
-    monkeypatch.setattr(resident_projections, "resident_operands_max_bytes", lambda available: 0.5 * float(available))
-    assert resident_projections.projection_sums_displace_resident_operands(int(sums_gib * gib)) is displaced
+    monkeypatch.setattr(resident_projections, "resident_operands_max_bytes", lambda available, override: 0.5 * float(available))
+    assert resident_projections.projection_sums_displace_resident_operands(int(sums_gib * gib), operand_max_bytes=None) is displaced
 
 
 def _count_projection_sum_flushes(monkeypatch):

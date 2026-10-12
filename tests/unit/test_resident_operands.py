@@ -748,17 +748,26 @@ def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
     from relax.runtime.memory_budget import device_available_bytes
 
     gib = 1024**3
+    from relax.runtime.engine_tuning import EngineTuning
+
     monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", raising=False)
+    unset = EngineTuning.from_environ().resident_operand_max_bytes
+    assert unset is None
     # A grown pool: nvidia-smi sees 10 GiB free, the pool holds 50 GiB unused,
     # the allocator could hand out 70 GiB; the device bound is 60 GiB.
     available = device_available_bytes(10 * gib, 70 * gib, 50 * gib)
     assert available == 60 * gib
-    assert resident_operands_max_bytes(available) == 30 * gib
+    assert resident_operands_max_bytes(available, unset) == 30 * gib
     assert device_available_bytes(None, None, None) is None
     assert device_available_bytes(12 * gib, None, None) == 12 * gib
-    assert resident_operands_max_bytes(None) == 6 * gib
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", str(3 * gib))
-    assert resident_operands_max_bytes(available) == 3 * gib
+    assert resident_operands_max_bytes(None, unset) == 6 * gib
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", f" {3 * gib} ")
+    override = EngineTuning.from_environ().resident_operand_max_bytes
+    assert resident_operands_max_bytes(available, override) == 3 * gib
+    for bad in ("0", "-5", "lots"):
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", bad)
+        with pytest.raises(ValueError):
+            EngineTuning.from_environ()
 
 
 def test_preparation_batch_shrinks_to_the_budget(monkeypatch):

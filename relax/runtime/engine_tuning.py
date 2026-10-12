@@ -28,10 +28,13 @@ class EngineTuning:
     :func:`relax.runtime.compile_ahead.parse_compile_ahead_config`): the resident pass 2's helper-thread warm-up.
     ``pass2_projection_cache`` (RELAX_SPARSE_PASS2_PROJECTION_CACHE, :func:`parse_projection_cache_request`): the
     resident pass 2's projection cache, None for its default (on, except for an operand dump).
+    ``resident_operand_max_bytes`` (RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES, :func:`parse_positive_bytes`):
+    the resident operands' byte budget, None for the allocator-derived one.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
     pass2_projection_cache: bool | None = None
+    resident_operand_max_bytes: int | None = None
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -40,7 +43,23 @@ class EngineTuning:
                 read_env_text(COMPILE_AHEAD_ENV, ""), read_env_text(COMPILE_AHEAD_MAX_ENV, ""),
             ),
             pass2_projection_cache=parse_projection_cache_request(read_env_text(PROJECTION_CACHE_ENV)),
+            resident_operand_max_bytes=parse_positive_bytes(
+                "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES",
+                read_env_text("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", ""),
+            ),
         )
+
+
+def parse_positive_bytes(name: str, raw: str) -> int | None:
+    """A positive integer override (stripped): blank is None; ``int()`` refuses a non-integer, and a value that is
+    not positive is refused naming ``name``."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    value = int(raw)
+    if value <= 0:
+        raise ValueError(f"{name} must be positive, got {value}")
+    return value
 
 
 PROJECTION_CACHE_ENV = "RELAX_SPARSE_PASS2_PROJECTION_CACHE"

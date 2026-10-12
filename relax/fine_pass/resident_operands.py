@@ -84,7 +84,6 @@ RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 # still hand out when the pass plans (sparse_pass2_budget.device_available_bytes,
 # the reading the streamed projection budget uses); the other half stays for the
 # class accumulators and the chunk working set.
-_RESIDENT_OPERAND_BYTES_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES"
 _RESIDENT_OPERAND_AVAILABLE_FRACTION = 0.5
 _DEFAULT_RESIDENT_OPERAND_MAX_BYTES = 6 * 1024**3
 _PREPARE_IMAGE_BATCH_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH"
@@ -475,20 +474,17 @@ def resident_half_operand_avals(
     )
 
 
-def resident_operands_max_bytes(available_bytes: float | None = None) -> int:
+def resident_operands_max_bytes(available_bytes: float | None, override: int | None) -> int:
     """Budget for one half's resident per-image operands and their preparation peak.
 
     ``available_bytes`` is what the allocator can still hand out
     (``sparse_pass2_budget.device_available_bytes``); unknown falls back to a
-    fixed 6 GiB. ``RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES`` overrides.
+    fixed 6 GiB. ``override`` (``EngineTuning.resident_operand_max_bytes``,
+    ``RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES``) replaces it.
     """
 
-    override = os.environ.get(_RESIDENT_OPERAND_BYTES_ENV, "").strip()
-    if override:
-        value = int(override)
-        if value <= 0:
-            raise ValueError(f"{_RESIDENT_OPERAND_BYTES_ENV} must be positive, got {value}")
-        return value
+    if override is not None:
+        return override
     if available_bytes is None:
         return _DEFAULT_RESIDENT_OPERAND_MAX_BYTES
     return max(1, int(float(available_bytes) * _RESIDENT_OPERAND_AVAILABLE_FRACTION))

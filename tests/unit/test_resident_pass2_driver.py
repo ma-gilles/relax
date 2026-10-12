@@ -1582,15 +1582,16 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
 def test_resident_operand_reservation_and_admission_share_one_predicate(monkeypatch):
     """Operands are reserved only when they would be admitted: half of what the allocator can hand out."""
 
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", raising=False)
     gib = 1024**3
-    assert resident_projections.resident_operands_fit(10 * gib, 20 * gib)
-    assert not resident_projections.resident_operands_fit(10 * gib + 1, 20 * gib)
+    assert resident_projections.resident_operands_fit(10 * gib, 20 * gib, None)
+    assert not resident_projections.resident_operands_fit(10 * gib + 1, 20 * gib, None)
     # EMPIAR-10202 iteration 2 (box 800): 50.9 GiB of operands against a 51 GiB reading stay per chunk.
-    assert not resident_projections.resident_operands_fit(int(50.9 * gib), 51 * gib)
+    assert not resident_projections.resident_operands_fit(int(50.9 * gib), 51 * gib, None)
     # An unknown reading falls back to the fixed budget.
-    assert resident_projections.resident_operands_fit(6 * gib, None)
-    assert not resident_projections.resident_operands_fit(6 * gib + 1, None)
+    assert resident_projections.resident_operands_fit(6 * gib, None, None)
+    assert not resident_projections.resident_operands_fit(6 * gib + 1, None, None)
+    # The command's override (EngineTuning.resident_operand_max_bytes) replaces the budget.
+    assert resident_projections.resident_operands_fit(30 * gib, 20 * gib, 30 * gib)
 
 
 def test_stream_projection_budget_is_capped_by_measured_free_memory():
