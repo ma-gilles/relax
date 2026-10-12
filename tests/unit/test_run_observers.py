@@ -3,8 +3,8 @@
 import pytest
 from helpers.tiny_refinement import run_tiny_refinement
 
+from relax.commands import refinement_arguments
 from relax.diagnostics import observers
-from relax.refinement import command_options
 from relax.refinement.ports import FinishedIteration, RunObserver
 
 pytestmark = pytest.mark.unit
@@ -45,7 +45,7 @@ def test_the_controller_tells_the_observer_each_moment_of_each_iteration_in_orde
 
 
 def _args(*arguments):
-    return command_options.parse_refinement_args(["--data_dir", "d", "--output", "o", *arguments])
+    return refinement_arguments.parse_refinement_args(["--data_dir", "d", "--output", "o", *arguments])
 
 
 def test_the_command_builds_the_observers_its_flags_and_environment_ask_for(monkeypatch, tmp_path):

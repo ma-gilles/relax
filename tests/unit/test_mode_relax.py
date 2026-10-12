@@ -12,7 +12,8 @@ from types import SimpleNamespace
 import pytest
 from helpers.run_options import stand_in
 
-from relax.refinement import command_options, iteration_snapshot, refinement_options
+from relax.commands import refinement_arguments
+from relax.refinement import iteration_snapshot, refinement_options
 from relax.refinement.refinement_options import (
     RELAX_MODE_CONSISTENCY,
     KClassOptions,
@@ -29,7 +30,7 @@ ALL = RelionConsistencyOptions(**RELAX_MODE_CONSISTENCY)
 
 
 def _resolve(flags, **route):
-    return command_options.resolve_consistency_options(command_options.parse_refinement_args(flags), **route)
+    return refinement_arguments.resolve_consistency_options(refinement_arguments.parse_refinement_args(flags), **route)
 
 
 def _without(*names):
@@ -44,7 +45,7 @@ def test_the_bundle_sets_the_consistent_value_of_every_option():
 
 def test_mode_relion_is_the_default_and_changes_no_option(caplog):
     with caplog.at_level(logging.INFO):
-        assert command_options.parse_refinement_args(BASE_ARGS).mode == "relion"
+        assert refinement_arguments.parse_refinement_args(BASE_ARGS).mode == "relion"
         assert _resolve(BASE_ARGS) == _resolve([*BASE_ARGS, "--mode", "relion"]) == RelionConsistencyOptions()
         explicit = _resolve([*BASE_ARGS, "--noise_shell_count", "summed"])
     assert explicit == RelionConsistencyOptions(noise_shell_count="summed")
@@ -98,7 +99,7 @@ def test_mode_relax_skips_what_the_route_does_not_honour_and_says_why(monkeypatc
         assert sum(message.startswith(f"--mode relax: {name} keeps RELION's rule") for message in messages) == 1
 
     # The loop's guard accepts what the mode resolved for this route.
-    args = command_options.parse_refinement_args([*RELAX, *flags])
+    args = refinement_arguments.parse_refinement_args([*RELAX, *flags])
     require_consistency_route(
         stand_in.options(
             consistency=options,
@@ -122,7 +123,7 @@ def test_an_explicit_option_still_fails_closed_under_mode_relax(flags, message):
     with pytest.raises(SystemExit, match=message):
         _resolve([*RELAX, *flags])
     with pytest.raises(SystemExit, match=message):
-        command_options.require_consistency_arguments(command_options.parse_refinement_args([*RELAX, *flags]))
+        refinement_arguments.require_consistency_arguments(refinement_arguments.parse_refinement_args([*RELAX, *flags]))
 
 
 def test_an_explicit_option_the_route_refuses_is_not_skipped():
@@ -154,11 +155,11 @@ def test_an_explicit_option_the_route_refuses_is_not_skipped():
     ids=["init-dir", "star-replay", "frozen-boundary", "loaded-noise", "relion-iteration"],
 )
 def test_mode_relax_is_refused_on_relion_seeded_or_replayed_state(flags):
-    args = command_options.parse_refinement_args([*RELAX, *flags])
+    args = refinement_arguments.parse_refinement_args([*RELAX, *flags])
     with pytest.raises(SystemExit, match="--mode relax: not available with RELION-seeded or replayed state"):
-        command_options.require_consistency_arguments(args)
+        refinement_arguments.require_consistency_arguments(args)
     with pytest.raises(SystemExit, match="--mode relax: not available with RELION-seeded or replayed state"):
-        command_options.resolve_consistency_options(args)
+        refinement_arguments.resolve_consistency_options(args)
     # The default mode keeps every such route.
     assert _resolve([*BASE_ARGS, *flags]) == RelionConsistencyOptions()
 

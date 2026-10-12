@@ -12,8 +12,8 @@ import starfile
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
+from relax.commands.refinement_arguments import validate_sigma_ang
 from relax.reconstruction.resolution import ImageGeometry
-from relax.refinement.command_options import validate_sigma_ang
 from relax.refinement.iteration_planning import initialize_refinement_state
 from relax.refinement.ports import InputSource
 from relax.refinement.refinement_options import (

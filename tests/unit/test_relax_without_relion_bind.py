@@ -35,7 +35,7 @@ CHILD = textwrap.dedent(
         "relax.commands.class3d",
         "relax.commands.initial_model",
         "relax.commands.ppca_initial_model",
-        "relax.refinement.full_refinement",
+        "relax.commands.refinement_run",
         "relax.refinement.iteration_loop",
         "relax.classification.k_class",
         "relax.vdam.driver",

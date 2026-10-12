@@ -1,4 +1,4 @@
-"""``relax refine`` / ``relax class3d`` (``full_refinement.main``) run on a tiny data directory.
+"""``relax refine`` / ``relax class3d`` (``refinement_run.main``) run on a tiny data directory.
 
 The tests run the command (``helpers.tiny_main``) and check what it hands the controller, what it refuses and
 what it writes, instead of reading its source.
@@ -16,7 +16,7 @@ from helpers.float_compare import assert_matches
 from helpers.tiny_main import controller_inputs, run_tiny_main, write_tiny_data_dir
 from helpers.tiny_refinement import CallTrace
 
-from relax.refinement import full_refinement
+from relax.commands import refinement_run
 
 pytestmark = pytest.mark.unit
 
@@ -30,22 +30,22 @@ def test_a_requested_significance_dump_stop_exits_cleanly(monkeypatch, caplog, s
     def main(command=None):
         raise completed("target written")
 
-    monkeypatch.setattr(full_refinement, "main", main)
+    monkeypatch.setattr(refinement_run, "main", main)
     monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", raising=False)
     if not stop_requested:
         with pytest.raises(completed):
-            full_refinement.run_from_command_line("refine")
+            refinement_run.run_from_command_line("refine")
         return
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
-    with caplog.at_level(logging.INFO, logger=full_refinement.logger.name), pytest.raises(SystemExit) as stop:
-        full_refinement.run_from_command_line("refine")
+    with caplog.at_level(logging.INFO, logger=refinement_run.logger.name), pytest.raises(SystemExit) as stop:
+        refinement_run.run_from_command_line("refine")
     assert stop.value.code == 0
     assert any("pass-2/M-step work" in record.getMessage() for record in caplog.records)
 
 
 def test_the_controller_gets_the_active_max_significants(monkeypatch, tmp_path):
     """Main hands the controller the runtime resolver's active value, not the saved sentinel."""
-    trace = CallTrace(monkeypatch).wrap(full_refinement.command_options, "resolve_relion_runtime_controls", "controls")
+    trace = CallTrace(monkeypatch).wrap(refinement_run.refinement_arguments, "resolve_relion_runtime_controls", "controls")
     inputs = controller_inputs(monkeypatch, tmp_path, "refine", "--max_significants", "9")
     (controls,) = trace.calls("controls")
     assert controls.kwargs["max_significants"] == 9
@@ -54,7 +54,7 @@ def test_the_controller_gets_the_active_max_significants(monkeypatch, tmp_path):
 
 
 def test_the_benchmark_ledger_records_the_max_significants_resolution(monkeypatch, tmp_path):
-    trace = CallTrace(monkeypatch).wrap(full_refinement.command_options, "resolve_relion_runtime_controls", "controls")
+    trace = CallTrace(monkeypatch).wrap(refinement_run.refinement_arguments, "resolve_relion_runtime_controls", "controls")
     ledger = tmp_path / "ledger.json"
     run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", "--max_significants", "9",
                   "--benchmark_ledger_json", ledger)
@@ -150,7 +150,7 @@ def test_k1_half_sets_are_relions_and_class3d_uses_all_data_once(monkeypatch, tm
     halves = glibc_rand_sequence(42, 12) % 2 + 1
     assert [half.n_units for half in k1] == [int(np.sum(halves == 1)), int(np.sum(halves == 2))]
     trace = CallTrace(monkeypatch).wrap(
-        full_refinement.input_particle_table, "prepare_class3d_particle_layout", "class3d_layout",
+        refinement_run.input_particle_table, "prepare_class3d_particle_layout", "class3d_layout",
     )
     k2 = controller_inputs(monkeypatch, tmp_path / "k2", "class3d", "--n_classes", "2", n_classes=2)
     assert len(trace.calls("class3d_layout")) == 1
@@ -160,7 +160,7 @@ def test_k1_half_sets_are_relions_and_class3d_uses_all_data_once(monkeypatch, tm
 def test_native_group_ids_are_available_to_k_class_refinement(monkeypatch, tmp_path):
     """Class3D gets the physical group layout too: group ids per half, the group and optics-group counts."""
     trace = CallTrace(monkeypatch).wrap(
-        full_refinement.input_particle_table, "prepare_particle_group_layout", "groups",
+        refinement_run.input_particle_table, "prepare_particle_group_layout", "groups",
     )
     start = controller_inputs(monkeypatch, tmp_path, "class3d", "--n_classes", "2", n_classes=2)["options"].start
     (groups,) = trace.calls("groups")

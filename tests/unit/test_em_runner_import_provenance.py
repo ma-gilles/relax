@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from relax.refinement import full_refinement as run_full_refinement
+from relax.commands import refinement_run as run_full_refinement
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_RUNNERS = (

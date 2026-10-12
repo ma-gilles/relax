@@ -10,7 +10,7 @@ sized pass-1 images at 28 instead of 56 pixels.
 
 import pytest
 
-from relax.refinement import full_refinement as run_full_refinement
+from relax.commands import refinement_run as run_full_refinement
 
 pytestmark = pytest.mark.unit
 
@@ -53,15 +53,15 @@ def test_cold_start_and_autonomous_runs_skip_saved_order_check(replay_dir, init_
 
 
 def test_cli_validates_saved_order_before_refinement(tmp_path, monkeypatch):
-    from relax.refinement import command_options
+    from relax.commands import refinement_arguments
 
     _write_sampling(tmp_path, 16, 3)
-    args = command_options.parse_refinement_args([
+    args = refinement_arguments.parse_refinement_args([
         "--data_dir", str(tmp_path), "--output", str(tmp_path / "output"),
         "--perturb_replay_relion_dir", str(tmp_path),
         "--init_relion_iteration", "16", "--healpix_order", "2",
     ])
-    monkeypatch.setattr(command_options, "parse_refinement_args", lambda: args)
+    monkeypatch.setattr(refinement_arguments, "parse_refinement_args", lambda: args)
     monkeypatch.setattr(run_full_refinement, "activate_recovar_compilation_cache", lambda: None)
     monkeypatch.setattr(run_full_refinement, "_assert_expected_repo_imports", lambda: None)
     monkeypatch.setattr(run_full_refinement, "apply_k1_refine3d_env_defaults", lambda: None)

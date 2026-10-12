@@ -72,7 +72,7 @@ variables such as `RELAX_TEST_RECEIPTS` (`RUN_CONTROL_ENV`); it seeds NumPy with
   another checkout, and `python scripts/x.py` does not put the repository root on `sys.path`.
 - Tests of the refinement controller run it on the CPU stand-in engine (`helpers/tiny_refinement.py`:
   `run_tiny_refinement`, `CallTrace`, `frame_holds`); the command runs the same way (`helpers/tiny_main.py`:
-  `run_tiny_main`, `controller_inputs`). A few tests of `full_refinement.main` and of the engines still read
+  `run_tiny_main`, `controller_inputs`). A few tests of `refinement_run.main` and of the engines still read
   source text; grep the name you move in `tests/` first, and convert such a test when its code
   becomes callable (rule 6).
 - Pinned outputs are compared only within one GPU model, and `tiers/pinned_fast_cases.json` holds H100

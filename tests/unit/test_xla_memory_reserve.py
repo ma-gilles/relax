@@ -167,16 +167,16 @@ def test_an_allocator_failure_in_the_default_mode_says_whether_the_pool_was_frag
 
 
 def test_the_refinement_entry_carries_the_pool_note(monkeypatch):
-    """A RESOURCE_EXHAUSTED raised inside ``relax refine``'s entry (``full_refinement.main``) leaves it with the note."""
-    from relax.refinement import full_refinement
+    """A RESOURCE_EXHAUSTED raised inside ``relax refine``'s entry (``refinement_run.main``) leaves it with the note."""
+    from relax.commands import refinement_run
 
     def exhausted(*args, **kwargs):
         raise ValueError("RESOURCE_EXHAUSTED: Out of memory while trying to allocate 7.65GiB.")
 
     monkeypatch.setattr(reserve, "_pool_statistics", lambda: None)
-    monkeypatch.setattr(full_refinement, "activate_recovar_compilation_cache", exhausted)
+    monkeypatch.setattr(refinement_run, "activate_recovar_compilation_cache", exhausted)
     with pytest.raises(ValueError) as err:
-        full_refinement.main("refine")
+        refinement_run.main("refine")
     assert "GPU pool at the failure" in err.value.__notes__[0]
 
 

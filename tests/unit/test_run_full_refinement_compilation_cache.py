@@ -5,8 +5,8 @@ import os
 import jax
 import pytest
 
-import relax.refinement.full_refinement as run_full_refinement
-from relax.refinement import command_options
+import relax.commands.refinement_run as run_full_refinement
+from relax.commands import refinement_arguments
 from relax.runtime import compilation_cache
 
 pytestmark = pytest.mark.unit
@@ -33,7 +33,7 @@ def test_refinement_main_sets_the_live_cache_config_before_parsing(monkeypatch, 
     def stop():
         raise _StopAfterActivation
 
-    monkeypatch.setattr(command_options, "parse_refinement_args", stop)
+    monkeypatch.setattr(refinement_arguments, "parse_refinement_args", stop)
     with pytest.raises(_StopAfterActivation):
         run_full_refinement.main()
     assert jax.config.jax_compilation_cache_dir == str(tmp_path)

@@ -15,7 +15,7 @@ reason; the sections after this one hold the detail.
 | 1 numbers, 2 interfaces | Met: every move was fingerprint-identical (results, files, checkpoints, trace) and passed the GPU tiers; only logger names and accepted new option leaves differ. Archive keys are unchanged (`RefinementResult.archive_fields`). |
 | 3 lifetimes | Met: the controller tests check required lifetimes (`frame_holds`, `keep_operands=False`). Releases that freed nothing are gone (2026-10-08); the M-step records are dropped in the end-of-iteration block, where their fields were. `RefinementResult` keeps the run's `RefinementHistory` (host curves, kilobytes). |
 | 4 JAX | Met (audit below). Exceptions: the donating normalisation executable, the box-scale host staging and the end-of-iteration sync. |
-| 5 decide once | Met for flags and the controller's diagnostics (`command_options` resolvers, the `from_environ` constructors the command calls). The controller takes the command's options (no `RefinementOptions()` default inside) and its scoring precision is `options.precision` (owner review, 2026-10-07). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2), among them the engines' reads of the dense precision. |
+| 5 decide once | Met for flags and the controller's diagnostics (`relax/commands/refinement_arguments.py` resolvers, the `from_environ` constructors the command calls). The controller takes the command's options (no `RefinementOptions()` default inside) and its scoring precision is `options.precision` (owner review, 2026-10-07). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2), among them the engines' reads of the dense precision. |
 | 6 contracts | Met: the controller's 24 mode tests select contract functions, mode-only steps or refusals (owner, 2026-10-04 and 2026-10-05); the final scoring loop and `DenseVariantPolicy.k_class_enabled` are variants. |
 | 7 one owner | Met; no known duplicate. Exception: the pixel size is kept as the input scalar and as `ReconstructionSettings.voxel_size` (a float) on purpose (rule 1). |
 | 8 config/state/results | Met: option records are frozen; the controller and the final pass return `RefinementResult`. Exception: the prior's per-shell outputs come from `relax.reconstruction.regularization` as a dict (`return_details=True`); that module owns the type. |
@@ -41,8 +41,8 @@ reason; the sections after this one hold the detail.
 
 1. **The command still assembles three option records from start-up results (rules 5, 7).** The
    schedule, adaptive, batching, overlap, local-search, k_class and debug records are resolved in
-   `command_options` (`resolve_*`, field tests in `tests/unit/test_option_resolvers.py`). The parity, replay
-   and checkpoint records stay in `full_refinement.main`: their fields are start-up results (half sets,
+   `refinement_arguments` (`resolve_*`, field tests in `tests/unit/test_option_resolvers.py`). The parity, replay
+   and checkpoint records stay in `refinement_run.main`: their fields are start-up results (half sets,
    references, noise, poses, replay inputs, follower topology, the frozen boundary), not flags, so a
    resolver would be a function of ten or more of them. `main` is 1,020 lines.
 2. **Environment reads below the boundary (rule 5).** The controller's remaining execution switches (the JAX
@@ -58,7 +58,7 @@ reason; the sections after this one hold the detail.
      variables during the denominator pass; `expectation`: whether a BPref dump of the engines is armed. The
      variables belong to the engine packages, which read them.
    - `expectation_batches`: `RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS` (owned by
-     `relax.numerics.precision`); `particle_loading`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
+     `relax.numerics.precision`); `commands.refinement_particles`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
      `relax.steps.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
      and the RECOVAR native softmask switch, which is how the setting reaches RECOVAR.
    - The scoring and reconstruction route variants (x-half M-step, local adaptive pass-2 support, the

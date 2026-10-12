@@ -1,4 +1,4 @@
-"""CLI-level sampling contract tests for ``relax/refinement/full_refinement.py``."""
+"""CLI-level sampling contract tests for ``relax/commands/refinement_run.py``."""
 
 from types import SimpleNamespace
 
@@ -6,13 +6,13 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import command_options
-from relax.refinement.command_options import (
+from relax.commands import refinement_arguments
+from relax.commands.refinement_arguments import (
     resolve_firstiter_cc_tree_rescore_margin,
     resolve_initial_projector_real_reference,
     resolve_initial_sampling,
 )
-from relax.refinement.full_refinement import (
+from relax.commands.refinement_run import (
     _effective_perturb_seed,
 )
 from relax.refinement.iteration_history import (
@@ -202,7 +202,7 @@ def _resolve_optimizer_random_seed(explicit_seed, seed_star):
         relion_init_dir=None,
         perturb_replay_relion_dir=None,
     )
-    seed = command_options.resolve_seed(args, seed_star, sealed=seed_star is not None)
+    seed = refinement_arguments.resolve_seed(args, seed_star, sealed=seed_star is not None)
     return seed.value, seed.source
 
 
@@ -224,7 +224,7 @@ def test_optimizer_seed_inherits_explicit_relion_star_when_omitted(tmp_path):
 
 
 def test_optimizer_seed_omitted_without_relion_state_is_the_time(monkeypatch):
-    monkeypatch.setattr(command_options.time, "time", lambda: 1700000000.2)
+    monkeypatch.setattr(refinement_arguments.time, "time", lambda: 1700000000.2)
     assert _resolve_optimizer_random_seed(None, None) == (1700000000, "RELION default -1: the time")
 
 
@@ -244,9 +244,9 @@ def test_seed_source_ignores_incidental_data_dir_relion_discovery(tmp_path):
         relion_half_sets=None,
     )
 
-    discovered = command_options.relion_optimiser_star(args, relion_half_sets_from_input=False)
+    discovered = refinement_arguments.relion_optimiser_star(args, relion_half_sets_from_input=False)
     assert discovered == (relion_dir / "run_optimiser.star").resolve()
-    assert command_options.optimiser_seed_source(args, discovered, sealed=False) is None
+    assert refinement_arguments.optimiser_seed_source(args, discovered, sealed=False) is None
 
 
 def test_optimizer_seed_is_resolved_before_halfset_splitting(monkeypatch, tmp_path):
@@ -254,11 +254,11 @@ def test_optimizer_seed_is_resolved_before_halfset_splitting(monkeypatch, tmp_pa
     are drawn with that resolved seed."""
     from helpers.tiny_main import controller_inputs
 
-    from relax.refinement import command_options
+    from relax.commands import refinement_arguments
     from relax.star.input_particle_table import glibc_rand_sequence
 
-    assert command_options.parse_refinement_args(["--data_dir", "d", "--output", "o"]).seed is None
-    import relax.refinement.full_refinement as driver
+    assert refinement_arguments.parse_refinement_args(["--data_dir", "d", "--output", "o"]).seed is None
+    import relax.commands.refinement_run as driver
 
     monkeypatch.setattr(driver.time, "time", lambda: 18.25)
     inputs = controller_inputs(monkeypatch, tmp_path, "refine", seed=None)
@@ -442,9 +442,9 @@ def test_a_continued_run_keeps_its_run_files_seed_and_refuses_another(tmp_path):
         perturb_replay_relion_dir=None,
     )
     # Recorded as an explicit seed, as the run's archive has always stored it.
-    assert command_options.resolve_seed(args, None, sealed=False) == RandomSeed(1713, "explicit CLI")
+    assert refinement_arguments.resolve_seed(args, None, sealed=False) == RandomSeed(1713, "explicit CLI")
     args.seed = 1713
-    assert command_options.resolve_seed(args, None, sealed=False).value == 1713
+    assert refinement_arguments.resolve_seed(args, None, sealed=False).value == 1713
     args.seed = 5
     with pytest.raises(SystemExit, match="differs from the continued run's seed 1713"):
-        command_options.resolve_seed(args, None, sealed=False)
+        refinement_arguments.resolve_seed(args, None, sealed=False)

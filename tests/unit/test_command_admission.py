@@ -14,8 +14,9 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
+from relax.commands import refinement_arguments
 from relax.parity import oracle_admission
-from relax.refinement import command_options, follower_scale
+from relax.refinement import follower_scale
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ def _admit(args, particles):
     """Admit the fixture's capture with the optimiser the arguments locate, as the command does."""
     return oracle_admission.load_verified_dispatch_schedule(
         args, particles, strict_replay=True,
-        discovered_optimiser=command_options.find_relion_optimiser_star(args, relion_half_sets_from_input=False),
+        discovered_optimiser=refinement_arguments.find_relion_optimiser_star(args, relion_half_sets_from_input=False),
     )
 
 
@@ -201,7 +202,7 @@ def test_dispatch_preserves_exception_scope(monkeypatch, failure, wrapped):
     (4, 0, 0, "cli_override"), (4, 37, 37, "cli_override"),
 ])
 def test_runtime_controls_without_optimiser(classes, override, expected, source):
-    controls = command_options.resolve_relion_runtime_controls(
+    controls = refinement_arguments.resolve_relion_runtime_controls(
         None, max_significants=override, target_iteration=8,
         firstiter_cc=False, n_classes=classes, log=LOG,
     )
@@ -232,7 +233,7 @@ def test_runtime_controls_read_saved_metadata_and_active_precedence(
     if saved is not None:
         text += f"_rlnMaximumSignificantPoses {saved}\n"
     path.write_text(text)
-    controls = command_options.resolve_relion_runtime_controls(
+    controls = refinement_arguments.resolve_relion_runtime_controls(
         path, max_significants=override, target_iteration=2,
         firstiter_cc=False, n_classes=4, log=LOG,
     )
@@ -252,14 +253,14 @@ def test_runtime_controls_read_saved_metadata_and_active_precedence(
 def test_runtime_controls_preserve_legacy_saved_cap_and_missing_gradient_failure(tmp_path):
     path = tmp_path / "run_optimiser.star"
     path.write_text("data_optimiser_general\n_maximum_significant_poses 23\n")
-    controls = command_options.resolve_relion_runtime_controls(
+    controls = refinement_arguments.resolve_relion_runtime_controls(
         path, max_significants=None, target_iteration=1,
         firstiter_cc=True, n_classes=4, log=LOG,
     )
     assert controls.max_significants_resolution.active_max_significants == 23
     path.write_text("data_optimiser_general\n_rlnDoGradientRefine 1\n")
     with pytest.raises(ValueError, match="requires rlnNumberOfIterations"):
-        command_options.resolve_relion_runtime_controls(
+        refinement_arguments.resolve_relion_runtime_controls(
             path, max_significants=None, target_iteration=1,
             firstiter_cc=True, n_classes=4, log=LOG,
         )
@@ -284,7 +285,7 @@ def test_follower_routing_hands_the_admitted_capture_and_its_oracle_to_the_topol
     routing = oracle_admission.admit_follower_routing(
         args, SimpleNamespace(particles=particles, path=oracle / "run_it000_data.star"), groups,
         random_seed=9, max_iter=1,
-        discovered_optimiser=command_options.find_relion_optimiser_star(args, relion_half_sets_from_input=False), log=LOG,
+        discovered_optimiser=refinement_arguments.find_relion_optimiser_star(args, relion_half_sets_from_input=False), log=LOG,
     )
     _, schedule, routed_groups, kwargs = calls[0]
     assert schedule is routing.schedule and schedule is not None and routing.topology is topology
@@ -298,7 +299,7 @@ def test_follower_routing_hands_the_admitted_capture_and_its_oracle_to_the_topol
 
 def test_runtime_controls_of_a_saved_optimiser_without_caps_leave_the_cap_off(dispatch_inputs):
     _, _, oracle = dispatch_inputs
-    controls = command_options.resolve_relion_runtime_controls(
+    controls = refinement_arguments.resolve_relion_runtime_controls(
         oracle / "run_optimiser.star", max_significants=None, target_iteration=1,
         firstiter_cc=False, n_classes=4, log=LOG,
     )

@@ -41,7 +41,7 @@ records scratch lifetime, unchanged ordering and outstanding qualification.
 
 ## Particle input preparation
 
-[`load_particle_inputs`](../../relax/refinement/particle_loading.py) owns command
+[`load_particle_inputs`](../../relax/commands/refinement_particles.py) owns command
 input admission and loading for SPA, multiple image grids and subtomogram 2D
 stacks. It preserves the order: establish the reading/scratch policy, detect and
 admit the format, use the existing RECOVAR/adapter loader, verify scratch/CTF
@@ -51,7 +51,7 @@ grid's pixel size; taper width remains in image pixels. Complex64 Fourier-image
 preprocessing is the production path; complex128 remains the admitted single-grid
 scoring diagnostic. These storage dtypes do not make likelihood scores complex.
 
-[`find_relion_optimiser_star`](../../relax/refinement/command_options.py) owns
+[`find_relion_optimiser_star`](../../relax/commands/refinement_arguments.py) owns
 shared command source discovery. Explicit, input-only and incidental-source
 precedence is unchanged; seed and runtime consumers retain their original timing.
 The controller receives the existing dataset and format/preprocessing metadata,
@@ -143,7 +143,7 @@ The pieces:
 - No RELION output: without `--relion_optimiser`, `--relion_init_dir`,
   `--perturb_replay_relion_dir` or `--relion_half_sets`, a Class3D run does not
   pick up a RELION optimiser STAR found next to the data
-  ([`_find_relion_optimiser_star`](../../relax/refinement/full_refinement.py)). The
+  ([`_find_relion_optimiser_star`](../../relax/commands/refinement_run.py)). The
   mask, `ini_high` and `max_significants` then come from `--particle_diameter_ang`,
   `--apply-initial-lowpass --init_resolution` and relion_refine's `--maxsig -1`.
 - Fixed schedule: Class3D keeps `--healpix_order` and runs every `--iter`
@@ -303,7 +303,7 @@ A fresh K1 start builds RELION's iteration-0 model from `relion_refine`'s own
 inputs rather than from a RELION `run_it000` output. This is the default when
 the run is given no RELION output (no `--relion_half_sets`, `--relion_init_dir`,
 replay directory or frozen boundary):
-[`resolve_standalone_k1_start`](../../relax/refinement/command_options.py) turns on
+[`resolve_standalone_k1_start`](../../relax/commands/refinement_arguments.py) turns on
 `--relion-half-sets-from-input`. The mt19937 order and RELION's start-up noise
 are the defaults of every run. A run given RELION output is a debug start and
 must supply `--relion_half_sets`; relax has no other K1 half split.
@@ -323,7 +323,7 @@ must supply `--relion_half_sets`; relax has no other K1 half split.
   half set's particle count and the initial noise.
   [`relion_initial_tau2_and_data_vs_prior`](../../relax/relion/reference_initialization.py) implements
   one class and is shared with the InitialModel start;
-  [`_relion_k1_start_tau2_and_data_vs_prior`](../../relax/refinement/full_refinement.py)
+  [`_relion_k1_start_tau2_and_data_vs_prior`](../../relax/commands/refinement_run.py)
   applies it to every fresh K1 start that does not load a noise or tau2 state
   (frozen boundary, `--init_noise_from_npz`, `--relion_init_dir`). The start-up `data_vs_prior` selects the iteration-1
   scale-correction shells (`data_vs_prior > 3`), which matters for starts
@@ -895,7 +895,7 @@ to that tilt.
   otherwise any of `--sigma_rot`, `--sigma_tilt`, `--sigma_psi` sets `PRIOR_ROTTILT_PSI` with the given
   widths and 0 for the others. So `--sigma_tilt s` alone is `sigma2_rot = sigma2_psi = 0`,
   `sigma2_tilt = s^2`, and `--sigma_tilt` next to `--sigma_ang` is ignored.
-  [`validate_sigma_ang`](../../relax/refinement/command_options.py) drops it with a warning;
+  [`validate_sigma_ang`](../../relax/commands/refinement_arguments.py) drops it with a warning;
   the width is run-constant, so it stays an option
   ([`LocalSearchOptions.tilt_prior_deg`](../../relax/refinement/refinement_options.py)) and adds nothing to
   the run state or its files. relax has `--sigma_tilt` only, not `--sigma_rot` or `--sigma_psi`.
@@ -1040,7 +1040,7 @@ changes numerical state or the refinement algorithm.
 
 ### Half image preprocessing
 
-[`configure_half_image_preprocessing`](../../relax/refinement/particle_loading.py)
+[`configure_half_image_preprocessing`](../../relax/commands/refinement_particles.py)
 selects backend preprocessing and installs masks before refinement state setup.
 Source-faithful scoring rejects an incompatible selected backend before mask
 installation. Shape-class masks use each class dataset's physical pixel size;
@@ -1170,7 +1170,7 @@ particle identities retain the existing refusals. The admitted result pairs the
 loaded schedule with verified roots; follower execution uses the unchanged
 schedule arrays.
 
-[`resolve_relion_runtime_controls`](../../relax/refinement/command_options.py)
+[`resolve_relion_runtime_controls`](../../relax/commands/refinement_arguments.py)
 reads the consumed optimiser's expected-accuracy CTF flag and positive CLI
 `ini_high`, then resolves the significant-support cap with
 [`resolve_relion_runtime_max_significants`](../../relax/star/metadata.py).

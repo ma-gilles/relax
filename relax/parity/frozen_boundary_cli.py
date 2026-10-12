@@ -30,7 +30,7 @@ from relax.parity.parity_provenance import git_head_or_none, git_worktree_proven
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import JobDefaults
 
-logger = logging.getLogger('relax.refinement.full_refinement')
+logger = logging.getLogger('relax.commands.refinement_run')
 
 
 class BoundaryInputs(NamedTuple):

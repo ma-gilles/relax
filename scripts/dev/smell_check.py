@@ -35,13 +35,11 @@ ENV_READ_ALLOWED = (
     "relax/runtime/env_flags.py",
     "relax/command_line.py",
     "relax/commands/",
-    "relax/refinement/command_options.py",
 )
 # Check 7: the command layer, which alone may import relax.diagnostics and relax.parity.
 DIAGNOSTICS_IMPORT_ALLOWED = (
     "relax/command_line.py",
     "relax/commands/",
-    "relax/refinement/command_options.py",
     "relax/diagnostics/",
     "relax/parity/",
 )

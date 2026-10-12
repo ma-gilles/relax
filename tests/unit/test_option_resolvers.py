@@ -1,5 +1,5 @@
 """The command's option-group resolvers: each record's fields come from the flags they name
-(relax.refinement.command_options)."""
+(relax.commands.refinement_arguments)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from helpers.tiny_main import controller_inputs
 
-from relax.refinement import command_options
+from relax.commands import refinement_arguments
 from relax.refinement.refinement_options import (
     AdaptiveOptions,
     ExecutionOptions,
@@ -22,17 +22,17 @@ LOG = logging.getLogger(__name__)
 
 
 def _args(*arguments):
-    return command_options.parse_refinement_args(["--data_dir", "d", "--output", "o", *arguments])
+    return refinement_arguments.parse_refinement_args(["--data_dir", "d", "--output", "o", *arguments])
 
 
 def test_adaptive_options_parse_the_oracle_lists_and_keep_the_sampling_flags():
     args = _args("--relion_current_sizes", "12,16", "--relion_healpix_orders", "2,3", "--adaptive_oversampling", "0",
                  "--coarse_engine", "gemm_dense")
-    assert command_options.resolve_adaptive_options(args, max_significants=7, log=LOG) == AdaptiveOptions(
+    assert refinement_arguments.resolve_adaptive_options(args, max_significants=7, log=LOG) == AdaptiveOptions(
         adaptive_oversampling=0, max_significants=7, coarse_engine="gemm_dense",
         relion_current_sizes=[12, 16], relion_healpix_orders=[2, 3],
     )
-    defaults = command_options.resolve_adaptive_options(_args(), max_significants=-1, log=LOG)
+    defaults = refinement_arguments.resolve_adaptive_options(_args(), max_significants=-1, log=LOG)
     assert defaults.relion_current_sizes is None and defaults.relion_healpix_orders is None
 
 
@@ -40,12 +40,12 @@ def test_execution_and_local_search_come_from_their_flags_and_the_environment(mo
     args = _args("--image_batch_size", "64", "--rotation_block_size", "128", "--overlap_halves",
                  "--auto_local_healpix_order", "3", "--sigma_ang", "2.5", "--local_search_profile", "on")
     monkeypatch.delenv("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS", raising=False)
-    assert command_options.resolve_execution(args) == ExecutionOptions(
+    assert refinement_arguments.resolve_execution(args) == ExecutionOptions(
         image_batch_size=64, rotation_block_size=128, overlap_halves=True, clear_jax_caches_between_iterations=False,
     )
     monkeypatch.setenv("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS", "1")
-    assert command_options.resolve_execution(args).clear_jax_caches_between_iterations is True
-    assert command_options.resolve_local_search(args) == LocalSearchOptions(
+    assert refinement_arguments.resolve_execution(args).clear_jax_caches_between_iterations is True
+    assert refinement_arguments.resolve_local_search(args) == LocalSearchOptions(
         auto_local_healpix_order=3, sigma_ang_deg=2.5, local_search_profile_mode="on",
     )
 
@@ -58,14 +58,14 @@ def test_the_command_hands_the_resolved_groups_to_the_controller(monkeypatch, tm
 
 
 def _schedule(args, continued_iterations=None):
-    return command_options.resolve_schedule(
-        args, max_iter=command_options.resolve_job_defaults(args).max_iter, initial_sampling=SimpleNamespace(coarse_order=2, max_order=5), init_current_size=24,
+    return refinement_arguments.resolve_schedule(
+        args, max_iter=refinement_arguments.resolve_job_defaults(args).max_iter, initial_sampling=SimpleNamespace(coarse_order=2, max_order=5), init_current_size=24,
         image_mask=(180.0, 5.0), continued_iterations=continued_iterations,
     )
 
 
 def _start_state(args, frozen_boundary=None, sigma_offset=None):
-    return command_options.resolve_start_state(
+    return refinement_arguments.resolve_start_state(
         args, particle_groups=SimpleNamespace(group_ids_per_half=([0], [0]), n_groups=1, n_optics_groups=1),
         initial_poses=SimpleNamespace(poses=None, image_corrections="image", scale_corrections="scale"),
         ini_high_angstrom=30.0, init_data_vs_prior="dvp", relion_init_sigma_offset_angstrom=sigma_offset,
@@ -102,13 +102,13 @@ def test_a_frozen_boundary_owns_its_start_state_fields():
 
 def test_class_seeds_are_drawn_only_for_a_fresh_class3d_run_from_one_reference():
     trial_order = np.arange(12)
-    seeded = command_options.resolve_k_class(_args("--n_classes", "3", "--init_volume", "ref.mrc"),
+    seeded = refinement_arguments.resolve_k_class(_args("--n_classes", "3", "--init_volume", "ref.mrc"),
                                              random_seed=5, trial_order=trial_order, resumed=False)
     assert seeded.n_classes == 3 and seeded.first_iteration_seed_classes.shape == (12,)
     assert set(seeded.first_iteration_seed_classes.tolist()) <= {0, 1, 2}
     for arguments, resumed in ((("--n_classes", "3", "--init_volume", "ref.mrc"), True), (("--n_classes", "3"), False),
                                (("--init_volume", "ref.mrc"), False)):
-        assert command_options.resolve_k_class(_args(*arguments), random_seed=5, trial_order=trial_order,
+        assert refinement_arguments.resolve_k_class(_args(*arguments), random_seed=5, trial_order=trial_order,
                                                resumed=resumed).first_iteration_seed_classes is None
 
 
@@ -116,7 +116,7 @@ def test_a_frozen_boundary_replays_its_state_and_its_sealed_sampling_on_the_fixe
     from relax.parity.relion_replay_source import RelionReplay
     from relax.refinement.ports import StartSeeds
 
-    assert command_options.resolve_local_search(_args("--stop_after_local_search")).stops_after_local_search
+    assert refinement_arguments.resolve_local_search(_args("--stop_after_local_search")).stops_after_local_search
     assert RelionReplay.from_frozen_boundary(None, perturb_replay_max_iter=2) == RelionReplay(perturb_replay_max_iter=2)
     boundary = SimpleNamespace(fixed_diagnostic_arm=True, sampling_state="sampling", schema="s", completed_relion_iteration=3,
                                consumer_relion_iteration=4, source_sha256="h", source_roles={}, runtime_config={},

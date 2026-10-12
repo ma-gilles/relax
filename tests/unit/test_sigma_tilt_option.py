@@ -7,24 +7,24 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.refinement import command_options
+from relax.commands import refinement_arguments
 from relax.refinement.refinement_options import LocalSearchOptions
 from relax.refinement.refinement_state import RefinementState, refine_angular_sampling
 from relax.steps import half_inputs
 
 
 def _args(*extra):
-    return command_options.parse_refinement_args(["--data_dir", "data", "--output", "out", *extra])
+    return refinement_arguments.parse_refinement_args(["--data_dir", "data", "--output", "out", *extra])
 
 
 @pytest.mark.unit
 def test_sigma_tilt_is_parsed_in_degrees_and_off_by_default():
     assert _args().sigma_tilt is None
     args = _args("--sigma_tilt", "10")
-    command_options.validate_sigma_ang(args)
-    command_options.validate_sigma_tilt(args)
+    refinement_arguments.validate_sigma_ang(args)
+    refinement_arguments.validate_sigma_tilt(args)
     assert args.sigma_tilt == 10.0
-    assert command_options.resolve_local_search(args).sigma_tilt_deg == 10.0
+    assert refinement_arguments.resolve_local_search(args).sigma_tilt_deg == 10.0
 
 
 @pytest.mark.unit
@@ -35,7 +35,7 @@ def test_sigma_tilt_is_parsed_in_degrees_and_off_by_default():
 ])  # fmt: skip
 def test_sigma_tilt_refusals(extra, message):
     with pytest.raises(SystemExit, match=message):
-        command_options.validate_sigma_tilt(_args(*extra))
+        refinement_arguments.validate_sigma_tilt(_args(*extra))
 
 
 @pytest.mark.unit
@@ -44,8 +44,8 @@ def test_sigma_ang_wins_over_sigma_tilt_as_in_relion(caplog):
 
     args = _args("--sigma_tilt", "10", "--sigma_ang", "5")
     with caplog.at_level(logging.WARNING):
-        command_options.validate_sigma_ang(args)
-        command_options.validate_sigma_tilt(args)
+        refinement_arguments.validate_sigma_ang(args)
+        refinement_arguments.validate_sigma_tilt(args)
     assert args.sigma_tilt is None and args.sigma_ang == 5.0
     assert "--sigma_tilt 10 is ignored" in caplog.text
 
@@ -53,12 +53,12 @@ def test_sigma_ang_wins_over_sigma_tilt_as_in_relion(caplog):
 @pytest.mark.unit
 def test_sigma_tilt_routes():
     args = _args("--sigma_tilt", "10")
-    command_options.validate_sigma_tilt_route(args, subtomograms=True)  # subtomogram auto-refine
+    refinement_arguments.validate_sigma_tilt_route(args, subtomograms=True)  # subtomogram auto-refine
     with pytest.raises(SystemExit, match="subtomogram particles .* only"):
-        command_options.validate_sigma_tilt_route(args, subtomograms=False)
+        refinement_arguments.validate_sigma_tilt_route(args, subtomograms=False)
     with pytest.raises(SystemExit, match="subtomogram auto-refine only"):
-        command_options.validate_sigma_tilt_route(_args("--sigma_tilt", "10", "--n_classes", "2"), subtomograms=True)
-    command_options.validate_sigma_tilt_route(_args(), subtomograms=False)  # no option: nothing to refuse
+        refinement_arguments.validate_sigma_tilt_route(_args("--sigma_tilt", "10", "--n_classes", "2"), subtomograms=True)
+    refinement_arguments.validate_sigma_tilt_route(_args(), subtomograms=False)  # no option: nothing to refuse
 
 
 def _state(**overrides):

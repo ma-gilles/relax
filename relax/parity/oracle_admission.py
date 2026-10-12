@@ -2,7 +2,7 @@
 
 A captured follower dispatch schedule is admitted against its verified oracle directories and the particle
 order, the followers' topology is built from it, and a perturbation replay's restart provenance is checked. The
-command (``relax.refinement.full_refinement``) calls these; the algorithm's modules never import them. What a
+command (``relax.commands.refinement_run``) calls these; the algorithm's modules never import them. What a
 frozen boundary replays is ``RelionReplay.from_frozen_boundary``.
 """
 

@@ -17,9 +17,9 @@ from typing import Sequence
 # RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
+from relax.commands.refinement_arguments import RetiredFlag
 from relax.io.particle_io import add_particle_read_arguments
 from relax.numerics.precision import use_float32_matmuls
-from relax.refinement.command_options import RetiredFlag
 from relax.vdam.native_options import InitialModelDefaults, VdamPilotControls
 
 

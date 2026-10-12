@@ -44,7 +44,7 @@ See [iteration loop](../../relax/refinement/iteration_loop.py),
 [accumulator geometry](../../relax/reconstruction/half_volume_mstep.py),
 [optics grouping](../../relax/steps/optics_shapes.py),
 [resolution helpers](../../relax/reconstruction/resolution.py), and
-[input loading](../../relax/refinement/full_refinement.py).
+[input loading](../../relax/commands/refinement_run.py).
 
 ## Proposed ownership
 

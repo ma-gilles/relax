@@ -33,6 +33,8 @@ import jax.numpy as jnp
 import numpy as np
 
 import relax
+from relax.commands import refinement_arguments, refinement_particles
+from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
 from relax.diagnostics import observers
 from relax.numerics.precision import use_float32_matmuls
 from relax.parity import (
@@ -49,15 +51,7 @@ from relax.parity.state_swap_probe import (
     state_swap_probe_loop_index,
     validate_state_swap_probe_application,
 )
-from relax.refinement import (
-    command_options,
-    particle_loading,
-    refinement_options,
-    run_files,
-    startup_noise,
-    startup_references,
-)
-from relax.refinement.command_options import apply_k1_refine3d_env_defaults
+from relax.refinement import refinement_options, run_files, startup_noise, startup_references
 from relax.refinement.result_files import (
     RunReport,
     build_archive_metadata,
@@ -391,19 +385,19 @@ def main(command=None):
     cache_directory = activate_recovar_compilation_cache()
     use_float32_matmuls()
     _assert_expected_repo_imports()
-    args = command_options.parse_refinement_args()
+    args = refinement_arguments.parse_refinement_args()
     if command is not None:
-        command_options.require_command_n_classes(command, int(args.n_classes))
-    command_options.require_consistency_arguments(args)
+        refinement_arguments.require_command_n_classes(command, int(args.n_classes))
+    refinement_arguments.require_consistency_arguments(args)
     if cache_directory:
         logger.info("Persistent JAX compilation cache: %s", cache_directory)
     if int(args.n_classes) == 1:
         apply_k1_refine3d_env_defaults()
-    job = command_options.resolve_job_defaults(args)
-    relion_half_sets_from_input = command_options.resolve_standalone_k1_start(args)
-    command_options.validate_sigma_ang(args)
-    command_options.validate_sigma_tilt(args)
-    command_options.validate_strict_highres_exp(args)
+    job = refinement_arguments.resolve_job_defaults(args)
+    relion_half_sets_from_input = refinement_arguments.resolve_standalone_k1_start(args)
+    refinement_arguments.validate_sigma_ang(args)
+    refinement_arguments.validate_sigma_tilt(args)
+    refinement_arguments.validate_strict_highres_exp(args)
     if (
         args.state_swap_target_relion_iteration is not None
         or args.state_swap_variant is not None
@@ -432,21 +426,21 @@ def main(command=None):
 
     frozen_boundary, fixed_diagnostic_source_paths = frozen_boundary_cli.load_cli_boundary(args, job=job)
 
-    command_options.validate_skip_align_args(args)
+    refinement_arguments.validate_skip_align_args(args)
     if args.continue_optimiser_star is not None:
-        command_options.validate_continue_args(args)
+        refinement_arguments.validate_continue_args(args)
 
     # The one RELION optimiser STAR the run reads: a sealed boundary's completed optimiser, or the one the
-    # arguments locate (see command_options.relion_optimiser_star).
+    # arguments locate (see refinement_arguments.relion_optimiser_star).
     fixed_diagnostic_arm = frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
     if fixed_diagnostic_arm and fixed_diagnostic_source_paths is None:
         raise ValueError("fixed diagnostic arm lacks sealed source paths")
-    optimiser_star = command_options.relion_optimiser_star(
+    optimiser_star = refinement_arguments.relion_optimiser_star(
         args,
         relion_half_sets_from_input=relion_half_sets_from_input,
         sealed_optimiser=fixed_diagnostic_source_paths["completed_optimiser"] if fixed_diagnostic_arm else None,
     )
-    seed = command_options.resolve_seed(args, optimiser_star, sealed=fixed_diagnostic_arm)
+    seed = refinement_arguments.resolve_seed(args, optimiser_star, sealed=fixed_diagnostic_arm)
     logger.info("Optimiser random seed: %d (%s)", seed.value, seed.source)
 
     if args.timing_dir:
@@ -475,7 +469,7 @@ def main(command=None):
 
     os.makedirs(args.output, exist_ok=True)
 
-    particle_inputs = particle_loading.load_particle_inputs(
+    particle_inputs = refinement_particles.load_particle_inputs(
         args,
         relion_half_sets_from_input=relion_half_sets_from_input,
         image_fourier_backend=job.image_fourier_backend,
@@ -488,7 +482,7 @@ def main(command=None):
     tomo_run = particle_inputs.tomographic
     shape_class_rows = particle_inputs.shape_class_rows
     # The one place --mode is read: after it the run carries the options only.
-    consistency_options = command_options.resolve_consistency_options(
+    consistency_options = refinement_arguments.resolve_consistency_options(
         args, subtomograms=tomo_run, several_image_shapes=shape_class_rows is not None, dataset=ds
     )
     relion_mask_params = particle_inputs.mask_parameters
@@ -510,7 +504,7 @@ def main(command=None):
 
     our_star = _starfile.read(os.path.join(args.data_dir, "particles.star"))
     our_particles = our_star["particles"] if isinstance(our_star, dict) else our_star
-    particle_loading.validate_particle_optics(
+    refinement_particles.validate_particle_optics(
         our_star.get("optics") if isinstance(our_star, dict) else None,
         tomographic=tomo_run,
     )
@@ -545,7 +539,7 @@ def main(command=None):
     use_fresh_auto_refine_order = relion_half_sets is not None and _use_fresh_auto_refine_particle_order(
         args, frozen_boundary
     )
-    half_sets = particle_loading.split_half_sets(
+    half_sets = refinement_particles.split_half_sets(
         our_star,
         ds,
         halfset_path=relion_half_sets,
@@ -638,7 +632,7 @@ def main(command=None):
         max_iter=job.max_iter,
         # The optimiser the arguments locate, which a dispatch capture's oracle manifest must hold.
         discovered_optimiser=(
-            command_options.find_relion_optimiser_star(args, relion_half_sets_from_input=relion_half_sets_from_input)
+            refinement_arguments.find_relion_optimiser_star(args, relion_half_sets_from_input=relion_half_sets_from_input)
             if args.relion_dispatch_schedule is not None
             else None
         ),
@@ -647,7 +641,7 @@ def main(command=None):
     relion_dispatch_schedule = follower_routing.schedule
     follower_topology = follower_routing.topology
 
-    runtime_controls = command_options.resolve_relion_runtime_controls(
+    runtime_controls = refinement_arguments.resolve_relion_runtime_controls(
         optimiser_star,
         max_significants=args.max_significants,
         target_iteration=int(args.init_relion_iteration) + 1,
@@ -696,10 +690,10 @@ def main(command=None):
                 "for the post-iter1 low-pass",
                 relion_firstiter_ini_high_angstrom,
             )
-    _use_initial_projector_real = command_options.resolve_initial_projector_real_reference(
+    _use_initial_projector_real = refinement_arguments.resolve_initial_projector_real_reference(
         firstiter_cc=bool(args.firstiter_cc), n_classes=int(args.n_classes)
     )
-    firstiter_cc_tree_rescore_max_margin = command_options.resolve_firstiter_cc_tree_rescore_margin(
+    firstiter_cc_tree_rescore_max_margin = refinement_arguments.resolve_firstiter_cc_tree_rescore_margin(
         firstiter_cc=bool(args.firstiter_cc),
         n_classes=int(args.n_classes),
         tree_rescore_max_margin=args.firstiter_cc_tree_rescore_max_margin,
@@ -739,7 +733,7 @@ def main(command=None):
         )
         relion_model_pixel_size = references.model_pixel_size
     else:
-        class_paths, class_option = command_options.resolve_class_reference_paths(args, log=logger)
+        class_paths, class_option = refinement_arguments.resolve_class_reference_paths(args, log=logger)
         for p in class_paths:
             _require_relion_convention_reference(p, class_option)
         references = startup_references.load_class_references(
@@ -764,7 +758,7 @@ def main(command=None):
     # ---- Set up rotation and translation grids ----
     from relax.sampling import relion_base_translation_grid, rotation_grid_size
 
-    initial_sampling = command_options.resolve_initial_sampling(
+    initial_sampling = refinement_arguments.resolve_initial_sampling(
         args.healpix_order,
         args.adaptive_oversampling,
         n_classes=args.n_classes,
@@ -1016,7 +1010,7 @@ def main(command=None):
     )
     logger.info("=" * 70)
 
-    adaptive_options = command_options.resolve_adaptive_options(args, max_significants=max_significants, log=logger)
+    adaptive_options = refinement_arguments.resolve_adaptive_options(args, max_significants=max_significants, log=logger)
 
     # Build per-iter replay overrides from RELION's per-iter data.star +
     # model.star when --perturb_replay_relion_dir is set. The override always
@@ -1258,7 +1252,7 @@ def main(command=None):
     del mean_variance, references
     run_options = RefinementOptions(
         symmetry=SymmetryOptions(point_group=symmetry),
-        schedule=command_options.resolve_schedule(
+        schedule=refinement_arguments.resolve_schedule(
             args,
             max_iter=job.max_iter,
             initial_sampling=initial_sampling,
@@ -1266,7 +1260,7 @@ def main(command=None):
             image_mask=(particle_diameter_ang, width_mask_edge_px),
             continued_iterations=None if resume_snapshot is None else continued_iterations,
         ),
-        execution=command_options.resolve_execution(args),
+        execution=refinement_arguments.resolve_execution(args),
         final_pass=refinement_options.FinalPassOptions.from_environ(),
         environment=refinement_options.RefinementEnvironment.from_environ(),
         adaptive=adaptive_options,
@@ -1300,15 +1294,15 @@ def main(command=None):
                 our_particles, from_input=relion_half_sets_from_input, resumed=resume_snapshot is not None
             ),
         ),
-        local_search=command_options.resolve_local_search(args),
-        k_class=command_options.resolve_k_class(
+        local_search=refinement_arguments.resolve_local_search(args),
+        k_class=refinement_arguments.resolve_k_class(
             args,
             random_seed=seed.value,
             trial_order=particle_layout.accuracy_trial_order_local,
             resumed=resume_snapshot is not None,
         ),
         checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
-        start=command_options.resolve_start_state(
+        start=refinement_arguments.resolve_start_state(
             args,
             particle_groups=particle_groups,
             initial_poses=initial_poses,

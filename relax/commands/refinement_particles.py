@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
+from relax.commands import refinement_arguments
 from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
-from relax.refinement import command_options
 from relax.relion.ctf import refuse_generic_ctf_for_optics
 from relax.runtime.env_flags import parse_env_true_flag
 from relax.star import metadata
@@ -265,7 +265,7 @@ def _apply_relion_image_mask(ds, args, *, relion_half_sets_from_input: bool, sea
         params = (float(args.particle_diameter_ang), float(args.width_mask_edge_px))
         optimiser_star = "explicit CLI"
     else:
-        optimiser_star = command_options.find_relion_optimiser_star(
+        optimiser_star = refinement_arguments.find_relion_optimiser_star(
             args, relion_half_sets_from_input=relion_half_sets_from_input
         )
         params = None if optimiser_star is None else metadata.load_relion_mask_params(optimiser_star)
@@ -337,7 +337,7 @@ def load_particle_inputs(
     _double_image_preprocessing = parse_env_true_flag("RELAX_USE_FLOAT64_SCORING")
     particle_read_policy = ParticleReadPolicy.from_args(args)
     tomo_run = is_relion5_2d_stack_star(os.path.join(args.data_dir, "particles.star"))
-    command_options.validate_sigma_tilt_route(args, subtomograms=tomo_run)
+    refinement_arguments.validate_sigma_tilt_route(args, subtomograms=tomo_run)
     # A subtomogram particle STAR names no image stacks; load_tomo_dataset stages from its per-tilt STAR.
     particle_scratch = None if tomo_run else prepare_particle_reads(
         os.path.join(args.data_dir, "particles.star"), particle_read_policy
@@ -345,7 +345,7 @@ def load_particle_inputs(
     shape_class_rows = None if tomo_run else optics_shape_class_rows(os.path.join(args.data_dir, "particles.star"))
     if tomo_run:
         # RELION 5 subtomogram 2D stacks: the units are the particles, each over its tilt images.
-        command_options.validate_tomo_args(args, frozen_boundary, _double_image_preprocessing)
+        refinement_arguments.validate_tomo_args(args, frozen_boundary, _double_image_preprocessing)
         flat_star = os.path.join(args.output, "particles_2d.star")
         ds = load_tomo_dataset(
             os.path.join(args.data_dir, "particles.star"),
@@ -370,7 +370,7 @@ def load_particle_inputs(
         assert_reads_from_scratch(ds, particle_scratch)
         refuse_generic_ctf_for_optics(ds)
     else:
-        command_options.validate_multi_shape_args(args, frozen_boundary, _double_image_preprocessing)
+        refinement_arguments.validate_multi_shape_args(args, frozen_boundary, _double_image_preprocessing)
         # One dataset per image shape (optics groups sharing box and pixel size).
         ds = MultiShapeDataset(
             [

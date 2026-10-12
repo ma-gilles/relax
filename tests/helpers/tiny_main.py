@@ -1,4 +1,4 @@
-"""``relax refine`` / ``relax class3d`` (``full_refinement.main``) on a tiny written data directory, on the CPU.
+"""``relax refine`` / ``relax class3d`` (``refinement_run.main``) on a tiny written data directory, on the CPU.
 
 ``write_tiny_data_dir`` writes a RELION particle STAR of 16-pixel images with its stack and RELION-convention
 start-up maps (one per class as well). ``controller_inputs`` runs main up to the controller and returns the
@@ -77,7 +77,7 @@ def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra
 
 
 def main_frame_arrays():
-    """Weak references to the arrays the running ``full_refinement.main`` holds in its locals, by identity.
+    """Weak references to the arrays the running ``refinement_run.main`` holds in its locals, by identity.
 
     Reading a frame's locals leaves a snapshot on the frame (Python 3.11) that holds them until they are read
     again: call it once more before checking that a replaced array is gone.
@@ -85,14 +85,14 @@ def main_frame_arrays():
 
     import weakref
 
-    from relax.refinement import full_refinement
+    from relax.commands import refinement_run
 
-    code = getattr(full_refinement.main, "__wrapped__", full_refinement.main).__code__
+    code = getattr(refinement_run.main, "__wrapped__", refinement_run.main).__code__
     frame = sys._getframe(1)
     while frame is not None and frame.f_code is not code:
         frame = frame.f_back
     if frame is None:
-        raise AssertionError("full_refinement.main is not running")
+        raise AssertionError("refinement_run.main is not running")
     return [weakref.ref(value) for value in frame.f_locals.values() if hasattr(value, "shape") and hasattr(value, "dtype")]
 
 
@@ -113,7 +113,7 @@ def _stand_in_device(monkeypatch):
 
 
 def _run_main(monkeypatch, command, data, output, arguments, seed=SEED):
-    from relax.refinement import full_refinement
+    from relax.commands import refinement_run
 
     seeded = [] if seed is None else ["--seed", str(seed)]
     argv = ["relax", "--data_dir", str(data), "--output", str(output), *seeded, *map(str, arguments)]
@@ -121,14 +121,14 @@ def _run_main(monkeypatch, command, data, output, arguments, seed=SEED):
     monkeypatch.setattr(sys, "orig_argv", ["python", "-m", f"relax.commands.{command}", *argv[1:]])
     environ = dict(os.environ)
     try:
-        full_refinement.run_from_command_line(command)
+        refinement_run.run_from_command_line(command)
     finally:  # main sets K=1 environment defaults
         os.environ.clear()
         os.environ.update(environ)
 
 
 def controller_inputs(monkeypatch, tmp_path, command, *arguments, n_classes=1, data=None, seed=SEED):
-    """The keyword arguments ``full_refinement.main`` hands ``refine_single_volume`` for ``arguments``.
+    """The keyword arguments ``refinement_run.main`` hands ``refine_single_volume`` for ``arguments``.
 
     ``data`` is a data directory (default: a new ``write_tiny_data_dir``); ``arguments`` may name files in
     it as ``<DATA>/name``. ``seed=None`` passes no ``--seed``.
@@ -148,7 +148,7 @@ def controller_inputs(monkeypatch, tmp_path, command, *arguments, n_classes=1, d
         _run_main(monkeypatch, command, data, tmp_path / "out", arguments, seed=seed)
     except ControllerReached as reached:
         return reached.kwargs
-    raise AssertionError("full_refinement.main returned without calling refine_single_volume")
+    raise AssertionError("refinement_run.main returned without calling refine_single_volume")
 
 
 def run_tiny_main(monkeypatch, tmp_path, command, *arguments, n_classes=1, data=None, output="out"):

@@ -1193,7 +1193,7 @@ def taper_first_cc_class_prior(
 
 ### Actual half-source selection, preparation, dataset subset and admission
 
-[relax/refinement/full_refinement.py](../../relax/refinement/full_refinement.py) (line 643):
+[relax/commands/refinement_run.py](../../relax/commands/refinement_run.py) (line 643):
 
 ```python
     if args.relion_half_sets is not None:
@@ -1315,7 +1315,7 @@ def taper_first_cc_class_prior(
 
 ### Complete half-row/noise/accuracy operation and result
 
-[relax/refinement/particle_loading.py](../../relax/refinement/particle_loading.py) (line 46):
+[relax/commands/refinement_particles.py](../../relax/commands/refinement_particles.py) (line 46):
 
 ```python
 class HalfsetParticleInputs(NamedTuple):
@@ -1327,7 +1327,7 @@ class HalfsetParticleInputs(NamedTuple):
     accuracy_ctf_params: np.ndarray | None
 ```
 
-[relax/refinement/particle_loading.py](../../relax/refinement/particle_loading.py) (line 64):
+[relax/commands/refinement_particles.py](../../relax/commands/refinement_particles.py) (line 64):
 
 ```python
 def prepare_relion_halfset_inputs(
@@ -1670,7 +1670,7 @@ state = initialize_refinement_state(
 
 ### Complete implementation
 
-[relax/refinement/particle_loading.py](../../relax/refinement/particle_loading.py) (line 123):
+[relax/commands/refinement_particles.py](../../relax/commands/refinement_particles.py) (line 123):
 
 ```python
 def configure_half_image_preprocessing(
@@ -1994,7 +1994,7 @@ initialization order and numerical buffer roots are unchanged.
 The remaining NPZ/live/model noise branches continue unchanged in their existing
 startup owner. This is the complete frozen branch at its original phase:
 
-[relax/refinement/full_refinement.py](../../relax/refinement/full_refinement.py) (line 1235):
+[relax/commands/refinement_run.py](../../relax/commands/refinement_run.py) (line 1235):
 
 ```python
 if frozen_boundary is not None:
@@ -2014,7 +2014,7 @@ if frozen_boundary is not None:
 
 ### Actual frozen replay branch
 
-[relax/refinement/full_refinement.py](../../relax/refinement/full_refinement.py) (line 1537):
+[relax/commands/refinement_run.py](../../relax/commands/refinement_run.py) (line 1537):
 
 ```python
 if frozen_boundary is not None:
@@ -2027,7 +2027,7 @@ if frozen_boundary is not None:
 
 ### Complete capture admission, attachment and publication
 
-[relax/refinement/full_refinement.py](../../relax/refinement/full_refinement.py) (line 1748):
+[relax/commands/refinement_run.py](../../relax/commands/refinement_run.py) (line 1748):
 
 ```python
 relion_projector_replay_slot = None
@@ -3178,7 +3178,7 @@ receives the dataset, model, iteration history or GPU arrays.
 
 ### Complete source selection and command caller
 
-[relax/refinement/full_refinement.py](../../relax/refinement/full_refinement.py) (line 1054):
+[relax/commands/refinement_run.py](../../relax/commands/refinement_run.py) (line 1054):
 
 ```python
 group_particle_source = input_particle_table.select_group_particle_source(
@@ -3237,7 +3237,7 @@ relion_firstiter_ini_high_angstrom = runtime_controls.firstiter_ini_high_angstro
 
 ### Verified dispatch result and operation
 
-[relax/refinement/command_options.py](../../relax/refinement/command_options.py) (line 904):
+[relax/commands/refinement_arguments.py](../../relax/commands/refinement_arguments.py) (line 904):
 
 ```python
 class VerifiedDispatchSchedule(NamedTuple):
@@ -3247,7 +3247,7 @@ class VerifiedDispatchSchedule(NamedTuple):
     oracle_dirs: list[Path]
 ```
 
-[relax/refinement/command_options.py](../../relax/refinement/command_options.py) (line 911):
+[relax/commands/refinement_arguments.py](../../relax/commands/refinement_arguments.py) (line 911):
 
 ```python
 def load_verified_dispatch_schedule(args, particles, *, strict_replay: bool) -> VerifiedDispatchSchedule:
@@ -3329,7 +3329,7 @@ def load_verified_dispatch_schedule(args, particles, *, strict_replay: bool) -> 
 
 ### Resolved controls and operation
 
-[relax/refinement/command_options.py](../../relax/refinement/command_options.py) (line 988):
+[relax/commands/refinement_arguments.py](../../relax/commands/refinement_arguments.py) (line 988):
 
 ```python
 class RelionRuntimeControls(NamedTuple):
@@ -3340,7 +3340,7 @@ class RelionRuntimeControls(NamedTuple):
     max_significants_resolution: dict
 ```
 
-[relax/refinement/command_options.py](../../relax/refinement/command_options.py) (line 996):
+[relax/commands/refinement_arguments.py](../../relax/commands/refinement_arguments.py) (line 996):
 
 ```python
 def resolve_relion_runtime_controls(

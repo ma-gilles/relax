@@ -10,7 +10,7 @@
 ``run`` calls the real ``refine_single_volume`` of one source tree on small CPU cases (8-cubed volume,
 four images) and records, per case: the result mapping, every file the run wrote, every checkpoint
 snapshot, and one ordered trace of log records and selected calls. The ``main_*`` cases run the command
-entry (``full_refinement.main``, ``relax refine`` / ``relax class3d``) on a written 12-image, 16-pixel data
+entry (``refinement_run.main``, ``relax refine`` / ``relax class3d``) on a written 12-image, 16-pixel data
 directory with the device check stood in for, and record the operands main hands ``refine_single_volume``,
 its result and every file main writes. Arrays are recorded as module,
 dtype, shape and SHA-256 of their bytes, so a changed value, dtype, host/device placement, write or
@@ -66,7 +66,7 @@ import fingerprint_cli  # noqa: E402  (the shared command line; it imports no ha
 
 SCHEMA = 1
 NOT_COVERED = (
-    "in full_refinement.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
+    "in refinement_run.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
     "STAR replays, --final-replay-relion-dir), schema-v3 frozen boundaries (the fixed diagnostic arm; "
     "main_k1_frozen_boundary runs a schema-v2 one), state-swap probes, "
     "follower-scale topologies, noise or poses from an earlier archive, several optics groups, subtomograms",
@@ -94,7 +94,7 @@ DIFFERENCE_CLASSES = ("outputs", "added", "retired", "moved", "redefaulted", "tr
 # behaviour moved behind a port, code rule 15).
 OFF_VALUES = frozenset({"None", "False"})
 DEFAULT_MARK = "=default"
-# Leaves of what full_refinement.main hands the controller (fingerprints of the main_* cases).
+# Leaves of what refinement_run.main hands the controller (fingerprints of the main_* cases).
 CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
 # Option fields moved to another group, as (old path piece, new path piece) of a controller-input leaf: a leaf only in
 # A whose renamed path is a leaf only in B with the same value is a moved input, accepted.
@@ -663,7 +663,7 @@ def _cases() -> dict[str, tuple[str, dict]]:
         local={"sigma_ang_deg": 3.0, "stop_after_local_search_profile": True}, **local)
     add("k1_sealed_final", "K=1 on a sealed sampling state that converges after its iteration: the final pass "
         "reuses the sealed grid", n_classes=1, join=0.0, sealed=True, max_iter=1, converge_after=1, dump=False)
-    # The command entry (full_refinement.main) on a 12-image, 16-pixel data directory.
+    # The command entry (refinement_run.main) on a 12-image, 16-pixel data directory.
     seed = ["--seed", "42"]  # a seed whose random halves are both non-empty for twelve particles
 
     def add_main(name, description, command, arguments, **keywords):
@@ -1692,7 +1692,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     def run_main_case(command, arguments, *, n_classes=1, converge_after=None, continue_after=None, first=None,
                       frozen_boundary_box=None):
-        """``relax <command>`` (full_refinement.main) on a tiny data directory, the stand-in engine underneath.
+        """``relax <command>`` (refinement_run.main) on a tiny data directory, the stand-in engine underneath.
 
         Records the operands main hands refine_single_volume, its result, and every file main writes.
         ``continue_after`` first runs that many iterations and then continues from their run files; ``first``
@@ -1700,7 +1700,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         """
         import jax
 
-        from relax.refinement import full_refinement
+        try:
+            from relax.commands import refinement_run
+        except ImportError:  # the source before the command boundary moved to commands (layout S9)
+            from relax.refinement import full_refinement as refinement_run
 
         work = Path(tempfile.mkdtemp(dir=tmp_root))
         if frozen_boundary_box is None:
@@ -1757,7 +1760,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 sys.orig_argv = ["python", "-m", f"relax.commands.{command}", *sys.argv[1:]]  # run files record it
                 try:
                     with contextlib.redirect_stdout(printed):
-                        full_refinement.run_from_command_line(command)
+                        refinement_run.run_from_command_line(command)
                     statuses.append("ok")
                 except SystemExit as exc:
                     statuses.append(f"SystemExit({scrub(str(exc.code))})")

@@ -53,7 +53,7 @@ def project(tmp_path_factory):
 
 @pytest.mark.unit
 def test_command_particle_loading_preserves_tilt_particle_identity(project, tmp_path, monkeypatch):
-    from relax.refinement import particle_loading
+    from relax.commands import refinement_particles
 
     out, flat = project
     monkeypatch.setenv("RECOVAR_CACHE_DIR", "")
@@ -64,7 +64,7 @@ def test_command_particle_loading_preserves_tilt_particle_identity(project, tmp_
         width_mask_edge_px=5.0, relion_softmask_reduction="control",
         image_fourier_backend="host_numpy", relion_init_dir=None, init_noise_from_npz=None,
     )
-    loaded = particle_loading.load_particle_inputs(
+    loaded = refinement_particles.load_particle_inputs(
         args, relion_half_sets_from_input=False, image_fourier_backend="host_numpy"
     )
     original_rows, _ = read_star(str(flat))
@@ -90,7 +90,7 @@ def test_command_particle_loading_stages_subtomogram_stacks_to_scratch_dir(proje
     import os
     import signal
 
-    from relax.refinement import particle_loading
+    from relax.commands import refinement_particles
 
     out, _ = project
     monkeypatch.delenv("RECOVAR_CACHE_DIR", raising=False)
@@ -106,7 +106,7 @@ def test_command_particle_loading_stages_subtomogram_stacks_to_scratch_dir(proje
             width_mask_edge_px=5.0, relion_softmask_reduction="control",
             image_fourier_backend="host_numpy", relion_init_dir=None, init_noise_from_npz=None,
         )
-        return particle_loading.load_particle_inputs(
+        return refinement_particles.load_particle_inputs(
             args, relion_half_sets_from_input=False, image_fourier_backend="host_numpy"
         ).dataset
 
@@ -302,7 +302,7 @@ def test_image_geometry_applies_the_subtomogram_matrix(project, tmp_path):
 def test_subtomogram_runs_take_the_first_iteration_cross_correlation():
     """Subtomogram Refine3D and Class3D run RELION's CC iteration (score_tomo_half normalized_cc)."""
 
-    from relax.refinement.command_options import validate_tomo_args
+    from relax.commands.refinement_arguments import validate_tomo_args
 
     args = SimpleNamespace(
         relion_init_dir=None, init_noise_from_npz=None, relion_softmask_reduction="control", firstiter_cc=False
@@ -321,7 +321,7 @@ def test_subtomogram_runs_refuse_unqualified_optics_features(project):
     relion_refine applies all four to every tilt image; ignoring one silently gave wrong maps.
     """
 
-    from relax.refinement.particle_loading import validate_particle_optics
+    from relax.commands.refinement_particles import validate_particle_optics
     from relax.star.metadata import OPTICS_FEATURE_LABELS, TOMO_OPTICS_FEATURES
 
     out, _ = project

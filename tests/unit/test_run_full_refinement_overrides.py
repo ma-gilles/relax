@@ -20,6 +20,16 @@ from helpers.em_fixtures import fixture_dir, fixture_root
 from helpers.float_compare import assert_matches, matches
 from recovar.utils.file_hash import sha256_file
 
+from relax.commands import refinement_arguments
+from relax.commands import refinement_run as run_full_refinement
+from relax.commands.refinement_particles import _apply_relion_image_mask, prepare_relion_halfset_inputs
+from relax.commands.refinement_run import (
+    _k1_relion_live_initial_noise_enabled,
+    _replay_complete_initial_particle_state,
+    _resolve_replay_normcorr,
+    _resolve_tau2_fudge,
+    _use_fresh_auto_refine_particle_order,
+)
 from relax.parity import frozen_boundary_cli
 from relax.parity.frozen_boundary import (
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
@@ -42,17 +52,7 @@ from relax.parity.relion_replay import (
     _build_replay_iteration_overrides,
     _format_replay_mean_for_log,
 )
-from relax.refinement import command_options
-from relax.refinement import full_refinement as run_full_refinement
-from relax.refinement.full_refinement import (
-    _k1_relion_live_initial_noise_enabled,
-    _replay_complete_initial_particle_state,
-    _resolve_replay_normcorr,
-    _resolve_tau2_fudge,
-    _use_fresh_auto_refine_particle_order,
-)
 from relax.refinement.iteration_history import _load_init_noise_radial_npz
-from relax.refinement.particle_loading import _apply_relion_image_mask, prepare_relion_halfset_inputs
 from relax.refinement.reference_state import ReferenceModel, _updated_mean_variance_per_half
 from relax.refinement.startup_noise import (
     estimate_startup_sigma2,
@@ -541,7 +541,7 @@ def test_fixed_arm_rejects_explicit_optimiser_and_internal_resolver_uses_sealed_
     boundary = SimpleNamespace(fixed_diagnostic_arm=True)
     assert boundary.fixed_diagnostic_arm
     assert (
-        command_options.relion_optimiser_star(args, relion_half_sets_from_input=False, sealed_optimiser=sealed)
+        refinement_arguments.relion_optimiser_star(args, relion_half_sets_from_input=False, sealed_optimiser=sealed)
         == sealed.resolve()
     )
 
@@ -682,7 +682,7 @@ def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():
     "flag", ["--relion-projector-capture-dir", "--relion-projector-capture-manifest", "--relion-projector-capture-iteration"],
 )
 def test_the_retired_projector_capture_flags_refuse_and_name_the_tag(flag, capsys):
-    from relax.refinement.command_options import CAPTURED_PROJECTOR_TAG, parse_refinement_args
+    from relax.commands.refinement_arguments import CAPTURED_PROJECTOR_TAG, parse_refinement_args
 
     with pytest.raises(SystemExit):
         parse_refinement_args(["--data_dir", "d", "--output", "o", flag, "x"])
@@ -891,8 +891,9 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     from helpers.refinement_results import refinement_result
     from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
+    from relax.commands import refinement_run
     from relax.parity import archive_provenance, oracle_admission
-    from relax.refinement import follower_scale, full_refinement, iteration_loop
+    from relax.refinement import follower_scale, iteration_loop
 
     # The controller's replay telemetry is archived as integers.
     saved = _archive_metadata({
@@ -915,13 +916,13 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
         raise _Stop
 
     monkeypatch.setattr(archive_provenance, "replay_archive_metadata", lambda **kw: archive.update(kw) or {})
-    monkeypatch.setattr(full_refinement, "build_archive_metadata", build_archive_metadata)
+    monkeypatch.setattr(refinement_run, "build_archive_metadata", build_archive_metadata)
     _stand_in_device(monkeypatch)
     with pytest.raises(_Stop):
         _run_main(monkeypatch, "refine", write_tiny_data_dir(tmp_path / "data"), tmp_path / "out", [])
     assert controller["source"].follower_topology.replay is replay
     assert archive["follower_replay"] is replay and archive["relion_dispatch_schedule"] is schedule
-    assert command_options.parse_refinement_args(
+    assert refinement_arguments.parse_refinement_args(
         ["--data_dir", "d", "--output", "o", "--relion-follower-scale-replay", "r.npz"]
     ).relion_follower_scale_replay == "r.npz"
 
@@ -2116,8 +2117,8 @@ def test_fresh_kclass_selects_only_run_it000_translations():
 def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
     # RELION's first iteration at ini_high 60 A on 128 px / 4.25 A runs at current size 38
     # (2 * (ROUND(9.07) + incr_size 10)); the old 32-pixel floor gave 52.
+    from relax.commands.refinement_run import _initial_current_size
     from relax.reconstruction.resolution import bootstrap_current_size_relion
-    from relax.refinement.full_refinement import _initial_current_size
 
     assert _initial_current_size(4.25, 128, 60.0) == 18
     assert bootstrap_current_size_relion(_initial_current_size(4.25, 128, 60.0), 128) == 38

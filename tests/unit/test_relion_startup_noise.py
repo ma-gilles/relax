@@ -8,8 +8,9 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import command_options, startup_noise
-from relax.refinement import full_refinement as driver
+from relax.commands import refinement_arguments
+from relax.commands import refinement_run as driver
+from relax.refinement import startup_noise
 from relax.steps.half_inputs import HalfPair
 
 pytestmark = pytest.mark.unit
@@ -19,7 +20,7 @@ pytestmark = pytest.mark.unit
 def test_cli_has_no_other_noise_estimator(monkeypatch, capsys, option):
     monkeypatch.setattr(sys, 'argv', ['run_full_refinement.py', '--data_dir', 'd', '--output', 'o', option, 'pipeline'])
     with pytest.raises(SystemExit):
-        command_options.parse_refinement_args()
+        refinement_arguments.parse_refinement_args()
     assert 'unrecognized arguments' in capsys.readouterr().err
 
 

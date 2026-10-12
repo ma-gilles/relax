@@ -17,14 +17,9 @@ from helpers.reconstruction_settings import reconstruction_settings
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
+from relax.commands import refinement_arguments
 from relax.reconstruction.volume_solver import ReconstructionPrograms
-from relax.refinement import (
-    command_options,
-    final_reconstruction,
-    finalization,
-    iteration_loop,
-    numbered_reconstruction,
-)
+from relax.refinement import final_reconstruction, finalization, iteration_loop, numbered_reconstruction
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
     KClassOptions,
@@ -391,11 +386,11 @@ BASE_ARGS = ["--data_dir", "data", "--output", "out"]
 
 
 def test_class3d_command_refuses_separable():
-    radial = command_options.parse_refinement_args([*BASE_ARGS, "--n_classes", "4"])
-    assert command_options.resolve_consistency_options(radial).non_default() == {}
-    separable = command_options.parse_refinement_args([*BASE_ARGS, "--n_classes", "4", "--gridding_kernel", "separable"])
+    radial = refinement_arguments.parse_refinement_args([*BASE_ARGS, "--n_classes", "4"])
+    assert refinement_arguments.resolve_consistency_options(radial).non_default() == {}
+    separable = refinement_arguments.parse_refinement_args([*BASE_ARGS, "--n_classes", "4", "--gridding_kernel", "separable"])
     with pytest.raises(SystemExit, match="K=1"):
-        command_options.resolve_consistency_options(separable)
+        refinement_arguments.resolve_consistency_options(separable)
 
 
 def _stub_half(owner=None):

@@ -21,18 +21,9 @@ import relax.refinement
 
 pytestmark = pytest.mark.unit
 
-# The command boundary chooses the implementations; every other module of the package is the algorithm.
-# particle_loading is the command's particle reader (only full_refinement imports it; it reads the flags).
-COMMAND_MODULES = {"full_refinement", "command_options", "particle_loading"}
 IMPLEMENTATIONS = ("relax.diagnostics.observers", "relax.parity")
 # Modules that may import relax.diagnostics and relax.parity: the two packages themselves and the command layer.
-BOUNDARY = (
-    "relax.diagnostics",
-    "relax.parity",
-    "relax.command_line",
-    "relax.commands",
-    *(f"relax.refinement.{name}" for name in sorted(COMMAND_MODULES)),
-)
+BOUNDARY = ("relax.diagnostics", "relax.parity", "relax.command_line", "relax.commands")
 DIAGNOSTIC_PACKAGES = ("relax.diagnostics", "relax.parity")
 
 _INLINE_DUMP = "an inline dump/capture called from the algorithm; it needs a RunObserver hook (deep2 PLAN c2)"
@@ -101,11 +92,7 @@ def test_no_production_module_imports_diagnostics_or_parity_beyond_the_allowlist
 
 
 def test_the_algorithm_modules_import_no_port_implementation():
-    names = sorted(
-        f"relax.refinement.{info.name}"
-        for info in pkgutil.iter_modules(relax.refinement.__path__)
-        if info.name not in COMMAND_MODULES
-    )
+    names = sorted(f"relax.refinement.{info.name}" for info in pkgutil.iter_modules(relax.refinement.__path__))
     assert "relax.refinement.iteration_loop" in names and "relax.refinement.ports" in names
     script = (
         "import importlib, json, sys\n"
@@ -126,7 +113,7 @@ def test_the_command_does_import_the_observers_and_the_input_sources():
     implementations = ("relax.diagnostics.observers", "relax.parity.relion_replay_source", "relax.parity.oracle_admission")
     out = subprocess.run(
         [sys.executable, "-c",
-         f"import sys, relax.refinement.full_refinement; print(all(n in sys.modules for n in {implementations!r}))"],
+         f"import sys, relax.commands.refinement_run; print(all(n in sys.modules for n in {implementations!r}))"],
         capture_output=True, text=True, check=True,
     )
     assert out.stdout.strip().splitlines()[-1] == "True"

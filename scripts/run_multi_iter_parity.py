@@ -21,18 +21,18 @@ from pathlib import Path
 
 # This is an EM entry point, so it opts in to recovar's EM-scoped XLA defaults
 # (currently --xla_gpu_autotune_level=0; see recovar/jax_config.py and
-# relax/refinement/full_refinement.py). It must be set before the first import that
+# relax/commands/refinement_run.py). It must be set before the first import that
 # reaches jax, which recovar.jax_config performs, and with `setdefault` so an
 # explicit RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
 import numpy as np
 
+from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
 from relax.diagnostics.gt_metrics import DEFAULT_GT_ALIGN_HEALPIX_ORDER, DEFAULT_GT_ALIGN_MAX_SHELL
 from relax.parity.parity_provenance import (
     assert_parity_ancestors_or_exit as _print_provenance_banner_and_assert_parity_ancestors,
 )
-from relax.refinement.command_options import apply_k1_refine3d_env_defaults
 from relax.refinement.iteration_history import add_significant_count_artifacts
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
@@ -1744,7 +1744,7 @@ def main():
     # to RFLOAT (double, in our ACC_DOUBLE_PRECISION oracle build) as part of
     # the read itself, and every downstream step -- including the FFT that
     # builds Projector::data -- runs at that same double precision (see
-    # relax/refinement/full_refinement.py's matching fix and
+    # relax/commands/refinement_run.py's matching fix and
     # docs/math/relion_parity_agent_notes.md's 2026-08-27 "round 3" entry for
     # the RELION source citations). Widen real-space inputs to float64 *before*
     # ftu.get_dft3: casting an already-computed complex64 result cannot recover
@@ -1838,10 +1838,10 @@ def main():
             f"{optimizer_random_seed} (production K=1 arithmetic)"
         )
     # Pass 1 scores RELION's exact coarse operands, which read RELION's CUDA image
-    # preprocessing (as full_refinement's auto does).
+    # preprocessing (as refinement_run's auto does).
     if args.image_fourier_backend == "auto":
         args.image_fourier_backend = "relion_cuda"
-    # Optics groups on several image shapes load one dataset per shape (full_refinement's rule).
+    # Optics groups on several image shapes load one dataset per shape (refinement_run's rule).
     shape_class_rows = optics_shape_class_rows(args.data_star)
     if shape_class_rows is None:
         ds = load_dataset(

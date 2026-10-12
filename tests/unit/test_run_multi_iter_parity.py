@@ -942,7 +942,7 @@ def test_iteration_overrides_use_the_replay_scale_keys():
 
 def test_final_only_replay_reports_empty_numbered_assignments(monkeypatch):
     """A final-only replay runs no numbered iteration; the result still carries
-    per-half assignments (None), which full_refinement indexes. 14381025
+    per-half assignments (None), which refinement_run indexes. 14381025
     finished the forced final at 10097 it22 and then stopped on an unbound
     hard_assignments."""
 

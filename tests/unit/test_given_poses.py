@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import command_options
+from relax.commands import refinement_arguments
 from relax.refinement.given_poses import given_pose_grids
 from relax.sampling import rotation_grid_size
 from relax.star import input_poses
@@ -58,13 +58,13 @@ def _args(**overrides):
 
 
 def test_skip_align_refusals_name_the_reason():
-    command_options.validate_skip_align_args(_args())
+    refinement_arguments.validate_skip_align_args(_args())
     # The cross-correlation first iteration from one reference is RELION's GUI default with --skip_align.
-    command_options.validate_skip_align_args(_args(firstiter_cc=True))
-    command_options.validate_skip_align_args(_args(skip_align=False, n_classes=1, firstiter_cc=True))
+    refinement_arguments.validate_skip_align_args(_args(firstiter_cc=True))
+    refinement_arguments.validate_skip_align_args(_args(skip_align=False, n_classes=1, firstiter_cc=True))
     # From one reference per class the cross-correlation iteration scores every class (relax#78).
-    command_options.validate_skip_align_args(_args(firstiter_cc=True, ref_star="references.star"))
-    command_options.validate_skip_align_args(_args(firstiter_cc=True, init_class_volumes="a.mrc,b.mrc"))
+    refinement_arguments.validate_skip_align_args(_args(firstiter_cc=True, ref_star="references.star"))
+    refinement_arguments.validate_skip_align_args(_args(firstiter_cc=True, init_class_volumes="a.mrc,b.mrc"))
     for overrides, reason in (
         (dict(n_classes=1), "needs --n_classes > 1"),
         (dict(continue_optimiser_star="run_it003_optimiser.star"), "--continue is not implemented"),
@@ -72,7 +72,7 @@ def test_skip_align_refusals_name_the_reason():
         (dict(relion_init_dir="/x"), "input STAR's"),
     ):
         with pytest.raises(SystemExit, match=reason):
-            command_options.validate_skip_align_args(_args(**overrides))
+            refinement_arguments.validate_skip_align_args(_args(**overrides))
 
 
 def test_class3d_pose_seed_keeps_the_input_orientations_under_skip_align():

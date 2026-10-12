@@ -11,9 +11,9 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.commands import refinement_arguments
+from relax.commands import refinement_run as run_full_refinement
 from relax.parity import relion_replay
-from relax.refinement import command_options
-from relax.refinement import full_refinement as run_full_refinement
 
 pytestmark = pytest.mark.unit
 
@@ -66,7 +66,7 @@ def _slot0_noise(tmp_path, *, semantics, init_relion_iteration):
 
 
 def test_replay_noise_semantics_default_is_continuation():
-    args = command_options.parse_refinement_args(["--data_dir", "data", "--output", "out"])
+    args = refinement_arguments.parse_refinement_args(["--data_dir", "data", "--output", "out"])
     assert args.replay_noise_semantics == "continuation"
 
 

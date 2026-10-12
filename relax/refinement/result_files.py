@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from relax.star.metadata import MaxSignificantsResolution
 
 
-logger = logging.getLogger("relax.refinement.full_refinement")
+logger = logging.getLogger("relax.commands.refinement_run")
 
 
 def final_pass_result(

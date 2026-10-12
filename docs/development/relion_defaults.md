@@ -26,7 +26,7 @@ value in that audit.
 
 ## 3D auto-refine (Refine3D) and 3D classification (Class3D)
 
-`relax refine` (K=1 auto-refine) and `relax class3d` (K>1 Class3D) run both, from [`relax/refinement/full_refinement.py`](../../relax/refinement/full_refinement.py).
+`relax refine` (K=1 auto-refine) and `relax class3d` (K>1 Class3D) run both, from [`relax/commands/refinement_run.py`](../../relax/commands/refinement_run.py).
 
 | Option (relax) | relax before | RELION GUI default | GUI source (`pipeline_jobs.cpp`) | `relion_refine` CLI default | Changed |
 | --- | --- | --- | --- | --- | --- |

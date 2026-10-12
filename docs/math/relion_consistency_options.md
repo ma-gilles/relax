@@ -20,7 +20,7 @@ below keeps RELION's rule unless it is given by name. `relax` sets every option 
 | `--firstiter_cc_support` | `relion` | `gaussian` |
 
 The bundle is one constant, `RELAX_MODE_CONSISTENCY` (`relax/refinement/refinement_options.py`). The command
-resolves the mode to options once (`resolve_consistency_options`, `relax/refinement/command_options.py`); the
+resolves the mode to options once (`resolve_consistency_options`, `relax/commands/refinement_arguments.py`); the
 refinement sees the options only.
 
 - An option given by name overrides the mode (`--mode relax --gridding_kernel radial`), and is refused as it is
@@ -50,7 +50,7 @@ iterations to convergence against the default's seed-to-seed spread). Not tested
 The options are the fields of `RelionConsistencyOptions`
 (`relax/refinement/refinement_options.py`) and flags of `relax refine` / `relax class3d`.
 `require_consistency_route` (the refinement) and `require_consistency_arguments`
-(`relax/refinement/command_options.py`) refuse a non-default value wherever it would not be
+(`relax/commands/refinement_arguments.py`) refuse a non-default value wherever it would not be
 honoured:
 
 - subtomogram particles and optics groups on several image shapes (their scorers are not reached);

@@ -139,7 +139,7 @@ def test_continuing_class3d_before_its_seed_iteration_warns(monkeypatch, tmp_pat
     data = write_tiny_data_dir(tmp_path / "data", n_images=16, n_classes=2)
     arguments = ("--n_classes", "2", "--init_volume", data / "reference_init_relion.mrc")
     first = _run(monkeypatch, tmp_path, "class3d", data, "first", *arguments, "--max_iter", "1")
-    with caplog.at_level(logging.WARNING, logger="relax.refinement.full_refinement"):
+    with caplog.at_level(logging.WARNING, logger="relax.commands.refinement_run"):
         _run(
             monkeypatch, tmp_path, "class3d", data, "continued", *arguments, "--max_iter", "2",
             "--continue", first / "run_it001_optimiser.star",

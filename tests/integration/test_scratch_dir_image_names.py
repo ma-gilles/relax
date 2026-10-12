@@ -51,7 +51,7 @@ def test_refine_with_scratch_dir_writes_the_input_image_names(tmp_path):
         sys.executable,
         "-c",
         "import logging, sys; logging.basicConfig(level=logging.INFO); "
-        "from relax.refinement.full_refinement import run_from_command_line; sys.argv[0] = 'relax refine'; "
+        "from relax.commands.refinement_run import run_from_command_line; sys.argv[0] = 'relax refine'; "
         "run_from_command_line('refine')",
         "--data_dir",
         str(K1_FIXTURE_DIR),

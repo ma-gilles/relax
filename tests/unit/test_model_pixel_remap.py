@@ -131,7 +131,7 @@ def test_class3d_half_sets_carry_the_input_star_optics(monkeypatch):
     """K>1 remaps its current size like K=1, so its half sets carry the input STAR's optics geometry."""
     import pandas as pd
 
-    from relax.refinement import particle_loading
+    from relax.commands import refinement_particles
     from relax.star import input_particle_table
 
     monkeypatch.setattr(input_particle_table, "prepare_class3d_particle_layout", lambda *a, **k: "layout")
@@ -139,7 +139,7 @@ def test_class3d_half_sets_carry_the_input_star_optics(monkeypatch):
         "optics": pd.DataFrame({"rlnOpticsGroup": [1], "rlnImageSize": [256], "rlnImagePixelSize": [CELL9_STAR_PIXEL]}),
         "particles": pd.DataFrame({"rlnOpticsGroup": [1, 1]}),
     }
-    half_sets = particle_loading.split_half_sets(
+    half_sets = refinement_particles.split_half_sets(
         star, SimpleNamespace(n_units=2), halfset_path=None, n_classes=4, seed=29, init_relion_iteration=0,
         fresh_auto_refine_order=False, noise_order_needed=False, tomographic=False,
     )
