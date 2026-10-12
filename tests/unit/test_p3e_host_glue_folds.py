@@ -31,7 +31,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.fine_pass import resident_chunk_records
+from relax.fine_pass import resident_chunk_inputs, resident_chunk_records
 from relax.fine_pass import resident_operands as ro
 from relax.fine_pass import resident_pass2 as rp
 
@@ -161,7 +161,7 @@ def test_zero_block_partials_reuses_one_program_per_class():
 def _chunk_operand_case(seed=0, image_capacity=6, n_valid=4, n_fine_trans=3, pixels=5):
     rng = np.random.default_rng(seed)
     shape = (image_capacity, pixels)
-    arrays = rp._ChunkOperandRowInputs(
+    arrays = resident_chunk_inputs._ChunkOperandRowInputs(
         score_input=jnp.asarray(rng.standard_normal(shape) + 1j * rng.standard_normal(shape),
                                 dtype=jnp.complex64),
         corr_img_score=jnp.asarray(rng.standard_normal(shape), dtype=jnp.float32),
@@ -191,7 +191,7 @@ def _chunk_operand_rows_loose(arrays, permutation, valid_images, exact_positions
     """The expression the fold replaces, statement for statement."""
 
     def take(values):
-        return None if values is None else rp._zero_padded_images(
+        return None if values is None else resident_chunk_inputs.zero_padded_images(
             jnp.asarray(values)[permutation], valid_images
         )
 
@@ -215,7 +215,7 @@ def _chunk_operand_rows_loose(arrays, permutation, valid_images, exact_positions
 def test_chunk_operand_rows_match_the_loose_dispatch_bitwise():
     case = _chunk_operand_case()
     arrays, permutation, valid_images, exact_positions, capacity, n_trans = case
-    folded = rp._chunk_operand_rows(
+    folded = resident_chunk_inputs._chunk_operand_rows(
         arrays, permutation, valid_images, exact_positions,
         image_capacity=capacity, n_fine_trans=n_trans,
     )
@@ -228,7 +228,7 @@ def test_chunk_operand_rows_match_the_loose_dispatch_bitwise():
 def test_chunk_operand_rows_zero_the_padded_slots():
     case = _chunk_operand_case(seed=3, image_capacity=6, n_valid=4)
     arrays, permutation, valid_images, exact_positions, capacity, n_trans = case
-    folded = rp._chunk_operand_rows(
+    folded = resident_chunk_inputs._chunk_operand_rows(
         arrays, permutation, valid_images, exact_positions,
         image_capacity=capacity, n_fine_trans=n_trans,
     )
@@ -241,10 +241,10 @@ def test_chunk_operand_rows_zero_the_padded_slots():
 def test_chunk_operand_rows_issue_no_eager_dispatch():
     case = _chunk_operand_case(seed=5)
     arrays, permutation, valid_images, exact_positions, capacity, n_trans = case
-    rp._chunk_operand_rows(arrays, permutation, valid_images, exact_positions,
+    resident_chunk_inputs._chunk_operand_rows(arrays, permutation, valid_images, exact_positions,
                            image_capacity=capacity, n_fine_trans=n_trans)
     with _DispatchCounter() as folded:
-        rp._chunk_operand_rows(arrays, permutation, valid_images, exact_positions,
+        resident_chunk_inputs._chunk_operand_rows(arrays, permutation, valid_images, exact_positions,
                                image_capacity=capacity, n_fine_trans=n_trans)
     with _DispatchCounter() as loose:
         _chunk_operand_rows_loose(*case)

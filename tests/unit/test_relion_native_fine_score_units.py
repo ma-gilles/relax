@@ -374,7 +374,7 @@ def test_per_chunk_operands_match_the_resident_native_operands(monkeypatch, curr
 
     from types import SimpleNamespace
 
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_chunk_inputs
 
     image_size = 6
     case = _resident_native_case(monkeypatch, image_size, current_size, with_scale)
@@ -384,7 +384,7 @@ def test_per_chunk_operands_match_the_resident_native_operands(monkeypatch, curr
     window = jnp.asarray(case["window"], dtype=jnp.int32)
 
     def per_chunk(native):
-        return rp._prepare_chunk_reconstruction_operands(
+        return resident_chunk_inputs.prepare_chunk_reconstruction_operands(
             chunk=SimpleNamespace(image_capacity=capacity, n_valid_images=n_images),
             image_indices=np.arange(n_images),
             experiment_dataset=case["dataset"],

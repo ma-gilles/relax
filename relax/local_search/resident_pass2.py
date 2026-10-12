@@ -73,6 +73,7 @@ from recovar.reconstruction import noise as noise_utils
 
 from relax.fine_pass import (
     policy,
+    resident_chunk_inputs,
     resident_chunk_memory,
     resident_chunk_records,
     resident_configuration,
@@ -1450,7 +1451,7 @@ def _prepare_chunk_score_operands(
 ):
     """One probe chunk's score operands, from the same preparation as pass 2.
 
-    :func:`~relax.fine_pass.resident_pass2._prepare_chunk_reconstruction_operands`
+    :func:`~relax.fine_pass.resident_chunk_inputs.prepare_chunk_reconstruction_operands`
     minus every reconstruction, noise and Wavg tile: ``_prepare_bucket_io`` runs
     with ``score_only`` and the rows are permuted and padded exactly as there.
     ``normalized_cc`` (the ``--firstiter_cc`` iteration) adds that function's
@@ -1459,10 +1460,10 @@ def _prepare_chunk_score_operands(
     """
 
     image_indices = np.asarray(image_indices)
-    batch_images, padded_ctf_params, fetched_indices, padded_fetched_indices = rp.fetch_capacity_batch(
+    batch_images, padded_ctf_params, fetched_indices, padded_fetched_indices = resident_chunk_inputs.fetch_capacity_batch(
         experiment_dataset, image_indices, chunk.image_capacity
     )
-    order = rp._reorder_permutation(fetched_indices, image_indices, chunk.image_capacity)
+    order = resident_chunk_inputs.reorder_permutation(fetched_indices, image_indices, chunk.image_capacity)
     prepared = _prepare_bucket_io(
         experiment_dataset,
         batch_images,
@@ -1495,19 +1496,19 @@ def _prepare_chunk_score_operands(
     valid_images = jnp.asarray(np.arange(chunk.image_capacity) < chunk.n_valid_images, dtype=bool)
 
     def take(values):
-        return rp._zero_padded_images(values[permutation], valid_images)
+        return resident_chunk_inputs.zero_padded_images(values[permutation], valid_images)
 
     translation_prior = jnp.asarray(
         np.zeros((chunk.image_capacity, int(n_fine_trans)), dtype=np.float32)
         if fine_translation_prior_2d is None
-        else rp._pad_batch_to_capacity(np.asarray(fine_translation_prior_2d)[image_indices], chunk.image_capacity),
+        else resident_chunk_inputs.pad_batch_to_capacity(np.asarray(fine_translation_prior_2d)[image_indices], chunk.image_capacity),
         dtype=score_real_dtype,
     )
     operands = {
         "score_input": take(score_input),
         "corr_img_score": take(corr_img_score),
         "highres_xi2_half": take(highres_xi2_half),
-        "translation_prior": rp._zero_padded_images(translation_prior, valid_images),
+        "translation_prior": resident_chunk_inputs.zero_padded_images(translation_prior, valid_images),
     }
     if normalized_cc:
         tile = shifted_corrected_score_half.reshape(chunk.image_capacity, int(n_fine_trans), -1)
@@ -1955,10 +1956,10 @@ def _run_resident_parent_probe(
 
 
 def _unshifted_chunk_operands(experiment_dataset, image_indices, **kwargs):
-    """:func:`resident_pass2.unshifted_chunk_operands`, or ``None`` where they are refused."""
+    """:func:`resident_chunk_inputs.unshifted_chunk_operands`, or ``None`` where they are refused."""
 
     try:
-        return rp.unshifted_chunk_operands(experiment_dataset, image_indices, **kwargs)
+        return resident_chunk_inputs.unshifted_chunk_operands(experiment_dataset, image_indices, **kwargs)
     except ResidentOperandsUnsupported as reason:
         logger.info(
             "Resident local pass-2 keeps the pre-shifted translation tiles: %s", reason
@@ -2329,7 +2330,7 @@ def _start_resident_local_chunk(
         if recon is None:
             operand_route["unshifted"] = False
     if recon is None:
-        recon = rp._prepare_chunk_reconstruction_operands(
+        recon = resident_chunk_inputs.prepare_chunk_reconstruction_operands(
             chunk=chunk,
             image_indices=image_indices,
             experiment_dataset=experiment_dataset,
@@ -2746,7 +2747,7 @@ def _start_resident_local_chunk(
             # Build the centres at capacity on the host so the squared-distance
             # program is keyed on the capacity class, not the occupancy; padded
             # rows multiply a zero posterior, so their value is never observable.
-            padded_image_indices = rp._pad_batch_to_capacity(
+            padded_image_indices = resident_chunk_inputs.pad_batch_to_capacity(
                 np.asarray(image_indices).reshape(-1, 1), chunk.image_capacity
             ).reshape(-1)
             centers = translation_prior_centers_for_images(
@@ -2754,7 +2755,7 @@ def _start_resident_local_chunk(
                 padded_image_indices,
                 batch_size=chunk.image_capacity,
             )
-            translation_sqdist_ang = rp._zero_padded_images(
+            translation_sqdist_ang = resident_chunk_inputs.zero_padded_images(
                 jnp.asarray(translation_sqdist_angstrom(fine_translations, centers, voxel_size)),
                 jnp.asarray(np.arange(chunk.image_capacity) < chunk.n_valid_images, dtype=bool),
             )

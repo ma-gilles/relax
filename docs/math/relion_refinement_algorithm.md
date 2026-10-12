@@ -490,8 +490,8 @@ conversion, with the zero origin of `Minvsigma2`
 which its kernel translates, and the reference rows of its score projections
 ([`resident_operands.py`](../../relax/fine_pass/resident_operands.py),
 `prepare_resident_half_operands`;
-[`resident_pass2.py`](../../relax/fine_pass/resident_pass2.py),
-`_prepare_chunk_reconstruction_operands`). Reconstruction and noise operands keep RECOVAR
+[`resident_chunk_inputs.py`](../../relax/fine_pass/resident_chunk_inputs.py),
+`prepare_chunk_reconstruction_operands`). Reconstruction and noise operands keep RECOVAR
 units. The exact local engine scores in RECOVAR units. The regressions are in
 [`test_relion_native_fine_score_units.py`](../../tests/unit/test_relion_native_fine_score_units.py).
 

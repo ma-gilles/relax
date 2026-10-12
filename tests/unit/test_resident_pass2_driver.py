@@ -34,6 +34,7 @@ from oracles.wavg import relion_wavg_rectangle_triplet_terms
 
 from relax.fine_pass import (
     resident_block_programs,
+    resident_chunk_inputs,
     resident_chunk_memory,
     resident_chunk_records,
     resident_configuration,
@@ -938,8 +939,8 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
     planned, measured, baseline = [], [], set()
     live_log = []
     real_plan = resident_chunk_memory.plan_resident_chunk_memory
-    real_prepare = rp._prepare_chunk_reconstruction_operands
-    real_rows = rp._chunk_operand_rows
+    real_prepare = resident_chunk_inputs.prepare_chunk_reconstruction_operands
+    real_rows = resident_chunk_inputs._chunk_operand_rows
     real_gather = rp.gather_resident_chunk_operands
 
     def translated_bytes(capacity, n_trans):
@@ -972,11 +973,11 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
             measured.append(("prepare_tile_pixels", capacity * n_trans, translated_bytes(capacity, n_trans)))
             return out
 
-        rp._chunk_operand_rows = rows
+        resident_chunk_inputs._chunk_operand_rows = rows
         try:
             result = real_prepare(**kwargs)
         finally:
-            rp._chunk_operand_rows = real_rows
+            resident_chunk_inputs._chunk_operand_rows = real_rows
         measured.append(("held_tile_pixels", capacity * n_trans, translated_bytes(capacity, n_trans)))
         return result
 
@@ -991,8 +992,9 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
 
     patch = pytest.MonkeyPatch()
     patch.setattr(resident_chunk_memory, "plan_resident_chunk_memory", plan)
-    patch.setattr(rp, "_prepare_chunk_reconstruction_operands", prepare)
+    patch.setattr(resident_chunk_inputs, "prepare_chunk_reconstruction_operands", prepare)
     patch.setattr(rp, "gather_resident_chunk_operands", gather)
+    patch.setattr(resident_chunk_inputs, "gather_resident_chunk_operands", gather)
     try:
         rp.compute_pass2_stats_resident(**args)
     finally:
@@ -1025,13 +1027,13 @@ def test_global_chunks_prepare_their_own_unshifted_operands(_resident_production
     resident = rp.compute_pass2_stats_resident(**args)
 
     chunk_calls, tile_calls = [], []
-    real_chunk, real_tiles = rp.unshifted_chunk_operands, rp._prepare_chunk_reconstruction_operands
+    real_chunk, real_tiles = resident_chunk_inputs.unshifted_chunk_operands, resident_chunk_inputs.prepare_chunk_reconstruction_operands
     monkeypatch.setattr(resident_projections, "resident_operands_fit", lambda *a, **k: False)
     monkeypatch.setattr(
-        rp, "unshifted_chunk_operands", lambda *a, **k: chunk_calls.append(1) or real_chunk(*a, **k)
+        resident_chunk_inputs, "unshifted_chunk_operands", lambda *a, **k: chunk_calls.append(1) or real_chunk(*a, **k)
     )
     monkeypatch.setattr(
-        rp, "_prepare_chunk_reconstruction_operands", lambda **k: tile_calls.append(1) or real_tiles(**k)
+        resident_chunk_inputs, "prepare_chunk_reconstruction_operands", lambda **k: tile_calls.append(1) or real_tiles(**k)
     )
     per_chunk = rp.compute_pass2_stats_resident(**args)
     assert chunk_calls and not tile_calls
@@ -1256,9 +1258,9 @@ def test_chunk_operands_are_padded_on_the_host():
 
     import inspect
 
-    source = inspect.getsource(rp._prepare_chunk_reconstruction_operands)
+    source = inspect.getsource(resident_chunk_inputs.prepare_chunk_reconstruction_operands)
     assert "fetch_capacity_batch(" in source
-    assert "_zero_padded_images" in source
+    assert "zero_padded_images(" in source
     # jnp.pad with an occupancy-dependent width is what this replaced.
     assert "jnp.pad" not in source
     driver = inspect.getsource(rp)
@@ -1284,36 +1286,36 @@ def test_capacity_batch_is_the_padded_fetch(monkeypatch):
         image_source=SimpleNamespace(host_images=host_images, tilt_series=False),
         metadata=SimpleNamespace(get_batch=lambda indices: (None, None, ctf[np.asarray(indices)])),
     )
-    monkeypatch.setattr(rp, "_FETCH_SUB_BATCH_BYTES", 2 * stack[0].nbytes)
+    monkeypatch.setattr(resident_chunk_inputs, "_FETCH_SUB_BATCH_BYTES", 2 * stack[0].nbytes)
     indices = np.array([5, 1, 3, 0, 6], dtype=np.int64)
     for _ in range(2):  # the second call refills the reused buffer
-        images, ctf_rows, fetched, padded = rp.fetch_capacity_batch(dataset, indices, 8)
-        want = rp._pad_batch_to_capacity(stack[indices], 8)
+        images, ctf_rows, fetched, padded = resident_chunk_inputs.fetch_capacity_batch(dataset, indices, 8)
+        want = resident_chunk_inputs.pad_batch_to_capacity(stack[indices], 8)
         np.testing.assert_allclose(np.asarray(images), want, rtol=0, atol=0)
-        np.testing.assert_allclose(ctf_rows, rp._pad_batch_to_capacity(ctf[indices], 8), rtol=0, atol=0)
+        np.testing.assert_allclose(ctf_rows, resident_chunk_inputs.pad_batch_to_capacity(ctf[indices], 8), rtol=0, atol=0)
         assert fetched.tolist() == indices.tolist()
         assert padded.tolist() == indices.tolist() + [5, 5, 5]
     assert max(calls) <= 2
     with pytest.raises(ValueError, match="cannot pad"):
-        rp.fetch_capacity_batch(dataset, indices, 4)
+        resident_chunk_inputs.fetch_capacity_batch(dataset, indices, 4)
 
 
 def test_pad_batch_to_capacity_repeats_the_first_row():
     batch = np.arange(12, dtype=np.float32).reshape(3, 4)
-    padded = rp._pad_batch_to_capacity(batch, 5)
+    padded = resident_chunk_inputs.pad_batch_to_capacity(batch, 5)
     assert padded.shape == (5, 4)
     assert_matches(padded[:3], batch)
     assert_matches(padded[3], batch[0])
     assert_matches(padded[4], batch[0])
-    assert_matches(rp._pad_batch_to_capacity(batch, 3), batch)
+    assert_matches(resident_chunk_inputs.pad_batch_to_capacity(batch, 3), batch)
     with pytest.raises(ValueError, match="cannot pad"):
-        rp._pad_batch_to_capacity(batch, 2)
+        resident_chunk_inputs.pad_batch_to_capacity(batch, 2)
 
 
 def test_zero_padded_images_clears_only_the_padded_slots():
     values = np.arange(24, dtype=np.float32).reshape(4, 3, 2)
     valid = np.asarray([True, True, False, False])
-    out = np.asarray(rp._zero_padded_images(jnp.asarray(values), jnp.asarray(valid)))
+    out = np.asarray(resident_chunk_inputs.zero_padded_images(jnp.asarray(values), jnp.asarray(valid)))
     assert_matches(out[:2], values[:2])
     assert_matches(out[2:], np.zeros_like(values[2:]))
 
@@ -1321,12 +1323,12 @@ def test_zero_padded_images_clears_only_the_padded_slots():
 def test_reorder_permutation_inverts_a_shuffled_fetch():
     requested = np.asarray([7, 3, 9, 1])
     fetched = np.asarray([1, 9, 7, 3])
-    order = rp._reorder_permutation(fetched, requested, capacity=6)
+    order = resident_chunk_inputs.reorder_permutation(fetched, requested, capacity=6)
     assert order.shape == (6,)
     # Position p of the table must read fetched slot order[p].
     assert_matches(fetched[order[:4]], requested)
     with pytest.raises(ValueError, match="did not return every requested image"):
-        rp._reorder_permutation(np.asarray([1, 9, 7, 7]), requested, capacity=6)
+        resident_chunk_inputs.reorder_permutation(np.asarray([1, 9, 7, 7]), requested, capacity=6)
 
 
 def test_dispatcher_sends_every_pass_to_the_resident_engine(monkeypatch):
