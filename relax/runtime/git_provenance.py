@@ -1,6 +1,6 @@
 """Git provenance of the running code: HEAD and a fingerprint of the exact worktree content.
 
-The refinement archive and the benchmark ledger record it; ``relax.parity.parity_provenance`` builds the parity
+The refinement archive and the benchmark ledger record it; ``scripts/lib/parity_provenance.py`` builds the parity
 ancestry gate on it.
 """
 

@@ -1,5 +1,8 @@
 """Worktree provenance gate for RELION-parity tests and benchmarks.
 
+Script library: moved from relax/parity/parity_provenance.py, which no relax command uses (the parity scripts
+and the parity tests do).
+
 A directory name is not proof of which branch is checked out. A worktree
 named ``recovar_wt_parity_*`` may have been switched to an unrelated branch
 by a previous session. Mixing branches has cost days of debugging on this

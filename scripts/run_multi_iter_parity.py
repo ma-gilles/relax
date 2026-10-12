@@ -30,9 +30,6 @@ import numpy as np
 
 from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
 from relax.diagnostics.gt_metrics import DEFAULT_GT_ALIGN_HEALPIX_ORDER, DEFAULT_GT_ALIGN_MAX_SHELL
-from relax.parity.parity_provenance import (
-    assert_parity_ancestors_or_exit as _print_provenance_banner_and_assert_parity_ancestors,
-)
 from relax.refinement.iteration_history import add_significant_count_artifacts
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
@@ -40,6 +37,9 @@ from relax.relion.initial_noise import (
 )
 from relax.runtime.git_provenance import git_head_or_none
 from relax.steps.half_inputs import HalfPair
+from scripts.lib.parity_provenance import (
+    assert_parity_ancestors_or_exit as _print_provenance_banner_and_assert_parity_ancestors,
+)
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)

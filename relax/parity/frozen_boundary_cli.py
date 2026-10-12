@@ -25,7 +25,7 @@ from relax.parity.frozen_boundary import (
     validate_fixed_diagnostic_boundary_runtime_config,
     verify_fixed_diagnostic_boundary_sources,
 )
-from relax.parity.parity_provenance import git_head_or_none, git_worktree_provenance
+from relax.runtime.git_provenance import git_head_or_none, git_worktree_provenance
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import JobDefaults

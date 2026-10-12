@@ -51,7 +51,7 @@ def test_git_worktree_fingerprint_includes_untracked_file_content(tmp_path, monk
 def test_required_parity_ancestors_are_in_relax_history():
     from pathlib import Path
 
-    from relax.parity.parity_provenance import REQUIRED_PARITY_ANCESTORS
+    from scripts.lib.parity_provenance import REQUIRED_PARITY_ANCESTORS
 
     repo = Path(__file__).resolve().parents[2]
     for sha, desc in REQUIRED_PARITY_ANCESTORS:
