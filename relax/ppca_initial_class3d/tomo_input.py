@@ -45,8 +45,8 @@ def load_tomo_dataset(particles_star, tomograms_star, flat_star, *, datadir, laz
     from recovar.data_io.cryoem_dataset import load_dataset
     from recovar.data_io.starfile import read_star, star_column
 
-    from relax.refinement.tomo_half import TomoDataset
-    from relax.relion.tomo_input import flatten_relion5_tomo
+    from relax.star.tomo_input import flatten_relion5_tomo
+    from relax.steps.tomo_half import TomoDataset
 
     flat_star = flatten_relion5_tomo(particles_star, tomograms_star, flat_star)
     rows, optics = read_star(str(flat_star))

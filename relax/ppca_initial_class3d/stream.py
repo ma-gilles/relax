@@ -11,7 +11,7 @@ import numpy as np
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.triangular import tri_size
 
-from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.engine import pose_invariant_score_offset
 from relax.ppca_refinement.full_row_stream import (
     FullRowStream,

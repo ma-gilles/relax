@@ -216,7 +216,7 @@ def test_child_pose_grid_carries_the_samplers_euler_rows():
     assert fine.eulers.shape == (fine.rotations.shape[0], 3)
     assert fine.translations.shape[0] == 8 * coarse.translations.shape[0]  # 3D shifts: 8 children each
     # Every child's Euler row reproduces its matrix: the metadata and the grid agree.
-    from relax.healpix_sampling import euler_angles_to_matrix
+    from relax.sampling.healpix import euler_angles_to_matrix
 
     rebuilt = np.asarray(euler_angles_to_matrix(fine.eulers[:16]), np.float32)
     assert_matches(rebuilt, fine.rotations[:16], rtol=1e-5)

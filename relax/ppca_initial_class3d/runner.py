@@ -15,7 +15,7 @@ from relax.ppca_initial_model.checkpoint import file_hash
 def tilt_training_identity(ios):
     """Read native input identities before a resume can replace its flat STAR."""
     from relax.commands.ppca_initial_model import tilt_series_hash
-    from relax.relion.tomo_input import read_optimisation_set
+    from relax.star.tomo_input import read_optimisation_set
 
     particles_star, tomograms_star = read_optimisation_set(ios)
     return {
@@ -42,7 +42,7 @@ def run(args, config):
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("Particle refinement runs require Slurm; use unit tests for local numerical checks")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
-    from relax.helpers.compilation_cache import activate_recovar_compilation_cache
+    from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 
     activate_recovar_compilation_cache()
 

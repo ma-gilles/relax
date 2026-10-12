@@ -66,7 +66,7 @@ def test_merged_stack_names_refuse_invalid_layouts(names, message):
 def test_merged_flat_star_preserves_all_non_image_metadata(project, merged_project, tmp_path):
     out, flat = project
     ios, first_of, merged = merged_project
-    from relax.relion.tomo_input import read_optimisation_set
+    from relax.star.tomo_input import read_optimisation_set
 
     particles, tomograms = read_optimisation_set(ios)
     output = tmp_path / "flat_merged.star"
@@ -117,11 +117,11 @@ def test_merged_training_matches_particle_stacks_with_and_without_mask(
 
 def test_adapter_does_not_replace_shared_loader():
     from relax.ppca_initial_class3d import images
-    from relax.refinement import tomo_half
-    from relax.relion import tomo_input
+    from relax.star import tomo_input
+    from relax.steps import tomo_half
 
-    assert tomo_half.load_tomo_dataset.__module__ == "relax.refinement.tomo_half"
-    assert tomo_input.flatten_relion5_tomo.__module__ == "relax.relion.tomo_input"
+    assert tomo_half.load_tomo_dataset.__module__ == "relax.steps.tomo_half"
+    assert tomo_input.flatten_relion5_tomo.__module__ == "relax.star.tomo_input"
     assert not hasattr(tomo_input, "merged_stack_image_names")
     assert images.load_tilt_training.__module__ == "relax.ppca_initial_class3d.images"
     assert Path(load_tomo_dataset.__code__.co_filename).parent.name == "ppca_initial_class3d"

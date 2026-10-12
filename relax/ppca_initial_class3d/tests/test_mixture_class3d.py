@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.full_row_tile import accumulate_full_row_tile
 from scipy.special import logsumexp
 from test_full_fine_streaming import _TinyData
 from test_tomo_ppca import IMAGE_SHAPE, NOISE, _particles, brute_force, make_problem
@@ -29,10 +30,7 @@ from relax.ppca_initial_class3d.stream import (
 from relax.ppca_initial_model.tomo import load_tilt_tile
 from relax.ppca_initial_model.update import empty_moments
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
-from relax.ppca_refinement.full_row_stream import (
-    accumulate_full_row_tile,
-    prepare_full_row_stream,
-)
+from relax.ppca_refinement.full_row_stream import prepare_full_row_stream
 
 pytestmark = pytest.mark.unit
 

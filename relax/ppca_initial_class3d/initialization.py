@@ -16,7 +16,7 @@ from relax.ppca_initial_model.initialization import initial_noise
 from relax.ppca_initial_model.initialization import seed_model as unsigned_seed_model
 from relax.ppca_initial_model.tomo import tilt_bootstrap, tilt_noise_images
 from relax.ppca_refinement.residual_statistics import full_float32
-from relax.vdam.bootstrap_iref import compute_ini_high_shell
+from relax.reconstruction.resolution import compute_ini_high_shell
 
 
 def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.helpers.convergence import healpix_angular_step
+from relax.sampling import relion_angular_sampling_deg
 
 SIGMA_CUTOFF = 3.0  # RELION's sigma_cutoff: +/- 3 standard deviations
 
@@ -27,7 +27,7 @@ SIGMA_CUTOFF = 3.0  # RELION's sigma_cutoff: +/- 3 standard deviations
 def relion_local_sigma_deg(coarse_order: int) -> float:
     """RELION's local-search width for a coarse HEALPix order whose children are the oversampling: twice the
     children's angular step."""
-    return 2.0 * healpix_angular_step(int(coarse_order) + 1)
+    return 2.0 * relion_angular_sampling_deg(int(coarse_order) + 1)
 
 
 def _directions(eulers_deg):

@@ -62,7 +62,7 @@ def load_tilt_training(ios, output, *, zero_mask_diameter_ang=None):
     from relax.ppca_initial_class3d.tomo_input import load_tomo_dataset
     from relax.ppca_initial_model.checkpoint import file_hash
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
-    from relax.relion.tomo_input import read_optimisation_set
+    from relax.star.tomo_input import read_optimisation_set
 
     particles_star, tomograms_star = read_optimisation_set(ios)
     refuse_unsupported_tilt_optics(particles_star)

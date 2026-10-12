@@ -98,7 +98,7 @@ def evaluate(args):
     from relax.ppca_initial_class3d.tomo_input import load_tomo_dataset
     from relax.ppca_initial_model.checkpoint import file_hash
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
-    from relax.relion.tomo_input import read_optimisation_set
+    from relax.star.tomo_input import read_optimisation_set
 
     require(args.expected_particles > 0, "Expected physical-particle count must be positive")
     output = Path(args.output)

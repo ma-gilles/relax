@@ -40,11 +40,11 @@ from recovar import core
 from recovar.reconstruction import noise as noise_utils
 from recovar.reconstruction.noise import make_radial_noise
 
-from relax.healpix_sampling import euler_angles_to_matrix
-from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.preprocessing import half_translation_phase_table, relion_half_translation_lattice
+from relax.fourier.preprocessing import half_translation_phase_table, relion_half_translation_lattice
 from relax.ppca_initial_class3d.local_search import relion_local_sigma_deg
 from relax.ppca_initial_model.tomo import TiltParticles, tilt_shifts
+from relax.sampling import relion_angular_sampling_deg
+from relax.sampling.healpix import euler_angles_to_matrix
 
 PVALUE = 4.60517  # exp(-4.60517) = 0.01: RELION's probability threshold on the projection difference
 ANGLE_LADDER = ((0.2, 0.05), (1.0, 0.1), (2.0, 0.2), (5.0, 0.5), (10.0, 1.0), (20.0, 2.0), (np.inf, 5.0))
@@ -58,7 +58,7 @@ INCREMENT_SHELLS = 10  # RELION's rlnIncrementImageSize: shells searched beyond 
 
 def children_step_deg(coarse_order: int) -> float:
     """The children's angular step of a coarse order: RELION's oversampled step."""
-    return healpix_angular_step(int(coarse_order) + 1)
+    return relion_angular_sampling_deg(int(coarse_order) + 1)
 
 
 def error_ladder(ladder, maximum):

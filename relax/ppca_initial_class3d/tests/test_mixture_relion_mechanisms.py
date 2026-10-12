@@ -16,8 +16,6 @@ from helpers.float_compare import assert_matches
 from recovar.core import fourier_transform_utils as ftu
 from test_mixture_controller import tiny_config, tomo_data
 
-from relax.healpix_sampling import euler_angles_to_matrix
-from relax.helpers.convergence import healpix_angular_step
 from relax.ppca_initial_class3d import auto_sampling, checkpoint, iteration_loop
 from relax.ppca_initial_class3d.config import Config
 from relax.ppca_initial_class3d.expectation import expectation_groups, pose_grid
@@ -25,6 +23,7 @@ from relax.ppca_initial_class3d.images import circular_zero_mask, zero_masked_ti
 from relax.ppca_initial_class3d.local_search import LocalGrid, candidate_rows, relion_local_sigma_deg, tile_candidates
 from relax.ppca_initial_class3d.membership import Membership
 from relax.ppca_initial_class3d.state import initialize_state
+from relax.sampling.healpix import angular_sampling_deg, euler_angles_to_matrix
 
 pytestmark = pytest.mark.unit
 
@@ -95,7 +94,7 @@ def test_local_candidates_match_brute_force_neighbourhood_and_keep_unknown_poses
     grid = pose_grid(data, config, 1)
     local = LocalGrid.of(grid)
     sigma = relion_local_sigma_deg(grid.order)
-    assert_matches(np.float32(sigma), np.float32(2 * healpix_angular_step(2)))
+    assert_matches(np.float32(sigma), np.float32(2 * angular_sampling_deg(2)))
     matrices = euler_angles_to_matrix(grid.eulers)
     for index in (0, 7, len(grid.rotations) // 2, len(grid.rotations) - 1):
         stored = grid.eulers[index]
@@ -179,7 +178,7 @@ def test_sampling_rules_follow_relion_arithmetic():
     local, log = auto_sampling.update_sampling(dataclasses.replace(updated, updates_without_resolution_gain=2), config,
                                                acc_rot_deg=1.4, acc_trans_px=0.3, iteration=30)
     assert local.healpix_order == 3 and local.local_searches
-    assert_matches(np.float32(local.sigma_deg), np.float32(2 * healpix_angular_step(4)))
+    assert_matches(np.float32(local.sigma_deg), np.float32(2 * angular_sampling_deg(4)))
     # Never beyond max_order, never a coarser offset step than before.
     capped, _ = auto_sampling.update_sampling(dataclasses.replace(local, updates_without_resolution_gain=2), config,
                                               acc_rot_deg=0.1, acc_trans_px=50.0, iteration=40)

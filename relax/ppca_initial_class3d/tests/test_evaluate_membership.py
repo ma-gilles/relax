@@ -71,7 +71,7 @@ def mock_inference(tmp_path, monkeypatch):
     from relax.ppca_initial_class3d import tomo_input as mixture_tomo_input
     from relax.ppca_initial_class3d.state import State
     from relax.ppca_initial_model import tomo as ppca_tomo
-    from relax.relion import tomo_input
+    from relax.star import tomo_input
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
