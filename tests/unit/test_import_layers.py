@@ -50,7 +50,6 @@ ALLOWED_UPWARD = {
     ("relax.refinement.finalization", "relax.diagnostics.bpref_diagnostics"): _B,
     ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _B,
     ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _B,
-    ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _B,
     ("relax.vdam.estep_setup", "relax.refinement.engine_record"): _A,
 }
 

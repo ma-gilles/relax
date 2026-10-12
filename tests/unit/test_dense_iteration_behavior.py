@@ -10,7 +10,6 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
-from relax.diagnostics import local_debug
 from relax.refinement import local_half
 from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
@@ -192,7 +191,7 @@ def test_k1_local_full_parent_diagnostic_counts_unmasked_parent_layout(parent_ma
     )
     selected = [] if empty else [None, np.array([], dtype=np.int64), np.array([0, 0, 1, 2])]
     records = []
-    local_debug.log_local_adaptive_support(
+    local_half.log_local_adaptive_support(
         SimpleNamespace(info=lambda *args: records.append(args)),
         parent_layout,
         selected,
@@ -227,7 +226,7 @@ def test_local_denominator_diagnostic_counts_masked_and_empty_support(masked, em
         ],
     )
     records = []
-    local_debug.log_local_denominator_support(
+    local_half.log_local_denominator_support(
         SimpleNamespace(info=lambda *args: records.append(args)), layout, "full_parent", "TEST_ENV"
     )
     assert records == [
@@ -504,8 +503,8 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
         "build_local_adaptive_pass2_hypothesis_layout",
         fake_layout,
     )
-    monkeypatch.setattr(local_debug, "log_local_adaptive_support", lambda *_args: None)
-    monkeypatch.setattr(local_debug, "log_local_denominator_support", lambda *_args: None)
+    monkeypatch.setattr(local_half, "log_local_adaptive_support", lambda *_args: None)
+    monkeypatch.setattr(local_half, "log_local_denominator_support", lambda *_args: None)
 
     policy = LocalAdaptivePass2Support(
         full_parent=full_parent,
