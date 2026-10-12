@@ -53,7 +53,7 @@ for helper in (
     "sampling.oversampling", "reconstruction.half_volume_mstep", "relion.projector_setup",
     "parity.relion_replay", "relion.normalization", "steps.projector_preparation",
     "steps.score_outputs", "classification.k_class_results", "classification.k_class_inputs", "steps.scoring_policy", "reconstruction.resolution", "diagnostics.bpref_diagnostics",
-    "sampling.expected_accuracy", "steps.expected_accuracy", "fine_pass.significant_samples", "diagnostics.coarse_score_diagnostics", "fine_pass.bucket_arrays", "scoring.compact_candidates", "relion.ctf", "relion.scale_groups",
+    "sampling.expected_accuracy", "steps.expected_accuracy", "fine_pass.significant_samples", "diagnostics.coarse_score_diagnostics", "fine_pass.bucket_arrays", "fine_pass.compact_candidates", "relion.ctf", "relion.scale_groups",
     "vdam.relion_checkpoint", "local_search.layout", "diagnostics.local_debug",
 ):
     importlib.import_module(f"relax.{helper}")

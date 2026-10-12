@@ -49,8 +49,8 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
+from relax.fine_pass.compact_candidates import SparseCandidateMask
 from relax.runtime.host_memory import return_freed_heap
-from relax.scoring.compact_candidates import SparseCandidateMask
 
 __all__ = [
     "CandidateTableBlocks",

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.scoring.compact_candidates import SparseCandidateMask
+from relax.fine_pass.compact_candidates import SparseCandidateMask
 
 pytestmark = pytest.mark.unit
 

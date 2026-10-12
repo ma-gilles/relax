@@ -20,6 +20,7 @@ from test_resident_significance import _csr_from_supports, _encoded_supports, _s
 
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.compact_candidates import candidate_mask_to_dense
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     expand_chunk_mask_jnp,
@@ -29,7 +30,6 @@ from relax.fine_pass.resident_candidates import (
     plan_capacity_chunks,
 )
 from relax.fine_pass.resident_significance import build_resident_candidate_tables_from_csr
-from relax.scoring.compact_candidates import candidate_mask_to_dense
 
 pytestmark = pytest.mark.unit
 

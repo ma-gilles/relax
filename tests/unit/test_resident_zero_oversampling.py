@@ -17,11 +17,11 @@ pytest.importorskip("jax")
 from test_resident_significance import _encoded_supports, _supports
 
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.compact_candidates import candidate_mask_to_dense
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     coarse_winner_cells,
 )
-from relax.scoring.compact_candidates import candidate_mask_to_dense
 
 pytestmark = pytest.mark.unit
 
