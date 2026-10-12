@@ -70,7 +70,6 @@ __all__ = [
     "DeviceCompactedSignificantSamples",
     "build_coarse_significance_csr",
     "build_resident_candidate_tables_from_csr",
-    "compact_batch_significance",
     "compact_batch_significance_classes",
     "csr_candidate_rows_per_image",
     "csr_capacity_for_total",
@@ -465,26 +464,6 @@ class DeviceCompactedSignificantSamples(list):
 # The compacted id buffers of the classes awaiting their read-back together stay
 # within this many bytes; each class's buffer is batch * n_samples / 2 int32.
 _PENDING_CLASS_ID_BYTES = 512 * 1024**2
-
-
-def compact_batch_significance(
-    batch_sig_mask,
-    *,
-    actual_batch_size: int,
-    n_coarse_rot: int,
-    n_coarse_trans: int,
-    batch_n_sig,
-):
-    """One class's :func:`compact_batch_significance_classes` result."""
-
-    return compact_batch_significance_classes(
-        batch_sig_mask,
-        n_classes=1,
-        actual_batch_size=actual_batch_size,
-        n_coarse_rot=n_coarse_rot,
-        n_coarse_trans=n_coarse_trans,
-        batch_n_sig=batch_n_sig,
-    )[0]
 
 
 def compact_batch_significance_classes(

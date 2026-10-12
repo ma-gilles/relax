@@ -125,7 +125,3 @@ def dense_optics_groups(optics_group_labels):
     return dense.astype(np.int32), int(unique.size)
 
 
-def image_rotation_rows(values):
-    """``[P] -> [1, 1, P]``; per-image rows ``[B, P] -> [B, 1, P]`` for ``(image, rotation, pixel)`` terms."""
-
-    return values[None, None, :] if values.ndim == 1 else values[:, None, :]

@@ -60,7 +60,6 @@ from relax.fine_pass.resident_candidates import CapacityChunk, plan_pass_chunks
 
 __all__ = [
     "ResidentLocalTables",
-    "expand_local_mask_rows",
     "materialize_local_chunk",
     "plan_local_capacity_chunks",
     "tables_from_local_layout",
@@ -283,25 +282,6 @@ def plan_local_capacity_chunks(
         image_capacity_ladder=image_capacity_ladder,
         image_ranges=[(0, int(tables.n_images))],
     )
-
-
-def expand_local_mask_rows(tables: ResidentLocalTables, start: int, stop: int) -> np.ndarray:
-    """Reference (numpy) dense mask for rows ``[start, stop)``.
-
-    Exactly ``LocalHypothesisLayout.sample_mask_rows(start, stop)``, including
-    the ``None`` case, which the layout means as full support and the bucketed
-    engine materializes as an all-true ``local_sample_mask``.
-    """
-
-    n_rows = stop - start
-    if tables.row_mask_bits is None:
-        return np.ones((n_rows, tables.n_trans), dtype=bool)
-    return np.unpackbits(
-        tables.row_mask_bits[start:stop],
-        axis=1,
-        count=int(tables.n_trans),
-        bitorder="little",
-    ).view(np.bool_)
 
 
 def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -> dict:

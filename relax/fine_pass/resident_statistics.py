@@ -3,9 +3,10 @@
 Stage 7 of ``../em_device_resident_pass2_design_20260918.md``. This module is
 the device twin of the host bucket tail of the deleted compact engine (its inner
 ``_bucket_tail``): instead of pulling ~35 per-bucket arrays to the
-host and accumulating them with numpy, one traced program folds a chunk's
-operands into float64 accumulators that stay on the device until
-:func:`finalize_statistics` pulls them once per half.
+host and accumulating them with numpy, the chunk programs of
+:mod:`relax.fine_pass.resident_pass2` fold a chunk's operands into float64
+accumulators that stay on the device until :func:`finalize_statistics` pulls
+them once per half.
 
 Ported production branches (the fresh K=1 guard, confirmed from
 the compact engine's ``_fresh_k1_direct_noise_default`` and its bucket tail, both deleted): ``accumulate_noise=True``,
@@ -48,36 +49,26 @@ float32 scoring, projection or Wavg streams.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fine_pass.wavg import (
-    _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
-    weighted_image_power_from_shells,
-)
 from relax.numerics.deterministic_reduce import (
-    add_segment_sum,
     deterministic_reductions_enabled,
     fixed_order_segment_sum,
 )
-from relax.projection.projection import compute_noise_block
 from relax.relion.optics_groups import pixel_rows
 from relax.runtime.env_flags import parse_env_flag
 from relax.runtime.shape_buckets import pow2_floor
 
 __all__ = [
-    "ChunkStatisticsOperands",
     "FinalizedClassStatistics",
     "FinalizedStatistics",
     "ResidentClassStatistics",
     "ResidentStatistics",
     "ResidentStatisticsConfig",
-    "ResidentStatisticsTables",
-    "accumulate_chunk_statistics",
     "finalize_statistics",
     "make_resident_statistics",
     "resolve_statistics_config",
@@ -146,59 +137,6 @@ class ResidentClassStatistics(NamedTuple):
     best_log_score: jax.Array  # float64 [image_capacity, K]
     best_cell: jax.Array  # int64 [image_capacity, K], -1 when the class has no candidate
     posterior_sums: jax.Array  # float64 [K]
-
-
-class ResidentStatisticsTables(NamedTuple):
-    """Iteration-global device tables shared by every chunk of one half.
-
-    None of these depend on the chunk, so they are uploaded once. ``noise_*``
-    live on the reconstruction/score window pixel axis ``P``; ``shell_indices_half``
-    lives on the preprocessed half-image axis ``P_half``; ``wavg_*`` live on
-    RELION's complete Wavg rectangle axis ``P_rect``.
-    """
-
-    translation_sqdist_ang: jax.Array | None  # float [n_fine_trans] or None
-    noise_variance: jax.Array  # float [P]
-    shell_indices_noise: jax.Array  # int32 [P]
-    shell_indices_half: jax.Array  # int32 [P_half]
-    wavg_shell_indices: jax.Array | None  # int32 [P_rect]
-    wavg_scale_pixel_mask: jax.Array | None  # bool [P_rect]
-    scale_pixel_mask: jax.Array | None  # bool [P], algebraic scale branch only
-
-
-class ChunkStatisticsOperands(NamedTuple):
-    """One capacity-padded chunk's operands, exactly as stages 3-6 leave them.
-
-    Row-capacity arrays are indexed by the flat candidate row; image-capacity
-    arrays by the chunk's image slot. ``row_image_local`` maps the former to
-    the latter. Everything is already on the device; nothing here is pulled.
-    """
-
-    # --- row capacity C_R -------------------------------------------------
-    row_image_local: jax.Array  # int32 [C_R]
-    row_fine_rot: jax.Array  # int32 [C_R], global fine rotation id
-    row_coarse_rot: jax.Array  # int32 [C_R], global coarse rotation id, padded -> >= n_coarse_rot
-    row_posterior: jax.Array  # float32 [C_R, T], pruned reconstruction probs
-    proj: jax.Array  # complex [C_R, P]
-    proj_abs2: jax.Array  # float [C_R, P]
-    summed_masked: jax.Array  # complex [C_R, P]
-    ctf_probs: jax.Array  # float [C_R, P]
-    # --- image capacity C_B ----------------------------------------------
-    image_ids: jax.Array  # int32 [C_B], padded -> -1
-    image_row_start: jax.Array  # int32 [C_B], chunk-local first row of the image
-    image_row_count: jax.Array  # int32 [C_B], rows owned by the image
-    group_ids: jax.Array  # int32 [C_B], global scale group, padded -> -1
-    image_power_shells: jax.Array  # float64 [C_B, n_shells], each image's power per noise shell
-    relion_norm_high_shell: jax.Array  # float [C_B]
-    scale: jax.Array  # float [C_B], the old group scale per image
-    wavg_triplet_pixels: jax.Array | None  # float32 [C_B, P_rect, 3] = (XA, AA, diff2)
-    best_row_local: jax.Array  # int32 [C_B], winner's chunk-local row
-    best_translation: jax.Array  # int32 [C_B], winner's fine translation
-    class_log_z: jax.Array  # float64 [C_B]
-    min_diff2: jax.Array  # float [C_B], RELION's common-min centering
-    best_log_score: jax.Array  # float64 [C_B]
-    max_posterior: jax.Array  # float [C_B]
-    batch_norm: jax.Array | None  # float [C_B, 1], non-exact-Gaussian branch only
 
 
 # The image axis of the per-image accumulators, and of every per-image operand
@@ -474,8 +412,8 @@ def _flat_row_norm_and_scale_terms(
 ):
     """Per-row ``A2`` and ``XA`` partials in the flat candidate-row layout.
 
-    Term for term this is
-    :func:`recovar.em.helpers.projection.compute_norm_residual_per_image` (and,
+    Term for term this is the rectangular per-image norm residual (the test oracle
+    in ``tests/oracles/projection.py``; and,
     with ``pixel_mask``, its scale-correction sibling) with the ``(B, R, P)``
     rotation axis folded into the row axis: the same masks, the same
     ``noise_variance`` broadcast and the same natural dtype promotion, summed
@@ -496,275 +434,6 @@ def _flat_row_norm_and_scale_terms(
     cross_terms = jnp.where(cross_has_mass, proj * jnp.conj(summed_masked), 0.0)
     xa_terms = noise_variance * cross_terms.real
     return jnp.sum(a2_terms, axis=1), jnp.sum(xa_terms, axis=1)
-
-
-@partial(jax.jit, static_argnames=("config",))
-def _accumulate_chunk_statistics_jit(
-    stats: ResidentStatistics,
-    operands: ChunkStatisticsOperands,
-    tables: ResidentStatisticsTables,
-    *,
-    config: ResidentStatisticsConfig,
-) -> ResidentStatistics:
-    """The single traced program; see :func:`accumulate_chunk_statistics`."""
-
-    image_capacity = int(operands.image_ids.shape[0])
-
-    probs = operands.row_posterior
-    row_image = jnp.asarray(operands.row_image_local, dtype=jnp.int32)
-    image_ids = jnp.asarray(operands.image_ids, dtype=jnp.int32)
-    valid_image = image_ids >= 0
-    image_slot = _drop_index(image_ids, int(config.image_capacity))
-
-    # --- 1. sigma2 offset -------------------------------------------------
-    # Host: translation_posterior = sum_R noise_probs (in the posterior dtype),
-    # cast to float64, then dot with the per-image squared translation
-    # distances. The per-image intermediate is kept so only the sum *across*
-    # images changes order.
-    sigma2_offset = stats.sigma2_offset
-    translation_posterior = segment_sum_by_image(
-        probs, row_image, image_capacity,
-        float32_posterior_bucket_size=(
-            128 if config.float32_bucketed_image_sums and probs.dtype == jnp.float32 else None
-        ),
-    )
-    if tables.translation_sqdist_ang is not None:
-        sqdist = jnp.asarray(tables.translation_sqdist_ang, dtype=jnp.float64)
-        sigma2_offset = sigma2_offset + jnp.sum(
-            translation_posterior.astype(jnp.float64) * sqdist
-        )
-
-    # --- 2. support mass --------------------------------------------------
-    support_mass = jnp.sum(translation_posterior, axis=1)
-    support_mass = jnp.where(valid_image, support_mass, jnp.zeros((), support_mass.dtype))
-    sumw = stats.sumw + jnp.sum(support_mass.astype(jnp.float64))
-
-    # --- 3. weighted image power shells and per-image norm power ----------
-    # ``valid_image_mask`` is the padding-aware form of the host's implicit
-    # ones vector: identical arithmetic on real images, zero on padded slots
-    # (which is what keeps the unweighted high shells padding-free).
-    weighted_img_shells, weighted_img_per_image = weighted_image_power_from_shells(
-        operands.image_power_shells,
-        support_mass,
-        operands.relion_norm_high_shell,
-        valid_image,
-        norm_unweighted_shell_cutoff=config.norm_unweighted_shell_cutoff,
-        include_unweighted_high_shell=config.include_unweighted_high_shell,
-        deterministic_norm_reduction=config.deterministic_norm_reduction,
-    )
-
-    # --- 4. per-particle norm correction (production algebraic mode) ------
-    # The host adds the image-power term and the A2-2XA residual in two
-    # separate ``+=`` statements; keep both scatters separate so the float64
-    # rounding of the accumulator matches.
-    norm_correction = stats.norm_correction.at[image_slot].add(
-        jnp.where(valid_image, weighted_img_per_image, 0.0).astype(jnp.float64),
-        mode="drop",
-    )
-
-    # --- 5. block noise shells -------------------------------------------
-    block_noise_shells, _, _ = compute_noise_block(
-        operands.proj,
-        operands.proj_abs2,
-        operands.summed_masked,
-        operands.ctf_probs,
-        tables.noise_variance,
-        tables.shell_indices_noise,
-        config.n_shells,
-        return_split=False,
-    )
-
-    # --- 6. RELION direct-Wavg low-shell replacement ----------------------
-    if config.relion_wavg_atomic_direct_noise:
-        if operands.wavg_triplet_pixels is None:
-            raise ValueError("direct Wavg noise replacement requires the Wavg triplet pixels")
-        residual_shells, image_power_shells = (
-            _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
-                block_noise_shells.astype(jnp.float64),
-                weighted_img_shells.astype(jnp.float64),
-                operands.wavg_triplet_pixels[:, :, 2],
-                tables.wavg_shell_indices,
-                exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
-                shell_count=config.n_shells,
-            )
-        )
-    else:
-        residual_shells = block_noise_shells.astype(jnp.float64)
-        image_power_shells = weighted_img_shells.astype(jnp.float64)
-    wsum_sigma2_noise = stats.wsum_sigma2_noise + residual_shells
-    wsum_img_power = stats.wsum_img_power + image_power_shells
-
-    # --- 7. per-image norm residual --------------------------------------
-    a2_per_row, xa_per_row = _flat_row_norm_and_scale_terms(
-        operands.proj,
-        operands.proj_abs2,
-        operands.summed_masked,
-        operands.ctf_probs,
-        tables.noise_variance,
-    )
-    a2_per_image = add_segment_sum(
-        jnp.zeros(image_capacity, dtype=a2_per_row.dtype), row_image, a2_per_row
-    )
-    xa_per_image = add_segment_sum(
-        jnp.zeros(image_capacity, dtype=xa_per_row.dtype), row_image, xa_per_row
-    )
-    block_norm_residual = a2_per_image - 2.0 * xa_per_image
-    norm_correction = norm_correction.at[image_slot].add(
-        jnp.where(valid_image, block_norm_residual, 0.0).astype(jnp.float64),
-        mode="drop",
-    )
-
-    # --- 8. group scale sufficient statistics -----------------------------
-    scale_xa = stats.scale_xa
-    scale_aa = stats.scale_aa
-    if config.accumulate_scale:
-        if config.relion_wavg_atomic_scale_aa:
-            # RELION's atomic Wavg stream already carries XA/AA in scale units;
-            # the host masks the rectangle and sums in float64.
-            if operands.wavg_triplet_pixels is None:
-                raise ValueError("the atomic Wavg scale branch requires the Wavg triplet pixels")
-            mask_rect = jnp.asarray(tables.wavg_scale_pixel_mask, dtype=bool).reshape(1, -1)
-            zero_f32 = jnp.float32(0.0)
-            scale_xa_per_image = jnp.sum(
-                jnp.where(mask_rect, operands.wavg_triplet_pixels[:, :, 0], zero_f32).astype(
-                    jnp.float64
-                ),
-                axis=1,
-            )
-            scale_aa_per_image = jnp.sum(
-                jnp.where(mask_rect, operands.wavg_triplet_pixels[:, :, 1], zero_f32).astype(
-                    jnp.float64
-                ),
-                axis=1,
-            )
-        else:
-            scale_a2_row, scale_xa_row = _flat_row_norm_and_scale_terms(
-                operands.proj,
-                operands.proj_abs2,
-                operands.summed_masked,
-                operands.ctf_probs,
-                tables.noise_variance,
-                pixel_mask=tables.scale_pixel_mask,
-            )
-            scale_a2_image = add_segment_sum(
-                jnp.zeros(image_capacity, dtype=scale_a2_row.dtype), row_image, scale_a2_row
-            )
-            scale_xa_image = add_segment_sum(
-                jnp.zeros(image_capacity, dtype=scale_xa_row.dtype), row_image, scale_xa_row
-            )
-            safe_scale = jnp.maximum(
-                jnp.asarray(operands.scale, dtype=scale_a2_image.dtype),
-                jnp.asarray(1e-30, dtype=scale_a2_image.dtype),
-            )
-            scale_xa_per_image = scale_xa_image / safe_scale
-            scale_aa_per_image = scale_a2_image / (safe_scale**2)
-        group_slot = _drop_index(operands.group_ids, int(config.n_scale_groups))
-        keep_group = valid_image & (jnp.asarray(operands.group_ids, dtype=jnp.int32) >= 0)
-        scale_xa = scale_xa.at[group_slot].add(
-            jnp.where(keep_group, scale_xa_per_image, 0.0).astype(jnp.float64), mode="drop"
-        )
-        scale_aa = scale_aa.at[group_slot].add(
-            jnp.where(keep_group, scale_aa_per_image, 0.0).astype(jnp.float64), mode="drop"
-        )
-
-    # --- 9. rotation posterior sums ---------------------------------------
-    probs_sum_t = jnp.sum(probs, axis=-1)
-    coarse_slot = _drop_index(operands.row_coarse_rot, int(config.n_coarse_rot))
-    rotation_posterior_sums = stats.rotation_posterior_sums.at[coarse_slot].add(
-        probs_sum_t.astype(jnp.float64), mode="drop"
-    )
-
-    # --- 10. per-image score and pose fields ------------------------------
-    if config.use_exact_relion_gaussian:
-        # ``_relion_cuda_fine_log_evidence_offset`` is exactly ``-min_diff2``.
-        log_score_offset = (-jnp.asarray(operands.min_diff2)).astype(jnp.float64)
-    else:
-        if operands.batch_norm is None:
-            raise ValueError("the non-exact-Gaussian branch requires batch_norm")
-        log_score_offset = -0.5 * jnp.squeeze(operands.batch_norm, axis=1).astype(jnp.float64)
-    class_log_z = jnp.asarray(operands.class_log_z, dtype=jnp.float64)
-    best_log_score_chunk = jnp.asarray(operands.best_log_score, dtype=jnp.float64)
-    finite = jnp.isfinite(best_log_score_chunk)
-    neg_inf = jnp.asarray(-jnp.inf, dtype=jnp.float64)
-
-    log_evidence_values = jnp.where(finite, class_log_z + log_score_offset, neg_inf)
-    score_log_z_values = jnp.where(
-        finite,
-        class_log_z + log_score_offset if config.use_exact_relion_gaussian else class_log_z,
-        neg_inf,
-    )
-    log_evidence = stats.log_evidence.at[image_slot].set(log_evidence_values, mode="drop")
-    score_log_z = stats.score_log_z.at[image_slot].set(score_log_z_values, mode="drop")
-    best_log_score = stats.best_log_score.at[image_slot].set(
-        best_log_score_chunk + log_score_offset, mode="drop"
-    )
-    max_posterior = stats.max_posterior.at[image_slot].set(
-        jnp.asarray(operands.max_posterior, dtype=stats.max_posterior.dtype), mode="drop"
-    )
-
-    best_row_local = jnp.asarray(operands.best_row_local, dtype=jnp.int32)
-    best_translation = jnp.asarray(operands.best_translation, dtype=jnp.int32)
-    local_rot = best_row_local - jnp.asarray(operands.image_row_start, dtype=jnp.int32)
-    # The host raises when the winner points into a bucket's rotation padding;
-    # a traced program counts instead and finalize_statistics raises.
-    row_count = jnp.asarray(operands.image_row_count, dtype=jnp.int32)
-    out_of_range = valid_image & ((local_rot < 0) | (local_rot >= row_count))
-    invalid_best_rows = stats.invalid_best_rows + jnp.sum(out_of_range.astype(jnp.int64))
-
-    safe_row = jnp.clip(best_row_local, 0, max(int(operands.row_fine_rot.shape[0]) - 1, 0))
-    best_fine_rot = jnp.asarray(operands.row_fine_rot, dtype=jnp.int64)[safe_row]
-    best_cell_values = best_fine_rot * jnp.int64(config.n_fine_trans) + best_translation.astype(jnp.int64)
-    best_cell = stats.best_cell.at[image_slot].set(best_cell_values, mode="drop")
-    best_local_rot = stats.best_local_rot.at[image_slot].set(local_rot, mode="drop")
-
-    return ResidentStatistics(
-        wsum_sigma2_noise=wsum_sigma2_noise,
-        wsum_img_power=wsum_img_power,
-        sigma2_offset=sigma2_offset,
-        sumw=sumw,
-        norm_correction=norm_correction,
-        scale_xa=scale_xa,
-        scale_aa=scale_aa,
-        rotation_posterior_sums=rotation_posterior_sums,
-        log_evidence=log_evidence,
-        best_log_score=best_log_score,
-        max_posterior=max_posterior,
-        best_cell=best_cell,
-        score_log_z=score_log_z,
-        best_local_rot=best_local_rot,
-        invalid_best_rows=invalid_best_rows,
-    )
-
-
-def accumulate_chunk_statistics(
-    stats: ResidentStatistics,
-    operands: ChunkStatisticsOperands,
-    tables: ResidentStatisticsTables,
-    *,
-    config: ResidentStatisticsConfig,
-) -> ResidentStatistics:
-    """Fold one capacity chunk into the device accumulators.
-
-    One ``jax.jit`` program per capacity class: ``config`` and the operand
-    shapes are static, ``n_valid_rows``/``n_valid_images`` never appear because
-    padding is already neutral by construction (zero posterior, zero CTF mass,
-    sentinel ids). Nothing is pulled to the host.
-    """
-
-    if not isinstance(config, ResidentStatisticsConfig):
-        raise TypeError(f"config must be a ResidentStatisticsConfig, got {type(config)!r}")
-    if int(config.n_optics_groups) != 1:
-        raise NotImplementedError("the T9a statistics stage keeps one optics group's noise")
-    if int(config.n_classes) != 1:
-        raise NotImplementedError("the T9a statistics stage has no class axis")
-    if operands.row_posterior.shape[1] != int(config.n_fine_trans):
-        raise ValueError(
-            "row posterior translation axis does not match the configured fine translation count: "
-            f"{operands.row_posterior.shape[1]} vs {config.n_fine_trans}"
-        )
-    if operands.row_image_local.shape != operands.row_fine_rot.shape:
-        raise ValueError("row_image_local and row_fine_rot must share the row capacity")
-    return _accumulate_chunk_statistics_jit(stats, operands, tables, config=config)
 
 
 class FinalizedStatistics(NamedTuple):

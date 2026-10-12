@@ -26,15 +26,15 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
-from test_resident_scoring import N_FINE_TRANS, _build_case
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE
+from oracles.resident_candidates import expand_mask_rows
+from test_resident_scoring import N_FINE_TRANS, _build_case
 
-from relax.fine_pass.resident_candidates import expand_mask_rows, materialize_chunk
+from relax.fine_pass.resident_candidates import materialize_chunk
 from relax.fine_pass.resident_scoring import (
     live_projection_block_rows,
     project_resident_live_rows,
     project_resident_rows,
-    resident_projection_block_rows,
     resident_row_projection_bytes,
     score_resident_chunk,
     score_resident_projected_chunk,
@@ -65,18 +65,9 @@ def _packed_row_mask(tables, chunk, n_fine_trans):
 FINE_TRANS_PARENT = np.repeat(np.arange(4, dtype=np.int32), 2)
 
 
-def test_projection_block_budget_is_at_least_one_row():
+def test_projected_row_bytes_count_the_score_and_recon_windows():
     per_row = resident_row_projection_bytes(n_score_pixels=3386, n_recon_pixels=4324)
     assert per_row == 3386 * 8 + 4324 * 12
-    assert resident_projection_block_rows(
-        n_score_pixels=3386, n_recon_pixels=4324, max_block_bytes=1
-    ) == 1
-    assert (
-        resident_projection_block_rows(
-            n_score_pixels=3386, n_recon_pixels=4324, max_block_bytes=10 * per_row
-        )
-        == 10
-    )
 
 
 @pytest.mark.gpu

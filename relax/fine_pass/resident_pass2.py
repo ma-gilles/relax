@@ -1382,7 +1382,7 @@ def _add_wavg_rectangle_image_power(
 ):
     """Add a chunk's Wavg image power to its per-image ``diff2`` slot, once.
 
-    The flat-row twin of ``_relion_wavg_rectangle_triplet_terms`` fills the
+    The rectangular form (the test oracle ``relion_wavg_rectangle_triplet_terms``) fills the
     rectangle's ``diff2`` slot with each row's posterior-weighted image power
     and overwrites the exact-radius positions with the projected triplet; the
     M-step blocks add only their rows' exact terms

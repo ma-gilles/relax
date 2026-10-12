@@ -14,7 +14,7 @@ tested here, is:
 * the chunk segment offsets the segmented posterior is driven with;
 * the flat-row twins of the three rectangular host helpers the driver replaces
   (``compute_local_mstep_sums``, ``_relion_wavg_atomic_triplet_terms`` and
-  ``_relion_wavg_rectangle_triplet_terms``).
+  the test oracle ``relion_wavg_rectangle_triplet_terms``).
 
 The whole-driver comparison against ``compute_pass2_stats_sparse_bucketed``
 needs a GPU and the custom CUDA library; it is the GPU test at the end.
@@ -29,6 +29,7 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
+from oracles.wavg import relion_wavg_rectangle_triplet_terms
 
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.local_backprojection import compute_local_mstep_sums
@@ -38,9 +39,6 @@ from relax.fine_pass.resident_candidates import (
     ResidentCandidateTables,
     chunk_segment_offsets,
     plan_capacity_chunks,
-)
-from relax.fine_pass.wavg import (
-    _relion_wavg_rectangle_triplet_terms,
 )
 
 pytestmark = pytest.mark.unit
@@ -291,7 +289,7 @@ def test_flat_row_wavg_rectangle_image_sums_match_the_rectangular_helper(
     posterior = np.abs(rng.normal(size=(batch, n_rot, n_trans))).astype(np.float32)
 
     rect = np.asarray(
-        _relion_wavg_rectangle_triplet_terms(
+        relion_wavg_rectangle_triplet_terms(
             jnp.asarray(exact_terms),
             jnp.asarray(raw_rect),
             jnp.asarray(posterior),

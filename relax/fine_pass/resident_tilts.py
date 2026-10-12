@@ -274,7 +274,7 @@ def run_tilt_chunk(
     - Rows are the chunk's particle hypotheses (unit-major, as the candidate tables hold them).
     - Each row is scored by every image of its particle, image slot by image slot, with that image's
       matrix ``inv(L_i A_r)`` (a chunk-local projection cache laid out ``slot * C_R + row``), phases,
-      CTF and noise, and the diff2 summed per row (``score_tilt_image_rows``). The minimum, the weights
+      CTF and noise, and the diff2 summed per row (``tilt_image_rows_raw_diff2``). The minimum, the weights
       and the significance are per particle (RELION's img_id loop, acc_ml_optimiser_impl.h:2282).
     - The M-step visits the slots again: each (image, row) backprojects with the particle's posterior,
       the image's matrix and phases; the noise and norm sums carry 1 / n_images, the scale sums and

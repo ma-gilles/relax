@@ -67,24 +67,6 @@ def test_fixed_order_segment_sum_leading_axes_and_shape_check():
         dr.fixed_order_segment_sum(jnp.asarray(values[:-1]), ids, n)
 
 
-def test_add_segment_sum_matches_scatter_under_both_flag_states(monkeypatch):
-    rng = np.random.default_rng(3)
-    n_groups, batch = 4, 37
-    group_ids = rng.integers(0, n_groups, size=batch).astype(np.int32)
-    per_image = rng.standard_normal(batch).astype(np.float32)
-    acc0 = jnp.asarray(rng.standard_normal(n_groups).astype(np.float32))
-    monkeypatch.delenv(dr.DETERMINISTIC_REDUCTIONS_ENV, raising=False)
-    scatter = np.asarray(dr.add_segment_sum(acc0, group_ids, per_image))
-    monkeypatch.setenv(dr.DETERMINISTIC_REDUCTIONS_ENV, "1")
-    fixed = np.asarray(dr.add_segment_sum(acc0, group_ids, per_image))
-    assert fixed.dtype == scatter.dtype == np.float32
-    reference = np.asarray(acc0, dtype=np.float64) + np.bincount(
-        group_ids, weights=per_image.astype(np.float64), minlength=n_groups
-    )
-    np.testing.assert_allclose(scatter, reference, rtol=1e-5, atol=1e-6)
-    np.testing.assert_allclose(fixed, reference, rtol=1e-5, atol=1e-6)
-
-
 def test_bin_shell_values_jax_flagged_path_matches_scatter_path(monkeypatch):
     values, ids, n = _shell_case(5)
     monkeypatch.delenv(dr.DETERMINISTIC_REDUCTIONS_ENV, raising=False)

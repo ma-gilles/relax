@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
+from oracles.resident_candidates import expand_mask_rows
 
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.compact_candidates import candidate_mask_to_dense
@@ -16,8 +17,6 @@ from relax.fine_pass.resident_candidates import (
     ResidentCandidateTables,
     build_resident_candidate_tables,
     expand_chunk_mask_jnp,
-    expand_mask_jnp,
-    expand_mask_rows,
     materialize_chunk,
     n_mask_words,
     plan_capacity_chunks,
@@ -142,14 +141,6 @@ def test_expand_mask_rows_matches_candidate_mask_to_dense_for_every_mode(fixture
         expected_dense = candidate_mask_to_dense(fixture_inputs["candidate_mask"][image])
         got_dense = expand_mask_rows(tables, image, FINE_TRANS_PARENT)
         assert_matches(got_dense, expected_dense)
-
-
-def test_expand_mask_jnp_matches_expand_mask_rows(fixture_tables):
-    tables = fixture_tables
-    for image in range(tables.n_images):
-        rows = expand_mask_rows(tables, image, FINE_TRANS_PARENT)
-        jnp_rows = np.asarray(expand_mask_jnp(tables, image, FINE_TRANS_PARENT))
-        assert_matches(jnp_rows, rows)
 
 
 def test_mask_width_mismatch_is_rejected(fixture_inputs):

@@ -26,6 +26,7 @@ from helpers.jit_programs import clear_programs
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
+from helpers.resident_scoring import materialize_chunk_device, prepare_resident_image_operands, score_all_chunks
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
 from recovar.core.configs import ForwardModelConfig
 from recovar.reconstruction import noise as noise_utils
@@ -42,12 +43,7 @@ from relax.fine_pass.resident_candidates import (
     materialize_chunk,
     plan_capacity_chunks,
 )
-from relax.fine_pass.resident_scoring import (
-    materialize_chunk_device,
-    prepare_resident_image_operands,
-    score_all_chunks,
-    score_resident_chunk,
-)
+from relax.fine_pass.resident_scoring import score_resident_chunk
 from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 from relax.fourier.half_spectrum import make_scoring_half_image_weights
 from relax.fourier.preprocessing import half_translation_phase_table

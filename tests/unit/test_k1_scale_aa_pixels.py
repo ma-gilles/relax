@@ -1,12 +1,11 @@
 from pathlib import Path
 
-import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
 from relax.fine_pass.policy import _relion_wavg_direct_modes
-from relax.fine_pass.wavg import _make_relion_wavg_rectangle, _relion_wavg_rectangle_triplet_terms
+from relax.fine_pass.wavg import _make_relion_wavg_rectangle
 from relax.fourier.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
@@ -151,45 +150,6 @@ def test_relion_wavg_rectangle_separates_optics_image_and_model_sizes():
     image_only = np.ones(layout.centered_indices.size, dtype=bool)
     image_only[layout.exact_positions] = False
     assert np.count_nonzero((layout.shell_indices >= 0) & image_only) > 0
-
-
-def test_relion_wavg_rectangle_terms_keep_image_only_pixels_in_issue_stream():
-    exact_terms = jnp.asarray(
-        [
-            [
-                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
-                [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
-            ]
-        ],
-        dtype=jnp.float32,
-    )
-    shifted = jnp.asarray(
-        [
-            [
-                [1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j, 4.0 + 0.0j, 5.0 + 0.0j],
-                [0.0 + 1.0j, 0.0 + 2.0j, 0.0 + 3.0j, 0.0 + 4.0j, 0.0 + 5.0j],
-            ]
-        ],
-        dtype=jnp.complex64,
-    )
-    posterior = jnp.asarray([[[0.25, 0.75], [0.5, 0.5]]], dtype=jnp.float32)
-    exact_positions = jnp.asarray([1, 3], dtype=jnp.int32)
-
-    result = np.asarray(
-        _relion_wavg_rectangle_triplet_terms(
-            exact_terms,
-            shifted,
-            posterior,
-            exact_positions,
-        )
-    )
-
-    assert_matches(result[:, :, exact_positions, :], np.asarray(exact_terms))
-    image_only = np.asarray([0, 2, 4])
-    assert_matches(result[:, :, image_only, :2], 0.0)
-    shifted_power = np.abs(np.asarray(shifted)) ** 2
-    expected_power = np.einsum("brt,btp->brp", np.asarray(posterior), shifted_power)
-    np.testing.assert_allclose(result[:, :, image_only, 2], expected_power[:, :, image_only])
 
 
 def test_scale_aa_pixels_joins_fourier_coordinates_and_localizes_operand_delta(tmp_path: Path):

@@ -48,16 +48,6 @@ def fixed_order_segment_sum(values, segment_ids, n_segments: int):
     return jnp.sum(jnp.where(member, values[..., None, :], zero), axis=-1)
 
 
-def add_segment_sum(accumulator, segment_ids, values):
-    """``accumulator.at[segment_ids].add(values)``, fixed-order under the opt-in."""
-
-    if not deterministic_reductions_enabled():
-        return accumulator.at[segment_ids].add(values)
-    return accumulator + fixed_order_segment_sum(
-        jnp.asarray(values, dtype=accumulator.dtype), segment_ids, accumulator.shape[0]
-    )
-
-
 def static_shell_voxel_lists(
     capacity: int,
     padding_factor: int,

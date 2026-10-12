@@ -125,10 +125,8 @@ def _assert_paired_native_noise(candidate, control):
 
 def _capture_chunk_norm(collector, original, stats, operands, tables, *, config):
     """Opt-in per-image norm boundary, using the same public statistics owners."""
-    from relax.fine_pass.resident_statistics import (
-        segment_sum_by_image,
-        weighted_image_power_from_shells,
-    )
+    from relax.fine_pass.resident_statistics import segment_sum_by_image
+    from relax.fine_pass.wavg import weighted_image_power_from_shells
 
     image_capacity = int(operands.image_ids.shape[0])
     posterior = operands.row_posterior

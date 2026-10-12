@@ -12,6 +12,7 @@ from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
+from helpers.resident_scoring import score_tilt_image_rows
 
 from relax.cuda import fine as cuda_fine
 from relax.fine_pass import resident_scoring
@@ -54,7 +55,7 @@ def test_rows_sum_their_particles_images_in_order(monkeypatch, request):
     resident_scoring.tilt_image_rows_raw_diff2.clear_cache()
     request.addfinalizer(resident_scoring.tilt_image_rows_raw_diff2.clear_cache)
     slot_projections = jnp.concatenate([project_slot(s, jnp.asarray(np.maximum(ids, 0))) for s, ids in enumerate(slots)])
-    out = resident_scoring.score_tilt_image_rows(
+    out = score_tilt_image_rows(
         slot_projections,
         slots,
         row_unit,

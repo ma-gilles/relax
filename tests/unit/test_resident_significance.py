@@ -13,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.resident_significance import compact_batch_significance
 
 from relax.fine_pass.bucket_arrays import (
     _prepare_per_image_pass2_inputs,
@@ -26,7 +27,6 @@ from relax.fine_pass.resident_significance import (
     PackedSignificanceBatch,
     build_coarse_significance_csr,
     build_resident_candidate_tables_from_csr,
-    compact_batch_significance,
     compact_batch_significance_classes,
     csr_candidate_rows_per_image,
     csr_capacity_for_total,

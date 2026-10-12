@@ -13,13 +13,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from oracles.resident_candidates import expand_mask_rows
 from test_resident_significance import _encoded_supports, _supports
 
 from relax.fine_pass import resident_candidates
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
-    expand_mask_rows,
     materialize_chunk,
     merge_class_tables,
     plan_capacity_chunks,

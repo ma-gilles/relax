@@ -16,6 +16,7 @@ import pytest
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
+from oracles.resident_candidates import expand_mask_rows
 from test_resident_significance import _csr_from_supports, _encoded_supports, _supports
 
 from relax.fine_pass import resident_pass2 as rp
@@ -24,7 +25,6 @@ from relax.fine_pass.compact_candidates import candidate_mask_to_dense
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     expand_chunk_mask_jnp,
-    expand_mask_rows,
     materialize_chunk,
     n_mask_words,
     plan_capacity_chunks,

@@ -7,8 +7,7 @@ device-resident kernel can be traced once per (row capacity, image capacity,
 pixel count) triple instead of once per bucket shape.
 
 Everything here is host planning: plain numpy (int32/float32/uint32/int8) plus
-one jax.numpy reference twin (:func:`expand_mask_jnp`) used only to validate
-that the same bit-unpacking arithmetic works on device arrays. No scoring,
+the ``jax.numpy`` chunk-mask expanders the device programs call. No scoring,
 projection or M-step arithmetic lives in this module; see
 ``../em_device_resident_pass2_design_20260918.md`` for the stages this table
 feeds.
@@ -63,8 +62,6 @@ __all__ = [
     "build_resident_candidate_tables",
     "expand_chunk_mask_jnp",
     "expand_local_chunk_mask_jnp",
-    "expand_mask_jnp",
-    "expand_mask_rows",
     "materialize_chunk",
     "plan_capacity_chunks",
     "plan_pass_chunks",
@@ -622,66 +619,6 @@ def coarse_winner_cells(
     return row_local * int(fine_translation_parent.size) + fine_of_coarse_trans[winner_trans]
 
 
-def expand_mask_rows(tables: ResidentCandidateTables, image: int, fine_translation_parent) -> np.ndarray:
-    """Reference (numpy) dense mask for one image; matches ``candidate_mask_to_dense`` exactly.
-
-    Returns a ``bool[n_rows_i, len(fine_translation_parent)]`` array. This is
-    the ground truth :func:`expand_mask_jnp` and the eventual device gather
-    kernel must reproduce.
-    """
-
-    start, stop = int(tables.row_offsets[image]), int(tables.row_offsets[image + 1])
-    n_rows_i = stop - start
-    fine_translation_parent = np.asarray(fine_translation_parent)
-    n_fine_trans = int(fine_translation_parent.shape[0])
-    mode = int(tables.mask_mode[image])
-
-    if mode == _MASK_MODE_FULL:
-        return np.ones((n_rows_i, n_fine_trans), dtype=bool)
-    if mode == _MASK_MODE_EMPTY:
-        return np.zeros((n_rows_i, n_fine_trans), dtype=bool)
-    if mode != _MASK_MODE_BITSET:
-        raise ValueError(f"image {image}: unknown mask_mode {mode}")
-
-    p0, p1 = int(tables.parent_offsets[image]), int(tables.parent_offsets[image + 1])
-    bits = tables.parent_trans_bits[p0:p1]
-    row_parent = tables.row_parent_local[start:stop]
-    row_bits = bits[row_parent].astype(np.uint32)
-    words, shifts = np.divmod(fine_translation_parent.astype(np.int64), _MASK_WORD_BITS)
-    return (((row_bits[:, words] >> shifts.astype(np.uint32)[None, :]) & np.uint32(1)) != 0)
-
-
-def expand_mask_jnp(tables: ResidentCandidateTables, image: int, fine_translation_parent):
-    """``jax.numpy`` twin of :func:`expand_mask_rows` for the same one image.
-
-    Same contract and same result as :func:`expand_mask_rows` (validated by
-    the unit tests bitwise), but written with ``jax.numpy`` primitives so the
-    bit-unpacking arithmetic can be copied verbatim into a jitted device
-    gather kernel in a later ticket. Runs on whatever platform JAX is
-    configured for (CPU in this ticket); nothing here is CUDA-specific.
-    """
-
-    import jax.numpy as jnp
-
-    start, stop = int(tables.row_offsets[image]), int(tables.row_offsets[image + 1])
-    n_rows_i = stop - start
-    fine_translation_parent = jnp.asarray(fine_translation_parent, dtype=jnp.uint32)
-    n_fine_trans = int(fine_translation_parent.shape[0])
-    mode = int(tables.mask_mode[image])
-
-    if mode == _MASK_MODE_FULL:
-        return jnp.ones((n_rows_i, n_fine_trans), dtype=bool)
-    if mode == _MASK_MODE_EMPTY:
-        return jnp.zeros((n_rows_i, n_fine_trans), dtype=bool)
-    if mode != _MASK_MODE_BITSET:
-        raise ValueError(f"image {image}: unknown mask_mode {mode}")
-
-    p0, p1 = int(tables.parent_offsets[image]), int(tables.parent_offsets[image + 1])
-    bits = jnp.asarray(tables.parent_trans_bits[p0:p1], dtype=jnp.uint32)
-    row_parent = jnp.asarray(tables.row_parent_local[start:stop], dtype=jnp.int32)
-    return _test_translation_bits(bits[row_parent], fine_translation_parent)
-
-
 def _test_translation_bits(row_bits, fine_translation_parent):
     """bool[rows, T]: bit ``fine_translation_parent[t]`` of each row's word bitset."""
 
@@ -695,8 +632,7 @@ def _test_translation_bits(row_bits, fine_translation_parent):
 def expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent):
     """Dense candidate mask of one padded chunk, from its per-row mask fields.
 
-    ``jax.numpy`` twin of :func:`expand_mask_rows` evaluated for a whole
-    :func:`materialize_chunk` output at once, so a jitted device program can
+    Evaluated for a whole :func:`materialize_chunk` output at once, so a jitted device program can
     rebuild the ``bool[row_capacity, n_fine_trans]`` mask without any host
     array. Inputs are the chunk fields ``row_mask_bits`` (uint32
     ``[row_capacity, n_words]``) and ``row_mask_mode`` (int8 ``[row_capacity]``), plus
@@ -733,8 +669,7 @@ def expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent)
 def expand_local_chunk_mask_jnp(row_mask_bits, *, n_trans: int):
     """Dense candidate mask of one padded chunk, from its packed per-row bytes.
 
-    ``jax.numpy`` twin of :func:`expand_local_mask_rows` for a whole
-    :func:`materialize_local_chunk` output at once, so a jitted device program
+    Evaluated for a whole :func:`materialize_local_chunk` output at once, so a jitted device program
     rebuilds ``bool[row_capacity, n_trans]`` with no host array. ``row_mask_bits``
     is uint8 ``[row_capacity, n_mask_bytes]`` in the layout's little-endian bit
     order: translation ``t`` is byte ``t // 8``, bit ``t % 8``.

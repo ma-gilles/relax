@@ -16,7 +16,6 @@ from recovar import core
 from recovar.cuda_backproject import cuda_available as _cuda_projection_available
 
 from relax.fourier.half_spectrum import bin_shell_values_jax
-from relax.relion.optics_groups import image_rotation_rows
 from relax.runtime.env_flags import parse_env_strict_flag
 
 logger = logging.getLogger(__name__)
@@ -1259,37 +1258,6 @@ def compute_noise_block_per_optics_group(
     xa = jnp.where(cross.real != 0.0, noise_table * cross.real, 0.0)
     block_noise = a2 - 2.0 * xa
     return jax.vmap(lambda values: bin_shell_values_jax(values, shell_indices, shell_count))(block_noise)
-
-
-@jax.jit
-def compute_norm_residual_per_image(
-    proj_half,
-    proj_abs2_half,
-    summed_masked,
-    ctf_probs,
-    noise_variance_half,
-):
-    """Return RELION norm-correction residual terms per image.
-
-    This is the same ``A2 - 2*XA`` contribution as :func:`compute_noise_block`,
-    but summed per image instead of binned over shells.  The caller adds the
-    image-power term once per image.
-
-    Like ``compute_noise_block``, keeps whatever real dtype the inputs
-    naturally promote to -- no explicit float32 cast, which used to
-    truncate this per-image residual before the caller's own accumulation
-    even when the inputs were already float64 (double-precision scoring).
-    """
-
-    ctf_has_mass = ctf_probs != 0.0
-    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * image_rotation_rows(noise_variance_half), 0.0)
-    a2_terms = jnp.where(ctf_has_mass, proj_abs2_half * ctf_probs_raw, 0.0)
-    a2_per_image = jnp.sum(a2_terms, axis=(1, 2))
-
-    cross_terms = jnp.where(summed_masked != 0.0, proj_half * jnp.conj(summed_masked), 0.0)
-    xa_terms = image_rotation_rows(noise_variance_half) * cross_terms.real
-    xa_per_image = jnp.sum(xa_terms, axis=(1, 2))
-    return a2_per_image - 2.0 * xa_per_image
 
 
 def relion_scale_correction_pixel_mask(data_vs_prior, shell_indices, *, n_shells=None):

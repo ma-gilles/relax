@@ -16,6 +16,7 @@ from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
+from oracles.resident_layout import expand_local_mask_rows
 
 from relax.fine_pass.resident_candidates import expand_local_chunk_mask_jnp
 from relax.local_search import resident_layout as rll
@@ -147,7 +148,7 @@ def test_mask_expansion_matches_the_layouts_own_unpacking():
     assert tables.row_mask_bits is not None, "the mixed fixture must carry a real mask"
 
     reference = layout.sample_mask_rows()
-    expanded = rll.expand_local_mask_rows(tables, 0, tables.n_rows)
+    expanded = expand_local_mask_rows(tables, 0, tables.n_rows)
     assert_matches(expanded, reference)
 
     device = expand_local_chunk_mask_jnp(
@@ -163,7 +164,7 @@ def test_full_support_layout_keeps_the_compact_none_spelling():
     assert tables.row_mask_bits is None
     # ``None`` means full support on both sides.
     assert_matches(
-        rll.expand_local_mask_rows(tables, 0, tables.n_rows),
+        expand_local_mask_rows(tables, 0, tables.n_rows),
         np.ones((tables.n_rows, tables.n_trans), dtype=bool),
     )
     assert expand_local_chunk_mask_jnp(None, n_trans=tables.n_trans) is None
@@ -247,7 +248,7 @@ def test_materialized_chunk_is_the_slice_plus_inert_padding():
         # The chunk's device mask agrees with the reference expansion row by row.
         if mask is not None:
             assert_matches(
-                np.asarray(mask)[:n_valid], rll.expand_local_mask_rows(tables, rs, re)
+                np.asarray(mask)[:n_valid], expand_local_mask_rows(tables, rs, re)
             )
 
 
