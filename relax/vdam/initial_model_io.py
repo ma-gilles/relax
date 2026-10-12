@@ -497,7 +497,7 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
         out_path.parent.mkdir(parents=True, exist_ok=True)
     # Rows written from the table's array: the same bytes as the per-row Series writer
     # (tests/unit/test_star_array_rows.py), 0.06 s instead of 0.5 s for 10k particles.
-    from relax.refinement.run_files import initial_model_data_blocks
+    from relax.star.blocks import initial_model_data_blocks
 
     blocks = initial_model_data_blocks(getattr(dataset, "particles_star", None), optics_star, table)
     write_star_blocks(str(out_path), blocks, array_rows=True)

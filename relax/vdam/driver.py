@@ -33,25 +33,20 @@ from relax.refinement.tomo_half import (
     load_tomo_dataset,
     tilt_image_accuracy_inputs,
 )
-from relax.relion import ctf, initial_model_io
-from relax.relion.initial_model_io import (
-    _experiment_read_order,
-    _particle_state_from_star,
-    _tomo_particle_state_from_star,
-    tomo_checkpoint_particle_state,
-)
+from relax.relion import ctf
 from relax.star.metadata import (
     INITIAL_MODEL_OPTICS_FEATURES,
     TOMO_INITIAL_MODEL_OPTICS_FEATURES,
     refuse_unsupported_optics,
 )
-from relax.vdam import estep_setup, native_sampling, output, particle_update, relion_checkpoint, schedules
+from relax.vdam import estep_setup, initial_model_io, native_sampling, output, particle_update, schedules
 from relax.vdam.bootstrap_iref import (
     initial_state_from_particles,
     initial_state_from_tomo_particles,
     load_raw_images,
 )
 from relax.vdam.estep_setup import run_initial_model_estep
+from relax.vdam.initial_model_io import _experiment_read_order
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.m_step import prepare_mstep_state_precision, relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -66,6 +61,7 @@ from relax.vdam.native_sampling import (
 )
 from relax.vdam.output import write_final_outputs, write_iteration_artifacts
 from relax.vdam.ports import ExpectationProbe, VdamInputSource, VdamObserver
+from relax.vdam.relion_checkpoint import _load_native_vdam_continuation, _validate_continuation_order_replay
 from relax.vdam.schedules import (
     DEFAULT_SIGMA2_FUDGE,
     default_subset_sizes_for_3d_initial_model,
@@ -507,7 +503,7 @@ def run_native_initial_model(
     optics_state = None if tomo else initial_model_io._native_optics_state(main_star, optics_star, dataset)
     continuation = None
     if opts.diagnostic_continue_optimiser is not None:
-        continuation = relion_checkpoint._load_native_vdam_continuation(
+        continuation = _load_native_vdam_continuation(
             opts.diagnostic_continue_optimiser,
             expected_data_star=opts.fn_img,
             opts=opts,
@@ -520,11 +516,15 @@ def run_native_initial_model(
                 f"stop={opts.diagnostic_stop_after_iteration}"
             )
     particle_state = (
-        (tomo_checkpoint_particle_state if continuation is not None else _tomo_particle_state_from_star)(
+        (
+            initial_model_io.tomo_checkpoint_particle_state
+            if continuation is not None
+            else initial_model_io._tomo_particle_state_from_star
+        )(
             main_star, pixel_size=float(dataset.voxel_size)
         )
         if tomo
-        else _particle_state_from_star(
+        else initial_model_io._particle_state_from_star(
             main_star,
             dataset,
             allow_unvisited_class_zero=continuation is not None,
@@ -550,7 +550,7 @@ def run_native_initial_model(
         )
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:
-        relion_checkpoint._validate_continuation_order_replay(continuation)
+        _validate_continuation_order_replay(continuation)
         grad_ini_subset_size = continuation.grad_ini_subset_size
         grad_fin_subset_size = continuation.grad_fin_subset_size
         grad_ini_frac = continuation.grad_ini_frac

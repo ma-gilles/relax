@@ -8,8 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar.utils.helpers import R_from_relion, R_to_relion
 
-from relax.relion import initial_model_io
-from relax.vdam import adaptive_estep, native_sampling, particle_update
+from relax.vdam import adaptive_estep, initial_model_io, native_sampling, particle_update
 from relax.vdam.estep_common import SPA_META_PARTICLE_FIELDS
 from relax.vdam.state import NativeParticleState
 

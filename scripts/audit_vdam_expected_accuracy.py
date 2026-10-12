@@ -10,11 +10,11 @@ from pathlib import Path
 import mrcfile
 import numpy as np
 import starfile
-
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import read_star
-from relax.relion.initial_model_io import _experiment_read_order, _native_optics_state
+
 from relax.relion_bind import _relion_bind_core as bind
+from relax.vdam.initial_model_io import _experiment_read_order, _native_optics_state
 
 
 def _column(table, name: str) -> np.ndarray:

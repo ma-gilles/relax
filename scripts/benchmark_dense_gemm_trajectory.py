@@ -27,7 +27,7 @@ from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.reconstruction import noise as recon_noise
 from recovar.utils.helpers import load_relion_volume
 
-from relax.refinement.run_files import read_star_blocks
+from relax.star.blocks import read_star_blocks
 
 log = logging.getLogger(__name__)
 

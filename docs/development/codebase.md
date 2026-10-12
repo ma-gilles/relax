@@ -92,7 +92,7 @@ independent algorithmic core under `reference/`.
 RELION diagnostic checkpoint restoration lives in [`vdam/relion_checkpoint.py`](../../relax/vdam/relion_checkpoint.py), separate from the VDAM execution driver. Native moment/reference and BPref overrides, including post-M-step reference-map replay, live in [`diagnostics/vdam_mstep_replay.py`](../../relax/parity/vdam_mstep_replay.py); [`vdam/m_step.py`](../../relax/vdam/m_step.py) retains the reconstruction transaction and its numerical boundary calls.
 
 InitialModel STAR import/export is owned by
-[`relion/initial_model_io.py`](../../relax/relion/initial_model_io.py).
+[`vdam/initial_model_io.py`](../../relax/vdam/initial_model_io.py).
 [`vdam/output.py`](../../relax/vdam/output.py) handles artifact paths,
 startup metadata and write cadence; it delegates STAR serialization to that
 adapter. Optics and particle records live in

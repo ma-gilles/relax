@@ -335,7 +335,7 @@ def resolve_seed(args, optimiser_star, *, sealed: bool) -> RandomSeed:
 
 def _continued_run_seed(args) -> int:
     """The continued run's ``rlnRandomSeed``; a different explicit ``--seed`` is refused."""
-    from relax.refinement.run_files import read_star_blocks
+    from relax.star.blocks import read_star_blocks
 
     general = read_star_blocks(args.continue_optimiser_star).get("optimiser_general", {})
     if "rlnRandomSeed" not in general:

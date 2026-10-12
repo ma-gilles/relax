@@ -8,11 +8,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from relax.relion import initial_model_io
 from relax.relion.initial_noise import relion_startup_positions
 from relax.sampling.expected_accuracy import ExpectedAccuracy
 from relax.vdam import bootstrap_reconstruction as br
-from relax.vdam import estep_setup, native_sampling
+from relax.vdam import estep_setup, initial_model_io, native_sampling
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.model_update import update_noise_from_estep

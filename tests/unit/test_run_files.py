@@ -30,9 +30,9 @@ from relax.refinement.run_files import (
     RunFileWriter,
     RunSettings,
     read_run_files,
-    read_star_blocks,
 )
 from relax.sampling.orientation_priors import DirectionPrior
+from relax.star.blocks import input_general_block, read_star_blocks
 
 pytestmark = pytest.mark.unit
 
@@ -603,9 +603,8 @@ def test_initial_model_data_star_starts_a_subtomogram_refinement(tmp_path, loope
 
     from recovar.data_io.starfile import read_star
 
-    from relax.refinement import run_files
     from relax.refinement.tomo_half import is_relion5_2d_stack_star
-    from relax.relion import initial_model_io
+    from relax.vdam import initial_model_io
     from relax.vdam.state import NativeParticleState
 
     rng = np.random.default_rng(66)
@@ -626,7 +625,7 @@ def test_initial_model_data_star_starts_a_subtomogram_refinement(tmp_path, loope
 
     for input_star, is_tomo in ((tomo, True), (plain, False)):
         main, optics = read_star(str(input_star))
-        assert (run_files.input_general_block(input_star) is not None) == is_tomo
+        assert (input_general_block(input_star) is not None) == is_tomo
         # A subtomogram dataset (TomoDataset) names its particle STAR; a single-particle dataset has none.
         dataset = SimpleNamespace(voxel_size=2.5, n_images=7, **({"particles_star": str(input_star)} if is_tomo else {}))
         vdam_out = tmp_path / f"vdam_{input_star.stem}" / "run_it003_data.star"

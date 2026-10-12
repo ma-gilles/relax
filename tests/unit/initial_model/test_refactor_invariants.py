@@ -24,13 +24,14 @@ import relax.vdam as init_model
 from relax.commands.initial_model import GuiInitialModelDefaults
 from relax.parity import vdam_mstep_replay
 from relax.reconstruction.resolution import compute_ini_high_shell
-from relax.relion import initial_model_io, projector_setup, reference_initialization
+from relax.relion import projector_setup, reference_initialization
 from relax.sampling.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
 from relax.vdam import (
     adaptive_estep,
     driver,
     estep_common,
     estep_setup,
+    initial_model_io,
     iteration_loop,
     m_step,
     model_update,
@@ -369,7 +370,7 @@ LOC_BUDGETS = {
     # write_final_outputs returns a FinalOutputs record in place of a 3-tuple (2026-10-10): +9 lines in
     # output.py, the record's exact size.
     "input_output": (1394, (
-        "output.py", "../relion/initial_model_io.py",
+        "output.py", "../vdam/initial_model_io.py",
         "relion_checkpoint.py", "../relion/initial_noise.py",
     )),
     # diagnostics/initial_model_capture.py (87 lines) left with the exact local engine

@@ -17,11 +17,10 @@ import numpy as np
 
 from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.refinement.optics_shapes import MultiShapeDataset
-from relax.relion import initial_model_io
-from relax.relion.initial_model_io import _experiment_read_order
 from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2, relion_startup_positions
 from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
-from relax.vdam import bootstrap_reconstruction
+from relax.vdam import bootstrap_reconstruction, initial_model_io
+from relax.vdam.initial_model_io import _experiment_read_order
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import n_directions_for_healpix_order
 from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_count

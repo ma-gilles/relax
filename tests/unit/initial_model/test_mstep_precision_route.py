@@ -12,8 +12,7 @@ from helpers.vdam import keep_tau2
 
 from relax.commands import initial_model as initial_model_command
 from relax.parity import vdam_mstep_replay, vdam_replay
-from relax.relion import initial_model_io
-from relax.vdam import driver, estep_setup, iteration_loop, m_step, native_options
+from relax.vdam import driver, estep_setup, initial_model_io, iteration_loop, m_step, native_options
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.ports import NoProbe, VdamObserver
@@ -108,7 +107,7 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
     monkeypatch.setattr(driver, "prepare_particle_reads", lambda *a, **k: None)
     monkeypatch.setattr(estep_setup, "configure_relion_image_mask", lambda *a: None)
     monkeypatch.setattr(initial_model_io, "_native_optics_state", lambda *a: None)
-    monkeypatch.setattr(driver, "_particle_state_from_star", lambda *a, **k: None)
+    monkeypatch.setattr(initial_model_io, "_particle_state_from_star", lambda *a, **k: None)
     monkeypatch.setattr(driver, "initial_sampling_state", lambda *a, **k: SimpleNamespace())
     monkeypatch.setattr(driver, "build_sampling_plan", lambda *a, **k: SimpleNamespace(rotations=None))
     monkeypatch.setattr(driver, "initial_state_from_particles", lambda *a, **k: (state, np.zeros(20, int)))
