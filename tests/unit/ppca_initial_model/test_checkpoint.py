@@ -117,6 +117,14 @@ def test_small_pilot_fixed_stochastic_batch_and_resume_identity(tmp_path):
     assert load(path, config, {"fixture": "fixed"}).iteration == 20
     with pytest.raises(ValueError, match="identity mismatch"):
         load(path, dataclasses.replace(config, stochastic_batch_size=None), {"fixture": "fixed"})
+@pytest.mark.parametrize("order", [1.5, 1.0, True])
+def test_stage_healpix_order_must_be_an_integer(order):
+    """A fractional order once ran the truncated order's grid with pass 1 sized from the fraction; refused now."""
+    with pytest.raises(ValueError, match="Stage HEALPix orders must be integers"):
+        Config(stages=((1, 4, order),))
+    assert Config(stages=((1, 4, np.int64(1)),)).stage(1) == (4, 1)
+
+
 def test_rejected_resume_preserves_existing_run_metadata(tmp_path, monkeypatch):
     """A source/config mismatch must not damage the prior run receipt."""
     from relax.commands import ppca_initial_model as command

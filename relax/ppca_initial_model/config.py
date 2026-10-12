@@ -63,6 +63,9 @@ class Config:
             raise ValueError("PPCA requires positive integer q, seed and iteration count")
         if not self.stages or self.stages[0][0] != 1:
             raise ValueError("Stages must begin at iteration 1")
+        if any(isinstance(hp, bool) or not isinstance(hp, (int, np.integer)) for _, _, hp in self.stages):
+            # A fractional order built the truncated order's rotation grid but sized pass 1 from the fraction.
+            raise ValueError(f"Stage HEALPix orders must be integers, got {[hp for _, _, hp in self.stages]}")
         if list(self.stages) != sorted(self.stages) or any(r <= 0 or hp < 0 for _, r, hp in self.stages):
             raise ValueError("Invalid radius/HEALPix schedule")
         if not 0 < self.target_mass <= 1 or self.oversampling < 0:
