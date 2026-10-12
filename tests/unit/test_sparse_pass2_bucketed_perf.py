@@ -264,48 +264,34 @@ def test_compute_local_ctf_sums_from_probs_sum_t_matches_dense_helper():
 
 
 def test_pass2_projection_cache_override_supports_matched_dump_ab(monkeypatch):
+    from relax.runtime.engine_tuning import EngineTuning
+
     fine_rotations = np.zeros((3, 3, 3), dtype=np.float32)
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", raising=False)
 
-    assert _projection_cache_enabled_for_pass(
-        fine_rotations_override=fine_rotations,
-        dump_pass2_operands=False,
-    )
-    assert not _projection_cache_enabled_for_pass(
-        fine_rotations_override=fine_rotations,
-        dump_pass2_operands=True,
-    )
+    def requested(value):
+        if value is None:
+            monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", raising=False)
+        else:
+            monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", value)
+        return EngineTuning.from_environ().pass2_projection_cache
 
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", "on")
-    assert _projection_cache_enabled_for_pass(
-        fine_rotations_override=fine_rotations,
-        dump_pass2_operands=False,
-    )
-    assert _projection_cache_enabled_for_pass(
-        fine_rotations_override=fine_rotations,
-        dump_pass2_operands=True,
-    )
-
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", "off")
-    assert not _projection_cache_enabled_for_pass(
-        fine_rotations_override=fine_rotations,
-        dump_pass2_operands=False,
-    )
-    assert not _projection_cache_enabled_for_pass(
-        fine_rotations_override=fine_rotations,
-        dump_pass2_operands=True,
-    )
-    assert not _projection_cache_enabled_for_pass(
-        fine_rotations_override=None,
-        dump_pass2_operands=False,
-    )
-
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", "invalid")
-    with pytest.raises(ValueError, match="must be 'auto', 'on', or 'off'"):
-        _projection_cache_enabled_for_pass(
-            fine_rotations_override=fine_rotations,
-            dump_pass2_operands=False,
+    def enabled(request, rotations, dump):
+        return _projection_cache_enabled_for_pass(
+            fine_rotations_override=rotations, dump_pass2_operands=dump, requested=request,
         )
+
+    auto = requested(None)
+    assert auto is None and EngineTuning().pass2_projection_cache is None
+    assert enabled(auto, fine_rotations, False)
+    assert not enabled(auto, fine_rotations, True)
+    on = requested("on")
+    assert enabled(on, fine_rotations, False) and enabled(on, fine_rotations, True)
+    off = requested("off")
+    assert not enabled(off, fine_rotations, False) and not enabled(off, fine_rotations, True)
+    assert not enabled(off, None, False)
+    assert requested("AUTO") is None and requested("Yes") is True
+    with pytest.raises(ValueError, match="must be 'auto', 'on', or 'off'"):
+        requested("invalid")
 
 
 def _assert_relion_stats_close(actual, expected, *, rtol=1e-5, atol=1e-5):

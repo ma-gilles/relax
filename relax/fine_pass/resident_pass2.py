@@ -911,6 +911,7 @@ def _resident_pass2(
     projection_cache_enabled = _projection_cache_enabled_for_pass(
         fine_rotations_override=fine_rotations_override,
         dump_pass2_operands=False,
+        requested=engine_tuning.pass2_projection_cache,
     )
     if full_grid_engine is None:
         resident_configuration.require_resident_production_configuration(

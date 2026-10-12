@@ -12,8 +12,6 @@ once per pass.
 
 from __future__ import annotations
 
-import os
-
 from relax.runtime.env_flags import parse_env_flag
 
 _RELION_WAVG_ATOMIC_SCALE_AA_ENV = "RELAX_RELION_WAVG_ATOMIC_SCALE_AA"
@@ -56,7 +54,6 @@ _BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV = (
 )
 
 
-_SPARSE_PASS2_PROJECTION_CACHE_ENV = "RELAX_SPARSE_PASS2_PROJECTION_CACHE"
 
 
 _SPARSE_PASS2_WINDOWED_PREPARE_ENV = "RELAX_SPARSE_PASS2_WINDOWED_PREPARE"
@@ -120,24 +117,18 @@ def _projection_cache_enabled_for_pass(
     *,
     fine_rotations_override,
     dump_pass2_operands: bool,
+    requested: bool | None,
 ) -> bool:
-    """Resolve the diagnostic projection-cache override without changing defaults."""
+    """Resolve the diagnostic projection-cache override without changing defaults; ``requested`` is
+    ``EngineTuning.pass2_projection_cache`` (None: auto)."""
 
     if fine_rotations_override is None:
         return False
-    raw = os.environ.get(_SPARSE_PASS2_PROJECTION_CACHE_ENV)
-    mode = "auto" if raw is None or raw.strip() == "" else raw.strip().lower()
-    if mode == "auto":
+    if requested is None:
         # Preserve the currently qualified paths while cache-on/cache-off is
         # adjudicated: production uses the cache and operand dumps do not.
         return not bool(dump_pass2_operands)
-    if mode in {"1", "true", "yes", "on"}:
-        return True
-    if mode in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(
-        f"{_SPARSE_PASS2_PROJECTION_CACHE_ENV} must be 'auto', 'on', or 'off', got {raw!r}",
-    )
+    return requested
 
 
 def _windowed_prepare_enabled_for_pass(use_window: bool) -> bool:
