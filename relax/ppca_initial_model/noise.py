@@ -9,6 +9,8 @@ not turn this total coefficient variance into a per-component variance.
 import jax.numpy as jnp
 import numpy as np
 
+from relax.steps.model_blend import relion_blend
+
 
 def relion_to_coefficient_variance(sigma2, image_shape):
     """Convert normalized RELION per-component variance to E|FFT(epsilon)|²."""
@@ -38,4 +40,4 @@ def _updated_spectrum(previous, numerator, denominator, full_data):
     if not np.all(np.isfinite(measured)) or np.any(measured <= 0):
         raise ValueError("Nonpositive/nonfinite expected noise variance")
     beta = np.float32(0 if full_data else 0.9)
-    return np.asarray(beta * np.asarray(previous) + (1 - beta) * measured, dtype=np.float32)
+    return np.asarray(relion_blend(np.asarray(previous), numerator, denominator, beta), dtype=np.float32)

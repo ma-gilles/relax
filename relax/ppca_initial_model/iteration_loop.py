@@ -54,6 +54,7 @@ from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import relion_coarse_image_size
 from relax.sampling import grids
 from relax.sampling.healpix import angular_sampling_deg
+from relax.steps.model_blend import MIN_SIGMA2_OFFSET_ANGSTROM2, blend_offset_variance, relion_blend
 
 logger = logging.getLogger(__name__)
 
@@ -576,9 +577,15 @@ def run(
             raise
         # Mean squared offset per dimension: 2D in-plane shifts, 3D subtomogram shifts.
         dimensions = 3 if isinstance(dataset, TiltParticles) else 2
-        offset = sum(s.diagnostics["offset_second_sum_px2"] for s in stats) / (dimensions * count)
         beta = 0 if count == dataset.n_images else 0.9
-        offset_variance = max(2.0 / dataset.voxel_size**2, beta * state.offset_variance + (1 - beta) * offset)
+        offset_variance = blend_offset_variance(
+            state.offset_variance,
+            sum(s.diagnostics["offset_second_sum_px2"] for s in stats),
+            count,
+            dimensions,
+            beta,
+            MIN_SIGMA2_OFFSET_ANGSTROM2 / dataset.voxel_size**2,
+        )
         if (
             theta.dtype != jnp.complex64
             or (moments is not None and (moments.first.dtype != jnp.complex64 or moments.second.dtype != jnp.float32))
@@ -592,13 +599,14 @@ def run(
         masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
         direction_mass = np.bincount(direction_ids, weights=masses)
         multiplicity = np.bincount(direction_ids)
-        estimated = (direction_mass[direction_ids] / multiplicity[direction_ids] / count).astype(np.float32)
         old_prior = (
             state.direction_prior
             if state.direction_order == hp and state.direction_prior is not None
             else np.full(len(direction_ids), 1 / len(direction_ids), np.float32)
         )
-        direction_prior = (beta * old_prior + (1 - beta) * estimated).astype(np.float32)
+        # Each direction's posterior mass per image, spread over its in-plane angles.
+        rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
+        direction_prior = relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
         state = State(
             theta,
             moments,
