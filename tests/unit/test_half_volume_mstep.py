@@ -15,7 +15,7 @@ import recovar.core.fourier_transform_utils as ftu
 import recovar.core.slicing as slicing
 import recovar.cuda_backproject as cuda_backproject
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import backprojection as cuda_backprojection
 from relax.cuda import library
 from relax.reconstruction import half_volume_mstep, regularization
 
@@ -719,7 +719,7 @@ def test_relion_fused_x_half_wrapper_uses_mixed_aliases_and_native_square(monkey
     data_volume = jnp.zeros(volume_size, dtype=jnp.complex64)
     weight_volume = jnp.zeros(volume_size, dtype=jnp.float32)
 
-    result = em_cuda_kernels.relion_fused_x_half_backproject_indexed.__wrapped__(
+    result = cuda_backprojection.relion_fused_x_half_backproject_indexed.__wrapped__(
         data_volume,
         weight_volume,
         data_rows,
@@ -770,7 +770,7 @@ def test_relion_fused_x_half_wrapper_preserves_double_precision(monkeypatch):
         [[[1.0, 0.1, 0.2], [0.3, 1.0, 0.4], [0.5, 0.6, 1.0]]],
         dtype=jnp.float64,
     )
-    em_cuda_kernels.relion_fused_x_half_backproject_indexed.__wrapped__(
+    cuda_backprojection.relion_fused_x_half_backproject_indexed.__wrapped__(
         data_volume,
         weight_volume,
         jnp.ones((1, 1), dtype=jnp.complex128),
@@ -811,7 +811,7 @@ def test_relion_fused_x_half_wrapper_rejects_non_relion_dtypes(
     rotations = jnp.eye(3, dtype=jnp.float32)[None]
 
     with pytest.raises(TypeError, match=error_match):
-        em_cuda_kernels.relion_fused_x_half_backproject_indexed.__wrapped__(
+        cuda_backprojection.relion_fused_x_half_backproject_indexed.__wrapped__(
             data_volume,
             weight_volume,
             data_rows,
@@ -1120,7 +1120,7 @@ def test_relion_fused_x_half_radius_uses_native_rotation_convention_at_exact_rim
     with cuda_backproject.jax.default_device(gpu_device):
         for rotation in rotations:
             outputs.append(
-                em_cuda_kernels.relion_fused_x_half_backproject_indexed(
+                cuda_backprojection.relion_fused_x_half_backproject_indexed(
                     jnp.zeros(volume_size, dtype=jnp.complex64),
                     jnp.zeros(volume_size, dtype=jnp.float32),
                     data_rows,
@@ -1205,7 +1205,7 @@ def test_relion_fused_x_half_cuda_matches_separate_topology(
             max_r=2.0,
             relion_x_half=True,
         )
-        actual_data, actual_weight = em_cuda_kernels.relion_fused_x_half_backproject_indexed(
+        actual_data, actual_weight = cuda_backprojection.relion_fused_x_half_backproject_indexed(
             actual_data_volume,
             actual_weight_volume,
             data_rows,
@@ -1260,7 +1260,7 @@ def test_relion_fused_x_half_native_particle_grid_matches_sequential(
         expected_data = jnp.zeros(volume_size, dtype=jnp.complex64)
         expected_weight = jnp.zeros(volume_size, dtype=jnp.float32)
         for particle in range(3):
-            expected_data, expected_weight = em_cuda_kernels.relion_fused_x_half_backproject_indexed(
+            expected_data, expected_weight = cuda_backprojection.relion_fused_x_half_backproject_indexed(
                 expected_data,
                 expected_weight,
                 data_rows[particle],
@@ -1272,7 +1272,7 @@ def test_relion_fused_x_half_native_particle_grid_matches_sequential(
                 2.0,
             )
         actual_data, actual_weight = (
-            em_cuda_kernels.relion_fused_x_half_backproject_particle_grid_indexed(
+            cuda_backprojection.relion_fused_x_half_backproject_particle_grid_indexed(
                 jnp.zeros(volume_size, dtype=jnp.complex64),
                 jnp.zeros(volume_size, dtype=jnp.float32),
                 data_rows,
@@ -1313,7 +1313,7 @@ def test_relion_fused_x_half_particle_grid_preserves_particle_axis_in_native_att
     pixel_indices = jnp.asarray([1, 7 * 5 + 1], dtype=jnp.int32)
     rotations = jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (2, 3, 3, 3))
 
-    result = em_cuda_kernels.relion_fused_x_half_backproject_particle_grid_indexed.__wrapped__(
+    result = cuda_backprojection.relion_fused_x_half_backproject_particle_grid_indexed.__wrapped__(
         data_volume,
         weight_volume,
         data_rows,

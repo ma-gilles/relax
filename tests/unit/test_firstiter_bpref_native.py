@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import jax.numpy as jnp
 import recovar.cuda_backproject as cuda_backproject
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import backprojection as cuda_backprojection
 from relax.cuda import library
 from helpers.float_compare import assert_matches
 pytestmark = pytest.mark.unit
@@ -74,7 +74,7 @@ def test_relion_firstiter_bpref_wrapper_uses_split_native_operands_and_static_sc
     native_eulers = jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (2, 3, 3))
 
     data_out, weight_out = (
-        em_cuda_kernels._relion_firstiter_bpref_fused_x_half_static.__wrapped__(
+        cuda_backprojection._relion_firstiter_bpref_fused_x_half_static.__wrapped__(
             data_volume,
             weight_volume,
             image,
@@ -128,7 +128,7 @@ def test_relion_firstiter_bpref_exact_native_ffi_smoke(
     minvsigma2 = np.full(12, np.float32(0.5), dtype=np.float32)
 
     with cuda_backproject.jax.default_device(gpu_device):
-        data_out, weight_out = em_cuda_kernels.relion_firstiter_bpref_fused_x_half(
+        data_out, weight_out = cuda_backprojection.relion_firstiter_bpref_fused_x_half(
             jnp.zeros(volume_size, dtype=jnp.complex64),
             jnp.zeros(volume_size, dtype=jnp.float32),
             jnp.asarray(image),

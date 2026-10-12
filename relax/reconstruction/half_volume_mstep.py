@@ -396,7 +396,7 @@ def finalize_half_volume_bpref(
         right_operators.shape[0],
         support_radius,
     )
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import backprojection as cuda_backprojection
 
     use_host = (
         (data.dtype == jnp.dtype(jnp.complex64)
@@ -404,8 +404,8 @@ def finalize_half_volume_bpref(
         if force_host is None else bool(force_host)
     )
     finalize = (
-        em_cuda_kernels.relion_point_group_symmetrise_bpref_host
-        if use_host else em_cuda_kernels.relion_point_group_symmetrise_bpref
+        cuda_backprojection.relion_point_group_symmetrise_bpref_host
+        if use_host else cuda_backprojection.relion_point_group_symmetrise_bpref
     )
     return finalize(
         data,

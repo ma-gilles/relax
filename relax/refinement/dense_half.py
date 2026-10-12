@@ -15,7 +15,7 @@ from recovar import utils
 
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import backprojection as cuda_backprojection
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.refinement import scoring_policy
 from relax.refinement.half_inputs import HalfScoringData
@@ -1102,7 +1102,7 @@ def _score_half_dense_in_bpref_scope(
 ) -> HalfScoreResult:
     """Keep all authoritative dense-half work outside diagnostic CUDA scope."""
 
-    with em_cuda_kernels.bpref_device_signature_scope(False):
+    with cuda_backprojection.bpref_device_signature_scope(False):
         return _score_half_dense(half, sampling, priors, batching, variant, execution, optics)
 
 

@@ -9,7 +9,7 @@ import pytest
 from recovar import cuda_backproject
 
 from relax.classification import k_class
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import backprojection as cuda_backprojection
 from relax.diagnostics import bpref_diagnostics
 from relax.refinement import dense_half, finalization, local_half
 from relax.refinement.refinement_options import ExecutionOptions, bpref_device_signature_target
@@ -85,12 +85,12 @@ def test_scoped_capture_ignores_all_process_flags_off_target(monkeypatch):
         "high_precision_operand_bundle": False,
     }
     assert not cuda_backproject.relion_x_half_bp_block_topology_enabled()
-    with em_cuda_kernels.bpref_device_signature_scope(False):
+    with cuda_backprojection.bpref_device_signature_scope(False):
         assert not cuda_backproject.relion_x_half_bp_block_topology_enabled()
 
     active = bpref_diagnostics._scoped_bpref_diagnostic_flags(active=True)
     assert all(value for name, value in active.items() if name != "device_signature_configured")
-    with em_cuda_kernels.bpref_device_signature_scope(True):
+    with cuda_backprojection.bpref_device_signature_scope(True):
         assert cuda_backproject.relion_x_half_bp_block_topology_enabled()
 
 

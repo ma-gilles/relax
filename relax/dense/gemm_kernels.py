@@ -777,7 +777,7 @@ def native_relion_callbacks(
     padding_factor=1,
 ):
     """Adapt the existing CUDA RELION projector and fused x-half adjoint."""
-    from relax.cuda.kernels import relion_fused_x_half_backproject_indexed
+    from relax.cuda.backprojection import relion_fused_x_half_backproject_indexed
     from relax.projection.projection import (
         _relion_projector_texture_enabled,
         compute_relion_projector_projections_block,

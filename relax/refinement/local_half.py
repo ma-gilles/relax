@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 from recovar import utils
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import backprojection as cuda_backprojection
 from relax.diagnostics import local_debug
 from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
@@ -888,7 +888,7 @@ def _score_half_local_in_bpref_scope(
 
     if diagnostics.bpref_device_signature_active:
         raise RuntimeError("BPref device signature capture is supported only by sparse adaptive pass 2")
-    with em_cuda_kernels.bpref_device_signature_scope(False):
+    with cuda_backprojection.bpref_device_signature_scope(False):
         return _score_half_local(half, sampling, priors, batching, execution, diagnostics, optics)
 
 
