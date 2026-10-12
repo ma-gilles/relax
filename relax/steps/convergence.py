@@ -237,4 +237,3 @@ def compute_relion_offset_changes_angstrom(
     sum_sq_per_particle = np.sum(diffs_ang**2, axis=-1)  # (N,)
     n = sum_sq_per_particle.shape[0]
     return float(np.sqrt(sum_sq_per_particle.sum() / (2.0 * n)))
-
