@@ -3,7 +3,7 @@
 Runs RELION's moment/reconstruction transaction in JAX, in float32 by default
 (float64 is the diagnostic reference). The single-class M-step (the per-class transaction, RELION's
 reconstruction-weight and resolution-shell rules) follows the multi-class driver; RELION's own
-step-by-step M-step with its dumps and replays is the oracle in ``diagnostics.vdam_native_mstep``.
+step-by-step M-step with its dumps and replays is the oracle in ``scripts.vdam_native_mstep``.
 """
 
 from __future__ import annotations

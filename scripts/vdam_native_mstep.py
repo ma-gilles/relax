@@ -5,7 +5,7 @@ Each step of RELION's gradient M-step (``reweightGrad``, ``getFristMoment``,
 is RELION's code through ``relax.relion_bind``. Production never takes this path;
 it runs the transaction (:func:`relax.vdam.m_step.vdam_m_step_single_class`).
 
-``python -m relax.diagnostics.vdam_native_mstep <relax initial_model arguments>``
+``python -m scripts.vdam_native_mstep <relax initial_model arguments>``
 runs an InitialModel whose M-step is this oracle, with the parity hooks
 ``RELAX_MSTEP_DUMP_DIR`` / ``RELAX_MSTEP_DUMP_ITER`` (intermediate dumps) and the
 ``RELAX_VDAM_NATIVE_*_REPLAY_BIN`` replays (:mod:`relax.parity.vdam_mstep_replay`).

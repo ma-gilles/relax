@@ -566,7 +566,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
 
 def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
     """``relax initial_model``. ``oracle_m_step``: RELION's own single-class M-step
-    (``relax.diagnostics.vdam_native_mstep``), which replaces relax's and alone takes the native M-step replays."""
+    (``scripts.vdam_native_mstep``), which replaces relax's and alone takes the native M-step replays."""
     _assert_expected_repo_imports()
     use_float32_matmuls()
     parser = make_parser()

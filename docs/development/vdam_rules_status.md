@@ -40,7 +40,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    `VdamInputSource.startup_references`), `RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE` and the native M-step replay
    variables, read once by the command,
    which builds the run's input source (`relax.vdam.ports.VdamInputSource`, `relax.parity.vdam_replay`) and
-   refuses the native replays unless the M-step oracle (`relax.diagnostics.vdam_native_mstep`) runs; and the
+   refuses the native replays unless the M-step oracle (`scripts.vdam_native_mstep`) runs; and the
    dumps the command's observer writes (`relax.vdam.ports.VdamObserver`,
    `relax.diagnostics.vdam_observers.vdam_command_observer`): the expected-accuracy inputs, the noise-update
    boundary, the non-finite noise sums and the stage profiles (`RECOVAR_INITIAL_MODEL_PROFILE`).
