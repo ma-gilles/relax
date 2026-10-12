@@ -467,7 +467,7 @@ def estimate_relion_em_batch_sizes(
     use_float64_scoring: bool = True,
     compact_k1_relion_layout: bool = False,
     compact_k1_relion_score_bpref_overlap: bool = False,
-    model_current_size: int | None = None,
+    compact_accumulator_shape: tuple[int, int, int] | None = None,
     runtime_free_memory_gb: float | None = None,
     score_projector_staging_bytes: int = 0,
     windowed_translation: bool = False,
@@ -488,6 +488,10 @@ def estimate_relion_em_batch_sizes(
     complex64/float32 BPref pair during deferred replay.  Later soft-posterior
     iterations set ``compact_k1_relion_score_bpref_overlap`` and conservatively
     add the texture and BPref pair because both remain live during scoring.
+    ``compact_accumulator_shape`` (required with ``compact_k1_relion_layout``) is
+    the packed half-volume shape of RELION's BPref accumulator at the model's
+    current size, which both the texture and the BPref pair are sized from;
+    the caller derives it with the reconstruction's shape rules.
     ``score_projector_staging_bytes`` accounts for additional device slabs
     retained alongside the texture (for example coarse transient projection).
     It must describe allocations pending at the live-memory sample boundary.
@@ -561,28 +565,12 @@ def estimate_relion_em_batch_sizes(
                 "compact_k1_relion_layout requires the production float32/complex64 "
                 "precision policy"
             )
-        if model_current_size is None:
+        if compact_accumulator_shape is None:
             raise ValueError(
-                "compact_k1_relion_layout requires explicit model_current_size; "
+                "compact_k1_relion_layout requires explicit compact_accumulator_shape; "
                 "score current_size is not a reconstruction-size substitute"
             )
-        if model_current_size <= 0:
-            raise ValueError(
-                f"model_current_size must be positive, got {model_current_size}"
-            )
-
-        from relax.reconstruction.half_volume_mstep import (
-            half_volume_accumulator_shape,
-            relion_backprojector_volume_shape,
-        )
-
-        compact_full_shape = relion_backprojector_volume_shape(
-            volume_shape,
-            padding_factor,
-            current_size=model_current_size,
-        )
-        compact_half_shape = half_volume_accumulator_shape(compact_full_shape)
-        compact_voxels = int(np.prod(compact_half_shape))
+        compact_voxels = int(np.prod(compact_accumulator_shape))
         texture_bytes = compact_voxels * np.dtype(np.complex64).itemsize
         score_projector_bytes = texture_bytes + score_projector_staging_bytes
         bpref_bytes = compact_voxels * (

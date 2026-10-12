@@ -96,7 +96,6 @@ ALLOWED_UPWARD = {
     ("relax.relion.metadata", "relax.sampling.symmetry"): _C,
     ("relax.relion.normalization", "relax.diagnostics.finite_check"): _B,
     ("relax.relion.tomo_input", "relax.sampling.healpix"): _C,
-    ("relax.runtime.batch_planning", "relax.reconstruction.half_volume_mstep"): _E,
     ("relax.sampling.expected_accuracy", "relax.refinement.optics_shapes"): _A,
     ("relax.sampling.expected_accuracy", "relax.refinement.projector_preparation"): _A,
     ("relax.sampling.expected_accuracy", "relax.refinement.tomo_half"): _A,

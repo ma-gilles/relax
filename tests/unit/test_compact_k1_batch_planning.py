@@ -1,9 +1,13 @@
 """Qualified-lifetime memory estimates retained from Q, not enabled by default."""
 from types import SimpleNamespace
-from relax.refinement import firstiter_bpref
+
 import numpy as np
 import pytest
+
+from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+from relax.refinement import firstiter_bpref
 from relax.runtime.batch_planning import estimate_relion_em_batch_sizes
+
 pytestmark = pytest.mark.unit
 
 def test_box800_k1_score_tile_plan_uses_resolved_precision():
@@ -29,8 +33,8 @@ def test_box800_compact_k1_persistent_estimate_uses_model_current_size_phase_max
         use_float64_scoring=False,
         compact_k1_relion_layout=True,
     )
-    current_size_62 = _box800_plan(**compact, model_current_size=62)
-    full_box_model = _box800_plan(**compact, model_current_size=800)
+    current_size_62 = _box800_plan(**compact, compact_accumulator_shape=_compact_accumulator_shape(62))
+    full_box_model = _box800_plan(**compact, compact_accumulator_shape=_compact_accumulator_shape(800))
     small_voxels = 127 * 127 * 64
     full_voxels = 1603 * 1603 * 802
     assert current_size_62.persistent_estimate_mode == "compact_k1_relion_phase_max"
@@ -59,7 +63,7 @@ def test_box800_soft_k1_compact_plan_adds_overlapping_projector_and_bpref():
         use_float64_scoring=False,
         compact_k1_relion_layout=True,
         compact_k1_relion_score_bpref_overlap=True,
-        model_current_size=294,
+        compact_accumulator_shape=_compact_accumulator_shape(294),
     )
     compact_voxels = 591 * 591 * 296
     overlapping_bytes = compact_voxels * (8 + 8 + 4)
@@ -95,7 +99,7 @@ def test_box800_soft_k1_compact_plan_preserves_headroom_at_10202_size564_boundar
         **common,
         compact_k1_relion_layout=True,
         compact_k1_relion_score_bpref_overlap=True,
-        model_current_size=564,
+        compact_accumulator_shape=_compact_accumulator_shape(564),
     )
 
     # Full-particle job 13356985 failed at this exact boundary after the
@@ -140,7 +144,7 @@ def test_box800_compact_k1_observed_live_plans(
         current_size=score_size,
         use_float64_scoring=False,
         compact_k1_relion_layout=True,
-        model_current_size=model_size,
+        compact_accumulator_shape=_compact_accumulator_shape(model_size),
         runtime_free_memory_gb=live_free_gb,
     )
     expected_usable = (live_free_gb - plan.pending_score_persistent_gb) * 0.8
@@ -152,7 +156,7 @@ def test_box800_compact_k1_observed_live_plans(
 def test_compact_k1_plan_rejects_genuine_float64_and_kclass_routes():
     compact = dict(
         compact_k1_relion_layout=True,
-        model_current_size=62,
+        compact_accumulator_shape=_compact_accumulator_shape(62),
     )
     with pytest.raises(ValueError, match="float32/complex64"):
         _box800_plan(
@@ -173,9 +177,14 @@ def test_compact_k1_plan_rejects_genuine_float64_and_kclass_routes():
         _box800_plan(
             compact_k1_relion_layout=False,
             compact_k1_relion_score_bpref_overlap=True,
-            model_current_size=62,
+            compact_accumulator_shape=_compact_accumulator_shape(62),
             use_float64_scoring=False,
         )
+
+
+def _compact_accumulator_shape(model_current_size):
+    """The box-800 compact accumulator at a model current size, as the expectation's planner derives it."""
+    return half_volume_accumulator_shape(relion_backprojector_volume_shape((800, 800, 800), 2, current_size=model_current_size))
 
 
 def _box800_plan(**overrides):
@@ -305,7 +314,7 @@ def test_compact_plan_accounts_for_transient_device_projector_slab(overlap):
         gpu_memory_gb=80, runtime_free_memory_gb=80,
         use_float64_scoring=False, compact_k1_relion_layout=True,
         compact_k1_relion_score_bpref_overlap=overlap,
-        model_current_size=800, score_projector_staging_bytes=voxels * 8,
+        compact_accumulator_shape=_compact_accumulator_shape(800), score_projector_staging_bytes=voxels * 8,
     )
     # Device input and CUDA texture coexist; BPref overlaps only in soft scoring.
     pending_bytes = voxels * (28 if overlap else 16)

@@ -119,8 +119,9 @@ def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monk
     assert calls[0]["score_projector_staging_bytes"] == 0
     expected_coarse_staging = 9 * 9 * 5 * np.dtype(np.complex64).itemsize if rescore_margin is None else 0
     assert calls[1]["score_projector_staging_bytes"] == expected_coarse_staging
-    assert calls[0]["model_current_size"] == 12 and calls[0]["compact_k1_relion_layout"]
-    assert calls[1]["model_current_size"] == (12 if rescore_margin is None else None)
+    # The 16-voxel box at model size 12: RELION's BPref grid 2 * (int(2 * 6 + 0.5) + 1) + 1 = 27, packed in x.
+    assert calls[0]["compact_accumulator_shape"] == (27, 27, 14) and calls[0]["compact_k1_relion_layout"]
+    assert calls[1]["compact_accumulator_shape"] == ((27, 27, 14) if rescore_margin is None else None)
     assert calls[1]["compact_k1_relion_layout"] == (rescore_margin is None)
     if rescore_margin is not None:
         assert policy.significance_safe_batch_sizes is planner

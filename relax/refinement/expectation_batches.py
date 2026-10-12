@@ -39,7 +39,7 @@ class BatchPlanner:
         self, n_rot, n_trans, *, classes=None, image_shape_for_batch=None,
         current_size_for_batch=None, compact_k1_relion_layout=False,
         compact_k1_relion_score_bpref_overlap=False,
-        model_current_size_for_batch=None, score_projector_staging_bytes=0,
+        compact_accumulator_shape_for_batch=None, score_projector_staging_bytes=0,
         windowed_translation=False, diagnostic_float64_pass2=False,
     ):
         """Reduce batch sizes using the selected phase's pending allocations."""
@@ -78,7 +78,7 @@ class BatchPlanner:
             use_float64_scoring=use_float64_scoring_for_batch,
             compact_k1_relion_layout=compact_k1_relion_layout,
             compact_k1_relion_score_bpref_overlap=compact_k1_relion_score_bpref_overlap,
-            model_current_size=model_current_size_for_batch,
+            compact_accumulator_shape=compact_accumulator_shape_for_batch,
             runtime_free_memory_gb=runtime_free_memory_gb,
             score_projector_staging_bytes=score_projector_staging_bytes,
             windowed_translation=windowed_translation,
@@ -205,6 +205,7 @@ def prepare_half_batches(
         recon_shape = relion_backprojector_volume_shape(
             volume_shape, RECONSTRUCTION_PADDING_FACTOR, current_size=model_size,
         )
+        compact_accumulator_shape = half_volume_accumulator_shape(recon_shape)
         decision = firstiter_bpref.relion_firstiter_compact_batch_planning_decision(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             winner_take_all=firstiter_winner_take_all_this_iter,
@@ -212,14 +213,16 @@ def prepare_half_batches(
             use_relion_x_half_mstep=use_relion_x_half_mstep,
             projector_half=SimpleNamespace(shape=projector_half.shape, dtype=np.dtype(np.complex64)),
             score_complex_dtype=np.complex64,
-            recon_volume_size=int(np.prod(half_volume_accumulator_shape(recon_shape))),
+            recon_volume_size=int(np.prod(compact_accumulator_shape)),
             bpref_device_signature_active=bpref_device_signature_active,
             fixed_base_bytes=int(RELION_EM_COMPACT_K1_FIXED_BASE_GB * 1e9),
         )
         if decision.enabled:
+            if model_size <= 0:
+                raise ValueError(f"model_current_size must be positive, got {model_size}")
             safe_batch_sizes_for_half = partial(
                 planner, compact_k1_relion_layout=True,
-                model_current_size_for_batch=model_size,
+                compact_accumulator_shape_for_batch=compact_accumulator_shape,
             )
             from relax.scoring.pass1_plan import global_pass1_relion_projector_texture_enabled
             if (projector_half.dtype == np.dtype(np.complex64)
