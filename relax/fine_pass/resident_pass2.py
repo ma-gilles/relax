@@ -2553,7 +2553,7 @@ def _resident_pass2(
     tilt=None,
     coarse_rotation_ids=None,
     unit_rotation_log_prior=None,
-    dense_gemm_full_grid: bool = False,
+    full_grid_engine=None,
     nyquist_column_counting: str = "relion",
     firstiter_cc_support: str = "relion",
     image_translations=None,
@@ -2593,6 +2593,11 @@ def _resident_pass2(
     ``--skip_align``): the images are translated as they are prepared
     (``prepare_unshifted_bucket_operands``) and the fine grid is the one zero translation.
 
+    ``full_grid_engine`` is the caller's full-grid engine (``relax.dense.gemm_coarse_engine.run_dense_gemm_full_grid``)
+    or None: with one, the pass resolves its operands, hands them to it as a
+    :class:`relax.fine_pass.full_grid.DenseGemmPreparedState` instead of building candidate tables, and returns
+    its result.
+
     ``wsum_current_size`` is the image current size of the weighted sums (RELION's
     ``image_current_size`` in ``storeWeightedSums``, ml_optimiser.cpp:6803-6806) when the E-step
     scores below it (``--strict_highres_exp``): the noise shells, the Wavg rectangle and its
@@ -2602,7 +2607,7 @@ def _resident_pass2(
     """
 
     if (nyquist_column_counting != "relion" or firstiter_cc_support != "relion") and (
-        tilt is not None or dense_gemm_full_grid
+        tilt is not None or full_grid_engine is not None
     ):
         raise NotImplementedError(
             "nyquist_column_counting / firstiter_cc_support are implemented for the single-particle "
@@ -2649,7 +2654,7 @@ def _resident_pass2(
     n_classes = len(class_supports)
     if n_classes > 1:
         # RELION's Class3D E-step; the --firstiter_cc winner is a K=1 pass per class.
-        if not dense_gemm_full_grid:
+        if full_grid_engine is None:
             _require(not firstiter_cc, "the K-class resident pass scores the Gaussian likelihood")
         # Zero oversampling (relax#73): the coarse sum, Pmax and winner come with the winner's class.
         _require(
@@ -2715,7 +2720,7 @@ def _resident_pass2(
         # (window_at_box below), so the full box is an explicit current size here.
         current_size = int(experiment_dataset.image_shape[0])
     wsum_current_size = current_size if wsum_current_size is None else int(wsum_current_size)
-    if wsum_current_size != current_size and (tilt is not None or dense_gemm_full_grid):
+    if wsum_current_size != current_size and (tilt is not None or full_grid_engine is not None):
         raise NotImplementedError("a weighted-sum size above the scoring size (--strict_highres_exp) is SPA resident only")
     try:
         (
@@ -2793,7 +2798,7 @@ def _resident_pass2(
         fine_rotations_override=fine_rotations_override,
         dump_pass2_operands=False,
     )
-    if not dense_gemm_full_grid:
+    if full_grid_engine is None:
         require_resident_production_configuration(
         relion_x_half_mstep=relion_x_half_mstep,
         relion_exact_fine_gaussian=relion_exact_fine_gaussian,
@@ -2933,7 +2938,7 @@ def _resident_pass2(
     n_fine_trans = int(fine_translations.shape[0])
     if image_translations is not None and (
         tilt is not None
-        or dense_gemm_full_grid
+        or full_grid_engine is not None
         or np.shape(image_translations) != (n_images, 2)
         or n_fine_trans != 1
         or np.any(np.asarray(fine_translations) != 0)
@@ -2956,8 +2961,7 @@ def _resident_pass2(
         dtype=precision_policy.score_real_dtype,
     )
 
-    if dense_gemm_full_grid:
-        from relax.dense.gemm_coarse_engine import run_dense_gemm_full_grid
+    if full_grid_engine is not None:
         from relax.fine_pass.full_grid import DenseGemmPreparedState
 
         if tilt is not None:
@@ -2969,7 +2973,7 @@ def _resident_pass2(
             raise ValueError("dense GEMM global pass requires float32 scoring and RELION x-half BPref")
         if normalization_log_z is not None or normalization_other_score_log_z is not None or relion_f32_normalization_sum_weight is not None:
             raise ValueError("dense GEMM global pass does not consume external/coarse normalizers")
-        return run_dense_gemm_full_grid(DenseGemmPreparedState(
+        return full_grid_engine(DenseGemmPreparedState(
             dataset=experiment_dataset,
             class_volumes=tuple(class_volumes),
             class_projector_halves=tuple(class_projector_halves),
@@ -5037,7 +5041,7 @@ def compute_pass2_stats_resident(
     reconstruction_image_radius=None,
     reconstruction_group_ids=None,
     reconstruction_group_count=None,
-    dense_gemm_full_grid: bool = False,
+    full_grid_engine=None,
     nyquist_column_counting: str = "relion",
     firstiter_cc_support: str = "relion",
     image_translations=None,

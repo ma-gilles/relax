@@ -228,9 +228,10 @@ def test_local_search_policies_carry_the_rule():
 
 
 def test_resident_pass_refuses_the_rule_for_subtomograms_and_the_full_grid_gemm_engine():
+    from relax.dense.gemm_coarse_engine import run_dense_gemm_full_grid
     from relax.fine_pass import resident_pass2
 
-    for refused in (dict(tilt=object()), dict(dense_gemm_full_grid=True)):
+    for refused in (dict(tilt=object()), dict(full_grid_engine=run_dense_gemm_full_grid)):
         with pytest.raises(NotImplementedError, match="single-particle resident pass 2"):
             resident_pass2._resident_pass2(
                 None, None, None, None, None, 0, "linear_interp",

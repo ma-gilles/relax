@@ -52,7 +52,6 @@ ALLOWED_UPWARD = {
     ("relax.fine_pass.bucket_io", "relax.diagnostics.finite_check"): _B,
     ("relax.fine_pass.bucket_io", "relax.diagnostics.sparse_pass2_dump"): _B,
     ("relax.fine_pass.dispatch", "relax.refinement.engine_record"): _A,
-    ("relax.fine_pass.resident_pass2", "relax.dense.gemm_coarse_engine"): _D,
     ("relax.refinement.command_options", "relax.parity.frozen_boundary_cli"): _B,
     ("relax.refinement.command_options", "relax.parity.state_swap_probe"): _B,
     ("relax.refinement.dense_half", "relax.diagnostics.parity_dump"): _B,

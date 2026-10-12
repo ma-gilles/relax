@@ -618,7 +618,9 @@ def test_k1_full_grid_matches_resident_exact_operands(monkeypatch):
     monkeypatch.setattr(gemm_coarse_engine, "run_dense_gemm_full_grid", checked)
     monkeypatch.setattr(gemm_coarse_engine, "pad_batch", capture_batch)
     control = resident_pass2.compute_pass2_stats_resident(**args)
-    candidate = resident_pass2.compute_pass2_stats_resident(**dict(args, dense_gemm_full_grid=True))
+    candidate = resident_pass2.compute_pass2_stats_resident(
+        **dict(args, full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid)
+    )
     assert called == [True]
     if path := os.environ.get("RELAX_DENSE_GEMM_DIAGNOSTIC_NPZ"):
         _save_k1_score_diagnostic(path, diagnostic["state"], diagnostic["batch"], control, candidate)
@@ -659,6 +661,7 @@ def test_k2_square_cc_full_grid_maps_wavg_and_keeps_one_winner(monkeypatch):
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
 
+    from relax.dense import gemm_coarse_engine
     from relax.fine_pass import resident_pass2
     from relax.relion import ctf as relion_ctf
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
@@ -687,7 +690,7 @@ def test_k2_square_cc_full_grid_maps_wavg_and_keeps_one_winner(monkeypatch):
         relion_exact_fine_normalized_cc=True,
         square_window=True,
         relion_fine_mstep_prune=False,
-        dense_gemm_full_grid=True,
+        full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid,
     )
     noise = args.pop("noise_variance")
     translations = args.pop("translations")
@@ -834,7 +837,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
     supports = [[None] * dataset.n_units for _ in range(4)]
 
     def call(dense):
-        options = dict(args, dense_gemm_full_grid=dense)
+        options = dict(args, full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid if dense else None)
         noise = options.pop("noise_variance")
         translations = options.pop("translations")
         return resident_pass2.compute_k_class_pass2_stats_resident(
@@ -953,6 +956,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
 def test_k1_firstiter_cc_keeps_canonical_winner_and_statistics(monkeypatch):
     """The native first-iteration CC scorer selects one full-grid pose."""
     assert jax.default_backend() == "gpu"
+    from relax.dense import gemm_coarse_engine
     from relax.fine_pass import resident_pass2
 
     args = _native_k1_args(monkeypatch, seed=20260930)
@@ -968,7 +972,6 @@ def test_k1_firstiter_cc_keeps_canonical_winner_and_statistics(monkeypatch):
     control_chunks = []
     dense_capture = {}
     if diagnostic_path:
-        from relax.dense import gemm_coarse_engine
         from relax.fine_pass import resident_operands, resident_scoring
 
         original_cc_scorer = resident_scoring.score_resident_chunk_normalized_cc
@@ -1022,7 +1025,9 @@ def test_k1_firstiter_cc_keeps_canonical_winner_and_statistics(monkeypatch):
         monkeypatch.setattr(gemm_coarse_engine, "pad_batch", capture_batch)
         monkeypatch.setattr(gemm_coarse_engine, "pad_grid", capture_grid)
         monkeypatch.setattr(resident_operands, "prepare_resident_half_operands", capture_operands)
-    candidate = resident_pass2.compute_pass2_stats_resident(**dict(args, dense_gemm_full_grid=True))
+    candidate = resident_pass2.compute_pass2_stats_resident(
+        **dict(args, full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid)
+    )
     if diagnostic_path:
         _save_k1_cc_score_diagnostic(
             diagnostic_path, dense_capture["state"], dense_capture["batch"],
@@ -1050,7 +1055,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
     # Import the dense statistics owner before instrumenting the resident
     # function; otherwise its first import can bind the temporary control
     # wrapper and record the dense rows twice.
-    from relax.dense import gemm_coarse_statistics
+    from relax.dense import gemm_coarse_engine, gemm_coarse_statistics
     from relax.fine_pass import resident_pass2
 
     args = _native_k1_args(monkeypatch, seed=20261001)
@@ -1126,7 +1131,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
 
         monkeypatch.setattr(gemm_coarse_statistics, "_resident_block_noise_and_norm", capture_dense_rows)
         jax.clear_caches()
-    candidate = resident_pass2._resident_pass2(**dict(args, dense_gemm_full_grid=True))
+    candidate = resident_pass2._resident_pass2(**dict(args, full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid))
     if path := diagnostic_path or (str(Path(row_diagnostic_path).with_name("gradient.npz"))
                                    if row_diagnostic_path else None):
         arrays = {}

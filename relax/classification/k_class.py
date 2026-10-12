@@ -359,7 +359,7 @@ def _run_sparse_k_class_adaptive_pass2(
         # The exact normalized-CC tree is a deliberately K=1-scoped parity
         # candidate. Keep the K>1 route byte-preserving until K=1 closes.
         relion_exact_fine_normalized_cc=n_classes == 1,
-        dense_gemm_full_grid=bool(base_engine_kwargs.get("dense_gemm_full_grid", False)),
+        full_grid_engine=_full_grid_engine(base_engine_kwargs),
         relion_firstiter_winner_take_all=bool(
             base_engine_kwargs.get("relion_firstiter_winner_take_all", False)
         ),
@@ -451,13 +451,13 @@ def _run_sparse_k_class_adaptive_pass2(
         rotation_log_prior=_class_rotation_prior(0),
         accumulate_noise=accumulate_noise,
         # No other classes: the degenerate cross-class normalizer of the production K=1 pass.
-        **({} if common["dense_gemm_full_grid"] else {
+        **({} if common["full_grid_engine"] is not None else {
             "normalization_other_score_log_z": np.full(
                 _dataset_image_count(experiment_dataset), -np.inf, dtype=np.float64,
             ),
         }),
         normalization_score_mode=(
-            None if common["dense_gemm_full_grid"] else common["relion_firstiter_score_mode"]
+            None if common["full_grid_engine"] is not None else common["relion_firstiter_score_mode"]
         ),
         return_score_log_z=True,
         relion_projector_half=select_projector_half_for_class(relion_projector_half_by_class, 0, n_classes),
@@ -523,6 +523,19 @@ def _as_host_accumulator(value):
     return np.asarray(jax.device_get(value))
 
 
+def _full_grid_engine(engine_kwargs: dict):
+    """The full-grid engine the fine pass hands its resolved operands to, or None (the resident tables).
+
+    ``engine_kwargs["dense_gemm_full_grid"]`` selects the dense GEMM engine (``coarse_engine="gemm_dense"``).
+    """
+
+    if not engine_kwargs.get("dense_gemm_full_grid", False):
+        return None
+    from relax.dense import gemm_coarse_engine
+
+    return gemm_coarse_engine.run_dense_gemm_full_grid
+
+
 def _resident_production_arithmetic(options: dict) -> dict:
     """RELION's pass-2 arithmetic, the K=1 production set, for a K>1 pass on the resident engine.
 
@@ -578,7 +591,7 @@ def _run_resident_k_class_pass2(
         )
     n_classes = int(means_array.shape[0])
     options = _resident_production_arithmetic(common)
-    if not options.get("dense_gemm_full_grid", False):
+    if options.get("full_grid_engine") is None:
         options.pop("relion_exact_fine_normalized_cc")
     options.update(
         relion_projector_half=relion_projector_half_by_class,
@@ -597,7 +610,7 @@ def _run_resident_k_class_pass2(
         rotation_log_priors_by_class=class_rotation_priors,
         **options,
     )
-    record_pass_engine("global", "gemm_dense" if options.get("dense_gemm_full_grid", False) else "resident")
+    record_pass_engine("global", "gemm_dense" if options.get("full_grid_engine") is not None else "resident")
     logger.info(
         "Resident K-class pass2: classes=%d images=%d total=%.1fs",
         n_classes,
