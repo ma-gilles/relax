@@ -21,7 +21,6 @@ import pytest
 
 from relax.local_search.layout import (
     DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER,
-    LOCAL_IMAGE_CAPACITY_LADDER_ENV,
     LocalHypothesisLayout,
     _ladder_image_capacity,
     plan_local_hypothesis_buckets,
@@ -78,24 +77,11 @@ def _padding_ratio(plans):
 # ----------------------------------------------------------------- resolver ---
 
 
-def test_ladder_is_off_by_default_and_reads_the_environment(monkeypatch):
-    monkeypatch.delenv(LOCAL_IMAGE_CAPACITY_LADDER_ENV, raising=False)
+def test_ladder_is_off_by_default_and_explicit_values_resolve():
     assert resolve_local_image_capacity_ladder() == ()
-
-    monkeypatch.setenv(LOCAL_IMAGE_CAPACITY_LADDER_ENV, "1")
-    assert resolve_local_image_capacity_ladder() == DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER
-
-    monkeypatch.setenv(LOCAL_IMAGE_CAPACITY_LADDER_ENV, "8, 64,16")
-    assert resolve_local_image_capacity_ladder() == (8, 16, 64)
-
-    monkeypatch.setenv(LOCAL_IMAGE_CAPACITY_LADDER_ENV, "0")
-    assert resolve_local_image_capacity_ladder() == ()
-
-
-def test_explicit_argument_overrides_the_environment(monkeypatch):
-    monkeypatch.setenv(LOCAL_IMAGE_CAPACITY_LADDER_ENV, "1")
     assert resolve_local_image_capacity_ladder(False) == ()
     assert resolve_local_image_capacity_ladder([32, 16]) == (16, 32)
+    assert resolve_local_image_capacity_ladder("8, 64,16") == (8, 16, 64)
     assert resolve_local_image_capacity_ladder("off") == ()
     assert resolve_local_image_capacity_ladder(True) == DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER
 
@@ -145,20 +131,6 @@ def test_snapping_never_raises_the_planner_memory_bound(max_images):
 
 
 # ------------------------------------------------------------------- planner ---
-
-
-def test_planners_ignore_the_environment_unless_the_caller_opts_in(monkeypatch):
-    """`scripts/lib/local_dataset.py` also plans local buckets.
-
-    It passes no ladder, so an EM-scoped environment variable must not
-    re-bucket a pipeline with its own validation. Only `run_local_em_exact`
-    reads the environment.
-    """
-
-    monkeypatch.setenv(LOCAL_IMAGE_CAPACITY_LADDER_ENV, "1")
-    counts = np.full(500, 180, dtype=np.int32)
-    assert _capacities(_plan(None, counts=counts, image_batch_size=135)) == [135]
-    assert _capacities(_plan(True, counts=counts, image_batch_size=135)) == [128]
 
 
 def test_planner_stabilizes_the_image_axis_across_batch_size_estimates():

@@ -115,8 +115,7 @@ def _unequal_support_layout():
     )
 
 
-def test_bucket_unification_applies_while_the_padding_it_adds_is_bounded(monkeypatch):
-    monkeypatch.setenv(local_layout.EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV, str(10**9))
+def test_bucket_unification_applies_while_the_padding_it_adds_is_bounded():
     layout = _unequal_support_layout()
 
     plans = local_layout.plan_local_hypothesis_buckets(layout, 2, 32, unify_bucket_sizes=True)
@@ -129,7 +128,7 @@ def test_bucket_unification_is_dropped_when_it_would_add_too_many_rows(monkeypat
     more than the extra compiled shapes it avoids. Measured on K=4 100k/256, where it
     turned 54.1 M padded rows into 204.8 M and doubled pass-2 time at the all-data
     iteration."""
-    monkeypatch.setenv(local_layout.EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV, "0")
+    monkeypatch.setattr(local_layout, "EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS", 0)
     layout = _unequal_support_layout()
 
     plans = local_layout.plan_local_hypothesis_buckets(layout, 2, 32, unify_bucket_sizes=True)
@@ -139,31 +138,3 @@ def test_bucket_unification_is_dropped_when_it_would_add_too_many_rows(monkeypat
     # Never below the true per-image neighborhood cardinality.
     for plan in plans:
         assert plan.bucket_rotation_count >= int(np.max(plan.actual_rotation_counts))
-
-
-def test_bucket_size_class_cap_rounds_up_and_never_truncates(monkeypatch):
-    """Capping distinct sizes trades padding back for fewer compiled shapes.
-
-    It must only ever round a bucket UP: sizing below an image's true neighborhood
-    would silently drop candidate rotations.
-    """
-    monkeypatch.setenv(local_layout.EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV, "0")
-    layout = _unequal_support_layout()
-
-    monkeypatch.setenv(local_layout.EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV, "0")
-    uncapped = local_layout.plan_local_hypothesis_buckets(layout, 2, 32, unify_bucket_sizes=True)
-    monkeypatch.setenv(local_layout.EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV, "2")
-    capped = local_layout.plan_local_hypothesis_buckets(layout, 2, 32, unify_bucket_sizes=True)
-
-    n_uncapped = len({plan.bucket_rotation_count for plan in uncapped})
-    n_capped = len({plan.bucket_rotation_count for plan in capped})
-    assert n_capped < n_uncapped and n_capped <= 2
-    for plan in capped:
-        assert plan.bucket_rotation_count >= int(np.max(plan.actual_rotation_counts))
-
-
-def test_bucket_size_class_cap_is_off_by_default(monkeypatch):
-    monkeypatch.delenv(local_layout.EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV, raising=False)
-    sizes = np.asarray([16, 32, 64, 128], dtype=np.int32)
-
-    assert_matches(local_layout._cap_bucket_size_classes(sizes), sizes)

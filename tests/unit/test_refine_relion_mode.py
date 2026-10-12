@@ -2555,7 +2555,6 @@ def test_bucket_local_hypothesis_layout_quantum_env_can_request_finer_tail_shape
 
 def test_bucket_local_hypothesis_layout_batches_moderate_local_search_neighborhoods(monkeypatch):
     monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
-    monkeypatch.delenv("RELAX_EXACT_LOCAL_BUCKET_QUANTUM", raising=False)
     n_images = 120
     rotation_counts = np.full(n_images, 198, dtype=np.int32)
     rotation_offsets = np.concatenate([[0], np.cumsum(rotation_counts)]).astype(np.int64)

@@ -37,8 +37,6 @@ from relax.sampling.oversampled_grids import (
 from relax.sampling.perturbation import apply_relion_rotation_perturbation_to_eulers
 from relax.sampling.symmetry import canonicalize_rotational_symmetry, rotational_operators
 
-EXACT_LOCAL_BUCKET_QUANTUM_ENV = "RELAX_EXACT_LOCAL_BUCKET_QUANTUM"
-
 # Global bucket-size unification pads every image to the halfset's largest local
 # neighborhood. That buys one compiled shape per layout, which is worth a lot while
 # the subsets are small, and costs a lot once the subset is the whole dataset.
@@ -53,18 +51,8 @@ EXACT_LOCAL_BUCKET_QUANTUM_ENV = "RELAX_EXACT_LOCAL_BUCKET_QUANTUM"
 # The bound is on rows the unification would add. 15.4 M was neutral in that run and
 # 150.7 M was a large loss, so the default sits between them with margin.
 EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS = 32_000_000
-EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV = "RELAX_EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS"
-
-# When the bound above drops unification, each image keeps its own size, which at
-# K=4 100k/256 produced 7 new bucket shapes at the all-data iteration and 67.4 s of
-# XLA compilation (14 compiles of run_local_bucket_big_jit at ~4.74 s each). Capping
-# the number of distinct sizes trades a little of the padding win back for fewer
-# compiled shapes. 0 means uncapped, which is the measured 1426.1 s behavior.
-EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES = 0
-EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV = "RELAX_EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES"
 EXACT_LOCAL_BUCKET_MIN_QUANTUM = 256
 
-LOCAL_IMAGE_CAPACITY_LADDER_ENV = "RELAX_LOCAL_IMAGE_CAPACITY_LADDER"
 DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER = (16, 32, 64, 128, 256)
 
 
@@ -78,22 +66,14 @@ def resolve_local_image_capacity_ladder(explicit=None) -> tuple[int, ...]:
     so a one-image change recompiles the whole bucket program set. Snapping the
     capacity to a fixed ladder makes that axis stable across iterations.
 
-    ``explicit`` beats the environment. Accepted values: ``None`` (consult the
-    environment), ``False``/``""``/``"0"``/``"off"`` (ladder off), ``True``/
-    ``"1"``/``"on"``/``"auto"`` (the default ladder) or an explicit sequence or
-    comma-separated string of positive capacities.
-
-    The bucket planners below treat ``None`` as off, because they are also called by
-    ``scripts/lib/local_dataset.py``, a pipeline with its own
-    validation that an EM-scoped environment variable must not re-bucket.
+    Accepted values: ``None``, ``False``/``""``/``"0"``/``"off"`` (ladder off),
+    ``True``/``"1"``/``"on"``/``"auto"`` (the default ladder) or an explicit
+    sequence or comma-separated string of positive capacities.
     """
 
     source = "local_image_capacity_ladder"
     raw = explicit
-    if raw is None:
-        source = LOCAL_IMAGE_CAPACITY_LADDER_ENV
-        raw = os.environ.get(LOCAL_IMAGE_CAPACITY_LADDER_ENV, "")
-    if raw is False:
+    if raw is None or raw is False:
         return ()
     if raw is True:
         return DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER
@@ -117,14 +97,6 @@ def resolve_local_image_capacity_ladder(explicit=None) -> tuple[int, ...]:
     return ladder
 
 
-def _planner_image_capacity_ladder(explicit) -> tuple[int, ...]:
-    """Resolve a planner's ladder argument; ``None`` means off, not "ask the env"."""
-
-    if explicit is None:
-        return ()
-    return resolve_local_image_capacity_ladder(explicit)
-
-
 def _ladder_image_capacity(max_images: int, ladder: tuple[int, ...]) -> int:
     """Snap an images-per-bucket capacity DOWN to the ladder.
 
@@ -144,65 +116,11 @@ def _ladder_image_capacity(max_images: int, ladder: tuple[int, ...]) -> int:
     return int(rungs[-1])
 
 
-
-def _nonnegative_count_override(raw: str, env_name: str, default: int) -> int:
-    """``raw`` (an environment value) as a non-negative count; blank is ``default``, a non-integer raises."""
-
-    token = raw.strip()
-    if not token:
-        return int(default)
-    value = int(token)
-    if value < 0:
-        raise ValueError(f"{env_name} must be non-negative")
-    return value
-
-
-def _exact_local_max_bucket_size_classes() -> int:
-    """Cap on distinct bucket sizes when unification is dropped; 0 means uncapped."""
-
-    return _nonnegative_count_override(
-        os.environ.get(EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV, ""),
-        EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV,
-        EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES,
-    )
-
-
-def _cap_bucket_size_classes(sizes: np.ndarray) -> np.ndarray:
-    """Round sizes up onto at most N distinct values, never below the true need."""
-
-    max_classes = _exact_local_max_bucket_size_classes()
-    distinct = np.unique(sizes)
-    if max_classes <= 0 or distinct.size <= max_classes:
-        return sizes
-    # Keep representative ceilings spread over the observed ladder, always including
-    # the largest so no neighborhood is truncated, then round every size up onto them.
-    picks = np.unique(np.linspace(0, distinct.size - 1, max_classes).round().astype(int))
-    kept = distinct[picks]
-    kept[-1] = distinct[-1]
-    return kept[np.clip(np.searchsorted(kept, sizes, side="left"), 0, kept.size - 1)]
-
-
-def _exact_local_unify_max_padded_rows() -> int:
-    """Rows that global bucket-size unification may add before it is dropped.
-
-    See ``EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS`` for the measurement behind the default.
-    """
-
-    return _nonnegative_count_override(
-        os.environ.get(EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV, ""),
-        EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV,
-        EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS,
-    )
-
-
 def _exact_local_large_bucket_quantum(rotation_block_size: int, explicit: int | None = None) -> int:
     """Return the large-neighborhood bucket quantum for exact local search."""
 
     if explicit is not None:
         return max(1, int(explicit))
-    env_quantum = os.environ.get(EXACT_LOCAL_BUCKET_QUANTUM_ENV, "")
-    if env_quantum:
-        return max(1, int(env_quantum))
     engine_cap = int(_local_search_engine_rotation_block_size(rotation_block_size))
     return max(EXACT_LOCAL_BUCKET_MIN_QUANTUM, engine_cap)
 
@@ -1861,7 +1779,7 @@ def plan_local_hypothesis_buckets(
 
     image_batch_size = int(max(1, image_batch_size))
     max_hypotheses_per_microbatch = int(max(1, max_hypotheses_per_microbatch))
-    image_capacity_ladder = _planner_image_capacity_ladder(image_capacity_ladder)
+    image_capacity_ladder = resolve_local_image_capacity_ladder(image_capacity_ladder)
     rotations_dtype = np.asarray(layout.rotations_flat).dtype
     mstep_rotations_flat = (
         np.asarray(layout.rotations_flat, dtype=rotations_dtype)
@@ -1904,12 +1822,10 @@ def plan_local_hypothesis_buckets(
     if bucket_sizes.size and bool(unify_bucket_sizes):
         unified_size = int(bucket_sizes.max())
         added_rows = unified_size * int(bucket_sizes.size) - int(bucket_sizes.sum(dtype=np.int64))
-        if added_rows <= _exact_local_unify_max_padded_rows():
+        # Past this bound the rows unification would add cost more than the extra
+        # compiled shapes it avoids, and each image keeps its own size.
+        if added_rows <= EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS:
             bucket_sizes = np.full_like(bucket_sizes, unified_size)
-        else:
-            # Past this point the rows unification would add cost more than the extra
-            # compiled shapes it avoids; optionally bound how many shapes that creates.
-            bucket_sizes = _cap_bucket_size_classes(bucket_sizes)
     processing_order = (
         np.arange(layout.n_images, dtype=np.int32)
         if preserve_image_order
