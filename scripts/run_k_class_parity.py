@@ -1284,7 +1284,6 @@ def main() -> None:
                 "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES target"
             )
         os.environ["RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET"] = "1"
-        os.environ["RELAX_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP"] = "1"
 
     import jax
     import jax.numpy as jnp

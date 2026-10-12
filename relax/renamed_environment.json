@@ -204,7 +204,6 @@
   "RECOVAR_KCLASS_REPLAY_TAU2": "RELAX_KCLASS_REPLAY_TAU2",
   "RECOVAR_K_CLASS_FULL_VOLUME_MSTEP": "RELAX_K_CLASS_FULL_VOLUME_MSTEP",
   "RECOVAR_K_CLASS_HALF_VOLUME_MSTEP": "RELAX_K_CLASS_HALF_VOLUME_MSTEP",
-  "RECOVAR_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP": "RELAX_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP",
   "RECOVAR_K_CLASS_PARITY_STOP_AFTER_PASS2_DUMP": "RELAX_K_CLASS_PARITY_STOP_AFTER_PASS2_DUMP",
   "RECOVAR_K_CLASS_RELION_X_HALF_MSTEP": "RELAX_K_CLASS_RELION_X_HALF_MSTEP",
   "RECOVAR_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT": "RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT",
@@ -705,6 +704,8 @@
   "RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF": "the first-iteration host-staged BPref is chosen from the memory readings only; the override changed no plan or result (A/B job 15402502, 2026-10-12)",
   "RELAX_RELION_FIRSTITER_DEFERRED_BPREF": "the first-iteration host-staged BPref is chosen from the memory readings only; the override changed no plan or result (A/B job 15402502, 2026-10-12)",
   "RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES": "no reader: the deferred first-iteration BPref host budget was never consulted (removed 2026-10-12)",
-  "RELAX_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES": "no reader: the deferred first-iteration BPref host budget was never consulted (removed 2026-10-12)"
+  "RELAX_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES": "no reader: the deferred first-iteration BPref host budget was never consulted (removed 2026-10-12)",
+  "RECOVAR_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP": "no reader: relax never raises the contribution dump's completion, so the replay script's stop on it is gone (2026-10-12)",
+  "RELAX_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP": "no reader: relax never raises the contribution dump's completion, so the replay script's stop on it is gone (2026-10-12)"
  }
 }
