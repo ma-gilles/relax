@@ -18,7 +18,6 @@ from relax.reconstruction.regularization import (
     fsc_to_relion_ssnr,
     resolution_from_data_vs_prior,
 )
-from relax.refinement.refinement_state import healpix_angular_step
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions
@@ -42,31 +41,6 @@ class ImageGeometry:
     def box_size(self) -> int:
         return self.image_shape[0]
 
-
-def relion_local_pass1_current_size(
-    *,
-    pre_update_healpix_order: int,
-    pixel_size: float,
-    box_size: int,
-    particle_diameter: float | None,
-    current_size: int | None,
-) -> int | None:
-    """Return RELION's local pass-1 size for the current expectation.
-
-    RELION computes ``image_coarse_size`` before ``updateAngularSampling``.
-    When an expectation advances the sampling order, its parent hypotheses
-    therefore use the incoming order for Fourier sizing even though the
-    updated order controls the parent grid and fine-child expansion.
-    """
-
-    coarse_size = relion_coarse_image_size(
-        healpix_angular_step(int(pre_update_healpix_order)),
-        pixel_size,
-        box_size,
-        particle_diameter=particle_diameter,
-        current_size=current_size,
-    )
-    return coarse_size if coarse_size < int(box_size) else None
 
 def relion_expectation_coarse_size_order(
     *,

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax import sampling
-from relax.fourier.resolution import relion_local_pass1_current_size
+from relax.fourier.resolution import relion_coarse_image_size
 from relax.refinement.image_size_plans import ExpectationWindows, RunOptics, plan_expectation_windows
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.refinement_state import direction_prior_healpix_order_for_scoring, healpix_angular_step
@@ -74,6 +74,32 @@ class LocalSampling:
     @property
     def symmetry(self) -> str:
         return self.search.symmetry
+
+
+def relion_local_pass1_current_size(
+    *,
+    pre_update_healpix_order: int,
+    pixel_size: float,
+    box_size: int,
+    particle_diameter: float | None,
+    current_size: int | None,
+) -> int | None:
+    """Return RELION's local pass-1 size for the current expectation.
+
+    RELION computes ``image_coarse_size`` before ``updateAngularSampling``.
+    When an expectation advances the sampling order, its parent hypotheses
+    therefore use the incoming order for Fourier sizing even though the
+    updated order controls the parent grid and fine-child expansion.
+    """
+
+    coarse_size = relion_coarse_image_size(
+        healpix_angular_step(int(pre_update_healpix_order)),
+        pixel_size,
+        box_size,
+        particle_diameter=particle_diameter,
+        current_size=current_size,
+    )
+    return coarse_size if coarse_size < int(box_size) else None
 
 
 def prepare_numbered_local_sampling(

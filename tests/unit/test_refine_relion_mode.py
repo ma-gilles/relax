@@ -26,6 +26,7 @@ from relax.fourier.resolution import ImageGeometry
 from relax.reconstruction import volume_solver
 from relax.refinement import map_postprocess
 from relax.refinement.half_inputs import HalfPair, initialize_halfsets
+from relax.refinement.local_sampling import relion_local_pass1_current_size
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver, StartSeeds
 from relax.refinement.refinement_options import OpticsGeometry, ReconstructionPrograms
@@ -75,7 +76,6 @@ from relax.fourier.resolution import (
     clamp_relion_coarse_image_size,
     compute_coarse_image_size,
     relion_expectation_coarse_size_order,
-    relion_local_pass1_current_size,
     relion_optics_image_current_sizes,
     shell_index_to_resolution_angstrom,
 )

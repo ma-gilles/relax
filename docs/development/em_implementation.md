@@ -98,7 +98,7 @@ rotation grid used by both dense half-scoring routes
 once with its perturbation and exact M-step rotations, and
 `_local_search_mstep_rotations` reuses or rebuilds the M-step matrices of a
 scoring grid; the final pass sizes its parent pass with
-`resolution.relion_local_pass1_current_size` only under adaptive oversampling
+`local_sampling.relion_local_pass1_current_size` only under adaptive oversampling
 ([`test_local_fine_grid_owner.py`](../../tests/unit/test_local_fine_grid_owner.py)).
 Grid tests substitute primitives at their sampling owner; sealed-state replay remains
 at the refinement boundary. The exact local-search stage is implemented in
