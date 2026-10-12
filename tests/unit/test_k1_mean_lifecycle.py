@@ -148,7 +148,7 @@ def test_production_runner_leaves_cold_start_host_owned_until_normalization(monk
 def test_initial_half_references_reuse_immutable_shared_reference():
     import jax.numpy as jnp
 
-    from relax.refinement.half_inputs import HalfPair
+    from relax.steps.half_inputs import HalfPair
 
     shared = jnp.arange(64, dtype=jnp.complex64)
     got = reference_state.initial_half_references(HalfPair.shared(shared), n_classes=1)

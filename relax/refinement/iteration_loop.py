@@ -30,7 +30,6 @@ from relax.refinement import (
     expectation,
     finalization,
     follower_scale,
-    half_inputs,
     image_size_plans,
     iteration_history,
     iteration_planning,
@@ -54,7 +53,7 @@ from relax.refinement import (
 from relax.relion import normalization
 from relax.runtime import timing
 from relax.sampling import orientation_priors
-from relax.steps import expected_accuracy, projector_preparation
+from relax.steps import expected_accuracy, half_inputs, projector_preparation
 
 logger = logging.getLogger(__name__)
 
@@ -472,7 +471,7 @@ def refine_single_volume(
     startup : ``StartupHandoff`` (``relax.refinement.startup_references``) holding the initial Fourier volume
         (a ``HalfPair``), the initial signal prior (tau^2, shape (volume_size,)) and the first projector's real
         maps (a ``HalfPair`` or None). The loop takes them once, so they are freed after the start-up (relax#26).
-    init_noise_variance : ``HalfPair`` (``relax.refinement.half_inputs``)
+    init_noise_variance : ``HalfPair`` (``relax.steps.half_inputs``)
         Each half-set's initial per-pixel noise variance: a flat image vector, or ``[G, P]`` rows for G > 1
         optics groups.
     translations : jnp.ndarray, shape (n_trans, 2)

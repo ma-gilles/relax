@@ -14,7 +14,6 @@ from helpers.run_options import stand_in
 
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.command_options import validate_sigma_ang
-from relax.refinement.half_inputs import HalfSet, local_search_centre_half
 from relax.refinement.iteration_planning import initialize_refinement_state
 from relax.refinement.ports import InputSource
 from relax.refinement.refinement_options import (
@@ -24,6 +23,7 @@ from relax.refinement.refinement_options import (
 from relax.refinement.refinement_state import RefinementState, refine_angular_sampling
 from relax.sampling.healpix import angular_sampling_deg
 from relax.star.input_poses import _load_input_star_previous_best_poses, prepare_initial_poses
+from relax.steps.half_inputs import HalfSet, local_search_centre_half
 
 pytestmark = pytest.mark.unit
 

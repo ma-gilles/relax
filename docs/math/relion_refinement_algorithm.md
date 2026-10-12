@@ -598,7 +598,7 @@ interprets a None model cutoff as the particle cutoff.
 support with the existing formulas, then validates any sealed width. Shape-class
 scoring retains its own per-shape remapping.
 
-[`resolve_particle_poses`](../../relax/refinement/half_inputs.py) interprets selected engine poses or grid IDs
+[`resolve_particle_poses`](../../relax/steps/half_inputs.py) interprets selected engine poses or grid IDs
 without changing the scoring frame. Its result pairs matrices, Euler degrees,
 relative search shifts and absolute metadata offsets in pixels. Supplied Euler
 rows retain host float64; supported matrix/grid paths retain their existing
@@ -903,7 +903,7 @@ to that tilt.
   `rlnAngleTiltPrior`; its current tilt where the label is absent (RELION's 999). RELION replaces a given
   prior by the current angle only in a local angular search, which is auto-refine at or above
   `--auto_local_healpix_order` or a classification with all three widths positive; with the tilt width
-  alone neither holds. [`tilt_prior_for_half`](../../relax/refinement/half_inputs.py).
+  alone neither holds. [`tilt_prior_for_half`](../../relax/steps/half_inputs.py).
 - Selection (`HealpixSampling::selectOrientationsWithNonZeroPriorProbability`,
   `healpix_sampling.cpp:841-879`, the branch `sigma_rot == 0 < sigma_tilt`). For direction `d` of the
   coarse grid with tilt `t_d`, the distance is

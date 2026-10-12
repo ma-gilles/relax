@@ -18,10 +18,10 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 from helpers.run_options import stand_in
 
-from relax.refinement.half_inputs import HalfPair
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.startup_references import StartupHandoff
+from relax.steps.half_inputs import HalfPair
 
 pytestmark = pytest.mark.unit
 

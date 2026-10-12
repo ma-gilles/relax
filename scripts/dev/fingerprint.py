@@ -1460,7 +1460,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 # The start-up arrays in their single-use holder (relax#26).
                 from relax.refinement.startup_references import StartupHandoff
 
-                half_pair = getattr(importlib.import_module("relax.refinement.half_inputs"), "HalfPair", None)
+                try:
+                    half_inputs = importlib.import_module("relax.steps.half_inputs")
+                except ImportError:  # the source before half_inputs moved to steps (layout S8c)
+                    half_inputs = importlib.import_module("relax.refinement.half_inputs")
+                half_pair = getattr(half_inputs, "HalfPair", None)
                 if half_pair is not None:
                     # The start-up volume and noise as typed pairs, shared by the halves.
                     init_volume, noise_variance = half_pair.shared(init_volume), half_pair.shared(noise_variance)

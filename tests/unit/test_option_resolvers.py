@@ -165,7 +165,7 @@ def test_the_resolved_mask_edge_reaches_the_controller(monkeypatch, tmp_path, ed
 def test_half_image_preprocessing_masks_with_the_resolved_edge():
     # The second mask call on the halves' backends (shared with the loader's) used the constant 5 and
     # overwrote the loader's mask; it now uses the run's edge.
-    from relax.refinement.half_inputs import configure_half_image_preprocessing
+    from relax.steps.half_inputs import configure_half_image_preprocessing
 
     calls = []
     backend = SimpleNamespace(set_relion_image_mask=lambda **kwargs: calls.append(kwargs))

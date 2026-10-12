@@ -10,7 +10,7 @@ from helpers.float_compare import assert_matches
 
 from relax.refinement import command_options, startup_noise
 from relax.refinement import full_refinement as driver
-from relax.refinement.half_inputs import HalfPair
+from relax.steps.half_inputs import HalfPair
 
 pytestmark = pytest.mark.unit
 

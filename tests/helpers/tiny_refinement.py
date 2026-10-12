@@ -264,7 +264,6 @@ def run_tiny_refinement(
     import relax.sampling as sampling
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement import iteration_loop
-    from relax.refinement.half_inputs import HalfPair
     from relax.refinement.ports import RunObserver
     from relax.refinement.refinement_options import (
         FinalPassOptions,
@@ -272,6 +271,7 @@ def run_tiny_refinement(
         RefinementEnvironment,
     )
     from relax.refinement.startup_references import StartupHandoff
+    from relax.steps.half_inputs import HalfPair
 
     calls = [] if engine_calls is None else engine_calls
 

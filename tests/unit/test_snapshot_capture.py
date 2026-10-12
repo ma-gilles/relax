@@ -7,10 +7,10 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement import iteration_snapshot
-from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.iteration_snapshot import IterationSnapshot, SnapshotCapture
 from relax.refinement.refinement_state import RefinementState
 from relax.sampling.orientation_priors import DirectionPrior
+from relax.steps.half_inputs import initialize_halfsets
 
 pytestmark = pytest.mark.unit
 

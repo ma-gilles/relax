@@ -13,9 +13,9 @@ import numpy as np
 from recovar import utils
 
 from relax.numerics.shells import shell_of_radius_sq
-from relax.refinement.half_inputs import HalfPair
 from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2, radial_power_spectrum
 from relax.star import metadata
+from relax.steps.half_inputs import HalfPair
 from relax.steps.optics_shapes import MultiShapeDataset
 from relax.steps.tomo_half import TomoDataset
 

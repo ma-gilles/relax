@@ -15,12 +15,12 @@ from relax.numerics.precision import DensePrecisionPolicy
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import expectation
 from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
-from relax.refinement.half_inputs import HalfScoringData, HalfSet
 from relax.refinement.local_half import LocalDiagnosticPolicy
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import NoProbe
 from relax.sampling import TrialGrid
 from relax.sampling.orientation_priors import HalfDirectionLogPriors
+from relax.steps.half_inputs import HalfScoringData, HalfSet
 from relax.steps.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.steps.tomo_half import TomoSampling
 

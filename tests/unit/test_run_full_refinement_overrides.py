@@ -51,7 +51,6 @@ from relax.refinement.full_refinement import (
     _resolve_tau2_fudge,
     _use_fresh_auto_refine_particle_order,
 )
-from relax.refinement.half_inputs import HalfSet
 from relax.refinement.iteration_history import _load_init_noise_radial_npz
 from relax.refinement.particle_loading import _apply_relion_image_mask, prepare_relion_halfset_inputs
 from relax.refinement.reference_state import ReferenceModel, _updated_mean_variance_per_half
@@ -71,6 +70,7 @@ from relax.star.metadata import (
     _parse_relion_tau2_fudge,
     parse_relion_cli_ini_high,
 )
+from relax.steps.half_inputs import HalfSet
 
 FIXTURE = fixture_root("k1_5k128_relion_os0")
 

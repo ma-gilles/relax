@@ -13,8 +13,7 @@ from helpers.float_compare import assert_matches
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
 from relax.local_search import records
-from relax.refinement import dense_half, half_inputs, local_half, local_sampling, shape_class_scoring
-from relax.refinement.half_inputs import HalfSet
+from relax.refinement import dense_half, local_half, local_sampling, shape_class_scoring
 from relax.refinement.refinement_options import ScoringVariants
 from relax.runtime import batch_planning
 from relax.runtime.batch_planning import (
@@ -23,7 +22,8 @@ from relax.runtime.batch_planning import (
     safe_firstiter_cc_image_batch_size,
 )
 from relax.sampling import oversampling
-from relax.steps import scoring_policy
+from relax.steps import half_inputs, scoring_policy
+from relax.steps.half_inputs import HalfSet
 from relax.types import NoiseStats, make_relion_stats
 
 

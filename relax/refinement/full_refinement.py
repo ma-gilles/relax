@@ -58,7 +58,6 @@ from relax.refinement import (
     startup_references,
 )
 from relax.refinement.command_options import apply_k1_refine3d_env_defaults
-from relax.refinement.half_inputs import HalfPair
 from relax.refinement.result_files import (
     RunReport,
     build_archive_metadata,
@@ -74,6 +73,7 @@ from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 from relax.star import input_particle_table, input_poses
 from relax.star import metadata as relion_metadata
 from relax.steps import scoring_policy
+from relax.steps.half_inputs import HalfPair
 
 logging.basicConfig(
     level=logging.INFO,

@@ -37,7 +37,6 @@ from relax.refinement.dense_half import (
     single_shape_reconstruction_grid,
 )
 from relax.refinement.engine_record import record_pass_engine
-from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.ports import ExpectationProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
@@ -57,6 +56,7 @@ from relax.sampling import (
     relion_angular_sampling_deg,
 )
 from relax.steps import scoring_policy
+from relax.steps.half_inputs import HalfScoringData
 from relax.steps.score_outputs import (
     HalfScoreResult,
     class_em_to_half_result,

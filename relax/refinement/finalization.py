@@ -20,7 +20,7 @@ from relax.reconstruction.resolution import (
     relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
-from relax.refinement import final_reconstruction, half_inputs, shape_class_scoring
+from relax.refinement import final_reconstruction, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -29,7 +29,6 @@ from relax.refinement.dense_half import (
     DenseVariantPolicy,
     _score_half_dense_in_bpref_scope,
 )
-from relax.refinement.half_inputs import HalfScoringData, local_search_centre_half
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_half import (
     LocalBatchPolicy,
@@ -64,7 +63,9 @@ from relax.sampling.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.star.metadata import relion_metadata_translations
+from relax.steps import half_inputs
 from relax.steps.expected_accuracy import expected_accuracy_class_ids
+from relax.steps.half_inputs import HalfScoringData, local_search_centre_half
 from relax.steps.optics_shapes import image_translation_factors
 from relax.steps.projector_preparation import prepare_scoring_projector
 from relax.steps.score_outputs import (

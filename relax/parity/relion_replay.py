@@ -18,7 +18,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.refinement.half_inputs import HalfSet, optional_half_arrays
 from relax.refinement.noise_updates import (
     NoiseModel,
     noise_model_from_pixels,
@@ -51,6 +50,7 @@ from relax.star.metadata import (
     read_relion_optimiser_metadata,
     read_relion_sampling_metadata,
 )
+from relax.steps.half_inputs import HalfSet, optional_half_arrays
 
 if TYPE_CHECKING:
     from relax.reconstruction.resolution import ImageGeometry

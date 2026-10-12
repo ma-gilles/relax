@@ -33,13 +33,13 @@ from relax.parity.parity_provenance import (
     assert_parity_ancestors_or_exit as _print_provenance_banner_and_assert_parity_ancestors,
 )
 from relax.refinement.command_options import apply_k1_refine3d_env_defaults
-from relax.refinement.half_inputs import HalfPair
 from relax.refinement.iteration_history import add_significant_count_artifacts
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
     relion_mpi_process_start_scoring_noise_pair,
 )
 from relax.runtime.git_provenance import git_head_or_none
+from relax.steps.half_inputs import HalfPair
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)

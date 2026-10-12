@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 
 from relax.parity import state_swap_runtime
-from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.reference_state import ReferenceModel
 from relax.sampling.orientation_priors import DirectionPrior
+from relax.steps.half_inputs import initialize_halfsets
 
 
 def _inputs():

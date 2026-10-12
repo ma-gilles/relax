@@ -89,8 +89,8 @@ def test_pose_transition_preserves_half_identity_snapshots_and_offset_frames(
     dtype, dimension, second_half_count,
     has_previous,
 ):
-    from relax.refinement.half_inputs import HalfSet
     from relax.refinement.particle_poses import prepare_particle_pose_update, prepare_pose_comparison
+    from relax.steps.half_inputs import HalfSet
 
     counts = (2, second_half_count)
     scores = score_outputs.PerHalfOutputs()
@@ -155,7 +155,8 @@ def test_pose_transition_preserves_half_identity_snapshots_and_offset_frames(
 
 
 def test_pose_transition_snapshots_both_halves_before_resolving_either(monkeypatch):
-    from relax.refinement import half_inputs, particle_poses
+    from relax.refinement import particle_poses
+    from relax.steps import half_inputs
 
     halves = [
         half_inputs.HalfSet(index=k, dataset=object(), translations=np.full((1, 2), k + 1.0))

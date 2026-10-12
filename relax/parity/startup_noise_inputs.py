@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from relax.refinement.half_inputs import HalfPair
 from relax.refinement.startup_noise import StartupNoise, estimate_startup_sigma2, scoring_noise_from_sigma2
+from relax.steps.half_inputs import HalfPair
 
 
 def frozen_boundary_noise(frozen_boundary, image_shape) -> StartupNoise:

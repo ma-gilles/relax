@@ -11,7 +11,6 @@ from relax.numerics.relion_random import GlibcRand, init_random_generator
 from relax.reconstruction.regularization import RELION_MINRES_MAP
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.expectation_batches import BatchPlanner
-from relax.refinement.half_inputs import configure_half_image_preprocessing
 from relax.refinement.image_size_plans import RunOptics
 from relax.refinement.iteration_snapshot import SnapshotCapture
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
@@ -37,6 +36,7 @@ from relax.relion.geometry import (
 )
 from relax.sampling.expected_accuracy import prepare_relion_half1_trial_order
 from relax.steps.expected_accuracy import RELION_DEFAULT_SIGMA2_FUDGE, Half1AccuracyInputs
+from relax.steps.half_inputs import configure_half_image_preprocessing
 from relax.steps.optics_shapes import MultiShapeHalf
 from relax.steps.tomo_half import TomoHalf
 

@@ -7,7 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.parity import initial_model_replay as replay
-from relax.refinement.half_inputs import HalfPair
+from relax.steps.half_inputs import HalfPair
 
 
 def _write_model(path, *, n_classes=1, sigma2=None, prior_dtype=np.float64, prior_column="rlnReferenceTau2", fudge="_rlnTau2FudgeFactor 1.75"):

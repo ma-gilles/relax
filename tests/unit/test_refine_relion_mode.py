@@ -26,7 +26,6 @@ from relax.reconstruction import volume_solver
 from relax.reconstruction.resolution import ImageGeometry
 from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess
-from relax.refinement.half_inputs import HalfPair, initialize_halfsets
 from relax.refinement.local_sampling import relion_local_pass1_current_size
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver, StartSeeds
@@ -37,6 +36,7 @@ from relax.sampling.orientation_priors import (
     DirectionPrior,
     _combined_class_direction_prior_from_halves,
 )
+from relax.steps.half_inputs import HalfPair, initialize_halfsets
 
 pytest.importorskip("jax")
 import healpy as hp

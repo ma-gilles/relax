@@ -7,9 +7,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.refinement import command_options, half_inputs
+from relax.refinement import command_options
 from relax.refinement.refinement_options import LocalSearchOptions
 from relax.refinement.refinement_state import RefinementState, refine_angular_sampling
+from relax.steps import half_inputs
 
 
 def _args(*extra):

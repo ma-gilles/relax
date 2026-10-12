@@ -6,9 +6,9 @@ from helpers.float_compare import assert_matches, matches
 from helpers.pass1_stats import make_pass1_stats
 
 from relax.reconstruction.resolution import ImageGeometry
-from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
 from relax.sampling.orientation_priors import DirectionPrior
+from relax.steps.half_inputs import initialize_halfsets
 
 pytest.importorskip("jax")
 import jax.numpy as jnp

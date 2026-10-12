@@ -16,7 +16,6 @@ from recovar.core import fourier_transform_utils as ftu
 from relax.reconstruction import regularization
 from relax.refinement import iteration_snapshot as iteration_snapshot_module
 from relax.refinement import setup_checks
-from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
     IterationSnapshot,
@@ -33,6 +32,7 @@ from relax.refinement.run_files import (
 )
 from relax.sampling.orientation_priors import DirectionPrior
 from relax.star.blocks import input_general_block, read_star_blocks
+from relax.steps.half_inputs import initialize_halfsets
 
 pytestmark = pytest.mark.unit
 

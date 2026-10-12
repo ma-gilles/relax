@@ -7,7 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement import follower_scale as scale
-from relax.refinement.half_inputs import HalfSet
+from relax.steps.half_inputs import HalfSet
 
 pytestmark = pytest.mark.unit
 

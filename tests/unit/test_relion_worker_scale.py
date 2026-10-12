@@ -42,10 +42,10 @@ from relax.refinement.follower_scale import (
     validate_relion_follower_scale_start,
     verify_relion_dispatch_schedule_oracle,
 )
-from relax.refinement.half_inputs import initialize_halfsets
 from relax.relion.normalization import (
     update_relion_norm_scale_corrections,
 )
+from relax.steps.half_inputs import initialize_halfsets
 from relax.types import NoiseStats
 
 _ORACLE_MANIFEST = "0" * 64
