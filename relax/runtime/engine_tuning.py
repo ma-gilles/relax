@@ -17,9 +17,25 @@ from relax.runtime.compile_ahead import (
     CompileAheadConfig,
     parse_compile_ahead_config,
 )
-from relax.runtime.env_flags import read_env_text
+from relax.runtime.env_flags import parse_env_flag, read_env_text
 
 DEFAULT_PREPARE_IMAGE_BATCH = 256
+RESIDENT_DIAGNOSTIC_DIR_ENVS = (
+    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+    "RELAX_PASS2_DUMP_DIR",
+    "RELAX_BPREF_EXECUTION_ORDER_LOCAL_FILE",
+    "RELAX_VDAM_KCLASS_STATS_DUMP_DIR",
+)
+RESIDENT_DIAGNOSTIC_FLAG_ENVS = (
+    "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
+    "RELAX_K1_RELION_TRANSLATED_WAVG_NORM",
+    "RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY",
+    "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
+    "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
+    "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -34,12 +50,16 @@ class EngineTuning:
     the resident operands' byte budget, None for the allocator-derived one. ``prepare_image_batch``
     (RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH, :func:`parse_positive_override`; default
     :data:`DEFAULT_PREPARE_IMAGE_BATCH`): images per resident operand preparation call (no value depends on it).
+    ``resident_diagnostics``: the diagnostic dumps (:data:`RESIDENT_DIAGNOSTIC_DIR_ENVS`, set to a non-blank value)
+    and arms (:data:`RESIDENT_DIAGNOSTIC_FLAG_ENVS`, ``env_flags.parse_env_flag``) that are set, dumps first, each in
+    its table's order; the resident engines refuse to run with any of them.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
     pass2_projection_cache: bool | None = None
     resident_operand_max_bytes: int | None = None
     prepare_image_batch: int = DEFAULT_PREPARE_IMAGE_BATCH
+    resident_diagnostics: tuple[str, ...] = ()
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -56,6 +76,10 @@ class EngineTuning:
                 "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH",
                 read_env_text("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", ""),
             ) or DEFAULT_PREPARE_IMAGE_BATCH,
+            resident_diagnostics=(
+                *(name for name in RESIDENT_DIAGNOSTIC_DIR_ENVS if read_env_text(name, "").strip()),
+                *(name for name in RESIDENT_DIAGNOSTIC_FLAG_ENVS if parse_env_flag(name, default=False)),
+            ),
         )
 
 

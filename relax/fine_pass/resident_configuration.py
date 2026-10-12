@@ -9,31 +9,14 @@ There is no other pass-2 engine to fall back to.
 
 from __future__ import annotations
 
-import os
-
 import numpy as np
 
+import relax.runtime.engine_tuning
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
-from relax.runtime.env_flags import parse_env_flag
 
-DIAGNOSTIC_DIR_ENVS = (
-    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
-    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
-    "RELAX_PASS2_DUMP_DIR",
-    "RELAX_BPREF_EXECUTION_ORDER_LOCAL_FILE",
-    "RELAX_VDAM_KCLASS_STATS_DUMP_DIR",
-)
-
-
-DIAGNOSTIC_FLAG_ENVS = (
-    "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
-    "RELAX_K1_RELION_TRANSLATED_WAVG_NORM",
-    "RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY",
-    "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
-    "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-    "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
-)
+# The diagnostic dumps and arms the resident drivers refuse (EngineTuning.resident_diagnostics).
+DIAGNOSTIC_DIR_ENVS = relax.runtime.engine_tuning.RESIDENT_DIAGNOSTIC_DIR_ENVS
+DIAGNOSTIC_FLAG_ENVS = relax.runtime.engine_tuning.RESIDENT_DIAGNOSTIC_FLAG_ENVS
 
 
 def require(condition: bool, message: str) -> None:
@@ -157,13 +140,9 @@ def require_resident_production_configuration(**kwargs) -> None:
         not bool(kwargs["relion_wavg_atomic_direct_norm"]),
         "the direct per-particle Wavg norm arm is a stopped diagnostic",
     )
-    for name in DIAGNOSTIC_DIR_ENVS:
+    for name in kwargs["requested_diagnostics"]:
         require(
-            not os.environ.get(name, "").strip(),
+            name not in DIAGNOSTIC_DIR_ENVS,
             f"the diagnostic dump {name} is set; the resident driver emits no dumps",
         )
-    for name in DIAGNOSTIC_FLAG_ENVS:
-        require(
-            not parse_env_flag(name, default=False),
-            f"the diagnostic flag {name} is set; the resident driver has no such arm",
-        )
+        require(False, f"the diagnostic flag {name} is set; the resident driver has no such arm")

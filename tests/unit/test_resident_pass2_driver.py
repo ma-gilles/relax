@@ -80,6 +80,7 @@ def _production_gate_kwargs(**overrides):
         relion_wavg_atomic_direct_noise=True,
         relion_wavg_atomic_direct_norm=False,
         relion_projector_texture=None,
+        requested_diagnostics=(),
     )
     kwargs.update(overrides)
     return kwargs
@@ -129,9 +130,26 @@ def test_gate_accepts_production_bpref_order_with_the_block_prototype():
 
 
 def test_gate_refuses_a_diagnostic_dump(monkeypatch):
+    from relax.runtime.engine_tuning import RESIDENT_DIAGNOSTIC_DIR_ENVS, RESIDENT_DIAGNOSTIC_FLAG_ENVS
+
+    for name in RESIDENT_DIAGNOSTIC_DIR_ENVS + RESIDENT_DIAGNOSTIC_FLAG_ENVS:
+        monkeypatch.delenv(name, raising=False)
+    assert _engine().resident_diagnostics == ()
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_DIR", "  ")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY", "0")
+    assert _engine().resident_diagnostics == ()
     monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/does-not-matter")
-    with pytest.raises(NotImplementedError, match="RELAX_PASS2_DUMP_DIR"):
-        resident_configuration.require_resident_production_configuration(**_production_gate_kwargs())
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+    requested = _engine().resident_diagnostics
+    assert requested == ("RELAX_PASS2_DUMP_DIR", "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS")
+    with pytest.raises(NotImplementedError, match="diagnostic dump RELAX_PASS2_DUMP_DIR"):
+        resident_configuration.require_resident_production_configuration(
+            **_production_gate_kwargs(requested_diagnostics=requested)
+        )
+    with pytest.raises(NotImplementedError, match="diagnostic flag RELAX_RELION_X_HALF_BP_FUSED_ATOMICS"):
+        resident_configuration.require_resident_production_configuration(
+            **_production_gate_kwargs(requested_diagnostics=requested[1:])
+        )
 
 
 def _tables(row_counts):

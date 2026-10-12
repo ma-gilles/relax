@@ -73,6 +73,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
+import relax.runtime.engine_tuning
 from relax.fine_pass import (
     policy,
     resident_block_programs,
@@ -174,7 +175,6 @@ from relax.relion import ctf
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
 from relax.relion.scale_groups import prepare_scale_correction_groups
 from relax.runtime.compile_ahead import CompileAheadPool
-from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.env_flags import parse_env_capacity_ladder, parse_env_flag
 from relax.runtime.memory_budget import (
     _device_free_memory_bytes,
@@ -596,7 +596,7 @@ def _resident_pass2(
     nside_level,
     disc_type,
     *,
-    engine_tuning: EngineTuning,
+    engine_tuning: relax.runtime.engine_tuning.EngineTuning,
     oversampling_order,
     current_size,
     reconstruction_current_size=None,
@@ -940,6 +940,7 @@ def _resident_pass2(
         relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
         relion_wavg_atomic_direct_norm=relion_wavg_atomic_direct_norm,
         relion_projector_texture=relion_projector_texture,
+        requested_diagnostics=engine_tuning.resident_diagnostics,
         )
         resident_configuration.require(
             bool(use_relion_f32_fine_posterior) or firstiter_cc,
@@ -3003,7 +3004,7 @@ def compute_pass2_stats_resident(
     nside_level,
     disc_type,
     *,
-    engine_tuning: EngineTuning,
+    engine_tuning: relax.runtime.engine_tuning.EngineTuning,
     oversampling_order,
     current_size,
     reconstruction_current_size=None,
