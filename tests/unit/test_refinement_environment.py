@@ -210,3 +210,25 @@ def test_lowres_join_route_reaches_the_join(monkeypatch):
     seen = _received(monkeypatch, regularization, "join_halves_at_low_resolution", "route",
                      RefinementEnvironment(), variants=variants, parity={"low_resol_join_halves_angstrom": 40.0})
     assert seen and set(seen) == {route}
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, None), ("  ", None), (" /cache ", "/cache")])
+def test_projector_cache_dir_is_read_once(monkeypatch, value, expected):
+    env = _from_environ(monkeypatch, "RELAX_RELION_PROJECTOR_CACHE_DIR", value)
+    assert env.projector_files.cache_dir == expected
+
+
+def test_projector_cache_dir_reaches_the_command(monkeypatch, tmp_path):
+    env = _command_environment(monkeypatch, tmp_path, "RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path / "cache"))
+    assert env.projector_files.cache_dir == str(tmp_path / "cache")
+
+
+def test_projector_files_reach_the_numbered_projectors(monkeypatch, tmp_path):
+    from relax.steps import projector_preparation
+    from relax.steps.projector_preparation import ProjectorFiles
+
+    monkeypatch.delenv("RELAX_RELION_PROJECTOR_CACHE_DIR", raising=False)
+    files = ProjectorFiles(cache_dir=str(tmp_path / "cache"))
+    seen = _received(monkeypatch, projector_preparation, "prepare_scoring_projector", "files",
+                     RefinementEnvironment(projector_files=files))
+    assert seen and set(seen) == {files}

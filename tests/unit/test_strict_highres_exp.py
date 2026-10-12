@@ -12,6 +12,7 @@ from relax.commands.refinement_arguments import parse_refinement_args, validate_
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans
 from relax.refinement.image_size_plans import ExpectationWindows, relion_strict_highres_image_size
+from relax.steps.projector_preparation import ProjectorFiles
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
@@ -124,6 +125,7 @@ def test_capped_accuracy_projects_at_the_current_size(monkeypatch):
         trial_order_local=None, dataset=None, volume_shape=(8, 8, 8), padding_factor=2, sigma2_fudge=1.0,
         optimizer_random_seed=0,
         expected_accuracy=SimpleNamespace(half1_particle_ids=None, half1_ctf_params=None, do_ctf_correction=True),
+        projector_files=ProjectorFiles(),
     )
     common = dict(reference_fourier=None, best_eulers_deg=None, class_ids=None, class_weights=None,
                   sigma2_noise_native=None)

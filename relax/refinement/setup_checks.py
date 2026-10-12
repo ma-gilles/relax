@@ -269,6 +269,7 @@ def expected_accuracy_inputs_for_run(
         sigma2_fudge=RELION_DEFAULT_SIGMA2_FUDGE,
         optimizer_random_seed=effective_optimizer_random_seed,
         expected_accuracy=options.expected_accuracy,
+        projector_files=options.environment.projector_files,
         optics_group_ids=optics_group_ids,
         gridding_kernel=gridding_kernel,
     )

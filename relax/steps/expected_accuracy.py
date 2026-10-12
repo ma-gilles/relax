@@ -45,6 +45,8 @@ class Half1AccuracyInputs(NamedTuple):
     sigma2_fudge: float
     optimizer_random_seed: object
     expected_accuracy: object
+    # The files of a projector built here (RefinementEnvironment.projector_files).
+    projector_files: object
     # Each half-1 image's row of a per-optics-group noise table; None for one group.
     optics_group_ids: object = None
     # The projector's gridding-correction window when the transform is built here.
@@ -201,6 +203,7 @@ def estimate_iteration_accuracy(
                         n_classes=n_classes,
                         dump_label=f"iter{iteration:03d}_half0",
                         gridding_kernel=inputs.gridding_kernel,
+                        files=inputs.projector_files,
                     ),
                 )
             # A failure raises: an infinite accuracy would hide it behind a changed

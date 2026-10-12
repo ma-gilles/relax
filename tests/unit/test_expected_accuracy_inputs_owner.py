@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from relax.steps import expected_accuracy as owner
+from relax.steps.projector_preparation import ProjectorFiles
 
 pytestmark = pytest.mark.unit
 
@@ -29,6 +30,7 @@ def test_estimator_receives_run_constants_and_per_pass_operands(monkeypatch):
     ea = SimpleNamespace(half1_particle_ids="pids", half1_ctf_params="ctf", do_ctf_correction=False)
     inputs = owner.Half1AccuracyInputs(
         trial_order_local="order", dataset="half1", volume_shape=[8, 8, 8], padding_factor=2, sigma2_fudge=np.float64(4.0), optimizer_random_seed=np.int64(11), expected_accuracy=ea,
+        projector_files=ProjectorFiles(),
     )
     out = inputs.estimate( reference_fourier="ref", best_eulers_deg="eul", class_ids="ids", class_weights="w", sigma2_noise_native="noise", current_image_size=np.int64(56),
     )

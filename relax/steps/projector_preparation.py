@@ -20,6 +20,16 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
+class ProjectorFiles:
+    """The files a projector setup may read or write; none changes the projector
+    (``RefinementEnvironment.projector_files``, read by the command). ``cache_dir``
+    (RELAX_RELION_PROJECTOR_CACHE_DIR, stripped; None when unset or blank): a cache of built slabs keyed by
+    their inputs."""
+
+    cache_dir: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
 class PreparedProjector:
     """Projection slabs, Fourier cutoff and power spectra from one transform."""
 
@@ -91,6 +101,7 @@ def prepare_scoring_projector(
     dump_label: str | None = None,
     reusable: ProjectorReuse | None = None,
     gridding_kernel: str = "radial",
+    files: ProjectorFiles,
 ) -> PreparedProjector:
     """Prepare RELION ``Projector::data`` slabs from current Fourier references.
 
@@ -104,7 +115,8 @@ def prepare_scoring_projector(
     RELION's own transform is a test oracle only. ``gridding_kernel`` is the
     setup's correction window; a ``reusable`` projector must have been built
     with the same one, and a non-radial window has its own cache entries.
-    The power spectrum always counts as RELION does (every stored coefficient once).
+    The power spectrum always counts as RELION does (every stored coefficient once). ``files`` names the
+    slab cache (``ProjectorFiles``).
     """
 
     if reusable is not None:
@@ -134,9 +146,8 @@ def prepare_scoring_projector(
                 f"got {refs_real_override.shape}, expected {expected_shape}",
             )
     resolved_current_size = int(current_size) if current_size is not None else int(volume_shape[0])
-    cache_dir = os.environ.get("RELAX_RELION_PROJECTOR_CACHE_DIR", "").strip()
     cache_path = None
-    if cache_dir:
+    if files.cache_dir:
         refs_for_hash = np.ascontiguousarray(
             refs_ft if refs_real_override is None else refs_real_override
         )
@@ -158,7 +169,7 @@ def prepare_scoring_projector(
             # Radial entries keep their keys; another window never reads them.
             hasher.update(f"gridding-kernel-{gridding_kernel}".encode("utf-8"))
         hasher.update(refs_for_hash.view(np.uint8))
-        cache_path = os.path.join(cache_dir, f"projector_{hasher.hexdigest()[:24]}.npz")
+        cache_path = os.path.join(files.cache_dir, f"projector_{hasher.hexdigest()[:24]}.npz")
         if os.path.exists(cache_path):
             try:
                 with np.load(cache_path, allow_pickle=False) as cached:
@@ -194,9 +205,9 @@ def prepare_scoring_projector(
         gridding_kernel=gridding_kernel,
     )
     if cache_path is not None:
-        os.makedirs(cache_dir, exist_ok=True)
+        os.makedirs(files.cache_dir, exist_ok=True)
         try:
-            with open(os.path.join(cache_dir, "SAFE_TO_DELETE"), "a", encoding="utf-8"):
+            with open(os.path.join(files.cache_dir, "SAFE_TO_DELETE"), "a", encoding="utf-8"):
                 pass
             tmp_path = f"{cache_path}.{os.getpid()}.tmp.npz"
             np.savez(
@@ -240,6 +251,7 @@ def build_numbered_projectors(
     reusable_half1: ProjectorReuse | None,
     real_references_by_half,
     iteration: int,
+    files: ProjectorFiles,
     log: logging.Logger,
 ) -> list[PreparedProjector | None]:
     """Build each half's ``Projector::data`` for one numbered iteration's scoring; ``[half 1, half 2]``.
@@ -269,6 +281,7 @@ def build_numbered_projectors(
             real_references=None if real_references_by_half is None else real_references_by_half[half.index],
             dump_label=f"iter{iteration:03d}_half{half.index}",
             gridding_kernel=settings.gridding_kernel,
+            files=files,
         )
     require_projectors_for_gridding_kernel(projectors, settings.gridding_kernel)
     log.info(

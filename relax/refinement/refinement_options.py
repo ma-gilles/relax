@@ -36,6 +36,7 @@ from relax.runtime.env_flags import (
     read_env_text,
 )
 from relax.sampling.symmetry import canonicalize_rotational_symmetry
+from relax.steps.projector_preparation import ProjectorFiles
 
 if TYPE_CHECKING:
     from relax.numerics.precision import DensePrecisionPolicy
@@ -792,12 +793,15 @@ class RefinementEnvironment:
     (RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS, :func:`_diagnostic_float64_pass2_iterations`): the RELION
     iterations whose pass 2 scores and is planned in float64. ``low_pmax_refine_guard``
     (:func:`_low_pmax_refine_guard`; None: off) holds the angular refinement while the posterior is diffuse.
+    ``projector_files`` (``steps.projector_preparation.ProjectorFiles``): the projector slab cache
+    (RELAX_RELION_PROJECTOR_CACHE_DIR).
     """
 
     half_accumulator_guard: str = "raise"
     firstiter_fused_bpref: bool | None = None
     diagnostic_float64_pass2_iterations: frozenset[int] = frozenset()
     low_pmax_refine_guard: LowPmaxRefineGuard | None = None
+    projector_files: ProjectorFiles = ProjectorFiles()
 
     @classmethod
     def from_environ(cls) -> RefinementEnvironment:
@@ -809,6 +813,9 @@ class RefinementEnvironment:
             firstiter_fused_bpref=_optional_env_flag(FIRSTITER_FUSED_BPREF_ENV),
             diagnostic_float64_pass2_iterations=_diagnostic_float64_pass2_iterations(),
             low_pmax_refine_guard=_low_pmax_refine_guard(),
+            projector_files=ProjectorFiles(
+                cache_dir=read_env_text("RELAX_RELION_PROJECTOR_CACHE_DIR", "").strip() or None,
+            ),
         )
 
 

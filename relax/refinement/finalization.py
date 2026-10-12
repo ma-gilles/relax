@@ -414,6 +414,7 @@ def run_final_all_data(
             n_classes=options.k_class.n_classes,
             dump_label=f"final_half{half.index}",
             gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
+            files=options.environment.projector_files,
         )
         logger.info(
             "RELION final all-data half-%d: built exact Projector::data for scoring at current_size=%d r_max=%s "

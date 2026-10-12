@@ -3100,6 +3100,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         current_size=4,
         padding_factor=2,
         n_classes=1,
+        files=_projector_files(),
     )
     second = projector_preparation.prepare_scoring_projector(
         mean_ft.reshape(-1),
@@ -3107,6 +3108,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         current_size=4,
         padding_factor=2,
         n_classes=1,
+        files=_projector_files(),
     )
 
     assert len(calls) == 1
@@ -3148,6 +3150,7 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
         padding_factor=2,
         n_classes=1,
         real_references=exact_real,
+        files=_projector_files(),
     )
 
     assert len(captured_real) == 1
@@ -9744,3 +9747,10 @@ def test_non_c1_small_rotation_grid_keeps_adaptive_sparse_route():
     assert not choose(adaptive_oversampling=1, use_local=False, n_rotations=12, symmetry="C1")
     assert not choose(adaptive_oversampling=0, use_local=False, n_rotations=12, symmetry="O")
     assert not choose(adaptive_oversampling=1, use_local=True, n_rotations=12, symmetry="O")
+
+
+def _projector_files():
+    """The projector files the command reads from the environment (``RefinementEnvironment.projector_files``)."""
+    from relax.refinement.refinement_options import RefinementEnvironment
+
+    return RefinementEnvironment.from_environ().projector_files

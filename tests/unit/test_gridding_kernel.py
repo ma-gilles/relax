@@ -27,6 +27,7 @@ from relax.refinement.refinement_options import (
 )
 from relax.relion import projector_setup as setup
 from relax.steps import expected_accuracy, projector_preparation
+from relax.steps.projector_preparation import ProjectorFiles
 
 pytestmark = pytest.mark.unit
 
@@ -104,7 +105,8 @@ def _scoring_projector(reference_real, r_max=3, **kwargs):
     n = reference_real.shape[0]
     reference_ft = np.asarray(ftu.get_dft3(jnp.asarray(reference_real))).reshape(-1)
     return projector_preparation.prepare_scoring_projector(
-        reference_ft, volume_shape=(n, n, n), current_size=2 * r_max, padding_factor=PF, n_classes=1, **kwargs
+        reference_ft, volume_shape=(n, n, n), current_size=2 * r_max, padding_factor=PF, n_classes=1, **kwargs,
+        files=_projector_files(),
     )
 
 
@@ -183,6 +185,7 @@ def test_expected_accuracy_inputs_hand_the_estimator_the_kernel(monkeypatch, ker
         optimizer_random_seed=11,
         expected_accuracy=SimpleNamespace(half1_particle_ids="pids", half1_ctf_params="ctf", do_ctf_correction=False),
         gridding_kernel=kernel,
+        projector_files=ProjectorFiles(),
     )
     inputs.estimate(
         reference_fourier="ref",
@@ -414,3 +417,10 @@ def _refine_stubs(halves, **options):
 def test_class3d_refuses_separable():
     with pytest.raises(NotImplementedError, match="K=1 single-particle"):
         _refine_stubs([_stub_half(), _stub_half()], k_class=KClassOptions(n_classes=2))
+
+
+def _projector_files():
+    """The projector files the command reads from the environment (``RefinementEnvironment.projector_files``)."""
+    from relax.refinement.refinement_options import RefinementEnvironment
+
+    return RefinementEnvironment.from_environ().projector_files
