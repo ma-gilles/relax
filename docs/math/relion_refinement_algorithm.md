@@ -464,7 +464,7 @@ The implementation owners are:
 
 | Work | Owner |
 | --- | --- |
-| Image/CTF/noise preparation and translation phases | [`preprocessing.py`](../../relax/fourier/preprocessing.py), `preprocess_batch` and `preprocess_batch_firstiter_cc` |
+| Image/CTF/noise preparation and translation phases | [`image_preprocessing.py`](../../relax/relion/image_preprocessing.py), `preprocess_batch`; the phase tables in [`preprocessing.py`](../../relax/fourier/preprocessing.py) |
 | Projection and projection-dependent residual statistics | [`projection.py`](../../relax/projection/projection.py), `compute_projections_block` and `compute_relion_projector_projections_block` |
 | Gaussian and normalized-CC block scores | [`coarse_kernels.py`](../../relax/scoring/coarse_kernels.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
 | Scoring weights for the selected Fourier convention | [`half_spectrum.py`](../../relax/fourier/half_spectrum.py), `make_scoring_half_image_weights` |
@@ -755,7 +755,7 @@ Reporting follows installation. The estimator computes
 per-image normalization and per-group scales from M-step statistics, using
 retained posterior mass for the average normalization. The controller installs
 the returned corrections; follower-specific installation remains in
-`relion_worker_scale.py`. Host arithmetic stays float64 and returned arrays
+`refinement/follower_scale.py`. Host arithmetic stays float64 and returned arrays
 use the caller's selected dtype, float32 by default.
 
 [`regularization.py`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/reconstruction/regularization.py) owns FSC,

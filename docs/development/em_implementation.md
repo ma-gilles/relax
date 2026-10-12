@@ -425,7 +425,7 @@ replay iteration mapping from `relion_replay`.
 owns per-image norm and per-group scale formulas and their result type. It
 depends on NumPy/JAX, not the controller, mean reconstruction or follower
 dispatch. The controller retains state installation and temporary lifetimes;
-`relion_worker_scale` handles follower-specific corrections. The seven formula
+`refinement.follower_scale` handles follower-specific corrections. The seven formula
 tests live in `tests/unit/test_relion_normalization.py` and import this owner
 directly. The old `mean_helpers` normalization exports are removed.
 
