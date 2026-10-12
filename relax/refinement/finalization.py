@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.diagnostics import bpref_diagnostics
+from relax.numerics.precision import _diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import (
     ImageGeometry,
     class_current_resolution_shell,
@@ -41,7 +42,6 @@ from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_l
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
 from relax.refinement.optics_shapes import image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource
-from relax.refinement.precision import _diagnostic_float64_pass2_matches
 from relax.refinement.priors import join_half_accumulators_at_low_resolution
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.reference_state import _class_weights_from_posterior

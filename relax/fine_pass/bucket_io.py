@@ -35,7 +35,7 @@ from relax.fourier.preprocessing import (
     half_translation_phase_table,
     relion_half_translation_lattice,
 )
-from relax.refinement.precision import DensePrecisionPolicy, audit_operand_precision
+from relax.numerics.precision import DensePrecisionPolicy, audit_operand_precision
 from relax.relion import ctf
 from relax.relion.image_preprocessing import prepare_batch_preprocess_operands, process_half_image
 from relax.relion.optics_groups import noise_rows, pixel_rows

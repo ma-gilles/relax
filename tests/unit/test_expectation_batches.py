@@ -8,8 +8,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import expectation_batches as batches
-from relax.refinement.precision import DensePrecisionPolicy
 
 pytestmark = pytest.mark.unit
 
@@ -177,7 +177,7 @@ def test_float64_diagnostic_changes_the_plan_of_the_listed_iterations_only(plann
     The plan takes the scoring side's own per-iteration predicate (precision._diagnostic_float64_pass2_matches),
     as expectation.py and finalization.py pass it.
     """
-    from relax.refinement.precision import _diagnostic_float64_pass2_matches
+    from relax.numerics.precision import _diagnostic_float64_pass2_matches
 
     calls = capture_estimates(monkeypatch)
     monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "2")

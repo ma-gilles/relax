@@ -13,7 +13,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.refinement.precision import DensePrecisionPolicy
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.scoring.coarse_kernels import _e_step_block_score_components, _e_step_block_scores_windowed
 
 

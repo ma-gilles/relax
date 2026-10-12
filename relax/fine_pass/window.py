@@ -24,7 +24,7 @@ from relax.fine_pass.posterior import relion_x_half_f32_fine_posterior_enabled
 from relax.fine_pass.scoring import _RELION_FINE_DIFF2_FUSED_FFI_ENV
 from relax.fourier.fourier_window import centered_half_indices_to_fftw_half_indices, make_fourier_window_spec
 from relax.fourier.half_spectrum import make_scoring_half_image_weights
-from relax.refinement.precision import DensePrecisionPolicy
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.runtime.env_flags import parse_env_flag
 from relax.runtime.memory_budget import (
     _device_memory_limit_bytes,

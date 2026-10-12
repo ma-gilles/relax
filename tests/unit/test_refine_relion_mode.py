@@ -80,6 +80,7 @@ from relax.local_search.layout import (
     exact_bucket_rotation_size,
     selected_rotation_matrices,
 )
+from relax.numerics import precision as dtype_policy_module
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization as regularization_relion
@@ -108,7 +109,6 @@ from relax.refinement import (
 from relax.refinement import image_size_plans as image_size_plans_module
 from relax.refinement import maximization as maximization_module
 from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
-from relax.refinement import precision as dtype_policy_module
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.map_postprocess import _align_fourier_volume_sign_to_reference

@@ -30,7 +30,7 @@ from relax.runtime.env_flags import (
 from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
 if TYPE_CHECKING:
-    from relax.refinement.precision import DensePrecisionPolicy
+    from relax.numerics.precision import DensePrecisionPolicy
 
 # Every option field's default is the value ``relax refine`` (K=1) uses when its flag is not given; a field
 # whose value the command computes from the data (init_current_size) has none (code rule 5).

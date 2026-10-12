@@ -34,6 +34,7 @@ import numpy as np
 
 import relax
 from relax.diagnostics import observers
+from relax.numerics.precision import use_float32_matmuls
 from relax.parity import (
     archive_provenance,
     frozen_boundary_cli,
@@ -59,7 +60,6 @@ from relax.refinement import (
 )
 from relax.refinement.command_options import apply_k1_refine3d_env_defaults
 from relax.refinement.half_inputs import HalfPair
-from relax.refinement.precision import use_float32_matmuls
 from relax.refinement.result_files import (
     RunReport,
     build_archive_metadata,

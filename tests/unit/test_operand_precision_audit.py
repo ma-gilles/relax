@@ -11,8 +11,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.refinement import precision
-from relax.refinement.precision import (
+from relax.numerics import precision
+from relax.numerics.precision import (
     DensePrecisionPolicy,
     audit_operand_precision,
     operand_precision_check_mode,

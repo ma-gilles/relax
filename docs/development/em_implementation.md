@@ -458,7 +458,7 @@ The first-iteration winner-take-all dispatcher lives with its grid builder in
 both K=1 and K-class scoring. The controller supplies its logger and chooses
 whether the batch clamp also updates the caller’s argument dictionary.
 
-Precision selectors belong to `refinement/precision.py`. The controller passes
+Precision selectors belong to `numerics/precision.py`. The controller passes
 its existing static argument mapping; diagnostic iteration selection still
 reads the environment at call time. Moving the selectors does not evaluate a
 second set of import-time defaults or change any selected dtype.

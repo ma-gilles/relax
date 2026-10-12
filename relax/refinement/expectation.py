@@ -12,6 +12,7 @@ import numpy as np
 
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
+from relax.numerics.precision import _diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import half_inputs, image_size_plans, iteration_planning, local_sampling, shape_class_scoring
 from relax.refinement.dense_half import (
@@ -32,7 +33,6 @@ from relax.refinement.local_half import (
     _score_half_local_in_bpref_scope,
 )
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
-from relax.refinement.precision import _diagnostic_float64_pass2_matches
 from relax.refinement.refinement_options import RefinementOptions
 from relax.refinement.score_outputs import (
     HalfScoreResult,

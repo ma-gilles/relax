@@ -12,7 +12,7 @@ import os
 import jax
 import numpy as np
 
-from relax.refinement.precision import DensePrecisionPolicy
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.runtime.env_flags import parse_env_true_flag
 
 logger = logging.getLogger(__name__)

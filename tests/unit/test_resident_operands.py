@@ -786,7 +786,7 @@ def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
 def test_operand_peak_counts_the_smallest_preparation_batch():
     from relax.fine_pass.resident_operands import resident_prepare_reserved_bytes
     from relax.fine_pass.resident_pass2 import _resident_half_operand_sizes
-    from relax.refinement.precision import DensePrecisionPolicy
+    from relax.numerics.precision import DensePrecisionPolicy
 
     common = dict(
         n_images=1000, n_windowed=600, n_recon_windowed=580, n_rect=800, n_shells=40, n_fine_trans=9,

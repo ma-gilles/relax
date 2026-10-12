@@ -11,6 +11,7 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
 import relax.refinement.noise_updates as noise_updates
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import expectation
 from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
@@ -18,7 +19,6 @@ from relax.refinement.half_inputs import HalfScoringData, HalfSet
 from relax.refinement.local_half import LocalDiagnosticPolicy
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import NoProbe
-from relax.refinement.precision import DensePrecisionPolicy
 from relax.refinement.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.refinement.tomo_half import TomoSampling
 from relax.sampling import TrialGrid

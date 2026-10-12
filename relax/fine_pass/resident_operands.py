@@ -71,7 +71,7 @@ from relax.fine_pass.scoring import (
 from relax.fine_pass.wavg import image_power_shells, relion_cuda_translate_wavg_norm_window
 from relax.fourier.half_spectrum import make_shell_indices_half
 from relax.io.batch_fetch import fetch_indexed_batch, prefetched_batches
-from relax.refinement.precision import DensePrecisionPolicy
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.relion.optics_groups import pixel_rows
 
 logger = logging.getLogger(__name__)

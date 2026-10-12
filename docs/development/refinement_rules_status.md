@@ -59,7 +59,7 @@ reason; the sections after this one hold the detail.
      variables during the denominator pass; `expectation`: whether a BPref dump of the engines is armed. The
      variables belong to the engine packages, which read them.
    - `expectation_batches`: `RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS` (owned by
-     `relax.refinement.precision`); `particle_loading`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
+     `relax.numerics.precision`); `particle_loading`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
      `relax.refinement.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
      and the RECOVAR native softmask switch, which is how the setting reaches RECOVAR.
    - The scoring and reconstruction route variants (x-half M-step, local adaptive pass-2 support, the
