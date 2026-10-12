@@ -1,7 +1,8 @@
 Mixture PPCA InitialModel (experimental)
 
 Public CLI: relax ppca_initial_model --K K --q q ...
-K=1 selects Marc's unchanged single-model controller. K>1 selects this package.
+Without --K the command runs Marc's unchanged single-model controller; any --K, 1 included,
+selects this package (2026-10-10).
 Native ET uses --ios optimisation_set.star --particle-diameter DIAMETER_ANG.
 SPA uses the existing training-manifest interface. No species labels or true poses
 are training inputs. ET tilts share one class, pose and latent per physical particle.
@@ -218,7 +219,7 @@ Job 37076280 also had two CPU-in-GPU-process setup errors; those are fixed and
 covered by the successful numerical rerun 37076522 above.
 
 Here "Experiment" is:
-/home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k10_D64
+/home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k5_D64
 Source hashes and native-library identities are retained in each GPU run.
 The only change outside this new package remains the approved seven-line CLI
 hook. Existing repository test tiers/docs/ledger and the single-model algorithm

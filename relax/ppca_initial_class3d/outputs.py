@@ -55,7 +55,8 @@ def export_assignments(output, dataset, state, config, grid, *, diameter_ang=Non
     ``grid`` is the final update's coarse grid; an oversampled final update
     reports its poses on its child grid (``child_grid``, else derived from the
     run's sampling), the grid pass 2 scored. ``candidates`` restricts each
-    tile's poses as the final update's local searches did.
+    tile's poses as the final update's local searches did. The Fourier radius is the final update's
+    (``state.radius``).
     """
     chunks = {key: [] for key in (
         "particle_ids", "class_probabilities", "class_conditional_z", "joint_map_class",
@@ -63,8 +64,8 @@ def export_assignments(output, dataset, state, config, grid, *, diameter_ang=Non
     )}
     oversampled = oversampled_update(config, config.iterations)
     for _, _, tile in mixture_tiles(dataset, state, config, [np.arange(dataset.n_images)],
-                                     config.iterations, grid, moments=False, diameter_ang=diameter_ang,
-                                     candidates=candidates):
+                                     config.iterations, grid, radius=state.radius, moments=False,
+                                     diameter_ang=diameter_ang, candidates=candidates):
         fields = (tile.original_image_ids, tile.class_probabilities, np.asarray(tile.embeddings), tile.best_class,
                   tile.best_rotation_idx, tile.best_translation_idx, tile.max_posterior_per_image)
         for key, value in zip(chunks, fields, strict=True):

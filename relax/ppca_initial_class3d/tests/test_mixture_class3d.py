@@ -301,7 +301,7 @@ def test_command_has_separate_class_and_pc_counts_and_tomography_input():
     assert (tomo.n_classes, tomo.q, tomo.ios, tomo.manifest) == (10, 10, "optimisation_set.star", None)
     assert (spa.n_classes, spa.q, spa.ios, spa.manifest) == (3, 2, None, "training.json")
     default = parser.parse_args(["training.json", "-o", "out"])
-    assert default.n_classes == 1 and default.q == 2
+    assert default.n_classes is None and default.q == 2  # no --K: the single-model workflow
 
 
 def test_mixture_checkpoint_preserves_all_components_and_rejects_changed_identity(tmp_path):

@@ -158,9 +158,9 @@ def evaluate(args):
         save_npz(output / "partial_memberships.npz", **common, status="PARTIAL_NOT_COMPLETE",
                  visited=visited, class_probabilities=probabilities, class_labels=labels)
 
-    print(f"Inferring ALL {len(ids)} particles; stage {config.stage(state.iteration)}; "
+    print(f"Inferring ALL {len(ids)} particles; radius {state.radius}; "
           f"{len(grid.rotations)} rotations x {len(grid.translations)} shifts", flush=True)
-    tiles = mixture_tiles(dataset, state, config, [ids], state.iteration, grid, moments=False,
+    tiles = mixture_tiles(dataset, state, config, [ids], state.iteration, grid, radius=state.radius, moments=False,
                           diameter_ang=diameter_ang, candidates=candidates)
     probabilities = collect(tiles, len(ids), config.n_classes, partial)
     after = file_hash(checkpoint_path)

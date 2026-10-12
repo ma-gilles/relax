@@ -98,9 +98,12 @@ class BatchStatistics:
     # Per class: the tiles' significant-sample counts, held mass and cap flags per particle (oversampled updates).
     oversampling: list = field(default_factory=list)
     membership_tiles: list = field(default_factory=list)
+    # Per tile: the particle ids and each one's log-evidence (pc_policy's PC tests).
+    image_log_likelihood: list = field(default_factory=list)
 
 
-def mixture_tiles(dataset, state, config, groups, iteration, grid, *, moments, diameter_ang=None, candidates=None):
+def mixture_tiles(dataset, state, config, groups, iteration, grid, *, radius, moments, diameter_ang=None,
+                  candidates=None):
     """Yield (group index, noise group, joint tile result), one noise owner at a time.
 
     Releasing each owner's K streams avoids storing K full models for every
@@ -108,12 +111,13 @@ def mixture_tiles(dataset, state, config, groups, iteration, grid, *, moments, d
     ``grid`` is the update's coarse pose grid (:func:`pose_grid`). An oversampled update
     (:func:`oversampled_update`) scores pass 1 on RELION's coarse image window of the
     grid's angular step (``diameter_ang`` sizes it; None takes the box) and pass 2 on the
-    children of each particle's significant samples, per class. ``candidates(tile)`` gives a
+    children of each particle's significant samples, per class, both within the update's Fourier ``radius``
+    (pixels, at most the box's Nyquist shell less one). ``candidates(tile)`` gives a
     tile's per-particle candidate coarse rows (local searches,
     :func:`relax.ppca_initial_class3d.local_search.tile_candidates`); None scores every pose.
     """
     tomo = isinstance(dataset, TiltParticles)
-    radius, hp = config.stage(iteration)[0], int(grid.order)
+    hp = int(grid.order)
     pass2_size = 2 * min(radius, dataset.grid_size // 2 - 1)
     geometry = GeometryConfig(current_size=pass2_size, q=config.q, volume_domain="fourier_half")
     oversampled = oversampled_update(config, iteration)
@@ -208,7 +212,7 @@ def _tile_poses(tile, grid):
     return eulers, padded
 
 
-def expectation_groups(dataset, state, config, groups, iteration, grid, *, diameter_ang=None, candidates=None,
+def expectation_groups(dataset, state, config, groups, iteration, grid, *, radius, diameter_ang=None, candidates=None,
                        child_grid=None):
     """Reduce each tile immediately: never retain a volume accumulator per tile.
 
@@ -225,7 +229,7 @@ def expectation_groups(dataset, state, config, groups, iteration, grid, *, diame
                for _ in groups]
     tomo = isinstance(dataset, TiltParticles)
     for group, noise_group, tile in mixture_tiles(
-        dataset, state, config, groups, iteration, grid, moments=True, diameter_ang=diameter_ang,
+        dataset, state, config, groups, iteration, grid, radius=radius, moments=True, diameter_ang=diameter_ang,
         candidates=candidates,
     ):
         result = results[group]
@@ -238,6 +242,7 @@ def expectation_groups(dataset, state, config, groups, iteration, grid, *, diame
         result.class_mass += tile.component_mass
         result.pmax_sum += float(np.sum(tile.max_posterior_per_image, dtype=np.float64))
         result.log_likelihood += tile.log_likelihood
+        result.image_log_likelihood.append((np.asarray(tile.original_image_ids).copy(), tile.image_log_likelihood))
         if result.residual_num is None:
             shape = ((dataset.n_noise_groups,) + tile.residual_num.shape) if tomo else tile.residual_num.shape
             result.residual_num = jnp.zeros(shape, jnp.float32)

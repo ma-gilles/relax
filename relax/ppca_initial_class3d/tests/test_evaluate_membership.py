@@ -99,9 +99,9 @@ def mock_inference(tmp_path, monkeypatch):
         args[2].write_text("derived flat metadata\n")
         return native
 
-    def infer(data, model, configuration, groups, iteration, grid, *, moments, diameter_ang, candidates):
+    def infer(data, model, configuration, groups, iteration, grid, *, radius, moments, diameter_ang, candidates):
         calls["inference"] += 1
-        assert data is dataset and model is state and moments is False
+        assert data is dataset and model is state and moments is False and radius == state.radius
         assert iteration == state.iteration and configuration.n_classes == 2
         settings.update(config=configuration, diameter_ang=diameter_ang, candidates=candidates)
         assert len(groups) == 1

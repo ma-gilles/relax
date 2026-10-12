@@ -45,18 +45,22 @@ def test_unified_command_selects_controller_and_preserves_single_identity(tmp_pa
     if k == 2:
         argv += ["--class-pseudocount", "0.5"]
     command.main(argv)
+    mixture = k is not None
     assert len(calls) == 1
     mode, args, kwargs = calls[0]
-    assert mode == ("mixture" if k == 2 else "single")
+    assert mode == ("mixture" if mixture else "single")
     assert args[0] is data and args[2] == tmp_path and args[4] == 6
     assert kwargs == {"resume": None, "stop_after": 1, "stop_file": None}
     config, actual_identity = args[1], args[3]
     assert config.q == 1 and config.iterations == 2
     assert config.gemm_precision == "fp32" and config.preread_images == "off" and config.pass2_mass_floor == 0
     receipt = json.loads((tmp_path / "run.json").read_text())
-    if k == 2:
-        assert type(config) is MixtureConfig and config.n_classes == 2 and config.class_pseudocount == .5
+    if mixture:
+        assert type(config) is MixtureConfig and config.n_classes == k
+        assert config.class_pseudocount == (.5 if k == 2 else MixtureConfig().class_pseudocount)
+        assert config.max_significant == 100 * k
         assert config.auto_sampling is tomography
+        assert config.adaptive_radius is tomography
         assert config.shift_step == Config().shift_step
         assert receipt["command"] == "ppca_initial_model"
         assert actual_identity["particle_diameter_ang"] == 6
@@ -70,7 +74,7 @@ def test_unified_command_selects_controller_and_preserves_single_identity(tmp_pa
 
 
 @pytest.mark.parametrize("options", [
-    ["--K", "0"], ["--K", "-1"], ["--K", "1", "--class-pseudocount", "1"],
+    ["--K", "0"], ["--K", "-1"], ["--class-pseudocount", "1"],
     ["--K", "2", "--oversampling-start", "0"], ["--K", "2", "--full-grid", "--oversampling-start", "3"],
     ["--K", "2", "--optimizer", "momentum_sgd"],
     ["--K", "2", "--no-stream-coarse-recompute"],
@@ -101,6 +105,22 @@ def test_sampling_default_resolves_at_mixture_input_boundary(monkeypatch, tomogr
     assert len(calls) == 1
     assert calls[0].auto_sampling is (tomography if expected is None else expected)
     assert calls[0].shift_step == Config().shift_step
+
+
+@pytest.mark.parametrize("tomography", [False, True], ids=["spa", "tomo"])
+@pytest.mark.parametrize("radius_flag,expected", [
+    (None, None), ("--adaptive-radius", True), ("--no-adaptive-radius", False),
+])
+def test_adaptive_radius_default_resolves_at_mixture_input_boundary(monkeypatch, tomography, radius_flag, expected):
+    calls = []
+    monkeypatch.setattr(runner, "run", lambda args, config: calls.append(config))
+    inputs = ["--ios", "ios.star", "--particle-diameter", "6"] if tomography else ["training.json"]
+    argv = [*inputs, "-o", "unused-output", "--K", "2"]
+    if radius_flag is not None:
+        argv.append(radius_flag)
+    command.main(argv)
+    assert len(calls) == 1
+    assert calls[0].adaptive_radius is (tomography if expected is None else expected)
 
 
 def test_explicit_shift_step_one_remains_available(monkeypatch):

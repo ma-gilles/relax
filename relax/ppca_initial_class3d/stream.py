@@ -101,6 +101,7 @@ class MixtureTileResult:
     log_likelihood: float
     residual_num: jax.Array | None
     residual_den: jax.Array | None
+    image_log_likelihood: np.ndarray  # (B,), each image's log-evidence (pc_policy's PC tests)
 
 
 def prepare_mixture_full_row_stream(streams, class_prior) -> MixtureFullRowStream:
@@ -330,6 +331,7 @@ def accumulate_mixture_full_row_tile(
             log_likelihood=float(jax.device_get(jnp.sum(absolute_logZ[:n_real]))),
             residual_num=residual_num,
             residual_den=residual_den,
+            image_log_likelihood=np.asarray(jax.device_get(absolute_logZ[:n_real]), np.float64),
         )
 
 
@@ -526,4 +528,5 @@ def accumulate_mixture_oversampled_tile(
             log_likelihood=float(jax.device_get(jnp.sum(absolute_logZ[:n_real]))),
             residual_num=residual_num,
             residual_den=residual_den,
+            image_log_likelihood=np.asarray(jax.device_get(absolute_logZ[:n_real]), np.float64),
         )

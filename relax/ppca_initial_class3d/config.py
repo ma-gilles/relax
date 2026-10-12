@@ -7,7 +7,9 @@ import numpy as np
 from relax.ppca_initial_model.config import Config as InitialModelConfig
 
 DEFAULT_RADII = (4, 8, 16, 32)
-DEFAULT_ORDERS = (1, 2, 2, 2)  # coarse HEALPix orders; stages 2-4 add order-1 children (3.75 degrees) under oversampling
+DEFAULT_ORDERS = (1, 2, 2, 2)  # coarse HEALPix orders without auto-sampling: 30, then 15 degrees; oversampling adds
+# children one order finer (7.5 degrees). With auto-sampling (the tilt-particle default) the order follows RELION's
+# accuracy rule up to max_order 3 (7.5 degrees, 3.75 with children) and the stages set only the resolution support.
 DEFAULT_STAGE_FRACTIONS = (0.0, 0.30, 0.55, 0.80)  # of the iteration count: 1, 61, 111, 161 for 200 updates
 
 
@@ -57,10 +59,26 @@ class Config(InitialModelConfig):
     # the offset step and range. The stages then set the resolution support only. The CLI resolves this to
     # True for --ios unless --no-auto-sampling; the input-independent Config remains opt-in for direct callers.
     auto_sampling: bool = False
+    # RELION's resolution-driven support (auto_sampling.relion_radius): each update's Fourier radius is the last
+    # update's resolution shell plus 10, instead of the stages' radii (their orders still set the coarse grid
+    # without auto-sampling). The CLI resolves it like auto_sampling: on for --ios unless --no-adaptive-radius.
+    adaptive_radius: bool = False
     accuracy_interval: int = 10
     accuracy_particles: int = 100
     local_order: int = 3
     max_order: int = 3
+    # How the principal components enter (pc_policy.py). pc_start_fraction None: every PC from the first update.
+    # Otherwise no loading is used before update round(pc_start_fraction * iterations) + 1, where PC 1 opens; the
+    # others open one at a time, evenly spaced, the last at round(pc_end_fraction * iterations) + 1.
+    pc_start_fraction: float | None = None
+    pc_end_fraction: float = 0.8
+    # After each M-step: move W zbar (the class's mean latent) into the mean; remove the mean's six first-order
+    # rigid motions from the loadings.
+    center_latents: bool = False
+    project_rigid_motions: bool = False
+    # The loadings follow each rise of the stage radius only if the new shells raise the minibatch's log-evidence
+    # at the stage's end; otherwise they stay at the previous radius (pc_policy.py).
+    pc_band_test: bool = False
     # tomogram_batches: each stochastic minibatch is drawn as whole tilt groups (tomograms) in a fresh random
     # order, so a tile holds a tomogram's particles instead of about one: the streamed engine projects every
     # pose once per tile. The pseudo-halves still split by particle parity. False: random particles.
@@ -102,5 +120,12 @@ class Config(InitialModelConfig):
             raise ValueError("local_order cannot exceed max_order")
         if self.auto_sampling and not self.oversampling:
             raise ValueError("Auto-sampling needs the two adaptive passes (oversampling 1)")
+        if self.pc_start_fraction is not None and not (
+            0 <= float(self.pc_start_fraction) <= float(self.pc_end_fraction) <= 1
+        ):
+            raise ValueError("Gradual PCs need 0 <= pc_start_fraction <= pc_end_fraction <= 1")
+        if self.adaptive_radius and self.pc_band_test:
+            raise ValueError("The PC band test follows the stages' radii; it cannot run with adaptive_radius "
+                             "(--no-adaptive-radius)")
         if self.auto_sampling and self.local_search_start is not None:
             raise ValueError("Auto-sampling decides when local searches start; drop local_search_start")

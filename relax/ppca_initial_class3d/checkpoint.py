@@ -36,9 +36,19 @@ APPROXIMATION_CONFIG_FIELDS = ("oversampling", "oversampling_start", "max_signif
 EXTENSION_CONFIG_FIELDS = ("iterations",)
 
 
+# Model settings added after checkpoints were written, with their defaults: a checkpoint without one holds the model
+# the default gives, so a setting at its default is no part of the identity.
+ADDED_CONFIG_DEFAULTS = {"pc_start_fraction": None, "pc_end_fraction": 0.8, "center_latents": False,
+                         "project_rigid_motions": False, "pc_band_test": False, "adaptive_radius": False}
+
+
 def _configuration(config):
     excluded = RUNTIME_CONFIG_FIELDS + APPROXIMATION_CONFIG_FIELDS + EXTENSION_CONFIG_FIELDS
-    return {key: value for key, value in canonical(config).items() if key not in excluded}
+    values = {key: value for key, value in canonical(config).items() if key not in excluded}
+    for key, default in ADDED_CONFIG_DEFAULTS.items():
+        if values.get(key, default) == default:
+            values.pop(key, None)
+    return values
 
 
 def _inputs(identity):
@@ -54,6 +64,12 @@ def save(path, state, config, identity):
         "offset_variance": state.offset_variance, "radius": state.radius,
         "initialization": state.initialization, "direction_order": state.direction_order,
         "sampling": None if state.sampling is None else state.sampling.to_json(),
+        "pc_caps": None if state.pc_caps is None else [int(c) for c in state.pc_caps],
+        "pc_first_gain": (None if state.pc_first_gain is None
+                          else [None if g is None else float(g) for g in state.pc_first_gain]),
+        "pc_band_caps": (None if state.pc_band_caps is None
+                         else [None if c is None else int(c) for c in state.pc_band_caps]),
+        "resolution_shell": None if state.resolution_shell is None else int(state.resolution_shell),
     }
     arrays = {
         "theta": np.asarray(state.theta), "noise": np.asarray(state.noise),
@@ -98,6 +114,14 @@ def load(path, config, identity):
         )
         if meta.get("sampling") is not None:
             state.sampling = SamplingState.from_json(meta["sampling"])
+        if meta.get("pc_caps") is not None:
+            state.pc_caps = [int(c) for c in meta["pc_caps"]]
+        if meta.get("pc_first_gain") is not None:
+            state.pc_first_gain = [None if g is None else float(g) for g in meta["pc_first_gain"]]
+        if meta.get("pc_band_caps") is not None:
+            state.pc_band_caps = [None if c is None else int(c) for c in meta["pc_band_caps"]]
+        if meta.get("resolution_shell") is not None:
+            state.resolution_shell = int(meta["resolution_shell"])
         # Additive v1 extension: old checkpoints have no historical membership.
         # Partial/corrupt new records must not silently become "unvisited".
         has_membership = any(name.startswith("membership_") for name in a.files)

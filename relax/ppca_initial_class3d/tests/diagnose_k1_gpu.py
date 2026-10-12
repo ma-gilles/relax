@@ -83,7 +83,9 @@ def main():
                 with patch.object(single, "prepare_full_row_stream", capture):
                     stats = single.expectation_groups(data, state, config, groups, 1, diameter_ang=6.)
             else:
-                stats = [s.components[0] for s in expectation_groups(data, mixture_state, mixture_config, groups, 1, grid)]
+                stats = [s.components[0] for s in expectation_groups(data, mixture_state, mixture_config, groups, 1, grid,
+                                                                  radius=min(mixture_config.stage(1)[0],
+                                                                             data.grid_size // 2 - 1))]
             arrays, directions, coverage = {}, [], []
             for half, stats_half in enumerate(stats):
                 direction, _ = coupled_direction(stats_half.lhs_tri, stats_half.residual_gradient, support,

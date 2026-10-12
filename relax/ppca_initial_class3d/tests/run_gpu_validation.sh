@@ -6,15 +6,15 @@
 #SBATCH --no-requeue --export=NONE
 #SBATCH --mail-user=yw3384@princeton.edu
 #SBATCH --mail-type=END,FAIL,TIME_LIMIT,INVALID_DEPEND
-#SBATCH --output=/home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k10_D64/logs/%x-%j.log
-#SBATCH --error=/home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k10_D64/logs/%x-%j.log
+#SBATCH --output=/home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k5_D64/logs/%x-%j.log
+#SBATCH --error=/home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k5_D64/logs/%x-%j.log
 set -euo pipefail
 export PATH=/home/ywang/relax-dev/.pixi/envs/default/bin:/usr/bin:/bin
 unset PYTHONPATH PYTHONHOME LD_LIBRARY_PATH
 export PYTHONNOUSERSITE=1 JAX_PLATFORMS=cuda,cpu
 export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=1 XLA_PYTHON_CLIENT_PREALLOCATE=false
 cd /home/ywang/relax-dev
-RUN=/home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k10_D64/validation/gpu_${SLURM_JOB_ID}
+RUN=/home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k5_D64/validation/gpu_${SLURM_JOB_ID}
 mkdir -p "$RUN/natives"
 git rev-parse HEAD > "$RUN/base_commit.txt"
 git diff HEAD | sha256sum > "$RUN/tracked_diff.sha256"
@@ -49,7 +49,7 @@ python scripts/native_sources.py check "$RUN/natives" --root "$PWD"
 if [[ "${1:-tests}" == "diagnose" ]]; then
     export PYTHONPATH="$PWD/tests:$PWD/tests/unit/ppca_initial_model"
     python -m relax.ppca_initial_class3d.tests.diagnose_k1_gpu \
-        /home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k10_D64/validation/gpu_37074660/pytest/test_spa_k1_complete_updates_m0 \
+        /home/ywang/three_species_particle_stacks/relax_tomo_abinitio_k5_D64/validation/gpu_37074660/pytest/test_spa_k1_complete_updates_m0 \
         "$RUN/diagnostic"
     exit
 fi

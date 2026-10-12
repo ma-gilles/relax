@@ -29,6 +29,10 @@ class State:
     direction_order: int = -1
     membership: Membership | None = None
     sampling: object = None  # auto_sampling.SamplingState of an auto-sampled run, else None
+    pc_caps: object = None  # gradual PCs (pc_policy): per class, the most PCs it may still open; None without them
+    pc_first_gain: object = None  # gradual PCs: per class, its PC 1's log-evidence gain at its test, else None
+    pc_band_caps: object = None  # PC band tests: per class, the radius its loadings stay at, else None
+    resolution_shell: object = None  # adaptive_radius: the last update's resolution shell (auto_sampling.py)
 
 
 def initialize_state(dataset, config, diameter_ang):
@@ -152,6 +156,23 @@ def validate_state(state, config):
     if state.membership is not None:
         state.membership.validate(n_particles=len(state.order), n_classes=config.n_classes,
                                   iteration=state.iteration)
+    if state.pc_caps is not None:
+        caps = np.asarray(state.pc_caps)
+        if (config.pc_start_fraction is None or caps.shape != (config.n_classes,)
+                or np.any(caps < 0) or np.any(caps > config.q)):
+            raise ValueError("Mixture PC caps do not match the gradual-PC configuration")
+    if state.pc_first_gain is not None:
+        gains = list(state.pc_first_gain)
+        if (config.pc_start_fraction is None or len(gains) != config.n_classes
+                or any(g is not None and not np.isfinite(g) for g in gains)):
+            raise ValueError("Mixture PC-1 gains do not match the gradual-PC configuration")
+    if state.pc_band_caps is not None:
+        caps = list(state.pc_band_caps)
+        if (not config.pc_band_test or len(caps) != config.n_classes
+                or any(c is not None and not 1 <= int(c) <= state.theta.shape[1] for c in caps)):
+            raise ValueError("Mixture PC band caps do not match the PC band configuration")
+    if state.resolution_shell is not None and (not config.adaptive_radius or int(state.resolution_shell) < 0):
+        raise ValueError("Mixture resolution shell does not match the adaptive-radius configuration")
     if state.sampling is not None:
         sampling = state.sampling
         if (not config.auto_sampling or sampling.healpix_order < 1 or sampling.healpix_order > config.max_order

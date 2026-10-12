@@ -200,6 +200,7 @@ def _synthetic_tile(ids, probabilities):
     return SimpleNamespace(original_image_ids=np.asarray(ids), class_probabilities=probabilities,
                            component_mass=probabilities.sum(axis=0), statistics=components,
                            max_posterior_per_image=np.max(probabilities, axis=1), log_likelihood=0.,
+                           image_log_likelihood=np.zeros(len(ids)),
                            residual_num=jnp.ones(1, jnp.float32), residual_den=jnp.ones(1, jnp.float32),
                            best_rotation_idx=np.zeros(probabilities.shape, np.int32),
                            best_translation_idx=np.zeros(probabilities.shape, np.int32))
@@ -225,9 +226,9 @@ def test_expectation_preserves_membership_and_checks_exact_group_id_coverage(mon
                                  translations=np.zeros((1, 3), np.float32)))
     if actual_ids != [90, 70]:
         with pytest.raises(ValueError):
-            expectation.expectation_groups(*arguments)
+            expectation.expectation_groups(*arguments, radius=2)
     else:
-        result = expectation.expectation_groups(*arguments)[0]
+        result = expectation.expectation_groups(*arguments, radius=2)[0]
         ids, probabilities, _, _ = result.membership_tiles[0]
         np.testing.assert_array_equal(ids, actual_ids)
         assert_matches(probabilities, tile.class_probabilities)

@@ -130,8 +130,9 @@ def test_local_search_with_an_everything_neighbourhood_equals_the_global_search(
     membership.update(np.arange(4), np.full((4, 2), 0.5, np.float32), iteration=1, model_iteration=0,
                       eulers_deg=grid.eulers[[1, 5, 9, 2]].astype(np.float32), translations_px=np.zeros((4, 3), np.float32))
     halves = [np.array([0, 2]), np.array([1, 3])]
-    reference = expectation_groups(data, state, config, halves, 1, grid)
-    everything = expectation_groups(data, state, config, halves, 1, grid,
+    radius = min(config.stage(1)[0], data.grid_size // 2 - 1)
+    reference = expectation_groups(data, state, config, halves, 1, grid, radius=radius)
+    everything = expectation_groups(data, state, config, halves, 1, grid, radius=radius,
                                     candidates=lambda tile: tile_candidates(local, membership, tile, sigma_deg=1000.))
     for a, b in zip(reference, everything, strict=True):
         assert_matches(a.class_mass, b.class_mass)
@@ -145,7 +146,7 @@ def test_local_search_with_an_everything_neighbourhood_equals_the_global_search(
             assert_matches(t_a, t_b)
     # A narrow neighbourhood changes the posterior support but keeps the responsibilities normalized.
     sigma = relion_local_sigma_deg(grid.order)
-    narrow = expectation_groups(data, state, config, halves, 1, grid,
+    narrow = expectation_groups(data, state, config, halves, 1, grid, radius=radius,
                                 candidates=lambda tile: tile_candidates(local, membership, tile, sigma_deg=sigma))
     for result in narrow:
         assert_matches(result.class_mass.sum(), np.float32(result.count))
@@ -189,9 +190,20 @@ def test_sampling_rules_follow_relion_arithmetic():
     assert (tracked.resolution_shell, tracked.updates_without_resolution_gain) == (3, 0)
     tracked = auto_sampling.track_resolution(auto_sampling.track_resolution(tracked, 3), 2)
     assert (tracked.resolution_shell, tracked.updates_without_resolution_gain) == (3, 2)
-    gates = np.array([[1.0, 1.0], [0.9, 0.1], [0.6, 0.0], [0.4, 0.0], [0.7, 0.0]])
-    assert auto_sampling.resolution_shell([{"gates": gates}, {"gates": gates[:, 0] * 0.2}], radius=8) == 2
-    assert auto_sampling.resolution_shell([{"gates": gates}], radius=1) == 1
+    # RELION's data_vs_prior: shell power of the class's average map x shell weight x fudge, below one from shell 3.
+    shells = np.repeat(np.arange(6), 4)
+    power = np.array([9.0, 4.0, 2.0, 0.5, 0.4, 3.0])  # shell 5 above one again: RELION stops at the first drop
+    weights = np.ones((2, shells.size), np.float32)
+    theta = np.zeros((2, shells.size, 2), np.complex64)
+    theta[0, :, 0] = np.sqrt(power[shells])
+    theta[1, :, 1] = np.sqrt(power[shells]) / 2  # the same map as W zbar with zbar = 2, a zero mean
+    centers = np.array([[0.0], [2.0]], np.float32)
+    assert auto_sampling.data_vs_prior_shell(theta, centers, weights, shells, fudge=1.0, radius=5) == 2
+    assert auto_sampling.data_vs_prior_shell(theta[1:], centers[1:], weights[1:], shells, fudge=1.0, radius=5) == 2
+    assert auto_sampling.data_vs_prior_shell(theta, centers, weights, shells, fudge=2.2, radius=5) == 3  # shell 3: 1.1, shell 4: 0.88
+    assert auto_sampling.data_vs_prior_shell(theta, centers, weights, shells, fudge=5.0, radius=5) == 5
+    assert auto_sampling.data_vs_prior_shell(theta, centers, weights, shells, fudge=5.0, radius=3) == 3
+    assert auto_sampling.data_vs_prior_shell(theta, centers, weights * 0.2, shells, fudge=1.0, radius=5) == 0
     long = dataclasses.replace(config, iterations=50)
     assert auto_sampling.update_due(10, long) and not auto_sampling.update_due(1, long)
     assert not auto_sampling.update_due(15, long) and not auto_sampling.update_due(50, long)
@@ -213,18 +225,34 @@ def test_expected_errors_shrink_with_a_stronger_signal():
     membership.update(np.array([0, 1, 3]), np.full((3, 2), 0.5, np.float32), iteration=1, model_iteration=0,
                       eulers_deg=grid.eulers[[1, 5, 9]].astype(np.float32), translations_px=np.zeros((3, 3), np.float32))
     rng = np.random.default_rng(3)
-    acc_rot, acc_trans, per_class = auto_sampling.expected_errors(data, state, config, membership, radius=2, rng=rng)
+    centers = np.zeros((2, config.q), np.float32)
+    acc_rot, acc_trans, per_class = auto_sampling.expected_errors(data, state, config, membership, radius=2, rng=rng,
+                                                                  centers=centers)
     stronger = dataclasses.replace(state, theta=state.theta * np.float32(1e3))
     strong_rot, strong_trans, strong_classes = auto_sampling.expected_errors(
-        data, stronger, config, membership, radius=2, rng=np.random.default_rng(3))
+        data, stronger, config, membership, radius=2, rng=np.random.default_rng(3), centers=centers)
     assert set(per_class) == {0, 1} and all(v["particles"] == 3 for v in per_class.values())
     assert 0 < strong_rot <= acc_rot <= 35.0 and 0 < strong_trans <= acc_trans <= 12.0
     assert strong_rot < acc_rot or acc_rot == 35.0
     assert strong_trans < 12.0
     # Classes below RELION's occupancy floor are not estimated.
     tiny = dataclasses.replace(state, class_prior=np.array([0.995, 0.005], np.float32))
-    _, _, classes = auto_sampling.expected_errors(data, tiny, config, membership, radius=2, rng=np.random.default_rng(3))
+    _, _, classes = auto_sampling.expected_errors(data, tiny, config, membership, radius=2, rng=np.random.default_rng(3),
+                                                  centers=centers)
     assert classes[1] == {"acc_rot_deg": 999.0, "acc_trans_px": 999.0, "particles": 0}
+    # Each class is projected as its average map mean + W zbar: the same map split between the mean and W zbar
+    # gives the accuracy of the mean alone holding it.
+    theta = np.array(state.theta)
+    centers = np.full((2, config.q), 0.5, np.float32)
+    theta[:, :, 1:] = 0
+    theta[:, :, 1] = 2 * theta[:, :, 0]  # W zbar = 0.5 * 2 * mean
+    split = dataclasses.replace(state, theta=jnp.asarray(theta * np.float32(0.5)))
+    whole = dataclasses.replace(state, theta=jnp.asarray(np.where(np.arange(theta.shape[2]) == 0, theta, 0)))
+    split_errors = auto_sampling.expected_errors(data, split, config, membership, radius=2,
+                                                 rng=np.random.default_rng(3), centers=centers)
+    whole_errors = auto_sampling.expected_errors(data, whole, config, membership, radius=2,
+                                                 rng=np.random.default_rng(3), centers=np.zeros_like(centers))
+    assert_matches(np.asarray(split_errors[:2]), np.asarray(whole_errors[:2]), rtol=1e-5)
 
 
 def test_controller_with_local_searches_and_auto_sampling_resumes_identically(tmp_path):
@@ -342,3 +370,48 @@ def test_seed_model_takes_the_bootstrap_sign():
         seed = np.asarray(ftu.get_idft3_real(theta[:, 0].reshape(ftu.volume_shape_to_half_volume_shape((n, n, n))), (n, n, n)))
         centre = np.sqrt(sum(a ** 2 for a in np.meshgrid(x, x, x, indexing="ij"))) <= 2
         assert np.sign(seed[centre].mean()) == sign
+
+
+def test_relion_radius_is_the_resolution_shell_plus_ten_below_nyquist():
+    assert auto_sampling.relion_radius(None, 64) == 15  # RELION's first update: --minres_map 5 plus 10
+    assert auto_sampling.relion_radius(3, 64) == 15
+    assert auto_sampling.relion_radius(20, 64) == 30
+    assert auto_sampling.relion_radius(25, 64) == 31
+    with pytest.raises(ValueError):
+        dataclasses.replace(tiny_config(2), adaptive_radius=True, pc_band_test=True)
+
+
+def test_controller_follows_the_resolution_with_an_adaptive_radius(tmp_path, monkeypatch):
+    # The 8-pixel box has 3 shells below Nyquist: without a floor and an increment the radius is the shell itself.
+    monkeypatch.setattr(auto_sampling, "MINRES_SHELL", 1)
+    monkeypatch.setattr(auto_sampling, "INCREMENT_SHELLS", 0)
+    data = tomo_data()
+    config = dataclasses.replace(tiny_config(2), iterations=6, shift_range=2, shift_step=2, adaptive_radius=True)
+    identity = {"case": "adaptive-radius"}
+    direct = iteration_loop.run(data, config, tmp_path / "direct", identity, 6.)
+    records = [json.loads(line) for line in (tmp_path / "direct/iterations.jsonl").read_text().splitlines()]
+    shells = [None] + [r["resolution_shell"] for r in records[:-1]]
+    assert [r["radius"] for r in records] == [auto_sampling.relion_radius(s, data.grid_size) for s in shells]
+    for update, record in enumerate(records, start=1):
+        assert 0 <= record["resolution_shell"] <= record["radius"]
+        with np.load(tmp_path / f"direct/checkpoint_{update:04d}.npz", allow_pickle=False) as saved:
+            assert json.loads(str(saved["metadata"]))["resolution_shell"] == record["resolution_shell"]
+    stopped = iteration_loop.run(data, config, tmp_path / "resumed", identity, 6., stop_after=2)
+    assert stopped.iteration == 2
+    resumed = iteration_loop.run(data, config, tmp_path / "resumed", identity, 6.,
+                                 resume=tmp_path / "resumed/checkpoint_0002.npz")
+    assert_matches(resumed.theta, direct.theta)
+
+
+def test_accuracy_snr_is_relions_with_the_mixtures_complex_noise_variance():
+    # RELION: |F1 - F2|^2 CTF^2 / (2 sigma2) with sigma2 per real and imaginary part; the mixture's noise is E|n|^2.
+    rng = np.random.default_rng(9)
+    f1 = (rng.normal(size=6) + 1j * rng.normal(size=6)).astype(np.complex64)
+    f2 = (rng.normal(size=(2, 1, 6)) + 1j * rng.normal(size=(2, 1, 6))).astype(np.complex64)
+    ctf = rng.uniform(0.2, 1.0, size=(1, 6)).astype(np.float32)
+    sigma2 = rng.uniform(0.5, 2.0, size=6).astype(np.float32)
+    window = jnp.asarray([False, True, True, True, True, True])
+    snr = np.asarray(auto_sampling._snr(jnp.asarray(f1[None]), jnp.asarray(f2), jnp.asarray(ctf), jnp.asarray(2 * sigma2),
+                                        window))
+    relion = np.sum((np.abs(f1[None, None] - f2) ** 2 * ctf[None] ** 2 / (2 * sigma2))[..., 1:], axis=(1, 2))
+    assert_matches(snr, relion, rtol=1e-5)
