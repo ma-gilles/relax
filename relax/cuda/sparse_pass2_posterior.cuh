@@ -4,7 +4,8 @@
 // relax/fine_pass/posterior.py:
 //
 //   SparsePass2LogZF64      <-> _logsumexp_pass2_bucket_score_only
-//   SparsePass2PosteriorF32 <-> _normalize_pass2_bucket_with_log_z followed by
+//   SparsePass2PosteriorF32 <-> _normalize_pass2_bucket_with_log_z (now in
+//                               scripts/lib/bucketed_pass2.py) followed by
 //                               relion_f32_fine_probabilities
 //
 // Every per-element formula is copied from the XLA path.  Order-independent

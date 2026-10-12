@@ -35,20 +35,13 @@ from recovar.core.configs import ForwardModelConfig
 
 from relax.classification.k_class import _fine_support_stats
 from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked, _adjoint_block_chunk_rows
-from relax.fine_pass.bucket_arrays import (
-    _bucket_pass2_inputs,
-    _coalesce_tail_bucket_sizes,
-    _prepare_per_image_pass2_inputs,
-)
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.bucket_io import (
     _half_translation_phase_table_for_indices,
     _prepare_bucket_io,
     relion_translation_angles_f32,
 )
-from relax.fine_pass.local_backprojection import (
-    compute_local_ctf_sums,
-    compute_local_ctf_sums_from_probs_sum_t,
-)
+from relax.fine_pass.local_backprojection import compute_local_ctf_sums_from_probs_sum_t
 from relax.fine_pass.policy import (
     _projection_cache_enabled_for_pass,
 )
@@ -74,6 +67,7 @@ from relax.runtime.memory_budget import (
     _projection_cache_fits_budget,
     _projection_cache_transient_bytes,
 )
+from scripts.lib.bucketed_pass2 import _bucket_pass2_inputs, _coalesce_tail_bucket_sizes, compute_local_ctf_sums
 
 
 # Moved from relax/fine_pass/policy.py (PLAN e1): no relax module uses it, only this test file.

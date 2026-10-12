@@ -32,7 +32,6 @@ import jax.numpy as jnp
 from oracles.wavg import relion_wavg_rectangle_triplet_terms
 
 from relax.fine_pass import resident_pass2 as rp
-from relax.fine_pass.local_backprojection import compute_local_mstep_sums
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_candidates import (
     CapacityChunk,
@@ -40,6 +39,7 @@ from relax.fine_pass.resident_candidates import (
     chunk_segment_offsets,
     plan_capacity_chunks,
 )
+from scripts.lib.bucketed_pass2 import compute_local_mstep_sums
 
 pytestmark = pytest.mark.unit
 

@@ -151,15 +151,6 @@ def _relion_cuda_score_translation_angles_if_available(
     )
 
 
-def _reorder_to_indices(image_indices_returned, requested_image_indices, *arrays):
-    """Reorder per-image arrays so they match the order returned by the dataset."""
-    if np.array_equal(image_indices_returned, requested_image_indices):
-        return arrays
-    position = {int(idx): pos for pos, idx in enumerate(np.asarray(requested_image_indices).tolist())}
-    order = np.array([position[int(idx)] for idx in np.asarray(image_indices_returned).tolist()], dtype=np.int64)
-    return tuple(arr[order] for arr in arrays)
-
-
 @jax.jit
 def _take_columns(values, column_indices):
     """Gather Fourier-window columns in one compiled program per shape."""

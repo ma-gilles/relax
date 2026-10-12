@@ -3,14 +3,8 @@ import pytest
 from helpers.array_padding import pad_axis
 from helpers.float_compare import assert_matches
 
-from relax.runtime.shape_buckets import (
-    coarse_bucket,
-    pow2_ceil,
-    pow2_floor,
-    power_bucket,
-    power_of_two_bucket,
-    round_up_to_multiple,
-)
+from relax.runtime.shape_buckets import pow2_ceil, pow2_floor, round_up_to_multiple
+from scripts.lib.bucket_shapes import coarse_bucket, power_bucket, power_of_two_bucket
 
 
 def test_round_up_to_multiple():

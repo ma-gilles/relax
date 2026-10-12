@@ -1094,7 +1094,7 @@ def _resident_block_weighted_sums(
     shifted_noise,  # complex [C_B, T, P]
     ctf2_over_nv_recon,  # real [C_B, P]
 ):
-    """Flat-row twin of the bucket's ``compute_local_mstep_sums`` pair.
+    """Flat-row twin of the bucket layout's ``compute_local_mstep_sums`` pair (``scripts/lib/bucketed_pass2.py``).
 
     ``compute_local_weighted_sums`` contracts ``(B, R, T) x (B, T, N)`` with
     ``Precision.HIGHEST``; the flat-row form gathers each row's image tile and

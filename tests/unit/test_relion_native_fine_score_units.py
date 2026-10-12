@@ -23,15 +23,15 @@ import numpy as np
 import pytest
 import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _raw_real_image_2d
+from helpers.float_compare import assert_matches
 
-from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half, make_shell_indices_half
 from relax.fine_pass.scoring import (
     _relion_cuda_corr_img_from_native_noise_variance,
     _relion_cuda_native_corr_img_from_noise_variance,
     _relion_native_fine_units,
-    _score_pass2_bucket_relion_gpu_diff2_raw,
 )
-from helpers.float_compare import assert_matches
+from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half, make_shell_indices_half
+from scripts.lib.bucketed_pass2_scoring import _score_pass2_bucket_relion_gpu_diff2_raw
 
 # Below one float32 ULP (2**-23 ~ 1.19e-7): tight enough to catch a different
 # rounding path at most values, without asserting bitwise equality.

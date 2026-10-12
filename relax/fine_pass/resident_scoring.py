@@ -548,7 +548,7 @@ def _flat_rows_scores(
     )
 
     # --- RELION diff2 -> log weight, in the flat-row layout ----------------
-    # Same operation order as ``_relion_cuda_fine_diff2_to_scores``: the two
+    # Same operation order as ``scripts/lib/bucketed_pass2_scoring._relion_cuda_fine_diff2_to_scores``: the two
     # optimization barriers keep ``(prior + min) - diff2`` from being
     # re-associated, which changes float32 tie-breaking at diff2 ~ 1e3.
     real_dtype = raw_diff2.dtype

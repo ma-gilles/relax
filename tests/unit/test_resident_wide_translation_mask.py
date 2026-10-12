@@ -21,7 +21,6 @@ from test_resident_significance import _csr_from_supports, _encoded_supports, _s
 
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.fine_pass.compact_candidates import candidate_mask_to_dense
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     expand_chunk_mask_jnp,
@@ -90,7 +89,7 @@ def test_wide_tables_expand_to_the_compact_dense_mask(n_coarse_trans):
     np.testing.assert_array_equal(csr_tables.parent_trans_bits, host_tables.parent_trans_bits)
     np.testing.assert_array_equal(csr_tables.mask_mode, host_tables.mask_mode)
     for image, mask in enumerate(per_image_inputs["candidate_mask"]):
-        compact_dense = candidate_mask_to_dense(mask)
+        compact_dense = np.asarray(mask, dtype=bool)
         np.testing.assert_array_equal(
             expand_mask_rows(host_tables, image, fine_parent), compact_dense, err_msg=f"image {image}"
         )
@@ -118,7 +117,7 @@ def test_wide_chunk_masks_expand_to_the_compact_dense_mask(n_coarse_trans):
             stop = int(tables.row_offsets[image + 1]) - chunk.row_start
             np.testing.assert_array_equal(
                 chunk_mask[start:stop],
-                candidate_mask_to_dense(per_image_inputs["candidate_mask"][image]),
+                np.asarray(per_image_inputs["candidate_mask"][image], dtype=bool),
                 err_msg=f"image {image}",
             )
 

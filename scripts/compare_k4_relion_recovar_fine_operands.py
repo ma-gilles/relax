@@ -12,23 +12,20 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core.ctf import _compute_spa_ctf
-from relax.cuda.preprocess import relion_preprocess_real_f32
 from recovar.data_io.image_backends import (
     _apply_relion_soft_image_mask_numpy,
     _centered_rfft2_jax,
     _centered_rfft2_numpy,
 )
+from recovar.utils.file_hash import sha256_file
+
+from relax.cuda.preprocess import relion_preprocess_real_f32
+from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
+from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup, _relion_cuda_fine_pixel_weights
 from relax.fourier.half_spectrum import make_scoring_half_image_weights, make_shell_indices_half
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts
-from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
-from relax.fine_pass.scoring import (
-    _relion_cuda_fine_diff2_sum,
-    _relion_cuda_fine_full_to_compact_lookup,
-    _relion_cuda_fine_pixel_weights,
-)
-from recovar.utils.file_hash import sha256_file
+from scripts.lib.bucketed_pass2_scoring import _relion_cuda_fine_diff2_sum
 from scripts.validate_relion_fine_operand_capture import (
     _cuda_fine_contribution,
     _reduce_lanes,

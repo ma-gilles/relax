@@ -87,7 +87,3 @@ def _dense_candidate_mask_from_spec(mask: SparseCandidateMask) -> np.ndarray:
     raise ValueError(f"Unknown sparse candidate mask mode {mask.mode!r}")
 
 
-def candidate_mask_to_dense(candidate_mask) -> np.ndarray:
-    if isinstance(candidate_mask, SparseCandidateMask):
-        return _dense_candidate_mask_from_spec(candidate_mask)
-    return np.asarray(candidate_mask, dtype=bool)

@@ -8,7 +8,6 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
-
 from helpers.cuda_source import EM_CUDA_DIR, read_cuda_source, read_em_cuda_source
 
 
@@ -46,6 +45,7 @@ def test_masked_fine_diff2_source_pins_rectangular_body_and_zero_fill():
 
 def test_masked_fine_diff2_is_optional_ffi_target():
     from recovar import cuda_backproject
+
     from relax.cuda import library
 
     target = library.TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
@@ -56,12 +56,12 @@ def test_masked_fine_diff2_is_optional_ffi_target():
 
 def test_fine_diff2_masked_knob_defaults_on_and_is_disableable(monkeypatch):
     """Default on after the matched hp3 pair (job 14082785); still switchable."""
-    from relax.fine_pass import scoring
+    from scripts.lib import bucketed_pass2_scoring
 
-    monkeypatch.delenv(scoring._RELION_FINE_DIFF2_MASKED_ENV, raising=False)
-    assert scoring._fine_diff2_masked_enabled() is True
-    monkeypatch.setenv(scoring._RELION_FINE_DIFF2_MASKED_ENV, "0")
-    assert scoring._fine_diff2_masked_enabled() is False
+    monkeypatch.delenv(bucketed_pass2_scoring._RELION_FINE_DIFF2_MASKED_ENV, raising=False)
+    assert bucketed_pass2_scoring._fine_diff2_masked_enabled() is True
+    monkeypatch.setenv(bucketed_pass2_scoring._RELION_FINE_DIFF2_MASKED_ENV, "0")
+    assert bucketed_pass2_scoring._fine_diff2_masked_enabled() is False
 
 
 def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch):
@@ -69,7 +69,7 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
     import numpy as np
 
     from relax.cuda import fine as cuda_fine
-    from relax.fine_pass import scoring
+    from scripts.lib import bucketed_pass2_scoring
 
     monkeypatch.setattr(
         cuda_fine, "relion_fine_diff2_rectangular_masked_supported", lambda: False
@@ -89,7 +89,7 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
     )
     rng = np.random.default_rng(5)
     reference, shifted, weight, _initial, lookup = _operands(rng, 2, 3, 4, 17, 21)
-    scoring._relion_cuda_fine_diff2_sum(
+    bucketed_pass2_scoring._relion_cuda_fine_diff2_sum(
         jnp.asarray(reference)[:, :, None, :],
         jnp.asarray(shifted)[:, None, :, :],
         jnp.asarray(weight)[:, None, None, :],
@@ -102,6 +102,7 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
 
 def test_masked_support_probe_reports_false_without_a_library(monkeypatch):
     from recovar import cuda_backproject
+
     from relax.cuda import fine as cuda_fine
     from relax.cuda import library
 
@@ -120,19 +121,20 @@ def test_masked_support_probe_reports_false_without_a_library(monkeypatch):
 def test_fine_diff2_sum_jax_path_ignores_candidate_mask(monkeypatch):
     """Without the fused FFI the emulation evaluates every cell (mask is a no-op)."""
     from relax.fine_pass import scoring
+    from scripts.lib import bucketed_pass2_scoring
 
     monkeypatch.delenv(scoring._RELION_FINE_DIFF2_FUSED_FFI_ENV, raising=False)
     rng = np.random.default_rng(3)
     reference, shifted, weight, _initial, lookup = _operands(rng, 2, 3, 4, 17, 21)
     mask = rng.uniform(size=(2, 3, 4)) < 0.5
     with jax.default_device(jax.devices("cpu")[0]):
-        plain = scoring._relion_cuda_fine_diff2_sum(
+        plain = bucketed_pass2_scoring._relion_cuda_fine_diff2_sum(
             jnp.asarray(reference)[:, :, None, :],
             jnp.asarray(shifted)[:, None, :, :],
             jnp.asarray(weight)[:, None, None, :],
             jnp.asarray(lookup),
         )
-        masked = scoring._relion_cuda_fine_diff2_sum(
+        masked = bucketed_pass2_scoring._relion_cuda_fine_diff2_sum(
             jnp.asarray(reference)[:, :, None, :],
             jnp.asarray(shifted)[:, None, :, :],
             jnp.asarray(weight)[:, None, None, :],
@@ -149,6 +151,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import fine as cuda_fine
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -193,7 +196,8 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
 def test_scoring_path_masked_matches_unmasked_scores(monkeypatch, custom_cuda_lib, gpu_device):
     """The full raw->scores path gives identical scores with the mask on and off."""
     import recovar.cuda_backproject as cuda_backproject
-    from relax.fine_pass import scoring
+
+    from scripts.lib import bucketed_pass2_scoring
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -218,17 +222,17 @@ def test_scoring_path_masked_matches_unmasked_scores(monkeypatch, custom_cuda_li
             jnp.asarray(lookup),
             jnp.asarray(initial),
         )
-        plain_raw = scoring._score_pass2_bucket_relion_gpu_diff2_raw(*args, use_fused_ffi=True)
-        masked_raw = scoring._score_pass2_bucket_relion_gpu_diff2_raw(
+        plain_raw = bucketed_pass2_scoring._score_pass2_bucket_relion_gpu_diff2_raw(*args, use_fused_ffi=True)
+        masked_raw = bucketed_pass2_scoring._score_pass2_bucket_relion_gpu_diff2_raw(
             *args, use_fused_ffi=True, candidate_mask=jnp.asarray(mask)
         )
         m = jnp.asarray(mask)
-        plain_min = scoring._relion_cuda_fine_diff2_min(plain_raw, m)
-        masked_min = scoring._relion_cuda_fine_diff2_min(masked_raw, m)
-        plain_scores = scoring._relion_cuda_fine_diff2_to_scores(
+        plain_min = bucketed_pass2_scoring._relion_cuda_fine_diff2_min(plain_raw, m)
+        masked_min = bucketed_pass2_scoring._relion_cuda_fine_diff2_min(masked_raw, m)
+        plain_scores = bucketed_pass2_scoring._relion_cuda_fine_diff2_to_scores(
             plain_raw, jnp.asarray(rot_prior)[:, :, None], jnp.asarray(trans_prior)[:, None, :], m, min_diff2=plain_min
         )
-        masked_scores = scoring._relion_cuda_fine_diff2_to_scores(
+        masked_scores = bucketed_pass2_scoring._relion_cuda_fine_diff2_to_scores(
             masked_raw, jnp.asarray(rot_prior)[:, :, None], jnp.asarray(trans_prior)[:, None, :], m, min_diff2=masked_min
         )
     assert_matches(np.asarray(plain_min), np.asarray(masked_min))

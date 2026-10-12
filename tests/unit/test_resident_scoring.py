@@ -37,7 +37,6 @@ from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
     _relion_cuda_score_translation_angles_if_available,
 )
-from relax.fine_pass.compact_candidates import candidate_mask_to_dense
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     materialize_chunk,
@@ -48,6 +47,7 @@ from relax.fine_pass.significant_samples import ComplementSignificantSampleIndic
 from relax.fourier.half_spectrum import make_scoring_half_image_weights
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.io.batch_fetch import fetch_indexed_batch
+from scripts.lib import bucketed_pass2_scoring
 
 N_COARSE_ROT = 6
 CHILDREN = 2
@@ -309,14 +309,12 @@ def test_resident_scores_match_the_relion_conversion_on_the_same_raw_costs(
                 stop = int(tables.row_offsets[image + 1]) - chunk.row_start
                 if stop == start:
                     continue
-                mask = candidate_mask_to_dense(
-                    case["per_image_inputs"]["candidate_mask"][image]
-                )
+                mask = np.asarray(case["per_image_inputs"]["candidate_mask"][image], dtype=bool)
                 rows_raw = raw[start:stop]
                 row_prior = np.asarray(
                     case["per_image_inputs"]["log_prior"][image], dtype=np.float32
                 )
-                expected = spb._relion_cuda_fine_diff2_to_scores(
+                expected = bucketed_pass2_scoring._relion_cuda_fine_diff2_to_scores(
                     jnp.asarray(rows_raw)[None],
                     jnp.asarray(row_prior)[None, :, None],
                     jnp.asarray(translation_prior[image])[None, None, :],

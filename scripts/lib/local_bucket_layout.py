@@ -11,9 +11,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.fine_pass.rotation_buckets import _local_search_engine_rotation_block_size, exact_bucket_rotation_size
 from relax.local_search.layout import LocalHypothesisLayout
-from relax.runtime.batch_planning import plan_consecutive_padded_batches
+from scripts.lib.bucket_shapes import (
+    _local_search_engine_rotation_block_size,
+    exact_bucket_rotation_size,
+    plan_consecutive_padded_batches,
+)
 
 # Global bucket-size unification pads every image to the halfset's largest local
 # neighborhood. That buys one compiled shape per layout, which is worth a lot while
@@ -29,11 +32,7 @@ from relax.runtime.batch_planning import plan_consecutive_padded_batches
 # The bound is on rows the unification would add. 15.4 M was neutral in that run and
 # 150.7 M was a large loss, so the default sits between them with margin.
 EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS = 32_000_000
-
-
 EXACT_LOCAL_BUCKET_MIN_QUANTUM = 256
-
-
 DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER = (16, 32, 64, 128, 256)
 
 

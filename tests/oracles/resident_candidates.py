@@ -16,7 +16,7 @@ from relax.fine_pass.resident_candidates import (
 
 
 def expand_mask_rows(tables: ResidentCandidateTables, image: int, fine_translation_parent) -> np.ndarray:
-    """Reference (numpy) dense mask for one image; matches ``candidate_mask_to_dense`` exactly.
+    """Reference (numpy) dense mask for one image; matches ``SparseCandidateMask``'s dense array exactly.
 
     Returns a ``bool[n_rows_i, len(fine_translation_parent)]`` array. This is
     the ground truth the device chunk-mask expansion must reproduce.

@@ -10,13 +10,13 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core.ctf import _compute_spa_ctf
-from relax.cuda.preprocess import relion_preprocess_real_f32
 from recovar.data_io.image_backends import _centered_rfft2_jax
-from relax.fine_pass.local_backprojection import compute_local_mstep_sums
-from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
 from recovar.utils.file_hash import sha256_file
+
+from relax.cuda.preprocess import relion_preprocess_real_f32
+from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
+from scripts.lib.bucketed_pass2 import compute_local_mstep_sums
 from scripts.recompute_bpref_high_precision import (
     _ctf_float64,
     _half_lattice,

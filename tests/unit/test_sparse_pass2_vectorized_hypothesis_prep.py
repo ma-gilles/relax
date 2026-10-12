@@ -8,6 +8,7 @@ from helpers.float_compare import assert_matches
 
 from relax.fine_pass import bucket_arrays as sba
 from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
+from scripts.lib import bucketed_pass2
 
 pytestmark = [pytest.mark.unit]
 
@@ -177,16 +178,16 @@ def test_resident_row_indices_gather_matches_index_array_build(monkeypatch):
     special = np.flatnonzero(positions < 0)
     assert vectorized.size >= 6 and special.size >= 1
 
-    monkeypatch.setenv(sba.ROTATIONS_BY_INDEX_ENV, "1")
+    monkeypatch.setenv(bucketed_pass2.ROTATIONS_BY_INDEX_ENV, "1")
     bucket_size = int(max(int(np.asarray(r).shape[0]) for r in fast["oversampled_rots"]))
     with jax.default_device(jax.devices("cpu")[0]):
         for image_indices, expect_resident in ((np.sort(vectorized[:5]), True),
                                                (np.concatenate([vectorized[:3], special[:1]]), False)):
             bucket = {"bucket_size": bucket_size, "image_indices": image_indices}
-            monkeypatch.setenv(sba.RESIDENT_HYPOTHESIS_TABLES_ENV, "0")
-            by_index = sba._build_bucket_arrays(bucket, fast, n_fine_trans, capacity_rows=8, device_rotations=True)
-            monkeypatch.setenv(sba.RESIDENT_HYPOTHESIS_TABLES_ENV, "1")
-            resident_build = sba._build_bucket_arrays(bucket, fast, n_fine_trans, capacity_rows=8, device_rotations=True)
+            monkeypatch.setenv(bucketed_pass2.RESIDENT_HYPOTHESIS_TABLES_ENV, "0")
+            by_index = bucketed_pass2._build_bucket_arrays(bucket, fast, n_fine_trans, capacity_rows=8, device_rotations=True)
+            monkeypatch.setenv(bucketed_pass2.RESIDENT_HYPOTHESIS_TABLES_ENV, "1")
+            resident_build = bucketed_pass2._build_bucket_arrays(bucket, fast, n_fine_trans, capacity_rows=8, device_rotations=True)
             for key in ("rotations", "mstep_rotations"):
                 a, b = np.asarray(by_index[key]), np.asarray(resident_build[key])
                 assert a.dtype == b.dtype, key

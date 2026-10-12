@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 from recovar import utils as recovar_utils
 
-from relax.fine_pass.rotation_buckets import _local_search_engine_rotation_block_size
 from relax.local_search.layout import LocalHypothesisLayout
 from relax.runtime.batch_planning import estimate_relion_em_batch_sizes
+from scripts.lib.bucket_shapes import _local_search_engine_rotation_block_size
 
 IMAGE_SHAPE = (8, 8)
 VOLUME_SHAPE = (8, 8, 8)

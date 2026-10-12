@@ -12,7 +12,6 @@ from helpers.float_compare import assert_matches, matches
 from oracles.resident_candidates import expand_mask_rows
 
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.fine_pass.compact_candidates import candidate_mask_to_dense
 from relax.fine_pass.resident_candidates import (
     ResidentCandidateTables,
     build_resident_candidate_tables,
@@ -134,11 +133,11 @@ def test_row_ids_parents_and_priors_match_per_image_inputs(fixture_inputs, fixtu
         assert matches(tables.row_unit[start:stop], image)
 
 
-def test_expand_mask_rows_matches_candidate_mask_to_dense_for_every_mode(fixture_inputs, fixture_tables):
+def test_expand_mask_rows_matches_the_dense_candidate_mask_for_every_mode(fixture_inputs, fixture_tables):
     tables = fixture_tables
     n_images = len(fixture_inputs["oversampled_rot_indices"])
     for image in range(n_images):
-        expected_dense = candidate_mask_to_dense(fixture_inputs["candidate_mask"][image])
+        expected_dense = np.asarray(fixture_inputs["candidate_mask"][image], dtype=bool)
         got_dense = expand_mask_rows(tables, image, FINE_TRANS_PARENT)
         assert_matches(got_dense, expected_dense)
 

@@ -23,23 +23,6 @@ _RELION_FINE_ROTATION_EXECUTION_ORDER_ENV = (
 _RELION_X_HALF_F32_FINE_POSTERIOR_ENV = "RELAX_RELION_X_HALF_F32_FINE_POSTERIOR"
 
 
-@jax.jit
-def _normalize_pass2_bucket_with_log_z(scores, log_z):
-    """Normalize sparse candidate scores with a precomputed full-grid log-Z."""
-    scores = jnp.where(jnp.isfinite(scores), scores, -jnp.inf)
-    flat = scores.reshape(scores.shape[0], -1)
-    best_log_score = jnp.max(flat, axis=1)
-    has_finite_score = jnp.isfinite(best_log_score) & jnp.isfinite(log_z)
-    safe_log_z = jnp.where(has_finite_score, log_z, 0.0)
-    probs = jnp.exp(scores - safe_log_z[:, None, None])
-    probs = jnp.where(has_finite_score[:, None, None] & jnp.isfinite(probs), probs, 0.0)
-    best_argmax = jnp.where(has_finite_score, jnp.argmax(flat, axis=1), 0)
-    max_posterior = jnp.exp(best_log_score - safe_log_z)
-    max_posterior = jnp.where(has_finite_score & jnp.isfinite(max_posterior), max_posterior, 0.0)
-    best_log_score = jnp.where(has_finite_score, best_log_score, -jnp.inf)
-    return safe_log_z, probs, best_log_score, best_argmax, max_posterior
-
-
 @partial(jax.jit, static_argnames=("adaptive_fraction", "keep_all"))
 def relion_f32_fine_probabilities(
     scores,
@@ -148,7 +131,6 @@ def relion_f32_fine_probabilities(
         sum_weight,
         threshold,
     )
-
 
 
 def relion_x_half_f32_fine_posterior_enabled(*, default: bool = False) -> bool:

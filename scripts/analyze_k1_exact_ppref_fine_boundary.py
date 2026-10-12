@@ -12,13 +12,10 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import numpy as np
-
-from relax.projection.projection import compute_relion_projector_projections_block
-from relax.fine_pass.scoring import (
-    _relion_cuda_fine_diff2_sum,
-    _relion_cuda_fine_full_to_compact_lookup,
-)
 from recovar.utils.file_hash import sha256_file  # noqa: E402 - follows repository path setup
+
+from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+from relax.projection.projection import compute_relion_projector_projections_block
 from scripts.analyze_k1_bpref_contributor_membership import match_rotations
 from scripts.analyze_k1_fine_direction_boundary import (
     _float32_key,
@@ -26,6 +23,7 @@ from scripts.analyze_k1_fine_direction_boundary import (
     _real,
     _scalar,
 )
+from scripts.lib.bucketed_pass2_scoring import _relion_cuda_fine_diff2_sum
 from scripts.validate_relion_fine_operand_capture import load_fine_operand_capture
 from scripts.validate_relion_fine_score_capture import ACTIVE, load_fine_score_capture
 

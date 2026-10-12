@@ -17,7 +17,6 @@ pytest.importorskip("jax")
 from test_resident_significance import _encoded_supports, _supports
 
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.fine_pass.compact_candidates import candidate_mask_to_dense
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     coarse_winner_cells,
@@ -39,7 +38,7 @@ def _selected_winners(per_image_inputs, rng):
 
     winners = []
     for image, mask in enumerate(per_image_inputs["candidate_mask"]):
-        dense = candidate_mask_to_dense(mask)
+        dense = np.asarray(mask, dtype=bool)
         rows, trans = np.nonzero(dense)
         pick = int(rng.integers(rows.size))
         parents = np.asarray(per_image_inputs["unique_rot"][image])[np.asarray(per_image_inputs["parent_map"][image])]
@@ -82,7 +81,7 @@ def test_coarse_winner_cells_refuse_an_unselected_winner():
     per_image_inputs, tables, fine_parent, fine_translation_parent = _os0_case()
     winners = _selected_winners(per_image_inputs, np.random.default_rng(3))
     for image, mask in enumerate(per_image_inputs["candidate_mask"]):
-        dense = candidate_mask_to_dense(mask)
+        dense = np.asarray(mask, dtype=bool)
         parents = np.asarray(per_image_inputs["unique_rot"][image])[np.asarray(per_image_inputs["parent_map"][image])]
         rows, trans = np.nonzero(~dense)
         if rows.size:

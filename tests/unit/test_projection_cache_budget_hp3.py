@@ -81,28 +81,28 @@ def test_cache_build_rotations_per_call_scales_scoring_budget(monkeypatch):
 
 
 def test_flatten_bucket_rotations_is_host_side_for_numpy_and_not_jitted():
-    from relax.fine_pass import local_backprojection as lb
+    from scripts.lib import bucketed_pass2
 
     rots = np.arange(2 * 3 * 9, dtype=np.float32).reshape(2, 3, 3, 3)
-    out = lb.flatten_bucket_rotations(rots)
+    out = bucketed_pass2.flatten_bucket_rotations(rots)
     assert isinstance(out, np.ndarray) and out.shape == (6, 3, 3)
     assert_matches(out, rots.reshape(6, 3, 3))
-    assert not hasattr(lb.flatten_bucket_rotations, "lower")  # plain function, not a jit wrapper
+    assert not hasattr(bucketed_pass2.flatten_bucket_rotations, "lower")  # plain function, not a jit wrapper
     import jax.numpy as jnp
-    dev = lb.flatten_bucket_rotations(jnp.asarray(rots))
+    dev = bucketed_pass2.flatten_bucket_rotations(jnp.asarray(rots))
     assert dev.shape == (6, 3, 3)
     assert_matches(np.asarray(dev), rots.reshape(6, 3, 3))
 
 
 def test_large_bucket_pow2_rung_is_opt_in(monkeypatch):
-    from relax.fine_pass import bucket_arrays as sba
+    from scripts.lib import bucketed_pass2
 
     monkeypatch.delenv("RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2", raising=False)
     monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
-    default = [sba._pass2_bucket_rotation_size(c, 5000) for c in (7, 100, 900, 5000, 9000, 20000, 100000, 217000)]
+    default = [bucketed_pass2._pass2_bucket_rotation_size(c, 5000) for c in (7, 100, 900, 5000, 9000, 20000, 100000, 217000)]
     assert default[:3] == [16, 128, 1024]  # small supports: shared power-of-two rule, unchanged
     monkeypatch.setenv("RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2", "1")
-    pow2 = [sba._pass2_bucket_rotation_size(c, 5000) for c in (7, 100, 900, 5000, 9000, 20000, 100000, 217000)]
+    pow2 = [bucketed_pass2._pass2_bucket_rotation_size(c, 5000) for c in (7, 100, 900, 5000, 9000, 20000, 100000, 217000)]
     assert pow2[:3] == default[:3]
     assert pow2[3:] == [8192, 16384, 32768, 131072, 262144]
     assert all(p >= d for p, d in zip(pow2, default))  # never smaller than the shared quantiser

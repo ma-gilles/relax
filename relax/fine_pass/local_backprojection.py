@@ -6,7 +6,6 @@ import os
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 _RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION_ENV = (
     "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION"
@@ -38,14 +37,6 @@ def compute_local_weighted_sums(probs, shifted):
 
 
 @jax.jit
-def compute_local_ctf_sums(probs, ctf2_over_nv):
-    """Compute weighted CTF^2/noise sums for one exact local bucket."""
-
-    probs_sum_t = jnp.sum(probs, axis=-1)  # (B, R)
-    return compute_local_ctf_sums_from_probs_sum_t(probs_sum_t, ctf2_over_nv)
-
-
-@jax.jit
 def compute_local_ctf_sums_from_probs_sum_t(probs_sum_t, ctf2_over_nv):
     """Compute weighted CTF^2/noise sums from precomputed rotation posterior sums."""
 
@@ -56,74 +47,3 @@ def compute_local_ctf_sums_from_probs_sum_t(probs_sum_t, ctf2_over_nv):
     )
 
 
-@jax.jit
-def compute_relion_sequential_mstep_sums(probs, shifted, ctf2_over_nv):
-    """Reduce translations in RELION order without changing precision.
-
-    RELION accumulates this loop in ``XFLOAT``.  That is float32 in its normal
-    GPU build and float64 in a double-precision build, so the RECOVAR parity
-    path must follow the operand precision rather than unconditionally model
-    the former.
-    """
-
-    real_dtype = jnp.result_type(probs, ctf2_over_nv, jnp.real(shifted))
-    complex_dtype = jnp.complex128 if real_dtype == jnp.dtype(jnp.float64) else jnp.complex64
-    probs = jnp.asarray(probs, dtype=real_dtype)
-    shifted = jnp.asarray(shifted, dtype=complex_dtype)
-    ctf2_over_nv = jnp.asarray(ctf2_over_nv, dtype=real_dtype)
-    batch, n_rot, n_trans = probs.shape
-    n_pixels = shifted.shape[-1]
-    numerator0 = jnp.zeros((batch, n_rot, n_pixels), dtype=complex_dtype)
-    denominator0 = jnp.zeros((batch, n_rot, n_pixels), dtype=real_dtype)
-
-    def add_translation(trans_idx, carry):
-        numerator, denominator = carry
-        weight = probs[:, :, trans_idx, None]
-        numerator = numerator + weight * shifted[:, None, trans_idx, :]
-        denominator = denominator + weight * ctf2_over_nv[:, None, :]
-        return numerator, denominator
-
-    return jax.lax.fori_loop(0, n_trans, add_translation, (numerator0, denominator0))
-
-
-def compute_local_mstep_sums(
-    probs,
-    shifted,
-    ctf2_over_nv,
-    *,
-    relion_x_half: bool,
-    default_probs_sum_t=None,
-    sequential_translation_reduction: bool | None = None,
-):
-    """Compute numerator/denominator sums, optionally using the x-half diagnostic."""
-
-    use_sequential_reduction = (
-        relion_x_half_sequential_translation_reduction_enabled()
-        if sequential_translation_reduction is None
-        else bool(sequential_translation_reduction)
-    )
-    if relion_x_half and use_sequential_reduction:
-        return compute_relion_sequential_mstep_sums(probs, shifted, ctf2_over_nv)
-    denominator = (
-        compute_local_ctf_sums(probs, ctf2_over_nv)
-        if default_probs_sum_t is None
-        else compute_local_ctf_sums_from_probs_sum_t(default_probs_sum_t, ctf2_over_nv)
-    )
-    return compute_local_weighted_sums(probs, shifted), denominator
-
-
-
-def flatten_bucket_rotations(rotations):
-    """Flatten a bucket's per-image rotations into one row-major batch.
-
-    This is a pure reshape and is deliberately not jitted: bucket rotation
-    blocks arrive as host arrays with a different ``(images, rotations)`` shape
-    for almost every bucket chunk, and a jitted reshape paid one compilation
-    cache lookup (key hashing plus a persistent-cache file read of ~85 ms)
-    per new shape, ~30% of a warm hp3 pass 2 (job 14051847 sampler).  Host
-    arrays are reshaped on the host; device arrays use the eager reshape.
-    """
-
-    if isinstance(rotations, np.ndarray):
-        return rotations.reshape(rotations.shape[0] * rotations.shape[1], 3, 3)
-    return jnp.reshape(rotations, (rotations.shape[0] * rotations.shape[1], 3, 3))

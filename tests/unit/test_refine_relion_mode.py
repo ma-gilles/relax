@@ -70,7 +70,6 @@ from relax.classification.k_class_results import (
     _sum_noise_stats,
 )
 from relax.diagnostics.observers import IntermediatesObserver
-from relax.fine_pass.rotation_buckets import EXACT_LOCAL_BUCKET_RADIX_ENV, exact_bucket_rotation_size
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
 from relax.local_search.layout import (
     LocalHypothesisLayout,
@@ -2493,6 +2492,8 @@ def test_exact_local_fine_grid_precompute_auto_policy():
 
 
 def test_exact_local_bucket_radix_can_collapse_adjacent_power_two_shapes(monkeypatch):
+    from scripts.lib.bucket_shapes import EXACT_LOCAL_BUCKET_RADIX_ENV, exact_bucket_rotation_size
+
     monkeypatch.setenv(EXACT_LOCAL_BUCKET_RADIX_ENV, "4")
 
     assert exact_bucket_rotation_size(32, 5000) == 64

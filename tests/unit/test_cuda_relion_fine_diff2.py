@@ -993,7 +993,7 @@ def test_sparse_pass2_fused_flag_routes_supported_operand_layouts(
     expected_shape,
 ):
     from relax.cuda import fine as cuda_fine
-    from relax.fine_pass.scoring import _relion_cuda_fine_diff2_sum
+    from scripts.lib.bucketed_pass2_scoring import _relion_cuda_fine_diff2_sum
 
     routes = []
 
@@ -1046,7 +1046,7 @@ def test_sparse_pass2_fused_flag_routes_supported_operand_layouts(
 
 def test_sparse_pass2_fused_flag_routes_float64_to_f64_ffi(monkeypatch):
     from relax.cuda import fine as cuda_fine
-    from relax.fine_pass.scoring import _relion_cuda_fine_diff2_sum
+    from scripts.lib.bucketed_pass2_scoring import _relion_cuda_fine_diff2_sum
 
     calls = []
 

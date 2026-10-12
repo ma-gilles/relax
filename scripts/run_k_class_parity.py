@@ -696,19 +696,9 @@ def _relion_bpref_maps_from_sparse_support(
     from recovar.reconstruction import noise as noise_utils
     from recovar.utils import helpers
 
-    from relax.fine_pass.bucket_arrays import (
-        _bucket_pass2_inputs,
-        _build_bucket_arrays,
-        _prepare_per_image_pass2_inputs,
-    )
-    from relax.fine_pass.bucket_io import _prepare_bucket_io, _reorder_to_indices
-    from relax.fine_pass.local_backprojection import (
-        compute_local_ctf_sums,
-        compute_local_weighted_sums,
-        flatten_bucket_rotations,
-    )
-    from relax.fine_pass.posterior import _normalize_pass2_bucket_with_log_z
-    from relax.fine_pass.scoring import _score_pass2_bucket_relion_gpu_diff2
+    from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+    from relax.fine_pass.bucket_io import _prepare_bucket_io
+    from relax.fine_pass.local_backprojection import compute_local_weighted_sums
     from relax.fourier.fourier_window import make_fourier_window_spec
     from relax.fourier.half_spectrum import make_scoring_half_image_weights
     from relax.io.batch_fetch import fetch_indexed_batch
@@ -716,6 +706,15 @@ def _relion_bpref_maps_from_sparse_support(
     from relax.relion_bind import _relion_bind_core as bind
     from relax.sampling.grids import rotation_grid_size
     from relax.sampling.oversampled_grids import get_oversampled_translation_grid
+    from scripts.lib.bucketed_pass2 import (
+        _bucket_pass2_inputs,
+        _build_bucket_arrays,
+        _normalize_pass2_bucket_with_log_z,
+        _reorder_to_indices,
+        compute_local_ctf_sums,
+        flatten_bucket_rotations,
+    )
+    from scripts.lib.bucketed_pass2_scoring import _score_pass2_bucket_relion_gpu_diff2
 
     image_shape = tuple(map(int, experiment_dataset.image_shape))
     volume_shape = tuple(map(int, experiment_dataset.volume_shape))
