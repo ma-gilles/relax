@@ -13,7 +13,7 @@ from recovar.reconstruction import relion_functions as rf
 from relax.reconstruction import regularization as regularization_relion
 from relax.reconstruction import relion_functions as relion_functions_relion
 from relax.reconstruction import volume_solver
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,

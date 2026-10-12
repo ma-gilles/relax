@@ -495,8 +495,8 @@ def test_k_class_replay_reconstructs_from_recorded_mstep_accumulator_shape():
 def test_cropped_x_half_accumulator_reconstructs_when_shape_is_explicit():
     from recovar.core import fourier_transform_utils
 
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
-    from relax.refinement.refinement_options import ReconstructionPrograms
 
     volume_shape = (8, 8, 8)
     accumulator_shape = (5, 5, 5)

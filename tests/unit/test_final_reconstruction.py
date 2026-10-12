@@ -8,8 +8,8 @@ import pytest
 from helpers import reconstruction_settings as settings_builder
 from helpers.float_compare import assert_matches
 
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import final_reconstruction
-from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.relion.geometry import (
     IMAGE_MASK_EDGE_PIXELS,
     PROJECTION_PADDING_FACTOR,

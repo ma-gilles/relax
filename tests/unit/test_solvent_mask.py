@@ -20,8 +20,8 @@ from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.numerics import relion_random
 from relax.reconstruction import solvent_mask
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess
-from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 

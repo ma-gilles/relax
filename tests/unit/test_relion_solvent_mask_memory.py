@@ -6,8 +6,8 @@ from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 from recovar.core import mask
 
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess, numbered_reconstruction
-from relax.refinement.refinement_options import ReconstructionPrograms
 
 jnp = pytest.importorskip("jax.numpy")
 

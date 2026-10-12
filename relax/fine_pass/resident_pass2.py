@@ -208,6 +208,7 @@ from relax.reconstruction.half_volume_mstep import (
     relion_x_half_accumulators_to_public_layout,
     relion_x_half_mstep_accumulator_dtypes,
 )
+from relax.reconstruction.volume_solver import _RESIDENT_STABLE_WINDOWS_ENV
 from relax.relion import ctf
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
 from relax.relion.optics_groups import noise_rows, pixel_rows
@@ -276,15 +277,6 @@ _KERNEL_CTF_PROBS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
 # against. The stage bodies are the same functions in both settings, so the
 # flag changes only where the JIT boundary sits.
 _RESIDENT_GLUE_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
-# Stable Fourier windows: the chunk programs are keyed on a physical window
-# class (the current size rounded up to the stable-window quantum) and RELION's
-# logical current size and pixel counts travel as device scalars
-# (_WindowLogicalSizes), so the current sizes of one class share their chunk
-# programs. Default on for Class3D and auto-refine: on the 5k K4 census
-# (14460993) the 25-iteration wall drops from 367 to 336 s with maps identical
-# to non-MPI RELION (14468487). ``=0`` restores RELION's logical window as the
-# programs' key; VDAM's resident route (--grad) takes them only with ``=1``.
-_RESIDENT_STABLE_WINDOWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS"
 # Diagnostic, default off. Checks the statically computed M-step carry avals
 # against a ``jax.eval_shape`` probe of the same block stages, once per
 # capacity class. The probes are what this change removes from the chunk loop;

@@ -19,8 +19,8 @@ from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.reconstruction import regularization
 from relax.reconstruction.resolution import shell_index_to_resolution_angstrom
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import numbered_reconstruction, priors
-from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 

@@ -9,10 +9,13 @@ from dataclasses import dataclass, field
 import jax.numpy as jnp
 import numpy as np
 
-from relax.reconstruction.volume_solver import _finish_host_staged_reconstruction, _reconstruct_volume_eager
+from relax.reconstruction.volume_solver import (
+    ReconstructionPrograms,
+    _finish_host_staged_reconstruction,
+    _reconstruct_volume_eager,
+)
 from relax.refinement import map_postprocess
 from relax.refinement.ports import MaximizationProbe, NoProbe
-from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.runtime.timing import Stopwatch
 
 logger = logging.getLogger(__name__)

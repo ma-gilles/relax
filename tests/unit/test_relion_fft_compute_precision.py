@@ -6,7 +6,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar.reconstruction.relion_functions import post_process_from_filter_v2
 
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 

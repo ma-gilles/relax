@@ -7,8 +7,8 @@ from helpers.float_compare import assert_matches
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import volume_solver
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess, numbered_reconstruction
-from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 

@@ -18,8 +18,9 @@ from helpers.tiny_refinement import record_calls, run_tiny_refinement
 
 from relax.reconstruction import half_volume_mstep
 from relax.reconstruction import regularization as rr
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import final_reconstruction, priors, startup_references
-from relax.refinement.refinement_options import ReconstructionPrograms, RelionConsistencyOptions
+from relax.refinement.refinement_options import RelionConsistencyOptions
 from relax.relion import projector_setup as setup
 from relax.relion import reference_initialization
 

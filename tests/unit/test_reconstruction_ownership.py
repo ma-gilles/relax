@@ -12,8 +12,8 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import regularization, volume_solver
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess
-from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 

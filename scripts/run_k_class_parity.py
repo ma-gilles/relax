@@ -1301,8 +1301,8 @@ def main() -> None:
     from relax.fine_pass.dispatch import compute_pass2_stats_sparse
     from relax.io.map_io import write_map
     from relax.reconstruction.regularization import RELION_MINRES_MAP
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
-    from relax.refinement.refinement_options import ReconstructionPrograms
     from relax.relion.metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,

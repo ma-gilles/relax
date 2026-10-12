@@ -11,7 +11,7 @@ import recovar.core.fourier_transform_utils as fourier_transform_utils
 from recovar.reconstruction import regularization
 
 from relax.reconstruction import regularization as regularization_relion
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 

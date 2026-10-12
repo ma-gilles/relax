@@ -24,12 +24,13 @@ from helpers.tiny_refinement import unconverged_accuracy
 import relax.refinement.noise_updates as noise_updates
 from relax.reconstruction import volume_solver
 from relax.reconstruction.resolution import ImageGeometry
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess
 from relax.refinement.half_inputs import HalfPair, initialize_halfsets
 from relax.refinement.local_sampling import relion_local_pass1_current_size
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver, StartSeeds
-from relax.refinement.refinement_options import OpticsGeometry, ReconstructionPrograms
+from relax.refinement.refinement_options import OpticsGeometry
 from relax.refinement.startup_references import StartupHandoff
 from relax.sampling import oversampling as oversampling_grids
 from relax.sampling.orientation_priors import (

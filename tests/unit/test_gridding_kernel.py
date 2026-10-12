@@ -17,6 +17,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import (
     command_options,
     final_reconstruction,
@@ -28,7 +29,6 @@ from relax.refinement import (
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
     KClassOptions,
-    ReconstructionPrograms,
     RelionConsistencyOptions,
 )
 from relax.relion import projector_setup as setup
