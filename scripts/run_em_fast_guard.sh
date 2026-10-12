@@ -54,7 +54,7 @@ for helper in (
     "parity.relion_replay", "relion.normalization", "refinement.projector_preparation",
     "refinement.score_outputs", "classification.k_class_results", "classification.k_class_inputs", "refinement.scoring_policy", "fourier.resolution", "diagnostics.bpref_diagnostics",
     "sampling.expected_accuracy", "scoring.significant_samples", "diagnostics.coarse_score_diagnostics", "fine_pass.bucket_arrays", "scoring.compact_candidates", "relion.ctf", "relion.scale_groups",
-    "relion.vdam_checkpoint", "local_search.layout", "diagnostics.local_debug",
+    "vdam.relion_checkpoint", "local_search.layout", "diagnostics.local_debug",
 ):
     importlib.import_module(f"relax.{helper}")
 for diagnostic in ("iteration", "reconstruction"):

@@ -22,7 +22,7 @@ from relax.diagnostics.vdam_observers import vdam_command_observer
 from relax.io.particle_io import ParticleReadPolicy
 from relax.parity import vdam_replay
 from relax.refinement.tomo_half import TiltImageAccuracyInputs
-from relax.relion import initial_model_io, vdam_checkpoint
+from relax.relion import initial_model_io
 from relax.sampling import healpix
 from relax.sampling.expected_accuracy import ExpectedAccuracy
 from relax.sampling.orientation_priors import relion_round_away_from_zero
@@ -33,6 +33,7 @@ from relax.vdam import (
     native_sampling,
     output,
     particle_update,
+    relion_checkpoint,
     schedules,
 )
 from relax.vdam.bootstrap_iref import initialise_denovo_state
@@ -288,7 +289,7 @@ def test_native_vdam_diagnostic_continuation_loads_complete_gradient_state(tmp_p
         diagnostic_stop_after_iteration=181,
     )
 
-    checkpoint = vdam_checkpoint._load_native_vdam_continuation(
+    checkpoint = relion_checkpoint._load_native_vdam_continuation(
         optimiser,
         expected_data_star=data,
         opts=opts,
@@ -334,7 +335,7 @@ def test_native_vdam_diagnostic_continuation_fails_without_second_pseudo_half(tm
     )
 
     with pytest.raises(FileNotFoundError):
-        vdam_checkpoint._load_native_vdam_continuation(
+        relion_checkpoint._load_native_vdam_continuation(
             optimiser,
             expected_data_star=data,
             opts=opts,
@@ -356,7 +357,7 @@ def test_continuation_order_replay_rejects_suspended_local_search_history(
     )
 
     with pytest.raises(NotImplementedError, match="suspended local-search"):
-        vdam_checkpoint._validate_continuation_order_replay(checkpoint)
+        relion_checkpoint._validate_continuation_order_replay(checkpoint)
 
 
 @pytest.mark.parametrize("prior_mode", (0, 1))
@@ -366,7 +367,7 @@ def test_continuation_order_replay_accepts_unsuspended_local_searches(prior_mode
         grad_suspended_local_searches_iter=-1,
     )
 
-    vdam_checkpoint._validate_continuation_order_replay(checkpoint)
+    relion_checkpoint._validate_continuation_order_replay(checkpoint)
 
 
 def test_continuation_order_replay_accepts_pre_local_checkpoint():
@@ -375,7 +376,7 @@ def test_continuation_order_replay_accepts_pre_local_checkpoint():
         grad_suspended_local_searches_iter=-1,
     )
 
-    vdam_checkpoint._validate_continuation_order_replay(checkpoint)
+    relion_checkpoint._validate_continuation_order_replay(checkpoint)
 
 
 def test_iteration_reference_replay_expands_iteration_and_class(monkeypatch, tmp_path):

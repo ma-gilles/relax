@@ -367,7 +367,7 @@ LOC_BUDGETS = {
     # output.py, the record's exact size.
     "input_output": (1394, (
         "output.py", "../relion/initial_model_io.py",
-        "../relion/vdam_checkpoint.py", "../relion/initial_noise.py",
+        "relion_checkpoint.py", "../relion/initial_noise.py",
     )),
     # diagnostics/initial_model_capture.py (87 lines) left with the exact local engine
     # it served (2026-09-30).
@@ -513,7 +513,8 @@ def test_mstep_single_class_definition_ownership():
 def test_initial_model_serialization_owners_and_driver_imports():
     from recovar.data_io.starfile import star_column
 
-    from relax.relion import ctf, metadata, vdam_checkpoint
+    from relax.relion import ctf, metadata
+    from relax.vdam import relion_checkpoint
 
     driver_src = inspect.getsource(driver)
     for owner, names in (
@@ -528,7 +529,7 @@ def test_initial_model_serialization_owners_and_driver_imports():
     assert output._write_data_star is initial_model_io._write_data_star
     assert output._write_model_star is initial_model_io._write_model_star
     assert initial_model_io.star_column is ctf.star_column is star_column
-    assert vdam_checkpoint._relion_star_list_value is metadata._relion_star_list_value
+    assert relion_checkpoint._relion_star_list_value is metadata._relion_star_list_value
     assert not (PACKAGE_DIR / "star_io.py").exists()
 
 
