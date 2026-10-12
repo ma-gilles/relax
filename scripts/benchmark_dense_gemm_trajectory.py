@@ -277,8 +277,8 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
         make_scoring_half_image_weights,
         mask_relion_noise_shell_indices_to_current_window,
     )
-    from relax.fourier.preprocessing import prepare_batch_preprocess_operands
     from relax.io.batch_fetch import iter_indexed_batches
+    from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
     from relax.scoring.coarse_operands import (
         assemble_relion_exact_coarse_gaussian_operands,
         process_relion_exact_coarse_half_image,

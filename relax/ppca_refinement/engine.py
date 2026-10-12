@@ -164,7 +164,7 @@ def _per_pose_stats_block(Y1, proj_aug, ctf2_over_noise, y_norm):
     the real parts of the Hermitian inner products. The ``.real``
     projections are exact (not approximations) provided the half-image
     weights are baked into ``Y1``, ``ctf2_over_noise``, and ``y_norm``
-    upstream. They are: ``relax.fourier.preprocessing.preprocess_batch``
+    upstream. They are: ``relax.relion.image_preprocessing.preprocess_batch``
     computes ``y_norm = Σ_f (|y|²/σ²) · w_f``, and
     :func:`iter_dense_ppca_dataset_blocks` bakes
     ``score_mask = window_mask × half_weights`` into both ``Y1`` and

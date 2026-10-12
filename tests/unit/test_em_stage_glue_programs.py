@@ -199,7 +199,7 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
 def test_preprocess_batch_jitted_elementwise_matches_eager():
     """The jitted elementwise chain matches the eager one within the float band."""
 
-    from relax.fourier import preprocessing
+    from relax.relion import image_preprocessing
 
     rng = np.random.default_rng(3)
     n_images, n_half_pixels, n_trans = 4, 9, 3
@@ -222,10 +222,10 @@ def test_preprocess_batch_jitted_elementwise_matches_eager():
         score_real_dtype=jnp.float32,
         norm_real_dtype=None,
     )
-    eager = preprocessing._preprocess_batch_elementwise(
+    eager = image_preprocessing._preprocess_batch_elementwise(
         processed, ctf, noise, phases, weights, **common
     )
-    jitted = preprocessing._preprocess_batch_elementwise_jit(
+    jitted = image_preprocessing._preprocess_batch_elementwise_jit(
         processed, ctf, noise, phases, weights, **common
     )
     assert len(eager) == len(jitted) == 4
@@ -287,7 +287,7 @@ def test_collate_keeps_device_arrays_on_device():
         ),
         (
             "RELAX_EM_JIT_STAGE_GLUE",
-            "relax.fourier.preprocessing:jit_stage_glue_enabled",
+            "relax.relion.image_preprocessing:jit_stage_glue_enabled",
             False,  # the K=1 entry points set it; the shared default stays off
         ),
     ],

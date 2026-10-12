@@ -223,7 +223,7 @@ def test_refinement_accepts_premultiplied_optics_only_where_supported():
 
 @pytest.mark.unit
 def test_dense_preprocessing_scores_premultiplied_batches_with_the_exact_rows(star_dataset, tmp_path, monkeypatch):
-    from relax.fourier.preprocessing import _dense_batch_ctf_half
+    from relax.relion.image_preprocessing import _dense_batch_ctf_half
 
     generic_calls = []
     config = SimpleNamespace(image_shape=(BOX, BOX), compute_ctf_half=lambda params: generic_calls.append(params))

@@ -3823,7 +3823,7 @@ def relion_preprocess_real_f32(
 
 
 _INVALID_IMAGE = "{count} image(s) had a non-finite pixel or a non-positive or non-finite soft-mask background"
-# The dataset images of the batch being preprocessed (helpers.preprocessing.prepare_batch_preprocess_operands).
+# The dataset images of the batch being preprocessed (relax.relion.image_preprocessing.prepare_batch_preprocess_operands).
 _RELION_PREPROCESS_BATCH_IMAGES: np.ndarray | None = None
 
 

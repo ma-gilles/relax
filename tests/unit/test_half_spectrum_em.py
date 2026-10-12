@@ -32,8 +32,8 @@ from relax.fourier.half_spectrum import (
     make_scoring_half_image_weights,
     make_shell_indices_half,
 )
-from relax.fourier.preprocessing import preprocess_batch as _preprocess_batch
 from relax.projection.projection import compute_projections_block as _compute_projections_block
+from relax.relion.image_preprocessing import preprocess_batch as _preprocess_batch
 from relax.scoring.coarse_kernels import update_logsumexp
 
 pytestmark = pytest.mark.unit

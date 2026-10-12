@@ -40,8 +40,8 @@ from relax.fourier.half_spectrum import (
     make_scoring_half_image_weights,
     mask_relion_noise_shell_indices_to_current_window,
 )
-from relax.fourier.preprocessing import preprocess_batch as _preprocess_batch
 from relax.projection.projection import compute_projections_block as _compute_projections_block
+from relax.relion.image_preprocessing import preprocess_batch as _preprocess_batch
 from relax.scoring.coarse_kernels import _e_step_block_scores_windowed
 
 pytestmark = pytest.mark.unit

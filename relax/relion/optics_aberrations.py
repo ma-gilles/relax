@@ -9,7 +9,7 @@ complex conjugate before scoring and backprojection (ml_optimiser.cpp:6285, 6418
 acc_ml_optimiser_impl.h:538, 859). The references are not modulated.
 
 The phase is a property of the image pixels, so relax applies it where the images
-are Fourier transformed (:func:`relax.fourier.preprocessing.process_half_image`),
+are Fourier transformed (:func:`relax.relion.image_preprocessing.process_half_image`),
 which every scoring and backprojection path reads.
 """
 

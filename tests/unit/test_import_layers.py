@@ -62,8 +62,6 @@ ALLOWED_UPWARD = {
     ("relax.fine_pass.resident_significance", "relax.scoring.significant_samples"): _D,
     ("relax.fine_pass.resident_tilts", "relax.refinement.tomo_particles"): _A,
     ("relax.fine_pass.window", "relax.refinement.precision"): _A,
-    ("relax.fourier.preprocessing", "relax.relion.ctf"): _C,
-    ("relax.fourier.preprocessing", "relax.relion.optics_aberrations"): _C,
     ("relax.fourier.resolution", "relax.reconstruction.regularization"): _E,
     ("relax.fourier.resolution", "relax.refinement.refinement_options"): _A,
     ("relax.fourier.resolution", "relax.refinement.refinement_state"): _A,

@@ -112,9 +112,9 @@ def tilt_image_coarse_operands(
     """
 
     from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
-    from relax.fourier.preprocessing import prepare_batch_preprocess_operands
     from relax.io.batch_fetch import fetch_indexed_batch
     from relax.relion.ctf import relion_exact_ctf_half_from_source_star_host
+    from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
     from relax.relion.optics_groups import noise_rows
     from relax.scoring.coarse_operands import (
         process_relion_exact_coarse_half_image,
@@ -1353,9 +1353,9 @@ def tilt_image_cc_coarse_operands(experiment_dataset, image_indices, window_indi
     normalises a tomo image (acc_ml_optimiser_impl.h:429-476).
     """
 
-    from relax.fourier.preprocessing import prepare_batch_preprocess_operands
     from relax.io.batch_fetch import fetch_indexed_batch
     from relax.relion.ctf import relion_exact_ctf_half_from_source_star
+    from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
     from relax.scoring.coarse_operands import (
         assemble_relion_cc_coarse_operands,
         process_relion_exact_coarse_half_image,

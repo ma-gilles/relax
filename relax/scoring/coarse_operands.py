@@ -257,7 +257,7 @@ def process_relion_exact_coarse_half_image(
 
     if relion_preprocess_kwargs is None:
         raise ValueError("RELION's exact coarse operands require RELION's CUDA image preprocessing")
-    from relax.fourier.preprocessing import process_half_image
+    from relax.relion.image_preprocessing import process_half_image
 
     exact_preprocess_kwargs = dict(relion_preprocess_kwargs)
     exact_preprocess_kwargs["relion_fft_per_image"] = True

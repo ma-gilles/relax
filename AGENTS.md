@@ -81,10 +81,10 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 | `relax/fine_pass/` | fine pass: the device-resident pass-2 engine (CUDA only) |
 | `relax/local_search/`, `relax/classification/` | exact local search: layout, sampling, a half's route and the resident local pass; K-class execution and results |
 | `relax/dense/` | the dense GEMM coarse pass and experiment |
-| `relax/reconstruction/`, `relax/relion/` | RELION M-step, regularization and noise; RELION metadata, CTF, projector, normalization |
+| `relax/reconstruction/`, `relax/relion/` | RELION M-step, regularization and noise; RELION metadata, CTF, image preprocessing, projector, normalization |
 | `relax/vdam/` (momentum SGD in `vdam/sgd.py`), `relax/ppca_initial_model/` | InitialModel variants |
 | `relax/ppca_refinement/` | pose-marginal PPCA refinement |
-| `relax/sampling/`, `relax/fourier/`, `relax/projection/` | grids, symmetry, priors, oversampling and expected accuracy; Fourier windows, resolution and preprocessing; projection and its adjoint |
+| `relax/sampling/`, `relax/fourier/`, `relax/projection/` | grids, symmetry, priors, oversampling and expected accuracy; Fourier windows, resolution and translation phases; projection and its adjoint |
 | `relax/runtime/`, `relax/io/`, `relax/numerics/`, `relax/types.py` | environment flags, memory and batch planning, compile cache; map and particle I/O; per-voxel Fourier shells, deterministic sums and RELION's random stream; shared records |
 | `relax/cuda/` | CUDA kernels and their FFI (`librelax_cuda.so`) |
 | `relax/diagnostics/`, `relax/relion_bind/` | capture and replay; the RELION binding (never imported by production code) |

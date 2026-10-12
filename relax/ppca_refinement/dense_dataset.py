@@ -25,7 +25,6 @@ from recovar.reconstruction import noise as noise_utils
 
 from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.fourier.half_spectrum import make_scoring_half_image_weights
-from relax.fourier.preprocessing import prepare_reconstruction_batch, preprocess_batch
 from relax.ppca_refinement.config import (
     GeometryConfig,
     PoseSelectionConfig,
@@ -63,6 +62,7 @@ from relax.ppca_refinement.pose_selection import (
 from relax.ppca_refinement.postprocess import PostprocessConfig, postprocess_ppca_half_volumes
 from relax.ppca_refinement.residual_statistics import full_float32, residual_statistics_precision
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
+from relax.relion.image_preprocessing import prepare_reconstruction_batch, preprocess_batch
 from relax.sampling.oversampling import find_significant_mask, top_k_rows
 
 

@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts
-from relax.fourier.preprocessing import prepare_batch_preprocess_operands
+from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
 from relax.scoring.coarse_operands import repeat_pad_batch_axis
 
 

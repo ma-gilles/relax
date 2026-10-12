@@ -33,12 +33,11 @@ from relax.fourier.image_shifts import apply_relion_integer_pre_shifts, half_ima
 from relax.fourier.preprocessing import (
     apply_half_translation_phases,
     half_translation_phase_table,
-    prepare_batch_preprocess_operands,
-    process_half_image,
     relion_half_translation_lattice,
 )
 from relax.refinement.precision import DensePrecisionPolicy, audit_operand_precision
 from relax.relion import ctf
+from relax.relion.image_preprocessing import prepare_batch_preprocess_operands, process_half_image
 from relax.relion.optics_groups import noise_rows, pixel_rows
 from relax.runtime.env_flags import parse_env_binary_flag
 

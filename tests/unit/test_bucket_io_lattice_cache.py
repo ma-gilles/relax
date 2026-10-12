@@ -123,17 +123,34 @@ def test_the_dense_batch_preparation_consumes_the_relabelled_table():
     """
 
     import inspect
+    from types import SimpleNamespace
 
     from relax.fourier import preprocessing
+    from relax.relion import image_preprocessing
 
-    source = inspect.getsource(preprocessing._dense_batch_half_inputs)
-    assert "half_translation_phase_table(" in source
+    shape = (16, 16)
+    translations = jnp.asarray([[0.0, 0.5]], dtype=jnp.float32)
+    n_half = preprocessing.half_translation_phase_table(translations, shape).shape[-1]
+    dataset = SimpleNamespace(particles_file=None, process_images_half=lambda batch, apply_image_mask: batch)
+    config = SimpleNamespace(
+        image_shape=shape, compute_ctf_half=lambda params: jnp.ones((1, n_half), dtype=jnp.float32)
+    )
+    *_, dense_phases = image_preprocessing._dense_batch_half_inputs(
+        dataset,
+        jnp.ones((1, n_half), dtype=jnp.complex64),
+        jnp.zeros((1, 9), dtype=jnp.float32),
+        jnp.ones(n_half, dtype=jnp.float32),
+        translations,
+        config,
+        False,
+    )
+    np.testing.assert_array_equal(
+        np.asarray(dense_phases), np.asarray(preprocessing.half_translation_phase_table(translations, shape))
+    )
     table_source = inspect.getsource(preprocessing._half_translation_phase_table)
     assert "relion_half_translation_lattice(image_shape)" in table_source
     assert "get_k_coordinate_of_each_pixel_half" not in table_source
 
-    shape = (16, 16)
-    translations = jnp.asarray([[0.0, 0.5]], dtype=jnp.float32)
     table = np.asarray(preprocessing.half_translation_phase_table(translations, shape))
     core = _core_lattice(shape)
     ky = np.rint(core[:, 1] * shape[0]).astype(int)
