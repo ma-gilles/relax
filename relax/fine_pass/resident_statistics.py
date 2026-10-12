@@ -205,7 +205,7 @@ class ResidentStatisticsConfig:
     # ``relion_wavg_atomic_direct_noise`` is set.
     direct_noise_exclusive_shell_stop: int
     accumulate_scale: bool
-    # RELION optics groups with their own noise spectrum (relax.relion.optics_noise).
+    # RELION optics groups with their own noise spectrum (relax.relion.optics_groups).
     # With more than one, the noise and image-power shells are [G, n_shells] and
     # ``sumw`` is [G] (``wsum_model.sigma2_noise[g]``, ``sumw_group[g]``).
     n_optics_groups: int = 1

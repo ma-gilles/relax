@@ -2576,7 +2576,7 @@ def _resident_pass2(
     ``noise_variance`` is one shared spectrum, or ``[G, P]`` rows of G optics
     groups with ``optics_group_ids`` giving each image's row; each image then
     scores, backprojects and adds its noise sums with its own group
-    (:mod:`relax.relion.optics_noise`), and the noise statistics come back per group.
+    (:mod:`relax.relion.optics_groups`), and the noise statistics come back per group.
 
     ``reconstruction_volume_current_size`` is the backprojector's model size when the
     images are on another grid than the reference (an optics group with another box

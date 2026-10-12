@@ -188,7 +188,7 @@ class ResidentHalfOperands:
     scale: jax.Array
     group_ids: jax.Array
     # Optics-group row of each image, only with a per-group noise table
-    # (relax.relion.optics_noise); None keeps the one-group programs unchanged.
+    # (relax.relion.optics_groups); None keeps the one-group programs unchanged.
     optics_groups: jax.Array | None = None
     bpref_ctf2_over_nv_recon: jax.Array | None = None
     # Explicit dense normalized-CC caller only; the resident chunk path keeps
