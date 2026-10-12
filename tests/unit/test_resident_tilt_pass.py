@@ -403,15 +403,15 @@ def _lone_tilt_runs(monkeypatch, args, tilt):
     Returns ``(whole, blocked, row blocks of each of the blocked pass's chunks)``.
     """
 
+    from relax.fine_pass import resident_chunk_memory, resident_tilts
     from relax.fine_pass import resident_pass2 as rp
-    from relax.fine_pass import resident_tilts
 
     monkeypatch.setattr(
         resident_tilts, "tilt_capacity_ladders", lambda rows, images, **k: ((16,), tuple(sorted(set(images))))
     )
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "16")
     plans, lone_rows = [], []
-    real_plan, real_chunk = rp.plan_resident_chunk_memory, resident_tilts.run_tilt_chunk
+    real_plan, real_chunk = resident_chunk_memory.plan_resident_chunk_memory, resident_tilts.run_tilt_chunk
 
     def plan(**kwargs):
         plans.append(kwargs)
@@ -422,18 +422,18 @@ def _lone_tilt_runs(monkeypatch, args, tilt):
         lone_rows.append(int(tilt_chunk.row_capacity) // k["lone_block_rows"] if k.get("lone_block_rows") else 0)
         return real_chunk(tilt_chunk, *a, **k)
 
-    monkeypatch.setattr(rp, "plan_resident_chunk_memory", plan)
+    monkeypatch.setattr(resident_chunk_memory, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(resident_tilts, "run_tilt_chunk", chunk)
     whole = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt)
     assert lone_rows and not any(lone_rows), "a particle that fits whole must not run in row blocks"
-    assert rp.overflow_row_capacity(plans[-1]["max_image_rows"], (16,)) > 16, "the fixture has no overflow particle"
+    assert resident_chunk_memory.overflow_row_capacity(plans[-1]["max_image_rows"], (16,)) > 16, "the fixture has no overflow particle"
 
     # Shrink the budget until the whole-particle plan is refused (the planner first shrinks the slot block and
     # the M-step block); the row-blocked plan must then fit, or the pass itself refuses and the test fails.
     whole_peak = real_plan(**dict(plans[-1], budget_bytes=None)).peak_bytes
     for fraction in (0.7, 0.5, 0.35, 0.25, 0.18, 0.12, 0.08, 0.05):
         budget = int(whole_peak * fraction)
-        monkeypatch.setattr(rp, "resident_chunk_budget_bytes", lambda budget=budget, **k: budget)
+        monkeypatch.setattr(resident_chunk_memory, "resident_chunk_budget_bytes", lambda budget=budget, **k: budget)
         del lone_rows[:]
         blocked = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt)
         if any(lone_rows):
@@ -476,7 +476,7 @@ def test_lone_tilt_plan_fits_the_refused_real_configuration():
     blocks it costs one block's chunk plus tilt_lone_row_bytes for each of its rows (under 1 GiB of them).
     """
 
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_chunk_memory
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_tilts import tilt_lone_row_bytes
 
@@ -495,11 +495,11 @@ def test_lone_tilt_plan_fits_the_refused_real_configuration():
     )
     assert 294912 * row_bytes > 82 * gib
     with pytest.raises(ResidentConfigurationUnsupported, match="294912 rows, run alone"):
-        rp.plan_resident_chunk_memory(**kwargs)
+        resident_chunk_memory.plan_resident_chunk_memory(**kwargs)
     lone_row_bytes = tilt_lone_row_bytes(37, slot_capacity=41)
-    assert lone_row_bytes == 37 * (rp._LONE_CHUNK_CELL_BYTES + 4) + 64 + 41 * 40
+    assert lone_row_bytes == 37 * (resident_chunk_memory._LONE_CHUNK_CELL_BYTES + 4) + 64 + 41 * 40
     assert 294912 * lone_row_bytes < gib
-    plan = rp.plan_resident_chunk_memory(**kwargs, lone_row_bytes=lone_row_bytes)
+    plan = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, lone_row_bytes=lone_row_bytes)
     assert plan.peak_bytes <= int(42.14 * gib)
     assert max(plan.row_capacity_ladder) * row_bytes + 294912 * lone_row_bytes <= plan.peak_bytes
 

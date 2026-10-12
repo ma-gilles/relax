@@ -187,12 +187,12 @@ def tilt_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators
     once per tilt image); when that does not fit for a particle run alone, its rows are projected, scored and
     backprojected ``lone_block_rows`` at a time, and only these stay for all of its rows:
 
-    - its ``T`` posterior cells, as the SPA lone chunk counts them (``resident_pass2.lone_chunk_row_bytes``),
+    - its ``T`` posterior cells, as the SPA lone chunk counts them (``resident_chunk_memory.lone_chunk_row_bytes``),
       and its posterior at the particle's own translations (at most ``T`` float32 cells) per accumulator;
     - per image slot, the row's float32 3x3 matrix ``inv(L_i A_r)`` and its int32 chunk image.
     """
 
-    from relax.fine_pass.resident_pass2 import lone_chunk_row_bytes
+    from relax.fine_pass.resident_chunk_memory import lone_chunk_row_bytes
 
     return (
         lone_chunk_row_bytes(int(n_fine_trans))

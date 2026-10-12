@@ -33,7 +33,7 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
-from relax.fine_pass import policy
+from relax.fine_pass import policy, resident_chunk_memory
 from relax.fine_pass import resident_pass2 as rp
 from relax.local_search import resident_pass2 as rlp
 from relax.local_search.layout import (
@@ -554,14 +554,15 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     """The capacity plan's per-stage tile counts are the translated arrays a chunk
     actually holds, for both operand families. EMPIAR-10202 it22 (14509861) ran out
     of memory when the plan counted three recon tiles and the tile preparation held
-    about ten; a new translated array must update ``resident_pass2.chunk_translated_tile_pixels``."""
+    about ten; a new translated array must update ``resident_chunk_memory.chunk_translated_tile_pixels``."""
 
+    from relax.fine_pass import resident_chunk_memory as resident_chunk_memory_module
     from relax.fine_pass import resident_pass2 as rp_module
 
     planned = []
     measured = []
     baseline = set()
-    real_plan = rp_module.plan_resident_chunk_memory
+    real_plan = resident_chunk_memory_module.plan_resident_chunk_memory
     real_prepare = rp_module._prepare_chunk_reconstruction_operands
     real_rows = rp_module._chunk_operand_rows
     real_unshifted = rlp._unshifted_chunk_operands
@@ -621,7 +622,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
         record("held_tile_pixels", capacity, n_trans)
         return result
 
-    monkeypatch.setattr(rp_module, "plan_resident_chunk_memory", plan)
+    monkeypatch.setattr(resident_chunk_memory_module, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(rp_module, "_prepare_chunk_reconstruction_operands", prepare)
     monkeypatch.setattr(rlp, "_unshifted_chunk_operands", unshifted_operands)
     _run(_case(), monkeypatch=monkeypatch, resident_operands=unshifted)
@@ -1330,11 +1331,11 @@ def test_lone_block_rows_divide_a_chunk_rounded_to_a_smaller_class():
     """A one-row-class re-plan rounds an overflow image to a multiple of the class it chose: the lone blocks
     are the largest class that divides those rows (EMPIAR-10073 Class3D local, 6144 rows under 1024/4096)."""
 
-    assert rp.lone_block_rows(6144, (1024, 4096)) == 1024
-    assert rp.lone_block_rows(8192, (1024, 4096)) == 4096
-    assert rp.lone_block_rows(24, (8, 16)) == 8
+    assert resident_chunk_memory.lone_block_rows(6144, (1024, 4096)) == 1024
+    assert resident_chunk_memory.lone_block_rows(8192, (1024, 4096)) == 4096
+    assert resident_chunk_memory.lone_block_rows(24, (8, 16)) == 8
     with pytest.raises(ValueError, match="divides"):
-        rp.lone_block_rows(100, (64, 256))
+        resident_chunk_memory.lone_block_rows(100, (64, 256))
 
 
 @requires_resident_gpu
@@ -1411,8 +1412,8 @@ def test_cc_row_block_scorer_matches_the_one_call_cc_chunk():
 def test_class3d_lone_rows_count_the_class_posterior_copy():
     """The Class3D local lone chunk counts one class's masked posterior copy and the class ids per row."""
 
-    plain = rp.lone_chunk_row_bytes(84)
-    assert rp.lone_chunk_row_bytes(84, class_rows=True) == plain + 84 * 4 + 8
+    plain = resident_chunk_memory.lone_chunk_row_bytes(84)
+    assert resident_chunk_memory.lone_chunk_row_bytes(84, class_rows=True) == plain + 84 * 4 + 8
 
 
 def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):

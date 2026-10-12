@@ -263,7 +263,7 @@ def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
     The SPA model (images x T x P x 3 tiles) keeps two particles per chunk here, which made the S1
     standalone's full-box iterations 7x slower; the tilt model keeps the default classes that fit.
     """
-    from relax.fine_pass.resident_pass2 import _cap_image_capacity_ladder
+    from relax.fine_pass.resident_chunk_memory import _cap_image_capacity_ladder
     from relax.runtime.memory_budget import _max_translation_tile_bytes_for_pass
 
     n_recon_pixels, slots, budget = 128 * 65, 41, _max_translation_tile_bytes_for_pass(80 * 1024**3)

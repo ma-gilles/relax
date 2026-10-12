@@ -32,7 +32,7 @@ import jax
 import jax.numpy as jnp
 from oracles.wavg import relion_wavg_rectangle_triplet_terms
 
-from relax.fine_pass import resident_configuration
+from relax.fine_pass import resident_chunk_memory, resident_configuration
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_candidates import (
@@ -369,7 +369,7 @@ def test_wavg_shifted_power_commutes_with_a_row_gather():
 
 def test_mstep_block_rows_divides_every_row_capacity():
     ladder = rp._DEFAULT_ROW_CAPACITY_LADDER
-    block = rp._resolve_mstep_block_rows(
+    block = resident_chunk_memory.resolve_mstep_block_rows(
         n_recon_pixels=4324, max_block_bytes=513124859, row_capacity_ladder=ladder
     )
     assert block > 0 and block & (block - 1) == 0
@@ -377,21 +377,21 @@ def test_mstep_block_rows_divides_every_row_capacity():
 
 
 def test_image_capacity_ladder_is_capped_by_the_translation_tile_budget():
-    ladder = rp._cap_image_capacity_ladder(
+    ladder = resident_chunk_memory._cap_image_capacity_ladder(
         (32, 128, 512), n_fine_trans=100, n_recon_pixels=4324, max_tile_bytes=1_197_291_339
     )
     assert ladder and list(ladder) == sorted(ladder)
     assert max(ladder) <= 512
     # A budget below the smallest class plans the largest power of two of images
     # that fits, at least one (10202 it13, 14460403: 32-image tiles ran out of memory).
-    assert rp._cap_image_capacity_ladder(
+    assert resident_chunk_memory._cap_image_capacity_ladder(
         (32, 128, 512), n_fine_trans=100, n_recon_pixels=4324, max_tile_bytes=1
     ) == (1,)
     per_image = 148 * 132095 * 8 * 3
-    assert rp._cap_image_capacity_ladder(
+    assert resident_chunk_memory._cap_image_capacity_ladder(
         (32, 128, 512), n_fine_trans=148, n_recon_pixels=132095, max_tile_bytes=int(0.02 * 76e9)
     ) == (2,)
-    assert rp._cap_image_capacity_ladder(
+    assert resident_chunk_memory._cap_image_capacity_ladder(
         (32, 128, 512), n_fine_trans=148, n_recon_pixels=132095, max_tile_bytes=31 * per_image
     ) == (16,)
 
@@ -408,17 +408,17 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
     row_bytes = resident_row_projection_bytes(n_score_pixels=p_score, n_recon_pixels=p_recon)
     fixed_tile = int(0.02 * 76e9)
     budget = 20 * gib
-    images = rp.resident_image_capacity_start(
+    images = resident_chunk_memory.resident_image_capacity_start(
         (32, 128, 512), n_fine_trans=t, n_recon_pixels=p_recon, max_tile_bytes=fixed_tile,
         chunk_budget_bytes=budget,
     )
     assert images == (32, 128, 512)  # the fixed tile budget fits no class: the joint plan sizes them
-    plan = rp.plan_resident_chunk_memory(
+    plan = resident_chunk_memory.plan_resident_chunk_memory(
         row_capacity_ladder=(1024, 4096), image_capacity_ladder=images, mstep_block_rows=64,
         row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=budget,
     )
     assert plan.peak_bytes <= budget
-    assert plan.peak_bytes == rp.resident_chunk_bytes(
+    assert plan.peak_bytes == resident_chunk_memory.resident_chunk_bytes(
         row_capacity=max(plan.row_capacity_ladder), image_capacity=max(plan.image_capacity_ladder),
         mstep_block_rows=plan.mstep_block_rows, row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon,
     )
@@ -427,14 +427,14 @@ def test_joint_chunk_plan_fits_the_10202_iteration_14_shape():
     assert 1024 % plan.mstep_block_rows == 0
     # A single row class halves until the chunk fits (bigbox 14640954: the 10202 final pass of a
     # cold run had 13.81 GiB for a 13.90 GiB 1024-row chunk).
-    halved = rp.plan_resident_chunk_memory(
+    halved = resident_chunk_memory.plan_resident_chunk_memory(
         row_capacity_ladder=(1024,), image_capacity_ladder=(1,), mstep_block_rows=1,
         row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=1 * gib,
     )
     assert max(halved.row_capacity_ladder) < 1024 and halved.peak_bytes <= 1 * gib
     # A budget below the smallest chunk is a refusal (there is no other pass-2 engine to run it on).
     with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest chunk"):
-        rp.plan_resident_chunk_memory(
+        resident_chunk_memory.plan_resident_chunk_memory(
             row_capacity_ladder=(1024,), image_capacity_ladder=(1,), mstep_block_rows=1,
             row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=row_bytes * 32,
         )
@@ -449,38 +449,38 @@ def test_float32_posterior_bucket_scratch_is_admitted_for_regular_pipeline_and_o
                 held_tile_pixels=0, prepare_tile_pixels=0, projection_transient_bytes=0)
     row, image = 4096, 32
     scratch = posterior_translation_bucket_scratch_bytes(row, image, 8)
-    plain = rp.resident_chunk_bytes(row_capacity=row, image_capacity=image, **base)
-    bucket = rp.resident_chunk_bytes(
+    plain = resident_chunk_memory.resident_chunk_bytes(row_capacity=row, image_capacity=image, **base)
+    bucket = resident_chunk_memory.resident_chunk_bytes(
         row_capacity=row, image_capacity=image, float32_posterior_buckets=True, **base,
     )
     assert bucket == row + scratch
     assert bucket > plain
-    pipelined = rp.resident_chunk_bytes(
+    pipelined = resident_chunk_memory.resident_chunk_bytes(
         row_capacity=row, image_capacity=image, float32_posterior_buckets=True,
         pipelined=True, **base,
     )
     assert pipelined == bucket + row
-    plan = rp.plan_resident_chunk_memory(
+    plan = resident_chunk_memory.plan_resident_chunk_memory(
         row_capacity_ladder=(4096, 131072), image_capacity_ladder=(32,),
         budget_bytes=bucket + 100, float32_posterior_buckets=True, **base,
     )
     assert plan.row_capacity_ladder == (4096,)
     assert plan.peak_bytes == bucket
     # Main's row planner can halve a lone class to its 64-row floor.
-    minimum_row = rp._MIN_PLANNED_ROW_CAPACITY
-    minimum = rp.resident_chunk_bytes(
+    minimum_row = resident_chunk_memory.MIN_PLANNED_ROW_CAPACITY
+    minimum = resident_chunk_memory.resident_chunk_bytes(
         row_capacity=minimum_row, image_capacity=1, float32_posterior_buckets=True, **base,
     )
     with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest chunk"):
-        rp.plan_resident_chunk_memory(
+        resident_chunk_memory.plan_resident_chunk_memory(
             row_capacity_ladder=(minimum_row,), image_capacity_ladder=(1,),
             budget_bytes=minimum - 1, float32_posterior_buckets=True, **base,
         )
-    overflow_row = rp.overflow_row_capacity(5000, (4096,))
-    overflow = rp.resident_chunk_bytes(
+    overflow_row = resident_chunk_memory.overflow_row_capacity(5000, (4096,))
+    overflow = resident_chunk_memory.resident_chunk_bytes(
         row_capacity=overflow_row, image_capacity=image, float32_posterior_buckets=True, **base,
     )
-    overflow_plan = rp.plan_resident_chunk_memory(
+    overflow_plan = resident_chunk_memory.plan_resident_chunk_memory(
         row_capacity_ladder=(4096,), image_capacity_ladder=(32,),
         max_image_rows=5000, budget_bytes=overflow,
         float32_posterior_buckets=True, **base,
@@ -505,30 +505,30 @@ def test_joint_chunk_plan_counts_the_local_preparation_stage():
         row_capacity_ladder=(1024,), image_capacity_ladder=(32,), mstep_block_rows=32,
         row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=budget,
     )
-    old = rp.plan_resident_chunk_memory(**kwargs)
+    old = resident_chunk_memory.plan_resident_chunk_memory(**kwargs)
     assert old.image_capacity_ladder == (32,)
     assert old.peak_bytes / gib == pytest.approx(18.55, abs=0.01)
 
-    tiles = rp.chunk_translated_tile_pixels(
+    tiles = resident_chunk_memory.chunk_translated_tile_pixels(
         unshifted_operands=False,
         n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=p_recon,
     )
     assert 32 * t * tiles["prepare_tile_pixels"] * 8 > budget
-    plan = rp.plan_resident_chunk_memory(**kwargs, **tiles)
+    plan = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, **tiles)
     assert plan.peak_bytes <= budget
     assert max(plan.image_capacity_ladder) * t * tiles["prepare_tile_pixels"] * 8 <= budget
     assert max(plan.image_capacity_ladder) >= 8
     assert plan.row_capacity_ladder == (1024,)  # only the image classes pay for the preparation stage
-    assert plan.peak_bytes == rp.resident_chunk_bytes(
+    assert plan.peak_bytes == resident_chunk_memory.resident_chunk_bytes(
         row_capacity=1024, image_capacity=max(plan.image_capacity_ladder), mstep_block_rows=plan.mstep_block_rows,
         row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, **tiles,
     )
 
-    unshifted = rp.chunk_translated_tile_pixels(
+    unshifted = resident_chunk_memory.chunk_translated_tile_pixels(
         unshifted_operands=True,
         n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=p_recon,
     )
-    assert rp.plan_resident_chunk_memory(**kwargs, **unshifted).image_capacity_ladder == (32,)
+    assert resident_chunk_memory.plan_resident_chunk_memory(**kwargs, **unshifted).image_capacity_ladder == (32,)
 
 
 def test_joint_chunk_plan_counts_the_global_per_chunk_preparation_with_its_rows():
@@ -550,29 +550,29 @@ def test_joint_chunk_plan_counts_the_global_per_chunk_preparation_with_its_rows(
         row_capacity_ladder=(8192, 32768), image_capacity_ladder=(32, 128, 512), mstep_block_rows=1024,
         row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, budget_bytes=budget,
     )
-    tiles = rp.chunk_translated_tile_pixels(
+    tiles = resident_chunk_memory.chunk_translated_tile_pixels(
         unshifted_operands=False,
         n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=n_exact,
     )
     # The failing 512-image chunk's preparation, which three recon tiles per image did not count.
     assert 512 * t * tiles["prepare_tile_pixels"] * 8 > budget
 
-    plan = rp.plan_resident_chunk_memory(**kwargs, **tiles, rows_live_during_prepare=True)
+    plan = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, **tiles, rows_live_during_prepare=True)
     assert plan.peak_bytes <= budget
     images, rows = max(plan.image_capacity_ladder), max(plan.row_capacity_ladder)
     assert images * t * tiles["prepare_tile_pixels"] * 8 + rows * row_bytes <= budget
     assert 32 <= images < 512
-    assert plan.peak_bytes == rp.resident_chunk_bytes(
+    assert plan.peak_bytes == resident_chunk_memory.resident_chunk_bytes(
         row_capacity=rows, image_capacity=images, mstep_block_rows=plan.mstep_block_rows,
         row_bytes=row_bytes, n_fine_trans=t, n_recon_pixels=p_recon, rows_live_during_prepare=True, **tiles,
     )
     # With the half's resident operands the chunk holds only the rectangle and its exact positions.
-    unshifted = rp.chunk_translated_tile_pixels(
+    unshifted = resident_chunk_memory.chunk_translated_tile_pixels(
         unshifted_operands=True,
         n_score_pixels=p_score, n_recon_pixels=p_recon, n_rect_pixels=n_rect, n_exact_rect_pixels=n_exact,
     )
     assert unshifted["prepare_tile_pixels"] < tiles["prepare_tile_pixels"] / 4
-    assert max(rp.plan_resident_chunk_memory(
+    assert max(resident_chunk_memory.plan_resident_chunk_memory(
         **kwargs, **unshifted, rows_live_during_prepare=True
     ).image_capacity_ladder) >= images
 
@@ -583,25 +583,25 @@ def test_unshifted_mstep_blocks_gather_no_translated_tile():
     (T=36, 25717 recon, 33024 rectangle pixels, 503 KiB rows, a 37.6 GiB budget)."""
 
     t, p, rect = 36, 25717, 33024
-    assert rp._mstep_block_row_bytes(t, p, 0) == 44 * p
-    assert rp._mstep_block_row_bytes(t, p) == 2 * t * p * 8 + 44 * p
+    assert resident_chunk_memory._mstep_block_row_bytes(t, p, 0) == 44 * p
+    assert resident_chunk_memory._mstep_block_row_bytes(t, p) == 2 * t * p * 8 + 44 * p
     kwargs = dict(
         row_capacity_ladder=(1024, 4096, 16384), image_capacity_ladder=(32, 128, 512), mstep_block_rows=1024,
         row_bytes=503 * 1024, n_fine_trans=t, n_recon_pixels=p, budget_bytes=int(37.6 * 1024**3),
     )
-    tiles = rp.chunk_translated_tile_pixels(
+    tiles = resident_chunk_memory.chunk_translated_tile_pixels(
         unshifted_operands=False, n_score_pixels=p, n_recon_pixels=p, n_rect_pixels=rect, n_exact_rect_pixels=p
     )
-    unshifted = rp.chunk_translated_tile_pixels(
+    unshifted = resident_chunk_memory.chunk_translated_tile_pixels(
         unshifted_operands=True, n_score_pixels=p, n_recon_pixels=p, n_rect_pixels=rect, n_exact_rect_pixels=p
     )
     assert unshifted["mstep_tile_pixels"] == 0 and tiles["mstep_tile_pixels"] == 2 * p
-    pre_shifted = rp.plan_resident_chunk_memory(**kwargs, **tiles)
-    plan = rp.plan_resident_chunk_memory(**kwargs, **unshifted)
+    pre_shifted = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, **tiles)
+    plan = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, **unshifted)
     assert plan.peak_bytes <= kwargs["budget_bytes"]
     assert plan.mstep_block_rows >= pre_shifted.mstep_block_rows
     assert max(plan.image_capacity_ladder) >= max(pre_shifted.image_capacity_ladder)
-    assert plan.peak_bytes == rp.resident_chunk_bytes(
+    assert plan.peak_bytes == resident_chunk_memory.resident_chunk_bytes(
         row_capacity=max(plan.row_capacity_ladder), image_capacity=max(plan.image_capacity_ladder),
         mstep_block_rows=plan.mstep_block_rows, row_bytes=503 * 1024, n_fine_trans=t, n_recon_pixels=p, **unshifted,
     )
@@ -615,7 +615,7 @@ def test_pipelined_chunk_plan_counts_the_previous_chunk():
 
     gib = 1024**3
     t, p = 84, 155356
-    tiles = rp.chunk_translated_tile_pixels(
+    tiles = resident_chunk_memory.chunk_translated_tile_pixels(
         unshifted_operands=True, n_score_pixels=p, n_recon_pixels=p, n_rect_pixels=158000,
         n_exact_rect_pixels=158000,
     )
@@ -624,14 +624,14 @@ def test_pipelined_chunk_plan_counts_the_previous_chunk():
         row_bytes=int(3016.72 * 1024), n_fine_trans=t, n_recon_pixels=p, budget_bytes=int(22.12 * gib),
         **tiles,
     )
-    serial = rp.plan_resident_chunk_memory(**kwargs)
+    serial = resident_chunk_memory.plan_resident_chunk_memory(**kwargs)
     assert serial.row_capacity_ladder == (1024, 4096)
-    pipelined = rp.plan_resident_chunk_memory(**kwargs, pipelined=True)
+    pipelined = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, pipelined=True)
     assert pipelined.row_capacity_ladder == (1024,)
     assert pipelined.peak_bytes <= kwargs["budget_bytes"]
     rows = 1024 * kwargs["row_bytes"]
     held = 32 * t * tiles["held_tile_pixels"] * 8
-    single = rp.resident_chunk_bytes(
+    single = resident_chunk_memory.resident_chunk_bytes(
         row_capacity=1024, image_capacity=32, mstep_block_rows=pipelined.mstep_block_rows,
         row_bytes=kwargs["row_bytes"], n_fine_trans=t, n_recon_pixels=p, **tiles,
     )
@@ -681,7 +681,7 @@ def test_full_box_chunk_plan_counts_the_projector_call_and_the_accumulators():
 
     gib = 1024**3
     crop, n_score, n_recon, union = 800 * 401, 251966, 251313, 252000
-    per_row = rp.projection_call_row_bytes(
+    per_row = resident_chunk_memory.projection_call_row_bytes(
         crop_pixels=crop, output_pixels=union, n_score_pixels=n_score, n_recon_pixels=n_recon
     )
     # The placement stage (union + zero column + both windows + |recon|^2) is this call's peak.
@@ -689,7 +689,7 @@ def test_full_box_chunk_plan_counts_the_projector_call_and_the_accumulators():
     assert per_row > 8 * (crop + union) > 8 * crop
     old_rows = 4 * gib // (crop * 8)
     assert old_rows == 1673
-    full_row = rp.projection_call_row_bytes(
+    full_row = resident_chunk_memory.projection_call_row_bytes(
         crop_pixels=crop, output_pixels=crop, n_score_pixels=n_score, n_recon_pixels=n_recon
     )
     assert old_rows * full_row > 2.5 * 4 * gib  # what the old reserve let one call hold
@@ -698,23 +698,23 @@ def test_full_box_chunk_plan_counts_the_projector_call_and_the_accumulators():
     assert transient <= 4 * gib
 
     t = 36
-    tiles = rp.chunk_translated_tile_pixels(
+    tiles = resident_chunk_memory.chunk_translated_tile_pixels(
         unshifted_operands=True, n_score_pixels=n_score, n_recon_pixels=n_recon, n_rect_pixels=crop,
         n_exact_rect_pixels=crop,
     )
-    accumulators = rp.resident_accumulator_bytes(1603 * 1603 * 802, np.complex64, np.float32)
+    accumulators = resident_chunk_memory.resident_accumulator_bytes(1603 * 1603 * 802, np.complex64, np.float32)
     assert accumulators == 1603 * 1603 * 802 * 12
     kwargs = dict(
         row_capacity_ladder=(1024, 4096), image_capacity_ladder=(16, 32), mstep_block_rows=32,
         row_bytes=resident_row_projection_bytes(n_score_pixels=n_score, n_recon_pixels=n_recon),
         n_fine_trans=t, n_recon_pixels=n_recon, budget_bytes=int(22.12 * gib), **tiles,
     )
-    without = rp.plan_resident_chunk_memory(**kwargs)
-    plan = rp.plan_resident_chunk_memory(**kwargs, projection_transient_bytes=transient, fixed_bytes=accumulators)
+    without = resident_chunk_memory.plan_resident_chunk_memory(**kwargs)
+    plan = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, projection_transient_bytes=transient, fixed_bytes=accumulators)
     assert plan.peak_bytes <= kwargs["budget_bytes"]
-    mstep = plan.mstep_block_rows * rp._mstep_block_row_bytes(t, n_recon, tiles["mstep_tile_pixels"])
+    mstep = plan.mstep_block_rows * resident_chunk_memory._mstep_block_row_bytes(t, n_recon, tiles["mstep_tile_pixels"])
     assert transient > mstep
-    assert plan.peak_bytes == rp.resident_chunk_bytes(
+    assert plan.peak_bytes == resident_chunk_memory.resident_chunk_bytes(
         row_capacity=max(plan.row_capacity_ladder), image_capacity=max(plan.image_capacity_ladder),
         mstep_block_rows=plan.mstep_block_rows, row_bytes=kwargs["row_bytes"], n_fine_trans=t,
         n_recon_pixels=n_recon, projection_transient_bytes=transient, **tiles,
@@ -723,10 +723,10 @@ def test_full_box_chunk_plan_counts_the_projector_call_and_the_accumulators():
     assert plan.pass_bytes == accumulators + plan.peak_bytes
     # The projector call and the M-step block are never live together: a call smaller than
     # the block adds nothing.
-    assert rp.resident_chunk_bytes(
+    assert resident_chunk_memory.resident_chunk_bytes(
         row_capacity=1024, image_capacity=32, mstep_block_rows=32, row_bytes=kwargs["row_bytes"],
         n_fine_trans=t, n_recon_pixels=n_recon, projection_transient_bytes=mstep // 2, **tiles,
-    ) == rp.resident_chunk_bytes(
+    ) == resident_chunk_memory.resident_chunk_bytes(
         row_capacity=1024, image_capacity=32, mstep_block_rows=32, row_bytes=kwargs["row_bytes"],
         n_fine_trans=t, n_recon_pixels=n_recon, **tiles,
     )
@@ -741,15 +741,15 @@ def test_joint_chunk_plan_leaves_a_box_256_plan_unchanged():
         row_bytes=8121 * 8, n_fine_trans=116, n_recon_pixels=7475,
     )
     for budget in (30 * 1024**3, None):
-        plan = rp.plan_resident_chunk_memory(budget_bytes=budget, **kwargs)
+        plan = resident_chunk_memory.plan_resident_chunk_memory(budget_bytes=budget, **kwargs)
         assert plan.row_capacity_ladder == (8192, 32768, 131072)
         assert plan.image_capacity_ladder == (32, 128)
         assert plan.mstep_block_rows == 256
     # Where the fixed tile budget fits a class, the starting image classes are its classes.
     fixed = dict(n_fine_trans=116, n_recon_pixels=7475, max_tile_bytes=int(0.02 * 80e9))
-    assert rp.resident_image_capacity_start(
+    assert resident_chunk_memory.resident_image_capacity_start(
         (32, 128, 512), chunk_budget_bytes=30 * 1024**3, **fixed
-    ) == rp._cap_image_capacity_ladder((32, 128, 512), **fixed)
+    ) == resident_chunk_memory._cap_image_capacity_ladder((32, 128, 512), **fixed)
 
 
 # ---------------------------------------------------------------------------
@@ -929,7 +929,7 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
 
     planned, measured, baseline = [], [], set()
     live_log = []
-    real_plan = rp.plan_resident_chunk_memory
+    real_plan = resident_chunk_memory.plan_resident_chunk_memory
     real_prepare = rp._prepare_chunk_reconstruction_operands
     real_rows = rp._chunk_operand_rows
     real_gather = rp.gather_resident_chunk_operands
@@ -982,7 +982,7 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
         return result
 
     patch = pytest.MonkeyPatch()
-    patch.setattr(rp, "plan_resident_chunk_memory", plan)
+    patch.setattr(resident_chunk_memory, "plan_resident_chunk_memory", plan)
     patch.setattr(rp, "_prepare_chunk_reconstruction_operands", prepare)
     patch.setattr(rp, "gather_resident_chunk_operands", gather)
     try:
@@ -1438,8 +1438,8 @@ def test_streamed_row_ladder_halves_below_its_smallest_class_when_none_fits():
     assert rp._stream_row_capacity_ladder(
         ladder,
         bytes_per_rotation=1.0 / rp._STREAM_PEAK_COPIES,
-        max_projection_bytes=rp._MIN_PLANNED_ROW_CAPACITY,
-    ) == (rp._MIN_PLANNED_ROW_CAPACITY,)
+        max_projection_bytes=resident_chunk_memory.MIN_PLANNED_ROW_CAPACITY,
+    ) == (resident_chunk_memory.MIN_PLANNED_ROW_CAPACITY,)
 
 
 def test_cached_row_ladder_bounds_the_gathered_chunk():
@@ -1762,31 +1762,31 @@ def test_plan_counts_a_lone_overflow_chunk():
     row_offsets = np.array([0, 300, 2800, 3183, 3483], dtype=np.int64)
     tables = SimpleNamespace(n_images=4, row_offsets=row_offsets)
     chunks = plan_capacity_chunks(tables, row_capacity_ladder=(1024,), image_capacity_ladder=(2, 4))
-    overflow = [chunk for chunk in chunks if rp.chunk_runs_alone(chunk, (1024,))]
+    overflow = [chunk for chunk in chunks if resident_chunk_memory.chunk_runs_alone(chunk, (1024,))]
     assert [(c.image_start, c.row_capacity, c.image_capacity) for c in overflow] == [(1, 3072, 2)]
-    assert rp.max_image_rows(row_offsets) == 2500
-    assert rp.overflow_row_capacity(2500, (1024,)) == 3072
-    assert rp.overflow_row_capacity(1024, (1024,)) == 0
+    assert resident_chunk_memory.max_image_rows(row_offsets) == 2500
+    assert resident_chunk_memory.overflow_row_capacity(2500, (1024,)) == 3072
+    assert resident_chunk_memory.overflow_row_capacity(1024, (1024,)) == 0
 
     t, p = 36, 1000
     kwargs = dict(
         row_capacity_ladder=(1024,), image_capacity_ladder=(2, 4), mstep_block_rows=32, row_bytes=10 * p,
         n_fine_trans=t, n_recon_pixels=p, budget_bytes=None, pipelined=True,
     )
-    lone = rp.resident_chunk_bytes(
+    lone = resident_chunk_memory.resident_chunk_bytes(
         row_capacity=3072, image_capacity=2, mstep_block_rows=32, row_bytes=10 * p, n_fine_trans=t,
         n_recon_pixels=p,
     )
-    regular = rp.plan_resident_chunk_memory(**kwargs)
+    regular = resident_chunk_memory.plan_resident_chunk_memory(**kwargs)
     assert regular.peak_bytes < lone
-    assert rp.plan_resident_chunk_memory(**kwargs, max_image_rows=2500).peak_bytes == lone
+    assert resident_chunk_memory.plan_resident_chunk_memory(**kwargs, max_image_rows=2500).peak_bytes == lone
 
     # Over budget, the lone chunk shrinks its M-step block; its rows cannot shrink.
-    fitted = rp.plan_resident_chunk_memory(**{**kwargs, "budget_bytes": lone - 1}, max_image_rows=2500)
+    fitted = resident_chunk_memory.plan_resident_chunk_memory(**{**kwargs, "budget_bytes": lone - 1}, max_image_rows=2500)
     assert fitted.mstep_block_rows < 32
     assert fitted.peak_bytes <= lone - 1
     with pytest.raises(ResidentConfigurationUnsupported):
-        rp.plan_resident_chunk_memory(**{**kwargs, "budget_bytes": 3072 * 10 * p}, max_image_rows=2500)
+        resident_chunk_memory.plan_resident_chunk_memory(**{**kwargs, "budget_bytes": 3072 * 10 * p}, max_image_rows=2500)
 
 
 def test_plan_counts_a_row_blocked_lone_chunk_by_its_posterior_cells():
@@ -1800,15 +1800,15 @@ def test_plan_counts_a_row_blocked_lone_chunk_by_its_posterior_cells():
         row_capacity_ladder=(8192, 32768), image_capacity_ladder=(32, 128), mstep_block_rows=512,
         row_bytes=96 * 1024, n_fine_trans=t, n_recon_pixels=p, budget_bytes=None, pipelined=True,
     )
-    lone_row_bytes = rp.lone_chunk_row_bytes(t)
-    plan = rp.plan_resident_chunk_memory(**kwargs, max_image_rows=294912, lone_row_bytes=lone_row_bytes)
-    block = rp.resident_chunk_bytes(
+    lone_row_bytes = resident_chunk_memory.lone_chunk_row_bytes(t)
+    plan = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, max_image_rows=294912, lone_row_bytes=lone_row_bytes)
+    block = resident_chunk_memory.resident_chunk_bytes(
         row_capacity=32768, image_capacity=32, mstep_block_rows=512, row_bytes=96 * 1024, n_fine_trans=t,
         n_recon_pixels=p,
     )
-    regular = rp.plan_resident_chunk_memory(**kwargs)
+    regular = resident_chunk_memory.plan_resident_chunk_memory(**kwargs)
     assert plan.peak_bytes == max(regular.peak_bytes, block + 294912 * lone_row_bytes)
-    assert plan.peak_bytes < rp.plan_resident_chunk_memory(**kwargs, max_image_rows=294912).peak_bytes / 2
+    assert plan.peak_bytes < resident_chunk_memory.plan_resident_chunk_memory(**kwargs, max_image_rows=294912).peak_bytes / 2
 
 
 @requires_resident_gpu
@@ -2017,7 +2017,7 @@ def test_every_free_memory_budget_honours_the_allocator_pool(monkeypatch):
 
     gib = 1024**3
     readings = dict(physical=62 * gib, allocator=10 * gib, pool=1 * gib)
-    for module in (rp, budget):
+    for module in (rp, resident_chunk_memory, budget):
         monkeypatch.setattr(module, "_device_free_memory_bytes", lambda: readings["physical"], raising=False)
         monkeypatch.setattr(module, "_jax_allocator_free_memory_bytes", lambda: readings["allocator"], raising=False)
         monkeypatch.setattr(module, "_jax_allocator_pool_free_bytes", lambda: readings["pool"], raising=False)

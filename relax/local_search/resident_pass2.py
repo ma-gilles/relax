@@ -71,7 +71,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
-from relax.fine_pass import policy, resident_configuration
+from relax.fine_pass import policy, resident_chunk_memory, resident_configuration
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
@@ -196,7 +196,7 @@ def _projection_block_rows(projection_row_bytes: int, chunk_budget_bytes: int | 
 
 
 def _projection_call_transient_max_bytes() -> int:
-    """Bytes one projector call may hold (:func:`relax.fine_pass.resident_pass2.projection_call_row_bytes`)."""
+    """Bytes one projector call may hold (:func:`relax.fine_pass.resident_chunk_memory.projection_call_row_bytes`)."""
 
     raw = os.environ.get(_PROJECTION_CALL_MAX_BYTES_ENV, "").strip()
     if not raw:
@@ -324,7 +324,7 @@ def _local_chunk_loop_pipelined() -> bool:
     """Whether the chunk loop enqueues chunk k+1 before chunk k's M-step (off while profiling).
 
     The chunk plan counts the second chunk's arrays exactly when it does
-    (:func:`resident_pass2.resident_chunk_bytes`).
+    (:func:`resident_chunk_memory.resident_chunk_bytes`).
     """
 
     return not parse_env_flag(_CHUNK_PROFILE_ENV, default=False)
@@ -936,16 +936,16 @@ def compute_local_search_resident(
         )
         # The accumulators already exist, so the budget reading counts them; the
         # plan records them so that its pass_bytes is the pass's total need.
-        accumulator_bytes = tables.n_classes * rp.resident_accumulator_bytes(
+        accumulator_bytes = tables.n_classes * resident_chunk_memory.resident_accumulator_bytes(
             recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype
         )
-        chunk_budget_bytes = rp.resident_chunk_budget_bytes()
+        chunk_budget_bytes = resident_chunk_memory.resident_chunk_budget_bytes()
         # One projector call holds the texture crop and the gathered rows
-        # together (rp.projection_call_row_bytes); its block of rows is sized to
+        # together (resident_chunk_memory.projection_call_row_bytes); its block of rows is sized to
         # the per-call cap and its bytes enter the chunk plan.
         projector_output_size = projection_kwargs.get("projector_output_size")
         projector_slab_bytes = int(np.dtype(relion_projector_half.dtype).itemsize)
-        projection_row_bytes = rp.projection_call_row_bytes(
+        projection_row_bytes = resident_chunk_memory.projection_call_row_bytes(
             crop_pixels=(
                 n_half
                 if projector_output_size is None
@@ -957,7 +957,7 @@ def compute_local_search_resident(
             complex_bytes=projector_slab_bytes,
         )
         projection_block_rows = _projection_block_rows(projection_row_bytes, chunk_budget_bytes)
-        tile_pixels = rp.chunk_translated_tile_pixels(
+        tile_pixels = resident_chunk_memory.chunk_translated_tile_pixels(
             unshifted_operands=operand_route["unshifted"],
             n_score_pixels=n_windowed,
             n_recon_pixels=n_recon_windowed,
@@ -973,7 +973,7 @@ def compute_local_search_resident(
             # Wavg rectangle and its exact positions, which the joint plan below
             # counts against the measured budget; capped at three recon tiles,
             # the 10097 full-box final pass ran 32-image chunks, 2032 per half.
-            image_ladder = rp.resident_image_capacity_start(
+            image_ladder = resident_chunk_memory.resident_image_capacity_start(
                 image_ladder,
                 n_fine_trans=n_fine_trans,
                 n_recon_pixels=n_recon_windowed,
@@ -982,12 +982,12 @@ def compute_local_search_resident(
                 ),
                 chunk_budget_bytes=chunk_budget_bytes,
             )
-        mstep_block_rows = rp._resolve_mstep_block_rows(
+        mstep_block_rows = resident_chunk_memory.resolve_mstep_block_rows(
             n_recon_pixels=n_recon_windowed,
             max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
             row_capacity_ladder=row_ladder,
         )
-        memory_plan = rp.plan_resident_chunk_memory(
+        memory_plan = resident_chunk_memory.plan_resident_chunk_memory(
             row_capacity_ladder=row_ladder,
             image_capacity_ladder=image_ladder,
             mstep_block_rows=mstep_block_rows,
@@ -1000,10 +1000,10 @@ def compute_local_search_resident(
             pipelined=_local_chunk_loop_pipelined(),
             projection_transient_bytes=projection_block_rows * projection_row_bytes,
             fixed_bytes=accumulator_bytes,
-            max_image_rows=rp.max_image_rows(tables.row_offsets),
+            max_image_rows=resident_chunk_memory.max_image_rows(tables.row_offsets),
             # An image past the largest row class runs alone in row blocks of that class
             # (_start_resident_local_chunk), as the global pass runs it (relax#49 follow-up).
-            lone_row_bytes=rp.lone_chunk_row_bytes(int(n_fine_trans), class_rows=tables.n_classes > 1),
+            lone_row_bytes=resident_chunk_memory.lone_chunk_row_bytes(int(n_fine_trans), class_rows=tables.n_classes > 1),
             **tile_pixels,
         )
         row_ladder = memory_plan.row_capacity_ladder
@@ -1040,7 +1040,7 @@ def compute_local_search_resident(
             n_projection_pixels,
             projector_slab_bytes,
             memory_plan.peak_bytes / float(1024**3),
-            rp.format_budget_gib(memory_plan.budget_bytes),
+            resident_chunk_memory.format_budget_gib(memory_plan.budget_bytes),
             memory_plan.pass_bytes / float(1024**3),
             accumulator_bytes / float(1024**3),
             table_s,
@@ -1123,8 +1123,8 @@ def compute_local_search_resident(
         n_lone_chunks = 0
         lone_block_sizes = set()
         for chunk in chunks:
-            alone = rp.chunk_runs_alone(chunk, row_ladder)
-            lone_block_rows = rp.lone_block_rows(chunk.row_capacity, row_ladder) if alone else None
+            alone = resident_chunk_memory.chunk_runs_alone(chunk, row_ladder)
+            lone_block_rows = resident_chunk_memory.lone_block_rows(chunk.row_capacity, row_ladder) if alone else None
             n_lone_chunks += int(alone)
             if alone:
                 lone_block_sizes.add(lone_block_rows)
@@ -1664,7 +1664,7 @@ def _run_resident_parent_probe(
     complex_bytes = np.dtype(precision_policy.score_complex_dtype).itemsize
     projector_output_size = projection_kwargs.get("projector_output_size")
     n_half = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
-    projection_row_bytes = rp.projection_call_row_bytes(
+    projection_row_bytes = resident_chunk_memory.projection_call_row_bytes(
         crop_pixels=(
             n_half
             if projector_output_size is None
@@ -1675,14 +1675,14 @@ def _run_resident_parent_probe(
         n_recon_pixels=0,
         complex_bytes=int(np.dtype(relion_projector_half.dtype).itemsize),
     )
-    budget = rp.resident_chunk_budget_bytes()
+    budget = resident_chunk_memory.resident_chunk_budget_bytes()
     projection_block_rows = _projection_block_rows(projection_row_bytes, budget)
     row_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER))
     image_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _PROBE_IMAGE_CAPACITY_LADDER))
 
     def peak(rows, images):
         return _probe_chunk_bytes(
-            row_capacity=max(max(rows), rp.overflow_row_capacity(rp.max_image_rows(tables.row_offsets), rows)),
+            row_capacity=max(max(rows), resident_chunk_memory.overflow_row_capacity(resident_chunk_memory.max_image_rows(tables.row_offsets), rows)),
             image_capacity=max(images),
             n_score_pixels=int(n_score_pixels),
             n_fine_trans=t,
@@ -1715,7 +1715,7 @@ def _run_resident_parent_probe(
         projection_block_rows,
         "full" if window_union is None else int(window_union.indices.shape[0]),
         peak(row_ladder, image_ladder) / float(1024**3),
-        rp.format_budget_gib(budget),
+        resident_chunk_memory.format_budget_gib(budget),
     )
 
     sample_ids_by_image: list[np.ndarray] = [np.zeros(0, dtype=np.int64)] * tables.n_images

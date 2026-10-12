@@ -8,8 +8,9 @@ accumulation it feeds. It is the only pass-2 engine and it needs a CUDA GPU.
 | Module | Owns |
 | --- | --- |
 | `dispatch.py` | `compute_pass2_stats_sparse`: the one entry the controllers call; it routes to the resident drivers |
-| `resident_pass2.py` | the drivers `compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`, `compute_tilt_pass2_stats_resident`; chunk memory planning |
+| `resident_pass2.py` | the drivers `compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`, `compute_tilt_pass2_stats_resident` |
 | `resident_configuration.py` | the configuration gate `require_resident_production_configuration`: the production configuration the drivers implement, checked before any device work |
+| `resident_chunk_memory.py` | chunk planning: the M-step block rows, the bytes of a chunk, `plan_resident_chunk_memory`, lone overflow chunks and the chunk budget |
 | `resident_candidates.py`, `resident_significance.py` | the candidate tables and their fixed-capacity chunks; device compaction of the coarse significance mask |
 | `resident_operands.py`, `resident_scoring.py`, `resident_statistics.py`, `resident_tilts.py` | per-image operands kept on the device; the scoring stage; the float64 device accumulators; tilt images of subtomogram particles |
 | `window.py`, `scoring.py`, `posterior.py`, `projection_blocks.py`, `wavg.py`, `adjoint.py`, `bucket_io.py`, `bucket_arrays.py`, `local_backprojection.py`, `policy.py` | shared pieces the drivers import, and `policy.py` (the environment switches) |
