@@ -40,7 +40,6 @@ ALLOWED_IMPORTS = {
     ("relax.refinement.iteration_loop", "relax.diagnostics.iteration"): _INLINE_DUMP,
     ("relax.refinement.iteration_loop", "relax.parity.relion_replay"): _REPLAY,
     ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _INLINE_DUMP,
-    ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): "the run report's timing rows (" + _INLINE_DUMP + ")",
     ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
 }
 

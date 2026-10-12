@@ -35,7 +35,7 @@ import numpy as np
 import relax
 from relax.commands import refinement_arguments, refinement_particles
 from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
-from relax.diagnostics import observers
+from relax.diagnostics import observers, parity_dump
 from relax.numerics.precision import use_float32_matmuls
 from relax.parity import (
     archive_provenance,
@@ -1363,10 +1363,14 @@ def main(command=None):
     logger.info("Refinement complete in %.1fs (%d iterations)", total_time, job.max_iter)
     logger.info("=" * 70)
 
+    # The stage timings the timing observer wrote during the run, for the reports.
+    timing_rows = parity_dump.collect_timing_rows(timing_dir_path)
     report = RunReport(
         data_dir=str(Path(args.data_dir).resolve()),
         output_dir=str(Path(args.output).resolve()),
         timing_dir=timing_dir_path,
+        timing_rows=timing_rows,
+        timing_summary=parity_dump.summarize_timing_rows(timing_rows),
         total_time_s=total_time,
         n_images=n_images,
         image_shape=tuple(ds.image_shape),

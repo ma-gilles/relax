@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from helpers.refinement_results import numbered_metadata, refinement_result
 
+from relax.diagnostics import parity_dump
 from relax.refinement import result_files
 from relax.refinement.iteration_history import RefinementHistory
 from relax.refinement.refinement_options import RestartProvenance
@@ -29,7 +30,8 @@ SHARED = {
 
 def _report(tmp_path):
     return result_files.RunReport(
-        data_dir=str(tmp_path / "data"), output_dir=str(tmp_path / "out"), timing_dir=None, total_time_s=12.5,
+        data_dir=str(tmp_path / "data"), output_dir=str(tmp_path / "out"), timing_dir=None, timing_rows=[],
+        timing_summary=parity_dump.summarize_timing_rows([]), total_time_s=12.5,
         n_images=6, image_shape=(8, 8), volume_shape=(8, 8, 8), voxel_size=1.5, healpix_order=2,
         auto_local_healpix_order=4, sigma_ang=None, adaptive_oversampling=1, max_significants=-1,
         max_significants_resolution=MaxSignificantsResolution(

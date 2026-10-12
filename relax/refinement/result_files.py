@@ -20,7 +20,6 @@ import jax
 import jaxlib
 import numpy as np
 
-from relax.diagnostics import parity_dump
 from relax.reconstruction.resolution import shell_index_to_resolution_angstrom
 from relax.refinement import iteration_history
 from relax.refinement.engine_record import take_coarse_engine_calls, take_pass_engines
@@ -486,12 +485,16 @@ def write_final_maps(
 class RunReport:
     """What a run's benchmark ledger and profile-only summary state beside its result.
 
-    The command builds it once the controller has returned; the reports only read it.
+    The command builds it once the controller has returned; the reports only read it. ``timing_rows`` are the
+    per-iteration stage timings the timing observer wrote under ``timing_dir`` (``relax.diagnostics.parity_dump.collect_timing_rows``)
+    and ``timing_summary`` their summary; both are read by the command.
     """
 
     data_dir: str
     output_dir: str
     timing_dir: Path | None
+    timing_rows: list
+    timing_summary: dict
     total_time_s: float
     n_images: int
     image_shape: tuple
@@ -523,7 +526,6 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
     """The fields the ledger and the profile-only summary share: environment, inputs, sampling and provenance.
 
     ``fields`` is the result's ``archive_fields()``."""
-    timing_rows = parity_dump.collect_timing_rows(report.timing_dir)
     return {
         "git_commit": git_head_or_none(),
         "python_version": platform.python_version(),
@@ -548,8 +550,8 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
         "adaptive_oversampling": int(report.adaptive_oversampling),
         "max_significants": int(report.max_significants),
         "max_significants_resolution": dataclasses.asdict(report.max_significants_resolution),
-        "timing_rows": timing_rows,
-        "timing_summary": parity_dump.summarize_timing_rows(timing_rows),
+        "timing_rows": report.timing_rows,
+        "timing_summary": report.timing_summary,
         "perturb_replay_restart_state_iterations": list(report.restart.iterations),
         "perturb_replay_restart_provenance_path": (
             str(report.restart.path)
