@@ -59,7 +59,7 @@ completion or speed admission follows from these transport tests.
 ## Device-resident pass 2
 
 The resident K=1 driver implements the same arithmetic
-([`_resident_chunk_posterior`](../../relax/fine_pass/resident_pass2.py),
+([`resident_chunk_posterior`](../../relax/fine_pass/resident_chunk_posterior.py),
 [`_coarse_normalization_reuse`](../../relax/fine_pass/resident_pass2.py)).
 The segmented float32 posterior keeps every positive selected weight and divides
 by the coarse float32 sum (`keep_all`, `use_external_sum_weight`). The chunk then

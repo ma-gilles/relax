@@ -21,7 +21,7 @@ import pytest
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.fine_pass.resident_pass2 import _winner_take_all_cells
+from relax.fine_pass.resident_chunk_posterior import winner_take_all_cells
 
 pytestmark = pytest.mark.unit
 
@@ -47,7 +47,7 @@ def test_winner_is_the_first_maximum_of_each_segment():
     valid = np.arange(row_capacity) < row_image.size
     row_image_padded = np.concatenate([row_image, np.full(row_capacity - row_image.size, image_capacity - 1)])
     offsets = np.concatenate([[0], np.cumsum(image_rows) * N_TRANS, [row_image.size * N_TRANS]])
-    best, cell, posterior = _winner_take_all_cells(
+    best, cell, posterior = winner_take_all_cells(
         jnp.asarray(scores),
         jnp.asarray(row_image_padded, dtype=jnp.int32),
         jnp.asarray(valid),

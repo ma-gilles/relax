@@ -75,6 +75,7 @@ from relax.fine_pass import (
     policy,
     resident_chunk_inputs,
     resident_chunk_memory,
+    resident_chunk_posterior,
     resident_chunk_records,
     resident_configuration,
     resident_image_terms,
@@ -463,7 +464,7 @@ def compute_local_search_resident(
     ``kernel.firstiter_cc`` is RELION's ``--firstiter_cc`` iteration of a search that is local from its
     first iteration (``--sigma_ang``): both the parent probe and the fine pass score the
     normalized CC and keep only each image's best hidden variable (ml_optimiser.cpp:9266-9292),
-    as the global ``--firstiter_cc`` pass does (resident_pass2 ``_resident_chunk_posterior_firstiter_cc``).
+    as the global ``--firstiter_cc`` pass does (resident_chunk_posterior ``_resident_chunk_posterior_firstiter_cc``).
     In a Class3D the best hidden variable is over the classes of the layout too: RELION scores every
     class in its CC iteration when the references are given, and class 1 alone only when it generates
     seeds from one reference (``do_generate_seeds``, ml_optimiser.cpp:4392-4401), a start whose layout
@@ -1535,7 +1536,7 @@ def _local_firstiter_cc_posterior(
 
     RELION zeroes every weight but the best one (ml_optimiser.cpp:9266-9292), so
     the posterior is one-hot at each image's first maximum in segment order and
-    Pmax is 1, as in the global pass (``resident_pass2._winner_take_all_posterior``).
+    Pmax is 1, as in the global pass (``resident_chunk_posterior.winner_take_all_posterior``).
     log-Z is the log-sum-exp of the CC scores, the evidence the global pass reports.
     Returns ``(log_z, best_log_score, best_cell_index, max_posterior, row_posterior,
     n_significant)``.
@@ -1545,7 +1546,7 @@ def _local_firstiter_cc_posterior(
 
     scores = jnp.asarray(scores, dtype=jnp.float32)
     log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(scores.reshape(-1), segment_offsets, n_valid_images)
-    best_log_score, best_cell_index, row_posterior = rp._winner_take_all_cells(
+    best_log_score, best_cell_index, row_posterior = resident_chunk_posterior.winner_take_all_cells(
         scores, row_image_local, row_is_valid, segment_offsets, image_capacity=image_capacity
     )
     has_winner = jnp.isfinite(best_log_score)
@@ -2061,7 +2062,7 @@ def _expand_posterior_bins(sums, posterior_bin_ids, n_posterior_bins: int) -> np
 
 
 class _ClassRows(NamedTuple):
-    """The two fields of a chunk's rows :func:`resident_pass2._class_sub_segment_posterior` reads."""
+    """The two fields of a chunk's rows :func:`resident_chunk_posterior.class_sub_segment_posterior` reads."""
 
     classes: object  # resident_pass2._ChunkClassLayout
     n_valid_images: object  # int32 device scalar
@@ -2613,7 +2614,7 @@ def _start_resident_local_chunk(
         class_layout = rp._chunk_class_layout(
             host_chunk, chunk, n_classes=n_classes, n_fine_trans=int(n_fine_trans), place=resident_chunk_records.PLACE_ON_DEVICE
         )
-        class_posterior = rp._class_sub_segment_posterior(
+        class_posterior = resident_chunk_posterior.class_sub_segment_posterior(
             scores_flat.reshape(chunk.row_capacity, int(n_fine_trans)),
             _ClassRows(classes=class_layout, n_valid_images=n_valid_images_device),
             row_is_valid,

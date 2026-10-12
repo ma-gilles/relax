@@ -306,7 +306,7 @@ def run_tilt_chunk(
     The per-stage (non-jitted) path.
     """
 
-    from relax.fine_pass import resident_chunk_records
+    from relax.fine_pass import resident_chunk_posterior, resident_chunk_records
     from relax.fine_pass import resident_pass2 as rp
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
@@ -459,7 +459,7 @@ def run_tilt_chunk(
             block_rows=int(spec.mstep_block_rows),
             tile_budget_bytes=int(tile_budget_bytes),
         )
-        posterior = rp._winner_take_all_posterior(
+        posterior = resident_chunk_posterior.winner_take_all_posterior(
             scored,
             rows,
             image_capacity=unit_capacity,
@@ -524,7 +524,7 @@ def run_tilt_chunk(
         )
         # The particle's segment spans every class: RELION's joint minimum, normalization and
         # significance (ml_optimiser.cpp:8411, :9225); with K>1 also each (particle, class) sub-segment.
-        posterior = rp._chunk_posterior_from_scores(
+        posterior = resident_chunk_posterior.chunk_posterior_from_scores(
             scored,
             rows,
             stage_tables,
