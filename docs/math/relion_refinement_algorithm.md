@@ -466,7 +466,7 @@ The implementation owners are:
 | --- | --- |
 | Image/CTF/noise preparation and translation phases | [`image_preprocessing.py`](../../relax/relion/image_preprocessing.py), `preprocess_batch`; the phase tables in [`preprocessing.py`](../../relax/fourier/preprocessing.py) |
 | Projection and projection-dependent residual statistics | [`projection.py`](../../relax/projection/projection.py), `compute_projections_block` and `compute_relion_projector_projections_block` |
-| Gaussian and normalized-CC block scores | [`coarse_kernels.py`](../../relax/scoring/coarse_kernels.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
+| Gaussian and normalized-CC block scores | [`coarse_kernels.py`](../../relax/scoring/coarse_kernels.py) (`relion_coarse_gaussian_gemm_scores_jit`); the dense reference scorers `_score_rotation_block` and `_e_step_block_scores_windowed` are test-only ([`dense_block_scores.py`](../../tests/helpers/dense_block_scores.py)) |
 | Scoring weights for the selected Fourier convention | [`half_spectrum.py`](../../relax/fourier/half_spectrum.py), `make_scoring_half_image_weights` |
 
 The half-image layout has `H * (W//2 + 1)` entries. RELION half-sum scoring and

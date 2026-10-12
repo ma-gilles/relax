@@ -243,11 +243,12 @@ order: a class without images gets zero accumulators, `-inf` best scores and zer
 and a scored class has its subset accumulators, statistics, noise and best poses expanded to
 the full image axis. Each route states whether it hosts the appended accumulators
 ([`test_kclass_results_owner.py`](../../tests/unit/test_kclass_results_owner.py)).
-[`scoring._e_step_block_score_components`](../../relax/scoring/coarse_kernels.py)
-computes the two HIGHEST-precision GEMMs every dense scorer is built from (the cross term
-`-2 Re(conj(shifted) . proj_weighted)` and the model energy `ctf2_over_nv . proj_abs2`);
-the residual, windowed, normalized-CC and coarse Gaussian scorers only combine them
-([`test_score_components_owner.py`](../../tests/unit/test_score_components_owner.py)).
+[`dense_block_scores._e_step_block_score_components`](../../tests/helpers/dense_block_scores.py)
+computes the two HIGHEST-precision GEMMs every dense reference scorer of the tests is built
+from (the cross term `-2 Re(conj(shifted) . proj_weighted)` and the model energy
+`ctf2_over_nv . proj_abs2`); the residual, windowed and normalized-CC reference scorers only
+combine them ([`test_score_components_owner.py`](../../tests/unit/test_score_components_owner.py)).
+The coarse pass scores with `coarse_kernels.relion_coarse_gaussian_gemm_scores_jit`.
 [`projection._relion_projector_fftw_block`](../../relax/projection/projection.py)
 projects one rotation block through RELION's Projector onto the clamped `2 r_max` (or
 requested) square with the scorer rotations transposed at the handoff; the centered-row

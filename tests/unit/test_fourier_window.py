@@ -21,7 +21,7 @@ from helpers.float_compare import assert_matches, matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 import recovar.core.fourier_transform_utils as ftu
-from helpers.dense_block_scores import _e_step_block_scores
+from helpers.dense_block_scores import _e_step_block_scores, _e_step_block_scores_windowed
 from helpers.em_arrays import _hermitian_volume, _raw_real_image_2d
 from recovar import core
 from recovar.core.configs import ForwardModelConfig
@@ -42,7 +42,6 @@ from relax.fourier.half_spectrum import (
 )
 from relax.projection.projection import compute_projections_block as _compute_projections_block
 from relax.relion.image_preprocessing import preprocess_batch as _preprocess_batch
-from relax.scoring.coarse_kernels import _e_step_block_scores_windowed
 
 pytestmark = pytest.mark.unit
 

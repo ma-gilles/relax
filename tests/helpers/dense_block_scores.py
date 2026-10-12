@@ -1,11 +1,9 @@
 """Dense half-spectrum block scorers kept for test comparisons.
 
-The dense EM engine that ran these per rotation block was removed on 2026-10-03.
-Production keeps their shared GEMM owner
-(:func:`relax.scoring.coarse_kernels._e_step_block_score_components`) and the windowed
-Gaussian scorer the coarse GEMM path reuses
-(:func:`relax.scoring.coarse_kernels._e_step_block_scores_windowed`); the residual and
-normalized-CC wrappers and the per-block dispatcher below are test-only.
+The dense EM engine that ran these per rotation block was removed on 2026-10-03, and the coarse pass scores with
+``relax.scoring.coarse_kernels.relion_coarse_gaussian_gemm_scores_jit``; the shared GEMM owner
+(``_e_step_block_score_components``), the windowed Gaussian scorer, the residual and normalized-CC wrappers and the
+per-block dispatcher below are test-only.
 """
 
 from functools import partial
@@ -14,7 +12,73 @@ import jax
 import jax.numpy as jnp
 
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.scoring.coarse_kernels import _e_step_block_score_components, _e_step_block_scores_windowed
+
+
+def _e_step_block_score_components(
+    shifted,
+    ctf2_over_nv,
+    proj_weighted,
+    proj_abs2,
+    n_images,
+    n_trans,
+):
+    """Return the cross and model-energy GEMM components of one rotation block.
+
+    ``cross[i, r, t] = -2 Re(conj(shifted[i, t]) . proj_weighted[r])`` recovers
+    the full inner product from half-spectrum pixels (the half weights are
+    absorbed into the projections once per block), and
+    ``norms[i, r] = ctf2_over_nv[i] . proj_abs2[r]`` is the model energy. Every
+    dense scorer (residual, windowed and normalized-CC) builds its score from
+    these two HIGHEST-precision GEMMs. The cross term is one real GEMM over
+    ``[Re, Im]``-packed operands, ``Re(conj(s) . p) = s_re . p_re + s_im . p_im``,
+    so the unused imaginary half of a complex product is never formed.
+    """
+
+    rot_block_size = proj_weighted.shape[0]
+    shifted_packed = jnp.concatenate([shifted.real, shifted.imag], axis=-1)
+    proj_packed = jnp.concatenate([proj_weighted.real, proj_weighted.imag], axis=-1)
+    cross = -2.0 * jnp.matmul(
+        shifted_packed,
+        proj_packed.T,
+        precision=jax.lax.Precision.HIGHEST,
+    )
+    cross = cross.reshape(n_images, n_trans, rot_block_size)
+    cross = cross.swapaxes(1, 2)
+    norms = jnp.matmul(
+        ctf2_over_nv,
+        proj_abs2.T,
+        precision=jax.lax.Precision.HIGHEST,
+    )
+    return cross, norms
+
+
+@partial(jax.jit, static_argnums=(6, 7, 8, 9, 10))
+def _e_step_block_scores_windowed(
+    shifted_windowed,
+    batch_norm,
+    ctf2_over_nv_windowed,
+    proj_windowed_weighted,
+    proj_abs2_windowed,
+    half_weights_windowed,
+    n_images,
+    n_trans,
+    n_windowed,
+    image_shape,
+    volume_shape,
+):
+    """E-step for one rotation block using windowed half-spectrum GEMMs."""
+
+    del batch_norm, half_weights_windowed, n_windowed, image_shape, volume_shape
+    cross, norms = _e_step_block_score_components(
+        shifted_windowed,
+        ctf2_over_nv_windowed,
+        proj_windowed_weighted,
+        proj_abs2_windowed,
+        n_images,
+        n_trans,
+    )
+    residuals = cross + norms[..., None]
+    return -0.5 * residuals
 
 
 def _score_rotation_block(

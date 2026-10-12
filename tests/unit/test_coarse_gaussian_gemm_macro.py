@@ -41,9 +41,8 @@ def _relion_coarse_gaussian_gemm_scores(
     The arithmetic is mathematically equivalent in exact arithmetic to
     RELION's direct-square
     ``0.5 * weight * |reference - shifted_image|**2 + initial_diff2``.
-    It intentionally reuses :func:`_e_step_block_scores_windowed` so both EM
-    and InitialModel exercise the mature half-spectrum GEMMs instead of a
-    second VDAM scoring implementation.  This expands the square into model,
+    It scores with ``coarse_kernels.relion_coarse_gaussian_gemm_scores_jit``, the
+    half-spectrum GEMMs pass 1 runs.  This expands the square into model,
     cross, and image terms and therefore changes both operation order and
     cancellation behavior; it is not merely a parallel-reduction reorder.
     Keep the path qualification-only until paired production operands show
@@ -636,12 +635,6 @@ def test_coarse_gaussian_gemm_macro_is_shared_by_em_and_initial_model():
     assert (
         "_compute_k_class_significance_batched"
         in k_class.run_dense_k_class_em_adaptive.__code__.co_names
-    )
-    assert (
-        coarse_kernels.relion_coarse_gaussian_gemm_scores_jit._fun.__globals__[
-            "_e_step_block_scores_windowed"
-        ]
-        is coarse_kernels._e_step_block_scores_windowed
     )
 
 
