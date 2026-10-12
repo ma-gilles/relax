@@ -18,7 +18,6 @@ from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostic
 from relax.fine_pass.significant_samples import significant_sample_ids
 from relax.projection.projection_cache import build_projection_cache
 from relax.relion import ctf
-from relax.runtime import memory_budget
 from relax.scoring import coarse_gaussian_gemm, coarse_kernels, pass1_batch, pass1_program, significance
 from relax.scoring.pass1_plan import plan_pass1
 from relax.scoring.pass1_request import Pass1Request
@@ -1235,29 +1234,7 @@ def test_coarse_gaussian_gemm_projection_cache_default_budget_is_a_fifth_of_gpu_
             return {"bytes_limit": 80 * 1024**3}
 
     monkeypatch.delenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB", raising=False)
-    monkeypatch.setattr(memory_budget.jax, "devices", lambda: [_Gpu()])
-    assert coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes() == 16 * 1024**3
-
-
-def test_coarse_gaussian_gemm_projection_cache_default_budget_halves_with_two_device_shares(
-    monkeypatch,
-):
-    # --overlap_halves runs both half-sets on one device and declares two shares; each
-    # half's cache must budget a fifth of its own half, not of the whole allocator limit.
-
-    class _Gpu:
-        platform = "gpu"
-
-        def memory_stats(self):
-            return {"bytes_limit": 80 * 1024**3}
-
-    monkeypatch.delenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB", raising=False)
-    monkeypatch.setattr(memory_budget.jax, "devices", lambda: [_Gpu()])
-    previous = memory_budget.set_concurrent_device_shares(2)
-    try:
-        assert coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes() == 8 * 1024**3
-    finally:
-        memory_budget.set_concurrent_device_shares(previous)
+    monkeypatch.setattr(coarse_gaussian_gemm.jax, "local_devices", lambda: [_Gpu()])
     assert coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes() == 16 * 1024**3
 
 

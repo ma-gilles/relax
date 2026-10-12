@@ -466,3 +466,57 @@ def test_recorded_half_hands_the_parity_dump_its_input_rows_only_when_it_dumps(m
         half.particles.dataset._index_layout = SimpleNamespace(original_image_indices_for_local=broken)
         with pytest.raises(IndexError, match='layout out of range'):
             expectation.record_numbered_half(engine_result(), half.particles, recording)
+
+
+def test_each_half_is_finished_right_after_it_is_scored():
+    """run_numbered_halves scores a half, then finishes it with that half's inputs and result: score 0, finish 0,
+    score 1, finish 1, so half 0's accumulators can leave the device before half 1 is scored (code rule 3)."""
+    from relax.refinement.expectation import run_numbered_halves
+
+    events = []
+
+    def score(inputs):
+        events.append(("score", inputs))
+        return f"result {inputs}"
+
+    def finish(inputs, result):
+        events.append(("finish", inputs, result))
+
+    combined = []
+    run_numbered_halves(
+        score, finish, ("half 0", "half 1"), (0, 1), SimpleNamespace(combine=lambda: combined.append(1)),
+    )
+    assert combined == [1]
+    assert events == [
+        ("score", "half 0"), ("finish", "half 0", "result half 0"),
+        ("score", "half 1"), ("finish", "half 1", "result half 1"),
+    ]
+
+
+def test_device_memory_limit_is_capped_by_the_allocator_limit(monkeypatch):
+    """XLA_PYTHON_CLIENT_MEM_FRACTION caps what the process can allocate.
+
+    With the fraction at .50 an 80 GB H100 gives the process about 40 GB; a
+    budget taken from the 80 GB total ran K=1 10097 10k out of memory in the
+    whole-grid projection cache (bench 14445196).
+    """
+    import subprocess
+    from types import SimpleNamespace
+
+    from relax.runtime import memory_budget as budget
+
+    gib = 1024**3
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", raising=False)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    # Without NVML the total comes from the nvidia-smi subprocess.
+    monkeypatch.setattr(budget, "_nvml_devices", lambda: False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="0, GPU-aaaa, 81559\n"),
+    )
+    total = 81559 * 1024**2
+    monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: 40 * gib)
+    assert budget._device_memory_limit_bytes() == 40 * gib
+    monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
+    assert budget._device_memory_limit_bytes() == total

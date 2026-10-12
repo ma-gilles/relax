@@ -330,18 +330,15 @@ def log_row(logger_name: str, level: str, template: str, text: str, *, scrub=lam
 def ordered_trace(rows: list) -> list:
     """Trace rows ``(thread_name, row)`` in a thread-independent order.
 
-    The controller's own thread is the spine. Rows of worker threads (the overlapped halves) are grouped
-    per thread, in thread-name order, at the point where the controller waited for them: which worker
-    logged first is a race, what each worker did in order is not. Rows of any other thread (the run-file
-    writer, which the command runs in the background) go after the spine, per thread.
+    The controller's own thread is the spine. Rows of any other thread (the run-file writer, which the
+    command runs in the background) go after the spine, per thread in thread-name order: when such a thread
+    logged relative to the controller is a race, what it did in order is not.
     """
     keyed, main_rows = [], 0
     for sequence, (thread_name, row) in enumerate(rows):
         if thread_name == "MainThread":
             keyed.append(((main_rows, "", sequence), row))
             main_rows += 1
-        elif thread_name.startswith("em-half-"):
-            keyed.append(((main_rows - 1, thread_name, sequence), row))
         else:
             keyed.append(((float("inf"), thread_name, sequence), row))
     return [row for _, row in sorted(keyed, key=lambda item: item[0])]
@@ -635,7 +632,6 @@ def _cases() -> dict[str, tuple[str, dict]]:
         add(f"k{k}_seed_start_cc", f"K={k} from one reference with CC: class 1 copied to every class, seeds in iteration 2", n_classes=k, join=0.0, seed=True, cc=True, max_iter=3, converge_after=3, writer=True)
     for k in (1, 2):
         add(f"k{k}_order_oracle", f"K={k} HEALPix-order schedule 1,2,2: the coarse grids are rebuilt in iteration 2", n_classes=k, join=0.0, orders=(1, 2, 2), max_iter=3, converge_after=3, dump=False)
-        add(f"k{k}_overlap", f"K={k} with the two halves' E-steps in one thread each", n_classes=k, join=0.0, overlap=True)
         add(f"k{k}_accuracy", f"K={k} with a stand-in expected-accuracy estimate that succeeds", n_classes=k, join=0.0, accuracy=True, max_iter=3, converge_after=3, dump=False, writer=True)
     add("k1_accuracy_order1", "K=1 from HEALPix order 1 with the stand-in accuracy estimate (native sampling may advance)", n_classes=1, join=0.0, accuracy=True, init_order=1, max_iter=4, converge_after=4, dump=False)
     add("k1_replay_cutoff", "K=1 STAR replay disabled after iteration 1 (--replay-override-max-iter)", n_classes=1, join=0.0, star_prior=[2, 2, 2, 2], replay_max_iter=1, max_iter=3, converge_after=3, dump=False)
@@ -685,8 +681,6 @@ def _cases() -> dict[str, tuple[str, dict]]:
                                       "--write-unfiltered-half-maps", "--skip_final_iteration"])
     add_main("main_k1_half_sets_off", "relax refine without the input-STAR half sets", "refine",
              ["--max_iter", "2", "--no-relion-half-sets-from-input"])
-    add_main("main_k1_overlap", "relax refine with the halves' E-steps overlapped", "refine",
-             ["--max_iter", "2", "--overlap_halves"])
     add_main("main_k1_ledger", "relax refine writing a benchmark ledger", "refine",
              ["--max_iter", "2", "--benchmark_ledger_json", "<OUTDIR>/ledger.json"])
     add_main("main_k1_init_noise", "relax refine starting from an earlier run's archived noise (--init_noise_from_npz)",
@@ -956,11 +950,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                                fine_rotations, fine_translations, rot_parent_map, trans_parent_map, disc_type, kwargs)
         record("call", "engine", f"seed={seed:016x}", "kwargs=" + ",".join(sorted(kwargs)),
                "priors=" + ",".join(k for k in sorted(kwargs) if "rotation_log_prior" in k and kwargs[k] is not None))
-        # Overlapped halves: finish in half order, so what the controller records does not depend on a race.
-        me = threading.current_thread()
-        for other in threading.enumerate():
-            if other is not me and other.name.startswith("em-half-") and me.name.startswith("em-half-") and other.name < me.name:
-                other.join()
         rng = np.random.default_rng(seed)
         n_classes = int(np.asarray(means).shape[0]) if np.ndim(means) >= 2 else 1
         n_images = int(experiment_dataset.n_units)
@@ -1232,7 +1221,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def run_case(n_classes, join, *, max_iter=4, converge_after=2, dump=True, cc=False, oversampling=0, env=None,
                  writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
                  iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
-                 seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None,
+                 seed=False, orders=None, accuracy=False, init_order=2, replay_max_iter=None,
                  consistency=None, current_sizes=None, sealed=False, local=None, frozen_seeds=None):
         first_pass = None
         if continued:
@@ -1298,15 +1287,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             extra["local_search"] = refinement_options.LocalSearchOptions(
                 sigma_ang_deg=local["sigma_ang_deg"], **{k: v for k, v in local.items() if k != "sigma_ang_deg"},
             )
-        # The execution knobs: one ExecutionOptions, or (a source before PLAN d1) RefinementBatching and
-        # HalfOverlapOptions.
+        # The execution knobs: one ExecutionOptions, or (a source before PLAN d1) RefinementBatching.
         execution_fields = dict(image_batch_size=fixtures.N_IMAGES, rotation_block_size=fixtures.N_ROTATIONS)
         if hasattr(refinement_options, "ExecutionOptions"):
-            extra["execution"] = refinement_options.ExecutionOptions(**execution_fields, overlap_halves=overlap)
+            extra["execution"] = refinement_options.ExecutionOptions(**execution_fields)
         else:
             extra["batching"] = refinement_options.RefinementBatching(**execution_fields)
-            if overlap:
-                extra["overlap"] = refinement_options.HalfOverlapOptions(overlap_halves=True)
         if consistency == "mode_relax":
             if hasattr(refinement_options, "relax_mode_consistency"):
                 extra["consistency"], _ = refinement_options.relax_mode_consistency(

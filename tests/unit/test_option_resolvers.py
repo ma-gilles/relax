@@ -37,11 +37,11 @@ def test_adaptive_options_parse_the_oracle_lists_and_keep_the_sampling_flags():
 
 
 def test_execution_and_local_search_come_from_their_flags_and_the_environment(monkeypatch):
-    args = _args("--image_batch_size", "64", "--rotation_block_size", "128", "--overlap_halves",
+    args = _args("--image_batch_size", "64", "--rotation_block_size", "128",
                  "--auto_local_healpix_order", "3", "--sigma_ang", "2.5", "--local_search_profile", "on")
     monkeypatch.delenv("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS", raising=False)
     assert refinement_arguments.resolve_execution(args) == ExecutionOptions(
-        image_batch_size=64, rotation_block_size=128, overlap_halves=True, clear_jax_caches_between_iterations=False,
+        image_batch_size=64, rotation_block_size=128, clear_jax_caches_between_iterations=False,
     )
     monkeypatch.setenv("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS", "1")
     assert refinement_arguments.resolve_execution(args).clear_jax_caches_between_iterations is True
@@ -193,3 +193,9 @@ def test_iteration_one_translations_are_relions_grid(monkeypatch, tmp_path, n_cl
     assert expected.shape == (81, 2)
     assert translations.dtype == np.float64
     np.testing.assert_allclose(translations, expected, rtol=0.0, atol=0.0)
+
+
+def test_the_overlap_flag_is_retired(capsys):
+    with pytest.raises(SystemExit):
+        _args("--overlap_halves")
+    assert "--overlap_halves was retired with the overlapped half-set E-steps" in capsys.readouterr().err

@@ -647,13 +647,10 @@ CLEAR_JAX_CACHES_BETWEEN_ITERATIONS_ENV = "RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN
 @dataclass(frozen=True, kw_only=True)
 class ExecutionOptions:
     """How the run executes, not what it computes: the batch sizes the iteration loop hands down to the
-    engines, whether the two half-sets' host work may overlap, whether JAX's caches are cleared after every
+    engines, whether JAX's caches are cleared after every
     numbered iteration, and which numbered half a BPref device-signature dump captures.
 
-    ``overlap_halves``: the halves are independent inside the E-step, so one half's host work can be issued
-    while the other's kernels run. Kernels still serialise on JAX's single compute stream, so this trades no
-    device order; it only stops the host from idling. It is a performance experiment, engaged only when every
-    guard in ``iteration_loop`` holds. ``clear_jax_caches_between_iterations``
+    ``clear_jax_caches_between_iterations``
     (``RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS``) and ``bpref_device_signature_target`` (the numbered
     (iteration, half), one-based, whose BPref device signature a dump captures, or None; that half plans its
     compact first-iteration batches for the capture; see ``bpref_device_signature_target``) come from the
@@ -663,7 +660,6 @@ class ExecutionOptions:
 
     image_batch_size: int = 500
     rotation_block_size: int = 40000
-    overlap_halves: bool = False
     clear_jax_caches_between_iterations: bool = False
     bpref_device_signature_target: tuple[int, int] | None = None
 
@@ -717,37 +713,23 @@ def half_accumulator_guard_mode(raw: str | None, *, warn_only: bool) -> str:
     return "warn" if warn_only else "raise"
 
 
-
-
-BPREF_DUMP_ENV_VARS = (
-    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
-    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
-    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-)
-
-
 @dataclass(frozen=True, kw_only=True)
 class RefinementEnvironment:
     """The controller's switches of the process environment, read once by :meth:`from_environ`, which the
     command calls when it builds the run's options (code rule 5); nothing below reads these variables again.
     The default instance is the unset environment.
 
-    ``armed_bpref_dumps``: the BPref dump variables of ``BPREF_DUMP_ENV_VARS`` (RELAX_BPREF_MEMBERSHIP_DUMP_DIR,
-    RELAX_BPREF_CONTRIBUTION_DUMP_DIR, RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR) set to a non-blank value, in that
-    order; while one is armed the two halves' E-steps do not overlap (``expectation._half_overlap_active``).
     ``half_accumulator_guard``: the mode of the finite guard of the half accumulators before their join, "raise"
     (the default), "warn" or "off", from RELAX_EM_BPREF_FINITE_GUARD (1/true/yes/on/raise or unset/blank:
     raise; 0/false/no/off: off; warn; anything else refused) demoted to "warn" by RELAX_EM_FINITE_CHECK_WARN
     (``env_flags.parse_env_true_flag``); see :func:`half_accumulator_guard_mode`.
     """
 
-    armed_bpref_dumps: tuple[str, ...] = ()
     half_accumulator_guard: str = "raise"
 
     @classmethod
     def from_environ(cls) -> RefinementEnvironment:
         return cls(
-            armed_bpref_dumps=tuple(name for name in BPREF_DUMP_ENV_VARS if read_env_text(name, "").strip()),
             half_accumulator_guard=half_accumulator_guard_mode(
                 read_env_text(HALF_ACCUMULATOR_GUARD_ENV),
                 warn_only=parse_env_true_flag("RELAX_EM_FINITE_CHECK_WARN"),  # finite_check.FINITE_CHECK_WARN_ENV

@@ -185,84 +185,9 @@ def finish_numbered_half(
 
 
 def _score_and_finish_half(score_half, finish_half, half_inputs, k) -> None:
-    """Score half ``k`` and finish it before anything else runs on that half's thread, then return the heap its
-    passes freed (:func:`~relax.runtime.host_memory.return_freed_heap`)."""
+    """Score half ``k`` and finish it before the next half is scored, then return the heap its passes freed (:func:`~relax.runtime.host_memory.return_freed_heap`)."""
     finish_half(half_inputs[k], score_half(half_inputs[k]))
     return_freed_heap(f"half {k + 1}'s E-step")
-
-
-def _half_overlap_active(
-    requested: bool, *, armed_bpref_dumps: tuple[str, ...], diagnostic_half_indices, log
-) -> bool:
-    """Decide whether the two halves' E-steps may run concurrently.
-
-    Refuses rather than degrades. Each guard is a place where running the two
-    halves at once would change what is observed, not merely when:
-
-    * a subset of halves is being scored, so there is nothing to overlap;
-    * a BPref dump is armed (``armed_bpref_dumps``, ``RefinementEnvironment``). Its captures (device panels,
-      membership, contributions) follow one half at a time, so two halves in flight
-      would interleave them. The dump is a diagnostic, so the overlap yields.
-    """
-
-    if not requested:
-        return False
-    if tuple(diagnostic_half_indices) != (0, 1):
-        log.info("Half overlap off: scoring halves %s, not both", tuple(diagnostic_half_indices))
-        return False
-    if armed_bpref_dumps:
-        log.info("Half overlap off: a BPref dump is armed (%s)", ", ".join(armed_bpref_dumps))
-        return False
-    log.info("Half overlap ON: the two halves' E-steps run in one thread each")
-    return True
-
-
-def _run_halves_overlapped(run_half, diagnostic_half_indices) -> None:
-    """Run each half's E-step in its own thread and re-raise in half order.
-
-    Kernels still serialise on JAX's single compute stream, so the device order
-    within a half is unchanged and the two halves' kernels cannot interleave
-    mid-kernel. What overlaps is host work: one half's dispatch and operand
-    preparation proceed while the other's kernels run.
-
-    The halves write disjoint state, each indexed by its own half, so no
-    accumulator is shared. Exceptions are collected and re-raised in half order
-    so a failure reports the same way it would have when the halves ran one
-    after another.
-    """
-
-    import threading
-
-    from relax.runtime.memory_budget import set_concurrent_device_shares
-
-    errors: dict[int, BaseException] = {}
-
-    def _target(half_index):
-        try:
-            run_half(half_index)
-        except BaseException as exc:  # re-raised below, in half order
-            errors[half_index] = exc
-
-    # A Python-level name only; do not name the OS thread through ctypes (a truncated pthread handle segfaults).
-    threads = [
-        threading.Thread(target=_target, args=(int(k),), name=f"em-half-{int(k)}")
-        for k in diagnostic_half_indices
-    ]
-    # Every pass-2 cache budget is a fraction of the device, written for one
-    # worker at a time. Both halves sizing against the whole device is what
-    # made the order-3 overlap fail with RESOURCE_EXHAUSTED while building the
-    # second half's projection cache, so each is told it owns its share.
-    previous_shares = set_concurrent_device_shares(len(threads))
-    try:
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-    finally:
-        set_concurrent_device_shares(previous_shares)
-    for k in diagnostic_half_indices:
-        if int(k) in errors:
-            raise errors[int(k)]
 
 
 def run_numbered_halves(
@@ -271,37 +196,23 @@ def run_numbered_halves(
     half_inputs,
     diagnostic_half_indices,
     significance: SignificanceStatistics,
-    *,
-    overlap_halves: bool,
-    armed_bpref_dumps: tuple[str, ...],
-    log: logging.Logger,
 ) -> None:
     """Score the halves of a numbered iteration and close its expectation.
 
     For each half ``k`` of ``diagnostic_half_indices``: ``score_half(half_inputs[k])`` returns its score result
     and ``finish_half(half_inputs[k], result)`` publishes it at once, before the next half is scored (so half 0's
-    finished accumulators can leave the device first). The halves run one after another, or one thread each
-    (score then finish) when ``overlap_halves`` is requested and allowed. A run that scored a subset of the
-    halves for a diagnostic stops here. Then the deferred preprocess checks are drained (dropped when the halves
+    finished accumulators can leave the device first). A run that scored a subset of the halves for a diagnostic
+    stops here. Then the deferred preprocess checks are drained (dropped when the halves
     raise, :func:`relax.cuda.preprocess.expectation_relion_preprocess_checks`) and the halves' significant-sample
     counts combined; the caller marks the end of the expectation for its observer.
     """
     from relax.cuda.preprocess import expectation_relion_preprocess_checks
 
-    _overlap_active = _half_overlap_active(
-        overlap_halves,
-        armed_bpref_dumps=armed_bpref_dumps,
-        diagnostic_half_indices=diagnostic_half_indices,
-        log=log,
-    )
     run_half = partial(_score_and_finish_half, score_half, finish_half, half_inputs)
     # The deferred preprocess checks are read when the halves are done, and dropped if they raise.
     with expectation_relion_preprocess_checks():
-        if _overlap_active:
-            _run_halves_overlapped(run_half, diagnostic_half_indices)
-        else:
-            for k in diagnostic_half_indices:
-                run_half(k)
+        for k in diagnostic_half_indices:
+            run_half(k)
         if diagnostic_half_indices != (0, 1):
             raise RuntimeError(
                 "targeted half-only significance diagnostic returned without writing its "
@@ -349,8 +260,7 @@ def run_numbered_expectation(
 ) -> NumberedExpectationResult:
     """Score both halves of a numbered iteration (step S3): the dense route's variant, the expectation phase
     shared by the halves, the subtomogram sampling, then each half scored and published (half 0's
-    accumulators leave the device before half 1 is scored; ``options.execution.overlap_halves`` may run the two
-    on two threads).
+    accumulators leave the device before half 1 is scored).
 
     ``half_inputs`` are the halves' scoring inputs (``numbered_half_inputs``); ``diagnostic_half_indices`` the
     halves to score (both, except for a targeted significance diagnostic, which stops the run). Reads from
@@ -414,8 +324,6 @@ def run_numbered_expectation(
             use_local=use_local, dtype=ctx.scoring_dtype,
         ),
         half_inputs, diagnostic_half_indices, significance,
-        overlap_halves=options.execution.overlap_halves,
-        armed_bpref_dumps=options.environment.armed_bpref_dumps, log=logger,
     )
     return NumberedExpectationResult(per_half=per_half, significance=significance)
 

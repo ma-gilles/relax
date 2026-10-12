@@ -86,7 +86,7 @@ def test_log_row_keeps_the_template_and_drops_wall_times():
     assert node[-1] == ""
 
 
-def test_trace_order_does_not_depend_on_which_worker_logged_first():
+def test_trace_order_does_not_depend_on_when_a_background_thread_logged():
     def rows(worker_order):
         return (
             [("MainThread", ["log", "before"])]
@@ -94,12 +94,12 @@ def test_trace_order_does_not_depend_on_which_worker_logged_first():
             + [("MainThread", ["log", "after"])]
         )
 
-    one = fingerprint.ordered_trace(rows([(0, "em-half-0"), (0, "em-half-1"), (1, "em-half-0"), (1, "em-half-1")]))
-    other = fingerprint.ordered_trace(rows([(0, "em-half-1"), (0, "em-half-0"), (1, "em-half-1"), (1, "em-half-0")]))
+    one = fingerprint.ordered_trace(rows([(0, "writer-b"), (0, "writer-a"), (1, "writer-b"), (1, "writer-a")]))
+    other = fingerprint.ordered_trace(rows([(0, "writer-a"), (1, "writer-a"), (0, "writer-b"), (1, "writer-b")]))
 
     assert one == other
     assert [row[1] for row in one] == [
-        "before", "em-half-0 step 0", "em-half-0 step 1", "em-half-1 step 0", "em-half-1 step 1", "after",
+        "before", "after", "writer-a step 0", "writer-a step 1", "writer-b step 0", "writer-b step 1",
     ]
 
 

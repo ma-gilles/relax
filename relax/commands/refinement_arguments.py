@@ -797,16 +797,10 @@ def parse_refinement_args(argv=None):
         default=40000,
         help="Rotations per block (larger = faster, less Python overhead)",
     )
-    parser.add_argument(
-        "--overlap_halves",
-        action="store_true",
-        help=(
-            "Run the two half-sets' E-steps in one thread each. The halves are "
-            "independent inside the E-step and kernels still serialise on one "
-            "stream, so this only stops the host idling. Off by default; it is "
-            "a performance experiment, not a scientific setting."
-        ),
-    )
+    # Deleted 2026-10-12: on the GPU it was slower than serial halves and stopped at random with
+    # CUDA_ERROR_STREAM_CAPTURE_INVALIDATED (em_work/overlap_fix_20261012).
+    parser.add_argument("--overlap_halves", action=RetiredFlag,
+                        feature="the overlapped half-set E-steps (the halves run one after another)")
     parser.add_argument(
         "--seed",
         type=int,
@@ -1526,12 +1520,10 @@ def resolve_adaptive_options(args, *, max_significants: int, log) -> AdaptiveOpt
 
 
 def resolve_execution(args) -> ExecutionOptions:
-    """The E-step's image and rotation block sizes, whether the halves' host work may overlap
-    (``--overlap_halves``), and the environment's JAX cache switch."""
+    """The E-step's image and rotation block sizes and the environment's JAX cache switch."""
     return ExecutionOptions.from_environ(
         image_batch_size=args.image_batch_size,
         rotation_block_size=args.rotation_block_size,
-        overlap_halves=bool(args.overlap_halves),
     )
 
 

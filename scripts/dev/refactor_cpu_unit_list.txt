@@ -72,7 +72,6 @@ tests/unit/test_frozen_refinement_boundary.py
 tests/unit/test_full_refinement_command.py
 tests/unit/test_fsc_resolution_loop.py
 tests/unit/test_global_coarse_order_boundary.py
-tests/unit/test_half_overlap_dispatch.py
 tests/unit/test_half_translation_prior_inputs.py
 tests/unit/test_half_volume_mstep.py
 tests/unit/test_healpix_order_oracle.py
