@@ -19,13 +19,11 @@ G (angular sampling), H (speed tricks).
 """
 
 import logging
-import os
 from dataclasses import dataclass, field, replace
 from typing import NamedTuple, Optional
 
 import numpy as np
 
-from relax.runtime.env_flags import parse_env_float_or_default, parse_env_int_or_default, parse_env_true_flag
 from relax.sampling.healpix import angular_sampling_deg
 from relax.steps.convergence import (
     compute_relion_offset_changes_angstrom,
@@ -69,16 +67,20 @@ MAX_NR_ITER_WO_RESOL_GAIN = 1
 MAX_NR_ITER_WO_LARGE_HIDDEN_VARIABLE_CHANGES = 1
 RELION_MAX_FULL_GRID_ORDER = 4
 LOCAL_SEARCH_HEALPIX_ORDER = 4  # Switch to local search at order >= 4 (~3.7 deg)
-_LOW_PMAX_REFINE_GUARD_ENV = "RELAX_EM_LOW_PMAX_REFINE_GUARD"
-_LOW_PMAX_REFINE_MAX_AVE_PMAX_ENV = "RELAX_EM_LOW_PMAX_REFINE_MAX_AVE_PMAX"
-_LOW_PMAX_REFINE_MIN_RES_STALL_ENV = "RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL"
-_LOW_PMAX_REFINE_REQUIRE_LOCAL_ENV = "RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL"
-_LOW_PMAX_REFINE_DEFAULT_MAX_AVE_PMAX = 0.15
-_LOW_PMAX_REFINE_DEFAULT_MIN_RES_STALL = 3
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
-_FALSE_ENV_VALUES = {"0", "false", "no", "off"}
 
 APPROX_ACC_ROT_CONVERGENCE_ENV = "RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE"
+
+
+@dataclass(frozen=True, kw_only=True)
+class LowPmaxRefineGuard:
+    """The opt-in diffuse-posterior guard of the angular refinement (RELAX_EM_LOW_PMAX_REFINE_GUARD), read once
+    by ``RefinementEnvironment.from_environ``: refinement stops while ave_Pmax <= ``max_ave_pmax`` and the
+    resolution has stalled ``min_res_stall`` iterations, only under local search if ``require_local_search``."""
+
+    max_ave_pmax: float
+    min_res_stall: int
+    require_local_search: bool
+
 
 # RELION's initial last-iteration offset change (ml_optimiser.cpp:1040, 2147): the first angular-sampling update
 # before a measurement reads it as min(1.3 * range, 5 * 999).
@@ -729,8 +731,9 @@ def check_convergence(state: RefinementState) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _angular_sampling_update_is_ready(state: RefinementState) -> bool:
-    """Return whether RELION enters the body of ``updateAngularSampling``."""
+def _angular_sampling_update_is_ready(state: RefinementState, low_pmax_guard: LowPmaxRefineGuard | None) -> bool:
+    """Return whether RELION enters the body of ``updateAngularSampling`` (``low_pmax_guard``: the
+    ``RefinementEnvironment`` ablation guard, None when off)."""
     do_proceed_resolution = (
         resolution_triggers_angular_refinement(state)
         or state.nr_iter_wo_resol_gain >= MAX_NR_ITER_WO_RESOL_GAIN
@@ -754,7 +757,7 @@ def _angular_sampling_update_is_ready(state: RefinementState) -> bool:
         ):
             return False
 
-    if _low_pmax_refinement_guard_blocks(state):
+    if _low_pmax_refinement_guard_blocks(state, low_pmax_guard):
         return False
 
     return True
@@ -769,7 +772,7 @@ def _angular_sampling_is_fine_enough_now(state: RefinementState) -> bool:
     )
 
 
-def update_angular_sampling(state: RefinementState) -> RefinementState:
+def update_angular_sampling(state: RefinementState, *, low_pmax_guard: LowPmaxRefineGuard | None) -> RefinementState:
     """Run RELION's expectation-boundary sampling transition.
 
     ``has_fine_enough_angular_sampling`` is a latched optimiser flag.  It is
@@ -778,7 +781,7 @@ def update_angular_sampling(state: RefinementState) -> RefinementState:
     ``acc_rot``.  Recomputing it as a property of a newly refined grid causes
     an off-by-one convergence decision.
     """
-    if state.has_fine_enough_angular_sampling or not _angular_sampling_update_is_ready(state):
+    if state.has_fine_enough_angular_sampling or not _angular_sampling_update_is_ready(state, low_pmax_guard):
         return state
     if _angular_sampling_is_fine_enough_now(state):
         logger.info(
@@ -798,19 +801,6 @@ def update_angular_sampling(state: RefinementState) -> RefinementState:
     return refine_angular_sampling(state)
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    value = os.environ.get(name)
-    if value is None or value.strip() == "":
-        return default
-    normalized = value.strip().lower()
-    if normalized in _TRUE_ENV_VALUES:
-        return True
-    if normalized in _FALSE_ENV_VALUES:
-        return False
-    logger.warning("Ignoring invalid %s=%r; using %s", name, value, default)
-    return default
-
-
 def approx_acc_rot_policy_for_convergence(enabled: bool) -> tuple[bool, str]:
     """Return whether native support-width acc_rot may gate convergence, and the reason logged.
 
@@ -826,28 +816,18 @@ def approx_acc_rot_policy_for_convergence(enabled: bool) -> tuple[bool, str]:
     return False, "diagnostic-only-default"
 
 
-def _low_pmax_refinement_guard_blocks(state: RefinementState) -> bool:
-    """Return whether the opt-in diffuse-posterior guard should stop refinement.
+def _low_pmax_refinement_guard_blocks(state: RefinementState, guard: LowPmaxRefineGuard | None) -> bool:
+    """Return whether the opt-in diffuse-posterior ``guard`` (None: off) should stop refinement.
 
     This is an ablation hook, disabled by default.  It prevents further
     post-local angular refinement when the posterior remains diffuse
     (low ave_Pmax) and the FSC-derived resolution has already stalled.
     """
-    if not parse_env_true_flag(_LOW_PMAX_REFINE_GUARD_ENV):
+    if guard is None:
         return False
-    require_local_search = _env_bool(_LOW_PMAX_REFINE_REQUIRE_LOCAL_ENV, True)
-    if require_local_search and not state.do_local_search:
+    if guard.require_local_search and not state.do_local_search:
         return False
-    max_ave_pmax = parse_env_float_or_default(
-        _LOW_PMAX_REFINE_MAX_AVE_PMAX_ENV,
-        _LOW_PMAX_REFINE_DEFAULT_MAX_AVE_PMAX,
-        logger=logger,
-    )
-    min_res_stall = parse_env_int_or_default(
-        _LOW_PMAX_REFINE_MIN_RES_STALL_ENV,
-        _LOW_PMAX_REFINE_DEFAULT_MIN_RES_STALL,
-        logger=logger,
-    )
+    max_ave_pmax, min_res_stall = guard.max_ave_pmax, guard.min_res_stall
     if not np.isfinite(state.ave_Pmax) or float(state.ave_Pmax) > max_ave_pmax:
         return False
     if int(state.nr_iter_wo_resol_gain) < min_res_stall:
@@ -1064,6 +1044,7 @@ def update_refinement_state(
     update_sampling: bool = True,
     check_convergence_now: bool = True,
     symmetry_label: str = "C1",
+    low_pmax_guard: LowPmaxRefineGuard | None,
 ) -> RefinementState:
     """Update RefinementState after one EM iteration.
 
@@ -1311,7 +1292,7 @@ def update_refinement_state(
 
     # --- Check if we should refine angular sampling ---
     if update_sampling:
-        updated = update_angular_sampling(updated)
+        updated = update_angular_sampling(updated, low_pmax_guard=low_pmax_guard)
 
     # --- Check convergence ---
     if check_convergence_now and check_convergence(updated):

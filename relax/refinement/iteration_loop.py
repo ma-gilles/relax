@@ -877,7 +877,7 @@ def refine_single_volume(
             may_advance_natively=this_iteration.has_previous_iteration and numbered_transitions.uses_native_auto_refine(
                 native_sampling_boundary=carry.native_sampling_boundary, n_classes=options.k_class.n_classes,
             ),
-            log=logger,
+            low_pmax_guard=options.environment.low_pmax_refine_guard, log=logger,
         ))
 
         history.record_scheduling(

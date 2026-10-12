@@ -36,7 +36,8 @@ def _received(monkeypatch, module, function, keyword, environment, **run):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(module, function, wrapped)
-    run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False, environment=environment, **run)
+    run = {"max_iter": 1, **run}
+    run_tiny_refinement(monkeypatch, final_after_max_iter=False, environment=environment, **run)
     return seen
 
 
@@ -94,3 +95,45 @@ def test_diagnostic_float64_pass2_iterations_reach_the_expectation(monkeypatch):
     run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False,
                         environment=RefinementEnvironment(diagnostic_float64_pass2_iterations=frozenset({99})))
     assert seen and set(seen) == {frozenset({99})}
+
+
+def test_low_pmax_refine_guard_is_read_once(monkeypatch, caplog):
+    from relax.refinement.refinement_state import LowPmaxRefineGuard
+
+    for name in ("RELAX_EM_LOW_PMAX_REFINE_MAX_AVE_PMAX", "RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL",
+                 "RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL"):
+        monkeypatch.delenv(name, raising=False)
+    assert _from_environ(monkeypatch, "RELAX_EM_LOW_PMAX_REFINE_GUARD", None).low_pmax_refine_guard is None
+    assert _from_environ(monkeypatch, "RELAX_EM_LOW_PMAX_REFINE_GUARD", "0").low_pmax_refine_guard is None
+    on = _from_environ(monkeypatch, "RELAX_EM_LOW_PMAX_REFINE_GUARD", "1").low_pmax_refine_guard
+    assert on == LowPmaxRefineGuard(max_ave_pmax=0.15, min_res_stall=3, require_local_search=True)
+    monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_MAX_AVE_PMAX", "0.2")
+    monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL", "5")
+    monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", "no")
+    assert RefinementEnvironment.from_environ().low_pmax_refine_guard == LowPmaxRefineGuard(
+        max_ave_pmax=0.2, min_res_stall=5, require_local_search=False)
+    # An unrecognised value warns and keeps its default, as before.
+    monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", "maybe")
+    monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL", "x")
+    guard = RefinementEnvironment.from_environ().low_pmax_refine_guard
+    assert guard.require_local_search is True and guard.min_res_stall == 3
+    assert "RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL" in caplog.text
+
+
+def test_low_pmax_refine_guard_reaches_the_command(monkeypatch, tmp_path):
+    env = _command_environment(monkeypatch, tmp_path, "RELAX_EM_LOW_PMAX_REFINE_GUARD", "1")
+    assert env.low_pmax_refine_guard is not None
+
+
+def test_low_pmax_refine_guard_reaches_the_sampling_update(monkeypatch):
+    from relax.refinement import numbered_transitions
+    from relax.refinement.refinement_state import LowPmaxRefineGuard
+
+    monkeypatch.delenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", raising=False)
+    guard = LowPmaxRefineGuard(max_ave_pmax=0.5, min_res_stall=2, require_local_search=False)
+    seen = _received(monkeypatch, numbered_transitions, "advance_expectation_sampling", "low_pmax_guard",
+                     RefinementEnvironment(low_pmax_refine_guard=guard), max_iter=2)
+    assert seen and set(seen) == {guard}
+    seen = _received(monkeypatch, numbered_transitions, "update_refinement_state", "low_pmax_guard",
+                     RefinementEnvironment(low_pmax_refine_guard=guard), max_iter=2)
+    assert seen and set(seen) == {guard}

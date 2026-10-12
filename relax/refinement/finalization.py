@@ -234,7 +234,9 @@ def run_final_all_data(
             )
             carry.state.acc_rot = final_expected_accuracy.acc_rot
             carry.state.acc_trans = final_expected_accuracy.acc_trans_angstrom
-            carry = replace(carry, state=update_angular_sampling(carry.state))
+            carry = replace(carry, state=update_angular_sampling(
+                carry.state, low_pmax_guard=options.environment.low_pmax_refine_guard,
+            ))
             final_expected_accuracy_status = "ok"
             logger.info(
                 "RELION final all-data expected accuracy: acc_rot=%.3f deg, "

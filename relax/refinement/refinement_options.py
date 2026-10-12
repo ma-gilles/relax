@@ -19,12 +19,18 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
 from relax.reconstruction.volume_solver import ReconstructionPrograms
-from relax.refinement.refinement_state import APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
+from relax.refinement.refinement_state import (
+    APPROX_ACC_ROT_CONVERGENCE_ENV,
+    LOCAL_SEARCH_HEALPIX_ORDER,
+    LowPmaxRefineGuard,
+)
 from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
 from relax.runtime.env_flags import (
     parse_env_choice,
     parse_env_flag,
     parse_env_flag_or_false,
+    parse_env_float_or_default,
+    parse_env_int_or_default,
     parse_env_optional_flag,
     parse_env_true_flag,
     read_env_text,
@@ -736,6 +742,40 @@ def _optional_env_flag(name: str) -> bool | None:
     return None if not read_env_text(name, "").strip() else parse_env_flag(name)
 
 
+LOW_PMAX_REFINE_GUARD_ENV = "RELAX_EM_LOW_PMAX_REFINE_GUARD"
+_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
+_FALSE_ENV_VALUES = {"0", "false", "no", "off"}
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    """A boolean token; unset or blank is ``default``, and an unrecognised value warns and is ``default``."""
+    value = read_env_text(name)
+    if value is None or value.strip() == "":
+        return default
+    normalized = value.strip().lower()
+    if normalized in _TRUE_ENV_VALUES:
+        return True
+    if normalized in _FALSE_ENV_VALUES:
+        return False
+    logging.getLogger(__name__).warning("Ignoring invalid %s=%r; using %s", name, value, default)
+    return default
+
+
+def _low_pmax_refine_guard() -> LowPmaxRefineGuard | None:
+    """The diffuse-posterior guard: None unless RELAX_EM_LOW_PMAX_REFINE_GUARD is a true token
+    (``parse_env_true_flag``); then RELAX_EM_LOW_PMAX_REFINE_MAX_AVE_PMAX (0.15), RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL
+    (3; an invalid number warns and is the default) and RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL (true; see
+    :func:`_env_bool`)."""
+    if not parse_env_true_flag(LOW_PMAX_REFINE_GUARD_ENV):
+        return None
+    log = logging.getLogger(__name__)
+    return LowPmaxRefineGuard(
+        require_local_search=_env_bool("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", True),
+        max_ave_pmax=parse_env_float_or_default("RELAX_EM_LOW_PMAX_REFINE_MAX_AVE_PMAX", 0.15, logger=log),
+        min_res_stall=parse_env_int_or_default("RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL", 3, logger=log),
+    )
+
+
 @dataclass(frozen=True, kw_only=True)
 class RefinementEnvironment:
     """The controller's switches of the process environment, read once by :meth:`from_environ`, which the
@@ -750,12 +790,14 @@ class RefinementEnvironment:
     first-iteration BPref takes its fused kernel wherever it is supported; False: never; True: required there,
     refused elsewhere; ``firstiter_bpref._relion_firstiter_fused_bpref_enabled``). ``diagnostic_float64_pass2_iterations``
     (RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS, :func:`_diagnostic_float64_pass2_iterations`): the RELION
-    iterations whose pass 2 scores and is planned in float64.
+    iterations whose pass 2 scores and is planned in float64. ``low_pmax_refine_guard``
+    (:func:`_low_pmax_refine_guard`; None: off) holds the angular refinement while the posterior is diffuse.
     """
 
     half_accumulator_guard: str = "raise"
     firstiter_fused_bpref: bool | None = None
     diagnostic_float64_pass2_iterations: frozenset[int] = frozenset()
+    low_pmax_refine_guard: LowPmaxRefineGuard | None = None
 
     @classmethod
     def from_environ(cls) -> RefinementEnvironment:
@@ -766,6 +808,7 @@ class RefinementEnvironment:
             ),
             firstiter_fused_bpref=_optional_env_flag(FIRSTITER_FUSED_BPREF_ENV),
             diagnostic_float64_pass2_iterations=_diagnostic_float64_pass2_iterations(),
+            low_pmax_refine_guard=_low_pmax_refine_guard(),
         )
 
 

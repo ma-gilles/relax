@@ -12,6 +12,7 @@ from relax.reconstruction.resolution import ImageGeometry, shell_index_to_resolu
 from relax.refinement.ports import InputSource, OptimiserAccuracyReplay
 from relax.refinement.refinement_state import (
     ExpectationStatistics,
+    LowPmaxRefineGuard,
     RefinementState,
     apply_relion_healpix_order_oracle,
     approx_acc_rot_policy_for_convergence,
@@ -51,9 +52,11 @@ def advance_expectation_sampling(
     *,
     iteration: int,
     may_advance_natively: bool,
+    low_pmax_guard: LowPmaxRefineGuard | None,
     log: logging.Logger,
 ) -> RefinementState:
-    """Choose this expectation's angular grid after accuracy, before expectation.
+    """Choose this expectation's angular grid after accuracy, before expectation (``low_pmax_guard``:
+    ``RefinementEnvironment.low_pmax_refine_guard``).
 
     An explicit HEALPix schedule takes precedence, including on the first iteration. Otherwise the
     grid advances only where ``may_advance_natively``: native K=1 auto-refine after a completed
@@ -62,7 +65,7 @@ def advance_expectation_sampling(
     """
     if adaptive.relion_healpix_orders is not None:
         return _scheduled_healpix_order_state(state, adaptive, iteration=iteration, log=log)
-    return update_angular_sampling(state) if may_advance_natively else state
+    return update_angular_sampling(state, low_pmax_guard=low_pmax_guard) if may_advance_natively else state
 
 
 class ConvergenceUpdate(NamedTuple):
@@ -187,6 +190,7 @@ def update_iteration_convergence(
         update_sampling=sampling_decision_now,
         check_convergence_now=sampling_decision_now,
         symmetry_label=options.symmetry.point_group,
+        low_pmax_guard=options.environment.low_pmax_refine_guard,
     )
     source.apply_optimiser_controls(iteration, state, accuracy_replay)
     return ConvergenceUpdate(state, accuracy_replay)

@@ -46,9 +46,15 @@ pytestmark = pytest.mark.unit
 _REFINEMENT_LOGGER = logging.getLogger("relax.refinement.iteration_loop")
 
 
-def _refines_angular_sampling(state: RefinementState) -> bool:
-    """Whether the production transition advances the HEALPix order."""
-    return update_angular_sampling(state).healpix_order > state.healpix_order
+def _guard_from_environ():
+    """The low-Pmax guard the command reads (``RefinementEnvironment.from_environ``)."""
+    from relax.refinement.refinement_options import RefinementEnvironment
+
+    return RefinementEnvironment.from_environ().low_pmax_refine_guard
+
+
+def _refines_angular_sampling(state: RefinementState, guard=None) -> bool:
+    return update_angular_sampling(state, low_pmax_guard=guard).healpix_order > state.healpix_order
 
 
 # =========================================================================
@@ -101,7 +107,7 @@ class TestRefinementStateConstruction:
             nr_iter_wo_assignment_changes=1,
         )
         assert state.has_fine_enough_angular_sampling is False
-        assert update_angular_sampling(state).has_fine_enough_angular_sampling is True
+        assert update_angular_sampling(state, low_pmax_guard=None).has_fine_enough_angular_sampling is True
 
     def test_uncapped_sampling_refines_past_order_7_until_fine_enough(self):
         """RELION's auto-refine has no HEALPix cap (ml_optimiser.cpp updateAngularSampling,
@@ -115,10 +121,10 @@ class TestRefinementStateConstruction:
             nr_iter_wo_assignment_changes=1,
         )
         assert state.max_healpix_order is None
-        refined = update_angular_sampling(state)
+        refined = update_angular_sampling(state, low_pmax_guard=None)
         assert refined.healpix_order == 8
         assert refined.has_fine_enough_angular_sampling is False
-        capped = update_angular_sampling(replace(state, max_healpix_order=7))
+        capped = update_angular_sampling(replace(state, max_healpix_order=7), low_pmax_guard=None)
         assert capped.healpix_order == 7 and capped.has_fine_enough_angular_sampling is False
 
     def test_resolution_required_sampling_does_not_replace_measured_acc_rot(self):
@@ -134,7 +140,7 @@ class TestRefinementStateConstruction:
         assert resolution_required_angular_sampling(4.86, 544.0) == pytest.approx(1.0227, rel=1e-3)
         state.nr_iter_wo_resol_gain = 1
         state.nr_iter_wo_assignment_changes = 1
-        assert update_angular_sampling(state).has_fine_enough_angular_sampling is True
+        assert update_angular_sampling(state, low_pmax_guard=None).has_fine_enough_angular_sampling is True
 
     def test_loose_acc_rot_still_applies_without_particle_diameter(self):
         state = RefinementState(
@@ -147,7 +153,7 @@ class TestRefinementStateConstruction:
 
         state.nr_iter_wo_resol_gain = 1
         state.nr_iter_wo_assignment_changes = 1
-        assert update_angular_sampling(state).has_fine_enough_angular_sampling is True
+        assert update_angular_sampling(state, low_pmax_guard=None).has_fine_enough_angular_sampling is True
 
     def test_resolution_required_sampling_cannot_replace_missing_acc_rot(self):
         """A resolution-derived step must not terminate without acc_rot."""
@@ -654,6 +660,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.5,
+            low_pmax_guard=None,
         )
         assert updated.iteration == 1
 
@@ -670,6 +677,7 @@ class TestUpdateRefinementState:
             new_resolution=4.5,
             max_posterior_per_image=np.asarray([0.1, 0.2, 0.3, 0.4]),
             ave_pmax_override=0.75,
+            low_pmax_guard=None,
         )
 
         assert updated.ave_Pmax == pytest.approx(0.75)
@@ -690,6 +698,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.0,  # better than 5.0
+            low_pmax_guard=None,
         )
         assert updated.nr_iter_wo_resol_gain == 0
 
@@ -709,6 +718,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.5,  # worse than 5.0
+            low_pmax_guard=None,
         )
         assert updated.nr_iter_wo_resol_gain == 1
 
@@ -727,6 +737,7 @@ class TestUpdateRefinementState:
             5,
             translations,
             new_resolution=4.999,
+            low_pmax_guard=None,
         )
 
         assert 1.0 / 4.999 > 1.0 / 5.0
@@ -749,6 +760,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.0,  # improving -> no resol stall -> no refinement
+            low_pmax_guard=None,
         )
         assert updated.fraction_changed == 0.0
         assert updated.nr_iter_wo_assignment_changes == 1
@@ -768,6 +780,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.0,
+            low_pmax_guard=None,
         )
         assert updated.fraction_changed == 1.0
         assert updated.nr_iter_wo_assignment_changes == 0
@@ -790,6 +803,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.5,  # stall
+            low_pmax_guard=None,
         )
         # After update: resol_gain=1, assignment_changes=1 -> should refine
         assert updated.healpix_order == 4
@@ -816,6 +830,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.5,
+            low_pmax_guard=None,
         )
         assert updated.has_converged is False
 
@@ -839,6 +854,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.5,
+            low_pmax_guard=None,
         )
         assert updated.has_converged is True
 
@@ -862,13 +878,14 @@ class TestUpdateRefinementState:
             new_resolution=5.5,
             update_sampling=False,
             check_convergence_now=False,
+            low_pmax_guard=None,
         )
 
         assert updated.healpix_order == 3
         assert updated.nr_iter_wo_resol_gain == 1
         assert updated.nr_iter_wo_assignment_changes == 1
         assert updated.has_converged is False
-        boundary_state = update_angular_sampling(updated)
+        boundary_state = update_angular_sampling(updated, low_pmax_guard=None)
         assert boundary_state.has_fine_enough_angular_sampling is True
         assert check_convergence(boundary_state) is True
 
@@ -881,7 +898,7 @@ class TestUpdateRefinementState:
             acc_rot=6.0,
         )
 
-        refined = update_angular_sampling(state)
+        refined = update_angular_sampling(state, low_pmax_guard=None)
 
         assert refined.healpix_order == 4
         assert refined.effective_step < 0.75 * refined.acc_rot
@@ -889,7 +906,7 @@ class TestUpdateRefinementState:
         refined.nr_iter_wo_resol_gain = 1
         refined.nr_iter_wo_assignment_changes = 1
         assert check_convergence(refined) is False
-        assert update_angular_sampling(refined).has_fine_enough_angular_sampling is True
+        assert update_angular_sampling(refined, low_pmax_guard=None).has_fine_enough_angular_sampling is True
 
     def test_pmax_tracking(self):
         state = self._make_base_state()
@@ -906,6 +923,7 @@ class TestUpdateRefinementState:
             translations,
             new_resolution=4.0,
             max_posterior_per_image=pmax,
+            low_pmax_guard=None,
         )
         assert abs(updated.ave_Pmax - 0.42) < 1e-6
 
@@ -926,6 +944,7 @@ class TestUpdateRefinementState:
                 np.array([0, 0, 1, 1, 2], dtype=np.int32),
                 np.array([0, 1, 1, 0, 2], dtype=np.int32),
             ),
+            low_pmax_guard=None,
         )
         assert updated.current_changes_optimal_classes == pytest.approx(0.4)
         assert updated.smallest_changes_optimal_classes == 0
@@ -943,6 +962,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.0,
+            low_pmax_guard=None,
         )
         assert updated.current_changes_optimal_classes == 0.0
 
@@ -981,6 +1001,7 @@ class TestUpdateRefinementState:
             current_translations_pixel=current_trans,
             previous_translations_pixel=previous_trans,
             voxel_size_angstrom=1.0,
+            low_pmax_guard=None,
         )
 
         assert updated.current_changes_optimal_offsets_angstrom == pytest.approx(0.25 / np.sqrt(2.0))
@@ -1065,6 +1086,7 @@ class TestUpdateRefinementState:
             voxel_size_angstrom=state.voxel_size_angstrom,
             update_sampling=False,
             check_convergence_now=False,
+            low_pmax_guard=None,
         )
 
     def test_first_iterations_seed_the_trackers_and_count_as_relion(self):
@@ -1115,8 +1137,8 @@ class TestUpdateRefinementState:
 
         assert state.nr_iter_wo_resol_gain == 1
         assert state.nr_iter_wo_large_hidden_variable_changes == 1
-        assert update_angular_sampling(state).healpix_order == 5
-        refined = update_angular_sampling(state)
+        assert update_angular_sampling(state, low_pmax_guard=None).healpix_order == 5
+        refined = update_angular_sampling(state, low_pmax_guard=None)
         assert refined.mpi_leader_hidden_variable_angular_step_deg == pytest.approx(7.5 / 2.0)
         assert refined.mpi_leader_hidden_variable_translation_step_angstrom == pytest.approx(4.25 / 2.0)
 
@@ -1145,12 +1167,12 @@ class TestUpdateRefinementState:
         ):
             state = self._record_relion_hidden_change(state, angle, offset)
             assert state.nr_iter_wo_large_hidden_variable_changes == 0
-            state = update_angular_sampling(state)
+            state = update_angular_sampling(state, low_pmax_guard=None)
             assert state.healpix_order == 3, iteration
 
         state = self._record_relion_hidden_change(state, 4.503409, 0.896290)
         assert state.nr_iter_wo_large_hidden_variable_changes == 1
-        state = update_angular_sampling(state)
+        state = update_angular_sampling(state, low_pmax_guard=None)
         assert state.healpix_order == 4
 
     def test_real10076_recovar_hidden_change_sequence_refines_at_iteration_8(self):
@@ -1174,7 +1196,7 @@ class TestUpdateRefinementState:
 
         state = self._record_relion_hidden_change(state, 4.836995, 0.933869)
         assert state.nr_iter_wo_large_hidden_variable_changes == 1
-        state = update_angular_sampling(state)
+        state = update_angular_sampling(state, low_pmax_guard=None)
         assert state.healpix_order == 4
 
     @pytest.mark.parametrize(
@@ -1212,7 +1234,7 @@ class TestUpdateRefinementState:
 
         state = self._record_relion_hidden_change(state, current_angle, current_offset)
         assert state.nr_iter_wo_large_hidden_variable_changes == 1
-        assert update_angular_sampling(state).healpix_order == 4
+        assert update_angular_sampling(state, low_pmax_guard=None).healpix_order == 4
 
     def test_relion_order5_to_order6_hidden_change_boundary(self):
         state = RefinementState(
@@ -1238,7 +1260,7 @@ class TestUpdateRefinementState:
 
         assert state.nr_iter_wo_resol_gain >= 1
         assert state.nr_iter_wo_large_hidden_variable_changes == 1
-        assert update_angular_sampling(state).healpix_order == 6
+        assert update_angular_sampling(state, low_pmax_guard=None).healpix_order == 6
 
 
 # =========================================================================
@@ -1305,6 +1327,7 @@ class TestMultiIterationWorkflow:
             n_trans,
             translations,
             new_resolution=8.0,
+            low_pmax_guard=None,
         )
         assert state.iteration == 1
         assert state.has_converged is False
@@ -1318,6 +1341,7 @@ class TestMultiIterationWorkflow:
             n_trans,
             translations,
             new_resolution=9.0,  # worse
+            low_pmax_guard=None,
         )
         # update_refinement_state increments iteration to 2, then
         # refine_angular_sampling preserves that iteration count
@@ -1344,6 +1368,7 @@ class TestMultiIterationWorkflow:
             n_trans,
             translations,
             new_resolution=9.5,
+            low_pmax_guard=None,
         )
         assert state2.has_converged is False
 
@@ -1365,6 +1390,7 @@ class TestMultiIterationWorkflow:
             n_trans,
             translations,
             new_resolution=10.0,
+            low_pmax_guard=None,
         )
         assert state3.has_converged is True
 
@@ -1416,10 +1442,11 @@ class TestRefinementPolicy:
         )
 
         monkeypatch.delenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", raising=False)
-        assert _refines_angular_sampling(state)
+        assert _refines_angular_sampling(state, _guard_from_environ())
 
         monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", "1")
-        assert not _refines_angular_sampling(state)
+        guard = _guard_from_environ()
+        assert not _refines_angular_sampling(state, guard)
 
         confident = RefinementState(
             healpix_order=4,
@@ -1435,7 +1462,7 @@ class TestRefinementPolicy:
             ave_Pmax=0.30,
             acc_rot=float("inf"),
         )
-        assert _refines_angular_sampling(confident)
+        assert _refines_angular_sampling(confident, guard)
 
     def test_low_pmax_refinement_guard_can_cover_prelocal_transition(self, monkeypatch):
         state = RefinementState(
@@ -1456,10 +1483,10 @@ class TestRefinementPolicy:
 
         monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", "1")
         monkeypatch.delenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", raising=False)
-        assert _refines_angular_sampling(state)
+        assert _refines_angular_sampling(state, _guard_from_environ())
 
         monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", "0")
-        assert not _refines_angular_sampling(state)
+        assert not _refines_angular_sampling(state, _guard_from_environ())
 
     def test_local_search_keeps_exhaustive_grid_at_last_prelocal_order(self):
         state = RefinementState(healpix_order=4, auto_local_healpix_order=4)
@@ -1544,6 +1571,7 @@ def test_computed_assignment_fraction_survives_sampling_transition(update_sampli
         current_changes_classes=hard_class_change_fraction(np.zeros(4, dtype=int), np.zeros(4, dtype=int)),
         ave_pmax_override=1.0,
         check_convergence_now=False,
+        low_pmax_guard=None,
     )
     assert updated.fraction_changed == 0.25
     if update_sampling:
