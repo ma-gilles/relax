@@ -71,15 +71,14 @@ from relax.classification.k_class_results import (
     _sum_noise_stats,
 )
 from relax.diagnostics.observers import IntermediatesObserver
+from relax.fine_pass.rotation_buckets import EXACT_LOCAL_BUCKET_RADIX_ENV, exact_bucket_rotation_size
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
 from relax.local_search.layout import (
-    EXACT_LOCAL_BUCKET_RADIX_ENV,
     LocalHypothesisLayout,
     bucket_local_hypothesis_layout,
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
-    exact_bucket_rotation_size,
     selected_rotation_matrices,
 )
 from relax.numerics import precision as dtype_policy_module

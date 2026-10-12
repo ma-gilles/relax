@@ -12,7 +12,7 @@ import logging
 
 import numpy as np
 
-from relax.local_search.layout import exact_bucket_rotation_size
+from relax.fine_pass.rotation_buckets import exact_bucket_rotation_size
 from relax.runtime.batch_planning import plan_consecutive_padded_batches
 from relax.runtime.env_flags import parse_env_binary_flag, parse_env_flag
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor, power_of_two_bucket
