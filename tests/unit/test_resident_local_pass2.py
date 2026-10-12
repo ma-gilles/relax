@@ -33,7 +33,7 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
-from relax.fine_pass import policy, resident_chunk_memory
+from relax.fine_pass import policy, resident_chunk_memory, resident_image_terms
 from relax.fine_pass import resident_pass2 as rp
 from relax.local_search import resident_pass2 as rlp
 from relax.local_search.layout import (
@@ -984,7 +984,7 @@ def test_padded_posterior_bins_serve_two_bin_counts_with_one_program(monkeypatch
         results = []
         for case in cases:
             results.append(_run(case, monkeypatch=monkeypatch))
-            programs.append(rp._accumulate_chunk_image_terms._cache_size())
+            programs.append(resident_image_terms.accumulate_chunk_image_terms._cache_size())
         return results, programs
 
     unpadded, unpadded_programs = runs(1)

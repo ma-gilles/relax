@@ -23,7 +23,10 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fine_pass.projection_blocks import project_rows_by_class
-from relax.fine_pass.wavg import weighted_image_power_from_shells
+from relax.fine_pass.wavg import (
+    _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
+    weighted_image_power_from_shells,
+)
 from relax.reconstruction.half_volume_mstep import blocks_per_flush, flushed_block_loop
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
 from relax.sampling import tomo_particles
@@ -1338,16 +1341,16 @@ def accumulate_tilt_chunk_terms(
 ):
     """Fold one tilt chunk into the resident statistics, particle terms once and image terms per image.
 
-    The SPA fold (resident_pass2._accumulate_chunk_image_terms) with RELION's subtomogram rules
+    The SPA fold (resident_image_terms.accumulate_chunk_image_terms) with RELION's subtomogram rules
     (acc_ml_optimiser_impl.h storeWeightedSums): the offset, sumw, rotation and score/pose terms are the
     particle's; the image power, the noise shells and the norm residual are summed over its images with
     1 / n_images (:3490-3491, :3512-3516); the scale sums are summed over its images as they
     are (:3474-3479). The noise and norm block partials arrive already scaled (image_noise_scale).
-    With K>1 the class terms are the particle's (``resident_pass2._fold_class_axis``) and the scale
+    With K>1 the class terms are the particle's (``resident_image_terms.fold_class_axis``) and the scale
     sums arrive folded class by class (``mstep.scale_xa_per_image``).
     """
 
-    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_image_terms
     from relax.fine_pass.resident_statistics import ResidentStatistics, _drop_index, segment_sum_by_image
 
     config = spec.stats_config
@@ -1400,7 +1403,7 @@ def accumulate_tilt_chunk_terms(
     direct_residual = operands.image_noise_scale[:, None] * mstep.wavg_triplet_pixels[:, :, 2]
     direct_residual = jnp.where(valid_image[:, None], direct_residual, jnp.float32(0.0))
     if config.n_optics_groups == 1:
-        residual_shells, image_power_shells = rp._replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+        residual_shells, image_power_shells = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
             jnp.asarray(mstep.noise_shells, dtype=jnp.float64),
             weighted_img_shells.astype(jnp.float64),
             direct_residual,
@@ -1423,7 +1426,7 @@ def accumulate_tilt_chunk_terms(
                 deterministic_norm_reduction=config.deterministic_norm_reduction,
                 high_shell_mass=scale,
             )
-            group_residual, group_power = rp._replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+            group_residual, group_power = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
                 jnp.asarray(mstep.noise_shells[group], dtype=jnp.float64),
                 group_img_shells.astype(jnp.float64),
                 jnp.where(in_group[:, None], direct_residual, jnp.float32(0.0)),
@@ -1477,7 +1480,7 @@ def accumulate_tilt_chunk_terms(
     if classes is not None:
         class_cell = jnp.asarray(posterior.classes.best_cell_index, dtype=jnp.int64)
         class_best_row = jnp.clip(rows.classes.segment_row_start + class_cell // n_t, 0, last_row).astype(jnp.int32)
-        classes = rp._fold_class_axis(
+        classes = resident_image_terms.fold_class_axis(
             classes,
             unit_slot,
             log_score_offset,

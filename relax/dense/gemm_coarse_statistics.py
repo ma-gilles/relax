@@ -24,12 +24,8 @@ from relax.fine_pass.resident_block_programs import (
     resident_block_wavg_algebraic_terms,
     resident_block_weighted_sums_kernel,
 )
-from relax.fine_pass.resident_pass2 import (
-    _accumulate_chunk_image_terms,
-    _ChunkImageOperands,
-    _ChunkImageTables,
-    _fold_class_scale_sums,
-)
+from relax.fine_pass.resident_image_terms import ChunkImageOperands, ChunkImageTables, accumulate_chunk_image_terms
+from relax.fine_pass.resident_pass2 import _fold_class_scale_sums
 from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
 from relax.fine_pass.wavg import (
     _relion_wavg_shifted_power,
@@ -358,7 +354,7 @@ def accumulate_batch_statistics(stats, result, carry, ops, batch, *, plan: Dense
     class_best_cell = jnp.where(
         class_pose >= 0, class_fine_rot * t + safe_class_pose % t, -1
     ).T.reshape(-1)
-    image_operands = _ChunkImageOperands(
+    image_operands = ChunkImageOperands(
         row_posterior=rows,
         row_image_local=row_image,
         row_coarse_rot=row_coarse,
@@ -385,14 +381,14 @@ def accumulate_batch_statistics(stats, result, carry, ops, batch, *, plan: Dense
         scale_xa_per_image=carry.scale_xa_per_image,
         scale_aa_per_image=carry.scale_aa_per_image,
     )
-    tables = _ChunkImageTables(
+    tables = ChunkImageTables(
         shell_indices_half=ops.shell_indices_noise,
         wavg_shell_indices=ops.wavg_shell_indices,
         wavg_scale_pixel_mask=ops.wavg_scale_pixel_mask,
         translation_sqdist_ang=ops.translation_sqdist_ang,
         norm_shell_cutoff=ops.norm_shell_cutoff,
     )
-    stats = _accumulate_chunk_image_terms(stats, image_operands, tables, config=plan.stats_config)
+    stats = accumulate_chunk_image_terms(stats, image_operands, tables, config=plan.stats_config)
     # The compressed rows deliberately used a drop sentinel above. Replace
     # their empty rotation contribution with the exact fine→coarse/class sum.
     r = result.rotation_posterior_sums.shape[1]

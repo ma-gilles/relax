@@ -780,7 +780,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
 
     from relax.dense import gemm_coarse_engine
-    from relax.fine_pass import resident_pass2
+    from relax.fine_pass import resident_image_terms, resident_pass2
     from relax.relion import ctf as relion_ctf
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
@@ -855,7 +855,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
     if diagnostic_path:
         from relax.fine_pass.resident_statistics import segment_sum_by_image
 
-        original_accumulate = resident_pass2._accumulate_chunk_image_terms
+        original_accumulate = resident_image_terms.accumulate_chunk_image_terms
 
         def capture_resident_mass(stats, operands, tables, *, config):
             translation_mass = segment_sum_by_image(
@@ -876,14 +876,14 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
                 control_norm_parts, original_accumulate, stats, operands, tables, config=config,
             )
 
-        monkeypatch.setattr(resident_pass2, "_accumulate_chunk_image_terms", capture_resident_mass)
+        monkeypatch.setattr(resident_image_terms, "accumulate_chunk_image_terms", capture_resident_mass)
     # The dense GEMM engine sums its float32 image rows in buckets; its control is the
     # resident pass with the same bucketed sums (the resident default is the scatter-add).
     monkeypatch.setattr(resident_pass2, "_FLOAT32_BUCKETED_IMAGE_SUMS", True)
     control = call(False)
     monkeypatch.setattr(resident_pass2, "_FLOAT32_BUCKETED_IMAGE_SUMS", False)
     if diagnostic_path:
-        monkeypatch.setattr(resident_pass2, "_accumulate_chunk_image_terms", original_accumulate)
+        monkeypatch.setattr(resident_image_terms, "accumulate_chunk_image_terms", original_accumulate)
         from relax.dense import gemm_coarse_statistics
 
         original_dense_accumulate = gemm_coarse_statistics._accumulate_chunk_image_terms
@@ -893,7 +893,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
                 candidate_norm_parts, original_dense_accumulate, stats, operands, tables, config=config,
             )
 
-        monkeypatch.setattr(gemm_coarse_statistics, "_accumulate_chunk_image_terms", capture_dense_norm)
+        monkeypatch.setattr(gemm_coarse_statistics, "accumulate_chunk_image_terms", capture_dense_norm)
         original_make_program = gemm_coarse_engine.make_joint_k_batch_program
 
         def capture_dense_program(*args, **kwargs):
@@ -1054,7 +1054,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
     # function; otherwise its first import can bind the temporary control
     # wrapper and record the dense rows twice.
     from relax.dense import gemm_coarse_engine, gemm_coarse_statistics
-    from relax.fine_pass import resident_block_programs, resident_pass2
+    from relax.fine_pass import resident_block_programs, resident_image_terms, resident_pass2
 
     args = _native_k1_args(monkeypatch, seed=20261001)
     from unit.test_resident_relion_reference import F32, _rel_l2
@@ -1082,7 +1082,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
     control_rows = []
     candidate_rows = []
     if diagnostic_path or row_diagnostic_path:
-        original_control_accumulate = resident_pass2._accumulate_chunk_image_terms
+        original_control_accumulate = resident_image_terms.accumulate_chunk_image_terms
 
         def capture_control_norm(stats, operands, tables, *, config):
             return _capture_chunk_norm(
@@ -1090,7 +1090,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
                 config=config,
             )
 
-        monkeypatch.setattr(resident_pass2, "_accumulate_chunk_image_terms", capture_control_norm)
+        monkeypatch.setattr(resident_image_terms, "accumulate_chunk_image_terms", capture_control_norm)
     if row_diagnostic_path:
         original_control_block = resident_block_programs.resident_block_noise_and_norm
 
@@ -1108,7 +1108,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
         jax.block_until_ready(control.noise_stats.wsum_norm_correction)
         jax.effects_barrier()
     if diagnostic_path or row_diagnostic_path:
-        monkeypatch.setattr(resident_pass2, "_accumulate_chunk_image_terms", original_control_accumulate)
+        monkeypatch.setattr(resident_image_terms, "accumulate_chunk_image_terms", original_control_accumulate)
         original_dense_accumulate = gemm_coarse_statistics._accumulate_chunk_image_terms
 
         def capture_dense_norm(stats, operands, tables, *, config):
@@ -1117,7 +1117,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
                 config=config,
             )
 
-        monkeypatch.setattr(gemm_coarse_statistics, "_accumulate_chunk_image_terms", capture_dense_norm)
+        monkeypatch.setattr(gemm_coarse_statistics, "accumulate_chunk_image_terms", capture_dense_norm)
     if row_diagnostic_path:
         monkeypatch.setattr(resident_block_programs, "resident_block_noise_and_norm", original_control_block)
         original_dense_block = gemm_coarse_statistics._resident_block_noise_and_norm

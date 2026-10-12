@@ -71,7 +71,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
-from relax.fine_pass import policy, resident_chunk_memory, resident_configuration
+from relax.fine_pass import policy, resident_chunk_memory, resident_configuration, resident_image_terms
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
@@ -1082,7 +1082,7 @@ def compute_local_search_resident(
         stats = make_resident_statistics(
             stats_config, max_posterior_dtype=precision_policy.score_real_dtype
         )
-        image_tables = rp._ChunkImageTables(
+        image_tables = resident_image_terms.ChunkImageTables(
             shell_indices_half=jnp.asarray(shell_indices_half, dtype=jnp.int32),
             wavg_shell_indices=jnp.asarray(relion_wavg_rectangle.shell_indices, dtype=jnp.int32),
             wavg_scale_pixel_mask=jnp.asarray(scale_pixel_mask_rect_np, dtype=bool),
@@ -2774,7 +2774,7 @@ def _start_resident_local_chunk(
         chunk_posterior_bin = np.full(chunk.row_capacity, int(stats_config.n_coarse_rot), dtype=np.int32)
         chunk_posterior_bin[:chunk.n_valid_rows] = posterior_bins[int(chunk.row_start) : int(chunk.row_stop)]
         chunk_posterior_bin = jnp.asarray(chunk_posterior_bin)
-        chunk_operands = rp._ChunkImageOperands(
+        chunk_operands = resident_image_terms.ChunkImageOperands(
             row_posterior=row_posterior,
             row_image_local=row_image_local,
             row_coarse_rot=jnp.where(
@@ -2797,7 +2797,7 @@ def _start_resident_local_chunk(
             optics_groups=recon.get("optics_groups"),
             **class_fields,
         )
-        stats = rp._accumulate_chunk_image_terms(
+        stats = resident_image_terms.accumulate_chunk_image_terms(
             stats, chunk_operands, chunk_tables, config=stats_config
         )
         stats = stats._replace(

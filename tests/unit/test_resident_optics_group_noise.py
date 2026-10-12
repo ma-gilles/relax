@@ -11,8 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.fine_pass import resident_block_programs
-from relax.fine_pass import resident_pass2 as rp
+from relax.fine_pass import resident_block_programs, resident_image_terms
 from relax.fine_pass.resident_statistics import make_resident_statistics, resolve_statistics_config
 from relax.fine_pass.wavg import image_power_shells
 from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half
@@ -112,7 +111,7 @@ def _chunk(rng, *, image_ids, optics_groups, block_noise_shells, wavg_diff2, cap
     rows = 10
     wavg = np.zeros((capacity, n_rect, 3), dtype=np.float32)
     wavg[:, :, 2] = wavg_diff2
-    return rp._ChunkImageOperands(
+    return resident_image_terms.ChunkImageOperands(
         row_posterior=jnp.asarray(rng.uniform(0.0, 0.3, (rows, 3)), dtype=jnp.float32),
         row_image_local=jnp.asarray(np.arange(rows) % capacity, dtype=jnp.int32),
         row_coarse_rot=jnp.zeros(rows, dtype=jnp.int32),
@@ -146,7 +145,7 @@ def test_chunk_statistics_per_group_equal_one_group_runs():
     base = np.random.default_rng(2)
     block_noise_shells = base.normal(size=(n_groups, N_SHELLS))
     wavg_diff2 = base.uniform(size=(capacity, n_rect)).astype(np.float32)
-    tables = rp._ChunkImageTables(
+    tables = resident_image_terms.ChunkImageTables(
         shell_indices_half=make_relion_noise_shell_indices_half(IMAGE_SHAPE),
         wavg_shell_indices=jnp.asarray(np.arange(n_rect) % N_SHELLS, dtype=jnp.int32),
         wavg_scale_pixel_mask=jnp.ones(n_rect, dtype=bool),
@@ -165,7 +164,7 @@ def test_chunk_statistics_per_group_equal_one_group_runs():
             n_optics_groups=g,
         )
 
-    stats = rp._accumulate_chunk_image_terms(
+    stats = resident_image_terms.accumulate_chunk_image_terms(
         make_resident_statistics(config(n_groups)),
         _chunk(
             np.random.default_rng(3),
@@ -182,7 +181,7 @@ def test_chunk_statistics_per_group_equal_one_group_runs():
     assert stats.wsum_sigma2_noise.shape == (n_groups, N_SHELLS) and stats.sumw.shape == (n_groups,)
     for g in range(n_groups):
         mine = (groups == g) & (image_ids >= 0)
-        one = rp._accumulate_chunk_image_terms(
+        one = resident_image_terms.accumulate_chunk_image_terms(
             make_resident_statistics(config(1)),
             _chunk(
                 np.random.default_rng(3),
@@ -219,7 +218,7 @@ def test_chunk_statistics_take_the_shell_cutoff_from_the_tables():
     wavg_diff2 = base.uniform(size=(capacity, n_rect)).astype(np.float32)
 
     def tables(cutoff):
-        return rp._ChunkImageTables(
+        return resident_image_terms.ChunkImageTables(
             shell_indices_half=make_relion_noise_shell_indices_half(IMAGE_SHAPE),
             wavg_shell_indices=jnp.asarray(np.arange(n_rect) % N_SHELLS, dtype=jnp.int32),
             wavg_scale_pixel_mask=jnp.ones(n_rect, dtype=bool),
@@ -237,7 +236,7 @@ def test_chunk_statistics_take_the_shell_cutoff_from_the_tables():
             current_size=current_size,
             accumulate_scale=False,
         )
-        return rp._accumulate_chunk_image_terms(
+        return resident_image_terms.accumulate_chunk_image_terms(
             make_resident_statistics(config),
             _chunk(
                 np.random.default_rng(7),
