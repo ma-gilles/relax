@@ -256,6 +256,7 @@ def audit(args) -> dict[str, object]:
             padding_factor=args.padding_factor,
             r_max=args.current_size // 2,
             accumulator_volume_shape=(accumulator_size,) * 3,
+            packed_stream_min_elements=0,
         )
     )
     saved = np.asarray(arrays["fsc"])

@@ -966,17 +966,8 @@ def compute_relion_tau2_from_weights(
 # full cubes on the host: 0.12 vs 0.27 s at a 185^3 accumulator, 0.29 vs 0.64 s
 # at 259^3 and 2.2 vs 9.8 s at 515^3, the 10097 final all-data pass (login node,
 # 8 threads). The environment variable keeps the expanded path selectable.
-_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS = 0
-
-
-def _relion_fsc_packed_stream_enabled(half_size):
-    threshold = int(
-        os.environ.get(
-            "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
-            _RELION_FSC_PACKED_STREAM_MIN_ELEMENTS,
-        )
-    )
-    return int(half_size) >= threshold
+# (``ReconstructionPrograms.fsc_packed_stream_min_elements``, read by the command).
+RELION_FSC_PACKED_STREAM_MIN_ELEMENTS = 0
 
 
 def _compute_relion_fsc_from_packed_half_streamed(
@@ -1277,8 +1268,12 @@ def compute_relion_fsc_from_backprojector(
     output_dtype=jnp.float32,
     full_is_hermitian=False,
     shell_pair_counting="relion",
+    packed_stream_min_elements: int,
 ):
     """Compute RELION's gold-standard FSC from backprojector accumulators.
+
+    A packed half of at least ``packed_stream_min_elements`` (``ReconstructionPrograms``) takes the streamed
+    reduction; the FSC is the same.
 
     RELION does not compute the auto-refine FSC used by ``updateSSNRarrays``
     from reconstructed unregularized maps. In
@@ -1340,7 +1335,7 @@ def compute_relion_fsc_from_backprojector(
     packed_stream_eligible = (
         half_size < full_size
         and input_sizes == (half_size, half_size, half_size, half_size)
-        and _relion_fsc_packed_stream_enabled(half_size)
+        and int(half_size) >= packed_stream_min_elements
     )
     if packed_stream_eligible and dump_avg:
         logger.warning(

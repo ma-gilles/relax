@@ -419,6 +419,7 @@ def main() -> None:
                 padding_factor=recovar["padding_factor"],
                 r_max=max_shell,
                 accumulator_volume_shape=recovar["accumulator_shape"],
+                packed_stream_min_elements=0,
             ),
             dtype=np.float64,
         )
@@ -432,6 +433,7 @@ def main() -> None:
                 padding_factor=recovar["padding_factor"],
                 r_max=max_shell,
                 accumulator_volume_shape=recovar["accumulator_shape"],
+                packed_stream_min_elements=0,
             ),
             dtype=np.float64,
         )

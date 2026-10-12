@@ -51,6 +51,7 @@ def test_compute_relion_fsc_from_backprojector_uses_relion_rounding_and_half_lay
             shape,
             padding_factor=2,
             r_max=1,
+            packed_stream_min_elements=0,
         )
     )
 
@@ -66,6 +67,7 @@ def test_compute_relion_fsc_from_backprojector_uses_relion_rounding_and_half_lay
         padding_factor=2,
         r_max=1,
         output_dtype=np.float64,
+        packed_stream_min_elements=0,
     )
     assert np.asarray(fsc_f64).dtype == np.float64
 
@@ -73,11 +75,6 @@ def test_compute_relion_fsc_from_backprojector_uses_relion_rounding_and_half_lay
 def test_compute_relion_fsc_from_backprojector_accepts_packed_half_accumulators(
     monkeypatch,
 ):
-    monkeypatch.setattr(
-        regularization_relion,
-        "_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
-        0,
-    )
     shape = (4, 4, 4)
     padding_factor = 2
     padded_shape = tuple(s * padding_factor for s in shape)
@@ -108,6 +105,7 @@ def test_compute_relion_fsc_from_backprojector_accepts_packed_half_accumulators(
             weight1_full.reshape(-1),
             shape,
             padding_factor=padding_factor,
+            packed_stream_min_elements=0,
         )
     )
     fsc_from_half = np.asarray(
@@ -118,6 +116,7 @@ def test_compute_relion_fsc_from_backprojector_accepts_packed_half_accumulators(
             weight1_half.reshape(-1),
             shape,
             padding_factor=padding_factor,
+            packed_stream_min_elements=0,
         )
     )
 
@@ -128,11 +127,6 @@ def test_compute_relion_fsc_from_backprojector_accepts_packed_half_accumulators(
 def test_compute_relion_fsc_from_backprojector_accepts_odd_packed_half_accumulators(
     monkeypatch,
 ):
-    monkeypatch.setattr(
-        regularization_relion,
-        "_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
-        0,
-    )
     shape = (8, 8, 8)
     padding_factor = 2
     accumulator_shape = (19, 19, 19)
@@ -173,6 +167,7 @@ def test_compute_relion_fsc_from_backprojector_accepts_odd_packed_half_accumulat
             padding_factor=padding_factor,
             r_max=shape[0] // 2,
             accumulator_volume_shape=accumulator_shape,
+            packed_stream_min_elements=0,
         )
     )
     fsc_from_half = np.asarray(
@@ -185,6 +180,7 @@ def test_compute_relion_fsc_from_backprojector_accepts_odd_packed_half_accumulat
             padding_factor=padding_factor,
             r_max=shape[0] // 2,
             accumulator_volume_shape=accumulator_shape,
+            packed_stream_min_elements=0,
         )
     )
 
@@ -219,6 +215,7 @@ def test_compute_relion_fsc_from_backprojector_applies_exact_rmax_before_shell_b
             shape,
             padding_factor=1,
             r_max=1,
+            packed_stream_min_elements=0,
         )
     )
 
@@ -290,6 +287,7 @@ def test_join_halves_at_low_resolution_uses_explicit_padding_for_current_size_ac
             padding_factor=padding_factor,
             r_max=2,
             accumulator_volume_shape=accumulator_shape,
+            packed_stream_min_elements=0,
         )
     )
     fsc_after_join = np.asarray(
@@ -302,6 +300,7 @@ def test_join_halves_at_low_resolution_uses_explicit_padding_for_current_size_ac
             padding_factor=padding_factor,
             r_max=2,
             accumulator_volume_shape=accumulator_shape,
+            packed_stream_min_elements=0,
         )
     )
 
@@ -705,11 +704,6 @@ def test_streamed_packed_half_backprojector_fsc_avoids_padded_full_allocation(
     weight0 = (0.25 + rng.random(size=half_shape)).astype(np.float32)
     weight1 = (0.25 + rng.random(size=half_shape)).astype(np.float32)
 
-    monkeypatch.setattr(
-        regularization_relion,
-        "_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
-        0,
-    )
     monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_AVG", "1")
     monkeypatch.delenv("RELAX_MSTEP_FSC_DUMP_DIR", raising=False)
     original_empty = regularization.np.empty
@@ -735,6 +729,7 @@ def test_streamed_packed_half_backprojector_fsc_avoids_padded_full_allocation(
             padding_factor=2,
             r_max=shape[0] // 2,
             accumulator_volume_shape=accumulator_shape,
+            packed_stream_min_elements=0,
         )
     )
 
@@ -751,10 +746,10 @@ def test_streamed_fsc_preserves_requested_output_precision(monkeypatch, output_d
     data = [(rng.normal(size=half_shape) + 1j * rng.normal(size=half_shape)).astype(np.complex64) for _ in range(2)]
     weights = [(0.25 + rng.random(size=half_shape)).astype(np.float32) for _ in range(2)]
     kwargs = dict(padding_factor=2, r_max=3, accumulator_volume_shape=accumulator_shape, output_dtype=output_dtype)
-    monkeypatch.setenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "1000000")
-    expected = regularization_relion.compute_relion_fsc_from_backprojector(*data, *weights, shape, **kwargs)
-    monkeypatch.setenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "0")
-    actual = regularization_relion.compute_relion_fsc_from_backprojector(*data, *weights, shape, **kwargs)
+    expected = regularization_relion.compute_relion_fsc_from_backprojector(
+        *data, *weights, shape, **kwargs, packed_stream_min_elements=1000000)
+    actual = regularization_relion.compute_relion_fsc_from_backprojector(
+        *data, *weights, shape, **kwargs, packed_stream_min_elements=0)
     assert actual.dtype == expected.dtype == output_dtype
     assert_matches(np.asarray(actual), np.asarray(expected))
 
@@ -772,10 +767,12 @@ def test_hermitian_full_accumulators_take_the_streamed_fsc_with_equal_result(sha
         np.asarray(fourier_transform_utils.half_volume_to_full_volume(value, accumulator_shape)).reshape(-1)
         for value in halves
     ]
-    kwargs = dict(padding_factor=2, r_max=shape[0] // 2, accumulator_volume_shape=accumulator_shape)
+    kwargs = dict(
+        padding_factor=2, r_max=shape[0] // 2, accumulator_volume_shape=accumulator_shape, packed_stream_min_elements=0,
+    )
     expected = regularization_relion.compute_relion_fsc_from_backprojector(*fulls, shape, **kwargs)
     actual = regularization_relion.compute_relion_fsc_from_backprojector(
-        *fulls, shape, full_is_hermitian=True, **kwargs
+        *fulls, shape, full_is_hermitian=True, **kwargs,
     )
     assert_matches(np.asarray(actual), np.asarray(expected))
     for half, full in zip(halves, fulls, strict=True):

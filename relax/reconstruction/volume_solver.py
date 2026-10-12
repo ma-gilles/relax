@@ -15,7 +15,7 @@ import numpy as np
 from recovar.core import fourier_transform_utils
 
 from relax.reconstruction import regularization
-from relax.runtime.env_flags import parse_env_auto_flag, parse_env_flag, parse_env_worker_count
+from relax.runtime.env_flags import parse_env_auto_flag, parse_env_flag, parse_env_worker_count, read_env_text
 from relax.runtime.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, device_fits
 
 logger = logging.getLogger(__name__)
@@ -43,12 +43,15 @@ class ReconstructionPrograms:
     too): reconstruct in the full-box class so one compiled program serves every size. ``host_irfft``
     (``RELAX_RELION_HOST_IRFFT``): the padded inverse FFT on the host when True, on the device when False, by
     size and allocator limit when None (``auto``). ``host_fft_workers`` (``RELAX_RELION_HOST_FFT_WORKERS``, else
-    ``SLURM_CPUS_PER_TASK``, else 1): that transform's threads.
+    ``SLURM_CPUS_PER_TASK``, else 1): that transform's threads. ``fsc_packed_stream_min_elements``
+    (``RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS``, an integer, default 0): the smallest packed half whose
+    backprojector FSC takes the streamed reduction instead of the full expansion (the two FSCs are equal).
     """
 
     stable_windows: bool
     host_irfft: bool | None
     host_fft_workers: int
+    fsc_packed_stream_min_elements: int
 
     @classmethod
     def from_environ(cls) -> ReconstructionPrograms:
@@ -59,6 +62,10 @@ class ReconstructionPrograms:
             host_fft_workers=parse_env_worker_count(
                 "RELAX_RELION_HOST_FFT_WORKERS", "SLURM_CPUS_PER_TASK", logger=log
             ),
+            fsc_packed_stream_min_elements=int(read_env_text(
+                "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
+                str(regularization.RELION_FSC_PACKED_STREAM_MIN_ELEMENTS),
+            )),
         )
 
 

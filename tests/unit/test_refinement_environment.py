@@ -137,3 +137,41 @@ def test_low_pmax_refine_guard_reaches_the_sampling_update(monkeypatch):
     seen = _received(monkeypatch, numbered_transitions, "update_refinement_state", "low_pmax_guard",
                      RefinementEnvironment(low_pmax_refine_guard=guard), max_iter=2)
     assert seen and set(seen) == {guard}
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, 0), ("12", 12)])
+def test_fsc_packed_stream_threshold_is_read_once(monkeypatch, value, expected):
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+
+    if value is None:
+        monkeypatch.delenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", raising=False)
+    else:
+        monkeypatch.setenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", value)
+    assert ReconstructionPrograms.from_environ().fsc_packed_stream_min_elements == expected
+
+
+def test_malformed_fsc_packed_stream_threshold_is_refused(monkeypatch):
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+
+    monkeypatch.setenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "many")
+    with pytest.raises(ValueError):
+        ReconstructionPrograms.from_environ()
+
+
+def test_fsc_packed_stream_threshold_reaches_the_command(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS", "12")
+    options = controller_inputs(monkeypatch, tmp_path, "refine")["options"]
+    assert options.variants.reconstruction.fsc_packed_stream_min_elements == 12
+
+
+def test_fsc_packed_stream_threshold_reaches_the_fsc(monkeypatch):
+    from dataclasses import replace
+
+    from relax.reconstruction import regularization
+    from relax.refinement.refinement_options import ScoringVariants
+
+    variants = ScoringVariants.from_environ()
+    variants = replace(variants, reconstruction=replace(variants.reconstruction, fsc_packed_stream_min_elements=7))
+    seen = _received(monkeypatch, regularization, "compute_relion_fsc_from_backprojector", "packed_stream_min_elements",
+                     RefinementEnvironment(), variants=variants)
+    assert seen and set(seen) == {7}

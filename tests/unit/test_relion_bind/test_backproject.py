@@ -210,6 +210,7 @@ def test_compute_fsc_from_bpref_matches_scheduler_emulation():
             padding_factor=padding_factor,
             r_max=r_max,
             accumulator_volume_shape=(pad_size,) * 3,
+            packed_stream_min_elements=0,
         )
     )
 
@@ -486,11 +487,6 @@ def test_streamed_packed_half_fsc_matches_relion_binding(monkeypatch):
             r_max=r_max,
         )
     )
-    monkeypatch.setattr(
-        regularization_relion,
-        "_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
-        0,
-    )
     actual = np.asarray(
         regularization_relion.compute_relion_fsc_from_backprojector(
             data_h1_half.reshape(-1),
@@ -501,6 +497,7 @@ def test_streamed_packed_half_fsc_matches_relion_binding(monkeypatch):
             padding_factor=padding_factor,
             r_max=r_max,
             accumulator_volume_shape=accumulator_shape,
+            packed_stream_min_elements=0,
         )
     )
 

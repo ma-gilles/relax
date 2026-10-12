@@ -978,6 +978,7 @@ def run_fixed_fixture_trajectory(args, model_dir):
                 padding_factor=2, r_max=checkpoint.current_size // 2,
                 accumulator_volume_shape=bp_shape, output_dtype=jnp.float32,
                 full_is_hermitian=True,
+                packed_stream_min_elements=0,
             )
             fsc_host = np.asarray(fsc)
             if not np.isfinite(fsc_host).all():
