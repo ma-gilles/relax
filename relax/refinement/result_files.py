@@ -22,9 +22,9 @@ import numpy as np
 
 from relax.reconstruction.resolution import shell_index_to_resolution_angstrom
 from relax.refinement import iteration_history
-from relax.refinement.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.refinement.refinement_result import FinalPassResult, ModelMaps, RefinementResult
 from relax.refinement.run_files import real_from_fourier
+from relax.runtime.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.runtime.git_provenance import git_head_or_none, git_worktree_provenance
 
 if TYPE_CHECKING:
@@ -285,7 +285,7 @@ def write_refinement_archive(
             dtype=np.int32,
         )
     # Which E-step engine each pass ran on, per iteration and for the final all-data
-    # pass (relax.refinement.engine_record), as JSON: resident vs fallback per run.
+    # pass (relax.runtime.engine_record), as JSON: resident vs fallback per run.
     for key in (
         "pass2_engine_trajectory", "final_all_data_pass2_engines",
         "coarse_engine_trajectory", "final_all_data_coarse_engines",

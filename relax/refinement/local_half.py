@@ -35,7 +35,6 @@ from relax.refinement.dense_half import (
     require_multi_shape_inputs,
     single_shape_reconstruction_grid,
 )
-from relax.refinement.engine_record import record_pass_engine
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.ports import ExpectationProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
@@ -47,6 +46,7 @@ from relax.relion.optics_aberrations import (
     dataset_projection_magnification,
     reported_rotations,
 )
+from relax.runtime.engine_record import record_pass_engine
 from relax.runtime.timing import Stopwatch
 from relax.sampling import (
     build_local_search_grid_metadata,

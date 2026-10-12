@@ -713,8 +713,8 @@ def test_public_k2_dense_engine_runs_joint_full_grid(monkeypatch):
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
 
     from relax.classification.k_class import run_dense_k_class_em_adaptive
-    from relax.refinement.engine_record import take_coarse_engine_calls
     from relax.relion import ctf as relion_ctf
+    from relax.runtime.engine_record import take_coarse_engine_calls
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise

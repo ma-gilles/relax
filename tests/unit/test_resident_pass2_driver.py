@@ -1327,7 +1327,7 @@ def test_dispatcher_sends_every_pass_to_the_resident_engine(monkeypatch):
     """The resident driver is relax's one pass-2 engine: dispatch has no other route."""
 
     from relax.fine_pass import dispatch as sparse_dispatch
-    from relax.refinement.engine_record import take_pass_engines
+    from relax.runtime.engine_record import take_pass_engines
 
     calls = []
     monkeypatch.setattr(rp, "compute_pass2_stats_resident", lambda *a, **k: calls.append(k) or "resident")

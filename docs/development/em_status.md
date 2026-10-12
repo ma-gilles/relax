@@ -1171,7 +1171,7 @@ User decision (2026-09-26): relax keeps one pass-2 engine, the device-resident o
 (`relax/sparse_pass2/resident_*.py`), as RELION keeps one algorithm. Every other pass-2
 engine or route is deprecated: its docstring says so, and a run that routes a pass to it
 logs one `DEPRECATED engine` warning per engine, pass kind and reason
-(`relax.refinement.engine_record.warn_deprecated_engine`), next to the per-iteration
+(`relax.runtime.engine_record.warn_deprecated_engine`), next to the per-iteration
 `pass2_engine_trajectory` entry. They are removed in the order below once resident covers
 what still routes to them. Inventory and line estimates (relax bc6d3e1):
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_onengine_20260926/PLAN.md`.

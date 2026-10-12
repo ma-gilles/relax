@@ -581,7 +581,7 @@ def _run_resident_k_class_pass2(
     """
 
     from relax.fine_pass.resident_pass2 import compute_k_class_pass2_stats_resident
-    from relax.refinement.engine_record import record_pass_engine
+    from relax.runtime.engine_record import record_pass_engine
 
     if engine_kwargs.get("normalization_log_evidence") is not None:
         raise NotImplementedError(
@@ -1701,7 +1701,7 @@ def run_dense_k_class_em_adaptive(
             oversampling_order=_resolved_oversampling_order(),
             random_perturbation=0.0, engine_kwargs=dense_kwargs,
         )
-        from relax.refinement.engine_record import record_coarse_engine_call
+        from relax.runtime.engine_record import record_coarse_engine_call
 
         score_mode = dense_kwargs["relion_firstiter_score_mode"]
         record_coarse_engine_call(
@@ -1946,7 +1946,7 @@ def run_dense_k_class_em_adaptive(
             support_audit=coarse_significance_support_audit,
         )
         if coarse_engine == "gemm_hybrid":
-            from relax.refinement.engine_record import record_coarse_engine_call
+            from relax.runtime.engine_record import record_coarse_engine_call
 
             support = sig_sample_indices_by_class
             if firstiter_cc_pass2_only_best_coarse:

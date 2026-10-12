@@ -2600,7 +2600,7 @@ def main():
     if fields.get("healpix_order_trajectory"):
         save_dict["healpix_order_trajectory"] = np.array(fields["healpix_order_trajectory"])
     # Which E-step engine each pass ran on, per iteration and for the final all-data
-    # pass (relax.refinement.engine_record), as JSON: resident vs fallback per run.
+    # pass (relax.runtime.engine_record), as JSON: resident vs fallback per run.
     for key in (
         "pass2_engine_trajectory", "final_all_data_pass2_engines",
         "coarse_engine_trajectory", "final_all_data_coarse_engines",

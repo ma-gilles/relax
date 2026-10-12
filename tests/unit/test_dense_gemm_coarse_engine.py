@@ -103,7 +103,7 @@ def test_complete_grid_local_slots_match_actual_resident_table(relion_order):
 @pytest.mark.parametrize("configured_native", [False, True])
 def test_public_adaptive_dense_dispatch_uses_complete_grid(n_classes, symmetry, configured_native, monkeypatch):
     from relax.classification import k_class
-    from relax.refinement.engine_record import take_coarse_engine_calls
+    from relax.runtime.engine_record import take_coarse_engine_calls
 
     class Returned(NamedTuple):
         significant_counts: object = None

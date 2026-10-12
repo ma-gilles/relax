@@ -41,10 +41,7 @@ _E = "E: a module in the wrong layer (layout S2, S6, S8d, S9)"
 
 # (importing module, imported module) -> why the upward edge is still there.
 ALLOWED_UPWARD = {
-    ("relax.classification.k_class", "relax.refinement.engine_record"): _A,
     ("relax.fine_pass.bucket_arrays", "relax.local_search.layout"): _D,
-    ("relax.fine_pass.dispatch", "relax.refinement.engine_record"): _A,
-    ("relax.vdam.estep_setup", "relax.refinement.engine_record"): _A,
 }
 
 

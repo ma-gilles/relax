@@ -2,7 +2,7 @@
 
 import logging
 
-from relax.refinement.engine_record import record_pass_engine
+from relax.runtime.engine_record import record_pass_engine
 
 # Preserve the category consumed by existing run-log collectors.
 logger = logging.getLogger("relax.sampling.oversampling")

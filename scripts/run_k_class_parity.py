@@ -2057,7 +2057,7 @@ def main() -> None:
     relion_pmax = np.asarray(target_data_ordered["rlnMaxValueProbDistribution"], dtype=np.float64)
     pmax_abs = np.abs(recovar_pmax - relion_pmax)
 
-    from relax.refinement.engine_record import take_coarse_engine_calls
+    from relax.runtime.engine_record import take_coarse_engine_calls
 
     summary = {
         "coarse_engine_calls": take_coarse_engine_calls(),

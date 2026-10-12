@@ -21,8 +21,8 @@ from recovar.utils.helpers import get_gpu_memory_total
 # backend (relax split seam S2), which configure_relion_image_mask can select. relax.fourier.preprocessing, which
 # the adaptive E-step imports, does the same; this module names the registration it relies on.
 from relax.cuda import preprocess as _relion_cuda_preprocessor_registration  # noqa: F401
-from relax.refinement.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.relion import projector_setup
+from relax.runtime.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.sampling.orientation_priors import (
     relion_round_away_from_zero,
     relion_sigma_offset_prior_center,

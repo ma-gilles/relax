@@ -23,7 +23,6 @@ import relax.refinement.refinement_state as convergence_helpers
 from relax.classification.probes import KClassProbe, NoProbe
 from relax.reconstruction import accumulator_guard, resolution
 from relax.refinement import (
-    engine_record,
     expectation,
     finalization,
     follower_scale,
@@ -48,7 +47,7 @@ from relax.refinement import (
     trial_grids,
 )
 from relax.relion import normalization
-from relax.runtime import timing
+from relax.runtime import engine_record, timing
 from relax.sampling import orientation_priors
 from relax.steps import expected_accuracy, half_inputs, projector_preparation
 
