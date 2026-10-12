@@ -638,7 +638,7 @@ def _relion_device_scoring_rotations_f32(
     if jax.default_backend() != "gpu":
         return None
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import rotations as cuda_rotations
 
     eulers_f32 = np.asarray(eulers_deg, dtype=np.float32).reshape(-1, 3)
     do_right = right_matrix is not None
@@ -648,7 +648,7 @@ def _relion_device_scoring_rotations_f32(
         right_f32 = np.asarray(right_matrix, dtype=np.float32)
         if right_f32.shape != (3, 3):
             raise ValueError(f"right_matrix must have shape (3, 3), got {right_f32.shape}")
-    rotations = em_cuda_kernels.relion_make_scoring_rotations_f32(
+    rotations = cuda_rotations.relion_make_scoring_rotations_f32(
         jnp.asarray(eulers_f32),
         jnp.asarray(right_f32),
         do_right=do_right,
@@ -683,9 +683,9 @@ def _relion_device_scoring_rotations_f64(
             raise ValueError(f"right_matrix must have shape (3, 3), got {right_f64.shape}")
 
     if jax.default_backend() == "gpu":
-        from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import rotations as cuda_rotations
 
-        rotations = em_cuda_kernels.relion_make_scoring_rotations_f64(
+        rotations = cuda_rotations.relion_make_scoring_rotations_f64(
             jnp.asarray(eulers_f64),
             jnp.asarray(right_f64),
             do_right=do_right,
@@ -843,14 +843,14 @@ def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_mat
     if jax.default_backend() != "gpu":
         return None
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import rotations as cuda_rotations
 
     # A device array of Euler rows stays on the device (the exact cut gathers its rows there).
     eulers_f32 = (
         eulers_deg.astype(jnp.float32) if isinstance(eulers_deg, jax.Array) else np.asarray(eulers_deg, dtype=np.float32)
     ).reshape(-1, 3)
     right_f32 = np.eye(3, dtype=np.float32) if right_matrix is None else np.asarray(right_matrix, dtype=np.float32)
-    rotations = em_cuda_kernels.relion_make_scoring_rotations_left_f32(
+    rotations = cuda_rotations.relion_make_scoring_rotations_left_f32(
         jnp.asarray(eulers_f32),
         jnp.asarray(right_f32),
         (
