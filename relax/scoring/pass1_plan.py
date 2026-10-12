@@ -116,23 +116,16 @@ def global_pass1_relion_projector_texture_enabled() -> bool:
 
 
 @nvtx.annotate("kclass.adaptive.pass1_significance", color="orange", domain=NVTX_DOMAIN_EM)
-def _prepare_coarse_relion_projector(
-    projector, *, use_float64_scoring, use_float64_projections,
-):
+def _prepare_coarse_relion_projector(projector, *, use_float64_projections):
     """Upload at the explicit consumer precision, retaining the source slab.
 
-    ``use_float64_projections=None`` uploads the projector in its own dtype. Double scoring/projection
-    diagnostics keep complex128 projection; production K1/K4 request float32.
+    ``use_float64_projections=None`` uploads the projector in its own dtype, ``False`` as complex64: pass 1 has refused
+    double precision before it gets here (:func:`_require_exact_pass1_operands`).
     """
-    dtype = None
-    if use_float64_projections is not None:
-        dtype = jnp.complex128 if (use_float64_scoring or use_float64_projections) else jnp.complex64
-    return jnp.asarray(projector, dtype=dtype)
+    return jnp.asarray(projector, dtype=None if use_float64_projections is None else jnp.complex64)
 
 
-def _class_stacked_coarse_relion_projector(
-    projector, n_classes, *, use_float64_scoring, use_float64_projections,
-):
+def _class_stacked_coarse_relion_projector(projector, n_classes, *, use_float64_projections):
     """Upload a coarse PPref as ``(n_classes, z, y, x_half)``.
 
     K=1 callers may pass one ``(z, y, x_half)`` slab, such as the host-compacted
@@ -140,10 +133,7 @@ def _class_stacked_coarse_relion_projector(
     """
     if np.ndim(projector) == 3 and int(n_classes) == 1:
         projector = projector[None]
-    projector = _prepare_coarse_relion_projector(
-        projector, use_float64_scoring=use_float64_scoring,
-        use_float64_projections=use_float64_projections,
-    )
+    projector = _prepare_coarse_relion_projector(projector, use_float64_projections=use_float64_projections)
     if projector.ndim != 4 or int(projector.shape[0]) != int(n_classes):
         raise ValueError(
             "relion_projector_half must have shape "
@@ -187,6 +177,22 @@ class Pass1Plan:
 def plan_pass1(request: Pass1Request) -> Pass1Plan:
     """Refuse what pass 1 cannot score with these resources, and plan the pass: see the module docstring."""
 
+    # Pass 1 scores RELION's exact coarse operands only: the Gaussian passes with the coarse GEMMs
+    # (relion_coarse_gaussian_gemm_scores_jit), the --firstiter_cc passes with RELION's coarse CC
+    # (relion_coarse_normalized_cc_gemm_scores_jit). The generic dense scorer was removed on
+    # 2026-10-02; like pass 2, pass 1 needs a CUDA GPU and RELION's CUDA image preprocessing.
+    _require_exact_pass1_operands(
+        use_relion_projector=request.relion_projector_half is not None,
+        coarse_texture_interp=(
+            global_pass1_relion_projector_texture_enabled()
+            if request.relion_projector_texture_interp is None
+            else bool(request.relion_projector_texture_interp)
+        ),
+        half_spectrum_scoring=request.half_spectrum_scoring,
+        use_float64_scoring=request.use_float64_scoring,
+        use_float64_projections=request.use_float64_projections,
+    )
+
     coarse_healpix_order = request.coarse_healpix_order
     coarse_rotation_ids = request.coarse_rotation_ids
     image_batch_size = request.image_batch_size
@@ -198,10 +204,8 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     # VDAM asks for the padded tail batch explicitly; the global coarse pass
     # opts in through the environment while the bitwise equality is qualified.
     pad_final_image_batch = bool(pad_final_image_batch) or _coarse_pad_final_image_batch_enabled()
-    # RELION's pdf_orientation/pdf_offset priors and score/evidence/Pmax
-    # outputs are RFLOAT (double), never narrowed -- derive from the
-    # caller's own use_float64_scoring instead of hardcoding float32.
-    score_real_dtype = np.float64 if request.use_float64_scoring else np.float32
+    # Pass 1 scores in float32: the refusal above admits no double precision.
+    score_real_dtype = np.float32
     # The class count is the length of the class priors; relion_projector_half carries the same count.
     class_log_priors_np = np.asarray(request.class_log_priors, dtype=np.float64).reshape(-1)
     n_classes = int(class_log_priors_np.shape[0])
@@ -223,8 +227,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     use_relion_projector = relion_projector_half is not None
     if use_relion_projector:
         relion_projector_half = _class_stacked_coarse_relion_projector(
-            relion_projector_half, n_classes, use_float64_scoring=request.use_float64_scoring,
-            use_float64_projections=request.use_float64_projections,
+            relion_projector_half, n_classes, use_float64_projections=request.use_float64_projections
         )
 
     window = plan_scoring_window(
@@ -241,22 +244,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     score_size = window.score_size
     kernel_window = (
         coarse_kernel_window(score_size, request.relion_projector_r_max, request.rotations) if use_relion_projector else None
-    )
-    coarse_texture_interp = (
-        global_pass1_relion_projector_texture_enabled()
-        if request.relion_projector_texture_interp is None
-        else bool(request.relion_projector_texture_interp)
-    )
-    # Pass 1 scores RELION's exact coarse operands only: the Gaussian passes with the coarse GEMMs
-    # (relion_coarse_gaussian_gemm_scores_jit), the --firstiter_cc passes with RELION's coarse CC
-    # (relion_coarse_normalized_cc_gemm_scores_jit). The generic dense scorer was removed on
-    # 2026-10-02; like pass 2, pass 1 needs a CUDA GPU and RELION's CUDA image preprocessing.
-    _require_exact_pass1_operands(
-        use_relion_projector=use_relion_projector,
-        coarse_texture_interp=coarse_texture_interp,
-        half_spectrum_scoring=request.half_spectrum_scoring,
-        use_float64_scoring=request.use_float64_scoring,
-        use_float64_projections=request.use_float64_projections,
     )
     pass_shape = PassShape(
         n_classes=n_classes,

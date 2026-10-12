@@ -21,7 +21,7 @@ def test_k1_single_slab_gains_class_axis_before_upload():
     from relax.scoring.pass1_plan import _class_stacked_coarse_relion_projector
 
     slab = _slab((23, 23, 12))
-    result = _class_stacked_coarse_relion_projector(slab, 1, use_float64_scoring=False, use_float64_projections=False)
+    result = _class_stacked_coarse_relion_projector(slab, 1, use_float64_projections=False)
     assert result.shape == (1, 23, 23, 12)
     assert result.dtype == np.complex64
     assert_matches(np.asarray(result)[0], slab)
@@ -32,10 +32,10 @@ def test_class_stacked_projector_passes_through_and_rejects_mismatches():
 
     stacked = _slab((2, 9, 9, 6))
     result = _class_stacked_coarse_relion_projector(
-        stacked, 2, use_float64_scoring=False, use_float64_projections=False
+        stacked, 2, use_float64_projections=False
     )
     assert_matches(np.asarray(result), stacked)
     with pytest.raises(ValueError, match="relion_projector_half must have shape"):
-        _class_stacked_coarse_relion_projector(stacked[0], 2, use_float64_scoring=False, use_float64_projections=False)
+        _class_stacked_coarse_relion_projector(stacked[0], 2, use_float64_projections=False)
     with pytest.raises(ValueError, match="relion_projector_half must have shape"):
-        _class_stacked_coarse_relion_projector(stacked, 1, use_float64_scoring=False, use_float64_projections=False)
+        _class_stacked_coarse_relion_projector(stacked, 1, use_float64_projections=False)

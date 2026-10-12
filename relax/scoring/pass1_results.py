@@ -31,8 +31,8 @@ class OutputPlan:
     significant samples; ``relion_f32_coarse_support_enabled`` is the float32 support route (RELION's coarse posterior
     on the device, which also yields ``sum_weight`` and the per-image maximum), ``return_relion_f32_normalization`` asks
     for that normalization on every route; ``return_class_best`` and ``return_class_second`` ask for each class's best
-    and runner-up pose. ``score_real_dtype`` is the dtype of the published scores (float64 only for the diagnostic
-    float64 scoring).
+    and runner-up pose. ``score_real_dtype`` is the dtype of the published scores (float32: pass 1 refuses double
+    precision).
     """
 
     n_classes: int
