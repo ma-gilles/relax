@@ -2957,7 +2957,8 @@ def _resident_pass2(
     )
 
     if dense_gemm_full_grid:
-        from relax.dense.gemm_coarse_engine import DenseGemmPreparedState, run_dense_gemm_full_grid
+        from relax.dense.gemm_coarse_engine import run_dense_gemm_full_grid
+        from relax.fine_pass.full_grid import DenseGemmPreparedState
 
         if tilt is not None:
             raise NotImplementedError("dense GEMM global pass currently requires SPA")
