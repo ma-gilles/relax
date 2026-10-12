@@ -328,7 +328,6 @@
 "tests/unit/test_snapshot_direction_priors.py": 0,
 "tests/unit/test_source_euler_metadata.py": 0,
 "tests/unit/test_source_euler_publication.py": 0,
-"tests/unit/test_sparse_group_timing_sync.py": 0,
 "tests/unit/test_sparse_pass2_bucketed_parity.py": 37,
 "tests/unit/test_sparse_pass2_bucketed_perf.py": 172,
 "tests/unit/test_sparse_pass2_cuda_posterior.py": 11,

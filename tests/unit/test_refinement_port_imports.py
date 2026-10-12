@@ -42,7 +42,6 @@ ALLOWED_IMPORTS = {
     ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _INLINE_DUMP,
     ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): "the run report's timing rows (" + _INLINE_DUMP + ")",
     ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.fine_pass.bucket_io", "relax.diagnostics.sparse_pass2_dump"): _INLINE_DUMP,
 }
 
 

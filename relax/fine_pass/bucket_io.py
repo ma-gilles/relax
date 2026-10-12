@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import functools
 import logging
-import time
 from functools import partial
 from typing import NamedTuple
 
@@ -17,7 +16,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics.sparse_pass2_dump import _add_sparse_group_timing
 from relax.fine_pass.scoring import (
     _relion_cuda_corr_img_from_native_noise_variance,
     _relion_cuda_corr_img_from_rfloat_ctf,
@@ -336,7 +334,6 @@ def prepare_unshifted_bucket_operands(
     window_indices=None,
     relion_exact_normalized_cc_operands=False,
     relion_exact_bpref_operands=False,
-    stage_timing=None,
     noise_optics_groups=None,
     cc_power_weights=None,
     nyquist_column_counting="relion",
@@ -375,7 +372,6 @@ def prepare_unshifted_bucket_operands(
     if score_mode not in {"gaussian", "normalized_cc"}:
         raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {score_mode!r}")
 
-    substage_t0 = time.time()
     image_shape = config.image_shape
     use_normalized_cc = score_mode == "normalized_cc"
     (
@@ -469,8 +465,6 @@ def prepare_unshifted_bucket_operands(
         bpref_weighted_ctf_half = weighted_ctf_half
     generic_inverse_noise = inverse_noise_half is not None and not relion_exact_bpref_operands
 
-    _add_sparse_group_timing(stage_timing, "prepare_ctf_noise", time.time() - substage_t0)
-    substage_t0 = time.time()
 
     # Raw processed half-spectrum images (BEFORE any per-image correction).
     # The score path uses masked images iff ``score_with_masked_images`` is True,
@@ -504,8 +498,6 @@ def prepare_unshifted_bucket_operands(
             processed_recon_half_raw * phases if translated_recon else processed_score_half_raw
         )
 
-    _add_sparse_group_timing(stage_timing, "prepare_image_fft", time.time() - substage_t0)
-    substage_t0 = time.time()
 
     if use_normalized_cc:
         # RELION firstiter_cc uses unweighted image power over the same Fourier
@@ -682,8 +674,6 @@ def prepare_unshifted_bucket_operands(
             ),
             image_ids=image_indices,
         )
-    _add_sparse_group_timing(stage_timing, "prepare_weighting", time.time() - substage_t0)
-    substage_t0 = time.time()
     return UnshiftedBucketOperands(
         image_shape=image_shape,
         use_normalized_cc=use_normalized_cc,
@@ -774,7 +764,6 @@ def _prepare_bucket_io(
     relion_exact_normalized_cc_operands=False,
     relion_exact_bpref_operands=False,
     return_native_bpref_operands=False,
-    stage_timing=None,
     noise_optics_groups=None,
     cc_power_weights=None,
     nyquist_column_counting="relion",
@@ -810,13 +799,11 @@ def _prepare_bucket_io(
         window_indices=window_indices,
         relion_exact_normalized_cc_operands=relion_exact_normalized_cc_operands,
         relion_exact_bpref_operands=relion_exact_bpref_operands,
-        stage_timing=stage_timing,
         noise_optics_groups=noise_optics_groups,
         cc_power_weights=cc_power_weights,
         nyquist_column_counting=nyquist_column_counting,
         image_translations=image_translations,
     )
-    substage_t0 = time.time()
     (
         image_shape,
         use_normalized_cc,
@@ -1093,8 +1080,6 @@ def _prepare_bucket_io(
         ctf2_over_nv_half = jnp.where(dc_mask[None, :], 0.0, ctf2_over_nv_half)
 
     precision_policy = DensePrecisionPolicy(use_float64_scoring=use_float64_scoring)
-    _add_sparse_group_timing(stage_timing, "prepare_translate", time.time() - substage_t0)
-    substage_t0 = time.time()
     if return_direct_scoring_io and use_normalized_cc:
         inv_xi2, ctf2_over_nv_half = normalized_cc_direct_corr_img(
             unshifted,
@@ -1153,8 +1138,6 @@ def _prepare_bucket_io(
     if not relion_exact_bpref_operands or score_only:
         raise ValueError("native BPref operands require reconstruction with exact operands")
     fft_size = float(np.prod(image_shape))
-    _add_sparse_group_timing(stage_timing, "prepare_window_cast", time.time() - substage_t0)
-    substage_t0 = time.time()
     audit_operand_precision(
         precision_policy,
         {
