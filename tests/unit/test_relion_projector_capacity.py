@@ -12,6 +12,7 @@ from recovar import cuda_backproject as cb
 from scipy.spatial.transform import Rotation
 
 from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import library
 from relax.projection.projection import relion_projector_half_to_texture_full
 
 pytestmark = pytest.mark.unit
@@ -41,7 +42,7 @@ def _inputs(q=32, pf=1):
 )
 def test_invalid_operands_rejected_before_loading_cuda(monkeypatch, which, value, message):
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
+    monkeypatch.setattr(library, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
     args = list(_inputs())
     args[which] = value
     with pytest.raises(ValueError, match=message):
@@ -51,7 +52,7 @@ def test_invalid_operands_rejected_before_loading_cuda(monkeypatch, which, value
 @pytest.mark.parametrize("shape,pf", [((31, 31), 1), ((32, 30), 1), ((32, 32), 3)])
 def test_invalid_static_geometry(monkeypatch, shape, pf):
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
+    monkeypatch.setattr(library, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
     with pytest.raises(ValueError):
         em_cuda_kernels.project_relion_half_capacity(*_inputs(), image_shape=shape, padding_factor=pf)
 
@@ -59,7 +60,7 @@ def test_invalid_static_geometry(monkeypatch, shape, pf):
 def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
     records = []
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_optional_ffi", lambda _target: None)
+    monkeypatch.setattr(library, "_ensure_optional_ffi", lambda _target: None)
 
     def fake_ffi(target, output, **options):
         def call(half, rotations, radius, **attrs):
@@ -76,7 +77,7 @@ def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
         assert_matches(result, np.full(result.shape, radius, np.complex64))
     assert len(records) == 1
     target, _, rotshape, radius_aval, attrs = records[0]
-    assert target == em_cuda_kernels._TARGET_PROJECT_RELION_HALF_RUNTIME
+    assert target == library._TARGET_PROJECT_RELION_HALF_RUNTIME
     assert rotshape == (1, 6)
     assert radius_aval.shape == () and radius_aval.dtype == np.dtype(np.int32)
     assert set(attrs) == {"image_h", "image_w", "padding_factor"}
@@ -92,13 +93,13 @@ def test_qualified_old_library_keeps_old_paths_and_capacity_fails_closed(monkeyp
 
     old_symbols = {symbol: object() for _, symbol in cb._FFI_REGISTRATIONS}
     assert symbol not in old_symbols
-    library = SimpleNamespace(**old_symbols)
+    fake_library = SimpleNamespace(**old_symbols)
     registrations = []
     monkeypatch.setattr(cb, "_ffi_registered", False)
     monkeypatch.setattr(cb, "_optional_ffi_registered", set())
     monkeypatch.setattr(cb, "_loaded_lib_path", None)
-    monkeypatch.setattr(cb, "_get_lib", lambda: library)
-    monkeypatch.setattr(em_cuda_kernels, "_get_lib", lambda: library)
+    monkeypatch.setattr(cb, "_get_lib", lambda: fake_library)
+    monkeypatch.setattr(library, "_get_lib", lambda: fake_library)
     monkeypatch.setattr(jax.ffi, "pycapsule", lambda symbol: symbol)
     monkeypatch.setattr(jax.ffi, "register_ffi_target", lambda target, *args, **kwargs: registrations.append(target))
     cb._ensure_ffi()
@@ -107,7 +108,7 @@ def test_qualified_old_library_keeps_old_paths_and_capacity_fails_closed(monkeyp
         cb._ensure_optional_ffi(target)
     assert target not in cb._optional_ffi_registered
     assert cb._ffi_registered
-    setattr(library, symbol, object())
+    setattr(fake_library, symbol, object())
     register = jax.ffi.register_ffi_target
 
     def fail_registration(*args, **kwargs):

@@ -8,7 +8,6 @@ from __future__ import annotations
 import ctypes
 import functools
 import os
-import pathlib
 import threading
 import time
 import weakref
@@ -41,9 +40,9 @@ from recovar.cuda_backproject import (
 from recovar.cuda_backproject import (
     validate_inputs as _validate_inputs,
 )
-from recovar.cuda_build import NativeLibrary, include_dir
 from recovar.data_io import image_backends as _image_backends
 
+from relax.cuda import library
 from relax.runtime.env_flags import parse_env_binary_flag
 
 
@@ -148,13 +147,13 @@ def relion_point_group_symmetrise_bpref(
             "RELION point-group BPref symmetry was requested but custom CUDA is disabled"
         )
 
-    _ensure_ffi()
+    library._ensure_ffi()
     output_types = (
         jax.ShapeDtypeStruct(data_volume.shape, data_volume.dtype),
         jax.ShapeDtypeStruct(weight_volume.shape, weight_volume.dtype),
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF,
+        library._TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF,
         output_types,
         vmap_method="sequential",
     )(
@@ -295,13 +294,13 @@ def _relion_point_group_symmetrise_bpref_complex_range_static(
 ) -> tuple[jax.Array, jax.Array]:
     """Emit one bounded complex/weight range from full complex input."""
 
-    _ensure_ffi()
+    library._ensure_ffi()
     output_types = (
         jax.ShapeDtypeStruct((range_voxels,), jnp.complex64),
         jax.ShapeDtypeStruct((range_voxels,), jnp.float32),
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_COMPLEX_RANGE,
+        library._TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_COMPLEX_RANGE,
         output_types,
         vmap_method="sequential",
     )(
@@ -345,11 +344,11 @@ def relion_make_scoring_rotations_f32(
         raise RuntimeError("RELION scorer-rotation construction requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION scorer-rotation construction was explicitly requested but custom CUDA is disabled")
-    _ensure_ffi()
+    library._ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct((eulers_deg.shape[0], 3, 3), jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_MAKE_SCORING_ROTATIONS_F32,
+        library._TARGET_RELION_MAKE_SCORING_ROTATIONS_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -388,11 +387,11 @@ def relion_make_scoring_rotations_left_f32(
         raise RuntimeError("RELION scorer-rotation construction requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION scorer-rotation construction was explicitly requested but custom CUDA is disabled")
-    _ensure_ffi()
+    library._ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct((left_matrices.shape[0], eulers_deg.shape[0], 3, 3), jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32,
+        library._TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -428,11 +427,11 @@ def relion_make_scoring_rotations_f64(
         raise RuntimeError("RELION scorer-rotation construction requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION scorer-rotation construction was explicitly requested but custom CUDA is disabled")
-    _ensure_ffi()
+    library._ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct((eulers_deg.shape[0], 3, 3), jnp.float64)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_MAKE_SCORING_ROTATIONS_F64,
+        library._TARGET_RELION_MAKE_SCORING_ROTATIONS_F64,
         out_type,
         vmap_method="sequential",
     )(
@@ -496,7 +495,7 @@ def relion_translate_score_f32(
         raise RuntimeError(
             "RELION score translation was explicitly requested but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
 
     image_h, image_w = (int(size) for size in image_shape)
     half_width = image_w // 2 + 1
@@ -508,7 +507,7 @@ def relion_translate_score_f32(
         jnp.complex64,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_TRANSLATE_SCORE_F32,
+        library._TARGET_RELION_TRANSLATE_SCORE_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -557,7 +556,7 @@ def relion_translate_score_f64(
         raise RuntimeError(
             "RELION score translation was explicitly requested but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
 
     image_h, image_w = (int(size) for size in image_shape)
     half_width = image_w // 2 + 1
@@ -569,7 +568,7 @@ def relion_translate_score_f64(
         jnp.complex128,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_TRANSLATE_SCORE_F64,
+        library._TARGET_RELION_TRANSLATE_SCORE_F64,
         out_type,
         vmap_method="sequential",
     )(
@@ -594,7 +593,7 @@ def _relion_posterior_rows_f32(target: str, operation: str, operand_name: str, v
         raise RuntimeError(f"RELION float32 {operation} requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError(f"RELION float32 {operation} was requested but custom CUDA is disabled")
-    _ensure_ffi()
+    library._ensure_ffi()
 
     output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
     return jax.ffi.ffi_call(
@@ -622,7 +621,7 @@ def _relion_posterior_batched_f32(target: str, operation: str, operand_name: str
         raise RuntimeError(
             f"RELION batched float32 {operation} was requested but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
 
     return jax.ffi.ffi_call(
         target,
@@ -634,7 +633,7 @@ def _relion_posterior_batched_f32(target: str, operation: str, operand_name: str
 def relion_exponentiate_f32(values: jax.Array, add: jax.Array) -> jax.Array:
     """Apply RELION's fine-weight ``expf(value + add)`` CUDA kernel."""
 
-    return _relion_posterior_rows_f32(_TARGET_RELION_EXPONENTIATE_F32, "exponentiation", "add", values, add)
+    return _relion_posterior_rows_f32(library._TARGET_RELION_EXPONENTIATE_F32, "exponentiation", "add", values, add)
 
 
 @jax.jit
@@ -645,7 +644,7 @@ def relion_exponentiate_batched_f32(
     """Apply RELION's float32 posterior exponentiation to a row batch."""
 
     return _relion_posterior_batched_f32(
-        _TARGET_RELION_EXPONENTIATE_BATCHED_F32, "exponentiation", "add", values, add
+        library._TARGET_RELION_EXPONENTIATE_BATCHED_F32, "exponentiation", "add", values, add
     )
 
 
@@ -653,7 +652,7 @@ def relion_exponentiate_batched_f32(
 def relion_divide_f32(values: jax.Array, divisor: jax.Array) -> jax.Array:
     """Apply RELION's CUDA ``float / float`` posterior normalization."""
 
-    return _relion_posterior_rows_f32(_TARGET_RELION_DIVIDE_F32, "division", "divisor", values, divisor)
+    return _relion_posterior_rows_f32(library._TARGET_RELION_DIVIDE_F32, "division", "divisor", values, divisor)
 
 
 @jax.jit
@@ -664,7 +663,7 @@ def relion_divide_batched_f32(
     """Apply RELION float32 division to all posterior rows in one FFI call."""
 
     return _relion_posterior_batched_f32(
-        _TARGET_RELION_DIVIDE_BATCHED_F32, "division", "divisor", values, divisor
+        library._TARGET_RELION_DIVIDE_BATCHED_F32, "division", "divisor", values, divisor
     )
 
 
@@ -689,11 +688,11 @@ def relion_cub_sort_scan_f32(values: jax.Array) -> tuple[jax.Array, jax.Array]:
         raise RuntimeError("RELION CUB sort/scan requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION CUB sort/scan was requested but custom CUDA is disabled")
-    _ensure_ffi()
+    library._ensure_ffi()
 
     output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_CUB_SORT_SCAN_F32,
+        library._TARGET_RELION_CUB_SORT_SCAN_F32,
         (output_type, output_type),
         vmap_method="sequential",
     )(values)
@@ -724,11 +723,11 @@ def relion_cub_sort_scan_batched_f32(
         raise RuntimeError(
             "RELION batched CUB sort/scan was requested but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
 
     output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32,
+        library._TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32,
         (output_type, output_type),
     )(values)
 
@@ -758,11 +757,11 @@ def relion_coarse_cut_f32(
         raise RuntimeError("RELION coarse cut requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION coarse cut was requested but custom CUDA is disabled")
-    _ensure_ffi()
+    library._ensure_ffi()
 
     rows = weights.shape[0]
     return jax.ffi.ffi_call(
-        _TARGET_RELION_COARSE_CUT_F32,
+        library._TARGET_RELION_COARSE_CUT_F32,
         (
             jax.ShapeDtypeStruct((rows,), jnp.float32),
             jax.ShapeDtypeStruct((rows,), jnp.float32),
@@ -840,9 +839,9 @@ def sparse_pass2_segmented_log_z_f64(
 
     _, segments = _sparse_pass2_segment_geometry(scores, segment_offsets, n_valid_images)
     _require_sparse_pass2_cuda_backend("Segmented sparse pass-2 log-Z")
-    _ensure_optional_ffi(_TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64)
+    library._ensure_optional_ffi(library._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64)
     return jax.ffi.ffi_call(
-        _TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
+        library._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
         jax.ShapeDtypeStruct((segments,), jnp.float64),
     )(scores, segment_offsets, n_valid_images.astype(jnp.int32).reshape(()))
 
@@ -909,7 +908,7 @@ def sparse_pass2_segmented_posterior_f32(
     if type(return_scratch) is not bool:
         raise TypeError("return_scratch must be a static Python bool")
     _require_sparse_pass2_cuda_backend("Segmented sparse pass-2 posterior")
-    _ensure_optional_ffi(_TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32)
+    library._ensure_optional_ffi(library._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32)
     full = scores.shape
     outputs = (
         jax.ShapeDtypeStruct((segments,), jnp.float64),  # log_z
@@ -928,7 +927,7 @@ def sparse_pass2_segmented_posterior_f32(
             (segments, _SPARSE_PASS2_SEGMENT_STATE_BYTES), jnp.uint8
         ),                                               # segment state
     )
-    result = jax.ffi.ffi_call(_TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32, outputs)(
+    result = jax.ffi.ffi_call(library._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32, outputs)(
         scores,
         segment_offsets,
         n_valid_images.astype(jnp.int32).reshape(()),
@@ -991,7 +990,7 @@ def relion_translate_bpref_f32(
         raise RuntimeError(
             "RELION BPref translation was explicitly requested but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
 
     image_h, image_w = (int(size) for size in image_shape)
     half_width = image_w // 2 + 1
@@ -1003,7 +1002,7 @@ def relion_translate_bpref_f32(
         jnp.complex64,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_TRANSLATE_BPREF_F32,
+        library._TARGET_RELION_TRANSLATE_BPREF_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -1060,7 +1059,7 @@ def relion_translate_bpref_f64(
         raise RuntimeError(
             "RELION BPref translation was explicitly requested but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
 
     image_h, image_w = (int(size) for size in image_shape)
     half_width = image_w // 2 + 1
@@ -1072,7 +1071,7 @@ def relion_translate_bpref_f64(
         jnp.complex128,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_TRANSLATE_BPREF_F64,
+        library._TARGET_RELION_TRANSLATE_BPREF_F64,
         out_type,
         vmap_method="sequential",
     )(
@@ -1116,7 +1115,7 @@ def _validate_relion_fine_diff2_inputs(
         raise RuntimeError(
             "RELION fine diff2 was explicitly requested but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
 
 
 @jax.jit
@@ -1174,7 +1173,7 @@ def relion_coarse_diff2_rectangular_f32(
         jnp.float32,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32,
+        library._TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, initial_diff2, full_to_compact)
@@ -1227,10 +1226,10 @@ def relion_coarse_normalized_cc_pairs_f32(
         raise RuntimeError(
             "RELION coarse normalized-CC pairs require the custom CUDA extension",
         )
-    _ensure_ffi()
+    library._ensure_ffi()
     out_type = jax.ShapeDtypeStruct(shifted_image.shape[:-1], jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_COARSE_NORMALIZED_CC_PAIRS_F32,
+        library._TARGET_RELION_COARSE_NORMALIZED_CC_PAIRS_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -1331,13 +1330,13 @@ def relion_coarse_normalized_cc_native_texture_pairs_f32(
         raise RuntimeError(
             "RELION native texture normalized-CC pairs require the custom CUDA extension"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
     eulers = jnp.swapaxes(rotation_matrices, -1, -2).reshape(
         rotation_matrices.shape[0], 9
     )
     out_type = jax.ShapeDtypeStruct((shifted_image.shape[0], 3), jnp.float32)
     components = jax.ffi.ffi_call(
-        _TARGET_RELION_COARSE_NORMALIZED_CC_NATIVE_TEXTURE_PAIRS_F32,
+        library._TARGET_RELION_COARSE_NORMALIZED_CC_NATIVE_TEXTURE_PAIRS_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -1420,7 +1419,7 @@ def _prepare_relion_coarse_diff2_projector_f32(
         raise RuntimeError(
             "RELION fused coarse projector was requested but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
     compact_rotations = _rot_to_compact(rotation_matrices, jnp.float32)
     out_type = jax.ShapeDtypeStruct(
         (images.shape[0], rotation_matrices.shape[0], translation_angles.shape[0]),
@@ -1535,7 +1534,7 @@ def relion_coarse_diff2_projector_f32(
         model_max_r=model_max_r,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_COARSE_DIFF2_PROJECTOR_F32,
+        library._TARGET_RELION_COARSE_DIFF2_PROJECTOR_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -1602,7 +1601,7 @@ def relion_coarse_diff2_projector_per_image_f32(
         model_max_r=model_max_r,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
+        library._TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
         jax.ShapeDtypeStruct((n_images, n_rotations, int(translation_angles.shape[1])), jnp.float32),
         vmap_method="sequential",
     )(
@@ -1705,7 +1704,7 @@ def relion_fine_diff2_rectangular_f32(
         jnp.float32,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32,
+        library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, initial_diff2, full_to_compact)
@@ -1719,11 +1718,11 @@ def relion_fine_diff2_rectangular_masked_supported() -> bool:
     """
 
     try:
-        _ensure_ffi()
-        symbol_name = _OPTIONAL_FFI_REGISTRATIONS[
-            _TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
+        library._ensure_ffi()
+        symbol_name = library._OPTIONAL_FFI_REGISTRATIONS[
+            library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
         ][0]
-        return getattr(_get_lib(), symbol_name, None) is not None
+        return getattr(library._get_lib(), symbol_name, None) is not None
     except Exception:
         return False
 
@@ -1772,10 +1771,10 @@ def relion_fine_diff2_rectangular_masked_f32(
             "masked rectangular fine diff2 initial_diff2 must be float32 with shape "
             f"({reference.shape[0]},), got {initial_diff2.shape} {initial_diff2.dtype}"
         )
-    _ensure_optional_ffi(_TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32)
+    library._ensure_optional_ffi(library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32)
     out_type = jax.ShapeDtypeStruct(expected, jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32,
+        library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, initial_diff2, full_to_compact, candidate_mask)
@@ -1914,7 +1913,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
             "runtime flat-row fused RELION fine diff2 was explicitly requested "
             "but custom CUDA is disabled"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct(
         (reference.shape[0], translation_angles.shape[-2]),
@@ -1932,7 +1931,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
     )
     if translation_chunk_live is None:
         return jax.ffi.ffi_call(
-            _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
+            library._TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
             out_type,
             vmap_method="sequential",
         )(*operands)
@@ -1946,9 +1945,9 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
             f"translation_chunk_live must have shape {expected_live_shape}, "
             f"got {tuple(translation_chunk_live.shape)}"
         )
-    _ensure_optional_ffi(_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32)
+    library._ensure_optional_ffi(library._TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32,
+        library._TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32,
         out_type,
         vmap_method="sequential",
     )(*operands, jnp.asarray(translation_chunk_live, dtype=jnp.uint8))
@@ -1995,7 +1994,7 @@ def relion_fine_diff2_pairs_f32(
     _validate_relion_fine_pairs_shapes(reference, shifted_image, weight)
     out_type = jax.ShapeDtypeStruct(reference.shape[:2], jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_FINE_DIFF2_PAIRS_F32,
+        library._TARGET_RELION_FINE_DIFF2_PAIRS_F32,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, full_to_compact)
@@ -2020,7 +2019,7 @@ def relion_fine_diff2_rectangular_f64(
         jnp.float64,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_FINE_DIFF2_RECTANGULAR_F64,
+        library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_F64,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, full_to_compact)
@@ -2042,7 +2041,7 @@ def relion_fine_diff2_pairs_f64(
     _validate_relion_fine_pairs_shapes(reference, shifted_image, weight)
     out_type = jax.ShapeDtypeStruct(reference.shape[:2], jnp.float64)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_FINE_DIFF2_PAIRS_F64,
+        library._TARGET_RELION_FINE_DIFF2_PAIRS_F64,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, full_to_compact)
@@ -2069,7 +2068,7 @@ def relion_fused_x_half_backproject_indexed(
     output buffers alias their corresponding input accumulators.
     """
 
-    _ensure_ffi()
+    library._ensure_ffi()
     _validate_inputs(volume_shape, image_shape, 1, True, True, max_r=max_r)
     if max_r is None:
         raise ValueError("RELION fused x-half backprojection requires an explicit support radius")
@@ -2152,7 +2151,7 @@ def relion_fused_x_half_backproject_indexed(
         jax.ShapeDtypeStruct(weight_volume.shape, weight_volume.dtype),
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_FUSED_X_HALF_BP,
+        library._TARGET_RELION_FUSED_X_HALF_BP,
         out_types,
         input_output_aliases={4: 0, 5: 1},
         vmap_method="sequential",
@@ -2188,7 +2187,7 @@ def relion_fused_x_half_backproject_particle_grid_indexed(
     combining their atomic streams.
     """
 
-    _ensure_ffi()
+    library._ensure_ffi()
     _validate_inputs(volume_shape, image_shape, 1, True, True, max_r=max_r)
     if max_r is None:
         raise ValueError("RELION fused x-half particle grid requires an explicit support radius")
@@ -2254,7 +2253,7 @@ def relion_fused_x_half_backproject_particle_grid_indexed(
         jax.ShapeDtypeStruct(weight_volume.shape, weight_volume.dtype),
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID,
+        library._TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID,
         out_types,
         input_output_aliases={4: 0, 5: 1},
         vmap_method="sequential",
@@ -2342,11 +2341,11 @@ def project_relion_half_capacity(
     if rotation_matrices.shape[0] * n_pixels > np.iinfo(np.int32).max:
         raise ValueError("projection output exceeds int32 kernel indexing")
     if image_r_max is None:
-        _ensure_optional_ffi(_TARGET_PROJECT_RELION_HALF_RUNTIME)
-        target = _TARGET_PROJECT_RELION_HALF_RUNTIME
+        library._ensure_optional_ffi(library._TARGET_PROJECT_RELION_HALF_RUNTIME)
+        target = library._TARGET_PROJECT_RELION_HALF_RUNTIME
     else:
-        _ensure_optional_ffi(_TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS)
-        target = _TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS
+        library._ensure_optional_ffi(library._TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS)
+        target = library._TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS
     rot6 = _rot_to_compact(rotation_matrices, jnp.float32)
     output = jax.ShapeDtypeStruct((rotation_matrices.shape[0], n_pixels), jnp.complex64)
     operands = (projector_half, rot6, logical_r_max)
@@ -2388,12 +2387,12 @@ class RelionCapacityHalfTextureF32:
             raise ValueError("projector_half must be C64 [pf*Q+3,pf*Q+3,pf*Q//2+2]")
         if jax.default_backend() != "gpu" or not custom_cuda_requested():
             raise RuntimeError("a persistent capacity projector texture requires the custom CUDA GPU backend")
-        _ensure_optional_ffi(_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE)
+        library._ensure_optional_ffi(library._TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE)
         (device,) = projector_half.devices()
         device_ordinal = int(getattr(device, "local_hardware_id", getattr(device, "id", -1)))
         # The C API reads the device buffer directly on its own stream.
         projector_half = jax.block_until_ready(projector_half)
-        lib = _get_lib()
+        lib = library._get_lib()
         create = (
             lib.relax_relion_capacity_half_texture_f32_create_reusable
             if reusable_staging else lib.relax_relion_capacity_half_texture_f32_create
@@ -2470,7 +2469,7 @@ class RelionCapacityHalfTextureF32:
         rotation_matrices = jnp.asarray(rotation_matrices)
         if rotation_matrices.dtype != jnp.float32 or rotation_matrices.ndim != 3 or rotation_matrices.shape[1:] != (3, 3):
             raise ValueError("rotation_matrices must be F32 [rotation,3,3]")
-        _ensure_optional_ffi(_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED)
+        library._ensure_optional_ffi(library._TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED)
         output = _project_relion_half_capacity_texture_compact_packed(
             rotation_matrices,
             jnp.asarray(image_r_max, dtype=jnp.int32),
@@ -2528,7 +2527,7 @@ class RelionCapacityHalfTextureF32:
         start = time.perf_counter()
         jax.block_until_ready(completion)
         projector_half = jax.block_until_ready(projector_half)
-        refresh = _get_lib().relax_relion_capacity_half_texture_f32_refresh
+        refresh = library._get_lib().relax_relion_capacity_half_texture_f32_refresh
         refresh.argtypes = (ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int, ctypes.c_int)
         refresh.restype = ctypes.c_int
         status = int(refresh(
@@ -2562,7 +2561,7 @@ class RelionCapacityHalfTextureF32:
 
 
 def _destroy_capacity_half_texture(handle: int, *, raise_on_error: bool = False) -> None:
-    destroy = _get_lib().relax_relion_capacity_half_texture_f32_destroy
+    destroy = library._get_lib().relax_relion_capacity_half_texture_f32_destroy
     destroy.argtypes = (ctypes.c_uint64,)
     destroy.restype = ctypes.c_int
     status = int(destroy(ctypes.c_uint64(int(handle))))
@@ -2574,7 +2573,7 @@ def _destroy_capacity_half_texture(handle: int, *, raise_on_error: bool = False)
 def _project_relion_half_capacity_texture(rotation_matrices, image_r_max, *, owner_handle, image_shape, has_image_radius):
     n_pixels = image_shape[0] * (image_shape[1] // 2 + 1)
     output = jax.ShapeDtypeStruct((rotation_matrices.shape[0], n_pixels), jnp.complex64)
-    return jax.ffi.ffi_call(_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE, output, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library._TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE, output, vmap_method="sequential")(
         _rot_to_compact(rotation_matrices, jnp.float32),
         image_r_max,
         owner_handle=np.int64(owner_handle),
@@ -2589,7 +2588,7 @@ def _project_relion_half_capacity_texture_compact_packed(
     rotation_matrices, image_r_max, crop_index, *, owner_handle, image_shape, scale
 ):
     output = jax.ShapeDtypeStruct((rotation_matrices.shape[0], 2 * crop_index.shape[0]), jnp.float32)
-    return jax.ffi.ffi_call(_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED, output, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library._TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED, output, vmap_method="sequential")(
         _rot_to_compact(rotation_matrices, jnp.float32),
         image_r_max,
         crop_index,
@@ -2608,7 +2607,7 @@ def relion_wavg_rotation_atomic_runtime_triplet_add_f32(
 ) -> jax.Array:
     """Run Wavg atomics over a logical prefix of fixed-capacity storage."""
 
-    _ensure_ffi()
+    library._ensure_ffi()
     terms = jnp.asarray(terms)
     accumulator = jnp.asarray(accumulator)
     logical_pixel_count = jnp.asarray(logical_pixel_count, dtype=jnp.int32)
@@ -2628,7 +2627,7 @@ def relion_wavg_rotation_atomic_runtime_triplet_add_f32(
         raise ValueError("logical_pixel_count must be an int32 scalar")
     output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32,
+        library._TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32,
         output_type,
         input_output_aliases={1: 0},
         vmap_method="sequential",
@@ -2698,12 +2697,12 @@ def relion_wavg_sequential_runtime_flat_rows_triplet_f32(
         raise RuntimeError("flat-row RELION Wavg requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("flat-row RELION Wavg requires custom CUDA")
-    _ensure_optional_ffi(
-        _TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
+    library._ensure_optional_ffi(
+        library._TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
     )
     output_type = jax.ShapeDtypeStruct((row_count, pixel_capacity, 3), jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32,
+        library._TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32,
         output_type,
         vmap_method="sequential",
     )(
@@ -2762,12 +2761,12 @@ def relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
         )
     if logical_pixel_count.shape != ():
         raise ValueError("logical_pixel_count must be an int32 scalar")
-    _ensure_optional_ffi(
-        _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
+    library._ensure_optional_ffi(
+        library._TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
     )
     output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32,
+        library._TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32,
         output_type,
         input_output_aliases={2: 0},
         vmap_method="sequential",
@@ -2812,10 +2811,10 @@ def relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
         raise ValueError("exact-position RELION Wavg atomics require a float32 [batch,rect pixel,3] accumulator")
     if logical_pixel_count.shape != ():
         raise ValueError("logical_pixel_count must be an int32 scalar")
-    _ensure_optional_ffi(_TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32)
+    library._ensure_optional_ffi(library._TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32)
     output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32,
+        library._TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32,
         output_type,
         input_output_aliases={3: 0},
         vmap_method="sequential",
@@ -2989,7 +2988,7 @@ def relion_translate_sum_flat_rows_f32(
             "flat-row translate-and-sum was explicitly requested but custom "
             "CUDA is disabled"
         )
-    _ensure_optional_ffi(_TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32)
+    library._ensure_optional_ffi(library._TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32)
 
     image_h, image_w = (int(size) for size in image_shape)
     outputs = (
@@ -3002,7 +3001,7 @@ def relion_translate_sum_flat_rows_f32(
         ),
     )
     results = jax.ffi.ffi_call(
-        _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32,
+        library._TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32,
         outputs,
         vmap_method="sequential",
     )(
@@ -3139,7 +3138,7 @@ def _relion_firstiter_bpref_fused_x_half_split_impl(
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Validate and issue the shared three-accumulator firstiter FFI call."""
 
-    _ensure_ffi()
+    library._ensure_ffi()
     _validate_inputs(volume_shape, image_shape, 1, True, True, max_r=max_r)
     if int(volume_shape[2]) % 2 == 0:
         raise ValueError(
@@ -3209,7 +3208,7 @@ def _relion_firstiter_bpref_fused_x_half_split_impl(
         jax.ShapeDtypeStruct(weight_volume.shape, weight_volume.dtype),
     )
     data_real_out, data_imag_out, weight_out = jax.ffi.ffi_call(
-        _TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF,
+        library._TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF,
         out_types,
         input_output_aliases={8: 0, 9: 1, 10: 2},
         vmap_method="sequential",
@@ -3231,7 +3230,7 @@ def _relion_firstiter_bpref_fused_x_half_split_impl(
 
 
 def _persistent_relion_half_texture_c_api():
-    lib = _get_lib()
+    lib = library._get_lib()
     create = lib.recovar_relion_persistent_half_texture_f32_create
     create.argtypes = (
         ctypes.c_void_p,
@@ -3342,7 +3341,7 @@ class RelionPersistentHalfTextureF32:
         if device_ordinal < 0:
             raise ValueError("could not resolve the CUDA ordinal for the JAX GPU device")
 
-        _ensure_ffi()
+        library._ensure_ffi()
         create, _ = _persistent_relion_half_texture_c_api()
         owner_handle = ctypes.c_uint64()
         status = int(
@@ -3472,7 +3471,7 @@ def _relion_projector_persistent_half_texture_f32(
         jnp.complex64,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32,
+        library._TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32,
         output_type,
         vmap_method="sequential",
     )(
@@ -3596,7 +3595,7 @@ def relion_projector_half_texture_f32(
         raise RuntimeError(
             "RELION half-texture projection requires the custom CUDA extension"
         )
-    _ensure_ffi()
+    library._ensure_ffi()
     compact_rotations = _rot_to_compact(rotation_matrices, jnp.float32)
     output_type = jax.ShapeDtypeStruct(
         (
@@ -3606,7 +3605,7 @@ def relion_projector_half_texture_f32(
         jnp.complex64,
     )
     return jax.ffi.ffi_call(
-        _TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32,
+        library._TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32,
         output_type,
         vmap_method="sequential",
     )(
@@ -3677,7 +3676,7 @@ def _relion_preprocess_real_f32_impl(
         raise RuntimeError("RELION CUDA preprocessing requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION CUDA preprocessing was explicitly requested but custom CUDA is disabled")
-    _ensure_ffi()
+    library._ensure_ffi()
     if images.dtype != jnp.float32:
         raise TypeError(f"images must be float32, got {images.dtype}")
     if normalization_factors.dtype != jnp.float32:
@@ -3712,12 +3711,12 @@ def _relion_preprocess_real_f32_impl(
         jnp.uint8,
     )
     target = (
-        _TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_ATOMIC
+        library._TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_ATOMIC
         if native_atomic_reduction
         else (
-            _TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_LANE
+            library._TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_LANE
             if native_lane_reduction
-            else _TARGET_RELION_PREPROCESS_REAL_F32
+            else library._TARGET_RELION_PREPROCESS_REAL_F32
         )
     )
     # Result order matches the handler binding: images, masked, workspace, count.
@@ -4009,297 +4008,6 @@ def expectation_relion_preprocess_checks():
     drain_relion_preprocess_checks()
 
 
-_TARGET_PROJECT_RELION_HALF_RUNTIME = "cuda_project_relion_half_runtime"
-
-
-_TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS = "cuda_project_relion_half_image_radius"
-_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE = "cuda_project_relion_half_capacity_texture"
-_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED = "cuda_project_relion_half_capacity_texture_compact_packed"
-
-
-_TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32 = "cuda_relion_projector_half_texture_f32"
-
-
-_TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32 = "cuda_relion_projector_persistent_half_texture_f32"
-
-
-_TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF = "cuda_relion_firstiter_bpref_fused_x_half"
-
-
-_TARGET_RELION_FUSED_X_HALF_BP = "cuda_relion_fused_x_half_bp"
-
-
-_TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID = (
-    "cuda_relion_fused_x_half_bp_particle_grid"
-)
-
-
-_TARGET_RELION_FUSED_X_HALF_BP_SIGNATURE = "cuda_relion_fused_x_half_bp_signature"
-
-
-_TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_COMPLEX_RANGE = (
-    "cuda_relion_point_group_symmetrise_bpref_complex_range"
-)
-
-
-_TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_SPLIT_RANGE = (
-    "cuda_relion_point_group_symmetrise_bpref_split_range"
-)
-
-
-_TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF = (
-    "cuda_relion_point_group_symmetrise_bpref"
-)
-
-
-_TARGET_RELION_PREPROCESS_REAL_F32 = "cuda_relion_preprocess_real_f32"
-
-
-_TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_LANE = (
-    "cuda_relion_preprocess_real_f32_native_lane"
-)
-
-
-_TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_ATOMIC = (
-    "cuda_relion_preprocess_real_f32_native_atomic"
-)
-
-
-_TARGET_RELION_MAKE_SCORING_ROTATIONS_F32 = "cuda_relion_make_scoring_rotations_f32"
-
-
-_TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32 = "cuda_relion_make_scoring_rotations_left_f32"
-
-
-_TARGET_RELION_MAKE_SCORING_ROTATIONS_F64 = "cuda_relion_make_scoring_rotations_f64"
-
-
-_TARGET_RELION_TRANSLATE_SCORE_F32 = "cuda_relion_translate_score_f32"
-
-
-_TARGET_RELION_TRANSLATE_SCORE_F64 = "cuda_relion_translate_score_f64"
-
-
-_TARGET_RELION_TRANSLATE_BPREF_F32 = "cuda_relion_translate_bpref_f32"
-
-
-_TARGET_RELION_TRANSLATE_BPREF_F64 = "cuda_relion_translate_bpref_f64"
-
-
-_TARGET_BPREF_PARTICLE_PACK = "cuda_bpref_particle_pack"
-
-
-_TARGET_DEFERRED_VDAM_HOST_PACK = "cuda_deferred_vdam_host_pack"
-
-
-_TARGET_NOISE_PIXEL_PACK = "cuda_noise_pixel_pack"
-
-
-_TARGET_NOISE_RESIDUAL_STATISTICS = "recovar_noise_residual_statistics"
-
-
-_TARGET_SPARSE_PASS2_LOG_Z_F64 = "recovar_sparse_pass2_log_z_f64"
-
-
-_TARGET_SPARSE_PASS2_POSTERIOR_F32 = "recovar_sparse_pass2_posterior_f32"
-
-
-_TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64 = (
-    "cuda_sparse_pass2_segmented_log_z_f64"
-)
-
-
-_TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32 = (
-    "cuda_sparse_pass2_segmented_posterior_f32"
-)
-
-
-_TARGET_RELION_VDAM_MSTEP_SUMS_F32 = "cuda_relion_vdam_mstep_sums_f32"
-
-
-_TARGET_RELION_VDAM_MSTEP_DENOMINATOR_F32 = (
-    "cuda_relion_vdam_mstep_denominator_f32"
-)
-
-
-_TARGET_RELION_VDAM_MSTEP_FUSED_X_HALF = "cuda_relion_vdam_mstep_fused_x_half"
-
-
-_TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_X_HALF = (
-    "cuda_relion_vdam_mstep_fused_projector_x_half"
-)
-
-
-_TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_RUNTIME_X_HALF = (
-    "cuda_relion_vdam_mstep_fused_projector_runtime_x_half"
-)
-
-
-_TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32 = (
-    "cuda_relion_coarse_diff2_rectangular_f32"
-)
-
-
-_TARGET_RELION_COARSE_DIFF2_PROJECTOR_F32 = (
-    "cuda_relion_coarse_diff2_projector_f32"
-)
-
-
-_TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32 = "cuda_relion_coarse_diff2_projector_per_image_f32"
-
-
-_TARGET_RELION_COARSE_NORMALIZED_CC_PAIRS_F32 = (
-    "cuda_relion_coarse_normalized_cc_pairs_f32"
-)
-
-
-_TARGET_RELION_COARSE_NORMALIZED_CC_NATIVE_TEXTURE_PAIRS_F32 = (
-    "cuda_relion_coarse_normalized_cc_native_texture_pairs_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32 = (
-    "cuda_relion_fine_diff2_rectangular_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32 = (
-    "cuda_relion_fine_diff2_rectangular_masked_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_FLAT_ROWS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_flat_rows_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_runtime_flat_rows_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_runtime_masked_flat_rows_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_PAIRS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_pairs_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_PAIRS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_runtime_pairs_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_JOBS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_jobs_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_JOBS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_runtime_jobs_f32"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_PAIRS_F32 = "cuda_relion_fine_diff2_pairs_f32"
-
-
-_TARGET_RELION_POWERCLASS_SPECTRUM_HIGHRES_F32 = (
-    "cuda_relion_powerclass_spectrum_highres_f32"
-)
-
-
-_TARGET_RELION_POWERCLASS_SPECTRUM_HIGHRES_RUNTIME_F32 = (
-    "cuda_relion_powerclass_spectrum_highres_runtime_f32"
-)
-
-
-_TARGET_RELION_EXPONENTIATE_F32 = "cuda_relion_exponentiate_f32"
-
-
-_TARGET_RELION_EXPONENTIATE_BATCHED_F32 = "cuda_relion_exponentiate_batched_f32"
-
-
-_TARGET_RELION_DIVIDE_F32 = "cuda_relion_divide_f32"
-
-
-_TARGET_RELION_FINE_DIFF2_RECTANGULAR_F64 = (
-    "cuda_relion_fine_diff2_rectangular_f64"
-)
-
-
-_TARGET_RELION_FINE_DIFF2_PAIRS_F64 = "cuda_relion_fine_diff2_pairs_f64"
-
-
-_TARGET_RELION_DIVIDE_BATCHED_F32 = "cuda_relion_divide_batched_f32"
-
-
-_TARGET_RELION_CUB_SORT_SCAN_F32 = "cuda_relion_cub_sort_scan_f32"
-
-
-_TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32 = "cuda_relion_cub_sort_scan_batched_f32"
-
-
-_TARGET_RELION_COARSE_CUT_F32 = "cuda_relion_coarse_cut_f32"
-
-
-_TARGET_RELION_WAVG_ROTATION_ATOMIC_TRIPLET_ADD_F32 = (
-    "cuda_relion_wavg_rotation_atomic_triplet_add_f32"
-)
-
-
-_TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32 = (
-    "cuda_relion_wavg_rotation_atomic_runtime_triplet_add_f32"
-)
-
-
-_TARGET_RELION_WAVG_SEQUENTIAL_TRIPLET_F32 = (
-    "cuda_relion_wavg_sequential_triplet_f32"
-)
-
-
-_TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_TRIPLET_F32 = (
-    "cuda_relion_wavg_sequential_runtime_triplet_f32"
-)
-
-
-_TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32 = (
-    "cuda_relion_wavg_sequential_runtime_flat_rows_triplet_f32"
-)
-
-
-_TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32 = (
-    "cuda_relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32"
-)
-_TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32 = (
-    "cuda_relion_wavg_exact_atomic_flat_rows_triplet_add_f32"
-)
-
-
-_TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32 = (
-    "cuda_relion_translate_sum_flat_rows_f32"
-)
-
-
-_TARGET_PPCA_MOMENT_SCATTER_F32 = "relax_ppca_moment_scatter_f32"
-_TARGET_PPCA_WINDOW_PROJECT_F32 = "relax_ppca_window_project_f32"
-_TARGET_PPCA_LATENT_EPILOGUE_F32 = "relax_ppca_latent_epilogue_f32"
-_TARGET_PPCA_POSTERIOR_PREP_F32 = "relax_ppca_posterior_prep_f32"
-
-
-_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32 = "cuda_dual_weighted_sums_pairs_f32"
-
-
-_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_ROWS_F32 = "cuda_dual_weighted_sums_pairs_rows_f32"
-
-
-_TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_CAPACITY_X_HALF = (
-    "cuda_relion_vdam_mstep_fused_projector_capacity_x_half"
-)
-
-
 def sparse_pass2_segmented_supported() -> bool:
     """Return whether the loaded library exports both segmented pass-2 targets.
 
@@ -4308,26 +4016,15 @@ def sparse_pass2_segmented_supported() -> bool:
     """
 
     try:
-        _ensure_ffi()
-        lib = _get_lib()
+        library._ensure_ffi()
+        lib = library._get_lib()
         return all(
-            getattr(lib, _OPTIONAL_FFI_REGISTRATIONS[target][0], None) is not None
+            getattr(lib, library._OPTIONAL_FFI_REGISTRATIONS[target][0], None) is not None
             for target in (
-                _TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
-                _TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
+                library._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
+                library._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
             )
         )
-    except Exception:
-        return False
-
-
-def _optional_target_supported(target: str) -> bool:
-    """Return whether the loaded library exports an optional target's symbol."""
-
-    try:
-        _ensure_ffi()
-        symbol_name = _OPTIONAL_FFI_REGISTRATIONS[target][0]
-        return getattr(_get_lib(), symbol_name, None) is not None
     except Exception:
         return False
 
@@ -4335,16 +4032,16 @@ def _optional_target_supported(target: str) -> bool:
 def relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported() -> bool:
     """Return whether the loaded library exports the flat-row Wavg target."""
 
-    return _optional_target_supported(
-        _TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
+    return library._optional_target_supported(
+        library._TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
     )
 
 
 def relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported() -> bool:
     """Return whether the loaded library exports the flat-row Wavg atomics."""
 
-    return _optional_target_supported(
-        _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
+    return library._optional_target_supported(
+        library._TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
     )
 
 
@@ -4375,7 +4072,7 @@ def ppca_moment_scatter_f32(
     half image, no RELION x-fold, unit upsampling) into a zero volume, up to float32 order.
     """
 
-    _ensure_ffi()
+    library._ensure_ffi()
     lhs_images, rhs_parts, projections = (jnp.asarray(x) for x in (lhs_images, rhs_parts, projections))
     if any(x.dtype != jnp.float32 for x in (lhs_images, rhs_parts, projections)):
         raise ValueError("ppca_moment_scatter_f32 expects float32 LHS/RHS images and planar projections")
@@ -4390,7 +4087,7 @@ def ppca_moment_scatter_f32(
         jax.ShapeDtypeStruct((-(-channels // 32), N0 * N1 * (N2 // 2 + 1), 32), jnp.float32),
         jax.ShapeDtypeStruct((lhs_images.shape[2],), jnp.float32),
     )
-    return jax.ffi.ffi_call(_TARGET_PPCA_MOMENT_SCATTER_F32, out_types, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library._TARGET_PPCA_MOMENT_SCATTER_F32, out_types, vmap_method="sequential")(
         lhs_images,
         rhs_parts,
         projections,
@@ -4428,7 +4125,7 @@ def ppca_window_project_f32(
     upsampling) at the windowed pixels, up to float32 association.
     """
 
-    _ensure_ffi()
+    library._ensure_ffi()
     volume_voxel_major = jnp.asarray(volume_voxel_major)
     if volume_voxel_major.dtype != jnp.complex64:
         raise ValueError("ppca_window_project_f32 expects complex64 volumes")
@@ -4442,7 +4139,7 @@ def ppca_window_project_f32(
         jax.ShapeDtypeStruct((P, R, 2 * F), jnp.float32),
         jax.ShapeDtypeStruct((P * (P + 1) // 2, R, F) if with_products else (0,), jnp.float32),
     )
-    return jax.ffi.ffi_call(_TARGET_PPCA_WINDOW_PROJECT_F32, out_types, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library._TARGET_PPCA_WINDOW_PROJECT_F32, out_types, vmap_method="sequential")(
         volume_voxel_major,
         rot6,
         pixel_indices,
@@ -4474,11 +4171,11 @@ def ppca_latent_epilogue_f32(inner, gram, rows, prior_tables, start, kept):
     ``sum_t exp(score - maximum)``. Latent rank at most 16.
     """
 
-    _ensure_ffi()
+    library._ensure_ffi()
     out_types = tuple(jax.ShapeDtypeStruct(x.shape, x.dtype) for x in kept)
     first = 9
     return jax.ffi.ffi_call(
-        _TARGET_PPCA_LATENT_EPILOGUE_F32,
+        library._TARGET_PPCA_LATENT_EPILOGUE_F32,
         out_types,
         input_output_aliases={first + i: i for i in range(len(kept))},
         vmap_method="sequential",
@@ -4506,7 +4203,7 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
     the count ``(R, B)`` of poses with ``gamma > 1e-3``.
     """
 
-    _ensure_ffi()
+    library._ensure_ffi()
     cap, B, T = kept_score.shape
     q = kept_mean.shape[0]
     P, R = q + 1, int(block_size)
@@ -4519,7 +4216,7 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
         jax.ShapeDtypeStruct((2, R, B), jnp.float32),
         jax.ShapeDtypeStruct((R, B), jnp.int32),
     )
-    return jax.ffi.ffi_call(_TARGET_PPCA_POSTERIOR_PREP_F32, out_types, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library._TARGET_PPCA_POSTERIOR_PREP_F32, out_types, vmap_method="sequential")(
         kept_score,
         kept_mean,
         kept_covariance,
@@ -4529,303 +4226,6 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
         jnp.reshape(jnp.asarray(start, jnp.int32), (1,)),
         block_size=np.int64(R),
     )
-
-
-# ──────────────────────────────────────────────────────────────────────
-# EM CUDA library (relax split seam S3/S4): librelax_cuda.so, built from relax/cuda
-# ──────────────────────────────────────────────────────────────────────
-
-_RELAX_CUDA_LIB_ENV = "RELAX_CUDA_LIB"
-_RELAX_CUDA_BUILD_SOURCE_NAMES = (
-    "relax_kernels.cu",
-    "noise_residual.cuh",
-    "vdam_trace.cuh",
-    "relion_preprocess.cuh",
-    "relion_vdam_mstep.cuh",
-    "relion_scoring.cuh",
-    "relion_posterior.cuh",
-    "sparse_pass2_posterior.cuh",
-    "relion_translate_sum.cuh",
-    "relion_capacity_texture.cuh",
-    "ppca_moment_backproject.cuh",
-    "ppca_stream.cuh",
-    "relion_coarse_diff2_projector_body.inc",
-    str(include_dir() / "recovar_cuda_common.cuh"),
-    str(include_dir() / "device_scratch.cuh"),
-    "Makefile",
-)
-
-_FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
-    (_TARGET_RELION_FUSED_X_HALF_BP, "RelionFusedXHalfBackproject"),
-    (_TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF, "RelionFirstiterBprefFusedXHalf"),
-    (_TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32, "RelionProjectorHalfTextureF32"),
-    (_TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32, "RelionProjectorPersistentHalfTextureF32"),
-    (
-        _TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID,
-        "RelionFusedXHalfBackprojectParticleGrid",
-    ),
-    (
-        _TARGET_RELION_FUSED_X_HALF_BP_SIGNATURE,
-        "RelionFusedXHalfBackprojectSignature",
-    ),
-    (
-        _TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF,
-        "RelionPointGroupSymmetriseBpref",
-    ),
-    (
-        _TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_SPLIT_RANGE,
-        "RelionPointGroupSymmetriseBprefSplitRange",
-    ),
-    (
-        _TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_COMPLEX_RANGE,
-        "RelionPointGroupSymmetriseBprefComplexRange",
-    ),
-    (_TARGET_RELION_PREPROCESS_REAL_F32, "RelionPreprocessRealF32"),
-    (
-        _TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_LANE,
-        "RelionPreprocessRealF32NativeLane",
-    ),
-    (
-        _TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_ATOMIC,
-        "RelionPreprocessRealF32NativeAtomic",
-    ),
-    (
-        _TARGET_RELION_MAKE_SCORING_ROTATIONS_F32,
-        "RelionMakeScoringRotationsF32",
-    ),
-    (
-        _TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32,
-        "RelionMakeScoringRotationsLeftF32",
-    ),
-    (
-        _TARGET_RELION_MAKE_SCORING_ROTATIONS_F64,
-        "RelionMakeScoringRotationsF64",
-    ),
-    (_TARGET_RELION_TRANSLATE_SCORE_F32, "RelionTranslateScoreF32"),
-    (_TARGET_RELION_TRANSLATE_SCORE_F64, "RelionTranslateScoreF64"),
-    (_TARGET_RELION_TRANSLATE_BPREF_F32, "RelionTranslateBprefF32"),
-    (_TARGET_RELION_TRANSLATE_BPREF_F64, "RelionTranslateBprefF64"),
-    (_TARGET_RELION_VDAM_MSTEP_SUMS_F32, "RelionVdamMstepSumsF32"),
-    (
-        _TARGET_RELION_VDAM_MSTEP_DENOMINATOR_F32,
-        "RelionVdamMstepDenominatorF32",
-    ),
-    (_TARGET_RELION_VDAM_MSTEP_FUSED_X_HALF, "RelionVdamMstepFusedXHalf"),
-    (
-        _TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_X_HALF,
-        "RelionVdamMstepFusedProjectorXHalf",
-    ),
-    (
-        _TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_RUNTIME_X_HALF,
-        "RelionVdamMstepFusedProjectorRuntimeXHalf",
-    ),
-    (
-        _TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32,
-        "RelionCoarseDiff2RectangularF32",
-    ),
-    (
-        _TARGET_RELION_COARSE_DIFF2_PROJECTOR_F32,
-        "RelionCoarseDiff2ProjectorF32",
-    ),
-    (
-        _TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
-        "RelionCoarseDiff2ProjectorPerImageF32",
-    ),
-    (
-        _TARGET_RELION_COARSE_NORMALIZED_CC_PAIRS_F32,
-        "RelionCoarseNormalizedCcPairsF32",
-    ),
-    (
-        _TARGET_RELION_COARSE_NORMALIZED_CC_NATIVE_TEXTURE_PAIRS_F32,
-        "RelionCoarseNormalizedCcNativeTexturePairsF32",
-    ),
-    (
-        _TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32,
-        "RelionFineDiff2RectangularF32",
-    ),
-    (
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_FLAT_ROWS_F32,
-        "RelionFineDiff2FusedTranslateFlatRowsF32",
-    ),
-    (
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
-        "RelionFineDiff2FusedTranslateRuntimeFlatRowsF32",
-    ),
-    (
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_PAIRS_F32,
-        "RelionFineDiff2FusedTranslatePairsF32",
-    ),
-    (
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_PAIRS_F32,
-        "RelionFineDiff2FusedTranslateRuntimePairsF32",
-    ),
-    (
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_JOBS_F32,
-        "RelionFineDiff2FusedTranslateJobsF32",
-    ),
-    (
-        _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_JOBS_F32,
-        "RelionFineDiff2FusedTranslateRuntimeJobsF32",
-    ),
-    (_TARGET_RELION_FINE_DIFF2_PAIRS_F32, "RelionFineDiff2PairsF32"),
-    (
-        _TARGET_RELION_POWERCLASS_SPECTRUM_HIGHRES_F32,
-        "RelionPowerClassSpectrumHighresF32",
-    ),
-    (
-        _TARGET_RELION_POWERCLASS_SPECTRUM_HIGHRES_RUNTIME_F32,
-        "RelionPowerClassSpectrumHighresRuntimeF32",
-    ),
-    (_TARGET_RELION_EXPONENTIATE_F32, "RelionExponentiateF32"),
-    (_TARGET_RELION_EXPONENTIATE_BATCHED_F32, "RelionExponentiateBatchedF32"),
-    (_TARGET_RELION_DIVIDE_F32, "RelionDivideF32"),
-    (
-        _TARGET_RELION_FINE_DIFF2_RECTANGULAR_F64,
-        "RelionFineDiff2RectangularF64",
-    ),
-    (_TARGET_RELION_FINE_DIFF2_PAIRS_F64, "RelionFineDiff2PairsF64"),
-    (_TARGET_RELION_DIVIDE_BATCHED_F32, "RelionDivideBatchedF32"),
-    (_TARGET_RELION_CUB_SORT_SCAN_F32, "RelionCubSortScanF32"),
-    (_TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32, "RelionCubSortScanBatchedF32"),
-    (_TARGET_RELION_COARSE_CUT_F32, "RelionCoarseCutF32"),
-    (
-        _TARGET_RELION_WAVG_ROTATION_ATOMIC_TRIPLET_ADD_F32,
-        "RelionWavgRotationAtomicTripletAddF32",
-    ),
-    (
-        _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32,
-        "RelionWavgRotationAtomicRuntimeTripletAddF32",
-    ),
-    (
-        _TARGET_RELION_WAVG_SEQUENTIAL_TRIPLET_F32,
-        "RelionWavgSequentialTripletF32",
-    ),
-    (
-        _TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_TRIPLET_F32,
-        "RelionWavgSequentialRuntimeTripletF32",
-    ),
-    (_TARGET_PPCA_MOMENT_SCATTER_F32, "PpcaMomentScatterF32"),
-    (_TARGET_PPCA_WINDOW_PROJECT_F32, "PpcaWindowProjectF32"),
-    (_TARGET_PPCA_LATENT_EPILOGUE_F32, "PpcaLatentEpilogueF32"),
-    (_TARGET_PPCA_POSTERIOR_PREP_F32, "PpcaPosteriorPrepF32"),
-    (_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32, "DualWeightedSumsPairsF32"),
-    (_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_ROWS_F32, "DualWeightedSumsPairsRowsF32"),
-)
-
-_OPTIONAL_FFI_REGISTRATIONS = {
-    _TARGET_NOISE_RESIDUAL_STATISTICS: (
-        "NoiseResidualStatistics",
-        "Explicit CUDA build with NoiseResidualStatistics required",
-    ),
-    _TARGET_PROJECT_RELION_HALF_RUNTIME: (
-        "ProjectRelionHalfRuntime",
-        "Projector capacity was requested but the loaded CUDA library lacks ProjectRelionHalfRuntime; explicitly rebuild the custom CUDA library",
-    ),
-    _TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS: (
-        "ProjectRelionHalfImageRadius",
-        "Image-radius projection requires ProjectRelionHalfImageRadius; explicitly rebuild the custom CUDA library",
-    ),
-    _TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE: (
-        "ProjectRelionHalfCapacityTexture",
-        "A persistent capacity projector texture requires ProjectRelionHalfCapacityTexture; explicitly rebuild the custom CUDA library",
-    ),
-    _TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED: (
-        "ProjectRelionHalfCapacityTextureCompactPacked",
-        "Packed coarse GEMM rows require ProjectRelionHalfCapacityTextureCompactPacked; explicitly rebuild the custom CUDA library",
-    ),
-    _TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_CAPACITY_X_HALF: (
-        "RelionVdamMstepFusedProjectorCapacityXHalf",
-        "BPref projector capacity requires RelionVdamMstepFusedProjectorCapacityXHalf; explicitly rebuild the custom CUDA library",
-    ),
-    _TARGET_NOISE_PIXEL_PACK: (
-        "NoisePixelPack",
-        "CUDA noise pixel packing requires an explicit build with NoisePixelPack",
-    ),
-    _TARGET_DEFERRED_VDAM_HOST_PACK: (
-        "DeferredVdamHostPack",
-        "CUDA host-plan packing requires an explicit build with DeferredVdamHostPack",
-    ),
-    _TARGET_BPREF_PARTICLE_PACK: (
-        "BprefParticlePack",
-        "CUDA BPref packing requires an explicit build with BprefParticlePack",
-    ),
-    _TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32: (
-        "RelionFineDiff2RectangularMaskedF32",
-        "Masked rectangular fine diff2 requires an explicit CUDA build with RelionFineDiff2RectangularMaskedF32",
-    ),
-    _TARGET_SPARSE_PASS2_LOG_Z_F64: (
-        "SparsePass2LogZF64",
-        "The fused sparse pass-2 log-Z requires an explicit CUDA build with SparsePass2LogZF64",
-    ),
-    _TARGET_SPARSE_PASS2_POSTERIOR_F32: (
-        "SparsePass2PosteriorF32",
-        "The fused sparse pass-2 posterior requires an explicit CUDA build with SparsePass2PosteriorF32",
-    ),
-    _TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64: (
-        "SparsePass2SegmentedLogZF64",
-        "The segmented sparse pass-2 log-Z requires an explicit CUDA build with SparsePass2SegmentedLogZF64",
-    ),
-    _TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32: (
-        "SparsePass2SegmentedPosteriorF32",
-        "The segmented sparse pass-2 posterior requires an explicit CUDA build with SparsePass2SegmentedPosteriorF32",
-    ),
-    _TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32: (
-        "RelionWavgSequentialRuntimeFlatRowsTripletF32",
-        "Flat-row RELION Wavg requires an explicit CUDA build with RelionWavgSequentialRuntimeFlatRowsTripletF32",
-    ),
-    _TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32: (
-        "RelionWavgRotationAtomicRuntimeFlatRowsTripletAddF32",
-        "Flat-row RELION Wavg atomics require an explicit CUDA build with RelionWavgRotationAtomicRuntimeFlatRowsTripletAddF32",
-    ),
-    _TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32: (
-        "RelionWavgExactAtomicFlatRowsTripletAddF32",
-        "Exact-position flat-row RELION Wavg atomics require an explicit CUDA build with RelionWavgExactAtomicFlatRowsTripletAddF32",
-    ),
-    _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32: (
-        "RelionTranslateSumFlatRowsF32",
-        "Flat-row translate-and-sum requires an explicit CUDA build with RelionTranslateSumFlatRowsF32",
-    ),
-    _TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32: (
-        "RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32",
-        "Candidate-chunk flat-row scoring requires an explicit CUDA build with "
-        "RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32",
-    ),
-}
-
-
-_LIBRARY = NativeLibrary(
-    name="relax (EM)",
-    filename="librelax_cuda.so",
-    make_dir=pathlib.Path(__file__).resolve().parent,
-    source_names=_RELAX_CUDA_BUILD_SOURCE_NAMES,
-    lib_env=_RELAX_CUDA_LIB_ENV,
-    registrations=_FFI_REGISTRATIONS,
-    optional_registrations=_OPTIONAL_FFI_REGISTRATIONS,
-)
-_ffi_lock = _LIBRARY.ffi_lock
-
-
-def _get_lib():
-    """ctypes handle of the EM library (C-ABI exports such as the persistent-texture registry)."""
-
-    return _LIBRARY.get_lib()
-
-
-def _ensure_ffi():
-    """Register recovar's pipeline FFI targets, which EM wrappers also call, then the EM library's."""
-
-    cuda_backproject.ensure_ffi()
-    _LIBRARY.ensure_ffi()
-
-
-def _ensure_optional_ffi(target):
-    """Register one optional target: EM targets from the EM library, pipeline ones through recovar."""
-
-    if target in _OPTIONAL_FFI_REGISTRATIONS:
-        _ensure_ffi()
-        _LIBRARY.ensure_optional_ffi(target)
-    else:
-        cuda_backproject.ensure_optional_ffi(target)
 
 
 # Seam S2 (relax split): the relion_cuda image backend in recovar.data_io.image_backends calls

@@ -156,6 +156,7 @@ def test_capacity_texture_rejects_traced_completion_without_destroy(monkeypatch)
 
 def test_capacity_texture_refresh_requires_concrete_boundary_and_same_geometry(monkeypatch):
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
     calls = []
 
@@ -164,7 +165,7 @@ def test_capacity_texture_refresh_requires_concrete_boundary_and_same_geometry(m
         return 0
 
     monkeypatch.setattr(
-        em_cuda_kernels, "_get_lib", lambda: type("Lib", (), {"relax_relion_capacity_half_texture_f32_refresh": staticmethod(native_refresh)})()
+        library, "_get_lib", lambda: type("Lib", (), {"relax_relion_capacity_half_texture_f32_refresh": staticmethod(native_refresh)})()
     )
     texture = object.__new__(em_cuda_kernels.RelionCapacityHalfTextureF32)
     texture._handle = 601
@@ -235,6 +236,7 @@ def test_persistent_texture_rejects_nonexact_host_inputs():
 def _install_fake_texture_runtime(monkeypatch, *, fail_device_put=False):
     import recovar.cuda_backproject as cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
     events = []
 
@@ -274,7 +276,7 @@ def _install_fake_texture_runtime(monkeypatch, *, fail_device_put=False):
     monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(
         em_cuda_kernels,
         "_persistent_relion_half_texture_c_api",
@@ -564,6 +566,7 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
 
     import recovar.cuda_backproject as cb
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -582,8 +585,8 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
 
     # The persistent textures live in the EM library (librelax_cuda.so), which binds like the pipeline one.
     with jax.default_device(gpu_device):
-        em_cuda_kernels._ensure_ffi()
-        bound = em_cuda_kernels._LIBRARY.loaded_path
+        library._ensure_ffi()
+        bound = library._LIBRARY.loaded_path
         reference = project()
         copy = tmp_path / "second_copy" / "librelax_cuda.so"
         copy.parent.mkdir()
@@ -594,7 +597,7 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
         # Without an explicit request, native calls keep using the bound library.
         monkeypatch.delenv("RELAX_CUDA_LIB")
         assert_matches(project(), reference)
-    assert em_cuda_kernels._LIBRARY.loaded_path == bound
+    assert library._LIBRARY.loaded_path == bound
 
 
 def test_large_static_projector_uses_half_storage_without_full_cube(monkeypatch):

@@ -15,10 +15,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", help="output path of librelax_cuda.so (default: relax/cuda/librelax_cuda.so)")
     args = parser.parse_args()
-    from relax.cuda import kernels
+    from relax.cuda import library
 
-    output = pathlib.Path(args.output or kernels._LIBRARY.make_dir / "librelax_cuda.so").expanduser().resolve()
-    kernels._LIBRARY.build(output_path=output, force=True)
+    output = pathlib.Path(args.output or library._LIBRARY.make_dir / "librelax_cuda.so").expanduser().resolve()
+    library._LIBRARY.build(output_path=output, force=True)
     print(f"Built {output}")
 
 

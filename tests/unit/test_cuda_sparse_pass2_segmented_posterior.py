@@ -17,6 +17,7 @@ from helpers.float_compare import assert_matches
 from recovar import cuda_backproject as cb
 
 from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import library
 
 pytestmark = pytest.mark.unit
 
@@ -43,8 +44,8 @@ def make_scores(shape, seed, *, all_inf_row=False, nan=False):
 
 
 def _gpu_library_has(symbol):
-    em_cuda_kernels._ensure_ffi()
-    return hasattr(em_cuda_kernels._get_lib(), symbol)
+    library._ensure_ffi()
+    return hasattr(library._get_lib(), symbol)
 
 
 def _require_segmented_gpu():
@@ -128,10 +129,10 @@ def test_segmented_targets_are_optional_abi():
     """Both handlers register lazily, like the other optional CUDA targets."""
 
     for target in (
-        em_cuda_kernels._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
-        em_cuda_kernels._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
+        library._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
+        library._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
     ):
-        assert target in em_cuda_kernels._OPTIONAL_FFI_REGISTRATIONS
+        assert target in library._OPTIONAL_FFI_REGISTRATIONS
         assert target not in {name for name, _symbol in cb._FFI_REGISTRATIONS}
     assert isinstance(em_cuda_kernels.sparse_pass2_segmented_supported(), bool)
 

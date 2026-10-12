@@ -46,11 +46,11 @@ def test_masked_fine_diff2_source_pins_rectangular_body_and_zero_fill():
 
 def test_masked_fine_diff2_is_optional_ffi_target():
     from recovar import cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
-    target = em_cuda_kernels._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
+    target = library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
     assert target == "cuda_relion_fine_diff2_rectangular_masked_f32"
-    assert target in em_cuda_kernels._OPTIONAL_FFI_REGISTRATIONS
+    assert target in library._OPTIONAL_FFI_REGISTRATIONS
     assert target not in dict(cuda_backproject._FFI_REGISTRATIONS)
 
 
@@ -103,15 +103,16 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
 def test_masked_support_probe_reports_false_without_a_library(monkeypatch):
     from recovar import cuda_backproject
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
     monkeypatch.setattr(
         cuda_backproject, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
     monkeypatch.setattr(
-        em_cuda_kernels, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
+        library, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
     monkeypatch.setattr(
-        em_cuda_kernels, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
+        library, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
     assert em_cuda_kernels.relion_fine_diff2_rectangular_masked_supported() is False
 

@@ -832,7 +832,7 @@ def test_stable_bpref_uses_capacity_stride_but_logical_native_issue_count():
 
 def test_runtime_bpref_ffi_abi_keeps_default_static_target_separate():
     root = Path(__file__).resolve().parents[3]
-    python_source = (root / "relax" / "cuda" / "kernels.py").read_text()
+    python_source = (root / "relax" / "cuda" / "library.py").read_text()
     cuda_source = read_em_cuda_source()
 
     assert "cuda_relion_vdam_mstep_fused_projector_x_half" in python_source

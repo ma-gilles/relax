@@ -458,9 +458,9 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
 
     from recovar.cuda_build import include_dir
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
-    assert em_cuda_kernels._RELAX_CUDA_BUILD_SOURCE_NAMES == (
+    assert library._RELAX_CUDA_BUILD_SOURCE_NAMES == (
         *local_inputs[:1],
         *local_inputs[2:],
         include_name,
@@ -468,7 +468,7 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
         str(include_dir() / "device_scratch.cuh"),
         "Makefile",
     )
-    assert em_cuda_kernels._LIBRARY.source_names == em_cuda_kernels._RELAX_CUDA_BUILD_SOURCE_NAMES
+    assert library._LIBRARY.source_names == library._RELAX_CUDA_BUILD_SOURCE_NAMES
 
 
 
@@ -828,6 +828,7 @@ def test_relion_fine_diff2_f64_uses_double_ffi_target(
     import recovar.cuda_backproject as cuda_backproject
 
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
     call = {}
 
@@ -839,7 +840,7 @@ def test_relion_fine_diff2_f64_uses_double_ffi_target(
     monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
     function = getattr(em_cuda_kernels, function_name).__wrapped__
     reference_shape = (1, 2, 5)

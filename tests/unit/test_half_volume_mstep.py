@@ -16,6 +16,7 @@ import recovar.core.slicing as slicing
 import recovar.cuda_backproject as cuda_backproject
 
 from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import library
 from relax.reconstruction import half_volume_mstep, regularization
 
 pytestmark = pytest.mark.unit
@@ -702,7 +703,7 @@ def test_relion_fused_x_half_wrapper_uses_mixed_aliases_and_native_square(monkey
         return call
 
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
 
     image_shape = (8, 8)
@@ -730,7 +731,7 @@ def test_relion_fused_x_half_wrapper_uses_mixed_aliases_and_native_square(monkey
         2.0,
     )
 
-    assert observed["target"] == em_cuda_kernels._TARGET_RELION_FUSED_X_HALF_BP
+    assert observed["target"] == library._TARGET_RELION_FUSED_X_HALF_BP
     assert observed["options"]["input_output_aliases"] == {4: 0, 5: 1}
     assert observed["options"]["vmap_method"] == "sequential"
     assert [item.dtype for item in observed["result_types"]] == [jnp.complex64, jnp.float32]
@@ -759,7 +760,7 @@ def test_relion_fused_x_half_wrapper_preserves_double_precision(monkeypatch):
         return call
 
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
 
     volume_size = 7 * 7 * 4
@@ -801,7 +802,7 @@ def test_relion_fused_x_half_wrapper_rejects_non_relion_dtypes(
     monkeypatch, data_dtype, weight_dtype, index_dtype, error_match
 ):
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
     data_volume = jnp.zeros(7 * 7 * 4, dtype=data_dtype)
     weight_volume = jnp.zeros(7 * 7 * 4, dtype=weight_dtype)
     data_rows = jnp.ones((1, 1), dtype=jnp.complex64)
@@ -1303,7 +1304,7 @@ def test_relion_fused_x_half_particle_grid_preserves_particle_axis_in_native_att
         return call
 
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
     data_volume = jnp.zeros(7 * 7 * 4, dtype=jnp.complex64)
     weight_volume = jnp.zeros(7 * 7 * 4, dtype=jnp.float32)
@@ -1324,7 +1325,7 @@ def test_relion_fused_x_half_particle_grid_preserves_particle_axis_in_native_att
         2.0,
     )
 
-    assert observed["target"] == em_cuda_kernels._TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID
+    assert observed["target"] == library._TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID
     assert observed["options"]["input_output_aliases"] == {4: 0, 5: 1}
     assert observed["attrs"]["n_particles"] == 2
     assert observed["attrs"]["rows_per_particle"] == 3
