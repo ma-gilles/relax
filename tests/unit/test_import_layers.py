@@ -92,7 +92,6 @@ ALLOWED_UPWARD = {
     ("relax.vdam.iteration_loop", "relax.refinement.refinement_state"): _A,
     ("relax.vdam.native_sampling", "relax.refinement.refinement_state"): _A,
     ("relax.vdam.shape_class_estep", "relax.refinement.shape_class_scoring"): _A,
-    ("relax.vdam.tomo_estep", "relax.refinement.tomo_scoring"): _A,
 }
 
 

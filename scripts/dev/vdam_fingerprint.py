@@ -217,9 +217,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     from relax.vdam import adaptive_estep, driver, shape_class_estep
 
     try:
-        from relax.refinement import tomo_scoring
-    except ImportError:  # a source from before tomo_scoring.py existed: the pass was tomo_half's
-        from relax.refinement import tomo_half as tomo_scoring
+        from relax.steps import tomo_scoring
+    except ImportError:  # the source before tomo_scoring moved to steps (layout S8c)
+        try:
+            from relax.refinement import tomo_scoring
+        except ImportError:  # a source from before tomo_scoring.py existed: the pass was tomo_half's
+            from relax.refinement import tomo_half as tomo_scoring
 
     assert relax.__file__.startswith(source), relax.__file__
 

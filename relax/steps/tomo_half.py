@@ -6,7 +6,7 @@ has one pose (rotation in its subtomogram frame, 3D offset) and one posterior (m
 acc_ml_optimiser_impl.h:1190-1402). A :class:`TomoHalf` presents a half as those particles, in
 particle-STAR row order, over a flat dataset of their tilt images in RELION's ``img_id`` order
 (:func:`relax.star.tomo_input.relion_image_geometry`). The half's scoring is
-:func:`relax.refinement.tomo_scoring.score_tomo_half`.
+:func:`relax.steps.tomo_scoring.score_tomo_half`.
 """
 
 from __future__ import annotations

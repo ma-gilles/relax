@@ -47,7 +47,6 @@ from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.refinement_state import update_angular_sampling
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.shape_class_scoring import OpticsSpec
-from relax.refinement.tomo_scoring import score_tomo_half_in_loop
 from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.runtime.timing import Stopwatch
@@ -78,6 +77,7 @@ from relax.steps.scoring_policy import (
     local_precision,
 )
 from relax.steps.tomo_half import local_tomo_sampling
+from relax.steps.tomo_scoring import score_tomo_half_in_loop
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext
