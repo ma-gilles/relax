@@ -21,6 +21,7 @@ from relax.diagnostics.iteration import (
     _maybe_dump_noise_update_debug,
     _save_iteration_intermediates,
     _save_iteration_particle_states,
+    _significance_dump_half_indices,
     _source_image_indices,
     dump_numbered_iteration,
     write_final_half_manifest,
@@ -221,6 +222,17 @@ class PremaskObserver(RunObserver):
         )
 
 
+class TargetHalfObserver(RunObserver):
+    """Scores one half only at a terminating coarse-significance or pass-2 norm dump boundary
+    (``RELAX_SIGNIFICANCE_DUMP_TARGET_HALF`` or ``RELAX_PASS2_DUMP_TARGET_HALF``, with the dump directory, iteration
+    and original-index targets they require), read from the environment at each numbered iteration."""
+
+    def scored_halves(self, numbered_relion_iteration, *, n_classes, experiment_datasets):
+        return _significance_dump_half_indices(
+            numbered_iteration=numbered_relion_iteration, n_classes=n_classes, experiment_datasets=experiment_datasets,
+        )
+
+
 class ObserverGroup(RunObserver):
     """Hands every hook to each of ``observers`` in order; a collection request holds if any asks for it."""
 
@@ -231,6 +243,11 @@ class ObserverGroup(RunObserver):
 
     def wants_unfiltered_maps(self, numbered_relion_iteration):
         return any([o.wants_unfiltered_maps(numbered_relion_iteration) for o in self.observers])
+
+    def scored_halves(self, numbered_relion_iteration, **values):
+        # Every observer is asked (one may refuse its settings); the first that targets one half decides.
+        selected = [o.scored_halves(numbered_relion_iteration, **values) for o in self.observers]
+        return next((halves for halves in selected if halves != (0, 1)), (0, 1))
 
     def run_started(self, context):
         for o in self.observers:
@@ -295,8 +312,8 @@ class ObserverGroup(RunObserver):
 
 def observers_from_environment() -> list[RunObserver]:
     """The observers the environment asks for: the parity capture or its timings, the BPref accumulator
-    captures, the noise-update terms, the Class3D M-step and image-size dumps, the pre-mask maps. A malformed
-    ``RELAX_BPREF_BOUNDARY_DUMP_ITERATION`` refuses here."""
+    captures, the noise-update terms, the Class3D M-step and image-size dumps, the pre-mask maps, a one-half dump
+    target. A malformed ``RELAX_BPREF_BOUNDARY_DUMP_ITERATION`` refuses here."""
 
     found = []
     if parity_dump.timing_is_active():
@@ -310,6 +327,8 @@ def observers_from_environment() -> list[RunObserver]:
         found.append(ClassDumpObserver(os.environ["RELAX_KCLASS_DUMP_DIR"]))
     if os.environ.get("RELAX_PREMASK_DUMP_DIR"):
         found.append(PremaskObserver(os.environ["RELAX_PREMASK_DUMP_DIR"]))
+    if any(os.environ.get(name, "").strip() for name in ("RELAX_SIGNIFICANCE_DUMP_TARGET_HALF", "RELAX_PASS2_DUMP_TARGET_HALF")):
+        found.append(TargetHalfObserver())
     return found
 
 

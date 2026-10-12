@@ -15,7 +15,8 @@ at and receives the values the run holds then; an observer must not mutate them,
 array past the hook unless it says so (it would extend that array's lifetime, code rule 3). The two
 collection requests (``keeps_rotation_posteriors``, ``collects_local_search_profiles``) and
 ``wants_unfiltered_maps`` ask the run to keep or compute something beside its own values; they cost memory
-or time, never a number of the run.
+or time, never a number of the run. ``scored_halves`` is a diagnostic boundary's request: score one half of a
+numbered iteration only, at a dump target after which the run stops.
 """
 
 from __future__ import annotations
@@ -375,6 +376,11 @@ class RunObserver:
     def wants_unfiltered_maps(self, numbered_relion_iteration: int) -> bool:
         """Whether this numbered iteration should also reconstruct its unregularized maps for the observer."""
         return False
+
+    def scored_halves(self, numbered_relion_iteration: int, *, n_classes: int, experiment_datasets) -> tuple[int, ...]:
+        """The halves numbered iteration ``numbered_relion_iteration`` scores (indices into
+        ``experiment_datasets``): both, unless a terminating diagnostic boundary targets one half there."""
+        return (0, 1)
 
     def run_started(self, context) -> None:
         """The run's context is resolved (a ``relax.refinement.setup_checks.RunContext``: its mode, geometry

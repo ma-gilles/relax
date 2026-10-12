@@ -1,5 +1,8 @@
 """The run observers (code rule 15): what the controller tells them, and which ones a command builds."""
 
+from types import SimpleNamespace
+
+import numpy as np
 import pytest
 from helpers.tiny_refinement import run_tiny_refinement
 
@@ -96,3 +99,41 @@ def test_the_environment_dump_observers_come_from_their_variables(monkeypatch, t
     found = observers.observers_from_environment()
     assert [type(o) for o in found] == [observers.ClassDumpObserver, observers.PremaskObserver]
     assert [o.directory for o in found] == [str(tmp_path / "kclass"), str(tmp_path / "premask")]
+
+
+_TARGET_HALF_ENV = ("RELAX_SIGNIFICANCE_DUMP_TARGET_HALF", "RELAX_PASS2_DUMP_TARGET_HALF")
+
+
+def test_the_controller_asks_the_observer_which_halves_each_numbered_iteration_scores(monkeypatch):
+    class Halves(RunObserver):
+        def __init__(self):
+            self.asked = []
+
+        def scored_halves(self, numbered_relion_iteration, *, n_classes, experiment_datasets):
+            self.asked.append((numbered_relion_iteration, n_classes, len(experiment_datasets)))
+            return (0, 1)
+
+    observer = Halves()
+    run_tiny_refinement(monkeypatch, max_iter=2, observer=observer)
+    assert observer.asked == [(1, 1, 2), (2, 1, 2)]
+    assert RunObserver().scored_halves(1, n_classes=1, experiment_datasets=[None, None]) == (0, 1)
+
+
+def test_a_one_half_dump_target_is_the_environment_target_half_observer(monkeypatch, tmp_path):
+    for name in _TARGET_HALF_ENV:
+        monkeypatch.delenv(name, raising=False)
+    assert not any(isinstance(o, observers.TargetHalfObserver) for o in observers.observers_from_environment())
+    for name, value in {
+        "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF": "2", "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET": "1",
+        "RELAX_SIGNIFICANCE_DUMP_DIR": str(tmp_path), "RELAX_SIGNIFICANCE_DUMP_ITERATION": "2",
+        "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1,3",
+    }.items():
+        monkeypatch.setenv(name, value)
+    target = [o for o in observers.observers_from_environment() if isinstance(o, observers.TargetHalfObserver)]
+    assert len(target) == 1
+    datasets = [SimpleNamespace(dataset_indices=np.asarray(rows)) for rows in ([2, 4], [1, 3])]
+    # Only the target iteration scores the target half alone; a group defers to the observer that targets one.
+    assert target[0].scored_halves(1, n_classes=1, experiment_datasets=datasets) == (0, 1)
+    assert target[0].scored_halves(2, n_classes=1, experiment_datasets=datasets) == (1,)
+    group = observers.ObserverGroup([RunObserver(), target[0]])
+    assert group.scored_halves(2, n_classes=1, experiment_datasets=datasets) == (1,)

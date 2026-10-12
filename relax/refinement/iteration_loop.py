@@ -19,7 +19,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.data_io import cryoem_dataset
 
-import relax.diagnostics.iteration as iteration_diagnostics
 import relax.refinement.refinement_state as convergence_helpers
 from relax.classification.probes import KClassProbe, NoProbe
 from relax.diagnostics import bpref_diagnostics
@@ -973,8 +972,8 @@ def refine_single_volume(
         # --- E-step on each half: one pass (adaptive_oversampling=0) or coarse then fine (>=1) ---
         expected = expectation.run_numbered_expectation(
             ctx, carry, plan, this_iteration, options, half_inputs=scoring_inputs, history=history,
-            diagnostic_half_indices=iteration_diagnostics._significance_dump_half_indices(
-                numbered_iteration=this_iteration.numbered_relion_iteration, n_classes=options.k_class.n_classes,
+            diagnostic_half_indices=observer.scored_halves(
+                this_iteration.numbered_relion_iteration, n_classes=options.k_class.n_classes,
                 experiment_datasets=experiment_datasets,
             ),
         )
