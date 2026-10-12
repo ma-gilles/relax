@@ -21,8 +21,9 @@ from relax.refinement.refinement_options import (
     KClassOptions,
     LocalSearchOptions,
 )
-from relax.refinement.refinement_state import RefinementState, healpix_angular_step, refine_angular_sampling
+from relax.refinement.refinement_state import RefinementState, refine_angular_sampling
 from relax.relion.input_poses import _load_input_star_previous_best_poses, prepare_initial_poses
+from relax.sampling.healpix import angular_sampling_deg
 
 pytestmark = pytest.mark.unit
 
@@ -71,7 +72,7 @@ def test_sampling_refinement_keeps_the_prior_below_the_local_order_and_resets_it
     assert_matches(below.sigma_rot, sigma)
     at = refine_angular_sampling(below)
     assert at.healpix_order == 4 and at.do_local_search
-    assert_matches(at.sigma_rot, 2.0 * np.deg2rad(healpix_angular_step(4) / 2))
+    assert_matches(at.sigma_rot, 2.0 * np.deg2rad(angular_sampling_deg(4) / 2))
     assert_matches(at.sigma_psi, at.sigma_rot)
 
 

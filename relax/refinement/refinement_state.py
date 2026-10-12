@@ -26,6 +26,7 @@ from typing import NamedTuple, Optional
 import numpy as np
 
 from relax.runtime.env_flags import parse_env_float_or_default, parse_env_int_or_default, parse_env_true_flag
+from relax.sampling.healpix import angular_sampling_deg
 from relax.types import total_sumw
 
 logger = logging.getLogger(__name__)
@@ -200,24 +201,6 @@ def expectation_statistics(per_half, previous_assignments, pmax_mass_per_half) -
     )
 
 
-def healpix_angular_step(order: int) -> float:
-    """Return approximate angular step in degrees for a HEALPix order.
-
-    Formula: step = 360 / (6 * 2^order).
-
-    Parameters
-    ----------
-    order : int
-        HEALPix order (nside = 2^order).
-
-    Returns
-    -------
-    float
-        Angular step in degrees.
-    """
-    return 360.0 / (6.0 * (2**order))
-
-
 def effective_angular_step(order: int, adaptive_oversampling: int = 0) -> float:
     """Return effective angular step accounting for adaptive oversampling.
 
@@ -233,7 +216,7 @@ def effective_angular_step(order: int, adaptive_oversampling: int = 0) -> float:
     float
         Effective angular step in degrees.
     """
-    return healpix_angular_step(order) / (2**adaptive_oversampling)
+    return angular_sampling_deg(order) / (2**adaptive_oversampling)
 
 
 def relion_mpi_hidden_variable_change_is_small(
@@ -534,7 +517,7 @@ class RefinementState:
         if self.auto_local_healpix_order < 0:
             raise ValueError("auto_local_healpix_order must be non-negative")
         if self.angular_step == 0.0:
-            self.angular_step = healpix_angular_step(self.healpix_order)
+            self.angular_step = angular_sampling_deg(self.healpix_order)
         oversampling_scale = 2**self.adaptive_oversampling
         if self.mpi_leader_hidden_variable_angular_step_deg == 0.0:
             self.mpi_leader_hidden_variable_angular_step_deg = self.angular_step / oversampling_scale
@@ -864,7 +847,7 @@ def calculate_expected_angular_errors(
         sigma2_psi  = step^2 / n_sig
         acc_rot = RAD2DEG(sqrt(sigma2_rot + sigma2_tilt))
 
-    where ``step = DEG2RAD(healpix_angular_step(order))``.
+    where ``step = DEG2RAD(angular_sampling_deg(order))``.
 
     Parameters
     ----------
@@ -887,7 +870,7 @@ def calculate_expected_angular_errors(
     nr_sig = np.asarray(nr_significant_per_image, dtype=np.float64)
     nr_sig_rot = nr_sig / max(1, n_translations)
     nr_sig_rot = np.maximum(nr_sig_rot, 1.0)
-    step_rad = np.deg2rad(healpix_angular_step(healpix_order))
+    step_rad = np.deg2rad(angular_sampling_deg(healpix_order))
     sigma2_per_image = 2.0 * step_rad**2 / (3.0 * nr_sig_rot)
     acc_rot_per_image = np.rad2deg(np.sqrt(sigma2_per_image))
     acc_rot = float(np.mean(acc_rot_per_image))
@@ -1178,7 +1161,7 @@ def refine_angular_sampling(state: RefinementState) -> RefinementState:
         The convergence counters are reset.
     """
     new_order = state.healpix_order + 1
-    new_angular_step = healpix_angular_step(new_order)
+    new_angular_step = angular_sampling_deg(new_order)
 
     new_trans_range, new_trans_step = _relion_next_translation_sampling_pixels(state)
 

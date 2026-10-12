@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.refinement.refinement_state import RefinementState, healpix_angular_step
+from relax.refinement.refinement_state import RefinementState
+from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import relion_local_search_sigmas
 
 pytestmark = pytest.mark.unit
@@ -26,7 +27,7 @@ def test_configured_widths_are_kept_and_psi_falls_back_to_rot():
 @pytest.mark.parametrize("order,oversampling", [(3, 0), (4, 1), (5, 2)])
 def test_unset_width_under_local_search_is_twice_the_oversampled_step(order, oversampling):
     rot, psi = relion_local_search_sigmas(_state(0.0, 0.0, order, oversampling), use_local=True)
-    expected = np.sqrt(2.0 * 2.0) * np.deg2rad(healpix_angular_step(order) / (2**oversampling))
+    expected = np.sqrt(2.0 * 2.0) * np.deg2rad(angular_sampling_deg(order) / (2**oversampling))
     assert rot == expected and psi == expected
 
 

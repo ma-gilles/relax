@@ -30,7 +30,6 @@ from relax.refinement.refinement_state import (
     compute_translation_changes,
     effective_angular_step,
     hard_class_change_fraction,
-    healpix_angular_step,
     refine_angular_sampling,
     relion_mpi_hidden_variable_change_is_small,
     resolution_required_angular_sampling,
@@ -42,6 +41,7 @@ from relax.sampling import (
     get_rotation_grid,
     get_rotation_grid_at_order,
 )
+from relax.sampling.healpix import angular_sampling_deg
 
 pytestmark = pytest.mark.unit
 
@@ -84,7 +84,7 @@ class TestRefinementStateConstruction:
 
     def test_effective_step_property(self):
         state = RefinementState(healpix_order=3, adaptive_oversampling=1)
-        expected = healpix_angular_step(3) / 2.0
+        expected = angular_sampling_deg(3) / 2.0
         assert abs(state.effective_step - expected) < 1e-10
 
     def test_max_healpix_order_is_not_fine_enough_by_itself(self):
@@ -177,26 +177,26 @@ class TestRefinementStateConstruction:
 
 
 # =========================================================================
-# healpix_angular_step / effective_angular_step
+# angular_sampling_deg / effective_angular_step
 # =========================================================================
 
 
 class TestAngularStepFunctions:
-    def test_healpix_angular_step_known_values(self):
+    def test_angular_sampling_deg_known_values(self):
         """Check against the known table in the RELION reference doc."""
         # Order 0: ~58.6 deg (360 / 6 = 60, close enough)
-        assert abs(healpix_angular_step(0) - 60.0) < 1e-10
+        assert abs(angular_sampling_deg(0) - 60.0) < 1e-10
         # Order 3: ~7.5 deg
-        assert abs(healpix_angular_step(3) - 7.5) < 1e-10
+        assert abs(angular_sampling_deg(3) - 7.5) < 1e-10
         # Order 4: ~3.75 deg
-        assert abs(healpix_angular_step(4) - 3.75) < 1e-10
+        assert abs(angular_sampling_deg(4) - 3.75) < 1e-10
 
     def test_effective_angular_step_no_oversampling(self):
-        assert effective_angular_step(3, 0) == healpix_angular_step(3)
+        assert effective_angular_step(3, 0) == angular_sampling_deg(3)
 
     def test_effective_angular_step_with_oversampling(self):
         """Oversampling 1 halves the step, oversampling 2 quarters it."""
-        step3 = healpix_angular_step(3)
+        step3 = angular_sampling_deg(3)
         assert abs(effective_angular_step(3, 1) - step3 / 2) < 1e-10
         assert abs(effective_angular_step(3, 2) - step3 / 4) < 1e-10
 
@@ -538,7 +538,7 @@ class TestRefineAngularSampling:
     def test_angular_step_updated(self):
         state = RefinementState(healpix_order=3)
         new_state = refine_angular_sampling(state)
-        expected = healpix_angular_step(4)
+        expected = angular_sampling_deg(4)
         assert abs(new_state.angular_step - expected) < 1e-10
 
     def test_counters_reset(self):
@@ -620,7 +620,7 @@ class TestRefineAngularSampling:
         """sigma2_rot = 2 * 2 * step^2 (RELION convention)."""
         state = RefinementState(healpix_order=3, adaptive_oversampling=0)
         new_state = refine_angular_sampling(state)
-        step_deg = healpix_angular_step(4)
+        step_deg = angular_sampling_deg(4)
         step_rad = np.deg2rad(step_deg)
         expected_sigma = np.sqrt(4.0) * step_rad
         assert abs(new_state.sigma_rot - expected_sigma) < 1e-10

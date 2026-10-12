@@ -47,7 +47,7 @@ from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.reference_state import _class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
-from relax.refinement.refinement_state import healpix_angular_step, update_angular_sampling
+from relax.refinement.refinement_state import update_angular_sampling
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.score_outputs import (
     PerHalfOutputs,
@@ -66,6 +66,7 @@ from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADD
 from relax.relion.metadata import relion_metadata_translations
 from relax.runtime.timing import Stopwatch
 from relax.sampling.expected_accuracy import expected_accuracy_class_ids
+from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import (
     DirectionPrior,
     HalfDirectionLogPriors,
@@ -292,7 +293,7 @@ def run_final_all_data(
         )
         if k_class_enabled and carry.state.adaptive_oversampling > 0:
             final_adaptive_pass1_current_size = relion_coarse_image_size(
-                healpix_angular_step(final_sampling.settings.grid_order),
+                angular_sampling_deg(final_sampling.settings.grid_order),
                 image_geometry.pixel_size_angstrom,
                 image_geometry.box_size,
                 particle_diameter=options.schedule.particle_diameter_ang,
@@ -477,7 +478,7 @@ def run_final_all_data(
                     voxel_size=image_geometry.pixel_size_angstrom,
                     random_perturbation=final_sampling.settings.random_perturbation,
                     pass1_size=relion_coarse_image_size(
-                        healpix_angular_step(final_sampling.settings.grid_order),
+                        angular_sampling_deg(final_sampling.settings.grid_order),
                         image_geometry.pixel_size_angstrom,
                         image_geometry.box_size,
                         particle_diameter=options.schedule.particle_diameter_ang,

@@ -12,13 +12,14 @@ from relax import sampling
 from relax.fourier.resolution import relion_coarse_image_size
 from relax.refinement.image_size_plans import ExpectationWindows, RunOptics, plan_expectation_windows
 from relax.refinement.iteration_planning import IterationCarry
-from relax.refinement.refinement_state import direction_prior_healpix_order_for_scoring, healpix_angular_step
+from relax.refinement.refinement_state import direction_prior_healpix_order_for_scoring
 from relax.refinement.trial_grids import (
     CoarseGrids,
     builds_coarse_pass1_rotations,
     coarse_pass1_rotations,
     iteration_trial_grid,
 )
+from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import relion_direction_log_priors, relion_local_search_sigmas
 
 if TYPE_CHECKING:
@@ -93,7 +94,7 @@ def relion_local_pass1_current_size(
     """
 
     coarse_size = relion_coarse_image_size(
-        healpix_angular_step(int(pre_update_healpix_order)),
+        angular_sampling_deg(int(pre_update_healpix_order)),
         pixel_size,
         box_size,
         particle_diameter=particle_diameter,
@@ -153,7 +154,7 @@ def prepare_numbered_local_sampling(
                     int(search.oversampling_order),
                 )
                 parent_order = search.healpix_order - int(search.oversampling_order)
-                coarse_angular_step_deg = healpix_angular_step(coarse_size_healpix_order)
+                coarse_angular_step_deg = angular_sampling_deg(coarse_size_healpix_order)
                 # --strict_highres_exp: pass 1 scores at the E-step cap, as pass 2 does.
                 first_pixel_size, first_box = optics.first_optics_group_geometry()
                 coarse_image_window_size = image_window_size if strict_pass1 else relion_local_pass1_current_size(
@@ -219,7 +220,7 @@ def prepare_final_local_sampling(
     angular_step_deg = sampling.relion_angular_sampling_deg(search.healpix_order, adaptive_oversampling=0)
 
     if search.oversampling_order > 0:
-        coarse_angular_step_deg = healpix_angular_step(search.parent_order)
+        coarse_angular_step_deg = angular_sampling_deg(search.parent_order)
         first_pixel_size, first_box = optics.first_optics_group_geometry()
         coarse_image_window_size = relion_local_pass1_current_size(
             pre_update_healpix_order=search.parent_order,

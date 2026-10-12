@@ -24,7 +24,6 @@ from relax.refinement.noise_updates import (
     noise_model_from_pixels,
 )
 from relax.refinement.ports import OptimiserAccuracyReplay
-from relax.refinement.refinement_state import healpix_angular_step
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.relion import metadata as relion_metadata
 from relax.relion.initial_noise import (
@@ -43,6 +42,7 @@ from relax.sampling import (
     _translation_grid_for_class_count,
     relion_sampling_perturbation_for_iteration,
 )
+from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import (
     DirectionPrior,
     class_weights_from_direction_prior,
@@ -1222,7 +1222,7 @@ def _read_replay_sampling_star(
     )
     _replay_meta = read_relion_sampling_metadata(_star)
     _relion_hp = int(_replay_meta["healpix_order"])
-    _relion_psi_step_deg = float(_replay_meta.get("psi_step", healpix_angular_step(_relion_hp)))
+    _relion_psi_step_deg = float(_replay_meta.get("psi_step", angular_sampling_deg(_relion_hp)))
     # RELION stores offset_{range,step} in Angstroms; convert to px.
     _relion_offset_range = float(_replay_meta["offset_range"]) / pixel_size_angstrom
     _relion_offset_step = float(_replay_meta["offset_step"]) / pixel_size_angstrom

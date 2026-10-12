@@ -122,7 +122,7 @@ from relax.refinement.refinement_options import (
     StartState,
     SymmetryOptions,
 )
-from relax.refinement.refinement_state import RefinementState, _relion_optimizer_average_pmax, healpix_angular_step
+from relax.refinement.refinement_state import RefinementState, _relion_optimizer_average_pmax
 from relax.relion import ctf
 from relax.sampling import (
     _get_relion_rotation_grid_eulers_float64,
@@ -139,7 +139,7 @@ from relax.sampling import (
     rotation_grid_n_in_planes,
     rotation_grid_size,
 )
-from relax.sampling.healpix import euler_angles_to_matrix
+from relax.sampling.healpix import angular_sampling_deg, euler_angles_to_matrix
 from relax.sampling.orientation_priors import (
     collapse_rotation_posterior_to_direction_prior,
     make_relion_direction_log_prior,
@@ -4725,7 +4725,7 @@ class TestRelionModeSmokeTest:
             current_size=122,
         )
         updated_order_size = compute_coarse_image_size(
-            healpix_angular_step(updated_parent_order),
+            angular_sampling_deg(updated_parent_order),
             3.28,
             128,
             particle_diameter=280.0,

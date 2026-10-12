@@ -27,7 +27,8 @@ from relax.reconstruction.regularization import (
     resolution_from_data_vs_prior,
     update_relion_growth_state_from_fsc,
 )
-from relax.refinement.refinement_state import RefinementState, healpix_angular_step
+from relax.refinement.refinement_state import RefinementState
+from relax.sampling.healpix import angular_sampling_deg
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions
@@ -209,7 +210,7 @@ def plan_adaptive_image_size(
     See ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
     """
     image_geometry = optics.image_geometry
-    angular_step_deg = healpix_angular_step(pre_update_healpix_order)
+    angular_step_deg = angular_sampling_deg(pre_update_healpix_order)
     if windows.score_size is not None:
         # --strict_highres_exp replaces the angular rule: pass 1 scores at the E-step cap as well.
         coarse_size = int(windows.score_size)

@@ -36,12 +36,12 @@ from relax.classification.k_class_results import KClassEMResult
 from relax.fine_pass.bucket_arrays import relion_parent_execution_key
 from relax.fourier.resolution import compute_coarse_image_size
 from relax.refinement import optics_shapes
-from relax.refinement.refinement_state import healpix_angular_step
 from relax.relion.image_preprocessing import uses_relion_cuda_image_preprocessing
 from relax.runtime.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
 from relax.sampling import oversampling
+from relax.sampling.healpix import angular_sampling_deg
 from relax.vdam.estep_common import (
     ENGINE_DISC_TYPE,
     SPA_META_PARTICLE_FIELDS,
@@ -72,7 +72,7 @@ def resolve_sparse_pass1_current_size(
     """
     coarse_size = int(
         compute_coarse_image_size(
-            healpix_angular_step(int(pass1_healpix_order)),
+            angular_sampling_deg(int(pass1_healpix_order)),
             float(state.pixel_size),
             int(state.box_size),
             particle_diameter=float(particle_diameter_ang),

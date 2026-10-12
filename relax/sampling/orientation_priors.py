@@ -11,9 +11,9 @@ from dataclasses import dataclass
 import healpy as hp
 import numpy as np
 
-from relax.refinement.refinement_state import healpix_angular_step
 from relax.relion.macros import relion_round_array
 from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
+from relax.sampling.healpix import angular_sampling_deg
 
 
 def relion_round_away_from_zero(values, *, dtype: np.dtype = np.float32):
@@ -718,7 +718,7 @@ def relion_local_search_sigmas(state, *, use_local):
     sigma_rot = state.sigma_rot
     sigma_psi = state.sigma_psi if state.sigma_psi > 0 else sigma_rot
     if use_local and sigma_rot <= 0:
-        step_rad = np.deg2rad(healpix_angular_step(state.healpix_order) / (2**state.adaptive_oversampling))
+        step_rad = np.deg2rad(angular_sampling_deg(state.healpix_order) / (2**state.adaptive_oversampling))
         sigma_rot = np.sqrt(2.0 * 2.0) * step_rad
         sigma_psi = sigma_rot
     return sigma_rot, sigma_psi

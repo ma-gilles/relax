@@ -16,8 +16,8 @@ import numpy as np
 
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.refinement import shape_class_scoring
-from relax.refinement.refinement_state import healpix_angular_step
 from relax.relion.optics_aberrations import reported_rotations
+from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import relion_round_away_from_zero, relion_sigma_offset_prior_center
 from relax.vdam import native_sampling
 from relax.vdam.estep_common import ENGINE_DISC_TYPE, InitialModelEstepConfig
@@ -67,7 +67,7 @@ def run_by_shape_class(
     estep_sampling = config.sampling
     shape_translations = estep_sampling.multi_shape_translations
     coarse_sizing = (
-        healpix_angular_step(estep_sampling.pass1_healpix_order),
+        angular_sampling_deg(estep_sampling.pass1_healpix_order),
         estep_sampling.particle_diameter_ang,
     )
 

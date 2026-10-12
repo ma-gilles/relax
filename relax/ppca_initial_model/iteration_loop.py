@@ -53,7 +53,7 @@ from relax.ppca_refinement.oversampled_stream import (
     significance_summary,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
-from relax.refinement.refinement_state import healpix_angular_step
+from relax.sampling.healpix import angular_sampling_deg
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,7 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
     """RELION's pass-1 image size of adaptive oversampling at HEALPix ``order``: the window the coarse angular step
     resolves, at most ``current_size`` (:func:`relax.fourier.resolution.compute_coarse_image_size`)."""
     return relion_coarse_image_size(
-        healpix_angular_step(order),
+        angular_sampling_deg(order),
         dataset.voxel_size,
         dataset.grid_size,
         particle_diameter=diameter_ang,
