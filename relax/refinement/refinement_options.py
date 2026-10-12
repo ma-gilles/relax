@@ -794,7 +794,7 @@ class RefinementEnvironment:
     iterations whose pass 2 scores and is planned in float64. ``low_pmax_refine_guard``
     (:func:`_low_pmax_refine_guard`; None: off) holds the angular refinement while the posterior is diffuse.
     ``projector_files`` (``steps.projector_preparation.ProjectorFiles``): the projector slab cache
-    (RELAX_RELION_PROJECTOR_CACHE_DIR).
+    (RELAX_RELION_PROJECTOR_CACHE_DIR) and dump (RELAX_RELION_PROJECTOR_DUMP_DIR).
     """
 
     half_accumulator_guard: str = "raise"
@@ -815,6 +815,7 @@ class RefinementEnvironment:
             low_pmax_refine_guard=_low_pmax_refine_guard(),
             projector_files=ProjectorFiles(
                 cache_dir=read_env_text("RELAX_RELION_PROJECTOR_CACHE_DIR", "").strip() or None,
+                dump_dir=read_env_text("RELAX_RELION_PROJECTOR_DUMP_DIR") or None,
             ),
         )
 

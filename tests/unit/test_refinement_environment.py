@@ -232,3 +232,24 @@ def test_projector_files_reach_the_numbered_projectors(monkeypatch, tmp_path):
     seen = _received(monkeypatch, projector_preparation, "prepare_scoring_projector", "files",
                      RefinementEnvironment(projector_files=files))
     assert seen and set(seen) == {files}
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, None), ("", None), ("/dump", "/dump")])
+def test_projector_dump_dir_is_read_once(monkeypatch, value, expected):
+    env = _from_environ(monkeypatch, "RELAX_RELION_PROJECTOR_DUMP_DIR", value)
+    assert env.projector_files.dump_dir == expected
+
+
+def test_projector_dump_dir_reaches_the_command(monkeypatch, tmp_path):
+    env = _command_environment(monkeypatch, tmp_path, "RELAX_RELION_PROJECTOR_DUMP_DIR", str(tmp_path / "dump"))
+    assert env.projector_files.dump_dir == str(tmp_path / "dump")
+
+
+def test_projector_dump_dir_writes_the_numbered_projectors(monkeypatch, tmp_path):
+    from relax.steps.projector_preparation import ProjectorFiles
+
+    monkeypatch.delenv("RELAX_RELION_PROJECTOR_DUMP_DIR", raising=False)
+    run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False,
+                        environment=RefinementEnvironment(projector_files=ProjectorFiles(dump_dir=str(tmp_path))))
+    assert sorted(path.name for path in tmp_path.glob("iter000_half*_relion_projector_half.npz")) == [
+        "iter000_half0_relion_projector_half.npz", "iter000_half1_relion_projector_half.npz"]

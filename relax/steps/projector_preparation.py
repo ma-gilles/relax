@@ -24,9 +24,11 @@ class ProjectorFiles:
     """The files a projector setup may read or write; none changes the projector
     (``RefinementEnvironment.projector_files``, read by the command). ``cache_dir``
     (RELAX_RELION_PROJECTOR_CACHE_DIR, stripped; None when unset or blank): a cache of built slabs keyed by
-    their inputs."""
+    their inputs. ``dump_dir`` (RELAX_RELION_PROJECTOR_DUMP_DIR as set; None when unset or empty): where each
+    built slab is written with its reference (``<dump_label>_relion_projector_half.npz``)."""
 
     cache_dir: str | None = None
+    dump_dir: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -116,7 +118,7 @@ def prepare_scoring_projector(
     setup's correction window; a ``reusable`` projector must have been built
     with the same one, and a non-radial window has its own cache entries.
     The power spectrum always counts as RELION does (every stored coefficient once). ``files`` names the
-    slab cache (``ProjectorFiles``).
+    slab cache and dump (``ProjectorFiles``).
     """
 
     if reusable is not None:
@@ -224,12 +226,11 @@ def prepare_scoring_projector(
             logger.info("RELION mode: saved Projector::data cache to %s", cache_path)
         except Exception as exc:
             logger.warning("Could not write RELION projector cache %s: %s", cache_path, exc)
-    dump_dir = os.environ.get("RELAX_RELION_PROJECTOR_DUMP_DIR")
-    if dump_dir:
+    if files.dump_dir:
         label = dump_label or "projector"
-        os.makedirs(dump_dir, exist_ok=True)
+        os.makedirs(files.dump_dir, exist_ok=True)
         np.savez_compressed(
-            os.path.join(dump_dir, f"{label}_relion_projector_half.npz"),
+            os.path.join(files.dump_dir, f"{label}_relion_projector_half.npz"),
             projector_half=np.asarray(projector_half),
             reference_real=np.asarray(refs_real),
             projector_r_max=np.int64(projector_r_max),
