@@ -288,6 +288,7 @@ def _run_settings(output_root, **fields):
             "padding_factor": 2.0,
             "command_line": "",
             "mode": "relion",
+            "sigma_tilt_deg": 0.0,
             **fields,
         }
     )
