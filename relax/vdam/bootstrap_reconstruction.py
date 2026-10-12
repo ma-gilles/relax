@@ -25,6 +25,7 @@ import math
 import numpy as np
 
 from relax.numerics import relion_random
+from relax.relion.geometry import soft_mask_weights
 from relax.relion.macros import PI, relion_round
 from relax.relion.reference_initialization import initial_low_pass_filter_references
 from relax.sampling.healpix import euler_angles_to_matrix
@@ -62,21 +63,16 @@ def _frozen(*arrays):
 
 @functools.lru_cache(maxsize=8)
 def _soft_mask_geometry(shape: tuple, radius: float, cosine_width: float):
-    """:func:`soft_mask_outside_map`'s grid-only part (radius, edge weights, their serial sum), memoized."""
+    """:func:`soft_mask_outside_map`'s grid-only part (background weights, the voxels they count, their serial sum),
+    memoized."""
 
-    axes = [_logical_axis(size) for size in shape]
-    grids = np.meshgrid(*axes, indexing="ij")
-    r = np.sqrt(sum(g.astype(np.int64) * g for g in grids).astype(np.float64))
     if radius < 0:
         radius = float(shape[-1]) / 2.0
-    radius_p = radius + cosine_width
-    outside = r > radius_p
-    edge = ~outside & ~(r < radius)
-    raised = np.where(edge, 0.5 + 0.5 * np.cos(PI * (radius_p - r) / cosine_width), 0.0)
-    weight = np.where(outside, 1.0, raised).reshape(-1)
-    counted = outside.reshape(-1) | edge.reshape(-1)
-    total = np.cumsum(weight[counted])[-1] if np.any(counted) else 0.0
-    return (*_frozen(outside, edge, raised, counted), total)
+    weight = soft_mask_weights(shape, radius, cosine_width)
+    # Every voxel outside or on the edge (RELION's sum; a zero edge weight adds nothing).
+    counted = (weight != 0.0).reshape(-1)
+    total = np.cumsum(weight.reshape(-1)[counted])[-1] if np.any(counted) else 0.0
+    return (*_frozen(weight, counted), total)
 
 
 def soft_mask_outside_map(volume, radius: float = -1.0, cosine_width: float = 3.0) -> np.ndarray:
@@ -86,11 +82,10 @@ def soft_mask_outside_map(volume, radius: float = -1.0, cosine_width: float = 3.
     """
 
     vol = np.asarray(volume, dtype=np.float64)
-    outside, edge, raised, counted, total = _soft_mask_geometry(vol.shape, float(radius), float(cosine_width))
-    weighted = np.where(outside, vol, raised * vol).reshape(-1)
-    background = (np.cumsum(weighted[counted])[-1] if np.any(counted) else 0.0) / total
-    out = np.where(outside, background, vol)
-    return np.where(edge, (1 - raised) * vol + raised * background, out)
+    weight, counted, total = _soft_mask_geometry(vol.shape, float(radius), float(cosine_width))
+    background = (np.cumsum((weight * vol).reshape(-1)[counted])[-1] if np.any(counted) else 0.0) / total
+    out = np.where(weight == 1.0, background, vol)
+    return np.where((weight != 0.0) & (weight != 1.0), (1 - weight) * vol + weight * background, out)
 
 
 @functools.lru_cache(maxsize=4)

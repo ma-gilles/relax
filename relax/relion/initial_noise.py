@@ -19,30 +19,25 @@ from typing import Iterable, Iterator, Tuple
 import numpy as np
 
 from relax.numerics.shells import shell_of_radius_sq
+from relax.relion.geometry import soft_mask_weights
 
 
 def _softmask_outside_map(image: np.ndarray, radius: float, cosine_width: float) -> np.ndarray:
-    """RELION ``softMaskOutsideMap`` (mask.cpp:43): cosine taper between ``r=radius`` and ``radius+cosine_width``."""
-    H, W = image.shape[-2:]
-    yy = np.arange(H) - H // 2
-    xx = np.arange(W) - W // 2
-    r = np.sqrt(yy[:, None] ** 2 + xx[None, :] ** 2).astype(np.float64)
-    radius_p = radius + cosine_width
+    """RELION ``softMaskOutsideMap`` (mask.cpp:43): cosine taper between ``r=radius`` and ``radius+cosine_width``.
 
-    w = np.zeros_like(r)
-    outside = r > radius_p
-    edge = (r >= radius) & (r <= radius_p)
-    w[outside] = 1.0
-    if cosine_width > 0 and edge.any():
-        w[edge] = 0.5 + 0.5 * np.cos(np.pi * (radius_p - r[edge]) / cosine_width)
+    The background average is NumPy's sum. A zero ``cosine_width`` is a hard edge here: the voxels at
+    ``r == radius``, where RELION divides 0 by 0, are kept.
+    """
+    w = soft_mask_weights(image.shape[-2:], radius, cosine_width)
+    if not cosine_width > 0:
+        w = np.where(np.isnan(w), 0.0, w)
 
     w_sum = w.sum()
     avg_bg = float((w * image).sum() / w_sum) if w_sum > 0 else 0.0
 
-    out = image.astype(np.float64, copy=True)
-    out[outside] = avg_bg
-    if cosine_width > 0 and edge.any():
-        out[edge] = (1.0 - w[edge]) * image[edge] + w[edge] * avg_bg
+    out = np.where(w == 1.0, avg_bg, image.astype(np.float64))
+    edge = (w != 0.0) & (w != 1.0)
+    out = np.where(edge, (1.0 - w) * image + w * avg_bg, out)
     return out.astype(image.dtype)
 
 
