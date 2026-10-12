@@ -45,6 +45,7 @@ def test_c1_finalizer_is_exact_historical_x0_callthrough(monkeypatch):
         label="test",
         symmetry_label="c1",
         relion_x_half=True,
+        symmetry_chunk_voxels=16 * 1024 * 1024,
     )
 
     assert actual_data is data_result
@@ -82,6 +83,7 @@ def test_c1_finalizer_matches_historical_x0_result():
         label="new",
         symmetry_label="C1",
         relion_x_half=True,
+        symmetry_chunk_voxels=16 * 1024 * 1024,
     )
 
     assert_matches(jax.device_get(actual_data), jax.device_get(expected_data))
@@ -105,6 +107,7 @@ def test_non_c1_native_half_volume_fails_closed_before_cuda():
             symmetry_label="C2",
             symmetry_operators=c2,
             relion_x_half=False,
+            symmetry_chunk_voxels=16 * 1024 * 1024,
         )
 
 
@@ -125,4 +128,5 @@ def test_c1_rejects_a_nonidentity_operator_payload():
             symmetry_label="C1",
             symmetry_operators=c2,
             relion_x_half=False,
+            symmetry_chunk_voxels=16 * 1024 * 1024,
         )

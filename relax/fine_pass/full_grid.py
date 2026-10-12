@@ -42,6 +42,8 @@ class DenseGemmPreparedState:
     reconstruction_padding_factor: int
     reconstruction_volume_current_size: int | None
     reconstruction_image_radius: float | None
+    # How the engines execute (EngineTuning, from the resident driver's caller).
+    engine_tuning: object
     image_corrections: object
     scale_corrections: object
     image_pre_shifts: object

@@ -27,6 +27,7 @@ from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.reconstruction import noise as recon_noise
 from recovar.utils.helpers import load_relion_volume
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.star.blocks import read_star_blocks
 
 log = logging.getLogger(__name__)
@@ -503,6 +504,7 @@ def _finalize_and_reconstruct(result, checkpoint, half, volume_shape, bp_shape):
     numerator, denominator = finalize_half_volume_bpref(
         result.numerator, result.denominator, bp_shape, logger=log,
         label="Dense GEMM fixed-grid fixture", symmetry_label="C1", relion_x_half=True,
+        symmetry_chunk_voxels=EngineTuning.from_environ().bpref_symmetry_chunk_voxels,
     )
     numerator, denominator = relion_x_half_accumulators_to_public_layout(
         numerator, denominator, bp_shape,

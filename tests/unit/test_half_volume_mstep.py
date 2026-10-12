@@ -1387,7 +1387,8 @@ def test_physical_finalize_then_crop_matches_crop_then_finalize(logical, physica
 
     def finalize(y, c, shape):
         y, c = half_volume_mstep.finalize_half_volume_bpref(
-            y, c, shape, logger=logger, label="test", symmetry_label="C1", relion_x_half=True
+            y, c, shape, logger=logger, label="test", symmetry_label="C1", relion_x_half=True,
+            symmetry_chunk_voxels=16 * 1024 * 1024,
         )
         return half_volume_mstep.relion_x_half_accumulators_to_public_layout(y, c, shape)
 

@@ -318,8 +318,10 @@ def finalize_half_volume_bpref(
     symmetry_operators=None,
     relion_x_half: bool,
     force_host: bool | None = None,
+    symmetry_chunk_voxels: int,
 ):
-    """Finalize half-volume BPref accumulators before layout conversion.
+    """Finalize half-volume BPref accumulators before layout conversion (``symmetry_chunk_voxels``: the host
+    point-group finalizer's chunk, ``EngineTuning.bpref_symmetry_chunk_voxels``).
 
     C1 deliberately calls the historical x=0 helper verbatim.  This keeps
     existing C1 output bitwise stable.  Non-C1 currently requires RELION's
@@ -413,6 +415,7 @@ def finalize_half_volume_bpref(
         jnp.asarray(right_operators, dtype=operator_dtype),
         recon_volume_shape,
         support_radius,
+        **({"chunk_voxels": symmetry_chunk_voxels} if use_host else {}),
     )
 
 

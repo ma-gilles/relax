@@ -8,7 +8,6 @@ Each wrapper registers the library targets through ``library.ensure_ffi()`` befo
 from __future__ import annotations
 
 import functools
-import os
 from contextlib import contextmanager
 from typing import Tuple
 
@@ -169,9 +168,10 @@ def relion_point_group_symmetrise_bpref_host(
     volume_shape: Tuple[int, int, int],
     support_radius: int,
     *,
-    chunk_voxels: int | None = None,
+    chunk_voxels: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Finalize complex64 BPref into bounded host chunks without splitting inputs.
+    """Finalize complex64 BPref into bounded host chunks without splitting inputs (``chunk_voxels`` voxels per
+    chunk, ``EngineTuning.bpref_symmetry_chunk_voxels``).
 
     Keeps the caller's complex accumulator on device and allocates only a
     bounded complex/weight output range, including the final partial chunk.
@@ -231,11 +231,6 @@ def relion_point_group_symmetrise_bpref_host(
             "RELION point-group BPref symmetry was requested but custom CUDA is disabled"
         )
 
-    if chunk_voxels is None:
-        raw_chunk_voxels = os.environ.get(
-            "RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS",
-        )
-        chunk_voxels = 16 * 1024 * 1024 if raw_chunk_voxels is None else int(raw_chunk_voxels)
     if chunk_voxels <= 0:
         raise ValueError(f"RELION BPref symmetry chunk_voxels must be positive, got {chunk_voxels}")
     chunk_voxels = min(chunk_voxels, expected_size)

@@ -1230,6 +1230,7 @@ def compute_local_search_resident(
             n_fine_trans=n_fine_trans,
             recon_volume_shape=recon_volume_shape,
             symmetry_label=symmetry_label,
+            symmetry_chunk_voxels=support.engine_tuning.bpref_symmetry_chunk_voxels,
             n_chunks=len(chunks),
             loop_s=loop_s,
             overall_t0=overall_t0,
@@ -1244,6 +1245,7 @@ def compute_local_search_resident(
         label="Resident local pass-2",
         symmetry_label=symmetry_label,
         relion_x_half=True,
+        symmetry_chunk_voxels=support.engine_tuning.bpref_symmetry_chunk_voxels,
     )
     Ft_y_total, Ft_ctf_total = relion_x_half_accumulators_to_public_layout(
         Ft_y_total,
@@ -1338,6 +1340,7 @@ def _finalize_class_local_pass(
     n_fine_trans,
     recon_volume_shape,
     symmetry_label,
+    symmetry_chunk_voxels: int,
     n_chunks,
     loop_s,
     overall_t0,
@@ -1360,6 +1363,7 @@ def _finalize_class_local_pass(
             label=f"Resident local pass-2 class {k + 1}",
             symmetry_label=symmetry_label,
             relion_x_half=True,
+            symmetry_chunk_voxels=symmetry_chunk_voxels,
         )
         y, ctf = relion_x_half_accumulators_to_public_layout(y, ctf, recon_volume_shape)
         Ft_y_public.append(y)

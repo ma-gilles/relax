@@ -20,6 +20,7 @@ from relax.runtime.compile_ahead import (
 from relax.runtime.env_flags import parse_env_flag, read_env_text
 
 DEFAULT_PREPARE_IMAGE_BATCH = 256
+DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
 RESIDENT_DIAGNOSTIC_DIR_ENVS = (
     "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
     "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
@@ -52,7 +53,10 @@ class EngineTuning:
     :data:`DEFAULT_PREPARE_IMAGE_BATCH`): images per resident operand preparation call (no value depends on it).
     ``resident_diagnostics``: the diagnostic dumps (:data:`RESIDENT_DIAGNOSTIC_DIR_ENVS`, set to a non-blank value)
     and arms (:data:`RESIDENT_DIAGNOSTIC_FLAG_ENVS`, ``env_flags.parse_env_flag``) that are set, dumps first, each in
-    its table's order; the resident engines refuse to run with any of them.
+    its table's order; the resident engines refuse to run with any of them. ``bpref_symmetry_chunk_voxels``
+    (RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS, ``int()`` of the text, default
+    :data:`DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS`): voxels per host chunk of the point-group BPref finalizer (its
+    caller refuses a value that is not positive).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -60,6 +64,7 @@ class EngineTuning:
     resident_operand_max_bytes: int | None = None
     prepare_image_batch: int = DEFAULT_PREPARE_IMAGE_BATCH
     resident_diagnostics: tuple[str, ...] = ()
+    bpref_symmetry_chunk_voxels: int = DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -80,6 +85,9 @@ class EngineTuning:
                 *(name for name in RESIDENT_DIAGNOSTIC_DIR_ENVS if read_env_text(name, "").strip()),
                 *(name for name in RESIDENT_DIAGNOSTIC_FLAG_ENVS if parse_env_flag(name, default=False)),
             ),
+            bpref_symmetry_chunk_voxels=int(read_env_text(
+                "RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", str(DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS),
+            )),
         )
 
 

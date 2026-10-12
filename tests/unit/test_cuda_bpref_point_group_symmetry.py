@@ -160,12 +160,12 @@ def test_complex_ranged_cuda_matches_full_output(symmetry, via_finalizer, monkey
     if via_finalizer:
         import logging
         from relax.reconstruction.half_volume_mstep import finalize_half_volume_bpref
-        monkeypatch.setenv("RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", "37")
         split_data, split_weight = finalize_half_volume_bpref(
             jnp.asarray(raw_data.reshape(-1)),
             jnp.asarray(raw_weight.reshape(-1)),
             _VOLUME_SHAPE, logger=logging.getLogger(__name__), label="bounded",
             symmetry_label=symmetry, relion_x_half=True, force_host=True,
+            symmetry_chunk_voxels=37,
         )
         assert isinstance(split_data, np.ndarray)
         assert isinstance(split_weight, np.ndarray)

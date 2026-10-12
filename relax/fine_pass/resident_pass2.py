@@ -1112,7 +1112,7 @@ def _resident_pass2(
                 use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
             ),
             current_size=int(current_size), mstep_current_size=int(mstep_current_size),
-            n_half=n_half, window_spec_kwargs=window_spec_kwargs,
+            n_half=n_half, window_spec_kwargs=window_spec_kwargs, engine_tuning=engine_tuning,
             disc_type=disc_type, projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
             reconstruction_padding_factor=reconstruction_padding_factor,
@@ -2897,6 +2897,7 @@ def _resident_pass2(
             label="Resident pass-2",
             symmetry_label=symmetry_label,
             relion_x_half=True,
+            symmetry_chunk_voxels=engine_tuning.bpref_symmetry_chunk_voxels,
         )
         class_Ft_y, class_Ft_ctf = relion_x_half_accumulators_to_public_layout(
             class_Ft_y,

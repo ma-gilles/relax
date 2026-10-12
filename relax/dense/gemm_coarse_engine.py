@@ -560,6 +560,7 @@ def _finalize_dense_result(state, numerator, denominator, stats, stats_config, b
                 numerator[class_id, group], denominator[class_id, group], bp_shape,
                 logger=logging.getLogger(__name__), label="Dense GEMM global pass",
                 symmetry_label=state.symmetry_label, relion_x_half=True,
+                symmetry_chunk_voxels=state.engine_tuning.bpref_symmetry_chunk_voxels,
             )
             y, w = relion_x_half_accumulators_to_public_layout(y, w, bp_shape)
             final_y.append(y)

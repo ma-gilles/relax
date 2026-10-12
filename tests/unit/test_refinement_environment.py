@@ -320,3 +320,16 @@ def test_engine_tuning_reaches_the_dense_engine(monkeypatch):
     run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False, engine_calls=calls,
                         environment=RefinementEnvironment(engine=tuning))
     assert calls and all(call["kwargs"]["engine_tuning"] is tuning for call in calls)
+
+
+def test_bpref_symmetry_chunk_is_read_once(monkeypatch):
+    from relax.runtime.engine_tuning import EngineTuning
+
+    monkeypatch.delenv("RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", raising=False)
+    assert EngineTuning.from_environ().bpref_symmetry_chunk_voxels == 16 * 1024 * 1024
+    assert EngineTuning().bpref_symmetry_chunk_voxels == 16 * 1024 * 1024
+    monkeypatch.setenv("RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", "37")
+    assert EngineTuning.from_environ().bpref_symmetry_chunk_voxels == 37
+    monkeypatch.setenv("RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", "many")
+    with pytest.raises(ValueError):
+        EngineTuning.from_environ()
