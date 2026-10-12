@@ -77,7 +77,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
-from relax.fine_pass import policy
+from relax.fine_pass import policy, resident_configuration
 from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.bucket_io import (
@@ -278,38 +278,12 @@ __all__ = [
     "ResidentPass2Plan",
     "compute_k_class_pass2_stats_resident",
     "compute_pass2_stats_resident",
-    "require_resident_production_configuration",
 ]
 
 
 # ---------------------------------------------------------------------------
 # Production-configuration gate
 # ---------------------------------------------------------------------------
-
-_DIAGNOSTIC_DIR_ENVS = (
-    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
-    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
-    "RELAX_PASS2_DUMP_DIR",
-    "RELAX_BPREF_EXECUTION_ORDER_LOCAL_FILE",
-    "RELAX_VDAM_KCLASS_STATS_DUMP_DIR",
-)
-
-_DIAGNOSTIC_FLAG_ENVS = (
-    "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS",
-    "RELAX_K1_RELION_TRANSLATED_WAVG_NORM",
-    "RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY",
-    "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
-    "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
-    "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
-)
-
-
-def _require(condition: bool, message: str) -> None:
-    if not condition:
-        raise ResidentConfigurationUnsupported(
-            f"The device-resident sparse pass 2 does not implement this configuration: {message}."
-        )
 
 
 def _resident_wavg_arithmetic(
@@ -357,132 +331,6 @@ def _require_gpu_pass2() -> None:
             f"and relax's custom CUDA library (JAX backend {backend!r}, custom CUDA "
             f"{'available' if cuda_backproject.custom_cuda_requested() else 'unavailable'}). "
             "There is no CPU pass 2: run on a GPU node."
-        )
-
-
-def require_resident_production_configuration(**kwargs) -> None:
-    """Raise :class:`NotImplementedError` unless this is the production path.
-
-    Every check names the specific missing piece rather than reporting a
-    generic refusal, so a caller that trips one knows which behaviour the
-    resident driver would have to grow.
-    """
-
-    _require(bool(kwargs["relion_x_half_mstep"]), "the RELION x-half M-step is required")
-    # The resident driver builds its own texture from relion_projector_half; a
-    # caller that supplies a persistent one gets a named refusal, not a drop.
-    _require(
-        kwargs["relion_projector_texture"] is None,
-        "the resident driver projects from relion_projector_half, not a caller's persistent texture",
-    )
-    score_mode = kwargs["relion_firstiter_score_mode"]
-    _require(
-        (score_mode == "gaussian" and bool(kwargs["relion_exact_fine_gaussian"]))
-        or (score_mode == "normalized_cc" and bool(kwargs.get("relion_exact_fine_normalized_cc"))),
-        "exact RELION fine Gaussian scoring, or RELION's literal fine normalized-CC "
-        "reduction for --firstiter_cc, is required "
-        f"(got relion_exact_fine_gaussian={kwargs['relion_exact_fine_gaussian']!r}, "
-        f"relion_exact_fine_normalized_cc={kwargs.get('relion_exact_fine_normalized_cc')!r}, "
-        f"score_mode={score_mode!r})",
-    )
-    _require(not bool(kwargs["use_float64_scoring"]), "float64 scoring is a diagnostic mode")
-    # RELION's --firstiter_cc iteration scores with normalized CC and keeps only
-    # the best weight (ml_optimiser.cpp:9266-9293); a Gaussian pass never does.
-    _require(
-        bool(kwargs["relion_firstiter_winner_take_all"]) == (score_mode == "normalized_cc"),
-        "winner-take-all goes with the --firstiter_cc normalized-CC pass and only with it "
-        f"(winner_take_all={bool(kwargs['relion_firstiter_winner_take_all'])!r}, "
-        f"score_mode={score_mode!r})",
-    )
-    _require(not bool(kwargs["return_score_log_z_only"]), "score-logZ-only passes are score-only")
-    _require(bool(kwargs["accumulate_noise"]), "the production pass accumulates noise statistics")
-    # The K=1 adaptive route always hands the M-step call an
-    # ``normalization_other_score_log_z`` built from the *other* classes'
-    # log-Z (k_class.py::_run_sparse_k_class_adaptive_pass2). At K=1 there are
-    # no other classes, so that vector is all -inf and the compact engine's
-    # own arithmetic collapses to its unnormalized branch: logaddexp(x, -inf)
-    # is x, the reported log-evidence and score log-Z are taken from
-    # ``local_score_log_z`` rather than from the combined value, and the
-    # float32 reconstruction weights never read it at all. Accept exactly that
-    # degenerate vector, which is the production K=1 case, and refuse any
-    # finite entry, which would genuinely mix classes.
-    other_log_z = kwargs["normalization_other_score_log_z"]
-    other_log_z_is_degenerate = other_log_z is not None and bool(
-        np.all(np.asarray(other_log_z) == -np.inf)
-    )
-    _require(
-        kwargs["normalization_log_z"] is None,
-        "an externally supplied log-Z belongs to the K-class engine",
-    )
-    _require(
-        other_log_z is None or other_log_z_is_degenerate,
-        "a finite cross-class score normalization belongs to the K-class engine",
-    )
-    coarse_sum_weight = kwargs["relion_f32_normalization_sum_weight"]
-    coarse_winner = kwargs["relion_coarse_hard_assignment"]
-    coarse_max_posterior = kwargs.get("relion_coarse_max_posterior")
-    _require(
-        (coarse_sum_weight is None) == (coarse_winner is None) == (coarse_max_posterior is None),
-        "the zero-oversampling pass reuses the coarse normalization sum, winner and Pmax "
-        "together, as the K=1 adaptive route supplies them",
-    )
-    _require(
-        coarse_sum_weight is None or int(kwargs.get("oversampling_order", 0)) == 0,
-        "the coarse normalization sum is reused only at zero oversampling "
-        "(acc_ml_optimiser_impl.h:2868)",
-    )
-    # ``preserve_bpref_particle_order`` is the production setting, and on its
-    # own it forces one BPref launch per particle. The production run pairs it
-    # with the soft-posterior block prototype, which turns those launches back
-    # into one block launch per bucket; that is the semantics the resident
-    # driver reproduces with one launch per row block. Without the prototype
-    # the compact engine really would launch per particle, so refuse.
-    _require(
-        (not bool(kwargs["preserve_bpref_particle_order"]))
-        or bool(kwargs["soft_posterior_block_bpref"]),
-        "strict per-particle BPref launches are not implemented; set "
-        "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1 (the production "
-        "setting) so BPref accumulates per block, or clear "
-        "preserve_bpref_particle_order",
-    )
-    _require(
-        kwargs["fine_rotations_override"] is not None
-        and kwargs["fine_rotation_parent_override"] is not None,
-        "the resident driver gathers rotations from the caller's fine grid, "
-        "so fine_rotations_override and fine_rotation_parent_override are required",
-    )
-    _require(
-        bool(kwargs["use_window"]),
-        "the resident driver scores through the RELION current-size window; "
-        "a full-half pass would include the ky=-N/2 Nyquist row, where the "
-        "fused-translate and pre-shifted scorers are known to differ",
-    )
-    _require(
-        bool(kwargs["projection_cache_available"]),
-        "the resident scoring stage gathers cached fine-rotation projections; "
-        "the per-iteration projection cache is disabled or did not fit its budget",
-    )
-    _require(
-        bool(kwargs["relion_wavg_atomic_scale_aa"]),
-        "the resident statistics stage consumes the RELION atomic Wavg triplet",
-    )
-    _require(
-        bool(kwargs["relion_wavg_atomic_direct_noise"]),
-        "the resident statistics stage uses RELION's direct low-shell residual",
-    )
-    _require(
-        not bool(kwargs["relion_wavg_atomic_direct_norm"]),
-        "the direct per-particle Wavg norm arm is a stopped diagnostic",
-    )
-    for name in _DIAGNOSTIC_DIR_ENVS:
-        _require(
-            not os.environ.get(name, "").strip(),
-            f"the diagnostic dump {name} is set; the resident driver emits no dumps",
-        )
-    for name in _DIAGNOSTIC_FLAG_ENVS:
-        _require(
-            not parse_env_flag(name, default=False),
-            f"the diagnostic flag {name} is set; the resident driver has no such arm",
         )
 
 
@@ -2617,13 +2465,13 @@ def _resident_pass2(
     if n_classes > 1:
         # RELION's Class3D E-step; the --firstiter_cc winner is a K=1 pass per class.
         if full_grid_engine is None:
-            _require(not firstiter_cc, "the K-class resident pass scores the Gaussian likelihood")
+            resident_configuration.require(not firstiter_cc, "the K-class resident pass scores the Gaussian likelihood")
         # Zero oversampling (relax#73): the coarse sum, Pmax and winner come with the winner's class.
-        _require(
+        resident_configuration.require(
             (relion_f32_normalization_sum_weight is None) == (relion_coarse_class_assignment is None),
             "the K-class zero-oversampling pass reuses the coarse normalization with the coarse winner's class",
         )
-        _require(
+        resident_configuration.require(
             relion_f32_normalization_sum_weight is None
             or (
                 relion_coarse_hard_assignment is not None
@@ -2633,23 +2481,23 @@ def _resident_pass2(
             "the coarse normalization sum is reused with the coarse winner and Pmax, at zero oversampling only",
         )
     else:
-        _require(relion_coarse_class_assignment is None, "a coarse winner class belongs to a K-class pass")
+        resident_configuration.require(relion_coarse_class_assignment is None, "a coarse winner class belongs to a K-class pass")
 
     n_images = int(experiment_dataset.n_units)
     # Subtomogram particles (S4.2, resident_tilts): the posterior unit is the particle; the dataset's
     # rows are its tilt images. The candidate tables and the statistics are per particle.
     n_units = n_images if tilt is None else int(np.asarray(tilt.unit_image_offsets).size - 1)
     if tilt is not None:
-        _require(
+        resident_configuration.require(
             relion_f32_normalization_sum_weight is None,
             "subtomogram particles run the fine pass without zero-oversampling reuse",
         )
-        _require(
+        resident_configuration.require(
             int(np.asarray(tilt.unit_image_offsets)[-1]) == n_images,
             "the tilt layout must cover every image of the half",
         )
         # The offset prior is the particle's (tilt.unit_translation_prior), not an image's.
-        _require(
+        resident_configuration.require(
             translation_log_prior is None and translation_prior_centers is None,
             "a tilt pass takes its offset prior from tilt.unit_translation_prior",
         )
@@ -2663,8 +2511,8 @@ def _resident_pass2(
         # A subtomogram local search (relax.steps.tomo_half): its coarse grid is the union of the
         # particles' local rotations (coarse id c is grid rotation coarse_rotation_ids[c]) and each
         # particle carries its own orientation prior over its support's coarse rotations.
-        _require(tilt is not None and classes is None, "a compact coarse grid is the subtomogram local search's")
-        _require(rotation_log_prior is None, "a local search's rotation priors are the particles' own")
+        resident_configuration.require(tilt is not None and classes is None, "a compact coarse grid is the subtomogram local search's")
+        resident_configuration.require(rotation_log_prior is None, "a local search's rotation priors are the particles' own")
         if coarse_rotation_ids is not None:
             n_coarse_rot = int(np.asarray(coarse_rotation_ids).size)
     image_shape = experiment_dataset.image_shape
@@ -2761,7 +2609,7 @@ def _resident_pass2(
         dump_pass2_operands=False,
     )
     if full_grid_engine is None:
-        require_resident_production_configuration(
+        resident_configuration.require_resident_production_configuration(
         relion_x_half_mstep=relion_x_half_mstep,
         relion_exact_fine_gaussian=relion_exact_fine_gaussian,
         relion_exact_fine_normalized_cc=relion_exact_fine_normalized_cc,
@@ -2788,12 +2636,12 @@ def _resident_pass2(
         relion_wavg_atomic_direct_norm=relion_wavg_atomic_direct_norm,
         relion_projector_texture=relion_projector_texture,
         )
-        _require(
+        resident_configuration.require(
             bool(use_relion_f32_fine_posterior) or firstiter_cc,
             "the RELION float32 fine posterior is the segmented kernel's contract "
             "(the --firstiter_cc pass takes the winner instead)",
         )
-        _require(
+        resident_configuration.require(
             bool(relion_fine_mstep_prune) or bool(relion_x_half_mstep),
             "the resident M-step reconstructs from RELION's pruned fine weights",
         )

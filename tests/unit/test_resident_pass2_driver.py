@@ -32,6 +32,7 @@ import jax
 import jax.numpy as jnp
 from oracles.wavg import relion_wavg_rectangle_triplet_terms
 
+from relax.fine_pass import resident_configuration
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_candidates import (
@@ -75,7 +76,7 @@ def _production_gate_kwargs(**overrides):
 
 
 def test_production_configuration_is_accepted():
-    rp.require_resident_production_configuration(**_production_gate_kwargs())
+    resident_configuration.require_resident_production_configuration(**_production_gate_kwargs())
 
 
 @pytest.mark.parametrize(
@@ -104,13 +105,13 @@ def test_production_configuration_is_accepted():
 )
 def test_gate_names_the_missing_piece(override, expected):
     with pytest.raises(NotImplementedError, match=expected):
-        rp.require_resident_production_configuration(**_production_gate_kwargs(**override))
+        resident_configuration.require_resident_production_configuration(**_production_gate_kwargs(**override))
 
 
 def test_gate_accepts_production_bpref_order_with_the_block_prototype():
     """``preserve_bpref_particle_order`` is production; the block prototype makes it block-wise."""
 
-    rp.require_resident_production_configuration(
+    resident_configuration.require_resident_production_configuration(
         **_production_gate_kwargs(
             preserve_bpref_particle_order=True, soft_posterior_block_bpref=True
         )
@@ -120,7 +121,7 @@ def test_gate_accepts_production_bpref_order_with_the_block_prototype():
 def test_gate_refuses_a_diagnostic_dump(monkeypatch):
     monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/does-not-matter")
     with pytest.raises(NotImplementedError, match="RELAX_PASS2_DUMP_DIR"):
-        rp.require_resident_production_configuration(**_production_gate_kwargs())
+        resident_configuration.require_resident_production_configuration(**_production_gate_kwargs())
 
 
 def _tables(row_counts):
@@ -1340,11 +1341,11 @@ def test_gate_still_raises_for_in_scope_mismatches():
     """Everything that is not an out-of-scope scoring mode still raises."""
 
     with pytest.raises(NotImplementedError, match="x-half M-step"):
-        rp.require_resident_production_configuration(
+        resident_configuration.require_resident_production_configuration(
             **_production_gate_kwargs(relion_x_half_mstep=False)
         )
     with pytest.raises(NotImplementedError, match="float64 scoring"):
-        rp.require_resident_production_configuration(
+        resident_configuration.require_resident_production_configuration(
             **_production_gate_kwargs(use_float64_scoring=True)
         )
 

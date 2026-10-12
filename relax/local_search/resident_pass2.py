@@ -71,7 +71,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
-from relax.fine_pass import policy
+from relax.fine_pass import policy, resident_configuration
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
@@ -308,12 +308,12 @@ def require_resident_local_configuration(**kwargs) -> None:
         "the resident local pass scores RELION's radial window; a full-rectangle "
         "support is not RELION's scoring support and is not implemented here",
     )
-    for name in rp._DIAGNOSTIC_DIR_ENVS:
+    for name in resident_configuration.DIAGNOSTIC_DIR_ENVS:
         _require(
             not os.environ.get(name, "").strip(),
             f"the diagnostic dump {name} is set; this driver emits no dumps",
         )
-    for name in rp._DIAGNOSTIC_FLAG_ENVS:
+    for name in resident_configuration.DIAGNOSTIC_FLAG_ENVS:
         _require(
             not parse_env_flag(name, default=False),
             f"the diagnostic flag {name} is set; this driver has no such arm",
@@ -379,12 +379,12 @@ def _require_parent_probe_configuration(**kwargs) -> None:
         "an externally supplied normalizer belongs to the broad-denominator probe",
     )
     _require(bool(kwargs["use_window"]), "the probe scores RELION's current-size window")
-    for name in rp._DIAGNOSTIC_DIR_ENVS:
+    for name in resident_configuration.DIAGNOSTIC_DIR_ENVS:
         _require(
             not os.environ.get(name, "").strip(),
             f"the diagnostic dump {name} is set; this driver emits no dumps",
         )
-    for name in rp._DIAGNOSTIC_FLAG_ENVS:
+    for name in resident_configuration.DIAGNOSTIC_FLAG_ENVS:
         _require(
             not parse_env_flag(name, default=False),
             f"the diagnostic flag {name} is set; this driver has no such arm",
