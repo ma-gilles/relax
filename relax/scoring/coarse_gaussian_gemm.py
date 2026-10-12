@@ -8,7 +8,6 @@ pass and calls it per image batch.
 
 import operator
 import os
-from typing import NamedTuple
 
 import jax
 import numpy as np
@@ -47,16 +46,6 @@ def coarse_gaussian_gemm_projection_cache_enabled(
     """Resolve the explicit call-scoped coarse-projection cache toggle."""
 
     return parse_env_strict_flag(COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV, default=default)
-
-
-class CoarseGaussianGemmResources(NamedTuple):
-    """Conservative device-transient accounting for one GEMM rotation block."""
-
-    full_centered_projection_bytes: int
-    compact_projection_bytes: int
-    compact_projection_abs2_bytes: int
-    predicted_peak_projection_bytes: int
-    projected_transient_budget_bytes: int
 
 
 def coarse_gaussian_gemm_projected_transient_budget_bytes(
@@ -128,7 +117,7 @@ def coarse_gaussian_gemm_projection_cache_budget_bytes(
 
 
 def coarse_gaussian_gemm_projection_row_bytes(*, image_shape, compact_pixel_count: int) -> int:
-    """Projector transient per rotation row, as ``coarse_gaussian_gemm_resources`` counts it."""
+    """Projector transient per rotation row: the full centered half-image, the compact complex projection and its abs2."""
 
     image_height, image_width = (int(value) for value in image_shape)
     full_count = image_height * (image_width // 2 + 1)
@@ -200,49 +189,6 @@ def coarse_gaussian_gemm_cached_block_rows(
     blocks = -(-rows // fit)
     balanced = -(-rows // blocks)
     return -(-balanced // row_alignment) * row_alignment
-
-
-def coarse_gaussian_gemm_resources(
-    *,
-    rotation_block_size: int,
-    image_shape,
-    compact_pixel_count: int,
-    budget_bytes: int,
-) -> CoarseGaussianGemmResources:
-    """Estimate and gate projection buffers before the first GPU launch.
-
-    The mature texture projector currently creates a full physical centered
-    half-image before gathering the current-size compact pixels.  Count that
-    buffer plus the compact complex projection and its real abs2 companion.
-    The pixel-index table is deliberately kept as a NumPy host array, so this
-    path performs no device-to-host index materialization.
-    """
-
-    block_size = int(rotation_block_size)
-    image_height, image_width = (int(value) for value in image_shape)
-    compact_count = int(compact_pixel_count)
-    if block_size <= 0 or image_height <= 0 or image_width <= 0 or compact_count <= 0:
-        raise ValueError("coarse GEMM resource dimensions must all be positive")
-    full_count = image_height * (image_width // 2 + 1)
-    full_bytes = block_size * full_count * np.dtype(np.complex64).itemsize
-    compact_bytes = block_size * compact_count * np.dtype(np.complex64).itemsize
-    abs2_bytes = block_size * compact_count * np.dtype(np.float32).itemsize
-    predicted_peak = full_bytes + compact_bytes + abs2_bytes
-    resources = CoarseGaussianGemmResources(
-        full_centered_projection_bytes=int(full_bytes),
-        compact_projection_bytes=int(compact_bytes),
-        compact_projection_abs2_bytes=int(abs2_bytes),
-        predicted_peak_projection_bytes=int(predicted_peak),
-        projected_transient_budget_bytes=int(budget_bytes),
-    )
-    if resources.predicted_peak_projection_bytes > resources.projected_transient_budget_bytes:
-        raise MemoryError(
-            "coarse GEMM predicted projection transient exceeds "
-            f"{_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV}: "
-            f"{resources.predicted_peak_projection_bytes} > "
-            f"{resources.projected_transient_budget_bytes} bytes",
-        )
-    return resources
 
 
 def validate_coarse_gaussian_gemm_projection_cache_request(

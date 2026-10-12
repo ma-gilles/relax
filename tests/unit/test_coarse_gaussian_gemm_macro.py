@@ -281,28 +281,12 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
     assert build_calls == [(0, 0, 16)]
 
 
-def test_coarse_gaussian_gemm_resource_gate_records_full_transient_and_host_sync():
-    resources = coarse_gaussian_gemm.coarse_gaussian_gemm_resources(
-        rotation_block_size=17,
-        image_shape=(128, 128),
-        compact_pixel_count=64 * 33,
-        budget_bytes=10**9,
+def test_coarse_gaussian_gemm_projection_row_bytes_count_the_full_centered_image_and_the_compact_pair():
+    # Per rotation row: the full centered half-image (complex64), the compact complex64 projection and its float32 abs2.
+    row_bytes = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_row_bytes(
+        image_shape=(128, 128), compact_pixel_count=64 * 33
     )
-    assert resources.full_centered_projection_bytes == 17 * 128 * 65 * 8
-    assert resources.compact_projection_bytes == 17 * 64 * 33 * 8
-    assert resources.compact_projection_abs2_bytes == 17 * 64 * 33 * 4
-    assert resources.predicted_peak_projection_bytes == (
-        resources.full_centered_projection_bytes
-        + resources.compact_projection_bytes
-        + resources.compact_projection_abs2_bytes
-    )
-    with pytest.raises(MemoryError, match="predicted projection transient"):
-        coarse_gaussian_gemm.coarse_gaussian_gemm_resources(
-            rotation_block_size=17,
-            image_shape=(128, 128),
-            compact_pixel_count=64 * 33,
-            budget_bytes=resources.predicted_peak_projection_bytes - 1,
-        )
+    assert row_bytes == 128 * 65 * 8 + 64 * 33 * 8 + 64 * 33 * 4
 
 
 @pytest.mark.parametrize("real_dtype", [np.float32, np.float64])
@@ -1252,13 +1236,9 @@ def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget
         36_864, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=budget
     )
     assert 16 <= rows < 36_864 and rows % 16 == 0
-    resources = coarse_gaussian_gemm.coarse_gaussian_gemm_resources(
-        rotation_block_size=rows,
-        image_shape=(256, 256),
-        compact_pixel_count=420,
-        budget_bytes=budget,
-    )
-    assert resources.predicted_peak_projection_bytes <= budget
+    assert rows * coarse_gaussian_gemm.coarse_gaussian_gemm_projection_row_bytes(
+        image_shape=(256, 256), compact_pixel_count=420
+    ) <= budget
     # A block that already fits is unchanged, and the split never drops below one row.
     assert coarse_gaussian_gemm.coarse_gaussian_gemm_fit_rotation_block_size(
         64, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=budget

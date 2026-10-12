@@ -16,8 +16,6 @@ from relax.scoring.coarse_gaussian_gemm import (
     coarse_gaussian_gemm_projected_transient_budget_bytes,
     coarse_gaussian_gemm_projection_cache_budget_bytes,
     coarse_gaussian_gemm_projection_cache_enabled,
-    coarse_gaussian_gemm_projection_row_bytes,
-    coarse_gaussian_gemm_resources,
     plan_coarse_gaussian_gemm_projection_cache,
     validate_coarse_gaussian_gemm_projection_cache_request,
 )
@@ -138,21 +136,6 @@ def plan_coarse_gaussian(
             transient_budget,
         )
         rotation_block_size = fitted_block_size
-    transient_budget = max(
-        transient_budget,
-        int(rotation_block_size)
-        * coarse_gaussian_gemm_projection_row_bytes(
-            image_shape=shape.image_shape,
-            compact_pixel_count=int(square_score_count),
-        ),
-    )
-    # Raises MemoryError when the projected transient would exceed its budget, before any GPU launch.
-    coarse_gaussian_gemm_resources(
-        rotation_block_size=int(rotation_block_size),
-        image_shape=shape.image_shape,
-        compact_pixel_count=int(square_score_count),
-        budget_bytes=transient_budget,
-    )
     projection_cache_plan = None
     if cache_requested:
         projection_cache_plan = plan_coarse_gaussian_gemm_projection_cache(
