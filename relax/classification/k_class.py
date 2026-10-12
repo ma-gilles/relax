@@ -33,10 +33,10 @@ from relax.diagnostics.coarse_score_diagnostics import (
     _with_coarse_significance_diagnostics,
 )
 from relax.diagnostics.local_debug import score_dump_label
+from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 from relax.relion.scale_groups import prepare_scale_correction_groups
 from relax.runtime.env_flags import parse_env_flag
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 from relax.types import RelionStats, make_relion_stats
 
 logger = logging.getLogger(__name__)

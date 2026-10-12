@@ -21,8 +21,8 @@ from relax.fine_pass.resident_candidates import (
     n_mask_words,
     plan_capacity_chunks,
 )
+from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 from relax.scoring.compact_candidates import candidate_mask_to_dense
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 
 pytestmark = pytest.mark.unit
 

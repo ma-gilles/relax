@@ -10,6 +10,7 @@ from typing import NamedTuple
 import numpy as np
 from recovar import utils
 
+from relax.fine_pass.significant_samples import significant_sample_ids
 from relax.runtime.batch_planning import (
     plan_consecutive_padded_batches,
 )
@@ -35,7 +36,6 @@ from relax.sampling import (
 from relax.sampling.healpix import euler_angles_to_matrix
 from relax.sampling.orientation_priors import make_relion_translation_log_prior
 from relax.sampling.symmetry import canonicalize_rotational_symmetry, rotational_operators
-from relax.scoring.significant_samples import significant_sample_ids
 
 EXACT_LOCAL_BUCKET_QUANTUM_ENV = "RELAX_EXACT_LOCAL_BUCKET_QUANTUM"
 

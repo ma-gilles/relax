@@ -37,11 +37,11 @@ def _pass2_bucket_rotation_size(count: int, rotation_block_size_for_quantization
     if size > _LARGE_BUCKET_POW2_THRESHOLD and parse_env_flag(_LARGE_BUCKET_POW2_ENV, default=False):
         return int(power_of_two_bucket(size))
     return size
+from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 from relax.scoring.compact_candidates import (
     SparseCandidateMask,
     candidate_mask_to_dense,
 )
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 
 _DEFAULT_MAX_HYPOTHESES_PER_MICROBATCH = 1_000_000
 _DEFAULT_TAIL_BUCKET_COALESCE_MAX_INFLATION = 2.0

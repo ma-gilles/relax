@@ -14,13 +14,13 @@ from helpers.exact_pass1_harness import ExactPass1Dataset, mock_unit_ctf_and_zer
 from helpers.float_compare import assert_matches
 from helpers.pass1_programs import clear_pass1_programs
 
+from relax.fine_pass.significant_samples import significant_sample_ids
 from relax.projection.projection_cache import build_projection_cache
 from relax.relion import ctf
 from relax.scoring import coarse_gaussian_gemm, coarse_kernels, pass1_batch, pass1_program, significance
 from relax.scoring.pass1_plan import plan_pass1
 from relax.scoring.pass1_request import Pass1Request
 from relax.scoring.pass1_scores import ProgramStatics
-from relax.scoring.significant_samples import significant_sample_ids
 
 
 # Moved from relax/scoring/coarse_kernels.py (PLAN e1): no relax module uses it, only this test file.

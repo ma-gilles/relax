@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.scoring.significant_samples import (
+from relax.fine_pass.significant_samples import (
     ComplementSignificantSampleIndices,
     significant_sample_ids,
 )

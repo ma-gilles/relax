@@ -740,7 +740,7 @@ def host_support_row(csr, image: int):
     stored whichever of the two id sets that rule selects.
     """
 
-    from relax.scoring.significant_samples import ComplementSignificantSampleIndices
+    from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 
     if int(csr.n_significant[image]) == csr.n_samples:
         return None

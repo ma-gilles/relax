@@ -61,6 +61,9 @@ from relax.fine_pass.scoring import (
     _relion_cuda_corr_img_from_rfloat_ctf,
     _relion_cuda_pixel_correction_from_rfloat_ctf,
 )
+from relax.fine_pass.significant_samples import (
+    ComplementSignificantSampleIndices,
+)
 from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.fourier.preprocessing import apply_half_translation_phases, half_translation_phase_table
 from relax.runtime.memory_budget import (
@@ -70,9 +73,6 @@ from relax.runtime.memory_budget import (
     _projection_cache_budget_complex_dtype,
     _projection_cache_fits_budget,
     _projection_cache_transient_bytes,
-)
-from relax.scoring.significant_samples import (
-    ComplementSignificantSampleIndices,
 )
 
 

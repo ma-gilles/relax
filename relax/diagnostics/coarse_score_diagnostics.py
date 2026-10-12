@@ -9,7 +9,7 @@ import operator
 
 import numpy as np
 
-from relax.scoring.significant_samples import significant_sample_ids
+from relax.fine_pass.significant_samples import significant_sample_ids
 
 
 def build_coarse_significance_support_audit(

@@ -35,7 +35,7 @@ from relax.fine_pass.resident_significance import (
     host_support_rows,
     significant_coarse_parents,
 )
-from relax.scoring.significant_samples import (
+from relax.fine_pass.significant_samples import (
     ComplementSignificantSampleIndices,
     compact_significant_sample_indices_from_mask,
 )

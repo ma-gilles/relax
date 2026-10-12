@@ -1463,7 +1463,7 @@ def test_build_pass2_hypothesis_layout_preserves_sparse_rotation_translation_mas
 
 @pytest.mark.parametrize("oversampling_order", [0, 1])
 def test_build_pass2_hypothesis_layout_accepts_complement_support(oversampling_order):
-    from relax.scoring.significant_samples import (
+    from relax.fine_pass.significant_samples import (
         ComplementSignificantSampleIndices,
         compact_significant_sample_indices_from_mask,
     )
@@ -6511,7 +6511,7 @@ class TestRelionModeSmokeTest:
             **common_kwargs,
         )
 
-        from relax.scoring.significant_samples import significant_sample_ids
+        from relax.fine_pass.significant_samples import significant_sample_ids
 
         for expected, actual in zip(unpadded[:4], padded[:4]):
             assert_matches(np.asarray(actual), np.asarray(expected))

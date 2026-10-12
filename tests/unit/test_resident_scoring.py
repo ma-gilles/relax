@@ -47,11 +47,11 @@ from relax.fine_pass.resident_scoring import (
     score_all_chunks,
     score_resident_chunk,
 )
+from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 from relax.fourier.half_spectrum import make_scoring_half_image_weights
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.io.batch_fetch import fetch_indexed_batch
 from relax.scoring.compact_candidates import candidate_mask_to_dense
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
 
 N_COARSE_ROT = 6
 CHILDREN = 2
