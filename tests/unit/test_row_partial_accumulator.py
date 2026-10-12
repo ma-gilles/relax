@@ -19,7 +19,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.fine_pass import policy, resident_tilts
+from relax.fine_pass import policy, resident_block_programs, resident_tilts
 from relax.fine_pass import resident_pass2 as rp
 from relax.reconstruction import half_volume_mstep as hvm
 
@@ -90,7 +90,7 @@ def _stage_driver(monkeypatch, weights, row_partial):
     monkeypatch.setattr(policy, "resident_glue_jit_enabled", lambda: False)
     monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
     monkeypatch.setattr(rp, "_initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
-    monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
+    monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
     monkeypatch.setattr(rp, "_resident_chunk_statistics", lambda stats, *a, **k: stats)
     n_rows = int(weights.shape[0])
     blocks = rp._MstepBlockInputs(
@@ -126,7 +126,7 @@ def _local_driver(monkeypatch, weights, row_partial):
     monkeypatch.setattr(policy, "resident_glue_jit_enabled", lambda: False)
     monkeypatch.setattr(rp, "_resident_mstep_block", block)
     monkeypatch.setattr(rp, "_initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
-    monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
+    monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
     n_rows = int(weights.shape[0])
     recon = dict.fromkeys(
         (
@@ -349,7 +349,7 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
     monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
     monkeypatch.setattr(rp, "_backproject_block_rows", backproject_block_rows)
     monkeypatch.setattr(rp, "_cached_block_projections", lambda tables, ids: (None, None, ids))
-    monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", lambda carry, *a, **k: carry)
+    monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda carry, *a, **k: carry)
     monkeypatch.setattr(
         rp,
         "_initial_mstep_carry",

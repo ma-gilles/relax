@@ -11,7 +11,7 @@ path they replace:
 * the resident per-image arrays, translated with the primitives
   ``_prepare_bucket_io`` uses, must match its pre-shifted tiles;
 * the kernel's ``summed``/``summed_masked``/``ctf_probs`` must match
-  ``_resident_block_weighted_sums`` at the production translation count,
+  ``resident_block_weighted_sums`` at the production translation count,
   where XLA's reduction over translations is sequential too.
 
 "Match" is the float32 band of ``helpers.float_compare``; no test here requires
@@ -565,9 +565,9 @@ def test_translate_sum_kernel_matches_the_block_reduction(
     output by up to one relative ulp; that arm is held to its measured bound.
     """
 
-    from relax.fine_pass.resident_pass2 import (
-        _resident_block_weighted_sums,
-        _resident_block_weighted_sums_kernel,
+    from relax.fine_pass.resident_block_programs import (
+        resident_block_weighted_sums,
+        resident_block_weighted_sums_kernel,
     )
 
     cuda_backproject = _gpu_case(monkeypatch, custom_cuda_lib)
@@ -596,7 +596,7 @@ def test_translate_sum_kernel_matches_the_block_reduction(
         posterior[7] = 0.0
 
         summed_ref, masked_ref, ctf_ref, _mass_ref = jax.block_until_ready(
-            _resident_block_weighted_sums(
+            resident_block_weighted_sums(
                 jnp.asarray(posterior),
                 jnp.asarray(row_image),
                 shifted_recon,
@@ -605,7 +605,7 @@ def test_translate_sum_kernel_matches_the_block_reduction(
             )
         )
         summed, masked, ctf_probs, _mass = jax.block_until_ready(
-            _resident_block_weighted_sums_kernel(
+            resident_block_weighted_sums_kernel(
                 jnp.asarray(posterior),
                 jnp.asarray(row_image_ids),
                 jnp.asarray(row_image),

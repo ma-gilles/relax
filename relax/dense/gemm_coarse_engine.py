@@ -230,12 +230,9 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     from recovar.reconstruction import noise as noise_utils
 
     from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
+    from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
     from relax.fine_pass.resident_operands import prepare_resident_half_operands
-    from relax.fine_pass.resident_pass2 import (
-        _make_chunk_translation_sqdist,
-        _relion_native_fine_units_in_place,
-        _relion_scale_correction_pixel_mask,
-    )
+    from relax.fine_pass.resident_pass2 import _make_chunk_translation_sqdist, _relion_scale_correction_pixel_mask
     from relax.fine_pass.resident_statistics import (
         make_resident_statistics,
         resolve_statistics_config,
@@ -395,7 +392,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     )
     def project(reference, rotations):
         score = native_score_project(reference, rotations)
-        return (_relion_native_fine_units_in_place(score, int(np.prod(dataset.image_shape)))
+        return (relion_native_fine_units_in_place(score, int(np.prod(dataset.image_shape)))
                 if state.relion_native_fine_units else score)
     stat_plan = DenseGemmStatisticsPlan(
         image_shape=dataset.image_shape, image_capacity=b, rotation_tile=q, translation_tile=u,

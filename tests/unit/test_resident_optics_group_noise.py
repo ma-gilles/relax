@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.fine_pass import resident_block_programs
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.resident_statistics import make_resident_statistics, resolve_statistics_config
 from relax.fine_pass.wavg import image_power_shells
@@ -75,7 +76,7 @@ def test_block_norm_terms_use_each_rows_group_noise():
     image_groups = np.array([1, 0, 1, 0], dtype=np.int32)
     row_groups = image_groups[row_image]
 
-    shells_g, a2_g, xa_g = rp._resident_block_noise_and_norm(
+    shells_g, a2_g, xa_g = resident_block_programs.resident_block_noise_and_norm(
         proj,
         np.abs(proj) ** 2,
         summed,
@@ -90,7 +91,7 @@ def test_block_norm_terms_use_each_rows_group_noise():
     assert shells_g.shape == (2, N_SHELLS)
     for g in range(2):
         mine = row_groups == g
-        one_shells, one_a2, one_xa = rp._resident_block_noise_and_norm(
+        one_shells, one_a2, one_xa = resident_block_programs.resident_block_noise_and_norm(
             proj[mine],
             np.abs(proj[mine]) ** 2,
             summed[mine],

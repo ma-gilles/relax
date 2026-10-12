@@ -13,6 +13,7 @@ accumulation it feeds. It is the only pass-2 engine and it needs a CUDA GPU.
 | `resident_chunk_memory.py` | chunk planning: the M-step block rows, the bytes of a chunk, `plan_resident_chunk_memory`, lone overflow chunks and the chunk budget |
 | `resident_stable_windows.py` | the physical window classes a refinement reuses (`stable_window_class_history`), the stable-window plan, the reference-model class and the capacity projection |
 | `resident_projections.py` | where a pass's projections live: the whole-grid cache and its row blocks, significant-parent slots, streamed chunk projections, per-projection M-step sums, and their device budgets |
+| `resident_block_programs.py` | the M-step's pixel-axis device programs of one row block: weighted sums, ctf_probs, residual, noise and norm, Wavg terms and image power |
 | `resident_candidates.py`, `resident_significance.py` | the candidate tables and their fixed-capacity chunks; device compaction of the coarse significance mask |
 | `resident_operands.py`, `resident_scoring.py`, `resident_statistics.py`, `resident_tilts.py` | per-image operands kept on the device; the scoring stage; the float64 device accumulators; tilt images of subtomogram particles |
 | `window.py`, `scoring.py`, `posterior.py`, `projection_blocks.py`, `wavg.py`, `adjoint.py`, `bucket_io.py`, `bucket_arrays.py`, `local_backprojection.py`, `policy.py` | shared pieces the drivers import, and `policy.py` (the environment switches) |

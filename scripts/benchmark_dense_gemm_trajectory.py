@@ -690,7 +690,7 @@ def _resident_cuda_fixture_program(
         tile_normalizer,
     )
     from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
-    from relax.fine_pass.resident_pass2 import _resident_block_weighted_sums_kernel
+    from relax.fine_pass.resident_block_programs import resident_block_weighted_sums_kernel
     from relax.runtime.memory_budget import _max_adjoint_block_bytes_for_pass
     from relax.scoring.coarse_kernels import relion_coarse_gaussian_gemm_scores_jit
     from scripts.lib.dense_gemm_experiment import (
@@ -779,7 +779,7 @@ def _resident_cuda_fixture_program(
                 posterior_rows = jax.lax.dynamic_slice_in_dim(
                     flat_weights, row_start, row_tile, axis=0,
                 )
-                summed, _unused_masked, ctf_probs, _row_mass = _resident_block_weighted_sums_kernel(
+                summed, _unused_masked, ctf_probs, _row_mass = resident_block_weighted_sums_kernel(
                     posterior_rows, row_ids, row_local,
                     batch.rec_raw_image, batch.rec_weighted_ctf, batch.rec_raw_image,
                     batch.rec_weight, recon_indices, angles,

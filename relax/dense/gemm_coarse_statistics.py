@@ -18,15 +18,17 @@ import jax.numpy as jnp
 
 from relax.cuda import fine as cuda_fine
 from relax.cuda import translate as cuda_translate
+from relax.fine_pass.resident_block_programs import (
+    add_wavg_rectangle_image_power,
+    resident_block_noise_and_norm,
+    resident_block_wavg_algebraic_terms,
+    resident_block_weighted_sums_kernel,
+)
 from relax.fine_pass.resident_pass2 import (
     _accumulate_chunk_image_terms,
-    _add_wavg_rectangle_image_power,
     _ChunkImageOperands,
     _ChunkImageTables,
     _fold_class_scale_sums,
-    _resident_block_noise_and_norm,
-    _resident_block_wavg_algebraic_terms,
-    _resident_block_weighted_sums_kernel,
 )
 from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
 from relax.fine_pass.wavg import (
@@ -152,7 +154,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
                 batch.valid_images[image_slot] & jnp.any(row_probs != 0.0, axis=1),
                 image_slot, -1,
             )
-            summed, summed_masked, ctf_probs, _ = _resident_block_weighted_sums_kernel(
+            summed, summed_masked, ctf_probs, _ = resident_block_weighted_sums_kernel(
                 row_probs, kernel_ids, image_slot,
                 ops.recon_image, ops.recon_weight, ops.noise_image,
                 ops.ctf2_over_nv_recon, ops.recon_pixel_indices, angles,
@@ -173,7 +175,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
                     ops.logical_recon_pixels,
                 )
             else:
-                exact = _resident_block_wavg_algebraic_terms(
+                exact = resident_block_wavg_algebraic_terms(
                     row_proj, proj_abs2, summed_masked, ctf_probs,
                     ops.noise_variance, ops.scale, image_slot, row_optics,
                 )
@@ -186,7 +188,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
                 scale = ops.image_noise_scale[image_slot, None].astype(jnp.float32)
                 noise_masked = noise_masked * scale
                 noise_ctf = noise_ctf * scale
-            shells, a2, xa = _resident_block_noise_and_norm(
+            shells, a2, xa = resident_block_noise_and_norm(
                 row_proj, proj_abs2, noise_masked, noise_ctf,
                 ops.noise_variance, ops.shell_indices_noise, image_slot, row_optics,
                 n_shells=plan.n_shells, image_capacity=b,
@@ -202,7 +204,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
         # Add the image-power part of the rectangle from this bounded U tile.
         # A full [B,T,P_rect] expansion defeats the serial-translation plan.
         row_image = jnp.repeat(jnp.arange(b, dtype=jnp.int32), q)
-        wavg = _add_wavg_rectangle_image_power(
+        wavg = add_wavg_rectangle_image_power(
             carry.wavg_triplet_pixels, raw_rect, posterior.reshape(b * q, u),
             row_image, ops.exact_positions, ops.logical_rect_pixels,
             power_at_exact_positions=not plan.use_rfloat_ctf_wavg,

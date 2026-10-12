@@ -13,6 +13,7 @@ from helpers.float_compare import assert_matches
 from test_resident_zero_oversampling import _rel_l2, _resident_production_env, requires_resident_gpu  # noqa: F401
 
 import relax.fine_pass.resident_pass2 as rp
+from relax.fine_pass import resident_block_programs
 
 pytestmark = pytest.mark.unit
 
@@ -38,7 +39,7 @@ def test_block_residual_is_the_exact_local_statement():
     row_image = np.array([0, 2, 1, 1, 0], dtype=np.int32)
     mass = np.array([0.5, 0.0, 1.0, 0.25, 2.0])
     out = np.asarray(
-        rp._resident_block_residual(
+        resident_block_programs.resident_block_residual(
             summed.astype(np.complex64),
             mass.astype(np.float32),
             proj.astype(np.complex64),
@@ -83,7 +84,7 @@ def test_native_fine_units_in_place_is_the_eager_conversion(shape):
     rng = np.random.default_rng(3)
     values = (rng.normal(size=shape) + 1j * rng.normal(size=shape)).astype(np.complex64) * np.float32(1e3)
     eager = np.asarray(_relion_native_fine_units(values, 136 * 136))
-    fused = np.asarray(rp._relion_native_fine_units_in_place(jnp.asarray(values), 136 * 136))
+    fused = np.asarray(resident_block_programs.relion_native_fine_units_in_place(jnp.asarray(values), 136 * 136))
     assert fused.dtype == np.complex64
     # Division in binary64 and one rounding to float32 in both forms (measured: identical).
     assert_matches(fused, eager)

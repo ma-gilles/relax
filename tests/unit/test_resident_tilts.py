@@ -450,6 +450,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
 
     import jax.numpy as jnp
 
+    from relax.fine_pass import resident_block_programs
     from relax.fine_pass import resident_pass2 as rp
 
     units, rows, translations, window = 8, 16, 32, 512
@@ -478,7 +479,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
 
     monkeypatch.setattr(resident_tilts, "_slot_view_translate", translate)
     monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
-    monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", image_power)
+    monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", image_power)
     monkeypatch.setattr(rp, "_initial_mstep_carry", initial_carry)
     fields = rp._ChunkStageOperands._fields
     operands = rp._ChunkStageOperands(

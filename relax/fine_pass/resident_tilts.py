@@ -980,6 +980,7 @@ def _tilt_mstep_program(
     the flush counts tilt images.
     """
 
+    from relax.fine_pass import resident_block_programs
     from relax.fine_pass import resident_pass2 as rp
 
     row_capacity = int(row_posterior.shape[0])
@@ -1062,7 +1063,7 @@ def _tilt_mstep_program(
                 )
             else:
                 slot_carry = jax.lax.fori_loop(0, n_blocks, block, slot_carry)
-            slot_carry = rp._add_chunk_wavg_image_power(
+            slot_carry = resident_block_programs.add_chunk_wavg_image_power(
                 slot_carry,
                 slot_operands,
                 slot_tables,

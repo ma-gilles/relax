@@ -32,7 +32,13 @@ import jax
 import jax.numpy as jnp
 from oracles.wavg import relion_wavg_rectangle_triplet_terms
 
-from relax.fine_pass import resident_chunk_memory, resident_configuration, resident_projections, resident_stable_windows
+from relax.fine_pass import (
+    resident_block_programs,
+    resident_chunk_memory,
+    resident_configuration,
+    resident_projections,
+    resident_stable_windows,
+)
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_candidates import (
@@ -213,7 +219,7 @@ def test_flat_row_weighted_sums_agree_with_the_rectangular_mstep_sums():
     )[0]
 
     row_image = np.repeat(np.arange(batch, dtype=np.int32), n_rot)
-    summed, summed_masked, ctf_probs, probs_sum_t = rp._resident_block_weighted_sums(
+    summed, summed_masked, ctf_probs, probs_sum_t = resident_block_programs.resident_block_weighted_sums(
         jnp.asarray(probs.reshape(batch * n_rot, n_trans)),
         jnp.asarray(row_image),
         jnp.asarray(shifted),
@@ -309,7 +315,7 @@ def test_flat_row_wavg_rectangle_image_sums_match_the_rectangular_helper(
     terms[:, exact_positions, :] = flat_exact
     logical = n_rect - 1
     power = np.asarray(
-        rp._add_wavg_rectangle_image_power(
+        resident_block_programs.add_wavg_rectangle_image_power(
             jnp.zeros((batch, n_rect, 3), dtype=jnp.float32),
             jnp.asarray(raw_rect),
             jnp.asarray(flat_posterior),

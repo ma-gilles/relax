@@ -1,6 +1,6 @@
 """Flat-row translate-and-sum against the resident M-step's XLA reduction.
 
-``resident_pass2._resident_block_weighted_sums`` gathers a pre-shifted
+``resident_block_programs.resident_block_weighted_sums`` gathers a pre-shifted
 ``[images, translations, pixels]`` tile per row and contracts it with the
 posterior at ``Precision.HIGHEST``.  The CUDA kernel applies RELION's
 translation inside the reduction instead, so the tile never exists.  Every
@@ -112,7 +112,7 @@ def _operands(
 def _reference(cuda_backproject, operands, *, reference_row_ids=None, bpref=False):
     """The production tile builder followed by the XLA weighted sums."""
 
-    from relax.fine_pass.resident_pass2 import _resident_block_weighted_sums
+    from relax.fine_pass.resident_block_programs import resident_block_weighted_sums
 
     n_images, n_pixels = operands["recon_image"].shape
     n_trans = operands["translation_angles"].shape[0]
@@ -139,7 +139,7 @@ def _reference(cuda_backproject, operands, *, reference_row_ids=None, bpref=Fals
         if reference_row_ids is None
         else reference_row_ids
     )
-    summed, masked, _ctf, mass = _resident_block_weighted_sums(
+    summed, masked, _ctf, mass = resident_block_weighted_sums(
         jnp.asarray(operands["posterior"]),
         jnp.asarray(ids),
         shifted[0],
@@ -745,7 +745,7 @@ def test_ctf_probs_matches_the_resident_block_reduction(
     operands = _operands(
         rng, rows=rows, image_capacity=64, n_trans=21, n_pixels=n_pixels
     )
-    from relax.fine_pass.resident_pass2 import _resident_block_weighted_sums
+    from relax.fine_pass.resident_block_programs import resident_block_weighted_sums
 
     with jax.default_device(gpu_device):
         shifted = [
@@ -758,7 +758,7 @@ def test_ctf_probs_matches_the_resident_block_reduction(
             for key in ("recon_image", "noise_image")
         ]
         _s, _m, ctf_ref, _p = jax.block_until_ready(
-            _resident_block_weighted_sums(
+            resident_block_weighted_sums(
                 jnp.asarray(operands["posterior"]),
                 jnp.asarray(operands["row_image_ids"]),
                 shifted[0],
@@ -792,7 +792,7 @@ def test_ctf_probs_matches_the_resident_block_reduction(
     # reduction plan for this expression is not fixed across sessions, with or
     # without ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` (the flag pins recovar's
     # own racing scatters, not the XLA reduction inside
-    # ``_resident_block_weighted_sums``).
+    # ``resident_block_weighted_sums``).
     mass_scale = np.abs(operands["posterior"]).sum(axis=1).astype(np.float64)
     _assert_close(
         np.asarray(ctf_probs),

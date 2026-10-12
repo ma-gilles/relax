@@ -366,7 +366,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     from relax.dense.gemm_kernels import native_phase_table, native_relion_callbacks, score_tile
     from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
     from relax.fine_pass.projection_blocks import _compute_sparse_pass2_windowed_projections_block
-    from relax.fine_pass.resident_pass2 import _relion_native_fine_units_in_place
+    from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
     from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
     from relax.fine_pass.window import _sparse_pass2_window_setup
 
@@ -409,8 +409,8 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
         **window.window_spec.projection_kwargs(return_abs2=False),
     )
     if state.relion_native_fine_units:
-        projected_dense = _relion_native_fine_units_in_place(projected_dense, int(np.prod(state.dataset.image_shape)))
-        projected_resident = _relion_native_fine_units_in_place(projected_resident, int(np.prod(state.dataset.image_shape)))
+        projected_dense = relion_native_fine_units_in_place(projected_dense, int(np.prod(state.dataset.image_shape)))
+        projected_resident = relion_native_fine_units_in_place(projected_resident, int(np.prod(state.dataset.image_shape)))
     angles = _relion_cuda_score_translation_angles_if_available(
         state.fine_translations_source, tuple(state.dataset.image_shape), enabled=True,
         dtype=np.float32, angle_scale=state.relion_translation_angle_scale,
@@ -471,7 +471,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
 def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chunks, control, candidate):
     """Keep actual fine-CC inputs and compare fine and GEMM scores at both winners."""
     from relax.dense.gemm_kernels import cc_score_tile, native_relion_callbacks
-    from relax.fine_pass.resident_pass2 import _relion_native_fine_units_in_place
+    from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
     from relax.fine_pass.scoring import (
         _relion_cuda_fine_full_to_compact_lookup,
         _relion_cuda_fine_normalized_cc_score,
@@ -507,7 +507,7 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
         jnp.asarray(state.fine_rotations)[unique_rot],
     )
     if state.relion_native_fine_units:
-        projection = _relion_native_fine_units_in_place(
+        projection = relion_native_fine_units_in_place(
             projection, int(np.prod(state.dataset.image_shape)),
         )
     _, half_weights = _pass2_half_weights(
@@ -1054,7 +1054,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
     # function; otherwise its first import can bind the temporary control
     # wrapper and record the dense rows twice.
     from relax.dense import gemm_coarse_engine, gemm_coarse_statistics
-    from relax.fine_pass import resident_pass2
+    from relax.fine_pass import resident_block_programs, resident_pass2
 
     args = _native_k1_args(monkeypatch, seed=20261001)
     from unit.test_resident_relion_reference import F32, _rel_l2
@@ -1092,14 +1092,14 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
 
         monkeypatch.setattr(resident_pass2, "_accumulate_chunk_image_terms", capture_control_norm)
     if row_diagnostic_path:
-        original_control_block = resident_pass2._resident_block_noise_and_norm
+        original_control_block = resident_block_programs.resident_block_noise_and_norm
 
         def capture_control_rows(*block_args, **block_kwargs):
             return _capture_pre_scatter_norm(
                 control_rows, original_control_block, *block_args, **block_kwargs,
             )
 
-        monkeypatch.setattr(resident_pass2, "_resident_block_noise_and_norm", capture_control_rows)
+        monkeypatch.setattr(resident_block_programs, "resident_block_noise_and_norm", capture_control_rows)
         # A preceding fixture may have compiled the same row program without
         # diagnostics. The opt-in probe must be present in the traced call.
         jax.clear_caches()
@@ -1119,7 +1119,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
 
         monkeypatch.setattr(gemm_coarse_statistics, "_accumulate_chunk_image_terms", capture_dense_norm)
     if row_diagnostic_path:
-        monkeypatch.setattr(resident_pass2, "_resident_block_noise_and_norm", original_control_block)
+        monkeypatch.setattr(resident_block_programs, "resident_block_noise_and_norm", original_control_block)
         original_dense_block = gemm_coarse_statistics._resident_block_noise_and_norm
 
         def capture_dense_rows(*block_args, **block_kwargs):
@@ -1127,7 +1127,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
                 candidate_rows, original_dense_block, *block_args, **block_kwargs,
             )
 
-        monkeypatch.setattr(gemm_coarse_statistics, "_resident_block_noise_and_norm", capture_dense_rows)
+        monkeypatch.setattr(gemm_coarse_statistics, "resident_block_noise_and_norm", capture_dense_rows)
         jax.clear_caches()
     candidate = resident_pass2._resident_pass2(**dict(args, full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid))
     if path := diagnostic_path or (str(Path(row_diagnostic_path).with_name("gradient.npz"))
