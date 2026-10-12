@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax import sampling
 from relax.reconstruction.resolution import relion_coarse_image_size
 from relax.refinement.image_size_plans import ExpectationWindows, RunOptics, plan_expectation_windows
 from relax.refinement.iteration_planning import IterationCarry
@@ -20,6 +19,7 @@ from relax.refinement.trial_grids import (
     iteration_trial_grid,
 )
 from relax.sampling import grids
+from relax.sampling import perturbation as sampling_perturbation
 from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import relion_direction_log_priors, relion_local_search_sigmas
 
@@ -139,7 +139,7 @@ def prepare_numbered_local_sampling(
         if search.oversampling_order == 0 and _precompute_exact_local_fine_grid_enabled(
             search.healpix_order, symmetry=search.symmetry,
         ):
-            rotations, rotation_eulers, mstep_rotations = sampling.exact_local_fine_grid(
+            rotations, rotation_eulers, mstep_rotations = sampling_perturbation.exact_local_fine_grid(
                 healpix_order=search.healpix_order,
                 angular_sampling_deg=angular_step_deg,
                 random_perturbation=float(perturbation),
@@ -177,7 +177,7 @@ def prepare_numbered_local_sampling(
     else:
         rotations = grid.rotations
         rotation_eulers = None
-        mstep_rotations = sampling.local_search_mstep_rotations(
+        mstep_rotations = sampling_perturbation.local_search_mstep_rotations(
             grid.mstep_rotations, grid.rotation_eulers, search.healpix_order, symmetry=search.symmetry,
         )
         deferred_perturbation = 0.0
@@ -235,7 +235,7 @@ def prepare_final_local_sampling(
         coarse_angular_step_deg = None
 
     if search.oversampling_order == 0 and _precompute_exact_local_fine_grid_enabled(search.healpix_order, symmetry=search.symmetry):
-        fine_rotations, _, fine_mstep_rotations = sampling.exact_local_fine_grid(
+        fine_rotations, _, fine_mstep_rotations = sampling_perturbation.exact_local_fine_grid(
             healpix_order=search.healpix_order,
             angular_sampling_deg=angular_step_deg,
             random_perturbation=perturbation,

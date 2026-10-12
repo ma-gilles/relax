@@ -156,8 +156,9 @@ class TestOversampledTranslations:
     @pytest.mark.parametrize("random_perturbation", [0.0, 0.461207])
     def test_recovar_oversampled_grid_matches_relion_binding_order(self, oversampling_order, random_perturbation):
         """RECOVAR must preserve RELION's translation child order and perturbation."""
-        from relax.sampling import apply_relion_translation_perturbation, get_oversampled_translation_grid
+        from relax.sampling import get_oversampled_translation_grid
         from relax.sampling.grids import get_translation_grid
+        from relax.sampling.perturbation import apply_relion_translation_perturbation
 
         offset_range = 10.0
         offset_step = 2.0

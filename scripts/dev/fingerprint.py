@@ -1120,7 +1120,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         """RELION sampling and model STAR files for the replay directory; orders[i] is the prior written
         after RELION iteration i+1 (None writes no model file for that iteration). ``seed``: the run's
         perturbation seed."""
-        from relax.sampling import relion_sampling_perturbation_for_iteration
+        # The harness runs on both sides of a base/head comparison, so it imports from either sampling layout.
+        try:
+            from relax.sampling.perturbation import relion_sampling_perturbation_for_iteration
+        except ImportError:  # the source before relax/sampling was split into topic modules
+            from relax.sampling import relion_sampling_perturbation_for_iteration
 
         root = Path(tempfile.mkdtemp(dir=tmp_root))
         for it in range(0, max_iter + 2):

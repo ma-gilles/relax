@@ -56,8 +56,8 @@ def preparation(monkeypatch):
         events.append(("advance", (previous, kwargs)))
         return 0.125, kwargs["perturb_seed"]
 
-    monkeypatch.setattr(trial_grids.sampling, "perturbed_trial_grid", perturb)
-    monkeypatch.setattr(trial_grids.sampling, "advance_relion_perturbation_for_iteration", advance)
+    monkeypatch.setattr(trial_grids.sampling_perturbation, "perturbed_trial_grid", perturb)
+    monkeypatch.setattr(trial_grids.sampling_perturbation, "advance_relion_perturbation_for_iteration", advance)
     inputs = dict(
         state=SimpleNamespace(translation_range=4.25, translation_step=1.416667),
         image_geometry=trial_grids.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.5),

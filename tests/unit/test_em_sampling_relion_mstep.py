@@ -5,15 +5,14 @@ import inspect
 import numpy as np
 from helpers.float_compare import assert_matches
 
-from relax.sampling import (
-    apply_relion_rotation_perturbation_to_eulers,
-    get_oversampled_rotation_grid_from_samples,
-    relion_adaptive_pass1_rotations,
-    relion_sampling_perturbation_for_iteration,
-)
+from relax.sampling import get_oversampled_rotation_grid_from_samples, relion_adaptive_pass1_rotations
 from relax.sampling import grids as grids_module
 from relax.sampling.grids import relion_mstep_rotations_from_eulers
 from relax.sampling.healpix import euler_angles_to_matrix
+from relax.sampling.perturbation import (
+    apply_relion_rotation_perturbation_to_eulers,
+    relion_sampling_perturbation_for_iteration,
+)
 
 
 def test_adaptive_pass1_routes_source_eulers_and_host_right_matrix_to_cuda_builder(monkeypatch):

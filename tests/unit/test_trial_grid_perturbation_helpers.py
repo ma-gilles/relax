@@ -11,10 +11,13 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-import relax.sampling as sampling_module
-from relax.sampling import apply_relion_rotation_perturbation_to_eulers, apply_relion_translation_perturbation
 from relax.sampling import grids as grids_module
+from relax.sampling import perturbation as perturbation_module
 from relax.sampling.grids import relion_angular_sampling_deg, rotation_grid_size
+from relax.sampling.perturbation import (
+    apply_relion_rotation_perturbation_to_eulers,
+    apply_relion_translation_perturbation,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -61,7 +64,7 @@ def test_perturbed_trial_grid_matches_the_separate_relion_calls(dtype):
     eulers = _canonical_eulers(ORDER).astype(np.float32)
     base_translations = np.asarray([[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
     angsamp = relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
-    grid = sampling_module.perturbed_trial_grid(
+    grid = perturbation_module.perturbed_trial_grid(
         rotation_eulers=eulers,
         mstep_source_eulers=_canonical_eulers(ORDER),
         base_translations=base_translations,
@@ -94,9 +97,9 @@ def test_perturbed_trial_grid_records_call_order(monkeypatch):
         calls.append(("trans", rp, step))
         return np.asarray(base) + rp
 
-    monkeypatch.setattr(sampling_module, "apply_relion_rotation_perturbation_to_eulers", fake_rot)
-    monkeypatch.setattr(sampling_module, "apply_relion_translation_perturbation", fake_trans)
-    grid = sampling_module.perturbed_trial_grid(
+    monkeypatch.setattr(perturbation_module, "apply_relion_rotation_perturbation_to_eulers", fake_rot)
+    monkeypatch.setattr(perturbation_module, "apply_relion_translation_perturbation", fake_trans)
+    grid = perturbation_module.perturbed_trial_grid(
         rotation_eulers=np.zeros((4, 3)),
         mstep_source_eulers=np.ones((4, 3)),
         base_translations=np.zeros((2, 2)),

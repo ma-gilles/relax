@@ -40,7 +40,7 @@ from relax.runtime.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
 from relax.sampling import grids as sampling_grids
-from relax.sampling import oversampling
+from relax.sampling import oversampling, perturbation
 from relax.sampling.healpix import angular_sampling_deg
 from relax.steps import optics_shapes
 from relax.vdam.estep_common import (
@@ -165,14 +165,14 @@ def adaptive_route_grids(
     before the SamplingPerturbation shift. The host coarse matrices (pass 1 off the GPU, and
     the fine rows of oversampling 0) perturb the source angles as RELION's getOrientations does
     (``A * Euler(p, p, p)`` back to angles, healpix_sampling.cpp:1909-1934) and are the host
-    inverses of those angles (:func:`relax.sampling.apply_relion_rotation_perturbation_to_eulers`).
+    inverses of those angles (:func:`relax.sampling.perturbation.apply_relion_rotation_perturbation_to_eulers`).
     """
 
     order = int(healpix_order)
     angular_sampling = sampling_grids.relion_angular_sampling_deg(order)
     source_eulers = sampling_grids.get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
     host_rotations = np.asarray(
-        sampling.apply_relion_rotation_perturbation_to_eulers(source_eulers, float(random_perturbation), angular_sampling)[0],
+        perturbation.apply_relion_rotation_perturbation_to_eulers(source_eulers, float(random_perturbation), angular_sampling)[0],
         dtype=np.float32,
     )
     device_rotations = sampling.relion_adaptive_pass1_rotations(
@@ -186,7 +186,7 @@ def adaptive_route_grids(
     )
 
     base = np.asarray(coarse_base_translations, dtype=np.float64)
-    coarse_translations = sampling.apply_relion_translation_perturbation(
+    coarse_translations = perturbation.apply_relion_translation_perturbation(
         base, float(random_perturbation), float(translation_step)
     ).astype(np.float32)
     grids = oversampling.prepare_adaptive_pass2_grids(

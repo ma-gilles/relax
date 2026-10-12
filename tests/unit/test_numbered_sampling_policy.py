@@ -7,10 +7,10 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
-from relax import sampling
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans, numbered_transitions, trial_grids
 from relax.refinement.refinement_state import RefinementState
+from relax.sampling import perturbation
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
     reference_rng = np.random.default_rng(23)
     current = expected = 0.125
     for iteration in range(3):
-        expected, _ = sampling.advance_relion_perturbation_for_iteration(
+        expected, _ = perturbation.advance_relion_perturbation_for_iteration(
             expected, perturb_factor=0.5, perturb_seed=seed,
             relion_iteration=11 + iteration, rng=reference_rng,
         )
@@ -150,7 +150,7 @@ def test_replay_restart_uses_physical_iteration(tmp_path):
 
 
 def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypatch):
-    monkeypatch.setattr(sampling, "advance_relion_perturbation_for_iteration", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
+    monkeypatch.setattr(perturbation, "advance_relion_perturbation_for_iteration", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
     result = trial_grids.resolve_numbered_perturbation(
         0.25, _options(stand_in.parity(perturb_factor=0.0), 10), iteration=2, rng=None, log=LOG,
     )

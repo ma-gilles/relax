@@ -17,7 +17,7 @@ from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 from relax import sampling
 from relax.relion import optics_groups
 from relax.relion.optics_aberrations import expected_accuracy_optics
-from relax.sampling import grids
+from relax.sampling import grids, perturbation
 from relax.steps.convergence import (
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
@@ -706,7 +706,7 @@ def build_sampling_plan(
     )
     coarse_translations = metadata_coarse_translations.astype(np.float32)
     coarse_pass1_translations = (
-        sampling.apply_relion_translation_perturbation(coarse_translations, random_perturbation, offset_step_px).astype(
+        perturbation.apply_relion_translation_perturbation(coarse_translations, random_perturbation, offset_step_px).astype(
             np.float32
         )
         if perturbed
@@ -718,7 +718,7 @@ def build_sampling_plan(
         # RELION's getOrientations perturbs the angles, and the scorer uses their host inverse matrices
         # (healpix_sampling.cpp:1909-1934); the unperturbed grid is those matrices too.
         rotations = np.asarray(
-            sampling.apply_relion_rotation_perturbation_to_eulers(
+            perturbation.apply_relion_rotation_perturbation_to_eulers(
                 grids.get_relion_rotation_grid_eulers_float64(healpix_order, rotation_index_order="relion"),
                 random_perturbation if perturbed else 0.0,
                 grids.relion_angular_sampling_deg(healpix_order),
@@ -728,10 +728,10 @@ def build_sampling_plan(
         translations = coarse_translations
         metadata_translations = metadata_coarse_translations
         if perturbed:
-            translations = sampling.apply_relion_translation_perturbation(
+            translations = perturbation.apply_relion_translation_perturbation(
                 translations, random_perturbation, offset_step_px
             ).astype(np.float32)
-            metadata_translations = sampling.apply_relion_translation_perturbation(
+            metadata_translations = perturbation.apply_relion_translation_perturbation(
                 metadata_translations, random_perturbation, offset_step_px
             )
     else:
@@ -753,10 +753,10 @@ def build_sampling_plan(
         )
         if not np.array_equal(translation_parent, _metadata_translation_parent):
             raise RuntimeError("GPU and metadata translation parent maps differ")
-        translations = sampling.apply_relion_translation_perturbation(
+        translations = perturbation.apply_relion_translation_perturbation(
             oversampled_trans.astype(np.float32, copy=False), random_perturbation, offset_step_pixels=offset_step_px
         )
-        metadata_translations = sampling.apply_relion_translation_perturbation(
+        metadata_translations = perturbation.apply_relion_translation_perturbation(
             metadata_translations,
             random_perturbation,
             offset_step_pixels=offset_step_px,
@@ -790,7 +790,7 @@ def _random_perturbation_for_iteration(opts: NativeInitialModelOptions, iteratio
     # function. Scaling a separately rounded unit draw changes the result by
     # one float32 ulp for seed 0 / iteration 1, which is enough to flip the
     # integer-truncated fine-projector radius predicate on the rounded rim.
-    return sampling.relion_sampling_perturbation_for_iteration(
+    return perturbation.relion_sampling_perturbation_for_iteration(
         float(opts.perturbation_factor),
         int(opts.random_seed),
         max(1, int(iteration)),

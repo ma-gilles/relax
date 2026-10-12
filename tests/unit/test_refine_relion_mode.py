@@ -60,7 +60,6 @@ import relax.parity.relion_replay as relion_replay_module
 import relax.refinement.expectation as expectation_module
 import relax.refinement.iteration_loop as iteration_loop_module
 import relax.refinement.numbered_transitions as convergence_policy
-import relax.sampling as sampling_module
 import relax.sampling.expected_accuracy as accuracy_trial_order_module
 import relax.sampling.orientation_priors as orientation_priors_module
 import relax.steps.expected_accuracy as expected_accuracy_module
@@ -125,13 +124,12 @@ from relax.refinement.refinement_options import (
 from relax.refinement.refinement_state import RefinementState
 from relax.relion import ctf
 from relax.sampling import (
-    apply_relion_rotation_perturbation,
-    apply_relion_rotation_perturbation_to_eulers,
     get_local_rotation_grid_fast,
     get_oversampled_rotation_grid_from_samples,
     get_oversampled_translation_grid,
 )
 from relax.sampling import grids as grids_module
+from relax.sampling import perturbation as perturbation_module
 from relax.sampling.grids import (
     build_local_search_grid_metadata,
     get_relion_rotation_grid,
@@ -152,6 +150,7 @@ from relax.sampling.orientation_priors import (
     relion_translation_prior_center,
     relion_translation_search_base,
 )
+from relax.sampling.perturbation import apply_relion_rotation_perturbation, apply_relion_rotation_perturbation_to_eulers
 from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores
 from relax.scoring.pass1_results import Pass1Result
 from relax.scoring.significance import _compute_k_class_significance_batched
@@ -5692,7 +5691,7 @@ class TestRelionModeSmokeTest:
             lambda order, *, symmetry='C1': fake_get_relion_rotation_grid_eulers(order).astype(np.float64),
         )
         monkeypatch.setattr(
-            sampling_module,
+            perturbation_module,
             "apply_relion_rotation_perturbation_to_eulers",
             fake_apply_relion_rotation_perturbation_to_eulers,
         )
@@ -8059,9 +8058,9 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
         "get_relion_rotation_grid_eulers_float64",
         lambda order, *, symmetry='C1': fake_get_grid_eulers(order).astype(np.float64),
     )
-    monkeypatch.setattr(sampling_module, "advance_relion_perturbation", fake_advance_relion_perturbation)
+    monkeypatch.setattr(perturbation_module, "advance_relion_perturbation", fake_advance_relion_perturbation)
     monkeypatch.setattr(
-        sampling_module,
+        perturbation_module,
         "apply_relion_rotation_perturbation_to_eulers",
         fake_apply_relion_rotation_perturbation_to_eulers,
     )
@@ -8529,7 +8528,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
         relion_replay_module,
         "read_relion_sampling_metadata",
         lambda _path: {
-            "random_perturbation": sampling_module.relion_sampling_perturbation_for_iteration(
+            "random_perturbation": perturbation_module.relion_sampling_perturbation_for_iteration(
                 0.5, 0, 14
             ),
             "perturbation_factor": 0.5,

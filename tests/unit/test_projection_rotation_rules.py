@@ -13,7 +13,7 @@ import pytest
 
 from relax import sampling
 from relax.relion.optics_aberrations import relax_projection_magnification, relion_projection_left_matrix
-from relax.sampling import grids
+from relax.sampling import grids, perturbation
 from relax.sampling.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 
 pytestmark = pytest.mark.unit
@@ -26,7 +26,7 @@ PERTURBATION = 0.37
 def _grids(oversampling):
     rotation_grid = grids.relion_scoring_rotation_grid(ORDER, dtype=np.float32)
     step = grids.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
-    coarse, _eulers = sampling.apply_relion_rotation_perturbation_to_eulers(
+    coarse, _eulers = perturbation.apply_relion_rotation_perturbation_to_eulers(
         np.asarray(rotation_grid.rotation_eulers, dtype=np.float64), PERTURBATION, step
     )
     translations = np.zeros((1, 2), dtype=np.float32)

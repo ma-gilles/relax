@@ -42,15 +42,14 @@ CHILD = textwrap.dedent(
     ):
         importlib.import_module(module)
 
-    from relax import sampling
-    from relax.sampling import expected_accuracy, grids, symmetry
+    from relax.sampling import expected_accuracy, grids, perturbation, symmetry
 
     for label in ("C1", "C4", "D2", "T", "O", "I"):
         symmetry.rotational_operators(label)
         symmetry.relion_point_group_code(label)
         grids.get_relion_rotation_grid(2, symmetry=label)
     grids.get_relion_rotation_grid_eulers(2)
-    sampling._relion_rnd_unif_scaled_first_draw(43, 0.5, 1.0)
+    perturbation._relion_rnd_unif_scaled_first_draw(43, 0.5, 1.0)
     expected_accuracy.relion_auto_refine_half_orders([1, 2, 1, 2, 2, 1], random_seed=42)
     assert "relax.relion_bind" not in sys.modules
     print("OK")

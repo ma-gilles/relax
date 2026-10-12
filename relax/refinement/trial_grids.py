@@ -21,6 +21,7 @@ from relax.refinement.refinement_state import (
     native_final_perturbation_healpix_order,
 )
 from relax.sampling import grids as sampling_grids
+from relax.sampling import perturbation as sampling_perturbation
 from relax.sampling import relion_adaptive_pass1_rotations
 
 if TYPE_CHECKING:
@@ -164,7 +165,7 @@ def iteration_trial_grid(
             translations=grids.translations,
         )
     angsamp_deg = sampling_grids.relion_angular_sampling_deg(perturbation_order, adaptive_oversampling=0)
-    return sampling.perturbed_trial_grid(
+    return sampling_perturbation.perturbed_trial_grid(
         rotation_eulers=rotation_eulers,
         mstep_source_eulers=sampling_grids.relion_mstep_source_eulers(
             rotation_eulers,
@@ -278,7 +279,7 @@ def advance_final_perturbation(previous_perturbation: float, options: Refinement
     parity = options.parity
     if not parity.perturb_factor > 0:
         return None
-    perturbation, seed = sampling.advance_relion_perturbation_for_iteration(
+    perturbation, seed = sampling_perturbation.advance_relion_perturbation_for_iteration(
         previous_perturbation,
         perturb_factor=parity.perturb_factor,
         perturb_seed=parity.perturb_seed,
@@ -372,7 +373,7 @@ def prepare_final_sampling(
     if settings.perturbation is None:
         grid = sampling_grids.TrialGrid(rotations, eulers, None, base_translations)
     else:
-        grid = sampling.perturbed_trial_grid(
+        grid = sampling_perturbation.perturbed_trial_grid(
             rotation_eulers=eulers,
             mstep_source_eulers=sampling_grids.relion_mstep_source_eulers(
                 eulers, settings.perturbation_order, symmetry=symmetry,
@@ -404,7 +405,7 @@ def initial_random_perturbation(options: RefinementOptions, *, log: logging.Logg
     sampling.star instead (an input source's).
     """
     if options.parity.perturb_factor > 0 and options.parity.perturb_seed is not None:
-        random_perturbation = sampling.relion_sampling_perturbation_for_iteration(
+        random_perturbation = sampling_perturbation.relion_sampling_perturbation_for_iteration(
             options.parity.perturb_factor,
             options.parity.perturb_seed,
             options.schedule.init_relion_iteration,
@@ -440,7 +441,7 @@ def resolve_numbered_perturbation(
     if not parity.perturb_factor > 0:
         return previous_perturbation
     relion_iteration = init_relion_iteration + iteration + 1
-    perturbation, seed = sampling.advance_relion_perturbation_for_iteration(
+    perturbation, seed = sampling_perturbation.advance_relion_perturbation_for_iteration(
         previous_perturbation,
         perturb_factor=parity.perturb_factor,
         perturb_seed=parity.perturb_seed,

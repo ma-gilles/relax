@@ -29,7 +29,6 @@ from relax.relion.initial_noise import (
     relion_mpi_process_start_scoring_noise_pair,
 )
 from relax.runtime.env_flags import parse_env_flag_or_false
-from relax.sampling import relion_sampling_perturbation_for_iteration
 from relax.sampling.grids import _translation_grid_for_class_count
 from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import (
@@ -40,6 +39,7 @@ from relax.sampling.orientation_priors import (
     normalize_class_direction_prior_per_half,
     normalize_direction_prior_per_half,
 )
+from relax.sampling.perturbation import relion_sampling_perturbation_for_iteration
 from relax.star import metadata as relion_metadata
 from relax.star.metadata import (
     read_relion_direction_prior,

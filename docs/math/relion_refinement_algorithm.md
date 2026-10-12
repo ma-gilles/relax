@@ -360,7 +360,8 @@ retain scoring precision for perturbation. Startup/rebuild/final preparation sha
 that owner without changing sampling or RNG progression.
 
 [`sampling/grids.py`](../../relax/sampling/grids.py) owns rotation and translation grids and
-Euler conversions; [`sampling`](../../relax/sampling/__init__.py) owns oversampled children and perturbations. For the full C1 grid,
+Euler conversions, [`sampling/perturbation.py`](../../relax/sampling/perturbation.py) the perturbations;
+[`sampling`](../../relax/sampling/__init__.py) owns oversampled children. For the full C1 grid,
 `rotation_grid_n_in_planes` and `rotation_grid_size` give
 
 ```text

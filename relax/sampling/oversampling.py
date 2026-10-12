@@ -81,11 +81,8 @@ def build_adaptive_pass2_grids(
     parent-major layout; :func:`fill_adaptive_fine_rotation_rows` then fills the
     rows of the parents a pass reads.
     """
-    from relax.sampling import (
-        apply_relion_translation_perturbation,
-        get_oversampled_rotation_grid_from_samples,
-        get_oversampled_translation_grid,
-    )
+    from relax.sampling import get_oversampled_rotation_grid_from_samples, get_oversampled_translation_grid
+    from relax.sampling.perturbation import apply_relion_translation_perturbation
     coarse_rot_np = np.asarray(coarse_rotations)
     coarse_trans_np = np.asarray(coarse_translations)
     base_translations_f64 = np.asarray(base_translations, dtype=np.float64)
@@ -847,7 +844,7 @@ def prepare_adaptive_pass2_grids(
     same SamplingPerturbation. The K=1 and K-class dense routes share this rule.
     """
 
-    from relax.sampling import apply_relion_translation_perturbation
+    from relax.sampling.perturbation import apply_relion_translation_perturbation
 
     (
         coarse_rot,

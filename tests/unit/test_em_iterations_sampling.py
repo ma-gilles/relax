@@ -12,7 +12,7 @@ import oracles.iterations as em_iterations
 from oracles.core import translations_to_indices
 
 import relax.sampling as em_sampling
-from relax.sampling import grids
+from relax.sampling import grids, perturbation
 from relax.star import metadata as relion_metadata
 
 pytestmark = pytest.mark.unit
@@ -286,7 +286,7 @@ def test_local_rotation_grid_fast_respects_provided_perturbed_grid():
     sigma_psi = np.deg2rad(2.0)
 
     base_rotations = np.asarray(grids.get_rotation_grid(order, matrices=True), dtype=np.float32)
-    perturbed_rotations = em_sampling.apply_relion_rotation_perturbation(
+    perturbed_rotations = perturbation.apply_relion_rotation_perturbation(
         base_rotations,
         random_perturbation,
         grids.relion_angular_sampling_deg(order),
@@ -322,7 +322,7 @@ def test_perturbed_rotation_grid_metadata_is_not_factorized():
     assert base_metadata["mode"] == "factorized"
 
     base_rotations = np.asarray(grids.get_rotation_grid(order, matrices=True), dtype=np.float32)
-    perturbed_rotations = em_sampling.apply_relion_rotation_perturbation(
+    perturbed_rotations = perturbation.apply_relion_rotation_perturbation(
         base_rotations,
         random_perturbation=0.3,
         angular_sampling_deg=grids.relion_angular_sampling_deg(order),
@@ -338,7 +338,7 @@ def test_perturbed_rotation_grid_metadata_reuses_precomputed_rotations():
 
     order = 2
     base_rotations = np.asarray(grids.get_rotation_grid(order, matrices=True), dtype=np.float32)
-    perturbed_rotations = em_sampling.apply_relion_rotation_perturbation(
+    perturbed_rotations = perturbation.apply_relion_rotation_perturbation(
         base_rotations,
         random_perturbation=0.3,
         angular_sampling_deg=grids.relion_angular_sampling_deg(order),
@@ -440,7 +440,7 @@ def test_local_rotation_grid_fast_full_mode_matches_reference_loop():
     sigma_rot = np.deg2rad(2.5)
     sigma_psi = np.deg2rad(4.0)
     base_rotations = np.asarray(grids.get_rotation_grid(order, matrices=True), dtype=np.float32)
-    perturbed_rotations = em_sampling.apply_relion_rotation_perturbation(
+    perturbed_rotations = perturbation.apply_relion_rotation_perturbation(
         base_rotations,
         random_perturbation=0.3,
         angular_sampling_deg=grids.relion_angular_sampling_deg(order),

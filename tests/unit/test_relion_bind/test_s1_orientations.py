@@ -271,10 +271,8 @@ class TestOversampledGrid:
 
     def test_full_precision_seeded_perturbation_matches_accelerated_matrix_dump(self):
         """STAR-rounded perturbation must not replace RELION's live seeded value."""
-        from relax.sampling import (
-            get_oversampled_rotation_grid_from_samples,
-            relion_sampling_perturbation_for_iteration,
-        )
+        from relax.sampling import get_oversampled_rotation_grid_from_samples
+        from relax.sampling.perturbation import relion_sampling_perturbation_for_iteration
 
         parent_sample = np.asarray([47 * 768 + 149], dtype=np.int64)
         exact_perturbation = relion_sampling_perturbation_for_iteration(0.5, 20260712, 2)
@@ -378,7 +376,7 @@ class TestPerturbation:
     """Compare RELION perturbation against recovar's apply_relion_rotation_perturbation."""
 
     def test_perturbation_vs_recovar(self):
-        from relax.sampling import apply_relion_rotation_perturbation
+        from relax.sampling.perturbation import apply_relion_rotation_perturbation
 
         order = 2
         random_pert = 0.3

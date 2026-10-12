@@ -18,7 +18,6 @@ from relax.runtime.batch_planning import (
 from relax.sampling import (
     DevicePass1Source,
     _compute_oversampled_rotation_grid,
-    apply_relion_rotation_perturbation_to_eulers,
     get_local_rotation_grid_fast,
     get_oversampled_rotation_grid_from_samples,
     get_oversampled_translation_grid,
@@ -37,6 +36,7 @@ from relax.sampling.grids import (
 )
 from relax.sampling.healpix import euler_angles_to_matrix
 from relax.sampling.orientation_priors import make_relion_translation_log_prior
+from relax.sampling.perturbation import apply_relion_rotation_perturbation_to_eulers
 from relax.sampling.symmetry import canonicalize_rotational_symmetry, rotational_operators
 
 EXACT_LOCAL_BUCKET_QUANTUM_ENV = "RELAX_EXACT_LOCAL_BUCKET_QUANTUM"

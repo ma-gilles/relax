@@ -157,10 +157,8 @@ def _relion_adaptive_fine_translation_grid(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return RELION pass-2 fine translations and fine-to-coarse parent map."""
 
-    from relax.sampling import (
-        apply_relion_translation_perturbation,
-        get_oversampled_translation_grid,
-    )
+    from relax.sampling import get_oversampled_translation_grid
+    from relax.sampling.perturbation import apply_relion_translation_perturbation
 
     fine_base_translations, trans_parent_map = get_oversampled_translation_grid(
         np.asarray(base_translations, dtype=np.float32),
@@ -197,7 +195,7 @@ def _resolve_target_random_perturbation(
             "previous optimiser STAR"
         )
 
-    from relax.sampling import relion_sampling_perturbation_for_iteration
+    from relax.sampling.perturbation import relion_sampling_perturbation_for_iteration
 
     exact = relion_sampling_perturbation_for_iteration(
         float(perturbation_factor),
@@ -1304,13 +1302,16 @@ def main() -> None:
     from relax.reconstruction.regularization import RELION_MINRES_MAP
     from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
-    from relax.sampling import apply_relion_rotation_perturbation_to_eulers, apply_relion_translation_perturbation
     from relax.sampling.grids import get_relion_rotation_grid_eulers, get_translation_grid, relion_angular_sampling_deg
     from relax.sampling.orientation_priors import (
         make_relion_direction_log_prior,
         make_relion_translation_log_prior,
         relion_translation_prior_center,
         relion_translation_search_base,
+    )
+    from relax.sampling.perturbation import (
+        apply_relion_rotation_perturbation_to_eulers,
+        apply_relion_translation_perturbation,
     )
     from relax.scoring.significance import _compute_k_class_significance_batched
     from relax.star.metadata import (

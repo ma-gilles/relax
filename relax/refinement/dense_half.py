@@ -32,16 +32,14 @@ from relax.runtime.batch_planning import (
     safe_dense_k_class_rotation_block_size,
     safe_firstiter_cc_image_batch_size,
 )
-from relax.sampling import (
-    apply_relion_translation_perturbation,
-    project_rows,
-)
+from relax.sampling import project_rows
 from relax.sampling.oversampling import (
     AdaptivePass2Grids,
     build_adaptive_pass2_grids,
     prepare_adaptive_pass2_grids,
     project_pass2_rotations,
 )
+from relax.sampling.perturbation import apply_relion_translation_perturbation
 from relax.sampling.symmetry import canonicalize_rotational_symmetry
 from relax.steps import scoring_policy
 from relax.steps.half_inputs import HalfScoringData

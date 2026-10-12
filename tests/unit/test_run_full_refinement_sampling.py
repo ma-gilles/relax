@@ -21,7 +21,7 @@ from relax.refinement.iteration_history import (
 )
 from relax.refinement.refinement_options import RandomSeed
 from relax.refinement.result_files import _rotation_posterior_arrays, profile_rows_for_json
-from relax.sampling import (
+from relax.sampling.perturbation import (
     advance_relion_perturbation_from_seed,
     relion_sampling_perturbation_for_iteration,
 )
