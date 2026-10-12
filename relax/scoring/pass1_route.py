@@ -12,7 +12,7 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from relax.scoring.coarse_operands import k1_relion_f32_coarse_support_enabled
+from relax.scoring.coarse_operands import infer_relion_coarse_healpix_order, k1_relion_f32_coarse_support_enabled
 from relax.scoring.coarse_projector import CompactRows
 from relax.scoring.gaussian_plan import plan_coarse_gaussian
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
@@ -106,16 +106,14 @@ def plan_cc_route(
     translations_source,
     *,
     rotation_block_size: int,
-    coarse_healpix_order: int | None,
-    coarse_rotation_ids,
 ) -> RoutePlan:
     """Plan the normalized-CC route (``--firstiter_cc``) over ``shape``, scoring the rows of ``window``.
 
     RELION's exact coarse operands: the tree rescore's per-image FFT, RFLOAT CTF and corr_img operands, translated
     with RELION's sincosf for every translation and scored by the coarse GEMMs
     (``relion_coarse_normalized_cc_gemm_scores_jit``). With ``tree_rescore_max_margin`` the route also plans the
-    top-two rescore of the ambiguous winners; ``coarse_healpix_order`` and ``coarse_rotation_ids`` place its candidates
-    in RELION's coarse grid.
+    top-two rescore of the ambiguous winners; the request's ``coarse_healpix_order`` (inferred from the rotation count when
+    ``None``) and ``coarse_rotation_ids`` place its candidates in RELION's coarse grid.
     """
 
     from relax.fine_pass.bucket_io import relion_translation_angles_f32
@@ -147,6 +145,9 @@ def plan_cc_route(
     tree_rescore_plan = None
     if request.tree_rescore_max_margin is not None:
         require_tree_rescore_call(n_classes=shape.n_classes, return_class_best=request.return_class_best)
+        coarse_healpix_order = request.coarse_healpix_order
+        if coarse_healpix_order is None:
+            coarse_healpix_order = infer_relion_coarse_healpix_order(shape.n_rot, symmetry_label=request.symmetry_label)
         tree_rescore_plan = plan_tree_rescore(
             max_margin=request.tree_rescore_max_margin,
             relion_projector_half=relion_projector_half,
@@ -162,7 +163,11 @@ def plan_cc_route(
                 padding_factor=request.projection_padding_factor,
                 projector_max_r=request.relion_projector_r_max,
                 coarse_healpix_order=coarse_healpix_order,
-                coarse_rotation_ids=coarse_rotation_ids,
+                coarse_rotation_ids=(
+                    None
+                    if request.coarse_rotation_ids is None
+                    else np.asarray(request.coarse_rotation_ids, dtype=np.int64).reshape(-1)
+                ),
                 symmetry_label=request.symmetry_label,
             ),
         )

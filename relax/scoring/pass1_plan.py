@@ -20,9 +20,6 @@ from relax.runtime.env_flags import (
 from relax.scoring.coarse_kernels import (
     coarse_gemm_float64_requested,
 )
-from relax.scoring.coarse_operands import (
-    infer_relion_coarse_healpix_order,
-)
 from relax.scoring.pass1_batch import BatchInputPlan, resolve_noise_tables
 from relax.scoring.pass1_priors import plan_rotation_blocks, validated_translation_log_prior
 from relax.scoring.pass1_request import Pass1Request
@@ -193,8 +190,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         use_float64_projections=request.use_float64_projections,
     )
 
-    coarse_healpix_order = request.coarse_healpix_order
-    coarse_rotation_ids = request.coarse_rotation_ids
     image_batch_size = request.image_batch_size
     pad_final_image_batch = request.pad_final_image_batch
     relion_projector_half = request.relion_projector_half
@@ -219,10 +214,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     image_batch_size = operator.index(image_batch_size)
     image_shape = request.experiment_dataset.image_shape
     n_half = int(image_shape[0] * (image_shape[1] // 2 + 1))
-    if coarse_rotation_ids is not None:
-        coarse_rotation_ids = np.asarray(coarse_rotation_ids, dtype=np.int64).reshape(-1)
-    if coarse_healpix_order is None:
-        coarse_healpix_order = infer_relion_coarse_healpix_order(n_rot, **({"symmetry_label": request.symmetry_label} if request.symmetry_label != "C1" else {}))
 
     use_relion_projector = relion_projector_half is not None
     if use_relion_projector:
@@ -272,8 +263,6 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
             relion_projector_half,
             translations_source,
             rotation_block_size=rotation_block_size,
-            coarse_healpix_order=coarse_healpix_order,
-            coarse_rotation_ids=coarse_rotation_ids,
         )
     rotation_block_size = route.rotation_block_size
 
