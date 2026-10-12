@@ -150,7 +150,8 @@ def _guard_from_environ():
 
 def test_half_accumulator_guard_is_on_by_default_and_names_the_half(monkeypatch):
     """The cheap once-per-iteration guard runs in production unless opted out."""
-    from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV, RefinementEnvironment
+    from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
+    from relax.refinement.refinement_options import RefinementEnvironment
 
     monkeypatch.delenv(HALF_ACCUMULATOR_GUARD_ENV, raising=False)
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
@@ -170,7 +171,7 @@ def test_half_accumulator_guard_is_on_by_default_and_names_the_half(monkeypatch)
 
 def test_half_accumulator_guard_opt_out_and_warn_modes(monkeypatch, caplog):
     """``0`` switches the guard off, ``warn`` keeps going, anything else is refused when the options are built."""
-    from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV
+    from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
 
     poisoned = {"Ft_ctf_1": np.array([1.0, np.inf])}
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
@@ -204,7 +205,7 @@ def test_the_command_reads_the_guard_mode_into_the_options(monkeypatch, tmp_path
     """``relax refine`` reads RELAX_EM_BPREF_FINITE_GUARD once, into ``options.environment``."""
     from helpers.tiny_main import controller_inputs
 
-    from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV
+    from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
 
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
     monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "warn")
@@ -216,13 +217,14 @@ def test_the_controller_hands_the_options_guard_mode_to_the_guard(monkeypatch):
     """The controller passes ``options.environment``'s mode, not the environment, to the pre-join guard."""
     from helpers.tiny_refinement import run_tiny_refinement
 
-    from relax.diagnostics import reconstruction
-    from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV, RefinementEnvironment
+    from relax.reconstruction import accumulator_guard
+    from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
+    from relax.refinement.refinement_options import RefinementEnvironment
 
     monkeypatch.delenv(HALF_ACCUMULATOR_GUARD_ENV, raising=False)
     modes = []
     monkeypatch.setattr(
-        reconstruction.finite_check, "check_half_accumulators",
+        accumulator_guard.finite_check, "check_half_accumulators",
         lambda accumulators, *, mode, context: modes.append(mode),
     )
     run_tiny_refinement(

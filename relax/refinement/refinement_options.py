@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
+from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
 from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement.refinement_state import APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
 from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
@@ -676,7 +677,6 @@ class ExecutionOptions:
         )
 
 
-HALF_ACCUMULATOR_GUARD_ENV = "RELAX_EM_BPREF_FINITE_GUARD"
 _GUARD_OFF_VALUES = frozenset({"0", "false", "no", "off"})
 _GUARD_RAISE_VALUES = frozenset({"", "1", "true", "yes", "on", "raise"})
 

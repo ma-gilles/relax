@@ -8,10 +8,9 @@ import pytest
 from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-import relax.diagnostics.reconstruction as reconstruction_diagnostics
 from relax.diagnostics import observers
-from relax.diagnostics import reconstruction as diagnostics
 from relax.numerics import finite_check
+from relax.reconstruction import accumulator_guard
 from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import maximization
 from relax.steps import score_outputs
@@ -81,7 +80,7 @@ def test_half_accumulator_guard_routing(iteration, mode, expected_events, monkey
         assert context == f'iteration={iteration} relion_iteration={12 + iteration + 1}'
 
     monkeypatch.setattr(finite_check, 'check_half_accumulators', check)
-    diagnostics.check_half_accumulators_before_join(
+    accumulator_guard.check_half_accumulators_before_join(
         numerators, denominators, guard_mode=mode, iteration=iteration, init_relion_iteration=12, log=log,
     )
     assert events == expected_events
@@ -115,7 +114,7 @@ def test_actual_controller_audits_before_join_and_snapshot(n_classes, monkeypatc
     """Each iteration audits the raw half accumulators before its M-step; Class3D combines the halves in the
     M-step; K=1 joins them, releases the previous maps, dumps the joined accumulators, then updates the prior."""
     trace = CallTrace(monkeypatch)
-    trace.wrap(reconstruction_diagnostics, "check_half_accumulators_before_join", "audit")
+    trace.wrap(accumulator_guard, "check_half_accumulators_before_join", "audit")
     trace.wrap(maximization, "class_maximization", "class")
     trace.wrap(score_outputs, "_combine_optional_half_accumulators", "combine")
     trace.wrap(maximization, "k1_maximization", "k1")

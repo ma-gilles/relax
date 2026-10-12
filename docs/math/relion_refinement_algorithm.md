@@ -1276,9 +1276,10 @@ See the [complete current caller and implementation](../development/final_local_
 
 ### Prejoin diagnostic ownership
 
-[`audit_prejoin_accumulators`](../../relax/diagnostics/reconstruction.py) performs
-optional native-half capture and finite auditing before the controller combines
-Class3D accumulators or joins K1 low-resolution shells. Its target match is reused
-by postjoin capture; the guard applies independently of capture target. The same
-owner's `write_bpref_accumulators` preserves the pre/postjoin NPZ schema and casts.
+The observer's optional native-half capture and the finite guard
+[`check_half_accumulators_before_join`](../../relax/reconstruction/accumulator_guard.py)
+run before the controller combines Class3D accumulators or joins K1 low-resolution
+shells. The capture's target match is reused by postjoin capture; the guard applies
+independently of capture target.
+[`write_bpref_accumulators`](../../relax/diagnostics/reconstruction.py) preserves the pre/postjoin NPZ schema and casts.
 The controller retains numerical joins, prior/reconstruction order and state writes.

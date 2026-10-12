@@ -1,7 +1,7 @@
 """Reconstruction diagnostic serialization; scheduling stays in the controller.
 
-The finite guard of the half accumulators runs before cross-half mixing (the captures of the accumulators
-are ``relax.diagnostics.observers.BpRefAccumulatorObserver``). Writers preserve historical NPZ field names,
+The captures of the half accumulators are ``relax.diagnostics.observers.BpRefAccumulatorObserver`` (their finite
+guard, which raises, is ``relax.reconstruction.accumulator_guard``). Writers preserve historical NPZ field names,
 casts and optional-field behavior; model and history updates remain with the controller.
 """
 
@@ -13,45 +13,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.numerics import finite_check
 from relax.reconstruction import regularization
-from relax.refinement.refinement_options import HALF_ACCUMULATOR_GUARD_ENV
 
 if TYPE_CHECKING:
     from relax.refinement.image_size_plans import ClassImageSize
     from relax.refinement.numbered_reconstruction import ReconstructionSettings
     from relax.refinement.priors import ClassPriorEstimate
-
-
-def check_half_accumulators_before_join(
-    numerators, denominators, *, guard_mode: str, iteration, init_relion_iteration, log
-) -> None:
-    """The finite guard of the native half accumulators, before any cross-half join.
-
-    ``guard_mode`` (``RELAX_EM_BPREF_FINITE_GUARD``, ``RefinementEnvironment.half_accumulator_guard``) is off, warn or raise;
-    the mode is logged at the first iteration. Run before the join, so a report names the half that is
-    actually damaged rather than the one the join copied it into.
-    """
-    if iteration == 0:
-        log.info(
-            "BPref accumulator guard (%s): mode=%s",
-            HALF_ACCUMULATOR_GUARD_ENV,
-            guard_mode,
-        )
-    if guard_mode != "off":
-        finite_check.check_half_accumulators(
-            {
-                "Ft_y_0": numerators[0],
-                "Ft_y_1": numerators[1],
-                "Ft_ctf_0": denominators[0],
-                "Ft_ctf_1": denominators[1],
-            },
-            mode=guard_mode,
-            context=finite_check.describe_context(
-                iteration=iteration,
-                relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
-            ),
-        )
 
 
 def write_bpref_accumulators(

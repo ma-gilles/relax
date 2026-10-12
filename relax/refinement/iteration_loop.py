@@ -20,12 +20,11 @@ import numpy as np
 from recovar.data_io import cryoem_dataset
 
 import relax.diagnostics.iteration as iteration_diagnostics
-import relax.diagnostics.reconstruction as reconstruction_diagnostics
 import relax.parity.relion_replay as replay_policy
 import relax.refinement.refinement_state as convergence_helpers
 from relax.classification.probes import KClassProbe, NoProbe
 from relax.diagnostics import bpref_diagnostics
-from relax.reconstruction import resolution
+from relax.reconstruction import accumulator_guard, resolution
 from relax.refinement import (
     engine_record,
     expectation,
@@ -1023,7 +1022,7 @@ def refine_single_volume(
             accumulator_shape=operands.accumulator_shape,
             pixel_size_angstrom=ctx.source_pixel_size_angstrom,
         )
-        reconstruction_diagnostics.check_half_accumulators_before_join(
+        accumulator_guard.check_half_accumulators_before_join(
             operands.numerators, operands.denominators, guard_mode=options.environment.half_accumulator_guard,
             iteration=iteration, init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
         )

@@ -52,7 +52,6 @@ ALLOWED_UPWARD = {
     ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _B,
     ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _B,
     ("relax.refinement.iteration_loop", "relax.diagnostics.iteration"): _B,
-    ("relax.refinement.iteration_loop", "relax.diagnostics.reconstruction"): _B,
     ("relax.refinement.iteration_loop", "relax.parity.relion_replay"): _B,
     ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _B,
     ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): _B,
