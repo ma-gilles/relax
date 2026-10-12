@@ -15,6 +15,7 @@ from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
 from relax.projection import adjoint
+from relax.relion.optics_aberrations import magnification_is_anisotropic
 
 pytestmark = pytest.mark.unit
 
@@ -65,8 +66,8 @@ def _relion_kept(relion_matrices, x, y, r_max):
     ],
 )
 def test_anisotropy_is_decided_from_the_magnification_matrix(matrix, anisotropic):
-    assert adjoint.magnification_is_anisotropic([matrix]) is anisotropic
-    assert adjoint.magnification_is_anisotropic([np.eye(2), matrix]) is anisotropic
+    assert magnification_is_anisotropic([matrix]) is anisotropic
+    assert magnification_is_anisotropic([np.eye(2), matrix]) is anisotropic
 
 
 def test_anisotropic_clip_keeps_the_rounded_image_support_and_the_reference_radius():

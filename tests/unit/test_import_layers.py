@@ -119,7 +119,6 @@ ALLOWED_UPWARD = {
     ("relax.relion.metadata", "relax.sampling.orientation_priors"): _C,
     ("relax.relion.metadata", "relax.sampling.symmetry"): _C,
     ("relax.relion.normalization", "relax.diagnostics.finite_check"): _B,
-    ("relax.relion.optics_aberrations", "relax.projection.adjoint"): _C,
     ("relax.relion.tomo_input", "relax.sampling.healpix"): _C,
     ("relax.relion.vdam_checkpoint", "relax.vdam.native_options"): _C,
     ("relax.relion.vdam_checkpoint", "relax.vdam.native_sampling"): _C,

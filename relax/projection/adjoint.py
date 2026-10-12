@@ -51,30 +51,11 @@ class ReferenceSphereClip(NamedTuple):
         return (runtime_image_radius - self.image_offset) / self.scale
 
 
-# Relative singular-value spread below which a magnification matrix is a scaled rotation.
-_ISOTROPIC_MAGNIFICATION_TOLERANCE = 1e-9
-
-
-def magnification_is_anisotropic(mag_matrices) -> bool:
-    """Whether any optics group's 2x2 ``rlnMagMat`` stretches some directions more than others.
-
-    Decided once from the optics table, never from a pass's rotations: a scaled rotation
-    (equal singular values, identity included) keeps the image-radius clip exact.
-    """
-
-    import numpy as np
-
-    for matrix in mag_matrices:
-        singular = np.linalg.svd(np.asarray(matrix, dtype=np.float64).reshape(2, 2), compute_uv=False)
-        if singular[0] - singular[1] > _ISOTROPIC_MAGNIFICATION_TOLERANCE * singular[0]:
-            return True
-    return False
-
-
 def mstep_adjoint_max_r(volume_current_size, image_radius, padding_factor, *, anisotropic_magnification=False):
     """The adjoint ``max_r``: r_max on one grid, a :class:`ReferenceSphereClip` otherwise.
 
-    ``anisotropic_magnification`` (:func:`magnification_is_anisotropic` of the images' optics
+    ``anisotropic_magnification``
+    (:func:`relax.relion.optics_aberrations.magnification_is_anisotropic` of the images' optics
     groups) selects the rotated-radius mask. On the reference grid the image clip keeps the
     rounded image support ``r_max + 1/2``. An optics group on another grid has
     ``image_radius = r_max * s`` (``s`` its scale difference, relax#48 and relax#53): its

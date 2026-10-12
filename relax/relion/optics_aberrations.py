@@ -385,15 +385,33 @@ def dataset_needs_exact_ctf(experiment_dataset) -> bool:
     return dataset_projection_magnification(experiment_dataset) is not None
 
 
+# Relative singular-value spread below which a magnification matrix is a scaled rotation.
+_ISOTROPIC_MAGNIFICATION_TOLERANCE = 1e-9
+
+
+def magnification_is_anisotropic(mag_matrices) -> bool:
+    """Whether any optics group's 2x2 ``rlnMagMat`` stretches some directions more than others.
+
+    Decided once from the optics table, never from a pass's rotations: a scaled rotation
+    (equal singular values, identity included) keeps the image-radius clip exact.
+    """
+
+    import numpy as np
+
+    for matrix in mag_matrices:
+        singular = np.linalg.svd(np.asarray(matrix, dtype=np.float64).reshape(2, 2), compute_uv=False)
+        if singular[0] - singular[1] > _ISOTROPIC_MAGNIFICATION_TOLERANCE * singular[0]:
+            return True
+    return False
+
+
 def dataset_magnification_is_anisotropic(experiment_dataset) -> bool:
     """Whether any optics group of the dataset has an anisotropic ``rlnMagMat``.
 
     The M-step adjoint then clips on RELION's rotated radius
-    (:func:`relax.projection.adjoint.magnification_is_anisotropic`, ``ReferenceSphereClip``).
+    (:func:`magnification_is_anisotropic`, :class:`relax.projection.adjoint.ReferenceSphereClip`).
     A dataset without a RELION source STAR or without magnification columns has none.
     """
-
-    from relax.projection.adjoint import magnification_is_anisotropic
 
     matrices = dataset_optics_mag_matrices(experiment_dataset)
     return bool(matrices) and magnification_is_anisotropic(matrices.values())
