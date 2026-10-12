@@ -63,23 +63,6 @@ _bpref_device_panel_launch_counters: dict[_BPrefPanelKey, int] = {}
 _bpref_device_panel_metadata: dict[_BPrefPanelKey, dict[str, object]] = {}
 
 
-class BPrefContributionDumpComplete(RuntimeError):
-    """Raised after an explicitly targeted BPref diagnostic bundle is written."""
-
-    def __init__(
-        self,
-        *,
-        contribution_path: str | Path,
-        device_signature_path: str | Path | None,
-    ):
-        self.contribution_path = Path(contribution_path)
-        self.device_signature_path = None if device_signature_path is None else Path(device_signature_path)
-        message = f"requested RECOVAR BPref contribution target was written (contribution_path={self.contribution_path}"
-        if self.device_signature_path is not None:
-            message += f", device_signature_path={self.device_signature_path}"
-        super().__init__(message + ")")
-
-
 def flush_selected_bpref_device_panel(*, iteration_index: int, half_index: int) -> None:
     """Flush the requested numbered capture, given zero-based loop indices."""
 

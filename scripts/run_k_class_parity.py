@@ -2183,16 +2183,4 @@ if __name__ == "__main__":
         ):
             print(f"RECOVAR pass-2 dump completed; stopping replay before remaining M-step work: {exc}")
             sys.exit(0)
-        if (
-            exc.__class__.__name__ == "BPrefContributionDumpComplete"
-            and os.environ.get(
-                "RELAX_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP"
-            )
-            == "1"
-        ):
-            print(
-                "RECOVAR BPref contribution dump completed; stopping replay "
-                f"before reconstruction: {exc}"
-            )
-            sys.exit(0)
         raise
