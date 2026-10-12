@@ -34,7 +34,7 @@ def make_mstep_block_inputs(rows, posterior, *, n_slots: int) -> "resident_chunk
     live, and the M-step was about 70% of the chunk time.
 
     The rows are taken slot-major (a single slot for K=1 refinement; a class
-    for Class3D; a class and pseudo-halfset for VDAM, :class:`_ChunkMstepLayout`),
+    for Class3D; a class and pseudo-halfset for VDAM, :class:`ChunkMstepLayout`),
     live rows of a slot first in their chunk order, then every row that is not
     live; ``slot_offsets`` holds each slot's live run, so each slot is one run
     of blocks and the rows of a boundary block outside it get no weight. Grouping the live rows into fewer blocks changes
@@ -69,7 +69,7 @@ class _MstepOnlyStatsConfig(NamedTuple):
 
     ``run_resident_mstep_blocks`` runs the M-step alone for a caller that owns
     its own scoring, posterior and statistics (local search, T12). Handing it
-    these fields in the shape ``_ChunkProgramSpec`` expects keeps one M-step
+    these fields in the shape ``ChunkProgramSpec`` expects keeps one M-step
     body without making that caller build a full statistics configuration.
     The local search sums its norm rows into their images with the scatter-add.
     """
@@ -219,7 +219,7 @@ def _resident_mstep_block(
             logical_recon_pixels,
         )
     # The image power is added once per chunk after the block walk
-    # (_add_chunk_wavg_image_power); the blocks add their rows' exact terms at
+    # (add_chunk_wavg_image_power); the blocks add their rows' exact terms at
     # their rectangle positions, the rest of the rectangle receiving nothing.
     wavg_triplet_pixels = cuda_fine.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
         jnp.asarray(exact_terms, dtype=jnp.float32),
@@ -251,7 +251,7 @@ def _resident_mstep_block(
 
     if spec.presum_adjoint:
         # The adjoint is linear in the rows, so a projection's rows are summed
-        # here and backprojected once per pass (_backproject_projection_sums).
+        # here and backprojected once per pass (backproject_projection_sums).
         # Padded and other-slot rows carry zero sums.
         Ft_y = carry.Ft_y.at[block_sum_ids].add(summed.astype(carry.Ft_y.dtype))
         Ft_ctf = carry.Ft_ctf.at[block_sum_ids].add(bpref_ctf_probs.astype(carry.Ft_ctf.dtype))
@@ -332,7 +332,7 @@ def _mstep_block_operand_dtypes(
     * ``XA`` promotes the noise variance against the real part of
       ``proj * conj(summed_masked)``.
 
-    ``_carry_aval_probe_enabled`` checks this against ``jax.eval_shape`` of the
+    ``carry_aval_probe_enabled`` checks this against ``jax.eval_shape`` of the
     real block stages; the unit tests set it.
     """
 
@@ -384,7 +384,7 @@ def _mstep_block_operand_dtypes(
         "noise": noise_dtype,
         "a2": a2_dtype,
         "xa": xa_dtype,
-        # ``_resident_block_noise_and_norm`` casts the binned shells to float64
+        # ``resident_block_noise_and_norm`` casts the binned shells to float64
         # before they leave the block, so the carry is float64 whatever the
         # operands promote to.
         "noise_shells": jnp.dtype(jnp.float64),

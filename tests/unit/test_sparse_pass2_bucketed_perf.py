@@ -1305,7 +1305,7 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
     A K15 VDAM chunk (62ab6ae, it151) ran out of memory gathering its classes' padded calls:
     every class with a few rows still projected a whole stream quantum, and the calls were
     concatenated and gathered next to the output, ``K * quantum`` rows past the plan's
-    ``_STREAM_PEAK_COPIES * row_capacity``. Here 15 classes of 3 rows each pad to 256-rotation
+    ``STREAM_PEAK_COPIES * row_capacity``. Here 15 classes of 3 rows each pad to 256-rotation
     calls (class_call_length; 3840 rotations of calls) in a 64-row chunk: the live projection
     arrays stay within the plan's two row-capacity copies, and every row holds its own class's
     projection.

@@ -760,7 +760,7 @@ def test_local_chunk_runs_with_the_once_per_half_operand_flag(
     """One local-search chunk through the M-step adapter with T16's flag on.
 
     The T16 merge added ``recon_image``/``recon_weight``/``noise_image`` to
-    ``_ChunkStageOperands`` and ``recon_pixel_indices`` to ``_ChunkStageTables``
+    ``ChunkStageOperands`` and ``recon_pixel_indices`` to ``ChunkStageTables``
     for the once-per-half kernel path. The local adapter still built the old
     field sets, so every resident local chunk raised ``TypeError``; the
     full-wave end-to-end (job 14168000) died at its first local search,

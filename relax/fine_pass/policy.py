@@ -179,7 +179,7 @@ _RESIDENT_OPERANDS_VERIFY_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY"
 
 # Take ``ctf_probs`` from the translate-and-sum kernel's fourth output instead
 # of the XLA statement. Measurement only: see
-# ``_resident_block_weighted_sums_kernel`` for why it is not the default.
+# ``resident_block_weighted_sums_kernel`` for why it is not the default.
 _KERNEL_CTF_PROBS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
 
 

@@ -27,7 +27,7 @@ _LARGE_IRFFT_TRANSFORM_SIZE_LIMIT = np.iinfo(np.int32).max
 # Stable Fourier windows: the chunk programs are keyed on a physical window
 # class (the current size rounded up to the stable-window quantum) and RELION's
 # logical current size and pixel counts travel as device scalars
-# (_WindowLogicalSizes), so the current sizes of one class share their chunk
+# (WindowLogicalSizes), so the current sizes of one class share their chunk
 # programs. Default on for Class3D and auto-refine: on the 5k K4 census
 # (14460993) the 25-iteration wall drops from 367 to 336 s with maps identical
 # to non-MPI RELION (14468487). ``=0`` restores RELION's logical window as the

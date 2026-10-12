@@ -75,7 +75,7 @@ def _chunks():
 def test_the_aval_placement_matches_the_device_placement():
     """The warm-up's row inputs must be the loop's, described.
 
-    Both come out of `_make_chunk_row_arrays`; only the placement differs. If
+    Both come out of `make_chunk_row_arrays`; only the placement differs. If
     a field's aval and its device array ever disagreed, the warm-up would
     compile a program keyed on the wrong signature and the loop would compile
     its own anyway.
@@ -421,7 +421,7 @@ def test_an_unknown_path_is_refused_rather_than_silently_warming_nothing():
 
 
 class _Spec(str):
-    """Stand-in for `_ChunkProgramSpec`: hashable, compares by value."""
+    """Stand-in for `ChunkProgramSpec`: hashable, compares by value."""
 
 
 def test_a_program_key_is_the_function_and_its_static_argument():

@@ -91,7 +91,7 @@ def test_class_layout_refuses_rows_out_of_hidden_space_order():
 
 
 def _block_inputs(host, chunk, live_cells, *, n_classes, n_slots=None, n_fine_trans=3):
-    """``_make_mstep_block_inputs`` on a stand-in chunk whose listed rows carry weight."""
+    """``make_mstep_block_inputs`` on a stand-in chunk whose listed rows carry weight."""
 
     n_slots = n_classes if n_slots is None else n_slots
     row_capacity = int(chunk.row_capacity)

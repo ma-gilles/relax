@@ -292,7 +292,7 @@ def run_tilt_chunk(
     - K>1 classes (RELION subtomogram Class3D): a particle's rows are class-major (the candidate
       tables' class layout), each (slot, row) projects from its class's reference, the posterior
       segment is the particle's over every class, and each accumulator slot's rows backproject into
-      its own BPref pair, their scale sums under the class's mask (``_fold_class_scale_sums``).
+      its own BPref pair, their scale sums under the class's mask (``fold_class_scale_sums``).
     - ``slot_block`` (:func:`tilt_projection_slot_block`): when the (slot, row) projections of every slot
       do not fit, they are made a block of slots at a time, for the scores (the running diff2 carried
       across blocks, so its slot order is kept) and again for the M-step.
@@ -971,7 +971,7 @@ def _tilt_mstep_program(
 
     Each slot backprojects the C_U images that are its units' s-th images (a slot view of the chunk's
     operands, indexed by unit), block by block over its active rows, then adds the image power of each
-    translation block once (as the SPA chunk does, ``_add_chunk_wavg_image_power``) and puts its
+    translation block once (as the SPA chunk does, ``add_chunk_wavg_image_power``) and puts its
     per-image partials on those images' chunk rows. ``row_posterior`` ``[C_R, k]`` is each row's posterior at
     its unit's ``k`` translations (:func:`unit_mstep_translations`), and ``slots.angles`` the units' phases
     there; ``kept_index``/``kept_valid`` are the translation blocks' ``[K, T_b]`` positions in those ``k``
@@ -1338,9 +1338,9 @@ def accumulate_tilt_chunk_terms(
     unit_translation_sqdist_ang,  # [C_U, T] or None
     image_unit_local,  # int32 [C_I], C_U on padded images
     image_ids,  # int32 [C_I], -1 padded
-    operands,  # _ChunkStageOperands over the chunk's images (image_noise_scale set)
-    tables,  # _ChunkStageTables
-    mstep,  # _ChunkMstepCarry after every slot's blocks (noise and norm partials already scaled)
+    operands,  # ChunkStageOperands over the chunk's images (image_noise_scale set)
+    tables,  # ChunkStageTables
+    mstep,  # ChunkMstepCarry after every slot's blocks (noise and norm partials already scaled)
     posterior,  # resident_chunk_records.ChunkPosterior over the chunk's particles
     rows,
     spec,

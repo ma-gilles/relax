@@ -88,7 +88,7 @@ def _chunk_mstep_layout(host_chunk, *, place) -> resident_chunk_records.ChunkMst
     ``BPref[iclass]``, ml_optimiser.cpp:10826) and, for VDAM, a pseudo-halfset's
     (``iclass + (part_id % 2) * nr_classes``, acc_ml_optimiser_impl.h:4800-4804).
     The slot-major order itself is taken on the device, over the live rows only
-    (:func:`_make_mstep_block_inputs`).
+    (:func:`make_mstep_block_inputs`).
     """
 
     return resident_chunk_records.ChunkMstepLayout(row_slot=place.array(host_chunk["row_slot"], jnp.int32))

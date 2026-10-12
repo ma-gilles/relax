@@ -2066,7 +2066,7 @@ def _expand_posterior_bins(sums, posterior_bin_ids, n_posterior_bins: int) -> np
 class _ClassRows(NamedTuple):
     """The two fields of a chunk's rows :func:`resident_chunk_posterior.class_sub_segment_posterior` reads."""
 
-    classes: object  # resident_chunk_programs._ChunkClassLayout
+    classes: object  # resident_chunk_programs.ChunkClassLayout
     n_valid_images: object  # int32 device scalar
 
 
@@ -2600,7 +2600,7 @@ def _start_resident_local_chunk(
     )
 
     # Only rows the pruned posterior keeps enter the M-step, live rows first in
-    # chunk order, as in the global pass (_make_mstep_block_inputs): a row with
+    # chunk order, as in the global pass (make_mstep_block_inputs): a row with
     # no positive cell adds exact zeros to every M-step accumulator, and the
     # block walk stops after the live rows. At the 10097 full-box final pass
     # about a third of the scored rows carry no weight.

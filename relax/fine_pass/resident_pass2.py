@@ -55,7 +55,7 @@ blocks inside the chunk program"). The driver therefore walks each chunk in
 fixed-size row blocks, so the pixel-axis programs are keyed on one static block
 shape regardless of the chunk's capacity class. Because of that split, the
 image-level statistics are folded once per chunk by
-:func:`_accumulate_chunk_image_terms` (T9a's arithmetic, with the row-pixel
+:func:`~relax.fine_pass.resident_image_terms.accumulate_chunk_image_terms` (T9a's arithmetic, with the row-pixel
 reductions arriving as chunk partials) rather than by T9a's single fused
 program, which assumes one call per chunk with the whole pixel axis resident.
 """
@@ -216,7 +216,7 @@ _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV = "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_B
 # 524288 is for early low-SNR states, where each image keeps thousands of rows:
 # Class3D K4 100k/256 snr05 iteration 2 ran 8722 chunks of 131072 rows, 2028 of
 # 524288, chunk loop 619 -> 523 s and iteration 3 453 -> 374 s (job 14580683).
-# The cached-path gather budget (_cached_row_capacity_ladder) and the chunk
+# The cached-path gather budget (cached_row_capacity_ladder) and the chunk
 # memory plan drop it wherever a chunk that size does not fit.
 _DEFAULT_ROW_CAPACITY_LADDER = (8192, 32768, 131072, 524288)
 _DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
@@ -227,11 +227,6 @@ __all__ = [
     "compute_k_class_pass2_stats_resident",
     "compute_pass2_stats_resident",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Production-configuration gate
-# ---------------------------------------------------------------------------
 
 
 def _resident_wavg_arithmetic(
@@ -280,21 +275,6 @@ def _require_gpu_pass2() -> None:
             f"{'available' if cuda_backproject.custom_cuda_requested() else 'unavailable'}). "
             "There is no CPU pass 2: run on a GPU node."
         )
-
-
-# ---------------------------------------------------------------------------
-# Planning
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Device programs with a pixel axis (one per (block rows, pixel count) pair)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Per-chunk image-level statistics (every term without a row-pixel axis)
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -1420,7 +1400,7 @@ def _resident_pass2(
     # chunk budgets), so every budget sees them; allocated after the chunk
     # budget they were not counted, up to 23 GiB at EMPIAR-10202's full box.
     # A K-class pass whose sums fit carries per-projection row sums instead
-    # (_projection_sums_bytes); the volumes are then built after the chunk loop.
+    # (projection_sums_bytes); the volumes are then built after the chunk loop.
     # K=1 keeps the per-row backprojection: it measured no gain (K1 50k, job
     # 14585996: 1095 -> 1092 s), and its cold-start parity cases carry the
     # reassociation into the trajectory (fast tier k1_os1_coldstart_standalone
@@ -1507,7 +1487,7 @@ def _resident_pass2(
     # ---- projection cache (same admission and build as the compact engine) -
     # K>1 caches every class's fine grid, class k at k * n_fine_rot; when the
     # significant coarse parents' children are far fewer, only they are cached
-    # (_significant_projection_slots), class k at k * capacity.
+    # (significant_projection_slots), class k at k * capacity.
     projection_slots = None
     if tilt is None and not presum_adjoint and coarse_reuse is None and coarse_rotation_ids is None:
         projection_slots = resident_projections.significant_projection_slots(
@@ -1729,7 +1709,7 @@ def _resident_pass2(
     # current size it does not (294912 rotations at 136 px is ~40 GiB), so each
     # chunk projects its own distinct fine rotations instead, as RELION projects
     # each particle's significant orientations. The projections are the same
-    # arrays gathered through a chunk-local slot; see _stream_chunk_projections.
+    # arrays gathered through a chunk-local slot; see stream_chunk_projections.
     projection_bytes_per_rotation = transient_projection_bytes / float(max(n_projections, 1))
     # Both the whole-grid cache and the chunk-local caches are sized from what
     # the allocator can still hand out now, after reserving the half's resident
@@ -1991,7 +1971,7 @@ def _resident_pass2(
 
     # ---- capacity plan ----------------------------------------------------
     # A chunk gathers one cached row per candidate: the union window's pixels
-    # when the cache holds one (_cached_block_projections), not the score
+    # when the cache holds one (cached_block_projections), not the score
     # window's. Counting the score window let a 524288-row chunk past both
     # budgets at current size 108 and its 19.8 GiB gather ran out of memory
     # (union 5008 vs score 3690 pixels, job 14592696).
@@ -3337,7 +3317,7 @@ def _mask_recon_tail(shell_indices_noise, noise_variance_for_noise, n_logical, *
 
 
 # ---------------------------------------------------------------------------
-# The chunk's stages and their program spec
+# The per-chunk run (the stages, records and programs are in resident_chunk_*.py)
 # ---------------------------------------------------------------------------
 
 
@@ -3441,7 +3421,7 @@ def _run_resident_chunk(
     (:func:`_run_lone_resident_chunk`, :func:`lone_block_rows`).
 
     ``union_score_take`` / ``union_recon_take`` / ``union_native_fft_size``
-    describe a union projection cache (see ``_ChunkStageTables``); they are
+    describe a union projection cache (see ``ChunkStageTables``); they are
     None / 0 for the three-cache layout and for streamed chunks.
     ``residual_sgd_cache`` / ``residual_sgd_take`` are VDAM's subtracted-reference
     rows of that cache (``_sgd_residual_rows``), None when it has none.

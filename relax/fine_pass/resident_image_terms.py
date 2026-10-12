@@ -46,7 +46,7 @@ class ChunkImageOperands(NamedTuple):
     per_class_log_z: jax.Array | None = None  # float64 [C_B * K]
     per_class_best_log_score: jax.Array | None = None  # float32 [C_B * K]
     per_class_best_cell: jax.Array | None = None  # int64 [C_B * K], fine rotation * T + t, -1 if none
-    # K>1: each image's scale sums under its classes' own masks (_fold_class_scale_sums).
+    # K>1: each image's scale sums under its classes' own masks (fold_class_scale_sums).
     scale_xa_per_image: jax.Array | None = None  # float64 [C_B]
     scale_aa_per_image: jax.Array | None = None  # float64 [C_B]
 

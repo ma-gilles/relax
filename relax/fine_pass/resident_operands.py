@@ -1170,7 +1170,7 @@ def _gather_chunk_arrays(
     posterior is zero.
 
     A padded slot reads the chunk's *first* image rather than image zero, which
-    is what ``_pad_batch_to_capacity`` fed the per-chunk preparation. Nothing
+    is what ``pad_batch_to_capacity`` fed the per-chunk preparation. Nothing
     downstream can see the difference, since every padded row is zeroed here,
     but it keeps the two paths' intermediate batches identical.
     """

@@ -8,7 +8,7 @@ accumulation it feeds. It is the only pass-2 engine and it needs a CUDA GPU.
 | Module | Owns |
 | --- | --- |
 | `dispatch.py` | `compute_pass2_stats_sparse`: the one entry the controllers call; it routes to the resident drivers |
-| `resident_pass2.py` | the drivers `compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`, `compute_tilt_pass2_stats_resident` |
+| `resident_pass2.py` | the drivers `compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`, `compute_tilt_pass2_stats_resident`; the candidate table blocks, the default capacity ladders and the per-chunk run (`_run_resident_chunk`) |
 | `resident_configuration.py` | the configuration gate `require_resident_production_configuration`: the production configuration the drivers implement, checked before any device work |
 | `resident_chunk_memory.py` | chunk planning: the M-step block rows, the bytes of a chunk, `plan_resident_chunk_memory`, lone overflow chunks and the chunk budget |
 | `resident_stable_windows.py` | the physical window classes a refinement reuses (`stable_window_class_history`), the stable-window plan, the reference-model class and the capacity projection |

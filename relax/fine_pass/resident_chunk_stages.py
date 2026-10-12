@@ -74,11 +74,11 @@ def resident_chunk_statistics_program(
 ):
     """The chunk's Wavg image power, then :func:`_resident_chunk_statistics`, as one program per capacity class.
 
-    The image power (:func:`_add_chunk_wavg_image_power`) is read only by the
+    The image power (:func:`add_chunk_wavg_image_power`) is read only by the
     statistics, so it runs inside this program rather than as one of its own.
     The statistics accumulator is donated: it is a running total the driver
     rebinds every chunk, so updating it in place is what the loose dispatch
-    already did through ``_accumulate_chunk_image_terms``.
+    already did through ``accumulate_chunk_image_terms``.
     """
 
     mstep = resident_block_programs.add_chunk_wavg_image_power(
@@ -230,7 +230,7 @@ def run_resident_chunk_stages(
     """The chunk's stages, dispatched one at a time.
 
     The host block loop reads each accumulator slot's live row range back from
-    the device once per chunk (:func:`_make_mstep_block_inputs`), so it
+    the device once per chunk (:func:`make_mstep_block_inputs`), so it
     launches only the blocks that carry weight.
 
     ``timing_hook(name)`` is called after each stage when the chunk

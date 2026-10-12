@@ -221,7 +221,7 @@ def stream_projection_budget_bytes(
 def _fitting_row_capacities(row_ladder, row_bytes: float, budget_bytes: float, what: str):
     """The ladder's row capacities whose ``capacity * row_bytes`` fits ``budget_bytes``.
 
-    When no class fits, the smallest is halved down to :data:`_MIN_PLANNED_ROW_CAPACITY`, as the chunk
+    When no class fits, the smallest is halved down to :data:`MIN_PLANNED_ROW_CAPACITY`, as the chunk
     memory plan does, and the largest that fits is the one class (a 16 GB V100's box-192 subtomogram final
     pass needed 4.43 GiB at 8192 rows against 3.78 GiB, relax#32). Below that floor the pass is refused,
     before any device work, with what to change. Ladders with a fitting class are unchanged.

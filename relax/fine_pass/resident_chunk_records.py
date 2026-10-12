@@ -142,7 +142,7 @@ class ChunkProgramSpec:
     firstiter_cc: bool = False
     n_slots: int = 1
     # VDAM (--grad): BPref takes the residual shift(img) - ctf * proj, RELION's
-    # cuda_kernel_backproject3D_SGD (BP.cuh:406-560); see _resident_block_residual.
+    # cuda_kernel_backproject3D_SGD (BP.cuh:406-560); see resident_block_residual.
     mstep_subtract_ctf_projection: bool = False
     # RELION Class3D classes; rows carry the class axis when there is more than one.
     n_classes: int = 1
@@ -155,7 +155,7 @@ class ChunkProgramSpec:
     union_native_fft_size: int = 0
     # The M-step carry holds per-projection row sums instead of BPref volumes;
     # the pass backprojects them once after its chunk loop
-    # (_backproject_projection_sums).
+    # (backproject_projection_sums).
     presum_adjoint: bool = False
 
 
@@ -353,7 +353,7 @@ class ChunkMstepCarry(NamedTuple):
     a2_per_image: jax.Array  # real [C_B]
     xa_per_image: jax.Array  # real [C_B]
     # K>1 only: each image's scale sums, every class masked by its own
-    # data_vs_prior_class > 3 (:func:`_fold_class_scale_sums`).
+    # data_vs_prior_class > 3 (:func:`fold_class_scale_sums`).
     scale_xa_per_image: jax.Array | None = None  # float64 [C_B]
     scale_aa_per_image: jax.Array | None = None  # float64 [C_B]
 
@@ -378,7 +378,7 @@ class MstepBlockInputs(NamedTuple):
     # the rows of a boundary block outside it get no weight. None where the
     # caller hands the block its rows directly (local search).
     class_row_range: jax.Array | None = None  # int32 [2]
-    # Each slot's live rows in this order (:func:`_make_mstep_block_inputs`).
+    # Each slot's live rows in this order (:func:`make_mstep_block_inputs`).
     slot_offsets: jax.Array | None = None  # int32 [n_slots + 1]
     # With ``spec.presum_adjoint``, each row's sum slot when it is not its projection id: a tilt slot's
     # visiting position, so the row's translation-block partials merge before one adjoint (relax#27).

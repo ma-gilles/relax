@@ -1272,7 +1272,7 @@ def test_chunk_operands_are_padded_on_the_host():
 def test_capacity_batch_is_the_padded_fetch(monkeypatch):
     """The chunk fetch reads the host images in sub-batches into one reused capacity buffer
     (bigbox 14747301: fresh 1.3 GB fetches and pads were ~95 s per half of host time); the
-    upload is the one-call fetch padded with its first image, as _pad_batch_to_capacity pads."""
+    upload is the one-call fetch padded with its first image, as pad_batch_to_capacity pads."""
 
     from types import SimpleNamespace
 

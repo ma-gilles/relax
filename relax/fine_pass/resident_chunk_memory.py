@@ -248,7 +248,7 @@ def chunk_translated_tile_pixels(
     preparation's tiles carry (the half spectrum when the preparation is not
     windowed).
 
-    With the translated tiles (:func:`_prepare_chunk_reconstruction_operands`),
+    With the translated tiles (:func:`prepare_chunk_reconstruction_operands`),
     the preparation peak is inside :func:`_chunk_operand_rows`, where
     ``_prepare_bucket_io``'s two score-window and two recon-window tiles, the
     Wavg rectangle and the row-order copies (recon, noise, rectangle and its
