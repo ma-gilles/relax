@@ -31,7 +31,7 @@ os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 import numpy as np
 
 if TYPE_CHECKING:
-    from relax.relion.metadata import MaxSignificantsResolution
+    from relax.star.metadata import MaxSignificantsResolution
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -429,7 +429,7 @@ def _resolve_replay_max_significants(
 ) -> MaxSignificantsResolution:
     """Resolve the active cap rather than trusting RELION's saved argument."""
 
-    from relax.relion.metadata import resolve_relion_runtime_max_significants
+    from relax.star.metadata import resolve_relion_runtime_max_significants
 
     return resolve_relion_runtime_max_significants(
         override=override,
@@ -1303,10 +1303,6 @@ def main() -> None:
     from relax.reconstruction.regularization import RELION_MINRES_MAP
     from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
-    from relax.relion.metadata import (
-        read_relion_optimiser_metadata,
-        read_relion_sampling_metadata,
-    )
     from relax.sampling import (
         apply_relion_rotation_perturbation_to_eulers,
         apply_relion_translation_perturbation,
@@ -1321,6 +1317,10 @@ def main() -> None:
         relion_translation_search_base,
     )
     from relax.scoring.significance import _compute_k_class_significance_batched
+    from relax.star.metadata import (
+        read_relion_optimiser_metadata,
+        read_relion_sampling_metadata,
+    )
     from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps
 
     relion_dir = args.relion_dir

@@ -96,7 +96,7 @@ def _noise_radial_history(noise_variance_per_half, image_shape, *, dtype):
     Pixel-array normalization and noise estimation remain with the caller.
     Preserve the float64 host shell reduction before the final JAX cast.
     """
-    from relax.relion.metadata import radial_profile_from_noise_variance
+    from relax.star.metadata import radial_profile_from_noise_variance
 
     def radial(noise_k):
         noise_k = _flat_noise_rows(noise_k)

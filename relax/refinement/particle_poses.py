@@ -58,8 +58,8 @@ def resolve_particle_poses(
     from recovar import utils
 
     from relax.local_search.layout import selected_rotation_matrices
-    from relax.relion.metadata import relion_metadata_translations
     from relax.sampling import build_local_search_grid_metadata
+    from relax.star.metadata import relion_metadata_translations
 
     if best_pose_rotations is not None:
         rotations = np.asarray(best_pose_rotations, dtype=dtype)

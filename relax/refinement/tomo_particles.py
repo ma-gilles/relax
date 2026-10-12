@@ -131,7 +131,7 @@ def image_slot_ids(row_unit, unit_image_offsets, slot: int) -> np.ndarray:
     The scorer visits a particle's images in slot order ``0..n_images - 1`` (RELION's
     ``img_id`` loop, acc_ml_optimiser_impl.h:1190 and :1490) and adds each image's diff2
     to the row's running sum. ``unit_image_offsets`` is the CSR ``[n_units + 1]`` of the
-    units' image rows (:class:`relax.relion.tomo_input.TomoParticleIndex.image_offsets`).
+    units' image rows (:class:`relax.star.tomo_input.TomoParticleIndex.image_offsets`).
     """
 
     row_unit = np.asarray(row_unit, dtype=np.int64)

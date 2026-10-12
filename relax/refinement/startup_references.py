@@ -22,8 +22,8 @@ from recovar import utils as recovar_utils
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.refinement.half_inputs import HalfPair
-from relax.relion import metadata
 from relax.relion.geometry import REFERENCE_FILTER_EDGE_SHELLS
+from relax.star import metadata
 
 
 @dataclass(frozen=True)

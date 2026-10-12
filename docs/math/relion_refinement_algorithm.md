@@ -22,7 +22,7 @@ records source precedence, buffer lifetime and qualification limits.
 
 ## Particle row layout
 
-[`prepare_relion_halfset_layout`](../../relax/relion/input_particle_table.py)
+[`prepare_relion_halfset_layout`](../../relax/star/input_particle_table.py)
 maps selected RELION half membership to loaded input rows using physical stack
 and image identities. Replay preserves input row order and returns the permutation
 needed to interpret RELION's half-local accuracy frame. A supplied fresh-start
@@ -30,7 +30,7 @@ seed preserves the existing paired mt19937 shuffle followed by stable numeric
 optics grouping; the physically reordered half then uses identity accuracy trials.
 Its particle-ID and optics rows stay paired for expected-accuracy CTF lookup.
 
-[`prepare_class3d_particle_layout`](../../relax/relion/input_particle_table.py)
+[`prepare_class3d_particle_layout`](../../relax/star/input_particle_table.py)
 selects all input rows once, leaves the second accumulator empty and prepares the
 existing whole-vector Class3D accuracy trials from RELION's post-read source
 order. Input rows, source particle IDs and half-local trial positions remain
@@ -109,14 +109,14 @@ The pieces:
 - Input origins: the default `--initial-pose-source auto` (or an explicit
   `input-star`) loads only the input `rlnOriginX/YAngst` (or pixel origins;
   absent origins are zero) in the all-data particle order
-  ([`_load_input_star_class3d_translations`](../../relax/relion/input_poses.py)).
+  ([`_load_input_star_class3d_translations`](../../relax/star/input_poses.py)).
   RELION rounds and applies them before the image FFT but does not centre the
   first global search on the input angles. The `--relion_init_dir` route
   (`_kclass_firstiter_translation_seed`, from `run_it000_data.star`) is kept
   for debug comparison; on the K4 50k/256 fixture the two are bitwise equal, and
   on EMPIAR-10097 (non-zero origins) the input origins equal `run_it000`'s.
 - References and class distribution: `--ref_star` reads relion_refine's `--ref`
-  STAR ([`read_relion_reference_star`](../../relax/relion/metadata.py));
+  STAR ([`read_relion_reference_star`](../../relax/star/metadata.py));
   its maps are RELION-frame and load with `load_relion_volume`. A fresh run
   starts from `pdf_class = 1/K` whatever `_rlnClassDistribution` says
   (`MlModel::initialise`, `ml_model.cpp:53`; `initialiseFromImages` reads only
@@ -287,7 +287,7 @@ Trajectory/FSC qualification remains separate from the fixed-input regression.
 
 ### Startup particle state and norm corrections
 
-[`prepare_initial_poses`](../../relax/relion/input_poses.py) selects and loads
+[`prepare_initial_poses`](../../relax/star/input_poses.py) selects and loads
 initial poses at the command's existing startup boundary. Explicit production
 input-STAR requests reject conflicting sources; frozen input precedes diagnostic
 NPZ, then fresh Class3D replay origins, then eligible input-STAR state. K1 uses
@@ -312,9 +312,9 @@ must supply `--relion_half_sets`; relax has no other K1 half split.
   and uses 1 when the label is absent; `avg_norm_correction` starts at 1. The
   E-step multiplies each image by `avg_norm / normcorr`, so the start-up image
   correction is `1 / normcorr` with unit group scales.
-  [`_load_input_star_previous_best_poses`](../../relax/relion/input_poses.py)
+  [`_load_input_star_previous_best_poses`](../../relax/star/input_poses.py)
   reads the column with the input poses in half-local order and
-  [`_initial_corrections_from_norm`](../../relax/relion/input_poses.py) forms the
+  [`_initial_corrections_from_norm`](../../relax/star/input_poses.py) forms the
   corrections; unit norms keep the unit (`None`) representation.
 - Signal prior and data-vs-prior. `MlModel::initialiseDataVersusPrior` sets
   `tau2 = tau2_fudge * P(Iref) * N^2 / 2`, with `P` the rounded-radius
@@ -875,7 +875,7 @@ uses the step rule above, as RELION's iteration 0 does). Below the local-search 
 `refine_angular_sampling` keeps the prior and its width; at that order it resets the width to the step
 rule, overwriting `--sigma_ang`, as `updateAngularSampling` does. The centre is the particle's current
 angles (the input STAR's at iteration 1; 0 where the STAR has none, and
-[`prepare_initial_poses`](../../relax/relion/input_poses.py) centres a start without any pose source at
+[`prepare_initial_poses`](../../relax/star/input_poses.py) centres a start without any pose source at
 (0, 0, 0) with a warning). The one exception is RELION's prior mode below the local-search order:
 there an angle with an `rlnAngle*Prior` is centred on that prior in every iteration, including the final
 one ([`local_search_centre_half`](../../relax/refinement/local_sampling.py); non-helical).
@@ -1172,7 +1172,7 @@ schedule arrays.
 [`resolve_relion_runtime_controls`](../../relax/refinement/command_options.py)
 reads the consumed optimiser's expected-accuracy CTF flag and positive CLI
 `ini_high`, then resolves the significant-support cap with
-[`resolve_relion_runtime_max_significants`](../../relax/relion/metadata.py).
+[`resolve_relion_runtime_max_significants`](../../relax/star/metadata.py).
 A CLI cap is an active-value override. A saved `-1` is an argument sentinel whose
 active value depends on RELION's gradient mode and first numbered iteration.
 With no optimiser or override, the RELION default argument is `-1` and the
@@ -1192,7 +1192,7 @@ coverage and the existing refusal of follower-state cold restarts remain intact.
 
 ### Half-set source admission and result publication
 
-[`read_relion_halfset_source`](../../relax/relion/input_particle_table.py) reads the
+[`read_relion_halfset_source`](../../relax/star/input_particle_table.py) reads the
 selected half-set STAR, requires its particle block before validating K1 optics,
 and preserves the existing integer image-size and float64 physical-pixel metadata
 casts. Class3D does not consume this K1 geometry. Source selection, startup-noise
@@ -1206,7 +1206,7 @@ at the final return boundary; absent values and saved sentinels are unchanged.
 
 ### Particle-group identity
 
-[`prepare_particle_group_layout`](../../relax/relion/input_particle_table.py)
+[`prepare_particle_group_layout`](../../relax/star/input_particle_table.py)
 selects the authoritative table and maps physical and optics group labels into
 each half's image order by particle/stack identity. Its named result pairs that
 source with the computed layout; dispatch verification and follower provenance

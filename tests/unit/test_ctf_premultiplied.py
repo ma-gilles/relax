@@ -15,7 +15,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.relion import ctf as relion_ctf
-from relax.relion.metadata import refuse_unsupported_optics
+from relax.star.metadata import refuse_unsupported_optics
 
 
 # Moved from relax/relion/ctf.py (PLAN e1): no relax module uses it, only this test file.

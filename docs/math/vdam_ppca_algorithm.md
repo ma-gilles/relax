@@ -1677,7 +1677,7 @@ on the streamed engine of section 14. Tomographic input, geometry, CTF and dose
 follow the subtomogram Refine3D/VDAM path that relax qualifies against RELION
 ([tomo_particles.py](../../relax/refinement/tomo_particles.py),
 [tomo_half.py](../../relax/refinement/tomo_half.py),
-[tomo_input.py](../../relax/relion/tomo_input.py)). RECOVAR's known-pose
+[tomo_input.py](../../relax/star/tomo_input.py)). RECOVAR's known-pose
 cryo-ET PPCA (shared latent and contrast per particle) is prior art for the
 per-particle shared quantities only.
 

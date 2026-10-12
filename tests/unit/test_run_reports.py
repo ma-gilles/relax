@@ -13,7 +13,7 @@ from relax.refinement import result_files
 from relax.refinement.iteration_history import RefinementHistory
 from relax.refinement.refinement_options import RestartProvenance
 from relax.refinement.refinement_result import ProfileStop
-from relax.relion.metadata import MaxSignificantsResolution
+from relax.star.metadata import MaxSignificantsResolution
 
 pytestmark = pytest.mark.unit
 

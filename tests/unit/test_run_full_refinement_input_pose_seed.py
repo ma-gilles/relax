@@ -11,7 +11,7 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
-from relax.relion.input_poses import (
+from relax.star.input_poses import (
     _initial_corrections_from_norm,
     _load_input_star_class3d_translations,
     _load_input_star_previous_best_poses,

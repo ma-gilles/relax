@@ -495,7 +495,7 @@ def _input_files(args: argparse.Namespace) -> dict[str, object]:
 
     if args.fn_optimisation_set is None:
         return {"fn_img": args.fn_img, "fn_tomograms": None}
-    from relax.relion.tomo_input import read_optimisation_set
+    from relax.star.tomo_input import read_optimisation_set
 
     particles, tomograms = read_optimisation_set(args.fn_optimisation_set)
     return {"fn_img": str(particles), "fn_tomograms": str(tomograms)}

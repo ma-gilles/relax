@@ -330,7 +330,7 @@ def prepare_particle_group_layout(
             group_source = GroupParticleSource(None, None)
     relion_particles = group_source.particles
 
-    from relax.relion import metadata as relion_metadata
+    from relax.star import metadata as relion_metadata
 
     if relion_particles is not None:
         group_particles = relion_particles
@@ -480,7 +480,7 @@ def _map_relion_half_rows(
     optics-group sort. Continuation and replay callers omit the seed
     and retain their existing row order.
     """
-    from relax.relion import metadata as relion_metadata
+    from relax.star import metadata as relion_metadata
 
     our_row_by_identity = relion_metadata.particle_identity_rows(
         our_particles,

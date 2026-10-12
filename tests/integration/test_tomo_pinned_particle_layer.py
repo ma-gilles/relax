@@ -76,7 +76,7 @@ def pinned():
 
     from relax.refinement import tomo_particles as tp
     from relax.relion import ctf as relion_ctf
-    from relax.relion import tomo_input
+    from relax.star import tomo_input
 
     bind = natives.relion_bind_core()
 

@@ -242,7 +242,7 @@ def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
 
     The groups' even Zernike gamma offsets on the model grid, as relax's exact CTF rows
     use them (:func:`relax.relion.ctf._optics_group_ctf_geometry`). The command refuses
-    magnification (:func:`relax.relion.metadata.refuse_unsupported_optics`), so a group's
+    magnification (:func:`relax.star.metadata.refuse_unsupported_optics`), so a group's
     ``rlnMagMat`` columns can only hold the exact identity here, which leaves the offsets unchanged (relax#66).
     """
 

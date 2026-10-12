@@ -151,7 +151,7 @@ def read_relion_model_pixel_size(path: str | Path) -> float:
     ``relion_metadata.read_relion_mrc_model_pixel_size`` does; ``mrcfile.voxel_size`` divides in float32.
     """
 
-    from relax.relion.metadata import read_relion_mrc_model_pixel_size
+    from relax.star.metadata import read_relion_mrc_model_pixel_size
 
     source = Path(path).expanduser().resolve()
     if not source.is_file():
@@ -1464,7 +1464,7 @@ def main():
         SymmetryOptions,
     )
     from relax.refinement.startup_references import StartupHandoff
-    from relax.relion.metadata import (
+    from relax.star.metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,

@@ -52,10 +52,7 @@ from relax.refinement.full_refinement import (
     _use_fresh_auto_refine_particle_order,
 )
 from relax.refinement.half_inputs import HalfSet
-from relax.refinement.iteration_history import (
-    _load_init_noise_radial_npz,
-    _load_init_previous_best_poses_npz,
-)
+from relax.refinement.iteration_history import _load_init_noise_radial_npz
 from relax.refinement.particle_loading import _apply_relion_image_mask, prepare_relion_halfset_inputs
 from relax.refinement.reference_state import ReferenceModel, _updated_mean_variance_per_half
 from relax.refinement.startup_noise import (
@@ -67,12 +64,13 @@ from relax.relion.initial_noise import (
     read_relion_single_optics_sigma2_noise,
     relion_mpi_process_start_scoring_noise_pair,
 )
-from relax.relion.input_particle_table import prepare_relion_halfset_layout
-from relax.relion.metadata import (
+from relax.sampling.orientation_priors import DirectionPrior
+from relax.star.input_particle_table import prepare_relion_halfset_layout
+from relax.star.input_poses import _load_init_previous_best_poses_npz
+from relax.star.metadata import (
     _parse_relion_tau2_fudge,
     parse_relion_cli_ini_high,
 )
-from relax.sampling.orientation_priors import DirectionPrior
 
 FIXTURE = fixture_root("k1_5k128_relion_os0")
 
@@ -2059,7 +2057,7 @@ def test_replay_overrides_respect_init_relion_iteration_offset(tmp_path):
 
 
 def test_fresh_kclass_translation_seed_is_scoped_and_fails_closed():
-    from relax.relion.input_poses import _kclass_firstiter_translation_seed
+    from relax.star.input_poses import _kclass_firstiter_translation_seed
     override = {"previous_best_translations": [np.zeros((1, 2)), np.zeros((2, 2))]}
     assert (
         _kclass_firstiter_translation_seed(
@@ -2086,7 +2084,7 @@ def test_fresh_kclass_translation_seed_is_scoped_and_fails_closed():
 
 
 def test_fresh_kclass_selects_only_run_it000_translations():
-    from relax.relion.input_poses import _kclass_firstiter_translation_seed
+    from relax.star.input_poses import _kclass_firstiter_translation_seed
     half1 = np.asarray([[3.9, -0.34], [0.3, -0.34]], dtype=np.float64)
     # Generic replay extraction currently collapses an empty all-data second
     # accumulator to (0,); the translation selector restores (0, 2).

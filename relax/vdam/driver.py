@@ -40,7 +40,7 @@ from relax.relion.initial_model_io import (
     _tomo_particle_state_from_star,
     tomo_checkpoint_particle_state,
 )
-from relax.relion.metadata import (
+from relax.star.metadata import (
     INITIAL_MODEL_OPTICS_FEATURES,
     TOMO_INITIAL_MODEL_OPTICS_FEATURES,
     refuse_unsupported_optics,

@@ -31,8 +31,8 @@ from relax.runtime.git_provenance import git_head_or_none, git_worktree_provenan
 if TYPE_CHECKING:
     from relax.refinement.command_options import RandomSeed
     from relax.refinement.refinement_options import InitialSampling, RestartProvenance
-    from relax.relion.input_poses import PoseProvenance
-    from relax.relion.metadata import MaxSignificantsResolution
+    from relax.star.input_poses import PoseProvenance
+    from relax.star.metadata import MaxSignificantsResolution
 
 
 logger = logging.getLogger("relax.refinement.full_refinement")

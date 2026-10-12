@@ -1001,7 +1001,7 @@ Class3D buffer-lifetime audits. Preserve preceding-iteration convergence timing,
 explicit model writes and finalization. Broader automation follows human review
 and production float32 quality/performance qualification.
 
-Startup pose selection now has a complete operation in `relion/input_poses.py`,
+Startup pose selection now has a complete operation in `star/input_poses.py`,
 with producer-owned provenance reused by profile and archive output. The full
 seed/correction payload keeps existing aliases and source metadata. Next trace
 projector capture and perturbation-restart provenance at their validated producers

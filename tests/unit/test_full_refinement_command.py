@@ -144,7 +144,7 @@ def test_diagnostic_single_half_empties_half_two(monkeypatch, tmp_path):
 
 def test_k1_half_sets_are_relions_and_class3d_uses_all_data_once(monkeypatch, tmp_path):
     """No seeded NumPy split: K=1 takes RELION's random halves of the input STAR, Class3D every particle once."""
-    from relax.relion.input_particle_table import glibc_rand_sequence
+    from relax.star.input_particle_table import glibc_rand_sequence
 
     k1 = controller_inputs(monkeypatch, tmp_path / "k1", "refine")["experiment_datasets"]
     halves = glibc_rand_sequence(42, 12) % 2 + 1

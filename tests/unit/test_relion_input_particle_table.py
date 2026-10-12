@@ -10,7 +10,7 @@ import starfile
 from helpers.em_fixtures import fixture_file
 from helpers.float_compare import assert_matches
 
-from relax.relion.input_particle_table import (
+from relax.star.input_particle_table import (
     GroupParticleSource,
     _read_replay_group_particles,
     build_relion_start_particle_table,

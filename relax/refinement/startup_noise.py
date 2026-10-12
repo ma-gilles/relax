@@ -16,8 +16,8 @@ from relax.numerics.shells import shell_of_radius_sq
 from relax.refinement.half_inputs import HalfPair
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.refinement.tomo_half import TomoDataset
-from relax.relion import metadata
 from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2, radial_power_spectrum
+from relax.star import metadata
 
 
 class StartupNoise(NamedTuple):
@@ -92,7 +92,7 @@ def class3d_noise_order(our_particles):
     ``calculateSumOfPowerSpectraAndAverageImage`` takes the first particles of
     each optics group (ml_optimiser.cpp:3068-3072).
     """
-    from relax.relion.input_particle_table import relion_particle_order
+    from relax.star.input_particle_table import relion_particle_order
 
     source_rows = relion_particle_order(our_particles)
     if "rlnOpticsGroup" in our_particles.columns:

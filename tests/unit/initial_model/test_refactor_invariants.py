@@ -394,7 +394,7 @@ def test_responsibility_loc_budget(responsibility):
     """Moving code must preserve its accounting; review growth before revising a cap."""
     from recovar.data_io.starfile import star_column
 
-    from relax.relion.metadata import _relion_star_list_value
+    from relax.star.metadata import _relion_star_list_value
 
     def source_lines(fn):
         return len(inspect.getsourcelines(fn)[0])
@@ -516,7 +516,8 @@ def test_mstep_single_class_definition_ownership():
 def test_initial_model_serialization_owners_and_driver_imports():
     from recovar.data_io.starfile import star_column
 
-    from relax.relion import ctf, metadata
+    from relax.relion import ctf
+    from relax.star import metadata
     from relax.vdam import relion_checkpoint
 
     driver_src = inspect.getsource(driver)

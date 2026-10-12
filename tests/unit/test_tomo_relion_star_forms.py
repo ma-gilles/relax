@@ -22,7 +22,7 @@ from recovar.data_io.starfile import read_star, star_column
 from recovar.simulation import relion_tomo
 
 from relax.refinement.tomo_half import is_relion5_2d_stack_star
-from relax.relion import tomo_input
+from relax.star import tomo_input
 
 TUTORIAL = Path(__file__).resolve().parents[1] / "fixtures" / "relion5_tomo_tutorial"
 # The particle STAR as relion_tomo_subtomo wrote it: RELION 5.0-beta-2 (shipped) and 5.0.1 (re-extracted).

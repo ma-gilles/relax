@@ -83,7 +83,7 @@ def _reader_inputs(particles_star, tomograms_star, output_star) -> tuple[Path, P
 
     - ``rlnRandomSubset`` (particles): ``relion_tomo_subtomo`` writes none. relion_refine draws the halves
       itself (``Experiment::divideParticlesInRandomHalves``, where 0 means not assigned), and so does
-      relax, from the particle STAR (:func:`relax.relion.input_particle_table.relion_random_subsets`).
+      relax, from the particle STAR (:func:`relax.star.input_particle_table.relion_random_subsets`).
       The copy carries 0.
     - ``rlnCtfScalefactor`` and ``rlnTomoXTilt`` (each tilt-series STAR): 1 and 0 when absent
       (``TomogramSet::loadTomogram``, jaz/tomography/tomogram_set.cpp:397-429). The copied tilt-series
@@ -133,7 +133,7 @@ def flatten_relion5_tomo(particles_star, tomograms_star, output_star) -> Path:
 
     Tomograms with ``rlnCtfBfactorPerElectronDose`` carry it on every row as the
     column ``_rlnCtfBfactorPerElectronDose``. The per-tilt optics table keeps the particle
-    STAR's optics features (:data:`relax.relion.metadata.OPTICS_FEATURE_LABELS`:
+    STAR's optics features (:data:`relax.star.metadata.OPTICS_FEATURE_LABELS`:
     ``rlnCtfDataAreCtfPremultiplied``, beam tilt, odd and even Zernike terms, ``rlnMagMat``):
     relion_refine reads them from the particle STAR's optics groups for every tilt image
     (``Experiment::read``, exp_model.cpp:863), and relax's exact CTF and aberration operands
@@ -165,7 +165,7 @@ def flatten_relion5_tomo(particles_star, tomograms_star, output_star) -> Path:
         names = np.asarray(star_column(rows, "rlnGroupName", required=True))
         rows["_rlnCtfBfactorPerElectronDose"] = [per_tomo[tomo_of_particle[name]] for name in names]
         changed = True
-    from relax.relion.metadata import OPTICS_FEATURE_LABELS
+    from relax.star.metadata import OPTICS_FEATURE_LABELS
 
     features = {label for labels in OPTICS_FEATURE_LABELS.values() for label in labels}
     written = {str(name).lstrip("_") for name in optics.columns}

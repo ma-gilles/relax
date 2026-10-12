@@ -13,8 +13,8 @@ from relax.refinement.command_options import RandomSeed, resolve_initial_samplin
 from relax.refinement.iteration_history import RefinementHistory
 from relax.refinement.refinement_options import RestartProvenance
 from relax.refinement.result_files import _savez_deflate_fast, build_archive_metadata
-from relax.relion.input_poses import PoseProvenance
-from relax.relion.metadata import MaxSignificantsResolution
+from relax.star.input_poses import PoseProvenance
+from relax.star.metadata import MaxSignificantsResolution
 
 pytestmark = pytest.mark.unit
 

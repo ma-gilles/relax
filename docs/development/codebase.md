@@ -21,7 +21,7 @@ the existing convergence state directly. The numerical controller retains phase
 timing, grid construction, subsequent model/particle installation and later
 scientific state updates.
 
-`relion.input_particle_table` owns physical particle identity, paired-half and
+`star.input_particle_table` owns physical particle identity, paired-half and
 Class3D row preparation. `ParticleLayout` pairs selected input rows with their
 expected-accuracy source/local frame throughout command consumers. Source/mode
 selection, diagnostic admission and important state writes remain in the
@@ -173,7 +173,7 @@ for detailed module contracts. Start with the boundary being changed:
 | Standard half-set and first-iteration adapters | [`refinement/dense_half.py`](../../relax/refinement/dense_half.py) (dense), [`refinement/local_half.py`](../../relax/refinement/local_half.py) (exact-local) |
 | Particle pose interpretation and persistent half state | [`refinement/particle_poses.py`](../../relax/refinement/particle_poses.py), [`refinement/half_inputs.py`](../../relax/refinement/half_inputs.py); resolves explicit or grid poses into computed matrices/Euler rows and relative/absolute pixel shifts. The controller installs state and records history. |
 | Strict RELION follower topology preparation | [`refinement/follower_scale.py`](../../relax/refinement/follower_scale.py); validates MPI admission, replay and numbered particle ownership before execution |
-| Particle-table source and group identity | [`relion/input_particle_table.py`](../../relax/relion/input_particle_table.py); admits half-set STAR schema/optics geometry and produces authoritative group source plus matching physical/optics axes in half image order |
+| Particle-table source and group identity | [`star/input_particle_table.py`](../../relax/star/input_particle_table.py); admits half-set STAR schema/optics geometry and produces authoritative group source plus matching physical/optics axes in half image order |
 | Input geometry and replay units | `ImageGeometry` in [`reconstruction/resolution.py`](../../relax/reconstruction/resolution.py); fixed shape and validated physical pixel size. [`parity/relion_replay.py`](../../relax/parity/relion_replay.py) consumes geometry directly. Controller retains the borrowed source pixel scalar where host promotion requires its original type; changing windows/model support have separate owners. |
 | Refinement memory planning | [`helpers/batch_planning.py`](../../relax/runtime/batch_planning.py) and [`refinement/expectation_batches.py`](../../relax/refinement/expectation_batches.py); live dense/local/compact budgets and half adaptation. The disconnected future whole-local descriptor/fingerprint family is retired; supported batch decisions are unchanged. |
 | Numbered half expectation preparation, execution and recording | [`refinement/expectation.py`](../../relax/refinement/expectation.py); `NumberedExpectation` and `prepare_numbered_expectation` bind the shared canonical grid, dense/local support and diagnostic policy. The same owner prepares per-half priors/batches/optics, dispatches, and records profiles/captures and ordered counts. Controller retains modes, tomography adaptation, publication, offloading, serial/overlap choice and release. |
@@ -447,7 +447,7 @@ Startup sampling policy is produced by
 publication order. The current review shows both producers and all calling facts.
 
 Startup pose source selection, loading and norm-correction preparation belong to
-`relax/relion/input_poses.py:prepare_initial_poses`. Its `InitialPoses` result
+`relax/star/input_poses.py:prepare_initial_poses`. Its `InitialPoses` result
 retains the source-specific seed payload; `PoseProvenance` is reused by profile
 and archive reporting. The command retains frozen-correction selection and
 visible replay options.

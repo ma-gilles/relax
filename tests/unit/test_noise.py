@@ -803,7 +803,7 @@ def test_compute_noise_block_preserves_float64_inputs():
 @pytest.mark.parametrize("box_size", [32, 64, 100, 128, 256])
 def test_relion_noise_shell_indices_include_vertical_nyquist(box_size):
     from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half
-    from relax.relion.metadata import _relion_half_plane_shell_counts
+    from relax.star.metadata import _relion_half_plane_shell_counts
 
     image_shape = (box_size, box_size)
     shell_indices = np.asarray(make_relion_noise_shell_indices_half(image_shape), dtype=np.int32)

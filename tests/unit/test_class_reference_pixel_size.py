@@ -24,7 +24,7 @@ def test_class_references_are_low_passed_in_the_header_pixel_size(tmp_path):
     # STAR's (often a rounded serialisation, 1.416667 for 544/384).
     import logging
 
-    from relax.relion import metadata
+    from relax.star import metadata
 
     rng = np.random.default_rng(5)
     shape = (16, 16, 16)

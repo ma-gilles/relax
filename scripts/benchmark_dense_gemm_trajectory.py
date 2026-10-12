@@ -189,10 +189,10 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     from relax.fine_pass.window import _pass2_window_setup, _sparse_pass2_window_setup
     from relax.refinement import scoring_policy
     from relax.refinement.trial_grids import build_initial_coarse_grids
-    from relax.relion.metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
     from relax.relion.optics_aberrations import projection_rotations
     from relax.sampling.oversampling import prepare_adaptive_pass2_grids
     from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
+    from relax.star.metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
 
     sampling_path = model_dir / "run_it001_sampling.star"
     sampling_state = read_relion_sampling_metadata(sampling_path)
@@ -387,7 +387,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
 
 def load_fixture_execution_state(data_dir, model_dir, *, rotations, translations, rotation_tile, translation_tile):
     """Resolve frozen STAR identities, native image backend and fixed grid."""
-    from relax.relion.metadata import load_relion_mask_params
+    from relax.star.metadata import load_relion_mask_params
 
     data_star = model_dir / "run_it001_data.star"
     dataset = load_dataset(

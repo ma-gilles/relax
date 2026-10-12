@@ -9,8 +9,8 @@ from helpers.float_compare import assert_matches
 
 from relax.refinement import command_options
 from relax.refinement.given_poses import given_pose_grids
-from relax.relion import input_poses
 from relax.sampling import rotation_grid_size
+from relax.star import input_poses
 
 pytestmark = pytest.mark.unit
 

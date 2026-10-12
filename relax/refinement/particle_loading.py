@@ -19,14 +19,14 @@ from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, 
 from relax.refinement import command_options
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star, load_tomo_dataset
-from relax.relion import metadata
 from relax.relion.ctf import refuse_generic_ctf_for_optics
 from relax.runtime.env_flags import parse_env_true_flag
+from relax.star import metadata
 
 if TYPE_CHECKING:
     from recovar.data_io.cryoem_dataset import CryoEMDataset
 
-    from relax.relion.input_particle_table import ParticleLayout
+    from relax.star.input_particle_table import ParticleLayout
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ def prepare_relion_halfset_inputs(
     table; tomography instead reads tilt-image CTFs from its dataset half.
     The unused full CTF source table expires after the selected copy is built.
     """
-    from relax.relion import input_particle_table
+    from relax.star import input_particle_table
 
     relion_fresh_initial_noise_source_rows = None
     relion_fresh_initial_noise_optics_group_ids = None
@@ -166,7 +166,7 @@ def split_half_sets(
     ``noise_order_needed``: the run estimates its start-up noise from the images, so the particles that
     estimate reads are listed.
     """
-    from relax.relion import input_particle_table
+    from relax.star import input_particle_table
 
     particles = particle_star["particles"] if isinstance(particle_star, dict) else particle_star
     if halfset_path is not None:

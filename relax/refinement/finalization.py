@@ -63,7 +63,6 @@ from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop
 from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
-from relax.relion.metadata import relion_metadata_translations
 from relax.runtime.timing import Stopwatch
 from relax.sampling.expected_accuracy import expected_accuracy_class_ids
 from relax.sampling.healpix import angular_sampling_deg
@@ -77,6 +76,7 @@ from relax.sampling.orientation_priors import (
     relion_local_search_sigmas,
     relion_translation_search_base,
 )
+from relax.star.metadata import relion_metadata_translations
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext

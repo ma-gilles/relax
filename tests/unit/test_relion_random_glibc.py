@@ -8,7 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.numerics import relion_random
-from relax.relion.input_particle_table import relion_class3d_seed_classes
+from relax.star.input_particle_table import relion_class3d_seed_classes
 
 pytestmark = pytest.mark.unit
 

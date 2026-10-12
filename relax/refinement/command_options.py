@@ -33,10 +33,10 @@ from relax.refinement.refinement_options import (
     relax_mode_consistency,
 )
 from relax.refinement.refinement_state import LOCAL_SEARCH_HEALPIX_ORDER
-from relax.relion import input_poses
+from relax.star import input_poses
 
 if TYPE_CHECKING:
-    from relax.relion.metadata import MaxSignificantsResolution
+    from relax.star.metadata import MaxSignificantsResolution
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +325,7 @@ def resolve_seed(args, optimiser_star, *, sealed: bool) -> RandomSeed:
         return RandomSeed(int(explicit_seed), "explicit CLI")
     seed_star = optimiser_seed_source(args, optimiser_star, sealed=sealed)
     if seed_star is not None:
-        from relax.relion.metadata import read_relion_optimiser_metadata
+        from relax.star.metadata import read_relion_optimiser_metadata
 
         relion_seed = read_relion_optimiser_metadata(seed_star).get("random_seed")
         if relion_seed is not None:
@@ -1378,13 +1378,13 @@ def resolve_relion_runtime_controls(
     ``target_iteration`` is the first numbered iteration of this invocation.
     See ``docs/math/relion_refinement_algorithm.md#command-admission``.
     """
-    from relax.relion import metadata as relion_metadata
+    from relax.star import metadata as relion_metadata
 
     expected_accuracy_do_ctf_correction = None
     relion_firstiter_ini_high_angstrom = None
     relion_optimiser_metadata = None
     if optimiser_star is not None:
-        from relax.relion.metadata import read_relion_optimiser_metadata
+        from relax.star.metadata import read_relion_optimiser_metadata
 
         relion_optimiser_metadata = read_relion_optimiser_metadata(optimiser_star)
         stored_do_correct_ctf = relion_optimiser_metadata.get("do_correct_ctf")
@@ -1411,7 +1411,7 @@ def resolve_relion_runtime_controls(
                 )
     max_significants_resolution = None
     if optimiser_star is not None and relion_optimiser_metadata is not None:
-        from relax.relion.metadata import resolve_relion_runtime_max_significants
+        from relax.star.metadata import resolve_relion_runtime_max_significants
 
         optimiser_max_significants = relion_optimiser_metadata.get(
             "maximum_significants_arg"
@@ -1441,7 +1441,7 @@ def resolve_relion_runtime_controls(
             optimiser_star,
         )
     if max_significants is None:
-        from relax.relion.metadata import resolve_relion_runtime_max_significants
+        from relax.star.metadata import resolve_relion_runtime_max_significants
 
         # Without a RELION optimiser STAR, use relion_refine's own --maxsig default of -1
         # (ml_optimiser.cpp:1109) and its runtime resolution (ml_optimiser.cpp:3692-3699).
@@ -1480,7 +1480,7 @@ def resolve_class_reference_paths(args, *, log: logging.Logger) -> tuple[list[st
     --ref_star list, --init_class_volumes, or the data directory's reference_init_class00K_relion.mrc."""
     import numpy as np
 
-    from relax.relion import metadata as relion_metadata
+    from relax.star import metadata as relion_metadata
 
     if args.init_volume is not None:
         # relion_refine --K K with one --ref map: every class starts from it and the first iteration scores
@@ -1646,7 +1646,7 @@ def resolve_schedule(
 def resolve_k_class(args, *, random_seed: int, trial_order, resumed: bool) -> KClassOptions:
     """The class count, ``--skip_align`` and, for a fresh Class3D run from one reference (``--init_volume``),
     each particle's class in RELION's first iteration, drawn in the expected-accuracy trial order ``trial_order``."""
-    from relax.relion.input_particle_table import relion_class3d_seed_classes
+    from relax.star.input_particle_table import relion_class3d_seed_classes
 
     return KClassOptions(
         n_classes=args.n_classes,

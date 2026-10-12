@@ -254,7 +254,7 @@ def test_optimizer_seed_is_resolved_before_halfset_splitting(monkeypatch, tmp_pa
     from helpers.tiny_main import controller_inputs
 
     from relax.refinement import command_options
-    from relax.relion.input_particle_table import glibc_rand_sequence
+    from relax.star.input_particle_table import glibc_rand_sequence
 
     assert command_options.parse_refinement_args(["--data_dir", "d", "--output", "o"]).seed is None
     import relax.refinement.full_refinement as driver

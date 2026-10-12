@@ -69,10 +69,11 @@ from relax.refinement.result_files import (
     write_profile_only_summary,
     write_refinement_archive,
 )
-from relax.relion import geometry, input_particle_table, input_poses
-from relax.relion import metadata as relion_metadata
+from relax.relion import geometry
 from relax.runtime import xla_memory_reserve
 from relax.runtime.compilation_cache import activate_recovar_compilation_cache
+from relax.star import input_particle_table, input_poses
+from relax.star import metadata as relion_metadata
 
 logging.basicConfig(
     level=logging.INFO,
@@ -340,7 +341,7 @@ def _effective_perturb_seed(perturb_seed: int | None, random_seed: int) -> int |
 
 def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir) -> Path:
     """Write RELION's start-up particle table rebuilt from the input STAR and return its path."""
-    from relax.relion.input_particle_table import write_relion_start_particle_star
+    from relax.star.input_particle_table import write_relion_start_particle_star
 
     if not isinstance(our_star, dict) or "optics" not in our_star:
         raise SystemExit("--relion-half-sets-from-input needs an optics table in <data_dir>/particles.star")

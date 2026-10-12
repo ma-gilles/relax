@@ -5,7 +5,7 @@ its own projection matrix, CTF and noise, the images' diff2 is summed per partic
 has one pose (rotation in its subtomogram frame, 3D offset) and one posterior (ml_optimiser.cpp:7650;
 acc_ml_optimiser_impl.h:1190-1402). A :class:`TomoHalf` presents a half as those particles, in
 particle-STAR row order, over a flat dataset of their tilt images in RELION's ``img_id`` order
-(:func:`relax.relion.tomo_input.relion_image_geometry`). The half's scoring is
+(:func:`relax.star.tomo_input.relion_image_geometry`). The half's scoring is
 :func:`relax.refinement.tomo_scoring.score_tomo_half`.
 """
 
@@ -36,7 +36,7 @@ def is_relion5_2d_stack_star(particles_star) -> bool:
 class TomoDataset:
     """All particles of a 2D-stack project: unit ``u`` is particle-STAR row ``u``.
 
-    ``images`` is the loaded flat per-tilt dataset (:func:`relax.relion.tomo_input.flatten_relion5_tomo`).
+    ``images`` is the loaded flat per-tilt dataset (:func:`relax.star.tomo_input.flatten_relion5_tomo`).
     Particle ``u`` owns images ``image_rows[unit_image_offsets[u]:unit_image_offsets[u + 1]]`` of it, in
     ``img_id`` order, with RELION's ``Aproj`` in ``image_projections`` (and the projection's left matrix,
     :func:`tilt_left_matrices`, in ``image_left``), its tilt-series frame in
@@ -46,7 +46,7 @@ class TomoDataset:
     def __init__(self, images, flat_rows, particles_star, tomograms_star):
         from recovar.data_io.starfile import read_star, star_column
 
-        from relax.relion import tomo_input
+        from relax.star import tomo_input
 
         index = tomo_input.tomo_particle_index(flat_rows)
         geometry = tomo_input.relion_image_geometry(flat_rows, index, particles_star, tomograms_star)
@@ -198,7 +198,7 @@ def load_tomo_dataset(
     from recovar.data_io.starfile import read_star
 
     from relax.io.particle_io import assert_reads_from_scratch, prepare_particle_reads
-    from relax.relion.tomo_input import flatten_relion5_tomo
+    from relax.star.tomo_input import flatten_relion5_tomo
 
     flat_star = flatten_relion5_tomo(particles_star, tomograms_star, flat_star)
     scratch = None if read_policy is None else prepare_particle_reads(

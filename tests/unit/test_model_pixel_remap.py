@@ -132,7 +132,7 @@ def test_class3d_half_sets_carry_the_input_star_optics(monkeypatch):
     import pandas as pd
 
     from relax.refinement import particle_loading
-    from relax.relion import input_particle_table
+    from relax.star import input_particle_table
 
     monkeypatch.setattr(input_particle_table, "prepare_class3d_particle_layout", lambda *a, **k: "layout")
     star = {

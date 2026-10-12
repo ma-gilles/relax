@@ -171,7 +171,7 @@ def test_resident_local_call_carries_the_point_group(monkeypatch):
 def test_replay_reads_the_point_group_relion_sampled_with(tmp_path):
     """A replay of a symmetric RELION run takes its group from the sampling STAR."""
 
-    from relax.relion.metadata import read_relion_sampling_symmetry
+    from relax.star.metadata import read_relion_sampling_symmetry
 
     star = tmp_path / "run_it011_sampling.star"
     star.write_text("data_sampling_general\n\n_rlnHealpixOrder 3\n_rlnSymmetryGroup c4\n")

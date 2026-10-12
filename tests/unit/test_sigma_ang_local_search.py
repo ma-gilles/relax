@@ -22,8 +22,8 @@ from relax.refinement.refinement_options import (
     LocalSearchOptions,
 )
 from relax.refinement.refinement_state import RefinementState, refine_angular_sampling
-from relax.relion.input_poses import _load_input_star_previous_best_poses, prepare_initial_poses
 from relax.sampling.healpix import angular_sampling_deg
+from relax.star.input_poses import _load_input_star_previous_best_poses, prepare_initial_poses
 
 pytestmark = pytest.mark.unit
 

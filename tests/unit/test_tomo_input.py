@@ -15,7 +15,8 @@ from recovar.data_io.starfile import read_star, star_column
 from recovar.simulation import relion_tomo
 from scipy.spatial.transform import Rotation
 
-from relax.relion import ctf, tomo_input
+from relax.relion import ctf
+from relax.star import tomo_input
 
 GRID = 32
 VOXEL = 4.0
@@ -321,7 +322,7 @@ def test_subtomogram_runs_refuse_unqualified_optics_features(project):
     """
 
     from relax.refinement.particle_loading import validate_particle_optics
-    from relax.relion.metadata import OPTICS_FEATURE_LABELS, TOMO_OPTICS_FEATURES
+    from relax.star.metadata import OPTICS_FEATURE_LABELS, TOMO_OPTICS_FEATURES
 
     out, _ = project
     _, optics = read_star(str(out / "particles.star"))

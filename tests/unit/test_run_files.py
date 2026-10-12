@@ -479,8 +479,8 @@ def _unestimated_norm_snapshot(snapshot, input_norms, rng):
 
     from types import SimpleNamespace
 
-    from relax.relion.input_poses import _initial_corrections_from_norm
     from relax.relion.normalization import update_relion_norm_scale_corrections
+    from relax.star.input_poses import _initial_corrections_from_norm
     from relax.types import NoiseStats
 
     image, scale = _initial_corrections_from_norm(input_norms)

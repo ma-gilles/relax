@@ -14,11 +14,11 @@ import numpy as np
 from recovar import utils
 
 from relax.refinement.half_inputs import HalfPair
-from relax.relion import metadata
 from relax.relion.initial_noise import (
     read_relion_single_optics_sigma2_noise,
     relion_mpi_process_start_scoring_noise_pair,
 )
+from relax.star import metadata
 
 
 class ModelStar(NamedTuple):

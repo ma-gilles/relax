@@ -4,7 +4,7 @@ A tiny RELION 5 2D-stack project is simulated with one strong aberration in its 
 ``relax refine`` twice: from the project as written, and from a copy whose optics table has the aberration
 column removed (what a program that ignores the feature sees). relion_refine demodulates the odd phase of
 every tilt image and puts the even terms in every tilt image's CTF; relax does the same through the per-tilt
-STAR (:mod:`relax.relion.tomo_input`, :mod:`relax.relion.optics_aberrations`), and projects, backprojects and
+STAR (:mod:`relax.star.tomo_input`, :mod:`relax.relion.optics_aberrations`), and projects, backprojects and
 evaluates the CTF of every tilt image through ``inv(M3) Aproj`` for a magnification matrix. The aberrations are far
 stronger than a microscope's (rms phase 0.6-0.7 rad at shell 6 and 1.2-1.3 rad at shell 8 of the 32-pixel box,
 8.5 A Nyquist at shell 16), so that ignoring them costs correlation in the shells a 60-particle run resolves.
