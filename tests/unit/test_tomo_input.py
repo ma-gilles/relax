@@ -126,9 +126,9 @@ def test_relion_tomo_damping_matches_relion_formula():
     freq_sq = np.array([0.0, 1e-4, 1e-2, 0.03])
     ne = 0.245 * np.power(freq_sq[1:], -0.8325) + 2.81
     expected = np.r_[1.0, np.exp(-0.5 * 12.0 / ne)]
-    np.testing.assert_allclose(tomo_input.relion_tomo_damping(freq_sq, 12.0), expected, rtol=1e-15)
+    np.testing.assert_allclose(ctf.relion_tomo_damping(freq_sq, 12.0), expected, rtol=1e-15)
     np.testing.assert_allclose(
-        tomo_input.relion_tomo_damping(freq_sq, 12.0, bfactor_per_electron_dose=4.0),
+        ctf.relion_tomo_damping(freq_sq, 12.0, bfactor_per_electron_dose=4.0),
         np.exp(-0.25 * 48.0 * freq_sq),
         rtol=1e-15,
     )

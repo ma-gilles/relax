@@ -434,12 +434,11 @@ def _trial_ctf_images(trial_local, *, defocus, optics, pixel_size, box_size, cur
 
     Evaluated on the full image by :func:`relax.relion.ctf.relion_ctf_fftw_half` and
     windowed to the current size. A tilt image with a cumulative dose takes RELION's dose
-    damping (ctf.h:219-233) through :func:`relax.relion.tomo_input.relion_tomo_damping`.
+    damping (ctf.h:219-233) through :func:`relax.relion.ctf.relion_tomo_damping`.
     ``optics=None`` takes each tilt image's own optics constants (its optics group's).
     """
 
-    from relax.relion.ctf import relion_ctf_fftw_half
-    from relax.relion.tomo_input import fftw_half_freq_sq, relion_tomo_damping
+    from relax.relion.ctf import fftw_half_freq_sq, relion_ctf_fftw_half, relion_tomo_damping
 
     if optics is not None:
         voltage, cs, q0 = optics

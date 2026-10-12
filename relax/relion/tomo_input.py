@@ -9,7 +9,7 @@ depth-corrected defocus, ``rlnCtfScalefactor``, ``rlnMicrographPreExposure`` and
 particle's optics group and half set. :class:`TomoParticleIndex` records which rows
 belong to which particle.
 
-The per-tilt CTF damping follows RELION exactly (:func:`relion_tomo_damping`); the
+The per-tilt CTF damping follows RELION exactly (:func:`relax.relion.ctf.relion_tomo_damping`); the
 exact RELION CTF operand applies it to rows that carry ``rlnMicrographPreExposure``.
 """
 
@@ -18,70 +18,9 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 from recovar.data_io.starfile import read_star, star_column
-
-
-def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
-    """Per-image CTF damping of a RELION tomo image, ``E(k)``.
-
-    ``Experiment::addImageToParticle`` (``exp_model.cpp:228-237``) stores either the
-    cumulative dose or, when the tomogram's ``rlnCtfBfactorPerElectronDose`` is
-    positive, a B-factor ``BfactorPerElectronDose * dose``; ``CTF::getCTF``
-    (``src/ctf.h:219-233``) then damps with
-
-    - dose: ``exp(-0.5 dose / Ne)``, ``Ne = 0.245 k^-1.665 + 2.81`` (Grant and
-      Grigorieff), no critical-exposure cutoff and no voltage factor;
-    - B-factor: ``exp(-B k^2 / 4)``.
-
-    The tilt series' own ``rlnCtfBfactor`` is not passed on by ``relion_refine``.
-    ``freq_sq`` is ``k^2`` in 1/A^2 and ``dose`` in e/A^2. At ``k = 0`` ``Ne`` is
-    infinite and the weight is 1. ``dose`` (and ``bfactor_per_electron_dose``) may be
-    one value per image, shape ``(n,)``; the result is then ``(n, *freq_sq.shape)``.
-
-    One expression on two array backends, chosen by the inputs: NumPy for host arrays (the
-    start-up expected-accuracy estimate) and ``jax.numpy`` when any input is a JAX array or
-    tracer (the CTF program, :func:`relax.relion.ctf._relion_ctf_program`). Both are
-    float64 and agree to the last units of a double (``pow`` and ``exp`` are glibc's or XLA's;
-    tests/unit/test_tomo_input.py).
-    """
-
-    # One formula for NumPy and JAX arrays (the CTF program damps with it, relion_ctf._relion_ctf_program).
-    xp = np
-    if any(isinstance(value, jax.Array) for value in (freq_sq, dose, bfactor_per_electron_dose)):
-        xp = jnp
-    freq_sq = xp.asarray(freq_sq, dtype=xp.float64)
-    dose = xp.asarray(dose, dtype=xp.float64)
-    bfactor = xp.broadcast_to(xp.asarray(bfactor_per_electron_dose, dtype=xp.float64), dose.shape)
-    per_image = (...,) + (None,) * freq_sq.ndim
-    with np.errstate(divide="ignore"):
-        critical_exposure = 0.245 * xp.power(freq_sq, -0.8325) + 2.81
-    by_bfactor = xp.exp(-0.25 * bfactor[per_image] * dose[per_image] * freq_sq)
-    by_dose = xp.exp(-0.5 * dose[per_image] / critical_exposure)
-    return xp.where((bfactor > 0.0)[per_image], by_bfactor, by_dose)
-
-
-def fftw_half_freq_sq(image_h: int, image_w: int, pixel_size: float, mag_matrix=None) -> np.ndarray:
-    """``k^2`` (1/A^2) on RELION's FFTW half grid, ``(image_h, image_w // 2 + 1)``.
-
-    Rows follow ``FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM2D`` as ``CTF::getFftwImage``
-    uses it (``src/ctf.cpp:443-449``): ``ip = i`` for ``i < image_w // 2 + 1``, else
-    ``i - image_h``. With an optics group's anisotropic magnification ``M`` (2x2) it is
-    ``|M k|^2``: ``CTF::getCTF`` magnifies the frequency before the damping (``src/ctf.h:189-197``).
-    """
-
-    rows = np.arange(image_h)
-    ip = np.where(rows < image_w // 2 + 1, rows, rows - image_h)
-    jp = np.arange(image_w // 2 + 1)
-    x = np.broadcast_to(jp[None, :] / (image_w * pixel_size), (image_h, jp.size))
-    y = np.broadcast_to(ip[:, None] / (image_h * pixel_size), (image_h, jp.size))
-    if mag_matrix is not None:
-        m = np.asarray(mag_matrix, dtype=np.float64)
-        x, y = m[0, 0] * x + m[0, 1] * y, m[1, 0] * x + m[1, 1] * y
-    return y**2 + x**2
 
 
 def read_optimisation_set(path) -> tuple[Path, Path]:
