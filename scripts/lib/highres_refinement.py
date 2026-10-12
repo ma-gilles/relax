@@ -97,6 +97,7 @@ def build_top_p_local_hypothesis_layout(
             None,
             float(voxel_size),
             grid_metadata=metadata,
+            sigma_tilt_deg=0.0,
         )
         unique_ids, first_idx, inverse = np.unique(
             np.asarray(local.rotation_ids_flat, dtype=np.int32),

@@ -323,6 +323,7 @@ def test_parent_expanded_local_layout_maps_non_c1_children_to_reduced_parent_ids
             "symmetry": label,
         },
         local_parent_oversampling_order=1,
+        sigma_tilt_deg=0.0,
     )
 
     assert_matches(layout.rotation_ids_flat, child_ids)

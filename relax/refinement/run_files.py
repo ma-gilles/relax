@@ -167,7 +167,7 @@ class RunSettings:
     mode: str
     # RELION --sigma_tilt in degrees when the run has the prior on the tilt angle alone (not under
     # --sigma_ang); 0: none. Written to the model STARs until the local searches start.
-    sigma_tilt_deg: float = 0.0
+    sigma_tilt_deg: float
 
 
 class RunFileWriter:
@@ -444,7 +444,7 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
     )
     halves = (None,) if snapshot.k_class else (1, 2)
     # RELION's --sigma_tilt alone, while it is in force (LocalSearchOptions.tilt_prior_deg).
-    tilt_prior_deg = 0.0 if state["do_local_search"] else float(settings.sigma_tilt_deg)
+    tilt_prior_deg = 0.0 if state["do_local_search"] else settings.sigma_tilt_deg
     paths = []
     for half in halves:
         h = 0 if half is None else half - 1

@@ -352,7 +352,7 @@ class LocalSearchOptions:
         """
         if self.sigma_tilt_deg is None or self.sigma_ang_deg is not None or do_local_search:
             return 0.0
-        return float(self.sigma_tilt_deg)
+        return self.sigma_tilt_deg
 
     @property
     def stops_after_local_search(self) -> bool:

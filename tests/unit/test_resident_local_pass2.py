@@ -96,6 +96,7 @@ def _pass2_layout(seed=20260919, full_support=False):
         grid_metadata=build_local_search_grid_metadata(PARENT_ORDER),
         translation_prior_reference_translations=translations,
         dtype=np.float32,
+        sigma_tilt_deg=0.0,
     )
     n_coarse_trans = int(translations.shape[0])
     rng = np.random.default_rng(seed + 1)
@@ -495,6 +496,7 @@ def _parent_layout(seed=20260919):
         grid_metadata=build_local_search_grid_metadata(PARENT_ORDER),
         translation_prior_reference_translations=translations,
         dtype=np.float32,
+        sigma_tilt_deg=0.0,
     )
     return parent, translations
 

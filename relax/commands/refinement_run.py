@@ -1221,7 +1221,7 @@ def main(command=None):
                 offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
                 perturbation_factor=float(args.perturb_factor),
                 padding_factor=float(geometry.RECONSTRUCTION_PADDING_FACTOR),
-                sigma_tilt_deg=float(args.sigma_tilt or 0.0) if args.sigma_ang is None else 0.0,
+                sigma_tilt_deg=refinement_arguments.resolve_local_search(args).tilt_prior_deg(do_local_search=False),
                 do_solvent_fsc=bool(args.solvent_correct_fsc),
                 solvent_mask_name="None" if args.solvent_mask is None else str(args.solvent_mask),
                 command_line=" ".join(sys.orig_argv),

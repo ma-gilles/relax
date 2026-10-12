@@ -644,7 +644,6 @@
   "self-cast:relax.io.map_io:write_map:volume",
   "self-cast:relax.io.particle_io:_stage_compact:ks",
   "self-cast:relax.io.particle_io:_stage_compact:rows",
-  "self-cast:relax.local_search.layout:_build_factorized_local_entries:sigma_tilt_deg",
   "self-cast:relax.local_search.layout:_build_parent_expanded_local_entries:child_ids",
   "self-cast:relax.local_search.layout:_build_parent_expanded_local_entries:parent_map",
   "self-cast:relax.local_search.layout:_resolve_prior_rotations:prior_rotations",

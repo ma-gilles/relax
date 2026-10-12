@@ -35,9 +35,9 @@ def test_banded_cone_keeps_the_dense_supports(monkeypatch, order, sigma_rot_deg,
     meta = build_local_search_grid_metadata(order)
     args = (eulers.astype(np.float64), order, np.deg2rad(sigma_rot_deg), np.deg2rad(sigma_psi_deg), meta)
 
-    banded = layout._build_factorized_local_entries(*args, dtype=np.float32)
+    banded = layout._build_factorized_local_entries(*args, dtype=np.float32, sigma_tilt_deg=0.0)
     monkeypatch.setattr(layout, "_direction_cone_candidates", _dense_candidates)
-    dense = layout._build_factorized_local_entries(*args, dtype=np.float32)
+    dense = layout._build_factorized_local_entries(*args, dtype=np.float32, sigma_tilt_deg=0.0)
 
     offsets, counts, ids, log_priors = banded
     np.testing.assert_array_equal(offsets, dense[0])

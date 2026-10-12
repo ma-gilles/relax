@@ -635,6 +635,7 @@ def score_numbered_half(
                     previous_eulers_deg=particle_half.rotation_eulers,
                     sigma_rot=sampling.search.sigma_rot,
                     sigma_psi=sampling.search.sigma_psi,
+                    sigma_tilt_deg=0.0,
                 )
                 if use_local
                 # RELION's --sigma_tilt below the local-search order: each particle's own orientations, every

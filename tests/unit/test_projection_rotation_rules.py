@@ -247,6 +247,7 @@ def _local_parent_layout():
         grid_metadata=grids.build_local_search_grid_metadata(ORDER),
         translation_prior_reference_translations=translations,
         rotation_grid_random_perturbation=PERTURBATION, rotation_grid_angular_sampling_deg=step, dtype=np.float32,
+        sigma_tilt_deg=0.0,
     )
 
 

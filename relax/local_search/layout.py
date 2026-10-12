@@ -316,7 +316,7 @@ def _build_factorized_local_entries(
     grid_metadata,
     *,
     dtype: np.dtype = np.float32,
-    sigma_tilt_deg: float = 0.0,
+    sigma_tilt_deg: float,
     prior_tilt_deg: np.ndarray | None = None,
 ):
     """Build exact per-image local supports for factorized HEALPix x psi grids.
@@ -345,7 +345,6 @@ def _build_factorized_local_entries(
 
     sigma_rot_deg = float(np.rad2deg(sigma_rot))
     sigma_psi_deg = float(np.rad2deg(sigma_psi))
-    sigma_tilt_deg = float(sigma_tilt_deg)
     if sigma_tilt_deg > 0.0:
         if sigma_rot_deg > 0.0:
             # RELION's cone for both widths uses max(sigma_rot, sigma_tilt); this module has them equal.
@@ -494,7 +493,7 @@ def _build_parent_expanded_local_entries(
     generate_relion_mstep_rotations: bool = False,
     dtype: np.dtype = np.float32,
     symmetry: str = "C1",
-    sigma_tilt_deg: float = 0.0,
+    sigma_tilt_deg: float,
     prior_tilt_deg: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
     """Build RELION-style local support by expanding selected coarse parents.
@@ -829,7 +828,7 @@ def build_local_hypothesis_layout(
     rotation_grid_mstep_rotations: np.ndarray | None = None,
     generate_relion_mstep_rotations: bool = False,
     dtype: np.dtype = np.float32,
-    sigma_tilt_deg: float = 0.0,
+    sigma_tilt_deg: float,
     prior_tilt_deg: np.ndarray | None = None,
 ) -> LocalHypothesisLayout:
     """Build exact per-image local neighborhoods and translation priors.
@@ -910,7 +909,7 @@ def build_local_hypothesis_layout(
             prior_tilt_deg=prior_tilt_deg,
         )
     else:
-        if float(sigma_tilt_deg) > 0.0:
+        if sigma_tilt_deg > 0.0:
             raise NotImplementedError("a tilt prior needs the factorized HEALPix x psi grid")
         n_images = int(prior_rotations.shape[0])
         offsets = np.zeros(n_images + 1, dtype=np.int64)

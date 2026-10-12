@@ -363,6 +363,7 @@ def _build_local_adaptive_parent_layout(
             adaptive_oversampling=0,
         ),
         dtype=layout_dtype,
+        sigma_tilt_deg=0.0,
     )
     return parent_layout, parent_order
 
@@ -1067,6 +1068,7 @@ def _run_local_search_iteration(
             rotation_grid_mstep_rotations=grid.rotation_grid_mstep_rotations,
             generate_relion_mstep_rotations=grid.generate_relion_mstep_rotations,
             dtype=local_layout_dtype,
+            sigma_tilt_deg=0.0,
         )
         selector_time = layout_clock.seconds
     else:

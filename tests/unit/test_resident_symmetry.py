@@ -280,6 +280,7 @@ def _c4_local_case(monkeypatch):
         grid_metadata=build_local_search_grid_metadata(local_tests.PARENT_ORDER, symmetry=SYMMETRY),
         translation_prior_reference_translations=translations,
         dtype=np.float32,
+        sigma_tilt_deg=0.0,
     )
     n_coarse_trans = int(translations.shape[0])
     rng = np.random.default_rng(seed + 1)

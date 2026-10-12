@@ -737,7 +737,7 @@ def score_tomo_half_in_loop(
             local_search["previous_eulers_deg"],
             sigma_rot=local_search["sigma_rot"],
             sigma_psi=local_search["sigma_psi"],
-            sigma_tilt_deg=local_search.get("sigma_tilt_deg", 0.0),
+            sigma_tilt_deg=local_search["sigma_tilt_deg"],
             prior_tilt_deg=local_search.get("prior_tilt_deg"),
             healpix_order=int(sampling.healpix_order),
             random_perturbation=float(sampling.random_perturbation),

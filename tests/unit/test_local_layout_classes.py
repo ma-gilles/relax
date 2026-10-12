@@ -31,6 +31,7 @@ def _parent():
         eulers, None, 0.35, 0.35, ORDER, TRANSLATIONS, np.zeros((N_IMAGES, 2), dtype=np.float32), 3.0, None, 1.0,
         grid_metadata=build_local_search_grid_metadata(ORDER), translation_prior_reference_translations=TRANSLATIONS,
         dtype=np.float32,
+        sigma_tilt_deg=0.0,
     )
 
 

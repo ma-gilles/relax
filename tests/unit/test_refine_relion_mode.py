@@ -1395,6 +1395,7 @@ def test_build_local_hypothesis_layout_and_bucketization_preserve_per_image_supp
         offset_range_pixels=1.0,
         voxel_size=1.0,
         grid_metadata={"mode": "full", "n_pixels": np.int64(192), "n_psi": np.int64(16)},
+        sigma_tilt_deg=0.0,
     )
 
     assert_matches(layout.rotation_offsets, np.array([0, 2, 5], dtype=np.int64))
@@ -2012,6 +2013,7 @@ def test_build_local_hypothesis_layout_factorized_matches_per_image_selector():
         offset_range_pixels=1.0,
         voxel_size=1.0,
         grid_metadata=grid_metadata,
+        sigma_tilt_deg=0.0,
     )
 
     for image_idx in range(prior_eulers.shape[0]):
@@ -2063,6 +2065,7 @@ def test_build_local_hypothesis_layout_parent_expands_relion_coarse_support():
         offset_range_pixels=1.0,
         voxel_size=1.0,
         grid_metadata=parent_metadata,
+        sigma_tilt_deg=0.0,
     )
     expanded_layout = build_local_hypothesis_layout(
         prior_eulers,
@@ -2077,6 +2080,7 @@ def test_build_local_hypothesis_layout_parent_expands_relion_coarse_support():
         voxel_size=1.0,
         grid_metadata=fine_metadata,
         local_parent_oversampling_order=oversampling_order,
+        sigma_tilt_deg=0.0,
     )
 
     assert expanded_layout.n_global_rotations == rotation_grid_size(fine_order)
@@ -2125,6 +2129,7 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
         rotation_grid_random_perturbation=0.0,
         rotation_grid_angular_sampling_deg=None,
         dtype=np.float32,
+        sigma_tilt_deg,
     ):
         captured["rotation_log_prior"] = (
             None if rotation_log_prior is None else np.asarray(rotation_log_prior, dtype=np.float32).copy()
@@ -2287,6 +2292,7 @@ def test_build_local_hypothesis_layout_parent_expands_translation_grid_and_prior
         grid_metadata=grid_metadata,
         translation_prior_reference_translations=reference_translations,
         local_parent_oversampling_order=oversampling_order,
+        sigma_tilt_deg=0.0,
     )
 
     fine_translations, translation_parent = get_oversampled_translation_grid(
@@ -2353,6 +2359,7 @@ def test_lazy_pass2_layouts_request_aligned_relion_mstep_rotations(monkeypatch, 
             grid_metadata=build_local_search_grid_metadata(1),
             local_parent_oversampling_order=1,
             generate_relion_mstep_rotations=True,
+            sigma_tilt_deg=0.0,
         )
     else:
         parent_layout = LocalHypothesisLayout(
@@ -2410,9 +2417,9 @@ def test_build_local_hypothesis_layout_factorized_chunking_preserves_support(mon
     )
 
     monkeypatch.delenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", raising=False)
-    full_layout = build_local_hypothesis_layout(prior_eulers, rotation_grid, **kwargs)
+    full_layout = build_local_hypothesis_layout(prior_eulers, rotation_grid, **kwargs, sigma_tilt_deg=0.0)
     monkeypatch.setenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", "1")
-    chunked_layout = build_local_hypothesis_layout(prior_eulers, rotation_grid, **kwargs)
+    chunked_layout = build_local_hypothesis_layout(prior_eulers, rotation_grid, **kwargs, sigma_tilt_deg=0.0)
 
     assert_matches(chunked_layout.rotation_offsets, full_layout.rotation_offsets)
     assert_matches(chunked_layout.rotation_counts, full_layout.rotation_counts)
@@ -3381,6 +3388,7 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
         rotation_grid_mstep_rotations=None,
         generate_relion_mstep_rotations=False,
         dtype=np.float32,
+        sigma_tilt_deg,
     ):
         captured["offset_range_pixels"] = offset_range_pixels
         captured["sigma_offset_angstrom"] = sigma_offset_angstrom
@@ -3531,6 +3539,7 @@ def test_run_local_search_iteration_dispatches_aligned_mstep_grid(monkeypatch, r
         None,
         dataset.voxel_size,
         grid_metadata=build_local_search_grid_metadata(0),
+        sigma_tilt_deg=0.0,
     )
     assert backward_compatible.mstep_rotations_flat is None
 
@@ -3688,6 +3697,7 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
         rotation_grid_mstep_rotations=None,
         generate_relion_mstep_rotations=False,
         dtype=np.float32,
+        sigma_tilt_deg,
     ):
         captured["grid_metadata_mode"] = grid_metadata["mode"]
         captured["n_pixels"] = int(grid_metadata["n_pixels"])

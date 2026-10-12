@@ -465,6 +465,7 @@ def run_final_all_data(
                     previous_eulers_deg=half.rotation_eulers,
                     sigma_rot=final_local_sampling.search.sigma_rot,
                     sigma_psi=final_local_sampling.search.sigma_psi,
+                    sigma_tilt_deg=0.0,
                 )
             elif tilt_prior is not None:
                 logger.info(

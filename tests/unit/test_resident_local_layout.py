@@ -63,6 +63,7 @@ def _parent_layout(n_images=N_IMAGES, n_coarse_trans=4, seed=20260919):
         grid_metadata=build_local_search_grid_metadata(PARENT_ORDER),
         translation_prior_reference_translations=translations,
         dtype=np.float32,
+        sigma_tilt_deg=0.0,
     ), translations
 
 
