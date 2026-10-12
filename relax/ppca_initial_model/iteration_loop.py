@@ -76,10 +76,8 @@ def _rotation_grid(hp):
 
 @functools.lru_cache(maxsize=4)
 def _direction_ids(hp):
-    """Index of each rotation's (rot, tilt) direction on the order-``hp`` grid (read-only; a sort of every rotation)."""
-    eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
-    _, direction_ids = np.unique(eulers[:, :2], axis=0, return_inverse=True)
-    direction_ids = direction_ids.reshape(-1)
+    """Index of each rotation's HEALPix direction on the order-``hp`` grid, in its RELION hidden order (read-only)."""
+    direction_ids = grids.rotation_direction_ids(hp, rotation_index_order="relion")
     direction_ids.flags.writeable = False
     return direction_ids
 

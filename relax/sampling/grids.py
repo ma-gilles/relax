@@ -217,6 +217,19 @@ def _split_rotation_indices(
     return pixel_idx, psi_idx
 
 
+def rotation_direction_ids(healpix_order: int, *, rotation_index_order: str, symmetry: str = "C1") -> np.ndarray:
+    """The HEALPix direction (pixel) of every rotation of the order's grid, ``(n_rotations,)`` int64.
+
+    ``rotation_index_order`` is the grid's: RELION's hidden-variable order (``"relion"``) keeps each
+    direction's in-plane angles together, RECOVAR's (``"recovar"``) runs over the directions within each
+    in-plane angle.
+    """
+    indices = np.arange(rotation_grid_size(healpix_order, symmetry), dtype=np.int64)
+    return _split_rotation_indices(
+        indices, healpix_order, rotation_index_order=rotation_index_order, symmetry=symmetry
+    )[0]
+
+
 def get_rotation_grid(nside_level, n_in_planes=None, matrices=False):
 
     #  * order	Npix	Theta-sampling

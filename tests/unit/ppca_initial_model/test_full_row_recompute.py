@@ -312,6 +312,8 @@ def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, ca
     monkeypatch.setattr(iteration_loop, "support_mask", lambda *_args: jnp.ones(shape, jnp.float32))
     monkeypatch.setattr(iteration_loop, "bandlimit_and_mask", lambda value, *_args: value)
     monkeypatch.setattr(iteration_loop.grids, "get_relion_hidden_rotation_grid", lambda *_a, **_k: np.zeros((1, 3)))
+    # The one-rotation stand-in grid has one direction.
+    monkeypatch.setattr(iteration_loop.grids, "rotation_direction_ids", lambda *_a, **_k: np.zeros(1, np.int64))
 
     def groups(_dataset, _state, _config, halves, _iteration, **_kwargs):
         return [

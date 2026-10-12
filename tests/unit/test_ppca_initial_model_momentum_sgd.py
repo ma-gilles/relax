@@ -209,6 +209,8 @@ def test_controller_pools_direct_residual_and_restarts_with_velocity(tmp_path, m
     monkeypatch.setattr(
         iteration_loop.grids, "get_relion_hidden_rotation_grid", lambda *_args, **_kwargs: np.zeros((1, 3))
     )
+    # The one-rotation stand-in grid has one direction.
+    monkeypatch.setattr(iteration_loop.grids, "rotation_direction_ids", lambda *_a, **_k: np.zeros(1, np.int64))
 
     def expectation(_dataset, _state, _config, ids, _iteration, *, embeddings_only=False, diameter_ang=None):
         if embeddings_only:

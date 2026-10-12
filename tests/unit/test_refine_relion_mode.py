@@ -5724,6 +5724,14 @@ class TestRelionModeSmokeTest:
             "rotation_grid_n_in_planes",
             fake_rotation_grid_n_in_planes,
         )
+        # The stand-in grid has one in-plane angle: every rotation is its own direction.
+        monkeypatch.setitem(
+            make_relion_direction_log_prior.__globals__,
+            "rotation_direction_ids",
+            lambda order, *, rotation_index_order, symmetry="C1": np.arange(
+                fake_rotation_grid_size(order, symmetry=symmetry), dtype=np.int64
+            ),
+        )
         monkeypatch.setattr(local_half, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
 
         result = refine_single_volume(

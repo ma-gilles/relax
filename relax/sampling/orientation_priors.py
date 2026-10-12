@@ -12,7 +12,7 @@ import healpy as hp
 import numpy as np
 
 from relax.relion.macros import relion_round_array
-from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
+from relax.sampling.grids import rotation_direction_ids, rotation_grid_n_in_planes, rotation_grid_size
 from relax.sampling.healpix import angular_sampling_deg
 
 
@@ -389,7 +389,7 @@ def collapse_rotation_posterior_to_direction_prior(
     # bincount adds each direction's rotations in index order, as np.add.at
     # did, at a fraction of its cost on the 19M-rotation order-6 grid.
     direction_weights = np.bincount(
-        np.arange(n_rot, dtype=np.int64) % n_pixels,
+        rotation_direction_ids(healpix_order, rotation_index_order="recovar", symmetry=symmetry),
         weights=rotation_posterior_sums,
         minlength=n_pixels,
     )
