@@ -133,11 +133,12 @@ CASES = _cases()
 # A deliberately wrong controller for the self-test: (name, old lines, new lines, what breaks, detected).
 # A target must occur in exactly one place of the tree: when a statement is rewritten, update its entry.
 MUTATIONS = (
-    ("noise_blend", "new_sigma2[g] * my_mu + (1.0 - my_mu) * np.asarray(wsum_g, dtype=np.float64) / float(shape[0] ** 4),",
-     "new_sigma2[g] * my_mu + (1.0 - my_mu) * np.asarray(wsum_g, dtype=np.float64) / float(shape[0] ** 4) * 2,",
+    ("noise_blend", "relion_blend(new_sigma2[g], np.asarray(wsum_g, dtype=np.float64), float(shape[0] ** 4), my_mu),",
+     "relion_blend(new_sigma2[g], np.asarray(wsum_g, dtype=np.float64), float(shape[0] ** 4) / 2, my_mu),",
      "the noise update doubles the new spectrum", True),
-    ("pdf_class_blend", "new_pdf_class += (1.0 - my_mu) * class_sums / sum_weight",
-     "new_pdf_class += (1.0 - my_mu) * class_sums[::-1] / sum_weight",
+    ("pdf_class_blend",
+     "new_pdf_class = relion_blend(np.asarray(state.pdf_class, dtype=np.float64), class_sums, sum_weight, my_mu)",
+     "new_pdf_class = relion_blend(np.asarray(state.pdf_class, dtype=np.float64), class_sums[::-1], sum_weight, my_mu)",
      "the class prior update reads the class sums reversed", True),
     ("ave_pmax_halved", "current = replace(current, ave_Pmax=float(ave_pmax))",
      "current = replace(current, ave_Pmax=0.5 * float(ave_pmax))",

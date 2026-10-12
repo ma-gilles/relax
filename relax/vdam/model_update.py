@@ -11,10 +11,9 @@ from dataclasses import replace
 
 import numpy as np
 
+from relax.steps.model_blend import MIN_SIGMA2_OFFSET_ANGSTROM2, blend_offset_variance, relion_blend
 from relax.vdam.estep_common import EstepSums
 from relax.vdam.state import InitialModelState
-
-MIN_SIGMA2_OFFSET_ANGSTROM2: float = 2.0
 
 
 def _my_mu(mu: float, do_grad: bool, subset_size: int) -> float:
@@ -134,7 +133,7 @@ def update_noise_from_estep(
         wsum_g = noise.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)
         # RELION blends, then applies its floors (ml_optimiser.cpp:5255-5282): a shell without data decays by mu.
         new_sigma2[g] = noise.apply_relion_sigma2_floors(
-            new_sigma2[g] * my_mu + (1.0 - my_mu) * np.asarray(wsum_g, dtype=np.float64) / float(shape[0] ** 4),
+            relion_blend(new_sigma2[g], np.asarray(wsum_g, dtype=np.float64), float(shape[0] ** 4), my_mu),
             ctf_premultiplied=sums.average_ctf2 is not None,
         )
         if not np.all(np.isfinite(new_sigma2[g])) or np.any(new_sigma2[g] <= 0.0):
@@ -166,8 +165,7 @@ def update_probabilities_from_estep(
 
     new_state = replace(state)
     if not uniform_class_direction_prior:
-        new_pdf_class = np.asarray(state.pdf_class, dtype=np.float64) * my_mu
-        new_pdf_class += (1.0 - my_mu) * class_sums / sum_weight
+        new_pdf_class = relion_blend(np.asarray(state.pdf_class, dtype=np.float64), class_sums, sum_weight, my_mu)
         pdf_class_sum = float(np.sum(new_pdf_class))
         if pdf_class_sum > 0.0:
             new_pdf_class /= pdf_class_sum
@@ -200,9 +198,7 @@ def update_probabilities_from_estep(
             # RELION resizes pdf_direction to the new sampling.NrDirections()
             # and fills it uniformly when angular sampling changes.
             pdf_direction = np.full(direction_sums.shape, 1.0 / float(state.K * direction_sums.shape[1]))
-        new_pdf_direction = pdf_direction * my_mu
-        new_pdf_direction += (1.0 - my_mu) * direction_sums / sum_weight
-        new_state.pdf_direction = new_pdf_direction
+        new_state.pdf_direction = relion_blend(pdf_direction, direction_sums, sum_weight, my_mu)
 
     wsum_sigma2_offset = sums.offset_wsum
     if wsum_sigma2_offset is not None:
@@ -211,13 +207,18 @@ def update_probabilities_from_estep(
         sigma2_offset_sumw = sums.offset_sumw
         if not np.isfinite(sigma2_offset_sumw) or sigma2_offset_sumw <= 0.0:
             raise ValueError("sigma2_offset_sumw must be positive and finite")
-        sigma2_offset = float(state.sigma2_offset) * my_mu
         # RELION divides by 2*sum_weight for 2D particle translations, 3*sum_weight for
         # subtomograms' 3D offsets (ml_optimiser.cpp:5222-5231).
         # Its sum_weight is accumulated from the same significant-pruned
         # reconstruction weights as wsum_sigma2_offset, rather than from the
         # unpruned per-image class responsibilities.
-        sigma2_offset += (1.0 - my_mu) * wsum_sigma2_offset / (sums.offset_dims * sigma2_offset_sumw)
-        new_state.sigma2_offset = max(float(sigma2_offset), MIN_SIGMA2_OFFSET_ANGSTROM2)
+        new_state.sigma2_offset = blend_offset_variance(
+            float(state.sigma2_offset),
+            wsum_sigma2_offset,
+            sigma2_offset_sumw,
+            sums.offset_dims,
+            my_mu,
+            MIN_SIGMA2_OFFSET_ANGSTROM2,
+        )
 
     return new_state
