@@ -26,7 +26,7 @@ from helpers.em_arrays import _raw_real_image_2d
 
 from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half, make_shell_indices_half
 from relax.fine_pass.scoring import (
-    _relion_cuda_corr_img_from_native_noise_variance,
+    relion_cuda_corr_img_from_native_noise_variance,
     _relion_cuda_native_corr_img_from_noise_variance,
     _relion_native_fine_units,
     _score_pass2_bucket_relion_gpu_diff2_raw,
@@ -59,7 +59,7 @@ def test_score_corr_img_is_the_native_corr_img_scaled_once(image_size):
     shape = (image_size, image_size)
 
     native = _relion_cuda_native_corr_img_from_noise_variance(noise_variance, ctf, shape, scale)
-    canonical = _relion_cuda_corr_img_from_native_noise_variance(noise_variance, ctf, shape, scale)
+    canonical = relion_cuda_corr_img_from_native_noise_variance(noise_variance, ctf, shape, scale)
 
     assert native.dtype == jnp.float32
     expected = (np.asarray(native, dtype=np.float64) / np.float64(image_size) ** 4).astype(np.float32)

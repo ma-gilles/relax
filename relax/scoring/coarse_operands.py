@@ -67,7 +67,7 @@ def relion_exact_coarse_operands(
     Neither returned operand depends on the FFI output, so both are produced
     before the call instead of straddling it.
 
-    RELION's cast order inside ``_relion_cuda_pixel_correction_from_rfloat_ctf``
+    RELION's cast order inside ``relion_cuda_pixel_correction_from_rfloat_ctf``
     and the ``corr_img`` helpers is carried by their own ``optimization_barrier``
     calls, which survive tracing, and nothing here reduces along an axis or
     adds a product. :data:`_relion_exact_coarse_operand_program` is ``jax.jit``
@@ -75,14 +75,14 @@ def relion_exact_coarse_operands(
     """
 
     from relax.fine_pass.scoring import (
-        _relion_cuda_corr_img_from_native_noise_variance,
-        _relion_cuda_corr_img_from_rfloat_ctf,
-        _relion_cuda_pixel_correction_from_rfloat_ctf,
+        relion_cuda_corr_img_from_native_noise_variance,
+        relion_cuda_corr_img_from_rfloat_ctf,
+        relion_cuda_pixel_correction_from_rfloat_ctf,
     )
 
     real_dtype = jnp.float64 if use_float64_scoring else jnp.float32
     complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
-    pixel_correction = _relion_cuda_pixel_correction_from_rfloat_ctf(
+    pixel_correction = relion_cuda_pixel_correction_from_rfloat_ctf(
         batch_scale_exact[:, None],
         ctf_half_rfloat,
         output_dtype=real_dtype,
@@ -98,13 +98,13 @@ def relion_exact_coarse_operands(
     score_noise_variance = noise_variance_half[..., score_indices]
     if use_float64_scoring:
         inverse_noise_half = jnp.reciprocal(jnp.asarray(score_noise_variance, dtype=jnp.float64))
-        exact_corr_img = _relion_cuda_corr_img_from_rfloat_ctf(
+        exact_corr_img = relion_cuda_corr_img_from_rfloat_ctf(
             pixel_rows(inverse_noise_half), ctf_half_rfloat,
             batch_scale_exact[:, None] if scale_corrections_enabled else None,
             output_dtype=real_dtype,
         )
     else:
-        exact_corr_img = _relion_cuda_corr_img_from_native_noise_variance(
+        exact_corr_img = relion_cuda_corr_img_from_native_noise_variance(
             pixel_rows(score_noise_variance),
             ctf_half_rfloat,
             image_shape,
@@ -163,11 +163,11 @@ def _relion_cc_coarse_operands(
     """
 
     from relax.fine_pass.scoring import (
-        _relion_cuda_corr_img_from_rfloat_ctf,
-        _relion_cuda_pixel_correction_from_rfloat_ctf,
+        relion_cuda_corr_img_from_rfloat_ctf,
+        relion_cuda_pixel_correction_from_rfloat_ctf,
     )
 
-    pixel_correction = _relion_cuda_pixel_correction_from_rfloat_ctf(
+    pixel_correction = relion_cuda_pixel_correction_from_rfloat_ctf(
         batch_scale_f32[:, None],
         ctf_rfloat,
     )
@@ -177,7 +177,7 @@ def _relion_cc_coarse_operands(
     )
     if phase_factors is not None:
         unshifted_corrected = unshifted_corrected * phase_factors
-    corr_img = _relion_cuda_corr_img_from_rfloat_ctf(
+    corr_img = relion_cuda_corr_img_from_rfloat_ctf(
         inverse_power,
         ctf_rfloat,
         batch_scale_f32[:, None] if scale_corrections_enabled else None,
@@ -340,14 +340,14 @@ def assemble_relion_exact_coarse_gaussian_operands(
 
     from relax.cuda import translate as cuda_translate
     from relax.fine_pass.bucket_io import (
-        _relion_translation_angles_f64,
         relion_translation_angles_f32,
+        relion_translation_angles_f64,
     )
     from relax.relion.ctf import relion_exact_ctf_half_from_source_star
 
     real_dtype = jnp.float64 if use_float64_scoring else jnp.float32
     complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
-    angle_fn = _relion_translation_angles_f64 if use_float64_scoring else relion_translation_angles_f32
+    angle_fn = relion_translation_angles_f64 if use_float64_scoring else relion_translation_angles_f32
     translate_fn = cuda_translate.relion_translate_score_f64 if use_float64_scoring else cuda_translate.relion_translate_score_f32
 
     # The padded rows of a short last batch repeat its first image's CTF row.

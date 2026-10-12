@@ -57,9 +57,9 @@ from relax.fine_pass.projection_blocks import (
     _compute_sparse_pass2_windowed_projections_block,
 )
 from relax.fine_pass.scoring import (
-    _relion_cuda_corr_img_from_native_noise_variance,
-    _relion_cuda_corr_img_from_rfloat_ctf,
-    _relion_cuda_pixel_correction_from_rfloat_ctf,
+    relion_cuda_corr_img_from_native_noise_variance,
+    relion_cuda_corr_img_from_rfloat_ctf,
+    relion_cuda_pixel_correction_from_rfloat_ctf,
 )
 from relax.fine_pass.significant_samples import (
     ComplementSignificantSampleIndices,
@@ -114,7 +114,7 @@ def test_relion_corr_img_squares_rfloat_ctf_before_xfloat_cast():
     assert np.any(expected != rejected_float_path)
 
     actual = np.asarray(
-        _relion_cuda_corr_img_from_rfloat_ctf(inverse_noise, ctf_rfloat)
+        relion_cuda_corr_img_from_rfloat_ctf(inverse_noise, ctf_rfloat)
     )
     assert_matches(actual, expected)
 
@@ -139,7 +139,7 @@ def test_relion_corr_img_applies_xfloat_scale_square_after_rfloat_ctf_cast():
     assert np.any(expected != rejected_fused_rfloat_path)
 
     actual = np.asarray(
-        _relion_cuda_corr_img_from_rfloat_ctf(
+        relion_cuda_corr_img_from_rfloat_ctf(
             inverse_noise,
             ctf_rfloat,
             scale,
@@ -154,7 +154,7 @@ def test_relion_corr_img_preserves_double_accelerator_precision():
     expected = inverse_noise * (ctf_rfloat * ctf_rfloat)
 
     actual = np.asarray(
-        _relion_cuda_corr_img_from_rfloat_ctf(
+        relion_cuda_corr_img_from_rfloat_ctf(
             inverse_noise,
             ctf_rfloat,
             output_dtype=jnp.float64,
@@ -196,7 +196,7 @@ def test_relion_corr_img_converts_noise_units_after_native_xfloat_product():
     assert np.any(expected != rejected_early_conversion)
 
     actual = np.asarray(
-        _relion_cuda_corr_img_from_native_noise_variance(
+        relion_cuda_corr_img_from_native_noise_variance(
             recovar_noise_variance,
             ctf_rfloat,
             image_shape,
@@ -223,7 +223,7 @@ def test_relion_pixel_correction_divides_by_rfloat_ctf_before_xfloat_cast():
     assert np.any(expected != rejected_float_path)
 
     actual = np.asarray(
-        _relion_cuda_pixel_correction_from_rfloat_ctf(scale, ctf_rfloat)
+        relion_cuda_pixel_correction_from_rfloat_ctf(scale, ctf_rfloat)
     )
     assert_matches(actual, expected)
 
@@ -236,7 +236,7 @@ def test_relion_pixel_correction_preserves_double_accelerator_precision():
     expected = (1.0 / scale) / ctf_rfloat
 
     actual = np.asarray(
-        _relion_cuda_pixel_correction_from_rfloat_ctf(
+        relion_cuda_pixel_correction_from_rfloat_ctf(
             scale,
             ctf_rfloat,
             output_dtype=jnp.float64,

@@ -17,7 +17,7 @@ import numpy as np
 
 from recovar.core.ctf import _compute_spa_ctf
 from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
-from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup
 from recovar.utils.file_hash import sha256_file
 from scripts.validate_relion_bpref_factor_capture import load_factor_pixel_capture
 from scripts.validate_relion_fine_operand_capture import (
@@ -350,7 +350,7 @@ def _compare_particle(
         )
 
     lookup = np.asarray(
-        _relion_cuda_fine_full_to_compact_lookup(
+        relion_cuda_fine_full_to_compact_lookup(
             (physical_image_size, physical_image_size),
             current_size,
             np.asarray(recovar["window_indices"], dtype=np.int32),

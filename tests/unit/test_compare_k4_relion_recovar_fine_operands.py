@@ -51,7 +51,7 @@ def test_compact_indices_roundtrip_non_self_inverse_score_lookup():
     image_shape = (8, 8)
     current_size = 4
     expected = np.asarray([27, 10, 21], dtype=np.int32)
-    lookup = comparator._relion_cuda_fine_full_to_compact_lookup(
+    lookup = comparator.relion_cuda_fine_full_to_compact_lookup(
         image_shape,
         current_size,
         expected,

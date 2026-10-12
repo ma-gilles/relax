@@ -83,7 +83,7 @@ def test_exact_coarse_assembly_precision_and_padding(
         use_float64_scoring=use_float64,
     )
     expected_ctf = ctf if batch_size == 2 else np.concatenate((ctf, ctf[:1]), axis=0)
-    correction = bucket_io._relion_cuda_pixel_correction_from_rfloat_ctf(
+    correction = bucket_io.relion_cuda_pixel_correction_from_rfloat_ctf(
         scale_operand,
         jnp.asarray(expected_ctf),
         output_dtype=real_dtype,
@@ -98,14 +98,14 @@ def test_exact_coarse_assembly_precision_and_padding(
     assert result.pixel_weight.dtype == real_dtype
     assert result.unshifted_corrected.dtype == complex_dtype
     if use_float64:
-        full_corr = bucket_io._relion_cuda_corr_img_from_rfloat_ctf(
+        full_corr = bucket_io.relion_cuda_corr_img_from_rfloat_ctf(
             jnp.full((1, 12), 0.5, dtype=jnp.float64),
             jnp.asarray(expected_ctf),
             scale_operand if scale_enabled else None,
             output_dtype=real_dtype,
         )
     else:
-        full_corr = bucket_io._relion_cuda_corr_img_from_native_noise_variance(
+        full_corr = bucket_io.relion_cuda_corr_img_from_native_noise_variance(
             jnp.full((1, 12), 2.0, dtype=jnp.float64),
             jnp.asarray(expected_ctf),
             (4, 4),
@@ -132,12 +132,12 @@ def test_native_noise_variance_corr_img_accepts_the_score_dtype_used_by_bucket_i
     entry_source = inspect.getsource(bucket_io._prepare_bucket_io)
     assert "prepare_unshifted_bucket_operands(" in entry_source
     call_site = inspect.getsource(bucket_io.prepare_unshifted_bucket_operands)
-    assert "_relion_cuda_corr_img_from_native_noise_variance(" in call_site
+    assert "relion_cuda_corr_img_from_native_noise_variance(" in call_site
     assert "output_dtype=acc_real_dtype" in call_site
     noise_variance = jnp.asarray([[2.0, 3.0, 5.0, 7.0]], dtype=jnp.float64)
     ctf = jnp.asarray([[0.5, -0.25, 1.0, 0.125]], dtype=jnp.float64)
-    default = bucket_io._relion_cuda_corr_img_from_native_noise_variance(noise_variance, ctf, (2, 2))
-    typed = bucket_io._relion_cuda_corr_img_from_native_noise_variance(
+    default = bucket_io.relion_cuda_corr_img_from_native_noise_variance(noise_variance, ctf, (2, 2))
+    typed = bucket_io.relion_cuda_corr_img_from_native_noise_variance(
         noise_variance, ctf, (2, 2), output_dtype=output_dtype
     )
     assert default.dtype == jnp.float32 and typed.dtype == output_dtype
@@ -146,6 +146,6 @@ def test_native_noise_variance_corr_img_accepts_the_score_dtype_used_by_bucket_i
     else:
         assert_matches(np.asarray(typed, dtype=np.float32), np.asarray(default))
     with pytest.raises(TypeError, match="output_dtype must be float32 or float64"):
-        bucket_io._relion_cuda_corr_img_from_native_noise_variance(
+        bucket_io.relion_cuda_corr_img_from_native_noise_variance(
             noise_variance, ctf, (2, 2), output_dtype=jnp.int32
         )

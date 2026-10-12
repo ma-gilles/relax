@@ -44,8 +44,8 @@ from relax.fine_pass import resident_operands as resident_module
 from relax.fine_pass.bucket_io import (
     _prepare_bucket_io,
     _relion_cuda_score_translation_angles_if_available,
-    _relion_translation_angles_f64,
     prepare_unshifted_bucket_operands,
+    relion_translation_angles_f64,
 )
 from relax.fine_pass.resident_operands import (
     ResidentOperandsUnsupported,
@@ -368,7 +368,7 @@ def test_native_fine_units_keep_the_score_modes_distinct(monkeypatch, score_mode
     kwargs["relion_exact_normalized_cc_operands"] = score_mode == "normalized_cc"
     kwargs["relion_exact_bpref_operands"] = True
     kwargs["relion_score_translation_angles"] = np.asarray(
-        _relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
+        relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
         np.float32,
     )
     # The mock has no source STAR or native preprocessor. Supply only the
@@ -442,7 +442,7 @@ def test_native_fine_units_keep_the_score_modes_distinct(monkeypatch, score_mode
 def test_staged_raw_batch_reuses_fetch_and_matches_default_operands(monkeypatch, count):
     case = _case(relion_angles=False)
     case["bucket_io_kwargs"]["relion_score_translation_angles"] = np.asarray(
-        _relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
+        relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
         dtype=np.float32,
     )
     indices = np.arange(count, dtype=np.int32)
@@ -470,7 +470,7 @@ def test_staged_raw_batch_reuses_fetch_and_matches_default_operands(monkeypatch,
 def test_staged_raw_batch_rejects_host_array_and_mismatched_ids():
     case = _case(relion_angles=False)
     case["bucket_io_kwargs"]["relion_score_translation_angles"] = np.asarray(
-        _relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
+        relion_translation_angles_f64(case["fine_translations"], case["image_shape"]),
         dtype=np.float32,
     )
     indices = np.arange(3, dtype=np.int32)

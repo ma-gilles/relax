@@ -329,7 +329,7 @@ def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
     """
 
     from relax.fine_pass.scoring import (
-        _relion_cuda_pixel_correction_from_rfloat_ctf,
+        relion_cuda_pixel_correction_from_rfloat_ctf,
     )
     from relax.scoring.coarse_operands import repeat_pad_batch_axis
 
@@ -346,10 +346,10 @@ def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
     )
 
     scale = jnp.asarray(rng.uniform(0.9, 1.1, (padded_size, 1)), dtype=jnp.float32)
-    correction = _relion_cuda_pixel_correction_from_rfloat_ctf(scale, padded)
+    correction = relion_cuda_pixel_correction_from_rfloat_ctf(scale, padded)
     assert correction.shape == (padded_size, pixels)
     # The live rows are the unpadded answer: padding may not move a science row.
-    unpadded_correction = _relion_cuda_pixel_correction_from_rfloat_ctf(
+    unpadded_correction = relion_cuda_pixel_correction_from_rfloat_ctf(
         scale[:actual], ctf
     )
     assert_matches(

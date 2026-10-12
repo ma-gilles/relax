@@ -44,7 +44,7 @@ def _relion_cuda_fine_reduce_lanes(lanes):
     return lanes[..., 0]
 
 
-def _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, compact_indices):
+def relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, compact_indices):
     """Map RELION's full current-size packed pixel order to compact score rows."""
 
     box_size = int(image_shape[0])
@@ -365,7 +365,7 @@ def _relion_cuda_fine_pixel_weights(corr_img_score, half_weights):
     )
 
 
-def _relion_cuda_corr_img_from_rfloat_ctf(
+def relion_cuda_corr_img_from_rfloat_ctf(
     inverse_noise,
     ctf_rfloat,
     scale=None,
@@ -396,7 +396,7 @@ def _relion_cuda_corr_img_from_rfloat_ctf(
     return corr_img
 
 
-def _relion_cuda_corr_img_from_native_noise_variance(
+def relion_cuda_corr_img_from_native_noise_variance(
     noise_variance,
     ctf_rfloat,
     image_shape,
@@ -454,7 +454,7 @@ def _relion_cuda_native_corr_img_from_noise_variance(
         / native_fourier_scale_rfloat
     )
     native_inverse_noise = jnp.reciprocal(native_variance).astype(jnp.float32)
-    return _relion_cuda_corr_img_from_rfloat_ctf(
+    return relion_cuda_corr_img_from_rfloat_ctf(
         native_inverse_noise,
         ctf_rfloat,
         scale,
@@ -539,7 +539,7 @@ def _relion_native_fine_units(values, fft_size):
     return jax.lax.complex(real, imag)
 
 
-def _relion_cuda_pixel_correction_from_rfloat_ctf(
+def relion_cuda_pixel_correction_from_rfloat_ctf(
     scale,
     ctf_rfloat,
     *,

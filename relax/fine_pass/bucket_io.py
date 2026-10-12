@@ -17,9 +17,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fine_pass.scoring import (
-    _relion_cuda_corr_img_from_native_noise_variance,
-    _relion_cuda_corr_img_from_rfloat_ctf,
-    _relion_cuda_pixel_correction_from_rfloat_ctf,
+    relion_cuda_corr_img_from_native_noise_variance,
+    relion_cuda_corr_img_from_rfloat_ctf,
+    relion_cuda_pixel_correction_from_rfloat_ctf,
 )
 from relax.fourier.half_spectrum import (
     make_half_image_weights,
@@ -82,7 +82,7 @@ def _translation_phase_table_for_indices(
     return translation_phases_half[:, pixel_indices]
 
 
-def _relion_translation_angles_f64(translations, image_shape, *, angle_scale: float = 1.0):
+def relion_translation_angles_f64(translations, image_shape, *, angle_scale: float = 1.0):
     """Return RELION double-ACC ``(tx, ty)`` translation radians.
 
     RELION stores sampling translations in Angstrom and converts them with the
@@ -110,7 +110,7 @@ def relion_translation_angles_f32(translations, image_shape, *, angle_scale=1.0)
     """Return RELION fine-score ``(tx, ty)`` radians with host rounding."""
 
     return np.asarray(
-        _relion_translation_angles_f64(translations, image_shape, angle_scale=angle_scale),
+        relion_translation_angles_f64(translations, image_shape, angle_scale=angle_scale),
         dtype=np.float32,
     )
 
@@ -144,7 +144,7 @@ def _relion_cuda_score_translation_angles_if_available(
     )
     return jnp.asarray(
         np.asarray(
-            _relion_translation_angles_f64(translations, image_shape, angle_scale=angle_scale),
+            relion_translation_angles_f64(translations, image_shape, angle_scale=angle_scale),
             dtype=dtype,
         ),
         dtype=dtype,
@@ -434,7 +434,7 @@ def prepare_unshifted_bucket_operands(
         ).astype(acc_real_dtype)
         weighted_ctf_half = ctf_half * pixel_rows(inverse_noise_half)
         ctf2_over_nv_half = weighted_ctf_half * ctf_half
-        relion_score_corr_img_half = _relion_cuda_corr_img_from_native_noise_variance(
+        relion_score_corr_img_half = relion_cuda_corr_img_from_native_noise_variance(
             pixel_rows(noise_variance_half),
             ctf_half_rfloat,
             image_shape,
@@ -610,7 +610,7 @@ def prepare_unshifted_bucket_operands(
 
     if return_direct_scoring_io and not folded_normalized_cc_operands:
         if relion_exact_bpref_operands:
-            pixel_correction = _relion_cuda_pixel_correction_from_rfloat_ctf(
+            pixel_correction = relion_cuda_pixel_correction_from_rfloat_ctf(
                 batch_scale[:, None],
                 ctf_half_rfloat,
                 output_dtype=acc_real_dtype,
@@ -728,7 +728,7 @@ def normalized_cc_direct_corr_img(unshifted, *, score_real_dtype, scale_correcti
         if unshifted.ctf_half_rfloat is None
         else unshifted.ctf_half_rfloat
     )
-    return inv_xi2, _relion_cuda_corr_img_from_rfloat_ctf(
+    return inv_xi2, relion_cuda_corr_img_from_rfloat_ctf(
         inv_xi2,
         corr_ctf_rfloat,
         unshifted.batch_scale[:, None] if scale_corrections is not None else None,

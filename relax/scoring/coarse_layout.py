@@ -41,7 +41,7 @@ def plan_coarse_gaussian_square_layout(
     logical lane assignment and appends only fused multiply-adds by zero.
     """
 
-    from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+    from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup
     from relax.fourier.fourier_window import (
         make_fourier_window_indices_np,
         make_frequency_coords_half_np,
@@ -97,7 +97,7 @@ def plan_coarse_gaussian_square_layout(
         raise ValueError("stable coarse compact score rows are not a unique physical square")
 
     logical_lookup = np.asarray(
-        _relion_cuda_fine_full_to_compact_lookup(
+        relion_cuda_fine_full_to_compact_lookup(
             image_shape,
             logical_current_size,
             logical_indices,

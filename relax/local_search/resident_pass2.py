@@ -104,8 +104,8 @@ from relax.fine_pass.resident_statistics import (
     resolve_statistics_config,
 )
 from relax.fine_pass.scoring import (
-    _relion_cuda_fine_full_to_compact_lookup,
     _relion_powerclass_noise_terms,
+    relion_cuda_fine_full_to_compact_lookup,
 )
 from relax.fine_pass.wavg import (
     _make_relion_wavg_rectangle,
@@ -602,7 +602,7 @@ def compute_local_search_resident(
     )
     del half_weights
     relion_score_full_to_compact = jnp.asarray(
-        _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
+        relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
         dtype=jnp.int32,
     )
     # The exact local engine casts sigma2 to the score real dtype before it

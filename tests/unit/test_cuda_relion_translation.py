@@ -84,15 +84,15 @@ def test_relion_translation_angle_scale_rejects_heterogeneous_optics():
 def test_unit_translation_angle_scale_keeps_every_angle_producer_unchanged():
     """Equal pixel sizes must leave the RELION angle operands untouched."""
     from relax.fine_pass.bucket_io import (
-        _relion_translation_angles_f64,
         relion_translation_angles_f32,
+        relion_translation_angles_f64,
     )
 
     rng = np.random.default_rng(20260922)
     translations = rng.uniform(-5.0, 5.0, size=(17, 2)).astype(np.float32)
     reference = -2.0 * np.pi * np.asarray(translations, dtype=np.float64) / 256.0
     assert_matches(
-        _relion_translation_angles_f64(translations, (256, 256)),
+        relion_translation_angles_f64(translations, (256, 256)),
         reference,
     )
     assert_matches(
@@ -100,7 +100,7 @@ def test_unit_translation_angle_scale_keeps_every_angle_producer_unchanged():
         reference.astype(np.float32),
     )
     with pytest.raises(ValueError, match="positive and finite"):
-        _relion_translation_angles_f64(translations, (256, 256), angle_scale=0.0)
+        relion_translation_angles_f64(translations, (256, 256), angle_scale=0.0)
 
 
 def test_relion_translation_cuda_source_preserves_explicit_arithmetic():

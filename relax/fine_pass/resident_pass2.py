@@ -153,11 +153,11 @@ from relax.fine_pass.resident_statistics import (
     segment_sum_by_image,
 )
 from relax.fine_pass.scoring import (
-    _relion_cuda_fine_full_to_compact_lookup,
     _relion_native_fine_units,
     _relion_native_fine_units_enabled,
     _relion_native_score_corr_img,
     _relion_powerclass_noise_terms,
+    relion_cuda_fine_full_to_compact_lookup,
     relion_powerclass_noise_dtypes,
 )
 from relax.fine_pass.wavg import (
@@ -3145,7 +3145,7 @@ def _resident_pass2(
     )
     if stable_window_plan is None:
         relion_score_full_to_compact = jnp.asarray(
-            _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
+            relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
             dtype=jnp.int32,
         )
     else:
@@ -3155,7 +3155,7 @@ def _resident_pass2(
         half_weights_windowed = _times_logical_mask(
             half_weights_windowed, jnp.int32(int(stable_window_plan.logical_score_pixels))
         )
-        logical_lookup = _relion_cuda_fine_full_to_compact_lookup(
+        logical_lookup = relion_cuda_fine_full_to_compact_lookup(
             image_shape,
             current_size,
             window_indices_np[: int(stable_window_plan.logical_score_pixels)],
