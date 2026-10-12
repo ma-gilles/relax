@@ -12,7 +12,6 @@ from helpers.float_compare import assert_matches, matches
 from helpers.refinement_specs import local_half_owners
 from helpers.run_options import stand_in
 
-from relax.refinement import shape_class_scoring
 from relax.refinement.refinement_options import ScoringVariants
 from relax.sampling.symmetry import (
     canonicalize_rotational_symmetry,
@@ -21,7 +20,7 @@ from relax.sampling.symmetry import (
     rotational_operators,
     symmetry_operator_sha256,
 )
-from relax.steps import scoring_policy
+from relax.steps import scoring_policy, shape_class_scoring
 from relax.steps.half_inputs import HalfScoringData, HalfSet
 
 pytestmark = pytest.mark.unit

@@ -40,7 +40,6 @@ from relax.refinement.engine_record import record_pass_engine
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.ports import ExpectationProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
-from relax.refinement.shape_class_scoring import OpticsSpec, reconstruction_image_radius
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -66,6 +65,7 @@ from relax.steps.scoring_policy import (
     RELION_ADAPTIVE_FRACTION,
     RELION_FOURIER_WINDOW_SQUARE,
 )
+from relax.steps.shape_class_scoring import OpticsSpec, reconstruction_image_radius
 from relax.types import NoiseStats, RelionStats
 
 logger = logging.getLogger(__name__)
@@ -339,7 +339,7 @@ def _local_owners_for_shape(
 ) -> LocalShapeOwners:
     """Derive one exact-local shape class through the optics owner."""
 
-    from relax.refinement import shape_class_scoring
+    from relax.steps import shape_class_scoring
 
     shape_values = shape_class_scoring.class_kwargs(
         {
@@ -422,8 +422,7 @@ def _score_half_local(
 ) -> HalfScoreResult:
     """Exact-local scoring for one half; several shapes run per shape class."""
 
-    from relax.refinement import shape_class_scoring
-    from relax.steps import optics_shapes
+    from relax.steps import optics_shapes, shape_class_scoring
 
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):

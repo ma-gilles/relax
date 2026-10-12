@@ -14,7 +14,7 @@ from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.numerics.precision import _diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import ImageGeometry
-from relax.refinement import image_size_plans, iteration_planning, local_sampling, shape_class_scoring
+from relax.refinement import image_size_plans, iteration_planning, local_sampling
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -41,7 +41,7 @@ from relax.sampling.orientation_priors import (
     relion_half_translation_prior_inputs,
     relion_translation_search_base,
 )
-from relax.steps import half_inputs
+from relax.steps import half_inputs, shape_class_scoring
 from relax.steps.half_inputs import HalfScoringData
 from relax.steps.score_outputs import (
     HalfScoreResult,

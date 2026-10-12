@@ -12,9 +12,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import shape_class_scoring
 from relax.refinement.particle_poses import prepare_particle_pose_update
-from relax.steps import optics_shapes
+from relax.steps import optics_shapes, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
 
 pytestmark = pytest.mark.unit

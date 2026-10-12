@@ -15,9 +15,9 @@ from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
-from relax.refinement import dense_half, local_half, shape_class_scoring
+from relax.refinement import dense_half, local_half
 from relax.refinement.refinement_options import ScoringVariants
-from relax.steps import half_inputs, optics_shapes, scoring_policy
+from relax.steps import half_inputs, optics_shapes, scoring_policy, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
 from relax.steps.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
 from relax.types import RelionStats, make_noise_stats
@@ -606,7 +606,7 @@ def test_class_translation_step_is_in_class_pixels():
 
 @pytest.mark.unit
 def test_class_mstep_image_radius_is_reference_r_max_times_scale():
-    from relax.refinement.shape_class_scoring import reconstruction_image_radius
+    from relax.steps.shape_class_scoring import reconstruction_image_radius
 
     # RELION's backprojector bounds the reference-grid radius by r_max = cs // 2; a class
     # image pixel |k| lands at |k| / s, so the class keeps pixels out to r_max * s.

@@ -15,10 +15,10 @@ from typing import Any
 import numpy as np
 
 from relax.classification.k_class import run_dense_k_class_em_adaptive
-from relax.refinement import shape_class_scoring
 from relax.relion.optics_aberrations import reported_rotations
 from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import relion_round_away_from_zero, relion_sigma_offset_prior_center
+from relax.steps import shape_class_scoring
 from relax.vdam import native_sampling
 from relax.vdam.estep_common import ENGINE_DISC_TYPE, InitialModelEstepConfig
 from relax.vdam.state import InitialModelState

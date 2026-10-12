@@ -18,7 +18,6 @@ from relax.classification.k_class_results import KClassEMResult
 from relax.cuda import backprojection as cuda_backprojection
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.refinement.shape_class_scoring import OpticsSpec, engine_projection_inputs, reference_grid_kwargs
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -57,6 +56,7 @@ from relax.steps.scoring_policy import (
     RELION_ADAPTIVE_FRACTION,
     RELION_FOURIER_WINDOW_SQUARE,
 )
+from relax.steps.shape_class_scoring import OpticsSpec, engine_projection_inputs, reference_grid_kwargs
 
 logger = logging.getLogger("relax.dense.half_scoring")
 
@@ -947,7 +947,7 @@ def _dense_owners_for_shape(
 ) -> DenseShapeOwners:
     """Derive one shape class without changing the shared scoring owners."""
 
-    from relax.refinement import shape_class_scoring
+    from relax.steps import shape_class_scoring
 
     shape_values = shape_class_scoring.class_kwargs(
         {
@@ -1041,7 +1041,7 @@ def require_multi_shape_inputs(half: HalfScoringData, optics: OpticsSpec) -> Non
 
 def merge_shape_class_results(results, experiment_half) -> HalfScoreResult:
     """One result for a multi-shape half from its shape classes' results, on the reference box."""
-    from relax.refinement import shape_class_scoring
+    from relax.steps import shape_class_scoring
 
     return shape_class_scoring.merge_class_results(
         results,
@@ -1116,7 +1116,7 @@ def single_shape_reconstruction_grid(dataset, sampling, optics: OpticsSpec):
     anisotropic magnification (:func:`relax.relion.optics_aberrations.dataset_magnification_is_anisotropic`,
     the predicate of the engines' ``reference_sphere_clip``) the engine keeps a rounded window and the
     kernel clips: the window is then the model support on the image grid and the reference keeps the
-    model's size, as for a shape class (:func:`relax.refinement.shape_class_scoring.class_kwargs`, the same
+    model's size, as for a shape class (:func:`relax.steps.shape_class_scoring.class_kwargs`, the same
     ``group_current_size``). A rounded window of the model's size on the larger image crop is one the
     Wavg rectangle refuses (relax#69).
     """

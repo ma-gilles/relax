@@ -20,7 +20,7 @@ from relax.reconstruction.resolution import (
     relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
-from relax.refinement import final_reconstruction, shape_class_scoring
+from relax.refinement import final_reconstruction
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -46,7 +46,6 @@ from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_EN
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.refinement_state import update_angular_sampling
 from relax.refinement.result_files import final_pass_result
-from relax.refinement.shape_class_scoring import OpticsSpec
 from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.runtime.timing import Stopwatch
@@ -62,7 +61,7 @@ from relax.sampling.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.star.metadata import relion_metadata_translations
-from relax.steps import half_inputs
+from relax.steps import half_inputs, shape_class_scoring
 from relax.steps.expected_accuracy import expected_accuracy_class_ids
 from relax.steps.half_inputs import HalfScoringData, local_search_centre_half
 from relax.steps.optics_shapes import image_translation_factors
@@ -76,6 +75,7 @@ from relax.steps.score_outputs import (
 from relax.steps.scoring_policy import (
     local_precision,
 )
+from relax.steps.shape_class_scoring import OpticsSpec
 from relax.steps.tomo_half import local_tomo_sampling
 from relax.steps.tomo_scoring import score_tomo_half_in_loop
 

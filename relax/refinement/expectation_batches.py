@@ -12,7 +12,7 @@ from relax.classification.k_class_inputs import select_projector_half_for_class
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.projection.projection import host_relion_projector_texture_enabled
 from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
-from relax.refinement import firstiter_bpref, shape_class_scoring
+from relax.refinement import firstiter_bpref
 from relax.refinement.refinement_options import ExecutionOptions
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.runtime import memory_budget
@@ -21,6 +21,7 @@ from relax.runtime.batch_planning import (
     estimate_relion_em_batch_sizes,
     plan_adaptive_dense_batch_sizes,
 )
+from relax.steps import shape_class_scoring
 
 
 @dataclass(frozen=True, eq=False, kw_only=True)

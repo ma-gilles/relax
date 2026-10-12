@@ -26,10 +26,10 @@
     "totals": {
       "maximum_function_line_span": 1229,
       "maximum_parameter_count": 28,
-      "large_argument_function_count": 27,
+      "large_argument_function_count": 25,
       "very_large_argument_function_count": 1,
-      "physical_lines": 24454,
-      "nonblank_noncomment_lines": 21019
+      "physical_lines": 23624,
+      "nonblank_noncomment_lines": 20345
     }
   }
 }

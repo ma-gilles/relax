@@ -17,7 +17,7 @@ Per-image outputs return to the half's image order by index, and additive sums a
 A half with one shape class is a plain dataset and never reaches this module.
 
 This module holds the shape classes and the datasets built from them; the per-class operand mapping and the
-merging of the classes' results are :mod:`relax.refinement.shape_class_scoring`.
+merging of the classes' results are :mod:`relax.steps.shape_class_scoring`.
 """
 
 from __future__ import annotations
