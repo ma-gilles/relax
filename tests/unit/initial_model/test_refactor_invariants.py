@@ -414,7 +414,7 @@ def test_responsibility_loc_budget(responsibility):
             "relion_initial_tau2_and_data_vs_prior", "_relion_data_vs_prior",
         )),
         "estep": 1 + sum(source_lines(getattr(projector_setup, name)) + 2 for name in (
-            "reference_to_relion_projector_half_maps", "reference_to_relion_projector_half_maps_and_power",
+            "reference_to_relion_projector_half_maps_and_power",
         )),
     }
     ceiling, names = LOC_BUDGETS[responsibility]

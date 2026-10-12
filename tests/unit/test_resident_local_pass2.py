@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 from helpers import cuda_targets
 from helpers.float_compare import assert_matches
+from helpers.projector_half_maps import reference_to_relion_projector_half_maps
 
 pytest.importorskip("jax")
 import jax
@@ -39,7 +40,6 @@ from relax.local_search.layout import (
     build_local_hypothesis_layout,
 )
 from relax.refinement import local_half
-from relax.relion.projector_setup import reference_to_relion_projector_half_maps
 from relax.sampling.grids import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit

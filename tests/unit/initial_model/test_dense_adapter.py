@@ -448,7 +448,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
 def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
     projector_half = np.ones((2, 3, 3, 2), dtype=np.complex64)
     monkeypatch.setattr(
-        "relax.relion.projector_setup.reference_to_relion_projector_half_maps",
+        "relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power",
         lambda *args, **kwargs: pytest.fail("prebuilt production projector was rebuilt"),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)

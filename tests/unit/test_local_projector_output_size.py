@@ -68,7 +68,7 @@ def test_unwindowed_spec_has_no_image_window():
 def _synthetic_relion_half_projector(r_max, padding_factor):
     """Small Hermitian-consistent PPref-like half volume with structure."""
 
-    from relax.relion.projector_setup import reference_to_relion_projector_half_maps
+    from helpers.projector_half_maps import reference_to_relion_projector_half_maps
 
     rng = np.random.default_rng(7)
     grid = np.indices((IMAGE, IMAGE, IMAGE)) - IMAGE // 2

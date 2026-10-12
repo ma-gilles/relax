@@ -50,8 +50,7 @@ def _ppref(volume_ft):
     """RELION's padded projector slab (padding 2, the box's radius) of a centered FFT volume."""
 
     import recovar.core.fourier_transform_utils as ftu
-
-    from relax.relion.projector_setup import reference_to_relion_projector_half_maps
+    from helpers.projector_half_maps import reference_to_relion_projector_half_maps
 
     volume_real = np.asarray(ftu.get_idft3(np.asarray(volume_ft).reshape(N, N, N)).real, dtype=np.float64)
     halves, r_max = reference_to_relion_projector_half_maps(
