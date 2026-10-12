@@ -1283,7 +1283,6 @@ def main() -> None:
                 "--stop-after-contribution-dump requires exactly one "
                 "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES target"
             )
-        os.environ["RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET"] = "1"
 
     import jax
     import jax.numpy as jnp

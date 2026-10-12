@@ -24,7 +24,6 @@
   "RECOVAR_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY": "RELAX_BPREF_CONTRIBUTION_IMAGE_NAMES_NPY",
   "RECOVAR_BPREF_CONTRIBUTION_RANK": "RELAX_BPREF_CONTRIBUTION_RANK",
   "RECOVAR_BPREF_CONTRIBUTION_STACK_SHA256": "RELAX_BPREF_CONTRIBUTION_STACK_SHA256",
-  "RECOVAR_BPREF_CONTRIBUTION_STOP_AFTER_TARGET": "RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET",
   "RECOVAR_BPREF_EXECUTION_ORDER_LOCAL_FILE": "RELAX_BPREF_EXECUTION_ORDER_LOCAL_FILE",
   "RECOVAR_BPREF_HIGH_PRECISION_OPERAND_BUNDLE": "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
   "RECOVAR_BPREF_MEMBERSHIP_DUMP_": "RELAX_BPREF_MEMBERSHIP_DUMP_",
@@ -706,6 +705,8 @@
   "RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES": "no reader: the deferred first-iteration BPref host budget was never consulted (removed 2026-10-12)",
   "RELAX_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES": "no reader: the deferred first-iteration BPref host budget was never consulted (removed 2026-10-12)",
   "RECOVAR_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP": "no reader: relax never raises the contribution dump's completion, so the replay script's stop on it is gone (2026-10-12)",
-  "RELAX_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP": "no reader: relax never raises the contribution dump's completion, so the replay script's stop on it is gone (2026-10-12)"
+  "RELAX_K_CLASS_PARITY_STOP_AFTER_CONTRIBUTION_DUMP": "no reader: relax never raises the contribution dump's completion, so the replay script's stop on it is gone (2026-10-12)",
+  "RECOVAR_BPREF_CONTRIBUTION_STOP_AFTER_TARGET": "no reader: nothing in relax stops after the BPref contribution dump's target (2026-10-12)",
+  "RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET": "no reader: nothing in relax stops after the BPref contribution dump's target (2026-10-12)"
  }
 }
