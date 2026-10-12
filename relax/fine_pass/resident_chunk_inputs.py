@@ -1,7 +1,7 @@
 """Host inputs of one resident chunk: the capacity batch fetch and the reconstruction operands.
 
 :func:`fetch_capacity_batch` reads a chunk's images into one reused capacity buffer
-(``_CAPACITY_BATCH_BUFFERS``, owned here for the process), and
+(``_CAPACITY_BATCH_BUFFERS``, one per thread), and
 :func:`prepare_chunk_reconstruction_operands` prepares the chunk's per-chunk operands when the half's
 operands are not resident. :func:`unshifted_chunk_operands` gathers a chunk from the resident per-image
 operands instead, and :func:`verify_resident_chunk_operands` checks the two against each other (a
@@ -11,6 +11,7 @@ diagnostic arm).
 from __future__ import annotations
 
 import logging
+import threading
 from functools import partial
 from typing import NamedTuple
 
@@ -76,7 +77,10 @@ def pad_batch_to_capacity(values, capacity: int):
 _FETCH_SUB_BATCH_BYTES = 24 << 20
 
 
-_CAPACITY_BATCH_BUFFERS: dict = {}
+# The buffer is per thread: two threads fetching same-shaped chunks at once must not share
+# it (the removed --overlap_halves did, and each half scored the other's images,
+# em_work/overlap_fix_20261012).
+_CAPACITY_BATCH_BUFFERS = threading.local()
 
 
 def fetch_capacity_batch(experiment_dataset, image_indices, capacity: int):
@@ -101,10 +105,11 @@ def fetch_capacity_batch(experiment_dataset, image_indices, capacity: int):
         images = np.asarray(images)
         if buffer is None:
             key = ((capacity,) + tuple(images.shape[1:]), images.dtype.str)
-            buffer = _CAPACITY_BATCH_BUFFERS.get(key)
-            if buffer is None:
-                _CAPACITY_BATCH_BUFFERS.clear()
-                buffer = _CAPACITY_BATCH_BUFFERS[key] = np.empty(key[0], dtype=images.dtype)
+            if getattr(_CAPACITY_BATCH_BUFFERS, "key", None) != key:
+                _CAPACITY_BATCH_BUFFERS.buffer = None
+                _CAPACITY_BATCH_BUFFERS.buffer = np.empty(key[0], dtype=images.dtype)
+                _CAPACITY_BATCH_BUFFERS.key = key
+            buffer = _CAPACITY_BATCH_BUFFERS.buffer
             step = max(1, _FETCH_SUB_BATCH_BYTES // max(int(images[0].nbytes), 1))
         buffer[start : start + images.shape[0]] = images
         ctf_parts.append(np.asarray(ctf_params))

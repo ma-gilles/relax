@@ -1270,7 +1270,7 @@ def test_chunk_operands_are_padded_on_the_host():
 
 
 def test_capacity_batch_is_the_padded_fetch(monkeypatch):
-    """The chunk fetch reads the host images in sub-batches into one reused capacity buffer
+    """The chunk fetch reads the host images in sub-batches into one reused capacity buffer per thread
     (bigbox 14747301: fresh 1.3 GB fetches and pads were ~95 s per half of host time); the
     upload is the one-call fetch padded with its first image, as pad_batch_to_capacity pads."""
 
@@ -1300,6 +1300,56 @@ def test_capacity_batch_is_the_padded_fetch(monkeypatch):
     assert max(calls) <= 2
     with pytest.raises(ValueError, match="cannot pad"):
         resident_chunk_inputs.fetch_capacity_batch(dataset, indices, 4)
+
+
+def test_concurrent_capacity_batches_keep_their_own_images(monkeypatch):
+    """Two threads fetching same-shaped chunks at once each upload their own images. With one process-wide
+    buffer, the removed --overlap_halves had half 2's fetch refill the rows half 1 had already copied, so half 1
+    scored half 2's particles (em_work/overlap_fix_20261012: 6% of half 1's iteration-1 poses moved)."""
+
+    import threading
+    from types import SimpleNamespace
+
+    first_sub_batch_copied = threading.Event()
+    other_fetch_done = threading.Event()
+
+    def dataset(offset, pause):
+        stack = offset + np.arange(6 * 3 * 3, dtype=np.float32).reshape(6, 3, 3)
+        calls = []
+
+        def host_images(indices):
+            calls.append(len(indices))
+            if pause and len(calls) == 2:  # the first sub-batch is in the buffer; let the other thread fetch
+                first_sub_batch_copied.set()
+                assert other_fetch_done.wait(timeout=30)
+            return stack[np.asarray(indices)]
+
+        return stack, SimpleNamespace(
+            image_source=SimpleNamespace(host_images=host_images, tilt_series=False),
+            metadata=SimpleNamespace(get_batch=lambda indices: (None, None, np.zeros((len(indices), 2)))),
+        )
+
+    monkeypatch.setattr(resident_chunk_inputs, "_FETCH_SUB_BATCH_BYTES", 2 * 3 * 3 * 4)
+    indices = np.array([4, 0, 2, 5], dtype=np.int64)
+    (stack_a, dataset_a), (stack_b, dataset_b) = dataset(0.0, pause=True), dataset(1000.0, pause=False)
+    results = {}
+
+    def fetch_a():
+        results["a"] = np.asarray(resident_chunk_inputs.fetch_capacity_batch(dataset_a, indices, 8)[0])
+
+    def fetch_b():
+        assert first_sub_batch_copied.wait(timeout=30)
+        results["b"] = np.asarray(resident_chunk_inputs.fetch_capacity_batch(dataset_b, indices, 8)[0])
+        other_fetch_done.set()
+
+    threads = [threading.Thread(target=fetch_a), threading.Thread(target=fetch_b)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    assert set(results) == {"a", "b"}
+    np.testing.assert_array_equal(results["a"], resident_chunk_inputs.pad_batch_to_capacity(stack_a[indices], 8))
+    np.testing.assert_array_equal(results["b"], resident_chunk_inputs.pad_batch_to_capacity(stack_b[indices], 8))
 
 
 def test_pad_batch_to_capacity_repeats_the_first_row():
