@@ -22,7 +22,7 @@ from recovar import core
 from scipy.spatial.transform import Rotation
 
 from relax.fourier.half_spectrum import make_half_image_weights
-from relax.fourier.preprocessing import relion_half_translation_lattice
+from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
 from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
@@ -349,7 +349,7 @@ def _tilt_operands(
     keep = visible.reshape(B, K, 1)
     half = jnp.where(keep, half.reshape(B, K, -1), 0)
     ctf = jnp.where(keep, ctf.reshape(B, K, -1), 0)
-    phases = jnp.exp(jnp.complex64(-2j * np.pi) * jnp.einsum("ktd,fd->ktf", frame_shifts, lattice, precision="highest"))
+    phases = translation_phases(frame_shifts, lattice)  # (K, T, F)
     weighted = (half * ctf / nv)[..., window]  # (B, K, F)
     ctf2 = (ctf * ctf / nv)[..., window]
 
@@ -466,8 +466,7 @@ def tilt_shift_phases(stream, layout, translations):
     frames = layout["frames"]
     _, constants, _ = _operand_layout(stream, 1, len(frames))
     shifts = jnp.asarray(tilt_shifts(frames, translations))
-    arguments = jnp.einsum("ktd,fd->ktf", shifts, constants["lattice"], precision="highest")
-    return jnp.transpose(jnp.exp(jnp.complex64(-2j * np.pi) * arguments), (1, 0, 2))
+    return jnp.transpose(translation_phases(shifts, constants["lattice"]), (1, 0, 2))
 
 
 # Adaptive oversampling forms each job's child-shifted operands from these factors.

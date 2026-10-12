@@ -84,11 +84,18 @@ def _half_translation_phase_table(translations, image_shape, real_dtype):
     # One program per (translations, image shape): eager, the lattice and the
     # phases were about twenty single-primitive programs per new image size.
     real_dtype = jnp.dtype(real_dtype)
-    complex_dtype = jnp.complex128 if real_dtype == jnp.float64 else jnp.complex64
-    phase_arg = jnp.einsum(
-        "td,pd->tp",
-        translations.astype(real_dtype),
-        relion_half_translation_lattice(image_shape).astype(real_dtype),
-        precision=jax.lax.Precision.HIGHEST,
+    return translation_phases(
+        translations.astype(real_dtype), relion_half_translation_lattice(image_shape).astype(real_dtype)
     )
+
+
+def translation_phases(translations, lattice):
+    """Phase factors ``exp(-2 pi i t . k)`` of translations ``(..., d)`` at frequencies ``lattice`` ``(P, d)``:
+    ``(..., P)``, complex128 for a float64 lattice and complex64 otherwise.
+
+    ``lattice`` is in cycles per pixel and ``t`` in pixels (:func:`relion_half_translation_lattice`, or a window
+    of it); the dot product is taken at HIGHEST precision, so float32 inputs are not truncated on the GPU.
+    """
+    complex_dtype = jnp.complex128 if lattice.dtype == jnp.float64 else jnp.complex64
+    phase_arg = jnp.einsum("...d,pd->...p", translations, lattice, precision=jax.lax.Precision.HIGHEST)
     return jnp.exp(jnp.asarray(-2j * jnp.pi, dtype=complex_dtype) * phase_arg)

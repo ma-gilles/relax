@@ -68,3 +68,28 @@ def test_a_whole_pixel_translation_is_the_circular_shift(shift):
     np.testing.assert_allclose(
         _relion_translated_rfft(image, shift), desired, rtol=0, atol=_ATOL * np.abs(desired).max()
     )
+
+
+@pytest.mark.parametrize("n", [8, 9])
+def test_batched_translation_phases_on_a_lattice_window_are_relions(n):
+    """:func:`translation_phases` on a window of the lattice and a (frame, shift) batch, as the PPCA tilt
+    operands use it: every frame's every shift is RELION's ``translatePixel`` phase at the window's pixels."""
+    import jax.numpy as jnp
+
+    from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
+
+    shifts = np.random.default_rng(n).uniform(-3, 3, size=(2, 3, 2))  # (frame, shift, xy)
+    window = np.random.default_rng(n + 1).choice(n * (n // 2 + 1), size=11, replace=False)
+    lattice = np.asarray(relion_half_translation_lattice((n, n)), np.float32)[window]
+    actual = np.asarray(translation_phases(jnp.asarray(shifts, jnp.float32), jnp.asarray(lattice)))
+    assert actual.shape == (2, 3, 11) and actual.dtype == np.complex64
+
+    rows = np.arange(n)
+    y = np.where(rows <= n // 2, rows, rows - n)[:, None]
+    x = np.arange(n // 2 + 1)[None, :]
+    for k in range(2):
+        for t in range(3):
+            v = x * (-2 * np.pi * shifts[k, t, 0] / n) + y * (-2 * np.pi * shifts[k, t, 1] / n)
+            # NumPy's rfft2 layout to the packed half's (rows centred), then the window.
+            desired = np.fft.fftshift(np.exp(1j * v), axes=0).reshape(-1)[window]
+            np.testing.assert_allclose(actual[k, t], desired, rtol=0, atol=_ATOL * 4)
