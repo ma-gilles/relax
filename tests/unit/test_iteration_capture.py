@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+import relax.refinement.follower_scale as relion_worker_scale
 import relax.relion.normalization as relion_normalization
-import relax.relion.worker_scale as relion_worker_scale
 from relax.diagnostics import iteration as captures
 from relax.diagnostics import parity_dump
 from relax.relion.normalization import NormScaleCorrectionReport, NormScaleCorrectionUpdateResult

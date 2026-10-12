@@ -30,6 +30,7 @@ from relax.refinement import (
     engine_record,
     expectation,
     finalization,
+    follower_scale,
     half_inputs,
     image_size_plans,
     iteration_history,
@@ -51,7 +52,7 @@ from relax.refinement import (
     startup_references,
     trial_grids,
 )
-from relax.relion import normalization, worker_scale
+from relax.relion import normalization
 from relax.runtime import timing
 from relax.sampling import expected_accuracy, orientation_priors
 
@@ -95,7 +96,7 @@ class _K1Iteration:
 
     def follower_scale_setup(self, options, source, halves, experiment_datasets):
         """K=1 runs no follower-scale emulation (a follower topology is refused)."""
-        return worker_scale.k1_follower_scale_state(
+        return follower_scale.k1_follower_scale_state(
             options, topology=source.follower_topology, relion_half_inputs=halves,
             experiment_datasets=experiment_datasets,
         )
@@ -253,7 +254,7 @@ class _ClassIteration:
 
     def follower_scale_setup(self, options, source, halves, experiment_datasets):
         """RELION's per-follower group-scale emulation where the input source has a follower topology."""
-        return worker_scale.setup_relion_follower_scale_state(
+        return follower_scale.setup_relion_follower_scale_state(
             options,
             topology=source.follower_topology,
             relion_half_inputs=halves,
@@ -441,7 +442,7 @@ def _follower_replay_telemetry(source, history) -> refinement_result.ReplayTelem
     """The follower-scale replay's requested and applied iterations (both None without a replay), validated
     against the iterations the run applied; raises if the replay was not applied as requested."""
 
-    requested, applied = worker_scale._finalize_relion_follower_scale_replay_telemetry(
+    requested, applied = follower_scale._finalize_relion_follower_scale_replay_telemetry(
         source, applied_iterations=history.relion_follower_scale_replay_applied_iterations, logger=logger,
     )
     return refinement_result.ReplayTelemetry(requested_iterations=requested, applied_iterations=applied)
@@ -744,7 +745,7 @@ def refine_single_volume(
         numbered_relion_iteration = options.schedule.numbered_relion_iteration(iteration)
 
         if follower_setup.follower_scale_state is not None:
-            worker_scale._dispatch_relion_follower_scale_for_numbered_iteration(
+            follower_scale._dispatch_relion_follower_scale_for_numbered_iteration(
                 follower_setup, history, iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,
                 relion_half_inputs=halves, relion_follower_scale_replay_source=follower_scale_replay,
                 dtype=ctx.scoring_dtype, logger=logger,
@@ -1179,7 +1180,7 @@ def refine_single_volume(
                 group_scale_corrections = norm_scale_update.group_scale_corrections_per_half
             else:
                 # Class3D follower-scale emulation: the follower state owns the scales and installs them.
-                group_scale_corrections = worker_scale._update_relion_follower_corrections(
+                group_scale_corrections = follower_scale._update_relion_follower_corrections(
                     follower_setup, noise_stats_per_half=expected.per_half.noise_stats, norm_scale_update=norm_scale_update,
                     relion_half_inputs=halves, relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
                     dtype=ctx.scoring_dtype, logger=logger,
@@ -1336,7 +1337,7 @@ def refine_single_volume(
     final_join_means = final_state.join_means
     carry = replace(carry, sigma_offset=final_state.sigma_offset, noise_model=final_state.noise_model)
     if follower_setup.follower_scale_state is not None:
-        worker_scale._dispatch_relion_follower_scale_for_final_all_data(
+        follower_scale._dispatch_relion_follower_scale_for_final_all_data(
             follower_setup, init_relion_iteration=options.schedule.init_relion_iteration,
             numbered_iteration_count=len(history.current_sizes), relion_half_inputs=halves, dtype=ctx.scoring_dtype,
             logger=logger,

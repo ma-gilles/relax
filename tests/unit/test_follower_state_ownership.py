@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.refinement import follower_scale as scale
 from relax.refinement.half_inputs import HalfSet
-from relax.relion import worker_scale as scale
 
 pytestmark = pytest.mark.unit
 

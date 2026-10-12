@@ -9,14 +9,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+import relax.refinement.follower_scale as relion_worker_scale
 import relax.refinement.numbered_transitions as convergence_policy
-import relax.relion.worker_scale as relion_worker_scale
 from relax.parity.relion_replay import _apply_replay_correction_overrides
-from relax.refinement.half_inputs import initialize_halfsets
-from relax.relion.normalization import (
-    update_relion_norm_scale_corrections,
-)
-from relax.relion.worker_scale import (
+from relax.refinement.follower_scale import (
     RELION_SCALE_REDUCTION_ALL_GROUPS,
     RELION_SCALE_REDUCTION_OPTICS_PREFIX,
     RelionDispatchSchedule,
@@ -45,6 +41,10 @@ from relax.relion.worker_scale import (
     validate_relion_follower_scale_replay_application,
     validate_relion_follower_scale_start,
     verify_relion_dispatch_schedule_oracle,
+)
+from relax.refinement.half_inputs import initialize_halfsets
+from relax.relion.normalization import (
+    update_relion_norm_scale_corrections,
 )
 from relax.types import NoiseStats
 
@@ -1068,7 +1068,7 @@ def test_final_dispatch_remap_is_wired_before_final_scoring(monkeypatch):
     from helpers.tiny_refinement import CallTrace
 
     from relax.refinement import finalization
-    from relax.relion import worker_scale as relion_worker_scale
+    from relax.refinement import follower_scale as relion_worker_scale
 
     trace = CallTrace(monkeypatch)
     trace.wrap(relion_worker_scale, "_dispatch_relion_follower_scale_for_final_all_data", "dispatch")
@@ -1089,7 +1089,7 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypa
     from helpers.tiny_refinement import CallTrace
 
     from relax.parity.relion_replay_source import RelionReplaySource
-    from relax.relion import worker_scale as relion_worker_scale
+    from relax.refinement import follower_scale as relion_worker_scale
 
     seen = {}
 
@@ -1164,8 +1164,8 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, cap
 def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry(monkeypatch):
     from helpers.tiny_refinement import CallTrace
 
+    from relax.refinement import follower_scale as relion_worker_scale
     from relax.refinement.iteration_history import RefinementHistory
-    from relax.relion import worker_scale as relion_worker_scale
 
     replay = _follower_scale_replay(2)
     seen = {}

@@ -894,8 +894,7 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
     from relax.parity import archive_provenance, oracle_admission
-    from relax.refinement import full_refinement, iteration_loop
-    from relax.relion import worker_scale
+    from relax.refinement import follower_scale, full_refinement, iteration_loop
 
     # The controller's replay telemetry is archived as integers.
     saved = _archive_metadata({
@@ -907,8 +906,8 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     replay, schedule = object(), object()
     monkeypatch.setattr(oracle_admission, "load_verified_dispatch_schedule",
                         lambda *a, **k: oracle_admission.VerifiedDispatchSchedule(schedule, [tmp_path]))
-    monkeypatch.setattr(worker_scale, "prepare_follower_topology",
-                        lambda *a, **k: worker_scale.PreparedFollowerTopology(
+    monkeypatch.setattr(follower_scale, "prepare_follower_topology",
+                        lambda *a, **k: follower_scale.PreparedFollowerTopology(
                             n_followers=0, replay=replay, reduction_mode=None, owners_by_iteration=None))
     controller = {}
     monkeypatch.setattr(iteration_loop, "refine_single_volume", lambda **kw: controller.update(kw) or refinement_result())

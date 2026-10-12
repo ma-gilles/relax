@@ -91,7 +91,7 @@ class RelionReplay:
     of reloading them from the STAR replay's model files.
     ``follower_topology``: an MPI RELION run's followers, its captured dispatch schedule (which follower scored
     which particle in each iteration, ``--relion-dispatch-schedule``) and follower-scale replay
-    (``relax.relion.worker_scale.PreparedFollowerTopology``; None or no followers: none).
+    (``relax.refinement.follower_scale.PreparedFollowerTopology``; None or no followers: none).
     """
 
     perturb_replay_relion_dir: str | None = None
