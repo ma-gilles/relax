@@ -289,7 +289,7 @@ def engine_projection_inputs(dataset, *, scale, reference_current_size):
     ``magnification`` is the dataset's ``applyAnisoMag`` left factor (None without); with ``scale``
     (``applyScaleDifference``) it gives the projection matrices of the images' rows, which the
     callers build by RELION's per-path rules (:func:`relax.sampling.oversampling.project_pass2_rotations`,
-    :func:`relax.sampling.project_rows`). The kwargs are :func:`reference_grid_kwargs`. Every
+    :func:`relax.sampling.device_rotations.project_rows`). The kwargs are :func:`reference_grid_kwargs`. Every
     adaptive engine call of a shape class (half scoring and VDAM) takes its geometry here.
     """
 

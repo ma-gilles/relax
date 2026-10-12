@@ -125,7 +125,7 @@ def test_k_class_replay_padding_override_is_explicit_and_validated():
 
 
 def test_k_class_replay_adaptive_coarse_rotations_use_relion_device_builder(monkeypatch):
-    from relax import sampling
+    from relax.sampling import device_rotations
     from scripts.run_k_class_parity import _adaptive_coarse_scoring_rotations
 
     source_eulers = np.asarray([[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]], dtype=np.float32)
@@ -137,7 +137,7 @@ def test_k_class_replay_adaptive_coarse_rotations_use_relion_device_builder(monk
         calls.append((np.asarray(eulers), perturbation, angular_sampling))
         return expected
 
-    monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", fake_builder)
+    monkeypatch.setattr(device_rotations, "relion_adaptive_pass1_rotations", fake_builder)
     actual, source = _adaptive_coarse_scoring_rotations(
         source_eulers,
         host,
@@ -153,11 +153,11 @@ def test_k_class_replay_adaptive_coarse_rotations_use_relion_device_builder(monk
 
 
 def test_k_class_replay_nonadaptive_coarse_rotations_keep_host_panel(monkeypatch):
-    from relax import sampling
+    from relax.sampling import device_rotations
     from scripts.run_k_class_parity import _adaptive_coarse_scoring_rotations
 
     monkeypatch.setattr(
-        sampling,
+        device_rotations,
         "relion_adaptive_pass1_rotations",
         lambda *_args: pytest.fail("device builder must not run for a nonadaptive replay"),
     )

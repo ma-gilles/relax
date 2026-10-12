@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 import numpy as np
 
-from relax import sampling
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.ports import InputSource
 from relax.refinement.refinement_state import (
@@ -20,9 +19,10 @@ from relax.refinement.refinement_state import (
     _exhaustive_grid_order_for_state,
     native_final_perturbation_healpix_order,
 )
+from relax.sampling import device_rotations
 from relax.sampling import grids as sampling_grids
 from relax.sampling import perturbation as sampling_perturbation
-from relax.sampling import relion_adaptive_pass1_rotations
+from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
 
 if TYPE_CHECKING:
     from relax.refinement.iteration_planning import FirstIterationPolicy
@@ -208,18 +208,18 @@ def coarse_pass1_rotations(
     perturbation_order: int | None,
     dtype,
     log: logging.Logger,
-) -> tuple[object, sampling.DevicePass1Source] | None:
+) -> tuple[object, device_rotations.DevicePass1Source] | None:
     """RELION's device-built rotations for the pass-1 coarse scorer and their source, or None where the host grid serves.
 
     The source is the unperturbed coarse Euler rows of ``rotation_grid``, in the scoring ``dtype`` and
     then widened to float64. The perturbation applies only when the trial grid is perturbed
     (``perturbation_order``, the order whose angular step scales it; None: unperturbed, at the grid's order).
     Images on another grid or magnified rebuild their rows from the source
-    (:func:`relax.sampling.relion_device_projection_rotations`).
+    (:func:`relax.sampling.device_rotations.relion_device_projection_rotations`).
     """
     source_eulers = np.asarray(np.asarray(rotation_grid.rotation_eulers, dtype=dtype), dtype=np.float64)
     adaptive_pass1_order = perturbation_order if perturbation_order is not None else int(rotation_grid.healpix_order)
-    source = sampling.DevicePass1Source(
+    source = device_rotations.DevicePass1Source(
         source_eulers_deg=source_eulers,
         random_perturbation=random_perturbation if perturbation_order is not None else 0.0,
         angular_sampling_deg=sampling_grids.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),

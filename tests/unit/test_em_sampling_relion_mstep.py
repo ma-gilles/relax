@@ -5,8 +5,9 @@ import inspect
 import numpy as np
 from helpers.float_compare import assert_matches
 
-from relax.sampling import get_oversampled_rotation_grid_from_samples, relion_adaptive_pass1_rotations
+from relax.sampling import get_oversampled_rotation_grid_from_samples
 from relax.sampling import grids as grids_module
+from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
 from relax.sampling.grids import relion_mstep_rotations_from_eulers
 from relax.sampling.healpix import euler_angles_to_matrix
 from relax.sampling.perturbation import (
@@ -16,7 +17,7 @@ from relax.sampling.perturbation import (
 
 
 def test_adaptive_pass1_routes_source_eulers_and_host_right_matrix_to_cuda_builder(monkeypatch):
-    from relax import sampling as sampling_module
+    from relax.sampling import device_rotations as device_rotations_module
 
     source_eulers = _UNPERTURBED_FINE_EULERS_F64[:2]
     sentinel = np.arange(18, dtype=np.float32).reshape(2, 3, 3)
@@ -26,7 +27,7 @@ def test_adaptive_pass1_routes_source_eulers_and_host_right_matrix_to_cuda_build
         calls.append((np.asarray(eulers_deg), np.asarray(right_matrix)))
         return sentinel
 
-    monkeypatch.setattr(sampling_module, "_relion_device_scoring_rotations_f32", fake_builder)
+    monkeypatch.setattr(device_rotations_module, "_relion_device_scoring_rotations_f32", fake_builder)
     result = relion_adaptive_pass1_rotations(
         source_eulers,
         random_perturbation=-0.455874443054,
@@ -52,7 +53,7 @@ def test_adaptive_pass1_routes_source_eulers_and_host_right_matrix_to_cuda_build
 
 
 def test_adaptive_pass1_omits_right_matrix_without_perturbation(monkeypatch):
-    from relax import sampling as sampling_module
+    from relax.sampling import device_rotations as device_rotations_module
 
     seen = []
 
@@ -60,14 +61,14 @@ def test_adaptive_pass1_omits_right_matrix_without_perturbation(monkeypatch):
         seen.append(right_matrix)
         return np.zeros((len(eulers_deg), 3, 3), dtype=np.float32)
 
-    monkeypatch.setattr(sampling_module, "_relion_device_scoring_rotations_f32", fake_builder)
+    monkeypatch.setattr(device_rotations_module, "_relion_device_scoring_rotations_f32", fake_builder)
     relion_adaptive_pass1_rotations(_UNPERTURBED_FINE_EULERS_F64[:1], 0.0, 7.5)
     assert seen == [None]
 
 
 def test_adaptive_pass1_float64_routes_to_double_precision_builder(monkeypatch):
     """``use_float64=True`` must dispatch to the double-precision builder, not the CUDA f32 one."""
-    from relax import sampling as sampling_module
+    from relax.sampling import device_rotations as device_rotations_module
 
     source_eulers = _UNPERTURBED_FINE_EULERS_F64[:2]
     sentinel = np.arange(18, dtype=np.float64).reshape(2, 3, 3)
@@ -75,7 +76,7 @@ def test_adaptive_pass1_float64_routes_to_double_precision_builder(monkeypatch):
     f64_calls = []
 
     monkeypatch.setattr(
-        sampling_module,
+        device_rotations_module,
         "_relion_device_scoring_rotations_f32",
         lambda *a, **k: f32_calls.append((a, k)) or None,
     )
@@ -84,7 +85,7 @@ def test_adaptive_pass1_float64_routes_to_double_precision_builder(monkeypatch):
         f64_calls.append((np.asarray(eulers_deg), np.asarray(right_matrix) if right_matrix is not None else None))
         return sentinel
 
-    monkeypatch.setattr(sampling_module, "_relion_device_scoring_rotations_f64", fake_f64_builder)
+    monkeypatch.setattr(device_rotations_module, "_relion_device_scoring_rotations_f64", fake_f64_builder)
     result = relion_adaptive_pass1_rotations(
         source_eulers,
         random_perturbation=-0.455874443054,
@@ -100,9 +101,9 @@ def test_adaptive_pass1_float64_routes_to_double_precision_builder(monkeypatch):
 
 def test_relion_device_scoring_rotations_f64_cpu_fallback_matches_euler_matrix_port(monkeypatch):
     """No perturbation: f64 builder must reduce to ``euler_angles_to_matrix``."""
-    from relax.sampling import _relion_device_scoring_rotations_f64
+    from relax.sampling.device_rotations import _relion_device_scoring_rotations_f64
 
-    monkeypatch.setattr("relax.sampling.jax.default_backend", lambda: "cpu")
+    monkeypatch.setattr("relax.sampling.device_rotations.jax.default_backend", lambda: "cpu")
     source_eulers = _UNPERTURBED_FINE_EULERS_F64
     result = _relion_device_scoring_rotations_f64(source_eulers, right_matrix=None)
     expected = euler_angles_to_matrix(source_eulers)
@@ -114,9 +115,9 @@ def test_relion_device_scoring_rotations_f64_cpu_fallback_matches_euler_matrix_p
 def test_relion_device_scoring_rotations_f64_cpu_fallback_right_multiplies_perturbation_matrix(monkeypatch):
     """With a perturbation: f64 builder must right-multiply, matching ``B = A @ right_matrix``
     from ``cuda_kernel_make_eulers_3D`` (``recovar/cuda/cuda_backproject.cu``)."""
-    from relax.sampling import _relion_device_scoring_rotations_f64
+    from relax.sampling.device_rotations import _relion_device_scoring_rotations_f64
 
-    monkeypatch.setattr("relax.sampling.jax.default_backend", lambda: "cpu")
+    monkeypatch.setattr("relax.sampling.device_rotations.jax.default_backend", lambda: "cpu")
     source_eulers = _UNPERTURBED_FINE_EULERS_F64[:2]
     right_matrix = euler_angles_to_matrix(np.asarray([[1.5, 1.5, 1.5]], dtype=np.float64))[0]
 

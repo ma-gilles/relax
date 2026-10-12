@@ -13,7 +13,7 @@ import pytest
 
 from relax import sampling
 from relax.relion.optics_aberrations import relax_projection_magnification, relion_projection_left_matrix
-from relax.sampling import grids, perturbation
+from relax.sampling import device_rotations, grids, perturbation
 from relax.sampling.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 
 pytestmark = pytest.mark.unit
@@ -112,7 +112,7 @@ def test_unprojected_images_keep_their_rows():
 
 def test_rows_from_another_source_are_refused():
     coarse, _ct, fine, _ft, _rp, _tp, mstep = _grids(1)
-    with pytest.raises(sampling.RotationProvenanceError, match="fine rows"):
+    with pytest.raises(device_rotations.RotationProvenanceError, match="fine rows"):
         project_pass2_rotations(
             coarse,
             fine[::-1].copy(),
@@ -139,21 +139,21 @@ def test_device_rows_are_relions_float32_left_kernel(scale):
     """Pass-1 rows: RELION's float32 ``MBL (A R)`` and adjugate, the kernel tilt images' ``MBL`` use too."""
 
     rotation_grid = grids.relion_scoring_rotation_grid(ORDER, dtype=np.float32)
-    source = sampling.DevicePass1Source(
+    source = device_rotations.DevicePass1Source(
         np.asarray(rotation_grid.rotation_eulers, dtype=np.float64),
         PERTURBATION,
         grids.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0),
         False,
     )
     plain = np.asarray(
-        sampling.relion_adaptive_pass1_rotations(
+        device_rotations.relion_adaptive_pass1_rotations(
             source.source_eulers_deg, source.random_perturbation, source.angular_sampling_deg
         )
     )
     left = relax_projection_magnification(MAG)
-    got = sampling.project_rows(plain, scale, left, device_source=source)
+    got = device_rotations.project_rows(plain, scale, left, device_source=source)
     kernel = np.asarray(
-        sampling._relion_device_scoring_rotations_left_f32(
+        device_rotations._relion_device_scoring_rotations_left_f32(
             source.source_eulers_deg,
             sampling.healpix.euler_angles_to_matrix(
                 np.full((1, 3), PERTURBATION * source.angular_sampling_deg)
@@ -194,7 +194,7 @@ def test_projection_follows_relions_identity_test(scale, magnification, projects
     assert applied == ((scale, magnification) if projects else (1.0, None))
     rows64 = _host64(0, False)
     rows = rows64.astype(np.float32)
-    projected = sampling.project_rows(rows, scale, magnification, host_rows=lambda: rows64, what="test rows")
+    projected = device_rotations.project_rows(rows, scale, magnification, host_rows=lambda: rows64, what="test rows")
     assert (projected is rows) != projects
 
 
@@ -275,11 +275,11 @@ def test_local_parent_rows_are_the_projector_plans_rows(scale, magnified):
         layout.rotation_ids_flat, grids.build_local_search_grid_metadata(ORDER), dtype=np.float32
     )
     step = grids.relion_angular_sampling_deg(ORDER, adaptive_oversampling=0)
-    source = sampling.DevicePass1Source(np.asarray(eulers, dtype=np.float64), PERTURBATION, step, False)
-    plain = np.asarray(sampling.relion_adaptive_pass1_rotations(source.source_eulers_deg, PERTURBATION, step))
+    source = device_rotations.DevicePass1Source(np.asarray(eulers, dtype=np.float64), PERTURBATION, step, False)
+    plain = np.asarray(device_rotations.relion_adaptive_pass1_rotations(source.source_eulers_deg, PERTURBATION, step))
     expected = plain
     if left is not None or scale != 1.0:
-        expected = sampling.project_rows(plain, scale, left, device_source=source)
+        expected = device_rotations.project_rows(plain, scale, left, device_source=source)
     assert np.array_equal(got, np.asarray(expected))
 
     # Independently of relax's builders: the plan kernel's statements in NumPy float32 (helpers.relion_plan_rows).
@@ -298,7 +298,7 @@ def test_local_parent_rows_are_the_projector_plans_rows(scale, magnified):
     assert (plan_steps > 1.0).mean() < 0.025, (plan_steps > 1.0).sum()
 
     # They are the same matrices as the host rule's to float32 rounding, and not the same bits.
-    host = sampling.project_rows(
+    host = device_rotations.project_rows(
         np.asarray(layout.rotations_flat),
         scale,
         left,

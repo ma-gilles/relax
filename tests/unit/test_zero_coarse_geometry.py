@@ -22,7 +22,7 @@ from relax.refinement import (
     local_half,
     local_sampling,
 )
-from relax.sampling import DevicePass1Source
+from relax.sampling.device_rotations import DevicePass1Source
 from relax.steps import scoring_policy
 
 pytestmark = pytest.mark.unit

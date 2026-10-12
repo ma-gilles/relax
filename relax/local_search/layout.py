@@ -16,16 +16,14 @@ from relax.runtime.batch_planning import (
     plan_consecutive_padded_batches,
 )
 from relax.sampling import (
-    DevicePass1Source,
     _compute_oversampled_rotation_grid,
     get_local_rotation_grid_fast,
     get_oversampled_rotation_grid_from_samples,
     get_oversampled_translation_grid,
     infer_translation_step,
-    project_rows,
-    relion_adaptive_pass1_rotations,
     unique_nonnegative_ids,
 )
+from relax.sampling.device_rotations import DevicePass1Source, project_rows, relion_adaptive_pass1_rotations
 from relax.sampling.grids import (
     build_local_search_grid_metadata,
     relion_mstep_rotations_from_eulers,
@@ -930,8 +928,8 @@ def local_layout_device_rotations(layout: LocalHypothesisLayout, scale: float, m
     (:func:`local_layout_host_rotations`): the two differ by a few float32 ulps in every row, which moves the
     score of a few percent of the orientations by about 1e-4 and reorders near-tied parents.
 
-    The rows are those of the global pass 1 (:func:`relax.sampling.relion_adaptive_pass1_rotations` and, for
-    images on another grid or magnified, :func:`relax.sampling.project_rows` with the device source), built
+    The rows are those of the global pass 1 (:func:`relax.sampling.device_rotations.relion_adaptive_pass1_rotations` and, for
+    images on another grid or magnified, :func:`relax.sampling.device_rotations.project_rows` with the device source), built
     from the unperturbed Euler rows of ``rotation_ids_flat`` in the layout's dtype, with the perturbation and
     angular step the layout was built with. Only id rows have a plan: oversampled children are fine-pass rows.
     """
@@ -966,7 +964,7 @@ def local_layout_host_rotations(layout: LocalHypothesisLayout, *, mstep: bool) -
     """A layout's scoring (or, with ``mstep``, M-step) rows as float64 matrices, by the rule that built them.
 
     The rows of images on another grid or magnified are composed from these and cast once
-    (:func:`relax.sampling.project_rows`). Oversampled children are the host inverse matrices of their
+    (:func:`relax.sampling.device_rotations.project_rows`). Oversampled children are the host inverse matrices of their
     source Euler rows (:func:`relax.sampling.get_oversampled_rotation_grid_from_samples`); other rows are
     rebuilt from ``rotation_ids_flat`` with the grid and perturbation the layout was built with
     (``id_rows_source``), not the caller's.

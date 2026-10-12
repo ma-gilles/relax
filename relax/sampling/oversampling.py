@@ -183,7 +183,7 @@ def project_pass2_rotations(
     """A pass-2 grid's ``(coarse, fine, M-step)`` rows for images on another grid or magnified.
 
     RELION builds pass-1 rows on the device and the fine and M-step rows on the host, and each
-    path applies the images' left matrix in its own precision (:func:`relax.sampling.project_rows`).
+    path applies the images' left matrix in its own precision (:func:`relax.sampling.device_rotations.project_rows`).
     ``coarse_device_source`` says the scored coarse rows are device-built (None: host-built, rebuilt
     here in float64 from the coarse sample ids). The fine and M-step rows of an oversampled grid are
     rebuilt in float64 from their parents (:func:`build_adaptive_pass2_grids`); without oversampling
@@ -193,7 +193,8 @@ def project_pass2_rotations(
     """
 
     from relax.relion.optics_aberrations import relion_projection_optics
-    from relax.sampling import get_oversampled_rotation_grid_from_samples, project_rows
+    from relax.sampling import get_oversampled_rotation_grid_from_samples
+    from relax.sampling.device_rotations import project_rows
 
     scale, magnification = relion_projection_optics(scale, magnification)
     if scale == 1.0 and magnification is None:

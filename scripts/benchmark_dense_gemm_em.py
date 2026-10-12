@@ -79,7 +79,7 @@ def arguments():
 
 def _rotations(count, seed):
     """Representative SO(3) poses with distinct canonical score/M-step matrices."""
-    from relax.sampling import _relion_device_scoring_rotations_f32
+    from relax.sampling.device_rotations import _relion_device_scoring_rotations_f32
     from relax.sampling.grids import relion_mstep_rotations_from_eulers
 
     rng = np.random.default_rng(seed + 19)

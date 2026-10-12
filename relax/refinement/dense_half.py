@@ -32,7 +32,7 @@ from relax.runtime.batch_planning import (
     safe_dense_k_class_rotation_block_size,
     safe_firstiter_cc_image_batch_size,
 )
-from relax.sampling import project_rows
+from relax.sampling.device_rotations import project_rows
 from relax.sampling.oversampling import (
     AdaptivePass2Grids,
     build_adaptive_pass2_grids,

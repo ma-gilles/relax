@@ -752,9 +752,9 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         left = jnp.asarray(left_matrices, dtype=jnp.float32)
         return base[None] + left[:, 0, 0][:, None, None, None]
 
-    from relax import sampling
+    from relax.sampling import device_rotations
 
-    monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", pass1_rotations)
+    monkeypatch.setattr(device_rotations, "relion_adaptive_pass1_rotations", pass1_rotations)
     from relax.projection import projection
 
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
@@ -902,7 +902,7 @@ def test_undecided_scorer_rotations_are_the_rotation_kernels_per_particle(gpu_de
     import jax
     from recovar.cuda_backproject import custom_cuda_requested
 
-    from relax.sampling import relion_adaptive_pass1_rotations
+    from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
 
     if jax.default_backend() != "gpu" or not custom_cuda_requested():
         pytest.skip("needs the custom CUDA rotation kernel")
@@ -1024,10 +1024,10 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         captured.append(np.asarray(diff2))
         return significance(diff2, rotation_prior, translation_prior, **kwargs)
 
-    from relax import sampling
     from relax.projection import projection
+    from relax.sampling import device_rotations
 
-    monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", pass1_rotations)
+    monkeypatch.setattr(device_rotations, "relion_adaptive_pass1_rotations", pass1_rotations)
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
     monkeypatch.setattr(tomo_coarse, "_coarse_gemm_slot_block", fake_block)
     monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", fake_direct)

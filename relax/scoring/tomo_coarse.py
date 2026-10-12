@@ -824,7 +824,7 @@ def _batch_scoring_rotations(
     """A coarse batch's scorer matrices on the device, ``[P_pad, S, R_pad, 3, 3]`` float32.
 
     Every tilt image has its own matrices, ``make_eulers_3D`` with its left matrix
-    (:func:`relax.sampling.relion_adaptive_pass1_rotations`). A global search builds the whole
+    (:func:`relax.sampling.device_rotations.relion_adaptive_pass1_rotations`). A global search builds the whole
     batch's images in one call; a local search builds each particle's own rotations. A particle's
     rotations beyond its own count repeat its last one, and padded slots and particles are zero.
     """
@@ -902,7 +902,7 @@ def particle_coarse_supports(
     RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1190-1402): every tilt image is
     scored with its own device matrices (``make_eulers_3D`` with the image's left matrix ``image_left``,
     its ``Aproj`` with the optics group's magnification, :func:`relax.steps.tomo_half.tilt_left_matrices`;
-    :func:`relax.sampling.relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts of ``Aproj``
+    :func:`relax.sampling.device_rotations.relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts of ``Aproj``
     (``image_projections``) plus
     the rounded old offset (:func:`relax.sampling.tomo_particles.tilt_translation_angles`) and its own
     CTF and noise; the images' diff2 is summed in ``img_id`` order and the particle's weights are cut
@@ -922,7 +922,8 @@ def particle_coarse_supports(
     """
 
     from relax.projection.projection import relion_projector_half_to_texture_full
-    from relax.sampling import relion_adaptive_pass1_rotations, tomo_particles
+    from relax.sampling import tomo_particles
+    from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
 
     class_projectors = tuple(projector_half) if isinstance(projector_half, (tuple, list)) else (projector_half,)
     n_classes = len(class_projectors)
@@ -1445,7 +1446,8 @@ def particle_coarse_cc_winners(
     from relax.fourier.fourier_window import make_fourier_window_spec
     from relax.fourier.half_spectrum import make_scoring_half_image_weights
     from relax.projection.projection import compute_relion_projector_projections_block
-    from relax.sampling import relion_adaptive_pass1_rotations, tomo_particles
+    from relax.sampling import tomo_particles
+    from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
 
     image_shape = tuple(int(n) for n in experiment_dataset.image_shape)
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)

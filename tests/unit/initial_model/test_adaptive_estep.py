@@ -6,8 +6,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax import sampling
-from relax.sampling import grids
+from relax.sampling import device_rotations, grids
 from relax.types import make_relion_stats
 from relax.vdam import adaptive_estep, native_options, native_sampling
 
@@ -281,7 +280,7 @@ def test_route_perturbs_the_coarse_grid_by_relions_euler_route(oversampling_orde
     from relax.sampling import healpix
 
     # The host route: on a GPU node pass 1 takes the device builder's matrices instead.
-    monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", lambda *args, **kwargs: None)
+    monkeypatch.setattr(device_rotations, "relion_adaptive_pass1_rotations", lambda *args, **kwargs: None)
     order, random_perturbation = 1, 0.37
     route = adaptive_estep.adaptive_route_grids(
         healpix_order=order,

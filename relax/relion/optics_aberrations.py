@@ -453,7 +453,7 @@ def projection_rotations(rotations, scale: float, magnification=None, *, dtype=n
     every host-built row: ``rotations`` are the rows' double-precision matrices, composed here in
     float64 and cast to ``dtype`` once. Composing after a float32 cast moves most magnified matrices
     by an ulp and flips near-tie poses (relax#24). The device-built pass-1 rows follow
-    :func:`relax.sampling.relion_device_projection_rotations` instead. A grid RELION treats as the
+    :func:`relax.sampling.device_rotations.relion_device_projection_rotations` instead. A grid RELION treats as the
     identity (:func:`relion_projection_optics`) keeps its rows.
     """
 
