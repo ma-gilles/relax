@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from relax.fine_pass.resident_pass2 import _stable_window_physical_class, stable_window_class_history
+from relax.fine_pass.resident_stable_windows import _stable_window_physical_class, stable_window_class_history
 from relax.fourier.fourier_window import (
     DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     STABLE_FOURIER_WINDOW_QUANTUM_ENV,

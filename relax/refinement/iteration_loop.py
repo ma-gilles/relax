@@ -455,7 +455,7 @@ def refine_single_volume(
 ) -> refinement_result.RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
 
-    Run it inside ``relax.fine_pass.resident_pass2.stable_window_class_history()``, as the commands do, so a
+    Run it inside ``relax.fine_pass.resident_stable_windows.stable_window_class_history()``, as the commands do, so a
     refinement's resident passes reuse the window classes they already ran (about 5 s of recompiles saved per
     current-size crossing on the 5k K=1 run); outside one, every pass picks its class afresh.
 

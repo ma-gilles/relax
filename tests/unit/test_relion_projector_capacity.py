@@ -305,7 +305,7 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
         capacity_projection_window_union,
         projection_window_union,
     )
-    from relax.fine_pass.resident_pass2 import center_pad_relion_projector_half
+    from relax.fine_pass.resident_stable_windows import center_pad_relion_projector_half
 
     image_size, radius = 96, logical_size // 2
     size = 2 * pf * radius + 3

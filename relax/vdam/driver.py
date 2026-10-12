@@ -18,7 +18,7 @@ import numpy as np
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import read_star
 
-from relax.fine_pass.resident_pass2 import stable_window_class_history
+from relax.fine_pass.resident_stable_windows import stable_window_class_history
 from relax.fourier.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.relion import ctf

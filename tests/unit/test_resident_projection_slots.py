@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from relax.fine_pass import resident_pass2 as rp
+from relax.fine_pass import resident_stable_windows
 from relax.fine_pass.resident_significance import (
     CoarseSignificanceCSR,
     build_resident_candidate_tables_from_csr,
@@ -118,7 +119,7 @@ def test_supports_that_take_every_parent_cache_the_whole_grid(small_slots):
 
 
 def test_a_refinement_reuses_a_larger_capacity_it_already_compiled(small_slots):
-    with rp.stable_window_class_history():
+    with resident_stable_windows.stable_window_class_history():
         assert rp._projection_slot_capacity(40, 144) == 64
         assert rp._projection_slot_capacity(20, 144) == 64  # 32 is new, 64 within twice it was used
         assert rp._projection_slot_capacity(10, 144) == 16

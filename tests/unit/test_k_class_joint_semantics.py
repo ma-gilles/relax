@@ -248,12 +248,12 @@ def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatc
 def test_adaptive_coarse_pass_follows_the_stable_window_policy(monkeypatch, flag, expected):
     # Pass 1 takes pass 2's quantized physical windows (on by default) so a new current
     # size reuses its class's programs; RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS=0 turns both off.
-    from relax.fine_pass import resident_pass2
+    from relax.reconstruction import volume_solver
 
     if flag is None:
-        monkeypatch.delenv(resident_pass2._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+        monkeypatch.delenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
     else:
-        monkeypatch.setenv(resident_pass2._RESIDENT_STABLE_WINDOWS_ENV, flag)
+        monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, flag)
     significance_calls, _sparse_calls, _result = _adaptive_run_with_fake_coarse(monkeypatch)
 
     assert significance_calls[0]["stable_fourier_window_shapes"] is expected

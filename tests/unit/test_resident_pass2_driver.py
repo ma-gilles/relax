@@ -32,7 +32,7 @@ import jax
 import jax.numpy as jnp
 from oracles.wavg import relion_wavg_rectangle_triplet_terms
 
-from relax.fine_pass import resident_chunk_memory, resident_configuration
+from relax.fine_pass import resident_chunk_memory, resident_configuration, resident_stable_windows
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_candidates import (
@@ -41,6 +41,7 @@ from relax.fine_pass.resident_candidates import (
     chunk_segment_offsets,
     plan_capacity_chunks,
 )
+from relax.reconstruction import volume_solver
 from scripts.lib.bucketed_pass2 import compute_local_mstep_sums
 
 pytestmark = pytest.mark.unit
@@ -1642,20 +1643,20 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, ca
         window_spec_kwargs={"window_at_box": True},
         firstiter_cc=False,
     )
-    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "0")
-    assert rp._resident_stable_window_plan((64, 64), **kwargs) is None
-    monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
-    plan = rp._resident_stable_window_plan((64, 64), **kwargs)
+    monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, "0")
+    assert resident_stable_windows.resident_stable_window_plan((64, 64), **kwargs) is None
+    monkeypatch.delenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    plan = resident_stable_windows.resident_stable_window_plan((64, 64), **kwargs)
     assert plan.logical_current_size == 36 and plan.physical_current_size == 40
     assert plan.physical_reconstruction_pixels > plan.logical_reconstruction_pixels
-    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "1")
+    monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, "1")
     for override in (
         {"current_size": 64, "mstep_current_size": 64, "n_half": 64 * 33},
         {"firstiter_cc": True},
         {"mstep_current_size": 34},
     ):
         with caplog.at_level("INFO"):
-            assert rp._resident_stable_window_plan((64, 64), **{**kwargs, **override}) is None
+            assert resident_stable_windows.resident_stable_window_plan((64, 64), **{**kwargs, **override}) is None
     assert "not applicable" in caplog.text
 
 
@@ -1666,16 +1667,16 @@ def test_stable_window_reference_volume_on_another_grid(monkeypatch):
     from relax.projection.adjoint import ReferenceSphereClip, mstep_adjoint_max_r
     from relax.steps.shape_class_scoring import reconstruction_image_radius
 
-    monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    monkeypatch.delenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
     quantum = stable_fourier_window_quantum()
-    physical = rp._stable_reference_volume_class(128, 54)
+    physical = resident_stable_windows.stable_reference_volume_class(128, 54)
     assert physical == stable_fourier_window_current_size(54, 128, quantum=quantum) and physical >= 54
     scale = 112 * 5.44 / (128 * 4.25)
     logical_radius = reconstruction_image_radius(54, scale)
-    physical_radius = rp._reference_image_radius_at(logical_radius, 54, physical)
+    physical_radius = resident_stable_windows.reference_image_radius_at(logical_radius, 54, physical)
     assert physical_radius == pytest.approx((physical // 2) * scale, rel=1e-12)
     assert physical_radius >= logical_radius
-    assert rp._reference_image_radius_at(None, 54, physical) is None
+    assert resident_stable_windows.reference_image_radius_at(None, 54, physical) is None
     clip = mstep_adjoint_max_r(54, logical_radius, 2)
     assert isinstance(clip, ReferenceSphereClip)
     assert rp._runtime_mstep_radius(clip) == pytest.approx(logical_radius)
@@ -1695,9 +1696,9 @@ def test_stable_windows_match_the_logical_window(_resident_production_env, monke
     """
 
     args = {**_driver_fixture_args(), "current_size": 4}
-    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "0")
+    monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, "0")
     logical = rp.compute_pass2_stats_resident(**args)
-    monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "1")
+    monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, "1")
     stable = rp.compute_pass2_stats_resident(**args)
 
     assert_matches(logical.hard_assignment, stable.hard_assignment)

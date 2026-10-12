@@ -987,7 +987,7 @@ how it was qualified.
   `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_onengine_20260926/mshape_repro_20261004`.
   Resident stable windows on another grid (2026-10-03): a pass whose images are on another grid than the
   reference takes the stable-window plan on its own image grid, and its reference-model cube takes its own
-  physical class (`resident_pass2._stable_reference_volume_class`); before, every such pass kept the logical
+  physical class (`resident_stable_windows.stable_reference_volume_class`); before, every such pass kept the logical
   window and recompiled per current size. Same fixture and seed, 25 iterations, cold: 754 -> 555 s, XLA
   compile 485 -> 275 s; iteration-2 maps differ from the control by 2.6e-7; masked GT FSC-AUC 0.4662 vs
   0.4664. Same-node pair on H100 (job 14945409): relax 485 s, stock GPU RELION 715 s. The remaining
@@ -1301,7 +1301,7 @@ compiles once per signature (_coarse_pass1_blocks x4, exact operands x4, powercl
 top 25). The compile cost sits in eager JAX primitives on new shapes (1362 compiles, 121 s: broadcast_in_dim x378,
 add, convert_element_type, gather, ...) and the pass-2/M-step programs.
 Since 2026-10-07 the adaptive K-class pass 1 (Refine3D, Class3D, VDAM) takes stable windows whenever pass 2 does
-(`_resident_stable_windows_requested`, `RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS=0` turns both off). On several-shape
+(`resident_stable_windows_requested`, `RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS=0` turns both off). On several-shape
 VDAM K1 (multioptics_k2_10k128, 200 iterations, seed 1, cold H100, same node, job 15129720) the run went 488 -> 404 s
 (compiles 3817 -> 1651 against 1c57fb7; _coarse_pass1_blocks 84 -> 22), seeds 1-6 410 s mean against GPU RELION's
 584 s (0.70x); masked GT FSC-AUC seeds 1-6 0.64462 against GPU RELION 0.64407 (paired +0.00055 +/- 0.00102); at
