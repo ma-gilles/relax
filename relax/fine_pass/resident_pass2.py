@@ -7389,7 +7389,7 @@ def _chunk_posterior_from_scores(
 ) -> _ChunkPosterior:
     """The segmented RELION posterior of a scored chunk (:func:`_resident_chunk_posterior`'s tail)."""
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import posterior as cuda_posterior
 
     scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
 
@@ -7402,10 +7402,10 @@ def _chunk_posterior_from_scores(
         external_sum_weight = coarse_sum_weight.astype(jnp.float32)
     else:
         external_sum_weight = jnp.ones((spec.image_capacity,), dtype=jnp.float32)
-    log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+    log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(
         scores_flat, rows.segment_offsets, rows.n_valid_images
     )
-    posterior = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
+    posterior = cuda_posterior.sparse_pass2_segmented_posterior_f32(
         scores_flat,
         rows.segment_offsets,
         rows.n_valid_images,
@@ -7473,10 +7473,10 @@ def _class_sub_segment_posterior(scores, rows, row_is_valid, *, n_segments: int,
     maximum in row order, as for the image (:func:`_winner_take_all_cells`).
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import posterior as cuda_posterior
 
     layout = rows.classes
-    log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+    log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(
         scores.reshape(-1),
         layout.segment_offsets,
         rows.n_valid_images * jnp.int32(n_classes),
@@ -7580,11 +7580,11 @@ def _winner_take_all_posterior(
 ) -> _ChunkPosterior:
     """The ``--firstiter_cc`` posterior of a chunk's normalized-CC scores (one segment per image or particle)."""
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import posterior as cuda_posterior
 
     scores = jnp.asarray(scored.scores, dtype=jnp.float32)
     scores_flat = scores.reshape(-1)
-    log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+    log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(
         scores_flat, rows.segment_offsets, rows.n_valid_images
     )
 

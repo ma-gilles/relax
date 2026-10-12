@@ -54,7 +54,7 @@ def relion_f32_fine_probabilities(
     50, applies ``expf``, sorts the raw weights in ascending order, and obtains
     both ``sum_weight`` and the lower-tail significance cutoff from a float32
     cumulative scan; the cut here has that definition with float64 cumulative
-    sums (:func:`relax.cuda.kernels.relion_coarse_cut_f32`).  Surviving weights
+    sums (:func:`relax.cuda.posterior.relion_coarse_cut_f32`).  Surviving weights
     are divided by the full pre-pruning ``sum_weight``; they are intentionally
     not renormalized afterward.
     """
@@ -70,7 +70,7 @@ def relion_f32_fine_probabilities(
     if jax.default_backend() == "gpu":
         from recovar import cuda_backproject
 
-        from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import posterior as cuda_posterior
 
         use_native_cuda = cuda_backproject.custom_cuda_requested()
     if use_native_cuda:
@@ -79,11 +79,11 @@ def relion_f32_fine_probabilities(
         # ``exp(score - best + 50)`` changes hundreds of thousands of raw
         # weights at the iteration-2 case-22 boundary.
         finite_scores = jnp.where(finite, flat_scores, -jnp.inf)
-        raw_weights = em_cuda_kernels.relion_exponentiate_batched_f32(
+        raw_weights = cuda_posterior.relion_exponentiate_batched_f32(
             finite_scores,
             exponent_add,
         )
-        fine_sum_weight, cut_weight, _ = em_cuda_kernels.relion_coarse_cut_f32(
+        fine_sum_weight, cut_weight, _ = cuda_posterior.relion_coarse_cut_f32(
             raw_weights, adaptive_fraction=float(adaptive_fraction), max_significants=0
         )
     else:
@@ -127,7 +127,7 @@ def relion_f32_fine_probabilities(
         mask_flat = has_mass[:, None] & finite & (raw_weights >= threshold[:, None])
     safe_sum_weight = jnp.where(has_mass, sum_weight, jnp.float32(1.0))
     if use_native_cuda:
-        normalized_weights = em_cuda_kernels.relion_divide_batched_f32(
+        normalized_weights = cuda_posterior.relion_divide_batched_f32(
             raw_weights,
             safe_sum_weight,
         )

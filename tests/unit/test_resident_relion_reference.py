@@ -243,10 +243,11 @@ def _gpu_available():
     from recovar import cuda_backproject
 
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import posterior as cuda_posterior
 
     return bool(
         cuda_backproject.custom_cuda_requested()
-        and em_cuda_kernels.sparse_pass2_segmented_supported()
+        and cuda_posterior.sparse_pass2_segmented_supported()
         and em_cuda_kernels.relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported()
         and em_cuda_kernels.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
     )

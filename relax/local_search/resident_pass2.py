@@ -1534,10 +1534,10 @@ def _local_firstiter_cc_posterior(
     n_significant)``.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import posterior as cuda_posterior
 
     scores = jnp.asarray(scores, dtype=jnp.float32)
-    log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(scores.reshape(-1), segment_offsets, n_valid_images)
+    log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(scores.reshape(-1), segment_offsets, n_valid_images)
     best_log_score, best_cell_index, row_posterior = rp._winner_take_all_cells(
         scores, row_image_local, row_is_valid, segment_offsets, image_capacity=image_capacity
     )
@@ -1658,7 +1658,7 @@ def _run_resident_parent_probe(
     significant coarse sample, ml_optimiser.cpp:9266-9292).
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import posterior as cuda_posterior
 
     t = int(n_fine_trans)
     complex_bytes = np.dtype(precision_policy.score_complex_dtype).itemsize
@@ -1839,7 +1839,7 @@ def _run_resident_parent_probe(
             )
             del score_proj, ops
             scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
-            log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+            log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(
                 scores_flat, segment_offsets, n_valid_images_device
             )
             (
@@ -1854,7 +1854,7 @@ def _run_resident_parent_probe(
                 n_significant,
                 _sum_weight,
                 _threshold,
-            ) = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
+            ) = cuda_posterior.sparse_pass2_segmented_posterior_f32(
                 scores_flat,
                 segment_offsets,
                 n_valid_images_device,
@@ -2253,7 +2253,7 @@ def _start_resident_local_chunk(
     (:func:`~relax.fine_pass.resident_scoring.score_resident_chunk_normalized_cc_in_row_blocks`).
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import posterior as cuda_posterior
 
     if lone_block_rows is not None:
         if int(lone_block_rows) % int(mstep_block_rows) or int(chunk.row_capacity) % int(lone_block_rows):
@@ -2554,10 +2554,10 @@ def _start_resident_local_chunk(
         mark("score", scores_flat)
 
         # --- stage 4: segmented RELION float32 fine posterior -------------------
-        log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+        log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(
             scores_flat, segment_offsets, n_valid_images_device
         )
-        posterior = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
+        posterior = cuda_posterior.sparse_pass2_segmented_posterior_f32(
             scores_flat,
             segment_offsets,
             n_valid_images_device,

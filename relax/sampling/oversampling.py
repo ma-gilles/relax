@@ -439,7 +439,7 @@ def relion_cuda_f32_coarse_posterior(
     inclusive float32 scan to select the lower-tail cutoff.  The surviving
     weights remain normalized by the full, pre-pruning sum. This cut has that
     definition with float64 cumulative sums, found by radix select instead of a
-    sort (:func:`relax.cuda.kernels.relion_coarse_cut_f32`); the float32 scan's
+    sort (:func:`relax.cuda.posterior.relion_coarse_cut_f32`); the float32 scan's
     rounding is not reproduced (its CUB order was not RELION's either).
 
     RELION constructs each coarse log weight as ``prior + min_diff2 - diff2``
@@ -479,15 +479,15 @@ def relion_cuda_f32_coarse_posterior(
     if jax.default_backend() == "gpu":
         from recovar import cuda_backproject
 
-        from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import posterior as cuda_posterior
 
         use_native_cuda = cuda_backproject.custom_cuda_requested()
     if use_native_cuda:
-        raw_weights = em_cuda_kernels.relion_exponentiate_batched_f32(
+        raw_weights = cuda_posterior.relion_exponentiate_batched_f32(
             jnp.where(finite, scores_f32, -jnp.inf),
             exponent_add,
         )
-        sum_weight, threshold, cutoff_count = em_cuda_kernels.relion_coarse_cut_f32(
+        sum_weight, threshold, cutoff_count = cuda_posterior.relion_coarse_cut_f32(
             raw_weights,
             adaptive_fraction=float(adaptive_fraction),
             max_significants=max_significants,
@@ -534,7 +534,7 @@ def relion_cuda_f32_coarse_posterior(
         )
     safe_sum_weight = jnp.where(has_mass, sum_weight, jnp.float32(1.0))
     if use_native_cuda:
-        probabilities = em_cuda_kernels.relion_divide_batched_f32(
+        probabilities = cuda_posterior.relion_divide_batched_f32(
             raw_weights,
             safe_sum_weight,
         )

@@ -1554,7 +1554,7 @@ def chunk_segment_offsets(tables, chunk, *, n_fine_trans: int) -> np.ndarray:
         scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
         segment_offsets_np = chunk_segment_offsets(tables, chunk, n_fine_trans=t)
         segment_offsets = jnp.asarray(segment_offsets_np, dtype=jnp.int32)
-        log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+        log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(
             scores_flat, segment_offsets, n_valid_images_device
         )
 ```
