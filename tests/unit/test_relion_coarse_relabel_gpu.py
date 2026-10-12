@@ -17,6 +17,7 @@ from scipy.spatial.transform import Rotation
 
 def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.fine_pass.bucket_io import relion_translation_angles_f32
     from relax.projection.projection import (
         compute_relion_projector_projections_block,
@@ -72,7 +73,7 @@ def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
         image_r_max=jnp.asarray(window // 2, dtype=jnp.int32),
     )
     shifted = relion_coarse_translate(
-        em_cuda_kernels.relion_translate_score_f32,
+        cuda_translate.relion_translate_score_f32,
         jnp.asarray(images),
         angles,
         jnp.asarray(score_indices),

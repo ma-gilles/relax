@@ -854,7 +854,7 @@ def native_relion_callbacks(
 
 def native_phase_table(translation_angles, pixel_indices, image_shape):
     """Generate the exact CUDA float32 image-translation phase at chosen pixels."""
-    from relax.cuda.kernels import relion_translate_score_f32
+    from relax.cuda.translate import relion_translate_score_f32
 
     indices = jnp.asarray(pixel_indices, dtype=jnp.int32)
     ones = jnp.ones((1, len(indices)), dtype=jnp.complex64)

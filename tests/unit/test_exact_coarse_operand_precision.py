@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import translate as cuda_translate
 from relax.fine_pass import bucket_io
 from relax.relion import ctf as relion_ctf
 from relax.scoring import coarse_operands
@@ -53,7 +53,7 @@ def test_exact_coarse_assembly_precision_and_padding(
         return jnp.broadcast_to(images[:, None, :], (batch_size, 2, len(score_indices)))
 
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_score_f64" if use_float64 else "relion_translate_score_f32",
         translate,
     )

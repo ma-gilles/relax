@@ -485,12 +485,12 @@ def relion_cuda_translate_wavg_norm_window(
     ``translation_angles`` is ``[T, 2]`` or ``[B, T, 2]`` (each image's own).
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     window_pixels = jnp.asarray(window_pixels, dtype=jnp.complex64)
     window_indices = jnp.asarray(window_indices, dtype=jnp.int32)
     translation_angles = jnp.asarray(translation_angles, dtype=jnp.float32)
-    translated = em_cuda_kernels.relion_translate_score_f32(
+    translated = cuda_translate.relion_translate_score_f32(
         window_pixels,
         translation_angles,
         window_indices,

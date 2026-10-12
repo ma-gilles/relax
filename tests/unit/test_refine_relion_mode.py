@@ -6550,6 +6550,7 @@ class TestRelionModeSmokeTest:
         import relax.scoring.coarse_kernels as scoring_module
         import relax.scoring.pass1_program as pass1_program
         from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import translate as cuda_translate
 
         dataset = half_datasets[0]
         dataset.image_source.backend.relion_fourier_backend = "relion_cuda"
@@ -6616,7 +6617,7 @@ class TestRelionModeSmokeTest:
         for module in (scoring_module, pass1_program):
             monkeypatch.setattr(module, "relion_coarse_normalized_cc_gemm_scores_jit", fake_cc_gemm_scores)
         monkeypatch.setattr(
-            em_cuda_kernels,
+            cuda_translate,
             "relion_translate_score_f32",
             lambda images, _angles, _indices, _shape: images,
         )

@@ -192,14 +192,14 @@ def _translate_native_preprocess_hybrid(
     import jax
     import jax.numpy as jnp
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.fine_pass.bucket_io import relion_translation_angles_f32
 
     translation_angles = relion_translation_angles_f32(
         np.asarray(fine_translations, dtype=np.float32),
         (image_size, image_size),
     )
-    translated = em_cuda_kernels.relion_translate_score_f32(
+    translated = cuda_translate.relion_translate_score_f32(
         jnp.asarray(processed_score[window_indices][None, :], dtype=jnp.complex64),
         jnp.asarray(translation_angles, dtype=jnp.float32),
         jnp.asarray(window_indices, dtype=jnp.int32),
@@ -219,9 +219,9 @@ def _translate_native_wavg_inputs(
     import jax
     import jax.numpy as jnp
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
-    translated = em_cuda_kernels.relion_translate_score_f32(
+    translated = cuda_translate.relion_translate_score_f32(
         jnp.asarray(np.asarray(native_image, dtype=np.complex64)[None, :]),
         jnp.asarray(native_translation_angles, dtype=jnp.float32),
         jnp.asarray(native_centered_indices, dtype=jnp.int32),

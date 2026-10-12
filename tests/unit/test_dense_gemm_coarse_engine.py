@@ -203,11 +203,14 @@ def test_memory_plan_uses_large_projection_tile_and_full_translation_when_it_fit
 @pytest.mark.unit
 def test_statistics_callback_uses_resident_native_kernel_owner():
     from relax.cuda import kernels as native
+    from relax.cuda import translate as cuda_translate
     from relax.dense import gemm_coarse_statistics as dense_stats
 
     assert dense_stats.cuda_backproject is native
+    assert dense_stats.cuda_translate is cuda_translate
+    for name in ("relion_translate_score_f32", "relion_translate_sum_flat_rows_f32"):
+        assert callable(getattr(dense_stats.cuda_translate, name))
     for name in (
-        "relion_translate_sum_flat_rows_f32",
         "relion_wavg_sequential_runtime_flat_rows_triplet_f32",
         "relion_wavg_exact_atomic_flat_rows_triplet_add_f32",
     ):

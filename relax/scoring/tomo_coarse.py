@@ -259,12 +259,12 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
     score translation; a zero-weight padded image scores zero.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.scoring.coarse_kernels import relion_coarse_gaussian_gemm_scores_jit
 
     n_images, n_trans = (int(n) for n in translation_angles.shape[:2])
     # Every image's translations in one launch, each with its own phases.
-    shifted_all = em_cuda_kernels.relion_translate_score_f32(
+    shifted_all = cuda_translate.relion_translate_score_f32(
         unshifted, translation_angles, score_indices, image_shape
     ).reshape(n_images, n_trans, -1)
 
@@ -1442,7 +1442,7 @@ def particle_coarse_cc_winners(
     ``scale_corrections`` are per dataset image.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.fourier.fourier_window import make_fourier_window_spec
     from relax.fourier.half_spectrum import make_scoring_half_image_weights
     from relax.projection.projection import compute_relion_projector_projections_block
@@ -1516,7 +1516,7 @@ def particle_coarse_cc_winners(
                 relion_kernel="coarse",
                 projector_output_size=int(coarse_size),
             )
-            shifted = em_cuda_kernels.relion_translate_score_f32(
+            shifted = cuda_translate.relion_translate_score_f32(
                 unshifted[slot : slot + 1], jnp.asarray(angles[slot], dtype=jnp.float32), window_device, image_shape
             )
             running = _add_tilt_image_cc_diff2(

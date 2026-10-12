@@ -784,7 +784,7 @@ def tilt_cc_scores(
     ``min_diff2`` is the particle's ``0.5 |X_i|^2`` summed over its images (the SPA evidence offset).
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.fine_pass.resident_scoring import ResidentChunkScores
     from relax.fine_pass.scoring import _relion_cuda_fine_normalized_cc_score
 
@@ -814,7 +814,7 @@ def tilt_cc_scores(
                 valid_units = units_images >= 0
                 safe = jnp.asarray(np.where(valid_units, units_images, 0), dtype=jnp.int32)
                 # [C_U, T_b, N]: the slot's images with their own phases, one launch.
-                tiles = em_cuda_kernels.relion_translate_score_f32(
+                tiles = cuda_translate.relion_translate_score_f32(
                     score_input[safe], block_angles[safe], pixels, shape
                 ).reshape(safe.shape[0], index.size, -1)
                 images = jnp.asarray(np.where(slot_image_ids[slot] >= 0, slot_image_ids[slot], 0), dtype=jnp.int32)

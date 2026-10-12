@@ -668,7 +668,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
 
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.projection import projection as projection_helpers
     for name, value in {
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "0",
@@ -682,7 +682,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
     mock_unit_ctf_and_zero_highres_power(monkeypatch)
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_score_f32",
         lambda images, translation_angles, pixel_indices, image_shape: jnp.repeat(
             images[:, None, :],
@@ -807,7 +807,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
 
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.fine_pass import scoring as sparse_pass2_scoring
     from relax.projection import projection as projection_helpers
     for name, value in {
@@ -847,7 +847,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         lambda processed, **_kwargs: jnp.zeros(processed.shape[0], dtype=jnp.float32),
     )
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_score_f32",
         lambda images, translation_angles, pixel_indices, image_shape: jnp.repeat(
             images[:, None, :],

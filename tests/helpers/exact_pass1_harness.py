@@ -165,14 +165,14 @@ def install_exact_pass1_mocks(monkeypatch):
     projector returns, for class ``k`` and a rotation whose ``[0, 1]`` entry is ``c``, the row
     ``(k + 1 + c) * exp(0.3 i p)`` over the requested pixels ``p``."""
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.projection import projection as projection_helpers
     from relax.scoring import gaussian_plan
 
     monkeypatch.setattr(gaussian_plan, "_custom_cuda_ready", lambda: True)
     mock_unit_ctf_and_zero_highres_power(monkeypatch)
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_score_f32",
         lambda images, translation_angles, pixel_indices, image_shape: jnp.repeat(
             images[:, None, :],

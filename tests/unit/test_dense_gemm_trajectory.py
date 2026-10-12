@@ -60,7 +60,7 @@ def test_failure_census_keeps_stable_ids_and_finite_ranges():
 
 def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypatch):
     """The selected GEMM scorer and resident row owner retain every pose."""
-    from relax.cuda import kernels as cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.dense.gemm_kernels import empty_normalizer_table, pad_grid
     from relax.fine_pass import adjoint as sparse_pass2_adjoint
     from relax.fine_pass import resident_pass2
@@ -103,7 +103,7 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
         assert kwargs["max_block_bytes"] > 0
         return volume.at[0].add(jnp.sum(rows))
 
-    monkeypatch.setattr(cuda_kernels, "relion_translate_score_f32", translate)
+    monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", translate)
     monkeypatch.setattr(coarse_kernels, "relion_coarse_gaussian_gemm_scores_jit", score)
     monkeypatch.setattr(resident_pass2, "_resident_block_weighted_sums_kernel", weighted_rows)
     monkeypatch.setattr(sparse_pass2_adjoint, "_accumulate_adjoint_block_chunked", adjoint)

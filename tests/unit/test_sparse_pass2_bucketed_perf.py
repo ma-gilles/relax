@@ -1532,7 +1532,7 @@ def test_sparse_pass2_windowed_projection_cap_casts_chunks_before_concat(monkeyp
 def test_prepare_bucket_io_routes_direct_score_translation_through_relion_cuda(
     monkeypatch,
 ):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     ds = MockDataset(n_images=3, seed=20260727)
     batch_indices = np.asarray([0, 2], dtype=np.int64)
@@ -1574,7 +1574,7 @@ def test_prepare_bucket_io_routes_direct_score_translation_through_relion_cuda(
         )
 
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_score_f32",
         fake_translate,
     )
@@ -1689,7 +1689,7 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
     both trees accumulate, must be identical to Q's; the native triple carries
     Q's normalized-image assertion.
     """
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.relion import ctf
 
     ds = MockDataset(n_images=1, seed=1701)
@@ -1724,12 +1724,12 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
         del pixel_indices, image_shape
         return jnp.repeat(images * weights, int(angles.shape[0]), axis=0)
 
-    monkeypatch.setattr(em_cuda_kernels, "relion_translate_bpref_f32", fake_translate)
+    monkeypatch.setattr(cuda_translate, "relion_translate_bpref_f32", fake_translate)
 
     def fake_translate_score(images, angles, _pixel_indices, _image_shape):
         return jnp.repeat(jnp.asarray(images), int(angles.shape[0]), axis=0)
 
-    monkeypatch.setattr(em_cuda_kernels, "relion_translate_score_f32", fake_translate_score)
+    monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", fake_translate_score)
     noise = np.linspace(0.75, 1.25, n_half, dtype=np.float64)
     result = _prepare_bucket_io(
         experiment_dataset=ds,

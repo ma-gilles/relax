@@ -369,13 +369,13 @@ def _compare_particle(
     native_replay_denominator = (
         native_ctf_replay**2 * native_inverse_noise_replay / n4
     ).astype(np.float32)
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     translation_angles = jnp.asarray(
         relion_translation_angles_f32(pass2["fine_translations"], (image_size, image_size)),
         dtype=jnp.float32,
     )
-    cuda_translated_all = em_cuda_kernels.relion_translate_score_f32(
+    cuda_translated_all = cuda_translate.relion_translate_score_f32(
         jnp.asarray(rec_processed[None, :], dtype=jnp.complex64),
         translation_angles,
         jnp.asarray(centered, dtype=jnp.int32),

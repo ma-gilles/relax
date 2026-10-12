@@ -24,13 +24,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.cuda.backprojection import relion_fused_x_half_backproject_particle_grid_indexed
-from relax.cuda.kernels import (
-    relion_coarse_diff2_projector_f32,
-    relion_coarse_diff2_rectangular_f32,
-    relion_translate_score_f32,
-    relion_translate_sum_flat_rows_f32,
-)
+from relax.cuda.kernels import relion_coarse_diff2_projector_f32, relion_coarse_diff2_rectangular_f32
 from relax.cuda.projector import RelionCapacityHalfTextureF32
+from relax.cuda.translate import relion_translate_score_f32, relion_translate_sum_flat_rows_f32
 from relax.dense.gemm_kernels import (
     DenseGemmTileConfig,
     empty_normalizer_table,

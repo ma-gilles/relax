@@ -13,6 +13,7 @@ pytest.importorskip("jax")
 import jax.numpy as jnp
 
 from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import translate as cuda_translate
 from relax.scoring import tomo_coarse
 
 
@@ -146,7 +147,7 @@ def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monk
         phase = jnp.exp(1j * (translation_angles[..., 0] + translation_angles[..., 1])).astype(jnp.complex64)
         return (images[:, None, :] * phase[:, :, None]).reshape(-1, images.shape[1])
 
-    monkeypatch.setattr(em_cuda_kernels, "relion_translate_score_f32", shift)
+    monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", shift)
     got = np.asarray(
         tomo_coarse._images_coarse_gemm_diff2.__wrapped__(
             jnp.asarray(projected), jnp.asarray(images), jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(angles),

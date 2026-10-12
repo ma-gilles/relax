@@ -54,12 +54,12 @@ _MAX_MASS_ULP_PER_TRANSLATION = 1.0
 
 def _cuda_backproject(monkeypatch, custom_cuda_lib):
     import recovar.cuda_backproject as cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
     monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
-    return em_cuda_kernels
+    return cuda_translate
 
 
 def _operands(

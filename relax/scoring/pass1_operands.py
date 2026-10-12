@@ -162,7 +162,7 @@ class CcOperandPlan:
     def prepare(self, batch: BatchInputs, indices) -> ScoreOperands:
         """The normalized-CC operands of ``batch``, whose images are the dataset images ``indices``."""
 
-        from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import translate as cuda_translate
         from relax.relion.ctf import relion_exact_ctf_half_from_source_star
 
         processed = process_relion_exact_coarse_half_image(
@@ -198,7 +198,7 @@ class CcOperandPlan:
             window_indices=self.window_indices,
             scale_corrections_enabled=self.scale_corrections_enabled,
         )
-        shifted = em_cuda_kernels.relion_translate_score_f32(
+        shifted = cuda_translate.relion_translate_score_f32(
             operands.windowed_unshifted,
             self.translation_angles,
             self.score_indices,

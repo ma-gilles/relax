@@ -17,6 +17,7 @@ import jax
 import jax.numpy as jnp
 
 from relax.cuda import kernels as cuda_backproject
+from relax.cuda import translate as cuda_translate
 from relax.fine_pass.resident_pass2 import (
     _accumulate_chunk_image_terms,
     _add_wavg_rectangle_image_power,
@@ -277,7 +278,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
             ).at[ops.exact_positions].set(False)
             wavg = wavg.at[..., 2].add(jnp.where(outside_exact[None, :], rectangle_power, 0.0))
 
-            shifted_noise = cuda_backproject.relion_translate_score_f32(
+            shifted_noise = cuda_translate.relion_translate_score_f32(
                 ops.noise_image, angles, ops.recon_pixel_indices, plan.image_shape
             ).reshape(b, u, plan.n_recon_pixels)
             noise_cross = jnp.sum(

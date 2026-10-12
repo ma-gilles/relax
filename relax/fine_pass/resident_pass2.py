@@ -1168,11 +1168,11 @@ def _resident_block_weighted_sums_kernel(
     is never used for anything else.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     row_posterior = jnp.asarray(row_posterior, dtype=jnp.float32)
     block_rows = int(row_posterior.shape[0])
-    outputs = em_cuda_kernels.relion_translate_sum_flat_rows_f32(
+    outputs = cuda_translate.relion_translate_sum_flat_rows_f32(
         jnp.asarray(recon_image, dtype=jnp.complex64),
         jnp.asarray(noise_image, dtype=jnp.complex64),
         jnp.asarray(row_image_ids, dtype=jnp.int32),
@@ -6778,13 +6778,13 @@ def _verify_resident_chunk_operands(
     difference here would be a changed reconstruction operand.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     image_capacity = int(np.asarray(reference_recon["shifted_recon"]).shape[0])
     angles = jnp.asarray(translation_angles, dtype=jnp.float32)
     indices = jnp.asarray(recon_pixel_indices, dtype=jnp.int32)
     if bpref_recon_operand:
-        translated_recon = em_cuda_kernels.relion_translate_bpref_f32(
+        translated_recon = cuda_translate.relion_translate_bpref_f32(
             jnp.asarray(resident_recon["recon_image"], dtype=jnp.complex64),
             jnp.asarray(resident_recon["recon_weight"], dtype=jnp.float32),
             angles,
@@ -6792,13 +6792,13 @@ def _verify_resident_chunk_operands(
             image_shape,
         )
     else:
-        translated_recon = em_cuda_kernels.relion_translate_score_f32(
+        translated_recon = cuda_translate.relion_translate_score_f32(
             jnp.asarray(resident_recon["recon_image"], dtype=jnp.complex64),
             angles,
             indices,
             image_shape,
         )
-    translated_noise = em_cuda_kernels.relion_translate_score_f32(
+    translated_noise = cuda_translate.relion_translate_score_f32(
         jnp.asarray(resident_recon["noise_image"], dtype=jnp.complex64),
         angles,
         indices,

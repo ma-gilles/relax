@@ -210,7 +210,7 @@ def _resident_native_case(monkeypatch, image_size, current_size, with_scale):
     from recovar.core.configs import ForwardModelConfig
     from recovar.reconstruction import noise as noise_utils
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
     from relax.fourier.fourier_window import make_fourier_window_spec
     from relax.relion import ctf as relion_ctf
 
@@ -227,14 +227,14 @@ def _resident_native_case(monkeypatch, image_size, current_size, with_scale):
     # Repeat instead of translate: the CUDA translations are not on CPU, and
     # the operands under test are the unshifted ones the kernel translates.
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_score_f32",
         lambda images, angles, _pixel_indices, _shape: jnp.repeat(
             jnp.asarray(images), int(angles.shape[0]), axis=0
         ),
     )
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_bpref_f32",
         lambda images, weights, angles, _pixel_indices, _shape: jnp.repeat(
             jnp.asarray(images) * jnp.asarray(weights), int(angles.shape[0]), axis=0

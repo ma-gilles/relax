@@ -359,7 +359,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         return name if hasattr(module, name) else "_" + name
 
     def install_recorders(patch):
-        from relax.cuda import kernels as em_cuda_kernels
+        try:
+            from relax.cuda import translate as cuda_translate
+        except ImportError:  # the source before the CUDA kernels split by family
+            from relax.cuda import kernels as cuda_translate
         try:
             from relax.projection import projection as projection_helpers
         except ImportError:  # the source before the package layout move
@@ -376,8 +379,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                                                              f"rows={'all' if kw.get('pixel_indices') is None else len(kw['pixel_indices'])}")),
         )
         patch.setattr(
-            em_cuda_kernels, "relion_translate_score_f32",
-            recorded("translate", em_cuda_kernels.relion_translate_score_f32,
+            cuda_translate, "relion_translate_score_f32",
+            recorded("translate", cuda_translate.relion_translate_score_f32,
                      lambda images, angles, *_: (f"images={images.shape[0]}", f"translations={angles.shape[0]}")),
         )
         ctf_rows = named(relion_ctf, "relion_exact_ctf_half_from_source_star")

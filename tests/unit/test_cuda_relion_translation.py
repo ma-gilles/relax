@@ -299,7 +299,7 @@ def test_relion_translate_score_f32_matches_float32_reference(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -324,7 +324,7 @@ def test_relion_translate_score_f32_matches_float32_reference(
     )
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_translate_score_f32(
+        actual = cuda_translate.relion_translate_score_f32(
             jnp.asarray(images),
             jnp.asarray(angles),
             jnp.asarray(pixel_indices),
@@ -365,7 +365,7 @@ def test_relion_translate_score_f32_matches_float32_reference(
 def test_relion_translate_score_f32_per_image_angles_are_each_images_own_launch(gpu_device):
     """``[B, T, 2]`` angles (a subtomogram's tilt images, one launch) give each image's ``[T, 2]`` result."""
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     rng = np.random.default_rng(5)
     image_shape = (16, 16)
@@ -374,11 +374,11 @@ def test_relion_translate_score_f32_per_image_angles_are_each_images_own_launch(
     angles = rng.uniform(-0.3, 0.3, size=(3, 7, 2)).astype(np.float32)
     with jax.default_device(gpu_device):
         batched = np.asarray(
-            em_cuda_kernels.relion_translate_score_f32(jnp.asarray(images), jnp.asarray(angles), pixel_indices, image_shape)
+            cuda_translate.relion_translate_score_f32(jnp.asarray(images), jnp.asarray(angles), pixel_indices, image_shape)
         )
         alone = [
             np.asarray(
-                em_cuda_kernels.relion_translate_score_f32(
+                cuda_translate.relion_translate_score_f32(
                     jnp.asarray(images[b : b + 1]), jnp.asarray(angles[b]), pixel_indices, image_shape
                 )
             )
@@ -398,7 +398,7 @@ def test_relion_translate_score_f32_matches_sealed_relion_values(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -447,7 +447,7 @@ def test_relion_translate_score_f32_matches_sealed_relion_values(
     )
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_translate_score_f32(
+        actual = cuda_translate.relion_translate_score_f32(
             jnp.asarray(images),
             jnp.asarray(angles),
             jnp.asarray(pixel_indices),
@@ -461,11 +461,11 @@ def test_relion_translate_score_f32_matches_sealed_relion_values(
 def test_relion_translate_score_f32_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_translate_score_f32.__wrapped__(
+        cuda_translate.relion_translate_score_f32.__wrapped__(
             jnp.zeros((1, 2), dtype=jnp.complex64),
             jnp.zeros((1, 2), dtype=jnp.float32),
             jnp.asarray([0, 1], dtype=jnp.int32),
@@ -474,10 +474,10 @@ def test_relion_translate_score_f32_fails_closed_without_gpu(monkeypatch):
 
 
 def test_relion_translate_score_f64_validates_input_dtype():
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     with pytest.raises(TypeError, match="images must be complex128"):
-        em_cuda_kernels.relion_translate_score_f64.__wrapped__(
+        cuda_translate.relion_translate_score_f64.__wrapped__(
             jnp.zeros((1, 2), dtype=jnp.complex64),
             jnp.zeros((1, 2), dtype=jnp.float64),
             jnp.asarray([0, 1], dtype=jnp.int32),
@@ -505,7 +505,7 @@ def test_relion_translate_score_f64_matches_double_sincos_reference(
     """
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -517,7 +517,7 @@ def test_relion_translate_score_f64_matches_double_sincos_reference(
     angles = np.asarray([[0.0, 0.0], [0.018312519416213036, -0.006231173872947693]], dtype=np.float64)
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_translate_score_f64(
+        actual = cuda_translate.relion_translate_score_f64(
             jnp.asarray(images),
             jnp.asarray(angles),
             jnp.asarray(pixel_indices),
@@ -540,10 +540,10 @@ def test_relion_translate_score_f64_matches_double_sincos_reference(
 
 
 def test_relion_translate_bpref_f32_validates_weight_shape(monkeypatch):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     with pytest.raises(ValueError, match="weighted_ctf must have shape"):
-        em_cuda_kernels.relion_translate_bpref_f32.__wrapped__(
+        cuda_translate.relion_translate_bpref_f32.__wrapped__(
             jnp.zeros((2, 3), dtype=jnp.complex64),
             jnp.zeros((1, 3), dtype=jnp.float32),
             jnp.zeros((1, 2), dtype=jnp.float32),
@@ -553,10 +553,10 @@ def test_relion_translate_bpref_f32_validates_weight_shape(monkeypatch):
 
 
 def test_relion_translate_bpref_f64_validates_input_dtype():
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     with pytest.raises(TypeError, match="images must be complex128"):
-        em_cuda_kernels.relion_translate_bpref_f64.__wrapped__(
+        cuda_translate.relion_translate_bpref_f64.__wrapped__(
             jnp.zeros((1, 2), dtype=jnp.complex64),
             jnp.zeros((1, 2), dtype=jnp.float64),
             jnp.zeros((1, 2), dtype=jnp.float64),
@@ -573,7 +573,7 @@ def test_relion_translate_bpref_f32_matches_translate_then_weight(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -599,14 +599,14 @@ def test_relion_translate_bpref_f32_matches_translate_then_weight(
     )
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_translate_bpref_f32(
+        actual = cuda_translate.relion_translate_bpref_f32(
             jnp.asarray(images),
             jnp.asarray(weighted_ctf),
             jnp.asarray(angles),
             jnp.asarray(pixel_indices),
             image_shape,
         )
-        translated = em_cuda_kernels.relion_translate_score_f32(
+        translated = cuda_translate.relion_translate_score_f32(
             jnp.asarray(images),
             jnp.asarray(angles),
             jnp.asarray(pixel_indices),
@@ -634,7 +634,7 @@ def test_relion_translate_bpref_f64_matches_translate_then_weight(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -660,14 +660,14 @@ def test_relion_translate_bpref_f64_matches_translate_then_weight(
     )
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_translate_bpref_f64(
+        actual = cuda_translate.relion_translate_bpref_f64(
             jnp.asarray(images),
             jnp.asarray(weighted_ctf),
             jnp.asarray(angles),
             jnp.asarray(pixel_indices),
             image_shape,
         )
-        translated = em_cuda_kernels.relion_translate_score_f64(
+        translated = cuda_translate.relion_translate_score_f64(
             jnp.asarray(images),
             jnp.asarray(angles),
             jnp.asarray(pixel_indices),
@@ -706,7 +706,7 @@ def test_relion_translate_score_labels_the_nyquist_row_as_relion_does(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -730,7 +730,7 @@ def test_relion_translate_score_labels_the_nyquist_row_as_relion_does(
 
     with jax.default_device(gpu_device):
         actual = np.asarray(
-            em_cuda_kernels.relion_translate_score_f32(
+            cuda_translate.relion_translate_score_f32(
                 jnp.asarray(images),
                 jnp.asarray(angles),
                 jnp.asarray(pixel_indices),
@@ -783,7 +783,7 @@ def test_relion_translate_bpref_labels_the_nyquist_row_as_relion_does(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -805,7 +805,7 @@ def test_relion_translate_bpref_labels_the_nyquist_row_as_relion_does(
 
     with jax.default_device(gpu_device):
         actual = np.asarray(
-            em_cuda_kernels.relion_translate_bpref_f32(
+            cuda_translate.relion_translate_bpref_f32(
                 jnp.asarray(images),
                 jnp.asarray(weighted_ctf),
                 jnp.asarray(angles),
@@ -842,7 +842,7 @@ def test_relion_translate_bpref_f32_matches_native_captured_values(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -884,7 +884,7 @@ def test_relion_translate_bpref_f32_matches_native_captured_values(
     )
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_translate_bpref_f32(
+        actual = cuda_translate.relion_translate_bpref_f32(
             jnp.asarray(images),
             jnp.asarray(weighted_ctf),
             jnp.asarray(angles),
