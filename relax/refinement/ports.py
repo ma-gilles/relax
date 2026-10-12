@@ -15,7 +15,9 @@ at and receives the values the run holds then; an observer must not mutate them,
 array past the hook unless it says so (it would extend that array's lifetime, code rule 3). The two
 collection requests (``keeps_rotation_posteriors``, ``collects_local_search_profiles``,
 ``keeps_pose_rotation_eulers``) and ``wants_unfiltered_maps`` ask the run to keep or compute something beside its own values; they cost memory
-or time, never a number of the run. ``scored_halves`` is a diagnostic boundary's request: score one half of a
+or time, never a number of the run. ``bpref_diagnostics_armed`` asks the first-iteration BPref of a numbered half
+for its direct path (not deferred to the host, not planned compact), which a BPref capture or diagnostic
+override needs. ``scored_halves`` is a diagnostic boundary's request: score one half of a
 numbered iteration only, at a dump target after which the run stops.
 """
 
@@ -397,6 +399,11 @@ class RunObserver:
         ``experiment_datasets``): both, unless a terminating diagnostic boundary targets one half there."""
         return (0, 1)
 
+    def bpref_diagnostics_armed(self, iteration: int, half_index: int, *, bpref_device_signature_active: bool) -> bool:
+        """Whether a BPref capture or diagnostic override is armed for half ``half_index`` of numbered iteration
+        ``iteration`` (both zero-based), so that half's first-iteration BPref takes its direct path."""
+        return False
+
     def run_started(self, context) -> None:
         """The run's context is resolved (a ``relax.refinement.setup_checks.RunContext``: its mode, geometry
         and settings), before the start-up state is built."""
@@ -473,6 +480,10 @@ class ExpectationProbe(Protocol):
 
     def numbered_half_recorded(self, recorded: NumberedHalfRecorded) -> None: ...
 
+    def bpref_diagnostics_armed(
+        self, iteration: int, half_index: int, *, bpref_device_signature_active: bool
+    ) -> bool: ...
+
     def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None: ...
 
     def final_half_scored(self, scored: FinalHalfScored) -> None: ...
@@ -503,6 +514,9 @@ class NoProbe:
 
     def numbered_half_recorded(self, recorded) -> None:
         pass
+
+    def bpref_diagnostics_armed(self, iteration, half_index, *, bpref_device_signature_active) -> bool:
+        return False
 
     def local_search_profile(self, iteration, half_index, profile) -> None:
         pass
@@ -535,6 +549,11 @@ class ObserverExpectationProbe:
 
     def numbered_half_recorded(self, recorded: NumberedHalfRecorded) -> None:
         self.observer.numbered_half_recorded(recorded)
+
+    def bpref_diagnostics_armed(self, iteration: int, half_index: int, *, bpref_device_signature_active: bool) -> bool:
+        return self.observer.bpref_diagnostics_armed(
+            iteration, half_index, bpref_device_signature_active=bpref_device_signature_active,
+        )
 
     def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None:
         self.observer.local_search_profile(iteration, half_index, profile)

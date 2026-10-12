@@ -21,7 +21,6 @@ from recovar.data_io import cryoem_dataset
 
 import relax.refinement.refinement_state as convergence_helpers
 from relax.classification.probes import KClassProbe, NoProbe
-from relax.diagnostics import bpref_diagnostics
 from relax.reconstruction import accumulator_guard, resolution
 from relax.refinement import (
     engine_record,
@@ -1296,10 +1295,6 @@ def refine_single_volume(
             )
 
         iteration += 1
-
-    # Numbered contribution/native dump identities must never leak into the
-    # return path or RELION's unnumbered final all-data pass.
-    bpref_diagnostics.clear_bpref_contribution_dump_context()
 
     # RELION enters the final pass only when checkConvergence() ran at the top of a permitted iteration; a run
     # made convergence-ready by its last numbered iteration ends at the cap (``iter <= nr_iter``). Set-up and

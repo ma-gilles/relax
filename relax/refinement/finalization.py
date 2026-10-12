@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.diagnostics import bpref_diagnostics
 from relax.numerics.precision import _diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import (
     ImageGeometry,
@@ -421,7 +420,6 @@ def run_final_all_data(
             first_projector_power_spectrum = projector.power_spectrum
         scoring_half = None
         half = local_search_centre_half(half, (options.start.init_angle_priors or (None, None))[half.index], carry.state)
-        bpref_diagnostics.clear_bpref_contribution_dump_context()
         final_half_clock = Stopwatch()
         logger.info(
             "RELION final all-data half-%d start: images=%d current_size=%d "

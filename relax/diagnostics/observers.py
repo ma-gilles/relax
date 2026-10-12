@@ -214,7 +214,14 @@ class BpRefAccumulatorObserver(RunObserver):
 
 class BpRefDiagnosticsObserver(RunObserver):
     """Flushes the BPref device-panel capture of each scored numbered half (``RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR``,
-    limited by ``RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION`` and ``_HALF``), read from the environment at each half."""
+    limited by ``RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION`` and ``_HALF``), and says when a BPref capture or
+    diagnostic override (``bpref_diagnostics.BPREF_DIAGNOSTIC_ENVS``) is armed for a numbered half, read from the
+    environment at each call."""
+
+    def bpref_diagnostics_armed(self, iteration, half_index, *, bpref_device_signature_active):
+        return bpref_diagnostics._relion_firstiter_bpref_diagnostics_active(
+            bpref_device_signature_active=bpref_device_signature_active, iteration=iteration + 1, half=half_index + 1,
+        )
 
     def numbered_half_recorded(self, recorded):
         if recorded.particles.dataset.n_units != 0:
@@ -354,6 +361,9 @@ class ObserverGroup(RunObserver):
     def numbered_half_recorded(self, recorded):
         for o in self.observers:
             o.numbered_half_recorded(recorded)
+
+    def bpref_diagnostics_armed(self, iteration, half_index, **values):
+        return any(o.bpref_diagnostics_armed(iteration, half_index, **values) for o in self.observers)
 
     def local_search_profile(self, iteration, half_index, profile):
         for o in self.observers:

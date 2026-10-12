@@ -11,7 +11,7 @@ from recovar import cuda_backproject
 from relax.classification import k_class
 from relax.cuda import backprojection as cuda_backprojection
 from relax.diagnostics import bpref_diagnostics
-from relax.refinement import dense_half, finalization, local_half
+from relax.refinement import dense_half, local_half
 from relax.refinement.refinement_options import ExecutionOptions, bpref_device_signature_target
 
 pytestmark = pytest.mark.unit
@@ -190,44 +190,25 @@ def test_target_half2_cannot_leak_into_local_search(monkeypatch):
         )
 
 
-def test_clear_dump_context_marks_contribution_and_native_dumps_inactive():
-    bpref_diagnostics.set_bpref_contribution_dump_context(iteration=5, half=2)
-    assert bpref_diagnostics._bpref_contribution_context == {
-        "iteration": 5,
-        "half": 2,
+def test_the_bpref_observer_arms_only_the_numbered_half_it_is_asked_about(monkeypatch, tmp_path):
+    """The membership dump names a one-based iteration and half; the run asks with its zero-based indices, and
+    without the observer (a run's default) nothing is armed."""
+    from relax.diagnostics import observers
+    from relax.refinement.ports import NoProbe, RunObserver
+
+    for name in bpref_diagnostics.BPREF_DIAGNOSTIC_ENVS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_ITERATION", "2")
+    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_HALF", "1")
+    observer = observers.BpRefDiagnosticsObserver()
+    armed = {
+        (iteration, half): observer.bpref_diagnostics_armed(iteration, half, bpref_device_signature_active=False)
+        for iteration in (0, 1) for half in (0, 1)
     }
-
-    bpref_diagnostics.clear_bpref_contribution_dump_context()
-    assert bpref_diagnostics._bpref_contribution_context == {
-        "iteration": -1,
-        "half": -1,
-    }
-
-
-@pytest.mark.parametrize("final_pass", [False, True])
-def test_iteration_loop_clears_dump_context_before_every_final_exit_or_half(monkeypatch, final_pass):
-    """Numbered dump identities never reach the final decision, the return path or a final half."""
-    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
-
-    cleared = {"iteration": -1, "half": -1}
-
-    def context_cleared(call):
-        assert bpref_diagnostics._bpref_contribution_context == cleared
-
-    def half_leaves_a_context(call):
-        bpref_diagnostics._bpref_contribution_context.update(iteration=99, half=call.args[0].index + 1)
-
-    trace = CallTrace(monkeypatch)
-    trace.wrap(bpref_diagnostics, "set_bpref_contribution_dump_context", "numbered_half")
-    trace.wrap(finalization, "_should_run_final_all_data_iteration", "decision", before=context_cleared)
-    trace.wrap(finalization, "prepare_final_half", "final_half", before=context_cleared, after=half_leaves_a_context)
-    run_tiny_refinement(monkeypatch, final_after_max_iter=final_pass)
-
-    if not final_pass:
-        assert bpref_diagnostics._bpref_contribution_context == cleared
-    # Two numbered iterations of two halves set the context; the final halves start from a cleared one.
-    assert trace.labels("numbered_half", "decision")[:5] == 4 * ["numbered_half"] + ["decision"]
-    assert len(trace.calls("final_half")) == (2 if final_pass else 0)
+    assert armed == {(0, 0): False, (0, 1): False, (1, 0): True, (1, 1): False}
+    assert not RunObserver().bpref_diagnostics_armed(1, 0, bpref_device_signature_active=False)
+    assert not NoProbe().bpref_diagnostics_armed(1, 0, bpref_device_signature_active=False)
 
 
 def test_active_capture_accepts_fused_kclass_route(monkeypatch):

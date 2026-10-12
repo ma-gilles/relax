@@ -4,8 +4,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from relax.diagnostics import observers
 from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
 from relax.refinement import firstiter_bpref
+from relax.refinement.ports import ObserverExpectationProbe
 from relax.runtime.batch_planning import estimate_relion_em_batch_sizes
 
 pytestmark = pytest.mark.unit
@@ -213,8 +215,9 @@ def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64)
         projector_half=projector_half,
         score_complex_dtype=score_complex_dtype,
         recon_volume_size=1603 * 1603 * 802,
-        bpref_device_signature_active=False,
         fixed_base_bytes=4_000_000_000,
+        # Iteration 1's first half; the command's BPref observer reads the diagnostic variables.
+        half=firstiter_bpref.NumberedBPrefHalf(0, 0, False, ObserverExpectationProbe(observers.BpRefDiagnosticsObserver())),
     )
 
 def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch):
@@ -239,32 +242,28 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
     ):
         monkeypatch.delenv(name, raising=False)
 
-    sparse.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
-    try:
-        enabled = _compact_route_decision(projector_half=host_projector)
-        assert enabled.enabled is True
-        assert enabled.deferred_firstiter_bpref is True
+    enabled = _compact_route_decision(projector_half=host_projector)
+    assert enabled.enabled is True
+    assert enabled.deferred_firstiter_bpref is True
 
-        float64 = _compact_route_decision(
-            projector_half=host_projector,
-            score_complex_dtype=np.complex128,
-        )
-        assert float64.enabled is False
+    float64 = _compact_route_decision(
+        projector_half=host_projector,
+        score_complex_dtype=np.complex128,
+    )
+    assert float64.enabled is False
 
-        class DeviceProjector:
-            shape = (2, 2, 2)
-            dtype = np.dtype(np.complex64)
+    class DeviceProjector:
+        shape = (2, 2, 2)
+        dtype = np.dtype(np.complex64)
 
-        monkeypatch.setattr(sparse.jax, "Array", DeviceProjector)
-        device_owned = _compact_route_decision(projector_half=DeviceProjector())
-        assert device_owned.enabled is False
+    monkeypatch.setattr(sparse.jax, "Array", DeviceProjector)
+    device_owned = _compact_route_decision(projector_half=DeviceProjector())
+    assert device_owned.enabled is False
 
-        monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/diagnostic")
-        diagnostic = _compact_route_decision(projector_half=host_projector)
-        assert diagnostic.enabled is False
-        assert diagnostic.deferred_firstiter_bpref is False
-    finally:
-        sparse.bpref_diagnostics.clear_bpref_contribution_dump_context()
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/diagnostic")
+    diagnostic = _compact_route_decision(projector_half=host_projector)
+    assert diagnostic.enabled is False
+    assert diagnostic.deferred_firstiter_bpref is False
 
 def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
     sparse = firstiter_bpref
@@ -274,37 +273,29 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
     )
     monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda: None)
     monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: None)
-    sparse.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
-    try:
-        monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "1")
-        forced_deferred = _compact_route_decision(projector_half=host_projector)
-        assert forced_deferred.enabled is True
-        assert forced_deferred.deferred_firstiter_bpref is True
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "1")
+    forced_deferred = _compact_route_decision(projector_half=host_projector)
+    assert forced_deferred.enabled is True
+    assert forced_deferred.deferred_firstiter_bpref is True
 
-        monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "0")
-        disabled_deferred = _compact_route_decision(projector_half=host_projector)
-        assert disabled_deferred.enabled is False
-        assert disabled_deferred.deferred_firstiter_bpref is False
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "0")
+    disabled_deferred = _compact_route_decision(projector_half=host_projector)
+    assert disabled_deferred.enabled is False
+    assert disabled_deferred.deferred_firstiter_bpref is False
 
-        monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF")
-        monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
-        disabled_fused = _compact_route_decision(projector_half=host_projector)
-        assert disabled_fused.enabled is False
-    finally:
-        sparse.bpref_diagnostics.clear_bpref_contribution_dump_context()
+    monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF")
+    monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
+    disabled_fused = _compact_route_decision(projector_half=host_projector)
+    assert disabled_fused.enabled is False
 
 @pytest.mark.parametrize("diagnostic_env", ["RELAX_EM_FINITE_CHECK", "RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR"])
 def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch, diagnostic_env):
     monkeypatch.setenv(diagnostic_env, "1")
     host = SimpleNamespace(shape=(1603, 1603, 802), dtype=np.dtype(np.complex64))
     monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", raising=False)
-    firstiter_bpref.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
-    try:
-        decision = _compact_route_decision(projector_half=host)
-        assert not decision.enabled
-        assert not decision.deferred_firstiter_bpref
-    finally:
-        firstiter_bpref.bpref_diagnostics.clear_bpref_contribution_dump_context()
+    decision = _compact_route_decision(projector_half=host)
+    assert not decision.enabled
+    assert not decision.deferred_firstiter_bpref
 
 
 @pytest.mark.parametrize("overlap", [False, True])
@@ -352,3 +343,34 @@ def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
     assert (plan.significance_image_batch_size, plan.significance_rotation_block_size) == (3, 5)
 
 
+
+
+def test_compact_planning_asks_the_probe_about_its_numbered_half(monkeypatch):
+    """The decision asks the run's probe about the half it plans, and only the first numbered iteration takes the
+    fused route compact planning needs."""
+    monkeypatch.setattr(firstiter_bpref.memory_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
+    monkeypatch.setattr(firstiter_bpref.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
+    for name in ("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "RELAX_EM_FINITE_CHECK"):
+        monkeypatch.delenv(name, raising=False)
+    asked = []
+
+    class Probe:
+        def __init__(self, armed):
+            self.armed = armed
+
+        def bpref_diagnostics_armed(self, iteration, half_index, *, bpref_device_signature_active):
+            asked.append((iteration, half_index, bpref_device_signature_active))
+            return self.armed
+
+    host = SimpleNamespace(shape=(1603, 1603, 802), dtype=np.dtype(np.complex64))
+    common = dict(
+        source_faithful_spectrum_norm=True, winner_take_all=True, preserve_bpref_particle_order=True,
+        use_relion_x_half_mstep=True, projector_half=host, score_complex_dtype=np.complex64,
+        recon_volume_size=1603 * 1603 * 802, fixed_base_bytes=4_000_000_000,
+    )
+    decide = firstiter_bpref.relion_firstiter_compact_batch_planning_decision
+    half = firstiter_bpref.NumberedBPrefHalf
+    assert decide(**common, half=half(0, 1, False, Probe(False))).enabled
+    assert not decide(**common, half=half(0, 1, False, Probe(True))).enabled
+    assert not decide(**common, half=half(1, 0, False, Probe(False))).enabled
+    assert asked == [(0, 1, False), (0, 1, False), (1, 0, False)]

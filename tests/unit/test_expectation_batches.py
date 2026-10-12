@@ -10,6 +10,8 @@ from helpers.run_options import stand_in
 
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import expectation_batches as batches
+from relax.refinement.firstiter_bpref import NumberedBPrefHalf
+from relax.refinement.ports import NoProbe
 
 pytestmark = pytest.mark.unit
 
@@ -32,8 +34,9 @@ def prepare(planner, **overrides):
         relion_firstiter_cc_this_iter=False, firstiter_winner_take_all_this_iter=False,
         firstiter_cc_tree_rescore_max_margin=None,
         source_faithful_spectrum_norm=True, preserve_bpref_particle_order=True,
-        bpref_device_signature_active=False, use_relion_x_half_mstep=False,
+        use_relion_x_half_mstep=False,
         multi_shape_halves=False, coarse_sizing=(30.0, 100.0), diagnostic_float64_pass2=False,
+        bpref_half=NumberedBPrefHalf(0, 0, False, NoProbe()),
     )
     options.update(overrides)
     return batches.prepare_half_batches(

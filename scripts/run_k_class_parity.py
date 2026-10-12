@@ -1601,15 +1601,6 @@ def main() -> None:
     print("  batch sizing: " + _batch_plan_note("coarse", base_batch_plan))
 
     t0 = time.time()
-    from relax.diagnostics import bpref_diagnostics
-
-    # Mirror the numbered-half context supplied by the production iteration
-    # loop so opt-in contribution/device-signature captures from this
-    # one-boundary replay retain exact target-iteration provenance.
-    bpref_diagnostics.set_bpref_contribution_dump_context(
-        iteration=args.target_iter,
-        half=1,
-    )
     common_em_kwargs = dict(
         class_log_priors=class_log_priors,
         # The resident pass 2 is the production pass: it always accumulates the noise statistics.
@@ -1734,7 +1725,6 @@ def main() -> None:
         ),
         **adaptive_em_kwargs,
     )
-    bpref_diagnostics.clear_bpref_contribution_dump_context()
     elapsed_s = time.time() - t0
     print(f"  RECOVAR K-class E/M step completed in {elapsed_s:.1f}s")
 

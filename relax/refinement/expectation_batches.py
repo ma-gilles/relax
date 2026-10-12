@@ -162,11 +162,11 @@ def prepare_half_batches(
     firstiter_winner_take_all_this_iter,
     source_faithful_spectrum_norm,
     preserve_bpref_particle_order,
-    bpref_device_signature_active,
     use_relion_x_half_mstep: bool,
     multi_shape_halves,
     coarse_sizing,
     diagnostic_float64_pass2: bool,
+    bpref_half: firstiter_bpref.NumberedBPrefHalf,
 ) -> HalfBatchPlan:
     """Resolve compact staging and coarse/fine batches before one half scores.
 
@@ -174,6 +174,7 @@ def prepare_half_batches(
     the safe-size callbacks and the coarse/fine sizes; local scoring sizes its own tiles.
     ``diagnostic_float64_pass2``: this iteration's pass 2 scores in float64 (a listed iteration of
     RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS), so its plan is sized for float64 and is not compact.
+    ``bpref_half`` is the numbered half being planned, for the first-iteration BPref gates.
     """
     batching = planner.requested
     n_classes = planner.n_classes
@@ -215,8 +216,8 @@ def prepare_half_batches(
             projector_half=SimpleNamespace(shape=projector_half.shape, dtype=np.dtype(np.complex64)),
             score_complex_dtype=np.complex64,
             recon_volume_size=int(np.prod(compact_accumulator_shape)),
-            bpref_device_signature_active=bpref_device_signature_active,
             fixed_base_bytes=int(RELION_EM_COMPACT_K1_FIXED_BASE_GB * 1e9),
+            half=bpref_half,
         )
         if decision.enabled:
             if model_size <= 0:

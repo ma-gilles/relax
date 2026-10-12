@@ -4,7 +4,7 @@ Observers (``relax.diagnostics.observers``) and comparison input sources (``rela
 RELION replay, the frozen boundary and the state-swap probe) are chosen by the command and handed to the
 controller through ``relax.refinement.ports``; the algorithm imports only the ports. Outside the command boundary
 no module of any ``relax`` package imports ``relax.diagnostics`` or ``relax.parity``, except the edges listed in
-``ALLOWED_IMPORTS``: each names why it is still there, and the list can only shrink.
+``ALLOWED_IMPORTS``: each names why it is still there, and the list can only shrink (it is empty since layout S11).
 """
 
 import ast
@@ -26,16 +26,8 @@ IMPLEMENTATIONS = ("relax.diagnostics.observers", "relax.parity")
 BOUNDARY = ("relax.diagnostics", "relax.parity", "relax.command_line", "relax.commands")
 DIAGNOSTIC_PACKAGES = ("relax.diagnostics", "relax.parity")
 
-_INLINE_DUMP = "an inline dump/capture called from the algorithm; it needs a RunObserver hook (deep2 PLAN c2)"
-_INLINE_CHECK = "an inline finite/accumulator check that raises inside the algorithm; it needs a port (deep2 PLAN c2)"
-
 # (importing module, imported module) -> why the edge is still there.
-ALLOWED_IMPORTS = {
-    ("relax.refinement.expectation", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.finalization", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-}
+ALLOWED_IMPORTS = {}
 
 
 def _in(name, prefixes):
@@ -48,9 +40,10 @@ def _module_or_package(root, name, package):
     return name if path.with_suffix(".py").is_file() or path.is_dir() else package
 
 
-def _diagnostic_imports():
-    """Every (module, imported diagnostics/parity module) edge outside the boundary, lazy imports included."""
-    root = Path(relax.__file__).parent
+def _diagnostic_imports(root=None):
+    """Every (module, imported diagnostics/parity module) edge outside the boundary, lazy imports included, in the
+    package at ``root`` (default: relax's)."""
+    root = Path(relax.__file__).parent if root is None else root
     edges = set()
     for path in sorted(root.rglob("*.py")):
         parts = path.relative_to(root.parent).with_suffix("").parts
@@ -105,5 +98,26 @@ def test_the_command_does_import_the_observers_and_the_input_sources():
         capture_output=True, text=True, check=True,
     )
     assert out.stdout.strip().splitlines()[-1] == "True"
-    edges = {target for _, target in _diagnostic_imports()}
-    assert "relax.diagnostics.bpref_diagnostics" in edges
+
+
+def test_the_scan_finds_algorithm_imports_of_diagnostics_and_parity_in_any_scope(tmp_path):
+    """The allowlist is empty, so the scan must be shown to see an edge: top-level, lazy, relative, and not from the
+    boundary."""
+    package = tmp_path / "relax"
+    for module, source in {
+        "__init__.py": "",
+        "diagnostics/__init__.py": "",
+        "diagnostics/parity_dump.py": "",
+        "parity/__init__.py": "",
+        "parity/relion_replay.py": "",
+        "commands/__init__.py": "",
+        "commands/run.py": "from relax.diagnostics import parity_dump\n",
+        "refinement/__init__.py": "",
+        "refinement/loop.py": "from relax.diagnostics import parity_dump\ndef f():\n    from ..parity import relion_replay\n",
+    }.items():
+        (package / module).parent.mkdir(parents=True, exist_ok=True)
+        (package / module).write_text(source)
+    assert _diagnostic_imports(package) == {
+        ("relax.refinement.loop", "relax.diagnostics.parity_dump"),
+        ("relax.refinement.loop", "relax.parity.relion_replay"),
+    }

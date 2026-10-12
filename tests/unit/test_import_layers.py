@@ -44,10 +44,6 @@ ALLOWED_UPWARD = {
     ("relax.classification.k_class", "relax.refinement.engine_record"): _A,
     ("relax.fine_pass.bucket_arrays", "relax.local_search.layout"): _D,
     ("relax.fine_pass.dispatch", "relax.refinement.engine_record"): _A,
-    ("relax.refinement.expectation", "relax.diagnostics.bpref_diagnostics"): _B,
-    ("relax.refinement.finalization", "relax.diagnostics.bpref_diagnostics"): _B,
-    ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _B,
-    ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _B,
     ("relax.vdam.estep_setup", "relax.refinement.engine_record"): _A,
 }
 

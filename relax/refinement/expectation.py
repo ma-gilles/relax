@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.classification.probes import KClassProbe
-from relax.diagnostics import bpref_diagnostics
 from relax.numerics.precision import _diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans, iteration_planning, local_sampling
@@ -24,6 +23,7 @@ from relax.refinement.dense_half import (
     _score_half_dense_in_bpref_scope,
 )
 from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
+from relax.refinement.firstiter_bpref import NumberedBPrefHalf
 from relax.refinement.local_half import (
     LocalBatchPolicy,
     LocalDiagnosticPolicy,
@@ -200,9 +200,9 @@ def _half_overlap_active(
     halves at once would change what is observed, not merely when:
 
     * a subset of halves is being scored, so there is nothing to overlap;
-    * a BPref dump is armed (``armed_bpref_dumps``, ``RefinementEnvironment``). The dump context is process-global and is set per
-      half at the top of the half's work, so two halves in flight would write
-      each other's context. The dump is a diagnostic, so the overlap yields.
+    * a BPref dump is armed (``armed_bpref_dumps``, ``RefinementEnvironment``). Its captures (device panels,
+      membership, contributions) follow one half at a time, so two halves in flight
+      would interleave them. The dump is a diagnostic, so the overlap yields.
     """
 
     if not requested:
@@ -606,10 +606,6 @@ def score_numbered_half(
     coarse_size_step_deg = sampling.coarse_angular_step_deg
     particle_diameter_ang = options.schedule.particle_diameter_ang
     source_faithful_spectrum_norm = options.parity.preserve_bpref_particle_order
-    bpref_diagnostics.set_bpref_contribution_dump_context(
-        iteration=iteration + 1,
-        half=particle_half.index + 1,
-    )
     bpref_device_signature_active = (
         options.execution.bpref_device_signature_target == (iteration + 1, particle_half.index + 1)
     )
@@ -642,11 +638,11 @@ def score_numbered_half(
         firstiter_winner_take_all_this_iter=phase.variant.winner_take_all,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
-        bpref_device_signature_active=bpref_device_signature_active,
         use_relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
         multi_shape_halves=multi_shape_halves,
         coarse_sizing=(coarse_size_step_deg, particle_diameter_ang) if phase.use_adaptive and multi_shape_halves else None,
         diagnostic_float64_pass2=diagnostic_float64_pass2,
+        bpref_half=NumberedBPrefHalf(iteration, particle_half.index, bpref_device_signature_active, probe),
     )
     # RELION translation priors: relion_half_translation_prior_inputs
     # documents the pdf_offset / wsum_sigma2_offset centers, the

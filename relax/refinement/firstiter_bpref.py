@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import jax
 import numpy as np
 
-from relax.diagnostics import bpref_diagnostics
 from relax.numerics import finite_check
+from relax.refinement.ports import ExpectationProbe
 from relax.runtime import memory_budget
 from relax.runtime.env_flags import parse_env_flag as _env_flag_enabled
 
@@ -34,8 +35,10 @@ def _relion_firstiter_fused_bpref_enabled(
     relion_exact_bpref_operands: bool,
     use_relion_x_half_mstep: bool,
     score_only: bool,
+    first_numbered_iteration: bool,
 ) -> bool:
-    """Route only fresh single-class firstiter BPref through its native kernel."""
+    """Route only fresh single-class firstiter BPref through its native kernel, in the run's first numbered
+    iteration (``first_numbered_iteration``)."""
 
     supported = bool(
         fresh_k1_guard
@@ -44,8 +47,7 @@ def _relion_firstiter_fused_bpref_enabled(
         and relion_exact_bpref_operands
         and use_relion_x_half_mstep
         and not score_only
-        and int(bpref_diagnostics._bpref_contribution_context["iteration"]) == 1
-        and int(bpref_diagnostics._bpref_contribution_context["half"]) in {1, 2}
+        and first_numbered_iteration
     )
     raw = os.environ.get(_RELION_FIRSTITER_FUSED_BPREF_ENV)
     if raw is None or not raw.strip():
@@ -165,6 +167,23 @@ def _relion_firstiter_compact_batch_planning_safe(
         )
     )
 
+@dataclass(frozen=True)
+class NumberedBPrefHalf:
+    """The numbered half a first-iteration BPref plan is for: ``iteration`` and ``half_index`` (zero-based), whether
+    the run's BPref device-signature target is this half (``device_signature_active``), and the run's expectation
+    probe, which says whether a BPref diagnostic is armed for it (asked only where a plan needs the answer)."""
+
+    iteration: int
+    half_index: int
+    device_signature_active: bool
+    probe: ExpectationProbe
+
+    def diagnostics_armed(self) -> bool:
+        return self.probe.bpref_diagnostics_armed(
+            self.iteration, self.half_index, bpref_device_signature_active=self.device_signature_active,
+        )
+
+
 class _RelionFirstiterCompactBatchPlanningDecision(NamedTuple):
     enabled: bool
     deferred_firstiter_bpref: bool
@@ -179,10 +198,10 @@ def relion_firstiter_compact_batch_planning_decision(
     projector_half,
     score_complex_dtype,
     recon_volume_size: int,
-    bpref_device_signature_active: bool,
     fixed_base_bytes: int,
+    half: NumberedBPrefHalf,
 ) -> _RelionFirstiterCompactBatchPlanningDecision:
-    """Preflight compact planning through the authoritative BPref gates."""
+    """Preflight compact planning through the authoritative BPref gates, for the numbered ``half``."""
 
     if projector_half is None:
         return _RelionFirstiterCompactBatchPlanningDecision(False, False, 0)
@@ -191,9 +210,7 @@ def relion_firstiter_compact_batch_planning_decision(
     projector_host_owned = not isinstance(projector_half, jax.Array)
     diagnostics_active = (
         finite_check.finite_check_enabled()
-        or bpref_diagnostics._relion_firstiter_bpref_diagnostics_active(
-            bpref_device_signature_active=bpref_device_signature_active,
-        )
+        or half.diagnostics_armed()
     )
     fresh_k1_guard = bool(source_faithful_spectrum_norm)
     relion_exact_bpref_operands = fresh_k1_guard
@@ -204,6 +221,7 @@ def relion_firstiter_compact_batch_planning_decision(
         relion_exact_bpref_operands=relion_exact_bpref_operands,
         use_relion_x_half_mstep=use_relion_x_half_mstep,
         score_only=False,
+        first_numbered_iteration=half.iteration == 0,
     )
     _, _, direct_peak_bytes = _relion_firstiter_bpref_overlap_bytes(
         projector_shape=projector_shape,
