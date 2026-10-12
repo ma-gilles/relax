@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 # This is an EM entry point, so it opts in to recovar's EM-scoped XLA defaults
 # (currently --xla_gpu_autotune_level=0; see recovar/jax_config.py and
-# relax/refinement/full_refinement.py). It must be set before the first import that
+# relax/commands/refinement_run.py). It must be set before the first import that
 # reaches jax, which recovar.jax_config performs, and with `setdefault` so an
 # explicit RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
@@ -31,7 +31,7 @@ os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 import numpy as np
 
 if TYPE_CHECKING:
-    from relax.relion.relion_metadata import MaxSignificantsResolution
+    from relax.star.metadata import MaxSignificantsResolution
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -80,7 +80,7 @@ def _safe_k_class_replay_batch_plan(
 ) -> _ReplayBatchPlan:
     """Mirror the main RELION replay loop's K-class microbatch planner."""
 
-    from relax.helpers.batch_planning import (
+    from relax.runtime.batch_planning import (
         estimate_relion_em_batch_sizes,
         safe_dense_k_class_rotation_block_size,
         safe_firstiter_cc_image_batch_size,
@@ -131,7 +131,7 @@ def _relion_adaptive_coarse_image_size(
 ) -> int:
     """Return RELION's adaptive pass-1 ``image_coarse_size``."""
 
-    from relax.helpers.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
+    from relax.reconstruction.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
     from relax.sampling import relion_angular_sampling_deg
 
     coarse_size = compute_coarse_image_size(
@@ -429,7 +429,7 @@ def _resolve_replay_max_significants(
 ) -> MaxSignificantsResolution:
     """Resolve the active cap rather than trusting RELION's saved argument."""
 
-    from relax.relion.relion_metadata import resolve_relion_runtime_max_significants
+    from relax.star.metadata import resolve_relion_runtime_max_significants
 
     return resolve_relion_runtime_max_significants(
         override=override,
@@ -698,25 +698,25 @@ def _relion_bpref_maps_from_sparse_support(
     from recovar.reconstruction import noise as noise_utils
     from recovar.utils import helpers
 
-    from relax.helpers.batch_fetch import fetch_indexed_batch
-    from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.helpers.half_spectrum import make_scoring_half_image_weights
-    from relax.helpers.projection import compute_projections_block as _compute_projections_block
-    from relax.local.local_backprojection import (
-        compute_local_ctf_sums,
-        compute_local_weighted_sums,
-        flatten_bucket_rotations,
-    )
-    from relax.relion_bind import _relion_bind_core as bind
-    from relax.sampling import get_oversampled_translation_grid, rotation_grid_size
-    from relax.scoring.sparse_bucket_arrays import (
+    from relax.fine_pass.bucket_arrays import (
         _bucket_pass2_inputs,
         _build_bucket_arrays,
         _prepare_per_image_pass2_inputs,
     )
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _prepare_bucket_io, _reorder_to_indices
-    from relax.sparse_pass2.sparse_pass2_posterior import _normalize_pass2_bucket_with_log_z
-    from relax.sparse_pass2.sparse_pass2_scoring import _score_pass2_bucket_relion_gpu_diff2
+    from relax.fine_pass.bucket_io import _prepare_bucket_io, _reorder_to_indices
+    from relax.fine_pass.local_backprojection import (
+        compute_local_ctf_sums,
+        compute_local_weighted_sums,
+        flatten_bucket_rotations,
+    )
+    from relax.fine_pass.posterior import _normalize_pass2_bucket_with_log_z
+    from relax.fine_pass.scoring import _score_pass2_bucket_relion_gpu_diff2
+    from relax.fourier.fourier_window import make_fourier_window_spec
+    from relax.fourier.half_spectrum import make_scoring_half_image_weights
+    from relax.io.batch_fetch import fetch_indexed_batch
+    from relax.projection.projection import compute_projections_block as _compute_projections_block
+    from relax.relion_bind import _relion_bind_core as bind
+    from relax.sampling import get_oversampled_translation_grid, rotation_grid_size
 
     image_shape = tuple(map(int, experiment_dataset.image_shape))
     volume_shape = tuple(map(int, experiment_dataset.volume_shape))
@@ -730,7 +730,7 @@ def _relion_bpref_maps_from_sparse_support(
     n_coarse_rot = int(rotation_grid_size(nside_level))
 
     if projection_padding_factor > 1:
-        from relax.reconstruction.relion_functions_relion import pad_volume_for_projection
+        from relax.reconstruction.relion_functions import pad_volume_for_projection
 
         projection_volumes = [
             pad_volume_for_projection(
@@ -1298,20 +1298,11 @@ def main() -> None:
     from recovar.reconstruction import noise as recon_noise
     from recovar.utils import helpers
 
-    from relax.helpers.map_io import write_map
-    from relax.helpers.orientation_priors import (
-        make_relion_direction_log_prior,
-        make_relion_translation_log_prior,
-        relion_translation_prior_center,
-        relion_translation_search_base,
-    )
-    from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
-    from relax.refinement.mean_helpers import _reconstruct_volume_eager
-    from relax.refinement.refinement_options import ReconstructionPrograms
-    from relax.relion.relion_metadata import (
-        read_relion_optimiser_metadata,
-        read_relion_sampling_metadata,
-    )
+    from relax.fine_pass.dispatch import compute_pass2_stats_sparse
+    from relax.io.map_io import write_map
+    from relax.reconstruction.regularization import RELION_MINRES_MAP
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
     from relax.sampling import (
         apply_relion_rotation_perturbation_to_eulers,
         apply_relion_translation_perturbation,
@@ -1319,8 +1310,17 @@ def main() -> None:
         get_translation_grid,
         relion_angular_sampling_deg,
     )
+    from relax.sampling.orientation_priors import (
+        make_relion_direction_log_prior,
+        make_relion_translation_log_prior,
+        relion_translation_prior_center,
+        relion_translation_search_base,
+    )
     from relax.scoring.significance import _compute_k_class_significance_batched
-    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
+    from relax.star.metadata import (
+        read_relion_optimiser_metadata,
+        read_relion_sampling_metadata,
+    )
     from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps
 
     relion_dir = args.relion_dir
@@ -1423,7 +1423,9 @@ def main() -> None:
         backend.image_mask_mode = "relion_background_fill"
     if not hasattr(backend, "set_relion_fourier_backend"):
         raise ValueError("Dataset backend does not support image Fourier backend selection")
-    from relax.cuda import kernels as _em_cuda_kernels  # noqa: F401  (registers the relion_cuda preprocessor, seam S2)
+    from relax.cuda import (
+        preprocess as _relion_cuda_preprocessor_registration,  # noqa: F401  (registers the relion_cuda preprocessor, seam S2)
+    )
 
     backend.set_relion_fourier_backend(args.image_fourier_backend)
     print(f"  image Fourier backend: {args.image_fourier_backend}")
@@ -1599,15 +1601,6 @@ def main() -> None:
     print("  batch sizing: " + _batch_plan_note("coarse", base_batch_plan))
 
     t0 = time.time()
-    from relax.diagnostics import bpref_diagnostics
-
-    # Mirror the numbered-half context supplied by the production iteration
-    # loop so opt-in contribution/device-signature captures from this
-    # one-boundary replay retain exact target-iteration provenance.
-    bpref_diagnostics.set_bpref_contribution_dump_context(
-        iteration=args.target_iter,
-        half=1,
-    )
     common_em_kwargs = dict(
         class_log_priors=class_log_priors,
         # The resident pass 2 is the production pass: it always accumulates the noise statistics.
@@ -1645,6 +1638,7 @@ def main() -> None:
     # for pass-2 only. Pass 2 evaluates only the children of the coarse
     # samples that survive pass-1's adaptive_fraction pruning.
     from relax.classification.k_class import run_dense_k_class_em_adaptive
+    from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
     from relax.sampling import (
         get_oversampled_rotation_grid_from_samples,
     )
@@ -1718,6 +1712,7 @@ def main() -> None:
         args.disc_type,
         coarse_engine=args.coarse_engine,
         adaptive_fraction=args.significance_adaptive_fraction,
+        probe=KClassDiagnostics(),
         max_significants=int(max_significants.active_max_significants),
         coarse_current_size=coarse_engine_current_size,
         fine_current_size=current_size,
@@ -1730,15 +1725,14 @@ def main() -> None:
         ),
         **adaptive_em_kwargs,
     )
-    bpref_diagnostics.clear_bpref_contribution_dump_context()
     elapsed_s = time.time() - t0
     print(f"  RECOVAR K-class E/M step completed in {elapsed_s:.1f}s")
 
     significant_summary = None
     significant_sample_indices = None
-    significant_full_stats = None
+    significant_stats = None
     bpref_significant_sample_indices = None
-    bpref_full_stats = None
+    bpref_stats = None
     bpref_significant_summary = None
     need_significant_support = args.significant_mstep or args.relion_bpref_mstep
     if need_significant_support:
@@ -1769,8 +1763,8 @@ def main() -> None:
         )
         n_sig_all = significance.n_sig_all
         significant_sample_indices = significance.significant_sample_indices
-        significant_full_stats = significance.full_stats
-        normalization_log_z = significant_full_stats["normalization_log_z"]
+        significant_stats = significance.stats
+        normalization_log_z = significant_stats.normalization_log_z
         significant_mstep_applied = bool(args.significant_mstep and not args.adaptive_2pass)
         if args.significant_mstep and args.adaptive_2pass:
             print(
@@ -1843,7 +1837,7 @@ def main() -> None:
             f"p95={significant_summary['abs_p95']:.3g}, max={significant_summary['abs_max']:.3g}"
         )
         bpref_significant_sample_indices = significant_sample_indices
-        bpref_full_stats = significant_full_stats
+        bpref_stats = significant_stats
 
     if args.relion_bpref_mstep and args.adaptive_2pass:
         # The adaptive significant-sample diagnostic above intentionally uses
@@ -1881,7 +1875,7 @@ def main() -> None:
         )
         bpref_n_sig_all = bpref_significance.n_sig_all
         bpref_significant_sample_indices = bpref_significance.significant_sample_indices
-        bpref_full_stats = bpref_significance.full_stats
+        bpref_stats = bpref_significance.stats
         bpref_significant_summary = {
             "adaptive_fraction": float(args.significance_adaptive_fraction),
             "elapsed_s": float(time.time() - bpref_sig_t0),
@@ -1938,9 +1932,9 @@ def main() -> None:
                 accumulator_volume_shape=result.mstep_accumulator_shape, programs=ReconstructionPrograms.from_environ(),
             ).reshape(-1)
             if apply_firstiter_lowpass:
-                from relax.refinement.mean_helpers import _apply_relion_initial_lowpass_filter
+                from relax.refinement.map_postprocess import apply_relion_initial_lowpass_filter
 
-                class_ft = _apply_relion_initial_lowpass_filter(
+                class_ft = apply_relion_initial_lowpass_filter(
                     class_ft,
                     ds.volume_shape,
                     float(ds.voxel_size),
@@ -1978,7 +1972,7 @@ def main() -> None:
     if args.relion_bpref_mstep:
         bpref_t0 = time.time()
         try:
-            if bpref_significant_sample_indices is None or bpref_full_stats is None:
+            if bpref_significant_sample_indices is None or bpref_stats is None:
                 raise RuntimeError("RELION BPref diagnostic requires significant support")
             bpref_maps, relion_bpref_class_summary = _relion_bpref_maps_from_sparse_support(
                 ds,
@@ -1986,7 +1980,7 @@ def main() -> None:
                 noise_variance,
                 translations.astype(np.float32),
                 bpref_significant_sample_indices,
-                bpref_full_stats["normalization_log_z"],
+                bpref_stats.normalization_log_z,
                 nside_level=healpix_order,
                 disc_type=args.disc_type,
                 current_size=current_size,
@@ -2063,7 +2057,7 @@ def main() -> None:
     relion_pmax = np.asarray(target_data_ordered["rlnMaxValueProbDistribution"], dtype=np.float64)
     pmax_abs = np.abs(recovar_pmax - relion_pmax)
 
-    from relax.sparse_pass2.engine_record import take_coarse_engine_calls
+    from relax.runtime.engine_record import take_coarse_engine_calls
 
     summary = {
         "coarse_engine_calls": take_coarse_engine_calls(),

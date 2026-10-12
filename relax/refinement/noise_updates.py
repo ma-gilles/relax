@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.types import make_noise_stats, total_sumw
+from relax.types import make_noise_stats, total_sumw
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ def _noise_radial_history(noise_variance_per_half, image_shape, *, dtype):
     Pixel-array normalization and noise estimation remain with the caller.
     Preserve the float64 host shell reduction before the final JAX cast.
     """
-    from relax.relion.relion_metadata import radial_profile_from_noise_variance
+    from relax.star.metadata import radial_profile_from_noise_variance
 
     def radial(noise_k):
         noise_k = _flat_noise_rows(noise_k)
@@ -178,7 +178,7 @@ def _per_optics_group_sigma2_noise(
     spectrum. Returns the ``[G, n_shells]`` shell profiles and ``[G, P]`` pixel rows.
     """
 
-    from relax.reconstruction import noise_relion
+    from relax.reconstruction import noise as noise_relion
 
     wsum = np.asarray(stats.wsum_sigma2_noise, dtype=np.float64)
     power = np.asarray(stats.wsum_img_power, dtype=np.float64)
@@ -217,7 +217,7 @@ class NoiseModel:
     Each half has flat pixel/shell arrays, or ``(G, P)`` / ``(G, S)`` arrays
     for several optics groups. Cached averages serve diagnostics; their dtype
     depends on initialization, replay or estimation and is retained separately.
-    K1 estimation replaces entries in the pixel list; Class3D shares its pixel
+    K1 estimation builds a new pixel list per update; Class3D shares its pixel
     array between halves and keeps independent host shell profiles.
     """
 
@@ -288,12 +288,12 @@ def datasets_store_premultiplied_ctf(experiment_datasets) -> bool:
     A subtomogram half is asked through its flat per-tilt dataset (``half.images``), a half
     with several image shapes through its shape classes' datasets.
     """
-    from relax.refinement.optics_shapes import shape_datasets
-    from relax.refinement.tomo_half import TomoHalf
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
+    from relax.steps.optics_shapes import shape_datasets
+    from relax.steps.tomo_half import TomoHalf
 
     return any(
-        relion_ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))
+        ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))
         for half in experiment_datasets
         for dataset in shape_datasets(half.images if isinstance(half, TomoHalf) else half)
     )
@@ -333,7 +333,7 @@ def _noise_update_keeping_previous_spectra(model: NoiseModel) -> NoiseUpdateResu
 
 def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied, summed_current_size, nyquist_column_counting):
     """One optics group's M-step noise update: the float64 shell profile and its flat pixel row."""
-    from relax.reconstruction import noise_relion
+    from relax.reconstruction import noise as noise_relion
 
     sigma2_noise = noise_relion.normalize_wsum_to_sigma2_noise(
         np.asarray(stats.wsum_sigma2_noise, dtype=np.float64),
@@ -395,7 +395,7 @@ def update_k1_posterior_noise_variance(
 
     Each half normalizes its own ``wsum_sigma2_noise``/``wsum_img_power``
     accumulators via RELION's M-step formula and keeps an independent
-    sigma2_noise; the pixel rows replace the entries of the model's list.
+    sigma2_noise; the pixel rows go into a new list and ``model`` is not modified.
 
     ``firstiter_cc``, ``ctf_premultiplied``, ``summed_current_size``, ``nyquist_column_counting``: see the module
     docstring.
@@ -405,7 +405,8 @@ def update_k1_posterior_noise_variance(
     if firstiter_cc:
         return _noise_update_keeping_previous_spectra(model)
 
-    noise_variance_per_half = model.variance_per_half
+    # A new list: the previous model is frozen and keeps its own rows.
+    noise_variance_per_half = list(model.variance_per_half)
     several_optics_groups = np.ndim(noise_stats_per_half[0].wsum_sigma2_noise) == 2
     noise_from_res_per_half = []
     for k_noise, stats_k in enumerate(noise_stats_per_half):

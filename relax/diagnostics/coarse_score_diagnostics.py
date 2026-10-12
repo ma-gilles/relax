@@ -9,7 +9,11 @@ import operator
 
 import numpy as np
 
-from relax.scoring.significant_samples import significant_sample_ids
+from relax.fine_pass.significant_samples import significant_sample_ids
+from relax.runtime.env_flags import parse_env_strict_flag
+
+_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV = "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT"
+_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV = "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS"
 
 
 def build_coarse_significance_support_audit(
@@ -115,13 +119,34 @@ def build_coarse_significance_support_audit(
     return result
 
 
-def _with_coarse_significance_diagnostics(result, *, support_audit: dict | None):
-    """Propagate exact coarse-support telemetry to InitialModel."""
+def _coarse_significance_support_audit_enabled(*, default: bool = False) -> bool:
+    """Resolve exact, diagnostic-only coarse-support hashing."""
 
-    if support_audit is None:
-        return result
-    profile_summary = dict(result.profile_summary or {})
-    profile_summary["coarse_significance_support_audit"] = dict(support_audit)
-    return result._replace(profile_summary=profile_summary)
+    return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV, default=default)
 
 
+def _coarse_significance_support_audit_ids_enabled() -> bool:
+    """Whether a support audit also retains its exact selected IDs."""
+    return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV)
+
+
+def coarse_significance_support_audit(significant_sample_indices, *, samples_per_class: int) -> dict | None:
+    """The support audit a pass 1 reports when ``RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT`` is on (else None).
+
+    Refuses a pass that collected no significant samples. ``RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS`` keeps
+    the selected IDs too.
+    """
+
+    support_audit = None
+    if _coarse_significance_support_audit_enabled():
+        if significant_sample_indices is None:
+            raise RuntimeError(
+                f"{_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV}=1 requires "
+                "collect_significance=True",
+            )
+        support_audit = build_coarse_significance_support_audit(
+            significant_sample_indices,
+            samples_per_class=samples_per_class,
+            include_ids=_coarse_significance_support_audit_ids_enabled(),
+        )
+    return support_audit

@@ -9,7 +9,7 @@ complex conjugate before scoring and backprojection (ml_optimiser.cpp:6285, 6418
 acc_ml_optimiser_impl.h:538, 859). The references are not modulated.
 
 The phase is a property of the image pixels, so relax applies it where the images
-are Fourier transformed (:func:`relax.helpers.preprocessing.process_half_image`),
+are Fourier transformed (:func:`relax.relion.image_preprocessing.process_half_image`),
 which every scoring and backprojection path reads.
 """
 
@@ -21,7 +21,7 @@ import re
 import numpy as np
 from recovar.data_io.starfile import star_column
 
-from relax.helpers.batch_fetch import original_image_indices
+from relax.io.batch_fetch import original_image_indices
 
 # The phase tables of one source STAR and image shape: {(source, shape): {group: row or None}}.
 _ODD_PHASE_CACHE: dict = {}
@@ -170,13 +170,13 @@ def optics_group_odd_coefficients(optics_row, *, has_odd: bool, has_tilt: bool) 
 
 
 def _optics_source_star(experiment_dataset):
-    from relax.relion.relion_ctf import dataset_optics_source_star
+    from relax.relion.ctf import dataset_optics_source_star
 
     return dataset_optics_source_star(experiment_dataset)
 
 
 def _source_tables(experiment_dataset, image_shape):
-    from relax.relion.relion_ctf import exact_ctf_source_cache
+    from relax.relion.ctf import exact_ctf_source_cache
 
     return exact_ctf_source_cache(experiment_dataset, image_shape)
 
@@ -320,14 +320,14 @@ def dataset_optics_mag_matrices(experiment_dataset) -> dict | None:
     """Each optics group's 2x2 ``rlnMagMat`` among the dataset's own images, or None without magnification.
 
     Only the groups the dataset's images belong to count: a shape class
-    (:func:`relax.refinement.optics_shapes.optics_shape_class_rows`) holds one
+    (:func:`relax.steps.optics_shapes.optics_shape_class_rows`) holds one
     magnification matrix even when the source STAR has several. A dataset without a
     RELION source STAR or without magnification columns has none.
     """
 
     from recovar.data_io.starfile import star_column
 
-    from relax.helpers.batch_fetch import original_image_indices
+    from relax.io.batch_fetch import original_image_indices
 
     if _optics_source_star(experiment_dataset) is None:
         return None
@@ -348,7 +348,7 @@ def dataset_projection_magnification(experiment_dataset) -> np.ndarray | None:
     The projection matrices are transformed per scoring call, so the dataset's images
     must share one magnification matrix. Optics groups with different matrices are
     split into shape classes, one matrix each, as groups on other grids are
-    (:func:`relax.refinement.optics_shapes.optics_shape_class_rows`, relax#48).
+    (:func:`relax.steps.optics_shapes.optics_shape_class_rows`, relax#48).
     """
 
     matrices = dataset_optics_mag_matrices(experiment_dataset)
@@ -371,7 +371,7 @@ def dataset_needs_exact_ctf(experiment_dataset) -> bool:
     The generic CTF evaluator knows none of these optics-table features.
     """
 
-    from relax.relion.relion_ctf import dataset_has_premultiplied_ctf
+    from relax.relion.ctf import dataset_has_premultiplied_ctf
 
     if _optics_source_star(experiment_dataset) is None:
         return False
@@ -385,15 +385,33 @@ def dataset_needs_exact_ctf(experiment_dataset) -> bool:
     return dataset_projection_magnification(experiment_dataset) is not None
 
 
+# Relative singular-value spread below which a magnification matrix is a scaled rotation.
+_ISOTROPIC_MAGNIFICATION_TOLERANCE = 1e-9
+
+
+def magnification_is_anisotropic(mag_matrices) -> bool:
+    """Whether any optics group's 2x2 ``rlnMagMat`` stretches some directions more than others.
+
+    Decided once from the optics table, never from a pass's rotations: a scaled rotation
+    (equal singular values, identity included) keeps the image-radius clip exact.
+    """
+
+    import numpy as np
+
+    for matrix in mag_matrices:
+        singular = np.linalg.svd(np.asarray(matrix, dtype=np.float64).reshape(2, 2), compute_uv=False)
+        if singular[0] - singular[1] > _ISOTROPIC_MAGNIFICATION_TOLERANCE * singular[0]:
+            return True
+    return False
+
+
 def dataset_magnification_is_anisotropic(experiment_dataset) -> bool:
     """Whether any optics group of the dataset has an anisotropic ``rlnMagMat``.
 
     The M-step adjoint then clips on RELION's rotated radius
-    (:func:`relax.helpers.adjoint.magnification_is_anisotropic`, ``ReferenceSphereClip``).
+    (:func:`magnification_is_anisotropic`, :class:`relax.projection.adjoint.ReferenceSphereClip`).
     A dataset without a RELION source STAR or without magnification columns has none.
     """
-
-    from relax.helpers.adjoint import magnification_is_anisotropic
 
     matrices = dataset_optics_mag_matrices(experiment_dataset)
     return bool(matrices) and magnification_is_anisotropic(matrices.values())
@@ -480,13 +498,13 @@ def expected_accuracy_optics(experiment_dataset, trial_local_indices):
     """The expected-accuracy binding's optics inputs for these trial particles, or None.
 
     ``trial_ctf``: each trial particle's RELION ``Fctf`` on the FFTW half grid of its
-    image (relax's exact CTF rows, :mod:`relax.relion.relion_ctf`: CTF^2 for a
+    image (relax's exact CTF rows, :mod:`relax.relion.ctf`: CTF^2 for a
     premultiplied group, even Zernike terms, magnification); ``projection_left``:
     ``applyAnisoMag``'s ``inv(M3)``, or absent. None when the dataset's CTF needs no
     optics table (:func:`dataset_needs_exact_ctf`).
     """
 
-    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star_host
+    from relax.relion.ctf import relion_exact_ctf_half_from_source_star_host
 
     if not dataset_needs_exact_ctf(experiment_dataset):
         return None

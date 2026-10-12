@@ -122,7 +122,7 @@ def _device_sums(
     import jax
     import jax.numpy as jnp
 
-    from relax.local.local_backprojection import compute_local_mstep_sums
+    from relax.fine_pass.local_backprojection import compute_local_mstep_sums
 
     devices = jax.devices()
     _require(bool(devices), "JAX reports no devices")

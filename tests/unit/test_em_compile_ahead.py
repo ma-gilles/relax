@@ -25,7 +25,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.sparse_pass2 import compile_ahead as ca
+from relax.runtime import compile_ahead as ca
 
 pytestmark = pytest.mark.unit
 

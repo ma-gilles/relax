@@ -25,7 +25,7 @@ arithmetic on the same CPU; it is a check for move-only commits, not a merge gat
 Printed lines are log rows (rule 2): their digits are masked, so a timing report shows as its template.
 
 Subtomograms (``--ios``) run on a simulated RELION 5 project (12 particles, seven tilts, two tomograms) with the
-tilt pass (``tomo_half.score_tomo_half`` and the pass-2 result builders of ``k_class``) replaced by a stand-in
+tilt pass (``tomo_scoring.score_tomo_half`` and the pass-2 result builders of ``k_class``) replaced by a stand-in
 seeded the same way; optics groups on two image shapes run each shape class's engine call through the same
 stand-in as single particles.
 
@@ -58,6 +58,7 @@ from fingerprint import (  # noqa: E402
     flatten,
     log_row,
     mutated_tree,
+    without_probe,
 )
 
 # The cases whose run is a refusal (fingerprint.case_errors).
@@ -65,7 +66,7 @@ REFUSED_CASES = frozenset({"k1_refused_float64_scoring", "k1_refused_nan_tau2_fu
 
 NOT_COVERED = (
     "the real E-step engines and their numbers (stand-ins seeded by their operands replace "
-    "run_dense_k_class_em_adaptive and the subtomogram tilt pass, tomo_half.score_tomo_half)",
+    "run_dense_k_class_em_adaptive and the subtomogram tilt pass, tomo_scoring.score_tomo_half)",
     "the diagnostic optimiser continuation (--diagnostic-continue-optimiser) and iteration reference replay",
     "RELION's CUDA image preprocessing (the cases use --image-fourier-backend host_numpy)",
     "GPU operation order, peak memory and array lifetimes",
@@ -148,8 +149,8 @@ MUTATIONS = (
      "the solvent mask's soft edge is stretched", True),
     ("tau2_fudge_doubled", "tau2_fudge_factor=current.tau2_fudge_factor,", "tau2_fudge_factor=2 * current.tau2_fudge_factor,",
      "the VDAM M-step receives twice the tau2 fudge", True),
-    ("resolution_minres", "minres_map=regularization_relion.RELION_MINRES_MAP,",
-     "minres_map=regularization_relion.RELION_MINRES_MAP - 1,",
+    ("resolution_minres", "minres_map=regularization.RELION_MINRES_MAP,",
+     "minres_map=regularization.RELION_MINRES_MAP - 1,",
      "the current resolution starts one shell early", True),
     ("schedule_radius", "current_resolution_shell=radius,", "current_resolution_shell=radius - 1,",
      "a scheduled Fourier radius installs the resolution shell one small", True),
@@ -175,8 +176,8 @@ MUTATIONS = (
     ("write_cadence", "return (iteration % grad_write_iter) == 0 or iteration == nr_iter",
      "return (iteration % grad_write_iter) == 1 or iteration == nr_iter",
      "the iteration files are written at the wrong cadence", True),
-    ("optics_group_noise", "wsum_g = noise_relion.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)",
-     "wsum_g = noise_relion.normalize_wsum_to_sigma2_noise(wsum_rows[0], power_rows[0], float(sumw_rows[0]), shape, apply_floors=False)",
+    ("optics_group_noise", "wsum_g = noise.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)",
+     "wsum_g = noise.normalize_wsum_to_sigma2_noise(wsum_rows[0], power_rows[0], float(sumw_rows[0]), shape, apply_floors=False)",
      "every optics group's noise is updated from group 1's sums", True),
     ("tomo_offset_winner", "np.asarray(fine_px, dtype=np.float64)[pose % int(fine_px.shape[0])]",
      "np.asarray(fine_px, dtype=np.float64)[(pose + 1) % int(fine_px.shape[0])]",
@@ -214,8 +215,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     import relax
     from relax.classification import k_class
     from relax.commands import initial_model as command
-    from relax.refinement import tomo_half
     from relax.vdam import adaptive_estep, driver, shape_class_estep
+
+    try:
+        from relax.steps import tomo_scoring
+    except ImportError:  # the source before tomo_scoring moved to steps (layout S8c)
+        try:
+            from relax.refinement import tomo_scoring
+        except ImportError:  # a source from before tomo_scoring.py existed: the pass was tomo_half's
+            from relax.refinement import tomo_half as tomo_scoring
 
     assert relax.__file__.startswith(source), relax.__file__
 
@@ -261,7 +269,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def stand_in_engine(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
                         coarse_translations, fine_rotations, fine_translations, rot_parent_map, trans_parent_map,
                         disc_type, **kwargs):
-        """CPU stand-in for run_dense_k_class_em_adaptive: a result seeded by every operand it receives."""
+        """CPU stand-in for run_dense_k_class_em_adaptive: a result seeded by every operand it receives (not the
+        diagnostics probe: ``fingerprint.without_probe``)."""
+        kwargs = without_probe(kwargs)
         seed = digest_operands(means, mean_variance, noise_variance, coarse_rotations, coarse_translations,
                                fine_rotations, fine_translations, rot_parent_map, trans_parent_map, disc_type, kwargs)
         record("call", "engine", f"seed={seed:016x}", "kwargs=" + ",".join(sorted(kwargs)))
@@ -330,9 +340,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                               rotation_log_prior, old_offsets_px, sigma_offset_angst, adaptive_fraction,
                               max_significants, unit_groups, padding_factor, reconstruction_group_ids,
                               reconstruction_group_count, **kwargs):
-        """CPU stand-in for the subtomogram pass (tomo_half.score_tomo_half and the pass-2 result builders):
+        """CPU stand-in for the subtomogram pass (tomo_scoring.score_tomo_half and the pass-2 result builders):
         the E-step result seeded by every operand it receives, as for single particles."""
-        from relax.refinement.tomo_half import tomo_translation_grids
+        try:
+            from relax.steps.tomo_half import tomo_translation_grids
+        except ImportError:  # the source before tomo_half moved to steps (layout S8b)
+            from relax.refinement.tomo_half import tomo_translation_grids
 
         scalars = dict(kwargs, relion_projector_r_max=relion_projector_r_max, sampling=repr(sampling),
                        sigma_offset_angst=sigma_offset_angst, adaptive_fraction=adaptive_fraction,
@@ -510,7 +523,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         patch(adaptive_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
         patch(shape_class_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
-        patch(tomo_half, "score_tomo_half", stand_in_tomo_scoring)
+        patch(tomo_scoring, "score_tomo_half", stand_in_tomo_scoring)
         patch(k_class, "single_class_pass2_em_result", stand_in_pass2_result)
         patch(k_class, "_class_segmented_em_result", stand_in_pass2_result)
         original_run = driver.run_native_initial_model

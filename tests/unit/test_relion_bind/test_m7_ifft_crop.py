@@ -22,13 +22,6 @@ Known strategy differences that prevent exact parity:
     which differs from recovar's ``N*pf``; the accumulator conversion
     introduces interpolation error at the grid boundary.
 
-**FFT convention note**:  ``relion_projector_to_recovar_centered`` returns
-``fftshift(fftn(vol))`` (standard centered), NOT recovar's internal
-convention ``fftshift(fftn(fftshift(vol)))`` (which ``get_dft3`` uses).
-The difference is a factor ``(-1)^(i+j+k)`` at each voxel in the centered
-domain.  When feeding converted data into ``post_process_from_filter_v2``
-(which calls ``get_idft3``), this sign correction must be applied.
-
 Test strategy: project a known volume through RELION, reconstruct via
 RELION's full pipeline, then separately reconstruct via recovar's
 ``post_process_from_filter_v2`` using recovar-convention accumulators
@@ -96,118 +89,13 @@ def _relative_error(a, b):
     return float(np.linalg.norm(a.ravel() - b.ravel()) / (np.linalg.norm(a.ravel()) + 1e-30))
 
 
-def _standard_to_recovar_centered(arr):
-    """Apply the (-1)^(i+j+k) sign correction to convert from standard
-    centered layout (fftshift(fftn(vol))) to recovar's convention
-    (fftshift(fftn(fftshift(vol)))) used by get_dft3/get_idft3.
-
-    The two layouts differ by a multiplicative sign factor at each voxel.
-    """
-    N = arr.shape[0]
-    idx = np.arange(N)
-    sign = np.where(
-        (idx[:, None, None] + idx[None, :, None] + idx[None, None, :]) % 2 == 0,
-        1.0,
-        -1.0,
-    )
-    return arr * sign
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
 
 class TestIFFTCropParity:
-    """Compare RELION's IFFT+crop with recovar's iDFT+crop on known Fourier data.
-
-    The test creates a known real-space volume, embeds its FFT into RELION's
-    projector layout, and compares:
-
-    (a) RELION-style IFFT+crop (simulated in numpy, matching
-        ``windowToOridimRealSpace``): ifftshift -> irfftn(pad_size) ->
-        CenterFFTbySign -> crop.
-
-    (b) recovar-style iDFT+crop: ``relion_projector_to_recovar_centered``
-        (N^3 standard centered) -> sign correction -> ``get_idft3``.
-
-    Both paths start from the EXACT same Fourier volume (no interpolation,
-    no Wiener, no gridding correction), so differences come only from the
-    IFFT+crop step itself.
-
-    The ``relion_projector_to_recovar_centered`` conversion returns
-    ``fftshift(fftn(vol))`` (standard centered), while recovar's
-    ``get_idft3`` expects ``fftshift(fftn(fftshift(vol)))`` (recovar
-    convention).  The sign correction ``(-1)^(i+j+k)`` bridges the two.
-    """
-
-    @pytest.mark.parametrize("N", [16, 32, 64])
-    @pytest.mark.parametrize("pf", [1, 2])
-    def test_conversion_roundtrip_exact(self, N, pf):
-        """projector -> recovar centered -> iDFT recovers the original volume."""
-        from relax.relion_bind.conversions import (
-            fftw_half_to_relion_projector,
-            relion_projector_to_recovar_centered,
-        )
-
-        rng = np.random.default_rng(42)
-        vol = _make_test_volume(N, rng)
-
-        # Embed the volume's exact FFT into RELION's projector layout
-        fftw_half = np.fft.rfftn(vol)
-        proj = fftw_half_to_relion_projector(fftw_half, padding_factor=pf)
-
-        # Convert projector -> standard centered (N^3)
-        std_centered = relion_projector_to_recovar_centered(
-            proj,
-            box_size=N,
-            padding_factor=pf,
-        )
-
-        # Apply sign correction for recovar convention, then get_idft3
-        recovar_centered = _standard_to_recovar_centered(std_centered)
-        recovered = np.fft.ifftshift(
-            np.fft.ifftn(np.fft.ifftshift(recovar_centered)),
-        ).real
-
-        err = np.max(np.abs(recovered - vol))
-
-        print(f"\n=== M7 conversion round-trip (N={N}, pf={pf}) ===")
-        print(f"  Max error: {err:.2e}")
-
-        assert err < 1e-12, f"Conversion round-trip error {err:.2e} exceeds 1e-12 (N={N}, pf={pf})"
-
-    @pytest.mark.parametrize("N", [16, 32, 64])
-    @pytest.mark.parametrize("pf", [1, 2])
-    def test_standard_vs_recovar_convention(self, N, pf):
-        """Sign correction bridges standard centered and recovar convention."""
-        from relax.relion_bind.conversions import (
-            fftw_half_to_relion_projector,
-            relion_projector_to_recovar_centered,
-        )
-
-        rng = np.random.default_rng(42)
-        vol = _make_test_volume(N, rng)
-
-        # Ground truth in recovar convention: fftshift(fftn(fftshift(vol)))
-        recovar_gt = np.fft.fftshift(np.fft.fftn(np.fft.fftshift(vol)))
-
-        # Via conversion: projector -> standard centered -> sign correction
-        fftw_half = np.fft.rfftn(vol)
-        proj = fftw_half_to_relion_projector(fftw_half, padding_factor=pf)
-        std_centered = relion_projector_to_recovar_centered(
-            proj,
-            box_size=N,
-            padding_factor=pf,
-        )
-        recovar_from_proj = _standard_to_recovar_centered(std_centered)
-
-        err = np.max(np.abs(recovar_from_proj - recovar_gt))
-
-        print(f"\n=== M7 convention match (N={N}, pf={pf}) ===")
-        print(f"  Max error vs recovar GT: {err:.2e}")
-
-        assert err < 1e-12, f"Convention mismatch {err:.2e} exceeds 1e-12 (N={N}, pf={pf})"
+    """RELION's and recovar's reconstruct, IFFT and crop each recover a known volume."""
 
     @pytest.mark.parametrize("N", [16, 32, 64])
     @pytest.mark.parametrize("pf", [1, 2])

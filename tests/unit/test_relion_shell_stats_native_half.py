@@ -14,14 +14,16 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import recovar.core.fourier_transform_utils as fourier_transform_utils  # noqa: E402
 
-from relax.helpers import half_volume_mstep  # noqa: E402
-from relax.reconstruction import regularization_relion  # noqa: E402
+from relax.reconstruction import (
+    half_volume_mstep,  # noqa: E402
+    regularization,  # noqa: E402
+)
 
 pytestmark = pytest.mark.unit
 
 # The axis of the public layout that is RELION's x for an x-half M-step accumulator; the
 # production call sites pass it as ``full_half_axis`` for both public layouts
-# (``mstep_full_half_axis=0`` in relax/refinement/half_scoring.py and iteration_loop.py).
+# (``mstep_full_half_axis=0`` in relax/refinement/dense_half.py and iteration_loop.py).
 _RELION_X_AXIS = 0
 
 # (volume_shape, padding_factor, accumulator_volume_shape, r_max)
@@ -120,7 +122,7 @@ def _native_half_route(x_half_weight, grid_shape, monkeypatch):
 
 def _production_shell_stats(weight, grid, shell_rounding):
     volume_shape, padding_factor, accumulator_volume_shape, r_max = grid
-    stats = regularization_relion.compute_relion_weight_shell_stats(
+    stats = regularization.compute_relion_weight_shell_stats(
         weight,
         volume_shape,
         padding_factor=padding_factor,
@@ -145,7 +147,7 @@ def reducer(request, monkeypatch):
     """Both reductions of the padded-grid statistics; the host one serves the largest grids."""
 
     if request.param == "host":
-        monkeypatch.setattr(regularization_relion, "_RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS", 1)
+        monkeypatch.setattr(regularization, "_RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS", 1)
     return request.param
 
 
@@ -198,7 +200,7 @@ def test_native_half_route_tau2_and_data_vs_prior_match_full_route(grid_name, re
     x_half_weight = _anisotropic_relion_x_half_weight(grid_shape, seed=5)
 
     def consumers(weight):
-        prior, _, details = regularization_relion.compute_relion_tau2_from_weights(
+        prior, _, details = regularization.compute_relion_tau2_from_weights(
             weight,
             weight,
             fsc,
@@ -209,7 +211,7 @@ def test_native_half_route_tau2_and_data_vs_prior_match_full_route(grid_name, re
             full_half_axis=_RELION_X_AXIS,
             accumulator_volume_shape=accumulator_volume_shape,
         )
-        data_vs_prior = regularization_relion.compute_data_vs_prior(
+        data_vs_prior = regularization.compute_data_vs_prior(
             weight,
             tau2,
             volume_shape,
@@ -240,7 +242,7 @@ def test_recovar_native_half_accumulator_counts_every_stored_entry(grid_name, re
         x_half_weight, volume_shape, grid_shape, padding_factor, r_max, "round"
     )
 
-    stats = regularization_relion.compute_relion_weight_shell_stats(
+    stats = regularization.compute_relion_weight_shell_stats(
         x_half_weight,
         volume_shape,
         padding_factor=padding_factor,
@@ -250,3 +252,32 @@ def test_recovar_native_half_accumulator_counts_every_stored_entry(grid_name, re
     )
 
     _assert_relion_shell_stats({key: np.asarray(value) for key, value in stats.items()}, expected_sum, expected_count)
+
+
+@pytest.mark.parametrize("grid", ["odd_bpref_27_full_size", "even_padded_24_current_8"])
+def test_host_shell_statistics_do_not_depend_on_their_block_size(monkeypatch, grid):
+    """The host statistics accumulate in blocks, each starting from the running sums (relax#39): one block
+    and many give the same sums and counts."""
+
+    volume_shape, padding_factor, accumulator_volume_shape, r_max = _GRIDS[grid]
+    grid_shape = _grid_shape(volume_shape, padding_factor, accumulator_volume_shape)
+    weight = _anisotropic_relion_x_half_weight(grid_shape, seed=5)
+    native_half = half_volume_mstep.relion_x_half_volume_to_native_half(weight, grid_shape)
+    monkeypatch.setattr(regularization, "_shell_stats_on_host", lambda size: True)
+
+    def statistics():
+        return regularization.compute_relion_weight_shell_stats(
+            native_half,
+            volume_shape,
+            padding_factor=padding_factor,
+            r_max=r_max,
+            full_half_axis=_RELION_X_AXIS,
+            accumulator_volume_shape=accumulator_volume_shape,
+        )
+
+    whole = statistics()
+    monkeypatch.setattr(regularization, "_SHELL_STATS_BLOCK", 97)
+    blocked = statistics()
+    assert len(whole) == len(blocked)
+    for one, many in zip(whole, blocked):
+        assert_matches(np.asarray(many), np.asarray(one))

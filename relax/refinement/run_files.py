@@ -32,7 +32,7 @@ Two deliberate differences from RELION's files:
 rank 1's ``sigma2_noise`` to every rank (ml_optimiser_mpi.cpp:750-758), so its half 2
 restarts on half 1's noise (relax issue #7); an uninterrupted run keeps both.
 
-Maps use RELION's sign and axis convention (``relax.helpers.map_io``). Relax's Fourier means
+Maps use RELION's sign and axis convention (``relax.io.map_io``). Relax's Fourier means
 round-trip through the float32 real-space MRC that RELION's ``--continue`` also reads.
 """
 
@@ -42,7 +42,6 @@ import logging
 import math
 import os
 import re
-import shlex
 import threading
 import time
 from dataclasses import dataclass
@@ -54,6 +53,7 @@ from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
     IterationSnapshot,
 )
+from relax.star.blocks import _general_columns, read_star_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -83,44 +83,6 @@ def _format_value(value) -> str:
     if text == "" or any(ch.isspace() for ch in text):
         return '"' + text.replace('"', "'") + '"'
     return text
-
-
-def input_general_block(input_star) -> dict | None:
-    """The input STAR's ``data_general`` block as :func:`read_star_blocks` text, or None without one.
-
-    A subtomogram particle STAR says it holds 2D stacks there (``rlnTomoSubTomosAre2DStacks``,
-    ``ParticleSet::read``), and relion_refine writes the block back to every ``run_itNNN_data.star``.
-    Both data-STAR writers write it back unchanged (:class:`RunFileWriter` for Refine3D and Class3D,
-    :func:`initial_model_data_blocks` for InitialModel), so a job's output starts the next job.
-    """
-
-    return read_star_blocks(input_star).get("general") or None
-
-
-def initial_model_data_blocks(input_star, optics, particles) -> dict:
-    """The blocks of InitialModel's data STAR for recovar's ``write_star_blocks``, in RELION's order.
-
-    ``optics`` and ``particles`` are the output tables (``optics`` None: the one-table RELION 3.0 form).
-    ``input_star`` is a subtomogram run's particle STAR (``TomoDataset.particles_star``; None for single
-    particles): its ``data_general`` block (:func:`input_general_block`) goes first.
-    """
-
-    if optics is None:
-        return {"data_": particles}
-    blocks = {"data_optics": optics.copy(), "data_particles": particles}
-    general = None if input_star is None else input_general_block(input_star)
-    if general:
-        import pandas as pd
-
-        columns = {f"_{label}": value for label, value in _general_columns(general).items()}
-        blocks = {"data_general": pd.DataFrame(columns), **blocks}
-    return blocks
-
-
-def _general_columns(general: dict) -> dict:
-    """``data_general`` as one-row loop columns, the form relion_refine writes, whichever form the input had."""
-
-    return {label: value if isinstance(value, list) else [value] for label, value in general.items()}
 
 
 class _FormattedColumn(list):
@@ -156,59 +118,6 @@ def _loop_block(name: str, columns) -> str:
     header.extend(f"_{label} #{i + 1}\n" for i, label in enumerate(labels))
     body = "\n".join(" ".join(row) for row in zip(*cells))
     return "".join(header) + body + ("\n" if body else "") + "\n"
-
-
-def read_star_blocks(path) -> dict:
-    """Parse a STAR file into ``{block: {label: str}}`` (list) or ``{block: {label: [str]}}`` (loop).
-
-    Values stay strings so numbers convert without the last-bit error of pandas' default
-    float parser; :func:`_floats` converts with NumPy's correctly rounded ``strtod``.
-    """
-
-    blocks: dict = {}
-    name = None
-    in_loop = False
-    labels: list[str] = []
-    rows: list[list[str]] = []
-
-    def _close_loop():
-        nonlocal in_loop, labels, rows
-        if in_loop and name is not None:
-            columns = list(zip(*rows)) if rows else [()] * len(labels)
-            blocks[name] = {label: list(col) for label, col in zip(labels, columns)}
-        in_loop = False
-        labels, rows = [], []
-
-    with open(path) as handle:
-        for raw in handle:
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.startswith("data_"):
-                _close_loop()
-                name = line[5:]
-                blocks[name] = {}
-                continue
-            if line == "loop_":
-                in_loop = True
-                labels, rows = [], []
-                continue
-            if line.startswith("_"):
-                tokens = shlex.split(line, comments=False)
-                label = tokens[0][1:]
-                if in_loop and not rows:
-                    labels.append(label)
-                else:
-                    _close_loop()
-                    blocks[name][label] = tokens[1] if len(tokens) > 1 else ""
-                continue
-            if in_loop:
-                tokens = shlex.split(line) if '"' in line or "'" in line else line.split()
-                if len(tokens) != len(labels):
-                    raise ValueError(f"{path}: block {name} row has {len(tokens)} fields, expected {len(labels)}")
-                rows.append(tokens)
-    _close_loop()
-    return blocks
 
 
 def _floats(values) -> np.ndarray:
@@ -256,6 +165,9 @@ class RunSettings:
     # The command's --mode, recorded beside the consistency options it resolved to (a label; the
     # options are what a continuation must repeat). RELION's mode writes nothing.
     mode: str
+    # RELION --sigma_tilt in degrees when the run has the prior on the tilt angle alone (not under
+    # --sigma_ang); 0: none. Written to the model STARs until the local searches start.
+    sigma_tilt_deg: float = 0.0
 
 
 class RunFileWriter:
@@ -437,12 +349,12 @@ def _class_map_paths(root: Path, snapshot: IterationSnapshot, half: int | None):
 
 
 def _write_maps(root: Path, snapshot: IterationSnapshot) -> None:
-    from relax.helpers.map_io import write_map
+    from relax.io.map_io import write_map
 
     shape = (snapshot.box_size,) * 3
 
     def _write(path, volume_ft):
-        write_map(path, _real_from_fourier(volume_ft, shape), voxel_size=snapshot.pixel_size)
+        write_map(path, real_from_fourier(volume_ft, shape), voxel_size=snapshot.pixel_size)
 
     if snapshot.k_class:
         stack = np.asarray(snapshot.means[0]).reshape(int(snapshot.n_classes), -1)
@@ -531,6 +443,8 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
         current_resolution if np.isfinite(current_resolution) and current_resolution > 0 else 999.0
     )
     halves = (None,) if snapshot.k_class else (1, 2)
+    # RELION's --sigma_tilt alone, while it is in force (LocalSearchOptions.tilt_prior_deg).
+    tilt_prior_deg = 0.0 if state["do_local_search"] else float(settings.sigma_tilt_deg)
     paths = []
     for half in halves:
         h = 0 if half is None else half - 1
@@ -556,9 +470,10 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             ("rlnTau2FudgeFactor", float(snapshot.tau2_fudge)),
             ("rlnNormCorrectionAverage", float(snapshot.avg_norm_correction[h]) / norm_frame),
             ("rlnSigmaOffsetsAngst", float(snapshot.sigma_offset_angstrom[h])),
-            ("rlnOrientationalPriorMode", 1 if state["do_local_search"] else 0),
+            # PRIOR_ROTTILT_PSI under a local search or the --sigma_tilt prior (sigma2_rot = sigma2_psi = 0).
+            ("rlnOrientationalPriorMode", 1 if state["do_local_search"] or tilt_prior_deg > 0.0 else 0),
             ("rlnSigmaPriorRotAngle", float(np.degrees(state["sigma_rot"]))),
-            ("rlnSigmaPriorTiltAngle", float(np.degrees(state["sigma_rot"]))),
+            ("rlnSigmaPriorTiltAngle", tilt_prior_deg if tilt_prior_deg > 0.0 else float(np.degrees(state["sigma_rot"]))),
             ("rlnSigmaPriorPsiAngle", float(np.degrees(state["sigma_psi"]))),
             ("rlnLogLikelihood", 0.0),
             ("rlnAveragePmax", float(state["ave_Pmax"])),
@@ -891,7 +806,7 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
 
 
 def _state_value(name, text):
-    from relax.helpers.convergence import RefinementState
+    from relax.refinement.refinement_state import RefinementState
 
     default = RefinementState.__dataclass_fields__[name].default
     if default is None:
@@ -919,6 +834,14 @@ def _state_text(relax_state, name):
     raise KeyError(f"run files have no {key}")
 
 
+def _class_conditionals(joint_prior: np.ndarray, class_weights: np.ndarray) -> np.ndarray:
+    """Each class's direction prior given the class, from the written joint rows ``conditional * weight``."""
+
+    weights = np.asarray(class_weights, dtype=np.float64)[:, None]
+    alive = weights > 0.0
+    return np.where(alive, joint_prior / np.where(alive, weights, 1.0), 1.0 / joint_prior.shape[1])
+
+
 def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapshot:
     """Read the ``run_itNNN_*`` files named by ``optimiser_star`` into a snapshot.
 
@@ -928,7 +851,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     loop held them in (``relax_*_dtype`` in ``data_relax_state``).
     """
 
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
 
     optimiser_star = Path(optimiser_star).resolve()
     directory = optimiser_star.parent
@@ -1029,8 +952,10 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
             direction_prior.append(None)
             continue
         prior = np.stack([_floats(t["rlnOrientationDistribution"]) for t in tables])
-        # Back to the loop's per-class conditionals (the writer's inverse).
-        direction_prior.append(prior / class_weights[:, None] if k_class else prior[0])
+        # Back to the loop's per-class conditionals (the writer's inverse). An empty class (weight 0, RELION's
+        # pdf_class == 0) has a zero joint row and no conditional to recover; it is never scored again, so it
+        # reads back as the uniform row.
+        direction_prior.append(_class_conditionals(prior, class_weights) if k_class else prior[0])
     if all(p is None for p in direction_prior):
         direction_prior = None
 
@@ -1122,7 +1047,7 @@ def _fft_workers() -> int:
     return max(1, len(os.sched_getaffinity(0)) // 2)
 
 
-def _real_from_fourier(volume_ft, volume_shape) -> np.ndarray:
+def real_from_fourier(volume_ft, volume_shape) -> np.ndarray:
     import scipy.fft
 
     volume = np.asarray(volume_ft).reshape(volume_shape)

@@ -9,7 +9,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
-from relax.helpers.types import _stats_array, make_noise_stats, make_relion_stats
+from relax.types import _stats_array, make_noise_stats, make_relion_stats
 
 pytestmark = pytest.mark.unit
 

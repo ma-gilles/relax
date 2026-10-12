@@ -6,7 +6,7 @@ selection: the CUDA texture implementation also derives its compact texture
 extent and origin from the radius. Gathering the same image pixels afterward
 does not make a projection computed with a different radius equivalent.
 
-Implementation: [`_compute_sparse_pass2_projections_block`](../../relax/sparse_pass2/sparse_pass2_projection_blocks.py).
+Implementation: [`_compute_sparse_pass2_projections_block`](../../relax/fine_pass/projection_blocks.py).
 The helper also reads `max_r` to infer a supplied RELION projector's output crop,
 but must not consume it before the generic call. An explicit `None` and an
 omitted argument retain their distinct underlying-projector meanings. Explicit
@@ -45,7 +45,7 @@ the allocated image extent. Explicit exact-disk masking remains a diagnostic
 option. The compact coarse certificate and rescorer share this canonical
 radius rule by default when the texture route is available.
 
-Implementation: [`_project_relion_projector_texture`](../../relax/helpers/projection.py).
+Implementation: [`_project_relion_projector_texture`](../../relax/projection/projection.py).
 Boundary regressions live in `tests/unit/test_coarse_rotated_radius.py` and
 `tests/unit/test_cuda_relion_fine_diff2.py`; their focused results do not replace
 matched trajectory qualification.
@@ -67,7 +67,7 @@ as RELION does, for both the projection and the image shift. The coarse zeros ar
 RELION's only when the window is at least about \(2s\,\mathrm{maxR}\). A coarse
 window strictly between \(2\,\mathrm{maxR}\) and that bound makes RELION score the
 wrapped rows with nonzero references
-([`coarse_rows_wrap_inside`](../../relax/helpers/optics_scale.py)). The non-fused
+([`coarse_rows_wrap_inside`](../../relax/relion/optics_groups.py)). The non-fused
 coarse projection and the local parent pass refuse that band; only the fused scorer
 reproduces it. Before this rule, the relabelled rows held nonzero reference values
 and the other-grid group's Pmax moved by about 0.01 per particle. Groups at
@@ -76,7 +76,7 @@ The local search passes `projection_relion_kernel="coarse"` for its parent pass 
 pass 1). Projections that name no kernel get the fine rule. For unscaled rotations that rule
 changes nothing, because those rows already lie outside the sphere.
 
-Implementation: [`relion_kernel_zero_rows`](../../relax/helpers/projection.py), passed
+Implementation: [`relion_kernel_zero_rows`](../../relax/projection/projection.py), passed
 through `compute_relion_projector_projections_block(relion_kernel=...)`, and the fused
 coarse scorer body `relax/cuda/relion_coarse_diff2_projector_body.inc`. The regression is
 `tests/unit/test_relion_kernel_rows.py`, which uses an independent scalar model of the
@@ -115,7 +115,7 @@ rounded image support (\(\text{max\_r}=r_{\max}+1/2\)). It masks each row's pixe
 RELION's integer-truncated \(r^2\) (relax/cuda/relion_scoring.cuh:464).
 
 Optics groups with different `rlnMagMat` (relax#48) are split into shape classes like groups on
-other grids ([`optics_shape_class_rows`](../../relax/refinement/optics_shapes.py)), so each class
+other grids ([`optics_shape_class_rows`](../../relax/steps/optics_shapes.py)), so each class
 applies one matrix and the mask above reads that class's \(A=s\,M_3^{-1}A_{\mathrm{proj}}R\). A class
 on another grid (image radius \(r_{\max}s\)) keeps its own rounded support in its recon window, so the
 image clip only has to cover that window: \(r_{\max}+1/2\) for \(s\le 1\) and \(r_{\max}s+1\) above
@@ -125,7 +125,7 @@ stable-window adjoint's runtime image radius gives back its reference radius
 (`ReferenceSphereClip.runtime_reference_radius`). RELION's \(s\ge\sqrt2\) kernel defect stays refused
 (relax#2).
 
-Implementation: [`ReferenceSphereClip`, `mstep_adjoint_max_r` and `rotated_radius_mask`](../../relax/helpers/adjoint.py),
+Implementation: [`ReferenceSphereClip`, `mstep_adjoint_max_r` and `rotated_radius_mask`](../../relax/projection/adjoint.py),
 selected by `dataset_magnification_is_anisotropic` in the resident and local engines. Regression:
 `tests/unit/test_mstep_rotated_radius_clip.py`. Its CPU half checks relax's support against the rule
 above for a symmetric and an asymmetric `rlnMagMat`. Its GPU half checks relax's adjoint against

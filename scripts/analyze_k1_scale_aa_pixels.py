@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.helpers.fourier_window import (
+from relax.fourier.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
 )

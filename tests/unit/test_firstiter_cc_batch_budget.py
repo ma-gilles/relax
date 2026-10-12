@@ -12,24 +12,19 @@ from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
-from relax.dense import scoring_policy
-from relax.helpers import batch_planning, oversampling
-from relax.helpers.batch_planning import (
+from relax.local_search import records
+from relax.refinement import dense_half, local_half, local_sampling
+from relax.refinement.refinement_options import ScoringVariants
+from relax.runtime import batch_planning
+from relax.runtime.batch_planning import (
     estimate_relion_em_batch_sizes,
     safe_dense_k_class_rotation_block_size,
     safe_firstiter_cc_image_batch_size,
 )
-from relax.helpers.types import NoiseStats, make_relion_stats
-from relax.refinement import (
-    firstiter_cc,
-    half_scoring,
-    local_sampling,
-    local_search_iteration,
-    optics_shapes,
-)
-from relax.refinement.half_inputs import HalfSet
-from relax.refinement.refinement_options import ScoringVariants
-from relax.sparse_pass2 import local_search_records
+from relax.sampling import oversampling
+from relax.steps import half_inputs, scoring_policy, shape_class_scoring
+from relax.steps.half_inputs import HalfSet
+from relax.types import NoiseStats, make_relion_stats
 
 
 def _dense_owners(**values):
@@ -37,7 +32,7 @@ def _dense_owners(**values):
 
     sampling_state = values.pop("state")
     owners = (
-        half_scoring.HalfScoringData(
+        half_inputs.HalfScoringData(
             particles=HalfSet(
                 index=values.pop("k"),
                 dataset=values.pop("experiment_dataset"),
@@ -59,7 +54,7 @@ def _dense_owners(**values):
             image_window_size=values.pop("cs_for_engine"),
             coarse_rotation_ids=values.pop("coarse_rotation_ids", None),
         ),
-        half_scoring.DensePriorSpec(
+        dense_half.DensePriorSpec(
             rotation_log_prior_k=values.pop("rotation_log_prior_k"),
             class_rotation_log_prior_k=values.pop("class_rotation_log_prior_k"),
             translation_log_prior=values.pop("translation_log_prior"),
@@ -85,14 +80,12 @@ def _dense_owners(**values):
         ),
         refinement_specs.dense_execution_policy(
             disc_type=values.pop("disc_type"),
-            disable_adjoint_y=values.pop("disable_adjoint_y"),
-            disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
             debug_iteration=values.pop("debug_iteration", None),
             relion_x_half_mstep=ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
             precision=scoring_policy.DENSE_PRECISION,
         ),
-        optics_shapes.OpticsSpec.single_shape(),
+        shape_class_scoring.OpticsSpec.single_shape(),
     )
     assert not values, f"unmapped dense owner values: {sorted(values)}"
     return owners
@@ -141,14 +134,12 @@ def _firstiter_cc_dispatch(
         class_log_priors=None,
         k_class_enabled=True,
         relion_firstiter_cc_this_iter=True,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         safe_batch_sizes=safe_batch_sizes,
         max_significants=None,
         firstiter_coarse_current_size=coarse_current_size,
         firstiter_fine_current_size=fine_current_size,
     )
-    return firstiter_cc._score_kclass_firstiter_cc_pass2(
+    return dense_half._score_kclass_firstiter_cc_pass2(
         half,
         dataclasses.replace(sampling, effective_device_source=effective_device_source),
         priors,
@@ -162,7 +153,7 @@ def _firstiter_cc_dispatch(
 
 
 def test_firstiter_cc_core_keeps_owner_dependencies_visible():
-    function = firstiter_cc._score_kclass_firstiter_cc_pass2
+    function = dense_half._score_kclass_firstiter_cc_pass2
     assert tuple(inspect.signature(function).parameters) == (
         "half", "sampling", "priors", "batching", "variant", "execution",
         "projection_scale", "magnification", "em_kwargs",
@@ -181,12 +172,12 @@ def test_firstiter_cc_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            half_scoring.HalfScoringData,
-            half_scoring.DenseSamplingSpec,
-            half_scoring.DensePriorSpec,
-            half_scoring.DenseBatchPolicy,
-            half_scoring.DenseVariantPolicy,
-            half_scoring.DenseExecutionPolicy,
+            half_inputs.HalfScoringData,
+            dense_half.DenseSamplingSpec,
+            dense_half.DensePriorSpec,
+            dense_half.DenseBatchPolicy,
+            dense_half.DenseVariantPolicy,
+            dense_half.DenseExecutionPolicy,
         )
         for field in dataclasses.fields(owner)
     }
@@ -194,7 +185,7 @@ def test_firstiter_cc_core_keeps_owner_dependencies_visible():
 
 
 def test_dense_half_core_keeps_owner_dependencies_visible():
-    function = half_scoring._score_half_dense_one_shape
+    function = dense_half._score_half_dense_one_shape
     assert tuple(inspect.signature(function).parameters) == (
         "half", "sampling", "priors", "batching", "variant", "execution", "optics",
     )
@@ -210,13 +201,13 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            half_scoring.HalfScoringData,
-            half_scoring.DenseSamplingSpec,
-            half_scoring.DensePriorSpec,
-            half_scoring.DenseBatchPolicy,
-            half_scoring.DenseVariantPolicy,
-            half_scoring.DenseExecutionPolicy,
-            optics_shapes.OpticsSpec,
+            half_inputs.HalfScoringData,
+            dense_half.DenseSamplingSpec,
+            dense_half.DensePriorSpec,
+            dense_half.DenseBatchPolicy,
+            dense_half.DenseVariantPolicy,
+            dense_half.DenseExecutionPolicy,
+            shape_class_scoring.OpticsSpec,
         )
         for field in dataclasses.fields(owner)
     }
@@ -226,7 +217,7 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
 
 
 def test_local_half_core_keeps_owner_dependencies_visible():
-    function = half_scoring._score_half_local_one_shape
+    function = local_half._score_half_local_one_shape
     assert tuple(inspect.signature(function).parameters) == (
         "half", "sampling", "priors", "batching", "execution", "diagnostics", "optics",
     )
@@ -242,13 +233,13 @@ def test_local_half_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            half_scoring.HalfScoringData,
+            half_inputs.HalfScoringData,
             local_sampling.LocalSampling,
-            half_scoring.LocalPriorSpec,
-            half_scoring.LocalBatchPolicy,
-            half_scoring.LocalExecutionPolicy,
-            half_scoring.LocalDiagnosticPolicy,
-            optics_shapes.OpticsSpec,
+            local_half.LocalPriorSpec,
+            local_half.LocalBatchPolicy,
+            local_half.LocalExecutionPolicy,
+            local_half.LocalDiagnosticPolicy,
+            shape_class_scoring.OpticsSpec,
         )
         for field in dataclasses.fields(owner)
     }
@@ -256,7 +247,7 @@ def test_local_half_core_keeps_owner_dependencies_visible():
 
 
 def test_local_iteration_core_keeps_owner_dependencies_visible():
-    function = local_search_iteration._run_local_search_iteration
+    function = local_half._run_local_search_iteration
     assert tuple(inspect.signature(function).parameters) == (
         "data", "grid", "kernel", "support",
     )
@@ -272,10 +263,10 @@ def test_local_iteration_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            local_search_records.LocalSearchData,
-            local_search_iteration.LocalSearchGridSpec,
-            local_search_records.LocalSearchKernelPolicy,
-            local_search_records.LocalSearchSupportPolicy,
+            records.LocalSearchData,
+            local_half.LocalSearchGridSpec,
+            records.LocalSearchKernelPolicy,
+            records.LocalSearchSupportPolicy,
         )
         for field in dataclasses.fields(owner)
     }
@@ -394,8 +385,8 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
         captured.update(kwargs)
         return "result"
 
-    monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
-    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
     def fake_safe_batch_sizes(n_rot, n_trans, *, classes=None, image_shape_for_batch=None, current_size_for_batch=None):
         assert classes == 2
@@ -439,7 +430,7 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
 def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, caplog, n_classes, separate_coarse):
     captured = {}
     dispatch = {}
-    original_dispatch = half_scoring._score_kclass_firstiter_cc_pass2
+    original_dispatch = dense_half._score_kclass_firstiter_cc_pass2
 
     def capture_dispatch(*owners, **values):
         dispatch.update(values)
@@ -531,14 +522,14 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
             best_pose_rotation_ids=jnp.zeros(n_images, dtype=jnp.int32),
         )
 
-    monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
-    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
-    monkeypatch.setattr(half_scoring, "_score_kclass_firstiter_cc_pass2", capture_dispatch)
+    monkeypatch.setattr(dense_half, "_score_kclass_firstiter_cc_pass2", capture_dispatch)
     means = jnp.zeros(4 if n_classes == 1 else (n_classes, 4), dtype=jnp.complex64)
     coarse_ids = np.arange(576, dtype=np.int32)
 
-    result = half_scoring._score_half_dense(*_dense_owners(
+    result = dense_half._score_half_dense(*_dense_owners(
         k=0,
         experiment_dataset=TinyDataset(),
         means_k=means,
@@ -565,8 +556,6 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
         class_log_priors=None,
         k_class_enabled=n_classes > 1,
         relion_firstiter_cc_this_iter=True,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         safe_batch_sizes=fake_safe_batch_sizes,
         significance_safe_batch_sizes=coarse_planner if separate_coarse else None,
         max_significants=None,
@@ -673,9 +662,9 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
         )
 
     monkeypatch.setattr(oversampling, "build_adaptive_pass2_grids", fake_grids)
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
 
-    result = half_scoring._score_half_dense(*_dense_owners(
+    result = dense_half._score_half_dense(*_dense_owners(
         k=0,
         experiment_dataset=TinyDataset(),
         means_k=jnp.zeros((4, 4), dtype=jnp.complex64),
@@ -702,8 +691,6 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
         class_log_priors=np.zeros(4, dtype=np.float32),
         k_class_enabled=True,
         relion_firstiter_cc_this_iter=False,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         safe_batch_sizes=fake_safe_batch_sizes,
         max_significants=max_significants,
         k_class_image_batch_size_override=50,
@@ -721,7 +708,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
     assert result.ha.shape == (3,)
     # The keywords both adaptive dense routes pass the engine identically.
     assert captured["accumulate_noise"] is True
-    assert captured["adaptive_fraction"] == half_scoring.RELION_ADAPTIVE_FRACTION
+    assert captured["adaptive_fraction"] == dense_half.RELION_ADAPTIVE_FRACTION
     assert captured["max_significants"] == (-1 if max_significants is None else 5)
     assert captured["relion_fine_mstep_prune"] is True
     assert type(captured["coarse_healpix_order"]) is int and captured["coarse_healpix_order"] == 1
@@ -790,9 +777,9 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
         captured["projection"] = kwargs
         return coarse / 2.0, fine / 2.0, mstep / 2.0
 
-    monkeypatch.setattr(firstiter_cc, "build_adaptive_pass2_grids", fake_grids)
-    monkeypatch.setattr(firstiter_cc, "project_pass2_rotations", fake_projection)
-    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", fake_adaptive)
+    monkeypatch.setattr(dense_half, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(dense_half, "project_pass2_rotations", fake_projection)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", fake_adaptive)
     source = object()
 
     _firstiter_cc_dispatch(
@@ -822,7 +809,7 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
 def test_firstiter_cc_global_winner_pass2_carries_each_images_optics_group(monkeypatch):
     """The --firstiter_cc fine pass gives the resident engine each subset image's optics group."""
     from relax.classification import k_class
-    from relax.sparse_pass2 import dispatch
+    from relax.fine_pass import dispatch
 
     captured = {}
 
@@ -885,7 +872,7 @@ def test_firstiter_cc_global_winner_pass2_keeps_the_optics_group_noise_table_wit
     noise", so every image backprojected with group 1's spectrum (SPA Class3D, 2026-09-30).
     """
     from relax.classification import k_class
-    from relax.sparse_pass2 import dispatch
+    from relax.fine_pass import dispatch
 
     captured = {}
 

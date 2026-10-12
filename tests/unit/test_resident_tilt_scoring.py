@@ -13,9 +13,9 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.cuda import kernels as em_cuda_kernels
-from relax.refinement import tomo_particles
-from relax.sparse_pass2 import resident_scoring
+from relax.cuda import fine as cuda_fine
+from relax.fine_pass import resident_scoring
+from relax.sampling import tomo_particles
 
 pytestmark = pytest.mark.unit
 
@@ -29,7 +29,7 @@ def _fake_kernel(reference, row_image_ids, image, angles, weight, full_to_compac
 
 
 def test_rows_sum_their_particles_images_in_order(monkeypatch, request):
-    monkeypatch.setattr(em_cuda_kernels, "relion_fine_diff2_fused_translate_runtime_flat_rows_f32", _fake_kernel)
+    monkeypatch.setattr(cuda_fine, "relion_fine_diff2_fused_translate_runtime_flat_rows_f32", _fake_kernel)
     rng = np.random.default_rng(7)
     unit_offsets = np.array([0, 3, 5, 9])  # three particles with 3, 2 and 4 tilt images
     n_images, n_pix, n_trans = 9, 12, 5
@@ -111,7 +111,7 @@ def test_flat_row_kernel_reads_each_images_own_phase_table():
     initial = rng.uniform(1, 2, size=n_images).astype(np.float32)
     angles = rng.uniform(-0.5, 0.5, size=(n_images, n_trans, 2)).astype(np.float32)
     row_image = np.array([0, 2, 1, -1, 2, 0, 1], dtype=np.int32)
-    kernel = em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32
+    kernel = cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32
     got = np.asarray(kernel(reference, row_image, image, angles, weight, full_to_compact, np.int32(size), initial))
     for b in range(n_images):
         rows = row_image == b

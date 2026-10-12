@@ -18,9 +18,10 @@ from helpers.em_fixtures import fixture_dir
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
-from relax.helpers import relion_random
+from relax.numerics import relion_random
 from relax.reconstruction import solvent_mask
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement import map_postprocess
 
 pytestmark = pytest.mark.unit
 
@@ -184,15 +185,14 @@ def _settings(**kwargs):
 
 
 def test_user_mask_replaces_the_diameter_sphere():
-    from relax.refinement import mean_helpers
 
     user = np.zeros((8, 8, 8))
     user[2:5, 3:6, 1:7] = 1.0
     settings = _settings(solvent_mask=user)
-    assert mean_helpers._solvent_flatten_requested(settings)
-    assert_matches(np.asarray(mean_helpers._numbered_solvent_mask(settings, dtype=np.float64)), user)
+    assert map_postprocess.solvent_flatten_requested(settings)
+    assert_matches(np.asarray(map_postprocess.numbered_solvent_mask(settings, dtype=np.float64)), user)
     # Without a diameter a user mask still flattens.
-    assert mean_helpers._solvent_flatten_requested(_settings(solvent_mask=user, particle_diameter_angstrom=None))
+    assert map_postprocess.solvent_flatten_requested(_settings(solvent_mask=user, particle_diameter_angstrom=None))
 
 
 def test_corrected_fsc_needs_a_mask_of_the_model_shape():
@@ -215,7 +215,7 @@ def test_mask_file_reaches_the_internal_frame(tmp_path):
 
 def test_half_spectrum_fsc_depends_on_the_halved_axis():
     # RELION halves the FFTW spectrum along the map file's x axis; relax's internal frame is the file's
-    # transpose, so the corrected FSC is computed after transposing back (mean_helpers.solvent_corrected_fsc).
+    # transpose, so the corrected FSC is computed after transposing back (priors.solvent_corrected_fsc).
     half1, half2, mask = _maps()
     mask = mask * (1.0 + 0.3 * np.indices(mask.shape)[0] / mask.shape[0])  # break the mask's symmetry
     file_order = solvent_mask.real_space_fsc(half1 * mask, half2 * mask)

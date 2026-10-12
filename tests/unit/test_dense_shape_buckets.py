@@ -3,7 +3,7 @@ import pytest
 from helpers.array_padding import pad_axis
 from helpers.float_compare import assert_matches
 
-from relax.helpers.shape_buckets import (
+from relax.runtime.shape_buckets import (
     coarse_bucket,
     pow2_ceil,
     pow2_floor,

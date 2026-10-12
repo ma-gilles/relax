@@ -41,13 +41,13 @@ def plan_coarse_gaussian_square_layout(
     logical lane assignment and appends only fused multiply-adds by zero.
     """
 
-    from relax.helpers.fourier_window import (
+    from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+    from relax.fourier.fourier_window import (
         make_fourier_window_indices_np,
         make_frequency_coords_half_np,
         stable_fourier_window_current_size,
         stable_fourier_window_quantum,
     )
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
 
     image_shape = tuple(int(value) for value in image_shape)
     physical_current_size = (

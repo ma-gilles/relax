@@ -4,7 +4,7 @@ Observers (``relax.diagnostics.observers``) and comparison input sources (``rela
 RELION replay, the frozen boundary and the state-swap probe) are chosen by the command and handed to the
 controller through ``relax.refinement.ports``; the algorithm imports only the ports. Outside the command boundary
 no module of any ``relax`` package imports ``relax.diagnostics`` or ``relax.parity``, except the edges listed in
-``ALLOWED_IMPORTS``: each names why it is still there, and the list can only shrink.
+``ALLOWED_IMPORTS``: each names why it is still there, and the list can only shrink (it is empty since layout S11).
 """
 
 import ast
@@ -21,50 +21,13 @@ import relax.refinement
 
 pytestmark = pytest.mark.unit
 
-# The command boundary chooses the implementations; every other module of the package is the algorithm.
-# particle_loading is the command's particle reader (only full_refinement imports it; it reads the flags).
-COMMAND_MODULES = {"full_refinement", "command_options", "particle_loading"}
 IMPLEMENTATIONS = ("relax.diagnostics.observers", "relax.parity")
 # Modules that may import relax.diagnostics and relax.parity: the two packages themselves and the command layer.
-BOUNDARY = (
-    "relax.diagnostics",
-    "relax.parity",
-    "relax.command_line",
-    "relax.commands",
-    *(f"relax.refinement.{name}" for name in sorted(COMMAND_MODULES)),
-)
+BOUNDARY = ("relax.diagnostics", "relax.parity", "relax.command_line", "relax.commands")
 DIAGNOSTIC_PACKAGES = ("relax.diagnostics", "relax.parity")
 
-_INLINE_DUMP = "an inline dump/capture called from the algorithm; it needs a RunObserver hook (deep2 PLAN c2)"
-_INLINE_CHECK = "an inline finite/accumulator check that raises inside the algorithm; it needs a port (deep2 PLAN c2)"
-_REPLAY = "a replay policy called by the controller; it needs an InputSource method (deep2 PLAN c3 follow-up)"
-
 # (importing module, imported module) -> why the edge is still there.
-ALLOWED_IMPORTS = {
-    ("relax.classification.k_class", "relax.diagnostics.coarse_gaussian_diagnostics"): _INLINE_DUMP,
-    ("relax.classification.k_class", "relax.diagnostics.coarse_score_diagnostics"): _INLINE_DUMP,
-    ("relax.classification.k_class", "relax.diagnostics.global_winner_summary"): _INLINE_DUMP,
-    ("relax.classification.k_class", "relax.diagnostics.local_debug"): _INLINE_DUMP,
-    ("relax.refinement.expectation", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.expectation", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
-    ("relax.refinement.finalization", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.half_scoring", "relax.diagnostics.local_debug"): _INLINE_DUMP,
-    ("relax.refinement.half_scoring", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
-    ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.iteration_loop", "relax.diagnostics.iteration"): _INLINE_DUMP,
-    ("relax.refinement.iteration_loop", "relax.diagnostics.reconstruction"): _INLINE_CHECK,
-    ("relax.refinement.iteration_loop", "relax.parity.relion_replay"): _REPLAY,
-    ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): "the run report's timing rows (" + _INLINE_DUMP + ")",
-    ("relax.relion.relion_normalization", "relax.diagnostics.finite_check"): _INLINE_CHECK,
-    ("relax.scoring.pass1_assembly", "relax.diagnostics.coarse_score_diagnostics"): _INLINE_DUMP,
-    ("relax.scoring.pass1_dump", "relax.diagnostics.coarse_gaussian_diagnostics"): _INLINE_DUMP,
-    ("relax.scoring.pass1_publish", "relax.diagnostics.coarse_gaussian_diagnostics"): _INLINE_DUMP,
-    ("relax.scoring.tree_rescore", "relax.diagnostics.coarse_gaussian_diagnostics"): _INLINE_DUMP,
-    ("relax.sparse_pass2.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.sparse_pass2.firstiter_bpref", "relax.diagnostics.finite_check"): _INLINE_CHECK,
-    ("relax.sparse_pass2.sparse_pass2_bucket_io", "relax.diagnostics.finite_check"): _INLINE_CHECK,
-    ("relax.sparse_pass2.sparse_pass2_bucket_io", "relax.diagnostics.sparse_pass2_dump"): _INLINE_DUMP,
-}
+ALLOWED_IMPORTS = {}
 
 
 def _in(name, prefixes):
@@ -77,9 +40,10 @@ def _module_or_package(root, name, package):
     return name if path.with_suffix(".py").is_file() or path.is_dir() else package
 
 
-def _diagnostic_imports():
-    """Every (module, imported diagnostics/parity module) edge outside the boundary, lazy imports included."""
-    root = Path(relax.__file__).parent
+def _diagnostic_imports(root=None):
+    """Every (module, imported diagnostics/parity module) edge outside the boundary, lazy imports included, in the
+    package at ``root`` (default: relax's)."""
+    root = Path(relax.__file__).parent if root is None else root
     edges = set()
     for path in sorted(root.rglob("*.py")):
         parts = path.relative_to(root.parent).with_suffix("").parts
@@ -109,11 +73,7 @@ def test_no_production_module_imports_diagnostics_or_parity_beyond_the_allowlist
 
 
 def test_the_algorithm_modules_import_no_port_implementation():
-    names = sorted(
-        f"relax.refinement.{info.name}"
-        for info in pkgutil.iter_modules(relax.refinement.__path__)
-        if info.name not in COMMAND_MODULES
-    )
+    names = sorted(f"relax.refinement.{info.name}" for info in pkgutil.iter_modules(relax.refinement.__path__))
     assert "relax.refinement.iteration_loop" in names and "relax.refinement.ports" in names
     script = (
         "import importlib, json, sys\n"
@@ -134,9 +94,30 @@ def test_the_command_does_import_the_observers_and_the_input_sources():
     implementations = ("relax.diagnostics.observers", "relax.parity.relion_replay_source", "relax.parity.oracle_admission")
     out = subprocess.run(
         [sys.executable, "-c",
-         f"import sys, relax.refinement.full_refinement; print(all(n in sys.modules for n in {implementations!r}))"],
+         f"import sys, relax.commands.refinement_run; print(all(n in sys.modules for n in {implementations!r}))"],
         capture_output=True, text=True, check=True,
     )
     assert out.stdout.strip().splitlines()[-1] == "True"
-    edges = {target for _, target in _diagnostic_imports()}
-    assert "relax.diagnostics.finite_check" in edges and "relax.parity.relion_replay" in edges
+
+
+def test_the_scan_finds_algorithm_imports_of_diagnostics_and_parity_in_any_scope(tmp_path):
+    """The allowlist is empty, so the scan must be shown to see an edge: top-level, lazy, relative, and not from the
+    boundary."""
+    package = tmp_path / "relax"
+    for module, source in {
+        "__init__.py": "",
+        "diagnostics/__init__.py": "",
+        "diagnostics/parity_dump.py": "",
+        "parity/__init__.py": "",
+        "parity/relion_replay.py": "",
+        "commands/__init__.py": "",
+        "commands/run.py": "from relax.diagnostics import parity_dump\n",
+        "refinement/__init__.py": "",
+        "refinement/loop.py": "from relax.diagnostics import parity_dump\ndef f():\n    from ..parity import relion_replay\n",
+    }.items():
+        (package / module).parent.mkdir(parents=True, exist_ok=True)
+        (package / module).write_text(source)
+    assert _diagnostic_imports(package) == {
+        ("relax.refinement.loop", "relax.diagnostics.parity_dump"),
+        ("relax.refinement.loop", "relax.parity.relion_replay"),
+    }

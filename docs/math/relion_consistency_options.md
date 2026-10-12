@@ -20,7 +20,7 @@ below keeps RELION's rule unless it is given by name. `relax` sets every option 
 | `--firstiter_cc_support` | `relion` | `gaussian` |
 
 The bundle is one constant, `RELAX_MODE_CONSISTENCY` (`relax/refinement/refinement_options.py`). The command
-resolves the mode to options once (`resolve_consistency_options`, `relax/refinement/command_options.py`); the
+resolves the mode to options once (`resolve_consistency_options`, `relax/commands/refinement_arguments.py`); the
 refinement sees the options only.
 
 - An option given by name overrides the mode (`--mode relax --gridding_kernel radial`), and is refused as it is
@@ -50,7 +50,7 @@ iterations to convergence against the default's seed-to-seed spread). Not tested
 The options are the fields of `RelionConsistencyOptions`
 (`relax/refinement/refinement_options.py`) and flags of `relax refine` / `relax class3d`.
 `require_consistency_route` (the refinement) and `require_consistency_arguments`
-(`relax/refinement/command_options.py`) refuse a non-default value wherever it would not be
+(`relax/commands/refinement_arguments.py`) refuse a non-default value wherever it would not be
 honoured:
 
 - subtomogram particles and optics groups on several image shapes (their scorers are not reached);
@@ -97,7 +97,7 @@ Nyquist plane, and the origin, which is its own mate), which makes every sum and
 half the one over the whole Fourier grid, every voxel once. Both public layouts of an accumulator
 give that statistic: the full layout expanded from RELION's x-half, and the native packed half
 that accumulators of 200M voxels or more are repacked to (`_pair_once_weights`,
-`relax/reconstruction/regularization_relion.py`).
+`relax/reconstruction/regularization.py`).
 
 | RELION loop | relax function | Feeds |
 | --- | --- | --- |
@@ -125,7 +125,7 @@ counted and never summed, and `sigma2_noise[cs/2]` is low by that fraction: 52 o
 other shell, and every shell at the box, is exact.
 
 `summed` divides each shell by the pixels the expectation summed
-(`summed_noise_pixels_per_shell`, `relax/reconstruction/noise_relion.py`), through
+(`summed_noise_pixels_per_shell`, `relax/reconstruction/noise.py`), through
 `update_posterior_noise_variance` for the K=1 per-half, the Class3D shared and the per-optics-group
 updates; the numbered iterations pass the expectation's image current size. The sums themselves
 and the kernels that accumulate them are unchanged. Not changed: RELION's average CTF^2 of
@@ -159,7 +159,7 @@ and scale sums and in `Npix_per_shell`. A cropped image has no such column (its 
 affected, and there only shells `>= N/2`, which lie outside the reference sphere.
 
 `once` leaves out the members `jp = N/2, ip < 0` (`redundant_nyquist_column_pixels`,
-`relax/helpers/half_spectrum.py`), through arrays built in Python only:
+`relax/fourier/half_spectrum.py`), through arrays built in Python only:
 
 | Quantity | Function |
 | --- | --- |
@@ -184,7 +184,7 @@ without DC. The first iteration therefore picks its poses on a different set of 
 `kx = 0` column at double weight, from all later ones.
 
 `gaussian` scores the CC iteration on the Gaussian support (`gaussian_support_weights`,
-`relax/helpers/half_spectrum.py`), through arrays built in Python only:
+`relax/fourier/half_spectrum.py`), through arrays built in Python only:
 
 | Quantity | Function |
 | --- | --- |

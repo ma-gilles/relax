@@ -69,7 +69,7 @@ def auc(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _relax_map(path: Path) -> np.ndarray:
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
 
     return np.asarray(load_relax_map(path), dtype=np.float64)
 

@@ -6,7 +6,7 @@ VDAM's three differences (:mod:`relax.vdam.adaptive_estep`): every tilt image ba
 residual ``shift(X_i) - CTF_i P_i V`` (BP.cuh ``backproject3D_SGD``), into the BPref slot
 ``class + K * (part_id % 2)`` of its particle (acc_ml_optimiser_impl.h:3391-3395), and the coarse
 pass keeps at most ``max_significants`` samples. The scoring is
-:func:`relax.refinement.tomo_half.score_tomo_half`, the subtomogram Refine3D/Class3D pass; this
+:func:`relax.steps.tomo_scoring.score_tomo_half`, the subtomogram Refine3D/Class3D pass; this
 module turns its output into VDAM's accumulators and E-step metadata, as the single-particle
 route does (:func:`relax.vdam.adaptive_estep.run_adaptive_initial_model_estep`).
 """
@@ -18,7 +18,7 @@ import logging
 import numpy as np
 
 from relax import sampling
-from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
+from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.vdam.adaptive_estep import (
     direction_posterior_stats,
     recovar_order_prior,
@@ -43,7 +43,7 @@ __all__ = ["run_tomo_initial_model_estep", "tomo_initial_model_sampling"]
 def tomo_initial_model_sampling(
     state: InitialModelState, sampling_plan, *, particle_diameter_ang: float, pass1_healpix_order: int | None = None
 ):
-    """The iteration's :class:`relax.refinement.tomo_half.TomoSampling` from VDAM's sampling plan.
+    """The iteration's :class:`relax.steps.tomo_half.TomoSampling` from VDAM's sampling plan.
 
     The coarse size is RELION's ``image_coarse_size`` for the pass-1 order, as for single particles
     (:func:`relax.vdam.adaptive_estep.resolve_sparse_pass1_current_size`); the fine size is the
@@ -51,7 +51,7 @@ def tomo_initial_model_sampling(
     RELION sets the sizes (expectationSetup step A) before it updates the sampling (step D).
     """
 
-    from relax.refinement.tomo_half import TomoSampling
+    from relax.steps.tomo_half import TomoSampling
 
     fine_size = int(state.effective_current_size)
     order = int(sampling_plan.healpix_order)
@@ -92,6 +92,7 @@ def run_tomo_initial_model_estep(
     sigma_offset_angstrom: float,
     particle_diameter_ang: float,
     padding_factor: int,
+    environment,
     optics_group_ids=None,
     pass1_healpix_order: int | None = None,
 ) -> InitialModelEstepResult:
@@ -102,13 +103,16 @@ def run_tomo_initial_model_estep(
     ``class_rotation_log_prior`` ``[K, R]`` VDAM's joint class/direction prior in RELION's
     direction-major order. With several optics groups ``noise_variance`` is ``[G, N^2]`` and
     ``optics_group_ids`` gives every particle-STAR row's group. The metadata carries the particles' new offsets
-    (``tomo_offsets_px``: RELION's rounded old offset plus the winning shift).
+    (``tomo_offsets_px``: RELION's rounded old offset plus the winning shift). ``environment`` is the run's
+    ``VdamEnvironment``, read for its two engine diagnostics: ``adaptive_fraction`` None keeps RELION's 0.999,
+    ``subtract_projected_reference`` False back-projects the tilt images instead of their residuals.
     """
 
     from relax.classification.k_class import _class_segmented_em_result, single_class_pass2_em_result
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-    from relax.refinement import tomo_particles
-    from relax.refinement.tomo_half import score_tomo_half, tomo_translation_grids
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.sampling import tomo_particles
+    from relax.steps.tomo_half import tomo_translation_grids
+    from relax.steps.tomo_scoring import score_tomo_half
 
     particle_ids = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
     if particle_ids.size == 0:
@@ -143,7 +147,9 @@ def run_tomo_initial_model_estep(
         rotation_log_prior=prior if state.K > 1 else prior[0],
         old_offsets_px=old,
         sigma_offset_angst=float(sigma_offset_angstrom),
-        adaptive_fraction=RELION_ADAPTIVE_FRACTION,
+        adaptive_fraction=(
+            RELION_ADAPTIVE_FRACTION if environment.adaptive_fraction is None else environment.adaptive_fraction
+        ),
         max_significants=int(max_significants),
         unit_groups=(
             np.zeros(particle_ids.size, dtype=np.int32)
@@ -153,7 +159,7 @@ def run_tomo_initial_model_estep(
         padding_factor=int(padding_factor),
         reconstruction_group_ids=group_ids,
         reconstruction_group_count=2,
-        mstep_subtract_ctf_projection=True,
+        mstep_subtract_ctf_projection=environment.subtract_projected_reference,
     )
     counts = np.asarray(scored.significant_counts)
     logger.info(
@@ -201,8 +207,7 @@ def run_tomo_initial_model_estep(
         result.Ft_y,
         result.Ft_ctf,
         state,
-        halfset_idx=None,
-        reconstruction_group_count=2,
+        half_count=2,
         padding_factor=int(padding_factor),
     )
     # vdam_m_step reads the list halfset-major (accumulators[k], accumulators[K + k]).

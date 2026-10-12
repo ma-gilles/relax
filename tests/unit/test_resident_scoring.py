@@ -21,36 +21,37 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.jit_programs import clear_programs
 
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
-
 from recovar.core.configs import ForwardModelConfig
-from relax.helpers.batch_fetch import fetch_indexed_batch
-from relax.helpers.half_spectrum import make_scoring_half_image_weights
-from relax.helpers.preprocessing import half_translation_phase_table
-from relax.scoring.compact_candidates import candidate_mask_to_dense
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
-from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.sparse_pass2 import sparse_pass2_scoring as spb
-from relax.sparse_pass2.resident_candidates import (
+from recovar.reconstruction import noise as noise_utils
+
+from relax.fine_pass import scoring as spb
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_io import (
+    _prepare_bucket_io,
+    _relion_cuda_score_translation_angles_if_available,
+)
+from relax.fine_pass.compact_candidates import candidate_mask_to_dense
+from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     materialize_chunk,
     plan_capacity_chunks,
 )
-from relax.sparse_pass2.resident_scoring import (
+from relax.fine_pass.resident_scoring import (
     materialize_chunk_device,
     prepare_resident_image_operands,
     score_all_chunks,
     score_resident_chunk,
 )
-from relax.sparse_pass2.sparse_pass2_bucket_io import (
-    _prepare_bucket_io,
-    _relion_cuda_score_translation_angles_if_available,
-)
-from recovar.reconstruction import noise as noise_utils
+from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
+from relax.fourier.half_spectrum import make_scoring_half_image_weights
+from relax.fourier.preprocessing import half_translation_phase_table
+from relax.io.batch_fetch import fetch_indexed_batch
 
 N_COARSE_ROT = 6
 CHILDREN = 2
@@ -360,7 +361,7 @@ def test_resident_program_compiles_once_per_capacity_class(
         )
         chunk_arrays = [materialize_chunk_device(case["tables"], chunk) for chunk in chunks]
 
-        score_resident_chunk._clear_cache()
+        cleared = clear_programs(score_resident_chunk)
         for chunk, arrays in zip(chunks, chunk_arrays, strict=True):
             jax.block_until_ready(
                 score_resident_chunk(
@@ -387,9 +388,8 @@ def test_resident_program_compiles_once_per_capacity_class(
                     n_score_pixels=int(case["operands"].n_score_pixels),
                 )
             )
-        assert score_resident_chunk._cache_size() == 1, (
-            f"expected one compiled program, got {score_resident_chunk._cache_size()}"
-        )
+        compiled = score_resident_chunk._cache_size() - cleared
+        assert compiled == 1, f"expected one compiled program, got {compiled}"
 
 
 @pytest.mark.gpu

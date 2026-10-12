@@ -46,7 +46,7 @@ score_i(k,r,t) =
 ```
 
 RECOVAR's dense score kernel implements the expanded form in
-[`helpers/scoring.py::_score_rotation_block`](../../relax/scoring/scoring.py):
+[`helpers/scoring.py::_score_rotation_block`](../../relax/scoring/coarse_kernels.py):
 
 ```text
 cross = -2 Re(conj(shifted_image) @ projected_volume)
@@ -113,7 +113,7 @@ The support restriction is part of the algorithm, not an optimization detail.
 The helpers are
 [`helpers/significance.py::_compute_k_class_significance_batched`](../../relax/scoring/significance.py)
 for coarse support and
-[`local_layout.py::build_pass2_hypothesis_layout`](../../relax/local/local_layout.py)
+[`local_layout.py::build_pass2_hypothesis_layout`](../../relax/local_search/layout.py)
 for fine-support expansion.
 
 For K-class EM, \(\pi_k\) and each class's tau/reference-variance curve are
@@ -233,6 +233,7 @@ Use this index only after reading the algorithm sections above.
 - VDAM loop and schedules:
   [`iteration_loop.py::run_vdam_iterations`](../../relax/vdam/iteration_loop.py),
   [`schedules.py`](../../relax/vdam/schedules.py),
+  [`sgd_schedule.py`](../../relax/steps/sgd_schedule.py),
   [`subset_schedule.py::select_vdam_subset`](../../relax/vdam/subset_schedule.py)
 - InitialModel dense bridge and M-step:
   [`estep_setup.py`](../../relax/vdam/estep_setup.py),
@@ -542,7 +543,7 @@ important blocks are:
   convergence counters and accuracy estimates used by replay code.
 
 RECOVAR parsing helpers for this state are concentrated in
-[`recovar/em/sampling.py`](../../relax/sampling.py). In particular,
+[`relax/sampling/__init__.py`](../../relax/sampling/__init__.py). In particular,
 `read_relion_model_metadata` reads current image size/resolution,
 `read_relion_optimiser_metadata` reads optimiser counters, and
 `read_relion_direction_prior` reads `model_pdf_orient_class_1`.
@@ -585,7 +586,7 @@ C++ primitive, not reimplemented Python code in this branch.
 Later native InitialModel iterations therefore reuse the same Python-carried
 state fields but update the reference through RELION's VDAM binding. The
 regularization strength seen by that binding changes through
-[`schedules.py::compute_tau2_fudge`](../../relax/vdam/schedules.py),
+[`sgd_schedule.py::compute_tau2_fudge`](../../relax/steps/sgd_schedule.py),
 which mirrors RELION `updateTau2Fudge`: for GUI InitialModel defaults
 `--tau2_fudge 4` and an empty scheme, the scheduled value grows from near `1`
 toward `4` over the gradient phases. This is different from standard dense EM,
@@ -594,7 +595,7 @@ where the Python reconstruction path receives an explicit tau spectrum.
 ### Standard EM/Class3D tau2 path
 
 The dense single-volume RELION-parity loop in
-[`recovar/em/refinement/iteration_loop.py`](../../relax/refinement/iteration_loop.py)
+[`relax/refinement/iteration_loop.py`](../../relax/refinement/iteration_loop.py)
 does use explicit tau2-like arrays. `_reconstruct_volume_eager` calls
 [`relion_functions.post_process_from_filter_v2`](https://github.com/ma-gilles/recovar/blob/c60e3c26f893b6aa88e0f78db4f50c76352afedc/recovar/reconstruction/relion_functions.py)
 with `tau=mean_variance`, `tau2_fudge`, `use_spherical_mask=True`,
@@ -618,7 +619,7 @@ soft spherical mask, optionally applies a supplied mask, optionally applies
 gridding correction, and returns the Fourier map.
 
 For RELION-style tau2 updates from half-map weights, RECOVAR implements
-[`regularization_relion.compute_relion_tau2_from_weights`](../../relax/reconstruction/regularization_relion.py):
+[`regularization_relion.compute_relion_tau2_from_weights`](../../relax/reconstruction/regularization.py):
 
 ```text
 SSNR[s] = FSC[s] / (1 - FSC[s]) * tau2_fudge
@@ -626,7 +627,7 @@ sigma2[s] = 1 / (padding_factor^3 * avg_weight[s])
 tau2[s] = SSNR[s] * sigma2[s]
 ```
 
-[`regularization_relion.compute_data_vs_prior`](../../relax/reconstruction/regularization_relion.py)
+[`regularization_relion.compute_data_vs_prior`](../../relax/reconstruction/regularization.py)
 computes RELION's resolution-control ratio:
 
 ```text
@@ -745,7 +746,7 @@ the same momentum rule. InitialModel sparse pass 2 uses fine rotation ids for
 direction posterior updates via `_initial_model_pass2_layout`; standard local
 refinement may instead track parent coarse rotations.
 
-`estep_meta_updates.py::update_particle_state_from_estep_meta` also updates:
+`particle_update.py::update_particle_state_from_estep_meta` also updates:
 
 - STAR origin offsets from best translation assignments,
 - `_rlnClassNumber` from best class assignments,

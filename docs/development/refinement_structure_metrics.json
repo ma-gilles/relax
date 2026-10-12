@@ -25,11 +25,11 @@
     "source_commit": "87eabd77f41a96bc1d1b4fe7d590b53bb465834e",
     "totals": {
       "maximum_function_line_span": 1229,
-      "maximum_parameter_count": 28,
-      "large_argument_function_count": 28,
-      "very_large_argument_function_count": 2,
-      "physical_lines": 22397,
-      "nonblank_noncomment_lines": 19233
+      "maximum_parameter_count": 20,
+      "large_argument_function_count": 25,
+      "very_large_argument_function_count": 1,
+      "physical_lines": 19829,
+      "nonblank_noncomment_lines": 17031
     }
   }
 }

@@ -13,15 +13,20 @@ The command chooses the observer once (``relax.diagnostics.observers``) and hand
 The base ``RunObserver`` is the default and does nothing. Each hook is named for the moment of the run it is called
 at and receives the values the run holds then; an observer must not mutate them, and must not keep a device
 array past the hook unless it says so (it would extend that array's lifetime, code rule 3). The two
-collection requests (``keeps_rotation_posteriors``, ``collects_local_search_profiles``) and
-``wants_unfiltered_maps`` ask the run to keep or compute something beside its own values; they cost memory
-or time, never a number of the run.
+collection requests (``keeps_rotation_posteriors``, ``collects_local_search_profiles``,
+``keeps_pose_rotation_eulers``) and ``wants_unfiltered_maps`` ask the run to keep or compute something beside its own values; they cost memory
+or time, never a number of the run. ``bpref_diagnostics_armed`` asks the first-iteration BPref of a numbered half
+for its direct path (not deferred to the host, not planned compact), which a BPref capture or diagnostic
+override needs. ``scored_halves`` is a diagnostic boundary's request: score one half of a
+numbered iteration only, at a dump target after which the run stops.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, NamedTuple, Protocol
+
+from relax.refinement.refinement_options import RELION_INCR_SIZE
 
 
 @dataclass
@@ -89,6 +94,18 @@ class DenseHalfScored(NamedTuple):
     image_window_size: Any
     perturb_factor: float
     result: Any
+
+
+class NumberedHalfRecorded(NamedTuple):
+    """One half of a numbered iteration once it is scored, published and recorded: ``particles`` is its
+    ``HalfSet``, ``score_result`` its ``HalfScoreResult`` and ``per_half`` the iteration's ``PerHalfOutputs``, whose
+    slots ``half_index`` now hold this half (an observer reads that slot only, and copies what it keeps)."""
+
+    iteration: int
+    half_index: int
+    particles: Any
+    score_result: Any
+    per_half: Any
 
 
 class FinalHalfScored(NamedTuple):
@@ -215,6 +232,28 @@ class FinalState(NamedTuple):
     noise_model: Any
 
 
+@dataclass(frozen=True)
+class StartSeeds:
+    """What the first iteration starts from when a RELION run's state (a frozen boundary) supplies it; the
+    defaults are a run's own start.
+
+    ``fsc``: the half-map FSC that seeds the start resolution and plans the first image size (None: the run's
+    ``--ini_high`` or bootstrap size does). ``ave_pmax`` and ``has_high_fsc_at_limit``: RELION's average Pmax
+    and its latch for a high FSC at the resolution limit, which choose the first size's growth step (None:
+    0 and unset). ``relion_incr_size``: RELION's size increment in shells, held as an int.
+    """
+
+    fsc: Any | None = None
+    ave_pmax: float | None = None
+    has_high_fsc_at_limit: bool | None = None
+    relion_incr_size: int = RELION_INCR_SIZE
+
+    def __post_init__(self):
+        object.__setattr__(self, "relion_incr_size", int(self.relion_incr_size))
+        if self.relion_incr_size <= 0:
+            raise ValueError("relion_incr_size must be positive")
+
+
 class InputSource:
     """The native source: every input is the one the run computed."""
 
@@ -225,6 +264,8 @@ class InputSource:
     # sizes) and the scoring context sealed with it; None natively. The sampling plan reads them.
     sealed_sampling_state = None
     sealed_scoring_context = None
+    # The first iteration's seeds taken from elsewhere (a frozen boundary's); natively the run's own start.
+    start_seeds = StartSeeds()
     # Whether a state-swap probe swaps state in some iteration (it then admits a fresh BPref particle order).
     swaps_state = False
     # Whether the run follows a RELION run's numbered STAR files or override slots, and whether it starts from a
@@ -232,18 +273,18 @@ class InputSource:
     replays_relion_trajectory = False
     starts_from_frozen_boundary = False
     # A replayed MPI RELION run's follower topology and captured dispatch schedule (a
-    # ``relax.relion.relion_worker_scale.PreparedFollowerTopology``); None natively: no followers.
+    # ``relax.refinement.follower_scale.PreparedFollowerTopology``); None natively: no followers.
     follower_topology = None
 
     def replays_relion_state(self) -> bool:
-        """Whether the run's state comes from a RELION run (replayed slots, STAR files, final-pass state, a
-        frozen boundary or a state-swap probe), which options computed with relax's own rules cannot be
-        combined with."""
+        """Whether the run's state comes from a RELION run (replayed slots, STAR files, final-pass state or
+        sampling, a frozen boundary or a state-swap probe; a follower topology alone is not), which options
+        computed with relax's own rules cannot be combined with."""
         return False
 
     def restore_boundary_state(self, state) -> None:
-        """After the initial resolution is set: install a frozen boundary's ``RefinementState`` fields in
-        ``state``."""
+        """After the initial resolution is set (from ``start_seeds.fsc`` where there is one): install a frozen
+        boundary's ``RefinementState`` fields in ``state``, over it."""
 
     def initial_coarse_grids(self, *, initialized_healpix_order: int, voxel_size, symmetry: str):
         """The first iteration's coarse grids taken from elsewhere (a ``CoarseGrids``), or None: the run builds
@@ -345,9 +386,22 @@ class RunObserver:
     keeps_rotation_posteriors: bool = False
     # A local search collects its per-bucket profile where ``--local_search_profile`` is ``auto``.
     collects_local_search_profiles: bool = False
+    # An adaptive K=1 half also reports its fine pose grid as RELION Euler angles
+    # (``HalfScoreResult.pose_rotation_eulers``).
+    keeps_pose_rotation_eulers: bool = False
 
     def wants_unfiltered_maps(self, numbered_relion_iteration: int) -> bool:
         """Whether this numbered iteration should also reconstruct its unregularized maps for the observer."""
+        return False
+
+    def scored_halves(self, numbered_relion_iteration: int, *, n_classes: int, experiment_datasets) -> tuple[int, ...]:
+        """The halves numbered iteration ``numbered_relion_iteration`` scores (indices into
+        ``experiment_datasets``): both, unless a terminating diagnostic boundary targets one half there."""
+        return (0, 1)
+
+    def bpref_diagnostics_armed(self, iteration: int, half_index: int, *, bpref_device_signature_active: bool) -> bool:
+        """Whether a BPref capture or diagnostic override is armed for half ``half_index`` of numbered iteration
+        ``iteration`` (both zero-based), so that half's first-iteration BPref takes its direct path."""
         return False
 
     def run_started(self, context) -> None:
@@ -403,6 +457,10 @@ class RunObserver:
     def dense_half_scored(self, scored: DenseHalfScored) -> None:
         """One half of a numbered iteration was scored on the single-pass dense route."""
 
+    def numbered_half_recorded(self, recorded: NumberedHalfRecorded) -> None:
+        """One half of a numbered iteration is scored and published, with its profile and significance counts
+        recorded (an empty half: published only)."""
+
     def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None:
         """A local search of one half returned its profile (only when the run collects profiles)."""
 
@@ -413,9 +471,18 @@ class RunObserver:
 class ExpectationProbe(Protocol):
     """The observer hooks an expectation calls mid-step, with data that exists only inside it (a half's scored
     result before its accumulators leave the device, a local search's profile): the hooks of
-    :class:`RunObserver` of the same names. Steps receive this, never the observer."""
+    :class:`RunObserver` of the same names, and its ``keeps_pose_rotation_eulers`` request. Steps receive this, never
+    the observer."""
+
+    keeps_pose_rotation_eulers: bool
 
     def dense_half_scored(self, scored: DenseHalfScored) -> None: ...
+
+    def numbered_half_recorded(self, recorded: NumberedHalfRecorded) -> None: ...
+
+    def bpref_diagnostics_armed(
+        self, iteration: int, half_index: int, *, bpref_device_signature_active: bool
+    ) -> bool: ...
 
     def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None: ...
 
@@ -440,8 +507,16 @@ class MaximizationProbe(Protocol):
 class NoProbe:
     """The no-op :class:`ExpectationProbe` and :class:`MaximizationProbe`: a step called without an observer."""
 
+    keeps_pose_rotation_eulers = False
+
     def dense_half_scored(self, scored) -> None:
         pass
+
+    def numbered_half_recorded(self, recorded) -> None:
+        pass
+
+    def bpref_diagnostics_armed(self, iteration, half_index, *, bpref_device_signature_active) -> bool:
+        return False
 
     def local_search_profile(self, iteration, half_index, profile) -> None:
         pass
@@ -465,8 +540,20 @@ class ObserverExpectationProbe:
 
     observer: RunObserver
 
+    @property
+    def keeps_pose_rotation_eulers(self) -> bool:
+        return self.observer.keeps_pose_rotation_eulers
+
     def dense_half_scored(self, scored: DenseHalfScored) -> None:
         self.observer.dense_half_scored(scored)
+
+    def numbered_half_recorded(self, recorded: NumberedHalfRecorded) -> None:
+        self.observer.numbered_half_recorded(recorded)
+
+    def bpref_diagnostics_armed(self, iteration: int, half_index: int, *, bpref_device_signature_active: bool) -> bool:
+        return self.observer.bpref_diagnostics_armed(
+            iteration, half_index, bpref_device_signature_active=bpref_device_signature_active,
+        )
 
     def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None:
         self.observer.local_search_profile(iteration, half_index, profile)

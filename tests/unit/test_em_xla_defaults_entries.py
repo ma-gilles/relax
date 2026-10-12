@@ -17,7 +17,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 # Every EM entry point must opt in.
-ENTRIES = ("relax.refinement.full_refinement", "relax.commands.initial_model")
+ENTRIES = ("relax.commands.refinement_run", "relax.commands.initial_model")
 MARKER = "RECOVAR_EM_XLA_DEFAULTS"
 # The flag recovar's EM policy adds to XLA_FLAGS when the marker is on.
 EM_FLAG = "--xla_gpu_autotune_level=0"

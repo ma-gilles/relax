@@ -192,14 +192,14 @@ def _translate_native_preprocess_hybrid(
     import jax
     import jax.numpy as jnp
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+    from relax.cuda import translate as cuda_translate
+    from relax.fine_pass.bucket_io import relion_translation_angles_f32
 
     translation_angles = relion_translation_angles_f32(
         np.asarray(fine_translations, dtype=np.float32),
         (image_size, image_size),
     )
-    translated = em_cuda_kernels.relion_translate_score_f32(
+    translated = cuda_translate.relion_translate_score_f32(
         jnp.asarray(processed_score[window_indices][None, :], dtype=jnp.complex64),
         jnp.asarray(translation_angles, dtype=jnp.float32),
         jnp.asarray(window_indices, dtype=jnp.int32),
@@ -219,9 +219,9 @@ def _translate_native_wavg_inputs(
     import jax
     import jax.numpy as jnp
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
-    translated = em_cuda_kernels.relion_translate_score_f32(
+    translated = cuda_translate.relion_translate_score_f32(
         jnp.asarray(np.asarray(native_image, dtype=np.complex64)[None, :]),
         jnp.asarray(native_translation_angles, dtype=jnp.float32),
         jnp.asarray(native_centered_indices, dtype=jnp.int32),
@@ -309,7 +309,7 @@ def _exact_ppref_projections(
     import jax
     import jax.numpy as jnp
 
-    from relax.helpers.projection import compute_relion_projector_projections_block
+    from relax.projection.projection import compute_relion_projector_projections_block
     if __package__:
         from scripts.analyze_k1_exact_ppref_fine_boundary import _load_ppref
     else:
@@ -527,7 +527,7 @@ def main() -> None:
         native_input_comparisons = None
         ppref_metadata = None
         if has_native_inputs:
-            from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+            from relax.fine_pass.bucket_io import relion_translation_angles_f32
 
             orientation_num = int(native_scalar["orientation_num"])
             translation_num = int(native_scalar["translation_num"])

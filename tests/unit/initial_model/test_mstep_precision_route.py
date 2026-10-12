@@ -11,14 +11,12 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import keep_tau2
 
 from relax.commands import initial_model as initial_model_command
-from relax.diagnostics import vdam_mstep_replay
-from relax.parity import vdam_replay
-from relax.relion import initial_model_io
-from relax.vdam import driver, estep_setup, iteration_loop, m_step, native_options
+from relax.parity import vdam_mstep_replay, vdam_replay
+from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
+from relax.vdam import driver, estep_setup, initial_model_io, iteration_loop, m_step, native_options
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.ports import NoProbe, VdamObserver
-from relax.vdam.schedules import DEFAULT_GRAD_MU
 
 pytestmark = pytest.mark.unit
 
@@ -103,13 +101,13 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
     state = _state()
     dataset = SimpleNamespace(n_images=20, voxel_size=1.0, tilt_series_flag=False, image_shape=(8, 8))
     monkeypatch.setattr(driver, "read_star", lambda _: (pd.DataFrame(index=range(20)), None))
-    monkeypatch.setattr(driver.relion_ctf, "dataset_has_premultiplied_ctf", lambda *a: False)
+    monkeypatch.setattr(driver.ctf, "dataset_has_premultiplied_ctf", lambda *a: False)
     monkeypatch.setattr(driver, "optics_shape_class_rows", lambda _: None)
     monkeypatch.setattr(driver, "load_dataset", lambda *a, **k: dataset)
     monkeypatch.setattr(driver, "prepare_particle_reads", lambda *a, **k: None)
     monkeypatch.setattr(estep_setup, "configure_relion_image_mask", lambda *a: None)
     monkeypatch.setattr(initial_model_io, "_native_optics_state", lambda *a: None)
-    monkeypatch.setattr(driver, "_particle_state_from_star", lambda *a, **k: None)
+    monkeypatch.setattr(initial_model_io, "_particle_state_from_star", lambda *a, **k: None)
     monkeypatch.setattr(driver, "initial_sampling_state", lambda *a, **k: SimpleNamespace())
     monkeypatch.setattr(driver, "build_sampling_plan", lambda *a, **k: SimpleNamespace(rotations=None))
     monkeypatch.setattr(driver, "initial_state_from_particles", lambda *a, **k: (state, np.zeros(20, int)))
@@ -132,6 +130,8 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
         assert current.tau2_class is state.tau2_class
         masked = kwargs["post_mstep_update"](current, 1, {})
         assert masked.Iref.dtype == expected
+        # The options' projector dump directory reaches the iteration's projector context.
+        assert kwargs["projector_refresh_fn"].__self__.projector_dump_dir == str(tmp_path / "dump")
         raise AtLoop
 
     monkeypatch.setattr(driver, "run_vdam_iterations", at_loop)
@@ -142,6 +142,7 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
                 outputname=str(tmp_path / "run"),
                 nr_iter=2,
                 mstep_compute_dtype=dtype,
+                environment=native_options.VdamEnvironment(projector_dump_dir=str(tmp_path / "dump")),
             )
         )
 
@@ -229,7 +230,7 @@ def test_float32_rejects_mixed_publication_state_before_execution(monkeypatch, f
 
 
 def test_real_host_device_transaction_publishes_f32_and_preserves_k4_other_slots(monkeypatch):
-    from relax.relion import relion_vdam_mstep as helper
+    from relax.vdam import relion_mstep as helper
 
     state = m_step.prepare_mstep_state_precision(_state(4), "float32")
     state.Iref[:] = np.arange(1, 5, dtype=np.float32)[:, None, None, None]
@@ -264,9 +265,9 @@ def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field, monk
     result[bad_field] = result[bad_field].astype(
         np.float32 if bad_field == "tau2" else np.complex128 if "mom" in bad_field else np.float64
     )
-    from relax.relion import relion_vdam_mstep
+    from relax.vdam import relion_mstep
 
-    monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", lambda *a, **options: result)
+    monkeypatch.setattr(relion_mstep, "relion_vdam_m_step_host", lambda *a, **options: result)
     with pytest.raises(ValueError, match="output|authoritative tau2"):
         m_step._run_m_step_transaction(
             state,

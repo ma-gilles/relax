@@ -10,7 +10,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.vdam import estep_sampling_stub, initial_model_state_stub
 
-from relax.local.local_layout import LocalHypothesisLayout
+from relax.local_search.layout import LocalHypothesisLayout
 from relax.vdam.adaptive_estep import _safe_coarse_significance_image_batch_size, resolve_sparse_pass1_current_size
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import (
@@ -111,11 +111,13 @@ def _fake_noise_stats(offset: float, sumw: float, wsum_noise, img_power):
         sumw=float(sumw),
         wsum_sigma2_noise=np.asarray(wsum_noise, dtype=np.float32),
         wsum_img_power=np.asarray(img_power, dtype=np.float32),
+        wsum_noise_a2=None,
+        wsum_noise_xa=None,
     )
 
 
 def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector_flip():
-    from relax.helpers.half_volume_mstep import (
+    from relax.reconstruction.half_volume_mstep import (
         enforce_relion_half_volume_x0_hermitian_host,
         relion_x_half_volume_to_full,
     )
@@ -147,7 +149,7 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
         [public_data],
         [public_weight],
         state,
-        halfset_idx=0,
+        half_count=None,
         padding_factor=1,
     )[0]
 
@@ -183,8 +185,7 @@ def test_arrays_to_accumulators_splits_grouped_halfsets():
         grouped_data[None, ...],
         grouped_weight[None, ...],
         state,
-        halfset_idx=None,
-        reconstruction_group_count=2,
+        half_count=2,
         padding_factor=1,
     )
 
@@ -255,81 +256,68 @@ def test_initial_model_estep_defaults_to_every_particle_in_alternating_halves(mo
     assert calls[1]["joint_halfset_ids"] is None
 
 
-def test_estep_meta_aggregates_noise_stats_for_model_updates():
-    halfset_results = {
-        0: SimpleNamespace(
-            class_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
-            noise_stats=(
-                _fake_noise_stats(0.0, 0.25, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-                _fake_noise_stats(0.0, 0.75, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-            ),
-            aggregate_noise_stats=_fake_noise_stats(10.0, 3.0, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0]),
-        ),
-        1: SimpleNamespace(
-            class_posterior_sums=np.asarray([3.0, 4.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([3.0, 4.0], dtype=np.float32),
-            noise_stats=(
-                _fake_noise_stats(0.0, 1.25, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-                _fake_noise_stats(0.0, 1.75, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
-            ),
-            aggregate_noise_stats=_fake_noise_stats(20.0, 7.0, [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]),
-        ),
-    }
+def _engine_result(class_sums, mstep_class_sums, **fields):
+    """A stand-in for the engine's KClassEMResult with the fields the E-step meta reads."""
+    defaults = dict(
+        noise_stats=None,
+        aggregate_noise_stats=None,
+        profile_summary=None,
+        class_assignments=np.zeros(1, dtype=np.int32),
+        per_class_stats=tuple(SimpleNamespace(rotation_posterior_sums=np.zeros(2)) for _ in class_sums),
+    )
+    return SimpleNamespace(
+        class_posterior_sums=np.asarray(class_sums, dtype=np.float32),
+        class_mstep_posterior_sums=None if mstep_class_sums is None else np.asarray(mstep_class_sums, dtype=np.float32),
+        **{**defaults, **fields},
+    )
 
-    meta = estep_meta(halfset_results)
 
-    assert meta["wsum_sigma2_offset"] == pytest.approx(30.0)
-    assert meta["sigma2_offset_sumw"] == pytest.approx(10.0)
-    assert meta["noise_sumw"] == pytest.approx(10.0)
-    np.testing.assert_allclose(meta["class_reconstruction_support_sums"], [1.5, 2.5])
+def test_estep_meta_reports_noise_stats_for_model_updates():
+    result = _engine_result(
+        [1.0, 2.0],
+        [1.0, 2.0],
+        noise_stats=(
+            _fake_noise_stats(0.0, 0.25, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+            _fake_noise_stats(0.0, 0.75, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        ),
+        aggregate_noise_stats=_fake_noise_stats(10.0, 3.0, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0]),
+    )
+
+    meta = estep_meta(result)
+
+    assert meta["halfset_ids"] == (0,)
+    assert meta["wsum_sigma2_offset"] == pytest.approx(10.0)
+    assert meta["sigma2_offset_sumw"] == pytest.approx(3.0)
+    assert meta["noise_sumw"] == pytest.approx(3.0)
+    np.testing.assert_allclose(meta["class_reconstruction_support_sums"], [0.25, 0.75])
     np.testing.assert_allclose(meta["halfset_0_class_reconstruction_support_sums"], [0.25, 0.75])
-    np.testing.assert_allclose(meta["halfset_1_class_reconstruction_support_sums"], [1.25, 1.75])
-    np.testing.assert_allclose(meta["wsum_sigma2_noise"], [8.0, 10.0, 12.0])
-    np.testing.assert_allclose(meta["wsum_img_power"], [14.0, 16.0, 18.0])
+    np.testing.assert_allclose(meta["wsum_sigma2_noise"], [1.0, 2.0, 3.0])
+    np.testing.assert_allclose(meta["wsum_img_power"], [4.0, 5.0, 6.0])
     np.testing.assert_allclose(meta["halfset_0_wsum_sigma2_noise"], [1.0, 2.0, 3.0])
-    np.testing.assert_allclose(meta["halfset_1_wsum_img_power"], [10.0, 11.0, 12.0])
+    np.testing.assert_allclose(meta["halfset_0_wsum_img_power"], [4.0, 5.0, 6.0])
+    assert meta["class_direction_posterior_sums"].shape == (2, 2)
+    assert "wsum_noise_a2" not in meta and "halfset_0_wsum_noise_xa" not in meta
 
 
 def test_estep_meta_refuses_a_result_without_mstep_class_mass():
-    halfset_results = {0: SimpleNamespace(class_posterior_sums=np.asarray([1.0, 2.0]), class_mstep_posterior_sums=None)}
-
     with pytest.raises(ValueError, match="no M-step class mass"):
-        estep_meta(halfset_results)
+        estep_meta(_engine_result([1.0, 2.0], None))
 
 
 def test_estep_meta_uses_significant_mstep_mass_for_relion_probability_updates():
-    halfset_results = {
-        0: SimpleNamespace(
-            class_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([0.8, 1.9], dtype=np.float32),
-        ),
-        1: SimpleNamespace(
-            class_posterior_sums=np.asarray([3.0, 4.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([2.7, 3.6], dtype=np.float32),
-        ),
-    }
+    meta = estep_meta(_engine_result([1.0, 2.0], [0.8, 1.9]))
 
-    meta = estep_meta(halfset_results)
-
-    np.testing.assert_allclose(meta["class_posterior_sums"], [3.5, 5.5])
-    np.testing.assert_allclose(meta["class_posterior_sums_full"], [4.0, 6.0])
+    np.testing.assert_allclose(meta["class_posterior_sums"], [0.8, 1.9])
+    np.testing.assert_allclose(meta["class_posterior_sums_full"], [1.0, 2.0])
     np.testing.assert_allclose(meta["halfset_0_class_posterior_sums"], [0.8, 1.9])
     np.testing.assert_allclose(meta["halfset_0_class_posterior_sums_full"], [1.0, 2.0])
+    assert "wsum_sigma2_noise" not in meta and "class_reconstruction_support_sums" not in meta
 
 
-def test_estep_meta_keeps_each_halfset_profile_summary():
-    def halfset(profile_summary):
-        return SimpleNamespace(
-            class_posterior_sums=np.asarray([1.0], dtype=np.float32),
-            class_mstep_posterior_sums=np.asarray([1.0], dtype=np.float32),
-            profile_summary=profile_summary,
-        )
-
-    meta = estep_meta({0: halfset({"em_time_s": 1.25, "batches": 1}), 1: halfset(None)})
-
+def test_estep_meta_keeps_the_profile_summary():
+    meta = estep_meta(_engine_result([1.0], [1.0], profile_summary={"em_time_s": 1.25, "batches": 1}))
     assert meta["halfset_0_profile_summary"] == {"em_time_s": 1.25, "batches": 1}
-    assert "halfset_1_profile_summary" not in meta
+    assert "halfset_0_profile_summary" not in estep_meta(_engine_result([1.0], [1.0]))
 
 
 def test_initial_model_estep_with_a_projector_passes_no_dense_means(monkeypatch):
@@ -395,7 +383,7 @@ def test_projector_conversion_uses_relion_frame(monkeypatch):
 def test_relion_projector_projection_dense_scale_matches_embedded_means(monkeypatch):
     import jax.numpy as jnp
 
-    from relax.helpers import projection as projection_helpers
+    from relax.projection import projection as projection_helpers
 
     raw = jnp.asarray([[1.0 + 2.0j, -3.0 + 0.5j]], dtype=jnp.complex64)
 
@@ -435,11 +423,12 @@ def _assert_nan_stand_ins(means, mean_variance, n_classes):
 def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(monkeypatch, dtype):
     projector_half = np.ones((1, 3, 3, 2), dtype=dtype)
     monkeypatch.setattr(
-        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power",
+        "relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power",
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
-    (half, r_max), _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+    prepared, _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1, projector_dump_dir=None)
+    half, r_max = prepared.half_by_class, prepared.r_max
     config = InitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),
@@ -459,7 +448,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
 def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
     projector_half = np.ones((2, 3, 3, 2), dtype=np.complex64)
     monkeypatch.setattr(
-        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps",
+        "relax.relion.projector_setup.reference_to_relion_projector_half_maps",
         lambda *args, **kwargs: pytest.fail("prebuilt production projector was rebuilt"),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
@@ -482,17 +471,31 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
 
 
 def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_path):
+    """RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR is read once into VdamEnvironment; the iteration's projector context
+    hands it to the dump; unset or blank dumps nothing."""
+    from relax.vdam.estep_setup import IterationProjectorContext
+    from relax.vdam.native_options import VdamEnvironment
+
     projector_half = np.arange(54, dtype=np.float32).reshape(1, 3, 3, 6)[..., :2].astype(np.complex64)
     monkeypatch.setattr(
-        "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power",
+        "relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power",
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
-    monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", str(tmp_path))
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     state.iter = 7
     state.current_size = 4
+    for unset in (None, "  "):
+        if unset is None:
+            monkeypatch.delenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", raising=False)
+        else:
+            monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", unset)
+        assert VdamEnvironment.from_environ().projector_dump_dir is None
+    assert VdamEnvironment().projector_dump_dir is None
+    monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", f" {tmp_path} ")
+    environment = VdamEnvironment.from_environ()
+    assert environment.projector_dump_dir == str(tmp_path)
 
-    prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
+    IterationProjectorContext(projector_dump_dir=environment.projector_dump_dir).refresh(state, padding_factor=1)
 
     with np.load(tmp_path / "iter007_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], projector_half)
@@ -558,15 +561,15 @@ def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
         full_data.append(data_full.reshape(-1))
         full_weight.append(weight_full.reshape(-1))
 
-    common = dict(state=state, halfset_idx=1, padding_factor=1)
+    common = dict(state=state, half_count=None, padding_factor=1)
     compact = arrays_to_accumulators(compact_data, compact_weight, **common)
     full = arrays_to_accumulators(full_data, full_weight, **common)
 
     assert [(value.halfset_idx, value.class_idx) for value in compact] == [
-        (1, 0),
-        (1, 1),
-        (1, 2),
-        (1, 3),
+        (0, 0),
+        (0, 1),
+        (0, 2),
+        (0, 3),
     ]
     for compact_accumulator, full_accumulator in zip(compact, full):
         assert_matches(compact_accumulator.data, full_accumulator.data)
@@ -597,7 +600,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
             data,
             weight,
             state,
-            halfset_idx=0,
+            half_count=None,
                     padding_factor=1,
         )
 
@@ -619,7 +622,7 @@ def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
         data,
         weight,
         state,
-        halfset_idx=0,
+        half_count=None,
         padding_factor=1,
     )
 

@@ -2,13 +2,14 @@
 
 import dataclasses
 
-from relax.dense import scoring_policy
-from relax.refinement import half_scoring, local_sampling, local_search_iteration, optics_shapes
-from relax.refinement.half_inputs import HalfSet
+from relax.classification.probes import NoProbe as KClassNoProbe
+from relax.local_search import records
+from relax.refinement import dense_half, local_half, local_sampling
 from relax.refinement.ports import NoProbe
-from relax.refinement.projector_preparation import PreparedProjector
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
-from relax.sparse_pass2 import local_search_records
+from relax.steps import half_inputs, scoring_policy, shape_class_scoring
+from relax.steps.half_inputs import HalfSet
+from relax.steps.projector_preparation import PreparedProjector
 
 _LOCAL_ITERATION_POSITIONAL = (
     "experiment_dataset",
@@ -38,7 +39,7 @@ def local_iteration_owners(*args, **values):
             raise TypeError(f"multiple values for {name}")
         values[name] = value
     owners = (
-        local_search_records.LocalSearchData(
+        records.LocalSearchData(
             experiment_dataset=values.pop("experiment_dataset"),
             mean=values.pop("mean"),
             noise_variance=values.pop("noise_variance"),
@@ -50,7 +51,7 @@ def local_iteration_owners(*args, **values):
             image_pre_shifts=values.pop("image_pre_shifts", None),
             optics_group_ids=values.pop("optics_group_ids", None),
         ),
-        local_search_iteration.LocalSearchGridSpec(
+        local_half.LocalSearchGridSpec(
             prior_rotations=values.pop("prior_rotations"),
             rotation_grid_rotations=values.pop("rotation_grid_rotations"),
             healpix_order=values.pop("healpix_order"),
@@ -70,7 +71,7 @@ def local_iteration_owners(*args, **values):
             symmetry=values.pop("symmetry", "C1"),
             n_classes=values.pop("n_classes", 1),
         ),
-        local_search_records.LocalSearchKernelPolicy(
+        records.LocalSearchKernelPolicy(
             disc_type=values.pop("disc_type"),
             current_size=values.pop("current_size"),
             reconstruction_current_size=values.pop("reconstruction_current_size", None),
@@ -96,7 +97,7 @@ def local_iteration_owners(*args, **values):
             wsum_current_size=values.pop("wsum_current_size", None),
             firstiter_cc=values.pop("firstiter_cc", False),
         ),
-        local_search_records.LocalSearchSupportPolicy(
+        records.LocalSearchSupportPolicy(
             mstep_relion_x_half=values.pop("mstep_relion_x_half", False),
             disable_adjoint_y=values.pop("disable_adjoint_y", False),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf", False),
@@ -140,7 +141,7 @@ def local_half_owners(**values):
     projector_r_max = values.pop("relion_projector_r_max", None)
     projector = None if projector_data is None else PreparedProjector(data=projector_data, r_max=projector_r_max)
     owners = (
-        half_scoring.HalfScoringData(
+        half_inputs.HalfScoringData(
             particles=HalfSet(
                 index=values.pop("k"),
                 dataset=values.pop("experiment_dataset"),
@@ -174,21 +175,18 @@ def local_half_owners(**values):
             perturbation=values.pop("local_search_random_perturbation"),
             angular_step_deg=values.pop("local_search_angular_sampling_deg"),
         ),
-        half_scoring.LocalPriorSpec(
+        local_half.LocalPriorSpec(
             trans_prior_center=values.pop("trans_prior_center"),
             trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
             current_sigma_offset_angstrom=values.pop("current_sigma_offset_angstrom"),
             translation_search_base=values.pop("translation_search_base"),
-            local_search_translation_prior_mode=values.pop("local_search_translation_prior_mode"),
             replay_prior_translations=values.pop("replay_prior_translations"),
         ),
-        half_scoring.LocalBatchPolicy(
+        local_half.LocalBatchPolicy(
             max_significants=values.pop("max_significants"),
         ),
-        half_scoring.LocalExecutionPolicy(
+        local_half.LocalExecutionPolicy(
             disc_type=values.pop("disc_type"),
-            disable_adjoint_y=values.pop("disable_adjoint_y"),
-            disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
             nyquist_column_counting=values.pop("nyquist_column_counting", "relion"),
@@ -211,7 +209,7 @@ def local_half_owners(**values):
             score_only=values.pop("diagnostic_score_only"),
             firstiter_cc=values.pop("firstiter_cc", False),
         ),
-        half_scoring.LocalDiagnosticPolicy(
+        local_half.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),
             debug_iteration=values.pop("debug_iteration", None),
             collect_local_search_profile=values.pop("collect_local_search_profile"),
@@ -219,7 +217,7 @@ def local_half_owners(**values):
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
             probe=values.pop("probe", NoProbe()),
         ),
-        optics_shapes.OpticsSpec(
+        shape_class_scoring.OpticsSpec(
             noise_radial_k=values.pop("noise_radial_k", None),
             coarse_sizing=values.pop("coarse_sizing", None),
             class_translations=values.pop("class_translations", None),
@@ -234,7 +232,7 @@ def local_half_owners(**values):
 # RELION's values of the dense policy fields a test does not set: the production builders
 # (expectation.score_numbered_half, finalization.run_final_all_data) pass every field.
 def dense_sampling_spec(**fields):
-    return half_scoring.DenseSamplingSpec(**{"coarse_engine": "auto", "symmetry": "C1", **fields})
+    return dense_half.DenseSamplingSpec(**{"coarse_engine": "auto", "symmetry": "C1", **fields})
 
 
 def dense_batch_policy(**fields):
@@ -248,11 +246,11 @@ def dense_batch_policy(**fields):
             "class_batch_overrides",
         )
     )
-    return half_scoring.DenseBatchPolicy(**{**unset, **fields})
+    return dense_half.DenseBatchPolicy(**{**unset, **fields})
 
 
 def dense_variant_policy(**fields):
-    return half_scoring.DenseVariantPolicy(
+    return dense_half.DenseVariantPolicy(
         **{
             "coarse_window_size": None,
             "fine_window_size": None,
@@ -263,7 +261,7 @@ def dense_variant_policy(**fields):
 
 
 def dense_execution_policy(**fields):
-    return half_scoring.DenseExecutionPolicy(
+    return dense_half.DenseExecutionPolicy(
         **{
             "return_best_pose_details": True,
             "bpref_device_signature_active": False,
@@ -275,6 +273,8 @@ def dense_execution_policy(**fields):
             "firstiter_cc_tree_rescore_max_margin": None,
             "firstiter_cc_support": "relion",
             "nyquist_column_counting": "relion",
+            "k_class_probe": KClassNoProbe(),
+            "keep_pose_rotation_eulers": False,
             **fields,
         }
     )

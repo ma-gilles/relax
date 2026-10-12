@@ -251,7 +251,7 @@ open. Existing sources/jobs are preserved; no new GPU submission or publication.
 
 The refactor is actively completing code before further production qualification,
 following the user's October 2 clarification. Angular-transition policy now
-belongs to `refinement/convergence.py`; numbered perturbation and scoring-window
+belongs to `refinement/numbered_transitions.py`; numbered perturbation and scoring-window
 planning belong to `refinement/iteration_planning.py`. The controller preserves
 pre-update coarse order, replay/accuracy timing, grid execution and explicit
 state writes. See the [complete calling flow](final_local_sampling_patch_review.md#numbered-sampling-policy-and-fourier-windows)
@@ -310,7 +310,7 @@ occurred; inspect the earlier uncertain submission's remote state before retryin
 ## Current startup pose source ownership
 
 Startup pose selection, loading, corrections and provenance now have one
-operation in `relion/input_poses.py`. The command retains source setup order and
+operation in `star/input_poses.py`. The command retains source setup order and
 visible replay/frozen-correction construction. Reports reuse provenance produced
 with the selected data. See the [complete caller, result types and implementation](final_local_sampling_patch_review.md#startup-pose-source-ownership).
 
@@ -425,13 +425,15 @@ are historical evidence rather than current instructions.
 
 RELION's "Perform image alignment: No" (feature gaps row 2, single particles). Each particle is scored
 against every class at its input angles and offsets: no pass 1, one rotation and one translation per
-particle (`relax/classification/given_poses.py`). The translation is the offset's remainder after the
+particle (`relax/refinement/given_poses.py`). The translation is the offset's remainder after the
 rounded pre-shift, applied to the particle's prepared images as a phase (`image_translations` of the
 resident pass, `prepare_unshifted_bucket_operands`), with the one zero translation scored. The direction
 prior is kept (ml_optimiser.cpp:5198); sigma_offset is still updated (:8690). With `--firstiter_cc`
 (RELION's GUI default) the first iteration scores each particle by normalized cross-correlation at its
-given pose against the one reference (:4989, :8021, :4389-4402). Refused for now: `--firstiter_cc` from
-several references, `--continue`, K=1, several image shapes, subtomograms.
+given pose against the one reference (:4989, :8021, :4389-4402), or, from one reference per class,
+against every class, the class of the best CC taking the particle (relax#78: only `do_generate_seeds`
+restricts that iteration to one reference, :4392-4401). Refused for now: `--continue`, K=1, several
+image shapes, subtomograms.
 
 - Gate (team-lead 2026-10-05: iterations 1-5 trajectory, RELION 5.0.1 patched non-MPI GPU, same-seed
   RELION runs bit-identical, seed rule over seeds 1-3; script `em_work/relax_onengine_20260926/skipalign_20261004/gate.py`).
@@ -445,6 +447,21 @@ several references, `--continue`, K=1, several image shapes, subtomograms.
   0, 0, +0.0025 +/- 0.0010, +0.0041 +/- 0.0023, +0.0095 +/- 0.0049, 0 (all pass); agreement 0.983-1.000
   at it3-5, map FSC-AUC at least 0.9996. On the offsets fixture agreement at least 0.992 and map FSC-AUC
   at least 0.9998 through it25.
+- `--firstiter_cc` from one reference per class (relax#78, October 11, 2026): data_pdb_k4_5k_128, its four
+  references, 5 iterations, seed 1, page-build RELION (same-seed RELION runs bit-identical). Class assignments
+  equal RELION's for all 5000 particles at every iteration; class maps within 1.2e-6 relative L2 at iteration 1
+  and 4.6e-4 at iterations 2-5; at most 3 particles with a Pmax difference above 1e-3 (largest 3.2e-3). The
+  winner class is found by scoring every image against each class in turn and then scoring the winners'
+  subsets, K + 1 passes of one sample per image (Slurm 15358774).
+- A class that empties on its own (the same list with class 3's reference replaced by white noise, so the
+  cross-correlation iteration gives it no particle): RELION sets its `pdf_class` to 0 and leaves it out. relax
+  stopped at iteration 2 of such a run with "class_log_priors must be finite" in the global and the given-pose
+  engine (the local-search route already took the class, relax#68); the engine now takes the minus-infinite log
+  prior. Global search (healpix 1, offsets 4/2, oversampling 1): assignments equal RELION's for all 5000
+  particles at iterations 1-5, live class maps within 1.3e-6, no Pmax difference above 1e-3. `--skip_align`:
+  one particle differs at iteration 2 and none at 1, 3, 4 and 5, live maps within 4.1e-4, at most 9 Pmax
+  differences above 1e-3 (largest 6.1e-3). Slurm 15358774 (RELION `--skip_align`) and 15358819. Tier item
+  `kclass_emptied_class` runs both searches with structural checks.
 - Offset handling: the same images with STAR offsets drawn in (-1.6, 1.6) px (seed 20261005, rows at
   exactly 0.5 and 1.5 px; the offsets do not describe the images, so this row tests parity, not accuracy
   against ground truth). Iteration-1 class maps relax vs RELION 1.1e-4 relative L2 (9e-5 without offsets);
@@ -492,7 +509,13 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   current-size crop (DC and x=0 column included), with RELION's 128 atomic additions per image, and
   keeps the first maximum in RELION's orientation order (`tomo_coarse.particle_coarse_cc_winners`);
   pass 2 scores its children (`resident_tilts.tilt_cc_scores`: each image's CC operands translated per
-  slot). Class3D's CC iteration is K=1 against class 0 (ml_optimiser.cpp:4389). Iteration 1 of
+  slot). The tilt-series Class3D CC iteration is K=1 against class 0, which is RELION's rule when it
+  seeds the classes from one reference (`do_generate_seeds`, ml_optimiser.cpp:4392-4401); with one
+  reference per class RELION scores every class, as the single-particle local pass does (relax#72) and
+  the tilt-series pass does since relax#75: each particle goes to the class of its best coarse sample
+  (the first class on an exact tie) and that class runs the K=1 pass over its particles
+  (`tomo_scoring._score_class_references_cc`). etob2_premult, K=2 from a reference STAR, against page-build
+  RELION: class, rotation and offset identical for 1000/1000 particles at iterations 1 and 2. Iteration 1 of
   et01_base seed 1 against RELION 5.0.1 (mpiscale build, MPI 3x4, H100), `run_it001_data.star`:
   orientations identical for 2000/2000 particles, offsets for 1998/2000
   (`em_work/cryoet_vdam_20261001/cc_it1`). Iteration 1 took 332 s in relax, about 60 min in RELION.
@@ -866,6 +889,13 @@ maintained callers migrate together; main heterogeneity APIs and serialized
 formats remain compatible. Production EM is float32; double precision is a
 labeled diagnostic only.
 
+Diagnostic switches, off by default: `RELAX_EM_DETERMINISTIC_REDUCTIONS=1` (fixed-order duplicate-index sums)
+and `RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1` (2026-10-11, relax#65: the per-row backprojection goes through a
+float32 partial pair flushed every 32,768 rows, for one-to-one comparison with RELION builds that backproject
+in double; production keeps the direct accumulation, which loses the same low-resolution weight as stock GPU
+RELION, 1e-2 at shell 0 of a soft pass; see "Exact float32 accumulation" in
+[the algorithm map](../math/relion_refinement_algorithm.md)).
+
 ## Feature gaps (moved from the README, 2026-09-29)
 
 The RELION 5 options and behaviours relax does not support yet, row by row with what each would take, are
@@ -1056,7 +1086,7 @@ how it was qualified.
   RELION GPU and relax (0.210942 vs 0.213352-0.214689).
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
   `rlnCtfBfactor` and `rlnCtfScalefactor`) with one float64 JAX program
-  (`relion_ctf._relion_ctf_program` in `relax/relion/relion_ctf.py`), per request, at the
+  (`relion_ctf._relion_ctf_program` in `relax/relion/ctf.py`), per request, at the
   requested pixels, on the default device; no row is cached on the host or the device
   (relax#39). The rows are cast to float32 before GPU scoring. `sin` and `exp` are the
   device's, so a value can differ from RELION's CPU double in the last unit. Production CTF
@@ -1096,18 +1126,18 @@ the binding in `tests/unit/test_*_vs_relion_bind.py` (and `tests/unit/initial_mo
 | `sampling.py` | oversampled-orientation builder | `get_oversampled_orientations_batch` (NumPy fallback for C1; required for non-C1) | every run (fine pass) | `HealpixSampling::getOrientations` children with random perturbation | ported (`healpix_sampling.py`) |
 | `sampling.py` | inverse scoring matrices | `euler_angles_to_inverse_matrices` (NumPy fallback exists) | every run | `Euler_angles2matrix` then `Matrix2D::inv` | ported (`healpix_sampling.py`) |
 | `sampling.py` | device scoring perturbation | `euler_angles_to_matrix` (NumPy fallback exists) | every run with perturbation | perturbation Euler matrix | ported (`healpix_sampling.py`) |
-| `sampling.py` | `_relion_rnd_unif_scaled_first_draw` | `vdam_rnd_unif_range_sequence` (glibc `ctypes` fallback) | every run (perturbation draw) | `init_random_generator(seed)` then `rnd_unif(low, high)` | ported (`helpers/relion_random.py`) |
-| `relion/relion_projector_setup.py` | `reference_to_relion_projector_half_maps_and_power` | `compute_fourier_transform_map` | `--projector_setup_backend native` and geometry the JAX path does not take (odd box, padding > 2, interpolator 0) | `Projector::computeFourierTransformMap` | removed: one device setup, other geometry refused; RELION's transform is `scripts/lib/native_projector_setup.py` |
-| `reconstruction/regularization_relion.py` | tau2 from reference | `compute_fourier_transform_map` | callers that pass no `projector_power_spectrum` | projector power spectrum | ported (device projector power) |
-| `relion/relion_ctf.py` | exact CTF | `get_ctf_images_batch` | CTF images | `CTF::getFftwImage` | ported by optics (0cbfb8b) |
-| `helpers/expected_accuracy.py` | `estimate_relion_expected_accuracy_from_prepared_inputs` | `vdam_expected_angular_errors` | auto-refine, Class3D, InitialModel, tomo | `MlOptimiser::calculateExpectedAngularErrors` | ported (`helpers/relion_expected_accuracy.py`, CTF from `relion_ctf.relion_ctf_fftw_half`) |
-| `helpers/expected_accuracy.py` | `relion_auto_refine_half_orders`, `relion_half1_trial_order`, `relion_class3d_trial_layout` | `auto_refine_randomise_half_orders_mt19937` | auto-refine, Class3D | `std::shuffle` with `mt19937(seed + iter)` | ported (`relion_random.shuffled_orders`) |
+| `sampling.py` | `_relion_rnd_unif_scaled_first_draw` | `vdam_rnd_unif_range_sequence` (glibc `ctypes` fallback) | every run (perturbation draw) | `init_random_generator(seed)` then `rnd_unif(low, high)` | ported (`numerics/relion_random.py`) |
+| `relion/projector_setup.py` | `reference_to_relion_projector_half_maps_and_power` | `compute_fourier_transform_map` | `--projector_setup_backend native` and geometry the JAX path does not take (odd box, padding > 2, interpolator 0) | `Projector::computeFourierTransformMap` | removed: one device setup, other geometry refused; RELION's transform is `scripts/lib/native_projector_setup.py` |
+| `reconstruction/regularization.py` | tau2 from reference | `compute_fourier_transform_map` | callers that pass no `projector_power_spectrum` | projector power spectrum | ported (device projector power) |
+| `relion/ctf.py` | exact CTF | `get_ctf_images_batch` | CTF images | `CTF::getFftwImage` | ported by optics (0cbfb8b) |
+| `steps/expected_accuracy.py` | `estimate_relion_expected_accuracy_from_prepared_inputs` | `vdam_expected_angular_errors` | auto-refine, Class3D, InitialModel, tomo | `MlOptimiser::calculateExpectedAngularErrors` | ported (`sampling/relion_expected_accuracy.py`, CTF from `relion_ctf.relion_ctf_fftw_half`) |
+| `sampling/expected_accuracy.py` | `relion_auto_refine_half_orders`, `relion_half1_trial_order`, `relion_class3d_trial_layout` | `auto_refine_randomise_half_orders_mt19937` | auto-refine, Class3D | `std::shuffle` with `mt19937(seed + iter)` | ported (`relion_random.shuffled_orders`) |
 | `vdam/subset_schedule.py` | subset shuffle | `vdam_randomise_particles_order` | InitialModel | `std::shuffle` with `mt19937(seed + iter)` | ported (`relion_random.shuffled_orders`) |
 | `vdam/estep_setup.py` | `IterationProjectorContext.refresh` | `vdam_projector_power_spectrum` | InitialModel | `MlModel::setFourierTransformMaps` tau2 | ported (device projector power) |
 | `vdam/bootstrap_iref.py` | `compute_bootstrap_iref_via_cpp` | `vdam_bootstrap_iref` | InitialModel | random-angle bootstrap reconstruction (ml_optimiser.cpp:3127-3205) | ported (`vdam/bootstrap_reconstruction.py`, now `compute_bootstrap_iref` / `postprocess_bootstrap_iref`) |
 | `vdam/bootstrap_iref.py` | `postprocess_bootstrap_iref_via_cpp` | `vdam_postprocess_initial_iref` | InitialModel | blobs, low-pass and soft mask with the C `rand()` stream | ported (`vdam/bootstrap_reconstruction.py`, now `compute_bootstrap_iref` / `postprocess_bootstrap_iref`) |
-| `vdam/m_step.py` (single-class M-step) | `_get_bindings` and the step-by-step path | `vdam_reweight_grad`, `vdam_first_moment`, `vdam_second_moment`, `vdam_apply_momenta`, `vdam_update_ssnr_arrays_from_bpref`, `vdam_reconstruct_grad` | InitialModel (module required by the default JAX transaction; step path only with dumps/replay or `use_native_transaction=False`) | VDAM M-step | done: production runs the transaction; RELION's steps are `diagnostics/vdam_native_mstep.py` |
-| `relion/relion_vdam_mstep.py` | `_first_moment_initializes`, `relion_vdam_m_step_host` | `vdam_first_moment_initializes`, `vdam_m_step_transaction` (FFT grid < 16) | InitialModel | serial first-moment sum test; small-grid M-step | ported (serial host sum; grids < 16 refused) |
+| `vdam/m_step.py` (single-class M-step) | `_get_bindings` and the step-by-step path | `vdam_reweight_grad`, `vdam_first_moment`, `vdam_second_moment`, `vdam_apply_momenta`, `vdam_update_ssnr_arrays_from_bpref`, `vdam_reconstruct_grad` | InitialModel (module required by the default JAX transaction; step path only with dumps/replay or `use_native_transaction=False`) | VDAM M-step | done: production runs the transaction; RELION's steps are `scripts/vdam_native_mstep.py` |
+| `vdam/relion_mstep.py` | `_first_moment_initializes`, `relion_vdam_m_step_host` | `vdam_first_moment_initializes`, `vdam_m_step_transaction` (FFT grid < 16) | InitialModel | serial first-moment sum test; small-grid M-step | ported (serial host sum; grids < 16 refused) |
 | `commands/ppca_initial_model.py` | `source_identity` | module file hash | PPCA initial model | provenance hash of the binding | removed (no binding in provenance) |
 
 `commands/build_relion_bind.py` builds the oracle and is a tool, not a production path.
@@ -1141,7 +1171,7 @@ User decision (2026-09-26): relax keeps one pass-2 engine, the device-resident o
 (`relax/sparse_pass2/resident_*.py`), as RELION keeps one algorithm. Every other pass-2
 engine or route is deprecated: its docstring says so, and a run that routes a pass to it
 logs one `DEPRECATED engine` warning per engine, pass kind and reason
-(`relax.sparse_pass2.engine_record.warn_deprecated_engine`), next to the per-iteration
+(`relax.runtime.engine_record.warn_deprecated_engine`), next to the per-iteration
 `pass2_engine_trajectory` entry. They are removed in the order below once resident covers
 what still routes to them. Inventory and line estimates (relax bc6d3e1):
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_onengine_20260926/PLAN.md`.
@@ -1196,7 +1226,7 @@ the score cache, the generic preprocessing and operands, the manual and dense co
 `relax/renamed_environment.json`). The generic scorer's arithmetic stays as a float64 test oracle
 (`tests/helpers/generic_coarse_reference.py`, `tests/unit/test_pass1_program_generic_reference.py`), and
 `tests/helpers/exact_pass1_harness.py` runs pass 1 on CPU for the significance unit tests. The generic
-kernels of `relax/scoring/scoring.py` that only dense `run_em` used left with it (item 6).
+kernels of `relax/scoring/coarse_kernels.py` that only dense `run_em` used left with it (item 6).
 
 Pass 1 on stable Fourier-window shapes: tried 2026-10-03, no gain, not landed (speedw; team-lead decision).
 
@@ -1232,7 +1262,7 @@ posterior, the winner, Pmax and the rotation mask; the device CTF row gather is 
 (`relion_ctf._gather_ctf_rows`); a batch's host read-backs (`publish_batch` in
 `relax/scoring/pass1_publish.py`, called by `significance._compute_k_class_significance_batched`) run once the next batch's operands are on the device and
 before that batch's score program, and the image preprocess kernel's finite check is read at the end of the loop
-(`kernels.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. That
+(`preprocess.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. That
 check's queue belongs to the loop: a failure names pass 1 and each batch with an invalid image (batch number, positions
 in the pass, dataset image range; the kernel reports a count per call), it is raised before pass 1 returns, and a loop
 that fails for another reason drops its unread checks. The check reads the soft-mask background, so it sees a
@@ -1281,7 +1311,7 @@ masked GT 0.679335 against same-seed RELION 0.679354; K4 pdb 50k Class3D 345 vs 
 same seed 0.240796, band 0.239769-0.24114), class accuracy 0.87506 (band 0.87462-0.87824).
 `--scratch_dir` (2026-10-07) stages single particles as RELION's `copyParticlesToScratch` does: only the
 referenced particles, one compact stack per optics group in STAR order, read through a scratch copy of the particle
-STAR whose `_rlnImageName` points into them (`relax/helpers/particle_io.py`). Until then relax copied whole stack
+STAR whose `_rlnImageName` points into them (`relax/io/particle_io.py`). Until then relax copied whole stack
 files (to reuse recovar's per-file staging redirect): the EMPIAR-10076 10k fixture names 10k images of a 131k-image
 stack, so every run copied 34.58 GB to local disk in 38 s. The input STAR stays the only source of image names for
 every output (`tests/integration/test_scratch_dir_image_names.py`). Subtomogram tilt stacks are one file per particle
@@ -1333,14 +1363,14 @@ reads the targets' pre-prior and with-prior scores from the pass-1 program (`dum
 `score_capture_mode="pass1_program_target_rows"`), so a dump no longer leaves the program.
 
 Projection kernel (2026-09-27, kspeed, from team-lead's TODO): `project_relion_half_capacity`
-and the half-storage branch of `relax.helpers.projection._project_relion_projector_texture` take
+and the half-storage branch of `relax.projection.projection._project_relion_projector_texture` take
 every slab whose texels fit the staging kernel's int32 indexing (box 800 at padding 2 is 1603 x
 1603 x 802), in launches of at most 65535 rotations, so one kernel serves every size. A resident
 local half stages one `RelionCapacityHalfTextureF32` for every slab, a plane group at a time
 (1 GiB of staging beside the texture); `resident_local_pass2._open_resident_local_projector_texture`
 and its persistent texture are gone. The per-call `relion_projector_half_texture_f32` branch now
 serves only the geometry the half-storage kernel does not take (odd output sizes, padding other
-than 1 or 2). The XLA pool reserve (`relax/helpers/xla_memory_reserve.py`) sizes the texture.
+than 1 or 2). The XLA pool reserve (`relax/runtime/xla_memory_reserve.py`) sizes the texture.
 
 ## Current evidence and open gates
 
@@ -1371,7 +1401,7 @@ measured free memory) and the low-resolution half join, which moved a physically
 large grid's host accumulators back to the device before the 1600^3 inverse FFT.
 
 RELION's projector (`Projector::computeFourierTransformMap`) has one device build
-(`relax/relion/relion_projector_setup.py::_build_projector_window`, bigbox 2026-09-27): the padded
+(`relax/relion/projector_setup.py::_build_projector_window`, bigbox 2026-09-27): the padded
 transform one axis at a time inside a window, mask and shell power on the device. It replaced the
 whole-volume rfftn build, which needed about 100 GB at box 800 and left 10202 on the native host
 binding (two single-threaded builds, 117 s per iteration in py-spy 14561585). At 10202 it22 the
@@ -1585,7 +1615,7 @@ runs 0.2225-0.2259 / 0.3550-0.3605. `--pass2_engine auto` now selects resident f
 
 VDAM coarse scorer, native vs GEMM (2026-09-26, relax main bc6d3e1; same node, one H100 + 8 CPUs per
 arm, uncapped). The default exact-operand coarse pass is a real-packed float32 GEMM pair
-(`relax/scoring/scoring.py::_relion_coarse_gaussian_gemm_scores_jit`); the native arm is RELION's fused
+(`relax/scoring/coarse_kernels.py::_relion_coarse_gaussian_gemm_scores_jit`); the native arm is RELION's fused
 per-pair projector/diff2 kernel (`RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO=0`, and for the K>1 resident route
 also `RECOVAR_K1_COARSE_GAUSSIAN_FFI=1 RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF=1
 RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS=1 RECOVAR_K1_COARSE_FUSED_PROJECTOR=1`, because K>1 resident
@@ -1764,7 +1794,7 @@ error): `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
 `RELAX_EM_JIT_STAGE_GLUE=0`, `RELAX_LOCAL_IMAGE_CAPACITY_LADDER=0`. Device coarse significance has no
 switch: every class's coarse support is compacted on the device whenever the ids are collected
 (K>1 and VDAM too); score dumps keep the host mask
-(`relax/sparse_pass2/resident_significance.py`). Flip pairs (relax vs
+(`relax/fine_pass/resident_significance.py`). Flip pairs (relax vs
 RELION wall, same node): EMPIAR-10073 1.05x and 10345 1.01x pass the scorecard thresholds; K1
 50k/256 runs at 0.65x, with the resident masked GT FSC 9e-5 below the three-run RELION band
 (compact inside it). OPEN (small, both engines): on 10345 and K1 50k/256 relax's map agreement with RELION
@@ -1820,7 +1850,7 @@ carried factor. Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_normfix_
 (`PERSTEP_DEVIATION.json`, `PMAX_AB.json`).
 
 Map sign convention: every map relax writes is in RELION's map convention, so a relax map and
-the RELION map of the same run agree voxel for voxel and in sign (`relax/helpers/map_io.py`).
+the RELION map of the same run agree voxel for voxel and in sign (`relax/io/map_io.py`).
 relax holds volumes internally in RECOVAR's frame, the negated transpose of RELION's file array
 (`relion_volume_to_recovar`); the sign entered at the map-file boundary, where the refinement,
 the parity harness and the per-iteration dumps wrote with RECOVAR's `write_mrc` and the K1

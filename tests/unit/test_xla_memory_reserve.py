@@ -1,4 +1,4 @@
-"""The XLA pool reserve for RELION's projector texture (relax.helpers.xla_memory_reserve)."""
+"""The XLA pool reserve for RELION's projector texture (relax.runtime.xla_memory_reserve)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from conftest import repo_subprocess_env
 
-from relax.helpers import xla_memory_reserve as reserve
+from relax.runtime import xla_memory_reserve as reserve
 
 H100_TOTAL_BYTES = 81559 * 1024**2  # nvidia-smi memory.total of the della H100s
 
@@ -167,16 +167,16 @@ def test_an_allocator_failure_in_the_default_mode_says_whether_the_pool_was_frag
 
 
 def test_the_refinement_entry_carries_the_pool_note(monkeypatch):
-    """A RESOURCE_EXHAUSTED raised inside ``relax refine``'s entry (``full_refinement.main``) leaves it with the note."""
-    from relax.refinement import full_refinement
+    """A RESOURCE_EXHAUSTED raised inside ``relax refine``'s entry (``refinement_run.main``) leaves it with the note."""
+    from relax.commands import refinement_run
 
     def exhausted(*args, **kwargs):
         raise ValueError("RESOURCE_EXHAUSTED: Out of memory while trying to allocate 7.65GiB.")
 
     monkeypatch.setattr(reserve, "_pool_statistics", lambda: None)
-    monkeypatch.setattr(full_refinement, "activate_recovar_compilation_cache", exhausted)
+    monkeypatch.setattr(refinement_run, "activate_recovar_compilation_cache", exhausted)
     with pytest.raises(ValueError) as err:
-        full_refinement.main("refine")
+        refinement_run.main("refine")
     assert "GPU pool at the failure" in err.value.__notes__[0]
 
 

@@ -100,7 +100,7 @@ def _load(path: Path, *, relion: bool) -> np.ndarray:
 
 
 def _load_relax(path: Path) -> np.ndarray:
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
 
     return np.asarray(load_relax_map(path, legacy_recovar_sign=True), dtype=np.float64)
 

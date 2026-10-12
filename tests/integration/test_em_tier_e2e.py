@@ -28,7 +28,7 @@ from helpers.coarse_engine_selection import run_selected_command
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.map_sign import assert_same_sign_convention
 
-from relax.helpers.map_io import load_relax_map
+from relax.io.map_io import load_relax_map
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # ``relax refine`` (relax/commands/refine.py) runs through the test interpreter.
@@ -212,7 +212,7 @@ def test_k1_5k128_standalone_autorefine(tmp_path):
             assert scores["relax_vs_gt"]["fsc_auc"] >= min(band_gt) - gate["gt_fsc_auc_below_band"], (kind, scores)
             worst = min(v["fsc_auc"] for v in scores["relax_vs_relion"].values())
             assert worst >= gate["min_cross_fsc_auc"], (kind, scores)
-    # The written files carry RELION's sign and convention (relax.helpers.map_io).
+    # The written files carry RELION's sign and convention (relax.io.map_io).
     assert_same_sign_convention(output_dir / "final_merged.mrc", relion_ref / "run_class001.mrc")
     for h in (1, 2):
         assert_same_sign_convention(output_dir / f"final_half{h}_unfil.mrc", relion_ref / f"run_half{h}_class001_unfil.mrc")

@@ -7,7 +7,7 @@ separate; the shared complement container only describes input indices.
 
 import numpy as np
 
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
+from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 
 
 def _build_fine_grid_significance_mask(

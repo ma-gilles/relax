@@ -21,12 +21,12 @@ import numpy as np
 from recovar import core
 from scipy.spatial.transform import Rotation
 
-from relax.helpers.half_spectrum import make_half_image_weights
-from relax.helpers.preprocessing import relion_half_translation_lattice
+from relax.fourier.half_spectrum import make_half_image_weights
+from relax.fourier.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
 from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
-from relax.vdam.bootstrap_iref import compute_ini_high_shell
+from relax.reconstruction.resolution import compute_ini_high_shell
 
 
 @dataclasses.dataclass(frozen=True)
@@ -85,14 +85,14 @@ class TiltParticles:
 
 
 def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
-    """:class:`TiltParticles` of a :class:`relax.refinement.tomo_half.TomoDataset`.
+    """:class:`TiltParticles` of a :class:`relax.steps.tomo_half.TomoDataset`.
 
     Particles of one tomogram form one group when every image's ``Aproj`` equals its frame's
     matrix in the tomogram (one subtomogram matrix); a particle that disagrees forms its own group.
     Tomograms with identical frame lists share a group.
     """
-    from relax.helpers.batch_fetch import fetch_indexed_batch
-    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
+    from relax.io.batch_fetch import fetch_indexed_batch
+    from relax.relion.ctf import relion_exact_ctf_half_from_source_star
 
     offsets = np.asarray(tomo.unit_image_offsets, dtype=np.int64)
     projections = np.asarray(tomo.image_projections, dtype=np.float64)
@@ -173,7 +173,7 @@ def tilt_tiles(particles: TiltParticles, ids, tile_size: int) -> list[np.ndarray
 def tilt_shifts(frames, translations) -> np.ndarray:
     """2D shift ``[Aproj t]_{1,2}`` of each frame for each 3D shift, ``(K, T, 2)`` float32.
 
-    RELION's ``Experiment::getTranslationInTiltSeries`` (:func:`relax.refinement.tomo_particles.tilt_image_shifts`).
+    RELION's ``Experiment::getTranslationInTiltSeries`` (:func:`relax.sampling.tomo_particles.tilt_image_shifts`).
     """
     frames = np.asarray(frames, dtype=np.float64)
     return np.einsum("kab,tb->kta", frames[:, :2, :], np.asarray(translations, dtype=np.float64)).astype(np.float32)

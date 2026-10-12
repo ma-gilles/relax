@@ -1,7 +1,7 @@
 """--scratch_dir stages compact optics-group stacks; every output STAR keeps the input's image names.
 
 With ``--scratch_dir`` single particles are read through a scratch copy of the particle STAR whose
-``_rlnImageName`` points into one compact stack per optics group (relax.helpers.particle_io, as RELION's
+``_rlnImageName`` points into one compact stack per optics group (relax.io.particle_io, as RELION's
 ``copyParticlesToScratch``). The input STAR stays the only source of image names for outputs, so a
 scratch name in a written STAR would be a leak. Refine3D runs on the K1 5k/128 fixture (RELION run
 files are written for one image shape, ``--write-iteration-every 1``) and VDAM InitialModel on the S3b
@@ -51,7 +51,7 @@ def test_refine_with_scratch_dir_writes_the_input_image_names(tmp_path):
         sys.executable,
         "-c",
         "import logging, sys; logging.basicConfig(level=logging.INFO); "
-        "from relax.refinement.full_refinement import run_from_command_line; sys.argv[0] = 'relax refine'; "
+        "from relax.commands.refinement_run import run_from_command_line; sys.argv[0] = 'relax refine'; "
         "run_from_command_line('refine')",
         "--data_dir",
         str(K1_FIXTURE_DIR),

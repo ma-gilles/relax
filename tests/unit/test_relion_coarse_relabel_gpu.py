@@ -16,14 +16,15 @@ from scipy.spatial.transform import Rotation
 
 
 def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.projection import (
+    from relax.cuda import coarse as cuda_coarse
+    from relax.cuda import translate as cuda_translate
+    from relax.fine_pass.bucket_io import relion_translation_angles_f32
+    from relax.projection.projection import (
         compute_relion_projector_projections_block,
         relion_projector_half_to_texture_full,
     )
-    from relax.relion.relion_coarse_operands import relion_coarse_translate
+    from relax.scoring.coarse_operands import relion_coarse_translate
     from relax.scoring.tomo_coarse import coarse_score_layout
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
     rng = np.random.default_rng(7)
     padding_factor = 2
@@ -43,7 +44,7 @@ def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
     weight = (rng.uniform(0.1, 2.0, images.shape) * np.asarray(layout.score_active_mask)[None]).astype(np.float32)
     initial = np.zeros(2, dtype=np.float32)
     angles = jnp.asarray(relion_translation_angles_f32(rng.uniform(-3.0, 3.0, (9, 2)), image_shape), dtype=jnp.float32)
-    fused = em_cuda_kernels.relion_coarse_diff2_projector_f32(
+    fused = cuda_coarse.relion_coarse_diff2_projector_f32(
         relion_projector_half_to_texture_full(jnp.asarray(projector_half)).astype(jnp.complex64),
         jnp.asarray(rotations),
         jnp.asarray(images),
@@ -72,7 +73,7 @@ def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
         image_r_max=jnp.asarray(window // 2, dtype=jnp.int32),
     )
     shifted = relion_coarse_translate(
-        em_cuda_kernels.relion_translate_score_f32,
+        cuda_translate.relion_translate_score_f32,
         jnp.asarray(images),
         angles,
         jnp.asarray(score_indices),
@@ -95,7 +96,7 @@ def test_coarse_gemm_operands_match_the_fused_relion_kernel_in_the_band(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.helpers.optics_scale import coarse_rows_wrap_inside
+    from relax.relion.optics_groups import coarse_rows_wrap_inside
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)

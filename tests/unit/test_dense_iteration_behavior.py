@@ -10,13 +10,12 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
-from relax.dense import score_outputs, scoring_policy
-from relax.diagnostics import local_debug
-from relax.helpers.convergence import native_final_perturbation_healpix_order
-from relax.refinement import half_scoring
-from relax.refinement.local_search_iteration import LocalSearchResult
+from relax.refinement import local_half
+from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
-from relax.relion import relion_normalization
+from relax.refinement.refinement_state import native_final_perturbation_healpix_order
+from relax.relion import normalization
+from relax.steps import score_outputs, scoring_policy
 
 pytestmark = pytest.mark.unit
 
@@ -155,8 +154,8 @@ def test_mstep_full_half_axis_resolver_keeps_common_axis_or_default():
 
 
 def test_relion_correction_range_formatter_accepts_empty_halves():
-    assert relion_normalization._format_relion_correction_range(np.array([], dtype=np.float32)) == "empty"
-    assert relion_normalization._format_relion_correction_range(np.array([0.5, 2.0], dtype=np.float32)) == "[0.5, 2]"
+    assert normalization._format_relion_correction_range(np.array([], dtype=np.float32)) == "empty"
+    assert normalization._format_relion_correction_range(np.array([0.5, 2.0], dtype=np.float32)) == "[0.5, 2]"
 
 
 @pytest.mark.parametrize(
@@ -192,7 +191,7 @@ def test_k1_local_full_parent_diagnostic_counts_unmasked_parent_layout(parent_ma
     )
     selected = [] if empty else [None, np.array([], dtype=np.int64), np.array([0, 0, 1, 2])]
     records = []
-    local_debug.log_local_adaptive_support(
+    local_half.log_local_adaptive_support(
         SimpleNamespace(info=lambda *args: records.append(args)),
         parent_layout,
         selected,
@@ -227,7 +226,7 @@ def test_local_denominator_diagnostic_counts_masked_and_empty_support(masked, em
         ],
     )
     records = []
-    local_debug.log_local_denominator_support(
+    local_half.log_local_denominator_support(
         SimpleNamespace(info=lambda *args: records.append(args)), layout, "full_parent", "TEST_ENV"
     )
     assert records == [
@@ -242,11 +241,11 @@ def test_local_denominator_diagnostic_counts_masked_and_empty_support(masked, em
 
 
 def test_k1_local_records_coarse_parent_support_not_fine_reconstruction_count():
-    counts = half_scoring._relion_coarse_significant_counts(
+    counts = local_half._relion_coarse_significant_counts(
         [np.array([2, 8], dtype=np.int64), np.array([1, 3, 5, 7], dtype=np.int64)]
     )
     assert_matches(counts, np.array([2, 4], dtype=np.int32))
-    assert half_scoring._relion_coarse_significant_counts([np.array([2]), None]) is None
+    assert local_half._relion_coarse_significant_counts([np.array([2]), None]) is None
 
 
 def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
@@ -280,9 +279,9 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
 
     monkeypatch.delenv("RELAX_K1_RELION_X_HALF_MSTEP", raising=False)
     monkeypatch.setattr(scoring_policy, "k1_relion_x_half_mstep_default_available", lambda: True)
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", fake_run_local_search_iteration)
 
-    result = half_scoring._score_half_local(*local_half_owners(
+    result = local_half._score_half_local(*local_half_owners(
         k=0,
         experiment_dataset=SimpleNamespace(
             voxel_size=1.0,
@@ -308,14 +307,11 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         image_corrections_k=None,
         scale_corrections_k=None,
         translation_search_base=None,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         max_significants=-1,
         iteration=0,
         local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=None,
         local_parent_oversampling_order=0,
-        local_search_translation_prior_mode="coarse",
         replay_prior_translations=None,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
@@ -393,16 +389,16 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
             noise_stats="fine_noise",
         )
 
-    monkeypatch.setattr(half_scoring, "build_local_search_grid_metadata", lambda _order, *, symmetry='C1': {})
-    monkeypatch.setattr(half_scoring, "build_local_hypothesis_layout", lambda *_args, **_kwargs: parent_layout)
+    monkeypatch.setattr(local_half, "build_local_search_grid_metadata", lambda _order, *, symmetry='C1': {})
+    monkeypatch.setattr(local_half, "build_local_hypothesis_layout", lambda *_args, **_kwargs: parent_layout)
     monkeypatch.setattr(
-        half_scoring,
+        local_half,
         "build_local_adaptive_pass2_hypothesis_layout",
         lambda *_args, **_kwargs: fine_layout,
     )
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", fake_run_local_search_iteration)
 
-    result = half_scoring._score_half_local(*local_half_owners(
+    result = local_half._score_half_local(*local_half_owners(
         k=0,
         experiment_dataset=SimpleNamespace(
             voxel_size=1.0,
@@ -427,15 +423,12 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         image_corrections_k=None,
         scale_corrections_k=None,
         translation_search_base=None,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         max_significants=23,
         source_faithful_spectrum_norm=spectrum_norm,
         iteration=3,
         local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=None,
         local_parent_oversampling_order=1,
-        local_search_translation_prior_mode="coarse",
         replay_prior_translations=None,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
@@ -501,17 +494,17 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
         return layout
 
     monkeypatch.setattr(
-        half_scoring,
-        "_expand_significant_samples_to_full_parent_translations",
+        local_half,
+        "expand_significant_samples_to_full_parent_translations",
         fake_expand,
     )
     monkeypatch.setattr(
-        half_scoring,
+        local_half,
         "build_local_adaptive_pass2_hypothesis_layout",
         fake_layout,
     )
-    monkeypatch.setattr(local_debug, "log_local_adaptive_support", lambda *_args: None)
-    monkeypatch.setattr(local_debug, "log_local_denominator_support", lambda *_args: None)
+    monkeypatch.setattr(local_half, "log_local_adaptive_support", lambda *_args: None)
+    monkeypatch.setattr(local_half, "log_local_denominator_support", lambda *_args: None)
 
     policy = LocalAdaptivePass2Support(
         full_parent=full_parent,
@@ -519,7 +512,7 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
         denominator_mode=denominator_mode,
     )
     pass2 = (
-        half_scoring._prepare_local_adaptive_pass2_support(
+        local_half._prepare_local_adaptive_pass2_support(
             "parent_layout",
             retained,
             SimpleNamespace(

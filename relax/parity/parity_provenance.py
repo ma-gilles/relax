@@ -19,7 +19,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from relax.helpers.git_provenance import git_head_or_none, git_worktree_provenance
+from relax.runtime.git_provenance import git_head_or_none, git_worktree_provenance
 
 # Load-bearing parity fix commits. If any of these is NOT an ancestor of
 # HEAD, the worktree is missing a known-required parity fix and replay

@@ -16,22 +16,24 @@ from recovar.data_io.starfile import read_star
 from recovar.utils.helpers import R_from_relion, write_relion_mrc
 
 import relax.vdam.driver as driver
-from relax import healpix_sampling, sampling
+from relax import sampling
 from relax.commands import initial_model
 from relax.diagnostics.vdam_observers import vdam_command_observer
-from relax.helpers.expected_accuracy import ExpectedAccuracy
-from relax.helpers.orientation_priors import relion_round_away_from_zero
-from relax.helpers.particle_io import ParticleReadPolicy
+from relax.io.particle_io import ParticleReadPolicy
 from relax.parity import vdam_replay
-from relax.refinement.tomo_half import TiltImageAccuracyInputs
-from relax.relion import initial_model_io, vdam_checkpoint
+from relax.sampling import healpix
+from relax.sampling.orientation_priors import relion_round_away_from_zero
+from relax.steps.expected_accuracy import ExpectedAccuracy
+from relax.steps.tomo_half import TiltImageAccuracyInputs
 from relax.vdam import (
     bootstrap_iref,
-    estep_meta_updates,
     estep_setup,
+    initial_model_io,
     native_options,
     native_sampling,
     output,
+    particle_update,
+    relion_checkpoint,
     schedules,
 )
 from relax.vdam.bootstrap_iref import initialise_denovo_state
@@ -287,7 +289,7 @@ def test_native_vdam_diagnostic_continuation_loads_complete_gradient_state(tmp_p
         diagnostic_stop_after_iteration=181,
     )
 
-    checkpoint = vdam_checkpoint._load_native_vdam_continuation(
+    checkpoint = relion_checkpoint._load_native_vdam_continuation(
         optimiser,
         expected_data_star=data,
         opts=opts,
@@ -333,7 +335,7 @@ def test_native_vdam_diagnostic_continuation_fails_without_second_pseudo_half(tm
     )
 
     with pytest.raises(FileNotFoundError):
-        vdam_checkpoint._load_native_vdam_continuation(
+        relion_checkpoint._load_native_vdam_continuation(
             optimiser,
             expected_data_star=data,
             opts=opts,
@@ -355,7 +357,7 @@ def test_continuation_order_replay_rejects_suspended_local_search_history(
     )
 
     with pytest.raises(NotImplementedError, match="suspended local-search"):
-        vdam_checkpoint._validate_continuation_order_replay(checkpoint)
+        relion_checkpoint._validate_continuation_order_replay(checkpoint)
 
 
 @pytest.mark.parametrize("prior_mode", (0, 1))
@@ -365,7 +367,7 @@ def test_continuation_order_replay_accepts_unsuspended_local_searches(prior_mode
         grad_suspended_local_searches_iter=-1,
     )
 
-    vdam_checkpoint._validate_continuation_order_replay(checkpoint)
+    relion_checkpoint._validate_continuation_order_replay(checkpoint)
 
 
 def test_continuation_order_replay_accepts_pre_local_checkpoint():
@@ -374,7 +376,7 @@ def test_continuation_order_replay_accepts_pre_local_checkpoint():
         grad_suspended_local_searches_iter=-1,
     )
 
-    vdam_checkpoint._validate_continuation_order_replay(checkpoint)
+    relion_checkpoint._validate_continuation_order_replay(checkpoint)
 
 
 def test_iteration_reference_replay_expands_iteration_and_class(monkeypatch, tmp_path):
@@ -723,7 +725,7 @@ def test_particle_state_from_star_seeds_input_euler_orientations_for_all_particl
 
 
 def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(monkeypatch):
-    from relax.helpers import relion_expected_accuracy
+    from relax.sampling import relion_expected_accuracy
 
     captured = {}
 
@@ -783,7 +785,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
 def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(monkeypatch):
     """RELION fills absent rlnAngleRot/Tilt/Psi with 0 when it reads the STAR (exp_model.cpp:1103-1134)
     and estimates the accuracy at iteration 1 from those angles (ml_optimiser.cpp:3541-3549, 9505-9507)."""
-    from relax.helpers import relion_expected_accuracy
+    from relax.sampling import relion_expected_accuracy
 
     captured = {}
 
@@ -1894,16 +1896,13 @@ def test_update_particle_state_preserves_best_pose_metadata():
         axis=0,
     )
 
-    estep_meta_updates.update_particle_state_from_estep_meta(
+    particle_update.update_particle_state_from_estep_meta(
         particle_state,
         {
             "selected_particle_ids": np.asarray([2, 0], dtype=np.int64),
             "pose_assignments": np.asarray([1, 0], dtype=np.int32),
             "best_pose_rotations": rotations,
             "best_pose_translations": np.asarray([[3.0, -1.0], [0.0, 2.0]], dtype=np.float32),
-            "best_pose_rotation_ids": np.asarray([11, 7], dtype=np.int32),
-            "healpix_order": 1,
-            "oversampling": 1,
         },
         np.asarray([[0.0, 2.0], [3.0, -1.0]], dtype=np.float32),
     )
@@ -1914,11 +1913,9 @@ def test_update_particle_state_preserves_best_pose_metadata():
         particle_state.best_pose_translations,
         np.asarray([[0.0, 2.0], [0.0, 0.0], [3.0, -1.0]], dtype=np.float32),
     )
-    assert_matches(particle_state.best_pose_rotation_ids, [7, -1, 11])
-    assert_matches(particle_state.best_pose_rotation_orders, [2, -1, 2])
     assert_matches(particle_state.visited, [True, False, True])
 
-    estep_meta_updates.update_particle_state_from_estep_meta(
+    particle_update.update_particle_state_from_estep_meta(
         particle_state,
         {
             "selected_particle_ids": np.asarray([1], dtype=np.int64),
@@ -1931,14 +1928,13 @@ def test_update_particle_state_preserves_best_pose_metadata():
     # VDAM subset, not only the identities selected by the current iteration.
     assert_matches(particle_state.visited, [True, True, True])
     np.testing.assert_allclose(particle_state.best_pose_rotations[[2, 0]], rotations)
-    assert_matches(particle_state.best_pose_rotation_ids, [7, -1, 11])
 
 
 def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():
     grid_eulers = sampling.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
     grid_rotations = sampling.get_relion_rotation_grid(1, rotation_index_order="relion")
     perturbed_euler = np.asarray([[33.0, 44.0, 55.0]], dtype=np.float64)
-    perturbed_rotation = healpix_sampling.euler_angles_to_matrix(perturbed_euler)[0].astype(np.float32)
+    perturbed_rotation = healpix.euler_angles_to_matrix(perturbed_euler)[0].astype(np.float32)
     particle_state = NativeParticleState(
         translation_offsets=np.zeros((2, 2), dtype=np.float32),
         class_assignments=np.zeros(2, dtype=np.int32),
@@ -1956,7 +1952,7 @@ def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():
     assert eulers is not None
     assert not np.allclose(eulers[0], grid_eulers[5])
     np.testing.assert_allclose(
-        healpix_sampling.euler_angles_to_matrix(eulers),
+        healpix.euler_angles_to_matrix(eulers),
         np.stack([perturbed_rotation, grid_rotations[7]], axis=0),
         atol=1e-5,
     )
@@ -2036,7 +2032,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     def fake_prepare_projector(state, *, padding_factor):
         event_order.append("prepare_projector")
         assert padding_factor == 2
-        return prepared_half, 2
+        return estep_setup.RelionProjectorInputs(prepared_half, 2)
 
     def fake_estimate_sampling_accuracy(
         sampling_state,
@@ -2202,7 +2198,10 @@ def test_engine_diagnostic_switches_are_read_once_with_the_options(monkeypatch):
     assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, True)
 
     monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "")  # empty is unset, as the E-step read it
-    monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "0")  # any value disables
+    monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "0")  # a false token leaves it on
+    environment = native_options.NativeInitialModelOptions(fn_img="x").environment
+    assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, True)
+    monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "1")
     environment = native_options.NativeInitialModelOptions(fn_img="x").environment
     assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, False)
 
@@ -2213,6 +2212,25 @@ def test_engine_diagnostic_switches_are_read_once_with_the_options(monkeypatch):
 
     monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "most")
     with pytest.raises(ValueError):
+        native_options.NativeInitialModelOptions(fn_img="x")
+
+
+@pytest.mark.parametrize(
+    "name, field, on",
+    [
+        ("RELAX_CLEAR_JAX_CACHES_PER_ITER", "clear_jax_caches_per_iteration", True),
+        ("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "subtract_projected_reference", False),
+    ],
+)
+def test_environment_flags_take_the_shared_tokens_and_refuse_a_malformed_value(monkeypatch, name, field, on):
+    """deep2 V2-4: one flag parser (env_flags.parse_env_strict_flag); ``=0`` is off and a typo is an error."""
+    monkeypatch.delenv(name, raising=False)
+    assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is (not on)
+    for token, expected in (("1", on), ("yes", on), ("True", on), ("0", not on), ("false", not on), ("off", not on)):
+        monkeypatch.setenv(name, token)
+        assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is expected
+    monkeypatch.setenv(name, "maybe")
+    with pytest.raises(ValueError, match=name):
         native_options.NativeInitialModelOptions(fn_img="x")
 
 
@@ -2236,7 +2254,7 @@ def test_vdam_refuses_iteration_counts_with_a_nan_tau2_fudge(nr_iter):
 
 
 def test_every_accepted_vdam_iteration_count_schedules_a_finite_tau2_fudge():
-    from relax.vdam.schedules import compute_phase_lengths, compute_tau2_fudge
+    from relax.steps.sgd_schedule import compute_phase_lengths, compute_tau2_fudge
 
     for nr_iter in (1, 2, 3, 6, 7, 8, 25, 200):
         native_options.NativeInitialModelOptions(fn_img="x", nr_iter=nr_iter).validate_run()
@@ -2245,7 +2263,7 @@ def test_every_accepted_vdam_iteration_count_schedules_a_finite_tau2_fudge():
 
 
 def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_path):
-    from relax.helpers import relion_expected_accuracy
+    from relax.sampling import relion_expected_accuracy
 
     captured = {}
 
@@ -2270,7 +2288,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
     state.tau2_fudge_factor = 3.995253
     state.sorted_particle_ids = np.asarray([1, 0], dtype=np.int64)
     state.sorted_particle_part_ids = np.asarray([9, 4], dtype=np.int64)
-    best_rotations = healpix_sampling.euler_angles_to_matrix(
+    best_rotations = healpix.euler_angles_to_matrix(
         np.asarray([[10.0, 30.0, 20.0], [40.0, 60.0, 50.0]])
     )
     particle_state = NativeParticleState(
@@ -2811,7 +2829,7 @@ def test_cli_gpu_allows_explicit_deterministic_cuda(monkeypatch):
 def test_log_likelihood_contribution_is_relions_dll():
     # ml_optimiser.cpp:9029-9058: dLL = log(sum_weight) - min_diff2 - logsigma2, logsigma2 summed over the current-size
     # Mresol_fine pixels with ires > 0 (each FFTW half-grid pixel once), once per image of the particle.
-    from relax.vdam.estep_meta_updates import relion_log_likelihood_contributions
+    from relax.vdam.particle_update import relion_log_likelihood_contributions
 
     ori, cs = 16, 10
     sigma2 = np.stack([np.linspace(1.0, 2.0, ori // 2 + 1), np.linspace(3.0, 4.0, ori // 2 + 1)])
@@ -2833,7 +2851,7 @@ def test_log_likelihood_contribution_of_a_group_on_another_grid():
     # each ires reading the model shell ROUND(remap_image_sizes * ires) (ml_optimiser.cpp:9046-9055).
     import math
 
-    from relax.vdam.estep_meta_updates import relion_log_likelihood_contributions
+    from relax.vdam.particle_update import relion_log_likelihood_contributions
 
     ori, ori_pixel, cs = 128, 4.25, 38
     box, pixel = 112, 5.44
@@ -2859,3 +2877,30 @@ def test_log_likelihood_contribution_of_a_group_on_another_grid():
         np.array([5.0]), sigma2_noise=sigma2, groups=[1], n_images=[1], box_size=ori, current_size=cs
     )
     assert abs(plain[0] - got[0]) > 1.0
+
+
+def test_run_metadata_records_the_library_settings_the_options_read(monkeypatch, tmp_path):
+    """The options file's allocator and JAX cache entries come from ``VdamEnvironment`` (read when the options are
+    built), not from the process environment at write time; unset variables give "default", None and None."""
+    names = ("TF_GPU_ALLOCATOR", "JAX_COMPILATION_CACHE_DIR", "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS")
+
+    def written(tag):
+        opts = native_options.NativeInitialModelOptions(fn_img="x", outputname=str(tmp_path / tag / "run"))
+        for name in names:  # what the environment holds after the options are built must not matter
+            monkeypatch.setenv(name, "changed-later")
+        output.write_initial_run_metadata(opts, None)
+        return json.loads((tmp_path / tag / "run_native_options.json").read_text())
+
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+    unset = written("unset")
+    assert (unset["resolved_cuda_allocator"], unset["jax_compilation_cache_enabled"]) == ("default", False)
+    assert (unset["jax_compilation_cache_dir"], unset["jax_persistent_cache_min_compile_time_secs"]) == (None, None)
+    assert "environment" not in unset
+
+    monkeypatch.setenv("TF_GPU_ALLOCATOR", "cuda_malloc_async")
+    monkeypatch.setenv("JAX_COMPILATION_CACHE_DIR", "/cache/dir")
+    monkeypatch.setenv("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS", "0.5")
+    set_ = written("set")
+    assert (set_["resolved_cuda_allocator"], set_["jax_compilation_cache_enabled"]) == ("cuda_malloc_async", True)
+    assert (set_["jax_compilation_cache_dir"], set_["jax_persistent_cache_min_compile_time_secs"]) == ("/cache/dir", "0.5")

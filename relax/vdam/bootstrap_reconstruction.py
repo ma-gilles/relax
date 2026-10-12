@@ -12,7 +12,7 @@ backprojector.cpp:1513-2023), then ``initialLowPassFilterReferences``,
 The host double arithmetic keeps RELION's formulas and operation order; FFTs
 (NumPy's pocketfft rather than FFTW) and the order of the back-projection sums
 agree with RELION's to float rounding. The C ``rand()`` stream is RELION's
-(:mod:`relax.helpers.relion_random`), and the blob draws continue it where the
+(:mod:`relax.numerics.relion_random`), and the blob draws continue it where the
 particle loop leaves it, as in RELION. ``relax.relion_bind`` is the unit-test
 oracle (``tests/unit/initial_model/test_bootstrap_reconstruction_vs_relion_bind.py``).
 """
@@ -24,10 +24,10 @@ import math
 
 import numpy as np
 
-from relax.healpix_sampling import euler_angles_to_matrix
-from relax.helpers import relion_random
+from relax.numerics import relion_random
 from relax.relion.macros import PI, relion_round
 from relax.relion.reference_initialization import initial_low_pass_filter_references
+from relax.sampling.healpix import euler_angles_to_matrix
 
 
 def _logical_axis(size: int) -> np.ndarray:

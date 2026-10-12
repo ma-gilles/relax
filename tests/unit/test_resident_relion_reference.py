@@ -50,7 +50,7 @@ def _ppref(volume_ft):
 
     import recovar.core.fourier_transform_utils as ftu
 
-    from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
+    from relax.relion.projector_setup import reference_to_relion_projector_half_maps
 
     volume_real = np.asarray(ftu.get_idft3(np.asarray(volume_ft).reshape(N, N, N)).real, dtype=np.float64)
     halves, r_max = reference_to_relion_projector_half_maps(
@@ -242,13 +242,14 @@ def _gpu_available():
         return False
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
+    from relax.cuda import posterior as cuda_posterior
 
     return bool(
         cuda_backproject.custom_cuda_requested()
-        and em_cuda_kernels.sparse_pass2_segmented_supported()
-        and em_cuda_kernels.relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported()
-        and em_cuda_kernels.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
+        and cuda_posterior.sparse_pass2_segmented_supported()
+        and cuda_fine.relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported()
+        and cuda_fine.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
     )
 
 
@@ -284,7 +285,7 @@ def test_resident_driver_is_relions_fine_pass(_resident_env, current_size, noise
     relative L2; noise, norm and scale sums at most 3.1e-7.
     """
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(current_size, noise)
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
@@ -355,7 +356,7 @@ def test_wide_translation_grids_are_relions_fine_pass(_resident_env, n_coarse_tr
 
     from test_resident_wide_translation_mask import _wide_driver_args
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_wide_driver_args(n_coarse_trans))
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
@@ -368,7 +369,7 @@ def test_vdam_residual_backprojection_is_relions_grad_pass(_resident_env, groups
 
     from test_resident_vdam_estep import _vdam_args
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_vdam_args(residual=True, groups=groups), subtract_reference=True)
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference, scale_sums=groups)
@@ -382,7 +383,7 @@ def test_zero_oversampling_reuses_relions_coarse_normalization(_resident_env):
 
     from test_resident_zero_oversampling import _os0_driver_args
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     base = _os0_driver_args()
     args, reference = _case(6, 200.0, base_args=base)
@@ -425,7 +426,7 @@ def test_c4_pass_is_relions_fine_pass_on_the_asymmetric_unit(_resident_env):
 
     from test_resident_symmetry import _c4_driver_args
 
-    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_c4_driver_args(), symmetry="C4")
     _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
@@ -552,9 +553,9 @@ def _run_local(case, current_size: int):
 
     from test_resident_local_pass2 import N_IMAGES, OVERSAMPLING, PARENT_ORDER, _prior_eulers
 
-    from relax.refinement import local_search_iteration
+    from relax.refinement import local_half
 
-    return local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
         case["volume"],
         case["noise_variance"],
@@ -679,6 +680,23 @@ def _local_parent_case(current_size: int, noise: float):
     case["noise_variance"] = jnp.asarray(noise_full.reshape(-1))
     parent, translations = _parent_layout()
     case.update(parent=parent, parent_translations=translations)
+    # RELION's coarse pass scores the parents with its projector plan's device-built matrices
+    # (AccProjectorPlan::setup, acc_projector_plan_impl.h:158-392), not with the layout's own rows, which are
+    # the host inverses of the fine pass. The reference gets them from the kernel's statements in NumPy
+    # (helpers.relion_plan_rows), not from relax's builder.
+    from helpers.relion_plan_rows import relion_plan_rows_f32
+
+    from relax.local_search.layout import _rotation_eulers_from_grid_metadata
+    from relax.sampling import build_local_search_grid_metadata, healpix
+
+    order, perturbation, angular_sampling_deg = parent.id_rows_source
+    parent_eulers = _rotation_eulers_from_grid_metadata(
+        parent.rotation_ids_flat, build_local_search_grid_metadata(order, symmetry=parent.symmetry), dtype=np.float32
+    )
+    right = None
+    if abs(perturbation) >= 1e-12:
+        right = healpix.euler_angles_to_matrix(np.full((1, 3), perturbation * angular_sampling_deg))[0]
+    plan_rows = relion_plan_rows_f32(parent_eulers, right, None)
     # A parent layout without posterior bins bins its posterior by its fine rotation ids.
     posterior_ids = (
         parent.rotation_ids_flat if parent.rotation_posterior_ids_flat is None else parent.rotation_posterior_ids_flat
@@ -694,7 +712,7 @@ def _local_parent_case(current_size: int, noise: float):
         image_cells.append(np.column_stack([rows[row], trans]))
     args = {
         "experiment_dataset": case["dataset"],
-        "fine_rotations_override": np.asarray(parent.rotations_flat),
+        "fine_rotations_override": np.asarray(plan_rows),
         "fine_rotation_parent_override": np.asarray(posterior_ids),
         "fine_translations_override": np.asarray(parent.translation_grid),
         "fine_translation_parent_override": np.zeros(n_trans, dtype=np.int64),
@@ -719,13 +737,13 @@ def _local_parent_case(current_size: int, noise: float):
 
 
 def _run_local_parent_probe(case, current_size: int):
-    """The production pass-1 parent probe (half_scoring's score-only local call) at padding 2."""
+    """The production pass-1 parent probe (dense_half's score-only local call) at padding 2."""
 
     from test_resident_local_pass2 import N_IMAGES, PARENT_ORDER, _prior_eulers
 
-    from relax.refinement import local_search_iteration
+    from relax.refinement import local_half
 
-    return local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
         case["volume"],
         case["noise_variance"],

@@ -131,12 +131,12 @@ def _comparison(replays, left_key, right_key):
 def _reconstruct_unregularized_map(replay, boundary):
     """Transfer one replay through the shared no-prior reconstruction path."""
 
-    from relax.helpers.half_volume_mstep import (
+    from relax.reconstruction.half_volume_mstep import (
         enforce_relion_half_volume_x0_hermitian_host,
         relion_x_half_volume_to_native_half,
     )
-    from relax.refinement.mean_helpers import _reconstruct_volume_eager
-    from relax.refinement.refinement_options import ReconstructionPrograms
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
 
     accumulator_shape = tuple(int(value) for value in np.asarray(boundary["volume_shape"]))
     image_shape = tuple(int(value) for value in np.asarray(boundary["image_shape"]))

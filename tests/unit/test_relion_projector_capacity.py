@@ -7,11 +7,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.jit_programs import clear_programs
 from recovar import cuda_backproject as cb
 from scipy.spatial.transform import Rotation
 
-from relax.cuda import kernels as em_cuda_kernels
-from relax.helpers.projection import relion_projector_half_to_texture_full
+from relax.cuda import library
+from relax.cuda import projector as cuda_projector
+from relax.projection.projection import relion_projector_half_to_texture_full
 
 pytestmark = pytest.mark.unit
 
@@ -40,25 +42,25 @@ def _inputs(q=32, pf=1):
 )
 def test_invalid_operands_rejected_before_loading_cuda(monkeypatch, which, value, message):
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
+    monkeypatch.setattr(library, "ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
     args = list(_inputs())
     args[which] = value
     with pytest.raises(ValueError, match=message):
-        em_cuda_kernels.project_relion_half_capacity(*args, image_shape=(32, 32))
+        cuda_projector.project_relion_half_capacity(*args, image_shape=(32, 32))
 
 
 @pytest.mark.parametrize("shape,pf", [((31, 31), 1), ((32, 30), 1), ((32, 32), 3)])
 def test_invalid_static_geometry(monkeypatch, shape, pf):
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
+    monkeypatch.setattr(library, "ensure_optional_ffi", lambda _target: pytest.fail("loaded CUDA before validation"))
     with pytest.raises(ValueError):
-        em_cuda_kernels.project_relion_half_capacity(*_inputs(), image_shape=shape, padding_factor=pf)
+        cuda_projector.project_relion_half_capacity(*_inputs(), image_shape=shape, padding_factor=pf)
 
 
 def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
     records = []
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_optional_ffi", lambda _target: None)
+    monkeypatch.setattr(library, "ensure_optional_ffi", lambda _target: None)
 
     def fake_ffi(target, output, **options):
         def call(half, rotations, radius, **attrs):
@@ -68,19 +70,19 @@ def test_runtime_radius_is_operand_not_attribute_and_reuses_trace(monkeypatch):
         return call
 
     monkeypatch.setattr(jax.ffi, "ffi_call", fake_ffi)
-    em_cuda_kernels.project_relion_half_capacity.clear_cache()
+    cleared = clear_programs(cuda_projector.project_relion_half_capacity)
     half, rotations, _ = _inputs()
     for radius in (15, 16, 0):
-        result = em_cuda_kernels.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
+        result = cuda_projector.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
         assert_matches(result, np.full(result.shape, radius, np.complex64))
     assert len(records) == 1
     target, _, rotshape, radius_aval, attrs = records[0]
-    assert target == em_cuda_kernels._TARGET_PROJECT_RELION_HALF_RUNTIME
+    assert target == library.TARGET_PROJECT_RELION_HALF_RUNTIME
     assert rotshape == (1, 6)
     assert radius_aval.shape == () and radius_aval.dtype == np.dtype(np.int32)
     assert set(attrs) == {"image_h", "image_w", "padding_factor"}
-    assert em_cuda_kernels.project_relion_half_capacity._cache_size() == 1
-    em_cuda_kernels.project_relion_half_capacity.clear_cache()
+    assert cuda_projector.project_relion_half_capacity._cache_size() - cleared == 1
+    cuda_projector.project_relion_half_capacity.clear_cache()
 
 
 @pytest.mark.parametrize(
@@ -91,13 +93,13 @@ def test_qualified_old_library_keeps_old_paths_and_capacity_fails_closed(monkeyp
 
     old_symbols = {symbol: object() for _, symbol in cb._FFI_REGISTRATIONS}
     assert symbol not in old_symbols
-    library = SimpleNamespace(**old_symbols)
+    fake_library = SimpleNamespace(**old_symbols)
     registrations = []
     monkeypatch.setattr(cb, "_ffi_registered", False)
     monkeypatch.setattr(cb, "_optional_ffi_registered", set())
     monkeypatch.setattr(cb, "_loaded_lib_path", None)
-    monkeypatch.setattr(cb, "_get_lib", lambda: library)
-    monkeypatch.setattr(em_cuda_kernels, "_get_lib", lambda: library)
+    monkeypatch.setattr(cb, "_get_lib", lambda: fake_library)
+    monkeypatch.setattr(library, "get_lib", lambda: fake_library)
     monkeypatch.setattr(jax.ffi, "pycapsule", lambda symbol: symbol)
     monkeypatch.setattr(jax.ffi, "register_ffi_target", lambda target, *args, **kwargs: registrations.append(target))
     cb._ensure_ffi()
@@ -106,7 +108,7 @@ def test_qualified_old_library_keeps_old_paths_and_capacity_fails_closed(monkeyp
         cb._ensure_optional_ffi(target)
     assert target not in cb._optional_ffi_registered
     assert cb._ffi_registered
-    setattr(library, symbol, object())
+    setattr(fake_library, symbol, object())
     register = jax.ffi.register_ffi_target
 
     def fail_registration(*args, **kwargs):
@@ -147,7 +149,7 @@ def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
     cb._ensure_ffi()
     rotations = _rotations()
     rng = np.random.default_rng(29)
-    em_cuda_kernels.project_relion_half_capacity.clear_cache()
+    cleared = clear_programs(cuda_projector.project_relion_half_capacity)
     for radius in range(15, min(42, q // 2) + 1):
         size = 2 * pf * radius + 3
         # Nonzero random ghost planes and poisoned capacity catch support errors.
@@ -164,7 +166,7 @@ def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
             max_r=float(radius),
             relion_texture_interp=True,
         )
-        result = em_cuda_kernels.project_relion_half_capacity(
+        result = cuda_projector.project_relion_half_capacity(
             jnp.asarray(_pad_with_poison(logical, q, pf)),
             rotations,
             jnp.asarray(radius, jnp.int32),
@@ -172,14 +174,14 @@ def test_gpu_old_texture_matches_all_logical_radii_and_one_executable(q, pf):
             padding_factor=pf,
         )
         assert_matches(np.asarray(result), np.asarray(reference), err_msg=f"q={q}, pf={pf}, r={radius}")
-    assert em_cuda_kernels.project_relion_half_capacity._cache_size() == 1
+    assert cuda_projector.project_relion_half_capacity._cache_size() - cleared == 1
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("radius", [-1, 17, np.iinfo(np.int32).max])
 def test_gpu_invalid_runtime_radius_is_nonfinite_without_oob(radius):
     half, rotations, _ = _inputs()
-    result = em_cuda_kernels.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
+    result = cuda_projector.project_relion_half_capacity(half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(32, 32))
     assert np.isnan(np.asarray(result)).all()
 
 
@@ -200,9 +202,9 @@ def test_gpu_staged_capacity_texture_is_the_per_call_projector(q, radius, pf, im
     # Once at the exact slab (the local pass's) and once inside poisoned capacity.
     for half in (jnp.asarray(logical), jnp.asarray(_pad_with_poison(logical, q, pf))):
         radius_kwargs = {} if image_r_max is None else {"image_r_max": jnp.asarray(image_r_max, jnp.int32)}
-        with em_cuda_kernels.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
+        with cuda_projector.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
             for rotations in (_rotations(), _rotations()[::-1]):
-                expected = em_cuda_kernels.project_relion_half_capacity(
+                expected = cuda_projector.project_relion_half_capacity(
                     half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(q, q), padding_factor=pf, **radius_kwargs
                 )
                 staged = texture.project(rotations, image_shape=(q, q), **radius_kwargs)
@@ -216,7 +218,7 @@ def test_gpu_staged_capacity_texture_is_the_per_call_projector(q, radius, pf, im
 @pytest.mark.parametrize("mask_disk", [False, True])
 def test_gpu_projection_block_with_a_staged_texture_matches_the_per_call_block(mask_disk):
     """The helper the resident local pass calls gives the same windowed rows with the texture."""
-    from relax.helpers.projection import compute_relion_projector_projections_block, relion_capacity_texture_serves
+    from relax.projection.projection import compute_relion_projector_projections_block, relion_capacity_texture_serves
 
     image_size, radius, pf = 32, 14, 2
     size = 2 * pf * radius + 3
@@ -235,12 +237,12 @@ def test_gpu_projection_block_with_a_staged_texture_matches_the_per_call_block(m
         logical, r_max=radius, padding_factor=pf, projector_output_size=2 * radius, relion_texture_interp=True
     )
     expected, _ = compute_relion_projector_projections_block(logical, _rotations(), **common)
-    with em_cuda_kernels.RelionCapacityHalfTextureF32(logical, radius, padding_factor=pf) as texture:
+    with cuda_projector.RelionCapacityHalfTextureF32(logical, radius, padding_factor=pf) as texture:
         staged, _ = compute_relion_projector_projections_block(logical, _rotations(), capacity_texture=texture, **common)
         assert_matches(np.asarray(staged), np.asarray(expected))
     # A texture of another slab is refused rather than projected.
     other = jnp.asarray(_pad_with_poison(np.asarray(logical), 40, pf))
-    with em_cuda_kernels.RelionCapacityHalfTextureF32(other, radius, padding_factor=pf) as texture:
+    with cuda_projector.RelionCapacityHalfTextureF32(other, radius, padding_factor=pf) as texture:
         with pytest.raises(ValueError, match="does not hold this projector"):
             compute_relion_projector_projections_block(logical, _rotations(), capacity_texture=texture, **common)
 
@@ -266,17 +268,17 @@ def test_gpu_wide_slab_takes_the_half_storage_kernel_and_matches_the_persistent_
     half = jnp.asarray(logical)
     rotations = _rotations()
     image_r_max = jnp.asarray(q // 2, jnp.int32)
-    per_call = em_cuda_kernels.project_relion_half_capacity(
+    per_call = cuda_projector.project_relion_half_capacity(
         half, rotations, jnp.asarray(radius, jnp.int32), image_shape=(q, q), padding_factor=pf, image_r_max=image_r_max
     )
-    with em_cuda_kernels.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
+    with cuda_projector.RelionCapacityHalfTextureF32(half, radius, padding_factor=pf) as texture:
         staged = texture.project(rotations, image_shape=(q, q), image_r_max=image_r_max)
         staged = np.asarray(staged)
     assert_matches(staged, np.asarray(per_call))
-    with em_cuda_kernels.RelionPersistentHalfTextureF32(
+    with cuda_projector.RelionPersistentHalfTextureF32(
         logical, padding_factor=pf, projector_max_r=radius
     ) as persistent:
-        wide = em_cuda_kernels.relion_projector_persistent_half_texture_f32(
+        wide = cuda_projector.relion_projector_persistent_half_texture_f32(
             persistent, rotations, current_size=q, padding_factor=pf, projector_max_r=radius
         )
     # The persistent path applies no image radius; compare inside the image disk
@@ -296,14 +298,14 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
     Its windowed rows (score and reconstruction windows of the physical class) equal the
     logical-crop projection of the logical slab: window pixels outside the logical crop,
     RELION's ky = -L/2 row among them, take the zero column either way
-    (capacity_projection_window_union; relax/relion/relion_project.py).
+    (capacity_projection_window_union; relax/relion/project.py).
     """
-    from relax.sparse_pass2.resident_pass2 import center_pad_relion_projector_half
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import (
+    from relax.fine_pass.projection_blocks import (
         _compute_sparse_pass2_windowed_projections_block,
         capacity_projection_window_union,
         projection_window_union,
     )
+    from relax.fine_pass.resident_pass2 import center_pad_relion_projector_half
 
     image_size, radius = 96, logical_size // 2
     size = 2 * pf * radius + 3
@@ -351,7 +353,7 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
 @pytest.mark.parametrize("logical_size, physical_size", [(30, 32), (34, 40), (56, 56)])
 def test_capacity_window_union_takes_the_logical_pixels(logical_size, physical_size):
     """Each window pixel takes the same projected pixel, or the zero column, as the logical union."""
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import (
+    from relax.fine_pass.projection_blocks import (
         capacity_projection_window_union,
         projection_window_union,
     )

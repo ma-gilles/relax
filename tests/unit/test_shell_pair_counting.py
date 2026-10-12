@@ -16,12 +16,13 @@ from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import record_calls, run_tiny_refinement
 
-from relax.helpers import half_volume_mstep
-from relax.reconstruction import regularization_relion as rr
-from relax.refinement import final_reconstruction, mean_helpers, startup_references
-from relax.refinement.refinement_options import ReconstructionPrograms, RelionConsistencyOptions
+from relax.reconstruction import half_volume_mstep
+from relax.reconstruction import regularization as rr
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement import final_reconstruction, priors, startup_references
+from relax.refinement.refinement_options import RelionConsistencyOptions
+from relax.relion import projector_setup as setup
 from relax.relion import reference_initialization
-from relax.relion import relion_projector_setup as setup
 
 pytestmark = pytest.mark.unit
 
@@ -564,19 +565,19 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
 
     def estimate(references, denominators, *, settings, **kwargs):
         recorded.append(settings.shell_pair_counting)
-        return mean_helpers.ClassPriorEstimate(
+        return priors.ClassPriorEstimate(
             variance=jnp.ones(4), shells=jnp.ones(3), relion_shells=jnp.ones(3), data_vs_prior=jnp.ones(3),
-            details={key: np.ones(3) for key in mean_helpers._CLASS_TAU2_DETAIL_KEYS},
+            details={key: np.ones(3) for key in priors._CLASS_TAU2_DETAIL_KEYS},
         )
 
-    monkeypatch.setattr(mean_helpers, "estimate_class_prior", estimate)
+    monkeypatch.setattr(priors, "estimate_class_prior", estimate)
     settings = reconstruction_settings(
         box_size=8, voxel_size=1.0, volume_shape=(8, 8, 8), padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None, shell_pair_counting=counting, programs=ReconstructionPrograms.from_environ(),
     )
     final_reconstruction.compute_final_class_priors(
-        None, None, projector=None, n_classes=2, settings=settings, current_size=8, accumulator_shape=None,
+        None, None, projector_power_spectrum=None, n_classes=2, settings=settings, current_size=8, accumulator_shape=None,
         full_half_axis=0,
     )
     assert recorded == [counting, counting]

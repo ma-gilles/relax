@@ -68,11 +68,11 @@ def analyze(
     import jax.numpy as jnp
     from recovar.utils.helpers import load_relion_volume
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.fourier_window import make_fourier_window_indices_np
-    from relax.helpers.half_spectrum import make_scoring_half_image_weights
-    from relax.helpers.projection import compute_relion_projector_projections_block
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
+    from relax.cuda import fine as cuda_fine
+    from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+    from relax.fourier.fourier_window import make_fourier_window_indices_np
+    from relax.fourier.half_spectrum import make_scoring_half_image_weights
+    from relax.projection.projection import compute_relion_projector_projections_block
     from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps
 
     with np.load(live_score_path, allow_pickle=False) as archive:
@@ -193,7 +193,7 @@ def analyze(
         )
         pair_references = projected_weighted[[rotation_row, rotation_row]]
         pair_shifted = shifted_unweighted[[first_translation, second_translation]]
-        diff2 = em_cuda_kernels.relion_fine_diff2_pairs_f32(
+        diff2 = cuda_fine.relion_fine_diff2_pairs_f32(
             jnp.asarray(pair_references[None], dtype=jnp.complex64),
             jnp.asarray(pair_shifted[None], dtype=jnp.complex64),
             jnp.asarray(direct_weight[None], dtype=jnp.float32),

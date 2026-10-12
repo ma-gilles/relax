@@ -134,6 +134,15 @@ class NativeParticleState:
 
 
 @dataclass(frozen=True)
+class ParticleOptics:
+    """Each particle's CTF constants, its optics group's ([n] float64): voltage (kV), Cs (mm), amplitude contrast."""
+
+    voltage: np.ndarray
+    Cs: np.ndarray
+    Q0: np.ndarray
+
+
+@dataclass(frozen=True)
 class NativeOpticsState:
     """Per-particle optics and CTF parameters for the SPA InitialModel path.
 

@@ -78,7 +78,7 @@ section of the owner's global instruction file says, and create a
 in place.
 
 Particle images are read the way RELION reads them
-([`relax/helpers/particle_io.py`](../../relax/helpers/particle_io.py)). Auto-refine,
+([`relax/io/particle_io.py`](../../relax/io/particle_io.py)). Auto-refine,
 Class3D and InitialModel stream batches from the original stacks by default, as the
 RELION GUI does (no pre-read, no scratch). `--preread_images` holds every particle
 in host memory. `--scratch_dir DIR` copies the referenced particles to `DIR` at
@@ -201,6 +201,8 @@ including the `--no-...` forms where that command omits a GUI option.
 | `--perturb 0.5` (default) | `--perturb_factor 0.5` |
 | `--maxsig` (default -1) | default, resolved as RELION does |
 | `--offset 10` (default) | default `--offset_sigma_angstrom 10` |
+| `--sigma_ang S` | `--sigma_ang S` |
+| `--sigma_tilt S` (subtomograms; ignored with `--sigma_ang`) | `--sigma_tilt S` (subtomogram auto-refine only) |
 
 Start-up norm corrections come from the input `rlnNormCorrection` and tau2
 and `data_vs_prior` from `initialiseDataVersusPrior` on the low-passed

@@ -710,11 +710,11 @@ def test_native_vdam_tau2_refresh_and_ssnr_diagnostics_are_merge_guarded():
     package = _initial_model_package_source()
     # 7811f82d5 moved the InitialModel model.star writer (_write_model_star),
     # which serializes the sigma2/coverage diagnostics, to the RELION STAR owner.
-    star_io = (REPO_ROOT / "relax/relion/initial_model_io.py").read_text()
+    star_io = (REPO_ROOT / "relax/vdam/initial_model_io.py").read_text()
     bind = (REPO_ROOT / "relax/relion_bind/initialmodel_bind.cpp").read_text()
     tests = (REPO_ROOT / "tests/unit/initial_model/test_iteration_loop.py").read_text()
     # RELION's step-by-step M-step (the SSNR diagnostics) is the oracle path in diagnostics.
-    native_mstep = (REPO_ROOT / "relax/diagnostics/vdam_native_mstep.py").read_text()
+    native_mstep = (REPO_ROOT / "scripts/vdam_native_mstep.py").read_text()
 
     haystack = "\n".join([package, star_io, bind, tests, native_mstep])
     expected_tokens = [

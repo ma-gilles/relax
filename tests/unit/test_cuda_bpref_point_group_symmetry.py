@@ -61,8 +61,8 @@ def test_streamed_cuda_matches_relion_cpu_oracle(
         apply_point_group_symmetry_to_bpref,
     )
 
-    from relax.cuda.kernels import relion_point_group_symmetrise_bpref
-    from relax.symmetry import rotational_operators
+    from relax.cuda.backprojection import relion_point_group_symmetrise_bpref
+    from relax.sampling.symmetry import rotational_operators
 
     rng = np.random.default_rng(20260830)
     raw_data = (
@@ -107,8 +107,8 @@ def test_streamed_cuda_matches_relion_cpu_oracle(
 
 def test_cuda_negative_x_weight_sum_and_radius_boundary():
     _skip_if_unavailable()
-    from relax.cuda.kernels import relion_point_group_symmetrise_bpref
-    from relax.symmetry import rotational_operators
+    from relax.cuda.backprojection import relion_point_group_symmetrise_bpref
+    from relax.sampling.symmetry import rotational_operators
 
     center = _PAD_SIZE // 2
     boundary = (center, center, _R_MAX)
@@ -140,11 +140,8 @@ def test_cuda_negative_x_weight_sum_and_radius_boundary():
 @pytest.mark.parametrize("via_finalizer", [False, True])
 def test_complex_ranged_cuda_matches_full_output(symmetry, via_finalizer, monkeypatch):
     _skip_if_unavailable(require_relion_bind=False)
-    from relax.cuda.kernels import (
-        relion_point_group_symmetrise_bpref,
-        relion_point_group_symmetrise_bpref_host,
-    )
-    from relax.symmetry import rotational_operators
+    from relax.cuda.backprojection import relion_point_group_symmetrise_bpref, relion_point_group_symmetrise_bpref_host
+    from relax.sampling.symmetry import rotational_operators
 
     rng = np.random.default_rng(20260831)
     raw_data = (
@@ -162,7 +159,7 @@ def test_complex_ranged_cuda_matches_full_output(symmetry, via_finalizer, monkey
     )
     if via_finalizer:
         import logging
-        from relax.helpers.half_volume_mstep import finalize_half_volume_bpref
+        from relax.reconstruction.half_volume_mstep import finalize_half_volume_bpref
         monkeypatch.setenv("RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", "37")
         split_data, split_weight = finalize_half_volume_bpref(
             jnp.asarray(raw_data.reshape(-1)),

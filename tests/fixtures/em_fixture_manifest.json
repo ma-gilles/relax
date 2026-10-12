@@ -6540,6 +6540,136 @@
    },
    "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h2_os1_14248155"
   },
+  "k4_5k128_oracle_h3_sigma3_cc_os1": {
+   "description": "RELION page-build K4 3-iteration oracle from four given references: local searches (--sigma_ang 3), healpix 3 os 1, --firstiter_cc (Slurm 15326549)",
+   "files": {
+    "run_it000_class001.mrc": [8389632, "38840481cedfafc23e3aea33a3b02f68aaf1cc27a3a2958f1084bedadc08230c"],
+    "run_it000_class001_angdist.bild": [69716, "8fa1dd2fe1a81fab043efaaaf4e8c5d3e760e03c416b049062a7baebee6fe077"],
+    "run_it000_class002.mrc": [8389632, "fcd4f2f7471d04ec33ad7c9982374f6d9a279f0eb78299f4aaa6e239c9696b1a"],
+    "run_it000_class002_angdist.bild": [69716, "8fa1dd2fe1a81fab043efaaaf4e8c5d3e760e03c416b049062a7baebee6fe077"],
+    "run_it000_class003.mrc": [8389632, "0ac251e4295d339843b2fe21dc20e321da6eb5713df8bd0efff5b2c4489e4b4a"],
+    "run_it000_class003_angdist.bild": [69716, "8fa1dd2fe1a81fab043efaaaf4e8c5d3e760e03c416b049062a7baebee6fe077"],
+    "run_it000_class004.mrc": [8389632, "12d94a1a92ec45e16ac6d3e645fcf36cabec3e12f557780e3fd26ee09912c4c9"],
+    "run_it000_class004_angdist.bild": [69716, "8fa1dd2fe1a81fab043efaaaf4e8c5d3e760e03c416b049062a7baebee6fe077"],
+    "run_it000_data.star": [1079580, "af8da2cf70c995cad4d38b8da19939b0ae310af0dc0722cae95bf8bc2235734a"],
+    "run_it000_model.star": [331667, "53c0a3dc44ceb453ae8b5d635ca0177fd2541508a8760f9905dc958a9608543f"],
+    "run_it000_optimiser.star": [7727, "53884a07e2e01cdf38c6b11ea7899ed7e7ed31440a01ccffd77bbf39f31f2d7d"],
+    "run_it001_class001.mrc": [8389632, "d5ff7175b9cec01dadf2b141f58edee319559677d25f7830d7a80bc790b3abe6"],
+    "run_it001_class001_angdist.bild": [51082, "e4ee8ca94d28fe40b790ffaa88d4e202c0e2f2730293a15135b35e8f379ac121"],
+    "run_it001_class002.mrc": [8389632, "a96dac06088604fdce0fbc070efdabb7c2442e75bdd3c32d8ce855449b33031b"],
+    "run_it001_class002_angdist.bild": [56416, "2d6d1381915d696dd2c87b895e60fc2e7c1e1e25f23a7a6b7eb861e61fe42e7d"],
+    "run_it001_class003.mrc": [8389632, "7d19fc28c681f6e264c98252fa385abb9d91a639f31d8531ea957a06444d013e"],
+    "run_it001_class003_angdist.bild": [57600, "3026ae456f766d460d241b8d665f0aabc8538de2faf48dd494a8c0be714d1ed5"],
+    "run_it001_class004.mrc": [8389632, "0713ac671d94093c208c3cbfe8f7093d4f7bc615ad3c0cf40f1d5ab1c79101d6"],
+    "run_it001_class004_angdist.bild": [57025, "bb96710b3a8b56ac943f301b8fd21717098613123b75929867667b343e97d234"],
+    "run_it001_data.star": [1274677, "3bb38b4eec37c1d019fc62f201a6f681bfc737b890e2dd22922341863b0408dc"],
+    "run_it001_model.star": [331667, "587e53314f2b358c261584ee4839d79e0cb32e20124b2442f9fc98e7593c3edf"],
+    "run_it001_optimiser.star": [7727, "6c87fdc50052d2d36f201ebb0ba075f7b1dfb89dea4f96bbbd121894be36a8d3"],
+    "run_it001_sampling.star": [21667, "c88025b39a1c368a8cfbc63212247ab6b19de8317a33b274caffc0e8b5777959"],
+    "run_it002_class001.mrc": [8389632, "707d93c1470eb6ae37837227bbc3db8d20dd4234d17d8215e5ae31a4aea730cc"],
+    "run_it002_class001_angdist.bild": [67813, "e7ed7beb8044cf1d890a6bc634d04d4b8c97c5a06f993abbd27c465c93673455"],
+    "run_it002_class002.mrc": [8389632, "a6a4df6ecaee984d4bd8982cb5c9cc9a3689b4fe3d023e329f601197c4ec3d03"],
+    "run_it002_class002_angdist.bild": [66086, "6814cff3b3244c229ebb3d23213f690797e6824e96283a4c629ddccb5e50166b"],
+    "run_it002_class003.mrc": [8389632, "842c76b463141fb56ccb626f05062ae55e9ddbcb208baf3ef90c021f871aa235"],
+    "run_it002_class003_angdist.bild": [64683, "eebf5e1a8a4844ab7a7763fe0d746cb15b7b661a012119286e4a86f786aa7882"],
+    "run_it002_class004.mrc": [8389632, "92b1729dd1dc599f33124e491810f1510fd61d74f255476ae91715fe748b4211"],
+    "run_it002_class004_angdist.bild": [61658, "ebafa0806a6231bfdfc1060a71d6cad9e2c2fb0b20180ac54cfe2ebdd1897e47"],
+    "run_it002_data.star": [1274677, "c2aaf64831e2014dfde14adf3a5342a587516383268a326af043be1da6c5622f"],
+    "run_it002_model.star": [335215, "880afe1e5b48416b2c28a33babfb87d7212fa802d0e7277afa917ee80f980d35"],
+    "run_it002_optimiser.star": [7727, "55387f8050bf9032acd5e31fad3b6a2124628b8d88d089a9b673bf89188c10c3"],
+    "run_it002_sampling.star": [21667, "c9daa57f84badc3a2fbafa696e5e8adb4cffe01af4e95c327d1805cac7ff7976"],
+    "run_it003_class001.mrc": [8389632, "371e60e35a54e2db471c8a69fde62a94d041b2d07666c3161078f2b17a2916a2"],
+    "run_it003_class001_angdist.bild": [66583, "33f74b26ac0a5a37a77d33f50898cec3fa57c13a84da050735c6334c72ad10d1"],
+    "run_it003_class002.mrc": [8389632, "382ab9c200da7c4e39fae3ef214d9c6f00b2bfd195d179429077a3163ac23f36"],
+    "run_it003_class002_angdist.bild": [59876, "81f3f00f8a5ef9cc267af75696f7c6f155f09953de472503e3b6e9848785dc3b"],
+    "run_it003_class003.mrc": [8389632, "c65d3c1d1d6b3e1e98d85096f81ef7efc1674d8a1d49a5cf7ba7e7f444de5776"],
+    "run_it003_class003_angdist.bild": [58895, "909a1aa327815354b2ea4a91cd87ecc1b412daa16a254e6a549f3e1fa01f6caf"],
+    "run_it003_class004.mrc": [8389632, "34c6c23119f3c26f16ffba03577883ddf43bbdce5d1b027dc112fde2f055cc8c"],
+    "run_it003_class004_angdist.bild": [56903, "0708671a55676cedbd76c6601965980746eba6caa6d230fe3a0aefc15ae74fa0"],
+    "run_it003_data.star": [1274677, "0ffecc0f2f7c14534059c87e65e90924cbf5d86874355d35650fff84ae1bb0f8"],
+    "run_it003_model.star": [335215, "c0a41337c721be788f00c5c6f8735255570c24c89740e906e8f9f3ad30395eab"],
+    "run_it003_optimiser.star": [7727, "4ad4f314fca3892a6bf374146d9bd436bfe7d65dd72697e0e833e54e6b291b3f"],
+    "run_it003_sampling.star": [21667, "0ca8c7d3880fed0f4c823f3ef153b190305bfc965ed3711c8da08ab9b0926c38"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h3_sigma3_cc_os1_15326549/PROVENANCE.json"
+    ],
+    "relion_optimiser_headers": {
+     "run_it000_optimiser.star": {
+      "command": "--o /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h3_sigma3_cc_os1_15326549/oracle/run --i particles.star --ref reference_init_classes_relion.star --K 4 --tau2_fudge 4 --iter 3 --healpix_order 3 --sigma_ang 3 --offset_range 6 --offset_step 2 --oversampling 1 --firstiter_cc --ini_high 30 --sym C1 --particle_diameter 200 --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --dont_combine_weights_via_disc --pool 10 --j 10 --gpu 0 --random_seed 1",
+      "random_seed": 1,
+      "version": "RELION optimiser; version 5.0.1-commit-b8153b"
+     }
+    }
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h3_sigma3_cc_os1_15326549/oracle"
+  },
+  "k4_5k128_oracle_h3_sigma3_cc_os1_repeat": {
+   "description": "Second capture (Slurm 15326549) of the K4 local-search --firstiter_cc oracle: RELION repeat",
+   "files": {
+    "run_it000_class001.mrc": [8389632, "50f106eac28e9cff9c04167c322cf4ed922a79aa7d527bc2f08def8bdf19d5da"],
+    "run_it000_class001_angdist.bild": [69716, "8fa1dd2fe1a81fab043efaaaf4e8c5d3e760e03c416b049062a7baebee6fe077"],
+    "run_it000_class002.mrc": [8389632, "636a453bcdbd309064daa4ba0448d4b748738e7040be02a89090fe49b1d0da16"],
+    "run_it000_class002_angdist.bild": [69716, "8fa1dd2fe1a81fab043efaaaf4e8c5d3e760e03c416b049062a7baebee6fe077"],
+    "run_it000_class003.mrc": [8389632, "9ef67b9b236abc1b7a383c849e21d7d58465681e3df9b352eea30198d8789971"],
+    "run_it000_class003_angdist.bild": [69716, "8fa1dd2fe1a81fab043efaaaf4e8c5d3e760e03c416b049062a7baebee6fe077"],
+    "run_it000_class004.mrc": [8389632, "79737464f85bf1b2b7a9f8828419779e46778862889a08836e9c41f9afb3c34a"],
+    "run_it000_class004_angdist.bild": [69716, "8fa1dd2fe1a81fab043efaaaf4e8c5d3e760e03c416b049062a7baebee6fe077"],
+    "run_it000_data.star": [1079580, "af8da2cf70c995cad4d38b8da19939b0ae310af0dc0722cae95bf8bc2235734a"],
+    "run_it000_model.star": [331695, "1975f5082e182c155a87f4f9fb6235d61f870d939ce619810eab8444af51a213"],
+    "run_it000_optimiser.star": [7762, "f3124a5041afcd2bd18e384060a71462799993028ac2a93321a6aa52af6b7b44"],
+    "run_it001_class001.mrc": [8389632, "d5ff7175b9cec01dadf2b141f58edee319559677d25f7830d7a80bc790b3abe6"],
+    "run_it001_class001_angdist.bild": [51082, "e4ee8ca94d28fe40b790ffaa88d4e202c0e2f2730293a15135b35e8f379ac121"],
+    "run_it001_class002.mrc": [8389632, "a96dac06088604fdce0fbc070efdabb7c2442e75bdd3c32d8ce855449b33031b"],
+    "run_it001_class002_angdist.bild": [56416, "2d6d1381915d696dd2c87b895e60fc2e7c1e1e25f23a7a6b7eb861e61fe42e7d"],
+    "run_it001_class003.mrc": [8389632, "7d19fc28c681f6e264c98252fa385abb9d91a639f31d8531ea957a06444d013e"],
+    "run_it001_class003_angdist.bild": [57600, "3026ae456f766d460d241b8d665f0aabc8538de2faf48dd494a8c0be714d1ed5"],
+    "run_it001_class004.mrc": [8389632, "4fa3d7b46d9fe2132d1bbc991a69ce55c2e795eb726e445db5543a8e4f995527"],
+    "run_it001_class004_angdist.bild": [57025, "bb96710b3a8b56ac943f301b8fd21717098613123b75929867667b343e97d234"],
+    "run_it001_data.star": [1274677, "da33091747e7db4edf76c575ee674a9aa0f328084e4a3ab43cfa6b69b54ae70f"],
+    "run_it001_model.star": [331695, "27ff4c429a446ecb2359db0ed1f3677e6d5704bdf55a25c622dde410289384d2"],
+    "run_it001_optimiser.star": [7762, "4830b75d042c77ab77ececdb4bca9e9e0d7b57a325968212f854519cc7608025"],
+    "run_it001_sampling.star": [21667, "c88025b39a1c368a8cfbc63212247ab6b19de8317a33b274caffc0e8b5777959"],
+    "run_it002_class001.mrc": [8389632, "58cc4c6aeb92692d1164f7ca9a02b9fad037929422ffaacb5f326809c92eaee4"],
+    "run_it002_class001_angdist.bild": [67808, "6ca678d24ef81af99c24010771b2f07745d79c4a97300b6448790b0e1a0b1fe7"],
+    "run_it002_class002.mrc": [8389632, "5216ee4eb9b9caf0529b79a986c7dc03393ade549c2041f62836392cb8d1bd4f"],
+    "run_it002_class002_angdist.bild": [66080, "93867b96db94b61a4dc4d6615f8b084d30e7cc9833dfce7dafc83cccbb2569ec"],
+    "run_it002_class003.mrc": [8389632, "ea4b0916009bd4fc3219f4392627b7c839bf673f020e7faaba62a9ea45f9237b"],
+    "run_it002_class003_angdist.bild": [64688, "29f37b6144c20da1ef581b53865bcce8637e8c1466839109161a199b241f397b"],
+    "run_it002_class004.mrc": [8389632, "1d8a43f2a702ee6a57c61e00c69db1cb0eb893577c57ff28dc5debdd6e59d162"],
+    "run_it002_class004_angdist.bild": [61669, "1d238a2847f73f58e1c42d365bec1f093e02138c33b4ae77ea54803f36f61b59"],
+    "run_it002_data.star": [1274677, "be319f52b32e4498dd613b250e4e197b201fc2fa5914e2b24c45e3ea2e08b601"],
+    "run_it002_model.star": [335243, "c63880ee54713bf6a5771f37704562a3cef9103d32cd387337182f61a0e4bc57"],
+    "run_it002_optimiser.star": [7762, "9b1976b7108887182c2d037a938072a670960979945b15c4b501f82b08835394"],
+    "run_it002_sampling.star": [21667, "c9daa57f84badc3a2fbafa696e5e8adb4cffe01af4e95c327d1805cac7ff7976"],
+    "run_it003_class001.mrc": [8389632, "4f31887462b43ac5f1e712f15dfc37718abcaab092c9cebe87273e768bc578cc"],
+    "run_it003_class001_angdist.bild": [66599, "e2104a8e5c03c3b3f90c07c1856960979cf5f8bb7e5bdcdf7647723bc571f8e6"],
+    "run_it003_class002.mrc": [8389632, "1948ded1aa207d93080d60df2b3dc396c5acc240fff705331f0e7005bd12b473"],
+    "run_it003_class002_angdist.bild": [59870, "c6965893b0e75b754a4f0fd931ebd4db0e2400f16bd71d3a6f701b15a157debf"],
+    "run_it003_class003.mrc": [8389632, "341df7e3c9733ea648d3b709b92cde42f3c3f66cc28d9cc29fb181f1055062f6"],
+    "run_it003_class003_angdist.bild": [58888, "640a70c3d09f0c3efff1f7731bce25eb9fbf461ad61f540e304b6c35d4b3fde7"],
+    "run_it003_class004.mrc": [8389632, "a8c9b249a885e0d5a7ea944f0831cc5c5a72c8f8addb817a5400e6c7c85dffc6"],
+    "run_it003_class004_angdist.bild": [56904, "ffa3e5390adc183526c51e6e12fd7c4cf7efe44a55779570a095549ec436029f"],
+    "run_it003_data.star": [1274677, "10be44cfa44f6096483ef636e6058d4310c602ddd7c299a5d16c49ea9b1ea957"],
+    "run_it003_model.star": [335243, "ce53965d7ca29590dc4967c2f640990d8687e4ee91a063e7bec0ceca1ed2b5e8"],
+    "run_it003_optimiser.star": [7762, "f4ec19439dc5240f8644322cf017a4280d269d5186d7b0de0b6145e3edaaf160"],
+    "run_it003_sampling.star": [21667, "0ca8c7d3880fed0f4c823f3ef153b190305bfc965ed3711c8da08ab9b0926c38"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h3_sigma3_cc_os1_15326549_repeat/PROVENANCE.json"
+    ],
+    "relion_optimiser_headers": {
+     "run_it000_optimiser.star": {
+      "command": "--o /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h3_sigma3_cc_os1_15326549_repeat/oracle/run --i particles.star --ref reference_init_classes_relion.star --K 4 --tau2_fudge 4 --iter 3 --healpix_order 3 --sigma_ang 3 --offset_range 6 --offset_step 2 --oversampling 1 --firstiter_cc --ini_high 30 --sym C1 --particle_diameter 200 --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --dont_combine_weights_via_disc --pool 10 --j 10 --gpu 0 --random_seed 1",
+      "random_seed": 1,
+      "version": "RELION optimiser; version 5.0.1-commit-b8153b"
+     }
+    }
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/k4_fast_oracles/h3_sigma3_cc_os1_15326549_repeat/oracle"
+  },
   "k4_5k128_relion_os0": {
    "description": "RELION K4 Class3D of k4_5k128_data (unit tests)",
    "files": {

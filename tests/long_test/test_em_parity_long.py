@@ -205,7 +205,7 @@ def _recovar_vs_relion_map_similarity(recovar_path: Path, relion_path: Path) -> 
     """Map parity metrics between a relax map and a RELION map, both RELION-convention files."""
     from recovar.utils import helpers
 
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
 
     return _volume_similarity(load_relax_map(recovar_path), helpers.load_relion_volume(str(relion_path)))
 
@@ -1009,7 +1009,7 @@ def test_em_parity_long_realdata_hp3_replay(tmp_path, arm):
     """
     from recovar.utils import helpers
 
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
     from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
 
     _assert_parity_ancestors_or_skip()
@@ -1088,7 +1088,7 @@ def test_em_parity_long_class3d_hp4_global(tmp_path):
     from recovar.utils import helpers
     from scipy.optimize import linear_sum_assignment
 
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
     from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
 
     _assert_parity_ancestors_or_skip()

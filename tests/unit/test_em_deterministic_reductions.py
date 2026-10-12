@@ -16,8 +16,8 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.helpers import deterministic_reduce as dr
-from relax.helpers.half_spectrum import bin_shell_values_jax, bin_shell_values_np
+from relax.fourier.half_spectrum import bin_shell_values_jax, bin_shell_values_np
+from relax.numerics import deterministic_reduce as dr
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -105,7 +105,7 @@ def test_fixed_order_segment_sum_is_bitwise_repeatable_under_jit():
 
 
 def test_mstep_fixed_order_shell_sums_match_scatter_rule():
-    from relax.helpers.deterministic_reduce import fixed_order_shell_sums, static_shell_voxel_lists
+    from relax.numerics.deterministic_reduce import fixed_order_shell_sums, static_shell_voxel_lists
 
     capacity, pf, n_shells = 19, 1, 9  # ori_size 16, padding 1 -> capacity 19
     lists = static_shell_voxel_lists(capacity, pf, n_shells)

@@ -15,8 +15,8 @@ coarse operands, RELION's score translation, and the SPA coarse GEMM scorer (REL
 a block of a batch's images per call. The GEMM expansion rounds differently from RELION's
 direct square, so the rotations with a sample within the expansion's error bound of a particle's
 significance cut (or of its smallest diff2) are scored again by the fused direct-square kernel before the
-cut is taken (:mod:`relax.scoring.exact_cut`). :func:`tilt_image_coarse_diff2` (that kernel, one image) is
-the reference the tests compare the GEMM scorer with.
+cut is taken (:mod:`relax.scoring.exact_cut`). The tests compare the GEMM scorer with
+that kernel scored one image at a time (``oracles.tomo_coarse.tilt_image_coarse_diff2``).
 """
 
 from __future__ import annotations
@@ -30,10 +30,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.shape_buckets import pow2_ceil, pow2_floor
-from relax.scoring.exact_cut import (
-    FUSED_TRANSLATION_CAPACITY as _FUSED_TRANSLATION_CAPACITY,
-)
+from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
 from relax.scoring.exact_cut import (
     direct_rows_diff2,
     first_rows,
@@ -64,8 +61,8 @@ def coarse_score_layout(
 ) -> CoarseScoreLayout:
     """The SPA coarse pass's score window (significance.py:1105-1123, 1680-1726) for one current size."""
 
-    from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.helpers.half_spectrum import make_scoring_half_image_weights
+    from relax.fourier.fourier_window import make_fourier_window_spec
+    from relax.fourier.half_spectrum import make_scoring_half_image_weights
     from relax.scoring.coarse_layout import coarse_gaussian_fused_logical_lookup, plan_coarse_gaussian_square_layout
 
     image_shape = tuple(int(size) for size in image_shape)
@@ -114,15 +111,15 @@ def tilt_image_coarse_operands(
     CTF, as for SPA (:1244-1263).
     """
 
-    from relax.helpers.batch_fetch import fetch_indexed_batch
-    from relax.helpers.optics_noise import noise_rows
-    from relax.helpers.preprocessing import prepare_batch_preprocess_operands
-    from relax.relion.relion_coarse_operands import (
+    from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
+    from relax.io.batch_fetch import fetch_indexed_batch
+    from relax.relion.ctf import relion_exact_ctf_half_from_source_star_host
+    from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
+    from relax.relion.optics_groups import noise_rows
+    from relax.scoring.coarse_operands import (
         process_relion_exact_coarse_half_image,
         relion_exact_coarse_operands,
     )
-    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star_host
-    from relax.sparse_pass2.sparse_pass2_scoring import relion_cuda_powerclass_highres_xi2_half
 
     image_indices = np.asarray(image_indices, dtype=np.int64)
     # One vectorized host read (the dataset's batch iterator collates image by image, 15x slower).
@@ -164,44 +161,6 @@ def tilt_image_coarse_operands(
     return unshifted, pixel_weight, jnp.asarray(initial, dtype=jnp.float32)
 
 
-def tilt_image_coarse_diff2(
-    projector_full,
-    rotations,
-    unshifted,
-    pixel_weight,
-    initial_diff2,
-    translation_angles,
-    layout: CoarseScoreLayout,
-    *,
-    model_max_r: int,
-    padding_factor: int,
-    canonical_reduction: bool = True,
-):
-    """One tilt image's coarse diff2 ``[R, T]`` with its own matrices ``[R, 3, 3]`` and phases ``[T, 2]``."""
-
-    from relax.cuda import kernels as em_cuda_kernels
-
-    translation_angles = jnp.asarray(translation_angles, dtype=jnp.float32)
-    chunks = [
-        em_cuda_kernels.relion_coarse_diff2_projector_f32(
-            projector_full,
-            jnp.asarray(rotations, dtype=jnp.float32),
-            jnp.asarray(unshifted, dtype=jnp.complex64)[None],
-            translation_angles[start : start + _FUSED_TRANSLATION_CAPACITY],
-            jnp.asarray(pixel_weight, dtype=jnp.float32)[None],
-            jnp.asarray(initial_diff2, dtype=jnp.float32).reshape(1),
-            layout.full_to_compact,
-            current_size=layout.current_size,
-            physical_image_size=int(layout.image_shape[0]),
-            model_max_r=int(model_max_r),
-            padding_factor=int(padding_factor),
-            canonical_reduction=canonical_reduction,
-        )[0]
-        for start in range(0, int(translation_angles.shape[0]), _FUSED_TRANSLATION_CAPACITY)
-    ]
-    return jnp.concatenate(chunks, axis=1)
-
-
 # Bytes of per-image projections ([images, R, P]) and coarse diff2 ([images, R, T] float32) one call holds, at most
 # (_coarse_pass_budget caps it by what the device can still hand out).
 _COARSE_BATCH_BYTES = 2 << 30
@@ -224,7 +183,7 @@ def _coarse_capacity_texture(
     """The class's persistent projector texture, refilled with ``projector_half``, when the half-storage kernel
     serves it, else ``None``."""
 
-    from relax.helpers.projection import relion_capacity_texture_serves
+    from relax.projection.projection import relion_capacity_texture_serves
 
     projector_half = jnp.asarray(projector_half)
     if jax.default_backend() != "gpu" or not relion_capacity_texture_serves(
@@ -235,7 +194,7 @@ def _coarse_capacity_texture(
         relion_texture_interp=True,
     ):
         return None
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
 
     texture, completion = _CLASS_TEXTURES.pop(int(class_index), (None, None))
     if (
@@ -262,7 +221,7 @@ def _score_window_projections(
     """Score-window projections: float32 ``[N, 2 P]`` packed ``[Re | Im]`` straight from ``texture`` where it
     serves, else complex64 ``[N, P]``; the GEMM scorer takes either."""
 
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         compute_relion_projector_projections_block,
         project_relion_coarse_packed_rows,
         relion_coarse_packed_rows_serve,
@@ -295,17 +254,17 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
     """Coarse diff2 ``[N, T, R]`` (translation-major) of ``N`` tilt images with their own projections ``[N, R, P]``
     and phases ``[N, T, 2]``.
 
-    Each image is scored by the SPA coarse GEMM scorer (:func:`relax.scoring.scoring.relion_coarse_gaussian_gemm_scores_jit`,
+    Each image is scored by the SPA coarse GEMM scorer (:func:`relax.scoring.coarse_kernels.relion_coarse_gaussian_gemm_scores_jit`,
     RELION's ``d0 + 0.5 sum w |p - y|^2`` as two real-packed float32 GEMMs) on its shifted pixels from RELION's
     score translation; a zero-weight padded image scores zero.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.scoring.scoring import relion_coarse_gaussian_gemm_scores_jit
+    from relax.cuda import translate as cuda_translate
+    from relax.scoring.coarse_kernels import relion_coarse_gaussian_gemm_scores_jit
 
     n_images, n_trans = (int(n) for n in translation_angles.shape[:2])
     # Every image's translations in one launch, each with its own phases.
-    shifted_all = em_cuda_kernels.relion_translate_score_f32(
+    shifted_all = cuda_translate.relion_translate_score_f32(
         unshifted, translation_angles, score_indices, image_shape
     ).reshape(n_images, n_trans, -1)
 
@@ -637,7 +596,7 @@ _COARSE_OPERAND_BLOCK_BYTES = 4 << 30
 def _device_available_bytes() -> float | None:
     """What the JAX allocator can still hand out on the device (``None`` when unknown)."""
 
-    from relax.sparse_pass2.sparse_pass2_budget import (
+    from relax.runtime.memory_budget import (
         _device_free_memory_bytes,
         _jax_allocator_free_memory_bytes,
         _jax_allocator_pool_free_bytes,
@@ -746,7 +705,7 @@ def _coarse_projection_bytes_per_pixel(
     (81 translations x 4 B + 278 pixels x 32 B) with a complex128 projector (Polar 413469).
     """
 
-    from relax.helpers.projection import relion_coarse_packed_rows_serve
+    from relax.projection.projection import relion_coarse_packed_rows_serve
 
     if all(t is not None for t in class_textures) and relion_coarse_packed_rows_serve(
         int(box_size), int(current_size), int(model_max_r)
@@ -820,13 +779,13 @@ def particle_coarse_significance(
     (``mask [P, R * T]``, ``n_significant``, ``pmax``, ``winner``, ...) and the ``log_weights`` it cut.
     """
 
-    from relax.helpers.oversampling import relion_cuda_f32_coarse_log_weights
+    from relax.sampling.oversampling import relion_cuda_f32_coarse_log_weights
     from relax.scoring.coarse_publication import posterior_statistics
 
     # RELION's left-to-right float32 order pdf_orientation + pdf_offset + min_diff2 - diff2
     # (cuda_kernel_weights_exponent_coarse). Adding the priors to the absolute scores first and the
     # min_diff2 offset afterwards rounds differently and can move near-tie cells across the
-    # significance cut (relax.helpers.oversampling.relion_cuda_f32_coarse_log_weights).
+    # significance cut (relax.sampling.oversampling.relion_cuda_f32_coarse_log_weights).
     raw = -jnp.asarray(particle_diff2, dtype=jnp.float32)
     n_particles = int(raw.shape[0])
     rotation_prior = (
@@ -870,7 +829,7 @@ def _batch_scoring_rotations(
     rotations beyond its own count repeat its last one, and padded slots and particles are zero.
     """
 
-    from relax.refinement import tomo_particles
+    from relax.sampling import tomo_particles
 
     counts = np.diff(offsets)[np.asarray(units)]
     slot = np.arange(slots)[None, :]
@@ -942,10 +901,10 @@ def particle_coarse_supports(
 
     RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1190-1402): every tilt image is
     scored with its own device matrices (``make_eulers_3D`` with the image's left matrix ``image_left``,
-    its ``Aproj`` with the optics group's magnification, :func:`relax.refinement.tomo_half.tilt_left_matrices`;
+    its ``Aproj`` with the optics group's magnification, :func:`relax.steps.tomo_half.tilt_left_matrices`;
     :func:`relax.sampling.relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts of ``Aproj``
     (``image_projections``) plus
-    the rounded old offset (:func:`relax.refinement.tomo_particles.tilt_translation_angles`) and its own
+    the rounded old offset (:func:`relax.sampling.tomo_particles.tilt_translation_angles`) and its own
     CTF and noise; the images' diff2 is summed in ``img_id`` order and the particle's weights are cut
     once (:func:`particle_coarse_significance`). Dataset images ``unit_image_offsets[u]:[u+1]`` are
     particle ``u``'s, in ``img_id`` order.
@@ -962,9 +921,8 @@ def particle_coarse_supports(
     (acc_ml_optimiser_impl.h:2245-2345). The supports are then a list per class.
     """
 
-    from relax.helpers.projection import relion_projector_half_to_texture_full
-    from relax.refinement import tomo_particles
-    from relax.sampling import relion_adaptive_pass1_rotations
+    from relax.projection.projection import relion_projector_half_to_texture_full
+    from relax.sampling import relion_adaptive_pass1_rotations, tomo_particles
 
     class_projectors = tuple(projector_half) if isinstance(projector_half, (tuple, list)) else (projector_half,)
     n_classes = len(class_projectors)
@@ -1394,14 +1352,14 @@ def tilt_image_cc_coarse_operands(experiment_dataset, image_indices, window_indi
     normalises a tomo image (acc_ml_optimiser_impl.h:429-476).
     """
 
-    from relax.helpers.batch_fetch import fetch_indexed_batch
-    from relax.helpers.preprocessing import prepare_batch_preprocess_operands
-    from relax.relion.relion_coarse_operands import (
+    from relax.io.batch_fetch import fetch_indexed_batch
+    from relax.relion.ctf import relion_exact_ctf_half_from_source_star
+    from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
+    from relax.scoring.coarse_operands import (
         assemble_relion_cc_coarse_operands,
         process_relion_exact_coarse_half_image,
         relion_cc_inverse_power_from_processed,
     )
-    from relax.relion.relion_ctf import relion_exact_ctf_half_from_source_star
 
     image_indices = np.asarray(image_indices, dtype=np.int64)
     batch_data, _ctf_params, fetched = fetch_indexed_batch(experiment_dataset, image_indices)
@@ -1441,7 +1399,7 @@ def _add_tilt_image_cc_diff2(running_diff2, projections, shifted, pixel_weight):
     ``X`` and ``A`` are the SPA coarse CC GEMM terms (scoring.relion_coarse_gemm_terms).
     """
 
-    from relax.scoring.scoring import relion_coarse_gemm_terms
+    from relax.scoring.coarse_kernels import relion_coarse_gemm_terms
 
     n_trans = int(shifted.shape[0])
     cross, model_energy, _, _ = relion_coarse_gemm_terms(
@@ -1483,12 +1441,11 @@ def particle_coarse_cc_winners(
     ``scale_corrections`` are per dataset image.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.helpers.half_spectrum import make_scoring_half_image_weights
-    from relax.helpers.projection import compute_relion_projector_projections_block
-    from relax.refinement import tomo_particles
-    from relax.sampling import relion_adaptive_pass1_rotations
+    from relax.cuda import translate as cuda_translate
+    from relax.fourier.fourier_window import make_fourier_window_spec
+    from relax.fourier.half_spectrum import make_scoring_half_image_weights
+    from relax.projection.projection import compute_relion_projector_projections_block
+    from relax.sampling import relion_adaptive_pass1_rotations, tomo_particles
 
     image_shape = tuple(int(n) for n in experiment_dataset.image_shape)
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)
@@ -1557,7 +1514,7 @@ def particle_coarse_cc_winners(
                 relion_kernel="coarse",
                 projector_output_size=int(coarse_size),
             )
-            shifted = em_cuda_kernels.relion_translate_score_f32(
+            shifted = cuda_translate.relion_translate_score_f32(
                 unshifted[slot : slot + 1], jnp.asarray(angles[slot], dtype=jnp.float32), window_device, image_shape
             )
             running = _add_tilt_image_cc_diff2(

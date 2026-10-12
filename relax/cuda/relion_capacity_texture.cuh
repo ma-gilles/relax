@@ -142,7 +142,7 @@ fill_relion_texture_capacity_planes_kernel(
 
 // Staging buffers are at most this many texels per plane group (two float
 // buffers of 512 MiB), so the transient beside the texture stays inside the
-// XLA pool reserve's slack (relax/helpers/xla_memory_reserve.py).
+// XLA pool reserve's slack (relax/runtime/xla_memory_reserve.py).
 constexpr int64_t kCapacityTextureStagingTexels = int64_t(1) << 27;
 
 /* The staging of launch_project_texture_float<true> (recovar_cuda_common.cuh):

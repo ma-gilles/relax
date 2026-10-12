@@ -8,12 +8,12 @@ import pytest
 from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-import relax.diagnostics.reconstruction as reconstruction_diagnostics
-from relax.dense import score_outputs
 from relax.diagnostics import observers
-from relax.diagnostics import reconstruction as diagnostics
+from relax.numerics import finite_check
+from relax.reconstruction import accumulator_guard
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import maximization
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.steps import score_outputs
 
 pytestmark = pytest.mark.unit
 
@@ -65,28 +65,23 @@ def test_prejoin_capture_routing(iteration, target, k_class_enabled, captured, s
 
 
 @pytest.mark.parametrize(('iteration', 'mode', 'expected_events'),
-                         [(0, 'off', ['mode']), (2, 'warn', ['mode', 'guard']), (2, 'raise', ['mode', 'guard'])])
+                         [(0, 'off', []), (2, 'warn', [('guard', 'warn')]), (2, 'raise', [('guard', 'raise')])])
 def test_half_accumulator_guard_routing(iteration, mode, expected_events, monkeypatch):
     events = []
     numerators = [np.array([1 + 2j]), np.array([3 + 4j])]
     denominators = [np.array([5.0]), np.array([6.0])]
     log = Mock()
 
-    def guard_mode():
-        events.append('mode')
-        return mode
-
-    def check(arrays, *, context):
-        events.append('guard')
+    def check(arrays, *, mode, context):
+        events.append(('guard', mode))
         assert tuple(arrays) == ('Ft_y_0', 'Ft_y_1', 'Ft_ctf_0', 'Ft_ctf_1')
         for actual, expected in zip(arrays.values(), numerators + denominators):
             assert actual is expected
         assert context == f'iteration={iteration} relion_iteration={12 + iteration + 1}'
 
-    monkeypatch.setattr(diagnostics.finite_check, 'half_accumulator_guard_mode', guard_mode)
-    monkeypatch.setattr(diagnostics.finite_check, 'check_half_accumulators', check)
-    diagnostics.check_half_accumulators_before_join(
-        numerators, denominators, iteration=iteration, init_relion_iteration=12, log=log,
+    monkeypatch.setattr(finite_check, 'check_half_accumulators', check)
+    accumulator_guard.check_half_accumulators_before_join(
+        numerators, denominators, guard_mode=mode, iteration=iteration, init_relion_iteration=12, log=log,
     )
     assert events == expected_events
     assert log.info.call_count == int(iteration == 0)
@@ -102,14 +97,13 @@ def test_malformed_capture_target_refuses_when_the_observers_are_built(monkeypat
 def test_capture_precedes_guard_failure(monkeypatch, tmp_path):
     events = []
     monkeypatch.setattr(observers, 'write_bpref_accumulators', lambda *args, **kwargs: events.append('capture'))
-    monkeypatch.setattr(diagnostics.finite_check, 'half_accumulator_guard_mode', lambda: 'raise')
 
     def check(*args, **kwargs):
         events.append('guard')
-        raise diagnostics.finite_check.FiniteCheckError('half 2 poisoned')
+        raise finite_check.FiniteCheckError('half 2 poisoned')
 
-    monkeypatch.setattr(diagnostics.finite_check, 'check_half_accumulators', check)
-    with pytest.raises(diagnostics.finite_check.FiniteCheckError, match='half 2 poisoned'):
+    monkeypatch.setattr(finite_check, 'check_half_accumulators', check)
+    with pytest.raises(finite_check.FiniteCheckError, match='half 2 poisoned'):
         run_tiny_refinement(monkeypatch, final_after_max_iter=False,
                             observer=observers.BpRefAccumulatorObserver(prejoin_dir=str(tmp_path)))
     assert events == ['capture', 'guard']
@@ -120,7 +114,7 @@ def test_actual_controller_audits_before_join_and_snapshot(n_classes, monkeypatc
     """Each iteration audits the raw half accumulators before its M-step; Class3D combines the halves in the
     M-step; K=1 joins them, releases the previous maps, dumps the joined accumulators, then updates the prior."""
     trace = CallTrace(monkeypatch)
-    trace.wrap(reconstruction_diagnostics, "check_half_accumulators_before_join", "audit")
+    trace.wrap(accumulator_guard, "check_half_accumulators_before_join", "audit")
     trace.wrap(maximization, "class_maximization", "class")
     trace.wrap(score_outputs, "_combine_optional_half_accumulators", "combine")
     trace.wrap(maximization, "k1_maximization", "k1")

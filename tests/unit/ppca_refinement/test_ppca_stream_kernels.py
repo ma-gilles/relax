@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 from helpers.float_compare import assert_matches
 
-from relax.helpers.fourier_window import make_fourier_window_spec
+from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.ppca_refinement import full_row_stream as frs
 
 IMAGE_SHAPE, VOLUME_SHAPE = (32, 32), (32, 32, 32)
@@ -55,7 +55,7 @@ def test_window_project_matches_recovar_slice(P, custom_cuda_lib, gpu_device, mo
     import recovar.cuda_backproject as cuda_backproject
     from recovar import core
 
-    from relax.cuda.kernels import ppca_window_project_f32
+    from relax.cuda.ppca import ppca_window_project_f32
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -152,7 +152,7 @@ def _prior_tables(rng, R, B, T, n_rows):
 @pytest.mark.parametrize("q,T", [(0, 29), (4, 29), (4, 40), (10, 29)])
 def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
     """Pass-1 epilogue (kept rows and partials) and pass-2 preparation against the XLA stages in float64."""
-    from relax.cuda.kernels import ppca_latent_epilogue_f32, ppca_posterior_prep_f32
+    from relax.cuda.ppca import ppca_latent_epilogue_f32, ppca_posterior_prep_f32
 
     rng = np.random.default_rng(11 + q + T)
     R, B, cap, start, pad = 16, 6, 48, 16, 3

@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.sparse_pass2 import resident_pass2 as rp
-from relax.sparse_pass2.resident_significance import (
+from relax.fine_pass import resident_pass2 as rp
+from relax.fine_pass.resident_significance import (
     CoarseSignificanceCSR,
     build_resident_candidate_tables_from_csr,
     fine_rotation_children,

@@ -17,11 +17,10 @@ from typing import Sequence
 # RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
-from relax.helpers.dtype_policy import use_float32_matmuls
-from relax.helpers.particle_io import add_particle_read_arguments
-from relax.ppca_initial_model.vdam_controls import VdamPilotControls
-from relax.refinement.command_options import RetiredFlag
-from relax.vdam.native_options import InitialModelDefaults
+from relax.commands.refinement_arguments import RetiredFlag
+from relax.io.particle_io import add_particle_read_arguments
+from relax.numerics.precision import use_float32_matmuls
+from relax.vdam.native_options import InitialModelDefaults, VdamPilotControls
 
 
 @dataclass(frozen=True)
@@ -453,7 +452,7 @@ def _configure_jax_compilation_cache(*, enabled: bool, requested_dir: str) -> di
         "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
         "0",
     )
-    # Importing ``recovar.em.vdam.schedules`` executes the package
+    # Importing ``relax.vdam.schedules`` executes the package
     # initializer, which may import JAX before CLI parsing reaches this point.
     # Update the live config as well as the environment so the cache is active
     # for this process, not merely its children.
@@ -464,7 +463,7 @@ def _configure_jax_compilation_cache(*, enabled: bool, requested_dir: str) -> di
         "jax_persistent_cache_min_compile_time_secs",
         float(min_compile_time_secs),
     )
-    from relax.helpers.compilation_cache import start_background_prune
+    from relax.runtime.compilation_cache import start_background_prune
 
     start_background_prune(directory)
     return {"enabled": True, "directory": str(directory), "source": source}
@@ -496,7 +495,7 @@ def _input_files(args: argparse.Namespace) -> dict[str, object]:
 
     if args.fn_optimisation_set is None:
         return {"fn_img": args.fn_img, "fn_tomograms": None}
-    from relax.relion.tomo_input import read_optimisation_set
+    from relax.star.tomo_input import read_optimisation_set
 
     particles, tomograms = read_optimisation_set(args.fn_optimisation_set)
     return {"fn_img": str(particles), "fn_tomograms": str(tomograms)}
@@ -567,7 +566,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
 
 def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
     """``relax initial_model``. ``oracle_m_step``: RELION's own single-class M-step
-    (``relax.diagnostics.vdam_native_mstep``), which replaces relax's and alone takes the native M-step replays."""
+    (``scripts.vdam_native_mstep``), which replaces relax's and alone takes the native M-step replays."""
     _assert_expected_repo_imports()
     use_float32_matmuls()
     parser = make_parser()

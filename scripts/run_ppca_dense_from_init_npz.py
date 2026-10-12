@@ -22,7 +22,7 @@ from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.reconstruction import noise as recon_noise
 from recovar.utils.json_utils import to_jsonable
 
-from relax.helpers.map_io import write_map_from_ft
+from relax.io.map_io import write_map_from_ft
 from relax.ppca_refinement.config import (
     GeometryConfig,
     ScheduleConfig,
@@ -30,10 +30,6 @@ from relax.ppca_refinement.config import (
     SparsePass2Config,
 )
 from relax.ppca_refinement.dense_dataset import coerce_augmented_half_volumes, run_dense_ppca_fused_em_iteration
-from relax.ppca_refinement.initialization import (
-    loading_row_norm_variance_prior,
-    volume_power_variance_prior,
-)
 from relax.ppca_refinement.mean_regularization import (
     KCLASS_RELION_MINRES_MAP,
     MeanRegularizationConfig,
@@ -42,6 +38,10 @@ from relax.ppca_refinement.mean_regularization import (
 from relax.ppca_refinement.postprocess import PostprocessConfig
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
 from relax.sampling import get_rotation_grid_at_order, get_translation_grid
+from scripts.lib.ppca_initialization import (
+    loading_row_norm_variance_prior,
+    volume_power_variance_prior,
+)
 from scripts.lib.refinement_loop import run_dense_ppca_refinement_loop
 
 

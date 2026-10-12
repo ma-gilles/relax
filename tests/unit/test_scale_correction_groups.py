@@ -5,7 +5,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.classification.k_class import _full_group_count_from_kwargs
-from relax.helpers.scale_groups import prepare_scale_correction_groups
+from relax.relion.scale_groups import prepare_scale_correction_groups
 
 pytestmark = pytest.mark.unit
 

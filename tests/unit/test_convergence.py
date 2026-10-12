@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.convergence import (
+from relax.refinement.refinement_state import (
     MAX_NR_ITER_WO_LARGE_HIDDEN_VARIABLE_CHANGES,
     MAX_NR_ITER_WO_RESOL_GAIN,
     RefinementState,
@@ -30,9 +30,7 @@ from relax.helpers.convergence import (
     compute_translation_changes,
     effective_angular_step,
     hard_class_change_fraction,
-    healpix_angular_step,
     refine_angular_sampling,
-    relion_mpi_hidden_variable_change_is_small,
     resolution_required_angular_sampling,
     resolution_triggers_angular_refinement,
     update_angular_sampling,
@@ -42,6 +40,8 @@ from relax.sampling import (
     get_rotation_grid,
     get_rotation_grid_at_order,
 )
+from relax.sampling.healpix import angular_sampling_deg
+from relax.steps.convergence import relion_mpi_hidden_variable_change_is_small
 
 pytestmark = pytest.mark.unit
 
@@ -84,7 +84,7 @@ class TestRefinementStateConstruction:
 
     def test_effective_step_property(self):
         state = RefinementState(healpix_order=3, adaptive_oversampling=1)
-        expected = healpix_angular_step(3) / 2.0
+        expected = angular_sampling_deg(3) / 2.0
         assert abs(state.effective_step - expected) < 1e-10
 
     def test_max_healpix_order_is_not_fine_enough_by_itself(self):
@@ -177,26 +177,26 @@ class TestRefinementStateConstruction:
 
 
 # =========================================================================
-# healpix_angular_step / effective_angular_step
+# angular_sampling_deg / effective_angular_step
 # =========================================================================
 
 
 class TestAngularStepFunctions:
-    def test_healpix_angular_step_known_values(self):
+    def test_angular_sampling_deg_known_values(self):
         """Check against the known table in the RELION reference doc."""
         # Order 0: ~58.6 deg (360 / 6 = 60, close enough)
-        assert abs(healpix_angular_step(0) - 60.0) < 1e-10
+        assert abs(angular_sampling_deg(0) - 60.0) < 1e-10
         # Order 3: ~7.5 deg
-        assert abs(healpix_angular_step(3) - 7.5) < 1e-10
+        assert abs(angular_sampling_deg(3) - 7.5) < 1e-10
         # Order 4: ~3.75 deg
-        assert abs(healpix_angular_step(4) - 3.75) < 1e-10
+        assert abs(angular_sampling_deg(4) - 3.75) < 1e-10
 
     def test_effective_angular_step_no_oversampling(self):
-        assert effective_angular_step(3, 0) == healpix_angular_step(3)
+        assert effective_angular_step(3, 0) == angular_sampling_deg(3)
 
     def test_effective_angular_step_with_oversampling(self):
         """Oversampling 1 halves the step, oversampling 2 quarters it."""
-        step3 = healpix_angular_step(3)
+        step3 = angular_sampling_deg(3)
         assert abs(effective_angular_step(3, 1) - step3 / 2) < 1e-10
         assert abs(effective_angular_step(3, 2) - step3 / 4) < 1e-10
 
@@ -538,7 +538,7 @@ class TestRefineAngularSampling:
     def test_angular_step_updated(self):
         state = RefinementState(healpix_order=3)
         new_state = refine_angular_sampling(state)
-        expected = healpix_angular_step(4)
+        expected = angular_sampling_deg(4)
         assert abs(new_state.angular_step - expected) < 1e-10
 
     def test_counters_reset(self):
@@ -620,7 +620,7 @@ class TestRefineAngularSampling:
         """sigma2_rot = 2 * 2 * step^2 (RELION convention)."""
         state = RefinementState(healpix_order=3, adaptive_oversampling=0)
         new_state = refine_angular_sampling(state)
-        step_deg = healpix_angular_step(4)
+        step_deg = angular_sampling_deg(4)
         step_rad = np.deg2rad(step_deg)
         expected_sigma = np.sqrt(4.0) * step_rad
         assert abs(new_state.sigma_rot - expected_sigma) < 1e-10
@@ -1475,7 +1475,7 @@ class TestRefinementPolicy:
         assert _exhaustive_grid_order_for_state(nonlocal_state) == 4
 
     def test_approx_acc_rot_convergence_policy_is_diagnostic_by_default(self, monkeypatch):
-        from relax.helpers import convergence as convergence_helpers
+        from relax.refinement import refinement_state as convergence_helpers
         from relax.refinement.refinement_options import ScoringVariants
 
         monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
@@ -1486,7 +1486,7 @@ class TestRefinementPolicy:
         assert reason == "diagnostic-only-default"
 
     def test_approx_acc_rot_convergence_policy_opt_in(self, monkeypatch):
-        from relax.helpers import convergence as convergence_helpers
+        from relax.refinement import refinement_state as convergence_helpers
         from relax.refinement.refinement_options import ScoringVariants
 
         monkeypatch.setenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", "1")
@@ -1499,7 +1499,7 @@ class TestRefinementPolicy:
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize("trailing_shape", [(2,), (3, 3)])
 def test_pose_stacks_preserve_empty_half_and_requested_precision(dtype, trailing_shape):
-    from relax.helpers.convergence import concatenate_pose_stacks_or_none
+    from relax.refinement.refinement_state import concatenate_pose_stacks_or_none
 
     populated = np.arange(2 * np.prod(trailing_shape), dtype=np.float64).reshape(2, *trailing_shape)
     result = concatenate_pose_stacks_or_none(
@@ -1513,7 +1513,7 @@ def test_pose_stacks_preserve_empty_half_and_requested_precision(dtype, trailing
 
 @pytest.mark.parametrize("stacks,warning", [([None, np.zeros((1, 2))], False), ([np.zeros((1, 3))], True)])
 def test_pose_stacks_skip_unavailable_or_malformed_half(stacks, warning, caplog):
-    from relax.helpers.convergence import concatenate_pose_stacks_or_none
+    from relax.refinement.refinement_state import concatenate_pose_stacks_or_none
 
     with caplog.at_level(logging.WARNING):
         result = concatenate_pose_stacks_or_none(
@@ -1564,7 +1564,7 @@ def test_class3d_keeps_global_searches_at_any_healpix_order():
     """
     from dataclasses import replace
 
-    from relax.helpers.convergence import RefinementState, refine_angular_sampling
+    from relax.refinement.refinement_state import RefinementState, refine_angular_sampling
 
     auto = RefinementState(healpix_order=4, auto_local_healpix_order=4)
     assert auto.do_local_search
@@ -1592,7 +1592,7 @@ def _relion_offset_update(changes_ang, old_range_ang, acc_trans, oversampling):
 def test_translation_update_reads_the_offset_change_as_relion_does(changes):
     """The range is 5x the last offset change as it is, 0 included (relax#59), capped at 1.3x the old range and
     floored at 1.5 steps; 999 is RELION's value before the first measurement."""
-    from relax.helpers.convergence import RefinementState, _relion_next_translation_sampling_pixels
+    from relax.refinement.refinement_state import RefinementState, _relion_next_translation_sampling_pixels
 
     pixel, old_range_px, old_step_px = 1.7, 6.0, 2.0
     state = RefinementState(
@@ -1608,7 +1608,7 @@ def test_translation_update_reads_the_offset_change_as_relion_does(changes):
 
 
 def test_a_new_state_starts_from_relions_offset_change_and_keeps_it_through_a_sampling_refinement():
-    from relax.helpers.convergence import CURRENT_CHANGES_INIT_OFFSETS, RefinementState, refine_angular_sampling
+    from relax.refinement.refinement_state import CURRENT_CHANGES_INIT_OFFSETS, RefinementState, refine_angular_sampling
 
     assert RefinementState().current_changes_optimal_offsets_angstrom == CURRENT_CHANGES_INIT_OFFSETS == 999.0
     state = RefinementState(translation_range=4.0, translation_step=1.0, voxel_size_angstrom=1.0)

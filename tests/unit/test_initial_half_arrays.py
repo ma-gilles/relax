@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement.half_inputs import HalfPair
-from relax.refinement.projector_preparation import (
+from relax.refinement.reference_state import initialize_class_reference_model, initialize_reference_model
+from relax.steps.half_inputs import HalfPair
+from relax.steps.projector_preparation import (
     prepare_initial_real_references,
 )
-from relax.refinement.reference_state import initialize_class_reference_model, initialize_reference_model
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)

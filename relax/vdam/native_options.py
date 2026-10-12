@@ -8,11 +8,13 @@ from __future__ import annotations
 import math
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
-from relax.helpers.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
-from relax.symmetry import is_identity_symmetry
-from relax.vdam.schedules import (
+from relax.io.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
+from relax.runtime.env_flags import parse_env_strict_flag, read_env_text
+from relax.sampling.symmetry import is_identity_symmetry
+from relax.steps.sgd_schedule import (
     DEFAULT_GRAD_EM_ITERS,
     DEFAULT_GRAD_FIN_FRAC,
     DEFAULT_GRAD_INI_FRAC,
@@ -23,7 +25,58 @@ from relax.vdam.schedules import (
     GUI_DEFAULT_TAU2_FUDGE,
     compute_phase_lengths,
     compute_tau2_fudge,
+    default_subset_sizes_for_3d_initial_model,
 )
+
+
+@dataclass(frozen=True)
+class VdamPilotControls:
+    """Opt-in caps for the native VDAM comparison arm of the PPCA pilots; ``None`` is native VDAM, unchanged.
+
+    The matched VDAM runs of ``docs/math/vdam_ppca_algorithm.md`` fix the non-final subset size and cap the
+    Fourier radius and HEALPix order. Native frequency and angular adaptation stays active within the caps.
+    """
+
+    stochastic_batch_size: int | None = None
+    max_fourier_radius: int | None = None
+    max_healpix_order: int | None = None
+    stop_file: str | None = None
+
+    def __post_init__(self):
+        if self.stochastic_batch_size is not None and self.stochastic_batch_size < 1:
+            raise ValueError("stochastic_batch_size must be positive")
+        if self.max_fourier_radius is not None and self.max_fourier_radius < 1:
+            raise ValueError("max_fourier_radius must be positive")
+
+    @classmethod
+    def from_values(cls, stochastic_batch_size=None, max_fourier_radius=None, max_healpix_order=None, stop_file=None):
+        """The controls, or ``None`` (native VDAM) when every cap is unset."""
+        values = (stochastic_batch_size, max_fourier_radius, max_healpix_order, stop_file)
+        return None if all(value is None for value in values) else cls(*values)
+
+    def validate(self, *, initial_healpix_order: int) -> None:
+        if self.max_healpix_order is not None and self.max_healpix_order < initial_healpix_order:
+            raise ValueError("max_healpix_order must not be below the initial order")
+
+    def subset_sizes(self, n_images: int) -> tuple[int, int]:
+        """InitialModel's gradient subset sizes; a fixed non-final subset replaces both."""
+        if self.stochastic_batch_size is None:
+            return default_subset_sizes_for_3d_initial_model(int(n_images))
+        size = min(int(self.stochastic_batch_size), int(n_images))
+        return size, size
+
+    def cap_current_size(self, current_size: int) -> int:
+        if self.max_fourier_radius is None:
+            return current_size
+        return min(current_size, 2 * int(self.max_fourier_radius))
+
+    def stop_requested(self) -> bool:
+        return self.stop_file is not None and Path(self.stop_file).exists()
+
+    def check_completed(self, final_iteration: int, nr_iter: int) -> None:
+        """Refuse final outputs when the stop file ended the run early."""
+        if self.stop_requested() and final_iteration < nr_iter:
+            raise RuntimeError(f"VDAM stopped at saved iteration {final_iteration} before final output")
 
 
 @dataclass(frozen=True)
@@ -31,13 +84,18 @@ class VdamEnvironment:
     """The InitialModel's switches of the process environment, read once when the options are built.
 
     :meth:`from_environ` reads them; the default instance has every switch off.
-    ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: 1, true or TRUE) releases JAX's
+    ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: a strict flag) releases JAX's
     buffers after each iteration (CUFFT_ALLOC_FAILED at 50k x 256^2); ``skip_expected_accuracy`` and
     ``isolate_expected_accuracy`` (RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY and
     RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS: 0 or 1) skip the estimate or run it in a spawned process.
     Two engine diagnostics: ``adaptive_fraction`` (RELAX_ADAPTIVE_FRACTION, a float; ``None`` when unset or
     empty keeps the engine's RELION 0.999) and ``subtract_projected_reference`` (``False`` when
-    RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE has any value: back-project the images, not the residuals).
+    RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is on, a strict flag: back-project the images, not the residuals).
+    A strict flag is ``env_flags.parse_env_strict_flag``: 1/true/yes/on, 0/false/no/off, anything else refused.
+    Three settings of the libraries, which the run's options file records as they are: ``cuda_allocator``
+    (TF_GPU_ALLOCATOR; "default" when unset), ``jax_compilation_cache_dir`` (JAX_COMPILATION_CACHE_DIR) and
+    ``jax_persistent_cache_min_compile_time_secs`` (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS); None when unset.
+    ``projector_dump_dir`` (RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR, stripped; None when unset or blank) dumps each projector.
     """
 
     clear_jax_caches_per_iteration: bool = False
@@ -45,10 +103,14 @@ class VdamEnvironment:
     isolate_expected_accuracy: bool = False
     adaptive_fraction: float | None = None
     subtract_projected_reference: bool = True
+    cuda_allocator: str = "default"
+    jax_compilation_cache_dir: str | None = None
+    jax_persistent_cache_min_compile_time_secs: str | None = None
+    projector_dump_dir: str | None = None
 
     @classmethod
-    def from_environ(cls, environ=None) -> VdamEnvironment:
-        env = os.environ if environ is None else environ
+    def from_environ(cls) -> VdamEnvironment:
+        env = os.environ
         if env.get("RELAX_USE_FLOAT64_SCORING", "").strip().lower() in {"1", "true", "yes", "on"}:
             raise NotImplementedError("RELAX_USE_FLOAT64_SCORING: InitialModel's resident E-step scores in float32 only")
 
@@ -57,11 +119,15 @@ class VdamEnvironment:
                 raise ValueError(f"{name} must be 0 or 1")
             return value == "1"
 
-        return cls(env.get("RELAX_CLEAR_JAX_CACHES_PER_ITER", "") in ("1", "true", "TRUE"),
+        return cls(parse_env_strict_flag("RELAX_CLEAR_JAX_CACHES_PER_ITER"),
                    strict("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"),
                    strict("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"),
                    float(adaptive_fraction) if (adaptive_fraction := env.get("RELAX_ADAPTIVE_FRACTION")) else None,
-                   not env.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"))
+                   not parse_env_strict_flag("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"),
+                   read_env_text("TF_GPU_ALLOCATOR", "default"),
+                   read_env_text("JAX_COMPILATION_CACHE_DIR"),
+                   read_env_text("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"),
+                   read_env_text("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", "").strip() or None)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -87,13 +153,13 @@ class InitialModelDefaults:
     perturbation_factor: float = 0.5
     image_batch_size: int = 500
     rotation_block_size: int = 5000
-    pilot_controls: object | None = None  # relax.ppca_initial_model.vdam_controls.VdamPilotControls
+    pilot_controls: VdamPilotControls | None = None
     pass2_engine: str = "auto"
     coarse_engine: Literal["auto", "gemm_hybrid", "gemm_dense"] = "auto"
     bootstrap_min_particles: int = 1000
     sigma2_min_particles: int = 1000
     padding_factor: int = 1
-    # RELION GUI defaults: no pre-read, no scratch copy (relax.helpers.particle_io).
+    # RELION GUI defaults: no pre-read, no scratch copy (relax.io.particle_io).
     preread_images: bool = False
     scratch_dir: str = ""
     keep_free_scratch_gb: float = DEFAULT_KEEP_FREE_SCRATCH_GB

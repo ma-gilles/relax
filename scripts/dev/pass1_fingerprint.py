@@ -215,8 +215,8 @@ MUTATIONS = (
      "the float32 support takes half the adaptive fraction", True),
     ("tie_ulps", "tie_score_ulps=int(request.relion_f32_coarse_tie_ulps),", "tie_score_ulps=int(request.relion_f32_coarse_tie_ulps) + 4000,",
      "the support's tie tolerance is 4000 ULPs wider", True),
-    ("exact_weight_order", "relion_exact_coarse_weight_order = bool(relion_f32_coarse_support_enabled and n_classes == 1)",
-     "relion_exact_coarse_weight_order = False",
+    ("exact_weight_order", "exact_weight_order = route.float32_support and n_classes == 1",
+     "exact_weight_order = False",
      "K=1 loses RELION's log-weight order", True),
     ("pad_target", "target_size=int(plan.image_batch_size),", "target_size=int(plan.image_batch_size) + 2,",
      "a padded tail batch is two images too long", True),
@@ -240,9 +240,9 @@ MUTATIONS = (
     ("class_log_evidence", "np.asarray(class_log_z, dtype=np.float64)[output_slice]",
      "np.asarray(class_log_z, dtype=np.float64)[output_slice] + 1.0",
      "the class log evidence is off by one", True),
-    ("class_second_assignment", "class_second_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(",
-     "class_second_hard_assignment[class_index, batch.start_idx:batch.end_idx] = 1 + np.asarray(",
-     "the class runner-up poses are shifted by one", True),
+    ("class_pose_assignment", "assignments[class_index, batch.start_idx:batch.end_idx] = np.asarray(",
+     "assignments[class_index, batch.start_idx:batch.end_idx] = 1 + np.asarray(",
+     "the class best and runner-up poses are shifted by one", True),
     ("cc_pixel_weight", "pixel_weight=operands.windowed_corr_img * self.score_half_weights,",
      "pixel_weight=operands.windowed_corr_img * 2.0 * self.score_half_weights,",
      "the normalized-CC pixel weight is doubled", True),
@@ -261,15 +261,15 @@ MUTATIONS = (
     ("projection_cache_disabled", "requested = coarse_gaussian_gemm_projection_cache_enabled(default=True)",
      "requested = False",
      "the projection cache is never requested", True),
-    ("generic_route_ignored", "relion_f32_coarse_support_enabled = exact_gaussian and k1_relion_f32_coarse_support_enabled(default=True)",
-     "relion_f32_coarse_support_enabled = exact_gaussian",
+    ("generic_route_ignored", "float32_support=k1_relion_f32_coarse_support_enabled(default=True),",
+     "float32_support=True,",
      "RECOVAR_K1_RELION_F32_COARSE_SUPPORT is ignored", True),
     ("rotated_radius_disk", "mask_current_image_disk=not self.rotated_radius,", "mask_current_image_disk=True,",
      "the rotated-radius clipping is ignored (always the source-pixel disk)", True),
     ("support_audit_ignored", "if _coarse_significance_support_audit_enabled():", "if False:",
      "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT is ignored", True),
-    ("dump_ignored", "enabled = collect_significance and significance_debug_dump_matches(",
-     "enabled = False and significance_debug_dump_matches(",
+    ("dump_ignored", "enabled = collect_significance and probe.score_dump_requested(",
+     "enabled = False and probe.score_dump_requested(",
      "the score dump is never taken", True),
     ("f32_normalization_sum_weight", "relion_f32_sum_weight[batch.start_idx:batch.end_idx] = np.asarray(\n batch.sum_weight,",
      "relion_f32_sum_weight[batch.start_idx:batch.end_idx] = 2.0 * np.asarray(\n batch.sum_weight,",
@@ -288,8 +288,8 @@ MUTATIONS = (
      "the winner-change count counts the unchanged", True),
     ("tree_exact_ties", "exact_ties=self.exact_ties + rescored.exact_ties,", "exact_ties=self.exact_ties + 0,",
      "the exact-tie count is dropped", True),
-    ("tree_runner_score_installed", "class_second_score=state.class_second_score.at[rows_jax].set(rescored_runner_score[applied_rows]),",
-     "class_second_score=state.class_second_score.at[rows_jax].set(rescored_winner_score[applied_rows]),",
+    ("tree_runner_score_installed", "class_second_score=state.class_second_score.at[rows_jax].set(rescored_runner_score),",
+     "class_second_score=state.class_second_score.at[rows_jax].set(rescored_winner_score),",
      "the class runner-up score takes the winner's rescored score", True),
     ("prefetch_order", "iter_indexed_batches(plan.experiment_dataset, image_indices, plan.image_batch_size)",
      "iter_indexed_batches(plan.experiment_dataset, image_indices[::-1], plan.image_batch_size)",
@@ -359,9 +359,18 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         return name if hasattr(module, name) else "_" + name
 
     def install_recorders(patch):
-        from relax.cuda import kernels as em_cuda_kernels
-        from relax.helpers import projection as projection_helpers
-        from relax.relion import relion_ctf
+        try:
+            from relax.cuda import translate as cuda_translate
+        except ImportError:  # the source before the CUDA kernels split by family
+            from relax.cuda import kernels as cuda_translate
+        try:
+            from relax.projection import projection as projection_helpers
+        except ImportError:  # the source before the package layout move
+            from relax.helpers import projection as projection_helpers
+        try:
+            from relax.relion import ctf as relion_ctf
+        except ImportError:  # the source before the package layout move
+            from relax.relion import relion_ctf
 
         patch.setattr(
             projection_helpers, "compute_relion_projector_projections_block",
@@ -370,8 +379,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                                                              f"rows={'all' if kw.get('pixel_indices') is None else len(kw['pixel_indices'])}")),
         )
         patch.setattr(
-            em_cuda_kernels, "relion_translate_score_f32",
-            recorded("translate", em_cuda_kernels.relion_translate_score_f32,
+            cuda_translate, "relion_translate_score_f32",
+            recorded("translate", cuda_translate.relion_translate_score_f32,
                      lambda images, angles, *_: (f"images={images.shape[0]}", f"translations={angles.shape[0]}")),
         )
         ctf_rows = named(relion_ctf, "relion_exact_ctf_half_from_source_star")
@@ -383,7 +392,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     def install_phased_projection(patch):
         """A projector whose phase ramp depends on the rotation, so the normalized CC differs between poses."""
-        from relax.helpers import projection as projection_helpers
+        try:
+            from relax.projection import projection as projection_helpers
+        except ImportError:  # the source before the package layout move
+            from relax.helpers import projection as projection_helpers
 
         def phased_projection(projector_half, rotations_block, image_shape, **kwargs):
             class_value = float(np.asarray(projector_half)[0, 0, 0].real)
@@ -403,15 +415,29 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         ``tests/unit/test_refine_relion_mode.py`` replaces the same things: the kernel runs only on a GPU.
         """
+        import importlib
+
         import jax
         import recovar.cuda_backproject as cuda_backproject
 
-        from relax.cuda import kernels as em_cuda_kernels
-        from relax.scoring import scoring as scoring_module
+        # Every module of CUDA wrappers that reads custom_cuda_requested: the kernel families, or the one
+        # kernels module of a source tree from before the split by family.
+        kernel_modules = []
+        for name in ("backprojection", "coarse", "fine", "posterior", "preprocess", "projector", "rotations",
+                     "translate", "kernels"):
+            try:
+                kernel_modules.append(importlib.import_module(f"relax.cuda.{name}"))
+            except ImportError:
+                pass
+        try:
+            from relax.scoring import coarse_kernels as scoring_module
+        except ImportError:  # the source before the package layout move
+            from relax.scoring import scoring as scoring_module
 
         patch.setattr(jax, "default_backend", lambda: "gpu")
         patch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
-        patch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
+        for module in kernel_modules:
+            patch.setattr(module, "custom_cuda_requested", lambda: True)
         patch.setattr(cuda_backproject, "cuda_available", lambda: True)
 
         def rescore(shifted_candidates, score_weight_candidates, projection_candidates, half_weights, fftw_order, **kw):
@@ -505,16 +531,45 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             args.insert(1, jnp.zeros((n_classes, args[0].volume_size), dtype=jnp.complex64))
         if "disc_type" in parameters:
             args.append("linear_interp")
+        # A tree whose pass 1 takes a probe (layout S15) dumps through the diagnostics one the commands build.
+        from relax.diagnostics import coarse_gaussian_diagnostics
+
+        if hasattr(coarse_gaussian_diagnostics, "SignificanceDiagnostics"):
+            kwargs = dict(kwargs, probe=coarse_gaussian_diagnostics.SignificanceDiagnostics())
         return function(*args, **kwargs)
+
+    def full_stats_dict(stats, class_assignment):
+        """The pass's statistics as one dict whichever tree runs: a base returns that dict, a head ``Pass1Stats``.
+
+        The head's record is flattened back to the base's keys (an entry left out when the pass did not produce it, the
+        class winners taken from the result's own ``class_assignment``). The base's route and tree-rescore entries, which
+        the head no longer returns, show as differences of the result.
+        """
+        if isinstance(stats, dict):
+            return stats
+        flat = {name: getattr(stats, name) for name in (
+            "normalization_log_z", "normalization_log_evidence", "log_evidence_per_image", "best_log_score_per_image",
+            "max_posterior_per_image", "class_log_evidence_per_image")}
+        flat["class_assignments"] = class_assignment
+        flat["significant_cutoff_counts"] = stats.significant_cutoff_counts
+        flat["executed_coarse_backend"] = stats.executed_coarse_backend
+        for name in (
+            "coarse_significance_support_audit", "relion_f32_sum_weight", "relion_f32_max_posterior",
+            "class_best_log_score_per_image", "class_best_offset_free_log_score_per_image", "class_hard_assignments",
+            "class_second_best_log_score_per_image", "class_second_best_offset_free_log_score_per_image",
+            "class_second_hard_assignments"):
+            if getattr(stats, name) is not None:
+                flat[name] = getattr(stats, name)
+        return flat
 
     def result_fields(result):
         """The six results as named leaves (``significant_samples`` also with its device CSR)."""
-        sig_rot_any, n_sig, hard, class_assignment, samples, full_stats = result
+        sig_rot_any, n_sig, hard, class_assignment, samples, stats = result
         return {
             "sig_rot_any": sig_rot_any, "n_significant": n_sig, "hard_assignment": hard, "class_assignment": class_assignment,
             "significant_samples": None if samples is None else [list(by_image) for by_image in samples],
             "significant_samples_csr": None if samples is None else [getattr(by_image, "csr", None) for by_image in samples],
-            "full_stats": full_stats,
+            "full_stats": full_stats_dict(stats, class_assignment),
         }
 
     def require_finite(fields):

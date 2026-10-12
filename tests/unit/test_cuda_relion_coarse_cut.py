@@ -47,10 +47,10 @@ def _rows(rng, n_rows, n_cols):
 
 
 def _cut(weights, fraction, max_significants, gpu_device):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import posterior as cuda_posterior
 
     with jax.default_device(gpu_device):
-        out = em_cuda_kernels.relion_coarse_cut_f32(
+        out = cuda_posterior.relion_coarse_cut_f32(
             jnp.asarray(weights), adaptive_fraction=fraction, max_significants=max_significants
         )
         return tuple(np.asarray(value) for value in jax.device_get(out))
@@ -104,8 +104,8 @@ def test_coarse_cut_keeps_relions_cub_sort_and_scan_cut(monkeypatch, custom_cuda
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.oversampling import _relion_cuda_f32_tail_target
+    from relax.cuda import posterior as cuda_posterior
+    from relax.sampling.oversampling import _relion_cuda_f32_tail_target
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -115,7 +115,7 @@ def test_coarse_cut_keeps_relions_cub_sort_and_scan_cut(monkeypatch, custom_cuda
     total, _, cutoff = _cut(weights, fraction, -1, gpu_device)
     with jax.default_device(gpu_device):
         matrix = jnp.asarray(weights)
-        _, cumulative = em_cuda_kernels.relion_cub_sort_scan_batched_f32(matrix)
+        _, cumulative = cuda_posterior.relion_cub_sort_scan_batched_f32(matrix)
         target = _relion_cuda_f32_tail_target(cumulative[:, -1], fraction)
         index = jax.vmap(lambda row, t: jnp.searchsorted(row, t, side="right"))(cumulative, target)
         index = jnp.maximum(index, weights.shape[1] - jnp.sum(matrix > 0, axis=1))

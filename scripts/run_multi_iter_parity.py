@@ -21,25 +21,25 @@ from pathlib import Path
 
 # This is an EM entry point, so it opts in to recovar's EM-scoped XLA defaults
 # (currently --xla_gpu_autotune_level=0; see recovar/jax_config.py and
-# relax/refinement/full_refinement.py). It must be set before the first import that
+# relax/commands/refinement_run.py). It must be set before the first import that
 # reaches jax, which recovar.jax_config performs, and with `setdefault` so an
 # explicit RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
 import numpy as np
 
+from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
 from relax.diagnostics.gt_metrics import DEFAULT_GT_ALIGN_HEALPIX_ORDER, DEFAULT_GT_ALIGN_MAX_SHELL
-from relax.helpers.git_provenance import git_head_or_none
-from relax.helpers.iteration_history import add_significant_count_artifacts
 from relax.parity.parity_provenance import (
     assert_parity_ancestors_or_exit as _print_provenance_banner_and_assert_parity_ancestors,
 )
-from relax.refinement.half_inputs import HalfPair
-from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
+from relax.refinement.iteration_history import add_significant_count_artifacts
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
     relion_mpi_process_start_scoring_noise_pair,
 )
+from relax.runtime.git_provenance import git_head_or_none
+from relax.steps.half_inputs import HalfPair
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -151,7 +151,7 @@ def read_relion_model_pixel_size(path: str | Path) -> float:
     ``relion_metadata.read_relion_mrc_model_pixel_size`` does; ``mrcfile.voxel_size`` divides in float32.
     """
 
-    from relax.relion.relion_metadata import read_relion_mrc_model_pixel_size
+    from relax.star.metadata import read_relion_mrc_model_pixel_size
 
     source = Path(path).expanduser().resolve()
     if not source.is_file():
@@ -288,7 +288,7 @@ def particle_half_indices(
 
     subsets = np.asarray(random_subsets)
     if fresh_order_seed is not None:
-        from relax.helpers.expected_accuracy import relion_auto_refine_half_orders
+        from relax.sampling.expected_accuracy import relion_auto_refine_half_orders
 
         return relion_auto_refine_half_orders(
             subsets,
@@ -1031,6 +1031,24 @@ def apply_iteration_normalization_factor_overrides(
     return corrected, applied
 
 
+def replay_source(run_options, *, relion_dir, run_prefix, max_iter, iteration_overrides, final_replay_override, start_seeds):
+    """The run's input source: the RELION run's numbered state, with the completed RELION iteration's FSC,
+    Pmax and high-FSC latch (``start_seeds``) starting the first iteration."""
+    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
+
+    return RelionReplaySource.for_run(
+        RelionReplay.from_environ(
+            perturb_replay_relion_dir=str(relion_dir),
+            perturb_replay_relion_prefix=run_prefix,
+            perturb_replay_max_iter=max_iter,
+            replay_iteration_overrides=iteration_overrides,
+            final_replay_override=final_replay_override,
+            start_seeds=start_seeds,
+        ),
+        run_options,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--relion_dir", required=True)
@@ -1328,12 +1346,6 @@ def main():
         help="Control exact-local profile collection. 'auto' profiles only when intermediates are enabled.",
     )
     parser.add_argument(
-        "--local_search_translation_prior_mode",
-        choices=["perturbed", "coarse"],
-        default="coarse",
-        help="Evaluate local-search translation priors on the perturbed candidate grid or the unperturbed coarse RELION grid.",
-    )
-    parser.add_argument(
         "--firstiter-cc-mode",
         choices=["auto", "on", "off"],
         default="auto",
@@ -1344,32 +1356,10 @@ def main():
         ),
     )
     parser.add_argument(
-        "--first_iteration_score_mode",
-        choices=["gaussian", "normalized_cc"],
-        default="gaussian",
-        help="Diagnostic override for the iter-0 score metric.",
-    )
-    parser.add_argument(
-        "--first_iteration_reconstruction_mode",
-        choices=["soft", "hard"],
-        default="soft",
-        help="Diagnostic override for the iter-0 reconstruction weights.",
-    )
-    parser.add_argument(
         "--relion_ini_high",
         type=float,
         default=None,
         help="Optional override for RELION --ini_high. Defaults to the optimiser flag value, or 30 A.",
-    )
-    parser.add_argument(
-        "--disable_adjoint_y",
-        action="store_true",
-        help="Experimental ablation: disable weighted-image adjoint accumulation.",
-    )
-    parser.add_argument(
-        "--disable_adjoint_ctf",
-        action="store_true",
-        help="Experimental ablation: disable CTF adjoint accumulation.",
     )
     parser.add_argument(
         "--benchmark_ledger_json",
@@ -1456,17 +1446,17 @@ def main():
     from recovar.utils import helpers
 
     from relax.diagnostics import observers
-    from relax.helpers.map_io import write_map_from_ft
-    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
+    from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
+    from relax.io.map_io import write_map_from_ft
     from relax.refinement.iteration_loop import refine_single_volume
-    from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
+    from relax.refinement.ports import StartSeeds
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
-        EngineDebugOptions,
         ExecutionOptions,
         FinalPassOptions,
         LocalSearchOptions,
         OpticsGeometry,
+        RefinementEnvironment,
         RefinementOptions,
         RefinementSchedule,
         RelionParityOptions,
@@ -1474,11 +1464,12 @@ def main():
         SymmetryOptions,
     )
     from relax.refinement.startup_references import StartupHandoff
-    from relax.relion.relion_metadata import (
+    from relax.star.metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,
     )
+    from relax.steps.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 
     def _rotation_matrices_from_eulers_deg(eulers_deg):
         return utils.R_from_relion(np.asarray(eulers_deg, dtype=np.float64))
@@ -1753,7 +1744,7 @@ def main():
     # to RFLOAT (double, in our ACC_DOUBLE_PRECISION oracle build) as part of
     # the read itself, and every downstream step -- including the FFT that
     # builds Projector::data -- runs at that same double precision (see
-    # relax/refinement/full_refinement.py's matching fix and
+    # relax/commands/refinement_run.py's matching fix and
     # docs/math/relion_parity_agent_notes.md's 2026-08-27 "round 3" entry for
     # the RELION source citations). Widen real-space inputs to float64 *before*
     # ftu.get_dft3: casting an already-computed complex64 result cannot recover
@@ -1847,10 +1838,10 @@ def main():
             f"{optimizer_random_seed} (production K=1 arithmetic)"
         )
     # Pass 1 scores RELION's exact coarse operands, which read RELION's CUDA image
-    # preprocessing (as full_refinement's auto does).
+    # preprocessing (as refinement_run's auto does).
     if args.image_fourier_backend == "auto":
         args.image_fourier_backend = "relion_cuda"
-    # Optics groups on several image shapes load one dataset per shape (full_refinement's rule).
+    # Optics groups on several image shapes load one dataset per shape (refinement_run's rule).
     shape_class_rows = optics_shape_class_rows(args.data_star)
     if shape_class_rows is None:
         ds = load_dataset(
@@ -2431,12 +2422,8 @@ def main():
         print(f"  GT volume requested but not found: {args.gt_volume}")
 
     print(f"  Local-search profile: {args.local_search_profile}")
-    print(f"  Local translation prior mode: {args.local_search_translation_prior_mode}")
-    print(f"  First-iteration score mode: {args.first_iteration_score_mode}")
-    print(f"  First-iteration reconstruction mode: {args.first_iteration_reconstruction_mode}")
     print(f"  Emulate RELION iter-1 CC: {do_firstiter_cc}")
     print(f"  RELION ini_high: {relion_ini_high}")
-    print(f"  Adjoint ablations: disable_y={args.disable_adjoint_y}, disable_ctf={args.disable_adjoint_ctf}")
 
     # ---- Run ----
     print(f"\nRunning {args.max_iter} iterations...")
@@ -2462,6 +2449,7 @@ def main():
             rotation_block_size=args.rotation_block_size,
         ),
         final_pass=FinalPassOptions.from_environ(),
+        environment=RefinementEnvironment.from_environ(),
         adaptive=AdaptiveOptions(
             adaptive_oversampling=oversampling, max_significants=max_significants,
             coarse_engine=args.coarse_engine,
@@ -2478,8 +2466,6 @@ def main():
             perturb_seed=optimizer_random_seed,
             emulate_relion_firstiter_cc=do_firstiter_cc,
             relion_firstiter_ini_high_angstrom=relion_ini_high if args.iter == 0 else None,
-            first_iteration_score_mode=args.first_iteration_score_mode,
-            first_iteration_reconstruction_mode=args.first_iteration_reconstruction_mode,
             image_fourier_backend=args.image_fourier_backend,
             preserve_bpref_particle_order=(
                 args.diagnostic_preserve_bpref_particle_order
@@ -2501,22 +2487,14 @@ def main():
             init_previous_best_rotation_eulers=[euler_h1, euler_h2],
             init_direction_prior=direction_prior,
             init_translation_sigma_angstrom=sigma_offset_angst_per_half,
-            init_fsc=fsc,
-            init_ave_Pmax=ave_Pmax,
-            init_has_high_fsc_at_limit=has_high_fsc_at_limit,
-        ),
-        debug=EngineDebugOptions(
-            disable_adjoint_y=args.disable_adjoint_y,
-            disable_adjoint_ctf=args.disable_adjoint_ctf,
         ),
         local_search=LocalSearchOptions(
             local_search_profile_mode=args.local_search_profile,
-            local_search_translation_prior_mode=args.local_search_translation_prior_mode,
         ),
         symmetry=SymmetryOptions(point_group=point_group),
     )
     # One stable-window class history for the refinement (see refine_single_volume).
-    from relax.sparse_pass2.resident_pass2 import stable_window_class_history
+    from relax.fine_pass.resident_pass2 import stable_window_class_history
 
     with stable_window_class_history():
         result = refine_single_volume(
@@ -2529,19 +2507,19 @@ def main():
             init_noise_variance=noise_variance,
             translations=None,
             options=run_options,
+            k_class_probe=KClassDiagnostics(),
             observer=observers.combine(
                 ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
                 + observers.observers_from_environment()
             ),
-            source=RelionReplaySource.for_run(
-                RelionReplay.from_environ(
-                    perturb_replay_relion_dir=str(relion_dir),
-                    perturb_replay_relion_prefix=run_prefix,
-                    perturb_replay_max_iter=args.replay_override_max_iter,
-                    replay_iteration_overrides=replay_iteration_overrides,
-                    final_replay_override=explicit_final_replay_override,
-                ),
+            source=replay_source(
                 run_options,
+                relion_dir=relion_dir,
+                run_prefix=run_prefix,
+                max_iter=args.replay_override_max_iter,
+                iteration_overrides=replay_iteration_overrides,
+                final_replay_override=explicit_final_replay_override,
+                start_seeds=StartSeeds(fsc=fsc, ave_pmax=ave_Pmax, has_high_fsc_at_limit=has_high_fsc_at_limit),
             ),
         )
     del run_options
@@ -2580,8 +2558,6 @@ def main():
             "elapsed_s": float(elapsed),
             "timing_only": True,
             "local_search_profile_mode": args.local_search_profile,
-            "disable_adjoint_y": bool(args.disable_adjoint_y),
-            "disable_adjoint_ctf": bool(args.disable_adjoint_ctf),
             "compile_count_from_log": _count_compile_lines(args.compile_log),
             "wall_times_trajectory": wall_times,
             "current_sizes": [int(x) for x in history.current_sizes],
@@ -2609,16 +2585,11 @@ def main():
         "half2_indices": half2_indices,
         "max_significants": np.int32(max_significants),
         "local_search_profile_mode": np.array(args.local_search_profile),
-        "local_search_translation_prior_mode": np.array(args.local_search_translation_prior_mode),
-        "first_iteration_score_mode": np.array(args.first_iteration_score_mode),
-        "first_iteration_reconstruction_mode": np.array(args.first_iteration_reconstruction_mode),
         "firstiter_cc_mode": np.array(args.firstiter_cc_mode),
         "firstiter_cc_oracle_enabled": np.bool_(oracle_firstiter_cc),
         "firstiter_cc_effective": np.bool_(do_firstiter_cc),
         "relion_ini_high_angstrom": np.float64(relion_ini_high),
         "relion_noise_state": np.array(relion_noise_state_label(args.restart_broadcast_noise_state)),
-        "disable_adjoint_y": np.bool_(args.disable_adjoint_y),
-        "disable_adjoint_ctf": np.bool_(args.disable_adjoint_ctf),
         "final_all_data_ran": np.bool_(fields.get("final_all_data_ran", False)),
     }
     if fields.get("ave_Pmax_trajectory"):
@@ -2629,7 +2600,7 @@ def main():
     if fields.get("healpix_order_trajectory"):
         save_dict["healpix_order_trajectory"] = np.array(fields["healpix_order_trajectory"])
     # Which E-step engine each pass ran on, per iteration and for the final all-data
-    # pass (relax.sparse_pass2.engine_record), as JSON: resident vs fallback per run.
+    # pass (relax.runtime.engine_record), as JSON: resident vs fallback per run.
     for key in (
         "pass2_engine_trajectory", "final_all_data_pass2_engines",
         "coarse_engine_trajectory", "final_all_data_coarse_engines",
@@ -3022,8 +2993,6 @@ def main():
         ),
         "elapsed_s": float(elapsed),
         "local_search_profile_mode": args.local_search_profile,
-        "disable_adjoint_y": bool(args.disable_adjoint_y),
-        "disable_adjoint_ctf": bool(args.disable_adjoint_ctf),
         "compile_count_from_log": _count_compile_lines(args.compile_log),
         "wall_times_trajectory": wall_times,
         "current_sizes": [int(x) for x in history.current_sizes],

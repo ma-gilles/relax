@@ -33,15 +33,15 @@ import numpy as np
 from relax import sampling
 from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
-from relax.helpers.batch_planning import (
+from relax.fine_pass.bucket_arrays import relion_parent_execution_key
+from relax.reconstruction.resolution import compute_coarse_image_size
+from relax.relion.image_preprocessing import uses_relion_cuda_image_preprocessing
+from relax.runtime.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
-from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.oversampling import adaptive_fine_rows, prepare_adaptive_pass2_grids
-from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
-from relax.helpers.resolution import compute_coarse_image_size
-from relax.refinement import optics_shapes
-from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
+from relax.sampling import oversampling
+from relax.sampling.healpix import angular_sampling_deg
+from relax.steps import optics_shapes
 from relax.vdam.estep_common import (
     ENGINE_DISC_TYPE,
     SPA_META_PARTICLE_FIELDS,
@@ -72,7 +72,7 @@ def resolve_sparse_pass1_current_size(
     """
     coarse_size = int(
         compute_coarse_image_size(
-            healpix_angular_step(int(pass1_healpix_order)),
+            angular_sampling_deg(int(pass1_healpix_order)),
             float(state.pixel_size),
             int(state.box_size),
             particle_diameter=float(particle_diameter_ang),
@@ -95,7 +95,7 @@ def sparse_pass2_estep_meta(
     ``particle_fields`` are the result's per-image fields the route copies, with their meta dtypes
     (``estep_common.SPA_META_PARTICLE_FIELDS``, ``TOMO_META_PARTICLE_FIELDS``)."""
 
-    meta = estep_meta({0: result})
+    meta = estep_meta(result)
     image_ids = np.asarray(image_ids, dtype=np.int64)
     source = result.best_pose_eulers_deg
     if source is not None:
@@ -140,11 +140,11 @@ class AdaptiveRouteGrids(NamedTuple):
     """One iteration's coarse and fine trial grids in the adaptive route's order."""
 
     pass1_rotations: np.ndarray
-    grids: object  # relax.helpers.oversampling.AdaptivePass2Grids
+    grids: oversampling.AdaptivePass2Grids
     fine_source_eulers: np.ndarray | None
     relion_of_recovar: np.ndarray
-    fill_fine_rows: object = None  # relax.helpers.oversampling.DeferredFineRows when the fine rows are deferred
-    pass1_device_source: object = None  # relax.sampling.DevicePass1Source of device-built pass1_rotations
+    fill_fine_rows: oversampling.DeferredFineRows | None = None  # set when the fine rows are deferred
+    pass1_device_source: sampling.DevicePass1Source | None = None  # of device-built pass1_rotations
 
 
 def adaptive_route_grids(
@@ -188,7 +188,7 @@ def adaptive_route_grids(
     coarse_translations = sampling.apply_relion_translation_perturbation(
         base, float(random_perturbation), float(translation_step)
     ).astype(np.float32)
-    grids = prepare_adaptive_pass2_grids(
+    grids = oversampling.prepare_adaptive_pass2_grids(
         pass1_rotations if int(oversampling_order) > 0 else host_rotations,
         coarse_translations,
         base,
@@ -199,7 +199,7 @@ def adaptive_route_grids(
         coarse_rotation_ids=None,
         defer_fine_rotations=int(oversampling_order) > 0,
     )
-    fine_source_eulers, fill = adaptive_fine_rows(grids, order, int(oversampling_order), float(random_perturbation))
+    fine_source_eulers, fill = oversampling.adaptive_fine_rows(grids, order, int(oversampling_order), float(random_perturbation))
     if fine_source_eulers is not None and fine_source_eulers.shape[0] != grids.fine_rotations.shape[0]:
         raise RuntimeError("fine source Euler rows do not match the fine rotation grid")
     return AdaptiveRouteGrids(
@@ -241,6 +241,26 @@ def recovar_order_prior(prior, relion_of_recovar: np.ndarray):
     if prior.shape[-1] != relion_of_recovar.size:
         raise ValueError(f"rotation prior has {prior.shape[-1]} coarse entries; expected {relion_of_recovar.size}")
     return prior[..., relion_of_recovar]
+
+
+def dead_classes_out_of_the_coarse_pass(class_log_priors, class_rotation_log_prior):
+    """The engine's class log priors with ``-inf`` for a class whose whole direction-prior row is ``-inf``.
+
+    VDAM's class prior travels in the joint class/direction prior, and the engine's own class log priors are
+    zero. A class at ``pdf_class == 0`` has a row of ``-inf`` there, so it takes no weight; RELION does not
+    evaluate it at all (acc_ml_optimiser_impl.h:1069), so its scores are not in ``min_diff2`` either. The
+    engine leaves a class at ``-inf`` out of that pre-prior maximum (``pass1_program._pass1_block_update``;
+    relax#68), which the zero prior did not tell it.
+    """
+
+    if class_rotation_log_prior is None or np.ndim(class_rotation_log_prior) != 2:
+        return class_log_priors
+    dead = np.all(np.isneginf(np.asarray(class_rotation_log_prior)), axis=1)
+    if not dead.any():
+        return class_log_priors
+    if dead.all():
+        raise ValueError("every class has a zero direction prior")
+    return np.where(dead, -np.inf, np.asarray(class_log_priors, dtype=np.float64))
 
 
 def run_adaptive_initial_model_estep(
@@ -288,6 +308,7 @@ def run_adaptive_initial_model_estep(
         engine_kwargs.get("class_rotation_log_prior"), route.relion_of_recovar
     )
     rotation_log_prior = recovar_order_prior(engine_kwargs.get("rotation_log_prior"), route.relion_of_recovar)
+    class_log_priors = dead_classes_out_of_the_coarse_pass(class_log_priors, class_rotation_log_prior)
     significance_image_batch_size = _safe_coarse_significance_image_batch_size(
         config.image_batch_size,
         n_classes=state.K,
@@ -362,6 +383,7 @@ def run_adaptive_initial_model_estep(
         preserve_bpref_particle_order=fresh_k1,
         source_faithful_spectrum_norm=fresh_k1,
         debug_iteration=group_kwargs.get("debug_iteration"),
+        probe=group_kwargs.get("k_class_probe"),
         reconstruction_group_ids=group_ids,
         reconstruction_group_count=2 if grouped else None,
     )
@@ -382,6 +404,8 @@ def run_adaptive_initial_model_estep(
         fine_current_size=current_size,
         coarse_healpix_order=healpix_order,
         oversampling_order=oversampling_order,
+        # Zero oversampling with classes keeps the coarse pass's sum, Pmax and winner, as K=1 does (relax#73).
+        **({"zero_oversampling_coarse_state_for_classes": True} if int(oversampling_order) == 0 else {}),
         coarse_translation_log_prior=coarse_translation_log_prior,
         relion_fine_mstep_prune=True,
         relion_projector_half=relion_projector_half_by_class,
@@ -434,8 +458,7 @@ def run_adaptive_initial_model_estep(
         result.Ft_y,
         result.Ft_ctf,
         state,
-        halfset_idx=None if grouped else 0,
-        reconstruction_group_count=2 if grouped else None,
+        half_count=2 if grouped else None,
         padding_factor=config.padding_factor,
     )
     # vdam_m_step reads the list by position, halfset-major (m_step.py: accumulators[k]

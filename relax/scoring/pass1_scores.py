@@ -1,21 +1,24 @@
-"""Running pass 1's score program for one image batch: the blocks, the cached or projected references, the results."""
+"""The plan and the results of pass 1's score program: its blocks, priors and static arguments, and one batch's scores.
 
+:func:`relax.scoring.pass1_program.run_score_program` runs the program from a :class:`ScoreProgramPlan` and returns
+:class:`BatchScores`.
+"""
+
+import logging
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, NamedTuple
 
-import jax
 import jax.numpy as jnp
-import numpy as np
 
+from relax.projection.projection_cache import build_projection_cache
 from relax.scoring.coarse_projector import CoarseProjector
-from relax.scoring.pass1_program import (
-    class_block_state,
-    coarse_pass1_block,
-    coarse_pass1_blocks,
-    merge_class_block_state,
-    pass1_batch_constants,
-    pass1_initial_state,
-)
+from relax.scoring.pass1_priors import RotationBlocks
+from relax.scoring.pass1_request import Pass1Request
+from relax.scoring.pass1_results import PassShape
+from relax.scoring.pass1_route import RoutePlan
+
+logger = logging.getLogger(__name__)
 
 
 def score_blocks(n_classes: int, n_rot: int, rotation_block_size: int) -> tuple:
@@ -50,16 +53,35 @@ def block_prior_terms(blocks: tuple, class_log_priors, rotation_log_prior_padded
 
 
 @dataclass(frozen=True)
+class ProgramStatics:
+    """What the score program is specialised on: the static arguments of its jitted kernels, one hashable record.
+
+    The program is compiled once per distinct record (and block shape). ``n_trans`` translations per rotation score
+    images of ``image_shape`` against a volume of ``volume_shape``; ``float64`` is the diagnostic precision.
+    ``score_kind`` is ``"gaussian"`` or ``"normalized_cc"``; ``exact_weight_order`` asks for the pre-prior support
+    values (RELION's log-weight order) and ``return_values`` for the support values at all. ``return_class_best`` and
+    ``track_class_second`` ask for each class's best pose and its runner-up.
+    """
+
+    n_trans: int
+    image_shape: tuple
+    volume_shape: tuple
+    float64: bool
+    score_kind: str
+    exact_weight_order: bool
+    return_class_best: bool
+    track_class_second: bool = False
+    return_values: bool = True
+
+
+@dataclass(frozen=True)
 class ScoreProgramPlan:
     """What every batch's score program runs over, fixed for the pass.
 
     ``blocks`` and ``prior_terms`` are aligned (:func:`score_blocks`, :func:`block_prior_terms`). ``rotations_padded``
     are the rotations padded with identities to whole blocks. ``projector`` yields a block's reference rows; with a
     ``projection_cache`` (the cached C64 table of the Gaussian GEMM) one program reads every block from it, otherwise
-    each block is projected and scored in its own call. ``score_kind`` is ``"gaussian"`` or ``"normalized_cc"``;
-    ``exact_weight_order`` asks for the pre-prior support values (RELION's log-weight order); ``return_values`` asks
-    for the support values at all. The remaining fields are the kernels' static arguments
-    (:func:`relax.scoring.pass1_program._pass1_block_update`).
+    each block is projected and scored in its own call. ``statics`` is what the kernels are specialised on.
     """
 
     blocks: tuple
@@ -68,15 +90,7 @@ class ScoreProgramPlan:
     projector: CoarseProjector
     projection_cache: Any
     n_classes: int
-    n_trans: int
-    image_shape: tuple
-    volume_shape: tuple
-    float64: bool
-    score_kind: str
-    exact_weight_order: bool
-    return_class_best: bool
-    track_class_second: bool
-    return_values: bool
+    statics: ProgramStatics
 
 
 class BatchScores(NamedTuple):
@@ -109,105 +123,73 @@ class BatchScores(NamedTuple):
     dump_with_prior_blocks: list | None
 
 
-def run_score_program(
-    plan: ScoreProgramPlan,
-    program_inputs,
-    translation_log_prior,
-    actual_batch_size: int,
-    dump_rows,
-) -> BatchScores:
-    """Score one batch: ``program_inputs`` are its ``(shifted, pixel_weight, initial_diff2)``.
+def plan_score_program(
+    request: Pass1Request,
+    shape: PassShape,
+    route: RoutePlan,
+    relion_projector_half,
+    rotation_blocks: RotationBlocks,
+    class_log_priors,
+    *,
+    exact_weight_order: bool,
+    float64: bool,
+    rotated_radius: bool,
+) -> ScoreProgramPlan:
+    """Plan the score program of a pass over ``shape`` on ``route``: its blocks, priors, projector and projection cache.
 
-    Pass 1 of the coarse GEMM scorers is one program per batch (``coarse_pass1_blocks``): over the cached
-    projections in one call, or one call per class and rotation block on its projection when the cache does not fit
-    and for --firstiter_cc. The program also returns the ``RELAX_SIGNIFICANCE_DUMP_*`` targets' scores (``dump_rows``,
-    batch rows or ``None``) and the class runner-up. ``translation_log_prior`` is the batch's prior on the device
-    (``None``, ``[T]`` or ``[B, T]``) and ``actual_batch_size`` the number of real rows.
+    ``rotation_blocks`` are the rotations and rotation prior padded to whole blocks of ``route.rotation_block_size`` and
+    ``class_log_priors`` the classes' prior (``[K]``). The projector is built from ``relion_projector_half``, on the
+    route's compact rows; ``rotated_radius`` asks it for the canonical rotated clipping. ``exact_weight_order`` asks for
+    the pre-prior support values and ``float64`` for the diagnostic precision. Builds the projection cache the route
+    planned (none when it planned none).
     """
 
-    batch_size = int(program_inputs[0].shape[0])
-    neg_inf_f, zeros_f64, zeros_i32 = pass1_batch_constants(batch_size, bool(jax.config.jax_enable_x64))
-    static = dict(
-        n_trans=plan.n_trans,
-        image_shape=plan.image_shape,
-        volume_shape=plan.volume_shape,
-        float64=plan.float64,
-        score_kind=plan.score_kind,
-        exact_weight_order=plan.exact_weight_order,
-        return_class_best=plan.return_class_best,
-        track_class_second=plan.track_class_second,
-        return_values=plan.return_values,
+    coarse_projector = CoarseProjector(
+        relion_projector_half=relion_projector_half,
+        relion_projector_r_max=request.relion_projector_r_max,
+        image_shape=shape.image_shape,
+        projection_padding_factor=request.projection_padding_factor,
+        current_size=request.current_size,
+        score_size=shape.score_size,
+        stable_fourier_window_shapes=request.stable_fourier_window_shapes,
+        compact=route.compact_rows,
+        rotated_radius=rotated_radius,
     )
-    state = pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), plan.n_classes)
-    if plan.projection_cache is not None and plan.score_kind != "normalized_cc":
-        state, values, dumps = coarse_pass1_blocks(
-            state,
-            plan.projection_cache,
-            *program_inputs,
-            actual_batch_size,
-            plan.prior_terms,
-            translation_log_prior,
-            dump_rows,
-            blocks=plan.blocks,
-            **static,
+
+    projection_cache = None
+    if route.projection_cache_plan is not None:
+        projection_cache = build_projection_cache(
+            route.projection_cache_plan,
+            partial(coarse_projector.cache_block, request.rotations),
         )
-    else:
-        values = []
-        dumps = []
-        for block_index, (class_index, r0, rows, block_rows) in enumerate(plan.blocks):
-            rots_b = plan.rotations_padded[r0 : r0 + block_rows]
-            if plan.score_kind == "normalized_cc":
-                reference, _ = plan.projector.block_once(class_index, rots_b, rotation_start=r0)
-            else:
-                reference, _ = plan.projector.compact_rows(class_index, rots_b, return_abs2=True)
-            block_state, block_values, block_dump = coarse_pass1_block(
-                class_block_state(state, class_index),
-                reference,
-                *program_inputs,
-                actual_batch_size,
-                plan.prior_terms[block_index],
-                translation_log_prior,
-                jnp.int32(class_index),
-                jnp.int32(r0),
-                dump_rows,
-                rows=rows,
-                block_rows=block_rows,
-                **static,
-            )
-            state = merge_class_block_state(state, block_state, class_index)
-            values.append(block_values)
-            dumps.append(block_dump)
-    support_values = jnp.concatenate(values, axis=1) if plan.return_values else None
-    dump_pre_prior_blocks = dump_with_prior_blocks = None
-    if dump_rows is not None:
-        # Per-class collectors for raw (pre-prior) score blocks at target rows.
-        # Shape after concat per class: (n_targets, n_rot, n_trans)
-        dump_pre_prior_blocks = [[] for _ in range(plan.n_classes)]
-        dump_with_prior_blocks = [[] for _ in range(plan.n_classes)]
-        for (class_index, _, _, _), (pre_prior, with_prior) in zip(plan.blocks, dumps, strict=True):
-            dump_pre_prior_blocks[class_index].append(np.asarray(pre_prior, dtype=np.float64))
-            dump_with_prior_blocks[class_index].append(np.asarray(with_prior, dtype=np.float64))
-    (
-        (global_max, global_sum),
-        (class_max, class_sum),
-        (best_score, best_argmax, best_class),
-        (class_best, class_best_argmax, class_second, class_second_argmax),
-        raw_score_max,
-    ) = state
-    return BatchScores(
-        global_max=global_max,
-        global_sum=global_sum,
-        class_max=list(class_max),
-        class_sum=list(class_sum),
-        best_score=best_score,
-        best_argmax=best_argmax,
-        best_class=best_class,
-        class_best_scores=list(class_best) if plan.return_class_best else None,
-        class_best_argmaxes=list(class_best_argmax) if plan.return_class_best else None,
-        class_second_best_scores=list(class_second) if plan.track_class_second else None,
-        class_second_best_argmaxes=list(class_second_argmax) if plan.track_class_second else None,
-        raw_score_max=raw_score_max,
-        support_values=support_values,
-        dump_pre_prior_blocks=dump_pre_prior_blocks,
-        dump_with_prior_blocks=dump_with_prior_blocks,
+        logger.warning(
+            "Coarse GEMM C64 projection cache built: "
+            "shape=%s chunks=%d conservative_peak_bytes=%d budget_bytes=%d",
+            route.projection_cache_plan.cache_shape,
+            route.projection_cache_plan.chunk_count_per_table,
+            route.projection_cache_plan.predicted_peak_bytes,
+            route.projection_cache_plan.budget_bytes,
+        )
+
+    blocks = score_blocks(shape.n_classes, shape.n_rot, route.rotation_block_size)
+    return ScoreProgramPlan(
+        blocks=blocks,
+        prior_terms=block_prior_terms(
+            blocks, class_log_priors, rotation_blocks.rotation_log_prior_padded, route.rotation_block_size
+        ),
+        rotations_padded=rotation_blocks.rotations_padded,
+        projector=coarse_projector,
+        projection_cache=projection_cache,
+        n_classes=shape.n_classes,
+        statics=ProgramStatics(
+            n_trans=int(shape.n_trans),
+            image_shape=tuple(int(value) for value in shape.image_shape),
+            volume_shape=tuple(int(value) for value in request.experiment_dataset.volume_shape),
+            float64=float64,
+            score_kind=route.score_kind,
+            exact_weight_order=exact_weight_order,
+            return_class_best=bool(request.return_class_best),
+            track_class_second=bool(request.return_class_second or route.tree_rescore_plan is not None),
+            return_values=bool(request.collect_significance),
+        ),
     )

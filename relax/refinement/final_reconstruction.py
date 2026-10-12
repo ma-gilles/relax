@@ -10,9 +10,9 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from relax.reconstruction import regularization_relion
-from relax.refinement import mean_helpers
-from relax.refinement.mean_helpers import ReconstructionSettings
+from relax.reconstruction import regularization
+from relax.refinement import numbered_reconstruction, priors
+from relax.refinement.numbered_reconstruction import ReconstructionSettings
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def compute_final_halfmap_prior(
     scoring_dtype,
 ) -> HalfmapPrior:
     """Estimate the whole-data prior from the joined halves' backprojector FSC."""
-    fsc = regularization_relion.compute_relion_fsc_from_backprojector(
+    fsc = regularization.compute_relion_fsc_from_backprojector(
         numerators[0],
         numerators[1],
         denominators[0],
@@ -83,7 +83,7 @@ def compute_final_halfmap_prior(
     if settings.solvent_correct_fsc:
         # RELION corrects the joined iteration's FSC too (ml_optimiser_mpi.cpp:4028, iter -1); its
         # final resolution is then "already with masking".
-        fsc = mean_helpers.solvent_corrected_fsc(
+        fsc = priors.solvent_corrected_fsc(
             numerators,
             denominators,
             settings,
@@ -93,7 +93,7 @@ def compute_final_halfmap_prior(
             like=fsc,
             log=logger,
         )
-    variance, _, details = regularization_relion.compute_relion_tau2_from_weights(
+    variance, _, details = regularization.compute_relion_tau2_from_weights(
         denominators[0],
         denominators[1],
         fsc,
@@ -116,7 +116,7 @@ def compute_final_class_priors(
     denominator,
     references,
     *,
-    projector,
+    projector_power_spectrum,
     n_classes: int,
     settings: ReconstructionSettings,
     current_size: int,
@@ -130,7 +130,7 @@ def compute_final_class_priors(
     data_vs_prior = []
     details = []
     for class_idx in range(n_classes):
-        prior = mean_helpers.estimate_class_prior(
+        prior = priors.estimate_class_prior(
             references,
             denominator,
             class_index=class_idx,
@@ -139,7 +139,7 @@ def compute_final_class_priors(
             accumulator_shape=accumulator_shape,
             full_half_axis=full_half_axis,
             frame_scale=frame_scale,
-            projector_power_spectrum=None if projector is None else projector.power_spectrum,
+            projector_power_spectrum=projector_power_spectrum,
         )
         variances.append(prior.variance)
         shells.append(prior.shells)
@@ -151,7 +151,7 @@ def compute_final_class_priors(
         data_vs_prior=np.stack(
             [np.asarray(value, dtype=np.float32) for value in data_vs_prior], axis=0,
         ),
-        details=mean_helpers._stack_class_tau2_update_details(details),
+        details=priors._stack_class_tau2_update_details(details),
     )
 
 
@@ -182,35 +182,57 @@ def reconstruct_final_class_maps(
         axis=0,
     )
     return FinalMaps(
-        merged=mean_helpers.weighted_class_merge(class_means, class_weights),
+        merged=numbered_reconstruction.weighted_class_merge(class_means, class_weights),
         halves=[class_means, class_means],
     )
 
 
+def _add_into_first(first, second):
+    """``first + second``; written into ``first`` when both are host arrays of the sum's dtype, so the sum of two
+    box-scale accumulators allocates nothing."""
+
+    if (
+        isinstance(first, np.ndarray)
+        and isinstance(second, np.ndarray)
+        and first.flags.writeable
+        and np.result_type(first, second) == first.dtype
+    ):
+        np.add(first, second, out=first)
+        return first
+    return first + second
+
+
 def reconstruct_final_halfmaps(
-    backprojections: list,
+    half_backprojections: list,
     prior,
     *,
     settings: ReconstructionSettings,
     current_size: int,
     accumulator_shape: tuple,
 ) -> FinalMaps:
-    """Consume merged/half backprojections in order, keeping maps on the host.
+    """Each half's map from its own backprojection, then the merged map from their sum, keeping maps on the host.
 
-    Each slot is a (denominator, numerator) pair: merged, half 1, half 2.
-    Clearing a slot before reconstruction and releasing its arrays afterwards
-    prevents retaining the large buffers after their last use.
+    ``half_backprojections`` holds the two halves' (denominator, numerator) pairs and is emptied here: this
+    function is their last reader. The halves are solved first, so the merged accumulators can then be formed
+    in the first half's arrays instead of beside both pairs (a third pair is 24.7 GB of host memory at
+    EMPIAR-10202's box 800, and sat in the final pass's peak; relax#39). A solve is a function of its own
+    accumulators and the prior (``settings.reconstruct``, which changes neither), so the three maps do not
+    depend on the order they are solved in, and ``a + b`` written into ``a`` is the same sum.
     """
-    maps = []
-    for index in range(3):
-        denominator, numerator = backprojections[index]
-        backprojections[index] = None
-        maps.append(
-            np.asarray(
-                settings.reconstruct(
-                    denominator, numerator, tau=prior, current_size=current_size, accumulator_volume_shape=accumulator_shape
-                ).reshape(-1)
-            )
+
+    def solve(denominator, numerator):
+        return np.asarray(
+            settings.reconstruct(
+                denominator, numerator, tau=prior, current_size=current_size, accumulator_volume_shape=accumulator_shape
+            ).reshape(-1)
         )
-        del denominator, numerator
-    return FinalMaps(merged=maps[0], halves=maps[1:])
+
+    halves = [solve(denominator, numerator) for denominator, numerator in half_backprojections]
+    (denominator, numerator), (other_denominator, other_numerator) = half_backprojections
+    half_backprojections.clear()
+    denominator = _add_into_first(denominator, other_denominator)
+    numerator = _add_into_first(numerator, other_numerator)
+    del other_denominator, other_numerator
+    merged = solve(denominator, numerator)
+    del denominator, numerator
+    return FinalMaps(merged=merged, halves=halves)

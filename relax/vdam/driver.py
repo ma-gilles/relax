@@ -18,40 +18,40 @@ import numpy as np
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import read_star
 
-from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
-from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
-from relax.refinement.optics_shapes import (
+from relax.fine_pass.resident_pass2 import stable_window_class_history
+from relax.fourier.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
+from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
+from relax.relion import ctf
+from relax.star.metadata import (
+    INITIAL_MODEL_OPTICS_FEATURES,
+    TOMO_INITIAL_MODEL_OPTICS_FEATURES,
+    refuse_unsupported_optics,
+)
+from relax.steps.optics_shapes import (
     MultiShapeDataset,
     average_ctf2_parts,
     optics_shape_class_rows,
     shape_datasets,
 )
-from relax.refinement.tomo_half import (
+from relax.steps.sgd_schedule import (
+    DEFAULT_SIGMA2_FUDGE,
+    default_subset_sizes_for_3d_initial_model,
+    phase_lengths_from_effective_fractions,
+)
+from relax.steps.tomo_half import (
     TiltImageAccuracyInputs,
     TomoDataset,
     load_tomo_dataset,
     tilt_image_accuracy_inputs,
 )
-from relax.relion import initial_model_io, relion_ctf, vdam_checkpoint
-from relax.relion.initial_model_io import (
-    _experiment_read_order,
-    _particle_state_from_star,
-    _tomo_particle_state_from_star,
-    tomo_checkpoint_particle_state,
-)
-from relax.relion.relion_metadata import (
-    INITIAL_MODEL_OPTICS_FEATURES,
-    TOMO_INITIAL_MODEL_OPTICS_FEATURES,
-    refuse_unsupported_optics,
-)
-from relax.sparse_pass2.resident_pass2 import stable_window_class_history
-from relax.vdam import estep_meta_updates, estep_setup, native_sampling, output, schedules
+from relax.vdam import estep_setup, initial_model_io, native_sampling, output, particle_update, schedules
 from relax.vdam.bootstrap_iref import (
     initial_state_from_particles,
     initial_state_from_tomo_particles,
     load_raw_images,
 )
 from relax.vdam.estep_setup import run_initial_model_estep
+from relax.vdam.initial_model_io import _experiment_read_order
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.m_step import prepare_mstep_state_precision, relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -66,11 +66,7 @@ from relax.vdam.native_sampling import (
 )
 from relax.vdam.output import write_final_outputs, write_iteration_artifacts
 from relax.vdam.ports import ExpectationProbe, VdamInputSource, VdamObserver
-from relax.vdam.schedules import (
-    DEFAULT_SIGMA2_FUDGE,
-    default_subset_sizes_for_3d_initial_model,
-    phase_lengths_from_effective_fractions,
-)
+from relax.vdam.relion_checkpoint import _load_native_vdam_continuation, _validate_continuation_order_replay
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation
 from relax.vdam.tomo_estep import run_tomo_initial_model_estep
@@ -82,7 +78,6 @@ class NativeInitialModelResult:
     """Summary returned by ``run_native_initial_model``."""
 
     state: InitialModelState
-    output_prefix: str
     final_model_star: str
     final_mrc: str
     class_mrcs: tuple[str, ...]
@@ -191,8 +186,8 @@ def _native_expectation_step(
                 halfset_ids=halfset_ids,
                 previous_offsets_px=previous_translations[ids],
                 noise_variance=current_noise_variance,
-                relion_projector_half_by_class=prepared_projector_inputs[0],
-                relion_projector_r_max=int(prepared_projector_inputs[1]),
+                relion_projector_half_by_class=prepared_projector_inputs.half_by_class,
+                relion_projector_r_max=prepared_projector_inputs.r_max,
                 class_rotation_log_prior=native_sampling.class_rotation_log_prior_for_sampling(
                     state, sampling_state, int(sampling_plan.healpix_order)
                 ),
@@ -200,12 +195,13 @@ def _native_expectation_step(
                 sigma_offset_angstrom=sigma_offset_angstrom,
                 particle_diameter_ang=float(opts.particle_diameter),
                 padding_factor=int(opts.padding_factor),
+                environment=opts.environment,
                 optics_group_ids=optics_group_ids,
             )
             effective_image_batch_size = int(opts.image_batch_size)
             if premultiplied_ctf:
                 # setAverageCTF2: the numerator over the tilt images, the denominator over the particles' sumw_group.
-                result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
+                result.meta["premultiplied_average_ctf2"] = ctf.premultiplied_average_ctf2(
                     average_ctf2_parts(
                         dataset.subset(ids).images,
                         None,
@@ -231,7 +227,7 @@ def _native_expectation_step(
             if premultiplied_ctf:
                 # The subset's average CTF^2 corrects the M-step's SSNR (setAverageCTF2 over
                 # this iteration's images and their sumw_group, ml_optimiser.cpp:4885-4926).
-                result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
+                result.meta["premultiplied_average_ctf2"] = ctf.premultiplied_average_ctf2(
                     average_ctf2_parts(
                         dataset.subset(np.asarray(particle_ids, dtype=np.int64)),
                         None,
@@ -295,11 +291,10 @@ def _native_expectation_step(
             config = replace(
                 config, engine_kwargs={**config.engine_kwargs, "optics_group_ids": np.asarray(optics_group_ids, dtype=np.int32)}
             )
-        prepared_half, prepared_r_max = prepared_projector_inputs
         config = replace(
             config,
-            relion_projector_half_by_class=prepared_half,
-            relion_projector_r_max=prepared_r_max,
+            relion_projector_half_by_class=prepared_projector_inputs.half_by_class,
+            relion_projector_r_max=prepared_projector_inputs.r_max,
         )
         class_rotation_log_prior = native_sampling.class_rotation_log_prior_for_sampling(
             state,
@@ -308,6 +303,7 @@ def _native_expectation_step(
         )
         config.engine_kwargs["class_rotation_log_prior"] = class_rotation_log_prior
         config.engine_kwargs["debug_iteration"] = iteration
+        config.engine_kwargs["k_class_probe"] = probe
         result = run_initial_model_estep(
             dataset, state, config, particle_ids=particle_ids, halfset_ids=halfset_ids
         )
@@ -340,8 +336,8 @@ def _native_expectation_step(
             orientational_prior_mode=int(sampling_state.orientational_prior_mode),
             uniform_local_orientation_prior=bool(sampling_state.uniform_local_orientation_prior),
         )
-        estep_meta_updates.add_log_likelihood_contributions(result.meta, state, optics_state, optics_group_ids, tilt_images)
-        estep_meta_updates.update_particle_state_from_estep_meta(
+        particle_update.add_log_likelihood_contributions(result.meta, state, optics_state, optics_group_ids, tilt_images)
+        particle_update.update_particle_state_from_estep_meta(
             particle_state,
             result.meta,
             (
@@ -490,7 +486,7 @@ def run_native_initial_model(
             )
             for rows in (shape_class_rows or [None])
         ]
-        if any(getattr(d, "tilt_series_flag", False) for d in datasets):
+        if any(d.tilt_series_flag for d in datasets):
             raise NotImplementedError("native InitialModel reads RELION 5 2D stacks (--ios), not tilt-series STAR files")
         # Optics groups on several image shapes: one dataset per shape (RELION S3b).
         dataset = image_dataset = (
@@ -499,7 +495,7 @@ def run_native_initial_model(
         if shape_class_rows is not None:
             _refuse_unsupported_multi_shape(opts, datasets)
         n_particles = int(dataset.n_images)
-    for class_dataset in getattr(image_dataset, "datasets", (image_dataset,)):
+    for class_dataset in shape_datasets(image_dataset):
         assert_reads_from_scratch(class_dataset, particle_scratch)
         estep_setup.configure_relion_image_mask(class_dataset, opts)
     profile.record("dataset_load")
@@ -507,7 +503,7 @@ def run_native_initial_model(
     optics_state = None if tomo else initial_model_io._native_optics_state(main_star, optics_star, dataset)
     continuation = None
     if opts.diagnostic_continue_optimiser is not None:
-        continuation = vdam_checkpoint._load_native_vdam_continuation(
+        continuation = _load_native_vdam_continuation(
             opts.diagnostic_continue_optimiser,
             expected_data_star=opts.fn_img,
             opts=opts,
@@ -520,11 +516,15 @@ def run_native_initial_model(
                 f"stop={opts.diagnostic_stop_after_iteration}"
             )
     particle_state = (
-        (tomo_checkpoint_particle_state if continuation is not None else _tomo_particle_state_from_star)(
+        (
+            initial_model_io.tomo_checkpoint_particle_state
+            if continuation is not None
+            else initial_model_io._tomo_particle_state_from_star
+        )(
             main_star, pixel_size=float(dataset.voxel_size)
         )
         if tomo
-        else _particle_state_from_star(
+        else initial_model_io._particle_state_from_star(
             main_star,
             dataset,
             allow_unvisited_class_zero=continuation is not None,
@@ -550,7 +550,7 @@ def run_native_initial_model(
         )
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:
-        vdam_checkpoint._validate_continuation_order_replay(continuation)
+        _validate_continuation_order_replay(continuation)
         grad_ini_subset_size = continuation.grad_ini_subset_size
         grad_fin_subset_size = continuation.grad_fin_subset_size
         grad_ini_frac = continuation.grad_ini_frac
@@ -600,7 +600,7 @@ def run_native_initial_model(
             ),
         )
     profile.record("state_setup")
-    projector_context = estep_setup.IterationProjectorContext()
+    projector_context = estep_setup.IterationProjectorContext(projector_dump_dir=opts.environment.projector_dump_dir)
     expectation_step = _native_expectation_step(
         dataset,
         opts,
@@ -611,7 +611,7 @@ def run_native_initial_model(
         tilt_images=tilt_images,
         optics_group_ids=optics_group_by_particle if int(np.unique(optics_group_by_particle).size) > 1 else None,
         premultiplied_ctf=any(
-            relion_ctf.dataset_has_premultiplied_ctf(d, tuple(int(v) for v in d.image_shape))
+            ctf.dataset_has_premultiplied_ctf(d, tuple(int(v) for v in d.image_shape))
             for d in shape_datasets(image_dataset)
         ),
         probe=expectation_probe,
@@ -726,24 +726,23 @@ def run_native_initial_model(
     profile.record("iterations")
     if opts.pilot_controls is not None:
         opts.pilot_controls.check_completed(final_state.iter, opts.nr_iter)
-    final_mrc, class_mrcs, align_report = write_final_outputs(
+    outputs = write_final_outputs(
         opts.outputname,
         final_state,
         sym_name=opts.sym_name,
         seed=int(opts.random_seed),
         written_iterations=frozenset(written_iterations),
     )
-    if "refined_rot_tilt_psi" in align_report:
-        print("InitialModel symmetry alignment: " + json.dumps(align_report, sort_keys=True), flush=True)
+    if "refined_rot_tilt_psi" in outputs.align_report:
+        print("InitialModel symmetry alignment: " + json.dumps(outputs.align_report, sort_keys=True), flush=True)
     final_model_star = f"{opts.outputname}_it{final_state.iter:03d}_model.star"
     profile.record("final_artifacts")
     profile.report("driver")
     return NativeInitialModelResult(
         state=final_state,
-        output_prefix=opts.outputname,
         final_model_star=final_model_star,
-        final_mrc=final_mrc,
-        class_mrcs=class_mrcs,
+        final_mrc=outputs.final_mrc,
+        class_mrcs=outputs.class_mrcs,
     )
 
 

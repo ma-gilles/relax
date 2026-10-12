@@ -7,13 +7,13 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-import relax.helpers.orientation_priors as orientation_priors_module
 import relax.parity.relion_replay as relion_replay_module
-from relax.helpers.orientation_priors import DirectionPrior
-from relax.helpers.resolution import ImageGeometry
-from relax.refinement.half_inputs import initialize_halfsets
+import relax.sampling.orientation_priors as orientation_priors_module
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.refinement_options import RefinementSchedule
+from relax.sampling.orientation_priors import DirectionPrior
+from relax.steps.half_inputs import initialize_halfsets
 
 pytestmark = pytest.mark.unit
 IMAGE_SIZE = 64

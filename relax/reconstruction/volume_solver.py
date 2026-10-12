@@ -7,23 +7,59 @@ import functools
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, device_fits
-from relax.reconstruction import regularization_relion
-
-if TYPE_CHECKING:
-    from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction import regularization
+from relax.runtime.env_flags import parse_env_auto_flag, parse_env_flag, parse_env_worker_count
+from relax.runtime.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, device_fits
 
 logger = logging.getLogger(__name__)
 
 
 _LARGE_IRFFT_TRANSFORM_SIZE_LIMIT = np.iinfo(np.int32).max
+
+
+# Stable Fourier windows: the chunk programs are keyed on a physical window
+# class (the current size rounded up to the stable-window quantum) and RELION's
+# logical current size and pixel counts travel as device scalars
+# (_WindowLogicalSizes), so the current sizes of one class share their chunk
+# programs. Default on for Class3D and auto-refine: on the 5k K4 census
+# (14460993) the 25-iteration wall drops from 367 to 336 s with maps identical
+# to non-MPI RELION (14468487). ``=0`` restores RELION's logical window as the
+# programs' key; VDAM's resident route (--grad) takes them only with ``=1``.
+_RESIDENT_STABLE_WINDOWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS"
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReconstructionPrograms:
+    """Which programs run a RELION reconstruction; no effect on its values.
+
+    ``stable_windows`` (``RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS``, default on, the resident engine's switch
+    too): reconstruct in the full-box class so one compiled program serves every size. ``host_irfft``
+    (``RELAX_RELION_HOST_IRFFT``): the padded inverse FFT on the host when True, on the device when False, by
+    size and allocator limit when None (``auto``). ``host_fft_workers`` (``RELAX_RELION_HOST_FFT_WORKERS``, else
+    ``SLURM_CPUS_PER_TASK``, else 1): that transform's threads.
+    """
+
+    stable_windows: bool
+    host_irfft: bool | None
+    host_fft_workers: int
+
+    @classmethod
+    def from_environ(cls) -> ReconstructionPrograms:
+        log = logging.getLogger(__name__)
+        return cls(
+            stable_windows=parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=True),
+            host_irfft=parse_env_auto_flag("RELAX_RELION_HOST_IRFFT", logger=log),
+            host_fft_workers=parse_env_worker_count(
+                "RELAX_RELION_HOST_FFT_WORKERS", "SLURM_CPUS_PER_TASK", logger=log
+            ),
+        )
 
 
 def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d):
@@ -41,7 +77,7 @@ def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumu
     memory than the final full-box one.
     """
 
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     if current_size is None or accumulator_volume_shape is None or not tau_is_1d:
         return None
@@ -71,7 +107,7 @@ def _stable_unregularized_class(vol_shape, padding_factor, accumulator_volume_sh
     padded voxels lie outside the logical support.
     """
 
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     if tau is not None or current_size is not None or accumulator_volume_shape is None:
         return None
@@ -149,7 +185,7 @@ def _reconstruct_volume_eager(
     gridding_correct = _RECOVAR_GRIDDING_CORRECT[gridding_kernel]
     from recovar.reconstruction import relion_functions
 
-    from relax.reconstruction import relion_functions_relion
+    from relax.reconstruction import relion_functions as relion_functions_relion
 
     padded_shape = relion_functions._relion_reconstruction_padded_shape(vol_shape, padding_factor)
     # A compact accumulator whose FFTW pad the device cannot hold (_relion_pad_exceeds_device_working_set) is solved
@@ -324,11 +360,11 @@ def _reconstruct_volume_eager(
         regularized_filter_device.block_until_ready()
         filter_input_donated = _device_array_is_deleted(stage_a_filter)
         if filter_input_donated is not True:
-            regularization_relion.delete_device_array(regularized_filter_device)
-            regularization_relion.delete_device_array(stage_a_filter)
+            regularization.delete_device_array(regularized_filter_device)
+            regularization.delete_device_array(stage_a_filter)
             raise RuntimeError("Large RELION Stage-A regularization did not donate its float32 filter input")
         if np.dtype(regularized_filter_device.dtype) != np.dtype(np.float32):
-            regularization_relion.delete_device_array(regularized_filter_device)
+            regularization.delete_device_array(regularized_filter_device)
             raise TypeError(
                 f"Large RELION Stage-A regularization must return float32, got {regularized_filter_device.dtype}"
             )
@@ -379,10 +415,10 @@ def _reconstruct_volume_eager(
         wiener_half_host = np.asarray(jax.device_get(wiener_half_device)).reshape(
             fourier_transform_utils.volume_shape_to_half_volume_shape(accumulator_shape),
         )
-        regularization_relion.delete_device_array(wiener_half_device)
-        regularization_relion.delete_device_array(stage_a_numerator)
-        regularization_relion.delete_device_array(regularized_filter_device)
-        regularization_relion.delete_device_array(stage_a_filter)
+        regularization.delete_device_array(wiener_half_device)
+        regularization.delete_device_array(stage_a_numerator)
+        regularization.delete_device_array(regularized_filter_device)
+        regularization.delete_device_array(stage_a_filter)
         del wiener_half_device
         del stage_a_numerator
         del regularized_filter_device
@@ -419,7 +455,7 @@ def _reconstruct_volume_eager(
             )
             wiener_half_device.block_until_ready()
             wiener_half_host = np.asarray(jax.device_get(wiener_half_device))
-            regularization_relion.delete_device_array(wiener_half_device)
+            regularization.delete_device_array(wiener_half_device)
             del wiener_half_device
             logger.info(
                 "RELION pre-window Wiener half padded on the host: accumulator_shape=%s reconstruction_shape=%s",

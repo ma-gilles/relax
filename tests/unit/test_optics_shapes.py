@@ -15,12 +15,12 @@ from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
-from relax.dense import scoring_policy
-from relax.dense.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
-from relax.helpers.types import RelionStats, make_noise_stats
-from relax.refinement import half_scoring, optics_shapes
-from relax.refinement.half_inputs import HalfSet
+from relax.refinement import dense_half, local_half
 from relax.refinement.refinement_options import ScoringVariants
+from relax.steps import half_inputs, optics_shapes, scoring_policy, shape_class_scoring
+from relax.steps.half_inputs import HalfSet
+from relax.steps.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
+from relax.types import RelionStats, make_noise_stats
 
 REF_BOX, REF_PIX = 32, 4.0
 
@@ -40,9 +40,9 @@ def test_class_rotation_prior_is_sliced_only_when_per_image():
     small = half.classes[1]
     per_class = np.arange(2 * 7.0).reshape(2, 7)
     per_image = np.arange(2 * 5 * 7.0).reshape(2, 5, 7)
-    out = optics_shapes.class_kwargs({"class_rotation_log_prior_k": per_class}, small, 5)
+    out = shape_class_scoring.class_kwargs({"class_rotation_log_prior_k": per_class}, small, 5)
     assert out["class_rotation_log_prior_k"] is per_class
-    out = optics_shapes.class_kwargs({"class_rotation_log_prior_k": per_image}, small, 5)
+    out = shape_class_scoring.class_kwargs({"class_rotation_log_prior_k": per_image}, small, 5)
     np.testing.assert_array_equal(out["class_rotation_log_prior_k"], per_image[:, [1, 2]])
 
 
@@ -52,7 +52,7 @@ def test_class_noise_follows_relion_estep_remap():
     shape_class = half.classes[1]
     s = shape_class.scale
     radial = np.stack([np.linspace(2.0, 1.0, 17), np.linspace(5.0, 3.0, 17)]) * REF_BOX**4
-    table = optics_shapes.class_noise_table(radial, shape_class, REF_BOX)
+    table = shape_class_scoring.class_noise_table(radial, shape_class, REF_BOX)
     assert table.shape == (2, 28 * 28)
     # Pixel (ky, kx) = (0, i) sits on group shell i; RELION reads reference shell ROUND(i / s)
     # (ml_optimiser.cpp:6840) and the class image is in RELION sigma2 times box_g**4.
@@ -67,7 +67,7 @@ def test_noise_sums_follow_relion_mstep_remap():
     shape_class = _half().classes[1]
     s = shape_class.scale
     sums = np.arange(2 * 15, dtype=np.float64).reshape(2, 15) * 28**4
-    out = optics_shapes.noise_sums_to_reference(sums, shape_class, REF_BOX)
+    out = shape_class_scoring.noise_sums_to_reference(sums, shape_class, REF_BOX)
     expected = np.zeros((2, 17))
     for g in range(2):
         for i in range(15):
@@ -93,7 +93,7 @@ def test_class_kwargs_units_and_sizes():
         # A replay's translation grid (relion_replay), [T, 2], not per image.
         replay_prior_translations=np.array([[0.0, 0.0], [2.0, -2.0], [4.0, 0.0]]),
     )
-    out = optics_shapes.class_kwargs(kwargs, b, 5)
+    out = shape_class_scoring.class_kwargs(kwargs, b, 5)
     np.testing.assert_allclose(out["replay_prior_translations"], kwargs["replay_prior_translations"] * 0.75)
     assert_matches(out["image_corrections_k"], [1.0, 2.0])
     np.testing.assert_allclose(out["translation_search_base"], np.arange(10.0).reshape(5, 2)[[1, 2]] * 0.75)
@@ -104,7 +104,7 @@ def test_class_kwargs_units_and_sizes():
     # The engines see the class's images on the reference volume grid.
     assert out["experiment_dataset"].volume_shape == (32, 32, 32)
     assert out["experiment_dataset"].image_shape == (28, 28) and out["experiment_dataset"]._dataset is b.dataset
-    assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["experiment_dataset"] is half.classes[0].dataset
+    assert shape_class_scoring.class_kwargs(kwargs, half.classes[0], 5)["experiment_dataset"] is half.classes[0].dataset
 
 
 def _fake_result(n, images, value, groups=2, box=32):
@@ -140,7 +140,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
     for group, shape_class in enumerate(half.classes):
         group_ids[shape_class.image_indices] = group
     return (
-        half_scoring.HalfScoringData(
+        half_inputs.HalfScoringData(
             particles=HalfSet(
                 index=0,
                 dataset=half,
@@ -162,7 +162,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             random_perturbation=0.0,
             image_window_size=None,
         ),
-        half_scoring.DensePriorSpec(
+        dense_half.DensePriorSpec(
             rotation_log_prior_k=None,
             class_rotation_log_prior_k=None,
             translation_log_prior=None,
@@ -184,8 +184,6 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
         ),
         refinement_specs.dense_execution_policy(
             disc_type="linear_interp",
-            disable_adjoint_y=False,
-            disable_adjoint_ctf=False,
             relion_x_half_mstep=ScoringVariants.from_environ().k1_relion_x_half_mstep,
             precision=scoring_policy.DENSE_PRECISION,
         ),
@@ -210,11 +208,11 @@ def test_shape_scoring_releases_unused_class_summaries_before_the_next_shape(mon
         summaries.append(weakref.ref(result.classes))
         return result
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
+    monkeypatch.setattr(dense_half, "_score_half_dense_one_shape", fake_score)
     owners = _dense_owners(
-        half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
+        half, dataclasses.replace(shape_class_scoring.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
     )
-    merged = half_scoring._score_half_dense(*owners)
+    merged = dense_half._score_half_dense(*owners)
 
     assert len(summaries) == 2
     assert all(reference() is None for reference in summaries)
@@ -226,7 +224,7 @@ def test_dense_owner_shape_derivation_passes_class_translations_through_the_merg
     half = _half()
     outputs = PerHalfOutputs()
     seen = []
-    optics = optics_shapes.prepare_optics(
+    optics = shape_class_scoring.prepare_optics(
         half, noise_radial=np.ones((2, 17)) * REF_BOX**4, previous_translations=np.full((5, 2), 1.4),
         sigma_offset_angstrom=10.0, base_translations=np.zeros((1, 2)), current_translations=np.zeros((1, 2)),
         with_log_prior=True, zero_cold_center=False,
@@ -244,10 +242,10 @@ def test_dense_owner_shape_derivation_passes_class_translations_through_the_merg
             box=half.particles.dataset.image_shape[0],
         )
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
+    monkeypatch.setattr(dense_half, "_score_half_dense_one_shape", fake_score)
     owners = _dense_owners(half, optics)
 
-    merged = half_scoring._score_half_dense(*owners)
+    merged = dense_half._score_half_dense(*owners)
     outputs.update_from(0, merged)
 
     assert [getattr(item[0].particles.dataset, "_dataset", item[0].particles.dataset) for item in seen] == [
@@ -328,11 +326,11 @@ def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch, k
             result.best_pose_translations = class_outputs.best_pose_translations[0]
         return result
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
-    owners = list(_dense_owners(half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4)))
+    monkeypatch.setattr(dense_half, "_score_half_dense_one_shape", fake_score)
+    owners = list(_dense_owners(half, dataclasses.replace(shape_class_scoring.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4)))
     owners[4] = dataclasses.replace(owners[4], k_class_enabled=k_class_enabled)
 
-    merged = half_scoring._score_half_dense(*owners)
+    merged = dense_half._score_half_dense(*owners)
     outputs.update_from(0, merged)
 
     if k_class_enabled:
@@ -372,7 +370,7 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
     half = _half()
     outputs = PerHalfOutputs()
     seen = []
-    optics = optics_shapes.prepare_optics(
+    optics = shape_class_scoring.prepare_optics(
         half, noise_radial=np.ones((2, 17)) * REF_BOX**4, previous_translations=np.full((5, 2), 1.4),
         sigma_offset_angstrom=10.0, base_translations=np.zeros((1, 2)), current_translations=np.zeros((1, 2)),
         with_log_prior=False, zero_cold_center=False,
@@ -390,7 +388,7 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
             box=half.particles.dataset.image_shape[0],
         )
 
-    monkeypatch.setattr(half_scoring, "_score_half_local_one_shape", fake_score)
+    monkeypatch.setattr(local_half, "_score_half_local_one_shape", fake_score)
     owners = local_half_owners(
         k=0,
         experiment_dataset=half,
@@ -416,11 +414,8 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         trans_prior_center_for_engine=np.zeros((5, 2)),
         current_sigma_offset_angstrom=1.0,
         translation_search_base=np.zeros((5, 2)),
-        local_search_translation_prior_mode="current",
         replay_prior_translations=None,
         max_significants=-1,
-        disable_adjoint_y=False,
-        disable_adjoint_ctf=False,
         iteration=0,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
@@ -429,7 +424,7 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         class_translations=optics.class_translations,
     )
 
-    merged = half_scoring._score_half_local(*owners)
+    merged = local_half._score_half_local(*owners)
     outputs.update_from(0, merged)
 
     assert [
@@ -457,21 +452,21 @@ def test_class_coarse_size_is_relions_formula_at_the_class_grid():
                   coarse_sizing=(step, diameter))
     got = []
     for shape_class in half.classes:
-        out = optics_shapes.class_kwargs(kwargs, shape_class, 5)
+        out = shape_class_scoring.class_kwargs(kwargs, shape_class, 5)
         assert "coarse_sizing" not in out
         expected = 2 * int(np.ceil(shape_class.pixel_size * shape_class.box_size / coarse_res))
         assert out["firstiter_coarse_current_size"] == min(expected, out["cs_for_engine"])
         got.append(out["firstiter_coarse_current_size"])
     # The reference class keeps its size; the other class's differs from a current-size remap (14).
     assert got == [12, 12]
-    out = optics_shapes.class_kwargs(dict(kwargs, coarse_sizing=None), half.classes[1], 5)
+    out = shape_class_scoring.class_kwargs(dict(kwargs, coarse_sizing=None), half.classes[1], 5)
     assert out["firstiter_coarse_current_size"] == 2 * int(np.ceil(0.5 * half.classes[1].scale * 12)) == 14
 
 
 @pytest.mark.unit
 def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
-    from relax.helpers.batch_planning import _AdaptiveDenseBatchSizes
     from relax.refinement import expectation_batches
+    from relax.runtime.batch_planning import _AdaptiveDenseBatchSizes
 
     ds_a = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     ds_b = SimpleNamespace(image_shape=(40, 40), volume_shape=(40,) * 3, voxel_size=4.0)  # larger box
@@ -490,7 +485,7 @@ def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
     overrides = expectation_batches._class_adaptive_batch_overrides(
         half, plan=plan, cs_for_engine=20, coarse_cs=12, coarse_sizing=sizing
     )
-    expected_sizes = [optics_shapes.class_adaptive_sizes(c, 20, 12, sizing) for c in classes]
+    expected_sizes = [shape_class_scoring.class_adaptive_sizes(c, 20, 12, sizing) for c in classes]
     assert seen == [((32, 32),) + expected_sizes[0], ((40, 40),) + expected_sizes[1]]
     assert expected_sizes[1][0] == 26  # 2 ceil(0.5 * 1.25 * 20)
     assert overrides[1] == expectation_batches.ShapeClassBatchSizes(
@@ -507,12 +502,12 @@ def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
         images = np.asarray(half.particles.image_corrections).astype(int)
         return _fake_result(images.size, images, 1.0, box=half.particles.dataset.image_shape[0])
 
-    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", score)
+    monkeypatch.setattr(dense_half, "_score_half_dense_one_shape", score)
     owners = _dense_owners(
-        half, dataclasses.replace(optics_shapes.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
+        half, dataclasses.replace(shape_class_scoring.OpticsSpec.single_shape(), noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
         class_batch_overrides=overrides,
     )
-    half_scoring._score_half_dense(*owners)
+    dense_half._score_half_dense(*owners)
     assert received == [1000 // 32, 25]
 
 
@@ -521,8 +516,8 @@ def test_full_box_reference_size_is_explicit_for_a_class_on_another_grid():
     # A full-box pass (no current size) still fills the backprojector at the reference box.
     half = _half()
     kwargs = dict(experiment_dataset=half, cs_for_engine=None)
-    assert optics_shapes.class_kwargs(kwargs, half.classes[1], 5)["reference_current_size"] == REF_BOX
-    assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["reference_current_size"] is None
+    assert shape_class_scoring.class_kwargs(kwargs, half.classes[1], 5)["reference_current_size"] == REF_BOX
+    assert shape_class_scoring.class_kwargs(kwargs, half.classes[0], 5)["reference_current_size"] is None
 
 
 @pytest.mark.unit
@@ -532,7 +527,7 @@ def test_class_pre_shifts_are_rounded_in_the_class_pixels():
     half = _half()
     previous = np.array([[1.4, -2.6], [2.5, 1.1], [-0.6, 3.3], [0.2, 0.2], [4.4, -4.4]])
     grid = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-    out = optics_shapes.prepare_optics(
+    out = shape_class_scoring.prepare_optics(
         half, noise_radial=np.ones((2, 17)), previous_translations=previous,
         sigma_offset_angstrom=10.0, base_translations=grid, current_translations=grid,
         with_log_prior=True, zero_cold_center=True,
@@ -544,13 +539,13 @@ def test_class_pre_shifts_are_rounded_in_the_class_pixels():
         expected = np.sign(in_class) * np.floor(np.abs(in_class) + 0.5)
         assert_matches(values.search_base, expected.astype(np.float32))
         assert values.log_prior.shape == (shape_class.image_indices.size, 3)
-    assert optics_shapes.prepare_optics(
+    assert shape_class_scoring.prepare_optics(
         object(), noise_radial=None, previous_translations=previous,
         sigma_offset_angstrom=1.0, base_translations=grid, current_translations=grid,
         with_log_prior=False, zero_cold_center=False,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
         single_shape_projection_scale=1.0,
-    ) == optics_shapes.OpticsSpec.single_shape()
+    ) == shape_class_scoring.OpticsSpec.single_shape()
 
 
 @pytest.mark.unit
@@ -560,7 +555,7 @@ def test_prepared_optics_preserves_cold_start_prior_policy(dtype, with_log_prior
     half = _half()
     grid = np.array([[0.0, 0.0], [1.0, -1.0], [2.0, 0.0]], dtype=dtype)
     noise = np.ones((2, 17), dtype=np.float64)
-    prepared = optics_shapes.prepare_optics(
+    prepared = shape_class_scoring.prepare_optics(
         half, noise_radial=noise, previous_translations=None, sigma_offset_angstrom=10.0,
         base_translations=grid, current_translations=grid, with_log_prior=with_log_prior,
         zero_cold_center=zero_cold_center, coarse_step_deg=34.5, particle_diameter_ang=100.0, dtype=dtype,
@@ -591,12 +586,12 @@ def test_single_shape_preparation_does_not_materialize_operands():
             raise AssertionError("Single-shape optics preparation must not read arrays")
 
     array = UnreadableArray()
-    assert optics_shapes.prepare_optics(
+    assert shape_class_scoring.prepare_optics(
         object(), noise_radial=array, previous_translations=array, sigma_offset_angstrom=1.0,
         base_translations=array, current_translations=array, with_log_prior=True, zero_cold_center=True,
         coarse_step_deg=None, particle_diameter_ang=None, dtype=np.float32,
         single_shape_projection_scale=1.0,
-    ) == optics_shapes.OpticsSpec.single_shape()
+    ) == shape_class_scoring.OpticsSpec.single_shape()
 
 
 @pytest.mark.unit
@@ -605,13 +600,13 @@ def test_class_translation_step_is_in_class_pixels():
     # on another pixel size samples the same Angstrom offsets, so its step is in its pixels.
     half = _half()
     kwargs = dict(experiment_dataset=half, translation_step=2.0)
-    assert optics_shapes.class_kwargs(kwargs, half.classes[1], 5)["translation_step"] == pytest.approx(2.0 * 0.75)
-    assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["translation_step"] == kwargs["translation_step"]
+    assert shape_class_scoring.class_kwargs(kwargs, half.classes[1], 5)["translation_step"] == pytest.approx(2.0 * 0.75)
+    assert shape_class_scoring.class_kwargs(kwargs, half.classes[0], 5)["translation_step"] == kwargs["translation_step"]
 
 
 @pytest.mark.unit
 def test_class_mstep_image_radius_is_reference_r_max_times_scale():
-    from relax.refinement.optics_shapes import reconstruction_image_radius
+    from relax.steps.shape_class_scoring import reconstruction_image_radius
 
     # RELION's backprojector bounds the reference-grid radius by r_max = cs // 2; a class
     # image pixel |k| lands at |k| / s, so the class keeps pixels out to r_max * s.
@@ -626,8 +621,8 @@ def test_class_mstep_image_radius_is_reference_r_max_times_scale():
 def test_class_mstep_clip_keeps_the_reference_padding():
     import inspect
 
-    from relax.helpers import adjoint
-    from relax.sparse_pass2 import resident_pass2
+    from relax.fine_pass import resident_pass2
+    from relax.projection import adjoint
 
     # One grid: the reference r_max, from which recovar infers RELION's pad size.
     assert adjoint.mstep_adjoint_max_r(56, None, 2) == pytest.approx(28.0)
@@ -683,9 +678,9 @@ def test_local_parent_pass_refuses_the_wrapped_coarse_band():
     half = optics_shapes.MultiShapeHalf(classes, image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     # r_max 10; pass-1 18 -> class window 24: 12 lies between 10 and 1.25 * sqrt(101).
     with pytest.raises(NotImplementedError, match="fused coarse scorer"):
-        optics_shapes.require_exact_local_parent_windows({"experiment_dataset": half, "cs_for_engine": 20, "local_pass1_current_size": 18})
+        shape_class_scoring.require_exact_local_parent_windows({"experiment_dataset": half, "cs_for_engine": 20, "local_pass1_current_size": 18})
     # Pass-1 20 -> class window 26 lies past the band.
-    optics_shapes.require_exact_local_parent_windows({"experiment_dataset": half, "cs_for_engine": 20, "local_pass1_current_size": 20})
+    shape_class_scoring.require_exact_local_parent_windows({"experiment_dataset": half, "cs_for_engine": 20, "local_pass1_current_size": 20})
 
 
 @pytest.mark.unit
@@ -700,12 +695,12 @@ def test_shape_class_engine_inputs_follow_the_class_rules(monkeypatch):
         projections.append((scale, magnification, source))
         return tuple(None if rows is None else rows / scale for rows in (coarse, fine, mstep))
 
-    monkeypatch.setattr(optics_shapes, "project_pass2_rotations", fake_projection)
+    monkeypatch.setattr(shape_class_scoring, "project_pass2_rotations", fake_projection)
     half = _half()
     small = half.classes[1]
     rotations = np.stack([np.eye(3), 2 * np.eye(3)])
     rotation_source = {"coarse_healpix_order": 1, "adaptive_oversampling": 1, "random_perturbation": 0.0}
-    inputs = optics_shapes.shape_class_engine_inputs(
+    inputs = shape_class_scoring.shape_class_engine_inputs(
         small,
         half,
         noise_radial=np.ones((2, 17)) * REF_BOX**4,
@@ -732,7 +727,7 @@ def test_shape_class_engine_inputs_follow_the_class_rules(monkeypatch):
     assert inputs.fine_mstep_rotations is None
     np.testing.assert_allclose(inputs.fine_translations, 2.0 * small.translation_factor)
     # The same remap and class rows as the half-level route (class_kwargs).
-    assert (inputs.fine_current_size, inputs.coarse_current_size) == optics_shapes.class_adaptive_sizes(
+    assert (inputs.fine_current_size, inputs.coarse_current_size) == shape_class_scoring.class_adaptive_sizes(
         small, 24, 16, None
     )
     np.testing.assert_array_equal(inputs.engine_kwargs["optics_group_ids"], [1, 1])
@@ -744,7 +739,7 @@ def test_shape_class_engine_inputs_follow_the_class_rules(monkeypatch):
     assert inputs.engine_kwargs["reconstruction_image_radius"] == pytest.approx(12 * small.scale)
     assert inputs.noise_variance.shape == (2, 28 * 28)
     with pytest.raises(ValueError, match="rebuilt in each shape class"):
-        optics_shapes.shape_class_engine_inputs(
+        shape_class_scoring.shape_class_engine_inputs(
             small,
             half,
             noise_radial=np.ones((2, 17)),
@@ -804,7 +799,7 @@ def test_merge_k_class_engine_results_places_images_and_adds_sums():
     results = [
         _fake_engine_result(c.image_indices, c.box_size, c.translation_factor) for c in half.classes
     ]
-    merged = optics_shapes.merge_k_class_engine_results(results, half.classes, half.n_units, REF_BOX)
+    merged = shape_class_scoring.merge_k_class_engine_results(results, half.classes, half.n_units, REF_BOX)
     images = np.arange(5)
     np.testing.assert_array_equal(merged.pose_assignments, images)
     np.testing.assert_array_equal(merged.class_assignments, images % 2)
@@ -829,12 +824,12 @@ def test_bpref_cubes_on_different_windows_merge_on_the_smaller_centred_cube():
     # A model-grid class may return its BPref on a stable physical cube (7^3) while a class at its own
     # box returns the logical cube (5^3); the merge sums the logical voxels, as crop_public_full_volume
     # would select them, and leaves equal cubes alone.
-    from relax.helpers.half_volume_mstep import crop_public_full_volume
+    from relax.reconstruction.half_volume_mstep import crop_public_full_volume
 
     rng = np.random.default_rng(0)
     physical = rng.standard_normal((1, 2, 7**3))
     logical = rng.standard_normal((1, 2, 5**3))
-    cut = optics_shapes._common_centered_cubes([physical, logical])
+    cut = shape_class_scoring._common_centered_cubes([physical, logical])
     expected = np.stack(
         [np.asarray(crop_public_full_volume(physical[0, h], (7, 7, 7), (5, 5, 5))) for h in range(2)]
     )[None]
@@ -842,6 +837,6 @@ def test_bpref_cubes_on_different_windows_merge_on_the_smaller_centred_cube():
     np.testing.assert_array_equal(cut[0], expected)
     assert cut[1] is logical
     same = [physical, physical.copy()]
-    assert optics_shapes._common_centered_cubes(same) is same
+    assert shape_class_scoring._common_centered_cubes(same) is same
     with pytest.raises(ValueError, match="not odd cubes"):
-        optics_shapes._common_centered_cubes([physical, np.zeros((1, 2, 8**3))])
+        shape_class_scoring._common_centered_cubes([physical, np.zeros((1, 2, 8**3))])

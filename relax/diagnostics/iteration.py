@@ -21,19 +21,20 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.diagnostics import parity_dump as _parity_dump
-from relax.helpers.env_flags import parse_int_set
-from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
-from relax.relion.relion_metadata import _relion_half_plane_shell_counts
+from relax.runtime.env_flags import parse_int_set
 from relax.sampling import rotation_grid_size
-from relax.symmetry import canonicalize_rotational_symmetry, symmetry_operator_sha256
+from relax.sampling.symmetry import canonicalize_rotational_symmetry, symmetry_operator_sha256
+from relax.star.metadata import _relion_half_plane_shell_counts
 
 if TYPE_CHECKING:
-    from relax.helpers.convergence import RefinementState
-    from relax.refinement.half_inputs import HalfSet, ParticlePoses
-    from relax.refinement.mean_helpers import ReconstructionSettings
+    from relax.refinement.numbered_reconstruction import ReconstructionSettings
+    from relax.refinement.particle_poses import ParticlePoses
     from relax.refinement.ports import DenseHalfScored
-    from relax.relion.relion_normalization import NormScaleCorrectionReport
+    from relax.refinement.refinement_state import RefinementState
+    from relax.relion.normalization import NormScaleCorrectionReport
+    from relax.steps.half_inputs import HalfSet
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +211,7 @@ def write_numbered_half_manifest(save_dir, scored: DenseHalfScored) -> None:
     ``random_perturbation``, the half's direction and translation log priors, ``particles`` (corrections),
     ``half`` (reference, prior and noise) and the engine's per-image maximum posterior.
     """
-    from relax.dense import scoring_policy
+    from relax.steps import scoring_policy
 
     (iteration, half_index, grid, sampling, direction_priors, translation_log_prior, particles,
      translation_search_base, previous_translations, half, image_window_size, perturb_factor, result) = scored
@@ -410,7 +411,7 @@ def _save_iteration_intermediates(
     ``translations``; ``sampling_plan.local`` (its search order, when the search is local);
     ``state.healpix_order`` and ``sigma_rot``; ``options.k_class.n_classes`` and ``symmetry.point_group``.
     """
-    from relax.helpers.map_io import write_map_from_ft
+    from relax.io.map_io import write_map_from_ft
 
     Ft_y_0, Ft_y_1 = numerators
     Ft_ctf_0, Ft_ctf_1 = denominators

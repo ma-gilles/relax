@@ -81,7 +81,7 @@ def test_touched_gpu_tests_follow_imports(tmp_path):
     (tests / "test_a.py").write_text(
         "import pytest\nfrom relax.local import local_em_engine\npytestmark = pytest.mark.gpu\n"
     )
-    (tests / "test_b.py").write_text("import pytest\nimport relax.cuda.kernels\npytestmark = pytest.mark.gpu\n")
+    (tests / "test_b.py").write_text("import pytest\nimport relax.cuda.library\npytestmark = pytest.mark.gpu\n")
     (tests / "test_c.py").write_text("from relax.local import local_em_engine\n")  # no gpu marker
     run_test_tier.TIERS_DIR, saved = tmp_path / "tests" / "tiers", run_test_tier.TIERS_DIR
     try:
@@ -390,7 +390,7 @@ def test_smoke_always_runs_the_changes_own_gpu_test_files(monkeypatch):
     seconds = {"tests/unit/a.py": 30, "tests/unit/b.py": 50, "tests/unit/own_slow.py": 400}
     monkeypatch.setattr(run_test_tier, "_durations", lambda: seconds)
     touched = ["tests/unit/a.py", "tests/unit/b.py", "tests/unit/new.py", "tests/unit/own_slow.py", "tests/unit/z.py"]
-    changed = ["relax/helpers/projection.py", "tests/unit/new.py", "tests/unit/own_slow.py"]
+    changed = ["relax/projection/projection.py", "tests/unit/new.py", "tests/unit/own_slow.py"]
     kept, deferred = run_test_tier.smoke_touched_split(touched, replay_seconds=200, changed=changed)
     assert set(kept) >= {"tests/unit/new.py", "tests/unit/own_slow.py"}
     # The own files used the room (100 s): every importer is deferred to medium.
@@ -400,7 +400,7 @@ def test_smoke_always_runs_the_changes_own_gpu_test_files(monkeypatch):
 def test_gpu_files_include_skipif_gated_resident_tests():
     files = set(run_test_tier.gpu_test_files(REPO_ROOT))
     assert {"tests/unit/test_resident_pass2_driver.py", "tests/unit/test_resident_local_pass2.py"} <= files
-    selected = run_test_tier.touched_gpu_tests(REPO_ROOT, ["relax/sparse_pass2/resident_pass2.py"])
+    selected = run_test_tier.touched_gpu_tests(REPO_ROOT, ["relax/fine_pass/resident_pass2.py"])
     assert "tests/unit/test_resident_pass2_driver.py" in selected
     assert "tests/unit/initial_model/test_audit_vdam_repeat_panel.py" not in files
 

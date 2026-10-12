@@ -1,6 +1,7 @@
 """Learn one ab-initio PPCA model from particles and known CTFs."""
 
 import argparse
+import ast
 import dataclasses
 import json
 import logging
@@ -12,9 +13,9 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.helpers.host_memory import available_memory_bytes
 from relax.ppca_initial_model.checkpoint import file_hash
 from relax.ppca_initial_model.config import Config
+from relax.runtime.host_memory import available_memory_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -212,12 +213,12 @@ def refuse_unsupported_tilt_optics(particles_star):
     relion_refine applies CTF premultiplication, odd and even aberrations and anisotropic
     magnification to every tilt image; the per-tilt STAR relax reads carries none of them, so a
     particle STAR that uses one fails instead of being trained on silently wrong images
-    (:data:`relax.relion.relion_metadata.TOMO_PPCA_OPTICS_FEATURES`; subtomogram Refine3D/Class3D
+    (:data:`relax.star.metadata.TOMO_PPCA_OPTICS_FEATURES`; subtomogram Refine3D/Class3D
     have their own set, ``TOMO_OPTICS_FEATURES``).
     """
     from recovar.data_io.starfile import read_star
 
-    from relax.relion.relion_metadata import TOMO_PPCA_OPTICS_FEATURES, refuse_unsupported_optics
+    from relax.star.metadata import TOMO_PPCA_OPTICS_FEATURES, refuse_unsupported_optics
 
     _, optics = read_star(str(particles_star))
     refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_PPCA_OPTICS_FEATURES)
@@ -230,8 +231,8 @@ def load_tilt_training(ios, output):
     enter training; the particles' input angles and offsets are not read.
     """
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
-    from relax.refinement.tomo_half import load_tomo_dataset
-    from relax.relion.tomo_input import read_optimisation_set
+    from relax.star.tomo_input import read_optimisation_set
+    from relax.steps.tomo_half import load_tomo_dataset
 
     particles_star, tomograms_star = read_optimisation_set(ios)
     refuse_unsupported_tilt_optics(particles_star)
@@ -269,6 +270,35 @@ def tilt_series_hash(tomograms_star):
     return digest.hexdigest()
 
 
+def ppca_source_files(repo: Path) -> list[Path]:
+    """The source files a PPCA checkpoint's code hash covers, sorted: PPCA's own modules (``relax/ppca_initial_model``,
+    ``relax/ppca_refinement``), this command, ``relax/relion/project.py``, and every relax module those import by
+    name, at any scope (top level, inside a function, under TYPE_CHECKING). The imports are read from the source
+    text, so the set is the same in every process whatever it has imported. It is not the transitive closure:
+    while the package graph is cyclic that would be most of relax, and every relax edit would refuse a resume.
+    """
+    own = sorted((repo / "relax/ppca_initial_model").glob("*.py"))
+    own += sorted((repo / "relax/ppca_refinement").glob("*.py"))
+    own += [Path(__file__).resolve(), repo / "relax/relion/project.py"]
+    files = set(own)
+    for path in own:
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names = [node.module] + [f"{node.module}.{alias.name}" for alias in node.names]
+            else:
+                continue
+            for name in names:
+                if name.split(".")[0] != "relax":
+                    continue
+                module = repo.joinpath(*name.split("."))
+                files.update(
+                    candidate for candidate in (module.with_suffix(".py"), module / "__init__.py") if candidate.is_file()
+                )
+    return sorted(files)
+
+
 def source_identity():
     import jax
     import recovar
@@ -282,9 +312,7 @@ def source_identity():
         native["cuda_sha256"] = file_hash(cuda_backproject._loaded_lib_path)
     repo = Path(__file__).resolve().parents[2]
     # Includes untracked implementation files; a clean HEAD alone is insufficient.
-    files = sorted((repo / "relax/ppca_initial_model").glob("*.py"))
-    files += sorted((repo / "relax/ppca_refinement").glob("*.py"))
-    files += [Path(__file__), repo / "relax/relion/relion_project.py"]
+    files = ppca_source_files(repo)
     # A plain file snapshot or an installed package has no lock file or git checkout; the file
     # hashes identify the source on their own.
     files += [path for path in (repo / "pixi.lock",) if path.is_file()]
@@ -317,7 +345,7 @@ def main(args=None):
 
     # The run's INFO lines (tile plans, compiled tile sizes, resumes) reach the job log, as in Refine3D.
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
-    from relax.helpers.compilation_cache import activate_recovar_compilation_cache
+    from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 
     activate_recovar_compilation_cache()
     if not os.environ.get("SLURM_JOB_ID"):

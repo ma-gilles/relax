@@ -8,14 +8,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from relax.helpers.expected_accuracy import ExpectedAccuracy
-from relax.relion import initial_model_io
 from relax.relion.initial_noise import relion_startup_positions
+from relax.steps.expected_accuracy import ExpectedAccuracy
 from relax.vdam import bootstrap_reconstruction as br
-from relax.vdam import estep_setup, native_sampling
+from relax.vdam import estep_setup, initial_model_io, native_sampling
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
-from relax.vdam.estep_meta_updates import update_noise_from_estep
+from relax.vdam.model_update import update_noise_from_estep
 from relax.vdam.ports import NoProbe
 
 
@@ -75,11 +74,10 @@ def test_particle_optics_follow_each_particles_group():
     class _Dataset:
         voxel_size = 4.25
 
-    voltage, cs, q0, pixel = initial_model_io._particle_optics(main, optics, _Dataset())
-    np.testing.assert_allclose(voltage, [200.0, 300.0, 200.0], rtol=1e-12)
-    np.testing.assert_allclose(cs, [1.4, 2.7, 1.4], rtol=1e-12)
-    np.testing.assert_allclose(q0, [0.07, 0.1, 0.07], rtol=1e-12)
-    assert pixel == pytest.approx(4.25, rel=1e-12)
+    particle_optics = initial_model_io._particle_optics(main, optics, _Dataset())
+    np.testing.assert_allclose(particle_optics.voltage, [200.0, 300.0, 200.0], rtol=1e-12)
+    np.testing.assert_allclose(particle_optics.Cs, [1.4, 2.7, 1.4], rtol=1e-12)
+    np.testing.assert_allclose(particle_optics.Q0, [0.07, 0.1, 0.07], rtol=1e-12)
     other_grid = optics.assign(_rlnImagePixelSize=[4.25, 5.44])
     with pytest.raises(ValueError, match="one dataset per image shape"):
         initial_model_io._particle_optics(main, other_grid, _Dataset())

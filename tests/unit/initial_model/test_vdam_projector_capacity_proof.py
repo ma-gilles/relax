@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import pytest
 
-from relax.helpers.fourier_window import stable_fourier_window_current_size
+from relax.fourier.fourier_window import stable_fourier_window_current_size
 from scripts.prove_vdam_projector_capacity import (
     GF46_IMAGE_SIZE,
     GF46_LOGICAL_CURRENT_SIZES,

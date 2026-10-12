@@ -46,17 +46,17 @@ def test_masked_fine_diff2_source_pins_rectangular_body_and_zero_fill():
 
 def test_masked_fine_diff2_is_optional_ffi_target():
     from recovar import cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
-    target = em_cuda_kernels._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
+    target = library.TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
     assert target == "cuda_relion_fine_diff2_rectangular_masked_f32"
-    assert target in em_cuda_kernels._OPTIONAL_FFI_REGISTRATIONS
+    assert target in library.OPTIONAL_FFI_REGISTRATIONS
     assert target not in dict(cuda_backproject._FFI_REGISTRATIONS)
 
 
 def test_fine_diff2_masked_knob_defaults_on_and_is_disableable(monkeypatch):
     """Default on after the matched hp3 pair (job 14082785); still switchable."""
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.fine_pass import scoring
 
     monkeypatch.delenv(scoring._RELION_FINE_DIFF2_MASKED_ENV, raising=False)
     assert scoring._fine_diff2_masked_enabled() is True
@@ -68,11 +68,11 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
     """A library without the optional symbol must not break the default path."""
     import numpy as np
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.cuda import fine as cuda_fine
+    from relax.fine_pass import scoring
 
     monkeypatch.setattr(
-        em_cuda_kernels, "relion_fine_diff2_rectangular_masked_supported", lambda: False
+        cuda_fine, "relion_fine_diff2_rectangular_masked_supported", lambda: False
     )
     called = {}
 
@@ -83,9 +83,9 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
     def _masked(*args, **kwargs):  # pragma: no cover - must not be reached
         raise AssertionError("masked target used although the library lacks it")
 
-    monkeypatch.setattr(em_cuda_kernels, "relion_fine_diff2_rectangular_f32", _unmasked)
+    monkeypatch.setattr(cuda_fine, "relion_fine_diff2_rectangular_f32", _unmasked)
     monkeypatch.setattr(
-        em_cuda_kernels, "relion_fine_diff2_rectangular_masked_f32", _masked
+        cuda_fine, "relion_fine_diff2_rectangular_masked_f32", _masked
     )
     rng = np.random.default_rng(5)
     reference, shifted, weight, _initial, lookup = _operands(rng, 2, 3, 4, 17, 21)
@@ -102,23 +102,24 @@ def test_masked_fine_diff2_falls_back_when_library_lacks_the_target(monkeypatch)
 
 def test_masked_support_probe_reports_false_without_a_library(monkeypatch):
     from recovar import cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
+    from relax.cuda import library
 
     monkeypatch.setattr(
         cuda_backproject, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
     monkeypatch.setattr(
-        em_cuda_kernels, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
+        library, "ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
     monkeypatch.setattr(
-        em_cuda_kernels, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
+        library, "ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
-    assert em_cuda_kernels.relion_fine_diff2_rectangular_masked_supported() is False
+    assert cuda_fine.relion_fine_diff2_rectangular_masked_supported() is False
 
 
 def test_fine_diff2_sum_jax_path_ignores_candidate_mask(monkeypatch):
     """Without the fused FFI the emulation evaluates every cell (mask is a no-op)."""
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.fine_pass import scoring
 
     monkeypatch.delenv(scoring._RELION_FINE_DIFF2_FUSED_FFI_ENV, raising=False)
     rng = np.random.default_rng(3)
@@ -148,7 +149,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -164,7 +165,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
     mask[1, :, 0] = True  # a fully included translation column
     with jax.default_device(gpu_device):
         dense = np.asarray(
-            em_cuda_kernels.relion_fine_diff2_rectangular_f32(
+            cuda_fine.relion_fine_diff2_rectangular_f32(
                 jnp.asarray(reference),
                 jnp.asarray(shifted),
                 jnp.asarray(weight),
@@ -173,7 +174,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
             )
         )
         masked = np.asarray(
-            em_cuda_kernels.relion_fine_diff2_rectangular_masked_f32(
+            cuda_fine.relion_fine_diff2_rectangular_masked_f32(
                 jnp.asarray(reference),
                 jnp.asarray(shifted),
                 jnp.asarray(weight),
@@ -192,7 +193,7 @@ def test_masked_fine_diff2_matches_rectangular_on_valid_cells(
 def test_scoring_path_masked_matches_unmasked_scores(monkeypatch, custom_cuda_lib, gpu_device):
     """The full raw->scores path gives identical scores with the mask on and off."""
     import recovar.cuda_backproject as cuda_backproject
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.fine_pass import scoring
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)

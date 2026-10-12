@@ -30,7 +30,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.sparse_pass2 import resident_pass2 as rp
+from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
 
@@ -56,7 +56,6 @@ def _spec(**overrides):
         use_translate_sum_kernel=False,
         bpref_recon_operand=False,
         kernel_ctf_probs=False,
-        static_block_trip=False,
     )
     kwargs.update(overrides)
     return rp._ChunkProgramSpec(**kwargs)

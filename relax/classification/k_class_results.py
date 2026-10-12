@@ -14,8 +14,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.env_flags import parse_env_binary_flag
-from relax.helpers.types import NoiseStats, RelionStats, make_noise_stats, make_relion_stats, total_sumw
+from relax.runtime.env_flags import parse_env_binary_flag
+from relax.types import NoiseStats, RelionStats, make_noise_stats, make_relion_stats, total_sumw
 
 _K1_POSE_PUBLISH_DIRECT_ENV = "RELAX_K1_POSE_PUBLISH_DIRECT"
 
@@ -275,6 +275,7 @@ def _assemble_result(
     aggregate_noise_stats_override=None,
     uncast_log_evidence_per_image=None,
     joint_max_posterior_per_image=None,
+    class_assignments_override=None,
     firstiter_winner_take_all: bool = False,
     host_accumulators: bool = False,
     host_stats_publication: bool = False,
@@ -382,6 +383,11 @@ def _assemble_result(
         axis=0,
     )
     class_assignments = np.argmax(best_scores, axis=0).astype(np.int32)
+    if class_assignments_override is not None:
+        # Zero oversampling: the winner is the coarse pass's, not the best fine sample.
+        class_assignments = np.asarray(class_assignments_override, dtype=np.int32)
+        if class_assignments.shape != (n_images,) or class_assignments.min() < 0 or class_assignments.max() >= n_classes:
+            raise ValueError(f"class assignments must be one class in [0, {n_classes}) per image")
     image_indices = np.arange(class_assignments.shape[0])
     pose_assignments = np.asarray(per_class_hard_assignments)[class_assignments, image_indices]
     global_best_scores = np.max(best_scores, axis=0)
@@ -655,3 +661,11 @@ def _expand_subset_pose_details(best_rots, best_trans, best_rot_ids, image_indic
     return best_rots_full, best_trans_full, best_rot_ids_full
 
 
+def _with_coarse_significance_diagnostics(result, *, support_audit: dict | None):
+    """Propagate exact coarse-support telemetry to InitialModel."""
+
+    if support_audit is None:
+        return result
+    profile_summary = dict(result.profile_summary or {})
+    profile_summary["coarse_significance_support_audit"] = dict(support_audit)
+    return result._replace(profile_summary=profile_summary)

@@ -122,7 +122,7 @@ def test_env_reads_outside_allowlist(tmp_path):
     reads = (
         'import os\n\ndef f():\n    return os.environ["A"], os.environ.get("B"), os.getenv("C"), "D" in os.environ\n'
     )
-    repo = make_repo(tmp_path, {"relax/algo.py": reads, "relax/helpers/env_flags.py": reads})
+    repo = make_repo(tmp_path, {"relax/algo.py": reads, "relax/runtime/env_flags.py": reads})
     assert keys(smell_check.check_env_reads(repo)) == {f"env-read:relax.algo:f:{v}" for v in "ABCD"}
 
 

@@ -7,8 +7,8 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.helpers.projection import compute_noise_block
-from relax.local.local_backprojection import compute_local_ctf_sums
+from relax.fine_pass.local_backprojection import compute_local_ctf_sums
+from relax.projection.projection import compute_noise_block
 
 pytestmark = pytest.mark.unit
 

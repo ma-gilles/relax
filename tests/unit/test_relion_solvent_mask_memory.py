@@ -4,12 +4,12 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
+from recovar.core import mask
 
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement import map_postprocess, numbered_reconstruction
 
 jnp = pytest.importorskip("jax.numpy")
-mask = pytest.importorskip("recovar.core.mask")
-mean_helpers = pytest.importorskip("relax.refinement.mean_helpers")
 
 
 @pytest.mark.parametrize(
@@ -32,7 +32,7 @@ def test_compiled_relion_solvent_mask_is_bitwise_exact(volume_shape, offset):
         offset=offset,
         dtype=jnp.float64,
     )
-    actual = mean_helpers._compiled_relion_solvent_mask(volume_shape, dtype=jnp.float64)(
+    actual = map_postprocess._compiled_relion_solvent_mask(volume_shape, dtype=jnp.float64)(
         radius,
         radius_p,
         offset,
@@ -40,12 +40,12 @@ def test_compiled_relion_solvent_mask_is_bitwise_exact(volume_shape, offset):
 
     assert actual.dtype == expected.dtype == jnp.float64
     assert_matches(np.asarray(actual), np.asarray(expected))
-    mean_helpers._compiled_relion_solvent_mask.cache_clear()
+    map_postprocess._compiled_relion_solvent_mask.cache_clear()
 
 
 def test_compiled_relion_solvent_mask_has_no_coordinate_stack_temporary():
     volume_shape = (80, 80, 80)
-    compiled = mean_helpers._compiled_relion_solvent_mask(volume_shape, dtype=jnp.float64).lower(
+    compiled = map_postprocess._compiled_relion_solvent_mask(volume_shape, dtype=jnp.float64).lower(
         np.float64(20.0),
         np.float64(24.0),
         jnp.zeros(3, dtype=jnp.float64),
@@ -55,7 +55,7 @@ def test_compiled_relion_solvent_mask_has_no_coordinate_stack_temporary():
     output_bytes = int(np.prod(volume_shape, dtype=np.int64)) * np.dtype(np.float64).itemsize
     assert memory.output_size_in_bytes == output_bytes
     assert memory.temp_size_in_bytes == 0
-    mean_helpers._compiled_relion_solvent_mask.cache_clear()
+    map_postprocess._compiled_relion_solvent_mask.cache_clear()
 
 
 def test_box800_relion_solvent_mask_routes_to_compiled_builder(monkeypatch, caplog):
@@ -75,20 +75,20 @@ def test_box800_relion_solvent_mask_routes_to_compiled_builder(monkeypatch, capl
     def reject_uncompiled_mask(*_args, **_kwargs):
         raise AssertionError("box-800 mask must not materialize the unfused coordinate stack")
 
-    monkeypatch.setattr(mean_helpers, "_compiled_relion_solvent_mask", fake_factory)
-    monkeypatch.setattr(mean_helpers.mask, "raised_cosine_mask", reject_uncompiled_mask)
-    caplog.set_level("INFO", logger=mean_helpers.__name__)
+    monkeypatch.setattr(map_postprocess, "_compiled_relion_solvent_mask", fake_factory)
+    monkeypatch.setattr(map_postprocess.mask, "raised_cosine_mask", reject_uncompiled_mask)
+    caplog.set_level("INFO", logger=map_postprocess.__name__)
 
-    result = mean_helpers._make_relion_solvent_mask(
+    result = map_postprocess._make_relion_solvent_mask(
         volume_shape,
         radius=np.float64(100.0),
         radius_p=np.float64(105.0),
         dtype=jnp.float64,
     )
 
-    assert mean_helpers._relion_solvent_mask_unfused_coordinate_bytes(volume_shape) == expected_bytes
-    assert mean_helpers._large_relion_solvent_mask_uses_compiled_builder(volume_shape)
-    assert not mean_helpers._large_relion_solvent_mask_uses_compiled_builder((256, 256, 256))
+    assert map_postprocess._relion_solvent_mask_unfused_coordinate_bytes(volume_shape) == expected_bytes
+    assert map_postprocess._large_relion_solvent_mask_uses_compiled_builder(volume_shape)
+    assert not map_postprocess._large_relion_solvent_mask_uses_compiled_builder((256, 256, 256))
     assert calls == [
         ("factory", volume_shape, jnp.float64),
         ("build", np.float64(100.0), np.float64(105.0), (0.0, 0.0, 0.0)),
@@ -108,20 +108,20 @@ def test_box_scale_solvent_flatten_lifecycle_is_bitwise_exact(monkeypatch, volum
         rng.standard_normal(volume_shape) + 1j * rng.standard_normal(volume_shape)
     ).astype(np.complex64)
     solvent_mask = rng.uniform(0.0, 1.0, volume_shape).astype(np.float64)
-    expected = mean_helpers.fourier_transform_utils.get_dft3(
-        mean_helpers.fourier_transform_utils.get_idft3(jnp.asarray(volume_ft))
+    expected = map_postprocess.fourier_transform_utils.get_dft3(
+        map_postprocess.fourier_transform_utils.get_idft3(jnp.asarray(volume_ft))
         * jnp.asarray(solvent_mask),
     ).reshape(-1)
     expected.block_until_ready()
     monkeypatch.setattr(
-        mean_helpers,
+        map_postprocess,
         "_large_relion_solvent_mask_uses_compiled_builder",
         lambda _shape: True,
     )
 
     volume_actual = jnp.asarray(volume_ft)
     mask_actual = jnp.asarray(solvent_mask)
-    actual = mean_helpers._apply_relion_solvent_flatten_k1(
+    actual = map_postprocess.apply_relion_solvent_flatten_k1(
         volume_actual,
         mask_actual,
         volume_shape,
@@ -174,19 +174,19 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch):
         events.append(("flatten", value.name, mask.name, volume_shape))
         return flattened
 
-    monkeypatch.setattr(mean_helpers, "_flatten_volume", fake_flatten)
+    monkeypatch.setattr(map_postprocess, "_flatten_volume", fake_flatten)
     monkeypatch.setattr(
-        mean_helpers.jax,
+        map_postprocess.jax,
         "device_get",
         lambda value: events.append(("device_get", value.name)) or flattened_host_source,
     )
     monkeypatch.setattr(
-        mean_helpers,
+        map_postprocess,
         "_large_relion_solvent_mask_uses_compiled_builder",
         lambda _shape: True,
     )
 
-    result = mean_helpers._apply_relion_solvent_flatten_k1(
+    result = map_postprocess.apply_relion_solvent_flatten_k1(
         volume_ft,
         solvent_mask,
         (800, 800, 800),
@@ -229,15 +229,15 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         masks.append(solvent_mask)
         return solvent_mask
 
-    monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", fake_reconstruct)
+    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", fake_reconstruct)
     monkeypatch.setattr(
-        mean_helpers,
+        numbered_reconstruction,
         "_finish_host_staged_reconstruction",
         lambda result, *_accumulators: result,
     )
-    monkeypatch.setattr(mean_helpers, "_make_relion_solvent_mask", fake_make_mask)
+    monkeypatch.setattr(map_postprocess, "_make_relion_solvent_mask", fake_make_mask)
     monkeypatch.setattr(
-        mean_helpers,
+        map_postprocess,
         "_large_relion_solvent_mask_uses_compiled_builder",
         lambda _shape: True,
     )
@@ -255,7 +255,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         particle_diameter_angstrom=2.0,
         first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
-    means = mean_helpers.reconstruct_numbered_k1_halfmaps(
+    means = numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         (jnp.ones(volume_size, dtype=jnp.complex64), jnp.ones(volume_size, dtype=jnp.complex64)),
         (jnp.ones(volume_size, dtype=jnp.float32), jnp.ones(volume_size, dtype=jnp.float32)),
         [
@@ -306,18 +306,18 @@ def test_small_solvent_flatten_keeps_async_default_path(monkeypatch):
     flattened = FakeBuffer("flattened")
 
     monkeypatch.setattr(
-        mean_helpers,
+        map_postprocess,
         "_flatten_volume",
         lambda value, mask, *, volume_shape: events.append(("flatten", value.name, mask.name, volume_shape))
         or flattened,
     )
     monkeypatch.setattr(
-        mean_helpers,
+        map_postprocess,
         "_large_relion_solvent_mask_uses_compiled_builder",
         lambda _shape: False,
     )
 
-    result = mean_helpers._apply_relion_solvent_flatten_k1(
+    result = map_postprocess.apply_relion_solvent_flatten_k1(
         volume_ft,
         solvent_mask,
         (8, 8, 8),
@@ -333,7 +333,7 @@ def test_compiled_mask_preserves_requested_precision(dtype):
     kwargs = dict(radius=np.float64(2.375), radius_p=np.float64(4.125),
                   offset=jnp.asarray([0.125, -0.25, 0.375], dtype=dtype))
     expected = mask.raised_cosine_mask(shape, **kwargs, dtype=dtype)
-    actual = mean_helpers._compiled_relion_solvent_mask(shape, dtype=dtype)(**kwargs)
+    actual = map_postprocess._compiled_relion_solvent_mask(shape, dtype=dtype)(**kwargs)
     assert actual.dtype == expected.dtype == dtype
     assert_matches(np.asarray(actual), np.asarray(expected))
-    mean_helpers._compiled_relion_solvent_mask.cache_clear()
+    map_postprocess._compiled_relion_solvent_mask.cache_clear()

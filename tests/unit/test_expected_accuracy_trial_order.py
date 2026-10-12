@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers import expected_accuracy as owner
+from relax.sampling import expected_accuracy as owner
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger("trial_order_test")

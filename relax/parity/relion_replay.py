@@ -18,9 +18,23 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.env_flags import parse_env_flag_or_false
-from relax.helpers.orientation_priors import (
+from relax.refinement.noise_updates import (
+    NoiseModel,
+    noise_model_from_pixels,
+)
+from relax.refinement.ports import OptimiserAccuracyReplay
+from relax.refinement.sigma_offset import SigmaOffset
+from relax.relion.initial_noise import (
+    read_relion_sigma2_noise_by_group,
+    relion_mpi_process_start_scoring_noise_pair,
+)
+from relax.runtime.env_flags import parse_env_flag_or_false
+from relax.sampling import (
+    _translation_grid_for_class_count,
+    relion_sampling_perturbation_for_iteration,
+)
+from relax.sampling.healpix import angular_sampling_deg
+from relax.sampling.orientation_priors import (
     DirectionPrior,
     class_weights_from_direction_prior,
     infer_direction_prior_healpix_order,
@@ -28,32 +42,18 @@ from relax.helpers.orientation_priors import (
     normalize_class_direction_prior_per_half,
     normalize_direction_prior_per_half,
 )
-from relax.refinement.half_inputs import HalfSet, optional_half_arrays
-from relax.refinement.noise_updates import (
-    NoiseModel,
-    noise_model_from_pixels,
-)
-from relax.refinement.ports import OptimiserAccuracyReplay
-from relax.refinement.sigma_offset import SigmaOffset
-from relax.relion import relion_metadata
-from relax.relion.initial_noise import (
-    read_relion_sigma2_noise_by_group,
-    relion_mpi_process_start_scoring_noise_pair,
-)
-from relax.relion.relion_metadata import (
+from relax.star import metadata as relion_metadata
+from relax.star.metadata import (
     read_relion_direction_prior,
     read_relion_direction_priors,
     read_relion_model_metadata,
     read_relion_optimiser_metadata,
     read_relion_sampling_metadata,
 )
-from relax.sampling import (
-    _translation_grid_for_class_count,
-    relion_sampling_perturbation_for_iteration,
-)
+from relax.steps.half_inputs import HalfSet, optional_half_arrays
 
 if TYPE_CHECKING:
-    from relax.helpers.resolution import ImageGeometry
+    from relax.reconstruction.resolution import ImageGeometry
 
 
 logger = logging.getLogger("relax.diagnostics.relion_replay")  # the name before the move to relax.parity: log rows keep it
@@ -268,130 +268,6 @@ def _select_final_replay_override(*, requested_index, diagnostic_override, repla
     return override_index, override
 
 
-def _has_numbered_replay_iteration_overrides(replay_iteration_overrides) -> bool:
-    """Return whether replay contains state beyond the cold-start boundary.
-
-    Override slot zero is also used by ``--relion_init_dir`` to seed RELION's
-    iter-0 particle/model state for an otherwise autonomous refinement.  That
-    cold-start state must not implicitly turn the final all-data iteration
-    into a numbered replay.  Genuine trajectory replay populates at least one
-    later slot; an explicit final-replay environment override remains handled
-    separately by the caller.
-    """
-    if replay_iteration_overrides is None or len(replay_iteration_overrides) <= 1:
-        return False
-    return any(override is not None for override in replay_iteration_overrides[1:])
-
-
-def _validate_k1_bpref_particle_order_scope(
-    *,
-    preserve_bpref_particle_order: bool,
-    init_relion_iteration: int,
-    perturb_replay_relion_dir,
-    replay_iteration_overrides,
-    sealed_sampling_state,
-    sealed_scoring_context,
-    allow_replayed_bpref_particle_order: bool = False,
-    allow_state_swap_fresh_bpref_particle_order: bool = False,
-    continues_own_run: bool = False,
-) -> None:
-    """Fail closed unless RELION's physical order can be preserved for this K=1 run.
-
-    Preserving RELION's order selects the production K=1 arithmetic
-    (the source-faithful powerClass normalisation), so every K=1 run that knows the
-    order uses it: a fresh run, a fresh run that replays RELION's
-    perturbations and per-iteration state (``--perturb_replay_relion_dir``),
-    and an imported-boundary replay that reconstructs the native order
-    (``allow_replayed_bpref_particle_order``). A sealed boundary fixes its own
-    arithmetic, so it is refused. A ``--continue`` of relax's own run
-    (``continues_own_run``) keeps that run's fresh order, and with it the
-    same arithmetic.
-    """
-
-    if not preserve_bpref_particle_order:
-        return
-    if sealed_sampling_state is not None or sealed_scoring_context is not None:
-        raise ValueError(
-            "RELION BPref particle-order preservation cannot alter a sealed boundary"
-        )
-    if allow_state_swap_fresh_bpref_particle_order:
-        if int(init_relion_iteration) != 0:
-            raise ValueError(
-                "state-swap RELION BPref particle-order preservation requires a fresh iteration-0 run"
-            )
-        if perturb_replay_relion_dir is None:
-            raise ValueError(
-                "state-swap RELION BPref particle-order preservation requires perturbation replay"
-            )
-        if not _has_numbered_replay_iteration_overrides(replay_iteration_overrides):
-            raise ValueError(
-                "state-swap RELION BPref particle-order preservation requires numbered replay state"
-            )
-        return
-    if int(init_relion_iteration) > 0 and continues_own_run:
-        if perturb_replay_relion_dir is not None or _has_numbered_replay_iteration_overrides(
-            replay_iteration_overrides
-        ):
-            raise ValueError("a continued run cannot also replay a RELION trajectory")
-        return
-    if int(init_relion_iteration) > 0:
-        if not allow_replayed_bpref_particle_order:
-            raise ValueError(
-                "RELION BPref particle-order preservation at an imported iteration requires "
-                "the native RELION order (allow_replayed_bpref_particle_order)"
-            )
-        if perturb_replay_relion_dir is None:
-            raise ValueError(
-                "replayed RELION BPref particle-order preservation requires perturbation replay"
-            )
-        return
-    if (
-        _has_numbered_replay_iteration_overrides(replay_iteration_overrides)
-        and perturb_replay_relion_dir is None
-    ):
-        raise ValueError(
-            "numbered replay state without perturbation replay has no RELION trajectory"
-        )
-
-
-def _validate_bpref_particle_order_scope(
-    *,
-    preserve_bpref_particle_order: bool,
-    n_classes: int,
-    init_relion_iteration: int,
-    perturb_replay_relion_dir,
-    replay_iteration_overrides,
-    sealed_sampling_state,
-    sealed_scoring_context,
-    allow_replayed_bpref_particle_order: bool = False,
-    allow_state_swap_fresh_bpref_particle_order: bool = False,
-    continues_own_run: bool = False,
-) -> None:
-    """Fail closed unless RELION's physical order can be preserved for this run.
-
-    This is the one remaining mode decision of the order-scope check, to be
-    removed when the K=1 trajectory calls
-    ``_validate_k1_bpref_particle_order_scope`` directly: Class3D refuses the
-    preservation and has no scope to check.
-    """
-
-    if int(n_classes) != 1:
-        if preserve_bpref_particle_order:
-            raise ValueError("RELION BPref particle-order preservation is K=1-only")
-        return
-    _validate_k1_bpref_particle_order_scope(
-        preserve_bpref_particle_order=preserve_bpref_particle_order,
-        init_relion_iteration=init_relion_iteration,
-        perturb_replay_relion_dir=perturb_replay_relion_dir,
-        replay_iteration_overrides=replay_iteration_overrides,
-        sealed_sampling_state=sealed_sampling_state,
-        sealed_scoring_context=sealed_scoring_context,
-        allow_replayed_bpref_particle_order=allow_replayed_bpref_particle_order,
-        allow_state_swap_fresh_bpref_particle_order=allow_state_swap_fresh_bpref_particle_order,
-        continues_own_run=continues_own_run,
-    )
-
-
 def _state_swap_reference_dir(probe, perturb_replay_relion_dir, *, iteration: int):
     """The RELION directory a state-swap probe reads its references from, or ``None`` to keep the run's own.
 
@@ -545,15 +421,9 @@ def _resolve_replay_random_perturbation(
     replay_dir: str,
     replay_prefix: str = "run",
     explicit_seed: int | None,
-    precision_mode: str,
     restart_state_iteration: int | None = None,
 ) -> tuple[float, str]:
-    """Recover RELION's live perturbation without STAR decimal truncation."""
-    if precision_mode not in {"auto", "seed_exact", "star"}:
-        raise ValueError(f"Unsupported perturb_replay_precision={precision_mode!r}")
-    if precision_mode == "star":
-        return float(star_value), "star"
-
+    """Recover RELION's live perturbation without STAR decimal truncation (the STAR value without a seed)."""
     seed = _replay_perturbation_seed(
         replay_dir,
         relion_iteration,
@@ -561,11 +431,6 @@ def _resolve_replay_random_perturbation(
         replay_prefix=replay_prefix,
     )
     if seed is None:
-        if precision_mode == "seed_exact":
-            raise ValueError(
-                "perturb_replay_precision='seed_exact' requires perturb_seed or "
-                "_rlnRandomSeed in a replay optimiser STAR"
-            )
         return float(star_value), "star-fallback"
 
     exact = relion_sampling_perturbation_for_iteration(
@@ -1233,7 +1098,7 @@ def _read_replay_sampling_star(
     )
     _replay_meta = read_relion_sampling_metadata(_star)
     _relion_hp = int(_replay_meta["healpix_order"])
-    _relion_psi_step_deg = float(_replay_meta.get("psi_step", healpix_angular_step(_relion_hp)))
+    _relion_psi_step_deg = float(_replay_meta.get("psi_step", angular_sampling_deg(_relion_hp)))
     # RELION stores offset_{range,step} in Angstroms; convert to px.
     _relion_offset_range = float(_replay_meta["offset_range"]) / pixel_size_angstrom
     _relion_offset_step = float(_replay_meta["offset_step"]) / pixel_size_angstrom
@@ -2077,7 +1942,7 @@ def _build_replay_iteration_overrides(
     def _read_model_direction_prior(model_path, model):
         if not _model_has_class_direction_priors(model):
             return None
-        from relax.relion.relion_metadata import (
+        from relax.star.metadata import (
             read_relion_direction_prior,
             read_relion_direction_priors,
         )
@@ -2098,7 +1963,7 @@ def _build_replay_iteration_overrides(
         """One half's pixel noise: flat for one optics group, ``[G, P]`` rows for G > 1.
 
         RELION keeps ``sigma2_noise`` per optics group (subtomograms: one group
-        per tilt); ``[G, P]`` is the noise model's per-group layout (helpers/optics_noise.py).
+        per tilt); ``[G, P]`` is the noise model's per-group layout (relion/optics_groups.py).
         """
         radial_by_group = read_relion_sigma2_noise_by_group(
             model,

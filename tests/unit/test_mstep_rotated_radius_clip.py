@@ -14,7 +14,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
-from relax.helpers import adjoint
+from relax.projection import adjoint
+from relax.relion.optics_aberrations import magnification_is_anisotropic
 
 pytestmark = pytest.mark.unit
 
@@ -65,8 +66,8 @@ def _relion_kept(relion_matrices, x, y, r_max):
     ],
 )
 def test_anisotropy_is_decided_from_the_magnification_matrix(matrix, anisotropic):
-    assert adjoint.magnification_is_anisotropic([matrix]) is anisotropic
-    assert adjoint.magnification_is_anisotropic([np.eye(2), matrix]) is anisotropic
+    assert magnification_is_anisotropic([matrix]) is anisotropic
+    assert magnification_is_anisotropic([np.eye(2), matrix]) is anisotropic
 
 
 def test_anisotropic_clip_keeps_the_rounded_image_support_and_the_reference_radius():
@@ -191,7 +192,7 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
     import jax.numpy as jnp
     from relax.relion_bind._relion_bind_core import get_backprojector_data
 
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     box, current_size, padding = 64, 36, 2
     r_max = current_size // 2
@@ -213,7 +214,7 @@ def test_gpu_adjoint_weight_matches_relion_backprojector(mag, scale):
         current_size, None if scale == 1.0 else r_max * scale, padding, anisotropic_magnification=mag is not None
     )
     volume_shape = relion_backprojector_volume_shape((box, box, box), padding, current_size=current_size)
-    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape
+    from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape
 
     def adjoint_weight(max_r):
         volume = jnp.zeros(int(np.prod(half_volume_accumulator_shape(volume_shape))), jnp.float32)
@@ -262,7 +263,7 @@ def test_gpu_runtime_radius_reads_back_the_reference_radius(scale, anisotropic):
 
     import jax.numpy as jnp
 
-    from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
 
     box, current_size, capacity_size, padding = 64, 36, 48, 2
     r_max = current_size // 2

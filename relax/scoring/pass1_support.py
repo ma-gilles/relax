@@ -12,6 +12,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.scoring.coarse_publication import coarse_support_posterior
+from relax.scoring.pass1_priors import RotationBlocks
+from relax.scoring.pass1_request import Pass1Request
+from relax.scoring.pass1_results import PassShape
 from relax.scoring.pass1_scores import BatchScores
 
 
@@ -86,6 +89,37 @@ def exact_order_rotation_prior(class_log_priors, rotation_log_prior_padded, n_ro
     ) + jnp.asarray(class_log_priors[0], dtype=jnp.float32)
 
 
+def plan_support(
+    request: Pass1Request,
+    shape: PassShape,
+    rotation_blocks: RotationBlocks,
+    class_log_priors,
+    *,
+    exact_weight_order: bool,
+) -> SupportPlan:
+    """Plan the support stage of a pass over ``shape``, with the pre-prior weight order when ``exact_weight_order``.
+
+    ``class_log_priors`` is ``[K]``; the exact weight order adds the rotation prior of ``rotation_blocks`` and the
+    class prior of class 0 to RELION's pre-prior scores (:func:`exact_order_rotation_prior`).
+    """
+
+    return SupportPlan(
+        n_classes=shape.n_classes,
+        n_rot=shape.n_rot,
+        n_trans=int(shape.n_trans),
+        adaptive_fraction=request.adaptive_fraction,
+        max_significants=request.max_significants,
+        tie_score_ulps=int(request.relion_f32_coarse_tie_ulps),
+        return_relion_f32_normalization=request.return_relion_f32_normalization,
+        exact_weight_order=exact_weight_order,
+        exact_rotation_prior=(
+            exact_order_rotation_prior(class_log_priors, rotation_blocks.rotation_log_prior_padded, shape.n_rot)
+            if exact_weight_order
+            else None
+        ),
+    )
+
+
 def float32_support(plan: SupportPlan, scores: BatchScores, translation_log_prior) -> SupportResult:
     """RELION's float32 coarse posterior of ``scores`` and what the batch publishes from it, as one program.
 
@@ -131,12 +165,12 @@ def generic_support(plan: SupportPlan, scores: BatchScores, global_log_z, actual
     ``global_log_z`` is the batch's log-sum-exp over every pose. ``scores.support_values`` are the with-prior scores.
     """
 
-    from relax.helpers.oversampling import find_significant_rotations as _find_sig
+    from relax.sampling.oversampling import find_significant_rotations as _find_sig
 
     weights = jnp.exp(scores.support_values - global_log_z[:, None])
     normalization_sum_weight = normalization_max_posterior = None
     if plan.return_relion_f32_normalization:
-        from relax.sparse_pass2.sparse_pass2_posterior import relion_f32_fine_probabilities
+        from relax.fine_pass.posterior import relion_f32_fine_probabilities
 
         # Retain the existing coarse selector and all of its outputs.
         # The symbolic fine pass needs the numeric maximum-shifted

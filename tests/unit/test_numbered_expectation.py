@@ -11,21 +11,20 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
 import relax.refinement.noise_updates as noise_updates
-from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
-from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.helpers.orientation_priors import HalfDirectionLogPriors
-from relax.helpers.resolution import ImageGeometry
+from relax.classification.probes import NoProbe as KClassNoProbe
+from relax.diagnostics import observers
+from relax.numerics.precision import DensePrecisionPolicy
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import expectation
 from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
-from relax.refinement.half_inputs import HalfSet
-from relax.refinement.half_scoring import (
-    HalfScoringData,
-    LocalDiagnosticPolicy,
-)
+from relax.refinement.local_half import LocalDiagnosticPolicy
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
-from relax.refinement.ports import NoProbe
-from relax.refinement.tomo_half import TomoSampling
+from relax.refinement.ports import NoProbe, ObserverExpectationProbe
 from relax.sampling import TrialGrid
+from relax.sampling.orientation_priors import HalfDirectionLogPriors
+from relax.steps.half_inputs import HalfScoringData, HalfSet
+from relax.steps.score_outputs import HalfScoreResult, PerHalfOutputs
+from relax.steps.tomo_half import TomoSampling
 
 pytestmark = pytest.mark.unit
 
@@ -84,7 +83,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
                                                 probe=NoProbe()) if local else None,
         replay_prior_translations=None, initial_class_assignments=None, single_class_iteration=False,
         scoring_dtype=np.float32, relion_translation_angle_scale=1., relion_projection_scale=1.,
-        iteration=0, numbered_relion_iteration=1, probe=NoProbe(),
+        iteration=0, numbered_relion_iteration=1, probe=NoProbe(), k_class_probe=KClassNoProbe(),
     )
     phase = expectation.NumberedExpectation(
         grid=grid, sampling=kwargs.pop('sampling'), variant=kwargs.pop('variant'),
@@ -114,7 +113,7 @@ def stub_planning(monkeypatch):
         fine_rotation_block_size=2, coarse_image_batch_size=1, coarse_rotation_block_size=1,
         class_overrides=None,
     ))
-    monkeypatch.setattr(expectation.optics_shapes, 'prepare_optics', lambda *args, **kw: object())
+    monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', lambda *args, **kw: object())
 
 
 @pytest.mark.parametrize('local', [False, True])
@@ -142,7 +141,7 @@ def test_numbered_sizing_and_optics_consume_the_sampling_and_half_operands(
         return object()
 
     monkeypatch.setattr(expectation, 'prepare_half_batches', plan)
-    monkeypatch.setattr(expectation.optics_shapes, 'prepare_optics', optics)
+    monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', optics)
     monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', lambda *args: engine_result())
     monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', lambda **inputs: engine_result())
     score_flat(half, phase, **kwargs)
@@ -282,14 +281,15 @@ def test_recording_uses_published_half_identity_and_preserves_capture_order(
         events.append('capture')
 
     monkeypatch.setattr(expectation, '_record_score_profile', profile)
-    monkeypatch.setattr(expectation.bpref_diagnostics, 'flush_selected_bpref_device_panel', panel)
-    monkeypatch.setattr(expectation._parity_dump, 'collect_e_step', capture)
-    monkeypatch.setattr(expectation._parity_dump, 'is_active', lambda: True)
-    expectation.record_numbered_half(
-        result, particle_half, outputs, significance,
-        profile_history=profile_history, iteration=4, image_window_size=None,
-        healpix_order=2, k_class_enabled=n_classes > 1,
-    )
+    monkeypatch.setattr(observers.bpref_diagnostics, 'flush_selected_bpref_device_panel', panel)
+    monkeypatch.setattr(observers.parity_dump, 'collect_e_step', capture)
+    monkeypatch.setattr(observers.parity_dump, 'is_active', lambda: True)
+    # The captures are the observers' (in the order the environment builds them), told through the probe.
+    captures_observer = observers.ObserverGroup([observers.BpRefDiagnosticsObserver(), observers.ParityDumpObserver()])
+    expectation.record_numbered_half(result, particle_half, expectation.NumberedHalfRecording(
+        outputs, significance, profile_history=profile_history, iteration=4, image_window_size=None,
+        healpix_order=2, k_class_enabled=n_classes > 1, probe=ObserverExpectationProbe(captures_observer),
+    ))
     assert events == (['capture'] if n_units == 0 else ['profile', 'panel', 'capture'])
     assert len(captures) == 1
     payload = captures[0]
@@ -402,7 +402,7 @@ def test_tomography_seeding_uses_original_unit_rows_without_spa_optics(monkeypat
         raise AssertionError('tomography must not prepare SPA image priors or optics')
 
     monkeypatch.setattr(expectation, '_score_tomo_half_in_loop', score)
-    monkeypatch.setattr(expectation.optics_shapes, 'prepare_optics', reject)
+    monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', reject)
     monkeypatch.setattr(expectation, 'relion_half_translation_prior_inputs', reject)
     score_flat(half, phase, **kwargs)
     assert_matches(captured['unit_seed_classes'], [0, 2])
@@ -444,14 +444,15 @@ def test_recorded_half_hands_the_parity_dump_its_input_rows_only_when_it_dumps(m
         half = replace(half, particles=replace(half.particles, dataset=SimpleNamespace(
             n_units=2, n_images=2, image_shape=(4, 4), volume_shape=(4, 4, 4))))
     collected = {}
-    monkeypatch.setattr(expectation._parity_dump, 'is_active', lambda: dump_active)
-    monkeypatch.setattr(expectation._parity_dump, 'collect_e_step', lambda **kw: collected.update(kw))
-    monkeypatch.setattr(expectation.bpref_diagnostics, 'flush_selected_bpref_device_panel', lambda **kw: None)
+    monkeypatch.setattr(observers.parity_dump, 'is_active', lambda: dump_active)
+    monkeypatch.setattr(observers.parity_dump, 'collect_e_step', lambda **kw: collected.update(kw))
+    probe = ObserverExpectationProbe(observers.ParityDumpObserver())
     per_half = PerHalfOutputs()
-    expectation.record_numbered_half(
-        engine_result(), half.particles, per_half, expectation.SignificanceStatistics(), profile_history=[],
-        iteration=0, image_window_size=4, healpix_order=0, k_class_enabled=False,
+    recording = expectation.NumberedHalfRecording(
+        per_half, expectation.SignificanceStatistics(), profile_history=[], iteration=0, image_window_size=4,
+        healpix_order=0, k_class_enabled=False, probe=probe,
     )
+    expectation.record_numbered_half(engine_result(), half.particles, recording)
     if dump_active and with_layout:
         np.testing.assert_array_equal(collected['original_image_indices'], [2, 3])
         assert collected['original_image_indices'].dtype == np.int64
@@ -464,7 +465,4 @@ def test_recorded_half_hands_the_parity_dump_its_input_rows_only_when_it_dumps(m
     if dump_active and with_layout:
         half.particles.dataset._index_layout = SimpleNamespace(original_image_indices_for_local=broken)
         with pytest.raises(IndexError, match='layout out of range'):
-            expectation.record_numbered_half(
-                engine_result(), half.particles, per_half, expectation.SignificanceStatistics(), profile_history=[],
-                iteration=0, image_window_size=4, healpix_order=0, k_class_enabled=False,
-            )
+            expectation.record_numbered_half(engine_result(), half.particles, recording)

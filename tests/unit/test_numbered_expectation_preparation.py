@@ -12,7 +12,7 @@ from helpers.run_options import stand_in
 from test_numbered_expectation import numbered_inputs
 
 from relax.refinement import expectation
-from relax.refinement.iteration_planning import ExpectationWindows
+from relax.refinement.image_size_plans import ExpectationWindows
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
 
 pytestmark = pytest.mark.unit
@@ -116,11 +116,11 @@ def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadat
     pass reads the coarse plan's angular step."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import iteration_planning, local_sampling
+    from relax.refinement import image_size_plans, local_sampling
 
     trace = CallTrace(monkeypatch)
     trace.wrap(local_sampling, 'iteration_trial_grid', 'grid')
-    trace.wrap(iteration_planning, 'plan_adaptive_image_size', 'coarse_plan')
+    trace.wrap(image_size_plans, 'plan_adaptive_image_size', 'coarse_plan')
     trace.wrap(expectation, 'DenseVariantPolicy', 'variant')
     trace.wrap(expectation, 'prepare_numbered_expectation', 'phase')
     run_tiny_refinement(

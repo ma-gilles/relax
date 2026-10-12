@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from relax.parity import relion_replay
-from relax.relion import input_poses
+from relax.star import input_poses
 
 
 @dataclass(frozen=True)
@@ -161,7 +161,7 @@ def final_only_replay(
             "diagnostic final-only substitution requires unnumbered run_optimiser.star "
             f"and run_sampling.star in {final_replay_dir}"
         )
-    from relax.relion.relion_metadata import read_relion_optimiser_metadata
+    from relax.star.metadata import read_relion_optimiser_metadata
 
     final_optimiser_metadata = read_relion_optimiser_metadata(final_optimiser_path)
     if not bool(final_optimiser_metadata.get("has_converged", False)):

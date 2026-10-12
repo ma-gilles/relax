@@ -18,8 +18,9 @@ def _class_log_priors(n_classes: int, class_log_priors) -> np.ndarray:
     priors = np.asarray(class_log_priors, dtype=np.float64)
     if priors.shape != (n_classes,):
         raise ValueError(f"class_log_priors must have shape ({n_classes},), got {priors.shape}")
-    if not np.all(np.isfinite(priors)):
-        raise ValueError("class_log_priors must be finite")
+    # A class at -inf is RELION's pdf_class == 0: an emptied class, left out of every expectation.
+    if np.any(np.isnan(priors) | np.isposinf(priors)) or not np.any(np.isfinite(priors)):
+        raise ValueError("class_log_priors must be finite, or -inf for an emptied class beside a live one")
     return priors
 
 
@@ -104,7 +105,7 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
 
     ``first_class_supports[u]`` is unit ``u``'s coarse support scored against the first class
     (:func:`seed_iteration_first_class`) and ``unit_seed_classes[u]`` its random class (0-based,
-    ``relax.relion.input_particle_table.relion_class3d_seed_classes``); the other classes get no candidates, as
+    ``relax.star.input_particle_table.relion_class3d_seed_classes``); the other classes get no candidates, as
     RELION scores none of them. A first-class support compacted on the device keeps its CSR per class, so the
     resident pass builds the candidate tables block by block (``resident_pass2._candidate_table_blocks``) instead of
     whole on the host.
@@ -113,17 +114,20 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
     seeds = np.asarray(unit_seed_classes, dtype=np.int64).reshape(-1)
     if seeds.size != len(first_class_supports) or np.any((seeds < 0) | (seeds >= int(n_classes))):
         raise ValueError("a seed iteration gives every unit one class in range")
+    csr = getattr(first_class_supports, "csr", None)
+    if csr is not None:
+        from relax.fine_pass.resident_significance import (
+            DeviceCompactedSignificantSamples,
+            csr_restricted_to_images,
+        )
+
+        # The restricted CSR's rows are the lists below: a dropped image decodes to an empty support.
+        return [
+            DeviceCompactedSignificantSamples(csr=csr_restricted_to_images(csr, seeds == k))
+            for k in range(int(n_classes))
+        ]
     empty = np.zeros(0, dtype=np.int32)
-    by_class = [
+    return [
         [support if seeds[u] == k else empty for u, support in enumerate(first_class_supports)]
         for k in range(int(n_classes))
-    ]
-    csr = getattr(first_class_supports, "csr", None)
-    if csr is None:
-        return by_class
-    from relax.sparse_pass2.resident_significance import DeviceCompactedSignificantSamples, csr_restricted_to_images
-
-    return [
-        DeviceCompactedSignificantSamples(rows, csr=csr_restricted_to_images(csr, seeds == k))
-        for k, rows in enumerate(by_class)
     ]

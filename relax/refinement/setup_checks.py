@@ -7,21 +7,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.helpers import optics_scale
-from relax.helpers.expected_accuracy import (
-    RELION_DEFAULT_SIGMA2_FUDGE,
-    Half1AccuracyInputs,
-    prepare_relion_half1_trial_order,
-)
-from relax.helpers.relion_random import GlibcRand, init_random_generator
-from relax.helpers.resolution import ImageGeometry
-from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
+from relax.classification.probes import KClassProbe
+from relax.numerics.relion_random import GlibcRand, init_random_generator
+from relax.reconstruction.regularization import RELION_MINRES_MAP
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.expectation_batches import BatchPlanner
-from relax.refinement.half_inputs import configure_half_image_preprocessing
-from relax.refinement.iteration_planning import RunOptics
+from relax.refinement.image_size_plans import RunOptics
 from relax.refinement.iteration_snapshot import SnapshotCapture
-from relax.refinement.mean_helpers import ReconstructionSettings
-from relax.refinement.optics_shapes import MultiShapeHalf
+from relax.refinement.numbered_reconstruction import ReconstructionSettings
 from relax.refinement.ports import (
     ExpectationProbe,
     MaximizationProbe,
@@ -34,13 +27,19 @@ from relax.refinement.refinement_options import (
     RefinementOptions,
     RelionConsistencyOptions,
     require_consistency_route,
+    require_final_pass_route,
 )
-from relax.refinement.tomo_half import TomoHalf
+from relax.relion import optics_groups
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
     REFERENCE_FILTER_EDGE_SHELLS,
 )
+from relax.sampling.expected_accuracy import prepare_relion_half1_trial_order
+from relax.steps.expected_accuracy import RELION_DEFAULT_SIGMA2_FUDGE, Half1AccuracyInputs
+from relax.steps.half_inputs import configure_half_image_preprocessing
+from relax.steps.optics_shapes import MultiShapeHalf
+from relax.steps.tomo_half import TomoHalf
 
 # The set-up logs as part of the controller's run.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -75,7 +74,7 @@ def checked_optics_group_ids(optics_group_ids_per_half, noise_variance_per_half,
     """Each half's per-image optics-group rows, or ``[None, None]`` for one group.
 
     A half's noise is a flat vector (one optics group) or ``[G, P]`` rows
-    (:mod:`relax.helpers.optics_noise`); with rows every image needs its group.
+    (:mod:`relax.relion.optics_groups`); with rows every image needs its group.
     """
 
     n_groups = 1 if noise_variance_per_half[0].ndim == 1 else int(noise_variance_per_half[0].shape[0])
@@ -100,7 +99,7 @@ def checked_optics_group_ids(optics_group_ids_per_half, noise_variance_per_half,
 def _internal_solvent_mask(path, box_size, pixel_size_angstrom):
     """RELION --solvent_mask on the model grid in relax's internal (z, y, x) frame, or None.
 
-    Map files hold RELION's axis order, the transpose of the internal frame (relax.helpers.map_io);
+    Map files hold RELION's axis order, the transpose of the internal frame (relax.io.map_io);
     a mask has no sign to undo.
     """
     if path is None:
@@ -182,7 +181,7 @@ def projection_scale_for_run(optics: RunOptics, *, subtomograms: bool) -> float:
     if optics.multi_shape_halves or subtomograms or optics.optics_pixel_sizes is None:
         return 1.0
     pixel, box = optics.first_optics_group_geometry()
-    scale = optics_scale.scale_difference(box, pixel, optics.image_geometry.box_size, optics.model_pixel_size)
+    scale = optics_groups.scale_difference(box, pixel, optics.image_geometry.box_size, optics.model_pixel_size)
     if scale != 1.0:
         logger.info("RELION single-shape scale difference: s=%.17g (model pixel %.12g)", scale, optics.model_pixel_size)
     return scale
@@ -275,6 +274,130 @@ def expected_accuracy_inputs_for_run(
     )
 
 
+def _has_numbered_replay_iteration_overrides(replay_iteration_overrides) -> bool:
+    """Return whether replay contains state beyond the cold-start boundary.
+
+    Override slot zero is also used by ``--relion_init_dir`` to seed RELION's
+    iter-0 particle/model state for an otherwise autonomous refinement.  That
+    cold-start state must not implicitly turn the final all-data iteration
+    into a numbered replay.  Genuine trajectory replay populates at least one
+    later slot; an explicit final-replay environment override remains handled
+    separately by the caller.
+    """
+    if replay_iteration_overrides is None or len(replay_iteration_overrides) <= 1:
+        return False
+    return any(override is not None for override in replay_iteration_overrides[1:])
+
+
+def _validate_k1_bpref_particle_order_scope(
+    *,
+    preserve_bpref_particle_order: bool,
+    init_relion_iteration: int,
+    perturb_replay_relion_dir,
+    replay_iteration_overrides,
+    sealed_sampling_state,
+    sealed_scoring_context,
+    allow_replayed_bpref_particle_order: bool = False,
+    allow_state_swap_fresh_bpref_particle_order: bool = False,
+    continues_own_run: bool = False,
+) -> None:
+    """Fail closed unless RELION's physical order can be preserved for this K=1 run.
+
+    Preserving RELION's order selects the production K=1 arithmetic
+    (the source-faithful powerClass normalisation), so every K=1 run that knows the
+    order uses it: a fresh run, a fresh run that replays RELION's
+    perturbations and per-iteration state (``--perturb_replay_relion_dir``),
+    and an imported-boundary replay that reconstructs the native order
+    (``allow_replayed_bpref_particle_order``). A sealed boundary fixes its own
+    arithmetic, so it is refused. A ``--continue`` of relax's own run
+    (``continues_own_run``) keeps that run's fresh order, and with it the
+    same arithmetic.
+    """
+
+    if not preserve_bpref_particle_order:
+        return
+    if sealed_sampling_state is not None or sealed_scoring_context is not None:
+        raise ValueError(
+            "RELION BPref particle-order preservation cannot alter a sealed boundary"
+        )
+    if allow_state_swap_fresh_bpref_particle_order:
+        if int(init_relion_iteration) != 0:
+            raise ValueError(
+                "state-swap RELION BPref particle-order preservation requires a fresh iteration-0 run"
+            )
+        if perturb_replay_relion_dir is None:
+            raise ValueError(
+                "state-swap RELION BPref particle-order preservation requires perturbation replay"
+            )
+        if not _has_numbered_replay_iteration_overrides(replay_iteration_overrides):
+            raise ValueError(
+                "state-swap RELION BPref particle-order preservation requires numbered replay state"
+            )
+        return
+    if int(init_relion_iteration) > 0 and continues_own_run:
+        if perturb_replay_relion_dir is not None or _has_numbered_replay_iteration_overrides(
+            replay_iteration_overrides
+        ):
+            raise ValueError("a continued run cannot also replay a RELION trajectory")
+        return
+    if int(init_relion_iteration) > 0:
+        if not allow_replayed_bpref_particle_order:
+            raise ValueError(
+                "RELION BPref particle-order preservation at an imported iteration requires "
+                "the native RELION order (allow_replayed_bpref_particle_order)"
+            )
+        if perturb_replay_relion_dir is None:
+            raise ValueError(
+                "replayed RELION BPref particle-order preservation requires perturbation replay"
+            )
+        return
+    if (
+        _has_numbered_replay_iteration_overrides(replay_iteration_overrides)
+        and perturb_replay_relion_dir is None
+    ):
+        raise ValueError(
+            "numbered replay state without perturbation replay has no RELION trajectory"
+        )
+
+
+def _validate_bpref_particle_order_scope(
+    *,
+    preserve_bpref_particle_order: bool,
+    n_classes: int,
+    init_relion_iteration: int,
+    perturb_replay_relion_dir,
+    replay_iteration_overrides,
+    sealed_sampling_state,
+    sealed_scoring_context,
+    allow_replayed_bpref_particle_order: bool = False,
+    allow_state_swap_fresh_bpref_particle_order: bool = False,
+    continues_own_run: bool = False,
+) -> None:
+    """Fail closed unless RELION's physical order can be preserved for this run.
+
+    This is the one remaining mode decision of the order-scope check, to be
+    removed when the K=1 trajectory calls
+    ``_validate_k1_bpref_particle_order_scope`` directly: Class3D refuses the
+    preservation and has no scope to check.
+    """
+
+    if int(n_classes) != 1:
+        if preserve_bpref_particle_order:
+            raise ValueError("RELION BPref particle-order preservation is K=1-only")
+        return
+    _validate_k1_bpref_particle_order_scope(
+        preserve_bpref_particle_order=preserve_bpref_particle_order,
+        init_relion_iteration=init_relion_iteration,
+        perturb_replay_relion_dir=perturb_replay_relion_dir,
+        replay_iteration_overrides=replay_iteration_overrides,
+        sealed_sampling_state=sealed_sampling_state,
+        sealed_scoring_context=sealed_scoring_context,
+        allow_replayed_bpref_particle_order=allow_replayed_bpref_particle_order,
+        allow_state_swap_fresh_bpref_particle_order=allow_state_swap_fresh_bpref_particle_order,
+        continues_own_run=continues_own_run,
+    )
+
+
 @dataclass(frozen=True, kw_only=True)
 class RunContext:
     """What a refinement run resolves once from its datasets and options before the first iteration, and only
@@ -312,6 +435,8 @@ class RunContext:
     # The run observer's mid-step hooks, the only part of it a step sees (relax.refinement.ports).
     expectation_probe: ExpectationProbe
     maximization_probe: MaximizationProbe
+    # The K-class E-step's diagnostics (relax.classification.probes), the command's: they observe its passes.
+    k_class_probe: KClassProbe
 
     @property
     def offset_dims(self) -> int:
@@ -325,6 +450,7 @@ def build_run_context(
     *,
     replays_relion_state: bool,
     observer: RunObserver,
+    k_class_probe: KClassProbe,
 ) -> RunContext:
     """Resolve the run's context from its two half datasets and validated ``options``, refusing unsupported
     routes, and configure the datasets' image preprocessing (Fourier backend and masks) in place: the datasets'
@@ -332,7 +458,7 @@ def build_run_context(
 
     ``replays_relion_state`` whether the input source replays a RELION run's state (the consistency options are
     refused then); ``observer`` is the run's observer: the context keeps its mid-step hooks as probes and
-    whether it asks for the local searches' profiles.
+    whether it asks for the local searches' profiles. ``k_class_probe`` is the K-class E-step's diagnostics.
     """
     volume_shape = experiment_datasets[0].volume_shape
     # Keep the input scalar type for host arithmetic; geometry validates its value.
@@ -347,6 +473,7 @@ def build_run_context(
         options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves,
         replays_relion_state=replays_relion_state,
     )
+    require_final_pass_route(options)
     relion_translation_angle_scale = translation_angle_scale_for_run(optics, subtomograms=tomo_halves)
     relion_projection_scale = projection_scale_for_run(optics, subtomograms=tomo_halves)
     reconstruction_settings = reconstruction_settings_for_run(options, image_geometry, volume_shape, consistency)
@@ -388,4 +515,5 @@ def build_run_context(
         perturb_rng=None if options.parity.perturb_seed is not None else np.random.default_rng(),
         expectation_probe=ObserverExpectationProbe(observer),
         maximization_probe=ObserverMaximizationProbe(observer),
+        k_class_probe=k_class_probe,
     )

@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.sparse_pass2 import firstiter_bpref as sparse
 from relax.diagnostics import bpref_diagnostics
+from relax.refinement import firstiter_bpref as sparse
 
 
 def test_deferred_firstiter_bpref_gate_uses_texture_peak_and_force_override(
@@ -100,8 +100,6 @@ def test_scoped_bpref_configured_target_is_not_an_active_diagnostic():
 
 def test_firstiter_fused_bpref_defaults_only_inside_complete_fresh_k1_guard(monkeypatch):
     monkeypatch.delenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", raising=False)
-    monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 1)
-    monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 2)
     kwargs = dict(
         fresh_k1_guard=True,
         winner_take_all=True,
@@ -109,17 +107,17 @@ def test_firstiter_fused_bpref_defaults_only_inside_complete_fresh_k1_guard(monk
         relion_exact_bpref_operands=True,
         use_relion_x_half_mstep=True,
         score_only=False,
+        first_numbered_iteration=True,
     )
 
     assert sparse._relion_firstiter_fused_bpref_enabled(**kwargs)
     assert not sparse._relion_firstiter_fused_bpref_enabled(
         **{**kwargs, "winner_take_all": False}
     )
+    assert not sparse._relion_firstiter_fused_bpref_enabled(**{**kwargs, "first_numbered_iteration": False})
 
 
 def test_firstiter_fused_bpref_override_can_disable_but_not_expand_scope(monkeypatch):
-    monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "iteration", 1)
-    monkeypatch.setitem(bpref_diagnostics._bpref_contribution_context, "half", 1)
     kwargs = dict(
         fresh_k1_guard=True,
         winner_take_all=True,
@@ -127,6 +125,7 @@ def test_firstiter_fused_bpref_override_can_disable_but_not_expand_scope(monkeyp
         relion_exact_bpref_operands=True,
         use_relion_x_half_mstep=True,
         score_only=False,
+        first_numbered_iteration=True,
     )
     monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
     assert not sparse._relion_firstiter_fused_bpref_enabled(**kwargs)
@@ -146,7 +145,7 @@ def test_firstiter_fused_bpref_override_can_disable_but_not_expand_scope(monkeyp
 def test_deferred_firstiter_preserves_requested_capture_route(monkeypatch, name):
     monkeypatch.setenv(name, '/requested/capture')
     active = bpref_diagnostics._relion_firstiter_bpref_diagnostics_active(
-        bpref_device_signature_active=False,
+        bpref_device_signature_active=False, iteration=1, half=1,
     )
     assert active
     common = dict(

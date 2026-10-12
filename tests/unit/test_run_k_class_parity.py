@@ -9,7 +9,7 @@ from helpers.float_compare import assert_matches
 
 
 def test_k_class_replay_batch_plan_applies_estimator_and_kclass_caps(monkeypatch):
-    from relax.helpers import batch_planning
+    from relax.runtime import batch_planning
     from scripts.run_k_class_parity import _safe_k_class_replay_batch_plan
 
     captured = {}
@@ -298,7 +298,7 @@ def test_k_class_replay_firstiter_lowpass_follows_relion_ini_high():
 
 
 def test_k_class_replay_batch_plan_preserves_smaller_estimator_plan(monkeypatch):
-    from relax.helpers import batch_planning
+    from relax.runtime import batch_planning
     from scripts.run_k_class_parity import _safe_k_class_replay_batch_plan
 
     monkeypatch.setattr(
@@ -481,6 +481,7 @@ def test_positive_one_based_class_parser():
 
 def test_k_class_replay_reconstructs_from_recorded_mstep_accumulator_shape():
     import inspect
+
     import scripts.run_k_class_parity as run_k_class_parity
 
     source = inspect.getsource(run_k_class_parity.main)
@@ -493,8 +494,9 @@ def test_k_class_replay_reconstructs_from_recorded_mstep_accumulator_shape():
 
 def test_cropped_x_half_accumulator_reconstructs_when_shape_is_explicit():
     from recovar.core import fourier_transform_utils
-    from relax.refinement.mean_helpers import _reconstruct_volume_eager
-    from relax.refinement.refinement_options import ReconstructionPrograms
+
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
 
     volume_shape = (8, 8, 8)
     accumulator_shape = (5, 5, 5)

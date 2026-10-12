@@ -241,6 +241,16 @@
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.092, 1 component(s), captures 0.940 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
+  "etoptics_b2_8c9c_b40_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/masks/etoptics_b2_8c9c_b40_c1/MASK.json",
+   "mask_sha256": "7cf1f01e15968f69ee62c9cca2e74738cd45daf869b2d5e58fe360da71c37c80",
+   "symmetry": "C1",
+   "box": 64,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth of the etoptics bin-2 (VDAM) family, box 64 at 4.25 A",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.093, 1 component(s), captures 0.878 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
   "fixed34_k101_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-01/masks/fixed34_k101_c1/MASK.json",
    "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",

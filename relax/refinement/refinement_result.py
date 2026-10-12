@@ -21,9 +21,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
-    from relax.helpers.convergence import RefinementState
-    from relax.helpers.iteration_history import RefinementHistory
-    from relax.relion.relion_worker_scale import FollowerScaleOutputs
+    from relax.refinement.follower_scale import FollowerScaleOutputs
+    from relax.refinement.iteration_history import RefinementHistory
+    from relax.refinement.refinement_state import RefinementState
 
 
 @dataclass(frozen=True, kw_only=True)

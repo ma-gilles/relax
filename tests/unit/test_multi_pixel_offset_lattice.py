@@ -12,8 +12,9 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement import optics_shapes
-from relax.refinement.half_inputs import HalfSet, prepare_particle_pose_update
+from relax.refinement.particle_poses import prepare_particle_pose_update
+from relax.steps import optics_shapes, shape_class_scoring
+from relax.steps.half_inputs import HalfSet
 
 pytestmark = pytest.mark.unit
 
@@ -39,7 +40,7 @@ def test_trial_translations_are_one_angstrom_grid_for_every_pixel():
     half = _half([0, 1])
     grid_ref = np.array([[0.0, 0.0], [0.5, -1.0], [-1.5, 2.0]])  # model pixels, --offset_step 1 at oversampling 1
     for shape_class in half.classes:
-        out = optics_shapes.class_kwargs(
+        out = shape_class_scoring.class_kwargs(
             {"current_translations": grid_ref, "translation_step": 1.0}, shape_class, half.n_units
         )
         assert_matches(out["current_translations"] * shape_class.pixel_size, grid_ref * MODEL_PIXEL)
@@ -87,9 +88,9 @@ def test_image_translation_factors():
 def test_subtomogram_offsets_keep_their_rounding():
     # A subtomogram half is one grid (a TomoHalf, never a MultiShapeHalf): no factors, and its 3D offsets keep the
     # whole-pixel rounding of RELION's GPU path (tomo_particles.relion_gpu_old_offsets), unchanged by relax#52.
-    from relax.refinement.tomo_half import TomoHalf
-    from relax.refinement.tomo_particles import relion_gpu_old_offsets
-    from relax.relion.relion_metadata import relion_metadata_translations
+    from relax.sampling.tomo_particles import relion_gpu_old_offsets
+    from relax.star.metadata import relion_metadata_translations
+    from relax.steps.tomo_half import TomoHalf
 
     assert not issubclass(TomoHalf, optics_shapes.MultiShapeHalf)
     old = np.array([[1.5, -2.49, 0.51], [-0.5, 3.2, -1.7]])

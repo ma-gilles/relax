@@ -8,9 +8,9 @@ from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
 from relax.diagnostics import reconstruction as dumps
-from relax.refinement.iteration_planning import ClassImageSize
-from relax.refinement.mean_helpers import ClassPriorEstimate
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement.image_size_plans import ClassImageSize
+from relax.refinement.priors import ClassPriorEstimate
 
 pytestmark = pytest.mark.unit
 
@@ -142,7 +142,7 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
         }
         return values["reconstruct_floor_stats_k"]
 
-    monkeypatch.setattr(dumps.regularization_relion, "compute_relion_weight_shell_stats", floor_statistics)
+    monkeypatch.setattr(dumps.regularization, "compute_relion_weight_shell_stats", floor_statistics)
     dumps.write_class_mstep(
         prior, numerators=values["Ft_y_combined"], denominators=values["Ft_ctf_combined"],
         half_denominators=(values["Ft_ctf_0"], values["Ft_ctf_1"]),

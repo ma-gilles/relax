@@ -17,21 +17,21 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-from relax.helpers.convergence import APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
-from relax.helpers.env_flags import (
-    parse_env_auto_flag,
+from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement.refinement_state import APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
+from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
+from relax.runtime.env_flags import (
     parse_env_choice,
-    parse_env_flag,
     parse_env_flag_or_false,
     parse_env_optional_flag,
     parse_env_true_flag,
-    parse_env_worker_count,
+    read_env_text,
 )
-from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
-from relax.symmetry import canonicalize_rotational_symmetry
+from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
 if TYPE_CHECKING:
-    from relax.helpers.dtype_policy import DensePrecisionPolicy
+    from relax.numerics.precision import DensePrecisionPolicy
 
 # Every option field's default is the value ``relax refine`` (K=1) uses when its flag is not given; a field
 # whose value the command computes from the data (init_current_size) has none (code rule 5).
@@ -118,7 +118,7 @@ class OpticsGeometry:
     relion_optics_image_sizes: Any | None = None
     relion_optics_pixel_sizes: Any | None = None
     # Each half's per-image optics-group row (0 .. G-1) of a per-group noise table
-    # (relax.helpers.optics_noise); required when the initial noise has G > 1 rows.
+    # (relax.relion.optics_groups); required when the initial noise has G > 1 rows.
     optics_group_ids_per_half: Any | None = None
     # The reference maps' pixel size (None: the image pixel size).
     relion_model_pixel_size: float | None = None
@@ -136,8 +136,6 @@ class RelionParityOptions:
     # --firstiter_cc (on by default, as the RELION GUI).
     emulate_relion_firstiter_cc: bool = True
     relion_firstiter_ini_high_angstrom: float | None = None
-    first_iteration_score_mode: str = "gaussian"
-    first_iteration_reconstruction_mode: str = "soft"
     # --image-fourier-backend auto: RELION's CUDA image preprocessing.
     image_fourier_backend: Literal["host_numpy", "jax_gpu", "relion_cuda"] = "relion_cuda"
     optimizer_random_seed: int | None = None
@@ -309,9 +307,7 @@ def require_consistency_route(
             "nyquist_column_counting / firstiter_cc_support are not implemented for the experimental "
             "gemm_dense coarse engine"
         )
-    if consistency.firstiter_cc_support != "relion" and not (
-        options.parity.emulate_relion_firstiter_cc or options.parity.first_iteration_score_mode == "normalized_cc"
-    ):
+    if consistency.firstiter_cc_support != "relion" and not options.parity.emulate_relion_firstiter_cc:
         raise NotImplementedError(
             f"firstiter_cc_support={consistency.firstiter_cc_support!r} needs the first-iteration "
             "cross-correlation (--firstiter_cc); this run has no CC iteration"
@@ -331,8 +327,10 @@ class LocalSearchOptions:
     auto_local_healpix_order: int = LOCAL_SEARCH_HEALPIX_ORDER
     # RELION --sigma_ang in degrees: local angular searches from iteration 1 (None: global until the order above).
     sigma_ang_deg: float | None = None
+    # RELION --sigma_tilt in degrees: a prior on the tilt angle alone until the order above (None: no prior).
+    # Not with --sigma_ang, which sets all three widths and wins, as in relion_refine.
+    sigma_tilt_deg: float | None = None
     local_search_profile_mode: Literal["auto", "on", "off"] = "auto"
-    local_search_translation_prior_mode: str = "coarse"
     # A probe run of the first local-search iteration: it returns after that iteration's expectation, with no
     # reconstruction (RefinementResult.profile_stop). ``..._profile`` also collects the search's profile;
     # ``..._score_only`` scores without accumulating. They change what the run does, so they are run options,
@@ -340,6 +338,21 @@ class LocalSearchOptions:
     stop_after_local_search_profile: bool = False
     stop_after_local_search: bool = False
     stop_after_local_search_score_only: bool = False
+
+    def tilt_prior_deg(self, do_local_search: bool) -> float:
+        """Width in degrees of RELION's ``--sigma_tilt`` prior on the tilt angle alone this iteration; 0: none.
+
+        relion_refine holds ``sigma2_rot == sigma2_psi == 0 < sigma2_tilt`` from parseInitial until
+        updateAngularSampling reaches ``--auto_local_healpix_order``, where all three widths become twice
+        the angular step (ml_optimiser.cpp:9923-9931): the local search (``do_local_search``, the run
+        state's) then replaces the tilt prior for good. ``--sigma_ang`` sets all three widths and the tilt
+        width is not read (ml_optimiser.cpp:739-752). The width is run-constant, so it is an option and not
+        run state; degrees as given, since RELION compares angular distances in degrees with three widths
+        (docs/math/relion_refinement_algorithm.md, "A prior on the tilt angle alone").
+        """
+        if self.sigma_tilt_deg is None or self.sigma_ang_deg is not None or do_local_search:
+            return 0.0
+        return float(self.sigma_tilt_deg)
 
     @property
     def stops_after_local_search(self) -> bool:
@@ -386,6 +399,24 @@ class RestartProvenance(NamedTuple):
     sha256: str | None
 
 
+@dataclass(frozen=True)
+class JobDefaults:
+    """The arguments whose default depends on the job type, resolved (``--max_iter``,
+    ``--image-fourier-backend``, ``--apply-initial-lowpass``)."""
+
+    max_iter: int
+    image_fourier_backend: str
+    apply_initial_lowpass: bool
+
+
+@dataclass(frozen=True)
+class RandomSeed:
+    """The run's random seed (RELION's ``--random_seed``) and where it came from (stored in the archive)."""
+
+    value: int
+    source: str
+
+
 @dataclass(frozen=True, kw_only=True)
 class ExpectedAccuracyOptions:
     """Half 1's particle order, optics groups, ids and CTFs for RELION's expected-accuracy estimate.
@@ -403,8 +434,6 @@ class ExpectedAccuracyOptions:
 
 FINAL_ALL_DATA_AFTER_MAX_ITER_ENV = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
 FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV = "RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE"
-FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE"
-FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -413,7 +442,8 @@ class FinalPassOptions:
     ``from_environ``, which the command calls. They change what the run does, so they are run options (code rule 9).
 
     ``after_max_iter`` (``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``): K=1 runs the final pass after the last
-    numbered iteration even without convergence. ``merged_reference``
+    numbered iteration even without convergence; Class3D refuses it at set-up
+    (``require_final_pass_route``). ``merged_reference``
     (``RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE``): its K=1 E-step scores both halves against the merged map.
     """
 
@@ -425,6 +455,16 @@ class FinalPassOptions:
         return cls(
             after_max_iter=parse_env_flag_or_false(FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, logger=logging.getLogger(__name__)),
             merged_reference=parse_env_true_flag(FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV),
+        )
+
+
+def require_final_pass_route(options: RefinementOptions) -> None:
+    """Refuse ``final_pass.after_max_iter`` for Class3D, which runs the final pass only after convergence."""
+    if options.final_pass.after_max_iter and options.k_class.n_classes > 1:
+        raise NotImplementedError(
+            f"{FINAL_ALL_DATA_AFTER_MAX_ITER_ENV} (the final all-data pass after the iteration cap, without "
+            f"convergence) is implemented for K=1 only; this run has n_classes={options.k_class.n_classes}, and "
+            f"Class3D runs the final pass only after convergence. Unset {FINAL_ALL_DATA_AFTER_MAX_ITER_ENV}."
         )
 
 
@@ -484,35 +524,6 @@ class LocalAdaptivePass2Support:
 
 
 @dataclass(frozen=True, kw_only=True)
-class ReconstructionPrograms:
-    """Which programs run a RELION reconstruction; no effect on its values.
-
-    ``stable_windows`` (``RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS``, default on, the resident engine's switch
-    too): reconstruct in the full-box class so one compiled program serves every size. ``host_irfft``
-    (``RELAX_RELION_HOST_IRFFT``): the padded inverse FFT on the host when True, on the device when False, by
-    size and allocator limit when None (``auto``). ``host_fft_workers`` (``RELAX_RELION_HOST_FFT_WORKERS``, else
-    ``SLURM_CPUS_PER_TASK``, else 1): that transform's threads.
-    """
-
-    stable_windows: bool
-    host_irfft: bool | None
-    host_fft_workers: int
-
-    @classmethod
-    def from_environ(cls) -> ReconstructionPrograms:
-        from relax.sparse_pass2.resident_pass2 import _RESIDENT_STABLE_WINDOWS_ENV
-
-        log = logging.getLogger(__name__)
-        return cls(
-            stable_windows=parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=True),
-            host_irfft=parse_env_auto_flag("RELAX_RELION_HOST_IRFFT", logger=log),
-            host_fft_workers=parse_env_worker_count(
-                "RELAX_RELION_HOST_FFT_WORKERS", "SLURM_CPUS_PER_TASK", logger=log
-            ),
-        )
-
-
-@dataclass(frozen=True, kw_only=True)
 class ScoringVariants:
     """Scoring and M-step route variants chosen by environment variable, read once when the run's options are
     built (``from_environ``, code rule 5); nothing below reads the variables again. They change what the run
@@ -538,7 +549,7 @@ class ScoringVariants:
 
     @classmethod
     def from_environ(cls) -> ScoringVariants:
-        from relax.dense import scoring_policy as sp
+        from relax.steps import scoring_policy as sp
 
         log = logging.getLogger(__name__)
         k1 = parse_env_optional_flag(sp.K1_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K=1 RELION x-half M-step default")
@@ -564,14 +575,6 @@ class ScoringVariants:
             approx_acc_rot_for_convergence=parse_env_true_flag(APPROX_ACC_ROT_CONVERGENCE_ENV),
             reconstruction=ReconstructionPrograms.from_environ(),
         )
-
-
-@dataclass(frozen=True, kw_only=True)
-class EngineDebugOptions:
-    """Adjoint ablation controls."""
-
-    disable_adjoint_y: bool = False
-    disable_adjoint_ctf: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -636,12 +639,6 @@ class StartState:
     # RELION-unit data_vs_prior spectrum of the start-up model (initialiseDataVersusPrior);
     # it selects the iteration-1 scale-correction shells (ml_optimiser.cpp:10473).
     init_data_vs_prior: Any | None = None
-    # A frozen boundary's FSC, average Pmax, high-FSC flag and RELION size increment (None and RELION's
-    # increment otherwise).
-    init_fsc: Any | None = None
-    init_ave_Pmax: float | None = None
-    init_has_high_fsc_at_limit: bool | None = None
-    init_relion_incr_size: int = RELION_INCR_SIZE
 
 
 CLEAR_JAX_CACHES_BETWEEN_ITERATIONS_ENV = "RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"
@@ -680,6 +677,84 @@ class ExecutionOptions:
         )
 
 
+_GUARD_OFF_VALUES = frozenset({"0", "false", "no", "off"})
+_GUARD_RAISE_VALUES = frozenset({"", "1", "true", "yes", "on", "raise"})
+
+
+def half_accumulator_guard_mode(raw: str | None, *, warn_only: bool) -> str:
+    """How the once-per-iteration accumulator guard behaves: raise, warn or off.
+
+    ``raw`` is the text of ``RELAX_EM_BPREF_FINITE_GUARD`` (None when unset) and ``warn_only`` the flag
+    ``RELAX_EM_FINITE_CHECK_WARN`` (``relax.numerics.finite_check.finite_check_warn_only``), both read once
+    by :meth:`RefinementEnvironment.from_environ`; ``finite_check.check_half_accumulators`` runs in this mode.
+
+    The guard is on by default in ``raise`` mode. Job 14193291 (P4-D,
+    2026-09-20) measured its cost on an interleaved off/on pair of twelve
+    one-iteration arms at current size 74 on one H100: in the eight arms that
+    ran without a co-located cold compile the medians were 218.0 s off and
+    218.3 s on, inside the 217.4 to 219.1 s same-source spread, so production
+    pays nothing measurable for stopping where the damage is instead of four
+    stages later.
+
+    ``RELAX_EM_BPREF_FINITE_GUARD=0`` (also ``off``, ``false``, ``no``) opts
+    out; ``warn`` logs the offending accumulators and continues;
+    ``RELAX_EM_FINITE_CHECK_WARN=1`` demotes it to ``warn`` as well, as it
+    does the per-bucket checks. Any other value is a configuration error and
+    raises, rather than silently running with a guard the caller did not ask
+    for.
+    """
+
+    raw = (raw or "").strip().lower()
+    if raw in _GUARD_OFF_VALUES:
+        return "off"
+    if raw == "warn":
+        return "warn"
+    if raw not in _GUARD_RAISE_VALUES:
+        raise ValueError(
+            f"{HALF_ACCUMULATOR_GUARD_ENV}={raw!r}: expected one of 1/on/raise "
+            "(the default), warn, or 0/off"
+        )
+    return "warn" if warn_only else "raise"
+
+
+
+
+BPREF_DUMP_ENV_VARS = (
+    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class RefinementEnvironment:
+    """The controller's switches of the process environment, read once by :meth:`from_environ`, which the
+    command calls when it builds the run's options (code rule 5); nothing below reads these variables again.
+    The default instance is the unset environment.
+
+    ``armed_bpref_dumps``: the BPref dump variables of ``BPREF_DUMP_ENV_VARS`` (RELAX_BPREF_MEMBERSHIP_DUMP_DIR,
+    RELAX_BPREF_CONTRIBUTION_DUMP_DIR, RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR) set to a non-blank value, in that
+    order; while one is armed the two halves' E-steps do not overlap (``expectation._half_overlap_active``).
+    ``half_accumulator_guard``: the mode of the finite guard of the half accumulators before their join, "raise"
+    (the default), "warn" or "off", from RELAX_EM_BPREF_FINITE_GUARD (1/true/yes/on/raise or unset/blank:
+    raise; 0/false/no/off: off; warn; anything else refused) demoted to "warn" by RELAX_EM_FINITE_CHECK_WARN
+    (``env_flags.parse_env_true_flag``); see :func:`half_accumulator_guard_mode`.
+    """
+
+    armed_bpref_dumps: tuple[str, ...] = ()
+    half_accumulator_guard: str = "raise"
+
+    @classmethod
+    def from_environ(cls) -> RefinementEnvironment:
+        return cls(
+            armed_bpref_dumps=tuple(name for name in BPREF_DUMP_ENV_VARS if read_env_text(name, "").strip()),
+            half_accumulator_guard=half_accumulator_guard_mode(
+                read_env_text(HALF_ACCUMULATOR_GUARD_ENV),
+                warn_only=parse_env_true_flag("RELAX_EM_FINITE_CHECK_WARN"),  # finite_check.FINITE_CHECK_WARN_ENV
+            ),
+        )
+
+
 @dataclass(frozen=True, kw_only=True)
 class CheckpointOptions:
     """RELION's per-iteration run files and ``--continue``.
@@ -709,13 +784,14 @@ class RefinementOptions:
     local_search: LocalSearchOptions = field(default_factory=LocalSearchOptions)
     k_class: KClassOptions = field(default_factory=KClassOptions)
     start: StartState = field(default_factory=StartState)
-    debug: EngineDebugOptions = field(default_factory=EngineDebugOptions)
     execution: ExecutionOptions = field(default_factory=ExecutionOptions)
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)
     checkpoint: CheckpointOptions = field(default_factory=CheckpointOptions)
     consistency: RelionConsistencyOptions = field(default_factory=RelionConsistencyOptions)
     # The command reads it from the environment (FinalPassOptions.from_environ); nothing below reads it again.
     final_pass: FinalPassOptions = field(default_factory=FinalPassOptions)
+    # The command reads it from the environment (RefinementEnvironment.from_environ); nothing below reads it again.
+    environment: RefinementEnvironment = field(default_factory=RefinementEnvironment)
     solvent: SolventOptions = field(default_factory=SolventOptions)
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # The dense scoring precision, taken when the options are built (code rule 5); see _process_dense_precision.
@@ -725,13 +801,13 @@ class RefinementOptions:
 
 
 def _process_dense_precision() -> DensePrecisionPolicy:
-    """The process's dense precision, ``relax.dense.scoring_policy.DENSE_PRECISION``.
+    """The process's dense precision, ``relax.steps.scoring_policy.DENSE_PRECISION``.
 
     That policy owns the default: ``RELAX_USE_FLOAT64_SCORING`` and ``RELAX_USE_FLOAT64_PROJECTIONS``, read once
-    when ``relax.dense.scoring_policy`` is imported. The scoring engines still read it there, so the
+    when ``relax.steps.scoring_policy`` is imported. The scoring engines still read it there, so the
     refinement refuses options whose precision differs (``require_process_precision``).
     """
-    from relax.dense import scoring_policy
+    from relax.steps import scoring_policy
 
     return scoring_policy.DENSE_PRECISION
 
@@ -742,7 +818,7 @@ def require_process_precision(options: RefinementOptions) -> None:
     if options.precision != process:
         raise ValueError(
             f"options.precision={options.precision!r} differs from the process's dense precision {process!r} "
-            "(relax.dense.scoring_policy.DENSE_PRECISION), which the scoring engines read; build the options "
+            "(relax.steps.scoring_policy.DENSE_PRECISION), which the scoring engines read; build the options "
             "after setting RELAX_USE_FLOAT64_SCORING / RELAX_USE_FLOAT64_PROJECTIONS"
         )
 
@@ -789,21 +865,3 @@ def with_validated_sampling_schedule(options: RefinementOptions) -> RefinementOp
     return replace(
         options, adaptive=replace(adaptive, relion_healpix_orders=validated_orders)
     )
-
-
-# Program-count settings that K=1 Refine3D turns on by default since the resident flip. They
-# are exact (the same primitives in the same order), but the stage glue and the local ladder
-# are shared with VDAM, whose defaults its own qualification changes, so they are set at the
-# K=1 entry points rather than in the shared library defaults.
-K1_REFINE3D_ENV_DEFAULTS = {
-    "RELAX_EM_JIT_STAGE_GLUE": "1",
-    "RELAX_LOCAL_IMAGE_CAPACITY_LADDER": "1",
-}
-
-
-def apply_k1_refine3d_env_defaults() -> None:
-    """Set the K=1 Refine3D program defaults; an explicit environment value still wins."""
-
-    for name, value in K1_REFINE3D_ENV_DEFAULTS.items():
-        os.environ.setdefault(name, value)
-

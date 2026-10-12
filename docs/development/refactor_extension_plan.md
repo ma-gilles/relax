@@ -563,7 +563,7 @@ The example covers particle-half ownership, prepared projectors, final sampling
 resolution, dense/local scoring inputs and final reconstruction stages. Shared
 startup formulas and adaptive grids have neutral owners used by refinement and
 VDAM. Reference maps/tau2, noise and direction priors now have persistent owners in
-`mean_helpers.py`, `noise_updates.py` and `orientation_priors.py`. Their producers,
+`numbered_reconstruction.py`, `noise_updates.py` and `orientation_priors.py`. Their producers,
 replay/restart paths, updates and consumers are shown in the existing review.
 Substantial controller operations remain the next design work.
 
@@ -620,7 +620,7 @@ Expectation batch preparation now has an operation owner in
 `expectation_batches.py`. It resolves compact allocation admission, separate
 coarse/fine callbacks and per-shape batch plans. Numbered and final scoring share
 the same run planner; available memory is read at invocation time. The existing
-memory estimator remains in `helpers/batch_planning.py`. The controller still
+memory estimator remains in `runtime/batch_planning.py`. The controller still
 selects the engine and constructs its policy explicitly. This is a bounded
 part of expectation, not the completed expectation stage. Its actual caller,
 implementation and consumers are in the existing review; GPU qualification of
@@ -804,7 +804,7 @@ Numerical and runtime qualification of latest source remains outstanding.
 
 | Package | Owners and boundaries to change | Reviewable outcome | Required checks |
 | --- | --- | --- | --- |
-| 1. Model-half lifecycle | `iteration_loop.py`, `noise_updates.py`, `mean_helpers.py`, replay/state-swap and `iteration_snapshot.py` | Reference maps/tau2 now have persistent ownership, completing the bounded direction-prior and noise lifecycle migration; array/order pairs remain together through restart, replay, reconstruction and updates. Final scoring reads those owners directly. | Noise/reconstruction/prior contracts, checkpoint/replay tests, fast guard, smoke; medium when numerical semantics change |
+| 1. Model-half lifecycle | `iteration_loop.py`, `noise_updates.py`, `numbered_reconstruction.py`, replay/state-swap and `iteration_snapshot.py` | Reference maps/tau2 now have persistent ownership, completing the bounded direction-prior and noise lifecycle migration; array/order pairs remain together through restart, replay, reconstruction and updates. Final scoring reads those owners directly. | Noise/reconstruction/prior contracts, checkpoint/replay tests, fast guard, smoke; medium when numerical semantics change |
 | 2. Optics preparation | `optics_shapes.py`, scoring input construction and shape adapters | Preparation returns typed optics operands directly; no intermediate dictionary followed by `.get` unpacking into another container. Shape transformations retain numerical meaning and subset identity. | Single/multiple shapes, pixel-unit conversion, noise remapping, scale routing, first-iteration and local/dense tests; smoke |
 | 3. Finalization orchestration | Controller final expectation, accumulation, reconstruction and reporting | A finalization entry point with explicit meaningful inputs and results; shared setup precedes per-half work, diagnostics remain visible and writes are applied explicitly. | Final-pass admission, merged weighted sums, local/global, K1/K4 and tomography paths, saved formats, fast guard and smoke |
 | 4. Precision and execution configuration | `scoring_policy.py`, dense/local engine adapters and diagnostic selectors | Effective settings resolved once at their proper scope; retire arbitrary forwarding dictionaries and duplicate defaults while retaining existing diagnostic capabilities and JIT specialization. | Production float32 and diagnostic precision contracts, engine routing, JIT/static inputs and native ABI checks; smoke and affected scientific tier |
@@ -943,7 +943,7 @@ receipt. Existing candidates and queued/running jobs remain untouched.
 
 ### Numbered convergence policy boundary
 
-`refinement/convergence.py` now owns accuracy admission and replay/state-update
+`refinement/numbered_transitions.py` now owns accuracy admission and replay/state-update
 precedence, returning a named state/accuracy result to the controller. Its pose,
 geometry and options operands already have producers; no temporary input context
 was introduced. Review the [actual top boundary, update and consumers](final_local_sampling_patch_review.md#iteration-convergence-policy)
@@ -1001,7 +1001,7 @@ Class3D buffer-lifetime audits. Preserve preceding-iteration convergence timing,
 explicit model writes and finalization. Broader automation follows human review
 and production float32 quality/performance qualification.
 
-Startup pose selection now has a complete operation in `relion/input_poses.py`,
+Startup pose selection now has a complete operation in `star/input_poses.py`,
 with producer-owned provenance reused by profile and archive output. The full
 seed/correction payload keeps existing aliases and source metadata. Next trace
 projector capture and perturbation-restart provenance at their validated producers

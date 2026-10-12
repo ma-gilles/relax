@@ -9,16 +9,17 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
-from relax.helpers.convergence import RefinementState
-from relax.helpers.resolution import ImageGeometry
 from relax.parity.relion_replay_source import RelionReplay
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.iteration_planning import initialize_refinement_state
 from relax.refinement.iteration_snapshot import IterationSnapshot, refinement_state_fields
+from relax.refinement.ports import StartSeeds
 from relax.refinement.refinement_options import (
     CheckpointOptions,
     KClassOptions,
     StartState,
 )
+from relax.refinement.refinement_state import RefinementState
 
 pytestmark = pytest.mark.unit
 
@@ -69,10 +70,10 @@ def test_initial_fsc_wins_over_both_lowpass_sources_and_respects_available_shell
     original = fsc.copy()
     options = stand_in.options(
         schedule=stand_in.schedule(init_current_size=current_size),
-        start=StartState(init_fsc=fsc, ini_high_angstrom=80.0),
+        start=StartState(ini_high_angstrom=80.0),
         parity=stand_in.parity(relion_firstiter_ini_high_angstrom=20.0),
     )
-    state = _initialize(options, dtype=dtype)
+    state = _initialize(options, dtype=dtype, relion_replay=RelionReplay(start_seeds=StartSeeds(fsc=fsc)))
     # Truncation crosses at shell 4, then the existing RELION minres_map=5 applies.
     assert_matches(state.current_resolution, 64 * 2.25 / resolution_shell)
     assert_matches(state.previous_resolution, state.current_resolution)
@@ -108,10 +109,12 @@ def test_replay_restart_uses_recorded_resolution_accuracy_and_stalls_before_fres
         '_rlnHasConverged 0\n'
     )
     options = stand_in.options(
-        schedule=stand_in.schedule(init_relion_iteration=2), start=StartState(init_fsc=np.full(33, 0.9)),
+        schedule=stand_in.schedule(init_relion_iteration=2),
         parity=stand_in.parity(relion_firstiter_ini_high_angstrom=30.0),
     )
-    state = _initialize(options, relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)))
+    state = _initialize(options, relion_replay=RelionReplay(
+        perturb_replay_relion_dir=str(tmp_path), start_seeds=StartSeeds(fsc=np.full(33, 0.9)),
+    ))
     assert_matches(state.current_resolution, 8.0)
     assert_matches(state.previous_resolution, 8.0)
     assert_matches(state.acc_rot, 0.75)
@@ -124,11 +127,9 @@ def test_replay_restart_uses_recorded_resolution_accuracy_and_stalls_before_fres
 def test_sealed_state_suppresses_restart_read_and_frozen_fields_override_resolution(tmp_path):
     # If restart were read, the deliberately malformed model would fail.
     (tmp_path / 'run_it002_half1_model.star').write_text('data_model_general\n')
-    options = stand_in.options(
-        schedule=stand_in.schedule(init_relion_iteration=2), start=StartState(init_fsc=np.full(33, 0.9)),
-    )
+    options = stand_in.options(schedule=stand_in.schedule(init_relion_iteration=2))
     state = _initialize(options, relion_replay=RelionReplay(
-        perturb_replay_relion_dir=str(tmp_path), sealed_sampling_state={},
+        perturb_replay_relion_dir=str(tmp_path), sealed_sampling_state={}, start_seeds=StartSeeds(fsc=np.full(33, 0.9)),
         frozen_refinement_state_fields=dict(current_resolution=12.0, previous_resolution=12.0, nr_iter_wo_resol_gain=2),
     ))
     assert state.healpix_order == options.schedule.init_healpix_order

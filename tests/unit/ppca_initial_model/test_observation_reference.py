@@ -6,7 +6,7 @@ import pytest
 from recovar.core import fourier_transform_utils as ftu
 from recovar.ppca.triangular import unpack_tri_to_full
 
-from relax.helpers.half_spectrum import make_half_image_weights
+from relax.fourier.half_spectrum import make_half_image_weights
 from relax.ppca_initial_model.noise import relion_to_coefficient_variance
 from relax.ppca_refinement.engine import dense_pose_ppca_score_with_moments_blocked
 from relax.ppca_refinement.residual_statistics import full_float32

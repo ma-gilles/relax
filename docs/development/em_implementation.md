@@ -9,7 +9,7 @@ rules and the [current status](em_status.md) identifies reviewed source/evidence
 ## Dense and local EM ownership
 
 Pose-stack preparation for convergence belongs to
-[`helpers.convergence.concatenate_pose_stacks_or_none`](../../relax/helpers/convergence.py).
+[`helpers.convergence.concatenate_pose_stacks_or_none`](../../relax/refinement/refinement_state.py).
 The iteration controller supplies precision and logging context and retains the
 four current/previous rotation/translation call sites. Empty half-sets, missing
 poses, malformed-shape warnings and concatenation ownership are preserved.
@@ -23,10 +23,10 @@ is used for the current iteration and the tolerant form for a previous
 iteration that may not have recorded assignments. The optimizer Pmax
 normalization mass comes from `convergence._relion_pmax_normalization_mass_per_half`:
 Class3D uses each half's retained M-step posterior mass, K=1 the half's noise
-`sumw`, and `_relion_optimizer_average_pmax` divides half 1's Pmax sum by it.
+`sumw`, and `relion_optimizer_average_pmax` divides half 1's Pmax sum by it.
 
 Direction-prior construction, learning and scoring belong to
-[`orientation_priors`](../../relax/helpers/orientation_priors.py).
+[`orientation_priors`](../../relax/sampling/orientation_priors.py).
 `DirectionPrior` pairs one half-model's probabilities with their HEALPix order:
 a vector for K=1, one row per class for Class3D, fixed where the prior is produced.
 `learn_k1_direction_priors` and `learn_class_direction_priors` return updates.
@@ -47,7 +47,7 @@ Snapshot initialization of those priors belongs to
 carries the previous iteration's `pdf_direction` per half (per class for K-class),
 normalized to the scoring dtype with the HEALPix order inferred from its length.
 Scoring with those priors follows RELION through one owner,
-[`orientation_priors.relion_direction_log_priors_for_half`](../../relax/helpers/orientation_priors.py),
+[`orientation_priors.relion_direction_log_priors_for_half`](../../relax/sampling/orientation_priors.py),
 which both the regular iterations and the final all-data pass call per half.
 RELION (`ml_optimiser.cpp`) multiplies orientation weights by the class's
 `pdf_direction` value at the sampled direction only in `NOPRIOR` mode, so local searches
@@ -71,7 +71,7 @@ both passes ([`test_local_search_sigma_owner.py`](../../tests/unit/test_local_se
 
 The [refinement controller](../../relax/refinement/iteration_loop.py)
 owns iteration history, half-set dispatch, sampling updates, convergence and
-finalization scheduling/state mutation. The existing [sampling module](../../relax/sampling.py)
+finalization scheduling/state mutation. The existing [sampling module](../../relax/sampling/__init__.py)
 owns pure grid construction. Its helpers
 `_relion_mstep_source_eulers` and `_perturbed_trial_grid` hold the two sampling rules
 both passes share: the exact M-step rotations are seeded from the sealed grid's own
@@ -81,7 +81,7 @@ the trial orientations, rebuilds the M-step rotations and shifts the translation
 grid. [`iteration_planning.build_initial_coarse_grids`](../../relax/refinement/iteration_planning.py)
 materializes the first exhaustive grid from a caller translation table or the
 RELION translation grid; `relax/parity/relion_replay_source.build_sealed_initial_coarse_grids` handles sealed
-captures. [`prepare_final_sampling`](../../relax/refinement/final_sampling.py)
+captures. [`prepare_final_sampling`](../../relax/refinement/trial_grids.py)
 resolves final native/replay settings and returns ready-to-score grids together
 with their metadata. It owns the final NumPy/JAX conversion boundary and preserves
 rounding before perturbation. [`test_initial_coarse_grid_owner.py`](../../tests/unit/test_initial_coarse_grid_owner.py)
@@ -98,19 +98,19 @@ rotation grid used by both dense half-scoring routes
 once with its perturbation and exact M-step rotations, and
 `_local_search_mstep_rotations` reuses or rebuilds the M-step matrices of a
 scoring grid; the final pass sizes its parent pass with
-`resolution.relion_local_pass1_current_size` only under adaptive oversampling
+`local_sampling.relion_local_pass1_current_size` only under adaptive oversampling
 ([`test_local_fine_grid_owner.py`](../../tests/unit/test_local_fine_grid_owner.py)).
 Grid tests substitute primitives at their sampling owner; sealed-state replay remains
 at the refinement boundary. The exact local-search stage is implemented in
-[`local_search_iteration`](../../relax/refinement/local_search_iteration.py).
+[`local_half`](../../relax/refinement/local_half.py).
 That module builds local pose neighborhoods, asks
-[`batch_planning`](../../relax/helpers/batch_planning.py) for
+[`batch_planning`](../../relax/runtime/batch_planning.py) for
 batch sizes, calls the selected kernel and returns `LocalSearchResult` (named accumulators,
 pose fields and statistics) or, for a Class3D fine pass, `LocalClassSearchResult` (the
 engine's class-segmented output).
 The controller reads those fields directly.
 The resident pass-2 operands in
-[`sparse_pass2_scoring`](../../relax/sparse_pass2/sparse_pass2_scoring.py)
+[`sparse_pass2_scoring`](../../relax/fine_pass/scoring.py)
 reproduce RELION's CUDA `powerClass` through one operand owner:
 `_relion_powerclass_packed_image` (RELION's unshifted `Faux` layout and
 amplitude convention), `_relion_powerclass_operands` (CUDA shell map and pixel
@@ -162,7 +162,7 @@ module's logger. Review [replay-state tests](../../tests/unit/test_relion_replay
 and [controller tests](../../tests/unit/test_refine_relion_mode.py) for selection
 identity, missing-slot errors, cutoff behavior and cold-start finalization.
 
-[`mean_helpers`](../../relax/refinement/mean_helpers.py) owns two
+[`numbered_reconstruction`](../../relax/refinement/numbered_reconstruction.py) owns two
 M-step boundaries that the regular iterations and the final all-data pass used
 to repeat inline. `join_half_accumulators_at_low_resolution` applies RELION's
 `--low_resol_join_halves` to the K=1 half accumulators before the Wiener solve;
@@ -182,7 +182,7 @@ exercise the controller boundary, while
 pins the owner arguments, dtypes and record layout.
 
 The local kernel returns `LocalEMResult` from
-[`helpers.types`](../../relax/helpers/types.py):
+[`helpers.types`](../../relax/types.py):
 `Ft_y`, `Ft_ctf`, `hard_assignments`, `stats`, optional best-pose fields,
 `noise_stats`, `profile` and `significant_counts`. All sixteen return-flag
 combinations have the same field layout; disabled fields are `None`. The
@@ -199,7 +199,7 @@ plus K2/exact-K4 pose, noise and class-summary settings. Returned arrays retain
 their layouts, dtypes and identities; saved refinement field names are unchanged.
 
 Per-half dispatch belongs to
-[`half_scoring`](../../relax/refinement/half_scoring.py).
+[`half_scoring`](../../relax/refinement/dense_half.py).
 Its dense and local adapters prepare engine arguments, retain adaptive/first-CC
 routing, and write class/pose fields into the caller-owned `PerHalfOutputs`.
 Every global K=1 and K-class scoring call runs the adaptive/sparse engine at the requested
@@ -210,7 +210,7 @@ expectation (pass 1 at the current size when no reduced coarse size exists). The
 engine (`run_em`) that served runs without scale groups at oversampling 0 was removed on
 2026-10-03
 ([`test_dense_scale_group_routing.py`](../../tests/unit/test_dense_scale_group_routing.py)).
-[`prepare_adaptive_pass2_grids`](../../relax/helpers/oversampling.py) materializes the perturbed coarse grid, the
+[`prepare_adaptive_pass2_grids`](../../relax/sampling/oversampling.py) materializes the perturbed coarse grid, the
 oversampled children with parent maps, the fine M-step rotations and the coarse
 translation phase source for both routes
 ([`test_adaptive_pass2_grids_owner.py`](../../tests/unit/test_adaptive_pass2_grids_owner.py)).
@@ -243,17 +243,17 @@ order: a class without images gets zero accumulators, `-inf` best scores and zer
 and a scored class has its subset accumulators, statistics, noise and best poses expanded to
 the full image axis. Each route states whether it hosts the appended accumulators
 ([`test_kclass_results_owner.py`](../../tests/unit/test_kclass_results_owner.py)).
-[`scoring._e_step_block_score_components`](../../relax/scoring/scoring.py)
+[`scoring._e_step_block_score_components`](../../relax/scoring/coarse_kernels.py)
 computes the two HIGHEST-precision GEMMs every dense scorer is built from (the cross term
 `-2 Re(conj(shifted) . proj_weighted)` and the model energy `ctf2_over_nv . proj_abs2`);
 the residual, windowed, normalized-CC and coarse Gaussian scorers only combine them
 ([`test_score_components_owner.py`](../../tests/unit/test_score_components_owner.py)).
-[`projection._relion_projector_fftw_block`](../../relax/helpers/projection.py)
+[`projection._relion_projector_fftw_block`](../../relax/projection/projection.py)
 projects one rotation block through RELION's Projector onto the clamped `2 r_max` (or
 requested) square with the scorer rotations transposed at the handoff; the centered-row
 projector reorders its rows and the indexed projector gathers its pixels from that block
 ([`test_projector_fftw_block_owner.py`](../../tests/unit/test_projector_fftw_block_owner.py)).
-[`types.SparsePass2Output`](../../relax/helpers/types.py) carries sparse
+[`types.SparsePass2Output`](../../relax/types.py) carries sparse
 pass-2 accumulators, poses and optional diagnostics in named fields. The resident driver
 and the per-image reference path construct it directly; K-class callers no longer
 need a positional decoder or flags to locate fields. Unrequested diagnostics are
@@ -264,13 +264,13 @@ In [`significance`](../../relax/scoring/significance.py),
 default only when the supplied RELION projector operands exist; a dense pass
 without a projector keeps the JAX coarse path and an explicit environment request
 still fails closed.
-`preprocessing.uses_relion_cuda_image_preprocessing` (with `relion_preprocess_backend`,
+`image_preprocessing.uses_relion_cuda_image_preprocessing` (with `relion_preprocess_backend`,
 which follows subset parents) is the one detection of RELION's CUDA image path; the
 local engine, the InitialModel adapter and the controller's early fresh-K=1 check use
 it ([`test_relion_cuda_preprocess_owner.py`](../../tests/unit/test_relion_cuda_preprocess_owner.py)).
 The controller calls its two BPref-scoped entry points and retains iteration
 scheduling, state transitions, reconstruction and device-buffer lifetime.
-[`scoring_policy`](../../relax/dense/scoring_policy.py)
+[`scoring_policy`](../../relax/steps/scoring_policy.py)
 owns shared padding/window constants, the import-time static kwargs object,
 and the existing call-time environment selectors. Their override precedence,
 invalid-value handling and float32 defaults are preserved. The controller and
@@ -279,7 +279,7 @@ These owners have no imports back into the controller. Log messages are unchange
 with namespaces following the owner of each moved function.
 
 Local searches (the fine pass and RELION's pass-1 parent probe) run on the device-resident
-local pass, [`resident_local_pass2`](../../relax/sparse_pass2/resident_local_pass2.py).
+local pass, [`resident_local_pass2`](../../relax/local_search/resident_pass2.py).
 [`k_class`](../../relax/classification/k_class.py) supplies adaptive
 and local K-class orchestration.
 [`k_class_inputs`](../../relax/classification/k_class_inputs.py) owns
@@ -293,7 +293,7 @@ must be handled at the K-class level, not inferred from independently normalized
 single-class probabilities.
 
 Scale-group ID validation and full-axis sizing have one host owner,
-[`helpers/scale_groups.py`](../../relax/helpers/scale_groups.py).
+[`relion/scale_groups.py`](../../relax/relion/scale_groups.py).
 Local EM, both sparse scorers and the K-class subset router use it. Explicit
 counts retain groups absent from a class subset; missing IDs disable engine
 scale-statistics allocation, while routing still retains an explicit count.
@@ -302,16 +302,16 @@ the flattened image axis; the router has no image-count constraint. The helper
 preserves existing casts and errors and imports independently of execution.
 
 Local projector slab normalization has one owner,
-[`relion_projector_setup.prepare_local_projector_slab`](../../relax/relion/relion_projector_setup.py).
+[`relion_projector_setup.prepare_local_projector_slab`](../../relax/relion/projector_setup.py).
 Bucket projection, packed-noise projection and the main BigJIT path accept the
 same three-dimensional slab or singleton class axis. The helper preserves JAX
 dtype conversion and path-specific errors. Radius requirements, pixel selection,
 interpolation, masking and projection execution stay with the callers.
 
 The exact coarse Gaussian path in
-[`helpers/significance.py`](../../relax/scoring/significance.py)
+[`scoring/significance.py`](../../relax/scoring/significance.py)
 passes its existing host pixel indices to the shared source-precision CTF owner
-[`helpers/relion_ctf.py`](../../relax/relion/relion_ctf.py).
+[`relion/ctf.py`](../../relax/relion/ctf.py).
 Coarse, local and sparse scoring call that owner directly; its parsed STAR
 tables and its one float64 CTF program remain independent of the execution engines.
 It evaluates the requested rows at the requested pixels on the device at every
@@ -328,7 +328,7 @@ block. The materialized NumPy comparison lives in
 It has no production callers and retains a separate mask-building algorithm
 for checking lazy blocks and explicit/complement coarse support.
 
-[`score_outputs`](../../relax/dense/score_outputs.py) owns
+[`score_outputs`](../../relax/steps/score_outputs.py) owns
 the scoring containers and class/coarse-grid result adapters. It also owns
 optional half-accumulator combination, shape/axis resolution and profile-row
 recording. The controller retains scheduling and device-buffer offloading.
@@ -421,11 +421,11 @@ controller. Helper-only callers import sign alignment and combined noise
 statistics from `mean_helpers`, rotation metadata from `relion_metadata`, and
 replay iteration mapping from `relion_replay`.
 
-[`relion_normalization`](../../relax/relion/relion_normalization.py)
+[`relion_normalization`](../../relax/relion/normalization.py)
 owns per-image norm and per-group scale formulas and their result type. It
 depends on NumPy/JAX, not the controller, mean reconstruction or follower
 dispatch. The controller retains state installation and temporary lifetimes;
-`relion_worker_scale` handles follower-specific corrections. The seven formula
+`refinement.follower_scale` handles follower-specific corrections. The seven formula
 tests live in `tests/unit/test_relion_normalization.py` and import this owner
 directly. The old `mean_helpers` normalization exports are removed.
 
@@ -447,23 +447,23 @@ Its materialized dense posterior implementation is preserved in
 The adaptive-oversampling tests still compare its complete posterior with active
 significance paths. This reference keeps separate orchestration but shares
 production preprocessing/scoring kernels; it does not independently validate
-those kernels. Production significance belongs to `helpers/significance.py`.
+those kernels. Production significance belongs to `scoring/significance.py`.
 
 Pure convergence-policy cases live in `tests/unit/test_convergence.py`; collecting
 this module does not import the iteration controller. Full iteration smoke tests
 remain in `test_refine_relion_mode.py`.
 
 The first-iteration winner-take-all dispatcher lives with its grid builder in
-`firstiter_cc.py`. It calls the batch planner and K-class engine directly for
+`dense_half.py`. It calls the batch planner and K-class engine directly for
 both K=1 and K-class scoring. The controller supplies its logger and chooses
 whether the batch clamp also updates the caller’s argument dictionary.
 
-Precision selectors belong to `helpers/dtype_policy.py`. The controller passes
+Precision selectors belong to `numerics/precision.py`. The controller passes
 its existing static argument mapping; diagnostic iteration selection still
 reads the environment at call time. Moving the selectors does not evaluate a
 second set of import-time defaults or change any selected dtype.
 
-Angular-grid order policies belong to `helpers/convergence.py`: exhaustive-grid
+Angular-grid order policies belong to `refinement/refinement_state.py`: exhaustive-grid
 capping, final parent/fine orders, perturbation order and direction-prior order.
 The controller supplies the active state and captured final-sampling metadata;
 the helpers preserve their distinct order choices.
@@ -518,9 +518,9 @@ checkout merely because the same report can still be rendered.
 
 ### Replay state diagnostics
 
-`helpers/state_swap_probe.py` owns the supported component variants and CLI
+`parity/state_swap_probe.py` owns the supported component variants and CLI
 validation. It can enumerate variants without importing the refinement
-controller. `helpers/state_swap_runtime.py` owns snapshot copying, map-amplitude
+controller. `parity/state_swap_runtime.py` owns snapshot copying, map-amplitude
 scaling and restoration of the selected components. The controller still owns
 when the snapshot is taken and applies it after the RELION replay override.
 
@@ -543,7 +543,7 @@ scheduling, adaptive search, parity behavior, local search, class setup, replay,
 diagnostics and batching. `refinement_options.with_validated_sampling_schedule`
 owns explicit current-size/HEALPix schedule admission and shallow option copies;
 the entry point invokes it before starting the loop. Option construction does
-not trigger these checks. `helpers/iteration_history.py` owns the per-iteration
+not trigger these checks. `refinement/iteration_history.py` owns the per-iteration
 history lists and their established result-dictionary keys. Its noise/tau2 recorder
 also owns host diagnostic formatting: it prepares all float64 shell fields
 before appending, retains aliases to existing float64 shell arrays, and stacks
@@ -558,7 +558,7 @@ do not import the controller to discover runtime settings. PR180's numerical
 changes and their qualification state are tracked on the
 [EM status page](em_status.md).
 
-`helpers/convergence.py` owns angular-refinement state transitions, including
+`refinement/refinement_state.py` owns angular-refinement state transitions, including
 validation and application of explicit HEALPix schedules used for oracle runs.
 The controller selects the iteration's requested order; the convergence helper
 advances through the existing angular and translation updates without coarsening
@@ -567,7 +567,7 @@ It also owns the approximate-accuracy convergence gate and its environment
 overrides. The controller supplies its logger so malformed-override warnings
 keep their existing routing.
 
-`helpers/resolution.py` owns current-size growth inputs and first-iteration
+`reconstruction/resolution.py` owns current-size growth inputs and first-iteration
 resolution rules: the inclusive FSC/data-vs-prior boundary, raw versus corrected
 K1 scheduling, the initial high-resolution cutoff, and the tau2 reporting taper.
 It also owns expectation-boundary coarse sizing: replay selects the incoming
@@ -580,7 +580,7 @@ The controller retains their timing within the refinement loop. The pure
 scheduling cases live in `tests/unit/test_resolution_scheduling.py`; the
 reconstruction/taper ordering check remains with the controller tests.
 
-`refinement/projector_preparation.py` prepares RELION reference slabs
+`steps/projector_preparation.py` prepares RELION reference slabs
 for the controller's scoring calls. It owns native reference conversion, cache
 keys and files and optional dumps. (Replaying a captured RELION `Projector::data`
 was retired; its code is at git tag `retired/captured-projector-20261006`.)
@@ -618,4 +618,4 @@ reporting tools; E/M execution, precision and quality gates are independent.
 Noise initialization, half-set aggregation and posterior updates live in
 [`refinement/noise_updates.py`](../../relax/refinement/noise_updates.py).
 The refinement controller and replay diagnostics import that owner directly;
-volume reconstruction remains in `refinement/mean_helpers.py`.
+volume reconstruction remains in `refinement/numbered_reconstruction.py`.

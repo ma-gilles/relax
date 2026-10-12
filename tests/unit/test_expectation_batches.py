@@ -8,8 +8,10 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
-from relax.helpers.dtype_policy import DensePrecisionPolicy
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import expectation_batches as batches
+from relax.refinement.firstiter_bpref import NumberedBPrefHalf
+from relax.refinement.ports import NoProbe
 
 pytestmark = pytest.mark.unit
 
@@ -32,8 +34,9 @@ def prepare(planner, **overrides):
         relion_firstiter_cc_this_iter=False, firstiter_winner_take_all_this_iter=False,
         firstiter_cc_tree_rescore_max_margin=None,
         source_faithful_spectrum_norm=True, preserve_bpref_particle_order=True,
-        bpref_device_signature_active=False, use_relion_x_half_mstep=False,
-        multi_shape_halves=False, coarse_sizing=(30.0, 100.0),
+        use_relion_x_half_mstep=False,
+        multi_shape_halves=False, coarse_sizing=(30.0, 100.0), diagnostic_float64_pass2=False,
+        bpref_half=NumberedBPrefHalf(0, 0, False, NoProbe()),
     )
     options.update(overrides)
     return batches.prepare_half_batches(
@@ -61,7 +64,7 @@ def capture_estimates(monkeypatch):
 def test_available_memory_is_read_each_time_a_compact_pass_is_planned(planner, monkeypatch):
     calls = capture_estimates(monkeypatch)
     free = iter([8_000_000_000, 5_000_000_000])
-    monkeypatch.setattr(batches.sparse_pass2_budget, "_device_free_memory_bytes", lambda: next(free))
+    monkeypatch.setattr(batches.memory_budget, "_device_free_memory_bytes", lambda: next(free))
     assert calls == []
     for _ in range(2):
         planner(576, 29, compact_k1_relion_layout=True, current_size_for_batch=12)
@@ -85,7 +88,7 @@ def test_compact_texture_budget_stays_inside_the_allocator_pool(
 ):
     """relax#44: the compact K1 budget is min(physical free, allocator available)."""
     calls = capture_estimates(monkeypatch)
-    budget = batches.sparse_pass2_budget
+    budget = batches.memory_budget
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: physical)
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: allocator)
     monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: pool)
@@ -106,7 +109,7 @@ def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monk
     from relax.scoring import pass1_plan
 
     calls = capture_estimates(monkeypatch)
-    monkeypatch.setattr(batches.sparse_pass2_budget, "_device_free_memory_bytes", lambda: 8_000_000_000)
+    monkeypatch.setattr(batches.memory_budget, "_device_free_memory_bytes", lambda: 8_000_000_000)
     monkeypatch.setattr(batches, "host_relion_projector_texture_enabled", lambda *a, **k: True)
     monkeypatch.setattr(pass1_plan, "global_pass1_relion_projector_texture_enabled", lambda: True)
     monkeypatch.setattr(batches.firstiter_bpref, "relion_firstiter_compact_batch_planning_decision",
@@ -119,8 +122,9 @@ def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monk
     assert calls[0]["score_projector_staging_bytes"] == 0
     expected_coarse_staging = 9 * 9 * 5 * np.dtype(np.complex64).itemsize if rescore_margin is None else 0
     assert calls[1]["score_projector_staging_bytes"] == expected_coarse_staging
-    assert calls[0]["model_current_size"] == 12 and calls[0]["compact_k1_relion_layout"]
-    assert calls[1]["model_current_size"] == (12 if rescore_margin is None else None)
+    # The 16-voxel box at model size 12: RELION's BPref grid 2 * (int(2 * 6 + 0.5) + 1) + 1 = 27, packed in x.
+    assert calls[0]["compact_accumulator_shape"] == (27, 27, 14) and calls[0]["compact_k1_relion_layout"]
+    assert calls[1]["compact_accumulator_shape"] == ((27, 27, 14) if rescore_margin is None else None)
     assert calls[1]["compact_k1_relion_layout"] == (rescore_margin is None)
     if rescore_margin is not None:
         assert policy.significance_safe_batch_sizes is planner
@@ -140,14 +144,57 @@ def test_local_half_plans_no_compact_staging(planner, monkeypatch):
 @pytest.mark.parametrize("precision", ["scoring", "projection", "pass2"])
 def test_diagnostic_precision_keeps_compact_planning_disabled(planner, monkeypatch, precision):
     calls = capture_estimates(monkeypatch)
-    if precision == "pass2":
-        monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "2")
-    else:
+    if precision != "pass2":
         planner = replace(planner, precision=DensePrecisionPolicy(
             use_float64_scoring=precision == "scoring", use_float64_projections=precision == "projection",
         ))
     monkeypatch.setattr(batches, "host_relion_projector_texture_enabled", lambda *a, **k: pytest.fail("compact planning"))
-    policy = prepare(planner, use_adaptive=True, relion_firstiter_cc_this_iter=True)
-    assert policy.safe_batch_sizes is planner
+    policy = prepare(
+        planner, use_adaptive=True, relion_firstiter_cc_this_iter=True, diagnostic_float64_pass2=precision == "pass2",
+    )
+    if precision == "pass2":
+        # A listed iteration's callbacks plan in float64 too: the engine calls them again per pass.
+        policy.safe_batch_sizes(576, 29)
+        assert calls[-1]["use_float64_scoring"] is True
+    else:
+        assert policy.safe_batch_sizes is planner
     assert not any(c["compact_k1_relion_layout"] for c in calls)
     assert all(c["use_float64_scoring"] == (precision != "projection") for c in calls)
+
+
+def test_non_adaptive_k_class_half_plans_no_clamp_that_nothing_reads(planner, monkeypatch):
+    """deep2 L-B2: only an adaptive half's sizes reach the engine, so a non-adaptive K>1 half plans none."""
+    calls = capture_estimates(monkeypatch)
+    messages = []
+    planner = replace(planner, n_classes=3, log=SimpleNamespace(info=lambda *args: messages.append(args[0])))
+    policy = prepare(planner, use_adaptive=False)
+    assert calls == []
+    assert not any("clamping" in message for message in messages)
+    assert (policy.fine_image_batch_size, policy.fine_rotation_block_size) == (200, 1000)
+    assert policy.coarse_image_batch_size is None and policy.safe_batch_sizes is planner
+
+
+def test_float64_diagnostic_changes_the_plan_of_the_listed_iterations_only(planner, monkeypatch):
+    """deep2 L-B4: RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS=2 leaves every other iteration's plan as without it.
+
+    The plan takes the scoring side's own per-iteration predicate (precision._diagnostic_float64_pass2_matches),
+    as expectation.py and finalization.py pass it.
+    """
+    from relax.numerics.precision import _diagnostic_float64_pass2_matches
+
+    calls = capture_estimates(monkeypatch)
+    monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "2")
+    float64_by_iteration = {}
+    for iteration in (1, 2, 3):
+        del calls[:]
+        listed = _diagnostic_float64_pass2_matches(iteration)
+        policy = prepare(planner, use_adaptive=True, diagnostic_float64_pass2=listed)
+        policy.safe_batch_sizes(576, 29)
+        planner.for_expectation(diagnostic_float64_pass2=listed)(576, 29)  # the final pass's planner
+        float64_by_iteration[iteration] = {c["use_float64_scoring"] for c in calls}
+        assert (policy.safe_batch_sizes is planner) == (iteration != 2)
+    assert float64_by_iteration == {1: {False}, 2: {True}, 3: {False}}
+    # The planner itself no longer reads the variable: an unlisted call plans in the run's precision.
+    del calls[:]
+    planner(576, 29)
+    assert calls[0]["use_float64_scoring"] is False

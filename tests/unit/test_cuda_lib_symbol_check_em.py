@@ -3,7 +3,7 @@
 import pytest
 from recovar import cuda_backproject as cb
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import library
 
 pytestmark = pytest.mark.unit
 
@@ -14,17 +14,17 @@ def test_em_ffi_registrations_cover_all_em_target_constants():
     # _TARGET_PROJECT_INDEXED is recovar's (imported by the EM wrappers)
     em_target_constants = {
         v
-        for k, v in vars(em_cuda_kernels).items()
-        if k.startswith("_TARGET_") and isinstance(v, str) and v not in recovar_targets
+        for k, v in vars(library).items()
+        if k.startswith("TARGET_") and isinstance(v, str) and v not in recovar_targets
     }
-    em_targets_in_table = {target for target, _symbol in em_cuda_kernels._FFI_REGISTRATIONS}
-    em_optional_targets = set(em_cuda_kernels._OPTIONAL_FFI_REGISTRATIONS)
+    em_targets_in_table = {target for target, _symbol in library.FFI_REGISTRATIONS}
+    em_optional_targets = set(library.OPTIONAL_FFI_REGISTRATIONS)
     assert em_targets_in_table.isdisjoint(em_optional_targets)
     assert em_target_constants == em_targets_in_table | em_optional_targets
 
 
 def test_em_ffi_registrations_have_unique_targets_and_symbols():
-    targets = [t for t, _s in em_cuda_kernels._FFI_REGISTRATIONS]
-    symbols = [s for _t, s in em_cuda_kernels._FFI_REGISTRATIONS]
+    targets = [t for t, _s in library.FFI_REGISTRATIONS]
+    symbols = [s for _t, s in library.FFI_REGISTRATIONS]
     assert len(set(targets)) == len(targets)
     assert len(set(symbols)) == len(symbols)

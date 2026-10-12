@@ -12,8 +12,9 @@ import pytest
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import run_tiny_refinement
 
+from relax.commands import refinement_arguments
 from relax.parity.relion_replay_source import RelionReplay
-from relax.refinement import command_options, iteration_loop, iteration_snapshot
+from relax.refinement import iteration_loop, iteration_snapshot
 from relax.refinement.ports import RunObserver
 from relax.refinement.refinement_options import (
     CheckpointOptions,
@@ -39,7 +40,7 @@ def test_every_default_is_relions_rule():
     options = stand_in.options().consistency
     assert {name: getattr(options, name) for name, _, _ in OPTIONS} == {name: default for name, default, _ in OPTIONS}
     assert options.non_default() == {}
-    parsed = command_options.resolve_consistency_options(command_options.parse_refinement_args(BASE_ARGS))
+    parsed = refinement_arguments.resolve_consistency_options(refinement_arguments.parse_refinement_args(BASE_ARGS))
     assert parsed == RelionConsistencyOptions()
 
 
@@ -48,10 +49,10 @@ def test_option_is_named_validated_and_parsed(name, value):
     assert RelionConsistencyOptions(**{name: value}).non_default() == {name: value}
     with pytest.raises(ValueError, match=name):
         RelionConsistencyOptions(**{name: "no-such-rule"})
-    args = command_options.parse_refinement_args([*BASE_ARGS, f"--{name}", value])
-    assert getattr(command_options.resolve_consistency_options(args), name) == value
+    args = refinement_arguments.parse_refinement_args([*BASE_ARGS, f"--{name}", value])
+    assert getattr(refinement_arguments.resolve_consistency_options(args), name) == value
     with pytest.raises(SystemExit):
-        command_options.parse_refinement_args([*BASE_ARGS, f"--{name}", "no-such-rule"])
+        refinement_arguments.parse_refinement_args([*BASE_ARGS, f"--{name}", "no-such-rule"])
 
 
 @NON_DEFAULT
@@ -63,11 +64,11 @@ def test_command_line_refuses_the_option_on_relion_seeded_or_replayed_state(name
         ["--init_noise_from_npz", "noise.npz"],
         ["--init_relion_iteration", "3"],
     ):
-        args = command_options.parse_refinement_args([*BASE_ARGS, f"--{name}", value, *flags])
+        args = refinement_arguments.parse_refinement_args([*BASE_ARGS, f"--{name}", value, *flags])
         with pytest.raises(SystemExit, match="RELION-seeded or replayed state"):
-            command_options.resolve_consistency_options(args)
+            refinement_arguments.resolve_consistency_options(args)
         # The default keeps every such route.
-        command_options.resolve_consistency_options(command_options.parse_refinement_args([*BASE_ARGS, *flags]))
+        refinement_arguments.resolve_consistency_options(refinement_arguments.parse_refinement_args([*BASE_ARGS, *flags]))
 
 
 def _stub_half(owner=None):
@@ -89,7 +90,7 @@ def _refine_stubs(halves, name, value, relion_replay=None, **groups):
 
 @NON_DEFAULT
 def test_subtomograms_refuse_the_option(name, value):
-    from relax.refinement.tomo_half import TomoHalf
+    from relax.steps.tomo_half import TomoHalf
 
     with pytest.raises(NotImplementedError, match="subtomogram particles"):
         _refine_stubs([_stub_half(TomoHalf), _stub_half(TomoHalf)], name, value)
@@ -97,7 +98,7 @@ def test_subtomograms_refuse_the_option(name, value):
 
 @NON_DEFAULT
 def test_optics_groups_on_several_image_shapes_refuse_the_option(name, value):
-    from relax.refinement.optics_shapes import MultiShapeHalf
+    from relax.steps.optics_shapes import MultiShapeHalf
 
     with pytest.raises(NotImplementedError, match="several image shapes"):
         _refine_stubs([_stub_half(MultiShapeHalf), _stub_half(MultiShapeHalf)], name, value)
@@ -114,13 +115,43 @@ def test_optics_groups_on_several_image_shapes_refuse_the_option(name, value):
         dict(relion_replay=RelionReplay(perturb_replay_relion_dir="relion")),
         dict(relion_replay=RelionReplay(sealed_sampling_state=object())),
         dict(relion_replay=RelionReplay(state_swap_probe={"iteration": 0})),
+        # deep2 O-B2: the three replays the refusal's own field list used to omit.
+        dict(relion_replay=RelionReplay(final_sampling_replay_relion_dir="relion")),
+        dict(relion_replay=RelionReplay(sealed_scoring_context=object())),
+        dict(relion_replay=RelionReplay(final_all_data_replay_last_numbered_state=True)),
     ],
-    ids=["iteration-overrides", "final-override", "final-references", "frozen-state", "star-replay", "sealed", "swap"],
+    ids=["iteration-overrides", "final-override", "final-references", "frozen-state", "star-replay", "sealed", "swap",
+         "final-sampling", "sealed-scoring", "forced-last-state"],
 )
 def test_replayed_or_frozen_relion_state_refuses_the_option(name, value, group):
     """Replayed statistics, references and frozen sampling were computed with RELION's rules."""
     with pytest.raises(NotImplementedError, match="replayed or frozen RELION state"):
         _refine_stubs([_stub_half(), _stub_half()], name, value, **group)
+
+
+def test_one_field_list_decides_what_replays_relion_state():
+    """deep2 O-B2: the source's predicate is the record's; a follower topology alone is replayed (it emulates
+    RELION's MPI layout) but is not RELION state, so it does not refuse the consistency options."""
+    from relax.parity.relion_replay_source import RelionReplaySource
+    from relax.refinement.ports import InputSource
+
+    options = stand_in.options()
+    state_fields = dict(
+        replay_iteration_overrides=[{}], perturb_replay_relion_dir="relion", final_replay_override={},
+        final_replay_reference_maps=[None, None], final_sampling_replay_relion_dir="relion",
+        sealed_sampling_state=object(), sealed_scoring_context=object(), frozen_refinement_state_fields={},
+        state_swap_probe={"iteration": 0}, final_all_data_replay_last_numbered_state=True,
+    )
+    for field, value in state_fields.items():
+        replay = RelionReplay(**{field: value})
+        assert replay.replays and replay.replays_relion_state, field
+        source = RelionReplaySource.for_run(replay, options)
+        assert isinstance(source, RelionReplaySource) and source.replays_relion_state() is True, field
+    followers = RelionReplay(follower_topology=SimpleNamespace(n_followers=2, replay=None))
+    assert followers.replays and not followers.replays_relion_state
+    assert RelionReplaySource.for_run(followers, options).replays_relion_state() is False
+    assert not RelionReplay().replays and not RelionReplay().replays_relion_state
+    assert type(RelionReplaySource.for_run(RelionReplay(), options)) is InputSource
 
 
 @NON_DEFAULT

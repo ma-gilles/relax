@@ -60,11 +60,12 @@ def test_failure_census_keeps_stable_ids_and_finite_ranges():
 
 def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypatch):
     """The selected GEMM scorer and resident row owner retain every pose."""
-    from relax.cuda import kernels as cuda_kernels
-    from relax.dense.gemm_experiment import pad_batch, pad_grid
-    from relax.dense.gemm_experiment_kernels import empty_normalizer_table
-    from relax.scoring import scoring
-    from relax.sparse_pass2 import resident_pass2, sparse_pass2_adjoint
+    from relax.cuda import translate as cuda_translate
+    from relax.dense.gemm_kernels import empty_normalizer_table, pad_grid
+    from relax.fine_pass import adjoint as sparse_pass2_adjoint
+    from relax.fine_pass import resident_pass2
+    from relax.scoring import coarse_kernels
+    from scripts.lib.dense_gemm_experiment import pad_experiment_batch
 
     selected = {"score_traces": 0, "row_traces": 0, "adjoint_traces": 0}
 
@@ -84,8 +85,6 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
     def weighted_rows(posterior, row_ids, row_local, recon, recon_weight,
                       noise, ctf2, indices, angles, **kwargs):
         selected["row_traces"] += 1
-        assert kwargs["cuda_backproject"] is cuda_kernels
-        assert hasattr(kwargs["cuda_backproject"], "relion_translate_sum_flat_rows_f32")
         assert kwargs["kernel_ctf_probs"] is False
         assert posterior.shape == (4, 2)
         assert indices.shape == (1,) and angles.shape == (2, 2)
@@ -104,8 +103,8 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
         assert kwargs["max_block_bytes"] > 0
         return volume.at[0].add(jnp.sum(rows))
 
-    monkeypatch.setattr(cuda_kernels, "relion_translate_score_f32", translate)
-    monkeypatch.setattr(scoring, "relion_coarse_gaussian_gemm_scores_jit", score)
+    monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", translate)
+    monkeypatch.setattr(coarse_kernels, "relion_coarse_gaussian_gemm_scores_jit", score)
     monkeypatch.setattr(resident_pass2, "_resident_block_weighted_sums_kernel", weighted_rows)
     monkeypatch.setattr(sparse_pass2_adjoint, "_accumulate_adjoint_block_chunked", adjoint)
 
@@ -116,7 +115,7 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
         rotation_tile=2, translation_tile=1,
     )
     raw = jnp.asarray([[1], [2], [3]], dtype=jnp.complex64)
-    batch = pad_batch(
+    batch = pad_experiment_batch(
         jnp.zeros((3, 1), dtype=jnp.complex64),
         jnp.ones((3, 1), dtype=jnp.float32),
         jnp.zeros((3,), dtype=jnp.float32),

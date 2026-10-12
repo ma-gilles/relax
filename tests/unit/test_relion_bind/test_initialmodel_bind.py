@@ -1,14 +1,14 @@
 """Phase-2 parity tests: Python InitialModel schedules / ordering vs the
 RELION C++ bindings.
 
-These tests verify that `recovar.em.vdam` produces byte-identical
+These tests verify that `relax.vdam` produces byte-identical
 trajectories against the corresponding RELION C++ functions compiled into
 `_relion_bind_core`.
 
 Covers:
-  - vdam_compute_subset_size    vs schedules.compute_subset_size
-  - vdam_compute_stepsize       vs schedules.compute_stepsize
-  - vdam_compute_tau2_fudge     vs schedules.compute_tau2_fudge
+  - vdam_compute_subset_size    vs sgd_schedule.compute_subset_size
+  - vdam_compute_stepsize       vs sgd_schedule.compute_stepsize
+  - vdam_compute_tau2_fudge     vs sgd_schedule.compute_tau2_fudge
   - vdam_randomise_particles_order  — RELION's std::shuffle(mt19937) subset
         order used by the native parity path.
 
@@ -25,7 +25,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.vdam.schedules import (
+from relax.steps.sgd_schedule import (
     DEFAULT_GRAD_EM_ITERS,
     compute_phase_lengths,
     compute_stepsize,
@@ -336,7 +336,7 @@ class TestRandomiseParticlesOrderBinding:
 
 class TestAutoRefineExpectedAccuracyBinding:
     def test_spawned_expected_accuracy_matches_direct_result(self, bind):
-        from relax.helpers.expected_accuracy import (
+        from relax.steps.expected_accuracy import (
             estimate_relion_expected_accuracy_from_prepared_inputs,
             estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
         )
@@ -385,10 +385,10 @@ class TestAutoRefineExpectedAccuracyBinding:
 
         from recovar.utils.helpers import relion_volume_to_recovar
 
-        from relax.helpers.expected_accuracy import (
+        from relax.relion.projector_setup import reference_to_relion_projector_half_maps_and_power
+        from relax.steps.expected_accuracy import (
             estimate_relion_expected_accuracy_from_prepared_inputs,
         )
-        from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
 
         rng = np.random.default_rng(11)
         references = rng.standard_normal((2, 16, 16, 16)).astype(np.float64)
@@ -436,7 +436,7 @@ class TestAutoRefineExpectedAccuracyBinding:
             assert_matches(supplied.acc_rot_per_class, direct.acc_rot_per_class, err_msg=backend)
 
     def test_python_order_applies_relion_base_order_and_stable_optics_sort(self, bind):
-        from relax.helpers.expected_accuracy import relion_half1_trial_order
+        from relax.sampling.expected_accuracy import relion_half1_trial_order
 
         base = np.asarray([5, 4, 3, 2, 1, 0], dtype=np.int64)
         optics = np.asarray([2, 1, 2, 1, 2, 1], dtype=np.int64)

@@ -10,32 +10,23 @@ start-up) comes first.
 
 from __future__ import annotations
 
-import math
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.relion import initial_model_io
-from relax.relion.initial_model_io import _experiment_read_order
+from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2, relion_startup_positions
 from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
-from relax.vdam import bootstrap_reconstruction
+from relax.steps.optics_shapes import MultiShapeDataset
+from relax.vdam import bootstrap_reconstruction, initial_model_io
+from relax.vdam.initial_model_io import _experiment_read_order
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import n_directions_for_healpix_order
 from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_count
 
 if TYPE_CHECKING:
     from relax.vdam.ports import NoStageProfile, VdamInputSource
-
-# RELION's 0.07 digital-frequency low-pass for do_average_unaligned (ml_optimiser.cpp:2513-2518).
-INI_HIGH_DIGITAL_FREQ: float = 0.07
-
-
-def compute_ini_high_shell(box_size: int) -> int:
-    """``ROUND(0.07 * ori_size)`` (initial resolution shell)."""
-    return int(math.floor(INI_HIGH_DIGITAL_FREQ * box_size + 0.5))
-
 
 def compute_ini_high_angstrom(box_size: int, pixel_size: float) -> float:
     """Initial low-pass in Ångström (1/getResolution(ini_shell))."""
@@ -193,7 +184,7 @@ def compute_bootstrap_iref(
     """
     from recovar.utils.helpers import relion_volume_to_recovar
 
-    from relax.relion.relion_ctf import relion_ctf_fftw_half
+    from relax.relion.ctf import relion_ctf_fftw_half
 
     # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not A).
     current_size = compute_ini_high_shell(box_size)
@@ -249,26 +240,24 @@ def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
     """``(image_group, {group: gamma})`` for the bootstrap CTF, or None without even Zernike terms.
 
     The groups' even Zernike gamma offsets on the model grid, as relax's exact CTF rows
-    use them (:func:`relax.relion.relion_ctf._optics_group_ctf_geometry`). Magnification is
-    refused upstream for InitialModel.
+    use them (:func:`relax.relion.ctf._optics_group_ctf_geometry`). The command refuses
+    magnification (:func:`relax.star.metadata.refuse_unsupported_optics`), so a group's
+    ``rlnMagMat`` columns can only hold the exact identity here, which leaves the offsets unchanged (relax#66).
     """
 
     from recovar.data_io.starfile import star_column
 
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
     from relax.relion.optics_aberrations import dataset_needs_exact_ctf
 
     if not dataset_needs_exact_ctf(dataset):
         return None
-    _, cache = relion_ctf.exact_ctf_source_cache(dataset, (int(box_size), int(box_size)))
-    original = np.asarray(relion_ctf.original_image_indices(dataset, np.asarray(image_indices, dtype=np.int64)))
+    _, cache = ctf.exact_ctf_source_cache(dataset, (int(box_size), int(box_size)))
+    original = np.asarray(ctf.original_image_indices(dataset, np.asarray(image_indices, dtype=np.int64)))
     groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[original]
     gamma_by_group = {}
     for group in np.unique(groups):
-        gamma, mag = relion_ctf._optics_group_ctf_geometry(cache, int(group), int(box_size))
-        if mag is not None:
-            raise NotImplementedError("InitialModel does not implement anisotropic magnification")
-        gamma_by_group[int(group)] = gamma
+        gamma_by_group[int(group)] = ctf._optics_group_ctf_geometry(cache, int(group), int(box_size))[0]
     if all(gamma is None for gamma in gamma_by_group.values()):
         return None
     return groups, gamma_by_group
@@ -308,7 +297,7 @@ def postprocess_bootstrap_iref(
 def _group_pixel_sizes(dataset, optics_group_by_particle) -> np.ndarray | None:
     """Each optics group's image pixel size for a dataset on several image shapes, else None."""
 
-    if getattr(dataset, "datasets", None) is None:
+    if not isinstance(dataset, MultiShapeDataset):
         return None
     sizes = np.zeros(int(np.max(optics_group_by_particle)) + 1)
     for class_dataset, rows in zip(dataset.datasets, dataset.rows):
@@ -408,7 +397,7 @@ def initial_state_from_particles(
         )
     profile.record("raw_images")
     sorted_star = main_star.iloc[bootstrap_order]
-    voltage, Cs, Q0, pixel_size = initial_model_io._particle_optics(sorted_star, optics_star, dataset)
+    optics = initial_model_io._particle_optics(sorted_star, optics_star, dataset)
     profile.record("optics_metadata")
 
     # A comparison source's start-up references replace the bootstrap (VdamInputSource.startup_references).
@@ -421,9 +410,9 @@ def initial_state_from_particles(
             defV=np.asarray(sorted_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
             defAngle=np.asarray(sorted_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),
             phase_shift=initial_model_io._phase_shift(sorted_star),
-            voltage=voltage,
-            Cs=Cs,
-            Q0=Q0,
+            voltage=optics.voltage,
+            Cs=optics.Cs,
+            Q0=optics.Q0,
             pixel_size=pixel_size,
             box_size=box_size,
             nr_classes=int(opts.nr_classes),
@@ -481,7 +470,7 @@ def initial_state_from_particles(
 def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInitialModelOptions):
     """The de novo start of subtomogram particles (RELION 5 2D stacks): noise, bootstrap and priors.
 
-    ``dataset`` is a :class:`relax.refinement.tomo_half.TomoDataset`; its units are the particles.
+    ``dataset`` is a :class:`relax.steps.tomo_half.TomoDataset`; its units are the particles.
     RELION's start-up loop (calculateSumOfPowerSpectraAndAverageImage, ml_optimiser.cpp:2806-3080)
     counts tilt images against ``minimum_nr_particles_sigma2_noise`` (10 for subtomograms, :2574), so
     the first particle of each optics group fills it: its images give the noise spectrum and the
@@ -491,10 +480,10 @@ def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInit
     ``data_vs_prior`` counts particles (ml_model.cpp:1609-1617). Returns ``(state, optics_group_by_particle)``.
     """
 
-    from relax.helpers.expected_accuracy import _trial_ctf_images
-    from relax.refinement.tomo_half import tilt_image_accuracy_inputs
+    from relax.relion.ctf import relion_fftw_ctf_rows
     from relax.relion.optics_aberrations import dataset_needs_exact_ctf
-    from relax.relion.relion_ctf import relion_fftw_ctf_rows
+    from relax.steps.expected_accuracy import _trial_ctf_images
+    from relax.steps.tomo_half import tilt_image_accuracy_inputs
 
     box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)

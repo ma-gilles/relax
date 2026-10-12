@@ -23,10 +23,10 @@ import jax.numpy as jnp
 from helpers.em_arrays import _raw_real_image_2d
 
 import recovar.core.fourier_transform_utils as ftu
-from relax.scoring.sparse_bucket_arrays import _build_bucket_arrays, _prepare_per_image_pass2_inputs
-from relax.sparse_pass2.sparse_pass2_bucket_io import _reorder_to_indices
-from relax.sparse_pass2.sparse_pass2_posterior import _normalize_pass2_bucket_with_log_z
-from relax.sparse_pass2.sparse_pass2_scoring import _score_pass2_bucket_relion_gpu_diff2
+from relax.fine_pass.bucket_arrays import _build_bucket_arrays, _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_io import _reorder_to_indices
+from relax.fine_pass.posterior import _normalize_pass2_bucket_with_log_z
+from relax.fine_pass.scoring import _score_pass2_bucket_relion_gpu_diff2
 
 pytestmark = pytest.mark.unit
 

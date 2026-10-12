@@ -10,7 +10,7 @@
 ``run`` calls the real ``refine_single_volume`` of one source tree on small CPU cases (8-cubed volume,
 four images) and records, per case: the result mapping, every file the run wrote, every checkpoint
 snapshot, and one ordered trace of log records and selected calls. The ``main_*`` cases run the command
-entry (``full_refinement.main``, ``relax refine`` / ``relax class3d``) on a written 12-image, 16-pixel data
+entry (``refinement_run.main``, ``relax refine`` / ``relax class3d``) on a written 12-image, 16-pixel data
 directory with the device check stood in for, and record the operands main hands ``refine_single_volume``,
 its result and every file main writes. Arrays are recorded as module,
 dtype, shape and SHA-256 of their bytes, so a changed value, dtype, host/device placement, write or
@@ -66,8 +66,9 @@ import fingerprint_cli  # noqa: E402  (the shared command line; it imports no ha
 
 SCHEMA = 1
 NOT_COVERED = (
-    "in full_refinement.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
-    "STAR replays, --final-replay-relion-dir), frozen boundaries, state-swap probes, "
+    "in refinement_run.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
+    "STAR replays, --final-replay-relion-dir), schema-v3 frozen boundaries (the fixed diagnostic arm; "
+    "main_k1_frozen_boundary runs a schema-v2 one), state-swap probes, "
     "follower-scale topologies, noise or poses from an earlier archive, several optics groups, subtomograms",
     "the real E-step engines and their numbers (a stand-in seeded by its operands replaces the dense adaptive engine)",
     "local search with adaptive oversampling (its parent and fine local passes), Class3D local search and the "
@@ -93,7 +94,7 @@ DIFFERENCE_CLASSES = ("outputs", "added", "retired", "moved", "redefaulted", "tr
 # behaviour moved behind a port, code rule 15).
 OFF_VALUES = frozenset({"None", "False"})
 DEFAULT_MARK = "=default"
-# Leaves of what full_refinement.main hands the controller (fingerprints of the main_* cases).
+# Leaves of what refinement_run.main hands the controller (fingerprints of the main_* cases).
 CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
 # Option fields moved to another group, as (old path piece, new path piece) of a controller-input leaf: a leaf only in
 # A whose renamed path is a leaf only in B with the same value is a moved input, accepted.
@@ -176,7 +177,19 @@ def engine_kwargs_without_defaults(kwargs: dict) -> dict:
         default = ENGINE_KWARG_DEFAULTS[key]
         return value is None if default is None else type(value) is type(default) and value == default
 
-    return {key: value for key, value in kwargs.items() if not at_default(key, value)}
+    return {key: value for key, value in without_probe(kwargs).items() if not at_default(key, value)}
+
+
+def without_probe(kwargs: dict) -> dict:
+    """``kwargs`` less ``probe``, the K-class engine's diagnostics (layout S15): they observe the pass and never steer
+    it, and a tree from before S15 passes none. Refuses a ``probe`` that is not a probe (or None), so no other value
+    can leave the digest under that name."""
+
+    probe = kwargs.get("probe")
+    assert probe is None or all(
+        callable(getattr(probe, hook, None)) for hook in ("score_dump_requested", "support_audit", "firstiter_winners_scored")
+    ), f"the engine's probe keyword holds {type(probe).__name__}, not a K-class probe"
+    return {key: value for key, value in kwargs.items() if key != "probe"}
 
 
 
@@ -602,6 +615,17 @@ def _cases() -> dict[str, tuple[str, dict]]:
     add("k2_star_optimiser", "K=2 STAR replay with optimiser files", n_classes=2, join=0.0, star_prior=[2, 2, 2, 2], star_optimiser=True, dump=False)
     add("k1_frozen", "K=1 frozen initial scoring-state assertion", n_classes=1, join=0.0, init_prior=2, frozen=True, dump=False)
     add("k2_frozen", "K=2 frozen assertion (the controller refuses it)", n_classes=2, join=0.0, init_prior=2, frozen=True, dump=False)
+    # A frozen boundary's start seeds, none at its default (run_case: frozen_seeds, the boundary's state fields).
+    seeds = dict(n_classes=1, join=0.0, init_prior=2, frozen=True, writer=True)
+    add(
+        "k1_frozen_seeds", "K=1 frozen boundary whose start FSC, Pmax, high-FSC flag and RELION increment decide the "
+        "first size, and whose state fields replace the FSC's current resolution", frozen_seeds={"current_resolution": 7.0},
+        **seeds,
+    )
+    add(
+        "k1_frozen_seeds_fsc_resolution", "K=1 frozen boundary with the same seeds and no state field: the start "
+        "FSC's resolution stays", frozen_seeds={}, dump=False, **seeds,
+    )
     add("k4_writer_dump", "K=4 with checkpoints and the intermediates dump", n_classes=4, join=0.0, writer=True)
     add("k1_cc_writer", "K=1 first-iteration CC with checkpoints", n_classes=1, join=40.0, cc=True, writer=True)
     add("k4_cc_writer", "K=4 first-iteration CC with checkpoints", n_classes=4, join=0.0, cc=True, writer=True)
@@ -639,7 +663,7 @@ def _cases() -> dict[str, tuple[str, dict]]:
         local={"sigma_ang_deg": 3.0, "stop_after_local_search_profile": True}, **local)
     add("k1_sealed_final", "K=1 on a sealed sampling state that converges after its iteration: the final pass "
         "reuses the sealed grid", n_classes=1, join=0.0, sealed=True, max_iter=1, converge_after=1, dump=False)
-    # The command entry (full_refinement.main) on a 12-image, 16-pixel data directory.
+    # The command entry (refinement_run.main) on a 12-image, 16-pixel data directory.
     seed = ["--seed", "42"]  # a seed whose random halves are both non-empty for twelve particles
 
     def add_main(name, description, command, arguments, **keywords):
@@ -680,6 +704,11 @@ def _cases() -> dict[str, tuple[str, dict]]:
              n_classes=2)
     add_main("main_k2_continue", "relax class3d --continue from the run files of one iteration", "class3d",
              ["--max_iter", "2", "--n_classes", "2"], n_classes=2, continue_after=1)
+    add_main("main_k1_frozen_boundary", "relax refine --frozen-boundary-dir: one iteration from a schema-v2 boundary "
+             "directory whose start seeds decide the first size (box 20)", "refine",
+             ["--frozen-boundary-dir", "<BOUNDARY>", "--relion_half_sets", "<HALVES>", "--perturb_replay_relion_dir",
+              "<RELION>", "--max_iter", "1", "--skip_final_iteration", "--init_relion_iteration", "1",
+              "--healpix_order", "2", "--adaptive_oversampling", "1"], frozen_boundary_box=20)
     add_main("main_refused_command", "relax refine asked for two classes (refused)", "refine",
              ["--max_iter", "2", "--n_classes", "2"], n_classes=2)
     add_main("main_refused_single_half", "--diagnostic_single_half without a local-search stop (refused)", "refine",
@@ -801,6 +830,19 @@ MUTATIONS = (
      "the STAR replay returns its prior translations reversed", False),
     ("star_offset_range_doubled", '_relion_offset_range = float(_replay_meta["offset_range"]) / pixel_size_angstrom', '_relion_offset_range = 2 * float(_replay_meta["offset_range"]) / pixel_size_angstrom',
      "the STAR replay reads twice the translation range", True),
+    # A frozen boundary's start seeds (k1_frozen_seeds*): each dropped, and the FSC installed out of order.
+    ("frozen_start_fsc_size_plan_dropped", "elif start_seeds.fsc is not None:\nprev_cs = int(schedule.init_current_size)", "elif False:\nprev_cs = int(schedule.init_current_size)",
+     "the first image size is planned without the frozen boundary's start FSC", True),
+    ("frozen_start_fsc_resolution_dropped", "elif source.start_seeds.fsc is not None:\ninitialize_resolution_from_fsc(", "elif False:\ninitialize_resolution_from_fsc(",
+     "a frozen boundary's start FSC does not seed the start resolution", True),
+    ("frozen_start_fsc_after_state_fields", "source.restore_boundary_state(state)", "source.restore_boundary_state(state); source.start_seeds.fsc is None or initialize_resolution_from_fsc(state, source.start_seeds.fsc, options, box_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom, dtype=dtype)",
+     "the start FSC's resolution is installed after the frozen boundary's state fields instead of before", True),
+    ("frozen_start_pmax_dropped", "_init_pmax = float(start_seeds.ave_pmax) if start_seeds.ave_pmax is not None else 0.0", "_init_pmax = 0.0",
+     "the first image size is planned without the frozen boundary's Pmax", True),
+    ("frozen_start_high_fsc_flag_dropped", "relion_has_high_fsc_at_limit = bool(source.start_seeds.has_high_fsc_at_limit)", "relion_has_high_fsc_at_limit = False",
+     "the run starts without the frozen boundary's high-FSC-at-limit flag", True),
+    ("frozen_start_incr_size_dropped", "relion_incr_size = source.start_seeds.relion_incr_size", "relion_incr_size = 10",
+     "the run starts from RELION's default size increment instead of the frozen boundary's", True),
     # The command entry (the main_* cases).
     ("main_max_iter_not_continued", "max_iter=int(max_iter) - (continued_iterations or 0),", "max_iter=int(max_iter),",
      "a continued run counts --max_iter from its own first iteration", True),
@@ -809,6 +851,13 @@ MUTATIONS = (
      "Class3D seeds random classes from per-class maps instead of from one reference", True),
     ("main_tau2_fudge_ignored", "parity=RelionParityOptions(\ntau2_fudge=effective_tau2_fudge,", "parity=RelionParityOptions(\ntau2_fudge=1.0,",
      "the controller is handed the default tau2 fudge instead of --tau2_fudge", True),
+    # A frozen boundary through the command (main_k1_frozen_boundary).
+    ("main_frozen_start_seeds_dropped", "fsc=frozen_boundary.fsc, ave_pmax=frozen_boundary.ave_pmax,\nhas_high_fsc_at_limit=frozen_boundary.has_high_fsc_at_limit,\nrelion_incr_size=frozen_boundary.relion_incr_size,", "fsc=None,\nhas_high_fsc_at_limit=None,\nrelion_incr_size=10,",
+     "the command's replay source drops the frozen boundary's start seeds", True),
+    ("main_frozen_corrections_ignored", "initial_poses.image_corrections if frozen_boundary is None else frozen_boundary.image_corrections", "initial_poses.image_corrections",
+     "the start state takes the input particles' image corrections instead of the frozen boundary's", True),
+    ("main_frozen_current_size_ignored", "int(frozen_boundary.current_size)\nif frozen_boundary is not None", "int(frozen_boundary.current_size)\nif False",
+     "the command starts a frozen boundary from --init_resolution's size instead of the boundary's", True),
     ("startup_lowpass_skipped", "real64 = _initial_lowpass_real(volume_real, volume_shape, pixel_size, ini_high)",
      "real64 = np.asarray(volume_real, dtype=np.float64)",
      "the start-up references (K=1 and Class3D, one step) are not low-pass filtered", True),
@@ -838,7 +887,13 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     from helpers.fake_adaptive_engine import adaptive_result
 
     import relax
-    from relax.helpers import expected_accuracy
+    try:
+        from relax.steps import expected_accuracy
+    except ImportError:  # the source before the estimator moved to steps (layout S8b)
+        try:
+            from relax.sampling import expected_accuracy
+        except ImportError:  # the source before the package layout move
+            from relax.helpers import expected_accuracy
     from relax.refinement import iteration_loop, refinement_options
 
     assert relax.__file__.startswith(source), relax.__file__
@@ -944,9 +999,21 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def stand_in_local(*owners):
         """CPU stand-in for _run_local_search_iteration (one K=1 local pass): a result seeded by every operand of
         its four owners, with the accumulator layout, statistics and best poses the half reads."""
-        from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-        from relax.helpers.types import NoiseStats, RelionStats
-        from relax.refinement.local_search_iteration import LocalSearchResult
+        try:
+            from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
+        except ImportError:  # the source before the package layout move
+            from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+        try:
+            from relax.types import NoiseStats, RelionStats
+        except ImportError:  # the source before the package layout move
+            from relax.helpers.types import NoiseStats, RelionStats
+        try:
+            from relax.refinement.local_search_iteration import LocalSearchResult
+        except ImportError:  # a source in which the local search is local_half's own
+            try:
+                from relax.refinement.local_half import LocalSearchResult
+            except ImportError:  # the source in which local_half was relax/local_search/half.py (layout S7)
+                from relax.local_search.half import LocalSearchResult
         from relax.sampling import rotation_grid_size
 
         fields = {f.name: getattr(owner, f.name) for owner in owners for f in dataclasses.fields(owner)}
@@ -1045,14 +1112,21 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             return [None if o is None else one_prior(n_classes, o, seed + h) for h, o in enumerate(order)]
         return [one_prior(n_classes, order, seed), one_prior(n_classes, order, seed + 1)]
 
-    def write_relion_dir(n_classes, orders, max_iter, optimiser):
+    def write_relion_dir(n_classes, orders, max_iter, optimiser, seed=17):
         """RELION sampling and model STAR files for the replay directory; orders[i] is the prior written
-        after RELION iteration i+1 (None writes no model file for that iteration)."""
+        after RELION iteration i+1 (None writes no model file for that iteration). ``seed``: the run's
+        perturbation seed."""
+        from relax.sampling import relion_sampling_perturbation_for_iteration
+
         root = Path(tempfile.mkdtemp(dir=tmp_root))
         for it in range(0, max_iter + 2):
+            # The perturbation RELION's seed (the cases' perturb_seed, 17) gives at this iteration, unrounded:
+            # the replay recovers it from the seed and checks the STAR value against it.
+            perturbation = float(relion_sampling_perturbation_for_iteration(0.5, seed, it))
             (root / f"run_it{it:03d}_sampling.star").write_text(
                 "data_sampling_general\n\n_rlnHealpixOrder 2\n_rlnPsiStep 15.0\n_rlnOffsetRange 10.0\n"
-                "_rlnOffsetStep 2.0\n_rlnSamplingPerturbInstance 0.25\n_rlnSamplingPerturbFactor 0.5\n"
+                f"_rlnOffsetStep 2.0\n_rlnSamplingPerturbInstance {perturbation!r}\n"
+                "_rlnSamplingPerturbFactor 0.5\n"
             )
         if optimiser:
             for it in range(1, max_iter + 2):
@@ -1151,7 +1225,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                  writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
                  iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
                  seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None,
-                 consistency=None, current_sizes=None, sealed=False, local=None):
+                 consistency=None, current_sizes=None, sealed=False, local=None, frozen_seeds=None):
         first_pass = None
         if continued:
             first_pass = run_case(n_classes, join, max_iter=1, converge_after=None, dump=False, cc=cc, writer=True,
@@ -1161,11 +1235,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 return {"status": {"error": "first pass failed"}, "result": {}, "files": {}, "checkpoints": {},
                         "trace": [], "first_pass": first_pass}
             resume = snapshots[-1]
-        rng = np.random.default_rng(fixtures.SEED)
-        n_half = fixtures.N_IMAGES // 2
-        halves = [Dataset(n_half, rng, 0), Dataset(n_half, rng, n_half)]
-        init_volume = fixtures._hermitian_volume(fixtures.VOLUME_SHAPE, seed=42)
-        translations = jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32)
         patches, calls = [], {"updates": 0}
         del trace[:]
 
@@ -1173,6 +1242,17 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             patches.append((owner, name, getattr(owner, name)))
             setattr(owner, name, replacement)
 
+        if frozen_seeds is not None:
+            # A box of 20 for this case (the unit-test fixtures' sizes, restored with the stand-ins): RELION's
+            # quarter-box growth step stays below the box only from 18 pixels on.
+            for name, value in (("IMAGE_SHAPE", (20, 20)), ("IMAGE_SIZE", 400), ("VOLUME_SHAPE", (20, 20, 20)),
+                                ("VOLUME_SIZE", 8000)):
+                patch(fixtures, name, value)
+        rng = np.random.default_rng(fixtures.SEED)
+        n_half = fixtures.N_IMAGES // 2
+        halves = [Dataset(n_half, rng, 0), Dataset(n_half, rng, n_half)]
+        init_volume = fixtures._hermitian_volume(fixtures.VOLUME_SHAPE, seed=42)
+        translations = jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32)
         install_stand_ins(patch, calls, converge_after=converge_after, accuracy=accuracy)
         for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR", "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"):
             os.environ.pop(name, None)
@@ -1256,6 +1336,23 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 init_image_corrections=[np.ones(n_half, dtype=np.float32) for _ in range(2)],
                 init_scale_corrections=[np.ones(n_half, dtype=np.float32) for _ in range(2)],
             )
+        init_current_size, frozen_state_fields = 4, {}
+        if frozen_seeds is not None:
+            # A frozen boundary's start seeds, none at its default, each deciding an output (box 20, previous
+            # size 16). The FSC gives resolution shell 6, which seeds the current resolution; the boundary's
+            # state fields (frozen_seeds) are installed after it, so one that names the current resolution
+            # replaces the FSC's and the order of the two shows. The FSC at the limit shell 7 (0.15) is not high,
+            # so the flag is the seed's; with it and the Pmax the first size grows by a quarter box (to 16),
+            # without either by the increment (to the box, 20). The increment is above the one the FSC implies
+            # (6) and is carried into the checkpoints.
+            init_current_size, frozen_state_fields = 16, dict(frozen_seeds)
+            frozen_start_seeds = dict(
+                init_fsc=np.asarray([1.0, 0.95, 0.9, 0.85, 0.8, 0.7, 0.6, 0.15, 0.1, 0.05, 0.02], dtype=np.float32),
+                init_ave_Pmax=0.5, init_has_high_fsc_at_limit=True, init_relion_incr_size=13,
+            )
+            if "init_fsc" in {f.name for f in dataclasses.fields(refinement_options.StartState)}:
+                # A source older than deep2 O S1 part 2: the seeds are start-state options.
+                replay_fields.update(frozen_start_seeds)
         if replay_fields:
             # The replay slots and the final-only replay are a ReplayState's on a source older than the replay
             # input source's settings (RelionReplay); run_case moves them there below otherwise. The record is
@@ -1270,7 +1367,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             )
         if star_prior is not None:
             parity["perturb_replay_relion_dir"] = write_relion_dir(n_classes, star_prior, max_iter, star_optimiser)
-            parity["perturb_replay_precision"] = "star"
         if replay_max_iter is not None:
             parity["perturb_replay_max_iter"] = replay_max_iter
         debug_fields = {}
@@ -1279,7 +1375,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         if frozen:
             debug_fields["assert_initial_scoring_state_immutable"] = True
         observer = {}
-        if dump and "save_intermediates_dir" in {f.name for f in dataclasses.fields(refinement_options.EngineDebugOptions)}:
+        debug_class = getattr(refinement_options, "EngineDebugOptions", None)
+        if dump and debug_class is not None and "save_intermediates_dir" in {f.name for f in dataclasses.fields(debug_class)}:
             # A source older than the observer port (code rule 15): the intermediates are a debug option.
             debug_fields["save_intermediates_dir"] = dump_dir
         elif dump:
@@ -1314,11 +1411,18 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             if debug_fields.pop("assert_initial_scoring_state_immutable", False):
                 # A frozen boundary's (empty) RefinementState fields: with them the source checks the scoring
                 # state; a source older than deep2 O-D5 also takes its separate assert_scoring_state_unchanged.
-                source_fields["frozen_refinement_state_fields"] = {}
+                source_fields["frozen_refinement_state_fields"] = frozen_state_fields
                 if "assert_scoring_state_unchanged" in {f.name for f in dataclasses.fields(replay_class)}:
                     source_fields["assert_scoring_state_unchanged"] = True
+            if frozen_seeds is not None and "start_seeds" in {f.name for f in dataclasses.fields(replay_class)}:
+                # The seeds enter through the input source, as the frozen boundary's other state does.
+                source_fields["start_seeds"] = importlib.import_module("relax.refinement.ports").StartSeeds(
+                    fsc=frozen_start_seeds["init_fsc"], ave_pmax=frozen_start_seeds["init_ave_Pmax"],
+                    has_high_fsc_at_limit=frozen_start_seeds["init_has_high_fsc_at_limit"],
+                    relion_incr_size=frozen_start_seeds["init_relion_incr_size"],
+                )
         if debug_fields:
-            extra["debug"] = refinement_options.EngineDebugOptions(**debug_fields)
+            extra["debug"] = debug_class(**debug_fields)
         if perturb is not None:
             parity["perturb_factor"] = perturb
         if cc:
@@ -1335,7 +1439,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 replay_settings = {
                     name: group.pop(name)
                     for group, names in (
-                        (parity, ("perturb_replay_relion_dir", "perturb_replay_precision", "perturb_replay_max_iter")),
+                        (parity, ("perturb_replay_relion_dir", "perturb_replay_max_iter")),
                         (replay_fields, ("replay_iteration_overrides", "final_replay_override")),
                     )
                     for name in names if name in group
@@ -1343,7 +1447,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 replay_settings.update(source_fields)
             options = refinement_options.RefinementOptions(
                 schedule=refinement_options.RefinementSchedule(
-                    max_iter=max_iter, init_current_size=4, init_healpix_order=init_order, max_healpix_order=2,
+                    max_iter=max_iter, init_current_size=init_current_size, init_healpix_order=init_order,
+                    max_healpix_order=2,
                     init_translation_range=10.0,
                     **({} if resume is None else {"init_relion_iteration": int(resume.relion_iteration)}),
                     **({"skip_final_iteration": True} if skip_final else {}),
@@ -1367,7 +1472,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 # The start-up arrays in their single-use holder (relax#26).
                 from relax.refinement.startup_references import StartupHandoff
 
-                half_pair = getattr(importlib.import_module("relax.refinement.half_inputs"), "HalfPair", None)
+                try:
+                    half_inputs = importlib.import_module("relax.steps.half_inputs")
+                except ImportError:  # the source before half_inputs moved to steps (layout S8c)
+                    half_inputs = importlib.import_module("relax.refinement.half_inputs")
+                half_pair = getattr(half_inputs, "HalfPair", None)
                 if half_pair is not None:
                     # The start-up volume and noise as typed pairs, shared by the halves.
                     init_volume, noise_variance = half_pair.shared(init_volume), half_pair.shared(noise_variance)
@@ -1469,6 +1578,84 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         star.write_text("".join(line for line in star.read_text().splitlines(True) if not line.startswith("# Created")))
         return root
 
+    def write_frozen_boundary_inputs(work, data, *, box):
+        """What ``--frozen-boundary-dir`` needs beside the data directory, written under ``work``: a RELION
+        half-set STAR (the particle STAR with alternating ``rlnRandomSubset``), a replay directory of RELION
+        STAR files, and a schema-v2 boundary directory (its NPZ and SHA-256 manifest) bound to the two STARs.
+        Returns ``{placeholder: path}`` for the case's arguments.
+
+        The boundary completes RELION iteration 1 at HEALPix order 2 and previous size 18 (not the size
+        --init_resolution gives, 16). Its start seeds are k1_frozen_seeds': an FSC of resolution shell 6 that is
+        not high at the limit shell, Pmax 0.5, the high-FSC flag and increment 13, so the first size is 16 only
+        with the Pmax and the flag (the box otherwise).
+        """
+        import starfile
+
+        from relax.parity import frozen_boundary
+
+        star = starfile.read(data / "particles.star", always_dict=True)
+        particles = star["particles"]
+        n_images = len(particles)
+        particles["rlnRandomSubset"] = 1 + np.arange(n_images) % 2
+        halves = work / "halves.star"
+        starfile.write(star, halves)
+        halves.write_text("".join(line for line in halves.read_text().splitlines(True) if not line.startswith("# Created")))
+        names = np.asarray(particles["rlnImageName"], dtype=str)
+        rows = [np.flatnonzero(np.asarray(particles["rlnRandomSubset"]) == half).astype(np.int64) for half in (1, 2)]
+        rng = np.random.default_rng(11)
+        n_shells, size = box // 2 + 1, box**3
+        values = {
+            "schema": np.asarray(frozen_boundary.FROZEN_BOUNDARY_SCHEMA_V2),
+            "completed_relion_iteration": np.int32(1),
+            "volume_shape": np.asarray([box, box, box], dtype=np.int32),
+            "current_size": np.int32(18), "healpix_order": np.int32(2),
+            "relion_incr_size": np.int32(13), "has_high_fsc_at_limit": np.bool_(True),
+            "mean_variance": np.full(size, 100.0, dtype=np.float32),
+            "fsc": np.asarray([1.0, 0.95, 0.9, 0.85, 0.8, 0.7, 0.6, 0.15, 0.1, 0.05, 0.02], dtype=np.float32)[:n_shells],
+            "ave_pmax": np.float64(0.5),
+            "state_current_resolution": np.float64(7.0), "state_previous_resolution": np.float64(9.0),
+            "state_nr_iter_wo_resol_gain": np.int32(1), "state_nr_iter_wo_assignment_changes": np.int32(2),
+            "state_nr_iter_wo_large_hidden_variable_changes": np.int32(3), "state_ave_Pmax": np.float64(0.3),
+            "state_current_changes_optimal_orientations": np.float64(9.0),
+            "state_current_changes_optimal_offsets_angstrom": np.float64(1.5),
+            "state_smallest_changes_optimal_orientations": np.float64(8.0),
+            "state_smallest_changes_optimal_offsets_angstrom": np.float64(1.25),
+            "state_acc_rot": np.float64(2.0), "state_acc_trans": np.float64(1.0),
+            "state_has_converged": np.bool_(False),
+            "source_job_id": np.int64(1), "source_arm": np.asarray("fingerprint"),
+            "source_map_serialization": np.asarray("in_memory_complex64"),
+            "bitwise_identity_to_original_in_memory_means": np.bool_(True),
+            "correction_state_owner": np.asarray("sealed_boundary"), "identity_schema": np.asarray("five_field.v1"),
+            "source_star_sha256": np.asarray(hashlib.sha256((data / "particles.star").read_bytes()).hexdigest()),
+            "relion_half_star_sha256": np.asarray(hashlib.sha256(halves.read_bytes()).hexdigest()),
+        }
+        for half, half_rows in enumerate(rows, start=1):
+            n = half_rows.size
+            values.update({
+                f"half{half}_mean_ft": np.asarray(
+                    fixtures._hermitian_volume((box, box, box), seed=60 + half), dtype=np.complex64).reshape(-1),
+                f"half{half}_noise_radial": 1.0 + 0.1 * half + np.arange(n_shells, dtype=np.float64) / n_shells,
+                f"half{half}_previous_best_rotation_eulers": rng.uniform(0.0, 90.0, (n, 3)).astype(np.float32),
+                f"half{half}_previous_best_translations": rng.integers(-1, 2, (n, 2)).astype(np.float32),
+                f"half{half}_image_corrections": (1.0 + 0.05 * rng.random(n)).astype(np.float32),
+                f"half{half}_scale_corrections": (1.0 + 0.05 * rng.random(n)).astype(np.float32),
+                f"half{half}_direction_prior": (0.5 + rng.random(192)).astype(np.float32) / 192.0,
+                f"half{half}_translation_sigma_angstrom": np.float64(4.0 + half),
+                f"half{half}_image_name": names[half_rows], f"half{half}_source_row": half_rows,
+                f"half{half}_random_subset": np.full(n, half, dtype=np.int8),
+                f"half{half}_half_index": np.full(n, half - 1, dtype=np.int8),
+                f"half{half}_half_local_index": np.arange(n, dtype=np.int64),
+            })
+        boundary = work / "boundary"
+        boundary.mkdir()
+        np.savez(boundary / frozen_boundary.FROZEN_BOUNDARY_FILENAME, **values)
+        digest = hashlib.sha256((boundary / frozen_boundary.FROZEN_BOUNDARY_FILENAME).read_bytes()).hexdigest()
+        (boundary / frozen_boundary.FROZEN_BOUNDARY_MANIFEST).write_text(
+            f"{digest}  {frozen_boundary.FROZEN_BOUNDARY_FILENAME}\n", encoding="utf-8")
+        # The command's seed (--seed 42); no model STAR for iteration 2, whose size would replace the planned one.
+        relion = write_relion_dir(1, [2, None], 1, True, seed=42)
+        return {"<BOUNDARY>": str(boundary), "<HALVES>": str(halves), "<RELION>": relion}
+
     def hash_output_files(base, out):
         """Every file under ``base``: archives by array, maps by data, text with its creation stamp dropped."""
         import mrcfile
@@ -1503,8 +1690,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 out[rel] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
         return out
 
-    def run_main_case(command, arguments, *, n_classes=1, converge_after=None, continue_after=None, first=None):
-        """``relax <command>`` (full_refinement.main) on a tiny data directory, the stand-in engine underneath.
+    def run_main_case(command, arguments, *, n_classes=1, converge_after=None, continue_after=None, first=None,
+                      frozen_boundary_box=None):
+        """``relax <command>`` (refinement_run.main) on a tiny data directory, the stand-in engine underneath.
 
         Records the operands main hands refine_single_volume, its result, and every file main writes.
         ``continue_after`` first runs that many iterations and then continues from their run files; ``first``
@@ -1512,10 +1700,18 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         """
         import jax
 
-        from relax.refinement import full_refinement
+        try:
+            from relax.commands import refinement_run
+        except ImportError:  # the source before the command boundary moved to commands (layout S9)
+            from relax.refinement import full_refinement as refinement_run
 
         work = Path(tempfile.mkdtemp(dir=tmp_root))
-        data = write_tiny_dataset(work / "data", n_classes=n_classes)
+        if frozen_boundary_box is None:
+            data, placeholders = write_tiny_dataset(work / "data", n_classes=n_classes), {}
+        else:
+            # A frozen boundary through the command: its box, and the files the command binds it to.
+            data = write_tiny_dataset(work / "data", n_classes=n_classes, box=frozen_boundary_box)
+            placeholders = write_frozen_boundary_inputs(work, data, box=frozen_boundary_box)
         environ = dict(os.environ)
         patches, calls = [], {"updates": 0}
         refine_inputs, refine_results = [], []
@@ -1559,11 +1755,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                     run_arguments += ["--continue", str(optimiser)]
                 run_arguments = [argument.replace("<DATA>", str(data)).replace("<OUTDIR>", str(output))
                                  .replace("<FIRST>", str(work / "first")) for argument in run_arguments]
+                run_arguments = [placeholders.get(argument, argument) for argument in run_arguments]
                 sys.argv = ["relax", "--data_dir", str(data), "--output", str(output), *run_arguments]
                 sys.orig_argv = ["python", "-m", f"relax.commands.{command}", *sys.argv[1:]]  # run files record it
                 try:
                     with contextlib.redirect_stdout(printed):
-                        full_refinement.run_from_command_line(command)
+                        refinement_run.run_from_command_line(command)
                     statuses.append("ok")
                 except SystemExit as exc:
                     statuses.append(f"SystemExit({scrub(str(exc.code))})")

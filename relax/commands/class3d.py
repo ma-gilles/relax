@@ -6,7 +6,7 @@ lists the options and ``docs/user_guide.md`` has runnable examples.
 
 from __future__ import annotations
 
-from relax.refinement.full_refinement import run_from_command_line
+from relax.commands.refinement_run import run_from_command_line
 
 
 def main() -> None:

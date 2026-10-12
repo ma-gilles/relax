@@ -1,8 +1,8 @@
 """BPref diagnostic capture, scoped execution checks and artifact writing.
 
-This module owns the shared numbered-half context and capture counters used by
-sparse and exact-local EM. Diagnostic output preserves the existing schemas,
-array precision and capture order. Execution-policy flags here select explicit
+This module owns the capture counters used by sparse and exact-local EM and the
+switches a numbered half's BPref diagnostics read (``BpRefDiagnosticsObserver``).
+Diagnostic output preserves the existing schemas, array precision and capture order. Execution-policy flags here select explicit
 diagnostic overrides; callers still own the production scoring and M-step.
 """
 
@@ -14,8 +14,11 @@ from pathlib import Path
 import jax
 import numpy as np
 
-from relax.helpers.env_flags import parse_env_flag
-from relax.local.local_backprojection import relion_x_half_sequential_translation_reduction_enabled
+from relax.fine_pass.local_backprojection import (
+    _RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION_ENV,
+    relion_x_half_sequential_translation_reduction_enabled,
+)
+from relax.runtime.env_flags import parse_env_flag
 
 _BPREF_MEMBERSHIP_DUMP_DIR_ENV = "RELAX_BPREF_MEMBERSHIP_DUMP_DIR"
 _BPREF_MEMBERSHIP_DUMP_ITERATION_ENV = "RELAX_BPREF_MEMBERSHIP_DUMP_ITERATION"
@@ -27,7 +30,22 @@ _RELION_X_HALF_BP_PER_PARTICLE_LAUNCH_ENV = "RELAX_RELION_X_HALF_BP_PER_PARTICLE
 _RELION_X_HALF_BP_FUSED_ATOMICS_ENV = "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS"
 
 
-_bpref_contribution_context = {"iteration": -1, "half": -1}
+# The variables the BPref observer (``relax.diagnostics.observers.BpRefDiagnosticsObserver``) reads; the command
+# builds it when one of them is set. Unset or blank, its hooks do nothing and arm nothing.
+BPREF_DIAGNOSTIC_ENVS = (
+    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_HALF",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
+    _BPREF_MEMBERSHIP_DUMP_DIR_ENV,
+    _RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION_ENV,
+    _RELION_X_HALF_BP_PER_PARTICLE_LAUNCH_ENV,
+    _RELION_X_HALF_BP_FUSED_ATOMICS_ENV,
+    "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
+    "RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR",
+    "RELAX_PASS2_DUMP_DIR",
+    "RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR",
+)
 
 
 _bpref_image_identity_cache: dict[str, np.ndarray] = {}
@@ -43,20 +61,6 @@ _bpref_device_panel_launch_counters: dict[_BPrefPanelKey, int] = {}
 
 
 _bpref_device_panel_metadata: dict[_BPrefPanelKey, dict[str, object]] = {}
-
-
-def set_bpref_contribution_dump_context(*, iteration: int, half: int) -> None:
-    """Set explicit one-based iteration/half labels for diagnostic row dumps."""
-
-    _bpref_contribution_context["iteration"] = int(iteration)
-    _bpref_contribution_context["half"] = int(half)
-
-
-def clear_bpref_contribution_dump_context() -> None:
-    """Mark contribution and native M-step dumps as outside a numbered half."""
-
-    _bpref_contribution_context["iteration"] = -1
-    _bpref_contribution_context["half"] = -1
 
 
 class BPrefContributionDumpComplete(RuntimeError):
@@ -189,12 +193,12 @@ def _scoped_bpref_diagnostic_flags(*, active: bool) -> dict[str, bool]:
     }
 
 
-def _bpref_membership_dump_requested():
+def _bpref_membership_dump_requested(context_iteration: int, context_half: int):
+    """Whether the membership dump targets the numbered half ``context_half`` (1 or 2) of iteration
+    ``context_iteration`` (one-based; -1 for both outside a numbered half)."""
     dump_dir = os.environ.get(_BPREF_MEMBERSHIP_DUMP_DIR_ENV, "").strip()
     if not dump_dir:
         return False
-    context_iteration = int(_bpref_contribution_context["iteration"])
-    context_half = int(_bpref_contribution_context["half"])
     target_iteration = os.environ.get(_BPREF_MEMBERSHIP_DUMP_ITERATION_ENV)
     if target_iteration and context_iteration != int(target_iteration):
         return False
@@ -227,8 +231,11 @@ def _scoped_bpref_diagnostics_active(flags: dict[str, bool]) -> bool:
 def _relion_firstiter_bpref_diagnostics_active(
     *,
     bpref_device_signature_active: bool,
+    iteration: int,
+    half: int,
 ) -> bool:
-    """Resolve the diagnostics that make deferred firstiter BPref unsafe."""
+    """Resolve the diagnostics that make deferred firstiter BPref unsafe, for the numbered ``half`` (1 or 2) of
+    ``iteration`` (one-based)."""
 
     device_signature_configured = bool(
         os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "").strip()
@@ -239,7 +246,7 @@ def _relion_firstiter_bpref_diagnostics_active(
             os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_DIR", "").strip()
             and (bpref_device_signature_active or not device_signature_configured)
         )
-        or _bpref_membership_dump_requested()
+        or _bpref_membership_dump_requested(iteration, half)
         or _scoped_bpref_diagnostics_active(
             _scoped_bpref_diagnostic_flags(active=bpref_device_signature_active)
         )

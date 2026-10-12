@@ -1,12 +1,12 @@
 import numpy as np
 import pytest
 
-from relax.helpers.types import make_noise_stats
 from relax.refinement.sigma_offset import (
     SigmaOffset,
     update_class_sigma_offset_from_posterior,
     update_k1_sigma_offset_from_posterior,
 )
+from relax.types import make_noise_stats
 
 pytestmark = pytest.mark.unit
 

@@ -1,7 +1,7 @@
 # EM Parity Best Metrics Ledger
 
 This file tracks accepted best RECOVAR-vs-RELION EM parity runs for the
-completion benchmark described in `recovar/em/CLAUDE.md`.
+completion benchmark described in `relax/AGENTS.md`.
 
 Use this for substantive "done" checks, not every edit-cycle test. The target
 completion benchmark is both K=1 and K=4 on at least 100k particles with at

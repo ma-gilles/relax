@@ -20,7 +20,7 @@ Subcommands::
     score        masked metrics of one RELION arm and one relax arm
 
 Frames: masks, RELION maps and relax maps are all in RELION's MRC file frame
-(``relax.helpers.map_io``), so arrays are compared as read and a mask applies
+(``relax.io.map_io``), so arrays are compared as read and a mask applies
 to every map. relax maps written before that convention carry no relax label
 and hold the negated array; such a map is negated once when it is read, and
 the score records which convention each relax map had. A mask source is chosen
@@ -586,7 +586,7 @@ def frame_correlation(a: np.ndarray, b: np.ndarray, mask: np.ndarray) -> float:
 
 def relax_map_sign(path: Path) -> float:
     """+1 for a labeled relax map (RELION convention), -1 for an unlabeled one written before it."""
-    from relax.helpers.map_io import is_relax_map
+    from relax.io.map_io import is_relax_map
 
     return 1.0 if is_relax_map(path) else -1.0
 

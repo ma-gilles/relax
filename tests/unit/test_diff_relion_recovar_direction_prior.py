@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,11 +15,18 @@ from scripts.diff_relion_recovar_per_iter import (
 )
 
 
+def _set_mtime_order(*, older, newer):
+    stamp = newer.stat().st_mtime_ns
+    os.utime(older, ns=(stamp - 1_000_000_000, stamp - 1_000_000_000))
+
+
 def test_cached_diagnostic_older_than_refinement_is_ignored(tmp_path):
     artifact = tmp_path / "pose_comparison_iter000.npz"
     refinement = tmp_path / "refinement_results.npz"
     np.savez(artifact, value=np.asarray([1.0]))
     np.savez(refinement, value=np.asarray([2.0]))
+    # Two back-to-back writes can share one timestamp tick; the test is about the order, so it sets it.
+    _set_mtime_order(older=artifact, newer=refinement)
 
     assert _load_current_npz_artifact(artifact, refinement, label="pose") is None
 
@@ -27,6 +36,7 @@ def test_cached_diagnostic_newer_than_refinement_is_loaded(tmp_path):
     artifact = tmp_path / "pose_comparison_iter000.npz"
     np.savez(refinement, value=np.asarray([2.0]))
     np.savez(artifact, value=np.asarray([1.0]))
+    _set_mtime_order(older=refinement, newer=artifact)
 
     loaded = _load_current_npz_artifact(artifact, refinement, label="pose")
     assert loaded is not None

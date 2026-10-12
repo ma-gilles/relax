@@ -1,6 +1,6 @@
 """Prerequisite test P1 for the PPCA-ab-initio v0 plan.
 
-Verifies that recovar.em.reference.heterogeneity.compute_bHb_terms — the
+Verifies that oracles.heterogeneity.compute_bHb_terms — the
 low-rank score correction used inside compute_pose_probabilities — actually
 computes the formula it claims to compute.
 

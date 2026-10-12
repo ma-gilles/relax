@@ -1,6 +1,7 @@
 """The RELION-vs-relax benchmark pages (results and provenance) stay in sync with their JSON baseline."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -8,8 +9,10 @@ from scripts.render_benchmark_table import (
     DEFAULT_JSON,
     DEFAULT_MARKDOWN,
     DEFAULT_PROVENANCE,
+    NOT_SEPARABLE,
     TABLE_HEADER,
     load_and_validate,
+    measured_scorer_resolution,
     multiseed_quality,
     render_markdown,
     render_provenance,
@@ -369,3 +372,69 @@ def test_feature_checks_render_in_their_own_section_by_flag_only(tmp_path):
     path.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="debug fixture"):
         load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_scorer_resolution_gives_not_separable_only_when_every_seed_is_inside():
+    # user decision 2026-10-10: gaps smaller than the measured scoring noise do not count seeds as hit or miss
+    relax, relion = {1: 0.6464, 2: 0.6439, 3: 0.6448}, {1: 0.6458, 2: 0.6436, 3: 0.6455}
+    band = list(relion.values())
+    hit, reason = multiseed_quality(relax, relion, band)
+    assert hit and "inside the scorer" not in reason
+    hit, reason = multiseed_quality(relax, relion, band, scorer_resolution=9.5e-4)
+    assert hit is None and reason.startswith("not separable at the scorer's resolution 9.5e-4") and "s3 −7.0e-4" in reason
+    # one seed beyond the resolution: the row keeps hit or miss and names the seeds that are inside
+    hit, reason = multiseed_quality(relax, relion, band, scorer_resolution=6.5e-4)
+    assert hit is True and "s1/s2 inside the scorer's resolution 6.5e-4" in reason
+    # a seed below by more than the resolution still counts: a systematic deficit stays a miss
+    low = {1: 0.6440, 2: 0.6420, 3: 0.6448}
+    hit, reason = multiseed_quality(low, relion, band, scorer_resolution=9.5e-4)
+    assert hit is False
+    below2 = {1: 0.6447, 2: 0.6425, 3: 0.6459}
+    hit, reason = multiseed_quality(below2, relion, [0.6400, *band], scorer_resolution=9.5e-4)
+    assert hit is False and "below same-seed RELION at 2 of 3 seeds" in reason
+    # no resolution, no change: the same numbers miss by the plain rule
+    assert multiseed_quality(below2, relion, [0.6400, *band])[0] is False
+
+
+@pytest.mark.unit
+def test_not_separable_row_needs_its_measurement_and_takes_no_speed_colour(tmp_path):
+    table = json.loads(DEFAULT_JSON.read_text())
+    rows = [r for r in table["rows"] if r.get("quality_state") == NOT_SEPARABLE]
+    assert rows, "the page has at least one not-separable row (multioptics several-shape VDAM)"
+    for row in rows:
+        assert row["quality_pass"] is None and status(row) == "🔵"
+        assert status(dict(row, time_ratio_relax_over_relion=0.3, matched="yes")) == "🔵"
+    path = tmp_path / "table.json"
+    plain = next(r for r in table["rows"] if not r.get("scorer_resolution") and r["quality_pass"] is True)
+    plain["quality_state"] = NOT_SEPARABLE
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="quality_state"):
+        load_and_validate(path)
+    del plain["quality_state"]
+    row = rows[0]
+    kept = row["scorer_resolution"]
+    for bad in (dict(kept, value=2e-3), dict(kept, method=""), {"value": 5e-4, "method": "typed in"}, dict(kept, evidence=dict(kept["evidence"], score_b=[]))):
+        row["scorer_resolution"] = bad
+        path.write_text(json.dumps(table))
+        with pytest.raises(ValueError, match="scorer_resolution"):
+            load_and_validate(path)
+    row["scorer_resolution"], row["quality_pass"] = kept, True
+    path.write_text(json.dumps(table))
+    with pytest.raises(ValueError, match="quality_state"):
+        load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_scorer_resolution_values_follow_from_their_two_score_files():
+    """A scorer resolution cannot be typed in: it is recomputed from the row's two scoring invocations."""
+    rows = [r for r in json.loads(DEFAULT_JSON.read_text())["rows"] if r.get("scorer_resolution")]
+    assert len(rows) >= 3
+    files = [Path(p) for r in rows for side in ("score_a", "score_b") for p in r["scorer_resolution"]["evidence"][side]]
+    if not Path("/scratch/gpfs/CRYOEM/gilleslab").is_dir():
+        pytest.skip("the curated benchmark evidence root is not mounted on this machine")
+    missing = [str(p) for p in files if not p.is_file()]
+    assert not missing, missing
+    for row in rows:
+        sr = row["scorer_resolution"]
+        assert measured_scorer_resolution(sr["evidence"]) == pytest.approx(sr["value"], rel=5e-3), row["id"]

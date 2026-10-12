@@ -11,8 +11,9 @@ from helpers.reconstruction_settings import reconstruction_settings
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
-from relax.reconstruction import regularization_relion, volume_solver
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction import regularization, volume_solver
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement import map_postprocess
 
 pytestmark = pytest.mark.unit
 
@@ -21,19 +22,19 @@ VOLUME_SIZE = 512
 
 
 def test_mean_reconstruction_variants_share_run_level_settings():
-    from relax.refinement import mean_helpers as mean_helpers_module
+    from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
-    assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_k1_halfmaps).parameters) == (
+    assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_numbered_k1_halfmaps).parameters) == (
         "numerators_by_half", "denominators_by_half", "tau_by_half", "settings", "iteration",
         "current_size", "accumulator_volume_shape",
         "relion_firstiter_cc_this_iter", "retained_first_numerator", "probe",
     )
-    assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_class_maps).parameters) == (
+    assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_numbered_class_maps).parameters) == (
         "combined_numerators", "combined_denominators", "tau_by_class", "settings", "n_classes",
         "iteration", "current_size", "accumulator_volume_shape",
-        "relion_firstiter_cc_this_iter", "probe",
+        "relion_firstiter_cc_this_iter", "probe", "unsolved",
     )
-    assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
+    assert tuple(field.name for field in dataclasses.fields(numbered_reconstruction_module.ReconstructionSettings)) == (
         "box_size", "voxel_size", "volume_shape", "padding_factor",
         "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
         "tau2_fudge", "particle_diameter_angstrom", "first_iteration_lowpass_angstrom",
@@ -44,16 +45,16 @@ def test_mean_reconstruction_variants_share_run_level_settings():
         "MeanReconstructionData", "MeanAccumulatorState", "MeanPriorSpec",
         "MeanGeometrySpec", "MeanPostprocessPolicy",
     ):
-        assert not hasattr(mean_helpers_module, name)
+        assert not hasattr(numbered_reconstruction_module, name)
 
-    assert not hasattr(mean_helpers_module, "_postprocess_numbered_maps")
+    assert not hasattr(numbered_reconstruction_module, "_postprocess_numbered_maps")
 
 
 _NUMBERED_SEQUENCES = {
     1: ("k1_maximization", "reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps",
-        "_apply_relion_initial_lowpass_filter", "_apply_relion_solvent_flatten_k1"),
+        "apply_relion_initial_lowpass_filter", "apply_relion_solvent_flatten_k1"),
     2: ("class_maximization", "reconstruct_numbered_class_maps", "_reconstruct_class_maps",
-        "_lowpass_class_stack", "_flatten_class_stack"),
+        "lowpass_class_stack", "flatten_class_stack"),
 }
 
 
@@ -66,7 +67,7 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
 
     from relax.diagnostics import observers
     from relax.refinement import maximization as maximization_module
-    from relax.refinement import mean_helpers as mean_helpers_module
+    from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
     from relax.refinement import setup_checks as setup_checks_module
 
     maximization, operation, solve, lowpass, flatten = _NUMBERED_SEQUENCES[n_classes]
@@ -77,10 +78,11 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
     trace.wrap(maximization_module, operation, "operation")
     for name, label in (
         (solve, "solve"), (lowpass, "lowpass"),
-        ("_numbered_solvent_mask", "mask"), ("_make_relion_solvent_mask", "mask_builder"), (flatten, "flatten"),
-        ("_log_first_cc_lowpass", "log"),
+        ("numbered_solvent_mask", "mask"), ("_make_relion_solvent_mask", "mask_builder"), (flatten, "flatten"),
+        ("log_first_cc_lowpass", "log"),
     ):
-        trace.wrap(mean_helpers_module, name, label)
+        # The solve is numbered_reconstruction' own (or its name for the solver); the post-processing is map_postprocess's.
+        trace.wrap(numbered_reconstruction_module if hasattr(numbered_reconstruction_module, name) else map_postprocess, name, label)
     trace.wrap(observers.PremaskObserver, "map_solved", "capture")
     trace.wrap(observers, "write_premask_mean", "dump")
     run_tiny_refinement(
@@ -114,17 +116,17 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
 
 
 def test_unregularized_reconstruction_variants_expose_dependencies():
-    from relax.refinement import mean_helpers as mean_helpers_module
+    from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
-    assert tuple(inspect.signature(mean_helpers_module.reconstruct_unregularized_k1_halfmaps).parameters) == (
+    assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_unregularized_k1_halfmaps).parameters) == (
         "Ft_y_per_half", "Ft_ctf_per_half", "settings",
         "accumulator_volume_shape",
     )
-    assert tuple(inspect.signature(mean_helpers_module.reconstruct_unregularized_class_means).parameters) == (
+    assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_unregularized_class_means).parameters) == (
         "Ft_y_combined", "Ft_ctf_combined", "settings", "n_classes",
         "accumulator_volume_shape",
     )
-    assert tuple(inspect.signature(mean_helpers_module.align_k1_volume_signs).parameters) == (
+    assert tuple(inspect.signature(map_postprocess.align_k1_volume_signs).parameters) == (
         "means", "previous_means", "unregularized_means", "volume_shape",
     )
     for name in (
@@ -132,14 +134,14 @@ def test_unregularized_reconstruction_variants_expose_dependencies():
         "UnregularizedAccumulatorState",
         "UnregularizedReconstructionPolicy",
     ):
-        assert not hasattr(mean_helpers_module, name)
+        assert not hasattr(numbered_reconstruction_module, name)
 
 
 class TestReconstructionOwnership:
     def test_k1_reconstruction_uses_per_half_1d_tau_shell_prior(self, monkeypatch):
         """K=1 reconstruction should not round-trip tau2 through full volumes."""
 
-        from relax.refinement import mean_helpers as mean_helpers_module
+        from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
         calls = []
         events = []
@@ -154,8 +156,8 @@ class TestReconstructionOwnership:
             events.append("finish")
             return result
 
-        monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
-        monkeypatch.setattr(mean_helpers_module, "_finish_host_staged_reconstruction", fake_finish)
+        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "_finish_host_staged_reconstruction", fake_finish)
         n_shells = VOLUME_SHAPE[0] // 2 + 1
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
@@ -172,7 +174,7 @@ class TestReconstructionOwnership:
             particle_diameter_angstrom=None,
             first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
         )
-        means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
+        means = numbered_reconstruction_module.reconstruct_numbered_k1_halfmaps(
             (jnp.ones(VOLUME_SIZE, dtype=jnp.complex64), jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)),
             (jnp.ones(VOLUME_SIZE, dtype=jnp.float32), jnp.ones(VOLUME_SIZE, dtype=jnp.float32)),
             tau_shells,
@@ -196,7 +198,7 @@ class TestReconstructionOwnership:
 
     def test_host_staged_k1_reconstruction_blocks_before_next_half(self, monkeypatch):
         """Host-staged box-scale reconstruction must serialize its FFT workspace."""
-        from relax.refinement import mean_helpers as mean_helpers_module
+        from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
         events = []
 
@@ -205,13 +207,13 @@ class TestReconstructionOwnership:
                 events.append("block")
 
         result = Result()
-        returned = mean_helpers_module._finish_host_staged_reconstruction(
+        returned = numbered_reconstruction_module._finish_host_staged_reconstruction(
             result, np.ones(1, dtype=np.float32), jnp.ones(1, dtype=jnp.float32)
         )
         assert returned is result
         assert events == ["block"]
         events.clear()
-        returned = mean_helpers_module._finish_host_staged_reconstruction(
+        returned = numbered_reconstruction_module._finish_host_staged_reconstruction(
             result, jnp.ones(1, dtype=jnp.float32), jnp.ones(1, dtype=jnp.float32)
         )
         assert returned is result
@@ -221,8 +223,8 @@ class TestReconstructionOwnership:
         """The retained half-0 buffer must feed Stage A and release before the iFFT."""
         from recovar.reconstruction import relion_functions
 
-        from relax.reconstruction import relion_functions_relion
-        from relax.refinement import mean_helpers as mean_helpers_module
+        from relax.reconstruction import relion_functions as relion_functions_relion
+        from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
         events = []
         host_boundary = np.ones((5, 5, 3), dtype=np.complex64)
@@ -266,13 +268,13 @@ class TestReconstructionOwnership:
         monkeypatch.setattr(relion_functions_relion, "regularize_large_relion_half_filter_donate_ctf", fake_regularize)
         monkeypatch.setattr(relion_functions_relion, "divide_large_relion_half_numerator_donate_numerator", fake_divide)
         monkeypatch.setattr(relion_functions_relion, "finish_large_relion_postprocess_from_fftw_half", fake_finish)
-        monkeypatch.setattr(mean_helpers_module.jax, "device_get", fake_device_get)
+        monkeypatch.setattr(volume_solver.jax, "device_get", fake_device_get)
         caplog.set_level("INFO", logger=volume_solver.__name__)
         volume_shape = (2, 2, 2)
         accumulator_shape = (5, 5, 5)
         half_shape = ftu.volume_shape_to_half_volume_shape(accumulator_shape)
         assert half_shape == host_numerator.shape
-        returned = mean_helpers_module._reconstruct_volume_eager(
+        returned = numbered_reconstruction_module._reconstruct_volume_eager(
             host_ctf,
             host_numerator,
             volume_shape,
@@ -294,8 +296,8 @@ class TestReconstructionOwnership:
         """Half 2 must see half 1 freed, then stage/delete its host numerator."""
         from recovar.reconstruction import relion_functions
 
-        from relax.reconstruction import relion_functions_relion
-        from relax.refinement import mean_helpers as mean_helpers_module
+        from relax.reconstruction import relion_functions as relion_functions_relion
+        from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
         volume_shape = (2, 2, 2)
         accumulator_shape = (5, 5, 5)
@@ -309,7 +311,7 @@ class TestReconstructionOwnership:
         sentinel = jnp.asarray([7.0 + 0j], dtype=jnp.complex64)
 
         def fake_regularize(stage_filter, *_args):
-            assert isinstance(stage_filter, mean_helpers_module.jax.Array)
+            assert isinstance(stage_filter, volume_solver.jax.Array)
             stage_filter.delete()
             regularized = jnp.ones(half_shape, dtype=jnp.float32)
             regularized_filters.append(regularized)
@@ -322,7 +324,7 @@ class TestReconstructionOwnership:
             else:
                 assert retained_numerator.is_deleted()
                 assert stage_outputs[0].is_deleted()
-                assert isinstance(stage_numerator, mean_helpers_module.jax.Array)
+                assert isinstance(stage_numerator, volume_solver.jax.Array)
                 assert not isinstance(stage_numerator, np.ndarray)
             assert not stage_numerator.is_deleted()
             stage_inputs.append(stage_numerator)
@@ -339,7 +341,7 @@ class TestReconstructionOwnership:
         monkeypatch.setattr(relion_functions_relion, "divide_large_relion_half_numerator_donate_numerator", fake_divide)
         monkeypatch.setattr(relion_functions_relion, "finish_large_relion_postprocess_from_fftw_half", fake_finish)
         caplog.set_level("INFO", logger=volume_solver.__name__)
-        half0 = mean_helpers_module._reconstruct_volume_eager(
+        half0 = numbered_reconstruction_module._reconstruct_volume_eager(
             host_ctf,
             host_numerator,
             volume_shape,
@@ -350,7 +352,7 @@ class TestReconstructionOwnership:
             accumulator_volume_shape=accumulator_shape,
             retained_device_numerator=retained_numerator, programs=ReconstructionPrograms.from_environ(),
         )
-        half1 = mean_helpers_module._reconstruct_volume_eager(
+        half1 = numbered_reconstruction_module._reconstruct_volume_eager(
             host_ctf,
             host_numerator,
             volume_shape,
@@ -379,7 +381,7 @@ def test_relion_reconstruction_tau_shells_match_full_prior_bitwise():
     weight = (0.5 + rng.random(half_shape)).astype(np.float32)
     numerator = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
     fsc = np.linspace(0.9, 0.1, volume_shape[0] // 2 + 1, dtype=np.float64)
-    tau_full, _, details = regularization_relion.compute_relion_tau2_from_weights(
+    tau_full, _, details = regularization.compute_relion_tau2_from_weights(
         weight,
         weight,
         fsc,
@@ -422,7 +424,7 @@ def test_relion_reconstruction_tau_shells_match_full_prior_bitwise():
 def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     """Production host join must hand one live exact buffer to half-0 Stage A."""
 
-    from relax.refinement import mean_helpers as mean_helpers_module
+    from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
     accumulator_shape = (9, 9, 9)
     half_shape = ftu.volume_shape_to_half_volume_shape(accumulator_shape)
@@ -432,7 +434,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     ft_ctf_0 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
-    joined = regularization_relion.join_halves_at_low_resolution(
+    joined = regularization.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,
         ft_ctf_0,
@@ -455,9 +457,9 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         calls.append((args, kwargs))
         return jnp.ones(4**3, dtype=jnp.complex128)
 
-    monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
+    monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
     monkeypatch.setattr(
-        mean_helpers_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
+        numbered_reconstruction_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
     settings = reconstruction_settings(
         box_size=4,
@@ -472,7 +474,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
-    means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
+    means = numbered_reconstruction_module.reconstruct_numbered_k1_halfmaps(
         (joined[0], joined[1]),
         (joined[2], joined[3]),
         [jnp.ones(3, dtype=jnp.float32), jnp.ones(3, dtype=jnp.float32)],
@@ -514,10 +516,10 @@ def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypat
         low_resol_join_halves_angstrom=40.0,
         padding_factor=2,
     )
-    host = regularization_relion.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
+    host = regularization.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
     assert all(isinstance(value, np.ndarray) for value in host)
     monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "never")
-    device = regularization_relion.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
+    device = regularization.join_halves_at_low_resolution(ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs)
     for h, d in zip(host, device, strict=True):
         np.testing.assert_allclose(np.asarray(h), np.asarray(d), rtol=1e-6, atol=0)
 

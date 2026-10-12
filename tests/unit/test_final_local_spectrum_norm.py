@@ -17,7 +17,7 @@ def test_final_local_pass_keeps_the_source_faithful_spectrum_norm(monkeypatch, p
     import numpy as np
     from helpers.tiny_refinement import run_tiny_refinement
 
-    from relax.refinement import finalization, half_scoring
+    from relax.refinement import finalization, local_half
 
     class Reached(Exception):
         pass
@@ -36,7 +36,7 @@ def test_final_local_pass_keeps_the_source_faithful_spectrum_norm(monkeypatch, p
         raise Reached
 
     monkeypatch.setattr(finalization, "run_final_all_data", local_final)
-    monkeypatch.setattr(half_scoring, "_score_half_local", scorer)
+    monkeypatch.setattr(local_half, "_score_half_local", scorer)
     with pytest.raises(Reached):
         run_tiny_refinement(monkeypatch, max_iter=1, parity=dict(preserve_bpref_particle_order=preserve_order))
     assert seen == [preserve_order]

@@ -75,9 +75,12 @@ def _assert_significance_results_match(candidate, control):
                 assert actual is expected
             else:
                 assert_matches(np.asarray(actual), np.asarray(expected))
-    assert set(candidate[5]) == set(control[5])
-    for key, expected in control[5].items():
-        actual = candidate[5][key]
+    candidate_stats, control_stats = vars(candidate[5]), vars(control[5])
+    assert {key for key, value in candidate_stats.items() if value is not None} == {
+        key for key, value in control_stats.items() if value is not None
+    }
+    for key, expected in control_stats.items():
+        actual = candidate_stats[key]
         if isinstance(expected, np.ndarray):
             assert_matches(actual, expected)
             assert actual.dtype == expected.dtype
@@ -91,7 +94,7 @@ def _assert_significance_results_match(candidate, control):
 #
 # Measured on a claimed A100 at this commit, this fixture compares 77 float
 # entries, its null control (the identical configuration twice in one process)
-# moves 0, and the padded path moves 6, all of them in four ``full_stats``
+# moves 0, and the padded path moves 6, all of them in four ``Pass1Stats``
 # reporting fields and none by more than one float32 ulp (1.2e-7 relative).
 # Those fields are float64 accumulators over float32 posteriors, so their band
 # is the float32 one, not the float64 default.
@@ -118,11 +121,14 @@ def _assert_significance_results_within_null_band(candidate, control):
                 assert actual is expected, f"class[{c}][{i}]"
                 continue
             compare(actual, expected, f"class[{c}][{i}]", reporting=False)
-    assert set(candidate[5]) == set(control[5])
-    for key, expected in control[5].items():
-        actual = candidate[5][key]
+    candidate_stats, control_stats = vars(candidate[5]), vars(control[5])
+    assert {key for key, value in candidate_stats.items() if value is not None} == {
+        key for key, value in control_stats.items() if value is not None
+    }
+    for key, expected in control_stats.items():
+        actual = candidate_stats[key]
         if isinstance(expected, np.ndarray):
-            compare(actual, expected, f"full_stats[{key!r}]", reporting=True)
+            compare(actual, expected, f"stats.{key}", reporting=True)
 
 
 def _run_padding_pair(monkeypatch):
@@ -193,7 +199,7 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
 def test_preprocess_batch_jitted_elementwise_matches_eager():
     """The jitted elementwise chain matches the eager one within the float band."""
 
-    from relax.helpers import preprocessing
+    from relax.relion import image_preprocessing
 
     rng = np.random.default_rng(3)
     n_images, n_half_pixels, n_trans = 4, 9, 3
@@ -216,10 +222,10 @@ def test_preprocess_batch_jitted_elementwise_matches_eager():
         score_real_dtype=jnp.float32,
         norm_real_dtype=None,
     )
-    eager = preprocessing._preprocess_batch_elementwise(
+    eager = image_preprocessing._preprocess_batch_elementwise(
         processed, ctf, noise, phases, weights, **common
     )
-    jitted = preprocessing._preprocess_batch_elementwise_jit(
+    jitted = image_preprocessing._preprocess_batch_elementwise_jit(
         processed, ctf, noise, phases, weights, **common
     )
     assert len(eager) == len(jitted) == 4
@@ -281,7 +287,7 @@ def test_collate_keeps_device_arrays_on_device():
         ),
         (
             "RELAX_EM_JIT_STAGE_GLUE",
-            "relax.helpers.preprocessing:jit_stage_glue_enabled",
+            "relax.relion.image_preprocessing:jit_stage_glue_enabled",
             False,  # the K=1 entry points set it; the shared default stays off
         ),
     ],
@@ -322,10 +328,10 @@ def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
     zero, and broadcasts against the padded per-image scale.
     """
 
-    from relax.relion.relion_coarse_operands import repeat_pad_batch_axis
-    from relax.sparse_pass2.sparse_pass2_scoring import (
+    from relax.fine_pass.scoring import (
         _relion_cuda_pixel_correction_from_rfloat_ctf,
     )
+    from relax.scoring.coarse_operands import repeat_pad_batch_axis
 
     actual, padded_size, pixels = 216, 250, 12
     rng = np.random.default_rng(20260920)

@@ -1,61 +1,58 @@
-"""Prepare numbered and final half expectations without publishing model updates.
+"""Prepare numbered half expectations without publishing model updates.
 
 See docs/math/relion_refinement_algorithm.md, section 3.
 """
 
 import logging
-import os
 from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.dense.score_outputs import (
+from relax.classification.probes import KClassProbe
+from relax.numerics.precision import _diagnostic_float64_pass2_matches
+from relax.reconstruction.resolution import ImageGeometry
+from relax.refinement import image_size_plans, iteration_planning, local_sampling
+from relax.refinement.dense_half import (
+    DenseBatchPolicy,
+    DenseExecutionPolicy,
+    DensePriorSpec,
+    DenseSamplingSpec,
+    DenseVariantPolicy,
+    _score_half_dense_in_bpref_scope,
+)
+from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
+from relax.refinement.firstiter_bpref import NumberedBPrefHalf
+from relax.refinement.local_half import (
+    LocalBatchPolicy,
+    LocalDiagnosticPolicy,
+    LocalExecutionPolicy,
+    LocalPriorSpec,
+    _score_half_local_in_bpref_scope,
+)
+from relax.refinement.ports import DenseHalfScored, ExpectationProbe, NumberedHalfRecorded
+from relax.refinement.refinement_options import RefinementOptions
+from relax.runtime.host_memory import return_freed_heap
+from relax.sampling import TrialGrid, rotation_grid_size
+from relax.sampling.orientation_priors import (
+    HalfDirectionLogPriors,
+    make_relion_translation_log_prior,
+    relion_half_translation_prior_inputs,
+    relion_translation_search_base,
+)
+from relax.steps import half_inputs, shape_class_scoring
+from relax.steps.half_inputs import HalfScoringData
+from relax.steps.score_outputs import (
     HalfScoreResult,
     PerHalfOutputs,
     _maybe_host_offload_half0_local_accumulators,
     _record_score_profile,
     empty_half_result,
 )
-from relax.dense.scoring_policy import local_precision
-from relax.diagnostics import bpref_diagnostics
-from relax.diagnostics import parity_dump as _parity_dump
-from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
-from relax.helpers.host_memory import return_freed_heap
-from relax.helpers.orientation_priors import (
-    DirectionPrior,
-    HalfDirectionLogPriors,
-    HalfTranslationPriorInputs,
-    make_relion_translation_log_prior,
-    relion_direction_log_priors_for_half,
-    relion_half_translation_prior_inputs,
-    relion_translation_search_base,
-)
-from relax.helpers.resolution import ImageGeometry
-from relax.refinement import half_inputs, iteration_planning, local_sampling, optics_shapes
-from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
-from relax.refinement.final_sampling import FinalSampling
-from relax.refinement.half_scoring import (
-    DenseBatchPolicy,
-    DenseExecutionPolicy,
-    DensePriorSpec,
-    DenseSamplingSpec,
-    DenseVariantPolicy,
-    HalfScoringData,
-    LocalBatchPolicy,
-    LocalDiagnosticPolicy,
-    LocalExecutionPolicy,
-    LocalPriorSpec,
-    _score_half_dense_in_bpref_scope,
-    _score_half_local_in_bpref_scope,
-)
-from relax.refinement.optics_shapes import OpticsSpec
-from relax.refinement.ports import DenseHalfScored, ExpectationProbe
-from relax.refinement.refinement_options import RefinementOptions
-from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
-from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
-from relax.sampling import TrialGrid, rotation_grid_size
+from relax.steps.scoring_policy import local_precision
+from relax.steps.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
+from relax.steps.tomo_scoring import score_tomo_half_in_loop as _score_tomo_half_in_loop
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext
@@ -95,83 +92,33 @@ class SignificanceStatistics:
 def record_numbered_half(
     score_result: HalfScoreResult,
     particle_half: half_inputs.HalfSet,
-    per_half: PerHalfOutputs,
-    significance: SignificanceStatistics,
-    *,
-    profile_history: list,
-    iteration: int,
-    image_window_size: int | None,
-    healpix_order: int,
-    k_class_enabled: bool,
+    recording: "NumberedHalfRecording",
 ) -> None:
-    """Record an already-published half's profile, support counts and captures.
+    """Record an already-published half's profile and support counts in ``recording``, then tell its probe (the
+    observer's captures: ``numbered_half_recorded``).
 
-    Empty halves keep the existing zero capture without a profile or device
-    panel flush. Scoring and accumulator offloading remain with the caller.
+    An empty half has no profile or support counts; the probe hears of it too. Scoring and accumulator
+    offloading remain with the caller.
     """
     k = particle_half.index
+    recorded = NumberedHalfRecorded(recording.iteration, k, particle_half, score_result, recording.per_half)
     if particle_half.dataset.n_units == 0:
-        _parity_dump.collect_e_step(
-            half=k,
-            em_stats=score_result.em_stats,
-            hard_assignment=score_result.ha,
-            coarse_hard_assignment=per_half.coarse_ha[k],
-            noise_stats=score_result.noise_stats,
-            Ft_y=score_result.Ft_y,
-            Ft_ctf=score_result.Ft_ctf,
-            pose_rotation_eulers=per_half.pose_rotation_eulers[k],
-            best_pose_rotation_eulers=per_half.best_pose_rotation_eulers[k],
-            best_pose_translations=per_half.best_pose_translations[k],
-            translation_search_base=per_half.translation_search_bases[k],
-            original_image_indices=np.zeros(0, dtype=np.int64),
-        )
+        recording.probe.numbered_half_recorded(recorded)
         return
 
     _record_score_profile(
-        profile_history,
+        recording.profile_history,
         score_result,
         phase="iteration",
-        iteration=iteration,
-        relion_iteration=iteration + 1,
+        iteration=recording.iteration,
+        relion_iteration=recording.iteration + 1,
         half_index=k,
-        current_size=image_window_size,
-        healpix_order=healpix_order,
-        k_class_enabled=k_class_enabled,
+        current_size=recording.image_window_size,
+        healpix_order=recording.healpix_order,
+        k_class_enabled=recording.k_class_enabled,
     )
-    significance.record(k, score_result.significant_counts, for_convergence=not k_class_enabled)
-    bpref_diagnostics.flush_selected_bpref_device_panel(iteration_index=iteration, half_index=k)
-
-    # The parity dump records each image's row in the input stack; a dataset without an index layout has none.
-    index_layout = getattr(particle_half.dataset, "_index_layout", None)
-    original_image_indices = (
-        np.asarray(
-            index_layout.original_image_indices_for_local(np.arange(particle_half.dataset.n_images, dtype=np.int32)),
-            dtype=np.int64,
-        )
-        if index_layout is not None and _parity_dump.is_active()
-        else None
-    )
-    _parity_dump.collect_e_step(
-        half=k,
-        em_stats=score_result.em_stats,
-        hard_assignment=score_result.ha,
-        coarse_hard_assignment=per_half.coarse_ha[k],
-        noise_stats=per_half.noise_stats[k],
-        Ft_y=score_result.Ft_y,
-        Ft_ctf=score_result.Ft_ctf,
-        pose_rotation_eulers=per_half.pose_rotation_eulers[k],
-        best_pose_rotation_eulers=per_half.best_pose_rotation_eulers[k],
-        best_pose_translations=per_half.best_pose_translations[k],
-        translation_search_base=per_half.translation_search_bases[k],
-        original_image_indices=original_image_indices,
-    )
-
-
-_BPREF_DUMP_ENV_VARS = (
-    "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
-    "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
-    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
-)
+    recording.significance.record(k, score_result.significant_counts, for_convergence=not recording.k_class_enabled)
+    recording.probe.numbered_half_recorded(recorded)
 
 
 @dataclass(frozen=True)
@@ -201,6 +148,8 @@ class NumberedHalfRecording:
     image_window_size: int | None
     healpix_order: int
     k_class_enabled: bool
+    # The observer's per-half hooks (RunContext.expectation_probe), told of each recorded half.
+    probe: ExpectationProbe
 
 
 def finish_numbered_half(
@@ -232,36 +181,28 @@ def finish_numbered_half(
             log=logger,
         )
     recording.per_half.update_from(k, score_result, dtype=dtype)
-    record_numbered_half(
-        score_result,
-        particle_half,
-        recording.per_half,
-        recording.significance,
-        profile_history=recording.profile_history,
-        iteration=recording.iteration,
-        image_window_size=recording.image_window_size,
-        healpix_order=recording.healpix_order,
-        k_class_enabled=recording.k_class_enabled,
-    )
+    record_numbered_half(score_result, particle_half, recording)
 
 
 def _score_and_finish_half(score_half, finish_half, half_inputs, k) -> None:
     """Score half ``k`` and finish it before anything else runs on that half's thread, then return the heap its
-    passes freed (:func:`~relax.helpers.host_memory.return_freed_heap`)."""
+    passes freed (:func:`~relax.runtime.host_memory.return_freed_heap`)."""
     finish_half(half_inputs[k], score_half(half_inputs[k]))
     return_freed_heap(f"half {k + 1}'s E-step")
 
 
-def _half_overlap_active(requested: bool, *, diagnostic_half_indices, log) -> bool:
+def _half_overlap_active(
+    requested: bool, *, armed_bpref_dumps: tuple[str, ...], diagnostic_half_indices, log
+) -> bool:
     """Decide whether the two halves' E-steps may run concurrently.
 
     Refuses rather than degrades. Each guard is a place where running the two
     halves at once would change what is observed, not merely when:
 
     * a subset of halves is being scored, so there is nothing to overlap;
-    * a BPref dump is armed. The dump context is process-global and is set per
-      half at the top of the half's work, so two halves in flight would write
-      each other's context. The dump is a diagnostic, so the overlap yields.
+    * a BPref dump is armed (``armed_bpref_dumps``, ``RefinementEnvironment``). Its captures (device panels,
+      membership, contributions) follow one half at a time, so two halves in flight
+      would interleave them. The dump is a diagnostic, so the overlap yields.
     """
 
     if not requested:
@@ -269,9 +210,8 @@ def _half_overlap_active(requested: bool, *, diagnostic_half_indices, log) -> bo
     if tuple(diagnostic_half_indices) != (0, 1):
         log.info("Half overlap off: scoring halves %s, not both", tuple(diagnostic_half_indices))
         return False
-    armed = [name for name in _BPREF_DUMP_ENV_VARS if os.environ.get(name, "").strip()]
-    if armed:
-        log.info("Half overlap off: a BPref dump is armed (%s)", ", ".join(armed))
+    if armed_bpref_dumps:
+        log.info("Half overlap off: a BPref dump is armed (%s)", ", ".join(armed_bpref_dumps))
         return False
     log.info("Half overlap ON: the two halves' E-steps run in one thread each")
     return True
@@ -293,7 +233,7 @@ def _run_halves_overlapped(run_half, diagnostic_half_indices) -> None:
 
     import threading
 
-    from relax.sparse_pass2.sparse_pass2_budget import set_concurrent_device_shares
+    from relax.runtime.memory_budget import set_concurrent_device_shares
 
     errors: dict[int, BaseException] = {}
 
@@ -333,6 +273,7 @@ def run_numbered_halves(
     significance: SignificanceStatistics,
     *,
     overlap_halves: bool,
+    armed_bpref_dumps: tuple[str, ...],
     log: logging.Logger,
 ) -> None:
     """Score the halves of a numbered iteration and close its expectation.
@@ -342,13 +283,14 @@ def run_numbered_halves(
     finished accumulators can leave the device first). The halves run one after another, or one thread each
     (score then finish) when ``overlap_halves`` is requested and allowed. A run that scored a subset of the
     halves for a diagnostic stops here. Then the deferred preprocess checks are drained (dropped when the halves
-    raise, :func:`relax.cuda.kernels.expectation_relion_preprocess_checks`) and the halves' significant-sample
+    raise, :func:`relax.cuda.preprocess.expectation_relion_preprocess_checks`) and the halves' significant-sample
     counts combined; the caller marks the end of the expectation for its observer.
     """
-    from relax.cuda.kernels import expectation_relion_preprocess_checks
+    from relax.cuda.preprocess import expectation_relion_preprocess_checks
 
     _overlap_active = _half_overlap_active(
         overlap_halves,
+        armed_bpref_dumps=armed_bpref_dumps,
         diagnostic_half_indices=diagnostic_half_indices,
         log=log,
     )
@@ -459,6 +401,7 @@ def run_numbered_expectation(
             relion_translation_angle_scale=ctx.relion_translation_angle_scale,
             relion_projection_scale=ctx.relion_projection_scale, iteration=this_iteration.iteration,
             numbered_relion_iteration=this_iteration.numbered_relion_iteration, probe=ctx.expectation_probe,
+            k_class_probe=ctx.k_class_probe,
         ),
         partial(
             finish_numbered_half,
@@ -466,11 +409,13 @@ def run_numbered_expectation(
                 per_half, significance, profile_history=history.global_profile_history,
                 iteration=this_iteration.iteration, image_window_size=plan.sampling_plan.windows.image_window_size,
                 healpix_order=carry.coarse_grids.rotation_grid.healpix_order, k_class_enabled=ctx.k_class_enabled,
+                probe=ctx.expectation_probe,
             ),
             use_local=use_local, dtype=ctx.scoring_dtype,
         ),
         half_inputs, diagnostic_half_indices, significance,
-        overlap_halves=options.execution.overlap_halves, log=logger,
+        overlap_halves=options.execution.overlap_halves,
+        armed_bpref_dumps=options.environment.armed_bpref_dumps, log=logger,
     )
     return NumberedExpectationResult(per_half=per_half, significance=significance)
 
@@ -498,8 +443,13 @@ def numbered_half_inputs(
     return [
         NumberedHalfInputs(
             data=HalfScoringData(
-                particles=local_sampling.local_search_centre_half(
+                particles=half_inputs.local_search_centre_half(
                     halves[k], (options.start.init_angle_priors or (None, None))[k], carry.state
+                ),
+                tilt_prior=half_inputs.tilt_prior_for_half(
+                    halves[k],
+                    (options.start.init_angle_priors or (None, None))[k],
+                    options.local_search.tilt_prior_deg(carry.state.do_local_search),
                 ),
                 reference=reference_model.maps[k],
                 mean_variance=reference_model.half_tau2(k),
@@ -521,80 +471,6 @@ def numbered_half_inputs(
     ]
 
 
-@dataclass(frozen=True)
-class PreparedFinalHalf:
-    """Priors and optics resolved on one final expectation's scoring frame."""
-
-    translations: HalfTranslationPriorInputs
-    translation_log_prior: object
-    directions: HalfDirectionLogPriors
-    optics: OpticsSpec
-
-
-def prepare_final_half(
-    half: half_inputs.HalfSet,
-    sampling: FinalSampling,
-    *,
-    image_geometry: ImageGeometry,
-    sigma_offset_angstrom,
-    noise_radial,
-    direction_prior: DirectionPrior,
-    n_classes: int,
-    use_local: bool,
-    coarse_angular_step_deg,
-    particle_diameter_angstrom,
-    sealed_sampling_state,
-    symmetry: str,
-    dtype,
-    projection_scale: float,
-) -> PreparedFinalHalf:
-    """Resolve SPA priors and optics in the final grid's image-pixel frame.
-
-    See docs/math/relion_refinement_algorithm.md, section 7.
-    """
-    translations = relion_half_translation_prior_inputs(
-        half.translations,
-        voxel_size=image_geometry.pixel_size_angstrom,
-        base_translations=sampling.base_translations,
-        current_translations=sampling.grid.translations,
-        dtype=dtype,
-    )
-    translation_log_prior = make_relion_translation_log_prior(
-        translations.prior_translations,
-        image_geometry.pixel_size_angstrom,
-        sigma_offset_angstrom,
-        translations.prior_center,
-        offset_range_pixels=None,
-        dtype=dtype,
-    )
-    directions = relion_direction_log_priors_for_half(
-        use_local=use_local,
-        scoring_healpix_order=None if use_local else sampling.settings.grid_order,
-        n_classes=n_classes,
-        prior=direction_prior,
-        sealed_sampling_state=sealed_sampling_state,
-        dtype=dtype,
-        log=logger,
-        half_index=half.index,
-        symmetry=symmetry,
-    )
-    optics = optics_shapes.prepare_optics(
-        half.dataset,
-        noise_radial=noise_radial,
-        coarse_step_deg=coarse_angular_step_deg,
-        particle_diameter_ang=particle_diameter_angstrom,
-        previous_translations=half.translations,
-        sigma_offset_angstrom=sigma_offset_angstrom,
-        base_translations=sampling.base_translations,
-        current_translations=sampling.grid.translations,
-        with_log_prior=not use_local,
-        zero_cold_center=False,
-        dtype=dtype,
-        single_shape_projection_scale=projection_scale,
-    )
-    return PreparedFinalHalf(translations, translation_log_prior, directions, optics)
-
-
 @dataclass(frozen=True, eq=False, kw_only=True)
 class NumberedExpectation:
     """Trial pose grid and resolved sampling/policies shared by both numbered halves."""
@@ -608,7 +484,7 @@ class NumberedExpectation:
 
 def prepare_numbered_expectation(
     grid: TrialGrid,
-    windows: iteration_planning.ExpectationWindows,
+    windows: image_size_plans.ExpectationWindows,
     *,
     local_sampling: local_sampling.LocalSampling | None,
     variant: DenseVariantPolicy,
@@ -709,6 +585,7 @@ def score_numbered_half(
     iteration: int,
     numbered_relion_iteration: int,
     probe: ExpectationProbe,
+    k_class_probe: KClassProbe,
 ) -> HalfScoreResult:
     """Build half-specific priors/batches and accumulate an empty, SPA or tomography half.
 
@@ -729,10 +606,6 @@ def score_numbered_half(
     coarse_size_step_deg = sampling.coarse_angular_step_deg
     particle_diameter_ang = options.schedule.particle_diameter_ang
     source_faithful_spectrum_norm = options.parity.preserve_bpref_particle_order
-    bpref_diagnostics.set_bpref_contribution_dump_context(
-        iteration=iteration + 1,
-        half=particle_half.index + 1,
-    )
     bpref_device_signature_active = (
         options.execution.bpref_device_signature_target == (iteration + 1, particle_half.index + 1)
     )
@@ -747,6 +620,8 @@ def score_numbered_half(
     translation_search_base = relion_translation_search_base(
         previous_translations_k, dtype=scoring_dtype
     )
+    # Resolved once per half: the batch plan and the execution policy read the same answer.
+    diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(numbered_relion_iteration)
     half_batching = prepare_half_batches(
         particle_half.dataset,
         half.data.projector,
@@ -763,10 +638,11 @@ def score_numbered_half(
         firstiter_winner_take_all_this_iter=phase.variant.winner_take_all,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
-        bpref_device_signature_active=bpref_device_signature_active,
         use_relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
         multi_shape_halves=multi_shape_halves,
         coarse_sizing=(coarse_size_step_deg, particle_diameter_ang) if phase.use_adaptive and multi_shape_halves else None,
+        diagnostic_float64_pass2=diagnostic_float64_pass2,
+        bpref_half=NumberedBPrefHalf(iteration, particle_half.index, bpref_device_signature_active, probe),
     )
     # RELION translation priors: relion_half_translation_prior_inputs
     # documents the pdf_offset / wsum_sigma2_offset centers, the
@@ -839,6 +715,8 @@ def score_numbered_half(
         if single_class_iteration
         else None
     )
+    if half.data.tilt_prior is not None and not tomo_halves:
+        raise NotImplementedError("--sigma_tilt is implemented for subtomogram particles only")
     if tomo_halves:
         score_result = _score_tomo_half_in_loop(
             half.data,
@@ -851,6 +729,20 @@ def score_numbered_half(
                     sigma_psi=sampling.search.sigma_psi,
                 )
                 if use_local
+                # RELION's --sigma_tilt below the local-search order: each particle's own orientations, every
+                # rot and psi within three widths of its prior tilt, on the otherwise global sampling.
+                else dict(
+                    previous_eulers_deg=(
+                        np.zeros((particle_half.dataset.n_units, 3), dtype=np.float64)
+                        if particle_half.rotation_eulers is None
+                        else particle_half.rotation_eulers
+                    ),
+                    sigma_rot=0.0,
+                    sigma_psi=0.0,
+                    sigma_tilt_deg=half.data.tilt_prior.sigma_deg,
+                    prior_tilt_deg=half.data.tilt_prior.centre_deg,
+                )
+                if half.data.tilt_prior is not None
                 else None
             ),
             rotation_log_prior=half.direction_priors.rotation_log_prior,
@@ -864,7 +756,7 @@ def score_numbered_half(
             normalized_cc=phase.variant.score_mode == "normalized_cc",
         )
     elif use_local:
-        local_optics = optics_shapes.prepare_optics(
+        local_optics = shape_class_scoring.prepare_optics(
             particle_half.dataset,
             noise_radial=half.data.noise_radial,
             coarse_step_deg=coarse_size_step_deg,
@@ -886,16 +778,14 @@ def score_numbered_half(
                 trans_prior_center_for_engine=trans_prior_center_for_engine,
                 current_sigma_offset_angstrom=half.sigma_offset_angstrom,
                 translation_search_base=translation_search_base,
-                local_search_translation_prior_mode=(options.local_search.local_search_translation_prior_mode),
                 replay_prior_translations=replay_prior_translations,
+                class_log_priors=class_log_priors if k_class_enabled else None,
             ),
             batching=LocalBatchPolicy(
                 max_significants=options.adaptive.max_significants,
             ),
             execution=LocalExecutionPolicy(
                 disc_type="linear_interp",
-                disable_adjoint_y=options.debug.disable_adjoint_y,
-                disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
                 source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                 relion_translation_angle_scale=(relion_translation_angle_scale),
                 nyquist_column_counting=options.consistency.nyquist_column_counting,
@@ -920,7 +810,7 @@ def score_numbered_half(
     else:
         # Shared dense half-scoring operands; the adaptive branch adds its
         # pass-1 grid and batch/size overrides.
-        dense_optics = optics_shapes.prepare_optics(
+        dense_optics = shape_class_scoring.prepare_optics(
             particle_half.dataset,
             noise_radial=half.data.noise_radial,
             coarse_step_deg=coarse_size_step_deg,
@@ -958,14 +848,10 @@ def score_numbered_half(
         dense_variant = phase.variant
         dense_execution = DenseExecutionPolicy(
             disc_type="linear_interp",
-            disable_adjoint_y=options.debug.disable_adjoint_y,
-            disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             return_best_pose_details=True,
             bpref_device_signature_active=bpref_device_signature_active,
             debug_iteration=numbered_relion_iteration,
-            diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
-                numbered_relion_iteration
-            ),
+            diagnostic_float64_pass2=diagnostic_float64_pass2,
             preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
@@ -974,6 +860,8 @@ def score_numbered_half(
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
             precision=options.precision,
+            k_class_probe=k_class_probe,
+            keep_pose_rotation_eulers=probe.keeps_pose_rotation_eulers,
         )
         dense_result = _score_half_dense_in_bpref_scope(
             dense_half,

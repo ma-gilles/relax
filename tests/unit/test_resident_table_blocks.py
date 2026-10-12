@@ -15,9 +15,9 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_significance import _csr_from_supports, _supports
 
-import relax.sparse_pass2.resident_pass2 as rp
-from relax.sparse_pass2.resident_candidates import CandidateTableBlocks, plan_capacity_chunks, table_block_starts
-from relax.sparse_pass2.resident_significance import (
+import relax.fine_pass.resident_pass2 as rp
+from relax.fine_pass.resident_candidates import CandidateTableBlocks, plan_capacity_chunks, table_block_starts
+from relax.fine_pass.resident_significance import (
     DeviceCompactedSignificantSamples,
     build_resident_candidate_tables_from_csr,
     csr_candidate_rows_per_image,

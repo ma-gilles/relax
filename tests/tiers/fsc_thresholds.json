@@ -168,6 +168,19 @@
     "relion_repeat_pmax_mean_abs": 4.157799999999961e-06
    }
   },
+  "kclass_local_cc": {
+   "fsc_auc_floor": 0.9999,
+   "min_shell_floor": 0.9998,
+   "pmax_mean_abs_max": 0.0002,
+   "measured": {
+    "worst_relax_fsc_auc": 0.9999999722491679,
+    "worst_relax_min_shell": 0.999999999789852,
+    "relax_pmax_mean_abs": 6.06704875140244e-06,
+    "relion_repeat_fsc_auc": 0.9999999995189296,
+    "relion_repeat_min_shell": 0.9999999998962721,
+    "relion_repeat_pmax_mean_abs": 5.049000000000162e-06
+   }
+  },
   "kclass_replay": {
    "fsc_auc_floor": 0.99968,
    "min_shell_floor": 0.9967,

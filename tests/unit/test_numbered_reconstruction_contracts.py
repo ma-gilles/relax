@@ -7,9 +7,9 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
-from relax.refinement import mean_helpers
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement import map_postprocess, numbered_reconstruction
 from relax.refinement.ports import RunObserver
-from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -71,16 +71,16 @@ class _Recorder:
             self.events.append("flatten")
             return value
 
-        monkeypatch.setattr(mean_helpers, "_finish_host_staged_reconstruction", lambda value, *_args: value)
+        monkeypatch.setattr(numbered_reconstruction, "_finish_host_staged_reconstruction", lambda value, *_args: value)
         class Observer(RunObserver):
             def map_solved(self, iteration, half_index, mean, *, settings, current_size, n_classes):
                 capture(mean, half_index=half_index, n_classes=n_classes)
 
         self.observer = Observer()
-        monkeypatch.setattr(mean_helpers, "_apply_relion_initial_lowpass_filter", lowpass)
-        monkeypatch.setattr(mean_helpers, "_make_relion_solvent_mask", mask)
-        monkeypatch.setattr(mean_helpers, "_apply_relion_solvent_flatten_k1", flatten)
-        monkeypatch.setattr(mean_helpers, "_large_relion_solvent_mask_uses_compiled_builder", lambda _shape: False)
+        monkeypatch.setattr(map_postprocess, "apply_relion_initial_lowpass_filter", lowpass)
+        monkeypatch.setattr(map_postprocess, "_make_relion_solvent_mask", mask)
+        monkeypatch.setattr(map_postprocess, "apply_relion_solvent_flatten_k1", flatten)
+        monkeypatch.setattr(map_postprocess, "_large_relion_solvent_mask_uses_compiled_builder", lambda _shape: False)
 
         def flatten_class(class_maps, _mask, class_idx, *, volume_shape):
             self.events.append("flatten_class")
@@ -88,7 +88,7 @@ class _Recorder:
             assert volume_shape == (2, 2, 2)
             return class_maps
 
-        monkeypatch.setattr(mean_helpers, "_flatten_class_row", flatten_class)
+        monkeypatch.setattr(map_postprocess, "_flatten_class_row", flatten_class)
 
     def solved(self, numerator, kwargs):
         """Record one solve and return its map at the complex dtype of the run."""
@@ -136,8 +136,8 @@ def test_numbered_k1_halfmaps_preserve_operands_and_operation_order(monkeypatch,
         assert kwargs.get("retained_device_numerator") is (retained if index == 0 else None)
         return record.solved(numerator, kwargs)
 
-    monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", solve)
-    result = mean_helpers.reconstruct_numbered_k1_halfmaps(
+    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
+    result = numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         numerators, denominators, priors, settings, retained_first_numerator=retained,
         relion_firstiter_cc_this_iter=first_cc, probe=record.observer, **COMMON,
     )
@@ -164,8 +164,8 @@ def test_numbered_class_maps_preserve_operands_and_operation_order(monkeypatch, 
         assert "retained_device_numerator" not in kwargs
         return record.solved(numerator, kwargs)
 
-    monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", solve)
-    result = mean_helpers.reconstruct_numbered_class_maps(
+    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
+    result = numbered_reconstruction.reconstruct_numbered_class_maps(
         numerators, denominators, priors, settings, n_classes=n_classes,
         relion_firstiter_cc_this_iter=first_cc, probe=record.observer, **COMMON,
     )

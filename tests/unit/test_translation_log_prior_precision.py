@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.helpers.orientation_priors import make_relion_translation_log_prior
+from relax.sampling.orientation_priors import make_relion_translation_log_prior
 
 pytestmark = pytest.mark.unit
 

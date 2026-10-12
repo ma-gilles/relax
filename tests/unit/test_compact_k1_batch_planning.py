@@ -1,9 +1,15 @@
 """Qualified-lifetime memory estimates retained from Q, not enabled by default."""
 from types import SimpleNamespace
-from relax.sparse_pass2 import firstiter_bpref
+
 import numpy as np
 import pytest
-from relax.helpers.batch_planning import estimate_relion_em_batch_sizes
+
+from relax.diagnostics import observers
+from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
+from relax.refinement import firstiter_bpref
+from relax.refinement.ports import ObserverExpectationProbe
+from relax.runtime.batch_planning import estimate_relion_em_batch_sizes
+
 pytestmark = pytest.mark.unit
 
 def test_box800_k1_score_tile_plan_uses_resolved_precision():
@@ -29,8 +35,8 @@ def test_box800_compact_k1_persistent_estimate_uses_model_current_size_phase_max
         use_float64_scoring=False,
         compact_k1_relion_layout=True,
     )
-    current_size_62 = _box800_plan(**compact, model_current_size=62)
-    full_box_model = _box800_plan(**compact, model_current_size=800)
+    current_size_62 = _box800_plan(**compact, compact_accumulator_shape=_compact_accumulator_shape(62))
+    full_box_model = _box800_plan(**compact, compact_accumulator_shape=_compact_accumulator_shape(800))
     small_voxels = 127 * 127 * 64
     full_voxels = 1603 * 1603 * 802
     assert current_size_62.persistent_estimate_mode == "compact_k1_relion_phase_max"
@@ -59,7 +65,7 @@ def test_box800_soft_k1_compact_plan_adds_overlapping_projector_and_bpref():
         use_float64_scoring=False,
         compact_k1_relion_layout=True,
         compact_k1_relion_score_bpref_overlap=True,
-        model_current_size=294,
+        compact_accumulator_shape=_compact_accumulator_shape(294),
     )
     compact_voxels = 591 * 591 * 296
     overlapping_bytes = compact_voxels * (8 + 8 + 4)
@@ -95,7 +101,7 @@ def test_box800_soft_k1_compact_plan_preserves_headroom_at_10202_size564_boundar
         **common,
         compact_k1_relion_layout=True,
         compact_k1_relion_score_bpref_overlap=True,
-        model_current_size=564,
+        compact_accumulator_shape=_compact_accumulator_shape(564),
     )
 
     # Full-particle job 13356985 failed at this exact boundary after the
@@ -140,7 +146,7 @@ def test_box800_compact_k1_observed_live_plans(
         current_size=score_size,
         use_float64_scoring=False,
         compact_k1_relion_layout=True,
-        model_current_size=model_size,
+        compact_accumulator_shape=_compact_accumulator_shape(model_size),
         runtime_free_memory_gb=live_free_gb,
     )
     expected_usable = (live_free_gb - plan.pending_score_persistent_gb) * 0.8
@@ -152,7 +158,7 @@ def test_box800_compact_k1_observed_live_plans(
 def test_compact_k1_plan_rejects_genuine_float64_and_kclass_routes():
     compact = dict(
         compact_k1_relion_layout=True,
-        model_current_size=62,
+        compact_accumulator_shape=_compact_accumulator_shape(62),
     )
     with pytest.raises(ValueError, match="float32/complex64"):
         _box800_plan(
@@ -173,9 +179,14 @@ def test_compact_k1_plan_rejects_genuine_float64_and_kclass_routes():
         _box800_plan(
             compact_k1_relion_layout=False,
             compact_k1_relion_score_bpref_overlap=True,
-            model_current_size=62,
+            compact_accumulator_shape=_compact_accumulator_shape(62),
             use_float64_scoring=False,
         )
+
+
+def _compact_accumulator_shape(model_current_size):
+    """The box-800 compact accumulator at a model current size, as the expectation's planner derives it."""
+    return half_volume_accumulator_shape(relion_backprojector_volume_shape((800, 800, 800), 2, current_size=model_current_size))
 
 
 def _box800_plan(**overrides):
@@ -204,8 +215,9 @@ def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64)
         projector_half=projector_half,
         score_complex_dtype=score_complex_dtype,
         recon_volume_size=1603 * 1603 * 802,
-        bpref_device_signature_active=False,
         fixed_base_bytes=4_000_000_000,
+        # Iteration 1's first half; the command's BPref observer reads the diagnostic variables.
+        half=firstiter_bpref.NumberedBPrefHalf(0, 0, False, ObserverExpectationProbe(observers.BpRefDiagnosticsObserver())),
     )
 
 def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch):
@@ -214,8 +226,8 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
         shape=(1603, 1603, 802),
         dtype=np.dtype(np.complex64),
     )
-    monkeypatch.setattr(sparse.sparse_pass2_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
-    monkeypatch.setattr(sparse.sparse_pass2_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
+    monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
+    monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
     for name in (
         "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
         "RELAX_RELION_FIRSTITER_DEFERRED_BPREF",
@@ -230,32 +242,28 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
     ):
         monkeypatch.delenv(name, raising=False)
 
-    sparse.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
-    try:
-        enabled = _compact_route_decision(projector_half=host_projector)
-        assert enabled.enabled is True
-        assert enabled.deferred_firstiter_bpref is True
+    enabled = _compact_route_decision(projector_half=host_projector)
+    assert enabled.enabled is True
+    assert enabled.deferred_firstiter_bpref is True
 
-        float64 = _compact_route_decision(
-            projector_half=host_projector,
-            score_complex_dtype=np.complex128,
-        )
-        assert float64.enabled is False
+    float64 = _compact_route_decision(
+        projector_half=host_projector,
+        score_complex_dtype=np.complex128,
+    )
+    assert float64.enabled is False
 
-        class DeviceProjector:
-            shape = (2, 2, 2)
-            dtype = np.dtype(np.complex64)
+    class DeviceProjector:
+        shape = (2, 2, 2)
+        dtype = np.dtype(np.complex64)
 
-        monkeypatch.setattr(sparse.jax, "Array", DeviceProjector)
-        device_owned = _compact_route_decision(projector_half=DeviceProjector())
-        assert device_owned.enabled is False
+    monkeypatch.setattr(sparse.jax, "Array", DeviceProjector)
+    device_owned = _compact_route_decision(projector_half=DeviceProjector())
+    assert device_owned.enabled is False
 
-        monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/diagnostic")
-        diagnostic = _compact_route_decision(projector_half=host_projector)
-        assert diagnostic.enabled is False
-        assert diagnostic.deferred_firstiter_bpref is False
-    finally:
-        sparse.bpref_diagnostics.clear_bpref_contribution_dump_context()
+    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/diagnostic")
+    diagnostic = _compact_route_decision(projector_half=host_projector)
+    assert diagnostic.enabled is False
+    assert diagnostic.deferred_firstiter_bpref is False
 
 def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
     sparse = firstiter_bpref
@@ -263,39 +271,31 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
         shape=(1603, 1603, 802),
         dtype=np.dtype(np.complex64),
     )
-    monkeypatch.setattr(sparse.sparse_pass2_budget, "_device_memory_limit_bytes", lambda: None)
-    monkeypatch.setattr(sparse.sparse_pass2_budget, "_jax_allocator_free_memory_bytes", lambda: None)
-    sparse.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
-    try:
-        monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "1")
-        forced_deferred = _compact_route_decision(projector_half=host_projector)
-        assert forced_deferred.enabled is True
-        assert forced_deferred.deferred_firstiter_bpref is True
+    monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda: None)
+    monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: None)
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "1")
+    forced_deferred = _compact_route_decision(projector_half=host_projector)
+    assert forced_deferred.enabled is True
+    assert forced_deferred.deferred_firstiter_bpref is True
 
-        monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "0")
-        disabled_deferred = _compact_route_decision(projector_half=host_projector)
-        assert disabled_deferred.enabled is False
-        assert disabled_deferred.deferred_firstiter_bpref is False
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "0")
+    disabled_deferred = _compact_route_decision(projector_half=host_projector)
+    assert disabled_deferred.enabled is False
+    assert disabled_deferred.deferred_firstiter_bpref is False
 
-        monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF")
-        monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
-        disabled_fused = _compact_route_decision(projector_half=host_projector)
-        assert disabled_fused.enabled is False
-    finally:
-        sparse.bpref_diagnostics.clear_bpref_contribution_dump_context()
+    monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF")
+    monkeypatch.setenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "0")
+    disabled_fused = _compact_route_decision(projector_half=host_projector)
+    assert disabled_fused.enabled is False
 
 @pytest.mark.parametrize("diagnostic_env", ["RELAX_EM_FINITE_CHECK", "RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR"])
 def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch, diagnostic_env):
     monkeypatch.setenv(diagnostic_env, "1")
     host = SimpleNamespace(shape=(1603, 1603, 802), dtype=np.dtype(np.complex64))
     monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", raising=False)
-    firstiter_bpref.bpref_diagnostics.set_bpref_contribution_dump_context(iteration=1, half=1)
-    try:
-        decision = _compact_route_decision(projector_half=host)
-        assert not decision.enabled
-        assert not decision.deferred_firstiter_bpref
-    finally:
-        firstiter_bpref.bpref_diagnostics.clear_bpref_contribution_dump_context()
+    decision = _compact_route_decision(projector_half=host)
+    assert not decision.enabled
+    assert not decision.deferred_firstiter_bpref
 
 
 @pytest.mark.parametrize("overlap", [False, True])
@@ -305,7 +305,7 @@ def test_compact_plan_accounts_for_transient_device_projector_slab(overlap):
         gpu_memory_gb=80, runtime_free_memory_gb=80,
         use_float64_scoring=False, compact_k1_relion_layout=True,
         compact_k1_relion_score_bpref_overlap=overlap,
-        model_current_size=800, score_projector_staging_bytes=voxels * 8,
+        compact_accumulator_shape=_compact_accumulator_shape(800), score_projector_staging_bytes=voxels * 8,
     )
     # Device input and CUDA texture coexist; BPref overlaps only in soft scoring.
     pending_bytes = voxels * (28 if overlap else 16)
@@ -325,7 +325,7 @@ def test_staging_estimate_requires_explicit_compact_layout():
 
 
 def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
-    from relax.helpers.batch_planning import plan_adaptive_dense_batch_sizes
+    from relax.runtime.batch_planning import plan_adaptive_dense_batch_sizes
     calls = []
     def fine(n_rot, n_trans, **kwargs):
         calls.append(("fine", n_rot, n_trans, kwargs["current_size_for_batch"]))
@@ -343,3 +343,34 @@ def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
     assert (plan.significance_image_batch_size, plan.significance_rotation_block_size) == (3, 5)
 
 
+
+
+def test_compact_planning_asks_the_probe_about_its_numbered_half(monkeypatch):
+    """The decision asks the run's probe about the half it plans, and only the first numbered iteration takes the
+    fused route compact planning needs."""
+    monkeypatch.setattr(firstiter_bpref.memory_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
+    monkeypatch.setattr(firstiter_bpref.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
+    for name in ("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "RELAX_EM_FINITE_CHECK"):
+        monkeypatch.delenv(name, raising=False)
+    asked = []
+
+    class Probe:
+        def __init__(self, armed):
+            self.armed = armed
+
+        def bpref_diagnostics_armed(self, iteration, half_index, *, bpref_device_signature_active):
+            asked.append((iteration, half_index, bpref_device_signature_active))
+            return self.armed
+
+    host = SimpleNamespace(shape=(1603, 1603, 802), dtype=np.dtype(np.complex64))
+    common = dict(
+        source_faithful_spectrum_norm=True, winner_take_all=True, preserve_bpref_particle_order=True,
+        use_relion_x_half_mstep=True, projector_half=host, score_complex_dtype=np.complex64,
+        recon_volume_size=1603 * 1603 * 802, fixed_base_bytes=4_000_000_000,
+    )
+    decide = firstiter_bpref.relion_firstiter_compact_batch_planning_decision
+    half = firstiter_bpref.NumberedBPrefHalf
+    assert decide(**common, half=half(0, 1, False, Probe(False))).enabled
+    assert not decide(**common, half=half(0, 1, False, Probe(True))).enabled
+    assert not decide(**common, half=half(1, 0, False, Probe(False))).enabled
+    assert asked == [(0, 1, False), (0, 1, False), (1, 0, False)]

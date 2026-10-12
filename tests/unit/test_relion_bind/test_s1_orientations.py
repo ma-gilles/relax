@@ -212,8 +212,9 @@ class TestRotationMatrices:
         ``R_from_relion`` expects.  Compare the two grids directly as
         unordered sets of matrices.
         """
-        from relax.sampling import get_rotation_grid
         from recovar.utils.helpers import R_from_relion
+
+        from relax.sampling import get_rotation_grid
 
         relion_coarse = get_coarse_orientations(order)
         n_total = relion_coarse.shape[0]
@@ -326,9 +327,9 @@ class TestOversampledGrid:
     @pytest.mark.parametrize("random_perturbation", [0.0, 0.461207])
     def test_recovar_sampled_oversampling_matches_relion_binding_order(self, oversampling_order, random_perturbation):
         """RECOVAR's sampled oversampling path must preserve RELION child order."""
-        from relax import healpix_sampling
         from relax.sampling import (
             get_oversampled_rotation_grid_from_samples,
+            healpix,
             rotation_grid_n_in_planes,
         )
 
@@ -361,7 +362,7 @@ class TestOversampledGrid:
                 ipsi,
                 random_perturbation,
             )
-            expected_blocks.append(healpix_sampling.euler_angles_to_matrix(expected_eulers).astype(np.float32))
+            expected_blocks.append(healpix.euler_angles_to_matrix(expected_eulers).astype(np.float32))
             expected_parent.extend([parent_pos] * expected_eulers.shape[0])
 
         expected_matrices = np.concatenate(expected_blocks, axis=0)

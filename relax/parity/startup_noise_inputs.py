@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from relax.refinement.half_inputs import HalfPair
 from relax.refinement.startup_noise import StartupNoise, estimate_startup_sigma2, scoring_noise_from_sigma2
+from relax.steps.half_inputs import HalfPair
 
 
 def frozen_boundary_noise(frozen_boundary, image_shape) -> StartupNoise:
@@ -29,7 +29,7 @@ def archived_noise(path, iteration, image_shape, *, log) -> StartupNoise:
     """The radial noise an earlier run's archive recorded at ``iteration`` (``--init_noise_from_npz``)."""
     from recovar.reconstruction import noise as recon_noise
 
-    from relax.helpers import iteration_history
+    from relax.refinement import iteration_history
 
     init_noise = iteration_history._load_init_noise_radial_npz(path, iteration)
     radial = init_noise["noise_radial"]

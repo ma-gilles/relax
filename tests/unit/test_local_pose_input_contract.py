@@ -2,7 +2,7 @@
 
 import pytest
 
-from relax.refinement.half_inputs import HalfSet
+from relax.steps.half_inputs import HalfSet
 
 pytestmark = pytest.mark.unit
 

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.local import local_layout
+from relax.local_search import layout
 from relax.sampling import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
@@ -17,7 +17,7 @@ def _dense_candidates(prior_dir_vecs, dir_vecs, dir_z_order, dir_z_sorted, cone_
 
     dots = prior_dir_vecs @ dir_vecs.T
     image, point = np.nonzero(dots >= cos_prefilter)
-    return local_layout._SparseCandidates(int(prior_dir_vecs.shape[0]), image, point, dots[image, point])
+    return layout._SparseCandidates(int(prior_dir_vecs.shape[0]), image, point, dots[image, point])
 
 
 @pytest.mark.parametrize(
@@ -35,9 +35,9 @@ def test_banded_cone_keeps_the_dense_supports(monkeypatch, order, sigma_rot_deg,
     meta = build_local_search_grid_metadata(order)
     args = (eulers.astype(np.float64), order, np.deg2rad(sigma_rot_deg), np.deg2rad(sigma_psi_deg), meta)
 
-    banded = local_layout._build_factorized_local_entries(*args, dtype=np.float32)
-    monkeypatch.setattr(local_layout, "_direction_cone_candidates", _dense_candidates)
-    dense = local_layout._build_factorized_local_entries(*args, dtype=np.float32)
+    banded = layout._build_factorized_local_entries(*args, dtype=np.float32)
+    monkeypatch.setattr(layout, "_direction_cone_candidates", _dense_candidates)
+    dense = layout._build_factorized_local_entries(*args, dtype=np.float32)
 
     offsets, counts, ids, log_priors = banded
     np.testing.assert_array_equal(offsets, dense[0])

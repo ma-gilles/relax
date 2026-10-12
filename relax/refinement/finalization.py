@@ -6,66 +6,77 @@ post-convergence sampling/scoring/reconstruction sequence and its result.
 
 
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.dense.score_outputs import (
-    PerHalfOutputs,
-    _record_score_profile,
-    resolve_mstep_accumulator_shape,
-    resolve_mstep_full_half_axis,
-)
-from relax.dense.scoring_policy import (
-    local_precision,
-)
-from relax.diagnostics import bpref_diagnostics
-from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
-from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
-from relax.helpers.expected_accuracy import expected_accuracy_class_ids
-from relax.helpers.orientation_priors import relion_local_search_sigmas, relion_translation_search_base
-from relax.helpers.resolution import (
+from relax.numerics.precision import _diagnostic_float64_pass2_matches
+from relax.reconstruction.resolution import (
+    ImageGeometry,
     class_current_resolution_shell,
     k1_current_resolution_shell,
     relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
-from relax.helpers.timing import Stopwatch
 from relax.refinement import final_reconstruction
-from relax.refinement.expectation import prepare_final_half
-from relax.refinement.final_sampling import prepare_final_sampling
-from relax.refinement.half_scoring import (
+from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
     DensePriorSpec,
     DenseSamplingSpec,
     DenseVariantPolicy,
-    HalfScoringData,
+    _score_half_dense_in_bpref_scope,
+)
+from relax.refinement.iteration_planning import IterationCarry
+from relax.refinement.local_half import (
     LocalBatchPolicy,
     LocalDiagnosticPolicy,
     LocalExecutionPolicy,
     LocalPriorSpec,
-    _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.iteration_planning import IterationCarry
-from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
-from relax.refinement.mean_helpers import (
-    join_half_accumulators_at_low_resolution,
-    merged_half_map,
-    weighted_class_merge,
-)
-from relax.refinement.optics_shapes import image_translation_factors
+from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
+from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
 from relax.refinement.ports import FinalHalfScored, InputSource
-from relax.refinement.projector_preparation import prepare_scoring_projector
+from relax.refinement.priors import join_half_accumulators_at_low_resolution
 from relax.refinement.reference_state import _class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
+from relax.refinement.refinement_state import update_angular_sampling
 from relax.refinement.result_files import final_pass_result
-from relax.refinement.tomo_half import local_tomo_sampling, score_tomo_half_in_loop
+from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
-from relax.relion.relion_metadata import relion_metadata_translations
+from relax.runtime.timing import Stopwatch
+from relax.sampling.healpix import angular_sampling_deg
+from relax.sampling.orientation_priors import (
+    DirectionPrior,
+    HalfDirectionLogPriors,
+    HalfTranslationPriorInputs,
+    make_relion_translation_log_prior,
+    relion_direction_log_priors_for_half,
+    relion_half_translation_prior_inputs,
+    relion_local_search_sigmas,
+    relion_translation_search_base,
+)
+from relax.star.metadata import relion_metadata_translations
+from relax.steps import half_inputs, shape_class_scoring
+from relax.steps.expected_accuracy import expected_accuracy_class_ids
+from relax.steps.half_inputs import HalfScoringData, local_search_centre_half
+from relax.steps.optics_shapes import image_translation_factors
+from relax.steps.projector_preparation import prepare_scoring_projector
+from relax.steps.score_outputs import (
+    PerHalfOutputs,
+    _record_score_profile,
+    resolve_mstep_accumulator_shape,
+    resolve_mstep_full_half_axis,
+)
+from relax.steps.scoring_policy import (
+    local_precision,
+)
+from relax.steps.shape_class_scoring import OpticsSpec
+from relax.steps.tomo_half import local_tomo_sampling
+from relax.steps.tomo_scoring import score_tomo_half_in_loop
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext
@@ -86,7 +97,7 @@ def _should_run_final_all_data_iteration(
     """Return whether to run RELION's final all-data reconstruction pass.
 
     ``after_max_iter``: run it after the last numbered iteration without convergence (K=1's
-    ``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``; Class3D passes ``class_after_max_iter``'s False).
+    ``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``; Class3D passes False, and refuses the option at set-up).
     """
 
     if force_max_iter_after_convergence:
@@ -99,23 +110,6 @@ def _should_run_final_all_data_iteration(
     ):
         return False
     return True
-
-
-def class_after_max_iter(state, options: RefinementOptions, *, iteration: int) -> bool:
-    """Class3D never runs the final pass after max_iter exhaustion (only after convergence): False, with a
-    warning where ``final_pass.after_max_iter`` asks for it at exhaustion."""
-    if (
-        not options.schedule.force_max_iter_after_convergence
-        and not state.has_converged
-        and options.final_pass.after_max_iter
-        and int(iteration) >= int(options.schedule.max_iter)
-    ):
-        logger.warning(
-            "Ignoring %s=1 for K-class after max_iter exhaustion; final all-data "
-            "is only valid for K-class after convergence",
-            FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
-        )
-    return False
 
 
 def final_pass_due(state, options: RefinementOptions, *, iteration: int, after_max_iter: bool) -> bool:
@@ -299,7 +293,7 @@ def run_final_all_data(
         )
         if k_class_enabled and carry.state.adaptive_oversampling > 0:
             final_adaptive_pass1_current_size = relion_coarse_image_size(
-                healpix_angular_step(final_sampling.settings.grid_order),
+                angular_sampling_deg(final_sampling.settings.grid_order),
                 image_geometry.pixel_size_angstrom,
                 image_geometry.box_size,
                 particle_diameter=options.schedule.particle_diameter_ang,
@@ -316,26 +310,6 @@ def run_final_all_data(
         else:
             final_adaptive_pass1_current_size = None
             final_adaptive_pass2_current_size = None
-    # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
-    projector_clock = Stopwatch()
-    final_projectors = [
-        prepare_scoring_projector(
-            reference,
-            volume_shape=volume_shape,
-            current_size=final_current_size,
-            padding_factor=PROJECTION_PADDING_FACTOR,
-            n_classes=options.k_class.n_classes,
-            dump_label=f"final_half{half.index}",
-            gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
-        )
-        for half, reference in zip(halves, final_join_means, strict=True)
-    ]
-    logger.info(
-        "RELION final all-data: built exact Projector::data for scoring at current_size=%d r_max=%s in %.2fs",
-        final_current_size,
-        final_projectors[0].r_max,
-        projector_clock.seconds,
-    )
     logger.info("=== RELION final all-data Nyquist iteration ===")
     if final_use_local:
         final_local_batching = LocalBatchPolicy(
@@ -343,8 +317,6 @@ def run_final_all_data(
         )
         final_local_execution = LocalExecutionPolicy(
             disc_type="linear_interp",
-            disable_adjoint_y=options.debug.disable_adjoint_y,
-            disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             # As the numbered local pass and the final dense pass: RELION's high-shell norm and sigma2 terms are
             # the same powerClass sums in the final iteration (ml_optimiser.cpp:10848-10856).
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
@@ -366,6 +338,8 @@ def run_final_all_data(
             local_profile_history=history.local_profile_history,
         )
     else:
+        # Resolved once: the batch plan and the execution policy read the same answer.
+        diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(final_sampling.settings.relion_iteration)
         final_dense_sampling = DenseSamplingSpec(
             effective_rotations=final_sampling.grid.rotations,
             current_translations=final_sampling.grid.translations,
@@ -380,7 +354,7 @@ def run_final_all_data(
         )
         final_dense_batching = DenseBatchPolicy(
             image_batch_size=options.execution.image_batch_size,
-            safe_batch_sizes=ctx.batch_planner,
+            safe_batch_sizes=ctx.batch_planner.for_expectation(diagnostic_float64_pass2=diagnostic_float64_pass2),
             max_significants=options.adaptive.max_significants,
             significance_safe_batch_sizes=None,
             k_class_image_batch_size_override=None,
@@ -400,16 +374,12 @@ def run_final_all_data(
         )
         final_dense_execution = DenseExecutionPolicy(
             disc_type="linear_interp",
-            disable_adjoint_y=options.debug.disable_adjoint_y,
-            disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             return_best_pose_details=not k_class_enabled,
             # Unlike the numbered pass, the final pass keeps the BPREF signature off and RELION's CC support:
             # the two pass builders differ here, and no parity run has checked which one RELION follows.
             bpref_device_signature_active=False,
             debug_iteration=final_sampling.settings.relion_iteration,
-            diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
-                final_sampling.settings.relion_iteration
-            ),
+            diagnostic_float64_pass2=diagnostic_float64_pass2,
             preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
             # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
@@ -419,11 +389,37 @@ def run_final_all_data(
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
             precision=options.precision,
+            k_class_probe=ctx.k_class_probe,
+            keep_pose_rotation_eulers=ctx.expectation_probe.keeps_pose_rotation_eulers,
         )
     final_outs = PerHalfOutputs()
-    for half, projector in zip(halves, final_projectors, strict=True):
+    first_projector_power_spectrum = None
+    for half, reference in zip(halves, final_join_means, strict=True):
+        # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
+        # Each half's Projector::data is built when its pass starts and released when it ends: complex128, 33 GiB
+        # per half at EMPIAR-10202's box, and both were held for the whole final pass (relax#39).
+        projector_clock = Stopwatch()
+        projector = prepare_scoring_projector(
+            reference,
+            volume_shape=volume_shape,
+            current_size=final_current_size,
+            padding_factor=PROJECTION_PADDING_FACTOR,
+            n_classes=options.k_class.n_classes,
+            dump_label=f"final_half{half.index}",
+            gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
+        )
+        logger.info(
+            "RELION final all-data half-%d: built exact Projector::data for scoring at current_size=%d r_max=%s "
+            "in %.2fs",
+            half.index + 1,
+            final_current_size,
+            projector.r_max,
+            projector_clock.seconds,
+        )
+        if first_projector_power_spectrum is None:
+            first_projector_power_spectrum = projector.power_spectrum
+        scoring_half = None
         half = local_search_centre_half(half, (options.start.init_angle_priors or (None, None))[half.index], carry.state)
-        bpref_diagnostics.clear_bpref_contribution_dump_context()
         final_half_clock = Stopwatch()
         logger.info(
             "RELION final all-data half-%d start: images=%d current_size=%d "
@@ -445,7 +441,64 @@ def run_final_all_data(
             final_inputs = None  # the half preparation below is single-particle only
             # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the
             # previous poses), with the merged reference for both halves.
-            if not final_use_local:
+            # RELION's final iteration keeps the orientational prior the run converged with: a local search,
+            # or below --auto_local_healpix_order the --sigma_tilt prior on the global sampling
+            # (the convergence branch sets has_converged, do_join_random_halves and do_use_all_data and
+            # nothing of the prior or the sampling, ml_optimiser.cpp:10152-10160).
+            tilt_prior = half_inputs.tilt_prior_for_half(
+                half,
+                (options.start.init_angle_priors or (None, None))[half.index],
+                options.local_search.tilt_prior_deg(carry.state.do_local_search),
+            )
+            if final_use_local:
+                tomo_final_sampling = local_tomo_sampling(
+                    fine_order=final_local_sampling.search.healpix_order,
+                    oversampling_order=final_local_sampling.search.oversampling_order,
+                    translation_range_px=final_sampling.settings.translation_range,
+                    translation_step_px=final_sampling.settings.translation_step,
+                    voxel_size=image_geometry.pixel_size_angstrom,
+                    random_perturbation=final_local_sampling.perturbation,
+                    pass1_size=final_local_sampling.coarse_image_window_size,
+                    current_size=final_current_size,
+                )
+                tomo_final_search = dict(
+                    previous_eulers_deg=half.rotation_eulers,
+                    sigma_rot=final_local_sampling.search.sigma_rot,
+                    sigma_psi=final_local_sampling.search.sigma_psi,
+                )
+            elif tilt_prior is not None:
+                logger.info(
+                    "RELION final all-data iteration under the --sigma_tilt prior: healpix_order=%d, sigma_tilt=%g deg",
+                    final_sampling.settings.grid_order, tilt_prior.sigma_deg,
+                )
+                tomo_final_sampling = local_tomo_sampling(
+                    fine_order=final_sampling.settings.grid_order + carry.state.adaptive_oversampling,
+                    oversampling_order=carry.state.adaptive_oversampling,
+                    translation_range_px=final_sampling.settings.translation_range,
+                    translation_step_px=final_sampling.settings.translation_step,
+                    voxel_size=image_geometry.pixel_size_angstrom,
+                    random_perturbation=final_sampling.settings.random_perturbation,
+                    pass1_size=relion_coarse_image_size(
+                        angular_sampling_deg(final_sampling.settings.grid_order),
+                        image_geometry.pixel_size_angstrom,
+                        image_geometry.box_size,
+                        particle_diameter=options.schedule.particle_diameter_ang,
+                        current_size=final_current_size,
+                    ),
+                    current_size=final_current_size,
+                )
+                tomo_final_search = dict(
+                    previous_eulers_deg=(
+                        np.zeros((half.dataset.n_units, 3), dtype=np.float64)
+                        if half.rotation_eulers is None
+                        else half.rotation_eulers
+                    ),
+                    sigma_rot=0.0,
+                    sigma_psi=0.0,
+                    sigma_tilt_deg=tilt_prior.sigma_deg,
+                    prior_tilt_deg=tilt_prior.centre_deg,
+                )
+            else:
                 raise NotImplementedError(
                     "a subtomogram final all-data pass without local search needs the global direction priors"
                 )
@@ -459,22 +512,9 @@ def run_final_all_data(
                     scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
                     scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
                 ),
-                use_adaptive=final_local_sampling.search.oversampling_order > 0,
-                sampling=local_tomo_sampling(
-                    fine_order=final_local_sampling.search.healpix_order,
-                    oversampling_order=final_local_sampling.search.oversampling_order,
-                    translation_range_px=final_sampling.settings.translation_range,
-                    translation_step_px=final_sampling.settings.translation_step,
-                    voxel_size=image_geometry.pixel_size_angstrom,
-                    random_perturbation=final_local_sampling.perturbation,
-                    pass1_size=final_local_sampling.coarse_image_window_size,
-                    current_size=final_current_size,
-                ),
-                local_search=dict(
-                    previous_eulers_deg=half.rotation_eulers,
-                    sigma_rot=final_local_sampling.search.sigma_rot,
-                    sigma_psi=final_local_sampling.search.sigma_psi,
-                ),
+                use_adaptive=tomo_final_sampling.oversampling_order > 0,
+                sampling=tomo_final_sampling,
+                local_search=tomo_final_search,
                 rotation_log_prior=None,
                 sigma_offset_angst=final_sigma_offset_k,
                 max_significants=options.adaptive.max_significants,
@@ -521,7 +561,7 @@ def run_final_all_data(
                         trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
                         current_sigma_offset_angstrom=final_sigma_offset_k,
                         translation_search_base=translation_search_base,
-                        local_search_translation_prior_mode=options.local_search.local_search_translation_prior_mode,
+                        class_log_priors=carry.class_mixture.log_priors,
                     ),
                     batching=final_local_batching,
                     execution=final_local_execution,
@@ -575,6 +615,8 @@ def run_final_all_data(
             reference_model=reference_model, noise_variance=carry.noise_model.variance_per_half[half.index],
             current_size=final_current_size, precision=final_precision, use_local=final_use_local,
         ))
+        # The pass is over: nothing below reads this half's Projector::data.
+        del projector, scoring_half
 
     final_mstep_accumulator_shape = resolve_mstep_accumulator_shape(
         final_outs.mstep_accumulator_shape,
@@ -616,7 +658,7 @@ def run_final_all_data(
         final_class_priors = final_reconstruction.compute_final_class_priors(
             final_ft_ctf,
             final_join_means[0],
-            projector=final_projectors[0],
+            projector_power_spectrum=first_projector_power_spectrum,
             n_classes=options.k_class.n_classes,
             settings=ctx.reconstruction_settings,
             current_size=final_current_size,
@@ -752,16 +794,12 @@ def run_final_all_data(
             "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
             final_current_size, options.k_class.n_classes,
         )
-        # The merged map from the COMBINED accumulators (summed only now: 24.7 GB of host at box 800), each half
-        # map from its own, at full Nyquist. The list is the only owner; each slot is freed after its solve.
-        final_ft_y = final_Ft_y_0 + final_Ft_y_1
-        final_ft_ctf = final_Ft_ctf_0 + final_Ft_ctf_1
+        # Each half map from its own accumulators, then the merged map from their sum, at full Nyquist. The list
+        # is the only owner: the sum is formed in the first half's arrays after both half maps are solved.
         final_backprojections = [
-            (final_ft_ctf, final_ft_y),
             (final_Ft_ctf_0, final_Ft_y_0),
             (final_Ft_ctf_1, final_Ft_y_1),
         ]
-        del final_ft_ctf, final_ft_y
         del final_Ft_ctf_0, final_Ft_y_0, final_Ft_ctf_1, final_Ft_y_1
         final_maps = final_reconstruction.reconstruct_final_halfmaps(
             final_backprojections,
@@ -805,3 +843,77 @@ def run_final_all_data(
             gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
         ),
     )
+
+
+@dataclass(frozen=True)
+class PreparedFinalHalf:
+    """Priors and optics resolved on one final expectation's scoring frame."""
+
+    translations: HalfTranslationPriorInputs
+    translation_log_prior: object
+    directions: HalfDirectionLogPriors
+    optics: OpticsSpec
+
+
+def prepare_final_half(
+    half: half_inputs.HalfSet,
+    sampling: FinalSampling,
+    *,
+    image_geometry: ImageGeometry,
+    sigma_offset_angstrom,
+    noise_radial,
+    direction_prior: DirectionPrior,
+    n_classes: int,
+    use_local: bool,
+    coarse_angular_step_deg,
+    particle_diameter_angstrom,
+    sealed_sampling_state,
+    symmetry: str,
+    dtype,
+    projection_scale: float,
+) -> PreparedFinalHalf:
+    """Resolve SPA priors and optics in the final grid's image-pixel frame.
+
+    See docs/math/relion_refinement_algorithm.md, section 7.
+    """
+    translations = relion_half_translation_prior_inputs(
+        half.translations,
+        voxel_size=image_geometry.pixel_size_angstrom,
+        base_translations=sampling.base_translations,
+        current_translations=sampling.grid.translations,
+        dtype=dtype,
+    )
+    translation_log_prior = make_relion_translation_log_prior(
+        translations.prior_translations,
+        image_geometry.pixel_size_angstrom,
+        sigma_offset_angstrom,
+        translations.prior_center,
+        offset_range_pixels=None,
+        dtype=dtype,
+    )
+    directions = relion_direction_log_priors_for_half(
+        use_local=use_local,
+        scoring_healpix_order=None if use_local else sampling.settings.grid_order,
+        n_classes=n_classes,
+        prior=direction_prior,
+        sealed_sampling_state=sealed_sampling_state,
+        dtype=dtype,
+        log=logger,
+        half_index=half.index,
+        symmetry=symmetry,
+    )
+    optics = shape_class_scoring.prepare_optics(
+        half.dataset,
+        noise_radial=noise_radial,
+        coarse_step_deg=coarse_angular_step_deg,
+        particle_diameter_ang=particle_diameter_angstrom,
+        previous_translations=half.translations,
+        sigma_offset_angstrom=sigma_offset_angstrom,
+        base_translations=sampling.base_translations,
+        current_translations=sampling.grid.translations,
+        with_log_prior=not use_local,
+        zero_cold_center=False,
+        dtype=dtype,
+        single_shape_projection_scale=projection_scale,
+    )
+    return PreparedFinalHalf(translations, translation_log_prior, directions, optics)

@@ -15,8 +15,8 @@ from typing import Sequence
 
 import numpy as np
 
-from relax.helpers import relion_random
-from relax.vdam.schedules import (
+from relax.numerics import relion_random
+from relax.steps.sgd_schedule import (
     VdamPhaseLengths,
     compute_phase_lengths,
     compute_subset_size,

@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from helpers.refinement_specs import local_iteration_owners
 
-from relax.helpers.types import LocalEMResult
-from relax.refinement import local_search_iteration
+from relax.refinement import local_half
+from relax.types import LocalEMResult
 
 pytestmark = pytest.mark.unit
 
@@ -29,10 +29,10 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
             profile=profile,
         )
 
-    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", run_local)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", run_local)
     rotations = np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0)
     translations = np.zeros((2, 2), dtype=np.float32)
-    result = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    result = local_half._run_local_search_iteration(*local_iteration_owners(
         SimpleNamespace(image_shape=(2, 2), volume_shape=(2, 2, 2), particles_file=None),
         None, None, rotations, rotations,
         healpix_order=0, sigma_rot=1.0, sigma_psi=1.0,
@@ -61,12 +61,12 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
     float64 rows divided by s and cast once, rebuilt by the rule and arguments that built the layout.
 
     "oversampled children": parent oversampling makes the rows children on the fine grid, rebuilt from their
-    source Euler rows. "pass-1 probe": as half_scoring's adaptive local pass 1 does, the parent layout is built
+    source Euler rows. "pass-1 probe": as dense_half's adaptive local pass 1 does, the parent layout is built
     with the iteration's perturbation and handed in (``pass2_layout``) under a grid that states no perturbation.
     411ed2c1 rebuilt both from the caller's grid and raised RotationProvenanceError (by 0.04-0.07)."""
     from scipy.spatial.transform import Rotation
 
-    from relax.local.local_layout import (
+    from relax.local_search.layout import (
         build_local_hypothesis_layout,
         build_local_search_grid_metadata,
         local_layout_host_rotations,
@@ -85,7 +85,7 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
             stats=object(),
         )
 
-    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", run_local)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", run_local)
     prior = Rotation.random(3, random_state=7).as_matrix()
     translations = np.zeros((3, 2), dtype=np.float32)
     grid = dict(rotation_grid_random_perturbation=rp, rotation_grid_angular_sampling_deg=step)
@@ -103,7 +103,7 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
                 rotation_grid_random_perturbation=rp, rotation_grid_angular_sampling_deg=step,
             ),
         )
-    local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    local_half._run_local_search_iteration(*local_iteration_owners(
         SimpleNamespace(image_shape=(2, 2), volume_shape=(2, 2, 2), voxel_size=1.0, particles_file=None),
         None, None, prior, None,
         healpix_order=2, sigma_rot=0.2, sigma_psi=0.2,
@@ -136,7 +136,7 @@ def test_adaptive_pass2_children_rebuild_from_their_source_eulers():
     (and so the s != 1 projection of their rows) reproduces both the scoring and the M-step rows."""
     from scipy.spatial.transform import Rotation
 
-    from relax.local.local_layout import (
+    from relax.local_search.layout import (
         build_local_adaptive_pass2_hypothesis_layout,
         build_local_hypothesis_layout,
         build_local_search_grid_metadata,

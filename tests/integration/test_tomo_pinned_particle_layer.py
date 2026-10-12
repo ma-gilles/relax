@@ -6,7 +6,7 @@ f2c1a3 Refine3D oracle (em_fixtures/cryoet_s1_offsets_20260925, README.md there)
 
 The test pins RELION's last split-half iteration, it019. Its E-step used the it018 half
 maps, noise and group scales, and RELION's it019 poses and 3D offsets are its answer.
-relax's particle layer (``relax.refinement.tomo_particles``) builds every tilt image from
+relax's particle layer (``relax.sampling.tomo_particles``) builds every tilt image from
 a particle hypothesis:
 
 - the image matrix is ``Aproj_i R`` and the image shift ``Aproj_i[:2] t``;
@@ -74,8 +74,9 @@ def pinned():
     from recovar.data_io.cryoem_dataset import load_dataset
     from recovar.data_io.starfile import read_star, star_column
 
-    from relax.refinement import tomo_particles as tp
-    from relax.relion import relion_ctf, tomo_input
+    from relax.relion import ctf as relion_ctf
+    from relax.sampling import tomo_particles as tp
+    from relax.star import tomo_input
 
     bind = natives.relion_bind_core()
 

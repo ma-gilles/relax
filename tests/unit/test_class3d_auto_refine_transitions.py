@@ -2,7 +2,7 @@
 
 import pytest
 
-from relax.refinement.convergence import uses_native_auto_refine
+from relax.refinement.numbered_transitions import uses_native_auto_refine
 
 pytestmark = pytest.mark.unit
 

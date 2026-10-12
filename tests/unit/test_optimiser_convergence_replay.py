@@ -5,8 +5,8 @@ from dataclasses import asdict
 
 import pytest
 
-from relax.helpers.convergence import RefinementState
 from relax.parity import relion_replay
+from relax.refinement.refinement_state import RefinementState
 
 pytestmark = pytest.mark.unit
 

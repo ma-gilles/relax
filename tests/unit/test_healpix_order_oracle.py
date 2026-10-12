@@ -2,7 +2,6 @@ import pytest
 from helpers.run_options import stand_in
 
 import relax.refinement.refinement_options as refinement_options
-from relax.helpers.convergence import RefinementState, apply_relion_healpix_order_oracle
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
     KClassOptions,
@@ -10,6 +9,7 @@ from relax.refinement.refinement_options import (
     _validate_relion_healpix_orders,
     with_validated_sampling_schedule,
 )
+from relax.refinement.refinement_state import RefinementState, apply_relion_healpix_order_oracle
 
 
 def test_validate_relion_healpix_orders_requires_complete_monotone_schedule():
@@ -84,7 +84,7 @@ def test_sampling_validation_preserves_payloads_and_input_options(orders):
     assert options.adaptive.relion_healpix_orders is orders
     assert validated.adaptive.relion_healpix_orders == (None if orders is None else (3, 3, 4))
     assert validated.adaptive.relion_current_sizes is current_sizes
-    for group in ("schedule", "parity", "local_search", "k_class", "start", "debug", "execution"):
+    for group in ("schedule", "parity", "local_search", "k_class", "start", "execution"):
         assert getattr(validated, group) is getattr(options, group)
 
 

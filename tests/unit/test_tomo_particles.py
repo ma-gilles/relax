@@ -10,7 +10,7 @@ from helpers import tomo_particles_reference as tomo_ref
 from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
-from relax.refinement import tomo_particles
+from relax.sampling import tomo_particles
 
 pytestmark = pytest.mark.unit
 
@@ -131,13 +131,14 @@ def test_image_slots_visit_each_particles_images_in_order():
 def test_tilt_row_matrices_are_relions_host_inverse_of_aproj_times_euler():
     """generateEulerMatrices with L = Aproj: inv(L A) (acc_helper_functions_impl.h:248-255), from the native binding
     when it is built and from the NumPy fallback otherwise; with L = I both equal the SPA matrices."""
-    from relax import healpix_sampling, sampling
+    from relax import sampling
+    from relax.sampling import healpix
 
     rng = np.random.default_rng(5)
     eulers = rng.uniform([-180, 0, -180], [180, 180, 180], size=(6, 3))
     left = Rotation.random(6, random_state=rng).as_matrix()
     got = sampling._relion_mstep_rotations_from_eulers(eulers, dtype=np.float64, left_matrices=left)
-    relion = np.stack([healpix_sampling.euler_angles_to_matrix(e[None])[0] for e in eulers])
+    relion = np.stack([healpix.euler_angles_to_matrix(e[None])[0] for e in eulers])
     # RECOVAR frame: the transpose of RELION's inverse.
     expected = np.swapaxes(np.linalg.inv(left @ relion), 1, 2)
     assert_matches(got, expected)
@@ -176,9 +177,9 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
     # float(0.999); the tomo pass takes the one constant the SPA routes use.
     from types import SimpleNamespace
 
-    from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
-    from relax.refinement import tomo_half
     from relax.sampling import rotation_grid_size
+    from relax.steps import tomo_scoring
+    from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
 
     captured = {}
 
@@ -189,7 +190,7 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
         captured.update(kwargs)
         raise Stop
 
-    monkeypatch.setattr(tomo_half, "score_tomo_half", score)
+    monkeypatch.setattr(tomo_scoring, "score_tomo_half", score)
     particles = SimpleNamespace(
         dataset=SimpleNamespace(n_units=2, voxel_size=1.0), translations=None, optics_group_ids=None,
         scale_corrections=None,
@@ -201,7 +202,7 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
     )
     sampling = SimpleNamespace(oversampling_order=1, healpix_order=0)
     with pytest.raises(Stop):
-        tomo_half.score_tomo_half_in_loop(
+        tomo_scoring.score_tomo_half_in_loop(
             data, use_adaptive=True, sampling=sampling,
             rotation_log_prior=np.zeros(rotation_grid_size(0, "C1"), dtype=np.float32), sigma_offset_angst=1.0,
             max_significants=None, reconstruction_current_size=4,

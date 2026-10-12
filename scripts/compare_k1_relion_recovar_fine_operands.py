@@ -16,8 +16,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from recovar.core.ctf import _compute_spa_ctf
-from relax.sparse_pass2.sparse_pass2_bucket_io import _half_translation_phase_table_for_indices
-from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
+from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
+from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
 from recovar.utils.file_hash import sha256_file
 from scripts.validate_relion_bpref_factor_capture import load_factor_pixel_capture
 from scripts.validate_relion_fine_operand_capture import (

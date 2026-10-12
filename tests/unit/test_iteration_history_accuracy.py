@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.helpers.iteration_history import RefinementHistory
+from relax.refinement.iteration_history import RefinementHistory
 
 pytestmark = pytest.mark.unit
 

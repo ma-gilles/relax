@@ -26,6 +26,10 @@ result and adds a footnote; ``cross_engine_by_relion_run`` and
 ``relion_vs_relion`` list the band FSC-AUCs of relax against every same-command
 RELION run and of the RELION runs against each other (``render_per_reference``).
 
+``scorer_resolution`` ({value, method, evidence}) is a row's measured scoring noise (the largest change of a
+same-seed relax-minus-RELION gap between two scorer invocations on the same maps); with it, a row whose every seed gap
+is inside that value carries ``quality_pass: null`` and ``quality_state: "not_separable"`` and renders as 🔵.
+
 Rows with ``"table": "initialmodel"`` are InitialModel (VDAM) runs, rendered in
 their own sections with the EM column set: they have no half maps, so their
 quality block ``initial_model`` holds FSC-AUCs of rigidly aligned final maps
@@ -109,7 +113,10 @@ STATUS_LEGEND = (
     " when relax's best run reaches RELION's lowest run (the ranges overlap, or relax lies above), and its relax range"
     " enters the across-seed band the same way; seeds without relax repeats compare relax's run with RELION's lowest"
     " same-seed run. A row may carry its own tie tolerance, decided by the user from measured relax spread (see its"
-    " provenance note). The page lists full-size"
+    " provenance note). 🔵 not separable at the scorer's resolution: at every seed the two programs' scores differ by"
+    " less than the scorer can resolve on this fixture (the row's measured scorer resolution, see its provenance note);"
+    " it is neither a hit nor a miss, and the row takes no speed colour. On a row with a scorer resolution a seed counts"
+    " as below RELION only when its gap exceeds that resolution. The page lists full-size"
     " datasets only: single-particle and VDAM rows need more than 10k particles (smaller fixtures are for testing and"
     " debugging and stay in the JSON with benchmark: false); cryo-ET rows count from 1k particles (about 40 tilts each)."
     " Feature-qualification checks on small fixtures have their own section, Feature checks, after the table."
@@ -204,6 +211,18 @@ def _validate_quality(row):
             raise ValueError(f"{row['id']}: tie_tolerance needs value, evidence and decision")
         if not 0 < float(tt["value"]) <= REPRODUCED_TIE:
             raise ValueError(f"{row['id']}: tie_tolerance must be in (0, {REPRODUCED_TIE:g}]")
+    sr = row.get("scorer_resolution")
+    if sr is not None:
+        if set(sr) != {"value", "method", "evidence"} or not sr["method"]:
+            raise ValueError(f"{row['id']}: scorer_resolution needs value, method and evidence")
+        ev = sr["evidence"]
+        if set(ev) != {"score_a", "score_b", "metric", "pairs"} or not all(ev.values()):
+            raise ValueError(f"{row['id']}: scorer_resolution evidence needs score_a, score_b, metric and pairs")
+        if not 0 < float(sr["value"]) <= SCORER_RESOLUTION_MAX:
+            raise ValueError(f"{row['id']}: scorer_resolution must be in (0, {SCORER_RESOLUTION_MAX:g}]")
+    state = row.get("quality_state")
+    if state is not None and (state != NOT_SEPARABLE or row["quality_pass"] is not None or sr is None):
+        raise ValueError(f"{row['id']}: quality_state {NOT_SEPARABLE} needs quality_pass null and a scorer_resolution")
 
 
 def _is_initialmodel(row):
@@ -380,6 +399,8 @@ def _category(row):
 TIE = 1e-6  # float32 round-off of identical maps: relax and RELION agree to ~1e-7 on some fixtures
 REPRODUCED_MAP_AUC = 0.9999  # relax map vs same-seed RELION map FSC-AUC at which the seed counts as reproduced
 REPRODUCED_TIE = 1e-4  # GT-metric differences below this are ties for a reproduced seed
+SCORER_RESOLUTION_MAX = 1e-3  # a row's measured scorer resolution may not exceed this
+NOT_SEPARABLE = "not_separable"  # quality_state of a row whose every same-seed gap is inside its scorer resolution
 
 
 def _gap(x):
@@ -398,6 +419,33 @@ def row_tie(row):
     return None if tt is None else float(tt["value"])
 
 
+def row_scorer_resolution(row):
+    """A row's measured scorer resolution (row field ``scorer_resolution``: value, method, evidence), or None: the
+    largest change of a same-seed relax-minus-RELION gap on the row's fixture between two scorer invocations on the
+    same maps (user, 2026-10-10). ``measured_scorer_resolution`` recomputes it from the evidence."""
+    sr = row.get("scorer_resolution")
+    return None if sr is None else float(sr["value"])
+
+
+def measured_scorer_resolution(evidence):
+    """Largest |gap_b - gap_a| over the evidence pairs, gap = relax arm minus RELION arm of ``metric`` against the
+    reference. score_a / score_b: score files (scripts/score_initialmodel_maps.py outputs) of the two invocations, a
+    label is read from the first file that has it; pairs: [relax, relion] labels (same in both invocations) or
+    [relax_a, relion_a, relax_b, relion_b]."""
+
+    def arms(paths):
+        merged = {}
+        for path in paths:
+            score = json.loads(Path(path).read_text())
+            for label, arm in score["arms"].items():
+                merged.setdefault(label, arm["vs_reference"][evidence["metric"]])
+        return merged
+
+    a, b = arms(evidence["score_a"]), arms(evidence["score_b"])
+    pairs = [p if len(p) == 4 else [*p, *p] for p in evidence["pairs"]]
+    return max(abs((b[xb] - b[lb]) - (a[xa] - a[la])) for xa, la, xb, lb in pairs)
+
+
 def multiseed_quality(
     relax,
     same_seed_relion,
@@ -406,8 +454,9 @@ def multiseed_quality(
     row_tie_value=None,
     relax_repeats=None,
     relion_repeats=None,
+    scorer_resolution=None,
 ):
-    """The multi-seed accuracy rule of STATUS_LEGEND. Returns (hit, reason).
+    """The multi-seed accuracy rule of STATUS_LEGEND. Returns (hit, reason); hit is None for "not separable".
 
     relax, same_seed_relion: {seed: value of the row's metric}; band_values: every RELION value of the row (all
     seeds); same_seed_map_auc: optional {seed: relax-vs-same-seed-RELION map FSC-AUC}. Hit when every relax seed is
@@ -418,11 +467,17 @@ def multiseed_quality(
     of same-command repeats (user, 2026-09-30); a seed with at least two runs on both engines passes when relax's run
     range overlaps RELION's (or lies above it): its gap is relax's best run minus RELION's lowest run, and relax's best
     run is what enters the across-seed band check. Other seeds keep relax[s] against same_seed_relion[s]. The reason
-    states the worst per-seed gap.
+    states the worst per-seed gap. scorer_resolution (a row's ``scorer_resolution``, see row_scorer_resolution): a seed
+    counts as below only when its gap exceeds it; when every seed's gap is inside it (and no seed is below the band)
+    the row is not separable at the scorer's resolution: neither a hit nor a miss, returned as (None, reason).
     """
     lo, hi = min(band_values), max(band_values)
     maps = same_seed_map_auc or {}
-    tie = {s: max(REPRODUCED_TIE if maps.get(s, 0.0) >= REPRODUCED_MAP_AUC else TIE, row_tie_value or 0.0) for s in relax}
+    resolution = scorer_resolution or 0.0
+    tie = {
+        s: max(REPRODUCED_TIE if maps.get(s, 0.0) >= REPRODUCED_MAP_AUC else TIE, row_tie_value or 0.0, resolution)
+        for s in relax
+    }
     ranged = [
         s for s in relax if len((relax_repeats or {}).get(s, [])) >= 2 and len((relion_repeats or {}).get(s, [])) >= 2
     ]
@@ -447,6 +502,17 @@ def multiseed_quality(
         )
     if below_band:
         return False, f"{worst_txt}; s{'/s'.join(map(str, below_band))} below across-seed RELION band {lo:.6g}-{hi:.6g}"
+    if resolution:
+        inside = [s for s in gaps if abs(gaps[s]) <= resolution]
+        res_txt = f"{resolution:.1e}".replace("e-0", "e-")
+        if len(inside) == len(gaps):
+            largest = max(gaps, key=lambda s: abs(gaps[s]))
+            return None, (
+                f"not separable at the scorer's resolution {res_txt}: every same-seed gap is inside it"
+                f" (largest s{largest} {_gap(gaps[largest])}){worst_txt[worst_txt.index(';'):] if ';' in worst_txt else ''}"
+            )
+        if inside:
+            worst_txt += f"; s{'/s'.join(map(str, inside))} inside the scorer's resolution {res_txt}"
     if n_below * 2 > len(gaps):
         return (
             False,
@@ -456,12 +522,21 @@ def multiseed_quality(
     return True, f"{worst_txt}; {where} across-seed band"
 
 
+def _quality_word(row):
+    if row.get("quality_state") == NOT_SEPARABLE:
+        return "not separable at the scorer's resolution (neither a hit nor a miss)"
+    return "hit" if row["quality_pass"] else ("missed" if row["quality_pass"] is False else "no band")
+
+
 def status(row):
     """🟢 accuracy hit and ratio <= 0.6x; 🟠 accuracy hit and ratio > 0.6x; 🔴 accuracy missed, whatever the speed;
     ⚪ accuracy hit or not scored, and the ratio is not a speed comparison (Matched workload or no, or a wall missing).
-    Matched yes means both arms ran cold on the same hardware (GPU model and node type), in one job or not (user, 2026-09-29)."""
+    Matched yes means both arms ran cold on the same hardware (GPU model and node type), in one job or not (user, 2026-09-29).
+    🔵 not separable at the scorer's resolution (quality_state): neither hit nor miss, no speed colour (user, 2026-10-10)."""
     ratio = row["time_ratio_relax_over_relion"]
     comparable = row["matched"] == "yes" and ratio is not None
+    if row.get("quality_state") == NOT_SEPARABLE:
+        return "🔵"
     if row["quality_pass"] is False:
         return "🔴"
     if not comparable or row["quality_pass"] is None:
@@ -548,7 +623,7 @@ def render_provenance(table):
         for row in rows:
             lines += ["", f'<a id="{row["id"]}"></a>', "", f"### {row['dataset']}: {row['workflow']}", ""]
             lines += [
-                f"Status {status(row)}; quality vs RELION: {'hit' if row['quality_pass'] else ('missed' if row['quality_pass'] is False else 'no band')}"
+                f"Status {status(row)}; quality vs RELION: {_quality_word(row)}"
                 f" ({row['quality_reason']}); matched: {row['matched']}; GPU: {_gpu(row)}.",
                 "",
                 _note(row),
@@ -702,6 +777,10 @@ def _note(row):
     if row.get("tie_tolerance"):
         tt = row["tie_tolerance"]
         text.append(f"Row tie tolerance {float(tt['value']):g} ({tt['decision']}; evidence `{tt['evidence']}`).")
+    if row.get("scorer_resolution"):
+        sr = row["scorer_resolution"]
+        files = ", ".join(f"`{p}`" for p in (*sr["evidence"]["score_a"], *sr["evidence"]["score_b"]))
+        text.append(f"Scorer resolution {float(sr['value']):.2g} ({sr['method']}; score files {files}).")
     if _is_initialmodel(row):
         return " ".join(text + _initialmodel_note(row))
     if row["mask"] is not None:

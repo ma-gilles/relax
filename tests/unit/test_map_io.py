@@ -1,4 +1,4 @@
-"""relax map files carry RELION's convention (relax.helpers.map_io).
+"""relax map files carry RELION's convention (relax.io.map_io).
 
 The fixture cases use the fast tier's K1 5k/128 data and its RELION oversampling-1 oracle: a
 volume held in relax's internal frame is written back as the RELION map it came from, and the
@@ -16,7 +16,7 @@ from helpers.float_compare import assert_matches
 from helpers.map_sign import SIGN_CORRELATION_MIN, file_correlation
 from recovar.utils import helpers
 
-from relax.helpers import map_io
+from relax.io import map_io
 
 pytestmark = pytest.mark.unit
 

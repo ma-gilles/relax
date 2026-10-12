@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics import vdam_mstep_replay
+from relax.parity import vdam_mstep_replay
 from relax.vdam import m_step as mstep_owner
 from relax.vdam.bootstrap_iref import (
     initialise_data_vs_prior_from_references,
@@ -281,7 +281,7 @@ def test_m_step_matches_relion_fsc_routing_for_ssnr_and_reconstruct(monkeypatch)
             captured["reconstruct_fsc"] = np.asarray(fsc, dtype=np.float64).copy()
             return np.asarray(iref_relion)
 
-    from relax.diagnostics import vdam_native_mstep
+    from scripts import vdam_native_mstep
 
     monkeypatch.setattr(vdam_native_mstep, "_bindings", lambda: FakeBindings)
     accum = _make_accumulator(k=1, h=0, ori_size=ori, seed=4)
@@ -301,11 +301,11 @@ def test_m_step_matches_relion_fsc_routing_for_ssnr_and_reconstruct(monkeypatch)
 
 @pytest.mark.parametrize("average_ctf2", [None, "spectrum"])
 def test_oracle_runs_one_m_step_as_the_command_wires_it(monkeypatch, average_ctf2):
-    # The oracle's M-step as `python -m relax.diagnostics.vdam_native_mstep` installs it (the command's input
+    # The oracle's M-step as `python -m scripts.vdam_native_mstep` installs it (the command's input
     # source), called by the production multi-class M-step with the arguments it passes, on CPU stand-ins for
     # RELION's primitives: the average CTF^2 must reach updateSSNRarrays as setAverageCTF2's spectrum.
-    from relax.diagnostics import vdam_native_mstep
     from relax.parity.vdam_replay import vdam_input_source
+    from scripts import vdam_native_mstep
 
     ori = 16
     shells = ori // 2 + 1

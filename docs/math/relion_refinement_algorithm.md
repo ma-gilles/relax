@@ -22,7 +22,7 @@ records source precedence, buffer lifetime and qualification limits.
 
 ## Particle row layout
 
-[`prepare_relion_halfset_layout`](../../relax/relion/input_particle_table.py)
+[`prepare_relion_halfset_layout`](../../relax/star/input_particle_table.py)
 maps selected RELION half membership to loaded input rows using physical stack
 and image identities. Replay preserves input row order and returns the permutation
 needed to interpret RELION's half-local accuracy frame. A supplied fresh-start
@@ -30,7 +30,7 @@ seed preserves the existing paired mt19937 shuffle followed by stable numeric
 optics grouping; the physically reordered half then uses identity accuracy trials.
 Its particle-ID and optics rows stay paired for expected-accuracy CTF lookup.
 
-[`prepare_class3d_particle_layout`](../../relax/relion/input_particle_table.py)
+[`prepare_class3d_particle_layout`](../../relax/star/input_particle_table.py)
 selects all input rows once, leaves the second accumulator empty and prepares the
 existing whole-vector Class3D accuracy trials from RELION's post-read source
 order. Input rows, source particle IDs and half-local trial positions remain
@@ -41,7 +41,7 @@ records scratch lifetime, unchanged ordering and outstanding qualification.
 
 ## Particle input preparation
 
-[`load_particle_inputs`](../../relax/refinement/particle_loading.py) owns command
+[`load_particle_inputs`](../../relax/commands/refinement_particles.py) owns command
 input admission and loading for SPA, multiple image grids and subtomogram 2D
 stacks. It preserves the order: establish the reading/scratch policy, detect and
 admit the format, use the existing RECOVAR/adapter loader, verify scratch/CTF
@@ -51,7 +51,7 @@ grid's pixel size; taper width remains in image pixels. Complex64 Fourier-image
 preprocessing is the production path; complex128 remains the admitted single-grid
 scoring diagnostic. These storage dtypes do not make likelihood scores complex.
 
-[`find_relion_optimiser_star`](../../relax/refinement/command_options.py) owns
+[`find_relion_optimiser_star`](../../relax/commands/refinement_arguments.py) owns
 shared command source discovery. Explicit, input-only and incidental-source
 precedence is unchanged; seed and runtime consumers retain their original timing.
 The controller receives the existing dataset and format/preprocessing metadata,
@@ -109,14 +109,14 @@ The pieces:
 - Input origins: the default `--initial-pose-source auto` (or an explicit
   `input-star`) loads only the input `rlnOriginX/YAngst` (or pixel origins;
   absent origins are zero) in the all-data particle order
-  ([`_load_input_star_class3d_translations`](../../relax/relion/input_poses.py)).
+  ([`_load_input_star_class3d_translations`](../../relax/star/input_poses.py)).
   RELION rounds and applies them before the image FFT but does not centre the
   first global search on the input angles. The `--relion_init_dir` route
   (`_kclass_firstiter_translation_seed`, from `run_it000_data.star`) is kept
   for debug comparison; on the K4 50k/256 fixture the two are bitwise equal, and
   on EMPIAR-10097 (non-zero origins) the input origins equal `run_it000`'s.
 - References and class distribution: `--ref_star` reads relion_refine's `--ref`
-  STAR ([`read_relion_reference_star`](../../relax/relion/relion_metadata.py));
+  STAR ([`read_relion_reference_star`](../../relax/star/metadata.py));
   its maps are RELION-frame and load with `load_relion_volume`. A fresh run
   starts from `pdf_class = 1/K` whatever `_rlnClassDistribution` says
   (`MlModel::initialise`, `ml_model.cpp:53`; `initialiseFromImages` reads only
@@ -128,7 +128,7 @@ The pieces:
   `std::shuffle(mt19937(random_seed + iter))`, stable-sorts it by optics group
   (`exp_model.cpp:449-456`) and takes the first 100 entries; each trial's
   `part_id` seeds its draws
-  ([`relion_class3d_trial_layout`](../../relax/helpers/expected_accuracy.py)).
+  ([`relion_class3d_trial_layout`](../../relax/sampling/expected_accuracy.py)).
   The estimator divides by `sigma2_fudge * sigma2_noise` with RELION's default
   `sigma2_fudge = 1` (`ml_optimiser.cpp:1069, 9291`), never by `tau2_fudge`.
   With RELION's iteration-1 state this reproduces `run_it002`'s per-class
@@ -138,12 +138,12 @@ The pieces:
   schedule (`--relion-scale-followers` resolves to 0 without
   `--relion_init_dir`/`--perturb_replay_relion_dir`). Emulating
   `relion_refine_mpi`'s follower-local scales
-  ([`relion_worker_scale`](../../relax/relion/relion_worker_scale.py)) needs a
+  ([`follower_scale`](../../relax/refinement/follower_scale.py)) needs a
   captured dispatch schedule and stays a debug replay tool.
 - No RELION output: without `--relion_optimiser`, `--relion_init_dir`,
   `--perturb_replay_relion_dir` or `--relion_half_sets`, a Class3D run does not
   pick up a RELION optimiser STAR found next to the data
-  ([`_find_relion_optimiser_star`](../../relax/refinement/full_refinement.py)). The
+  ([`_find_relion_optimiser_star`](../../relax/commands/refinement_run.py)). The
   mask, `ini_high` and `max_significants` then come from `--particle_diameter_ang`,
   `--apply-initial-lowpass --init_resolution` and relion_refine's `--maxsig -1`.
 - Fixed schedule: Class3D keeps `--healpix_order` and runs every `--iter`
@@ -192,7 +192,7 @@ results from those modes must remain distinguishable from autonomous refinement.
 Their implementation belongs to
 [`relion_replay.py`](../../relax/parity/relion_replay.py).
 
-[`score_outputs.py`](../../relax/dense/score_outputs.py)
+[`score_outputs.py`](../../relax/steps/score_outputs.py)
 defines the controller's scoring payloads:
 
 - `HalfScoreResult` holds one half's accumulators, assignments, poses and statistics.
@@ -277,7 +277,7 @@ sampling stores Angstrom translations and its accelerated code applies another
 pixel-size-squared factor. This documents source parity, not a proposed unit
 convention. Perturbation affects scoring translations, not this base-grid prior.
 
-[`make_relion_translation_log_prior`](../../relax/helpers/orientation_priors.py)
+[`make_relion_translation_log_prior`](../../relax/sampling/orientation_priors.py)
 implements the formula; its explicit `None` center still requests a flat prior.
 The K1 correction is at the regular global controller call site, not a blanket
 change to shared helper, local, K-class or VDAM semantics. The controller wiring
@@ -287,7 +287,7 @@ Trajectory/FSC qualification remains separate from the fixed-input regression.
 
 ### Startup particle state and norm corrections
 
-[`prepare_initial_poses`](../../relax/relion/input_poses.py) selects and loads
+[`prepare_initial_poses`](../../relax/star/input_poses.py) selects and loads
 initial poses at the command's existing startup boundary. Explicit production
 input-STAR requests reject conflicting sources; frozen input precedes diagnostic
 NPZ, then fresh Class3D replay origins, then eligible input-STAR state. K1 uses
@@ -303,7 +303,7 @@ A fresh K1 start builds RELION's iteration-0 model from `relion_refine`'s own
 inputs rather than from a RELION `run_it000` output. This is the default when
 the run is given no RELION output (no `--relion_half_sets`, `--relion_init_dir`,
 replay directory or frozen boundary):
-[`resolve_standalone_k1_start`](../../relax/refinement/command_options.py) turns on
+[`resolve_standalone_k1_start`](../../relax/commands/refinement_arguments.py) turns on
 `--relion-half-sets-from-input`. The mt19937 order and RELION's start-up noise
 are the defaults of every run. A run given RELION output is a debug start and
 must supply `--relion_half_sets`; relax has no other K1 half split.
@@ -312,9 +312,9 @@ must supply `--relion_half_sets`; relax has no other K1 half split.
   and uses 1 when the label is absent; `avg_norm_correction` starts at 1. The
   E-step multiplies each image by `avg_norm / normcorr`, so the start-up image
   correction is `1 / normcorr` with unit group scales.
-  [`_load_input_star_previous_best_poses`](../../relax/relion/input_poses.py)
+  [`_load_input_star_previous_best_poses`](../../relax/star/input_poses.py)
   reads the column with the input poses in half-local order and
-  [`_initial_corrections_from_norm`](../../relax/relion/input_poses.py) forms the
+  [`_initial_corrections_from_norm`](../../relax/star/input_poses.py) forms the
   corrections; unit norms keep the unit (`None`) representation.
 - Signal prior and data-vs-prior. `MlModel::initialiseDataVersusPrior` sets
   `tau2 = tau2_fudge * P(Iref) * N^2 / 2`, with `P` the rounded-radius
@@ -323,7 +323,7 @@ must supply `--relion_half_sets`; relax has no other K1 half split.
   half set's particle count and the initial noise.
   [`relion_initial_tau2_and_data_vs_prior`](../../relax/relion/reference_initialization.py) implements
   one class and is shared with the InitialModel start;
-  [`_relion_k1_start_tau2_and_data_vs_prior`](../../relax/refinement/full_refinement.py)
+  [`_relion_k1_start_tau2_and_data_vs_prior`](../../relax/commands/refinement_run.py)
   applies it to every fresh K1 start that does not load a noise or tau2 state
   (frozen boundary, `--init_noise_from_npz`, `--relion_init_dir`). The start-up `data_vs_prior` selects the iteration-1
   scale-correction shells (`data_vs_prior > 3`), which matters for starts
@@ -359,7 +359,7 @@ host-double source angles until its existing scoring cast; working Euler rows
 retain scoring precision for perturbation. Startup/rebuild/final preparation share
 that owner without changing sampling or RNG progression.
 
-[`sampling.py`](../../relax/sampling.py) owns rotation and translation grids,
+[`sampling.py`](../../relax/sampling/__init__.py) owns rotation and translation grids,
 Euler conversions, oversampled children and perturbations. For the full C1 grid,
 `rotation_grid_n_in_planes` and `rotation_grid_size` give
 
@@ -392,9 +392,9 @@ in [`apply_iter_replay_overrides`](../../relax/parity/relion_replay.py).
 `DirectionPrior` keeps that order with its probability array through replay,
 learning and checkpoint restoration; each half-model holds one, a vector for
 K=1 and one row per class for Class3D. Their initialization and learning operations live in
-[`orientation_priors.py`](../../relax/helpers/orientation_priors.py).
+[`orientation_priors.py`](../../relax/sampling/orientation_priors.py).
 When that order differs from the scoring grid,
-[`relion_direction_log_priors_for_half`](../../relax/helpers/orientation_priors.py)
+[`relion_direction_log_priors_for_half`](../../relax/sampling/orientation_priors.py)
 uses a uniform prior, matching RELION's `updateAngularSampling` reset. Remapping
 the old distribution and labeling it with the new order would incorrectly
 preserve learned directional preferences after a grid change. The file and
@@ -464,10 +464,10 @@ The implementation owners are:
 
 | Work | Owner |
 | --- | --- |
-| Image/CTF/noise preparation and translation phases | [`preprocessing.py`](../../relax/helpers/preprocessing.py), `preprocess_batch` and `preprocess_batch_firstiter_cc` |
-| Projection and projection-dependent residual statistics | [`projection.py`](../../relax/helpers/projection.py), `compute_projections_block` and `compute_relion_projector_projections_block` |
-| Gaussian and normalized-CC block scores | [`scoring.py`](../../relax/scoring/scoring.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
-| Scoring weights for the selected Fourier convention | [`half_spectrum.py`](../../relax/helpers/half_spectrum.py), `make_scoring_half_image_weights` |
+| Image/CTF/noise preparation and translation phases | [`image_preprocessing.py`](../../relax/relion/image_preprocessing.py), `preprocess_batch`; the phase tables in [`preprocessing.py`](../../relax/fourier/preprocessing.py) |
+| Projection and projection-dependent residual statistics | [`projection.py`](../../relax/projection/projection.py), `compute_projections_block` and `compute_relion_projector_projections_block` |
+| Gaussian and normalized-CC block scores | [`coarse_kernels.py`](../../relax/scoring/coarse_kernels.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
+| Scoring weights for the selected Fourier convention | [`half_spectrum.py`](../../relax/fourier/half_spectrum.py), `make_scoring_half_image_weights` |
 
 The half-image layout has `H * (W//2 + 1)` entries. RELION half-sum scoring and
 Hermitian full-image inner-product weights are separate conventions. Gaussian
@@ -482,14 +482,14 @@ and bit for bit when `N²` is a power of two, but not in float32 pixel products
 otherwise. The fresh K=1 exact-Gaussian pass therefore scores native-unit
 operands (condition `_relion_native_fine_units_enabled`): each complex operand
 divided by `N²` in binary64 and rounded once
-([`sparse_pass2_scoring.py`](../../relax/sparse_pass2/sparse_pass2_scoring.py),
+([`scoring.py`](../../relax/fine_pass/scoring.py),
 `_relion_native_fine_units`), and RELION's own `corr_img` before its `N⁻⁴`
 conversion, with the zero origin of `Minvsigma2`
 (`_relion_native_score_corr_img`). The device-resident driver divides the unshifted image,
 which its kernel translates, and the reference rows of its score projections
-([`resident_operands.py`](../../relax/sparse_pass2/resident_operands.py),
+([`resident_operands.py`](../../relax/fine_pass/resident_operands.py),
 `prepare_resident_half_operands`;
-[`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py),
+[`resident_pass2.py`](../../relax/fine_pass/resident_pass2.py),
 `_prepare_chunk_reconstruction_operands`). Reconstruction and noise operands keep RECOVAR
 units. The exact local engine scores in RECOVAR units. The regressions are in
 [`test_relion_native_fine_score_units.py`](../../tests/unit/test_relion_native_fine_score_units.py).
@@ -513,7 +513,7 @@ or comparing intermediate results.
 [`expectation_batches.py`](../../relax/refinement/expectation_batches.py) owns
 refinement's compact staging admission and coarse/fine batch preparation.
 `BatchPlanner` reuses the numerical allocation estimates in
-[`batch_planning.py`](../../relax/helpers/batch_planning.py) and reads available
+[`batch_planning.py`](../../relax/runtime/batch_planning.py) and reads available
 device memory at each invocation. `prepare_half_batches` returns sizes and
 callbacks; the controller still selects local/dense/tomography execution and
 constructs the engine policy. Extraction changes source ownership, without a
@@ -533,13 +533,13 @@ accumulation now always runs in the sparse fine pass.
 [`significance.py`](../../relax/scoring/significance.py)
 computes joint coarse class/pose evidence and significant support, including
 K=1 routed through the class-aware implementation.
-[`oversampling.py`](../../relax/helpers/oversampling.py)
+[`oversampling.py`](../../relax/sampling/oversampling.py)
 owns cumulative-mass selection and coarse/fine mappings. Significance selects
 rotation/translation pairs; it is not simply an independent probability cutoff
 on every orientation.
 
 Fine execution runs on the device-resident pass 2:
-[`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py) owns the K=1 and
+[`resident_pass2.py`](../../relax/fine_pass/resident_pass2.py) owns the K=1 and
 K-class scoring, the segmented float32 posterior and the accumulation
 (`compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`); the dense route
 is a deprecated diagnostic. The support representation and float32 posterior policy
@@ -548,16 +548,16 @@ does not establish equivalent soft M-step contributions.
 
 The host cell offsets used by global scoring, the local parent probe and local
 fine scoring share `chunk_segment_offsets` in
-[`resident_candidates.py`](../../relax/sparse_pass2/resident_candidates.py).
+[`resident_candidates.py`](../../relax/fine_pass/resident_candidates.py).
 The operation multiplies image row offsets by the fine-translation count and
 pads empty image segments with the valid end offset; drivers retain their
 existing device placement and posterior kernels.
 
 **Exact local search.**
-[`local_search_iteration.py`](../../relax/refinement/local_search_iteration.py)
+[`local_half.py`](../../relax/refinement/local_half.py)
 constructs per-image neighborhoods and runs both the fine pass and RELION's pass-1
 parent probe on the device-resident local driver.
-[`local_layout.py`](../../relax/local/local_layout.py)
+[`layout.py`](../../relax/local_search/layout.py)
 builds the per-image hypothesis layout. This route does not use the retired
 sort-and-split union helper formerly described on this page.
 
@@ -570,7 +570,7 @@ is active. This limits exploration of separated modes; it does not prove that
 a particle can never leave its initial neighborhood over later iterations.
 
 **Fourier windows and performance.**
-[`fourier_window.py`](../../relax/helpers/fourier_window.py)
+[`fourier_window.py`](../../relax/fourier/fourier_window.py)
 defines `FourierWindowSpec` and the score/projection window mappings.
 `current_size` is an image diameter in pixels. Window shape, pixel order and
 redundant-axis treatment depend on the scoring route. Smaller windows reduce
@@ -598,7 +598,7 @@ interprets a None model cutoff as the particle cutoff.
 support with the existing formulas, then validates any sealed width. Shape-class
 scoring retains its own per-shape remapping.
 
-[`resolve_particle_poses`](../../relax/refinement/half_inputs.py) interprets selected engine poses or grid IDs
+[`resolve_particle_poses`](../../relax/steps/half_inputs.py) interprets selected engine poses or grid IDs
 without changing the scoring frame. Its result pairs matrices, Euler degrees,
 relative search shifts and absolute metadata offsets in pixels. Supplied Euler
 rows retain host float64; supported matrix/grid paths retain their existing
@@ -606,7 +606,7 @@ precision. The shared `_relion_metadata_translations` formula adds the rounded
 previous pre-shift to the selected relative shift. The previous offset is rounded
 in each image's own pixels (RELION `xoff_A / my_pixel_size`, then `selfROUND`), so
 an optics group whose pixel differs from the model's
-([`image_translation_factors`](../../relax/refinement/optics_shapes.py)) keeps its
+([`image_translation_factors`](../../relax/steps/optics_shapes.py)) keeps its
 rounded offset in its own pixels while the trial grid stays one Angstrom grid
 (relax#52). The controller installs
 each half's Euler rows/absolute offsets before noise and convergence updates.
@@ -632,15 +632,63 @@ mu_c      ≈ Ft_y[c] / (Ft_ctf[c] + prior_precision[c])
 
 These equations omit layout, interpolation, normalization and padding details.
 `P_r*` inserts a 2D slice into the 3D accumulator. Accumulation belongs to the resident sparse pass
-([`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py)) and the resident local pass. `Ft_y` is complex. `Ft_ctf` represents
+([`resident_pass2.py`](../../relax/fine_pass/resident_pass2.py)) and the resident local pass. `Ft_y` is complex. `Ft_ctf` represents
 real weights, although some return layouts store it in a complex array.
 
-[`half_volume_mstep.py`](../../relax/helpers/half_volume_mstep.py)
+[`half_volume_mstep.py`](../../relax/reconstruction/half_volume_mstep.py)
 owns packed-half conventions, the Hermitian `x=0` plane and conversions to
 public layouts. Do not assume all accumulators have the full native volume
 shape: padding and current-size backprojector grids change their dimensions.
 
-[`mean_helpers.py`](../../relax/refinement/mean_helpers.py) owns the numbered K1
+### Exact float32 accumulation (diagnostic switch)
+
+`Ft_y` and `Ft_ctf` are complex64 and float32 (`relion_x_half_mstep_accumulator_dtypes`), and by default every
+row of a pass is scattered into one pair per accumulator slot. A float32 accumulator drops an addend smaller
+than half an ulp of its running total, so a pass with millions of rows loses weight where every row lands,
+the lowest shells first. Stock GPU RELION accumulates its device backprojection in single precision too and
+loses the same weight; production relax keeps this direct accumulation and matches it (iteration-1 half maps
+of a 5k K=1 cold start agree with stock RELION to a few 1e-6).
+
+`RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1` is an opt-in diagnostic, off by default, for one-to-one comparison
+with RELION builds whose device backprojection accumulates in double. Under it, every row that is
+backprojected on its own is scattered into a zeroed partial pair, which is added into the pass's totals every
+`ROW_PARTIAL_FLUSH_ROWS` = 32,768 backprojected rows and when a slot's row blocks of a chunk end
+(`exact_float32_accumulation_enabled`, `allocate_row_partial`, `RowPartial`, `flush_partial`,
+`flushed_block_loop` and `blocks_per_flush` in
+[`half_volume_mstep.py`](../../relax/reconstruction/half_volume_mstep.py)). No accumulator is double. The
+switch is read once per pass, when the pass allocates its accumulators; without it nothing is allocated and
+the three row-block loops run as before: `_resident_chunk_stages_finish` in
+[`fine_pass/resident_pass2.py`](../../relax/fine_pass/resident_pass2.py), `_tilt_mstep_program` in
+[`resident_tilts.py`](../../relax/fine_pass/resident_tilts.py) (a row is one tilt image there) and
+`run_resident_mstep_blocks` (local searches and the final pass, from
+[`local_search/resident_pass2.py`](../../relax/local_search/resident_pass2.py)). The flush points are a
+static block count, so they depend on the row order alone.
+
+Measured loss of the default accumulation, and what the switch leaves (relax#65):
+
+| Case | Rows per accumulator | Weight missing at shell 0, default | With the switch |
+| --- | --- | --- | --- |
+| Tilt-series VDAM K=1, iteration 1 | about 3M tilt images times poses | 9.9e-3 and 1.5e-2 (two pseudo-halves) | at most 2e-7 with partials of 31k rows |
+| K=1 Refine3D, 5k images, iteration 1 | 11.2M | 1.6e-2 | at most 1.1e-5 with partials of 30k rows |
+| K=1 refinement, 100k images, box 256, final full-size pass | 4.4M | 8.5e-3 (2.9e-3 at shell 1, 5.5e-5 at shell 63) | not run |
+
+On the tilt case, iteration-1 `rlnSsnrMap` is 0.990 to 0.9994 of a double-backprojection RELION's over
+shells 0 to 12 by default and 0.99997 to 1.00002 with the switch; on 5k K=1 cold starts the switched
+iteration-3 half maps agree with a double-backprojection RELION run at FSC-AUC 0.999999 and 1.000000. The
+float32 total of the partials equals their float64 total to 5e-8 per shell.
+
+Limits of the switch. A pass that sums a projection's rows before one backprojection per pass (K>1 without
+tilt series) is unchanged by it (its loss was at most 7e-5 in the same census). A pair larger than
+`ROW_PARTIAL_MAX_PAIR_BYTES` = 4 GiB, a current size above about 440 at padding 2, keeps the direct
+accumulation and logs one line; the rule reads the pair's size only, never free device memory. The switch
+needs one extra accumulator pair on the device and is not qualified under 16 GB emulation. Cost on H100
+pairs: 309 s against 309 s for three iterations of the 5k cold start and 786 s against 783 s for a 50k
+box-256 refinement to convergence. Converged runs are trajectory-sensitive: one particle crossing the coarse
+significance threshold separates two runs by 1e-2 in map FSC-AUC twelve iterations later, between two RELION
+runs as between relax and RELION, so the switch gives agreement at matched iterations, not identical
+converged maps.
+
+[`numbered_reconstruction.py`](../../relax/refinement/numbered_reconstruction.py) owns the numbered K1
 and class reconstruction operations (`reconstruct_numbered_k1_halfmaps` and
 `reconstruct_numbered_class_maps`), their unregularized counterparts and
 `align_k1_volume_signs`. Each numbered operation owns its private ordered solves
@@ -665,7 +713,7 @@ Class3D callers. `estimate_class_priors` owns numbered replay admission,
 premultiplied-CTF adaptation and the ordered class estimate/capture/aggregation.
 The controller publishes its scheduling curve before stacking detail records.
 Final first-iteration, replay, CTF and DVP precision policies remain distinct.
-[`estimate_split_half_prior`](../../relax/refinement/mean_helpers.py) owns the
+[`estimate_split_half_prior`](../../relax/refinement/numbered_reconstruction.py) owns the
 numbered K1 backprojector FSC and each half's weight-based tau2. RELION's
 `--solvent_correct_fsc` is not implemented, so the FSC used for priors and size
 growth is the raw reporting FSC, `SplitHalfPrior.fsc`. It supplies the shared/per-half variance,
@@ -697,7 +745,7 @@ well as accumulators. The input noise representation can be a per-pixel array
 or separate half-set inputs; radial statistics and group corrections have
 explicit conversion/update paths.
 
-[`relion_normalization.py`](../../relax/relion/relion_normalization.py)
+[`normalization.py`](../../relax/relion/normalization.py)
 owns `prepare_norm_scale_update`, the unchanged numerical
 `update_relion_norm_scale_corrections`, their existing result type and reporting.
 Preparation adapts persistent half corrections/cardinality and audits particle
@@ -707,7 +755,7 @@ Reporting follows installation. The estimator computes
 per-image normalization and per-group scales from M-step statistics, using
 retained posterior mass for the average normalization. The controller installs
 the returned corrections; follower-specific installation remains in
-`relion_worker_scale.py`. Host arithmetic stays float64 and returned arrays
+`refinement/follower_scale.py`. Host arithmetic stays float64 and returned arrays
 use the caller's selected dtype, float32 by default.
 
 [`regularization.py`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/reconstruction/regularization.py) owns FSC,
@@ -763,22 +811,22 @@ reads its halves, so its stream restarts. With the same maps the corrected FSC i
 rounding (`test_corrected_fsc_replays_relion_leader_stream`, relax#35).
 
 Implementation: [`read_solvent_mask` and `solvent_corrected_fsc`](../../relax/reconstruction/solvent_mask.py);
-the flatten in `_numbered_solvent_mask` and the FSC in `solvent_corrected_fsc` in
-[`mean_helpers.py`](../../relax/refinement/mean_helpers.py), on the unregularised maps of
+the flatten in `numbered_solvent_mask` and the FSC in `solvent_corrected_fsc` in
+[`numbered_reconstruction.py`](../../relax/refinement/numbered_reconstruction.py), on the unregularised maps of
 `reconstruct_unregularized_k1_halfmaps` (the maps written as `run_itNNN_half*_unfil.mrc`). Tests: `tests/unit/test_solvent_mask.py`.
 
 ## 6. Sampling transitions and convergence
 
 ### Iteration convergence policy
 
-[`advance_expectation_sampling`](../../relax/refinement/convergence.py) applies
+[`advance_expectation_sampling`](../../relax/refinement/numbered_transitions.py) applies
 an explicit HEALPix schedule or native K1 sampling advancement after expected
 accuracy. Native advancement uses completed-iteration stall counters, including
 a resumed run's first loop iteration. Class3D never takes the native auto-refine
 transition. The controller checks convergence at the earlier loop top and
 records completed-iteration statistics after reconstruction/noise updates.
 
-[`update_iteration_convergence`](../../relax/refinement/convergence.py) converts
+[`update_iteration_convergence`](../../relax/refinement/numbered_transitions.py) converts
 the scheduling shell to angstroms, resolves accuracy admission, reads numbered
 optimiser accuracy, calls the unchanged mathematical state update, applies the
 fresh auto-refine follower reset, and finally applies optimiser controls.
@@ -790,7 +838,7 @@ next permitted loop top. Exhausting the iteration cap does not synthesize a
 finalization boundary. Approximate support accuracy remains diagnostic by default.
 
 
-[`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`](../../relax/helpers/resolution.py)
+[`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`](../../relax/reconstruction/resolution.py)
 take the K1 reconstruction SSNR and the Class3D prior curves respectively,
 preserving current-window truncation and the minimum shell 5. K1 applies the
 split-half high-resolution recheck; Class3D takes the maximum shell over
@@ -800,7 +848,7 @@ observed shell separate from the first-iteration `ini_high` scheduling override.
 The controller converts the scheduling shell to angstroms after noise updates and
 records convergence statistics at its original boundary.
 
-[`convergence.py`](../../relax/helpers/convergence.py)
+[`refinement_state.py`](../../relax/refinement/refinement_state.py)
 owns `RefinementState`, `update_refinement_state`, `update_angular_sampling`,
 `refine_angular_sampling` and `check_convergence`.
 
@@ -827,15 +875,77 @@ uses the step rule above, as RELION's iteration 0 does). Below the local-search 
 `refine_angular_sampling` keeps the prior and its width; at that order it resets the width to the step
 rule, overwriting `--sigma_ang`, as `updateAngularSampling` does. The centre is the particle's current
 angles (the input STAR's at iteration 1; 0 where the STAR has none, and
-[`prepare_initial_poses`](../../relax/relion/input_poses.py) centres a start without any pose source at
+[`prepare_initial_poses`](../../relax/star/input_poses.py) centres a start without any pose source at
 (0, 0, 0) with a warning). The one exception is RELION's prior mode below the local-search order:
 there an angle with an `rlnAngle*Prior` is centred on that prior in every iteration, including the final
 one ([`local_search_centre_half`](../../relax/refinement/local_sampling.py); non-helical).
 With `--firstiter_cc`, iteration 1 of such a search is RELION's CC iteration in the local window: the
 parent probe and the fine pass score the normalized CC with no orientational or translational prior and
 keep only each image's best hidden variable (ml_optimiser.cpp:9266-9292), as the global CC iteration
-does ([`compute_local_search_resident`](../../relax/sparse_pass2/resident_local_pass2.py) with
+does ([`compute_local_search_resident`](../../relax/local_search/resident_pass2.py) with
 `firstiter_cc`; relax#51).
+
+**A prior on the tilt angle alone (`--sigma_tilt`, subtomogram auto-refine).** For particles picked on
+a membrane or lattice the tilt of each particle is known roughly and its rot and in-plane angle are not.
+`relion_refine --sigma_tilt s` (with `rlnAngleTiltPrior` in the particle STAR; RELION's subtomogram
+tutorial runs its Refine3D with `--sigma_tilt 10` on priors of 90) restricts the otherwise global search
+to that tilt.
+
+- Parsing (`ml_optimiser.cpp:734-752`). `--sigma_ang > 0` sets all three widths and nothing else is read;
+  otherwise any of `--sigma_rot`, `--sigma_tilt`, `--sigma_psi` sets `PRIOR_ROTTILT_PSI` with the given
+  widths and 0 for the others. So `--sigma_tilt s` alone is `sigma2_rot = sigma2_psi = 0`,
+  `sigma2_tilt = s^2`, and `--sigma_tilt` next to `--sigma_ang` is ignored.
+  [`validate_sigma_ang`](../../relax/commands/refinement_arguments.py) drops it with a warning;
+  the width is run-constant, so it stays an option
+  ([`LocalSearchOptions.tilt_prior_deg`](../../relax/refinement/refinement_options.py)) and adds nothing to
+  the run state or its files. relax has `--sigma_tilt` only, not `--sigma_rot` or `--sigma_psi`.
+- Centre (`ml_optimiser.cpp:5970-5995`, `acc_ml_optimiser_impl.h:130-170`). The particle's
+  `rlnAngleTiltPrior`; its current tilt where the label is absent (RELION's 999). RELION replaces a given
+  prior by the current angle only in a local angular search, which is auto-refine at or above
+  `--auto_local_healpix_order` or a classification with all three widths positive; with the tilt width
+  alone neither holds. [`tilt_prior_for_half`](../../relax/steps/half_inputs.py).
+- Selection (`HealpixSampling::selectOrientationsWithNonZeroPriorProbability`,
+  `healpix_sampling.cpp:841-879`, the branch `sigma_rot == 0 < sigma_tilt`). For direction `d` of the
+  coarse grid with tilt `t_d`, the distance is
+
+  `delta_d = min over {d and its symmetry mates m} of wrap(|t_m - t_prior|)`, `wrap(x) = |x - 360|` for `x > 180`,
+
+  with `t_m = acos(z)` of the mate `(d^T R)^T` (`Euler_direction2angles`) for the group's non-identity
+  operators `R`. Directions with `delta_d < 3 s` are kept with weight
+  `exp(-delta_d^2 / (2 s^2))`, normalized to sum 1 over the kept directions. Every in-plane angle is kept
+  with weight `1 / n_psi`. A sample's orientation prior is the product, it replaces the model's
+  `pdf_direction` (`acc_ml_optimiser_impl.h:1968-1971`), and the oversampled children of a kept sample
+  inherit it. The comparison is in degrees against `3 s` with `s` as typed: HEALPix rings sit on that
+  boundary for round values (tilt 60 and 120 for a prior of 90 with `s = 10` are a few ulp inside it), so
+  relax carries the width in degrees and never through radians.
+  If no direction is within `3 s`, RELION keeps one direction with prior 1: `best_idir` of a scan that
+  stores, as the distance to beat, the distance of the last symmetry mate of the current best direction
+  rather than its smallest; with symmetry that is not always the nearest direction. relax reproduces the
+  scan. [`_tilt_prior_direction_supports`](../../relax/local_search/layout.py), inside the selector the
+  local searches use ([`_build_factorized_local_entries`](../../relax/local_search/layout.py)), tested
+  against a direct transcription of RELION's loop
+  ([`tests/unit/test_tilt_prior_selection.py`](../../tests/unit/test_tilt_prior_selection.py)).
+- Search. Each particle is scored over its own kept orientations and every translation, with its own
+  prior, on the global sampling of the iteration. In relax that is the subtomogram local-search pass
+  given these lists instead of a neighbourhood
+  ([`tomo_local_rotations`](../../relax/steps/tomo_half.py),
+  [`score_numbered_half`](../../relax/refinement/expectation.py)).
+- Auto-refine (`ml_optimiser.cpp:9923-9931`). When `updateAngularSampling` reaches
+  `--auto_local_healpix_order` all three widths become twice the angular step, so the tilt prior ends
+  there and the ordinary local search around each particle's current angles takes over
+  (`LocalSearchOptions.tilt_prior_deg` is 0 once `do_local_search` is on). Below that order the width
+  stays as given.
+- Written back: `rlnOrientationalPriorMode 1`, `rlnSigmaPriorRotAngle 0`, `rlnSigmaPriorTiltAngle s`,
+  `rlnSigmaPriorPsiAngle 0` in the model STARs while the prior is in force; the particles'
+  `rlnAngleTiltPrior` is an input column and is carried through unchanged.
+- Final iteration. Convergence sets `has_converged`, `do_join_random_halves` and `do_use_all_data` and
+  nothing of the prior or the sampling (`ml_optimiser.cpp:10152-10160`), so a run that converges below
+  `--auto_local_healpix_order` scores its final all-data iteration with the tilt prior on the same
+  sampling. [`run_final_all_data`](../../relax/refinement/finalization.py) does the same for
+  subtomograms (without the option that final pass has no orientation prior to use and is refused).
+- Not implemented, refused with a message: single-particle refinement and classification (their global
+  pass scores every particle on one shared grid) and subtomogram Class3D (its K-class pass has no
+  per-particle orientation lists and does not implement `--sigma_ang` either).
 
 **Class3D with `--sigma_ang` (K>1).** Every iteration is a local search of that width at the fixed HEALPix
 order, centred on each particle's previous best angles (the input STAR's at iteration 1). RELION scores
@@ -844,17 +954,17 @@ mode the orientation weight is the local Gaussian prior, which replaces `pdf_dir
 `pdf_direction` carries the class mass no `pdf_class` enters the weights (`ml_optimiser.cpp:7207-7219`,
 `acc_ml_optimiser_impl.h:1960-1972`). `pdf_direction` and `pdf_class` are still accumulated in the
 M-step (`ml_optimiser.cpp:5179-5211`). relax repeats each image's local rows per class
-([`expand_local_layout_classes`](../../relax/local/local_layout.py)); the resident local pass projects each
+([`expand_local_layout_classes`](../../relax/local_search/layout.py)); the resident local pass projects each
 class's rows with its reference, takes the joint posterior and each class's sub-segment evidence, and
 backprojects each class into its own BPref
-([`compute_local_search_resident`](../../relax/sparse_pass2/resident_local_pass2.py)). The first iteration
+([`compute_local_search_resident`](../../relax/local_search/resident_pass2.py)). The first iteration
 from one reference scores each particle against its seed class only
-([`restrict_local_layout_classes`](../../relax/local/local_layout.py)).
+([`restrict_local_layout_classes`](../../relax/local_search/layout.py)).
 
-[`expected_accuracy.py`](../../relax/helpers/expected_accuracy.py)
+[`expected_accuracy.py`](../../relax/steps/expected_accuracy.py)
 owns the RELION-style accuracy trial calculation. The approximate posterior
 helper `calculate_expected_angular_errors` is a different route. Likewise,
-`convergence._relion_optimizer_average_pmax` uses the split-half optimizer's
+`convergence.relion_optimizer_average_pmax` uses the split-half optimizer's
 mass normalization, rather than just averaging all recorded Pmax values.
 
 ## 7. Final output and validation boundaries
@@ -874,7 +984,7 @@ the existing timing. Final angular/resolution/history writes remain explicit in
 the final controller. Production precision, reductions, RNG, Fourier layouts,
 serialization and reconstruction order are unchanged by this structural move.
 
-[`prepare_final_sampling`](../../relax/refinement/final_sampling.py) resolves
+[`prepare_final_sampling`](../../relax/refinement/trial_grids.py) resolves
 native or replayed final sampling, advances the selected perturbation source,
 and produces the scoring grids. The final translation base retains its existing
 conversion to scoring precision before perturbation; numbered iterations keep
@@ -899,7 +1009,7 @@ the actual returned fields instead of assuming one fixed four-item tuple.
 `convergence_state.current_resolution` follows RELION's
 `updateCurrentResolution`: the last shell before data_vs_prior drops below 1,
 computed by `k1_current_resolution_shell` and `class_current_resolution_shell` in
-[`resolution.py`](../../relax/helpers/resolution.py). In numbered split-half
+[`resolution.py`](../../relax/reconstruction/resolution.py). In numbered split-half
 iterations the K=1 curve is the half-map SSNR `fsc / (1 - fsc)`, so the
 crossing is at FSC 0.5. RELION also runs the update after the final all-data
 iteration, where `updateSSNRarrays` converts the FSC to whole-data form
@@ -930,7 +1040,7 @@ changes numerical state or the refinement algorithm.
 
 ### Half image preprocessing
 
-[`configure_half_image_preprocessing`](../../relax/refinement/particle_loading.py)
+[`configure_half_image_preprocessing`](../../relax/commands/refinement_particles.py)
 selects backend preprocessing and installs masks before refinement state setup.
 Source-faithful scoring rejects an incompatible selected backend before mask
 installation. Shape-class masks use each class dataset's physical pixel size;
@@ -941,7 +1051,7 @@ GPU pass or array lifetime change. CLI mask-source precedence is unchanged.
 
 ### Fixed input geometry and replay units
 
-[`ImageGeometry`](../../relax/helpers/resolution.py) validates physical particle
+[`ImageGeometry`](../../relax/reconstruction/resolution.py) validates physical particle
 pixel size once as a finite, positive Python float. Numbered replay receives
 that geometry directly for angstrom-to-pixel translation conversion and noise
 image shape. Its valid-input pixel value is the former `float(dataset.voxel_size)`;
@@ -1051,18 +1161,19 @@ order. Result-file ownership does not change convergence or finalization timing.
 
 [`load_verified_dispatch_schedule`](../../relax/parity/oracle_admission.py)
 admits a captured dispatch schedule only in the existing strict Class3D
-init/replay mode. It verifies unique resolved oracle roots before discovering the
-consumed optimiser and sampling files; all consumed files must be manifested and
+init/replay mode. It verifies unique resolved oracle roots before admitting the
+consumed optimiser (located by the command's arguments and passed in) and sampling
+files; all consumed files must be manifested and
 the selected authoritative particle order/group labels must match. Relocated
 identical roots are valid. Unknown files, changed manifest bytes and changed
 particle identities retain the existing refusals. The admitted result pairs the
 loaded schedule with verified roots; follower execution uses the unchanged
 schedule arrays.
 
-[`resolve_relion_runtime_controls`](../../relax/refinement/command_options.py)
+[`resolve_relion_runtime_controls`](../../relax/commands/refinement_arguments.py)
 reads the consumed optimiser's expected-accuracy CTF flag and positive CLI
 `ini_high`, then resolves the significant-support cap with
-[`resolve_relion_runtime_max_significants`](../../relax/relion/relion_metadata.py).
+[`resolve_relion_runtime_max_significants`](../../relax/star/metadata.py).
 A CLI cap is an active-value override. A saved `-1` is an argument sentinel whose
 active value depends on RELION's gradient mode and first numbered iteration.
 With no optimiser or override, the RELION default argument is `-1` and the
@@ -1073,7 +1184,7 @@ dictionary reaches archive and benchmark outputs.
 
 ### Follower-topology admission before refinement
 
-[`prepare_follower_topology`](../../relax/relion/relion_worker_scale.py) owns
+[`prepare_follower_topology`](../../relax/refinement/follower_scale.py) owns
 follower count admission, causal replay validation, oracle reduction-mode
 selection and per-iteration ownership. Command source discovery and oracle
 admission remain before this operation, through the command-options owner. Captured particle IDs determine
@@ -1082,7 +1193,7 @@ coverage and the existing refusal of follower-state cold restarts remain intact.
 
 ### Half-set source admission and result publication
 
-[`read_relion_halfset_source`](../../relax/relion/input_particle_table.py) reads the
+[`read_relion_halfset_source`](../../relax/star/input_particle_table.py) reads the
 selected half-set STAR, requires its particle block before validating K1 optics,
 and preserves the existing integer image-size and float64 physical-pixel metadata
 casts. Class3D does not consume this K1 geometry. Source selection, startup-noise
@@ -1096,7 +1207,7 @@ at the final return boundary; absent values and saved sentinels are unchanged.
 
 ### Particle-group identity
 
-[`prepare_particle_group_layout`](../../relax/relion/input_particle_table.py)
+[`prepare_particle_group_layout`](../../relax/star/input_particle_table.py)
 selects the authoritative table and maps physical and optics group labels into
 each half's image order by particle/stack identity. Its named result pairs that
 source with the computed layout; dispatch verification and follower provenance
@@ -1116,7 +1227,7 @@ Physical RELION file numbering still uses initial iteration plus loop index plus
 one. Raw dataset pixel-size metadata is passed explicitly, without substituting a
 normalized scalar from reconstruction settings.
 
-[`NormScaleCorrectionReport`](../../relax/relion/relion_normalization.py) holds
+[`NormScaleCorrectionReport`](../../relax/relion/normalization.py) holds
 borrowed per-half measurements for checkpoint averages and this capture. Native
 group estimates and rank-1 follower serialization differ: follower half 2 remains
 absent in the report while each particle keeps its installed owner-specific scales.
@@ -1165,9 +1276,10 @@ See the [complete current caller and implementation](../development/final_local_
 
 ### Prejoin diagnostic ownership
 
-[`audit_prejoin_accumulators`](../../relax/diagnostics/reconstruction.py) performs
-optional native-half capture and finite auditing before the controller combines
-Class3D accumulators or joins K1 low-resolution shells. Its target match is reused
-by postjoin capture; the guard applies independently of capture target. The same
-owner's `write_bpref_accumulators` preserves the pre/postjoin NPZ schema and casts.
+The observer's optional native-half capture and the finite guard
+[`check_half_accumulators_before_join`](../../relax/reconstruction/accumulator_guard.py)
+run before the controller combines Class3D accumulators or joins K1 low-resolution
+shells. The capture's target match is reused by postjoin capture; the guard applies
+independently of capture target.
+[`write_bpref_accumulators`](../../relax/diagnostics/reconstruction.py) preserves the pre/postjoin NPZ schema and casts.
 The controller retains numerical joins, prior/reconstruction order and state writes.

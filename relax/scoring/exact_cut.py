@@ -1,7 +1,7 @@
 """Direct-square scores where the coarse GEMM scorer does not decide the significance cut.
 
 The subtomogram coarse pass scores RELION's ``d0 + 0.5 sum w |p - y|^2`` as the expansion
-``d0 + 0.5 A + 0.5 C - X`` (two float32 GEMMs, :func:`relax.scoring.scoring.relion_coarse_gemm_terms`),
+``d0 + 0.5 A + 0.5 C - X`` (two float32 GEMMs, :func:`relax.scoring.coarse_kernels.relion_coarse_gemm_terms`),
 which rounds differently from RELION's sum of squares. A particle's diff2 is the sum of its tilt images',
 thousands with a float32 unit of 2e-4, while its samples' log weights at the significance cut are closer
 than that: the rounding moved samples across the cut (194 of 200 particles' kept sets matched RELION's on
@@ -19,7 +19,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.helpers.shape_buckets import pow2_ceil
+from relax.runtime.shape_buckets import pow2_ceil
 
 # The fused coarse projector's translation capacity (one 128-thread block).
 FUSED_TRANSLATION_CAPACITY = 128
@@ -196,12 +196,12 @@ def direct_rows_diff2(
     """Direct-square diff2 ``[B, M, T]`` at each particle's own rotations ``[B, S, M, 3, 3]``.
 
     RELION's fused coarse kernel on every image ``[B, S]`` with its own phases ``[B, S, T, 2]``
-    (:func:`relax.cuda.kernels.relion_coarse_diff2_projector_per_image_f32`, the translations in blocks of
+    (:func:`relax.cuda.coarse.relion_coarse_diff2_projector_per_image_f32`, the translations in blocks of
     its capacity), the particle's ``S`` images added in slot order; a single-particle image is ``S = 1``.
     A rotation's diff2 does not depend on the other rotations of the call.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     n_particles, n_slots, n_rows = (int(n) for n in rotations.shape[:3])
     n_images, n_trans = n_particles * n_slots, int(translation_angles.shape[2])
@@ -214,7 +214,7 @@ def direct_rows_diff2(
     for first in range(0, n_rows, block_rows):
         rows = images[:, first : first + block_rows]
         blocks = [
-            em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
+            cuda_coarse.relion_coarse_diff2_projector_per_image_f32(
                 projector_full,
                 rows,
                 unshifted.reshape(n_images, -1),

@@ -22,7 +22,7 @@ import recovar.core.fourier_transform_utils as ftu
 from helpers.dense_posterior_reference import compute_e_step_weights
 from helpers.em_arrays import _hermitian_volume, _make_rotations, _raw_real_image_2d
 
-from relax.helpers.oversampling import (
+from relax.sampling.oversampling import (
     _find_significant_mask_full_sort,
     _find_significant_mask_topk,
     find_significant_mask,
@@ -123,20 +123,20 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     """Return raw F32 normalization without selecting from a different posterior."""
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
-    from relax.scoring import pass1_plan, significance
-    from relax.sparse_pass2 import sparse_pass2_posterior
+    from relax.fine_pass import posterior
+    from relax.scoring import pass1_route, significance
 
     install_exact_pass1_mocks(monkeypatch)
-    monkeypatch.setattr(pass1_plan, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
+    monkeypatch.setattr(pass1_route, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
     captured = []
-    original = sparse_pass2_posterior.relion_f32_fine_probabilities
+    original = posterior.relion_f32_fine_probabilities
 
     def record(scores, **kwargs):
         result = original(scores, **kwargs)
         captured.append((np.asarray(scores), result))
         return result
 
-    monkeypatch.setattr(sparse_pass2_posterior, "relion_f32_fine_probabilities", record)
+    monkeypatch.setattr(posterior, "relion_f32_fine_probabilities", record)
     args, projector = _exact_pass1_call(n_classes)
     kwargs = dict(
         **projector,
@@ -170,9 +170,9 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         "significant_cutoff_counts",
         "class_log_evidence_per_image",
     ):
-        assert_matches(candidate[5][key], control[5][key])
-    assert "relion_f32_sum_weight" not in control[5]
-    assert "relion_f32_max_posterior" not in control[5]
+        assert_matches(getattr(candidate[5], key), getattr(control[5], key))
+    assert control[5].relion_f32_sum_weight is None
+    assert control[5].relion_f32_max_posterior is None
     expected_sums, expected_maxima = [], []
     for batch_index, (scores, result) in enumerate(captured):
         assert scores.shape[1] == n_classes * 5 * 2  # Exclude padded rotations.
@@ -180,20 +180,20 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         actual_rows = min(2, 3 - batch_index * 2)
         expected_sums.extend(np.asarray(result[4])[:actual_rows])
         expected_maxima.extend(np.asarray(result[0]).max(axis=1)[:actual_rows])
-    assert_matches(candidate[5]["relion_f32_sum_weight"], expected_sums)
-    assert_matches(candidate[5]["relion_f32_max_posterior"], expected_maxima)
-    assert candidate[5]["relion_f32_sum_weight"].dtype == np.float32
+    assert_matches(candidate[5].relion_f32_sum_weight, expected_sums)
+    assert_matches(candidate[5].relion_f32_max_posterior, expected_maxima)
+    assert candidate[5].relion_f32_sum_weight.dtype == np.float32
 
 
 def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
     """K=1 support weights use RELION's prior + min_diff2 - diff2 order on pre-prior scores."""
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
-    from relax.helpers import oversampling
-    from relax.scoring import pass1_plan, pass1_support, significance
+    from relax.sampling import oversampling
+    from relax.scoring import pass1_route, pass1_support, significance
 
     install_exact_pass1_mocks(monkeypatch)
-    monkeypatch.setattr(pass1_plan, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
+    monkeypatch.setattr(pass1_route, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
     support_program = pass1_support.coarse_support_posterior
 
     def run(n_classes, rotation_log_prior, translation_log_prior):
@@ -1241,7 +1241,7 @@ def test_top_k_rows_matches_lax_top_k_for_single_rows_above_the_splitter_thresho
     import jax
     import jax.numpy as jnp
 
-    from relax.helpers.oversampling import _TOPK_SPLITTER_MIN_SAMPLES, top_k_rows
+    from relax.sampling.oversampling import _TOPK_SPLITTER_MIN_SAMPLES, top_k_rows
 
     rng = np.random.default_rng(4)
     for rows in (1, 3):
@@ -1262,7 +1262,7 @@ def test_coarse_projections_are_computed_once_per_block_across_image_batches(mon
     """
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
-    from relax.helpers import projection
+    from relax.projection import projection
     from relax.scoring import coarse_projector, significance
 
     install_exact_pass1_mocks(monkeypatch)

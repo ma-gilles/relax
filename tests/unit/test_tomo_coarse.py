@@ -7,11 +7,13 @@ check_p3_p4.py) compares the whole pass with RELION's dumped coarse diff2 on the
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from oracles.tomo_coarse import tilt_image_coarse_diff2
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import coarse as cuda_coarse
+from relax.cuda import translate as cuda_translate
 from relax.scoring import tomo_coarse
 
 
@@ -34,7 +36,7 @@ def _coarse_gemm_projections(
 
     The projection the SPA coarse GEMM scorer reads (significance.py ``_project_relion_compact_score_rows``):
     RELION's texture interpolation with the coarse diff2 kernel's row rule, in ``layout``'s score pixels.
-    ``texture`` is the half's :class:`relax.cuda.kernels.RelionCapacityHalfTextureF32`, staged once per pass.
+    ``texture`` is the half's :class:`relax.cuda.projector.RelionCapacityHalfTextureF32`, staged once per pass.
     """
 
     return tomo_coarse._score_window_projections(
@@ -59,7 +61,7 @@ def _fake_projector(projector_full, rotations, images, angles, weight, initial, 
 
 
 def test_translations_are_scored_in_chunks_and_images_add_in_slot_order(monkeypatch):
-    monkeypatch.setattr(em_cuda_kernels, "relion_coarse_diff2_projector_f32", _fake_projector)
+    monkeypatch.setattr(cuda_coarse, "relion_coarse_diff2_projector_f32", _fake_projector)
     rng = np.random.default_rng(3)
     layout = tomo_coarse.CoarseScoreLayout(
         (8, 8), 6, np.arange(4), jnp.ones(4, bool), jnp.zeros(1, jnp.int32), jnp.ones(40)
@@ -69,7 +71,7 @@ def test_translations_are_scored_in_chunks_and_images_add_in_slot_order(monkeypa
     angles = rng.normal(size=(3, n_trans, 2)).astype(np.float32)
     initial = np.array([1.5, 2.5, 3.5], np.float32)
     per_image = [
-        tomo_coarse.tilt_image_coarse_diff2(
+        tilt_image_coarse_diff2(
             None,
             rotations[i],
             jnp.zeros(4, jnp.complex64),
@@ -145,7 +147,7 @@ def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monk
         phase = jnp.exp(1j * (translation_angles[..., 0] + translation_angles[..., 1])).astype(jnp.complex64)
         return (images[:, None, :] * phase[:, :, None]).reshape(-1, images.shape[1])
 
-    monkeypatch.setattr(em_cuda_kernels, "relion_translate_score_f32", shift)
+    monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", shift)
     got = np.asarray(
         tomo_coarse._images_coarse_gemm_diff2.__wrapped__(
             jnp.asarray(projected), jnp.asarray(images), jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(angles),
@@ -275,8 +277,8 @@ def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_shar
     4608 rotations, 81 translations, 278 score pixels, complex128 projector without a texture. The fixed 2 GiB batch
     at 8 B per pixel asked for one 6.42 GiB program buffer with 6.6 GiB physically free and ran out of memory."""
 
-    from relax.helpers import projection
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.projection import projection
+    from relax.runtime import memory_budget as budget
 
     gib = 1 << 30
     rotations, slots, trans, pixels = 4608, 41, 81, 278
@@ -322,8 +324,8 @@ def test_coarse_batch_plan_on_an_80gb_card_is_the_fixed_2gib_plan(monkeypatch):
     quarter of the free memory exceeds the fixed 2 GiB, so the batches are those of the fixed budget (the policy in
     docs/development/gpu_compatibility.md: small-card sizing is a no-op on large cards)."""
 
-    from relax.helpers import projection
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.projection import projection
+    from relax.runtime import memory_budget as budget
 
     gib = 1 << 30
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 66 * gib)
@@ -349,8 +351,7 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
     """The batched per-image launch and one call per image score every (image, rotation, translation) alike."""
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -381,7 +382,7 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
         weight = rng.uniform(0.1, 1.0, size=(n_images, n_px)).astype(np.float32)
         initial = rng.uniform(10.0, 20.0, size=n_images).astype(np.float32)
         angles = rng.uniform(-0.2, 0.2, size=(n_images, n_trans, 2)).astype(np.float32)
-        batched = em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
+        batched = cuda_coarse.relion_coarse_diff2_projector_per_image_f32(
             projector,
             jnp.asarray(rotations),
             jnp.asarray(images),
@@ -395,7 +396,7 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
             padding_factor=pad,
         )
         for b in range(n_images):
-            single = tomo_coarse.tilt_image_coarse_diff2(
+            single = tilt_image_coarse_diff2(
                 projector,
                 rotations[b],
                 images[b],
@@ -413,7 +414,7 @@ def _gemm_fixture(rng, *, n_images=3, n_rot=256, n_trans=200, box=32):
     """A projector half for ``box`` (32 by default), random rotations, images, weights, d0 and translation phases
     on the GPU."""
 
-    from relax.helpers.projection import relion_projector_half_to_texture_full
+    from relax.projection.projection import relion_projector_half_to_texture_full
 
     size, pad, max_r = box, 2, box // 2
     layout = tomo_coarse.coarse_score_layout((box, box), size, half_spectrum_scoring=True, square_window=False)
@@ -456,8 +457,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
     """
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -487,7 +487,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
         rotations = f["rotations"].reshape(f["n_images"], f["n_rot"], 3, 3)
         for b in range(f["n_images"]):
             direct = np.asarray(
-                tomo_coarse.tilt_image_coarse_diff2(
+                tilt_image_coarse_diff2(
                     f["full"], rotations[b], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b], layout,
                     model_max_r=f["max_r"], padding_factor=f["pad"],
                 )
@@ -513,8 +513,7 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
     at three score-window sizes: the largest observed difference stays under it."""
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -540,7 +539,7 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
         assert gemm.size >= 1_000_000
         for b in range(n_images):
             direct = np.asarray(
-                tomo_coarse.tilt_image_coarse_diff2(
+                tilt_image_coarse_diff2(
                     f["full"], rotations[b], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b], layout,
                     model_max_r=f["max_r"], padding_factor=f["pad"],
                 )
@@ -559,8 +558,8 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, mo
     (the kernel's int32 output count) they are the one-block values."""
 
     import jax
+    from recovar.cuda_backproject import custom_cuda_requested
 
-    from relax.cuda.kernels import custom_cuda_requested
     from relax.scoring import exact_cut
 
     if not custom_cuda_requested():
@@ -576,7 +575,7 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, mo
             for s_ in range(n_slots):
                 b = p_ * n_slots + s_
                 image = np.asarray(
-                    tomo_coarse.tilt_image_coarse_diff2(
+                    tilt_image_coarse_diff2(
                         f["full"], rotations[p_, s_], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b],
                         layout, model_max_r=f["max_r"], padding_factor=f["pad"],
                     )
@@ -613,8 +612,7 @@ def test_packed_rows_are_the_complex_projections_split(gpu_device):
     reads and dense scale, in one kernel), so the GEMM's reference operand does not change."""
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -645,8 +643,7 @@ def test_the_class_texture_is_refilled_for_the_next_pass(gpu_device):
     programs capture its handle), and it projects what a texture staged fresh from that projector projects."""
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -758,7 +755,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     from relax import sampling
 
     monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", pass1_rotations)
-    from relax.helpers import projection
+    from relax.projection import projection
 
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
     monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", direct)
@@ -903,8 +900,8 @@ def test_undecided_scorer_rotations_are_the_rotation_kernels_per_particle(gpu_de
     """The same with RELION's rotation kernel (perturbed, left matrices): the per-particle calls' matrices."""
 
     import jax
+    from recovar.cuda_backproject import custom_cuda_requested
 
-    from relax.cuda.kernels import custom_cuda_requested
     from relax.sampling import relion_adaptive_pass1_rotations
 
     if jax.default_backend() != "gpu" or not custom_cuda_requested():
@@ -1028,7 +1025,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         return significance(diff2, rotation_prior, translation_prior, **kwargs)
 
     from relax import sampling
-    from relax.helpers import projection
+    from relax.projection import projection
 
     monkeypatch.setattr(sampling, "relion_adaptive_pass1_rotations", pass1_rotations)
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))

@@ -2,7 +2,7 @@
 
 ``--skip_align`` gives each particle one translation, its own offset remainder; relax scores the
 one zero translation of images that pass 2 translated as it prepared them
-(``image_translations``, :func:`relax.classification.given_poses.given_pose_grids`). The same
+(``image_translations``, :func:`relax.refinement.given_poses.given_pose_grids`). The same
 pass with the remainders as an ordinary translation grid and each image's one sample on its own
 translation must give the same classes, maps and noise sums.
 """
@@ -22,7 +22,7 @@ def _k2_inputs(monkeypatch):
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
 
-    from relax.relion import relion_ctf
+    from relax.relion import ctf
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "unit"))
     from integration.test_dense_gemm_coarse_engine_gpu import _install_native_preprocessing, _variable_ctf_rows
@@ -33,7 +33,7 @@ def _k2_inputs(monkeypatch):
     args = _driver_fixture_args(seed=20260929)
     dataset = args.pop("experiment_dataset")
     _install_native_preprocessing(dataset)
-    monkeypatch.setattr(relion_ctf, "relion_exact_ctf_half_from_source_star", _variable_ctf_rows)
+    monkeypatch.setattr(ctf, "relion_exact_ctf_half_from_source_star", _variable_ctf_rows)
     for name in (
         "volume",
         "noise_variance",
@@ -100,7 +100,7 @@ def test_image_translations_score_as_their_translation_samples(monkeypatch):
     from helpers.float_compare import assert_trees_match
     from scipy.spatial.transform import Rotation
 
-    from relax.classification.given_poses import given_pose_grids
+    from relax.refinement.given_poses import given_pose_grids
 
     dataset, volumes, noise, args = _k2_inputs(monkeypatch)
     n = int(dataset.n_units)

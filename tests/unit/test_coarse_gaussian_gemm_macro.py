@@ -9,17 +9,22 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers import score_diagnostics
+from helpers.coarse_cache_evidence import projection_cache_stats
 from helpers.exact_pass1_harness import ExactPass1Dataset, mock_unit_ctf_and_zero_highres_power
 from helpers.float_compare import assert_matches
 from helpers.pass1_programs import clear_pass1_programs
 
-from relax.helpers.projection_cache import build_projection_cache
-from relax.relion import relion_ctf
-from relax.scoring import coarse_gaussian_gemm, pass1_batch, pass1_program, scoring, significance
-from relax.scoring.significant_samples import significant_sample_ids
+from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostics
+from relax.fine_pass.significant_samples import significant_sample_ids
+from relax.projection.projection_cache import build_projection_cache
+from relax.relion import ctf
+from relax.scoring import coarse_gaussian_gemm, coarse_kernels, pass1_batch, pass1_program, significance
+from relax.scoring.pass1_plan import plan_pass1
+from relax.scoring.pass1_request import Pass1Request
+from relax.scoring.pass1_scores import ProgramStatics
 
 
-# Moved from relax/scoring/scoring.py (PLAN e1): no relax module uses it, only this test file.
+# Moved from relax/scoring/coarse_kernels.py (PLAN e1): no relax module uses it, only this test file.
 def _relion_coarse_gaussian_gemm_scores(
     projected_reference,
     projected_reference_abs2,
@@ -101,7 +106,7 @@ def _relion_coarse_gaussian_gemm_scores(
                 "coarse GEMM actual_image_count must be in "
                 f"[0, {n_images}], got {actual_count}",
             )
-    return scoring.relion_coarse_gaussian_gemm_scores_jit(
+    return coarse_kernels.relion_coarse_gaussian_gemm_scores_jit(
         projected_reference,
         projected_reference_abs2,
         shifted_corrected,
@@ -112,7 +117,7 @@ def _relion_coarse_gaussian_gemm_scores(
         n_trans=n_trans,
         image_shape=tuple(int(value) for value in image_shape),
         volume_shape=tuple(int(value) for value in volume_shape),
-        float64=scoring.coarse_gemm_float64_requested(),
+        float64=coarse_kernels.coarse_gemm_float64_requested(),
     )
 
 
@@ -221,10 +226,7 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     assert plan.predicted_peak_bytes == 3_502_817_280
     assert not plan.destination_alias_proven
     assert plan.admitted
-    stats = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_stats(
-        plan,
-        enabled=True,
-    )
+    stats = projection_cache_stats(plan, enabled=True)
     assert stats["conservative_predicted_peak_bytes"] == 3_502_817_280
     assert stats["h100_alias_evidence_applies_to_plan"] is True
     assert stats["h100_observed_donated_insert_alias"] is True
@@ -258,10 +260,7 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
         image_shape=(4, 4),
         budget_bytes=1_000_000,
     )
-    stats = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_stats(
-        plan,
-        enabled=True,
-    )
+    stats = projection_cache_stats(plan, enabled=True)
     assert stats["h100_alias_evidence_applies_to_plan"] is False
     assert stats["h100_observed_donated_insert_alias"] is None
     assert stats["h100_observed_alias_peak_bytes"] is None
@@ -655,10 +654,10 @@ def test_coarse_gaussian_gemm_macro_is_shared_by_em_and_initial_model():
         in k_class.run_dense_k_class_em_adaptive.__code__.co_names
     )
     assert (
-        scoring.relion_coarse_gaussian_gemm_scores_jit._fun.__globals__[
+        coarse_kernels.relion_coarse_gaussian_gemm_scores_jit._fun.__globals__[
             "_e_step_block_scores_windowed"
         ]
-        is scoring._e_step_block_scores_windowed
+        is coarse_kernels._e_step_block_scores_windowed
     )
 
 
@@ -670,8 +669,8 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
 
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers import projection as projection_helpers
+    from relax.cuda import translate as cuda_translate
+    from relax.projection import projection as projection_helpers
     for name, value in {
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "0",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB": "0.001",
@@ -684,7 +683,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
     mock_unit_ctf_and_zero_highres_power(monkeypatch)
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_score_f32",
         lambda images, translation_angles, pixel_indices, image_shape: jnp.repeat(
             images[:, None, :],
@@ -778,7 +777,8 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
 
     projection_calls.clear()
     monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "1")
-    cached = run()
+    plan = plan_pass1(Pass1Request(dataset, jnp.ones(dataset.image_size, dtype=jnp.float32), rotations, translations, **common))
+    cached = significance.run_pass1(plan)
     assert len(projection_calls) == 1
     assert_matches(projection_calls[0][0], np.arange(1, 17))
     assert projection_calls[0][1] is False
@@ -790,17 +790,11 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
         "best_log_score_per_image",
         "max_posterior_per_image",
         "class_log_evidence_per_image",
-        "class_assignments",
     ):
-        assert_matches(cached[5][key], uncached[5][key])
+        assert_matches(getattr(cached[5], key), getattr(uncached[5], key))
     assert_matches(cached[2], uncached[2])
     assert_matches(cached[3], uncached[3])
-    cache_stats = cached[5]["coarse_gaussian_gemm_projection_cache"]
-    assert cache_stats["enabled"] is True
-    assert cache_stats["cache_shape"] == (1, 16, 12)
-    assert cache_stats["stores_projection_abs2"] is False
-    assert cache_stats["h100_alias_evidence_applies_to_plan"] is False
-    assert cache_stats["h100_observed_donated_insert_alias"] is None
+    assert plan.route.projection_cache_plan.cache_shape == (1, 16, 12)
 
 
 
@@ -814,9 +808,9 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
 
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers import projection as projection_helpers
-    from relax.sparse_pass2 import sparse_pass2_scoring
+    from relax.cuda import translate as cuda_translate
+    from relax.fine_pass import scoring as sparse_pass2_scoring
+    from relax.projection import projection as projection_helpers
     for name, value in {
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "0",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB": "0.01",
@@ -827,7 +821,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
     monkeypatch.setattr(
-        relion_ctf,
+        ctf,
         "relion_exact_ctf_half_from_source_star",
         lambda _dataset, indices, image_shape, *, pixel_indices=None: jnp.ones(
             (
@@ -838,7 +832,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         ),
     )
     monkeypatch.setattr(
-        relion_ctf,
+        ctf,
         "relion_exact_ctf_half_from_source_star_host",
         lambda _dataset, indices, image_shape, *, pixel_indices=None: np.ones(
             (
@@ -854,7 +848,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         lambda processed, **_kwargs: jnp.zeros(processed.shape[0], dtype=jnp.float32),
     )
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_translate,
         "relion_translate_score_f32",
         lambda images, translation_angles, pixel_indices, image_shape: jnp.repeat(
             images[:, None, :],
@@ -1085,6 +1079,21 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     assert unique_support_pairs(translation_only) == ((0, 0), (0, 1), (0, 0))
     assert unique_support_pairs(clean) == ((1, 0), (0, 3), (0, 0))
 
+    # A class at zero prior (log prior -inf, RELION's pdf_class == 0, relax#68) wins no image and keeps no
+    # support, with finite results for the classes that remain.
+    for dead_class, live_class in ((0, 1), (1, 0)):
+        dead_prior = np.zeros(2, dtype=np.float64)
+        dead_prior[dead_class] = -np.inf
+        dead = run_with_priors(
+            dataset, class_prior=dead_prior, rotation_prior=zero_rotation_prior,
+            translation_prior=zero_translation_prior,
+        )
+        assert_matches(dead[3], [live_class] * 3)
+        for image_index in range(3):
+            assert len(significant_sample_ids(dead[4][dead_class][image_index], 6)) == 0
+            assert len(significant_sample_ids(dead[4][live_class][image_index], 6)) >= 1
+        assert np.all(np.isfinite(np.asarray(dead[2], dtype=np.float64)))
+
     poison_tail["enabled"] = True
     group_datasets = (dataset.subset([0, 2]), dataset.subset([1]))
     poisoned_groups = tuple(
@@ -1120,10 +1129,6 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
                 np.asarray(expected_support[class_index][image_index], dtype=np.int64),
             )
     assert any(np.any(tail) for _, _, tail in projection_calls)
-    resources = clean[5]["coarse_gaussian_gemm_resources"]
-    assert resources["predicted_peak_projection_bytes"] <= resources[
-        "projected_transient_budget_bytes"
-    ]
 
     # RELAX_SIGNIFICANCE_DUMP_* reads the pass-1 program's target-row scores: each target's
     # designed scores of every class and rotation, before and after the priors.
@@ -1136,6 +1141,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         class_prior=active_class_prior,
         rotation_prior=active_rotation_prior,
         translation_prior=active_translation_prior,
+        probe=SignificanceDiagnostics(),
     )
     images = jnp.asarray(np.arange(1, 4, dtype=np.complex64)[:, None, None] * np.ones((3, 2, 1), np.complex64))
     expected_pre_prior = np.stack(
@@ -1168,7 +1174,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
 
     # RELION's float32 normalization (the zero-oversampling reuse) reads the program's
     # with-prior values, as it read the loop's.
-    from relax.sparse_pass2 import sparse_pass2_posterior
+    from relax.fine_pass import posterior
 
     normalization_inputs = []
 
@@ -1177,7 +1183,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         ones = jnp.ones(scores.shape[0], dtype=jnp.float32)
         return jnp.zeros_like(scores), None, None, None, ones, None
 
-    monkeypatch.setattr(sparse_pass2_posterior, "relion_f32_fine_probabilities", capture_fine_posterior)
+    monkeypatch.setattr(posterior, "relion_f32_fine_probabilities", capture_fine_posterior)
     monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_DIR")
     run_with_priors(
         dataset,
@@ -1311,14 +1317,16 @@ def _pass1_case(seed=20261002):
 
 def _pass1_static(case, score_kind, exact_weight_order, track_class_second=False):
     return dict(
-        n_trans=case["n_trans"],
-        image_shape=(4, 4),
-        volume_shape=(4, 4, 4),
-        float64=False,
-        score_kind=score_kind,
-        exact_weight_order=exact_weight_order,
-        return_class_best=True,
-        track_class_second=track_class_second,
+        statics=ProgramStatics(
+            n_trans=case["n_trans"],
+            image_shape=(4, 4),
+            volume_shape=(4, 4, 4),
+            float64=False,
+            score_kind=score_kind,
+            exact_weight_order=exact_weight_order,
+            return_class_best=True,
+            track_class_second=track_class_second,
+        )
     )
 
 
@@ -1433,7 +1441,7 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
         cc = np.stack(
             [
                 np.asarray(
-                    scoring.relion_coarse_normalized_cc_gemm_scores_jit(
+                    coarse_kernels.relion_coarse_normalized_cc_gemm_scores_jit(
                         case["cache"][k], case["shifted"], case["weight"], 2, n_images=case["n_images"],
                         n_trans=case["n_trans"],
                     )

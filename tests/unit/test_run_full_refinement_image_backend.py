@@ -7,18 +7,18 @@ import os
 import pytest
 from helpers.tiny_main import controller_inputs, write_tiny_data_dir
 
-from relax.refinement import command_options, particle_loading
+from relax.commands import refinement_arguments, refinement_particles
 
 BACKENDS = ("auto", "host_numpy", "jax_gpu", "relion_cuda")
 
 
 def _parse(*arguments):
-    return command_options.parse_refinement_args(["--data_dir", "data", "--output", "out", *arguments])
+    return refinement_arguments.parse_refinement_args(["--data_dir", "data", "--output", "out", *arguments])
 
 
 def test_image_fourier_backend_cli_defaults_by_job_type_with_typed_choices():
     # auto resolves to relion_cuda for K=1 and for Class3D on the resident pass 2, host_numpy for
-    # Class3D on the compact engine (command_options.resolve_job_defaults).
+    # Class3D on the compact engine (refinement_arguments.resolve_job_defaults).
     assert _parse().image_fourier_backend == "auto"
     assert [_parse("--image-fourier-backend", backend).image_fourier_backend for backend in BACKENDS] == list(BACKENDS)
     with pytest.raises(SystemExit):
@@ -53,13 +53,13 @@ def test_relion_softmask_reduction_routes_both_native_diagnostic_modes(monkeypat
     arguments = ["--data_dir", str(data), "--output", str(tmp_path / "out"), "--relion-softmask-reduction", mode]
     os.makedirs(tmp_path / "out")
     with pytest.raises(ValueError, match="requires --image-fourier-backend relion_cuda"):
-        particle_loading.load_particle_inputs(
-            command_options.parse_refinement_args([*arguments, "--image-fourier-backend", "host_numpy"]),
+        refinement_particles.load_particle_inputs(
+            refinement_arguments.parse_refinement_args([*arguments, "--image-fourier-backend", "host_numpy"]),
             relion_half_sets_from_input=False,
             image_fourier_backend="host_numpy",
         )
-    particle_loading.load_particle_inputs(
-        command_options.parse_refinement_args([*arguments, "--image-fourier-backend", "relion_cuda"]),
+    refinement_particles.load_particle_inputs(
+        refinement_arguments.parse_refinement_args([*arguments, "--image-fourier-backend", "relion_cuda"]),
         relion_half_sets_from_input=False,
         image_fourier_backend="relion_cuda",
     )

@@ -78,7 +78,7 @@ def relax_triplet(root) -> dict:
 def map_convention(path, frame: str) -> str:
     """RELION maps and labeled relax maps are in RELION's convention; unlabeled relax maps are legacy RECOVAR."""
 
-    from relax.helpers.map_io import is_relax_map
+    from relax.io.map_io import is_relax_map
 
     return "relion" if frame == "relion" or is_relax_map(path) else "legacy_recovar_sign"
 

@@ -341,7 +341,7 @@ The piecewise pack is RELION's MPI combine (`combineAllWeightedSums`, used with
 `--dont_combine_weights_via_disc` by builds without `USE_MPI_COLLECTIVE`,
 which CMake defines only for SYCL/ALTCPU). Without that flag RELION combines
 through files with one full `MlWsumModel::pack(Mpack)`, which does reduce every
-physical group. `relion_worker_scale.update_relion_follower_scales` therefore
+physical group. `follower_scale.update_relion_follower_scales` therefore
 takes the reduction mode that `relion_scale_reduction_mode_from_command` reads
 from the oracle's recorded command line. The 2026-09-23 D6 symmetry audit found
 the reconciled source hard-coded the file-combine rule; every

@@ -208,8 +208,8 @@ def test_bpref_converter_accepts_shared_compact_backprojector_cube(ori_size, r_m
 
 
 def test_relion_x_public_output_to_bpref_exactly_inverts_shared_public_layout():
-    from relax.helpers.half_volume_mstep import relion_x_half_volume_to_full
-    from relax.helpers.half_volume_mstep import enforce_relion_half_volume_x0_hermitian_host
+    from relax.reconstruction.half_volume_mstep import relion_x_half_volume_to_full
+    from relax.reconstruction.half_volume_mstep import enforce_relion_half_volume_x0_hermitian_host
 
     ori_size = 128
     r_max = 19

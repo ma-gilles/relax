@@ -9,12 +9,12 @@ from helpers.float_compare import assert_matches
 
 from relax import sampling
 from relax.classification import k_class_results
-from relax.helpers.types import make_relion_stats
-from relax.local.local_layout import (
+from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.local_search.layout import (
     bucket_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
 )
-from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.types import make_relion_stats
 
 pytestmark = pytest.mark.unit
 

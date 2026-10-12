@@ -246,7 +246,7 @@ def emulated_fraction(module: str, box: int, emulate_gb: float, total_bytes: int
     fraction = 0.90
     if module.rsplit(".", 1)[-1] in ("refine", "class3d"):
         padding_factor = _relax_module("relion/geometry.py").PROJECTION_PADDING_FACTOR
-        fraction = _relax_module("helpers/xla_memory_reserve.py").xla_memory_fraction(box, padding_factor, small)
+        fraction = _relax_module("runtime/xla_memory_reserve.py").xla_memory_fraction(box, padding_factor, small)
     return fraction * small / total_bytes
 
 

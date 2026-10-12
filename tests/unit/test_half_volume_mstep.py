@@ -15,9 +15,9 @@ import recovar.core.fourier_transform_utils as ftu
 import recovar.core.slicing as slicing
 import recovar.cuda_backproject as cuda_backproject
 
-from relax.cuda import kernels as em_cuda_kernels
-from relax.helpers import half_volume_mstep
-from relax.reconstruction import regularization_relion
+from relax.cuda import backprojection as cuda_backprojection
+from relax.cuda import library
+from relax.reconstruction import half_volume_mstep, regularization
 
 pytestmark = pytest.mark.unit
 
@@ -227,7 +227,7 @@ def test_relion_backprojector_volume_shape_rejects_invalid_inputs():
 
 
 def test_enforce_relion_x0_hermitian_uses_centered_odd_grid_partner():
-    from relax.helpers.half_volume_mstep import (
+    from relax.reconstruction.half_volume_mstep import (
         enforce_relion_half_volume_x0_hermitian,
         enforce_relion_half_volume_x0_hermitian_host,
     )
@@ -386,14 +386,14 @@ def test_relion_x_half_public_full_tau2_shell_stats_use_relion_x_axis(monkeypatc
     )
     fsc = np.full(volume_shape[0] // 2 + 1, 0.5, dtype=np.float64)
 
-    _, _, packed_details = regularization_relion.compute_relion_tau2_from_weights(
+    _, _, packed_details = regularization.compute_relion_tau2_from_weights(
         relion_x_half_weight.reshape(-1),
         relion_x_half_weight.reshape(-1),
         fsc,
         volume_shape,
         return_details=True,
     )
-    _, _, public_full_details = regularization_relion.compute_relion_tau2_from_weights(
+    _, _, public_full_details = regularization.compute_relion_tau2_from_weights(
         relion_x_public_full,
         relion_x_public_full,
         fsc,
@@ -401,7 +401,7 @@ def test_relion_x_half_public_full_tau2_shell_stats_use_relion_x_axis(monkeypatc
         return_details=True,
         full_half_axis=0,
     )
-    _, _, wrong_axis_details = regularization_relion.compute_relion_tau2_from_weights(
+    _, _, wrong_axis_details = regularization.compute_relion_tau2_from_weights(
         relion_x_public_full,
         relion_x_public_full,
         fsc,
@@ -703,7 +703,7 @@ def test_relion_fused_x_half_wrapper_uses_mixed_aliases_and_native_square(monkey
         return call
 
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
 
     image_shape = (8, 8)
@@ -719,7 +719,7 @@ def test_relion_fused_x_half_wrapper_uses_mixed_aliases_and_native_square(monkey
     data_volume = jnp.zeros(volume_size, dtype=jnp.complex64)
     weight_volume = jnp.zeros(volume_size, dtype=jnp.float32)
 
-    result = em_cuda_kernels.relion_fused_x_half_backproject_indexed.__wrapped__(
+    result = cuda_backprojection.relion_fused_x_half_backproject_indexed.__wrapped__(
         data_volume,
         weight_volume,
         data_rows,
@@ -731,7 +731,7 @@ def test_relion_fused_x_half_wrapper_uses_mixed_aliases_and_native_square(monkey
         2.0,
     )
 
-    assert observed["target"] == em_cuda_kernels._TARGET_RELION_FUSED_X_HALF_BP
+    assert observed["target"] == library.TARGET_RELION_FUSED_X_HALF_BP
     assert observed["options"]["input_output_aliases"] == {4: 0, 5: 1}
     assert observed["options"]["vmap_method"] == "sequential"
     assert [item.dtype for item in observed["result_types"]] == [jnp.complex64, jnp.float32]
@@ -760,7 +760,7 @@ def test_relion_fused_x_half_wrapper_preserves_double_precision(monkeypatch):
         return call
 
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
 
     volume_size = 7 * 7 * 4
@@ -770,7 +770,7 @@ def test_relion_fused_x_half_wrapper_preserves_double_precision(monkeypatch):
         [[[1.0, 0.1, 0.2], [0.3, 1.0, 0.4], [0.5, 0.6, 1.0]]],
         dtype=jnp.float64,
     )
-    em_cuda_kernels.relion_fused_x_half_backproject_indexed.__wrapped__(
+    cuda_backprojection.relion_fused_x_half_backproject_indexed.__wrapped__(
         data_volume,
         weight_volume,
         jnp.ones((1, 1), dtype=jnp.complex128),
@@ -802,7 +802,7 @@ def test_relion_fused_x_half_wrapper_rejects_non_relion_dtypes(
     monkeypatch, data_dtype, weight_dtype, index_dtype, error_match
 ):
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     data_volume = jnp.zeros(7 * 7 * 4, dtype=data_dtype)
     weight_volume = jnp.zeros(7 * 7 * 4, dtype=weight_dtype)
     data_rows = jnp.ones((1, 1), dtype=jnp.complex64)
@@ -811,7 +811,7 @@ def test_relion_fused_x_half_wrapper_rejects_non_relion_dtypes(
     rotations = jnp.eye(3, dtype=jnp.float32)[None]
 
     with pytest.raises(TypeError, match=error_match):
-        em_cuda_kernels.relion_fused_x_half_backproject_indexed.__wrapped__(
+        cuda_backprojection.relion_fused_x_half_backproject_indexed.__wrapped__(
             data_volume,
             weight_volume,
             data_rows,
@@ -1120,7 +1120,7 @@ def test_relion_fused_x_half_radius_uses_native_rotation_convention_at_exact_rim
     with cuda_backproject.jax.default_device(gpu_device):
         for rotation in rotations:
             outputs.append(
-                em_cuda_kernels.relion_fused_x_half_backproject_indexed(
+                cuda_backprojection.relion_fused_x_half_backproject_indexed(
                     jnp.zeros(volume_size, dtype=jnp.complex64),
                     jnp.zeros(volume_size, dtype=jnp.float32),
                     data_rows,
@@ -1205,7 +1205,7 @@ def test_relion_fused_x_half_cuda_matches_separate_topology(
             max_r=2.0,
             relion_x_half=True,
         )
-        actual_data, actual_weight = em_cuda_kernels.relion_fused_x_half_backproject_indexed(
+        actual_data, actual_weight = cuda_backprojection.relion_fused_x_half_backproject_indexed(
             actual_data_volume,
             actual_weight_volume,
             data_rows,
@@ -1260,7 +1260,7 @@ def test_relion_fused_x_half_native_particle_grid_matches_sequential(
         expected_data = jnp.zeros(volume_size, dtype=jnp.complex64)
         expected_weight = jnp.zeros(volume_size, dtype=jnp.float32)
         for particle in range(3):
-            expected_data, expected_weight = em_cuda_kernels.relion_fused_x_half_backproject_indexed(
+            expected_data, expected_weight = cuda_backprojection.relion_fused_x_half_backproject_indexed(
                 expected_data,
                 expected_weight,
                 data_rows[particle],
@@ -1272,7 +1272,7 @@ def test_relion_fused_x_half_native_particle_grid_matches_sequential(
                 2.0,
             )
         actual_data, actual_weight = (
-            em_cuda_kernels.relion_fused_x_half_backproject_particle_grid_indexed(
+            cuda_backprojection.relion_fused_x_half_backproject_particle_grid_indexed(
                 jnp.zeros(volume_size, dtype=jnp.complex64),
                 jnp.zeros(volume_size, dtype=jnp.float32),
                 data_rows,
@@ -1304,7 +1304,7 @@ def test_relion_fused_x_half_particle_grid_preserves_particle_axis_in_native_att
         return call
 
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
     data_volume = jnp.zeros(7 * 7 * 4, dtype=jnp.complex64)
     weight_volume = jnp.zeros(7 * 7 * 4, dtype=jnp.float32)
@@ -1313,7 +1313,7 @@ def test_relion_fused_x_half_particle_grid_preserves_particle_axis_in_native_att
     pixel_indices = jnp.asarray([1, 7 * 5 + 1], dtype=jnp.int32)
     rotations = jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (2, 3, 3, 3))
 
-    result = em_cuda_kernels.relion_fused_x_half_backproject_particle_grid_indexed.__wrapped__(
+    result = cuda_backprojection.relion_fused_x_half_backproject_particle_grid_indexed.__wrapped__(
         data_volume,
         weight_volume,
         data_rows,
@@ -1325,7 +1325,7 @@ def test_relion_fused_x_half_particle_grid_preserves_particle_axis_in_native_att
         2.0,
     )
 
-    assert observed["target"] == em_cuda_kernels._TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID
+    assert observed["target"] == library.TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID
     assert observed["options"]["input_output_aliases"] == {4: 0, 5: 1}
     assert observed["attrs"]["n_particles"] == 2
     assert observed["attrs"]["rows_per_particle"] == 3
@@ -1399,3 +1399,20 @@ def test_physical_finalize_then_crop_matches_crop_then_finalize(logical, physica
     ]
     for g, e in zip(got, expected, strict=True):
         assert_matches(np.asarray(g), np.asarray(e))
+
+
+@pytest.mark.parametrize("volume_shape", [(8, 8, 8), (9, 9, 9)])
+def test_relion_x_half_host_repacks_do_not_depend_on_their_slab_size(monkeypatch, volume_shape):
+    """Both host repacks fill their output in slabs (relax#39): one slab and one column per slab agree."""
+
+    half_grid = _valid_relion_x_half_grid(volume_shape, seed=7).reshape(-1)
+    whole_native = half_volume_mstep._relion_x_half_volume_to_native_half_host(half_grid, volume_shape)
+    whole_full = half_volume_mstep._relion_x_half_volume_to_full_host(half_grid, volume_shape)
+    monkeypatch.setattr(half_volume_mstep, "_REPACK_SLAB_ELEMENTS", 1)
+    assert len(half_volume_mstep._slabs(5, 64)) == 5
+    slab_native = half_volume_mstep._relion_x_half_volume_to_native_half_host(half_grid, volume_shape)
+    slab_full = half_volume_mstep._relion_x_half_volume_to_full_host(half_grid, volume_shape)
+    assert slab_native.shape == whole_native.shape and slab_full.shape == whole_full.shape
+    assert slab_full.flags.c_contiguous and slab_native.flags.c_contiguous
+    assert_matches(slab_native, whole_native)
+    assert_matches(slab_full, whole_full)

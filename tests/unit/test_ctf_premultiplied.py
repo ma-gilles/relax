@@ -14,11 +14,11 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.relion import relion_ctf
-from relax.relion.relion_metadata import refuse_unsupported_optics
+from relax.relion import ctf as relion_ctf
+from relax.star.metadata import refuse_unsupported_optics
 
 
-# Moved from relax/relion/relion_ctf.py (PLAN e1): no relax module uses it, only this test file.
+# Moved from relax/relion/ctf.py (PLAN e1): no relax module uses it, only this test file.
 def require_no_premultiplied_ctf(experiment_dataset, image_indices, image_shape, *, where: str) -> None:
     """Refuse CTF-premultiplied images on a path that backprojects them as ordinary ones."""
 
@@ -175,7 +175,7 @@ def _relion_bp_sums(image, fctf, minvsigma2, weight, scale, premultiplied):
 
 @pytest.mark.unit
 def test_premultiplied_bpref_weights_match_relion_bp_kernel_in_recovar_frame():
-    from relax.sparse_pass2.sparse_pass2_bucket_io import premultiplied_bpref_weights
+    from relax.fine_pass.bucket_io import premultiplied_bpref_weights
 
     rng = np.random.default_rng(7)
     n_images, n_pixels = 3, 11
@@ -223,7 +223,7 @@ def test_refinement_accepts_premultiplied_optics_only_where_supported():
 
 @pytest.mark.unit
 def test_dense_preprocessing_scores_premultiplied_batches_with_the_exact_rows(star_dataset, tmp_path, monkeypatch):
-    from relax.helpers.preprocessing import _dense_batch_ctf_half
+    from relax.relion.image_preprocessing import _dense_batch_ctf_half
 
     generic_calls = []
     config = SimpleNamespace(image_shape=(BOX, BOX), compute_ctf_half=lambda params: generic_calls.append(params))
@@ -315,7 +315,7 @@ def test_average_ctf2_is_none_without_premultiplied_images(tmp_path, monkeypatch
 def _shape_class_half(star, scale_b):
     """A two-shape half over the four STAR rows: class A rows (0, 3) on the model grid, class B rows (2, 1) at s_g."""
 
-    from relax.refinement.optics_shapes import MultiShapeHalf, ShapeClass
+    from relax.steps.optics_shapes import MultiShapeHalf, ShapeClass
 
     def dataset(rows):
         return SimpleNamespace(
@@ -335,7 +335,7 @@ def test_average_ctf2_of_several_image_shapes_is_relions_remapped_sumw_ctf2(tmp_
     shell i onto model shell ROUND(i / s_g) (acc_ml_optimiser_impl.h:3612-3626)."""
 
     from relax.refinement.noise_updates import datasets_store_premultiplied_ctf
-    from relax.refinement.optics_shapes import average_ctf2_parts
+    from relax.steps.optics_shapes import average_ctf2_parts
 
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     star = _write_star(tmp_path / "particles.star")
@@ -374,9 +374,9 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
     (:2842). The Class3D prior hands premultiplied_average_ctf2 the tilt images as parts and the halves'
     noise sumw as the denominator: neither the tilt count nor the particle count."""
 
-    from relax.helpers.types import NoiseStats
-    from relax.refinement import mean_helpers
-    from relax.refinement.tomo_half import TomoHalf
+    from relax.refinement import priors
+    from relax.steps.tomo_half import TomoHalf
+    from relax.types import NoiseStats
 
     class _Seen(Exception):
         pass
@@ -387,9 +387,9 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
         seen.update(parts=parts, box_size=box_size, sumw=sumw)
         raise _Seen
 
-    monkeypatch.setattr(mean_helpers.relion_ctf, "premultiplied_average_ctf2", average_ctf2)
+    monkeypatch.setattr(priors.ctf, "premultiplied_average_ctf2", average_ctf2)
     monkeypatch.setattr(
-        mean_helpers, "average_ctf2_parts", lambda dataset, scales, **_: [(dataset, scales, BOX, 1.0)]
+        priors, "average_ctf2_parts", lambda dataset, scales, **_: [(dataset, scales, BOX, 1.0)]
     )
 
     def half(tilts_per_particle, scales, kept_mass):
@@ -405,7 +405,7 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
     half1, stats1 = half([3, 4], [0.9, 1.1], [0.999, 0.998])  # 2 particles, 7 tilt images
     half2, stats2 = half([2], [1.0], [0.0, 0.997])  # 1 particle, 2 tilt images
     with pytest.raises(_Seen):
-        mean_helpers.estimate_class_priors(
+        priors.estimate_class_priors(
             None, None, None, SimpleNamespace(box_size=BOX),
             half_denominators=None, halves=(half1, half2), noise_stats_per_half=(stats1, stats2), n_classes=2,
             iteration=0, current_size=BOX, image_current_size=BOX, accumulator_shape=None, full_half_axis=-1,

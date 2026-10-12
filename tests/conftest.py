@@ -24,6 +24,13 @@ if GPU_GUARD_REASON:
     os.environ["JAX_PLATFORMS"] = "cpu"
     print(f"relax tests: running on the CPU: {GPU_GUARD_REASON}", file=sys.stderr, flush=True)
 
+# XLA's CPU contractions run on one Eigen thread, set before JAX is imported: the multithreaded split
+# depends on the node's cores and changes float32 sums, so float32-vs-float64 accuracy tests passed on
+# one CPU and failed on another (ppca_initial_model/test_full_fine_streaming on Xeon 8462Y+ nodes).
+_SINGLE_THREAD_EIGEN = "--xla_cpu_multi_thread_eigen=false"
+if "--xla_cpu_multi_thread_eigen" not in os.environ.get("XLA_FLAGS", ""):
+    os.environ["XLA_FLAGS"] = f"{os.environ.get('XLA_FLAGS', '')} {_SINGLE_THREAD_EIGEN}".strip()
+
 _REQUIRE_CUSTOM_CUDA_FOR_TESTS_ENV = "RELAX_REQUIRE_CUSTOM_CUDA_FOR_TESTS"
 _CUSTOM_CUDA_LIB_UNSET = object()
 _custom_cuda_test_lib = _CUSTOM_CUDA_LIB_UNSET
@@ -551,7 +558,7 @@ def _strict_em_operand_precision(monkeypatch):
     Production EM precision is float32; a single float64 factor upstream can
     silently promote reconstruction and M-step rows with no visible effect on
     results. Production only warns (see
-    ``relax.helpers.dtype_policy``); tests are strict
+    ``relax.numerics.precision``); tests are strict
     unless a test opts out by setting the variable itself.
     """
 

@@ -4,15 +4,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
 from helpers.float_compare import assert_matches
-from relax.dense.gemm_experiment import (
+
+from relax.dense.gemm_kernels import (
     DenseGemmTileConfig,
+    class_score_tile,
     make_joint_k_batch_program,
     pad_batch,
     pad_grid,
+    score_tile,
 )
-from relax.dense.gemm_experiment_kernels import class_score_tile, score_tile
 
 
 def _case(*, skewed, score_mode):
@@ -39,7 +40,7 @@ def _case(*, skewed, score_mode):
     batch = pad_batch(
         images, score_weight, np.zeros(b, np.float32),
         complex_values((b, pr)), rng.uniform(0.2, 1.0, (b, pr)).astype(np.float32),
-        None, np.zeros((b, t), np.float32), [0, 1],
+        np.zeros((b, t), np.float32), [0, 1],
         image_capacity=3, grid=grid, sentinel_id=2,
     )
     padded_priors = jnp.pad(
@@ -129,7 +130,7 @@ def test_class_score_cache_rejects_padded_grid_above_cap():
 
 @pytest.mark.unit
 def test_class_score_tile_uses_flattened_projection_axis(monkeypatch):
-    from relax.dense import gemm_experiment_kernels as kernels
+    from relax.dense import gemm_kernels as kernels
 
     k, b, q, u, p = 4, 2, 3, 2, 5
     projections = jnp.ones((k, q, p), jnp.complex64)

@@ -225,8 +225,8 @@ def follower_scale_replay(n_iterations, n_followers=2, replay=None):
     ``replay`` (None: none)."""
 
     from relax.parity.relion_replay_source import RelionReplay
+    from relax.refinement.follower_scale import RELION_SCALE_REDUCTION_MODES, PreparedFollowerTopology
     from relax.refinement.refinement_options import StartState
-    from relax.relion.relion_worker_scale import RELION_SCALE_REDUCTION_MODES, PreparedFollowerTopology
 
     n_half = N_IMAGES // 2
     owners = [np.arange(n_half) % n_followers, (np.arange(n_half) + 1) % n_followers]
@@ -264,13 +264,14 @@ def run_tiny_refinement(
     import relax.sampling as sampling
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement import iteration_loop
-    from relax.refinement.half_inputs import HalfPair
     from relax.refinement.ports import RunObserver
     from relax.refinement.refinement_options import (
         FinalPassOptions,
         KClassOptions,
+        RefinementEnvironment,
     )
     from relax.refinement.startup_references import StartupHandoff
+    from relax.steps.half_inputs import HalfPair
 
     calls = [] if engine_calls is None else engine_calls
 
@@ -311,7 +312,11 @@ def run_tiny_refinement(
         monkeypatch.delenv(name, raising=False)
     # K=1: run the final all-data pass after the last numbered iteration without waiting for convergence
     # (RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER); the rest of the environment is read as the command does.
-    option_groups["final_pass"] = replace(FinalPassOptions.from_environ(), after_max_iter=final_after_max_iter)
+    # Class3D refuses the option at set-up (require_final_pass_route), so only K=1 sets it.
+    option_groups["final_pass"] = replace(
+        FinalPassOptions.from_environ(), after_max_iter=final_after_max_iter and n_classes == 1,
+    )
+    option_groups.setdefault("environment", RefinementEnvironment.from_environ())
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
     option_groups.setdefault("adaptive", stand_in.adaptive(adaptive_oversampling=1))
@@ -361,8 +366,8 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
     """
 
     from relax.classification import k_class
+    from relax.fine_pass import resident_pass2
     from relax.scoring import significance
-    from relax.sparse_pass2 import resident_pass2
 
     recorded = []
 
@@ -409,7 +414,7 @@ def unconverged_accuracy(n_classes: int = 1):
     """
     import numpy as np
 
-    from relax.helpers.expected_accuracy import ExpectedAccuracy
+    from relax.steps.expected_accuracy import ExpectedAccuracy
 
     return ExpectedAccuracy(
         acc_rot=999.0,

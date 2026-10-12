@@ -17,12 +17,13 @@ from helpers.float_compare import assert_matches, matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.local.local_layout import (
+from relax.fine_pass.resident_candidates import expand_local_chunk_mask_jnp
+from relax.local_search import resident_layout as rll
+from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
 from relax.sampling import build_local_search_grid_metadata
-from relax.sparse_pass2 import resident_local_layout as rll
 
 pytestmark = pytest.mark.unit
 
@@ -65,7 +66,7 @@ def _parent_layout(n_images=N_IMAGES, n_coarse_trans=4, seed=20260919):
 
 
 def _pass2_layout(significant_mode="mixed", seed=20260919):
-    """A pass-2 layout with the three support shapes half_scoring can produce.
+    """A pass-2 layout with the three support shapes dense_half can produce.
 
     ``mixed`` gives some images an explicit significant-sample list (so the
     layout carries a real per-row mask) and some ``None`` (full parent support).
@@ -103,7 +104,7 @@ def test_tables_mirror_the_layout_row_for_row():
     tables = rll.tables_from_local_layout(layout)
 
     assert tables.n_images == layout.n_images
-    assert tables.n_rows == layout.total_local_rotations
+    assert tables.n_rows == layout.rotation_ids_flat.shape[0]
     assert tables.n_trans == int(layout.translation_grid.shape[0])
     assert_matches(tables.row_offsets, layout.rotation_offsets)
     assert_matches(tables.rotations, layout.rotations_flat)
@@ -149,7 +150,7 @@ def test_mask_expansion_matches_the_layouts_own_unpacking():
     expanded = rll.expand_local_mask_rows(tables, 0, tables.n_rows)
     assert_matches(expanded, reference)
 
-    device = rll.expand_local_chunk_mask_jnp(
+    device = expand_local_chunk_mask_jnp(
         jnp.asarray(tables.row_mask_bits), n_trans=tables.n_trans
     )
     assert_matches(np.asarray(device), reference)
@@ -165,7 +166,7 @@ def test_full_support_layout_keeps_the_compact_none_spelling():
         rll.expand_local_mask_rows(tables, 0, tables.n_rows),
         np.ones((tables.n_rows, tables.n_trans), dtype=bool),
     )
-    assert rll.expand_local_chunk_mask_jnp(None, n_trans=tables.n_trans) is None
+    assert expand_local_chunk_mask_jnp(None, n_trans=tables.n_trans) is None
 
 
 @pytest.mark.parametrize("n_trans", [1, 7, 8, 9, 31, 84, 129])
@@ -176,7 +177,7 @@ def test_device_mask_expansion_is_bit_exact_for_any_translation_count(n_trans):
     rows = 11
     dense = rng.random((rows, n_trans)) < 0.5
     bits = np.packbits(dense, axis=1, bitorder="little")
-    device = rll.expand_local_chunk_mask_jnp(jnp.asarray(bits), n_trans=n_trans)
+    device = expand_local_chunk_mask_jnp(jnp.asarray(bits), n_trans=n_trans)
     assert_matches(np.asarray(device), dense)
 
 
@@ -234,7 +235,7 @@ def test_materialized_chunk_is_the_slice_plus_inert_padding():
 
         # Padding is inert: no candidate cell, a dropped histogram bin, a finite
         # rotation and a prior no winner can reach.
-        mask = rll.expand_local_chunk_mask_jnp(
+        mask = expand_local_chunk_mask_jnp(
             host["row_mask_bits"], n_trans=tables.n_trans
         )
         if mask is not None:
@@ -272,7 +273,7 @@ def test_adapter_rejects_a_mask_of_the_wrong_width():
         **{
             **{field: getattr(layout, field) for field in layout.__dataclass_fields__},
             "sample_mask_bits": np.zeros(
-                (layout.total_local_rotations, 1), dtype=np.uint8
+                (layout.rotation_ids_flat.shape[0], 1), dtype=np.uint8
             ),
         }
     )

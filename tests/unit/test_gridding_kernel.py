@@ -17,22 +17,16 @@ from helpers.reconstruction_settings import reconstruction_settings
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
-from relax.helpers import expected_accuracy
-from relax.refinement import (
-    command_options,
-    final_reconstruction,
-    finalization,
-    iteration_loop,
-    mean_helpers,
-    projector_preparation,
-)
+from relax.commands import refinement_arguments
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement import final_reconstruction, finalization, iteration_loop, numbered_reconstruction
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
     KClassOptions,
-    ReconstructionPrograms,
     RelionConsistencyOptions,
 )
-from relax.relion import relion_projector_setup as setup
+from relax.relion import projector_setup as setup
+from relax.steps import expected_accuracy, projector_preparation
 
 pytestmark = pytest.mark.unit
 
@@ -202,7 +196,7 @@ def test_expected_accuracy_inputs_hand_the_estimator_the_kernel(monkeypatch, ker
 
 
 def test_expected_accuracy_refuses_separable_for_subtomograms():
-    from relax.refinement.tomo_half import TomoHalf
+    from relax.steps.tomo_half import TomoHalf
 
     with pytest.raises(NotImplementedError, match="subtomogram"):
         expected_accuracy.estimate_relion_expected_accuracy(
@@ -236,7 +230,7 @@ def _accumulators(n, seed=1):
 def _reconstruct(n=8, **kwargs):
     ft_ctf, ft_y = _accumulators(n)
     return np.asarray(
-        mean_helpers._reconstruct_volume_eager(
+        numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf,
             ft_y,
             (n, n, n),
@@ -320,20 +314,20 @@ def test_every_k1_reconstruction_hands_the_solve_the_kernel(monkeypatch, kernel)
         calls.append(kwargs)
         return jnp.ones(8**3, dtype=jnp.complex64)
 
-    monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", solve)
-    monkeypatch.setattr(mean_helpers, "_finish_host_staged_reconstruction", lambda result, *_: result)
+    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
+    monkeypatch.setattr(numbered_reconstruction, "_finish_host_staged_reconstruction", lambda result, *_: result)
     settings = _settings(gridding_kernel=kernel)
     pair = ("a", "b")
-    mean_helpers.reconstruct_numbered_k1_halfmaps(
+    numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         pair, pair, (np.ones(5), np.ones(5)), settings,
         iteration=1, current_size=8, accumulator_volume_shape=None, relion_firstiter_cc_this_iter=False,
     )
-    mean_helpers.reconstruct_unregularized_k1_halfmaps(pair, pair, settings)
+    numbered_reconstruction.reconstruct_unregularized_k1_halfmaps(pair, pair, settings)
     final_reconstruction.reconstruct_unfiltered_halfmaps(
         pair, pair, settings=settings, current_size=8, accumulator_shape=None
     )
     final_reconstruction.reconstruct_final_halfmaps(
-        [pair, pair, pair], np.ones(5), settings=settings, current_size=8, accumulator_shape=None
+        [pair, pair], np.ones(5), settings=settings, current_size=8, accumulator_shape=None
     )
     assert [kwargs["gridding_kernel"] for kwargs in calls] == [kernel] * 9
 
@@ -360,7 +354,7 @@ def test_class_runs_refuse_separable_before_any_reconstruction():
 @pytest.mark.parametrize("kernel", ["radial", "separable"])
 def test_refinement_hands_every_k1_site_the_kernel(monkeypatch, kernel):
     """Two numbered iterations and the final all-data pass of the real controller."""
-    reconstructions = record_calls(monkeypatch, mean_helpers, "_reconstruct_volume_eager")
+    reconstructions = record_calls(monkeypatch, numbered_reconstruction, "_reconstruct_volume_eager")
     numbered_projectors = record_calls(monkeypatch, projector_preparation, "prepare_scoring_projector")
     final_projectors = record_calls(monkeypatch, finalization, "prepare_scoring_projector")
     accuracy_kernels = []
@@ -392,11 +386,11 @@ BASE_ARGS = ["--data_dir", "data", "--output", "out"]
 
 
 def test_class3d_command_refuses_separable():
-    radial = command_options.parse_refinement_args([*BASE_ARGS, "--n_classes", "4"])
-    assert command_options.resolve_consistency_options(radial).non_default() == {}
-    separable = command_options.parse_refinement_args([*BASE_ARGS, "--n_classes", "4", "--gridding_kernel", "separable"])
+    radial = refinement_arguments.parse_refinement_args([*BASE_ARGS, "--n_classes", "4"])
+    assert refinement_arguments.resolve_consistency_options(radial).non_default() == {}
+    separable = refinement_arguments.parse_refinement_args([*BASE_ARGS, "--n_classes", "4", "--gridding_kernel", "separable"])
     with pytest.raises(SystemExit, match="K=1"):
-        command_options.resolve_consistency_options(separable)
+        refinement_arguments.resolve_consistency_options(separable)
 
 
 def _stub_half(owner=None):

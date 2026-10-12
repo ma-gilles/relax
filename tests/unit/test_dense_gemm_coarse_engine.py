@@ -1,33 +1,28 @@
 """Small-grid checks for the exact joint-class dense GEMM core."""
 
+from types import SimpleNamespace
+from typing import NamedTuple
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from types import SimpleNamespace
-from typing import NamedTuple
+from helpers.float_compare import assert_matches
 
-from relax.dense.gemm_experiment import (
-    DenseGemmTileConfig,
-    make_joint_k_batch_program,
-    pad_batch,
-    pad_grid,
-)
-from relax.dense.gemm_experiment_kernels import score_tile
 from relax.dense.gemm_coarse_statistics import (
     DenseGemmStatisticsPlan,
     initial_statistics_carry,
     split_normalizer_metadata,
 )
-from relax.sparse_pass2.resident_statistics import ResidentStatisticsConfig
-from helpers.float_compare import assert_matches
+from relax.dense.gemm_kernels import DenseGemmTileConfig, make_joint_k_batch_program, pad_batch, pad_grid, score_tile
+from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("exact_bpref", [False, True])
 def test_gemm_reconstruction_operands_follow_resident_preparation(exact_bpref):
     from relax.dense.gemm_coarse_engine import _dense_reconstruction_operands
-    from relax.sparse_pass2.resident_operands import _BatchWindowInputs, _batch_window_operands
+    from relax.fine_pass.resident_operands import _batch_window_operands, _BatchWindowInputs
 
     raw = jnp.asarray([[1 + 2j, 3 + 4j, 5 + 6j, 7 + 8j],
                        [2 + 1j, 4 + 3j, 6 + 5j, 8 + 7j],
@@ -71,8 +66,9 @@ def test_gemm_reconstruction_operands_follow_resident_preparation(exact_bpref):
 @pytest.mark.parametrize("relion_order", [False, True])
 def test_complete_grid_local_slots_match_actual_resident_table(relion_order):
     from relax.dense.gemm_coarse_engine import _full_grid_local_rotation_slots
-    from relax.sparse_pass2.resident_significance import (
-        CoarseSignificanceCSR, build_resident_candidate_tables_from_csr,
+    from relax.fine_pass.resident_significance import (
+        CoarseSignificanceCSR,
+        build_resident_candidate_tables_from_csr,
     )
 
     n_coarse, n_trans = 18, 3  # whole psi rows at HEALPix level 0
@@ -107,7 +103,7 @@ def test_complete_grid_local_slots_match_actual_resident_table(relion_order):
 @pytest.mark.parametrize("configured_native", [False, True])
 def test_public_adaptive_dense_dispatch_uses_complete_grid(n_classes, symmetry, configured_native, monkeypatch):
     from relax.classification import k_class
-    from relax.sparse_pass2.engine_record import take_coarse_engine_calls
+    from relax.runtime.engine_record import take_coarse_engine_calls
 
     class Returned(NamedTuple):
         significant_counts: object = None
@@ -154,7 +150,7 @@ def test_public_adaptive_dense_dispatch_uses_complete_grid(n_classes, symmetry, 
 @pytest.mark.unit
 def test_memory_plan_bounds_preparation_and_nondivisible_rotation_count(monkeypatch):
     from relax.dense.gemm_coarse_engine import _memory_tiles
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 1 << 30)
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 1 << 30)
@@ -179,7 +175,7 @@ def test_memory_plan_bounds_preparation_and_nondivisible_rotation_count(monkeypa
 @pytest.mark.unit
 def test_memory_plan_uses_large_projection_tile_and_full_translation_when_it_fits(monkeypatch):
     from relax.dense.gemm_coarse_engine import _memory_tiles
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 16 << 30)
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 16 << 30)
@@ -206,16 +202,19 @@ def test_memory_plan_uses_large_projection_tile_and_full_translation_when_it_fit
 
 @pytest.mark.unit
 def test_statistics_callback_uses_resident_native_kernel_owner():
-    from relax.cuda import kernels as native
+    from relax.cuda import fine as cuda_fine
+    from relax.cuda import translate as cuda_translate
     from relax.dense import gemm_coarse_statistics as dense_stats
 
-    assert dense_stats.cuda_backproject is native
+    assert dense_stats.cuda_translate is cuda_translate
+    assert dense_stats.cuda_fine is cuda_fine
+    for name in ("relion_translate_score_f32", "relion_translate_sum_flat_rows_f32"):
+        assert callable(getattr(dense_stats.cuda_translate, name))
     for name in (
-        "relion_translate_sum_flat_rows_f32",
         "relion_wavg_sequential_runtime_flat_rows_triplet_f32",
         "relion_wavg_exact_atomic_flat_rows_triplet_add_f32",
     ):
-        assert callable(getattr(dense_stats.cuda_backproject, name))
+        assert callable(getattr(dense_stats.cuda_fine, name))
 
 
 @pytest.mark.unit
@@ -248,7 +247,7 @@ def test_joint_exact_normalizer_and_grouped_presums(n_classes, translation_tile,
     )
     batch = pad_batch(
         images, score_weight, initial, rec_image, rec_weight,
-        np.zeros((b, r), np.float32), translation_prior, [2, 0, 4],
+        translation_prior, [2, 0, 4],
         image_capacity=4, grid=grid, sentinel_id=5,
     )
     padded_class_prior = jnp.pad(
@@ -341,7 +340,7 @@ def test_joint_best_pose_ties_follow_canonical_rotation_translation_order():
     batch = pad_batch(
         np.ones((1, 1), np.complex64), np.ones((1, 1), np.float32), np.zeros(1, np.float32),
         np.zeros((1, 1), np.complex64), np.ones((1, 1), np.float32),
-        np.zeros((1, n_rot), np.float32), np.zeros((1, n_trans), np.float32), [0],
+        np.zeros((1, n_trans), np.float32), [0],
         image_capacity=1, grid=grid, sentinel_id=1,
     )
 
@@ -431,7 +430,7 @@ def test_gradient_presum_and_cc_winner_with_distinct_reconstruction_pixels(score
     batch = pad_batch(
         np.array([[2, 0]], np.complex64), np.ones((1, 2), np.float32), np.zeros(1, np.float32),
         np.array([[1, 2, 3]], np.complex64), np.array([[0.5, 0.75, 1.25]], np.float32),
-        np.zeros((1, 2), np.float32), np.zeros((1, 3), np.float32), [0],
+        np.zeros((1, 3), np.float32), [0],
         image_capacity=1, grid=grid, sentinel_id=1,
     )
 

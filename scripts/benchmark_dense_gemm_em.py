@@ -23,35 +23,31 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.cuda.kernels import (
-    RelionCapacityHalfTextureF32,
-    relion_coarse_diff2_projector_f32,
-    relion_coarse_diff2_rectangular_f32,
-    relion_fused_x_half_backproject_particle_grid_indexed,
-    relion_translate_score_f32,
-    relion_translate_sum_flat_rows_f32,
-)
-from relax.dense.gemm_experiment import (
-    DenseGemmBatchResult,
+from relax.cuda.backprojection import relion_fused_x_half_backproject_particle_grid_indexed
+from relax.cuda.coarse import relion_coarse_diff2_projector_f32, relion_coarse_diff2_rectangular_f32
+from relax.cuda.projector import RelionCapacityHalfTextureF32
+from relax.cuda.translate import relion_translate_score_f32, relion_translate_sum_flat_rows_f32
+from relax.dense.gemm_kernels import (
     DenseGemmTileConfig,
-    leading_tile_bytes,
-    make_batch_program,
-    native_phase_table,
-    native_relion_callbacks,
-    pad_batch,
-    pad_grid,
-)
-from relax.dense.gemm_experiment_kernels import (
     empty_normalizer_table,
     merge_normalizers,
-    normalizer_logz,
+    native_phase_table,
+    native_relion_callbacks,
+    pad_grid,
     score_model_power,
     score_tile,
     tile_normalizer,
+)
+from relax.projection.projection import relion_projector_half_to_texture_full
+from relax.relion.projector_setup import setup_relion_projector
+from scripts.lib.dense_gemm_experiment import (
+    DenseGemmBatchResult,
+    leading_tile_bytes,
+    make_batch_program,
+    normalizer_logz,
+    pad_experiment_batch,
     weighted_slices,
 )
-from relax.helpers.projection import relion_projector_half_to_texture_full
-from relax.relion.relion_projector_setup import setup_relion_projector
 
 
 def arguments():
@@ -104,8 +100,7 @@ def _source_identity(root):
         return subprocess.check_output(["git", *args], cwd=root).decode().strip()
 
     paths = (
-        "relax/dense/gemm_experiment.py",
-        "relax/dense/gemm_experiment_kernels.py",
+        "relax/dense/gemm_kernels.py",
         "scripts/benchmark_dense_gemm_em.py",
     )
     return {
@@ -146,14 +141,12 @@ def _native_identity():
 
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels
-
     paths = {"recovar": os.environ.get("RECOVAR_CUDA_LIB"), "relax": os.environ.get("RELAX_CUDA_LIB")}
     if any(path is None for path in paths.values()):
         raise RuntimeError("set both RECOVAR_CUDA_LIB and RELAX_CUDA_LIB to exclusive built libraries")
     if not cuda_backproject.cuda_available():
         raise RuntimeError("pinned RECOVAR CUDA library did not load")
-    if not kernels.custom_cuda_requested():
+    if not cuda_backproject.custom_cuda_requested():
         raise RuntimeError("pinned RELAX CUDA library was disabled")
     return {
         name: {"path": path, "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()}
@@ -170,7 +163,7 @@ def _make_case(args):
         raise ValueError("box must be an even integer of at least 8")
     if args.translations > 128:
         raise ValueError("native direct coarse scorer supports at most 128 translations")
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     volume_shape = relion_backprojector_volume_shape((n, n, n), padding_factor, current_size=2 * r_max)
     image_shape = (n, n)
@@ -234,7 +227,7 @@ def _make_case(args):
     )
     rotation_prior = rng.uniform(-0.1, 0.1, (args.images, args.rotations)).astype(np.float32)
     translation_prior = rng.uniform(-0.1, 0.1, (args.images, args.translations)).astype(np.float32)
-    batch = pad_batch(
+    batch = pad_experiment_batch(
         score_image,
         score_weight,
         initial_diff2,
@@ -589,7 +582,7 @@ def _production_program(args, backproject, translation_angles):
     pf = args.padding_factor
     native_rows = getattr(args, "engine", "production") == "native"
     if native_rows:
-        from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+        from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
         rec_native_indices = _native_reconstruction_indices(n, radius)
         rec_centered_indices = _centered_reconstruction_indices(rec_native_indices, n)
@@ -860,7 +853,7 @@ def main():
     reference, batch, grid, project, backproject, _, _, _, _ = case
     texture = None
     if args.engine == "gemm":
-        from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+        from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
         texture = RelionCapacityHalfTextureF32(reference, args.box // 4, padding_factor=args.padding_factor)
         project, backproject = native_relion_callbacks(

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from relax.sparse_pass2 import sparse_pass2_scoring as sp
-from relax.sparse_pass2 import sparse_pass2_scoring
+from relax.fine_pass import scoring as sp
+from relax.fine_pass import scoring as sparse_pass2_scoring
 
 pytestmark = pytest.mark.unit
 
@@ -43,7 +43,7 @@ def test_noise_terms_key_on_the_box_and_take_the_current_size_at_runtime():
     import jax.numpy as jnp
     import numpy as np
 
-    from relax.sparse_pass2 import sparse_pass2_scoring as scoring
+    from relax.fine_pass import scoring
 
     rng = np.random.default_rng(4)
     image_shape = (16, 16)

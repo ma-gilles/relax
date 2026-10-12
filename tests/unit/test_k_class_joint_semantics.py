@@ -3,11 +3,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
+from helpers.pass1_stats import make_pass1_stats
 
-from relax.helpers.orientation_priors import DirectionPrior
-from relax.helpers.resolution import ImageGeometry
-from relax.refinement.half_inputs import initialize_halfsets
+from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.noise_updates import NoiseModel
+from relax.sampling.orientation_priors import DirectionPrior
+from relax.steps.half_inputs import initialize_halfsets
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -25,21 +26,22 @@ from relax.classification.k_class_results import (
     _expand_subset_noise_stats,
     _zero_subset_noise_stats,
 )
-from relax.dense.score_outputs import _combine_optional_half_accumulators, _select_single_class_accumulator
-from relax.helpers.orientation_priors import (
+from relax.classification.probes import NoProbe
+from relax.fine_pass.bucket_io import relion_translation_angles_f32
+from relax.refinement.sigma_offset import update_class_sigma_offset_from_posterior
+from relax.sampling.orientation_priors import (
     class_weights_from_direction_prior,
     normalize_class_direction_prior_per_half,
 )
-from relax.helpers.oversampling import build_adaptive_pass2_grids
-from relax.helpers.types import (
+from relax.sampling.oversampling import build_adaptive_pass2_grids
+from relax.scoring.pass1_results import Pass1Result
+from relax.star.metadata import read_relion_direction_priors
+from relax.steps.score_outputs import _combine_optional_half_accumulators, _select_single_class_accumulator
+from relax.types import (
     SparsePass2Output,
     make_noise_stats,
     make_relion_stats,
 )
-from relax.refinement.sigma_offset import update_class_sigma_offset_from_posterior
-from relax.relion.relion_metadata import read_relion_direction_priors
-from relax.scoring.pass1_results import Pass1Result
-from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
 
 
 def _stats(log_evidence, best_score, pmax, n_rot=3):
@@ -101,8 +103,8 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
         coarse_calls.append(kwargs)
         return Pass1Result(None, np.ones(1, dtype=np.int32), coarse_pose, np.zeros(1, dtype=np.int32),
                 [[np.asarray([0], dtype=np.int32)] for _ in range(n_classes)],
-                {"significant_cutoff_counts": np.ones(1, dtype=np.int32),
-                 "relion_f32_sum_weight": coarse_sum, "relion_f32_max_posterior": coarse_pmax})
+                make_pass1_stats(significant_cutoff_counts=np.ones(1, dtype=np.int32),
+                                 relion_f32_sum_weight=coarse_sum, relion_f32_max_posterior=coarse_pmax))
 
     result = _assemble_result(
         class_log_evidence=np.zeros((n_classes, 1)), new_means=None,
@@ -180,9 +182,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch):
             np.zeros(1, dtype=np.int32),
             np.zeros(1, dtype=np.int32),
             [[np.asarray([0], dtype=np.int32)]],
-            {
-                "significant_cutoff_counts": np.full(1, 5, dtype=np.int32),
-            },
+            make_pass1_stats(significant_cutoff_counts=np.full(1, 5, dtype=np.int32)),
         )
 
     sparse_result = _assemble_result(
@@ -248,7 +248,7 @@ def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatc
 def test_adaptive_coarse_pass_follows_the_stable_window_policy(monkeypatch, flag, expected):
     # Pass 1 takes pass 2's quantized physical windows (on by default) so a new current
     # size reuses its class's programs; RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS=0 turns both off.
-    from relax.sparse_pass2 import resident_pass2
+    from relax.fine_pass import resident_pass2
 
     if flag is None:
         monkeypatch.delenv(resident_pass2._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
@@ -733,18 +733,17 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
             None,
             np.asarray([1, 0, 1], dtype=np.int32),
             None,
-            {
-                "class_log_evidence_per_image": np.asarray(
+            make_pass1_stats(
+                class_log_evidence_per_image=np.asarray(
                     [[0.0, 2.0, 1.0], [1.0, 0.0, 3.0]],
                     dtype=np.float64,
                 ),
-                "class_hard_assignments": np.asarray([[4, 5, 6], [7, 8, 9]], dtype=np.int32),
-                "class_best_log_score_per_image": np.asarray(
+                class_hard_assignments=np.asarray([[4, 5, 6], [7, 8, 9]], dtype=np.int32),
+                class_best_log_score_per_image=np.asarray(
                     [[10.0, 20.0, 30.0], [11.0, 21.0, 31.0]],
                     dtype=np.float32,
                 ),
-                "class_assignments": np.asarray([1, 0, 1], dtype=np.int32),
-            },
+            ),
         )
 
     monkeypatch.setattr(significance_module, "_compute_k_class_significance_batched", fake_compute_significance)
@@ -759,6 +758,7 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
         jnp.ones(1, dtype=jnp.float32),
         np.zeros((5, 3, 3), dtype=np.float32),
         np.zeros((3, 2), dtype=np.float32),
+        probe=NoProbe(),
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,
@@ -866,8 +866,8 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
 
     It takes the K=1 production arithmetic of the resident pass 2.
     """
+    from relax.fine_pass import dispatch as sparse_dispatch
     from relax.sampling import rotation_grid_size
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
 
     probe_calls = []
     sparse_calls = []
@@ -986,7 +986,7 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
 
 
 def test_sparse_firstiter_k1_adapter_forwards_exact_cc_and_spectrum_norm(monkeypatch):
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
+    from relax.fine_pass import dispatch as sparse_dispatch
 
     calls = []
 
@@ -1078,8 +1078,8 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch, d
 
     from recovar import cuda_backproject
 
+    from relax.fine_pass import dispatch as sparse_dispatch
     from relax.sampling import rotation_grid_size
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
 
     calls = []
     n_images = 2
@@ -1540,15 +1540,14 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
             None,
             np.zeros(TinyDataset.n_units, dtype=np.int32),
             None,
-            {
-                "class_log_evidence_per_image": np.zeros((1, TinyDataset.n_units)),
-                "class_hard_assignments": np.zeros((1, TinyDataset.n_units), dtype=np.int32),
-                "class_best_log_score_per_image": np.zeros(
+            make_pass1_stats(
+                class_log_evidence_per_image=np.zeros((1, TinyDataset.n_units)),
+                class_hard_assignments=np.zeros((1, TinyDataset.n_units), dtype=np.int32),
+                class_best_log_score_per_image=np.zeros(
                     (1, TinyDataset.n_units),
                     dtype=np.float32,
                 ),
-                "class_assignments": np.zeros(TinyDataset.n_units, dtype=np.int32),
-            },
+            ),
         )
 
     monkeypatch.setattr(
@@ -1572,6 +1571,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
         jnp.ones(1, dtype=jnp.float32),
         np.zeros((1, 3, 3), dtype=np.float32),
         np.zeros((1, 2), dtype=np.float32),
+        probe=NoProbe(),
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,
@@ -1607,7 +1607,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
 
 
 def test_relion_projector_compaction_rejects_post_transfer_jax_array():
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         compact_relion_projector_half_for_centered_indices,
     )
 

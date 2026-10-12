@@ -23,7 +23,7 @@ from recovar.data_io.image_backends import (
     _centered_rfft2_jax_per_image,
     _centered_rfft2_numpy,
 )
-from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+from relax.fine_pass.bucket_io import relion_translation_angles_f32
 from recovar.utils.file_hash import sha256_file
 from scripts.analyze_k1_bpref_factor_boundary import _metric, _pixel_coordinates, _translation_map
 from scripts.parse_relion_dump_dir import _read_real_2d
@@ -297,8 +297,7 @@ def _compare_particle(
     )
     production_preprocessed_real = raw_real_image[None, ...]
     if preprocess_backend == "relion_cuda":
-        from relax.cuda import kernels as em_cuda_kernels
-        from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import preprocess as cuda_preprocess
 
         def optics_value(name: str) -> float:
             return float(optics_row[name] if name in optics_row else optics_row[f"_{name}"])
@@ -316,7 +315,7 @@ def _compare_particle(
             contribution["integer_pre_shifts"][contribution_row : contribution_row + 1],
             dtype=np.int32,
         )
-        _, production_preprocessed_device = em_cuda_kernels.relion_preprocess_real_f32(
+        _, production_preprocessed_device = cuda_preprocess.relion_preprocess_real_f32(
             jnp.asarray(raw_real_image[None, ...], dtype=jnp.float32),
             jnp.asarray(normalization_factors, dtype=jnp.float32),
             jnp.asarray(integer_shifts, dtype=jnp.int32),
@@ -370,14 +369,13 @@ def _compare_particle(
     native_replay_denominator = (
         native_ctf_replay**2 * native_inverse_noise_replay / n4
     ).astype(np.float32)
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     translation_angles = jnp.asarray(
         relion_translation_angles_f32(pass2["fine_translations"], (image_size, image_size)),
         dtype=jnp.float32,
     )
-    cuda_translated_all = em_cuda_kernels.relion_translate_score_f32(
+    cuda_translated_all = cuda_translate.relion_translate_score_f32(
         jnp.asarray(rec_processed[None, :], dtype=jnp.complex64),
         translation_angles,
         jnp.asarray(centered, dtype=jnp.int32),

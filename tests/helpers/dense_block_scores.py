@@ -2,9 +2,9 @@
 
 The dense EM engine that ran these per rotation block was removed on 2026-10-03.
 Production keeps their shared GEMM owner
-(:func:`relax.scoring.scoring._e_step_block_score_components`) and the windowed
+(:func:`relax.scoring.coarse_kernels._e_step_block_score_components`) and the windowed
 Gaussian scorer the coarse GEMM path reuses
-(:func:`relax.scoring.scoring._e_step_block_scores_windowed`); the residual and
+(:func:`relax.scoring.coarse_kernels._e_step_block_scores_windowed`); the residual and
 normalized-CC wrappers and the per-block dispatcher below are test-only.
 """
 
@@ -13,8 +13,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.scoring.scoring import _e_step_block_score_components, _e_step_block_scores_windowed
+from relax.numerics.precision import DensePrecisionPolicy
+from relax.scoring.coarse_kernels import _e_step_block_score_components, _e_step_block_scores_windowed
 
 
 def _score_rotation_block(
@@ -37,10 +37,9 @@ def _score_rotation_block(
 
     proj_score = window_spec.score_values(proj_half)
     proj_abs2_score = window_spec.score_values(proj_abs2_half)
-    proj_score, proj_abs2_score = precision_policy.cast_projection_scores(
-        proj_score,
-        proj_abs2_score,
-    )
+    if not precision_policy.use_float64_scoring:
+        proj_score = proj_score.astype(jnp.complex64)
+        proj_abs2_score = proj_abs2_score.astype(jnp.float32)
     weights = window_spec.score_values(half_weights)
     proj_weighted = proj_score * weights
     proj_abs2_weighted = proj_abs2_score * weights

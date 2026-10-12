@@ -2,7 +2,7 @@
  * Optics-group CTFs and aberrations through RELION's ObservationModel: test oracles.
  *
  * relax production does not call these (nor any RELION code): its CTF rows are
- * relax.relion.relion_ctf.relion_ctf_fftw_half and its aberration phases
+ * relax.relion.ctf.relion_ctf_fftw_half and its aberration phases
  * relax.relion.optics_aberrations; these functions are what the unit tests
  * compare them with.
  *

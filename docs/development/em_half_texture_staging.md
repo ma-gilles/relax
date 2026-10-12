@@ -1,8 +1,8 @@
 # EM half-volume texture staging
 
 The projection route in
-[`_project_relion_projector_texture`](../../relax/helpers/projection.py)
-reuses [`project_relion_half_capacity`](../../relax/cuda/kernels.py) without
+[`_project_relion_projector_texture`](../../relax/projection/projection.py)
+reuses [`project_relion_half_capacity`](../../relax/cuda/projector.py) without
 changing its native kernel. The kernel reads the supplied half-volume directly
 instead of constructing a
 full cubic JAX buffer and then extracting its positive-frequency half again.
@@ -37,11 +37,11 @@ full box and does not establish full-size memory or trajectory qualification.
 A resident local pass projects one fixed slab per half from every chunk, and
 `project_relion_half_capacity` stages its texture (fill kernel, two
 `cudaMalloc3DArray`, two 3-D copies), projects, synchronizes the stream and frees
-the texture on each call. [`RelionCapacityHalfTextureF32`](../../relax/cuda/kernels.py)
+the texture on each call. [`RelionCapacityHalfTextureF32`](../../relax/cuda/projector.py)
 stages the same texture once with the same fill kernel and launches the same
 `project_texture_kernel<true, true>` per call without a synchronization; its
 `close()` waits for the last projection. The local pass opens one per half where
-[`relion_capacity_texture_serves`](../../relax/helpers/projection.py) says the
+[`relion_capacity_texture_serves`](../../relax/projection/projection.py) says the
 half-storage kernel is the projection's, and the projection helpers refuse a
 texture they cannot use. The GPU tests in
 [`test_relion_projector_capacity.py`](../../tests/unit/test_relion_projector_capacity.py)

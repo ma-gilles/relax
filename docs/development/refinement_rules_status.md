@@ -15,10 +15,10 @@ reason; the sections after this one hold the detail.
 | 1 numbers, 2 interfaces | Met: every move was fingerprint-identical (results, files, checkpoints, trace) and passed the GPU tiers; only logger names and accepted new option leaves differ. Archive keys are unchanged (`RefinementResult.archive_fields`). |
 | 3 lifetimes | Met: the controller tests check required lifetimes (`frame_holds`, `keep_operands=False`). Releases that freed nothing are gone (2026-10-08); the M-step records are dropped in the end-of-iteration block, where their fields were. `RefinementResult` keeps the run's `RefinementHistory` (host curves, kilobytes). |
 | 4 JAX | Met (audit below). Exceptions: the donating normalisation executable, the box-scale host staging and the end-of-iteration sync. |
-| 5 decide once | Met for flags and the controller's diagnostics (`command_options` resolvers, the `from_environ` constructors the command calls). The controller takes the command's options (no `RefinementOptions()` default inside) and its scoring precision is `options.precision` (owner review, 2026-10-07). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2), among them the engines' reads of the dense precision. |
+| 5 decide once | Met for flags and the controller's diagnostics (`relax/commands/refinement_arguments.py` resolvers, the `from_environ` constructors the command calls). The controller takes the command's options (no `RefinementOptions()` default inside) and its scoring precision is `options.precision` (owner review, 2026-10-07). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2), among them the engines' reads of the dense precision. |
 | 6 contracts | Met: the controller's 24 mode tests select contract functions, mode-only steps or refusals (owner, 2026-10-04 and 2026-10-05); the final scoring loop and `DenseVariantPolicy.k_class_enabled` are variants. |
 | 7 one owner | Met; no known duplicate. Exception: the pixel size is kept as the input scalar and as `ReconstructionSettings.voxel_size` (a float) on purpose (rule 1). |
-| 8 config/state/results | Met: option records are frozen; the controller and the final pass return `RefinementResult`. Exception: the prior's per-shell outputs come from `relax.reconstruction.regularization_relion` as a dict (`return_details=True`); that module owns the type. |
+| 8 config/state/results | Met: option records are frozen; the controller and the final pass return `RefinementResult`. Exception: the prior's per-shell outputs come from `relax.reconstruction.regularization` as a dict (`return_details=True`); that module owns the type. |
 | 9 transitions | Met (audit below). The expected-accuracy inputs, which steer sampling, are `options.expected_accuracy`, no longer under `debug`; each numbered half's per_half and significance writes are `finish_numbered_half`, a module-level step with explicit inputs (owner review, 2026-10-07). Exceptions: the local-search profile sink and the opt-in pass-2 diagnostic variants. |
 | 10 signatures | Met: two groupings; every remaining function with ten or more parameters is accepted with its reason (table below). The two sentences added on 2026-10-07 (no record or option group unpacked into locals; no closures over controller state as callbacks) are met by `k1_maximization` (reads `SplitHalfPrior` where used), the two controllers (no option aliases) and the numbered halves (`NumberedHalfInputs`, `finish_numbered_half`). The M-step results are kept as records (mstep). The input source receives the scoring state as values (`ports.ScoringState`, `ScoringArrays`; deep2 c3), not thunks. Open against the 2026-10-08 extension: `dump_debug=partial(observer.noise_updated, ...)` (an observer callback handed to the noise update), and the positional unpacks of the state-swap 7-tuple and `join_half_accumulators_at_low_resolution`'s five values. |
 | 11 layers | Met (audit below). Exceptions: `tomo_particles` (shared by engines and other workflows) and 62 private-name imports from `relax.helpers`, `relax.diagnostics` and `relax.relion`, until those modules are refactored. |
@@ -41,8 +41,8 @@ reason; the sections after this one hold the detail.
 
 1. **The command still assembles three option records from start-up results (rules 5, 7).** The
    schedule, adaptive, batching, overlap, local-search, k_class and debug records are resolved in
-   `command_options` (`resolve_*`, field tests in `tests/unit/test_option_resolvers.py`). The parity, replay
-   and checkpoint records stay in `full_refinement.main`: their fields are start-up results (half sets,
+   `refinement_arguments` (`resolve_*`, field tests in `tests/unit/test_option_resolvers.py`). The parity, replay
+   and checkpoint records stay in `refinement_run.main`: their fields are start-up results (half sets,
    references, noise, poses, replay inputs, follower topology, the frozen boundary), not flags, so a
    resolver would be a function of ten or more of them. `main` is 1,020 lines.
 2. **Environment reads below the boundary (rule 5).** The controller's remaining execution switches (the JAX
@@ -52,15 +52,14 @@ reason; the sections after this one hold the detail.
    the run are observers (`relax.refinement.ports.RunObserver`, rule 15), built at the command from flags
    and the environment (`relax.diagnostics.observers`): the intermediates, the parity capture and timings,
    the BPref accumulator captures and the noise-update terms. Still read where used, each with its reason:
-   - `projector_preparation.prepare_scoring_projector`: `RELAX_RELION_PROJECTOR_CACHE_DIR` and
-     `RELAX_RELION_PROJECTOR_DUMP_DIR`; `relax/helpers/expected_accuracy.py` calls it too, outside this
-     package.
+   - `projector_preparation.prepare_scoring_projector` (`relax/steps` since layout S8b): `RELAX_RELION_PROJECTOR_CACHE_DIR`
+     and `RELAX_RELION_PROJECTOR_DUMP_DIR`; `relax/steps/expected_accuracy.py` calls it too.
    - `local_search_iteration`: the x-half batch guard; `half_scoring`: hides the local engine's dump
      variables during the denominator pass; `expectation`: whether a BPref dump of the engines is armed. The
      variables belong to the engine packages, which read them.
    - `expectation_batches`: `RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS` (owned by
-     `relax.helpers.dtype_policy`); `particle_loading`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
-     `relax.dense.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
+     `relax.numerics.precision`); `commands.refinement_particles`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
+     `relax.steps.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
      and the RECOVAR native softmask switch, which is how the setting reaches RECOVAR.
    - The scoring and reconstruction route variants (x-half M-step, local adaptive pass-2 support, the
      support-width convergence gate, the reconstruction's stable windows and host inverse FFT) are one
@@ -138,11 +137,11 @@ Not yet through the ports, each still read where it was:
 - Port-only parameters still threaded through the algorithm (REVIEW_DEEP #12; None or False natively):
   `NumberedState.prior_translations` -> `score_numbered_half(replay_prior_translations=)` ->
   `LocalPriorSpec.replay_prior_translations`; `source.sealed_sampling_state` -> `relion_direction_log_priors`,
-  `prepare_final_half` and `iteration_trial_grid(sealed_grid=)`; `_validate_bpref_particle_order_scope` reads
-  the replay's fields. `FinalSamplingSettings.sampling_star`/`sampling_star_source` (set only by the replay
+  `prepare_final_half` and `iteration_trial_grid(sealed_grid=)`; `setup_checks._validate_bpref_particle_order_scope`
+  reads the replay's fields. `FinalSamplingSettings.sampling_star`/`sampling_star_source` (set only by the replay
   source) reach the archive through `RefinementResult`.
 - The projector disk cache (`RELAX_RELION_PROJECTOR_CACHE_DIR`, deep2 M S43) is read in
-  `prepare_scoring_projector`, which `relax/helpers/expected_accuracy.py` also calls.
+  `prepare_scoring_projector` (`relax/steps/projector_preparation.py`), which `relax/steps/expected_accuracy.py` also calls.
 - `parity.use_per_half_mean_variance` (deep2 O S2, checked): set only on a frozen boundary's fixed arm, it is a
   variant of the algorithm (each half scores against its own tau2), not a replaced input; it stays a run option.
 
@@ -159,7 +158,7 @@ accepted, with the reason:
 | `result_files.build_archive_metadata` | 20 | One field each of many owners, written once into the archive; the replay provenance keys come as one dict (`relax/parity/archive_provenance.py`, deep2 c3). |
 | `expectation.score_numbered_half` | 17 | Takes `NumberedHalfInputs`, the phase and the options; the rest are the iteration's shared operands, bound once by the controller. |
 | `expectation_batches.prepare_half_batches` | 19 | Reads three fields of `RelionParityOptions` and two of `DenseVariantPolicy`: fields of a large object (rule 10). |
-| `mean_helpers.estimate_class_priors` | 19 | Array operands and iteration scalars; `reference_model` would add a mutable owner. |
+| `priors.estimate_class_priors` | 19 | Array operands and iteration scalars; `reference_model` would add a mutable owner. |
 | `expectation.prepare_numbered_expectation` | 18 | No record covers more than two of its inputs. |
 | `mean_helpers._reconstruct_volume_eager` | 18 | Six fields equal `ReconstructionSettings`'s at the production calls; those calls go through `ReconstructionSettings.reconstruct`, which forwards them. The solver keeps its raw-geometry signature for the 21 tests and the scripts that call it directly. |
 | `convergence.update_iteration_convergence` | 16 | Separate inputs of one update; the controller passes the K=1/Class3D differences as values (`sampling_decision_now`, `class_change_fraction`) and applies the K=1 follower-counter reset itself. |
@@ -169,8 +168,8 @@ accepted, with the reason:
 | `expectation.prepare_final_half` | 13 | Operands plus settings. |
 | `optics_shapes.shape_class_engine_inputs` | 13 | No production caller yet; kept for VDAM's multi-shape loop (`em_status.md`). |
 | `local_sampling.prepare_numbered_local_sampling` | 11 | `CoarseGrids` would cover two fields. |
-| `mean_helpers.join_half_accumulators_at_low_resolution` | 11 | Three fields equal `ReconstructionSettings`'s, but K=1 passes the raw pixel-size scalar the settings convert (rule 1). |
-| `mean_helpers.estimate_class_prior`, `estimate_split_half_prior` | 10-11 | Already take `ReconstructionSettings`; the rest are operands. |
+| `priors.join_half_accumulators_at_low_resolution` | 11 | Three fields equal `ReconstructionSettings`'s, but K=1 passes the raw pixel-size scalar the settings convert (rule 1). |
+| `priors.estimate_class_prior`, `estimate_split_half_prior` | 10-11 | Already take `ReconstructionSettings`; the rest are operands. |
 | `optics_shapes.prepare_optics` | 11 | `HalfSet` would cover two fields. |
 | `TomoHalf.__init__`, `RunFileWriter.__init__`, `BatchPlanner.__call__` | 10-11 | A record's own constructor; writer policy beside `RunSettings`; a per-pass query with defaults. |
 
@@ -193,7 +192,7 @@ accepted, with the reason:
 - **Rule 11: met, with exceptions.** Fixed: the controller no longer imports the command
   (`configure_half_image_preprocessing` moved to `half_inputs`); `InitialSampling` and `RestartProvenance`
   moved to `refinement_options`; `relax.parity.relion_replay` imports two now-public `half_inputs`
-  helpers. Accepted until those packages are refactored: `relax/refinement/tomo_particles.py` (numpy only)
+  helpers. Accepted until those packages are refactored: `relax/sampling/tomo_particles.py` (numpy only)
   is imported by two engines and three other workflows, and its home moves with them; 62 imports of
   private names from `relax.helpers`, `relax.diagnostics` and `relax.relion` stay until those modules make
   them public.

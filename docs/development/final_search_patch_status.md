@@ -460,7 +460,7 @@ occurred; inspect the earlier uncertain submission's remote state before retryin
 ## Current startup pose source ownership
 
 Startup pose selection, loading, corrections and provenance now have one
-operation in `relion/input_poses.py`. The command retains source setup order and
+operation in `star/input_poses.py`. The command retains source setup order and
 visible replay/frozen-correction construction. Reports reuse provenance produced
 with the selected data. See the [complete caller, result types and implementation](final_local_sampling_patch_review.md#startup-pose-source-ownership).
 

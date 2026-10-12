@@ -29,8 +29,8 @@ import jax.numpy as jnp
 from test_resident_scoring import N_FINE_TRANS, _build_case
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE
 
-from relax.sparse_pass2.resident_candidates import expand_mask_rows, materialize_chunk
-from relax.sparse_pass2.resident_scoring import (
+from relax.fine_pass.resident_candidates import expand_mask_rows, materialize_chunk
+from relax.fine_pass.resident_scoring import (
     live_projection_block_rows,
     project_resident_live_rows,
     project_resident_rows,
@@ -300,7 +300,7 @@ def test_live_row_projection_matches_whole_chunk_projection(monkeypatch, n_valid
 
     from helpers.em_arrays import _hermitian_volume
 
-    import relax.sparse_pass2.resident_scoring as resident_scoring
+    import relax.fine_pass.resident_scoring as resident_scoring
 
     capacity = 16
     rng = np.random.default_rng(20260927)
@@ -374,7 +374,7 @@ def _relion_half_case(seed=11):
 
 
 def _window_union_projection_matches(texture_interp: bool, crop: int = 16):
-    from relax.sparse_pass2.sparse_pass2_projection_blocks import projection_window_union
+    from relax.fine_pass.projection_blocks import projection_window_union
 
     half, rotations, r_max, pf = _relion_half_case()
     image_shape = (16, 16)

@@ -10,6 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.full_row_tile import accumulate_full_row_tile
 from scipy.spatial.transform import Rotation
 from test_full_fine_streaming import IMAGE_SHAPE, N_HALF, _half_volume, _TinyData
 
@@ -17,7 +18,6 @@ from relax import sampling
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.full_row_stream import (
     _normalize,
-    accumulate_full_row_tile,
     full_row_tile_embeddings,
     prepare_full_row_stream,
 )

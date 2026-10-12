@@ -73,8 +73,8 @@ def _reserve_refinement_projector_memory(*, argv=None, orig_argv=None) -> str | 
 
     if not any(_cli_command_requested(command, argv, orig_argv) for command in ("refine", "class3d")):
         return None
-    from relax.helpers import xla_memory_reserve as reserve
     from relax.relion.geometry import PROJECTION_PADDING_FACTOR
+    from relax.runtime import xla_memory_reserve as reserve
 
     argv = sys.argv if argv is None else argv
     record = reserve.reserve_for_refinement(argv[1:], padding_factor=PROJECTION_PADDING_FACTOR)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.local import local_layout
+from relax.local_search import layout
 from relax.sampling import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
@@ -34,6 +34,6 @@ def test_direction_support_at_the_cone_edge_uses_double_prior_angles():
     direction = np.column_stack([np.sin(tilt) * np.cos(rot), np.sin(tilt) * np.sin(rot), np.cos(tilt)])
     assert np.all(np.degrees(np.arccos(direction @ d0)) < 3 * sigma_deg)
 
-    offsets, _, ids, _ = local_layout._build_factorized_local_entries(prior, order, np.deg2rad(sigma_deg), 0.0, meta)
+    offsets, _, ids, _ = layout._build_factorized_local_entries(prior, order, np.deg2rad(sigma_deg), 0.0, meta)
     kept = [target in set((ids[offsets[i] : offsets[i + 1]] % n_pixels).tolist()) for i in range(len(prior))]
     assert all(kept)

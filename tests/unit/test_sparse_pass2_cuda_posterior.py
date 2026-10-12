@@ -4,7 +4,8 @@ import os
 import numpy as np
 import pytest
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import library
+from relax.cuda import posterior as cuda_posterior
 
 pytestmark = pytest.mark.unit
 
@@ -110,7 +111,7 @@ def make_scores(shape, seed, *, all_inf_row=False, nan=False):
 
 
 def test_row_state_bytes_match_header():
-    header = os.path.join(os.path.dirname(em_cuda_kernels.__file__), "sparse_pass2_posterior.cuh")
+    header = os.path.join(os.path.dirname(cuda_posterior.__file__), "sparse_pass2_posterior.cuh")
     body = open(header).read().split("struct RowState", 1)[1].split("};", 1)[0]
     sizes = {"float": 4, "double": 8, "int": 4}
     fields = [line.split()[0] for line in body.splitlines() if line.strip() and line.strip()[0] not in "{/"]
@@ -119,11 +120,11 @@ def test_row_state_bytes_match_header():
         size = sizes[kind]
         total = (total + size - 1) // size * size + size
     total = (total + 7) // 8 * 8
-    assert total == em_cuda_kernels._SPARSE_PASS2_ROW_STATE_BYTES
+    assert total == cuda_posterior._SPARSE_PASS2_ROW_STATE_BYTES
 
 
 def _gpu_library_has(symbol):
-    em_cuda_kernels._ensure_ffi()
-    return hasattr(em_cuda_kernels._get_lib(), symbol)
+    library.ensure_ffi()
+    return hasattr(library.get_lib(), symbol)
 
 

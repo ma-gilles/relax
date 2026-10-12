@@ -21,9 +21,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.healpix_sampling import euler_angles_to_matrix
 from relax.relion.macros import relion_round
-from relax.symmetry import is_identity_symmetry, relion_symmetry_operators
+from relax.sampling.healpix import euler_angles_to_matrix
+from relax.sampling.symmetry import is_identity_symmetry, relion_symmetry_operators
 
 # align_symmetry.cpp defaults: --box_size 64, --nr_uniform 400, --local_search_range 2, --local_search_step 2,
 # --pad 2, trilinear interpolation, --r_min_nn 10 (unused by trilinear rotation).

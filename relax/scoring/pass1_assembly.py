@@ -3,19 +3,15 @@
 import logging
 import time
 
-from relax.diagnostics.coarse_score_diagnostics import build_coarse_significance_support_audit
-from relax.helpers.env_flags import parse_env_strict_flag
-from relax.scoring.pass1_results import OutputPlan, Pass1Outputs
-from relax.sparse_pass2.resident_significance import (
+from relax.fine_pass.resident_significance import (
     DeviceCompactedSignificantSamples,
     build_coarse_significance_csr,
     host_support_rows,
 )
+from relax.scoring.pass1_results import OutputPlan, Pass1Outputs, Pass1Stats
+from relax.scoring.probes import Pass1Probe
 
 logger = logging.getLogger(__name__)
-
-_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV = "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT"
-_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV = "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS"
 
 
 def log_batch_timing(batch_starts, loop_start, n_images):
@@ -102,92 +98,56 @@ def significant_samples_after_loop(outputs: Pass1Outputs, plan: OutputPlan):
             outputs.device_significance_starts,
         ):
             per_batch[class_index].clear()
-        samples[class_index] = DeviceCompactedSignificantSamples(
-            host_support_rows(coarse_significance_csr),
-            csr=coarse_significance_csr,
-        )
+        samples[class_index] = DeviceCompactedSignificantSamples(csr=coarse_significance_csr)
         logger.info(
             "Coarse significance compacted on the device (class %d): %d images, %d ids "
             "(%.2f MB) instead of a %.2f GB support mask",
             class_index,
             plan.n_images,
-            int(coarse_significance_csr.ids.size),
-            coarse_significance_csr.ids.nbytes / 1e6,
+            coarse_significance_csr.n_ids,
+            coarse_significance_csr.nbytes / 1e6,
             float(plan.n_images) * float(plan.n_rot) * float(plan.n_trans) / 1e9,
         )
     return samples
 
 
-def _coarse_significance_support_audit_enabled(*, default: bool = False) -> bool:
-    """Resolve exact, diagnostic-only coarse-support hashing."""
-
-    return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV, default=default)
-
-
-def _coarse_significance_support_audit_ids_enabled() -> bool:
-    """Whether a support audit also retains its exact selected IDs."""
-    return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV)
-
-
-def build_full_stats(
+def build_stats(
     outputs: Pass1Outputs,
     significant_sample_indices,
     plan: OutputPlan,
     *,
     executed_backend: str,
-    gaussian_report: dict,
-    tree_report: dict,
-) -> dict:
-    """The pass's ``full_stats``: its per-image statistics, and the reports of the route it ran.
+    probe: Pass1Probe,
+) -> Pass1Stats:
+    """The pass's :class:`Pass1Stats`: its per-image statistics.
 
-    ``executed_backend`` names the scorer that ran. ``gaussian_report`` and ``tree_report`` are the entries the
-    Gaussian route and the tree rescore add (empty when the pass did not run them). The class best and runner-up
-    statistics are present when the plan asked for them. The support audit (an environment diagnostic) adds the
-    hash of the supports, and refuses a pass that collected none.
+    ``executed_backend`` names the scorer that ran. The class best and runner-up statistics are present when the plan
+    asked for them. ``probe`` gives the support audit the statistics report (:meth:`Pass1Probe.support_audit`).
     """
 
-    full_stats = {
-        "normalization_log_z": outputs.normalization_log_z,
-        "normalization_log_evidence": outputs.normalization_log_evidence,
-        "log_evidence_per_image": outputs.log_evidence,
-        "best_log_score_per_image": outputs.best_log_score,
-        "max_posterior_per_image": outputs.max_posterior,
-        "class_log_evidence_per_image": outputs.class_log_evidence,
-        "class_assignments": outputs.class_assignment,
+    support_audit = probe.support_audit(significant_sample_indices, samples_per_class=plan.n_rot * plan.n_trans)
+    return Pass1Stats(
+        normalization_log_z=outputs.normalization_log_z,
+        normalization_log_evidence=outputs.normalization_log_evidence,
+        log_evidence_per_image=outputs.log_evidence,
+        best_log_score_per_image=outputs.best_log_score,
+        max_posterior_per_image=outputs.max_posterior,
+        class_log_evidence_per_image=outputs.class_log_evidence,
         # RELION serializes the cutoff rank before inclusive threshold ties
         # expand the pass-2/M-step support represented by ``n_sig_all``.
-        "significant_cutoff_counts": outputs.cutoff_count_all,
-        "executed_coarse_backend": executed_backend,
-    }
-    full_stats.update(gaussian_report)
-    if _coarse_significance_support_audit_enabled():
-        if significant_sample_indices is None:
-            raise RuntimeError(
-                f"{_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV}=1 requires "
-                "collect_significance=True",
-            )
-        full_stats["coarse_significance_support_audit"] = (
-            build_coarse_significance_support_audit(
-                significant_sample_indices,
-                samples_per_class=plan.n_rot * plan.n_trans,
-                include_ids=_coarse_significance_support_audit_ids_enabled(),
-            )
-        )
-    if outputs.relion_f32_sum_weight is not None:
+        significant_cutoff_counts=outputs.cutoff_count_all,
+        executed_coarse_backend=executed_backend,
         # RELION's oversampling-zero second pass deliberately reuses this
         # coarse, maximum-shifted float32 denominator numerically.  It is not
         # interchangeable with a log-evidence value because the fine pass
         # independently shifts its own maximum to 50 before division.
-        full_stats["relion_f32_sum_weight"] = outputs.relion_f32_sum_weight
-    if outputs.relion_f32_max_posterior is not None:
-        full_stats["relion_f32_max_posterior"] = outputs.relion_f32_max_posterior
-    if plan.return_class_best:
-        full_stats["class_best_log_score_per_image"] = outputs.class_best_log_score
-        full_stats["class_best_offset_free_log_score_per_image"] = outputs.class_best_offset_free_log_score
-        full_stats["class_hard_assignments"] = outputs.class_hard_assignment
-    if plan.return_class_second:
-        full_stats["class_second_best_log_score_per_image"] = outputs.class_second_best_log_score
-        full_stats["class_second_hard_assignments"] = outputs.class_second_hard_assignment
-        full_stats["class_second_best_offset_free_log_score_per_image"] = outputs.class_second_best_offset_free_log_score
-    full_stats.update(tree_report)
-    return full_stats
+        relion_f32_sum_weight=outputs.relion_f32_sum_weight,
+        relion_f32_max_posterior=outputs.relion_f32_max_posterior,
+        class_best_log_score_per_image=outputs.class_best_log_score,
+        class_best_offset_free_log_score_per_image=outputs.class_best_offset_free_log_score,
+        class_hard_assignments=outputs.class_hard_assignment,
+        class_second_best_log_score_per_image=outputs.class_second_best_log_score,
+        class_second_best_offset_free_log_score_per_image=outputs.class_second_best_offset_free_log_score,
+        class_second_hard_assignments=outputs.class_second_hard_assignment,
+        coarse_significance_support_audit=support_audit,
+    )

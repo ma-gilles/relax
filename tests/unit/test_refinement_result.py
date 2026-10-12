@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 from helpers.refinement_results import numbered_metadata
 
-from relax.helpers.iteration_history import RefinementHistory
+from relax.refinement.follower_scale import FollowerScaleOutputs
+from relax.refinement.iteration_history import RefinementHistory
 from relax.refinement.refinement_result import (
     FinalPassResult,
     ModelMaps,
@@ -19,7 +20,6 @@ from relax.refinement.refinement_result import (
     RefinementResult,
     ReplayTelemetry,
 )
-from relax.relion.relion_worker_scale import FollowerScaleOutputs
 
 pytestmark = pytest.mark.unit
 

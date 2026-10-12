@@ -170,7 +170,7 @@ def build_guard_commands(
                     "--ledger-root", str(ledger_root), "--require-case",
                     "k1_replay", "k1_local_replay", "k1_adaptive_replay", "kclass_replay", "k1_coldstart", "k1_os1_coldstart",
                     "k1_multioptics_coldstart", "k1_gui60_coldstart", "k1_perturbreplay",
-                    "kclass_coldstart", "kclass_strict", "kclass_strict_os1",
+                    "kclass_coldstart", "kclass_local_cc", "kclass_strict", "kclass_strict_os1",
                 ),
                 backend="gpu",
             )

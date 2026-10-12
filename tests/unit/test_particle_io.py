@@ -19,15 +19,15 @@ from recovar.data_io import staging
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import write_star
 
-from relax.helpers import particle_io
-from relax.helpers.particle_io import (
+from relax.commands import refinement_particles
+from relax.io import particle_io
+from relax.io.particle_io import (
     ParticleReadPolicy,
     add_particle_read_arguments,
     assert_reads_from_scratch,
     image_star,
     prepare_particle_reads,
 )
-from relax.refinement import particle_loading
 
 pytestmark = pytest.mark.unit
 
@@ -146,7 +146,7 @@ def test_command_particle_loading_preserves_images_identity_and_precision(
         return load_dataset(*args, **kwargs)
 
     monkeypatch.setattr(cryoem_dataset, "load_dataset", recorded_load)
-    loaded = particle_loading.load_particle_inputs(_loading_args(
+    loaded = refinement_particles.load_particle_inputs(_loading_args(
         tmp_path, preread_images=mode == "preread",
         scratch_dir=str(scratch_dir) if mode == "scratch" else "",
     ), relion_half_sets_from_input=False, image_fourier_backend="host_numpy")
@@ -182,7 +182,7 @@ def test_command_particle_loading_keeps_shape_rows_and_group_mask_geometry(tmp_p
         mrc.set_data(cropped)
     starfile.write(tables, star_path, overwrite=True)
 
-    loaded = particle_loading.load_particle_inputs(
+    loaded = refinement_particles.load_particle_inputs(
         _loading_args(tmp_path), relion_half_sets_from_input=False, image_fourier_backend="host_numpy"
     )
     dataset = loaded.dataset
@@ -223,20 +223,20 @@ def test_command_refuses_unsupported_input_state_before_loading(
     from recovar.data_io import cryoem_dataset
 
     monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1" if unsupported == "float64" else "0")
-    monkeypatch.setattr(particle_loading, "is_relion5_2d_stack_star", lambda _: format_name == "subtomogram")
-    monkeypatch.setattr(particle_loading, "optics_shape_class_rows", lambda _: [np.array([0]), np.array([1])])
+    monkeypatch.setattr(refinement_particles, "is_relion5_2d_stack_star", lambda _: format_name == "subtomogram")
+    monkeypatch.setattr(refinement_particles, "optics_shape_class_rows", lambda _: [np.array([0]), np.array([1])])
 
     def unexpected_load(*args, **kwargs):
         raise AssertionError("unsupported input reached image loading")
 
     monkeypatch.setattr(cryoem_dataset, "load_dataset", unexpected_load)
-    monkeypatch.setattr(particle_loading, "load_tomo_dataset", unexpected_load)
+    monkeypatch.setattr(refinement_particles, "load_tomo_dataset", unexpected_load)
     args = _loading_args(
         tmp_path, init_noise_from_npz="noise.npz" if unsupported == "loaded_noise" else None,
         relion_init_dir="seeded" if unsupported == "initial_state" else None,
     )
     with pytest.raises(SystemExit, match="subtomogram particles|optics groups on several image shapes"):
-        particle_loading.load_particle_inputs(
+        refinement_particles.load_particle_inputs(
             args,
             relion_half_sets_from_input=False,
             image_fourier_backend="host_numpy",

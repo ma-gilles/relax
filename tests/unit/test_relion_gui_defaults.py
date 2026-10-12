@@ -4,13 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from relax.refinement import command_options, particle_loading
+from relax.commands import refinement_arguments, refinement_particles
+from relax.refinement.refinement_options import RandomSeed
 
 pytestmark = pytest.mark.unit
 
 
 def _parsed(*tokens):
-    return command_options.parse_refinement_args(["--data_dir", "data", "--output", "out", *tokens])
+    return refinement_arguments.parse_refinement_args(["--data_dir", "data", "--output", "out", *tokens])
 
 
 def test_refine3d_and_class3d_gui_defaults():
@@ -37,7 +38,7 @@ def test_input_and_output_are_required(missing, capsys):
     tokens = {"--data_dir": "data", "--output": "out"}
     tokens.pop(missing)
     with pytest.raises(SystemExit):
-        command_options.parse_refinement_args([item for pair in tokens.items() for item in pair])
+        refinement_arguments.parse_refinement_args([item for pair in tokens.items() for item in pair])
     assert missing in capsys.readouterr().err
 
 
@@ -58,7 +59,7 @@ def test_job_type_defaults(n_classes, frozen, expected):
         apply_initial_lowpass=None,
         frozen_boundary_dir=frozen,
     )
-    job = command_options.resolve_job_defaults(args)
+    job = refinement_arguments.resolve_job_defaults(args)
     assert (job.max_iter, job.image_fourier_backend, job.apply_initial_lowpass) == expected
 
 
@@ -66,21 +67,21 @@ def test_explicit_values_are_kept():
     args = SimpleNamespace(
         n_classes=1, max_iter=3, image_fourier_backend="host_numpy", apply_initial_lowpass=False, frozen_boundary_dir=None
     )
-    job = command_options.resolve_job_defaults(args)
+    job = refinement_arguments.resolve_job_defaults(args)
     assert (job.max_iter, job.image_fourier_backend, job.apply_initial_lowpass) == (3, "host_numpy", False)
 
 
 def test_seed_defaults_to_the_time_like_relion(monkeypatch):
-    monkeypatch.setattr(command_options.time, "time", lambda: 1234567890.7)
+    monkeypatch.setattr(refinement_arguments.time, "time", lambda: 1234567890.7)
     args = SimpleNamespace(
         seed=None, continue_optimiser_star=None, relion_optimiser=None, relion_init_dir=None,
         perturb_replay_relion_dir=None,
     )
-    assert command_options.resolve_seed(args, None, sealed=False) == command_options.RandomSeed(
+    assert refinement_arguments.resolve_seed(args, None, sealed=False) == RandomSeed(
         1234567890, "RELION default -1: the time"
     )
     args.seed = 7
-    assert command_options.resolve_seed(args, None, sealed=False) == command_options.RandomSeed(7, "explicit CLI")
+    assert refinement_arguments.resolve_seed(args, None, sealed=False) == RandomSeed(7, "explicit CLI")
 
 
 def test_mask_diameter_falls_back_to_the_gui_default(monkeypatch):
@@ -91,8 +92,8 @@ def test_mask_diameter_falls_back_to_the_gui_default(monkeypatch):
             applied.update(kwargs)
 
     ds = SimpleNamespace(image_source=SimpleNamespace(backend=Backend()), voxel_size=2.0)
-    monkeypatch.setattr(command_options, "find_relion_optimiser_star", lambda args, **_kwargs: None)
-    params = particle_loading._apply_relion_image_mask(
+    monkeypatch.setattr(refinement_arguments, "find_relion_optimiser_star", lambda args, **_kwargs: None)
+    params = refinement_particles._apply_relion_image_mask(
         ds, SimpleNamespace(particle_diameter_ang=None, width_mask_edge_px=5.0), relion_half_sets_from_input=False
     )
     assert params == (200.0, 5.0)

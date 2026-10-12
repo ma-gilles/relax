@@ -1,6 +1,6 @@
 # Resident pass 2: rows, segments and classes
 
-The device-resident sparse pass 2 ([`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py))
+The device-resident sparse pass 2 ([`resident_pass2.py`](../../relax/fine_pass/resident_pass2.py))
 is being generalized from one class and one image per posterior to RELION's full hidden space. Three
 workstreams share this layout, so each one changes only its own side:
 
@@ -23,7 +23,7 @@ contiguous segment (`segment_offsets`), so the segmented log-Z and posterior ker
 minimum, sum and significance over classes and poses without knowing about classes (ml_optimiser.cpp:7153,
 :7734, :8111-8169).
 
-[`ResidentCandidateTables`](../../relax/sparse_pass2/resident_candidates.py) holds the hypothesis rows:
+[`ResidentCandidateTables`](../../relax/fine_pass/resident_candidates.py) holds the hypothesis rows:
 
 - `row_offsets`: the rows of each unit;
 - `row_unit`: the row's unit;
@@ -85,7 +85,7 @@ images.
 
 ## Implementation
 
-[`compute_k_class_pass2_stats_resident`](../../relax/sparse_pass2/resident_pass2.py) runs the class axis;
+[`compute_k_class_pass2_stats_resident`](../../relax/fine_pass/resident_pass2.py) runs the class axis;
 `compute_pass2_stats_resident` is its one-class case. The K-class
 output has the field names of the exact-local engine's class-segmented output, so
 `k_class._class_segmented_em_result` builds the K-class result from either. Every K-class pass runs on it

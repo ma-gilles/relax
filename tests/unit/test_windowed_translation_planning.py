@@ -5,7 +5,7 @@ import pytest
 def test_windowed_translation_tile_lifts_the_coarse_pass_image_cap():
     """The K-class passes translate inside the current-size window; sizing them by the
     full half-image translation tile capped the 100k/256 K=4 coarse pass at 88 images."""
-    from relax.helpers.batch_planning import estimate_relion_em_batch_sizes
+    from relax.runtime.batch_planning import estimate_relion_em_batch_sizes
 
     common = dict(
         requested_image_batch_size=5000,
@@ -34,7 +34,7 @@ def test_windowed_translation_tile_lifts_the_coarse_pass_image_cap():
     )
 
 def test_kclass_adaptive_planner_requests_windowed_translation_when_supported():
-    from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
+    from relax.runtime.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
 
     seen = []
 
@@ -63,7 +63,7 @@ def test_kclass_adaptive_planner_requests_windowed_translation_when_supported():
 
 @pytest.mark.parametrize("fine_accepts", [False, True])
 def test_separate_planners_negotiate_window_keyword_independently(fine_accepts):
-    from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
+    from relax.runtime.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
     seen = []
     def accepts(n_rot, n_trans, *, windowed_translation=False, **kwargs):
         seen.append(windowed_translation)

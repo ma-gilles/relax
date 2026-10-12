@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+from relax.scoring.pass1_results import Pass1Stats
+
 SCHEMA = "k4_global_winner_summary_v1"
 MAX_SUPPORTED_BYTES = 32 * 1024 * 1024
 _PATH_ENV = "RELAX_GLOBAL_WINNER_SUMMARY_PATH"
@@ -53,7 +55,8 @@ def _original_indices(experiment_dataset, n_images: int) -> np.ndarray:
 def maybe_dump_global_winner_summary(
     *,
     experiment_dataset,
-    full_stats: dict,
+    stats: Pass1Stats,
+    class_assignments,
     n_classes: int,
     n_rotations: int,
     n_translations: int,
@@ -79,20 +82,20 @@ def maybe_dump_global_winner_summary(
     if not 0 < max_bytes <= MAX_SUPPORTED_BYTES:
         raise RuntimeError(f"RELAX_GLOBAL_WINNER_SUMMARY_MAX_BYTES must be in (0, {MAX_SUPPORTED_BYTES}]")
 
-    class_scores = np.asarray(full_stats["class_best_offset_free_log_score_per_image"])
-    class_second_scores = np.asarray(full_stats["class_second_best_offset_free_log_score_per_image"])
-    class_scores_with_offset = np.asarray(full_stats["class_best_log_score_per_image"])
-    class_second_scores_with_offset = np.asarray(full_stats["class_second_best_log_score_per_image"])
+    class_scores = np.asarray(stats.class_best_offset_free_log_score_per_image)
+    class_second_scores = np.asarray(stats.class_second_best_offset_free_log_score_per_image)
+    class_scores_with_offset = np.asarray(stats.class_best_log_score_per_image)
+    class_second_scores_with_offset = np.asarray(stats.class_second_best_log_score_per_image)
     if any(
         array.dtype != np.float32
         for array in (class_scores, class_second_scores, class_scores_with_offset, class_second_scores_with_offset)
     ):
         raise RuntimeError("RECOVAR global-winner summary requires native float32 best/second class scores")
-    class_pose_indices = np.asarray(full_stats["class_hard_assignments"], dtype=np.int32)
-    class_second_pose_indices = np.asarray(full_stats["class_second_hard_assignments"], dtype=np.int32)
-    class_log_evidence = np.asarray(full_stats["class_log_evidence_per_image"], dtype=np.float64)
-    winner_class = np.asarray(full_stats["class_assignments"], dtype=np.int32)
-    global_log_z = np.asarray(full_stats["normalization_log_z"], dtype=np.float64)
+    class_pose_indices = np.asarray(stats.class_hard_assignments, dtype=np.int32)
+    class_second_pose_indices = np.asarray(stats.class_second_hard_assignments, dtype=np.int32)
+    class_log_evidence = np.asarray(stats.class_log_evidence_per_image, dtype=np.float64)
+    winner_class = np.asarray(class_assignments, dtype=np.int32)
+    global_log_z = np.asarray(stats.normalization_log_z, dtype=np.float64)
     expected_shape = (n_classes, expected_particles)
     for name, array in (
         ("class_best_offset_free_log_score_per_image", class_scores),

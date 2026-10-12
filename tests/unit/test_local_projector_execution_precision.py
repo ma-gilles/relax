@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.relion.relion_projector_setup import cast_relion_projector_for_execution
+from relax.relion.projector_setup import cast_relion_projector_for_execution
 
 
 @pytest.mark.parametrize("classes", [1, 4])

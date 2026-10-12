@@ -2,7 +2,7 @@
 
 ``RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE`` replaces the references after each iteration's M-step with RELION's
 maps of that iteration (causal trajectory boundaries). The M-step oracle
-(``python -m relax.diagnostics.vdam_native_mstep``) replaces relax's single-class M-step with RELION's
+(``python -m scripts.vdam_native_mstep``) replaces relax's single-class M-step with RELION's
 step-by-step primitives, which read the native replays (``NATIVE_MSTEP_REPLAY_ENVS``) themselves. The command
 reads the environment once and builds the source here (:func:`vdam_input_source`).
 """
@@ -22,7 +22,7 @@ INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV = "RELAX_INITIALMODEL_IREF_REPLAY_TEMPLAT
 # RELION's start-up references in place of the bootstrap (VdamReplaySource.startup_references).
 INITIAL_IREF_OVERRIDE_ENV = "RELAX_INITIAL_IREF_OVERRIDE"
 
-# The native replays of RELION's M-step intermediates (relax.diagnostics.vdam_mstep_replay); only the oracle
+# The native replays of RELION's M-step intermediates (relax.parity.vdam_mstep_replay); only the oracle
 # reads them.
 NATIVE_MSTEP_REPLAY_ENVS = (
     "RELAX_VDAM_NATIVE_SECOND_MOMENT_REPLAY_BIN",
@@ -123,7 +123,7 @@ def vdam_input_source(
     ``oracle_m_step`` (RELION's M-step) takes."""
     if native_mstep_replays and oracle_m_step is None:
         raise ValueError(
-            f"{list(native_mstep_replays)} replay RELION's M-step; run python -m relax.diagnostics.vdam_native_mstep instead"
+            f"{list(native_mstep_replays)} replay RELION's M-step; run python -m scripts.vdam_native_mstep instead"
         )
     if reference_template and mstep_compute_dtype == "float32":
         raise ValueError("float32 M-step is incompatible with iteration reference replay")

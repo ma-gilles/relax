@@ -57,13 +57,13 @@ def sha256_file(path: Path) -> str:
 def gridding_corrected_saved_map(volume: np.ndarray, padding_factor: int = GRIDDING_PADDING_FACTOR) -> np.ndarray:
     """Return RELION's gridding correction of a saved uncorrected map, rounded like a saved map.
 
-    ``relax.reconstruction.relion_functions_relion._gridding_correct_trilinear_np``
+    ``relax.reconstruction.relion_functions._gridding_correct_trilinear_np``
     divides by ``sinc^2(r / (N * padding_factor))`` with ``r`` measured from voxel
     index ``N/2``. The result is rounded to float32 because final maps are
     written as float32 MRC files, then returned as float64 for the FSC.
     """
 
-    from relax.reconstruction.relion_functions_relion import _gridding_correct_trilinear_np
+    from relax.reconstruction.relion_functions import _gridding_correct_trilinear_np
 
     vol = np.asarray(volume, dtype=np.float64)
     if vol.ndim != 3 or len(set(vol.shape)) != 1:
@@ -261,7 +261,7 @@ def gridding_metadata() -> dict[str, Any]:
         "reference": "RELION backprojector.cpp BackProjector::reconstruct -> griddingCorrect",
         "formula": "map / sinc^2(r / (N * padding_factor)), r from voxel index N/2",
         "padding_factor": GRIDDING_PADDING_FACTOR,
-        "implementation": "relax.reconstruction.relion_functions_relion._gridding_correct_trilinear_np",
+        "implementation": "relax.reconstruction.relion_functions._gridding_correct_trilinear_np",
         "applies_to": "final merged map only; numbered iterations and final_half*_unfil.mrc were already corrected",
     }
 

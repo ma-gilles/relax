@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.helpers import relion_random
+from relax.numerics import relion_random
 
 bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
 

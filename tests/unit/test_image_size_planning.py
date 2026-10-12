@@ -7,12 +7,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
-from relax.refinement.iteration_planning import (
-    plan_class_image_size,
-    plan_halfmap_image_size,
-    plan_initial_image_size,
-)
-from relax.refinement.refinement_options import StartState
+from relax.refinement.image_size_plans import plan_class_image_size, plan_halfmap_image_size, plan_initial_image_size
+from relax.refinement.ports import StartSeeds
 
 pytestmark = pytest.mark.unit
 
@@ -21,10 +17,10 @@ pytestmark = pytest.mark.unit
 def test_initial_ini_high_precedes_fsc_and_retains_growth(dtype):
     plan = plan_initial_image_size(
         stand_in.options(
-            schedule=stand_in.schedule(init_current_size=32), start=StartState(init_fsc=np.zeros(65, dtype=dtype)),
+            schedule=stand_in.schedule(init_current_size=32),
             parity=stand_in.parity(relion_firstiter_ini_high_angstrom=30.),
         ),
-        box_size=128, pixel_size_angstrom=4.25, incr_size=16,
+        start_seeds=StartSeeds(fsc=np.zeros(65, dtype=dtype)), box_size=128, pixel_size_angstrom=4.25, incr_size=16,
         has_high_fsc_at_limit=True, dtype=dtype, log=Mock(),
     )
     # ini_high sets shell 18; this startup path adds the configured 16 shells.
@@ -37,7 +33,7 @@ def test_initial_ini_high_precedes_fsc_and_retains_growth(dtype):
 def test_initial_fallback_retains_its_distinct_default_growth(restart_iteration):
     plan = plan_initial_image_size(
         stand_in.options(schedule=stand_in.schedule(init_current_size=32, init_relion_iteration=restart_iteration)),
-        box_size=128, pixel_size_angstrom=4.25,
+        start_seeds=StartSeeds(), box_size=128, pixel_size_angstrom=4.25,
         incr_size=16, has_high_fsc_at_limit=True, dtype=np.float32, log=Mock(),
     )
     # Without ini_high/FSC, the existing bootstrap uses its own ten-shell default.
@@ -52,10 +48,8 @@ def test_initial_fsc_updates_growth_and_scheduling_curve(dtype):
     fsc[:10] = .8
     original = fsc.tobytes()
     plan = plan_initial_image_size(
-        stand_in.options(
-            schedule=stand_in.schedule(init_current_size=40), start=StartState(init_fsc=fsc, init_ave_Pmax=.2),
-        ),
-        box_size=128, pixel_size_angstrom=4.25,
+        stand_in.options(schedule=stand_in.schedule(init_current_size=40)),
+        start_seeds=StartSeeds(fsc=fsc, ave_pmax=.2), box_size=128, pixel_size_angstrom=4.25,
         incr_size=6, has_high_fsc_at_limit=False, dtype=dtype, log=Mock(),
     )
     # Truncation at shell 20 makes incr_size 21 - 10 + 5 = 16.

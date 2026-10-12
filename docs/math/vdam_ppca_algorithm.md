@@ -148,7 +148,7 @@ position in a newly shuffled subset. Also, averaging two separately
 preconditioned directions is generally different from preconditioning pooled
 statistics once.
 
-Sources: [device transaction](../../relax/relion/relion_vdam_mstep.py),
+Sources: [device transaction](../../relax/vdam/relion_mstep.py),
 [native transaction wrapper](../../relax/vdam/m_step.py),
 [subset ordering](../../relax/vdam/subset_schedule.py).
 
@@ -614,7 +614,8 @@ general monotone-resolution guarantee.
 
 Sources: [sampling](../../relax/vdam/native_sampling.py),
 [E-step](../../relax/vdam/adaptive_estep.py),
-[schedules](../../relax/vdam/schedules.py), and the iteration loop.
+[schedules](../../relax/vdam/schedules.py), [the gradient schedule](../../relax/steps/sgd_schedule.py) and the
+iteration loop.
 
 ### PPCA changes and decisions
 
@@ -649,7 +650,7 @@ to abandon its native schedule.
 Current VDAM updates noise and pose/class distributions with subset smoothing;
 the usual EMA coefficient is 0.9 on subsets and zero on full-data updates.
 The current owner is
-[estep_meta_updates.py](../../relax/vdam/estep_meta_updates.py).
+[model_update.py](../../relax/vdam/model_update.py).
 PPCA needs expected residual energy, not only the residual at its posterior
 mean. For pixel `p` at a pose,
 
@@ -774,7 +775,7 @@ The general initial count is `clamp(round(0.005*N), 200, 5000)` and the final
 subset count is `clamp(round(0.1*N), 1000, 50000)`. These are **total** counts,
 not per-class counts. Actual pseudo-half counts follow particle identity.
 Sources: `default_subset_sizes_for_3d_initial_model` and `compute_subset_size`
-in [schedules.py](../../relax/vdam/schedules.py).
+in [sgd_schedule.py](../../relax/steps/sgd_schedule.py).
 
 Recommendation: begin with this batch schedule, including an explicitly
 specified final all-data update for PPCA. The user requested this comparison
@@ -1009,7 +1010,7 @@ scientific contract; runnable code alone does not establish recovery.
   trace channel alone (`TracePPCAStats`, `ppca_momentum_sgd.md`).
   On GPU the metric and residual images of a block are backprojected together
   into one voxel-major half volume of 32-float voxel rows
-  ([ppca_moment_scatter_f32](../../relax/cuda/kernels.py)): each lane
+  ([ppca_moment_scatter_f32](../../relax/cuda/ppca.py)): each lane
   of a warp forms its own pixel's expected residual and noise correction from
   the block's moment images and projections, and expands the pixel's trilinear
   and Hermitian-partner targets, as RECOVAR's windowed adjoint does; then the
@@ -1032,19 +1033,19 @@ scientific contract; runnable code alone does not establish recovery.
   around the four GEMMs runs in relax CUDA kernels
   ([ppca_stream.cuh](../../relax/cuda/ppca_stream.cuh)); the XLA formulation above
   stays the CPU path and the float64 reference of the tests. The window
-  projector ([ppca_window_project_f32](../../relax/cuda/kernels.py)) evaluates
+  projector ([ppca_window_project_f32](../../relax/cuda/ppca.py)) evaluates
   all `P` components of a voxel-major model copy at once, at the score-window
   pixels only, into the planar `[Re | Im]` GEMM operand and the packed products
   `Re(conj(A_i) A_j)` of the Gram GEMM; it replaces RECOVAR's per-component
   projection loop, whose XLA loop predicate synchronized the host every block.
-  The latent epilogue ([ppca_latent_epilogue_f32](../../relax/cuda/kernels.py))
+  The latent epilogue ([ppca_latent_epilogue_f32](../../relax/cuda/ppca.py))
   writes the scores, latent means and covariances in place into the kept
   buffers, and per (rotation, image) the maximum score over translations, the
   first maximizing translation and `sum_t exp(score - maximum)`; the tile
   normalization reduces these partials
   ([_normalize_partials](../../relax/ppca_refinement/full_row_stream.py)), with the
   same first-maximum order, instead of every kept score. The posterior
-  preparation ([ppca_posterior_prep_f32](../../relax/cuda/kernels.py)) forms the
+  preparation ([ppca_posterior_prep_f32](../../relax/cuda/ppca.py)) forms the
   weights `gamma [1, E z]` and the translation sums of `gamma E[a a^T]`; the
   embedding, rotation mass and latent trace follow from those sums. The GEMM
   window is padded with zero pixels to a multiple of four so every GEMM row is
@@ -1294,7 +1295,7 @@ scientific contract; runnable code alone does not establish recovery.
   As in RELION, pass 1 runs on a smaller image window than pass 2: the coarse
   image size the coarse angular step resolves, `2 ceil(pixel ori_size /
   (step/360 pi diameter / 1.2))`, at most the stage's
-  ([compute_coarse_image_size](../../relax/helpers/resolution.py), with RELION's
+  ([compute_coarse_image_size](../../relax/reconstruction/resolution.py), with RELION's
   clamp; 50 against 62 pixels at the eleven-state HP3 stage). A tile's images are
   read once, unshifted at the pass-2 window: the pass-1 operands are their pixels
   inside the pass-1 window times the coarse shifts' phase factors, and a job's
@@ -1591,7 +1592,7 @@ three float32 RELION-frame maps. The VDAM override skips its native double
 bootstrap when these maps are supplied; later projection and M-step backends
 must still be selected explicitly for production float32 execution.
 VDAM has one projector setup
-([`reference_to_relion_projector_half_maps_and_power`](../../relax/relion/relion_projector_setup.py)): the device
+([`reference_to_relion_projector_half_maps_and_power`](../../relax/relion/projector_setup.py)): the device
 FFT in double, narrowed to the complex64 slab RELION's GPU projector holds as a
 float texture, with the tau2 shell power kept in double. It does not follow the
 M-step dtype, and `--projector-setup-backend` is gone from InitialModel; a
@@ -1619,7 +1620,7 @@ subset of the existing simulator fixture before training. An opt-in
 non-final subset count; iteration 60 still uses every particle. The VDAM
 comparison has opt-in fixed non-final subset and low-resolution Fourier and
 angular caps in the PPCA-owned
-[VdamPilotControls](../../relax/ppca_initial_model/vdam_controls.py), which the
+[VdamPilotControls](../../relax/vdam/native_options.py), which the
 VDAM controller holds as `pilot_controls` (`None` is native VDAM).
 Native frequency and angular adaptation remains active within those caps, so
 its effective per-iteration support must be reported rather than assumed equal
@@ -1675,9 +1676,9 @@ changing rank does not change the optimizer schedule or observation model.
 sections 4-15 for RELION 5 subtomograms (2D tilt stacks), with both optimizers,
 on the streamed engine of section 14. Tomographic input, geometry, CTF and dose
 follow the subtomogram Refine3D/VDAM path that relax qualifies against RELION
-([tomo_particles.py](../../relax/refinement/tomo_particles.py),
-[tomo_half.py](../../relax/refinement/tomo_half.py),
-[tomo_input.py](../../relax/relion/tomo_input.py)). RECOVAR's known-pose
+([tomo_particles.py](../../relax/sampling/tomo_particles.py),
+[tomo_half.py](../../relax/steps/tomo_half.py),
+[tomo_input.py](../../relax/star/tomo_input.py)). RECOVAR's known-pose
 cryo-ET PPCA (shared latent and contrast per particle) is prior art for the
 per-particle shared quantities only.
 

@@ -29,27 +29,27 @@ from typing import Callable, Literal, Sequence
 
 import numpy as np
 
-from relax.helpers.convergence import _relion_optimizer_average_pmax
-from relax.reconstruction import regularization_relion
-from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
+from relax.reconstruction import regularization
+from relax.reconstruction.regularization import resolution_from_data_vs_prior
 from relax.relion.macros import relion_round
-from relax.vdam.estep_common import EstepSums, estep_sums
-from relax.vdam.estep_meta_updates import (
-    NonFiniteNoiseSums,
-    update_noise_from_estep,
-    update_probabilities_from_estep,
-    with_uniform_class_direction_priors,
-)
-from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
-from relax.vdam.native_options import VdamEnvironment
-from relax.vdam.output import add_class_prior_report
-from relax.vdam.ports import MaximizationProbe, VdamObserver
-from relax.vdam.schedules import (
+from relax.steps.convergence import relion_optimizer_average_pmax
+from relax.steps.sgd_schedule import (
     VdamPhaseLengths,
     compute_stepsize,
     compute_subset_size,
     compute_tau2_fudge,
 )
+from relax.vdam.estep_common import EstepSums, estep_sums
+from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
+from relax.vdam.model_update import (
+    NonFiniteNoiseSums,
+    update_noise_from_estep,
+    update_probabilities_from_estep,
+    with_uniform_class_direction_priors,
+)
+from relax.vdam.native_options import VdamEnvironment
+from relax.vdam.output import add_class_prior_report
+from relax.vdam.ports import MaximizationProbe, VdamObserver
 from relax.vdam.state import InitialModelState
 from relax.vdam.subset_schedule import resolve_phase_lengths, select_subset_for_iter
 
@@ -126,7 +126,7 @@ def update_current_resolution_from_data_vs_prior(state: InitialModelState) -> In
         resolution_from_data_vs_prior(
             np.asarray(state.data_vs_prior_class[k], dtype=np.float64),
             box_size=state.box_size,
-            minres_map=regularization_relion.RELION_MINRES_MAP,
+            minres_map=regularization.RELION_MINRES_MAP,
         )
         for k in range(int(state.K))
     )
@@ -158,7 +158,7 @@ def _ave_pmax(sums: EstepSums) -> float | None:
     # RELION accumulates Pmax over all VDAM pseudo-halfsets, then divides by the retained M-step
     # posterior mass (rather than the particle count). Treat the two pseudo-halfsets as one optimiser
     # population when reusing the Class3D normalization helper.
-    _, average, _ = _relion_optimizer_average_pmax([sums.pmax], [float(np.sum(sums.class_mass))])
+    _, average, _ = relion_optimizer_average_pmax([sums.pmax], [float(np.sum(sums.class_mass))])
     return average
 
 

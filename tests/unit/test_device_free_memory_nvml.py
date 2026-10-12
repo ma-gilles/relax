@@ -6,7 +6,7 @@ import ctypes
 
 import pytest
 
-from relax.sparse_pass2 import sparse_pass2_budget as budget
+from relax.runtime import memory_budget as budget
 
 pytestmark = pytest.mark.unit
 
@@ -76,3 +76,20 @@ def test_the_device_total_is_nvidia_smis_whole_mebibytes_without_a_subprocess(mo
     assert budget._device_memory_limit_bytes() == 81559 * 1024**2
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: 40 * 1024**3)
     assert budget._device_memory_limit_bytes() == 40 * 1024**3
+
+
+@pytest.mark.parametrize("value", ["eighty", "80GB", "0", "-4", "nan", "inf", " "])
+def test_a_malformed_device_memory_override_is_refused(monkeypatch, value):
+    """deep2 V2-4: RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB is a positive number or an error, never ignored."""
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", value)
+    with pytest.raises(ValueError, match="RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB must be a positive number"):
+        budget._device_memory_limit_bytes()
+
+
+def test_a_device_memory_override_is_taken_and_an_empty_one_is_unset(monkeypatch):
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", "1.5")
+    assert budget._device_memory_limit_bytes() == int(1.5 * 1024**3)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", "")
+    monkeypatch.setattr(budget, "_nvml_memory_bytes", lambda *args: 7 * 1024**2)
+    monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
+    assert budget._device_memory_limit_bytes() == 7 * 1024**2

@@ -27,17 +27,15 @@ from relax.classification.k_class_results import (
     _expand_subset_noise_stats,
     _expand_subset_pose_details,
     _full_stats_from_subset,
+    _with_coarse_significance_diagnostics,
     _zero_subset_noise_stats,
 )
-from relax.diagnostics.coarse_score_diagnostics import (
-    _with_coarse_significance_diagnostics,
-)
-from relax.diagnostics.local_debug import score_dump_label
-from relax.helpers.env_flags import parse_env_flag
-from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-from relax.helpers.scale_groups import prepare_scale_correction_groups
-from relax.helpers.types import RelionStats, make_relion_stats
-from relax.scoring.significant_samples import ComplementSignificantSampleIndices
+from relax.classification.probes import KClassProbe, NoProbe
+from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
+from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
+from relax.relion.scale_groups import prepare_scale_correction_groups
+from relax.runtime.env_flags import parse_env_flag
+from relax.types import RelionStats, make_relion_stats
 
 logger = logging.getLogger(__name__)
 NVTX_DOMAIN_EM = "recovar_em"
@@ -260,7 +258,7 @@ def _run_sparse_k_class_adaptive_pass2(
 ) -> KClassEMResult:
     """Run K-class adaptive pass-2 over RELION significant sparse support."""
 
-    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
+    from relax.fine_pass.dispatch import compute_pass2_stats_sparse
 
     n_classes = int(means_array.shape[0])
     n_rot_coarse = int(coarse_rotations_np.shape[0])
@@ -359,7 +357,7 @@ def _run_sparse_k_class_adaptive_pass2(
         # The exact normalized-CC tree is a deliberately K=1-scoped parity
         # candidate. Keep the K>1 route byte-preserving until K=1 closes.
         relion_exact_fine_normalized_cc=n_classes == 1,
-        dense_gemm_full_grid=bool(base_engine_kwargs.get("dense_gemm_full_grid", False)),
+        full_grid_engine=_full_grid_engine(base_engine_kwargs),
         relion_firstiter_winner_take_all=bool(
             base_engine_kwargs.get("relion_firstiter_winner_take_all", False)
         ),
@@ -388,10 +386,12 @@ def _run_sparse_k_class_adaptive_pass2(
     if base_engine_kwargs.get("wsum_current_size") is not None:
         # --strict_highres_exp: the weighted sums' image size, above the E-step's (the resident engine).
         common["wsum_current_size"] = int(base_engine_kwargs["wsum_current_size"])
-    if n_classes == 1 and base_engine_kwargs.get("relion_f32_normalization_sum_weight") is not None:
+    if base_engine_kwargs.get("relion_f32_normalization_sum_weight") is not None:
         common["relion_f32_normalization_sum_weight"] = base_engine_kwargs["relion_f32_normalization_sum_weight"]
         common["relion_coarse_hard_assignment"] = base_engine_kwargs.get("relion_coarse_hard_assignment")
         common["relion_coarse_max_posterior"] = base_engine_kwargs.get("relion_coarse_max_posterior")
+        if n_classes > 1:
+            common["relion_coarse_class_assignment"] = base_engine_kwargs["relion_coarse_class_assignment"]
     preserve_bpref_particle_order = _apply_bpref_particle_order_policy(
         common,
         base_engine_kwargs,
@@ -449,13 +449,13 @@ def _run_sparse_k_class_adaptive_pass2(
         rotation_log_prior=_class_rotation_prior(0),
         accumulate_noise=accumulate_noise,
         # No other classes: the degenerate cross-class normalizer of the production K=1 pass.
-        **({} if common["dense_gemm_full_grid"] else {
+        **({} if common["full_grid_engine"] is not None else {
             "normalization_other_score_log_z": np.full(
                 _dataset_image_count(experiment_dataset), -np.inf, dtype=np.float64,
             ),
         }),
         normalization_score_mode=(
-            None if common["dense_gemm_full_grid"] else common["relion_firstiter_score_mode"]
+            None if common["full_grid_engine"] is not None else common["relion_firstiter_score_mode"]
         ),
         return_score_log_z=True,
         relion_projector_half=select_projector_half_for_class(relion_projector_half_by_class, 0, n_classes),
@@ -521,6 +521,19 @@ def _as_host_accumulator(value):
     return np.asarray(jax.device_get(value))
 
 
+def _full_grid_engine(engine_kwargs: dict):
+    """The full-grid engine the fine pass hands its resolved operands to, or None (the resident tables).
+
+    ``engine_kwargs["dense_gemm_full_grid"]`` selects the dense GEMM engine (``coarse_engine="gemm_dense"``).
+    """
+
+    if not engine_kwargs.get("dense_gemm_full_grid", False):
+        return None
+    from relax.dense import gemm_coarse_engine
+
+    return gemm_coarse_engine.run_dense_gemm_full_grid
+
+
 def _resident_production_arithmetic(options: dict) -> dict:
     """RELION's pass-2 arithmetic, the K=1 production set, for a K>1 pass on the resident engine.
 
@@ -567,8 +580,8 @@ def _run_resident_k_class_pass2(
     (``engine_record``).
     """
 
-    from relax.sparse_pass2.engine_record import record_pass_engine
-    from relax.sparse_pass2.resident_pass2 import compute_k_class_pass2_stats_resident
+    from relax.fine_pass.resident_pass2 import compute_k_class_pass2_stats_resident
+    from relax.runtime.engine_record import record_pass_engine
 
     if engine_kwargs.get("normalization_log_evidence") is not None:
         raise NotImplementedError(
@@ -576,7 +589,7 @@ def _run_resident_k_class_pass2(
         )
     n_classes = int(means_array.shape[0])
     options = _resident_production_arithmetic(common)
-    if not options.get("dense_gemm_full_grid", False):
+    if options.get("full_grid_engine") is None:
         options.pop("relion_exact_fine_normalized_cc")
     options.update(
         relion_projector_half=relion_projector_half_by_class,
@@ -595,7 +608,7 @@ def _run_resident_k_class_pass2(
         rotation_log_priors_by_class=class_rotation_priors,
         **options,
     )
-    record_pass_engine("global", "gemm_dense" if options.get("dense_gemm_full_grid", False) else "resident")
+    record_pass_engine("global", "gemm_dense" if options.get("full_grid_engine") is not None else "resident")
     logger.info(
         "Resident K-class pass2: classes=%d images=%d total=%.1fs",
         n_classes,
@@ -610,6 +623,8 @@ def _run_resident_k_class_pass2(
         host_accumulators=True,
         mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
         mstep_accumulator_shape=mstep_accumulator_shape,
+        # Zero oversampling: the particle's class is the coarse winner's (docs/math/zero_oversampling.md).
+        class_assignments_override=output.coarse_class_assignments,
     )
 
 
@@ -718,11 +733,11 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     translations,
     *,
     engine_kwargs: dict,
+    probe: KClassProbe,
 ) -> _DenseKClassScoreProbeResult:
-    """Score RELION firstiter-CC K-class coarse poses in one shared pass."""
+    """Score RELION firstiter-CC K-class coarse poses in one shared pass; ``probe`` observes it."""
 
-    from relax.diagnostics.coarse_gaussian_diagnostics import significance_debug_dump_matches
-    from relax.helpers.projection import compact_relion_projector_half_for_centered_indices
+    from relax.projection.projection import compact_relion_projector_half_for_centered_indices
     from relax.scoring.pass1_plan import global_pass1_relion_projector_texture_enabled
     from relax.scoring.significance import _compute_k_class_significance_batched
 
@@ -744,7 +759,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     if score_texture_interp is None:
         score_texture_interp = global_pass1_relion_projector_texture_enabled()
     if score_projector_half is not None and n_classes == 1 and score_texture_interp:
-        from relax.helpers.fourier_window import make_fourier_window_spec
+        from relax.fourier.fourier_window import make_fourier_window_spec
 
         image_shape = tuple(int(value) for value in experiment_dataset.image_shape)
         n_half = image_shape[0] * (image_shape[1] // 2 + 1)
@@ -787,7 +802,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     # RELION's iter-1 firstiter_cc path performs WTA on raw normalized-CC
     # scores before the non-firstiter prior-weighting branch is reached.
     firstiter_class_log_priors = np.zeros(n_classes, dtype=np.float64)
-    full_stats = _compute_k_class_significance_batched(
+    pass1_result = _compute_k_class_significance_batched(
         experiment_dataset,
         noise_variance,
         rotations,
@@ -821,34 +836,34 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         firstiter_cc_support=engine_kwargs.get("firstiter_cc_support", "relion"),
         nyquist_column_counting=engine_kwargs.get("nyquist_column_counting", "relion"),
         tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
-        collect_significance=significance_debug_dump_matches(
+        collect_significance=probe.score_dump_requested(
             current_size=engine_kwargs.get("current_size"),
             debug_iteration=engine_kwargs.get("debug_iteration"),
         ),
         return_class_best=True,
-        return_class_second=bool(os.environ.get("RELAX_GLOBAL_WINNER_SUMMARY_PATH", "").strip()),
+        return_class_second=probe.wants_class_runner_up(),
         debug_iteration=engine_kwargs.get("debug_iteration"),
+        probe=probe,
         coarse_healpix_order=engine_kwargs.get("coarse_healpix_order"),
         coarse_rotation_ids=engine_kwargs.get("coarse_rotation_ids"),
         translation_phase_source=engine_kwargs.get("translation_phase_source"),
         **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(engine_kwargs),
-    ).full_stats
-    from relax.diagnostics.global_winner_summary import maybe_dump_global_winner_summary
-
-    maybe_dump_global_winner_summary(
+    )
+    probe.firstiter_winners_scored(
         experiment_dataset=experiment_dataset,
-        full_stats=full_stats,
+        stats=pass1_result.stats,
+        class_assignments=pass1_result.class_assignment,
         n_classes=n_classes,
         n_rotations=n_rot,
         n_translations=int(np.asarray(translations).shape[0]),
         iteration=engine_kwargs.get("debug_iteration"),
     )
-    class_log_evidence = np.asarray(full_stats["class_log_evidence_per_image"], dtype=np.float64)
-    per_class_hard = np.asarray(full_stats["class_hard_assignments"], dtype=np.int32)
+    class_log_evidence = np.asarray(pass1_result.stats.class_log_evidence_per_image, dtype=np.float64)
+    per_class_hard = np.asarray(pass1_result.stats.class_hard_assignments, dtype=np.int32)
     score_dtype = _score_dtype_from_kwargs(engine_kwargs)
-    class_best_log_score = np.asarray(full_stats["class_best_log_score_per_image"], dtype=score_dtype)
-    class_assignments = np.asarray(full_stats["class_assignments"], dtype=np.int32)
+    class_best_log_score = np.asarray(pass1_result.stats.class_best_log_score_per_image, dtype=score_dtype)
+    class_assignments = np.asarray(pass1_result.class_assignment, dtype=np.int32)
     per_class_stats = tuple(
         make_relion_stats(
             log_evidence_per_image=np.asarray(class_log_evidence[class_index], dtype=score_dtype),
@@ -864,7 +879,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         per_class_hard_assignments=per_class_hard,
         per_class_stats=per_class_stats,
         class_assignments=class_assignments,
-        coarse_score_backend=full_stats.get("executed_coarse_backend"),
+        coarse_score_backend=pass1_result.stats.executed_coarse_backend,
     )
 
 
@@ -1087,15 +1102,17 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
     accumulate_noise: bool,
     return_best_pose_details: bool,
     pass2_kwargs: dict,
+    given_pose_evidence: np.ndarray | None = None,
 ) -> KClassEMResult:
     """Sparse RELION firstiter_cc fine pass over global-winner image subsets.
 
     ``coarse_result`` None is the pass at given poses (``--skip_align``): there is no coarse probe, each
     image's one sample is its only candidate, and a class's evidence for its images is the fine pass's
-    own (the coarse and the fine sample are the same).
+    own (the coarse and the fine sample are the same). ``given_pose_evidence`` (float64 ``[K, N]``) then
+    receives that evidence as the pass reduced it, before the result's cast to the score dtype.
     """
 
-    from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
+    from relax.fine_pass.dispatch import compute_pass2_stats_sparse
 
     n_classes = int(means_array.shape[0])
     n_images = int(coarse_class_assignments.shape[0])
@@ -1265,6 +1282,10 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             class_log_evidence[class_index, image_indices] = np.asarray(
                 result.relion_stats.log_evidence_per_image, dtype=class_log_evidence.dtype
             )
+            if given_pose_evidence is not None:
+                given_pose_evidence[class_index, image_indices] = np.asarray(
+                    result.relion_stats.log_evidence_per_image, dtype=np.float64
+                )
         hard_full = np.zeros(n_images, dtype=np.int32)
         hard_full[image_indices] = sparse_pose_ids_to_fine_grid(
             result.hard_assignment, result.best_rotation_indices, n_fine_trans
@@ -1304,7 +1325,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
 def _supports_coarse_parents(supports_by_class, n_images, n_coarse_rot, n_coarse_trans):
     """The coarse parents any class's pass-2 rows descend from, or None for every parent."""
 
-    from relax.sparse_pass2.resident_significance import significant_coarse_parents
+    from relax.fine_pass.resident_significance import significant_coarse_parents
 
     parents = []
     for support in supports_by_class:
@@ -1325,10 +1346,9 @@ def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int
     whole grid.
     """
 
-    from relax.sparse_pass2.resident_significance import (
+    from relax.fine_pass.resident_significance import (
         DeviceCompactedSignificantSamples,
         build_coarse_significance_csr,
-        host_support_rows,
     )
 
     rows = [np.unique(np.asarray(samples, dtype=np.int32).reshape(-1)) for samples in class_supports]
@@ -1340,7 +1360,7 @@ def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int
         store_excluded_per_batch=[np.zeros(len(rows), dtype=bool)],
         ids_per_batch=[np.concatenate(rows) if rows else np.zeros(0, np.int32)],
     )
-    return DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+    return DeviceCompactedSignificantSamples(csr=csr)
 
 
 def _given_pose_class_supports(
@@ -1351,14 +1371,13 @@ def _given_pose_class_supports(
     No pose search, so no pass 1 (ml_optimiser.cpp:8454, pdf_orientation = pdf_class): every class is
     scored on each image's own sample, or only its seed class in a seed iteration. RELION's
     ``--firstiter_cc`` iteration from one reference scores every particle against it alone
-    (:4389-4402), so its winner at a given pose is the seed class. Returns the supports by class, each
-    image's sample count and, for that iteration, each image's class.
+    (:4389-4402), so its winner at a given pose is the seed class; from one reference per class it scores
+    every class and the caller finds the winner (:func:`_given_pose_cc_classes`). Returns the supports by
+    class, each image's sample count and, for the seeded cross-correlation iteration, each image's class.
     """
 
     if n_classes == 1 or len(given_supports) != n_images:
         raise ValueError("given supports are one coarse sample list per image of a K-class pass")
-    if firstiter_cc and image_seed_classes is None:
-        raise NotImplementedError("the cross-correlation iteration at given poses starts from one reference")
     supports = [np.asarray(samples, dtype=np.int32).reshape(-1) for samples in given_supports]
     by_class = (
         [list(supports) for _ in range(n_classes)]
@@ -1368,8 +1387,45 @@ def _given_pose_class_supports(
     return (
         [_given_support_csr(rows, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans) for rows in by_class],
         np.asarray([samples.size for samples in supports], dtype=np.int32),
-        np.asarray(image_seed_classes, dtype=np.int32) if firstiter_cc else None,
+        np.asarray(image_seed_classes, dtype=np.int32) if firstiter_cc and image_seed_classes is not None else None,
     )
+
+
+def classes_of_best_given_pose_cc(cc_by_class) -> np.ndarray:
+    """Each image's class in a ``--firstiter_cc`` iteration at given poses from K references (relax#78).
+
+    RELION takes the device arg-min of the float32 ``diff2 = -CC`` over one class-major weight array
+    (acc_ml_optimiser_impl.h:1384-1392 and 2012-2026; cuda_utils_cub.cuh:66-84), so the class of the best
+    normalized CC wins and equal scores go to the lowest class. ``cc_by_class`` is ``[K, N]``, each image's
+    float32 CC of every class, or that plus an offset of the image's own (the pass's evidence): the offset is
+    0.5 |image|^2, about 2^21, and a float64 keeps a float32 CC below 1 added to it apart from its neighbours,
+    so the order and the exact ties are the float32 CC's.
+    """
+
+    return np.argmax(np.asarray(cc_by_class, dtype=np.float64), axis=0).astype(np.int32)
+
+
+def _given_pose_cc_classes(score_class, n_classes: int, n_images: int) -> np.ndarray:
+    """The winner class of each image's given pose under normalized CC, from one reference per class.
+
+    Nothing restricts RELION's ``--firstiter_cc`` iteration to one reference under ``--skip_align``
+    (``do_generate_seeds`` alone does, ml_optimiser.cpp:4392-4401), so each particle's one sample is scored
+    against every class. ``score_class(assignments, evidence)`` is the winner-subset pass, here with every
+    image assigned one class; it fills that class's row of ``evidence``, at one sample per image the sample's
+    normalized CC less an offset of the image's own.
+    """
+
+    cc = np.full((n_classes, n_images), -np.inf, dtype=np.float64)
+    for class_index in range(n_classes):
+        score_class(np.full(n_images, class_index, dtype=np.int32), cc)
+    if not np.all(np.isfinite(cc)):
+        raise RuntimeError("a given-pose normalized CC is not finite")
+    winners = classes_of_best_given_pose_cc(cc)
+    logger.info(
+        "RELION --skip_align --firstiter_cc from %d references: images per class %s",
+        n_classes, np.bincount(winners, minlength=n_classes).tolist(),
+    )
+    return winners
 
 
 def run_dense_k_class_em_adaptive(
@@ -1417,6 +1473,8 @@ def run_dense_k_class_em_adaptive(
     fill_fine_rows=None,
     given_supports=None,
     given_image_translations=None,
+    zero_oversampling_coarse_state_for_classes: bool = False,
+    probe: KClassProbe | None = None,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + sparse fine pass 2.
@@ -1439,7 +1497,7 @@ def run_dense_k_class_em_adaptive(
         projections, posterior selection, and reported best poses continue to
         use ``fine_rotations``. Supported by sparse pass 2 only.
     fill_fine_rows : callable or None
-        For a deferred fine grid (:class:`relax.helpers.oversampling.DeferredFineRows`):
+        For a deferred fine grid (:class:`relax.sampling.oversampling.DeferredFineRows`):
         called with the significant coarse parents before the sparse pass 2, or
         with None (every parent) before the full-grid or firstiter-CC routes read the fine rows.
     rot_parent_map : np.ndarray of int, shape (n_rot_fine,)
@@ -1453,13 +1511,22 @@ def run_dense_k_class_em_adaptive(
     given_supports : list of np.ndarray or None
         Each image's coarse samples, given by the caller instead of found by pass 1
         (RELION ``--skip_align``: one sample per image, its stored pose,
-        :func:`relax.classification.given_poses.given_pose_grids`). Pass 1 is skipped
+        :func:`relax.refinement.given_poses.given_pose_grids`). Pass 1 is skipped
         and pass 2 scores every class on these samples, so the posterior is over the
         classes alone.
+    zero_oversampling_coarse_state_for_classes : bool
+        At ``oversampling_order`` 0 with K > 1, hand pass 2 the coarse pass's sum of weights, Pmax and
+        winner (class and pose), as RELION's GPU code keeps them (acc_ml_optimiser_impl.h:1984-1988,
+        docs/math/zero_oversampling.md; relax#73). K = 1 always does. Off, K > 1 normalizes pass 2 on the
+        retained samples.
     given_image_translations : np.ndarray or None
         ``[n_images, 2]`` with ``given_supports``: each image's own translation sample
         (pixels), applied to its images by pass 2 (``image_translations`` of the resident
         pass); the translation grids are then the one zero translation.
+    probe : KClassProbe or None
+        The diagnostics that observe the pass (:mod:`relax.classification.probes`: score dumps, the support audit,
+        the first-iteration winner summary); None is the :class:`~relax.classification.probes.NoProbe`, which
+        observes nothing. No result depends on it.
     coarse_healpix_order, oversampling_order : int or None
         RELION sampling metadata for sparse pass-2 diagnostics.  When omitted,
         the values are inferred from exact HEALPix grid sizes for compatibility
@@ -1475,14 +1542,15 @@ def run_dense_k_class_em_adaptive(
         defers to ``RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP``;
         the strict-parity default is RELION texture interpolation.
     """
+    probe = NoProbe() if probe is None else probe
     if "relion_exact_coarse" in engine_kwargs:
         raise TypeError(
             "relion_exact_coarse was removed on 2026-10-02: pass 1 always scores RELION's exact coarse operands"
         )
     # Lazy import to avoid the formatter stripping a top-level name that is
     # only referenced inside this function.
+    from relax.sampling.symmetry import canonicalize_rotational_symmetry
     from relax.scoring.significance import _compute_k_class_significance_batched
-    from relax.symmetry import canonicalize_rotational_symmetry
 
     if not engine_kwargs.pop("sparse_pass2", True):
         raise RuntimeError(
@@ -1614,6 +1682,7 @@ def run_dense_k_class_em_adaptive(
             "relion_f32_normalization_sum_weight",
             "relion_coarse_hard_assignment",
             "relion_coarse_max_posterior",
+            "relion_coarse_class_assignment",
         ):
             dense_kwargs.pop(field, None)
         dense_kwargs["mstep_relion_x_half"] = True
@@ -1632,7 +1701,7 @@ def run_dense_k_class_em_adaptive(
             oversampling_order=_resolved_oversampling_order(),
             random_perturbation=0.0, engine_kwargs=dense_kwargs,
         )
-        from relax.sparse_pass2.engine_record import record_coarse_engine_call
+        from relax.runtime.engine_record import record_coarse_engine_call
 
         score_mode = dense_kwargs["relion_firstiter_score_mode"]
         record_coarse_engine_call(
@@ -1673,7 +1742,11 @@ def run_dense_k_class_em_adaptive(
 
     coarse_class_assignments = None
     reuse_zero_oversampling_coarse_state = bool(
-        n_classes == 1
+        (
+            n_classes == 1
+            # Classes take RELION's route on request; a seed iteration and given poses have no joint pass 1.
+            or (zero_oversampling_coarse_state_for_classes and image_seed_classes is None and given_supports is None)
+        )
         and _resolved_oversampling_order() == 0
         and engine_kwargs.get("mstep_relion_x_half", False)
         and not firstiter_cc_pass2_only_best_coarse
@@ -1753,7 +1826,7 @@ def run_dense_k_class_em_adaptive(
                 coarse_probe_kwargs["class_rotation_log_prior"] = seed_iteration_first_class(
                     means_array, class_rotation_prior
                 )[1]
-        with score_dump_label("coarse"):
+        with probe.coarse_score_dump_label():
             with nvtx.annotate("kclass.adaptive.coarse_probe", color="yellow", domain=NVTX_DOMAIN_EM):
                 coarse_result = _run_dense_k_class_joint_firstiter_score_probe(
                     experiment_dataset,
@@ -1762,6 +1835,7 @@ def run_dense_k_class_em_adaptive(
                     coarse_rotations_np,
                     coarse_translations_np,
                     engine_kwargs=coarse_probe_kwargs,
+                    probe=probe,
                 )
         coarse_actual_backend = coarse_result.coarse_score_backend
         # ``per_class_hard_assignments[k, i]`` is class k's best coarse pose
@@ -1794,7 +1868,7 @@ def run_dense_k_class_em_adaptive(
         # per-class child lists above remain convenient for pass-2 routing.
         significant_counts_for_result = np.ones(n_images, dtype=np.int32)
     else:
-        from relax.sparse_pass2.resident_pass2 import _resident_stable_windows_requested
+        from relax.fine_pass.resident_pass2 import _resident_stable_windows_requested
 
         sig_kwargs = dict(
             adaptive_fraction=adaptive_fraction,
@@ -1819,6 +1893,7 @@ def run_dense_k_class_em_adaptive(
             relion_projector_r_max=relion_projector_r_max,
             relion_projector_texture_interp=coarse_relion_projector_texture_interp,
             debug_iteration=debug_iteration,
+            probe=probe,
             translation_phase_source=coarse_translation_phase_source,
             tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
@@ -1844,21 +1919,16 @@ def run_dense_k_class_em_adaptive(
                 **_translation_angle_scale_kwargs(engine_kwargs),
             )
         sig_sample_indices_by_class = pass1_result.significant_sample_indices
-        _full_coarse_stats = pass1_result.full_stats
         if image_seed_classes is not None:
             sig_sample_indices_by_class = seed_iteration_supports(
                 sig_sample_indices_by_class[0], image_seed_classes, n_classes
             )
-        if _full_coarse_stats is None or "significant_cutoff_counts" not in _full_coarse_stats:
-            raise RuntimeError("K-class significance did not return RELION cutoff-rank counts")
         significant_counts_for_result = np.asarray(
-            _full_coarse_stats["significant_cutoff_counts"],
+            pass1_result.stats.significant_cutoff_counts,
             dtype=np.int32,
         )
-        coarse_actual_backend = _full_coarse_stats.get("executed_coarse_backend")
-        coarse_significance_support_audit = _full_coarse_stats.get(
-            "coarse_significance_support_audit",
-        )
+        coarse_actual_backend = pass1_result.stats.executed_coarse_backend
+        coarse_significance_support_audit = pass1_result.stats.coarse_significance_support_audit
     if coarse_engine == "gemm_hybrid" and coarse_actual_backend not in {"gemm_macro", "exact_cc_gemm"}:
         raise RuntimeError(f"gemm_hybrid selected but coarse scorer executed {coarse_actual_backend!r}")
     pass1_s = time.time() - pass1_t0
@@ -1876,7 +1946,7 @@ def run_dense_k_class_em_adaptive(
             support_audit=coarse_significance_support_audit,
         )
         if coarse_engine == "gemm_hybrid":
-            from relax.sparse_pass2.engine_record import record_coarse_engine_call
+            from relax.runtime.engine_record import record_coarse_engine_call
 
             support = sig_sample_indices_by_class
             if firstiter_cc_pass2_only_best_coarse:
@@ -1918,9 +1988,11 @@ def run_dense_k_class_em_adaptive(
     mask_t0 = time.time()
     pass2_kwargs = dict(engine_kwargs)
     if reuse_zero_oversampling_coarse_state:
-        pass2_kwargs["relion_f32_normalization_sum_weight"] = _full_coarse_stats["relion_f32_sum_weight"]
-        pass2_kwargs["relion_coarse_max_posterior"] = _full_coarse_stats["relion_f32_max_posterior"]
+        pass2_kwargs["relion_f32_normalization_sum_weight"] = pass1_result.stats.relion_f32_sum_weight
+        pass2_kwargs["relion_coarse_max_posterior"] = pass1_result.stats.relion_f32_max_posterior
         pass2_kwargs["relion_coarse_hard_assignment"] = pass1_result.hard_assignment
+        if n_classes > 1:
+            pass2_kwargs["relion_coarse_class_assignment"] = pass1_result.class_assignment
     if pass2_use_float64_scoring is not None:
         pass2_kwargs["use_float64_scoring"] = bool(pass2_use_float64_scoring)
     if pass2_use_float64_projections is not None:
@@ -1987,29 +2059,37 @@ def run_dense_k_class_em_adaptive(
                 "dataset with subset(); the dense global-winner fallback was removed on 2026-10-03"
             )
         pass2_t0 = time.time()
-        result = _run_sparse_firstiter_global_winner_subset_pass2(
-            experiment_dataset,
-            means_array,
-            mean_variance,
-            noise_variance,
-            coarse_translations_np,
-            fine_rotations_np,
-            fine_mstep_rotations_np,
-            sparse_fine_translations_np,
-            rot_parent_map_np,
-            trans_parent_map_np,
-            sig_sample_indices_by_class,
-            disc_type,
-            coarse_result=coarse_result,
-            coarse_class_assignments=coarse_class_assignments,
-            n_rot_coarse=n_rot_coarse,
-            n_fine_trans=n_trans_fine,
-            healpix_order=_resolved_coarse_healpix_order(),
-            oversampling_order=_resolved_oversampling_order(),
-            accumulate_noise=accumulate_noise,
-            return_best_pose_details=return_best_pose_details,
-            pass2_kwargs=pass2_kwargs,
-        )
+
+        def _winner_subset_pass2(class_assignments, given_pose_evidence=None):
+            return _run_sparse_firstiter_global_winner_subset_pass2(
+                experiment_dataset,
+                means_array,
+                mean_variance,
+                noise_variance,
+                coarse_translations_np,
+                fine_rotations_np,
+                fine_mstep_rotations_np,
+                sparse_fine_translations_np,
+                rot_parent_map_np,
+                trans_parent_map_np,
+                sig_sample_indices_by_class,
+                disc_type,
+                coarse_result=coarse_result,
+                coarse_class_assignments=class_assignments,
+                n_rot_coarse=n_rot_coarse,
+                n_fine_trans=n_trans_fine,
+                healpix_order=_resolved_coarse_healpix_order(),
+                oversampling_order=_resolved_oversampling_order(),
+                accumulate_noise=accumulate_noise,
+                return_best_pose_details=return_best_pose_details,
+                pass2_kwargs=pass2_kwargs,
+                given_pose_evidence=given_pose_evidence,
+            )
+
+        if coarse_class_assignments is None:
+            # Given poses from one reference per class: no coarse probe named the winners.
+            coarse_class_assignments = _given_pose_cc_classes(_winner_subset_pass2, n_classes, n_images)
+        result = _winner_subset_pass2(coarse_class_assignments)
         pass2_s = time.time() - pass2_t0
         logger.info(
             "Adaptive K-class EM profile: classes=%d images=%d coarse=(rot=%d,trans=%d) sparse_firstiter_fine=(rot=%d,trans=%d) pass1=%.1fs mask=%.1fs pass2=%.1fs total=%.1fs",

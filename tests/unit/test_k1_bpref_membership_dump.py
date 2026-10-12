@@ -28,11 +28,10 @@ def test_membership_selector_preserves_filter_order(monkeypatch, directory, iter
             monkeypatch.delenv(name, raising=False)
         else:
             monkeypatch.setenv(name, value)
-    monkeypatch.setattr(bpref_diagnostics, "_bpref_contribution_context", {"iteration": context[0], "half": context[1]})
     if expected is ValueError:
         with pytest.raises(ValueError):
-            bpref_diagnostics._bpref_membership_dump_requested()
+            bpref_diagnostics._bpref_membership_dump_requested(*context)
     else:
-        assert bpref_diagnostics._bpref_membership_dump_requested() is expected
+        assert bpref_diagnostics._bpref_membership_dump_requested(*context) is expected
 
 

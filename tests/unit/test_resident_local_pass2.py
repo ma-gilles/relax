@@ -3,7 +3,7 @@
 Ticket: ``em_parity_tickets_20260918/T12_resident_local_search.md``.
 
 The two engines are compared through the production dispatch
-(``local_search_iteration._run_local_search_iteration``) with the flag off and
+(``local_half._run_local_search_iteration``) with the flag off and
 on, so the test covers the wiring as well as the driver.
 
 What is compared, and against what
@@ -31,15 +31,15 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
-from relax.local.local_layout import (
+from relax.fine_pass import resident_pass2 as rp
+from relax.local_search import resident_pass2 as rlp
+from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
-from relax.refinement import local_search_iteration
-from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
+from relax.refinement import local_half
+from relax.relion.projector_setup import reference_to_relion_projector_half_maps
 from relax.sampling import build_local_search_grid_metadata
-from relax.sparse_pass2 import resident_local_pass2 as rlp
-from relax.sparse_pass2 import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
 
@@ -54,12 +54,13 @@ def _gpu_available():
         return False
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
+    from relax.cuda import posterior as cuda_posterior
 
     return bool(
         cuda_backproject.custom_cuda_requested()
-        and em_cuda_kernels.sparse_pass2_segmented_supported()
-        and em_cuda_kernels.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
+        and cuda_posterior.sparse_pass2_segmented_supported()
+        and cuda_fine.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
     )
 
 
@@ -198,7 +199,7 @@ def _run(
         image_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         scale_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         trans_centers = rng.uniform(-0.5, 0.5, (N_IMAGES, 2)).astype(np.float32)
-    return local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+    return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
         case["volume"],
         case["noise_variance"],
@@ -230,7 +231,7 @@ def _run(
         scale_correction_data_vs_prior=np.full(case["n_shells"], 5.0, dtype=np.float64),
         mstep_relion_x_half=True,
         # The zero-oversampling route keeps every weight for the reconstruction
-        # and the statistics (half_scoring.py, local_reconstruct_significant_only).
+        # and the statistics (dense_half.py, local_reconstruct_significant_only).
         reconstruct_significant_only=not zero_oversampling,
         stats_use_reconstruction_probs=not zero_oversampling,
         adaptive_fraction=0.999,
@@ -263,7 +264,7 @@ def _dispatched_arguments(monkeypatch, **run):
         bound.append((signature.bind(*args, **kwargs), set(kwargs)))
         raise _Dispatched
 
-    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", resident)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", resident)
     with pytest.raises(_Dispatched):
         _run(_case(), monkeypatch=monkeypatch, **run)
     (arguments, keywords), = bound
@@ -555,7 +556,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     of memory when the plan counted three recon tiles and the tile preparation held
     about ten; a new translated array must update ``resident_pass2.chunk_translated_tile_pixels``."""
 
-    from relax.sparse_pass2 import resident_pass2 as rp_module
+    from relax.fine_pass import resident_pass2 as rp_module
 
     planned = []
     measured = []
@@ -647,6 +648,34 @@ def test_driver_does_not_narrow_the_projector_slab():
 
 
 @requires_resident_gpu
+def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch, _resident_local_env):
+    """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the local pass through the partial pair (relax#65).
+
+    Too few rows here for one accumulator to lose weight, so the switched pass agrees with the default one to
+    the driver's own repeat band; the loss is shown by test_row_partial_accumulator.py.
+    """
+
+    from relax.reconstruction import half_volume_mstep as hvm
+
+    case = _case()
+    default = _run(case, monkeypatch=monkeypatch)
+    allocated = []
+    real_allocate = rlp.allocate_row_partial
+
+    def allocate(*a, **kw):
+        allocated.append(real_allocate(*a, **kw))
+        return allocated[-1]
+
+    monkeypatch.setattr(rlp, "allocate_row_partial", allocate)
+    monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
+    exact = _run(case, monkeypatch=monkeypatch)
+    assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
+    assert_matches(np.asarray(default.hard_assignment), np.asarray(exact.hard_assignment))
+    a, b = np.asarray(default.Ft_y, dtype=np.complex128), np.asarray(exact.Ft_y, dtype=np.complex128)
+    assert float(np.linalg.norm(a - b) / np.linalg.norm(a)) < 1e-6
+
+
+@requires_resident_gpu
 def test_resident_local_repeats_itself(monkeypatch, _resident_local_env):
     """The resident driver's own repeat band, the reference for the table above."""
 
@@ -717,7 +746,6 @@ def test_mstep_adapter_refuses_unshifted_operands_without_the_kernel_tables():
             mstep_current_size=CURRENT_SIZE,
             relion_x_half_recon_indices=None,
             max_adjoint_block_bytes=1 << 20,
-            cuda_backproject=None,
         )
 
 
@@ -828,20 +856,118 @@ def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_l
     ) < 1e-6
 
 
+def _numerator_distance(explicit, unset) -> float:
+    """``|Ft_y(explicit) - Ft_y(unset)| / |Ft_y(explicit)|`` of two passes' backprojection numerators.
+
+    The distance is over the complex numerators. Until relax#71 the test cast them to float64, which kept the real
+    parts only; the complex distance is the stricter statistic at the same bound, and the distributions quoted in
+    :func:`_assert_the_same_pass` are of it.
+    """
+
+    a = np.asarray(explicit.Ft_y, dtype=np.complex128)
+    b = np.asarray(unset.Ft_y, dtype=np.complex128)
+    return float(np.linalg.norm(a - b) / np.linalg.norm(a))
+
+
+def _assert_the_same_pass(default_pairs, exact_pair):
+    """Two routes ran one pass: ``(explicit, unset)`` results, several pairs on the default path and one pair under
+    ``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1``.
+
+    The bound is ``sqrt(N_IMAGES) * float32 eps`` on the numerator's relative distance (8.06e-08 times its norm
+    for this case). What varies between two runs of the same pass is the float32 row-by-row backprojection sum,
+    whose order the GPU does not fix: about 330 of the 1331 voxels differ, most at the origin voxel and its two
+    x-neighbours, which every image and candidate adds into (7 to 8.5 float32 steps in the widest draws;
+    relax#65, relax#71). Everything upstream of that sum agrees: assignments, rotation posterior sums and noise
+    sums were identical in every one of 12,000 draws. As a fraction of the bound, one default-path pair measured
+    q50 0.38, q99 0.69, max 1.04 (1 of 1742 pairs above it; Slurm 15358610, 15359167, 15359175), so a single draw
+    fails about once in 1700 runs; with the partial pair of the exact-accumulation switch it measured q50 0.35,
+    q99 0.42, max 0.49 over 2613 draws (15359175). Hence:
+
+    - the default path's numerators are judged by the median of the pairs, and
+    - one pair is judged alone where the accumulation walk is removed.
+    """
+
+    bound = np.sqrt(N_IMAGES) * np.finfo(np.float32).eps
+    for explicit, unset in [*default_pairs, exact_pair]:
+        assert np.array_equal(np.asarray(explicit.hard_assignment), np.asarray(unset.hard_assignment))
+        assert_matches(
+            np.asarray(explicit.relion_stats.rotation_posterior_sums),
+            np.asarray(unset.relion_stats.rotation_posterior_sums),
+        )
+        assert_matches(
+            np.asarray(explicit.noise_stats.wsum_sigma2_noise), np.asarray(unset.noise_stats.wsum_sigma2_noise)
+        )
+    assert np.median([_numerator_distance(explicit, unset) for explicit, unset in default_pairs]) <= bound
+    assert _numerator_distance(*exact_pair) <= bound
+
+
 @requires_resident_gpu
 def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch, _resident_local_env):
     """A regular iteration at the full box passes current_size=None (MS2 box 512 it25,
-    bench 14641044, which the dispatcher refused); it is the box-size pass."""
+    bench 14641044, which the dispatcher refused); it is the box-size pass
+    (:func:`_assert_the_same_pass` says how the two results are compared)."""
+
+    from relax.reconstruction import half_volume_mstep as hvm
 
     case = _case()
     box = int(case["dataset"].image_shape[0])
-    unset = _run(case, monkeypatch=monkeypatch, current_size=None)
-    explicit = _run(case, monkeypatch=monkeypatch, current_size=box)
-    assert_matches(np.asarray(explicit.hard_assignment), np.asarray(unset.hard_assignment))
-    a = np.asarray(explicit.Ft_y, dtype=np.float64)
-    b = np.asarray(unset.Ft_y, dtype=np.float64)
-    # The same pass twice: only the float32 BPref atomics' order may differ.
-    assert np.linalg.norm(a - b) <= np.sqrt(N_IMAGES) * np.finfo(np.float32).eps * np.linalg.norm(a)
+
+    def pair():
+        unset = _run(case, monkeypatch=monkeypatch, current_size=None)
+        return _run(case, monkeypatch=monkeypatch, current_size=box), unset
+
+    default_pairs = [pair() for _ in range(5)]
+    with monkeypatch.context() as exact:
+        exact.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
+        exact_pair = pair()
+    _assert_the_same_pass(default_pairs, exact_pair)
+
+
+def _stand_in_pass(numerator, *, assignment=None, rotation_sums=None, noise_sums=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        Ft_y=numerator,
+        hard_assignment=np.arange(N_IMAGES, dtype=np.int32) if assignment is None else assignment,
+        relion_stats=SimpleNamespace(
+            rotation_posterior_sums=np.linspace(0.1, 1.0, 12) if rotation_sums is None else rotation_sums
+        ),
+        noise_stats=SimpleNamespace(
+            wsum_sigma2_noise=np.linspace(1.0, 2.0, 5, dtype=np.float32) if noise_sums is None else noise_sums
+        ),
+    )
+
+
+def test_same_pass_assertions_pass_accumulation_noise_and_catch_a_changed_pass():
+    """Stand-in results: the comparison accepts the measured accumulation noise, one wide draw included, and
+    fails when a route's pass differs (a numerator off by a few float32 steps throughout, on either
+    accumulation path, a changed posterior sum, noise sum or assignment)."""
+
+    rng = np.random.default_rng(71)
+    numerator = (rng.normal(size=1331) + 1j * rng.normal(size=1331)).astype(np.complex64)
+    eps = float(np.finfo(np.float32).eps)
+
+    def off_by(steps):
+        # Every voxel moved by ``steps`` float32 steps of its own magnitude: a relative distance of steps * eps.
+        return (numerator.astype(np.complex128) * (1.0 + steps * eps)).astype(np.complex128)
+
+    def pair(steps=0.0, **changed):
+        return _stand_in_pass(off_by(steps), **changed), _stand_in_pass(numerator)
+
+    # The bound is sqrt(8) = 2.83 steps. Default pairs at 0.38 of it with one draw above it; the exact pair at 0.35.
+    noise = [pair(1.1), pair(1.0), pair(3.0), pair(1.2), pair(0.9)]
+    _assert_the_same_pass(noise, pair(1.0))
+
+    broken = [
+        ([pair(4.0) for _ in range(5)], pair(1.0)),  # the default path's numerator, 4 steps off throughout
+        (noise, pair(4.0)),  # the exact-accumulation numerator
+        (noise, pair(1.0, rotation_sums=np.linspace(0.1, 1.0, 12) * (1.0 + 1e-9))),
+        ([*noise[:4], pair(0.9, noise_sums=np.linspace(1.0, 2.0, 5, dtype=np.float32) * np.float32(1.0 + 1e-4))], pair(1.0)),
+        (noise, pair(1.0, assignment=np.arange(N_IMAGES, dtype=np.int32)[::-1].copy())),
+    ]
+    for default_pairs, exact_pair in broken:
+        with pytest.raises(AssertionError):
+            _assert_the_same_pass(default_pairs, exact_pair)
 
 
 @requires_resident_gpu
@@ -961,21 +1087,72 @@ def test_cc_block_rows_divide_every_capacity():
         assert 1 <= block <= 128 and capacity % block == 0 and block & (block - 1) == 0
 
 
-def test_local_firstiter_cc_refuses_a_class3d_pass():
-    """RELION's --firstiter_cc iteration scores one reference; a local Class3D CC pass (a layout with
-    two classes) is refused before any device work."""
+@requires_resident_gpu
+def test_local_firstiter_cc_class3d_takes_the_winner_over_classes(monkeypatch, _resident_local_env):
+    """RELION's --firstiter_cc iteration of a local Class3D with given references scores every class
+    (do_generate_seeds is off, ml_optimiser.cpp:4392-4401) and keeps each particle's best sample over
+    classes and poses (relax#72: this pass was refused).
 
-    from types import SimpleNamespace
+    Two different references: each class's best score and pose are those of its own K=1 CC pass, and
+    the particle's whole posterior goes to the class with the larger best score.
+    """
 
-    with pytest.raises(rlp.ResidentConfigurationUnsupported, match="firstiter_cc iteration is K=1"):
-        rlp.compute_local_search_resident(
-            SimpleNamespace(experiment_dataset=MockDataset(n_images=2, seed=1)),
-            SimpleNamespace(n_classes=2),
-            SimpleNamespace(current_size=CURRENT_SIZE, wsum_current_size=None, firstiter_cc=True),
-            None,
-            translation_prior_centers=None,
-            symmetry_label="C1",
-        )
+    case = _case()
+    rng = np.random.default_rng(72)
+    other_projector = case["projector_half"] * jnp.asarray(
+        rng.uniform(0.5, 1.5, np.shape(case["projector_half"])), dtype=jnp.float32
+    )
+    singles = [
+        _run(case, monkeypatch=monkeypatch, firstiter_cc=True),
+        _run(dict(case, projector_half=other_projector), monkeypatch=monkeypatch, firstiter_cc=True),
+    ]
+    two = dict(
+        case,
+        volume=jnp.stack([case["volume"], case["volume"]]),
+        projector_half=jnp.stack([case["projector_half"], other_projector]),
+    )
+    joint = _run(two, monkeypatch=monkeypatch, firstiter_cc=True, n_classes=2).class_pass
+
+    best = np.stack([np.asarray(s.relion_stats.best_log_score_per_image, dtype=np.float64) for s in singles])
+    for k in range(2):
+        np.testing.assert_allclose(np.asarray(joint.class_best_log_score_per_image[k]), best[k], rtol=1e-5)
+        assert_matches(np.asarray(joint.per_class_hard_assignments[k]), np.asarray(singles[k].hard_assignment))
+    winner = np.argmax(best, axis=0)
+    assert set(winner.tolist()) == {0, 1}, "the case should give both classes a particle"
+    np.testing.assert_array_equal(np.asarray(joint.stats.max_posterior_per_image), 1.0)
+    np.testing.assert_allclose(
+        np.asarray(joint.class_reconstruction_posterior_sums), np.bincount(winner, minlength=2), atol=1e-6
+    )
+
+
+@requires_resident_gpu
+def test_local_firstiter_cc_identical_classes_give_the_first_class_everything(monkeypatch, _resident_local_env):
+    """An exact tie between classes goes to the first class: with two copies of one reference the first
+    class's BPref is the K=1 CC pass's and the second class has none.
+
+    RELION takes the CC winner as the device arg-min of the coarse weights
+    (acc_ml_optimiser_impl.h:2012-2026, ``getArgMinOnDevice`` = ``cub::DeviceReduce::ArgMin``,
+    cuda_utils_cub.cuh:66-84, which prefers the smaller offset on a tie), and that array is class-major
+    (``mapAllWeightsToMweights`` per class, acc_ml_optimiser_impl.h:1384-1392), so the lower class wins.
+    """
+
+    case = _case()
+    single = _run(case, monkeypatch=monkeypatch, firstiter_cc=True)
+    doubled = dict(
+        case,
+        volume=jnp.stack([case["volume"], case["volume"]]),
+        projector_half=jnp.stack([case["projector_half"], case["projector_half"]]),
+    )
+    joint = _run(doubled, monkeypatch=monkeypatch, firstiter_cc=True, n_classes=2).class_pass
+
+    def rel_l2(a, b):
+        a, b = np.asarray(a, dtype=np.complex128), np.asarray(b, dtype=np.complex128)
+        return float(np.linalg.norm(a - b) / np.linalg.norm(b))
+
+    np.testing.assert_allclose(np.asarray(joint.class_reconstruction_posterior_sums), [N_IMAGES, 0.0], atol=1e-6)
+    assert_matches(np.asarray(joint.per_class_hard_assignments[0]), np.asarray(single.hard_assignment))
+    assert rel_l2(joint.Ft_y[0], single.Ft_y) < 1e-5 and rel_l2(joint.Ft_ctf[0], single.Ft_ctf) < 1e-5
+    assert not np.asarray(joint.Ft_y[1]).any() and not np.asarray(joint.Ft_ctf[1]).any()
 
 
 @requires_resident_gpu
@@ -1052,7 +1229,7 @@ def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_l
     repeat band (the x-half BPref and Wavg atomics are not bit-reproducible in either arm). The --firstiter_cc
     iteration scores its blocks with the normalized-CC block core the one-call CC chunk uses."""
 
-    from relax.sparse_pass2 import resident_scoring
+    from relax.fine_pass import resident_scoring
 
     case = _case()
     whole = _run(case, monkeypatch=monkeypatch, production_shapes=True, firstiter_cc=firstiter_cc)
@@ -1203,7 +1380,7 @@ def test_cc_row_block_scorer_matches_the_one_call_cc_chunk():
     """The --firstiter_cc lone scorer and the one-call CC chunk scorer share one block core: scoring the same
     projections a block at a time gives the one-call chunk's scores and candidates (padding blocks included)."""
 
-    from relax.sparse_pass2 import resident_scoring as rs
+    from relax.fine_pass import resident_scoring as rs
 
     rng = np.random.default_rng(11)
     n_images, n_trans, n_pix, rows, n_valid = 2, 5, 24, 32, 21

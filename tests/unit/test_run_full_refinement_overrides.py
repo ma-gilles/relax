@@ -1,4 +1,4 @@
-"""Unit tests for ``recovar.em.parity.relion_replay._build_replay_iteration_overrides``.
+"""Unit tests for ``relax.parity.relion_replay._build_replay_iteration_overrides``.
 
 Locks down the parity-critical contract that the per-iter replay override
 dict always carries ``translation_sigma_angstrom`` sourced from RELION's
@@ -20,11 +20,16 @@ from helpers.em_fixtures import fixture_dir, fixture_root
 from helpers.float_compare import assert_matches, matches
 from recovar.utils.file_hash import sha256_file
 
-from relax.helpers.iteration_history import (
-    _load_init_noise_radial_npz,
-    _load_init_previous_best_poses_npz,
+from relax.commands import refinement_arguments
+from relax.commands import refinement_run as run_full_refinement
+from relax.commands.refinement_particles import _apply_relion_image_mask, prepare_relion_halfset_inputs
+from relax.commands.refinement_run import (
+    _k1_relion_live_initial_noise_enabled,
+    _replay_complete_initial_particle_state,
+    _resolve_replay_normcorr,
+    _resolve_tau2_fudge,
+    _use_fresh_auto_refine_particle_order,
 )
-from relax.helpers.orientation_priors import DirectionPrior
 from relax.parity import frozen_boundary_cli
 from relax.parity.frozen_boundary import (
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
@@ -47,17 +52,7 @@ from relax.parity.relion_replay import (
     _build_replay_iteration_overrides,
     _format_replay_mean_for_log,
 )
-from relax.refinement import command_options
-from relax.refinement import full_refinement as run_full_refinement
-from relax.refinement.full_refinement import (
-    _k1_relion_live_initial_noise_enabled,
-    _replay_complete_initial_particle_state,
-    _resolve_replay_normcorr,
-    _resolve_tau2_fudge,
-    _use_fresh_auto_refine_particle_order,
-)
-from relax.refinement.half_inputs import HalfSet
-from relax.refinement.particle_loading import _apply_relion_image_mask, prepare_relion_halfset_inputs
+from relax.refinement.iteration_history import _load_init_noise_radial_npz
 from relax.refinement.reference_state import ReferenceModel, _updated_mean_variance_per_half
 from relax.refinement.startup_noise import (
     estimate_startup_sigma2,
@@ -68,11 +63,14 @@ from relax.relion.initial_noise import (
     read_relion_single_optics_sigma2_noise,
     relion_mpi_process_start_scoring_noise_pair,
 )
-from relax.relion.input_particle_table import prepare_relion_halfset_layout
-from relax.relion.relion_metadata import (
+from relax.sampling.orientation_priors import DirectionPrior
+from relax.star.input_particle_table import prepare_relion_halfset_layout
+from relax.star.input_poses import _load_init_previous_best_poses_npz
+from relax.star.metadata import (
     _parse_relion_tau2_fudge,
     parse_relion_cli_ini_high,
 )
+from relax.steps.half_inputs import HalfSet
 
 FIXTURE = fixture_root("k1_5k128_relion_os0")
 
@@ -543,7 +541,7 @@ def test_fixed_arm_rejects_explicit_optimiser_and_internal_resolver_uses_sealed_
     boundary = SimpleNamespace(fixed_diagnostic_arm=True)
     assert boundary.fixed_diagnostic_arm
     assert (
-        command_options.relion_optimiser_star(args, relion_half_sets_from_input=False, sealed_optimiser=sealed)
+        refinement_arguments.relion_optimiser_star(args, relion_half_sets_from_input=False, sealed_optimiser=sealed)
         == sealed.resolve()
     )
 
@@ -652,16 +650,18 @@ def test_frozen_boundary_schedule_is_threaded_exactly_to_refinement_loop(monkeyp
 
     from relax.parity import frozen_boundary_cli
 
-    fresh = controller_inputs(monkeypatch, tmp_path / "fresh", "refine")["options"]
-    assert (fresh.start.init_relion_incr_size, fresh.start.init_fsc, fresh.start.init_ave_Pmax) == (10, None, None)
+    fresh = controller_inputs(monkeypatch, tmp_path / "fresh", "refine")
+    fresh, fresh_seeds = fresh["options"], fresh["source"].start_seeds
+    assert (fresh_seeds.relion_incr_size, fresh_seeds.fsc, fresh_seeds.ave_pmax) == (10, None, None)
     boundary = _StandInBoundary()
     monkeypatch.setattr(frozen_boundary_cli, "load_cli_boundary", lambda args, **_kwargs: (boundary, None))
     monkeypatch.setattr(frozen_boundary_cli, "validate_particle_half_inputs", lambda *a, **k: None)
     monkeypatch.setattr(frozen_boundary_cli, "validate_empty_replay_slots", lambda *a, **k: None)
-    frozen = controller_inputs(monkeypatch, tmp_path / "frozen", "refine")["options"]
-    assert (frozen.schedule.init_current_size, frozen.start.init_relion_incr_size) == (12, 7)
+    frozen = controller_inputs(monkeypatch, tmp_path / "frozen", "refine")
+    frozen, seeds = frozen["options"], frozen["source"].start_seeds
+    assert (frozen.schedule.init_current_size, seeds.relion_incr_size) == (12, 7)
     assert (12, 7) != (fresh.schedule.init_current_size, 10)
-    assert frozen.start.init_fsc is boundary.fsc and frozen.start.init_ave_Pmax == 0.25
+    assert seeds.fsc is boundary.fsc and seeds.ave_pmax == 0.25
 
 
 def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():
@@ -682,7 +682,7 @@ def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():
     "flag", ["--relion-projector-capture-dir", "--relion-projector-capture-manifest", "--relion-projector-capture-iteration"],
 )
 def test_the_retired_projector_capture_flags_refuse_and_name_the_tag(flag, capsys):
-    from relax.refinement.command_options import CAPTURED_PROJECTOR_TAG, parse_refinement_args
+    from relax.commands.refinement_arguments import CAPTURED_PROJECTOR_TAG, parse_refinement_args
 
     with pytest.raises(SystemExit):
         parse_refinement_args(["--data_dir", "d", "--output", "o", flag, "x"])
@@ -816,7 +816,7 @@ def _archive_metadata(result, *, half_indices=None, n_images=None):
 
 
 def test_refinement_results_persist_final_tau2_weight_combination():
-    from relax.helpers.iteration_history import add_refinement_history_artifacts
+    from relax.refinement.iteration_history import add_refinement_history_artifacts
 
     result = {
         "fsc_history": [],
@@ -847,7 +847,7 @@ def test_final_all_data_writes_matched_unfiltered_half_products(tmp_path):
 
 
 def test_refinement_results_persist_class_assignment_history():
-    from relax.helpers.iteration_history import add_class_history_artifacts
+    from relax.refinement.iteration_history import add_class_history_artifacts
 
     result = {
         "class_assignment_history": [np.array([3, 0, 2, 1], dtype=np.int64)],
@@ -891,9 +891,9 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     from helpers.refinement_results import refinement_result
     from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
+    from relax.commands import refinement_run
     from relax.parity import archive_provenance, oracle_admission
-    from relax.refinement import full_refinement, iteration_loop
-    from relax.relion import relion_worker_scale
+    from relax.refinement import follower_scale, iteration_loop
 
     # The controller's replay telemetry is archived as integers.
     saved = _archive_metadata({
@@ -905,8 +905,8 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     replay, schedule = object(), object()
     monkeypatch.setattr(oracle_admission, "load_verified_dispatch_schedule",
                         lambda *a, **k: oracle_admission.VerifiedDispatchSchedule(schedule, [tmp_path]))
-    monkeypatch.setattr(relion_worker_scale, "prepare_follower_topology",
-                        lambda *a, **k: relion_worker_scale.PreparedFollowerTopology(
+    monkeypatch.setattr(follower_scale, "prepare_follower_topology",
+                        lambda *a, **k: follower_scale.PreparedFollowerTopology(
                             n_followers=0, replay=replay, reduction_mode=None, owners_by_iteration=None))
     controller = {}
     monkeypatch.setattr(iteration_loop, "refine_single_volume", lambda **kw: controller.update(kw) or refinement_result())
@@ -916,13 +916,13 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
         raise _Stop
 
     monkeypatch.setattr(archive_provenance, "replay_archive_metadata", lambda **kw: archive.update(kw) or {})
-    monkeypatch.setattr(full_refinement, "build_archive_metadata", build_archive_metadata)
+    monkeypatch.setattr(refinement_run, "build_archive_metadata", build_archive_metadata)
     _stand_in_device(monkeypatch)
     with pytest.raises(_Stop):
         _run_main(monkeypatch, "refine", write_tiny_data_dir(tmp_path / "data"), tmp_path / "out", [])
     assert controller["source"].follower_topology.replay is replay
     assert archive["follower_replay"] is replay and archive["relion_dispatch_schedule"] is schedule
-    assert command_options.parse_refinement_args(
+    assert refinement_arguments.parse_refinement_args(
         ["--data_dir", "d", "--output", "o", "--relion-follower-scale-replay", "r.npz"]
     ).relion_follower_scale_replay == "r.npz"
 
@@ -937,7 +937,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
     from helpers.refinement_specs import local_half_owners
     from helpers.sparse_pass2_mock import MockDataset
 
-    from relax.refinement import half_scoring
+    from relax.refinement import local_half
     from relax.sampling import relion_angular_sampling_deg
 
     class Scored(Exception):
@@ -949,10 +949,10 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
         captured.update(support=support, kernel=kernel)
         raise Scored
 
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fine_pass)
-    monkeypatch.setattr(half_scoring, "build_local_search_grid_metadata", lambda _order, *, symmetry="C1": {})
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", fine_pass)
+    monkeypatch.setattr(local_half, "build_local_search_grid_metadata", lambda _order, *, symmetry="C1": {})
     monkeypatch.setattr(
-        half_scoring, "build_local_hypothesis_layout",
+        local_half, "build_local_hypothesis_layout",
         lambda *args, **kwargs: SimpleNamespace(rotation_counts=np.asarray([2])),
     )
     dataset = MockDataset(n_images=2, seed=3)
@@ -967,15 +967,15 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
         trans_prior_center_for_engine=np.zeros((dataset.n_units, 2), dtype=np.float32),
         current_sigma_offset_angstrom=1.0, disc_type="linear_interp", cs_for_engine=None,
         local_pass1_current_size=4, image_corrections_k=None, scale_corrections_k=None,
-        translation_search_base=None, disable_adjoint_y=False, disable_adjoint_ctf=False, max_significants=None,
+        translation_search_base=None, max_significants=None,
         iteration=3, local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=0,
-        diagnostic_score_only=score_only, local_search_translation_prior_mode="coarse",
+        diagnostic_score_only=score_only,
         replay_prior_translations=None, collect_local_search_profile=False,
         local_profile_history=[],
     )
     with pytest.raises(Scored):
-        half_scoring._score_half_local(*owners)
+        local_half._score_half_local(*owners)
     support = captured["support"]
     assert support.score_only is score_only
     assert captured["kernel"].accumulate_noise is (not score_only)
@@ -987,7 +987,7 @@ def test_numbered_projectors_skip_the_empty_diagnostic_half(monkeypatch, caplog)
     import logging
     from types import SimpleNamespace
 
-    from relax.refinement import projector_preparation
+    from relax.steps import projector_preparation
 
     built = []
     monkeypatch.setattr(
@@ -1128,7 +1128,7 @@ def test_relion_expected_accuracy_layout_supports_repeated_indices_across_stacks
 
 def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
     pd = pytest.importorskip("pandas")
-    from relax.helpers.expected_accuracy import relion_auto_refine_half_orders
+    from relax.sampling.expected_accuracy import relion_auto_refine_half_orders
 
     relion_particles = pd.DataFrame(
         {
@@ -2058,7 +2058,7 @@ def test_replay_overrides_respect_init_relion_iteration_offset(tmp_path):
 
 
 def test_fresh_kclass_translation_seed_is_scoped_and_fails_closed():
-    from relax.relion.input_poses import _kclass_firstiter_translation_seed
+    from relax.star.input_poses import _kclass_firstiter_translation_seed
     override = {"previous_best_translations": [np.zeros((1, 2)), np.zeros((2, 2))]}
     assert (
         _kclass_firstiter_translation_seed(
@@ -2085,7 +2085,7 @@ def test_fresh_kclass_translation_seed_is_scoped_and_fails_closed():
 
 
 def test_fresh_kclass_selects_only_run_it000_translations():
-    from relax.relion.input_poses import _kclass_firstiter_translation_seed
+    from relax.star.input_poses import _kclass_firstiter_translation_seed
     half1 = np.asarray([[3.9, -0.34], [0.3, -0.34]], dtype=np.float64)
     # Generic replay extraction currently collapses an empty all-data second
     # accumulator to (0,); the translation selector restores (0, 2).
@@ -2117,8 +2117,8 @@ def test_fresh_kclass_selects_only_run_it000_translations():
 def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
     # RELION's first iteration at ini_high 60 A on 128 px / 4.25 A runs at current size 38
     # (2 * (ROUND(9.07) + incr_size 10)); the old 32-pixel floor gave 52.
-    from relax.helpers.resolution import bootstrap_current_size_relion
-    from relax.refinement.full_refinement import _initial_current_size
+    from relax.commands.refinement_run import _initial_current_size
+    from relax.reconstruction.resolution import bootstrap_current_size_relion
 
     assert _initial_current_size(4.25, 128, 60.0) == 18
     assert bootstrap_current_size_relion(_initial_current_size(4.25, 128, 60.0), 128) == 38
@@ -2129,7 +2129,7 @@ def test_initial_current_size_is_relions_ini_high_pixel_without_a_floor():
 @pytest.mark.unit
 def test_every_reference_loader_refuses_a_map_of_unknown_convention(tmp_path):
     """K=1 --init_volume and the Class3D --ref_star / --init_class_volumes / data-dir class maps go
-    through one check (relax.helpers.map_io.require_relion_convention_reference) before they are read."""
+    through one check (relax.io.map_io.require_relion_convention_reference) before they are read."""
     import mrcfile
 
     legacy = tmp_path / "reference_init_class001.mrc"  # RECOVAR-convention name, mrcfile's default label

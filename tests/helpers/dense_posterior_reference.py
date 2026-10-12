@@ -15,12 +15,12 @@ from helpers.dense_block_scores import _score_rotation_block
 from recovar.core.configs import ForwardModelConfig
 from recovar.reconstruction import noise as noise_utils
 
-from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.half_spectrum import make_half_image_weights
-from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
-from relax.helpers.projection import compute_projections_block as _compute_projections_block
-from relax.scoring.scoring import update_logsumexp
+from relax.fourier.fourier_window import make_fourier_window_spec
+from relax.fourier.half_spectrum import make_half_image_weights
+from relax.numerics.precision import DensePrecisionPolicy
+from relax.projection.projection import compute_projections_block as _compute_projections_block
+from relax.relion.image_preprocessing import preprocess_batch as _preprocess_batch
+from relax.scoring.coarse_kernels import update_logsumexp
 
 
 @dataclass(frozen=True)
@@ -156,7 +156,7 @@ def compute_e_step_weights(
 
         # Pass 1: streaming logsumexp
         max_s = jnp.full(batch_size, -jnp.inf)
-        sum_exp = jnp.zeros(batch_size, dtype=precision_policy.normalization_real_dtype)
+        sum_exp = jnp.zeros(batch_size, dtype=jnp.float64)
 
         for block in _iter_dense_rotation_blocks(rotations_padded, n_rot, n_blocks, rotation_block_size):
             proj_half_b, proj_abs2_half_b = _compute_projections_block(

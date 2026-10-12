@@ -31,17 +31,16 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
 
 1. **Environment reads that stay where they are used (rule 5).** Each is a diagnostic dump or a parity
    hook owned below the controller:
-   - `estep_setup._finish_relion_projector_class_inputs`: `RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR`
-     (called through the projector context, which has no options);
    - `estep_common.arrays_to_accumulators`: `RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR`;
    - `output.write_initial_run_metadata`: records the CUDA allocator and JAX cache variables as provenance.
-   Moving them into `VdamEnvironment` costs plumbing through the projector context and the accuracy
-   helpers. Not an exception: `RELAX_USE_FLOAT64_SCORING`, read once by `VdamEnvironment` only to refuse it;
+   Moving them into `VdamEnvironment` costs plumbing through the accuracy helpers. The projector dump
+   (`RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR`) is `VdamEnvironment.projector_dump_dir`, handed to the projector
+   context by the driver. Not an exception: `RELAX_USE_FLOAT64_SCORING`, read once by `VdamEnvironment` only to refuse it;
    `RELAX_INITIAL_IREF_OVERRIDE` (RELION's start-up references in place of the bootstrap,
    `VdamInputSource.startup_references`), `RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE` and the native M-step replay
    variables, read once by the command,
    which builds the run's input source (`relax.vdam.ports.VdamInputSource`, `relax.parity.vdam_replay`) and
-   refuses the native replays unless the M-step oracle (`relax.diagnostics.vdam_native_mstep`) runs; and the
+   refuses the native replays unless the M-step oracle (`scripts.vdam_native_mstep`) runs; and the
    dumps the command's observer writes (`relax.vdam.ports.VdamObserver`,
    `relax.diagnostics.vdam_observers.vdam_command_observer`): the expected-accuracy inputs, the noise-update
    boundary, the non-finite noise sums and the stage profiles (`RECOVAR_INITIAL_MODEL_PROFILE`).
@@ -61,9 +60,9 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    `grad_em_iters`, `tau2_fudge_arg`, `grad_stepsize`, `mu`), one concept of run lifetime. Other wide
    functions: `compute_bootstrap_iref` (22), `run_tomo_initial_model_estep` (16, engine boundary),
    `bootstrap_references` (16), `compute_subset_size` (13, RELION's arguments one for one).
-5. **Layers (rule 11).** Production imports refinement internals (`refinement.optics_shapes`, `refinement.tomo_half`,
+5. **Layers (rule 11).** Production imports refinement internals (`refinement.optics_shapes` and `refinement.tomo_half`, in `relax/steps` since layout S8b;
    `sparse_pass2.resident_pass2.stable_window_class_history`) and private names of
-   `relion.initial_model_io`. `relax.vdam.sgd` imports `relax.vdam.state`, and the loop imports
+   `relion.initial_model_io` (since moved into vdam). `relax.vdam.sgd` imports `relax.vdam.state`, and the loop imports
    it back (lazily, inside `MomentumSgdUpdate`). `relion_solvent_mask` has copies in
    `relax/relion/reference_initialization.py` and `relax/relion/initial_noise.py` (one formula, three
    homes).

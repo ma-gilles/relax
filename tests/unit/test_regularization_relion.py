@@ -10,8 +10,8 @@ import jax.numpy as jnp  # noqa: E402
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 from recovar.reconstruction import regularization
 
-from relax.reconstruction import regularization_relion
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction import regularization as regularization_relion
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -544,7 +544,7 @@ def test_shell_stats_route_to_the_host_when_the_device_copy_does_not_fit(monkeyp
     16 GB card and ran out of memory (A100 emulating 16 GB, relax c8ac3e6): it reduces on the host when the device
     arrays would take more than half of what the device can still hand out, and stays on an 80 GB card."""
 
-    from relax.sparse_pass2 import sparse_pass2_budget as budget
+    from relax.runtime import memory_budget as budget
 
     gib = 1 << 30
     voxels = 512**3
@@ -638,7 +638,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
     from helpers.em_fixtures import fixture_file
     from recovar.utils.helpers import load_relion_volume, recovar_volume_to_relion
 
-    from relax.refinement.projector_preparation import prepare_scoring_projector
+    from relax.steps.projector_preparation import prepare_scoring_projector
 
     volume_path = fixture_file("k4_5k128_relion_os0", "run_it000_class001.mrc")
     vol_recovar = np.asarray(load_relion_volume(str(volume_path)), dtype=np.float64)

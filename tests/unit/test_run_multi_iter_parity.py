@@ -8,8 +8,8 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
-from relax.helpers.iteration_history import add_significant_count_artifacts
-from relax.parity.relion_replay import _validate_bpref_particle_order_scope
+from relax.refinement.iteration_history import add_significant_count_artifacts
+from relax.refinement.setup_checks import _validate_bpref_particle_order_scope
 from scripts import diff_relion_recovar_per_iter as parity_diff
 from scripts.postprocess_multi_iter_gt import resolve_intermediates_dir
 from scripts.run_multi_iter_parity import (
@@ -183,7 +183,7 @@ def test_particle_half_indices_preserve_source_order_and_int64_dtype():
 
 
 def test_particle_half_indices_can_reconstruct_fresh_relion_order(monkeypatch):
-    from relax.helpers import expected_accuracy
+    from relax.sampling import expected_accuracy
 
     observed = {}
 
@@ -942,7 +942,7 @@ def test_iteration_overrides_use_the_replay_scale_keys():
 
 def test_final_only_replay_reports_empty_numbered_assignments(monkeypatch):
     """A final-only replay runs no numbered iteration; the result still carries
-    per-half assignments (None), which full_refinement indexes. 14381025
+    per-half assignments (None), which refinement_run indexes. 14381025
     finished the forced final at 10097 it22 and then stopped on an unbound
     hard_assignments."""
 
@@ -1032,3 +1032,26 @@ def test_replay_reads_every_optics_groups_noise():
     assert pair.half1.shape == pair.half2.shape == (2, n * n)
     with pytest.raises(ValueError, match="numbered 1..G"):
         read_model_sigma2_noise({"model_optics_group_2": two}, context="test")
+
+
+def test_replay_source_starts_from_the_relion_iterations_seeds(tmp_path):
+    """The script's replay source carries the completed RELION iteration's FSC, Pmax and high-FSC latch."""
+    from relax.parity.relion_replay_source import RelionReplaySource
+    from relax.refinement.ports import StartSeeds
+    from scripts.run_multi_iter_parity import replay_source
+
+    seeds = StartSeeds(fsc=np.linspace(1.0, 0.0, 9), ave_pmax=0.25, has_high_fsc_at_limit=True)
+    source = replay_source(
+        None,
+        relion_dir=tmp_path,
+        run_prefix="run",
+        max_iter=None,
+        iteration_overrides=[None],
+        final_replay_override=None,
+        start_seeds=seeds,
+    )
+
+    assert isinstance(source, RelionReplaySource)
+    assert source.start_seeds is seeds
+    assert source.replay.perturb_replay_relion_dir == str(tmp_path)
+

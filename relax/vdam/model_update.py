@@ -1,0 +1,223 @@
+"""The model's update from one E-step's sums.
+
+RELION's ``MlOptimiser::maximizationOtherParameters`` for the native VDAM InitialModel: the noise
+(sigma2), offset and class/direction probability updates, read from the E-step's ``EstepSums``.
+``iteration_loop`` calls these once per iteration.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+
+import numpy as np
+
+from relax.vdam.estep_common import EstepSums
+from relax.vdam.state import InitialModelState
+
+MIN_SIGMA2_OFFSET_ANGSTROM2: float = 2.0
+
+
+def _my_mu(mu: float, do_grad: bool, subset_size: int) -> float:
+    my_mu = float(mu) if do_grad and subset_size != -1 else 0.0
+    if my_mu < 0.0 or my_mu > 1.0:
+        raise ValueError(f"mu must be in [0, 1], got {mu}")
+    return my_mu
+
+
+def with_uniform_class_direction_priors(
+    state: InitialModelState, *, n_directions: int | None = None
+) -> InitialModelState:
+    """Set the joint class/direction prior to 1/(K*D), including restarts."""
+    if n_directions is None:
+        direction = np.asarray(state.pdf_direction)
+        if direction.ndim != 2 or direction.shape[0] != state.K:
+            raise ValueError("uniform class/direction prior requires a (K, D) direction grid")
+        n_directions = int(direction.shape[1])
+    if int(n_directions) < 1:
+        raise ValueError("uniform class/direction prior requires at least one direction")
+    return replace(
+        state,
+        pdf_class=np.full(state.K, 1.0 / float(state.K), dtype=np.float64),
+        pdf_direction=np.full((state.K, n_directions), 1.0 / float(state.K * n_directions), dtype=np.float64),
+    )
+
+
+class NonFiniteNoiseSums(ValueError):
+    """The E-step's noise sums are not finite; ``summaries`` describe the sums and their weights."""
+
+    def __init__(self, summaries):
+        self.summaries = list(summaries)
+        super().__init__("noise weighted sums must be finite: " + "; ".join(self.summaries))
+
+
+def _array_finite_summary(name: str, value: object, *, max_indices: int = 5) -> str:
+    arr = np.asarray(value)
+    bad = np.argwhere(~np.isfinite(arr))
+    if bad.size == 0:
+        values = arr.astype(np.float64, copy=False).reshape(-1)
+        if values.size == 0:
+            return f"{name}: shape={arr.shape}, empty"
+        return (
+            f"{name}: shape={arr.shape}, all finite, min={float(np.min(values)):.6g}, max={float(np.max(values)):.6g}"
+        )
+    finite_values = arr[np.isfinite(arr)].astype(np.float64, copy=False)
+    finite_range = (
+        f"finite_min={float(np.min(finite_values)):.6g}, finite_max={float(np.max(finite_values)):.6g}"
+        if finite_values.size
+        else "no finite values"
+    )
+    sample_indices = [tuple(int(x) for x in idx) for idx in bad[:max_indices]]
+    return f"{name}: shape={arr.shape}, nonfinite={int(bad.shape[0])}/{arr.size}, {finite_range}, first_bad={sample_indices}"
+
+
+def update_noise_from_estep(
+    state: InitialModelState,
+    sums: EstepSums,
+    *,
+    do_grad: bool,
+    mu: float,
+) -> InitialModelState:
+    """Update ``sigma2_noise`` from E-step weighted sums (engine units → RELION /N⁴); non-finite sums raise
+    :class:`NonFiniteNoiseSums`. A state with no update to make (no sums, no weight) is returned as it is.
+
+    One optics group's sums are ``[n]`` with a scalar ``noise_sumw``; several groups give
+    ``[G, n]`` sums and ``[G]`` weights, and each group with noise sums is updated on its own
+    (``maximizationOtherParameters``, ml_optimiser.cpp:6316-6372: a group whose sums are zero
+    keeps its spectrum).
+    """
+    if sums.noise is None:
+        return state
+    wsum_sigma2_noise, wsum_img_power = sums.noise.wsum_sigma2_noise, sums.noise.wsum_img_power
+    noise_sumw = sums.noise.sumw
+    total_sumw = float(np.sum(noise_sumw))
+    if total_sumw <= 0.0 or not np.all(np.isfinite(noise_sumw)):
+        return state
+    my_mu = _my_mu(mu, do_grad, state.subset_size)
+
+    if wsum_sigma2_noise.shape != wsum_img_power.shape:
+        raise ValueError(
+            f"wsum_sigma2_noise and wsum_img_power shape mismatch: {wsum_sigma2_noise.shape} vs {wsum_img_power.shape}"
+        )
+    expected_shells = int(state.box_size) // 2 + 1
+    new_sigma2 = np.asarray(state.sigma2_noise, dtype=np.float64).copy()
+    if new_sigma2.ndim != 2 or new_sigma2.shape[1] != expected_shells:
+        raise ValueError(f"sigma2_noise must have shape (G, {expected_shells}), got {new_sigma2.shape}")
+    n_groups = int(new_sigma2.shape[0])
+    per_group = wsum_sigma2_noise.ndim == 2
+    expected = (n_groups, expected_shells) if per_group else (expected_shells,)
+    if wsum_sigma2_noise.shape != expected or (per_group and noise_sumw.shape != (n_groups,)):
+        raise ValueError(
+            f"noise weighted sums must have shape {expected} with {n_groups if per_group else 'one'} weight(s), "
+            f"got {wsum_sigma2_noise.shape} and {noise_sumw.shape}"
+        )
+    if not per_group and n_groups != 1:
+        raise ValueError(f"{n_groups} optics groups need per-group noise sums")
+    if not np.all(np.isfinite(wsum_sigma2_noise)) or not np.all(np.isfinite(wsum_img_power)):
+        raise NonFiniteNoiseSums([
+            _array_finite_summary("wsum_sigma2_noise", wsum_sigma2_noise),
+            _array_finite_summary("wsum_img_power", wsum_img_power),
+            f"noise_sumw={noise_sumw!r}",
+        ])
+
+    from relax.reconstruction import noise
+
+    wsum_rows = wsum_sigma2_noise.reshape(-1, expected_shells)
+    power_rows = wsum_img_power.reshape(-1, expected_shells)
+    sumw_rows = noise_sumw.reshape(-1)
+    new_state = replace(state)
+    for g in range(n_groups):
+        if np.sum(wsum_rows[g]) == 0.0:
+            continue
+        if sumw_rows[g] <= 0.0:
+            raise ValueError(f"optics group {g + 1} has noise sums but no weight")
+        shape = (int(state.box_size), int(state.box_size))
+        wsum_g = noise.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)
+        # RELION blends, then applies its floors (ml_optimiser.cpp:5255-5282): a shell without data decays by mu.
+        new_sigma2[g] = noise.apply_relion_sigma2_floors(
+            new_sigma2[g] * my_mu + (1.0 - my_mu) * np.asarray(wsum_g, dtype=np.float64) / float(shape[0] ** 4),
+            ctf_premultiplied=sums.average_ctf2 is not None,
+        )
+        if not np.all(np.isfinite(new_sigma2[g])) or np.any(new_sigma2[g] <= 0.0):
+            raise ValueError("updated sigma2_noise must be positive and finite")
+    new_state.sigma2_noise = new_sigma2
+    return new_state
+
+
+def update_probabilities_from_estep(
+    state: InitialModelState,
+    sums: EstepSums,
+    *,
+    do_grad: bool,
+    mu: float,
+    uniform_class_direction_prior: bool,
+) -> InitialModelState:
+    """``MlOptimiser::maximizationOtherParameters`` for pdf_class / pdf_direction / sigma2_offset."""
+    class_sums = sums.class_mass
+    if class_sums is None:
+        return state
+    if class_sums.shape != (state.K,):
+        raise ValueError(f"class_posterior_sums must have shape ({state.K},), got {class_sums.shape}")
+    if not np.all(np.isfinite(class_sums)) or np.any(class_sums < 0.0):
+        raise ValueError("class_posterior_sums must be non-negative and finite")
+    sum_weight = float(np.sum(class_sums))
+    if sum_weight <= 0.0:
+        return state
+    my_mu = _my_mu(mu, do_grad, state.subset_size)
+
+    new_state = replace(state)
+    if not uniform_class_direction_prior:
+        new_pdf_class = np.asarray(state.pdf_class, dtype=np.float64) * my_mu
+        new_pdf_class += (1.0 - my_mu) * class_sums / sum_weight
+        pdf_class_sum = float(np.sum(new_pdf_class))
+        if pdf_class_sum > 0.0:
+            new_pdf_class /= pdf_class_sum
+        new_state.pdf_class = new_pdf_class
+
+    direction_sums = sums.direction_mass
+    if uniform_class_direction_prior:
+        if direction_sums is not None:
+            if direction_sums.ndim != 2 or direction_sums.shape[0] != state.K:
+                raise ValueError("class_direction_posterior_sums must have shape (K, n_directions)")
+            if not np.all(np.isfinite(direction_sums)) or np.any(direction_sums < 0.0):
+                raise ValueError("class_direction_posterior_sums must be non-negative and finite")
+            n_directions = int(direction_sums.shape[1])
+        elif state.pdf_direction is not None and np.asarray(state.pdf_direction).ndim == 2:
+            n_directions = int(np.asarray(state.pdf_direction).shape[1])
+        else:
+            raise ValueError("uniform class/direction prior requires a direction grid")
+        if n_directions < 1:
+            raise ValueError("uniform class/direction prior requires at least one direction")
+        new_state = with_uniform_class_direction_priors(new_state, n_directions=n_directions)
+    elif direction_sums is not None and state.pdf_direction is not None:
+        if direction_sums.ndim != 2 or direction_sums.shape[0] != state.K:
+            raise ValueError(
+                f"class_direction_posterior_sums must have shape ({state.K}, n_directions), got {direction_sums.shape}"
+            )
+        if not np.all(np.isfinite(direction_sums)) or np.any(direction_sums < 0.0):
+            raise ValueError("class_direction_posterior_sums must be non-negative and finite")
+        pdf_direction = np.asarray(state.pdf_direction, dtype=np.float64)
+        if pdf_direction.shape != direction_sums.shape:
+            # RELION resizes pdf_direction to the new sampling.NrDirections()
+            # and fills it uniformly when angular sampling changes.
+            pdf_direction = np.full(direction_sums.shape, 1.0 / float(state.K * direction_sums.shape[1]))
+        new_pdf_direction = pdf_direction * my_mu
+        new_pdf_direction += (1.0 - my_mu) * direction_sums / sum_weight
+        new_state.pdf_direction = new_pdf_direction
+
+    wsum_sigma2_offset = sums.offset_wsum
+    if wsum_sigma2_offset is not None:
+        if not np.isfinite(wsum_sigma2_offset) or wsum_sigma2_offset < 0.0:
+            raise ValueError("wsum_sigma2_offset must be non-negative and finite")
+        sigma2_offset_sumw = sums.offset_sumw
+        if not np.isfinite(sigma2_offset_sumw) or sigma2_offset_sumw <= 0.0:
+            raise ValueError("sigma2_offset_sumw must be positive and finite")
+        sigma2_offset = float(state.sigma2_offset) * my_mu
+        # RELION divides by 2*sum_weight for 2D particle translations, 3*sum_weight for
+        # subtomograms' 3D offsets (ml_optimiser.cpp:5222-5231).
+        # Its sum_weight is accumulated from the same significant-pruned
+        # reconstruction weights as wsum_sigma2_offset, rather than from the
+        # unpruned per-image class responsibilities.
+        sigma2_offset += (1.0 - my_mu) * wsum_sigma2_offset / (sums.offset_dims * sigma2_offset_sumw)
+        new_state.sigma2_offset = max(float(sigma2_offset), MIN_SIGMA2_OFFSET_ANGSTROM2)
+
+    return new_state

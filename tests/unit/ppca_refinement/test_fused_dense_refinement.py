@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from recovar.core import fourier_transform_utils as ftu
-from relax.helpers.adjoint import batch_adjoint_slice_volume_half
+from relax.projection.adjoint import batch_adjoint_slice_volume_half
 from relax.ppca_refinement.engine import (
     _score_gamma_and_moments,
     fused_dense_pose_ppca_block,

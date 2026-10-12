@@ -6,15 +6,15 @@ BPref backprojection. It does not change production defaults or implement VDAM's
 optimizer. The fixed-grid experiment is separate from production adaptive support
 selection.
 
-The implementation is [`make_batch_program`](../../relax/dense/gemm_experiment.py),
-with tile arithmetic in [`gemm_experiment_kernels.py`](../../relax/dense/gemm_experiment_kernels.py).
+The implementation is [`make_batch_program`](../../scripts/lib/dense_gemm_experiment.py),
+with tile arithmetic in [`gemm_kernels.py`](../../relax/dense/gemm_kernels.py).
 The real-data adapter is
 [`benchmark_dense_gemm_trajectory.py`](../../scripts/benchmark_dense_gemm_trajectory.py).
 
 The selectable production EM/VDAM full-grid route is
 [`run_dense_gemm_full_grid`](../../relax/dense/gemm_coarse_engine.py), using the
 joint-class two-sweep program
-[`make_joint_k_batch_program`](../../relax/dense/gemm_experiment.py). It does not
+[`make_joint_k_batch_program`](../../relax/dense/gemm_kernels.py). It does not
 prune configured poses. The experimental trajectory adapter described above
 has a different lifetime and benchmark scope.
 
@@ -41,7 +41,7 @@ its batch; it does not need one volume per image.
 
 Do not replace canonical image/CTF/noise conventions with a generic Euclidean
 metric. The existing
-[`relion_coarse_operands.py`](../../relax/relion/relion_coarse_operands.py) owns
+[`coarse_operands.py`](../../relax/scoring/coarse_operands.py) owns
 corrections, masks, Fourier weights, zero-CTF handling and `d[i]`.
 
 The implementation stores a float32 pair `(m[i], l[i])`, where
@@ -204,7 +204,7 @@ by `relion_ctf._relion_ctf_program` and kept by no cache (relax#39).
 
 The final real-data adapter fetches and stages each raw batch once and passes it
 to both canonical operand owners. The optional `staged_batch` input of
-[`prepare_resident_half_operands`](../../relax/sparse_pass2/resident_operands.py)
+[`prepare_resident_half_operands`](../../relax/fine_pass/resident_operands.py)
 validates row identities and shapes and pads short batches on device. Full/tail
 real GPU operand comparisons pass existing float bands. The existing lazy loader
 uses float16 raw storage; preprocessing promotes to float32, and scoring and

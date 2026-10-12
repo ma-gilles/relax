@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-from relax.helpers import orientation_priors as op
+from relax.sampling import orientation_priors as op
 
 pytestmark = pytest.mark.unit
 

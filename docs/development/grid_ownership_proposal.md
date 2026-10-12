@@ -22,7 +22,7 @@ assumptions in the earlier final-search examples, not the agreed principles.
    `:2137–2170`. Model support is remapped to particle windows using each optics
    grid. The existing `None` convention is overloaded: full model support can
    accidentally become the particle cutoff unless stated explicitly.
-4. `helpers/fourier_window.py` implements support restrictions using original
+4. `fourier/fourier_window.py` implements support restrictions using original
    frequency coordinates and gathered/scattered indices. A smaller working
    array does not imply a newly sampled physical image grid.
 5. `helpers/half_volume_mstep.py:118` derives a padded, odd backprojector shape
@@ -40,11 +40,11 @@ assumptions in the earlier final-search examples, not the agreed principles.
    nominal pixel sizes look equal.
 
 See [iteration loop](../../relax/refinement/iteration_loop.py),
-[Fourier windows](../../relax/helpers/fourier_window.py),
-[accumulator geometry](../../relax/helpers/half_volume_mstep.py),
-[optics grouping](../../relax/refinement/optics_shapes.py),
-[resolution helpers](../../relax/helpers/resolution.py), and
-[input loading](../../relax/refinement/full_refinement.py).
+[Fourier windows](../../relax/fourier/fourier_window.py),
+[accumulator geometry](../../relax/reconstruction/half_volume_mstep.py),
+[optics grouping](../../relax/steps/optics_shapes.py),
+[resolution helpers](../../relax/reconstruction/resolution.py), and
+[input loading](../../relax/commands/refinement_run.py).
 
 ## Proposed ownership
 

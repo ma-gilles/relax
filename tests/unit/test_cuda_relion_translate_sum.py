@@ -54,16 +54,12 @@ _MAX_MASS_ULP_PER_TRANSLATION = 1.0
 
 def _cuda_backproject(monkeypatch, custom_cuda_lib):
     import recovar.cuda_backproject as cuda_backproject
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import translate as cuda_translate
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
     monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
-    if not em_cuda_kernels.relion_translate_sum_flat_rows_f32_supported():
-        pytest.skip("loaded CUDA library predates the translate-and-sum target")
-    from relax.cuda import kernels as em_cuda_kernels
-
-    return em_cuda_kernels
+    return cuda_translate
 
 
 def _operands(
@@ -116,7 +112,7 @@ def _operands(
 def _reference(cuda_backproject, operands, *, reference_row_ids=None, bpref=False):
     """The production tile builder followed by the XLA weighted sums."""
 
-    from relax.sparse_pass2.resident_pass2 import _resident_block_weighted_sums
+    from relax.fine_pass.resident_pass2 import _resident_block_weighted_sums
 
     n_images, n_pixels = operands["recon_image"].shape
     n_trans = operands["translation_angles"].shape[0]
@@ -623,7 +619,7 @@ def test_in_kernel_translation_phases_match_the_primitive(
 def _ctf_probs_reference(operands, probs_sum_t, row_ids=None):
     """``compute_local_ctf_sums_from_probs_sum_t`` on the kernel's own mass."""
 
-    from relax.local.local_backprojection import (
+    from relax.fine_pass.local_backprojection import (
         compute_local_ctf_sums_from_probs_sum_t,
     )
 
@@ -749,7 +745,7 @@ def test_ctf_probs_matches_the_resident_block_reduction(
     operands = _operands(
         rng, rows=rows, image_capacity=64, n_trans=21, n_pixels=n_pixels
     )
-    from relax.sparse_pass2.resident_pass2 import _resident_block_weighted_sums
+    from relax.fine_pass.resident_pass2 import _resident_block_weighted_sums
 
     with jax.default_device(gpu_device):
         shifted = [

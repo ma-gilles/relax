@@ -11,8 +11,8 @@ from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 from helpers.float_compare import assert_matches
 from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
-import relax.refinement.half_inputs as half_inputs_module
-from relax.refinement import firstiter_cc, half_scoring
+from relax.refinement import dense_half
+from relax.refinement import particle_poses as particle_poses_module
 
 pytestmark = pytest.mark.unit
 
@@ -35,7 +35,7 @@ def _run(monkeypatch, tmp_path, command, data, output, *arguments):
 
     _stand_in_device(monkeypatch)
     install_fake_adaptive_engine(monkeypatch)
-    engine = half_scoring.run_dense_k_class_em_adaptive
+    engine = dense_half.run_dense_k_class_em_adaptive
 
     def run(experiment_dataset, means, mean_variance, noise_variance, *args, **kwargs):
         result = engine(experiment_dataset, means, mean_variance, noise_variance, *args, **kwargs)
@@ -52,8 +52,8 @@ def _run(monkeypatch, tmp_path, command, data, output, *arguments):
             aggregate_noise_stats=follow(result.aggregate_noise_stats),
         )
 
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", run)
-    monkeypatch.setattr(firstiter_cc, "run_dense_k_class_em_adaptive", run)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", run)
+    monkeypatch.setattr(dense_half, "run_dense_k_class_em_adaptive", run)
     _run_main(monkeypatch, command, data, tmp_path / output, [str(argument) for argument in arguments])
     return tmp_path / output
 
@@ -139,7 +139,7 @@ def test_continuing_class3d_before_its_seed_iteration_warns(monkeypatch, tmp_pat
     data = write_tiny_data_dir(tmp_path / "data", n_images=16, n_classes=2)
     arguments = ("--n_classes", "2", "--init_volume", data / "reference_init_relion.mrc")
     first = _run(monkeypatch, tmp_path, "class3d", data, "first", *arguments, "--max_iter", "1")
-    with caplog.at_level(logging.WARNING, logger="relax.refinement.full_refinement"):
+    with caplog.at_level(logging.WARNING, logger="relax.commands.refinement_run"):
         _run(
             monkeypatch, tmp_path, "class3d", data, "continued", *arguments, "--max_iter", "2",
             "--continue", first / "run_it001_optimiser.star",
@@ -167,13 +167,13 @@ def test_pose_records_of_a_magnified_class_are_rotations(monkeypatch, tmp_path):
     it scored and the caller undoes the magnification (relax#61: a stand-in returning the identity left inv(M))."""
 
     seen = []
-    prepare = half_inputs_module.prepare_pose_comparison
+    prepare = particle_poses_module.prepare_pose_comparison
 
     def record(pose_update, **kwargs):
         seen.extend(np.asarray(poses.rotations, dtype=np.float64) for poses in pose_update.current)
         return prepare(pose_update, **kwargs)
 
-    monkeypatch.setattr(half_inputs_module, "prepare_pose_comparison", record)
+    monkeypatch.setattr(particle_poses_module, "prepare_pose_comparison", record)
     _run(monkeypatch, tmp_path, "refine", _write_data(tmp_path, "magnification", 1), "whole", "--max_iter", "2")
 
     rotations = np.concatenate([r for r in seen if r.size])

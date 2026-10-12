@@ -17,7 +17,7 @@ from oracles.normalized_cc_replay import (
     replay_normalized_cc_candidates,
 )
 
-from relax.relion.relion_coarse_operands import relion_cc_inverse_power_from_processed
+from relax.scoring.coarse_operands import relion_cc_inverse_power_from_processed
 
 pytestmark = pytest.mark.unit
 
@@ -89,7 +89,7 @@ def test_relion_coarse_rescore_matches_numpy_replay():
     pytest.importorskip("jax")
     import jax.numpy as jnp
 
-    from relax.scoring.scoring import (
+    from relax.scoring.coarse_kernels import (
         _relion_coarse_128lane_float32_reduce,
         _relion_coarse_cc_atomic_score_from_components,
         _relion_coarse_normalized_cc_rescore_jax,
@@ -167,7 +167,7 @@ def test_relion_coarse_native_rescore_matches_exact_uniform_operands():
     import jax.numpy as jnp
     from recovar import cuda_backproject
 
-    from relax.scoring.scoring import (
+    from relax.scoring.coarse_kernels import (
         _relion_coarse_normalized_cc_rescore_jax,
         relion_coarse_normalized_cc_rescore,
     )
@@ -211,7 +211,7 @@ def test_relion_coarse_native_texture_rescore_exposes_reduced_components():
     import jax.numpy as jnp
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     if jax.default_backend() != "gpu" or not cuda_backproject.custom_cuda_requested():
         pytest.skip("native RELION texture rescore requires the custom CUDA GPU path")
@@ -224,7 +224,7 @@ def test_relion_coarse_native_texture_rescore_exposes_reduced_components():
     packed_to_compact = jnp.arange(4, dtype=jnp.int32)
 
     components = np.asarray(
-        em_cuda_kernels.relion_coarse_normalized_cc_native_texture_pairs_f32(
+        cuda_coarse.relion_coarse_normalized_cc_native_texture_pairs_f32(
             projector,
             rotations,
             shifted,
@@ -244,7 +244,7 @@ def test_relion_coarse_native_texture_rescore_exposes_reduced_components():
     assert np.all(components[:, 1:] > 0.0)
 
     translated = np.asarray(
-        em_cuda_kernels.relion_coarse_normalized_cc_native_texture_pairs_f32(
+        cuda_coarse.relion_coarse_normalized_cc_native_texture_pairs_f32(
             projector,
             rotations,
             shifted,
@@ -296,7 +296,7 @@ def test_jax_relion_coarse_rescore_preserves_double_accelerator_precision():
 
 
 def test_relion_coarse_exact_tie_uses_direction_major_flat_order():
-    from relax.relion.relion_coarse_operands import (
+    from relax.scoring.coarse_operands import (
         _relion_coarse_pose_tie_break_keys,
         select_relion_coarse_rescore_winner_slots,
     )
@@ -322,7 +322,7 @@ def test_relion_coarse_exact_tie_uses_direction_major_flat_order():
 
 
 def test_relion_coarse_tie_order_maps_subset_rotation_ids():
-    from relax.relion.relion_coarse_operands import (
+    from relax.scoring.coarse_operands import (
         _relion_coarse_pose_tie_break_keys,
         select_relion_coarse_rescore_winner_slots,
     )
@@ -536,14 +536,14 @@ def test_native_cc_rescore_limits_support_to_current_image(model_radius, padding
     import jax.numpy as jnp
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     if jax.default_backend() != "gpu" or not cuda_backproject.custom_cuda_requested():
         pytest.skip("requires the custom CUDA GPU path")
     size = 8
     pixels = size * (size // 2 + 1)
     side = 2 * model_radius * padding_factor + 3
-    result = np.asarray(em_cuda_kernels.relion_coarse_normalized_cc_native_texture_pairs_f32(
+    result = np.asarray(cuda_coarse.relion_coarse_normalized_cc_native_texture_pairs_f32(
         jnp.ones((side, side, side), dtype=jnp.complex64),
         jnp.eye(3, dtype=jnp.float32)[None],
         jnp.ones((1, pixels), dtype=jnp.complex64),
@@ -570,7 +570,7 @@ def test_normalized_cc_gemm_scores_every_pose_within_the_float32_reorder_bound()
     pytest.importorskip("jax")
     import jax.numpy as jnp
 
-    from relax.scoring.scoring import relion_coarse_normalized_cc_gemm_scores_jit
+    from relax.scoring.coarse_kernels import relion_coarse_normalized_cc_gemm_scores_jit
 
     rng = np.random.default_rng(7190)
     n_images, n_trans, n_rot, n_pixels = 3, 4, 5, 56 * 29

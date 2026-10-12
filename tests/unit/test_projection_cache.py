@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers import projection_cache
+from relax.projection import projection_cache
 
 pytestmark = pytest.mark.unit
 

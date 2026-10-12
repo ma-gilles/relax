@@ -1,8 +1,8 @@
 """The K=1 Refine3D entry points turn on the stage glue and the local ladder by default."""
 
-from relax.helpers.preprocessing import jit_stage_glue_enabled
-from relax.local.local_layout import DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER, resolve_local_image_capacity_ladder
-from relax.refinement.refinement_options import K1_REFINE3D_ENV_DEFAULTS, apply_k1_refine3d_env_defaults
+from relax.commands.refinement_arguments import K1_REFINE3D_ENV_DEFAULTS, apply_k1_refine3d_env_defaults
+from relax.local_search.layout import DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER, resolve_local_image_capacity_ladder
+from relax.relion.image_preprocessing import jit_stage_glue_enabled
 
 
 def test_k1_refine3d_defaults_turn_on_glue_and_ladder(monkeypatch):

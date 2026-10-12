@@ -1,6 +1,6 @@
 """Test reference: tilt-image geometry and per-particle score/weight maps of RELION tomography.
 
-Moved from relax/refinement/tomo_particles.py (PLAN e1): no relax module uses them, only tests.
+Moved from relax/sampling/tomo_particles.py (PLAN e1): no relax module uses them, only tests.
 """
 
 import numpy as np

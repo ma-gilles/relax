@@ -5,7 +5,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.helpers.oversampling import relion_cuda_f32_coarse_log_weights, relion_cuda_f32_coarse_posterior
+from relax.sampling.oversampling import relion_cuda_f32_coarse_log_weights, relion_cuda_f32_coarse_posterior
 
 
 @partial(jax.jit, static_argnames=("adaptive_fraction", "max_significants", "tie_score_ulps"))
@@ -62,11 +62,11 @@ def coarse_support_posterior(
     ``values`` is ``[B, K * R * T]``, class-major. With ``exact_weight_order`` (K=1) it holds the
     pre-prior scores and the program forms RELION's log weights ``pdf_orientation + pdf_offset +
     min_diff2 - diff2`` from ``rotation_log_prior`` (``[R]`` or ``[B, R]``) and ``translation_log_prior``
-    (``[T]`` or ``[B, T]``) first (:func:`relax.helpers.oversampling.relion_cuda_f32_coarse_log_weights`);
+    (``[T]`` or ``[B, T]``) first (:func:`relax.sampling.oversampling.relion_cuda_f32_coarse_log_weights`);
     otherwise it holds the with-prior scores and ``raw_max`` (``[B]``) restores RELION's ``min_diff2``
     frame. Returns the posterior's ``weights``, ``mask``, ``n_significant``, ``cutoff_count``,
     ``sum_weight`` and ``significant_weight``
-    (:func:`relax.helpers.oversampling.relion_cuda_f32_coarse_posterior`), each row's ``winner``
+    (:func:`relax.sampling.oversampling.relion_cuda_f32_coarse_posterior`), each row's ``winner``
     (argmax of the weights, int32) and ``pmax``, and ``rotation_mask`` ``[B, K * R]``, the rotations
     with a significant translation.
     """
@@ -98,41 +98,3 @@ def coarse_support_posterior(
         pmax=jnp.max(weights, axis=1),
         rotation_mask=jnp.any(mask.reshape(batch, -1, n_trans), axis=2),
     )
-
-
-def coarse_square_layout_metadata(coarse_gaussian_square_layout, *, stable_fourier_window_shapes):
-    """Describe logical and physical score windows without touching device arrays."""
-    return {
-        "stable_fourier_window_shapes_requested": bool(
-            stable_fourier_window_shapes
-        ),
-        "stable_fourier_window_shapes_effective": bool(
-            stable_fourier_window_shapes
-            and coarse_gaussian_square_layout.physical_current_size
-            != coarse_gaussian_square_layout.logical_current_size
-        ),
-        "logical_current_size": int(
-            coarse_gaussian_square_layout.logical_current_size
-        ),
-        "physical_current_size": int(
-            coarse_gaussian_square_layout.physical_current_size
-        ),
-        "logical_square_pixels": int(
-            coarse_gaussian_square_layout.logical_square_count
-        ),
-        "physical_square_pixels": int(
-            coarse_gaussian_square_layout.physical_square_count
-        ),
-        "executed_square_pixels": int(
-            coarse_gaussian_square_layout.logical_square_count
-            if stable_fourier_window_shapes
-            else coarse_gaussian_square_layout.physical_square_count
-        ),
-        "logical_issue_stream_is_prefix": True,
-        "physical_tail_zero_weighted": True,
-        "physical_tail_skipped_by_runtime_count": bool(
-            stable_fourier_window_shapes
-            and coarse_gaussian_square_layout.physical_square_count
-            != coarse_gaussian_square_layout.logical_square_count
-        ),
-    }

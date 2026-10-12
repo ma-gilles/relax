@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers import xla_memory_reserve
-from relax.relion import relion_projector_setup as setup
+from relax.relion import projector_setup as setup
+from relax.runtime import xla_memory_reserve
 
 pytestmark = pytest.mark.unit
 
@@ -45,7 +45,7 @@ def test_xy_stage_on_the_host_gives_the_same_window(monkeypatch):
 
 _PEAK_CHILD = """
 import jax, numpy as np
-from relax.relion import relion_projector_setup as setup
+from relax.relion import projector_setup as setup
 setup.single_working_set_bytes = lambda: int(2.55 * 2**30)  # a 16 GB card's pool at box 448 (limit 10.22 GiB)
 reference = np.random.default_rng(0).standard_normal((448,) * 3)
 device = jax.devices()[0]

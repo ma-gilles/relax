@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax import symmetry
+from relax.sampling import symmetry
 
 bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
 

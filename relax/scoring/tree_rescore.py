@@ -17,8 +17,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics.coarse_gaussian_diagnostics import maybe_dump_tree_rescore_batch
-from relax.relion.relion_coarse_operands import select_relion_coarse_rescore_winner_slots
+from relax.scoring.coarse_operands import select_relion_coarse_rescore_winner_slots
+from relax.scoring.probes import Pass1Probe
 
 logger = logging.getLogger(__name__)
 
@@ -121,18 +121,6 @@ class TreeRescoreTotals:
         )
 
 
-def tree_rescore_report(totals: TreeRescoreTotals, max_margin: float) -> dict:
-    """The pass's report of the rescore (the ``firstiter_cc_tree_top2_rescore`` entry of ``full_stats``)."""
-
-    return {
-        "max_margin": float(max_margin),
-        "examined_images": int(totals.examined),
-        "ambiguous_images": int(totals.ambiguous),
-        "exact_score_ties": int(totals.exact_ties),
-        "winner_changes": int(totals.winner_changes),
-    }
-
-
 def log_tree_rescore_totals(totals: TreeRescoreTotals) -> None:
     """Log the totals of a pass's rescore."""
 
@@ -146,18 +134,12 @@ def log_tree_rescore_totals(totals: TreeRescoreTotals) -> None:
     )
 
 
-def require_tree_rescore_call(
-    *,
-    n_classes: int,
-    return_class_best: bool,
-    use_relion_projector: bool,
-    coarse_texture_interp: bool,
-    half_spectrum_scoring: bool,
-) -> None:
+def require_tree_rescore_call(*, n_classes: int, return_class_best: bool) -> None:
     """Refuse, naming ``tree_rescore_max_margin``, a call that cannot run the rescore.
 
-    The rescore is K=1, returns the class best, and needs the supplied RELION projector with texture interpolation and
-    half-spectrum scoring.
+    The rescore is K=1 and returns the class best. The supplied RELION projector with texture interpolation and
+    half-spectrum scoring, which it also needs, are required of every pass 1 before it is planned
+    (``_require_exact_pass1_operands``).
     """
 
     if n_classes != 1:
@@ -168,15 +150,6 @@ def require_tree_rescore_call(
         raise ValueError(
             "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires return_class_best=True",
         )
-    if not use_relion_projector or not coarse_texture_interp:
-        raise ValueError(
-            "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
-            "the supplied RELION projector with texture interpolation",
-        )
-    if not half_spectrum_scoring:
-        raise ValueError(
-            "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires half-spectrum scoring",
-        )
 
 
 def plan_tree_rescore(
@@ -186,21 +159,20 @@ def plan_tree_rescore(
     image_shape,
     n_half: int,
     score_indices_np,
-    translations_source,
-    relion_translation_angle_scale: float,
+    translation_angles,
     geometry: TreeRescoreGeometry,
 ) -> TreeRescorePlan:
     """Build the rescore's plan once :func:`require_tree_rescore_call` has accepted the call.
 
     Refuses a backend that is not the custom CUDA one. ``score_indices_np`` are the scored rows of the window
-    (``None``: every half-spectrum row).
+    (``None``: every half-spectrum row). ``translation_angles`` is RELION's float32 ``[T, 2]`` table of the
+    translations on the device, the one the pass's normalized-CC operands translate with.
     """
 
     from recovar import cuda_backproject
 
-    from relax.helpers.fourier_window import relion_fftw_order_for_square_score_window
-    from relax.helpers.projection import relion_projector_half_to_texture_full
-    from relax.sparse_pass2.sparse_pass2_bucket_io import relion_translation_angles_f32
+    from relax.fourier.fourier_window import relion_fftw_order_for_square_score_window
+    from relax.projection.projection import relion_projector_half_to_texture_full
 
     if (
         jax.default_backend() != "gpu"
@@ -223,14 +195,6 @@ def plan_tree_rescore(
             score_indices_np,
         ),
         dtype=jnp.int32,
-    )
-    translation_angles = jnp.asarray(
-        relion_translation_angles_f32(
-            translations_source,
-            image_shape,
-            angle_scale=relion_translation_angle_scale,
-        ),
-        dtype=jnp.float32,
     )
     logger.warning(
         "RELION coarse-tree top-2 rescore: max_margin=%g current_size=%d",
@@ -255,6 +219,7 @@ def rescore_ambiguous_images(
     experiment_dataset,
     indices,
     debug_iteration,
+    probe: Pass1Probe,
 ) -> TreeRescoreBatch:
     """Rescore the images of one batch whose best and runner-up scores are within ``plan.max_margin``.
 
@@ -262,10 +227,10 @@ def rescore_ambiguous_images(
     the normalized-CC operand assembly). For each ambiguous row the two candidate poses are scored again by the direct
     texture projection and the better one replaces the row's best (and the other its runner-up) in the returned state;
     the rows that are not ambiguous, and every array when none is, are untouched. ``experiment_dataset``, ``indices``
-    and ``debug_iteration`` only name the candidates of a ``RELAX_SIGNIFICANCE_DUMP_*`` dump.
+    and ``debug_iteration`` only name the candidates for ``probe`` (:meth:`Pass1Probe.tree_rescore_scored`).
     """
 
-    from relax.scoring.scoring import relion_coarse_normalized_cc_rescore
+    from relax.scoring.coarse_kernels import relion_coarse_normalized_cc_rescore
 
     tree_score_dtype = np.float32
     best_scores_np = np.asarray(state.class_best_score, dtype=tree_score_dtype)
@@ -328,7 +293,7 @@ def rescore_ambiguous_images(
         score_dtype=tree_score_dtype,
         **({"symmetry_label": plan.geometry.symmetry_label} if plan.geometry.symmetry_label != "C1" else {}),
     )
-    maybe_dump_tree_rescore_batch(
+    probe.tree_rescore_scored(
         experiment_dataset=experiment_dataset,
         indices=indices,
         ambiguous_rows=ambiguous_rows,
@@ -360,15 +325,14 @@ def rescore_ambiguous_images(
     rescored_winner_score = rescored_scores_np[row_ids, rescored_winner_slot]
     rescored_runner_score = rescored_scores_np[row_ids, rescored_runner_slot]
     winner_changes = int(np.count_nonzero(rescored_winner_pose != best_pose_np))
-    applied_rows = np.arange(ambiguous_rows.size, dtype=np.int32)
-    rows_jax = jnp.asarray(ambiguous_rows[applied_rows], dtype=jnp.int32)
+    rows_jax = jnp.asarray(ambiguous_rows, dtype=jnp.int32)
     replaced = TreeRescoreState(
-        best_argmax=state.best_argmax.at[rows_jax].set(rescored_winner_pose[applied_rows]),
-        best_score=state.best_score.at[rows_jax].set(rescored_winner_score[applied_rows]),
-        class_best_argmax=state.class_best_argmax.at[rows_jax].set(rescored_winner_pose[applied_rows]),
-        class_best_score=state.class_best_score.at[rows_jax].set(rescored_winner_score[applied_rows]),
-        class_second_argmax=state.class_second_argmax.at[rows_jax].set(rescored_runner_pose[applied_rows]),
-        class_second_score=state.class_second_score.at[rows_jax].set(rescored_runner_score[applied_rows]),
+        best_argmax=state.best_argmax.at[rows_jax].set(rescored_winner_pose),
+        best_score=state.best_score.at[rows_jax].set(rescored_winner_score),
+        class_best_argmax=state.class_best_argmax.at[rows_jax].set(rescored_winner_pose),
+        class_best_score=state.class_best_score.at[rows_jax].set(rescored_winner_score),
+        class_second_argmax=state.class_second_argmax.at[rows_jax].set(rescored_runner_pose),
+        class_second_score=state.class_second_score.at[rows_jax].set(rescored_runner_score),
     )
     return TreeRescoreBatch(
         replaced,

@@ -5,10 +5,11 @@ import numpy as np
 import pytest
 import recovar.core.fourier_transform_utils as ftu
 from helpers.float_compare import assert_matches
+from helpers.full_row_tile import accumulate_full_row_tile
 
 from relax import sampling
-from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
-from relax.local.local_layout import build_pass2_hypothesis_layout
+from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.local_search.layout import build_pass2_hypothesis_layout
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
     _per_image_pose_prior_block,
@@ -19,7 +20,6 @@ from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
     TILE_FRAGMENTATION_HEADROOM,
     TracePPCAStats,
-    accumulate_full_row_tile,
     accumulate_full_row_tiles,
     coarse_support_mask,
     full_row_pose_log_prior,
@@ -679,7 +679,7 @@ def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
     dataset, mu, W, stream, host = tile_problem
     reference = build_pass2_hypothesis_layout(PRUNED, **LAYOUT_KWARGS)
     actual = accumulate_full_row_tile(stream, np.arange(3), PRUNED)
-    assert actual.diagnostics["supported_image_rows"] == reference.total_local_rotations == 32
+    assert actual.diagnostics["supported_image_rows"] == reference.rotation_ids_flat.shape[0] == 32
     assert actual.diagnostics["scored_image_rows"] == 3 * 20  # union of 16 rows in four 5-row blocks
     parts = []
     for image in range(3):

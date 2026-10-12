@@ -125,7 +125,7 @@ and adaptive-support consumers read
 ## Actual proposed types and signatures
 
 Place these small inputs/results and the two computational functions in the
-existing [half_scoring.py](../../relax/refinement/half_scoring.py), alongside
+existing [half_scoring.py](../../relax/refinement/dense_half.py), alongside
 `LocalSamplingSpec`. This is the current owner of the consuming sampling
 interfaces and already imports sampling functions and the local-iteration owner.
 Add direct imports from `sampling`, `helpers.convergence`, `helpers.resolution`,
@@ -270,7 +270,7 @@ One existing defect needs separate handling before claiming eager-branch
 coverage: [iteration_loop.py](../../relax/refinement/iteration_loop.py), line
 5341, calls `_local_search_precision_flags(..., pass_index=2)` without its
 required keyword-only `static_em_kwargs` argument
-([dtype_policy.py](../../relax/helpers/dtype_policy.py), line 231). Other final
+([dtype_policy.py](../../relax/numerics/precision.py), line 231). Other final
 precision calls supply `_DENSE_EM_STATIC_KWARGS`. Source inspection predicts a
 `TypeError` on the eager mismatch branch; it was not executed here. A pure
 extraction must preserve the existing failure, or the primary must qualify a

@@ -26,7 +26,8 @@ from helpers.em_fixtures import fixture_file
 from helpers.float_compare import assert_matches
 from recovar.data_io.starfile import read_star, star_column
 
-from relax.relion import relion_ctf, tomo_input
+from relax.relion import ctf as relion_ctf
+from relax.star import tomo_input
 
 relion_bind = pytest.importorskip("relax.relion_bind._relion_bind_core")
 
@@ -246,10 +247,10 @@ def test_tomo_damping_agrees_on_numpy_and_jax(tilt_table):
 
     particles, optics, size = tilt_table
     dose = np.unique(np.asarray(particles["rlnMicrographPreExposure"], dtype=np.float64))
-    freq_sq = tomo_input.fftw_half_freq_sq(size, size, float(optics["rlnImagePixelSize"][0])).reshape(-1)
+    freq_sq = relion_ctf.fftw_half_freq_sq(size, size, float(optics["rlnImagePixelSize"][0])).reshape(-1)
     for per_dose in (np.zeros_like(dose), np.where(np.arange(dose.size) % 2 == 0, 4.0, 0.0)):
-        host = tomo_input.relion_tomo_damping(freq_sq, dose, per_dose)
-        device = tomo_input.relion_tomo_damping(jnp.asarray(freq_sq), jnp.asarray(dose), jnp.asarray(per_dose))
+        host = relion_ctf.relion_tomo_damping(freq_sq, dose, per_dose)
+        device = relion_ctf.relion_tomo_damping(jnp.asarray(freq_sq), jnp.asarray(dose), jnp.asarray(per_dose))
         assert isinstance(host, np.ndarray) and isinstance(device, jax.Array)
         assert host.dtype == device.dtype == np.float64 and host.shape == device.shape == (dose.size, freq_sq.size)
         assert_matches(device, host, rtol=1e-15)

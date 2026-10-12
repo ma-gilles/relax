@@ -40,7 +40,7 @@ owner's global file (15,913 bytes) loads in both and is not counted.
 | --- | --- | --- | --- |
 | Loaded at session start | 13,675 (root guide) | 7,751 | 7,751 |
 | One-line fix in a helper under `relax/helpers/` | 226,892: root, `relax/` guide, `em_status.md`, `codebase.md`, `agent_workflow.md`, `tests/` guide, `CONTRIBUTING.md` | 20,635: root, `relax/`, `tests/` | 20,635 |
-| Engine change in `relax/sparse_pass2/` | 270,743: the above, the runbook, `benchmarks.md`, `della.md` | 37,343: root, `relax/`, `relax/sparse_pass2/`, `tests/`, `CONTRIBUTING.md`; 56,824 with the runbook for parity work | the same |
+| Engine change in `relax/fine_pass/` | 270,743: the above, the runbook, `benchmarks.md`, `della.md` | 37,343: root, `relax/`, `relax/fine_pass/`, `tests/`, `CONTRIBUTING.md`; 56,824 with the runbook for parity work | the same |
 | Refactor step in `relax/refinement/` | 291,587: the helper path and `refactor_principles.md`; 807,155 with the extension plan and the review document, which `refactor-agent-prompt.txt` asks for | 90,834: root, `relax/`, `relax/refinement/`, `tests/`, `refactor_principles.md` | about 36,000 with a 10 KB rules file |
 
 ## Order

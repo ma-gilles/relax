@@ -16,10 +16,9 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import keep_tau2, projector_power_refresh
 
 from relax.diagnostics.vdam_observers import VdamDiagnosticObserver
-from relax.ppca_initial_model.vdam_controls import VdamPilotControls
+from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
-from relax.vdam.estep_meta_updates import update_noise_from_estep, update_probabilities_from_estep
 from relax.vdam.iteration_loop import (
     VdamUpdate,
     _ave_pmax,
@@ -28,9 +27,9 @@ from relax.vdam.iteration_loop import (
     update_image_size_and_resolution_pointers,
 )
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
-from relax.vdam.native_options import VdamEnvironment
+from relax.vdam.model_update import update_noise_from_estep, update_probabilities_from_estep
+from relax.vdam.native_options import VdamEnvironment, VdamPilotControls
 from relax.vdam.ports import NoProbe, VdamObserver
-from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.state import VdamAccumulator
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation, select_subset_for_iter
 
@@ -218,7 +217,7 @@ def test_projector_refresh_updates_tau2_of_all_classes(bind):
 
     from relax.vdam.estep_setup import IterationProjectorContext
 
-    out = IterationProjectorContext().refresh(state, padding_factor=1)
+    out = IterationProjectorContext(projector_dump_dir=None).refresh(state, padding_factor=1)
 
     assert out is not state
     assert out.tau2_class.shape == (2, ori // 2 + 1)
@@ -727,7 +726,7 @@ class TestRunVdamIterations:
         assert out.sigma2_offset == pytest.approx(90.3125)
 
     def test_updates_sigma2_noise_from_estep_meta_in_relion_units(self):
-        from relax.reconstruction import noise_relion
+        from relax.reconstruction import noise as noise_relion
 
         state = initialise_denovo_state(
             box_size=8,
@@ -757,7 +756,7 @@ class TestRunVdamIterations:
         np.testing.assert_allclose(state.sigma2_noise, 0.01)
 
     def test_updates_sigma2_noise_with_vdam_momentum_on_subset_iterations(self):
-        from relax.reconstruction import noise_relion
+        from relax.reconstruction import noise as noise_relion
 
         state = initialise_denovo_state(
             box_size=8,

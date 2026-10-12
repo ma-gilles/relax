@@ -12,7 +12,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_zero_oversampling import _rel_l2, _resident_production_env, requires_resident_gpu  # noqa: F401
 
-import relax.sparse_pass2.resident_pass2 as rp
+import relax.fine_pass.resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
 
@@ -78,7 +78,7 @@ def test_resident_without_scale_groups_keeps_the_scale_one_wavg():
 def test_native_fine_units_in_place_is_the_eager_conversion(shape):
     """On the default backend (CPU, or the Slurm GPU): a cache-sized block and a small one."""
 
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units
+    from relax.fine_pass.scoring import _relion_native_fine_units
 
     rng = np.random.default_rng(3)
     values = (rng.normal(size=shape) + 1j * rng.normal(size=shape)).astype(np.complex64) * np.float32(1e3)
@@ -97,7 +97,7 @@ def test_native_fine_units_in_place_is_the_eager_conversion(shape):
 def _two_class_tables(**fields):
     """Three images, two classes, rows image-major then class-major, every image full-mask."""
 
-    from relax.sparse_pass2.resident_candidates import ResidentCandidateTables
+    from relax.fine_pass.resident_candidates import ResidentCandidateTables
 
     row_unit = np.array([0, 0, 0, 1, 1, 2, 2, 2, 2], dtype=np.int32)
     row_class = np.array([0, 1, 1, 0, 1, 0, 0, 1, 1], dtype=np.int32)
@@ -122,7 +122,7 @@ def _two_class_tables(**fields):
 
 
 def test_tables_write_each_row_its_slot():
-    from relax.sparse_pass2.resident_candidates import CapacityChunk, materialize_chunk
+    from relax.fine_pass.resident_candidates import CapacityChunk, materialize_chunk
 
     tables = _two_class_tables(unit_slot_offset=np.array([1, 0, 1], dtype=np.int32), n_slot_groups=2)
     assert tables.n_slots == 4

@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from relax.helpers.batch_fetch import prefetch_depth, prefetched_batches
+from relax.io.batch_fetch import prefetch_depth, prefetched_batches
 
 pytestmark = pytest.mark.unit
 

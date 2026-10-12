@@ -14,9 +14,16 @@ import pytest
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-from relax.dense import scoring_policy
-from relax.refinement import expectation, finalization, half_scoring, iteration_loop, local_sampling
+from relax.refinement import (
+    dense_half,
+    expectation,
+    finalization,
+    iteration_loop,
+    local_half,
+    local_sampling,
+)
 from relax.sampling import DevicePass1Source
+from relax.steps import scoring_policy
 
 pytestmark = pytest.mark.unit
 
@@ -50,16 +57,16 @@ def test_adaptive_dense_route_keeps_owner_inputs_visible(monkeypatch, n_classes)
     """The dispatcher hands its mode's adaptive scorer its own seven records and the point group."""
     scorer = {1: "_score_adaptive_k1_dense", 2: "_score_adaptive_kclass_dense"}[n_classes]
     records = ["half", "sampling", "priors", "batching", "variant", "execution", "optics"]
-    assert _parameters(half_scoring._score_half_dense_one_shape)[:7] == records
+    assert _parameters(dense_half._score_half_dense_one_shape)[:7] == records
     if n_classes == 1:
-        assert _parameters(half_scoring._score_adaptive_k1_dense) == [*records, "base_em_kwargs"]
-        assert [name for name, parameter in inspect.signature(half_scoring._score_adaptive_k1_dense).parameters.items()
+        assert _parameters(dense_half._score_adaptive_k1_dense) == [*records, "base_em_kwargs"]
+        assert [name for name, parameter in inspect.signature(dense_half._score_adaptive_k1_dense).parameters.items()
                 if parameter.kind is parameter.KEYWORD_ONLY] == ["symmetry"]
     else:
-        assert _parameters(half_scoring._score_adaptive_kclass_dense) == [*records, "em_kwargs", "symmetry"]
+        assert _parameters(dense_half._score_adaptive_kclass_dense) == [*records, "em_kwargs", "symmetry"]
     trace = CallTrace(monkeypatch)
-    trace.wrap(half_scoring, "_score_half_dense_one_shape", "dispatch")
-    trace.wrap(half_scoring, scorer, "scorer")
+    trace.wrap(dense_half, "_score_half_dense_one_shape", "dispatch")
+    trace.wrap(dense_half, scorer, "scorer")
     run_tiny_refinement(monkeypatch, n_classes=n_classes, final_after_max_iter=False)
     assert trace.labels() == ["dispatch", "scorer"] * 4
     for dispatch, call in zip(trace.calls("dispatch"), trace.calls("scorer"), strict=True):
@@ -78,25 +85,22 @@ def _device_rotations_stand_in(monkeypatch):
     monkeypatch.setattr(local_sampling, "coarse_pass1_rotations", coarse_rotations)
 
 
-# (oversampling, classes, first-iteration CC, first-iteration hard reconstruction, float64 scoring) ->
+# (oversampling, classes, first-iteration CC, float64 scoring) ->
 # whether iterations 1 and 2 generate RELION's coarse device rotations.
 _GATE_CASES = {
-    "os0_k1": ((0, 1, False, False, False), [True, True]),
-    "os0_kclass": ((0, 2, False, False, False), [False, False]),
-    "os0_k1_cc": ((0, 1, True, False, False), [False, True]),
-    "os0_k1_hard": ((0, 1, False, True, False), [False, True]),
-    "os0_k1_float64": ((0, 1, False, False, True), [False, False]),
-    "os1_k1": ((1, 1, False, False, False), [True, True]),
-    "os1_kclass_cc_float64": ((1, 2, True, False, True), [True, True]),
+    "os0_k1": ((0, 1, False, False), [True, True]),
+    "os0_kclass": ((0, 2, False, False), [True, True]),  # as one class since relax#73
+    "os0_k1_cc": ((0, 1, True, False), [False, True]),
+    "os0_k1_float64": ((0, 1, False, True), [False, False]),
+    "os1_k1": ((1, 1, False, False), [True, True]),
+    "os1_kclass_cc_float64": ((1, 2, True, True), [True, True]),
 }
 
 
-def _gate_run(monkeypatch, trace, oversampling, n_classes, cc, hard, float64):
+def _gate_run(monkeypatch, trace, oversampling, n_classes, cc, float64):
     parity = {}
     if cc:
         parity.update(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0)
-    if hard:
-        parity.update(first_iteration_reconstruction_mode="hard")
     if float64:
         monkeypatch.setattr(
             scoring_policy, "DENSE_PRECISION", replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
@@ -122,21 +126,20 @@ def test_device_matrix_generation_gate(monkeypatch, case):
 
 
 @pytest.mark.parametrize(
-    "oversampling,xhalf,score_mode,expected",
-    [(0, True, "gaussian", [True] * 4), (0, False, "gaussian", [False] * 4), (1, True, "gaussian", [False] * 4),
-     (0, True, "normalized_cc", [False, False, True, True])],
+    "oversampling,xhalf,expected",
+    [(0, True, [True] * 4), (0, False, [False] * 4), (1, True, [False] * 4)],
 )
-def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, score_mode, expected):
+def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, expected):
     """K=1 scores pass 1 on the generated coarse device rotations only at oversampling 0 with the x-half
     M-step and Gaussian scoring; the fine operand is always the pass-2 grid's."""
     monkeypatch.setenv("RELAX_K1_RELION_X_HALF_MSTEP", "1" if xhalf else "0")
     _device_rotations_stand_in(monkeypatch)
     trace = CallTrace(monkeypatch)
-    trace.wrap(half_scoring, "_score_adaptive_k1_dense", "scorer")
-    trace.wrap(half_scoring, "prepare_adaptive_pass2_grids", "grids")
-    trace.wrap(half_scoring, "project_pass2_rotations", "projection")
+    trace.wrap(dense_half, "_score_adaptive_k1_dense", "scorer")
+    trace.wrap(dense_half, "prepare_adaptive_pass2_grids", "grids")
+    trace.wrap(dense_half, "project_pass2_rotations", "projection")
     run_tiny_refinement(
-        monkeypatch, final_after_max_iter=False, parity=dict(first_iteration_score_mode=score_mode),
+        monkeypatch, final_after_max_iter=False,
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
     )
     scorers, grids, projections = trace.calls("scorer"), trace.calls("grids"), trace.calls("projection")
@@ -156,7 +159,7 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, sc
 
 def test_dense_float64_diagnostic_is_resolved_by_expectation_orchestration(monkeypatch):
     """The numbered and final execution policies carry the diagnostic switch their owner resolved."""
-    assert not hasattr(half_scoring, "_diagnostic_float64_pass2_matches")
+    assert not hasattr(dense_half, "_diagnostic_float64_pass2_matches")
     trace = CallTrace(monkeypatch)
     for module in (expectation, finalization):
         monkeypatch.setattr(module, "_diagnostic_float64_pass2_matches", lambda *args, **kwargs: True)
@@ -175,7 +178,7 @@ def test_local_adaptive_overrides_are_resolved_before_half_scoring():
     """
     for name in ("_local_adaptive_pass2_full_parent_enabled", "_local_adaptive_pass2_rotation_only_enabled",
                  "_local_adaptive_pass2_denominator_support_mode"):
-        assert not hasattr(half_scoring, name)
+        assert not hasattr(dense_half, name)
 
 
 class _Stop(Exception):
@@ -192,16 +195,16 @@ def _local_one_shape(monkeypatch, *, parent_probe):
     dataset = MockDataset(n_images=2, seed=3)
     layout = SimpleNamespace(rotation_counts=np.asarray([2]))
     trace = CallTrace(monkeypatch)
-    monkeypatch.setattr(half_scoring, "_build_local_adaptive_parent_layout", lambda *args: (layout, 0))
-    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", parent_probe)
+    monkeypatch.setattr(local_half, "_build_local_adaptive_parent_layout", lambda *args: (layout, 0))
+    monkeypatch.setattr(local_half, "_run_local_search_iteration", parent_probe)
 
     def stop(*args):
         raise _Stop
 
-    monkeypatch.setattr(half_scoring, "_prepare_local_adaptive_pass2_support", stop)
-    trace.wrap(half_scoring, "_score_half_local_one_shape", "scorer")
-    trace.wrap(half_scoring, "_build_local_adaptive_parent_layout", "parent_layout")
-    trace.wrap(half_scoring, "_prepare_local_adaptive_pass2_support", "support")
+    monkeypatch.setattr(local_half, "_prepare_local_adaptive_pass2_support", stop)
+    trace.wrap(local_half, "_score_half_local_one_shape", "scorer")
+    trace.wrap(local_half, "_build_local_adaptive_parent_layout", "parent_layout")
+    trace.wrap(local_half, "_prepare_local_adaptive_pass2_support", "support")
     owners = local_half_owners(
         k=0, experiment_dataset=dataset, means_k=np.zeros(dataset.volume_size, dtype=np.complex64),
         noise_variance_k=np.ones(dataset.image_size, dtype=np.float32),
@@ -213,20 +216,20 @@ def _local_one_shape(monkeypatch, *, parent_probe):
         trans_prior_center_for_engine=np.zeros((dataset.n_units, 2), dtype=np.float32),
         current_sigma_offset_angstrom=1.0, disc_type="linear_interp", cs_for_engine=None,
         local_pass1_current_size=4, image_corrections_k=None, scale_corrections_k=None,
-        translation_search_base=None, disable_adjoint_y=False, disable_adjoint_ctf=False, max_significants=None,
+        translation_search_base=None, max_significants=None,
         iteration=3, local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=1,
-        diagnostic_score_only=False, local_search_translation_prior_mode="coarse", replay_prior_translations=None,
+        diagnostic_score_only=False, replay_prior_translations=None,
         collect_local_search_profile=False,
         local_profile_history=[],
     )
     with pytest.raises(_Stop):
-        half_scoring._score_half_local(*owners)
+        local_half._score_half_local(*owners)
     return trace, layout
 
 
 def test_local_adaptive_parent_layout_exposes_five_story_inputs(monkeypatch):
-    assert _parameters(half_scoring._build_local_adaptive_parent_layout) == [
+    assert _parameters(local_half._build_local_adaptive_parent_layout) == [
         "half", "sampling", "priors", "translation_prior_reference_translations", "layout_dtype",
     ]
 
@@ -240,7 +243,7 @@ def test_local_adaptive_parent_layout_exposes_five_story_inputs(monkeypatch):
 
 
 def test_local_adaptive_support_helper_exposes_six_story_inputs(monkeypatch):
-    assert _parameters(half_scoring._prepare_local_adaptive_pass2_support) == [
+    assert _parameters(local_half._prepare_local_adaptive_pass2_support) == [
         "parent_layout", "significant_sample_indices", "sampling", "support", "parent_order",
         "fine_layout_dtype",
     ]

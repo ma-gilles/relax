@@ -185,8 +185,14 @@ written as 2D stacks (its `data_general` block sets
 `tomograms.star`. The file names in the example are placeholders for your
 Extract and tomogram jobs; link every project directory the two STAR files
 name. relax detects the 2D-stack format and scores every particle over its tilt images.
+The files are read as RELION writes them: the particle STAR of `relion_tomo_subtomo --stack2d`
+needs no `rlnRandomSubset` (the run draws the halves from `--seed`, as `relion_refine` does), and
+tilt-series STARs without `rlnCtfScalefactor` or `rlnTomoXTilt` take RELION's defaults (1 and 0).
 As for single particles, `--firstiter_cc` (the default) starts with RELION's cross-correlation
 iteration; pass `--no-firstiter_cc` when the reference is on the images' greyscale.
+For particles picked on a membrane or lattice, `--sigma_tilt S` is RELION's prior on the tilt angle:
+the search keeps the directions within 3 S degrees of each particle's `rlnAngleTiltPrior` (RELION's
+tutorial uses `--sigma_tilt 10`), until auto-refine switches to local searches.
 
 ## Subtomogram 3D initial model (VDAM)
 

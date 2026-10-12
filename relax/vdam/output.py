@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 from recovar.utils.helpers import recovar_volume_to_relion
 
-from relax.helpers.map_io import write_map
-from relax.relion.initial_model_io import _write_data_star, _write_model_star
+from relax.io.map_io import write_map
 from relax.vdam.align_symmetry import align_symmetry, select_largest_class
+from relax.vdam.initial_model_io import _write_data_star, _write_model_star
 from relax.vdam.state import InitialModelState, NativeParticleState
 
 if TYPE_CHECKING:
@@ -42,18 +41,11 @@ def write_initial_run_metadata(opts, continuation) -> None:
     config_path = f"{opts.outputname}_native_options.json"
     native_options = asdict(opts)
     del native_options["environment"]  # the saved options keep their format
-    native_options["resolved_cuda_allocator"] = os.environ.get(
-        "TF_GPU_ALLOCATOR",
-        "default",
-    )
-    native_options["jax_compilation_cache_enabled"] = bool(
-        os.environ.get("JAX_COMPILATION_CACHE_DIR")
-    )
-    native_options["jax_compilation_cache_dir"] = os.environ.get(
-        "JAX_COMPILATION_CACHE_DIR"
-    )
-    native_options["jax_persistent_cache_min_compile_time_secs"] = os.environ.get(
-        "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"
+    native_options["resolved_cuda_allocator"] = opts.environment.cuda_allocator
+    native_options["jax_compilation_cache_enabled"] = bool(opts.environment.jax_compilation_cache_dir)
+    native_options["jax_compilation_cache_dir"] = opts.environment.jax_compilation_cache_dir
+    native_options["jax_persistent_cache_min_compile_time_secs"] = (
+        opts.environment.jax_persistent_cache_min_compile_time_secs
     )
     with open(config_path, "w") as f:
         json.dump(native_options, f, indent=2, sort_keys=True)
@@ -152,6 +144,15 @@ def _json_ready(value):
     return value
 
 
+@dataclass(frozen=True)
+class FinalOutputs:
+    """What ``write_final_outputs`` wrote: ``initial_model.mrc``, the class maps, and the symmetry alignment's report."""
+
+    final_mrc: str
+    class_mrcs: tuple[str, ...]
+    align_report: dict
+
+
 def write_final_outputs(
     output_prefix: str,
     state: InitialModelState,
@@ -159,7 +160,7 @@ def write_final_outputs(
     sym_name: str,
     seed: int,
     written_iterations: frozenset[int] = frozenset(),
-) -> tuple[str, tuple[str, ...], dict]:
+) -> FinalOutputs:
     """Write the last iteration's class maps, model.star and ``initial_model.mrc``.
 
     RELION's write() always writes the last iteration's model (ml_optimiser.cpp:1361, 3489). The class maps
@@ -186,4 +187,4 @@ def write_final_outputs(
     aligned, report = align_symmetry(relion_map, sym_name, seed=seed)
     write_map(final_mrc, recovar_volume_to_relion(aligned).astype(np.float32), voxel_size=float(state.pixel_size))
     report["class"] = best_class + 1
-    return final_mrc, class_mrcs, report
+    return FinalOutputs(final_mrc, class_mrcs, report)

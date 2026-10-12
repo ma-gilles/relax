@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from helpers.vdam import initial_model_state_stub
 
+from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.tomo_estep import tomo_initial_model_sampling
 
 
@@ -62,6 +63,7 @@ def test_the_subtomogram_estep_takes_the_order_before_the_update(monkeypatch):
             previous_offsets_px=np.zeros((4, 3)), noise_variance=None, relion_projector_half_by_class=None,
             relion_projector_r_max=10, class_rotation_log_prior=None, max_significants=100,
             sigma_offset_angstrom=3.0, particle_diameter_ang=240.0, padding_factor=1, pass1_healpix_order=1,
+            environment=VdamEnvironment(),
         )
     assert seen["pass1_healpix_order"] == 1
     # The driver hands the subtomogram E-step the order it read before updating the sampling, as it does for
@@ -74,3 +76,39 @@ def test_the_subtomogram_estep_takes_the_order_before_the_update(monkeypatch):
         any(kw.arg == "pass1_healpix_order" and getattr(kw.value, "id", "") == "pass1_healpix_order" for kw in call.keywords)
         for call in calls
     )
+
+
+def test_the_subtomogram_estep_honours_the_environments_engine_diagnostics(monkeypatch):
+    """deep2 V2-3: RELAX_ADAPTIVE_FRACTION and RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE reach the tilt pass."""
+    import numpy as np
+    import pytest
+
+    from relax.sampling import rotation_grid_size
+    from relax.steps import tomo_scoring
+    from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
+    from relax.vdam import tomo_estep
+
+    class Reached(Exception):
+        pass
+
+    seen = []
+
+    def score(half, **kwargs):
+        seen.append((kwargs["adaptive_fraction"], kwargs["mstep_subtract_ctf_projection"]))
+        raise Reached
+
+    monkeypatch.setattr(tomo_scoring, "score_tomo_half", score)
+    monkeypatch.setattr(tomo_estep, "tomo_initial_model_sampling", lambda *a, **k: SimpleNamespace(healpix_order=1))
+    for adaptive_fraction, subtract in ((None, True), (0.99, False)):
+        with pytest.raises(Reached):
+            tomo_estep.run_tomo_initial_model_estep(
+                SimpleNamespace(subset=lambda ids: None), SimpleNamespace(K=1, pseudo_halfsets=True),
+                sampling_plan=_plan(1), particle_ids=np.arange(4), halfset_ids=np.array([0, 1, 0, 1]),
+                previous_offsets_px=np.zeros((4, 3)), noise_variance=None,
+                relion_projector_half_by_class=np.zeros((1, 2, 2, 2), dtype=np.complex64),
+                relion_projector_r_max=10, class_rotation_log_prior=np.zeros((1, rotation_grid_size(1))),
+                max_significants=100, sigma_offset_angstrom=3.0, particle_diameter_ang=240.0, padding_factor=1,
+                environment=VdamEnvironment(adaptive_fraction=adaptive_fraction, subtract_projected_reference=subtract),
+            )
+    # The default call is unchanged: RELION's 0.999 and the residual back-projection.
+    assert seen == [(RELION_ADAPTIVE_FRACTION, True), (0.99, False)]

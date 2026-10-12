@@ -7,17 +7,18 @@ import argparse
 import glob
 import json
 import os
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
-from relax.ppca_refinement.initialization import initialize_ppca_from_gt_volumes
 from recovar.utils import helpers
 from recovar.utils.json_utils import to_jsonable
+
+from scripts.lib.ppca_initialization import initialize_ppca_from_gt_volumes
 
 
 def _source_index(path: Path, fallback: int) -> int:

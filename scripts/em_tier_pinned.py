@@ -39,6 +39,7 @@ TIER_CASES = {
         "k1_multioptics_coldstart",
         "k1_perturbreplay",
         "kclass_coldstart",
+        "kclass_local_cc",
         "kclass_nonadaptive_replay",
         "kclass_strict_oversample_coldstart",
     ),

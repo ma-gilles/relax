@@ -12,7 +12,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.relion import relion_ctf
+from relax.relion import ctf
 
 pytestmark = pytest.mark.unit
 
@@ -237,7 +237,6 @@ def test_relion_fused_translate_cuda_source_pins_native_block_topology():
     assert "constexpr int kRelionFineDiff2Ref3dJobChunk = 4;" in source
     assert "template <bool FlatRows>" in source
     assert "relion_fine_diff2_fused_translate_rows_f32_kernel" in source
-    assert "relion_fine_diff2_fused_translate_rows_f32_kernel<false>" in source
     assert "relion_fine_diff2_fused_translate_rows_f32_kernel<true>" in source
     assert "row_image_ids[row]" in source
     assert "relion_score_translate_f32(" in source
@@ -247,7 +246,6 @@ def test_relion_fused_translate_cuda_source_pins_native_block_topology():
     assert "runtime_current_size[0]" in source
     assert "logical_full_pixel_count" in source
     assert "RelionFineDiff2FusedTranslateRuntimeFlatRowsF32" in source
-    assert "RelionFineDiff2FusedTranslateRuntimeRectangularF32" in source
 
     pair_start = source.index(
         "relion_fine_diff2_fused_translate_pairs_f32_kernel"
@@ -315,11 +313,6 @@ def test_relion_coarse_diff2_cuda_source_pins_production_topology():
     assert "threadIdx.x / translation_count" in block
     assert "pixel_in_chunk += active_lanes" in block
     assert "atomicAdd(" in block
-    f64_start = source.index("relion_coarse_diff2_rectangular_f64_kernel")
-    f64_block = source[f64_start : source.index("cudaError_t", f64_start)]
-    assert "double lane_sums" in f64_block
-    assert "relion_fine_diff2_update_f64" in f64_block
-    assert "atomicAdd(" in f64_block
 
 
     # The rectangular kernel and its runtime-size variant share exactly one
@@ -465,9 +458,9 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
 
     from recovar.cuda_build import include_dir
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import library
 
-    assert em_cuda_kernels._RELAX_CUDA_BUILD_SOURCE_NAMES == (
+    assert library._RELAX_CUDA_BUILD_SOURCE_NAMES == (
         *local_inputs[:1],
         *local_inputs[2:],
         include_name,
@@ -475,7 +468,7 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
         str(include_dir() / "device_scratch.cuh"),
         "Makefile",
     )
-    assert em_cuda_kernels._LIBRARY.source_names == em_cuda_kernels._RELAX_CUDA_BUILD_SOURCE_NAMES
+    assert library._LIBRARY.source_names == library._RELAX_CUDA_BUILD_SOURCE_NAMES
 
 
 
@@ -494,10 +487,10 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
 def test_relion_coarse_single_lane_canonical_rejects_unsupported_counts(
     translation_count,
 ):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     with pytest.raises(ValueError, match="requires 65--128 translations"):
-        em_cuda_kernels.relion_coarse_diff2_projector_f32.__wrapped__(
+        cuda_coarse.relion_coarse_diff2_projector_f32.__wrapped__(
             jnp.zeros((5, 5, 5), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -514,10 +507,10 @@ def test_relion_coarse_single_lane_canonical_rejects_unsupported_counts(
 
 
 def test_relion_coarse_single_lane_canonical_requires_canonical_reduction():
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     with pytest.raises(ValueError, match="requires canonical_reduction=True"):
-        em_cuda_kernels.relion_coarse_diff2_projector_f32.__wrapped__(
+        cuda_coarse.relion_coarse_diff2_projector_f32.__wrapped__(
             jnp.zeros((5, 5, 5), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -536,7 +529,7 @@ def test_relion_coarse_single_lane_canonical_requires_canonical_reduction():
 def test_exact_relion_ctf_source_defaults_to_dataset_star(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    from relax.relion.relion_ctf import _relion_exact_ctf_source_star
+    from relax.relion.ctf import _relion_exact_ctf_source_star
 
     dataset_star = tmp_path / "particles.star"
     explicit_star = tmp_path / "override.star"
@@ -579,12 +572,12 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
         "rlnImagePixelSize": 1.5,
     }
     monkeypatch.setattr(
-        relion_ctf,
+        ctf,
         "_relion_exact_ctf_source_star",
         lambda _dataset: source,
     )
     monkeypatch.setitem(
-        relion_ctf._RELION_EXACT_CTF_SOURCE_CACHE,
+        ctf._RELION_EXACT_CTF_SOURCE_CACHE,
         cache_key,
         {
             "particles": pd.DataFrame([particle]),
@@ -597,18 +590,18 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     )
 
     pixel_indices = np.asarray([11, 0, 4, 4], dtype=np.int32)
-    compact_result = relion_ctf.relion_exact_ctf_half_from_source_star_host(
+    compact_result = ctf.relion_exact_ctf_half_from_source_star_host(
         dataset,
         np.asarray([0, 0], dtype=np.int32),
         (4, 4),
         pixel_indices=pixel_indices,
     )
-    host_result = relion_ctf.relion_exact_ctf_half_from_source_star_host(
+    host_result = ctf.relion_exact_ctf_half_from_source_star_host(
         dataset,
         np.asarray([0], dtype=np.int32),
         (4, 4),
     )
-    device_result = relion_ctf.relion_exact_ctf_half_from_source_star(
+    device_result = ctf.relion_exact_ctf_half_from_source_star(
         dataset,
         np.asarray([0], dtype=np.int32),
         (4, 4),
@@ -619,7 +612,7 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     assert isinstance(device_result, jax.Array)
     assert device_result.dtype == jnp.float64
     # RECOVAR's frame: centred rows and the opposite sign of RELION's FFTW rows.
-    fftw_rows = relion_ctf.relion_fftw_ctf_rows(dataset, np.asarray([0], dtype=np.int32), (4, 4))
+    fftw_rows = ctf.relion_fftw_ctf_rows(dataset, np.asarray([0], dtype=np.int32), (4, 4))
     assert_matches(host_result[0], -np.fft.fftshift(fftw_rows[0], axes=0).reshape(-1))
     assert_matches(np.asarray(device_result), host_result)
 
@@ -628,7 +621,7 @@ def test_exact_relion_ctf_source_exposes_host_and_shared_device_boundaries(
     # Every request is evaluated anew: the caller owns its array.
     compact_result[:] = 99.0
     assert_matches(
-        relion_ctf.relion_exact_ctf_half_from_source_star_host(
+        ctf.relion_exact_ctf_half_from_source_star_host(
             dataset,
             np.asarray([0], dtype=np.int32),
             (4, 4),
@@ -645,7 +638,7 @@ def test_relion_coarse_diff2_rectangular_matches_atomic_envelope(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -682,7 +675,7 @@ def test_relion_coarse_diff2_rectangular_matches_atomic_envelope(
 
     with jax.default_device(gpu_device):
         actual = np.asarray(
-            em_cuda_kernels.relion_coarse_diff2_rectangular_f32(
+            cuda_coarse.relion_coarse_diff2_rectangular_f32(
                 jnp.asarray(reference),
                 jnp.asarray(shifted),
                 jnp.asarray(weight),
@@ -723,7 +716,7 @@ def test_relion_fine_diff2_rectangular_matches_production_tree(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -737,7 +730,7 @@ def test_relion_fine_diff2_rectangular_matches_production_tree(
     )
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_fine_diff2_rectangular_f32(
+        actual = cuda_fine.relion_fine_diff2_rectangular_f32(
             jnp.asarray(reference[None, None, :]),
             jnp.asarray(shifted[None, None, :]),
             jnp.asarray(weight[None, :]),
@@ -759,7 +752,7 @@ def test_relion_fine_diff2_pairs_matches_production_tree(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -768,7 +761,7 @@ def test_relion_fine_diff2_pairs_matches_production_tree(
     expected = _production_reference(reference, shifted, weight, lookup)
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_fine_diff2_pairs_f32(
+        actual = cuda_fine.relion_fine_diff2_pairs_f32(
             jnp.asarray(reference[None, None, :]),
             jnp.asarray(shifted[None, None, :]),
             jnp.asarray(weight[None, :]),
@@ -789,7 +782,7 @@ def test_relion_fine_diff2_rectangular_f64_matches_acc_double_tree(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -801,7 +794,7 @@ def test_relion_fine_diff2_rectangular_f64_matches_acc_double_tree(
     expected = _production_reference_f64(reference, shifted, weight, lookup)
 
     with jax.default_device(gpu_device):
-        actual = em_cuda_kernels.relion_fine_diff2_rectangular_f64(
+        actual = cuda_fine.relion_fine_diff2_rectangular_f64(
             jnp.asarray(reference[None, None, :]),
             jnp.asarray(shifted[None, None, :]),
             jnp.asarray(weight[None, :]),
@@ -834,7 +827,8 @@ def test_relion_fine_diff2_f64_uses_double_ffi_target(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
+    from relax.cuda import library
 
     call = {}
 
@@ -844,11 +838,11 @@ def test_relion_fine_diff2_f64_uses_double_ffi_target(
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
-    monkeypatch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
+    monkeypatch.setattr(cuda_fine, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(em_cuda_kernels, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
-    function = getattr(em_cuda_kernels, function_name).__wrapped__
+    function = getattr(cuda_fine, function_name).__wrapped__
     reference_shape = (1, 2, 5)
     shifted_shape = (1, 3, 5) if "rectangular" in function_name else reference_shape
     actual = function(
@@ -875,10 +869,10 @@ def test_relion_fine_diff2_f64_uses_double_ffi_target(
 def test_relion_fine_diff2_fails_closed_without_gpu(monkeypatch, function_name):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
-    function = getattr(em_cuda_kernels, function_name).__wrapped__
+    function = getattr(cuda_fine, function_name).__wrapped__
     is_f64 = function_name.endswith("f64")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
         function(
@@ -889,25 +883,18 @@ def test_relion_fine_diff2_fails_closed_without_gpu(monkeypatch, function_name):
         )
 
 
-@pytest.mark.parametrize("dtype", [jnp.float32, jnp.float64])
-def test_relion_coarse_diff2_fails_closed_without_gpu(monkeypatch, dtype):
+def test_relion_coarse_diff2_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
-    is_f64 = dtype == jnp.float64
-    function = (
-        em_cuda_kernels.relion_coarse_diff2_rectangular_f64
-        if is_f64
-        else em_cuda_kernels.relion_coarse_diff2_rectangular_f32
-    )
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        function.__wrapped__(
-            jnp.zeros((1, 2), dtype=jnp.complex128 if is_f64 else jnp.complex64),
-            jnp.zeros((1, 29, 2), dtype=jnp.complex128 if is_f64 else jnp.complex64),
-            jnp.ones((1, 2), dtype=dtype),
-            jnp.zeros((1,), dtype=dtype),
+        cuda_coarse.relion_coarse_diff2_rectangular_f32.__wrapped__(
+            jnp.zeros((1, 2), dtype=jnp.complex64),
+            jnp.zeros((1, 29, 2), dtype=jnp.complex64),
+            jnp.ones((1, 2), dtype=jnp.float32),
+            jnp.zeros((1,), dtype=jnp.float32),
             jnp.asarray([0, 1], dtype=jnp.int32),
         )
 
@@ -915,11 +902,11 @@ def test_relion_coarse_diff2_fails_closed_without_gpu(monkeypatch, dtype):
 def test_relion_coarse_normalized_cc_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="require a JAX GPU backend"):
-        em_cuda_kernels.relion_coarse_normalized_cc_pairs_f32.__wrapped__(
+        cuda_coarse.relion_coarse_normalized_cc_pairs_f32.__wrapped__(
             jnp.zeros((1, 2, 3), dtype=jnp.complex64),
             jnp.ones((1, 2, 3), dtype=jnp.float32),
             jnp.zeros((1, 2, 3), dtype=jnp.complex64),
@@ -933,11 +920,11 @@ def test_relion_coarse_normalized_cc_native_texture_fails_closed_without_gpu(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="require a JAX GPU backend"):
-        em_cuda_kernels.relion_coarse_normalized_cc_native_texture_pairs_f32.__wrapped__(
+        cuda_coarse.relion_coarse_normalized_cc_native_texture_pairs_f32.__wrapped__(
             jnp.zeros((5, 5, 5), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -953,11 +940,11 @@ def test_relion_coarse_normalized_cc_native_texture_fails_closed_without_gpu(
 def test_relion_projector_half_texture_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import projector as cuda_projector
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_projector_half_texture_f32.__wrapped__(
+        cuda_projector.relion_projector_half_texture_f32.__wrapped__(
             jnp.zeros((5, 5, 3), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             current_size=2,
@@ -969,11 +956,11 @@ def test_relion_projector_half_texture_fails_closed_without_gpu(monkeypatch):
 def test_relion_coarse_vdam_projector_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_coarse_diff2_projector_f32.__wrapped__(
+        cuda_coarse.relion_coarse_diff2_projector_f32.__wrapped__(
             jnp.zeros((5, 5, 5), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -1005,8 +992,8 @@ def test_sparse_pass2_fused_flag_routes_supported_operand_layouts(
     expected_route,
     expected_shape,
 ):
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_diff2_sum
+    from relax.cuda import fine as cuda_fine
+    from relax.fine_pass.scoring import _relion_cuda_fine_diff2_sum
 
     routes = []
 
@@ -1039,11 +1026,11 @@ def test_sparse_pass2_fused_flag_routes_supported_operand_layouts(
 
     monkeypatch.setenv("RELAX_RELION_FINE_DIFF2_FUSED_FFI", "1")
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_fine,
         "relion_fine_diff2_rectangular_f32",
         rectangular,
     )
-    monkeypatch.setattr(em_cuda_kernels, "relion_fine_diff2_pairs_f32", pairs)
+    monkeypatch.setattr(cuda_fine, "relion_fine_diff2_pairs_f32", pairs)
 
     actual = _relion_cuda_fine_diff2_sum(
         jnp.zeros(reference_shape, dtype=jnp.complex64),
@@ -1058,8 +1045,8 @@ def test_sparse_pass2_fused_flag_routes_supported_operand_layouts(
 
 
 def test_sparse_pass2_fused_flag_routes_float64_to_f64_ffi(monkeypatch):
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_diff2_sum
+    from relax.cuda import fine as cuda_fine
+    from relax.fine_pass.scoring import _relion_cuda_fine_diff2_sum
 
     calls = []
 
@@ -1072,7 +1059,7 @@ def test_sparse_pass2_fused_flag_routes_float64_to_f64_ffi(monkeypatch):
 
     monkeypatch.setenv("RELAX_RELION_FINE_DIFF2_FUSED_FFI", "1")
     monkeypatch.setattr(
-        em_cuda_kernels,
+        cuda_fine,
         "relion_fine_diff2_rectangular_f64",
         rectangular,
     )
@@ -1088,31 +1075,14 @@ def test_sparse_pass2_fused_flag_routes_float64_to_f64_ffi(monkeypatch):
     assert calls == [(jnp.complex128, jnp.complex128, jnp.float64)]
 
 
-def test_relion_runtime_cutoff_fine_diff2_fails_closed_without_gpu(monkeypatch):
-    import recovar.cuda_backproject as cuda_backproject
-
-    from relax.cuda import kernels as em_cuda_kernels
-
-    monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
-    with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_rectangular_f32.__wrapped__(
-            jnp.zeros((1, 1, 1), dtype=jnp.complex64),
-            jnp.zeros((1, 1), dtype=jnp.complex64),
-            jnp.zeros((1, 2), dtype=jnp.float32),
-            jnp.ones((1, 1), dtype=jnp.float32),
-            jnp.asarray([0], dtype=jnp.int32),
-            jnp.asarray(2, dtype=jnp.int32),
-        )
-
-
 def test_relion_runtime_flat_rows_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32.__wrapped__(
+        cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32.__wrapped__(
             jnp.zeros((1, 1), dtype=jnp.complex64),
             jnp.zeros((1,), dtype=jnp.int32),
             jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -1137,10 +1107,10 @@ def test_exact_ctf_compact_indices_reject_invalid_host_geometry(monkeypatch, tmp
     from types import SimpleNamespace
 
     source = (tmp_path / "particles.star").resolve()
-    monkeypatch.setattr(relion_ctf, "_relion_exact_ctf_source_star", lambda _: source)
+    monkeypatch.setattr(ctf, "_relion_exact_ctf_source_star", lambda _: source)
     dataset = SimpleNamespace(original_image_indices_from_local=lambda indices: indices)
     with pytest.raises(ValueError):
-        relion_ctf.relion_exact_ctf_half_from_source_star_host(
+        ctf.relion_exact_ctf_half_from_source_star_host(
             dataset,
             np.asarray([0]),
             (4, 4),
@@ -1156,11 +1126,11 @@ def test_exact_ctf_compact_indices_never_materialize_device_inputs(monkeypatch, 
             raise AssertionError("Unexpected device-to-host materialization")
 
     source = (tmp_path / "particles.star").resolve()
-    monkeypatch.setattr(relion_ctf, "_relion_exact_ctf_source_star", lambda _: source)
+    monkeypatch.setattr(ctf, "_relion_exact_ctf_source_star", lambda _: source)
     dataset = SimpleNamespace(original_image_indices_from_local=lambda indices: indices)
     for indices in (DeviceOnly(), jnp.asarray([0], dtype=jnp.int32)):
         with pytest.raises(TypeError, match="host NumPy array"):
-            relion_ctf.relion_exact_ctf_half_from_source_star_host(
+            ctf.relion_exact_ctf_half_from_source_star_host(
                 dataset,
                 np.asarray([0]),
                 (4, 4),
@@ -1178,8 +1148,8 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.helpers.projection import (
+    from relax.cuda import projector as cuda_projector
+    from relax.projection.projection import (
         compute_relion_projector_projections_block,
         relion_projector_half_to_texture_full,
     )
@@ -1231,7 +1201,7 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
             max_r=float(projector_max_r),
             relion_texture_interp=True,
         )
-        compact = em_cuda_kernels.relion_projector_half_texture_f32(
+        compact = cuda_projector.relion_projector_half_texture_f32(
             projector_half_jax,
             rotations_jax,
             current_size=current_size,
@@ -1250,7 +1220,7 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
             max_r=float(projector_max_r),
             relion_texture_interp=True,
         )
-        compact_native_scaled = em_cuda_kernels.relion_projector_half_texture_f32(
+        compact_native_scaled = cuda_projector.relion_projector_half_texture_f32(
             projector_half_jax,
             rotations_jax,
             current_size=current_size,
@@ -1300,7 +1270,7 @@ def test_relion_half_texture_full_even_indexed_projection_matches_full_scatter(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         compute_relion_projector_projections_block,
     )
 
@@ -1396,7 +1366,7 @@ def test_relion_half_texture_projection_uses_native_rotated_image_radius_cutoff(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import projector as cuda_projector
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -1427,7 +1397,7 @@ def test_relion_half_texture_projection_uses_native_rotated_image_radius_cutoff(
     )
 
     with jax.default_device(gpu_device):
-        projected = em_cuda_kernels.relion_projector_half_texture_f32(
+        projected = cuda_projector.relion_projector_half_texture_f32(
             jnp.asarray(projector),
             jnp.asarray(rotations),
             current_size=20,
@@ -1449,10 +1419,10 @@ def test_relion_half_texture_projection_is_invariant_to_host_support_crop(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.helpers.fourier_window import (
+    from relax.fourier.fourier_window import (
         make_fourier_window_spec,
     )
-    from relax.helpers.projection import (
+    from relax.projection.projection import (
         compact_relion_projector_half_for_centered_indices,
         compute_relion_projector_projections_block,
     )
@@ -1524,13 +1494,13 @@ def test_relion_half_texture_projection_is_invariant_to_host_support_crop(
 
 
 def test_translation_chunk_live_marks_chunks_of_four_with_a_candidate():
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     mask = np.zeros((3, 10), dtype=bool)
     mask[0, 1] = True
     mask[1, 9] = True
     mask[2, [4, 7]] = True
-    live = np.asarray(em_cuda_kernels.relion_fine_diff2_translation_chunk_live(jnp.asarray(mask)))
+    live = np.asarray(cuda_fine.relion_fine_diff2_translation_chunk_live(jnp.asarray(mask)))
     assert live.shape == (3, 3)
     assert live.tolist() == [[True, False, False], [False, False, True], [False, True, False]]
 
@@ -1545,7 +1515,7 @@ def test_relion_runtime_masked_flat_rows_skip_chunks_without_candidates(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import fine as cuda_fine
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -1563,7 +1533,7 @@ def test_relion_runtime_masked_flat_rows_skip_chunks_without_candidates(
     initial_diff2 = np.asarray([0.022644043, 0.03125], dtype=np.float32)
     candidate = rng.random((n_rows, n_translations)) < 0.2
     candidate[1] = False
-    live = em_cuda_kernels.relion_fine_diff2_translation_chunk_live(jnp.asarray(candidate))
+    live = cuda_fine.relion_fine_diff2_translation_chunk_live(jnp.asarray(candidate))
 
     with jax.default_device(gpu_device):
         args = (
@@ -1576,8 +1546,8 @@ def test_relion_runtime_masked_flat_rows_skip_chunks_without_candidates(
             jnp.asarray(size, dtype=jnp.int32),
             jnp.asarray(initial_diff2),
         )
-        full = em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(*args)
-        masked = em_cuda_kernels.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
+        full = cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(*args)
+        masked = cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
             *args, translation_chunk_live=live
         )
         full, masked = (np.asarray(v) for v in jax.block_until_ready((full, masked)))

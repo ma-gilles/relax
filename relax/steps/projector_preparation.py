@@ -1,0 +1,298 @@
+"""Prepare RELION projector slabs for scoring.
+
+Device preparation converts references, reuses the existing disk cache and
+writes optional projector dumps. It does not own iteration scheduling.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import os
+from dataclasses import dataclass
+
+import jax.numpy as jnp
+import numpy as np
+
+from relax.runtime.timing import Stopwatch
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, kw_only=True)
+class PreparedProjector:
+    """Projection slabs, Fourier cutoff and power spectra from one transform."""
+
+    data: object
+    r_max: int
+    power_spectrum: object | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ProjectorReuse:
+    """An accuracy projector tied to its reference identity and image support."""
+
+    references: object
+    current_size: int
+    image_box_size: int
+    projector: PreparedProjector
+
+
+def prepare_initial_real_references(init_reference_real, *, volume_shape, n_classes, init_relion_iteration, log):
+    """Each half's direct real references on a class axis, without Fourier conversion, from the handoff's
+    ``HalfPair`` (or None).
+
+    Preserve float64 source values, shared-half identity and per-half views.
+    A missing handoff stays [None, None] for the existing Fourier fallback.
+    The handoff replaces loop iteration 0's scoring projector, so it is only
+    valid for a fresh start: a run resuming after RELION iteration N scores
+    that iteration against the replayed references instead.
+    """
+    initial_real_references_by_half = [None, None]
+    if init_reference_real is not None and int(init_relion_iteration) != 0:
+        raise ValueError(
+            "direct initial real-reference handoff (the K=1 --firstiter_cc default or "
+            "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE=1) would score the first loop "
+            "iteration against the start-up reference, but this run resumes after RELION "
+            f"iteration {int(init_relion_iteration)}; drop --firstiter_cc (and the "
+            "environment override) for --init_relion_iteration > 0"
+        )
+    if init_reference_real is not None:
+        expected_volume_shape = tuple(int(value) for value in volume_shape)
+
+        def _as_class_real_references(value):
+            array = np.asarray(value, dtype=np.float64)
+            if n_classes == 1 and array.shape == expected_volume_shape:
+                return array[None, ...]
+            expected_class_shape = (n_classes,) + expected_volume_shape
+            if array.shape == expected_class_shape:
+                return array
+            raise ValueError(
+                "a half's init_reference_real must be a real volume or a per-class "
+                f"array; got {array.shape}, expected "
+                f"{expected_volume_shape} or {expected_class_shape}",
+            )
+
+        initial_real_references_by_half = list(init_reference_real.map(_as_class_real_references))
+        log.info(
+            "RELION initial projector: preserving direct float64 real-reference handoff"
+        )
+    return initial_real_references_by_half
+
+
+def prepare_scoring_projector(
+    references,
+    *,
+    volume_shape,
+    current_size: int | None,
+    padding_factor: int,
+    n_classes: int,
+    real_references=None,
+    dump_label: str | None = None,
+    reusable: ProjectorReuse | None = None,
+    gridding_kernel: str = "radial",
+) -> PreparedProjector:
+    """Prepare RELION ``Projector::data`` slabs from current Fourier references.
+
+    The returned ``power_spectrum`` (float64
+    ``[K, ori_size // 2 + 1]``) is each class's corrected power spectrum from
+    the same transform, as ``computeFourierTransformMap`` returns it; Class3D
+    derives its tau2 from it.
+
+    The slabs come from the device projector setup
+    (:func:`relax.relion.projector_setup.reference_to_relion_projector_half_maps_and_power`);
+    RELION's own transform is a test oracle only. ``gridding_kernel`` is the
+    setup's correction window; a ``reusable`` projector must have been built
+    with the same one, and a non-radial window has its own cache entries.
+    The power spectrum always counts as RELION does (every stored coefficient once).
+    """
+
+    if reusable is not None:
+        reuse_size = reusable.image_box_size if current_size is None else int(current_size)
+        if reusable.references is references and reusable.current_size == reuse_size:
+            return reusable.projector
+
+    from recovar.core import fourier_transform_utils as ftu
+
+    from relax.relion.projector_setup import reference_to_relion_projector_half_maps_and_power
+
+    refs_ft = np.asarray(references)
+    if int(n_classes) == 1 and refs_ft.ndim == 1:
+        refs_ft = refs_ft[None, :]
+    if refs_ft.ndim != 2 or int(refs_ft.shape[0]) != int(n_classes):
+        raise ValueError(
+            "references must be a flat reference or a per-class reference array; "
+            f"got shape {refs_ft.shape} for n_classes={n_classes}",
+        )
+    refs_real_override = None
+    if real_references is not None:
+        refs_real_override = np.asarray(real_references, dtype=np.float64)
+        expected_shape = (int(n_classes),) + tuple(int(value) for value in volume_shape)
+        if refs_real_override.shape != expected_shape:
+            raise ValueError(
+                "real_references must have one real-space volume per class; "
+                f"got {refs_real_override.shape}, expected {expected_shape}",
+            )
+    resolved_current_size = int(current_size) if current_size is not None else int(volume_shape[0])
+    cache_dir = os.environ.get("RELAX_RELION_PROJECTOR_CACHE_DIR", "").strip()
+    cache_path = None
+    if cache_dir:
+        refs_for_hash = np.ascontiguousarray(
+            refs_ft if refs_real_override is None else refs_real_override
+        )
+        hasher = hashlib.sha256()
+        # v3: one transform (the device setup); v2 keys named the backend, v1
+        # entries could mix backends. Older entries are unreachable, which costs
+        # one rebuild and is the safe direction.
+        hasher.update(b"recovar-relion-projector-cache-v3")
+        hasher.update(b"fourier-reference" if refs_real_override is None else b"real-reference")
+        hasher.update(str(refs_for_hash.dtype).encode("utf-8"))
+        hasher.update(np.asarray(refs_for_hash.shape, dtype=np.int64).tobytes())
+        hasher.update(np.asarray(volume_shape, dtype=np.int64).tobytes())
+        cache_params = np.asarray(
+            [resolved_current_size, int(padding_factor), int(n_classes)],
+            dtype=np.int64,
+        )
+        hasher.update(cache_params.tobytes())
+        if gridding_kernel != "radial":
+            # Radial entries keep their keys; another window never reads them.
+            hasher.update(f"gridding-kernel-{gridding_kernel}".encode("utf-8"))
+        hasher.update(refs_for_hash.view(np.uint8))
+        cache_path = os.path.join(cache_dir, f"projector_{hasher.hexdigest()[:24]}.npz")
+        if os.path.exists(cache_path):
+            try:
+                with np.load(cache_path, allow_pickle=False) as cached:
+                    projector_half = np.asarray(cached["projector_half"])
+                    projector_r_max = int(np.asarray(cached["projector_r_max"]))
+                    projector_power = np.asarray(cached["projector_power"])
+                    if (
+                        int(np.asarray(cached["current_size"])) != resolved_current_size
+                        or int(np.asarray(cached["padding_factor"])) != int(padding_factor)
+                        or int(np.asarray(cached["n_classes"])) != int(n_classes)
+                        or tuple(np.asarray(cached["volume_shape"], dtype=np.int64).tolist()) != tuple(volume_shape)
+                    ):
+                        raise ValueError("metadata mismatch")
+                logger.info("RELION mode: loaded cached Projector::data from %s", cache_path)
+                return PreparedProjector(data=projector_half, r_max=projector_r_max, power_spectrum=projector_power)
+            except Exception as exc:
+                logger.warning("Ignoring unreadable RELION projector cache %s: %s", cache_path, exc)
+    if refs_real_override is None:
+        refs_real = []
+        for class_index in range(int(n_classes)):
+            ref_ft = jnp.asarray(refs_ft[class_index]).reshape(volume_shape)
+            refs_real.append(np.asarray(ftu.get_idft3(ref_ft)).real)
+        refs_real = np.asarray(refs_real, dtype=np.float64)
+    else:
+        refs_real = refs_real_override
+    projector_half, projector_power, projector_r_max = reference_to_relion_projector_half_maps_and_power(
+        refs_real,
+        current_size=resolved_current_size,
+        padding_factor=int(padding_factor),
+        # Refinement consumes complex128, which its own log line reports; the
+        # setup narrows to complex64 (the InitialModel consumer) unless told otherwise.
+        projector_data_dtype="complex128",
+        gridding_kernel=gridding_kernel,
+    )
+    if cache_path is not None:
+        os.makedirs(cache_dir, exist_ok=True)
+        try:
+            with open(os.path.join(cache_dir, "SAFE_TO_DELETE"), "a", encoding="utf-8"):
+                pass
+            tmp_path = f"{cache_path}.{os.getpid()}.tmp.npz"
+            np.savez(
+                tmp_path,
+                projector_half=np.asarray(projector_half),
+                projector_r_max=np.int64(projector_r_max),
+                projector_power=np.asarray(projector_power),
+                current_size=np.int64(resolved_current_size),
+                padding_factor=np.int64(padding_factor),
+                volume_shape=np.asarray(volume_shape, dtype=np.int64),
+                n_classes=np.int64(n_classes),
+            )
+            os.replace(tmp_path, cache_path)
+            logger.info("RELION mode: saved Projector::data cache to %s", cache_path)
+        except Exception as exc:
+            logger.warning("Could not write RELION projector cache %s: %s", cache_path, exc)
+    dump_dir = os.environ.get("RELAX_RELION_PROJECTOR_DUMP_DIR")
+    if dump_dir:
+        label = dump_label or "projector"
+        os.makedirs(dump_dir, exist_ok=True)
+        np.savez_compressed(
+            os.path.join(dump_dir, f"{label}_relion_projector_half.npz"),
+            projector_half=np.asarray(projector_half),
+            reference_real=np.asarray(refs_real),
+            projector_r_max=np.int64(projector_r_max),
+            current_size=np.int64(resolved_current_size),
+            padding_factor=np.int64(padding_factor),
+            volume_shape=np.asarray(volume_shape, dtype=np.int64),
+            n_classes=np.int64(n_classes),
+        )
+    return PreparedProjector(data=projector_half, r_max=projector_r_max, power_spectrum=projector_power)
+
+
+def build_numbered_projectors(
+    halves,
+    references_by_half,
+    settings,
+    *,
+    current_size: int | None,
+    n_classes: int,
+    reusable_half1: ProjectorReuse | None,
+    real_references_by_half,
+    iteration: int,
+    log: logging.Logger,
+) -> list[PreparedProjector | None]:
+    """Build each half's ``Projector::data`` for one numbered iteration's scoring; ``[half 1, half 2]``.
+
+    A half without images gets ``None``. Half 1 returns ``reusable_half1``'s projector when it was built
+    from the same references at ``current_size`` (the expected-accuracy estimate's projector). Each half
+    projects ``references_by_half[half.index]``, from ``real_references_by_half[half.index]`` when given
+    (the start-up handoff of the first iteration). Reads from ``settings`` (the run's
+    ``ReconstructionSettings``): ``volume_shape``, ``projection_padding_factor`` and ``gridding_kernel``.
+    """
+    clock = Stopwatch()
+    projectors = [None, None]
+    for half in halves:
+        if half.dataset.n_units == 0:
+            log.info(
+                "RELION mode: skipping Projector::data build for empty half-%d dataset",
+                half.index + 1,
+            )
+            continue
+        projectors[half.index] = prepare_scoring_projector(
+            references_by_half[half.index],
+            volume_shape=settings.volume_shape,
+            current_size=current_size,
+            padding_factor=settings.projection_padding_factor,
+            n_classes=n_classes,
+            reusable=reusable_half1 if half.index == 0 else None,
+            real_references=None if real_references_by_half is None else real_references_by_half[half.index],
+            dump_label=f"iter{iteration:03d}_half{half.index}",
+            gridding_kernel=settings.gridding_kernel,
+        )
+    require_projectors_for_gridding_kernel(projectors, settings.gridding_kernel)
+    log.info(
+        # The slab dtype decides whether pass-2 projection runs on
+        # the native texture projector or the vmapped JAX fallback
+        # (_relion_projector_texture_enabled requires complex64),
+        # so record it rather than leaving the path implicit.
+        "RELION mode: built exact Projector::data for scoring at current_size=%s r_max=%s "
+        "dtype=%s in %.2fs",
+        current_size,
+        None if projectors[0] is None else projectors[0].r_max,
+        None if projectors[0] is None else projectors[0].data.dtype,
+        clock.seconds,
+    )
+    return projectors
+
+
+def require_projectors_for_gridding_kernel(projectors, gridding_kernel: str) -> None:
+    """Refuse a non-radial gridding window when a half would be scored without its projector slab.
+
+    A scorer handed no slab pads and corrects the reference itself, with RELION's radial window.
+    """
+
+    if gridding_kernel != "radial" and any(projector is None for projector in projectors):
+        raise NotImplementedError(
+            f"gridding_kernel={gridding_kernel!r} needs every half's RELION projector slab built with that window"
+        )

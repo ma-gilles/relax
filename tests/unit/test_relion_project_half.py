@@ -7,7 +7,7 @@ def test_relion_project_half_uses_projector_matrix_directly():
     """RELION accelerator euler matrices are projector matrices, not inverses."""
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
+    from relax.relion.project import relion_project_half
 
     n = 8
     volume = np.zeros((n, n, n // 2 + 1), dtype=np.complex128)
@@ -42,8 +42,8 @@ def test_centered_row_projector_transposes_scorer_rotations():
     """Centered-row RECOVAR scoring uses the transpose at the raw Projector handoff."""
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
-    from relax.helpers.projection import project_relion_projector_half_spectrum_centered_rows
+    from relax.relion.project import relion_project_half
+    from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows
 
     n = 8
     rng = np.random.default_rng(7)
@@ -98,8 +98,8 @@ def test_centered_row_projector_scatters_cropped_ppref_into_full_box():
     """Cropped RELION ``PPref`` output must land in full-box RECOVAR row order."""
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
-    from relax.helpers.projection import project_relion_projector_half_spectrum_centered_rows
+    from relax.relion.project import relion_project_half
+    from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows
 
     full_n = 8
     current_size = 4
@@ -152,8 +152,8 @@ def test_centered_row_projector_can_use_explicit_coarse_output_size():
     """RELION pass-1 projects PPref into the current-size Fimg box."""
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
-    from relax.helpers.projection import project_relion_projector_half_spectrum_centered_rows
+    from relax.relion.project import relion_project_half
+    from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows
 
     full_n = 8
     projector_n = 8
@@ -208,7 +208,7 @@ def test_relion_acc_double_floorf_quirk_matches_default_away_from_integer_bounda
     """Away from an integer coordinate, the GPU floorf-narrowing quirk is a no-op."""
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
+    from relax.relion.project import relion_project_half
 
     n = 16
     rng = np.random.default_rng(23)
@@ -245,7 +245,7 @@ def test_relion_project_half_truncates_rotated_radius_before_clipping():
     """AccProjectorKernel assigns the positive floating r² sum to ``int``."""
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
+    from relax.relion.project import relion_project_half
 
     n = 8
     r_max = 2
@@ -282,7 +282,7 @@ def test_relion_acc_double_floorf_quirk_flips_bucket_at_integer_boundary():
     """
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
+    from relax.relion.project import relion_project_half
 
     n = 32
     # xp = 10 - 4e-7: float64 floors to 9. Cast to float32, this value rounds
@@ -382,7 +382,7 @@ def test_relion_project_half_radius_matches_relion_accelerated_kernel(r_max, mat
     """The kept pixels are exactly those RELION's GPU kernel keeps."""
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
+    from relax.relion.project import relion_project_half
 
     image_size = 8
     volume_size = 24  # large enough that no kept pixel reads outside the box
@@ -414,7 +414,7 @@ def test_relion_project_half_center_padded_capacity_matches_logical(logical_size
     """
     import jax.numpy as jnp
 
-    from relax.relion.relion_project import relion_project_half
+    from relax.relion.project import relion_project_half
 
     r_max = logical_size // 2
     pf = padding_factor
@@ -468,7 +468,7 @@ def test_full_box_projection_samples_relions_plus_nyquist_row():
     import jax.numpy as jnp
     from scipy.spatial.transform import Rotation
 
-    from relax.relion.relion_project import relion_project_half
+    from relax.relion.project import relion_project_half
 
     n, pad = 32, 2
     rng = np.random.default_rng(11)

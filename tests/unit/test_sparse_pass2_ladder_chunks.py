@@ -2,7 +2,7 @@
 
 import pytest
 
-from relax.scoring import sparse_bucket_arrays as sba
+from relax.fine_pass import bucket_arrays as sba
 
 
 def test_default_chunking_is_consecutive_caps(monkeypatch):

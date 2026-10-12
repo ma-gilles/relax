@@ -20,9 +20,8 @@ from recovar.ppca.pose_marginal import compute_ppca_pose_scores_and_moments_no_c
 from recovar.ppca.triangular import tri_size as _tri_size
 from recovar.reconstruction import noise as noise_utils
 
-from relax.helpers.batch_fetch import fetch_indexed_batch
-from relax.helpers.preprocessing import prepare_reconstruction_batch, preprocess_batch
-from relax.local.local_layout import LocalHypothesisLayout, bucket_local_hypothesis_layout
+from relax.io.batch_fetch import fetch_indexed_batch
+from relax.local_search.layout import LocalHypothesisLayout, bucket_local_hypothesis_layout
 from relax.ppca_refinement.config import (
     GeometryConfig,
     PoseSelectionConfig,
@@ -54,6 +53,7 @@ from relax.ppca_refinement.pose_selection import (
 )
 from relax.ppca_refinement.postprocess import PostprocessConfig, postprocess_ppca_half_volumes
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
+from relax.relion.image_preprocessing import prepare_reconstruction_batch, preprocess_batch
 
 # Smart-sizing defaults mirror the K-class engine's
 # ``EXACT_LOCAL_TARGET_ROW_PIXELS`` (190 M scoring pixels per microbatch),
@@ -597,7 +597,7 @@ def _accumulate_local_pose_ppca_bucket_cached(
 ):
     """Exact local PPCA M-step backprojection from cached score moments."""
 
-    from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
+    from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
 
     score = jnp.asarray(score)
     alpha = jnp.asarray(alpha)
@@ -691,7 +691,7 @@ def _accumulate_local_pose_ppca_bucket_topk_cached(
 ):
     """Approximate local M-step that backprojects only the top-k posterior poses."""
 
-    from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
+    from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
 
     score = jnp.asarray(score)
     alpha = jnp.asarray(alpha)
@@ -806,7 +806,7 @@ def _fused_local_pose_ppca_bucket(
     posterior accumulation instead of summing over images before the adjoint.
     """
 
-    from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
+    from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
 
     Y1 = jnp.asarray(Y1)
     proj_aug = jnp.asarray(proj_aug)

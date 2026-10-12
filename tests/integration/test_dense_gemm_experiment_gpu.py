@@ -8,10 +8,16 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from relax.dense.gemm_experiment import DenseGemmTileConfig, make_batch_program, native_relion_callbacks
-from relax.dense.gemm_experiment_kernels import empty_normalizer_table
-from relax.helpers.projection import relion_projector_half_to_texture_full
+from relax.dense.gemm_kernels import (
+    DenseGemmTileConfig,
+    empty_normalizer_table,
+    native_relion_callbacks,
+)
+from relax.projection.projection import relion_projector_half_to_texture_full
 from scripts.benchmark_dense_gemm_em import _direct_comparison, _make_case, _production_program, _run_once
+from scripts.lib.dense_gemm_experiment import (
+    make_batch_program,
+)
 
 
 @pytest.mark.gpu
@@ -76,8 +82,8 @@ def test_lagged_bootstrap_uses_native_program_and_exposes_mass():
 
 @pytest.mark.gpu
 def test_compiled_batch_reuses_capacity_texture_until_concrete_completion():
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
-    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
+    from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
     args = SimpleNamespace(
         seed=20260928,
@@ -131,7 +137,7 @@ def test_compiled_batch_reuses_capacity_texture_until_concrete_completion():
 
 @pytest.mark.gpu
 def test_capacity_texture_refresh_reuses_compiled_projection_and_matches_new_owner():
-    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
 
     args = SimpleNamespace(
         seed=20260928, images=3, rotations=3, translations=5,

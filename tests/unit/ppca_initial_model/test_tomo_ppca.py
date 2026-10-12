@@ -14,15 +14,16 @@ import numpy as np
 import pytest
 import recovar.core.fourier_transform_utils as ftu
 from helpers.float_compare import assert_matches
+from helpers.full_row_tile import accumulate_full_row_tile
 from recovar import core
 from scipy.spatial.transform import Rotation
 
-from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
-from relax.helpers.preprocessing import relion_half_translation_lattice
+from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.fourier.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.tomo import TiltParticles, load_tilt_tile, tilt_shifts, tilt_tiles
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.engine import _enforce_augmented_x0
-from relax.ppca_refinement.full_row_stream import accumulate_full_row_tile, prepare_full_row_stream
+from relax.ppca_refinement.full_row_stream import prepare_full_row_stream
 
 pytestmark = pytest.mark.unit
 
@@ -628,7 +629,7 @@ def test_tilt_geometry_edit_refuses_resume(tmp_path, monkeypatch):
     from relax.ppca_initial_model.checkpoint import load, save
     from relax.ppca_initial_model.config import Config
     from relax.ppca_initial_model.state import State
-    from relax.refinement import tomo_half
+    from relax.steps import tomo_half
 
     (tmp_path / "tilt_series").mkdir()
     (tmp_path / "optimisation_set.star").write_text(

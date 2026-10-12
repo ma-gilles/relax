@@ -1,7 +1,7 @@
 // Flat-row translate-and-sum for RECOVAR's device-resident K=1 pass-2 M-step.
 //
 // Replaces the XLA reduce fusion of
-// recovar/em/sparse_pass2/resident_pass2.py::_resident_block_weighted_sums,
+// relax/fine_pass/resident_pass2.py::_resident_block_weighted_sums,
 // which gathers a ``[rows, translations, pixels]`` shifted tile per M-step
 // block (2.3 GB at the hp3 state) and contracts it with the posterior.  This
 // kernel keeps only the per-image unshifted operands and applies RELION's

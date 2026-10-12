@@ -16,7 +16,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar import cuda_backproject as cb
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import library
+from relax.cuda import posterior as cuda_posterior
 
 pytestmark = pytest.mark.unit
 
@@ -43,8 +44,8 @@ def make_scores(shape, seed, *, all_inf_row=False, nan=False):
 
 
 def _gpu_library_has(symbol):
-    em_cuda_kernels._ensure_ffi()
-    return hasattr(em_cuda_kernels._get_lib(), symbol)
+    library.ensure_ffi()
+    return hasattr(library.get_lib(), symbol)
 
 
 def _require_segmented_gpu():
@@ -85,7 +86,7 @@ def _segmented(
     scratch=False,
 ):
     segments = len(offsets) - 1
-    outputs = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
+    outputs = cuda_posterior.sparse_pass2_segmented_posterior_f32(
         jnp.asarray(scores_flat, dtype=jnp.float32),
         jnp.asarray(offsets, dtype=jnp.int32),
         jnp.asarray(n_valid, dtype=jnp.int32),
@@ -111,9 +112,9 @@ def _segmented(
 def test_segment_state_bytes_match_header():
     """The Python scratch size tracks sizeof(SegmentState) in the CUDA header."""
 
-    header = os.path.join(os.path.dirname(em_cuda_kernels.__file__), "sparse_pass2_posterior.cuh")
+    header = os.path.join(os.path.dirname(cuda_posterior.__file__), "sparse_pass2_posterior.cuh")
     body = open(header).read().split("struct SegmentState", 1)[1].split("};", 1)[0]
-    sizes = {"RowState": em_cuda_kernels._SPARSE_PASS2_ROW_STATE_BYTES, "int": 4, "int64_t": 8}
+    sizes = {"RowState": cuda_posterior._SPARSE_PASS2_ROW_STATE_BYTES, "int": 4, "int64_t": 8}
     fields = [line.split()[0] for line in body.splitlines() if line.strip() and line.strip()[0] not in "{/"]
     total = 0
     for kind in fields:
@@ -121,19 +122,19 @@ def test_segment_state_bytes_match_header():
         align = min(size, 8)
         total = (total + align - 1) // align * align + size
     total = (total + 7) // 8 * 8
-    assert total == em_cuda_kernels._SPARSE_PASS2_SEGMENT_STATE_BYTES
+    assert total == cuda_posterior._SPARSE_PASS2_SEGMENT_STATE_BYTES
 
 
 def test_segmented_targets_are_optional_abi():
     """Both handlers register lazily, like the other optional CUDA targets."""
 
     for target in (
-        em_cuda_kernels._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
-        em_cuda_kernels._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
+        library.TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
+        library.TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
     ):
-        assert target in em_cuda_kernels._OPTIONAL_FFI_REGISTRATIONS
+        assert target in library.OPTIONAL_FFI_REGISTRATIONS
         assert target not in {name for name, _symbol in cb._FFI_REGISTRATIONS}
-    assert isinstance(em_cuda_kernels.sparse_pass2_segmented_supported(), bool)
+    assert isinstance(cuda_posterior.sparse_pass2_segmented_supported(), bool)
 
 
 @pytest.mark.parametrize(
@@ -185,7 +186,7 @@ def test_wrapper_rejects_bad_operands(case):
     if case == "return_scratch":
         kwargs["return_scratch"] = 1
     with pytest.raises((TypeError, ValueError)):
-        em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
+        cuda_posterior.sparse_pass2_segmented_posterior_f32(
             scores, offsets, n_valid, log_z, external, **kwargs
         )
 
@@ -197,9 +198,9 @@ def test_wrapper_requires_gpu_backend():
     offsets = jnp.asarray([0, 6, 12], jnp.int32)
     n_valid = jnp.asarray(2, jnp.int32)
     with pytest.raises(RuntimeError, match="GPU backend"):
-        em_cuda_kernels.sparse_pass2_segmented_log_z_f64(scores, offsets, n_valid)
+        cuda_posterior.sparse_pass2_segmented_log_z_f64(scores, offsets, n_valid)
     with pytest.raises(RuntimeError, match="GPU backend"):
-        em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
+        cuda_posterior.sparse_pass2_segmented_posterior_f32(
             scores,
             offsets,
             n_valid,
@@ -251,7 +252,7 @@ def make_production_chunk(images, rows, translations, occupancy, seed):
 
 def _chunk_log_z(scores, offsets, images):
     return np.asarray(
-        em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
+        cuda_posterior.sparse_pass2_segmented_log_z_f64(
             jnp.asarray(scores, jnp.float32),
             jnp.asarray(offsets, jnp.int32),
             jnp.asarray(images, jnp.int32),

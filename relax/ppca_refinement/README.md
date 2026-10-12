@@ -82,7 +82,7 @@ switch from single-set to halfset).
 | `mean_regularization.py` | `MeanRegularizationConfig`, `resolve_mean_precision`, RELION/K-class tau filter helpers. The mean row of the augmented system gets RELION-style tau regularization; the W rows keep the variance-style prior. |
 | `postprocess.py` | `PostprocessConfig` + `postprocess_ppca_half_volumes`. RELION-style soft mask + grid correction applied after the M-step. Marked clearly as a heuristic; the long-term target is masked-PCG. |
 | `diagnostics.py` | `build_iteration_diagnostics`, `resolve_image_scale_range`. Single home for the diagnostic-dict contract. |
-| `initialization.py` | `initialize_ppca_from_gt_volumes`, `loading_row_norm_variance_prior`, `volume_power_variance_prior` etc. |
+| `initialization.py` | `real_volume_to_centered_fourier_half` (the initializers and variance priors live in `scripts/lib/ppca_initialization.py`). |
 | `engine.py` | JIT-compiled E+M kernel: `fused_dense_pose_ppca_block` and `dense_pose_ppca_score_stats_blocked`. Shared by both flavors. |
 | `dense_dataset.py` | Dataset-facing dense-flavor iteration (`run_dense_ppca_fused_em_iteration`) + halfset wrapper + the dense block iterator. |
 | `scripts/lib/local_dataset.py` (a script library; no relax command imports it) | Dataset-facing exact-local-flavor iteration (`run_local_ppca_fused_em_iteration`) + halfset wrapper + the per-image bucket iterator. |
@@ -147,7 +147,7 @@ result = run_dense_ppca_fused_em_iteration(
   most-load-bearing imports.
 - **Half-Fourier helpers, FFT conventions** → `recovar/core/fourier_transform_utils.py`.
 - **Preprocessing, batch fetch, half-spectrum weights** →
-  `relax/helpers/`.
+  `relax/fourier/`, `relax/io/`.
 - **Noise model expansion** → `recovar/reconstruction/noise.py`.
 
 The single rule: **if it's used by `dense_dataset.py` and `local_dataset.py`,

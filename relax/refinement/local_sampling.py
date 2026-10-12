@@ -9,19 +9,18 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax import sampling
-from relax.helpers.convergence import direction_prior_healpix_order_for_scoring, healpix_angular_step
-from relax.helpers.orientation_priors import relion_direction_log_priors, relion_local_search_sigmas
-from relax.helpers.resolution import relion_local_pass1_current_size
-from relax.refinement.iteration_planning import (
+from relax.reconstruction.resolution import relion_coarse_image_size
+from relax.refinement.image_size_plans import ExpectationWindows, RunOptics, plan_expectation_windows
+from relax.refinement.iteration_planning import IterationCarry
+from relax.refinement.refinement_state import direction_prior_healpix_order_for_scoring
+from relax.refinement.trial_grids import (
     CoarseGrids,
-    ExpectationWindows,
-    IterationCarry,
-    RunOptics,
     builds_coarse_pass1_rotations,
     coarse_pass1_rotations,
     iteration_trial_grid,
-    plan_expectation_windows,
 )
+from relax.sampling.healpix import angular_sampling_deg
+from relax.sampling.orientation_priors import relion_direction_log_priors, relion_local_search_sigmas
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions
@@ -78,6 +77,32 @@ class LocalSampling:
         return self.search.symmetry
 
 
+def relion_local_pass1_current_size(
+    *,
+    pre_update_healpix_order: int,
+    pixel_size: float,
+    box_size: int,
+    particle_diameter: float | None,
+    current_size: int | None,
+) -> int | None:
+    """Return RELION's local pass-1 size for the current expectation.
+
+    RELION computes ``image_coarse_size`` before ``updateAngularSampling``.
+    When an expectation advances the sampling order, its parent hypotheses
+    therefore use the incoming order for Fourier sizing even though the
+    updated order controls the parent grid and fine-child expansion.
+    """
+
+    coarse_size = relion_coarse_image_size(
+        angular_sampling_deg(int(pre_update_healpix_order)),
+        pixel_size,
+        box_size,
+        particle_diameter=particle_diameter,
+        current_size=current_size,
+    )
+    return coarse_size if coarse_size < int(box_size) else None
+
+
 def prepare_numbered_local_sampling(
     search: LocalSearchSettings,
     grid: sampling.TrialGrid,
@@ -129,7 +154,7 @@ def prepare_numbered_local_sampling(
                     int(search.oversampling_order),
                 )
                 parent_order = search.healpix_order - int(search.oversampling_order)
-                coarse_angular_step_deg = healpix_angular_step(coarse_size_healpix_order)
+                coarse_angular_step_deg = angular_sampling_deg(coarse_size_healpix_order)
                 # --strict_highres_exp: pass 1 scores at the E-step cap, as pass 2 does.
                 first_pixel_size, first_box = optics.first_optics_group_geometry()
                 coarse_image_window_size = image_window_size if strict_pass1 else relion_local_pass1_current_size(
@@ -195,7 +220,7 @@ def prepare_final_local_sampling(
     angular_step_deg = sampling.relion_angular_sampling_deg(search.healpix_order, adaptive_oversampling=0)
 
     if search.oversampling_order > 0:
-        coarse_angular_step_deg = healpix_angular_step(search.parent_order)
+        coarse_angular_step_deg = angular_sampling_deg(search.parent_order)
         first_pixel_size, first_box = optics.first_optics_group_geometry()
         coarse_image_window_size = relion_local_pass1_current_size(
             pre_update_healpix_order=search.parent_order,
@@ -300,30 +325,6 @@ def plan_expectation_sampling(
     else:
         local_sampling = None
     return ExpectationSampling(windows, local_sampling)
-
-
-def local_search_centre_half(half, angle_priors, state):
-    """The half whose ``rotation_eulers`` centre this iteration's local angular searches.
-
-    relion_refine centres a local search on the particle's current angles, except while an orientational
-    prior from ``--sigma_ang`` is on below ``--auto_local_healpix_order`` in auto-refine: there each angle
-    with an ``rlnAngle*Prior`` is centred on that prior, every iteration, and the others on the current angle
-    (``getFourierTransformsAndCtfs``; non-helical). ``angle_priors`` is the half's ``[N, 3]`` priors in
-    degrees, NaN where absent, or None. Reads from ``state``: ``do_local_search``, ``auto_sampling``,
-    ``healpix_order`` and ``auto_local_healpix_order``.
-    See ``docs/math/relion_refinement_algorithm.md#iteration-convergence-policy`` (local searches from the start).
-    """
-
-    if (
-        angle_priors is None
-        or half.rotation_eulers is None
-        or not (state.do_local_search and state.auto_sampling)
-        or state.healpix_order >= state.auto_local_healpix_order
-    ):
-        return half
-    current = np.asarray(half.rotation_eulers)
-    centres = np.where(np.isnan(angle_priors), current, angle_priors).astype(current.dtype)
-    return replace(half, rotation_eulers=centres)
 
 
 def _should_use_adaptive_search(state, options: RefinementOptions, *, use_local: bool, n_rotations: int) -> bool:

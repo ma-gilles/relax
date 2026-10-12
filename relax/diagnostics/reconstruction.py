@@ -1,7 +1,7 @@
 """Reconstruction diagnostic serialization; scheduling stays in the controller.
 
-The finite guard of the half accumulators runs before cross-half mixing (the captures of the accumulators
-are ``relax.diagnostics.observers.BpRefAccumulatorObserver``). Writers preserve historical NPZ field names,
+The captures of the half accumulators are ``relax.diagnostics.observers.BpRefAccumulatorObserver`` (their finite
+guard, which raises, is ``relax.reconstruction.accumulator_guard``). Writers preserve historical NPZ field names,
 casts and optional-field behavior; model and history updates remain with the controller.
 """
 
@@ -13,41 +13,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.diagnostics import finite_check
-from relax.reconstruction import regularization_relion
+from relax.reconstruction import regularization
 
 if TYPE_CHECKING:
-    from relax.refinement.iteration_planning import ClassImageSize
-    from relax.refinement.mean_helpers import ClassPriorEstimate, ReconstructionSettings
-
-
-def check_half_accumulators_before_join(numerators, denominators, *, iteration, init_relion_iteration, log) -> None:
-    """The finite guard of the native half accumulators, before any cross-half join.
-
-    ``RELAX_EM_BPREF_FINITE_GUARD`` (``finite_check.half_accumulator_guard_mode``) selects off, warn or raise;
-    the mode is logged at the first iteration. Run before the join, so a report names the half that is
-    actually damaged rather than the one the join copied it into.
-    """
-    guard_mode = finite_check.half_accumulator_guard_mode()
-    if iteration == 0:
-        log.info(
-            "BPref accumulator guard (%s): mode=%s",
-            finite_check.HALF_ACCUMULATOR_GUARD_ENV,
-            guard_mode,
-        )
-    if guard_mode != "off":
-        finite_check.check_half_accumulators(
-            {
-                "Ft_y_0": numerators[0],
-                "Ft_y_1": numerators[1],
-                "Ft_ctf_0": denominators[0],
-                "Ft_ctf_1": denominators[1],
-            },
-            context=finite_check.describe_context(
-                iteration=iteration,
-                relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
-            ),
-        )
+    from relax.refinement.image_size_plans import ClassImageSize
+    from relax.refinement.numbered_reconstruction import ReconstructionSettings
+    from relax.refinement.priors import ClassPriorEstimate
 
 
 def write_bpref_accumulators(
@@ -146,7 +117,7 @@ def write_class_mstep(
     frame_scale,
 ):
     """Capture a class prior and its reconstruction operands in the M-step NPZ."""
-    reconstruct_floor_stats_k = regularization_relion.compute_relion_weight_shell_stats(
+    reconstruct_floor_stats_k = regularization.compute_relion_weight_shell_stats(
         denominators[class_index],
         settings.volume_shape,
         padding_factor=settings.padding_factor,

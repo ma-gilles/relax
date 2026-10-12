@@ -30,7 +30,7 @@ from test_resident_candidates import (  # noqa: E402
     _synthetic_tables,
 )
 
-from relax.sparse_pass2.resident_candidates import (  # noqa: E402
+from relax.fine_pass.resident_candidates import (  # noqa: E402
     materialize_chunk,
     plan_capacity_chunks,
 )

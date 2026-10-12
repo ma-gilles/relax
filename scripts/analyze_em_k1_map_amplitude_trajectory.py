@@ -197,7 +197,7 @@ def summarize_fourier_pair(
 
 def _load_recovar_map(path: Path) -> np.ndarray:
     """A relax intermediate map; an unlabeled one predates the RELION map convention."""
-    from relax.helpers.map_io import load_relax_map
+    from relax.io.map_io import load_relax_map
 
     return np.asarray(load_relax_map(path, legacy_recovar_sign=True), dtype=np.float32)
 

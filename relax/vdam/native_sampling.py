@@ -15,20 +15,20 @@ import numpy as np
 from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 from relax import sampling
-from relax.helpers import optics_scale
-from relax.helpers.convergence import (
+from relax.relion import optics_groups
+from relax.relion.optics_aberrations import expected_accuracy_optics
+from relax.steps.convergence import (
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
     relion_mpi_hidden_variable_change_is_small,
 )
-from relax.helpers.expected_accuracy import (
+from relax.steps.expected_accuracy import (
     ExpectedAccuracy,
     _combine_group_expected_accuracies,
     estimate_relion_expected_accuracy_from_prepared_inputs,
     estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
 )
-from relax.refinement.optics_shapes import MultiShapeDataset
-from relax.relion.optics_aberrations import expected_accuracy_optics
+from relax.steps.optics_shapes import MultiShapeDataset
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.schedules import relion_sampling_cadence
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from relax.vdam.ports import ExpectationProbe
 
 if TYPE_CHECKING:
-    from relax.refinement.tomo_half import TiltImageAccuracyInputs
+    from relax.steps.tomo_half import TiltImageAccuracyInputs
 
 RELION_INITIALMODEL_LOCAL_SEARCH_HEALPIX_ORDER = 4
 
@@ -416,7 +416,7 @@ def estimate_native_sampling_accuracy(
 ) -> SamplingAccuracyEstimate | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
-    Subtomogram particles pass ``tilt_images`` (:func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`
+    Subtomogram particles pass ``tilt_images`` (:func:`relax.steps.tomo_half.tilt_image_accuracy_inputs`
     of every particle, in particle-STAR row order) and no ``optics_state``: each trial sums its tilt
     images, each with its own ``Aproj`` and dose-damped CTF. With several optics groups
     (``optics_group_ids``, each particle's zero-based group) every trial takes its group's noise
@@ -531,10 +531,10 @@ def estimate_native_sampling_accuracy(
             # model-size projector (ml_optimiser.cpp:9336-9353).
             pixel = group_constant(optics_state.image_pixel_size, ids, "pixel size")
             box = int(group_constant(optics_state.image_box, ids, "box"))
-            scale = optics_scale.scale_difference(box, pixel, int(state.box_size), float(optics_state.pixel_size))
+            scale = optics_groups.scale_difference(box, pixel, int(state.box_size), float(optics_state.pixel_size))
             optics_kwargs["pixel_size"] = pixel
             grid_kwargs = dict(
-                current_image_size=optics_scale.group_current_size(current_image_size, box, scale),
+                current_image_size=optics_groups.group_current_size(current_image_size, box, scale),
                 group_grid=dict(
                     model_pixel_size=float(optics_state.pixel_size),
                     image_full_size=box,

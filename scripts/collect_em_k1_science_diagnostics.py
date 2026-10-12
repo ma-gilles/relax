@@ -388,7 +388,7 @@ def construct_common_soft_mask(
 def _load_volume(path: Path, frame: str) -> tuple[np.ndarray, float]:
     if frame == "relax":
         # A relax map is in RELION's convention unless it predates the relax map label.
-        from relax.helpers.map_io import is_relax_map
+        from relax.io.map_io import is_relax_map
 
         frame = "relion" if is_relax_map(path) else "recovar"
     if frame == "recovar":

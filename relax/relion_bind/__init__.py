@@ -3,10 +3,6 @@
 RELION-style EM uses this extension for sampling, particle ordering, CTFs
 and reconstruction. Other exports provide independent numerical references
 for tests and replay tools; the package is not solely a test dependency.
-
-Submodules
-----------
-conversions : Layout conversion functions (pure Python, no C++ dependency)
 """
 
 from __future__ import annotations
@@ -15,18 +11,6 @@ import importlib.util
 import os
 import sys
 from pathlib import Path
-
-from relax.relion_bind.conversions import (
-    compute_relion_pad_size,
-    fftw_half_to_recovar_centered,
-    fftw_half_to_relion_projector,
-    recovar_centered_to_fftw_half,
-    recovar_centered_to_relion_projector,
-    recovar_real_to_relion_real,
-    relion_projector_to_fftw_half,
-    relion_projector_to_recovar_centered,
-    relion_real_to_recovar_real,
-)
 
 
 def _load_external_core_if_available() -> None:
@@ -73,15 +57,3 @@ def _load_external_core_if_available() -> None:
 
 
 _load_external_core_if_available()
-
-__all__ = [
-    "compute_relion_pad_size",
-    "fftw_half_to_recovar_centered",
-    "fftw_half_to_relion_projector",
-    "recovar_centered_to_fftw_half",
-    "recovar_centered_to_relion_projector",
-    "recovar_real_to_relion_real",
-    "relion_projector_to_fftw_half",
-    "relion_projector_to_recovar_centered",
-    "relion_real_to_recovar_real",
-]

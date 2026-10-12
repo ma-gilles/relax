@@ -7,8 +7,8 @@ from helpers.float_compare import assert_matches
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import volume_solver
-from relax.refinement import mean_helpers
-from relax.refinement.refinement_options import ReconstructionPrograms
+from relax.reconstruction.volume_solver import ReconstructionPrograms
+from relax.refinement import map_postprocess, numbered_reconstruction
 
 pytestmark = pytest.mark.unit
 
@@ -70,7 +70,7 @@ def test_cpu_route_matches_the_device_route(monkeypatch):
     results = {}
     for route in (False, True):
         monkeypatch.setattr(volume_solver, "_relion_pad_exceeds_device_working_set", lambda *_a, route=route, **_k: route)
-        results[route] = np.asarray(mean_helpers._reconstruct_volume_eager(ft_ctf, ft_y, volume_shape, 2, **common))
+        results[route] = np.asarray(numbered_reconstruction._reconstruct_volume_eager(ft_ctf, ft_y, volume_shape, 2, **common))
 
     assert len(calls) == 2  # both routes reach the staged pad, not another path
     assert results[True].dtype == results[False].dtype == np.complex64
@@ -85,8 +85,8 @@ def test_sign_overlap_cpu_route_matches_the_device_route(monkeypatch, negate):
     volume = reference * (-0.7 if negate else 0.7) + 0.1 * jnp.asarray(rng.standard_normal(1728).astype(np.complex64))
     results = {}
     for route in (False, True):
-        monkeypatch.setattr(mean_helpers, "_sign_overlap_exceeds_device_headroom", lambda *_a, route=route: route)
-        results[route] = mean_helpers._align_fourier_volume_sign_to_reference(volume, reference, shape)
+        monkeypatch.setattr(map_postprocess, "_sign_overlap_exceeds_device_headroom", lambda *_a, route=route: route)
+        results[route] = map_postprocess._align_fourier_volume_sign_to_reference(volume, reference, shape)
     assert results[True][1] is results[False][1] is negate
     assert_matches(np.asarray(results[True][0]), np.asarray(results[False][0]))
 
@@ -96,7 +96,7 @@ def _fake_gpu(monkeypatch, *, limit_gib, in_use_gib, largest_block_gib):
     ``largest_block_gib`` (the probe allocation's answer)."""
     import jax
 
-    from relax.helpers import xla_memory_reserve
+    from relax.runtime import xla_memory_reserve
 
     stats = {"bytes_limit": int(limit_gib * GIB), "bytes_in_use": int(in_use_gib * GIB)}
 
@@ -113,7 +113,7 @@ def _fake_gpu(monkeypatch, *, limit_gib, in_use_gib, largest_block_gib):
 
 
 def test_device_fits_is_the_share_the_headroom_and_a_placement(monkeypatch):
-    from relax.helpers.xla_memory_reserve import device_fits
+    from relax.runtime.xla_memory_reserve import device_fits
 
     # A 16 GB card at box 448 after a K=1 M-step: limit 10.19 GiB, 8.4 GiB in use.
     _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=8.4, largest_block_gib=1.5)
@@ -131,18 +131,18 @@ def test_sign_overlap_and_pad_on_an_h100_at_box_800_stay_on_the_device(monkeypat
     box 448 on a 16 GB card that cannot place 2 GiB goes to the CPU."""
 
     _fake_gpu(monkeypatch, limit_gib=61.5, in_use_gib=31.5, largest_block_gib=30.0)
-    assert mean_helpers._sign_overlap_exceeds_device_headroom((800,) * 3) is False
+    assert map_postprocess._sign_overlap_exceeds_device_headroom((800,) * 3) is False
     _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=5.2, largest_block_gib=1.5)
-    assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is True
+    assert map_postprocess._sign_overlap_exceeds_device_headroom((448,) * 3) is True
     _fake_gpu(monkeypatch, limit_gib=10.19, in_use_gib=3.0, largest_block_gib=4.0)
-    assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is False
+    assert map_postprocess._sign_overlap_exceeds_device_headroom((448,) * 3) is False
 
 
 def test_device_can_place_catches_only_out_of_memory(monkeypatch):
     import jax
     from jax.errors import JaxRuntimeError
 
-    from relax.helpers import xla_memory_reserve
+    from relax.runtime import xla_memory_reserve
 
     monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
 
@@ -161,7 +161,7 @@ def test_device_can_place_catches_only_out_of_memory(monkeypatch):
 
 
 def test_device_fits_skips_the_probe_well_inside_the_bounds(monkeypatch):
-    from relax.helpers import xla_memory_reserve
+    from relax.runtime import xla_memory_reserve
 
     _fake_gpu(monkeypatch, limit_gib=72.0, in_use_gib=10.0, largest_block_gib=0.0)
     probes = []
@@ -174,7 +174,7 @@ def test_device_fits_skips_the_probe_well_inside_the_bounds(monkeypatch):
 
 _PROBE_CHILD = """
 import jax, jax.numpy as jnp
-from relax.helpers.xla_memory_reserve import device_can_place
+from relax.runtime.xla_memory_reserve import device_can_place
 x = jnp.ones((1 << 20,), jnp.float32).block_until_ready()
 stats = jax.devices()[0].memory_stats()
 before = stats["bytes_in_use"]
@@ -209,15 +209,15 @@ def test_device_can_place_answers_on_the_device_and_leaves_nothing(preallocate):
 
 
 def test_low_resolution_join_goes_to_the_host_when_its_copies_do_not_fit(monkeypatch):
-    from relax.reconstruction import regularization_relion
+    from relax.reconstruction import regularization
 
     monkeypatch.delenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", raising=False)
     seen = []
-    monkeypatch.setattr(regularization_relion, "device_fits", lambda nbytes: seen.append(nbytes) or False)
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 10, itemsize=8) is True
+    monkeypatch.setattr(regularization, "device_fits", lambda nbytes: seen.append(nbytes) or False)
+    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 10, itemsize=8) is True
     assert seen == [2 * 1000 * 8]  # both joined copies of the half pair
-    monkeypatch.setattr(regularization_relion, "device_fits", lambda nbytes: True)
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 10) is False
+    monkeypatch.setattr(regularization, "device_fits", lambda nbytes: True)
+    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 10) is False
     # A full join (every voxel) never takes the host path; physically large grids always do.
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(1000, 1000) is False
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(300_000_000, 10) is True
+    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 1000) is False
+    assert regularization._low_resolution_join_host_fallback_enabled_for_size(300_000_000, 10) is True
