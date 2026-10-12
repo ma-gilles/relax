@@ -58,7 +58,7 @@ def test_relion_firstiter_bpref_wrapper_uses_split_native_operands_and_static_sc
         return call
 
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
 
     image_shape = (4, 4)
@@ -91,7 +91,7 @@ def test_relion_firstiter_bpref_wrapper_uses_split_native_operands_and_static_sc
         )
     )
 
-    assert observed["target"] == library._TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF
+    assert observed["target"] == library.TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF
     assert observed["options"]["input_output_aliases"] == {8: 0, 9: 1, 10: 2}
     assert observed["options"]["vmap_method"] == "sequential"
     assert [item.dtype for item in observed["result_types"]] == [

@@ -1,8 +1,8 @@
 """RELION image translation kernels on the GPU: the phase-shift translations of scoring and BPref operands (f32 and
 f64) and the flat-row translate-and-sum reduction of the resident M-step.
 
-Each wrapper registers the library targets through ``library._ensure_ffi()`` or
-``library._ensure_optional_ffi(target)`` before its first FFI call.
+Each wrapper registers the library targets through ``library.ensure_ffi()`` or
+``library.ensure_optional_ffi(target)`` before its first FFI call.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def relion_translate_score_f32(
         raise RuntimeError(
             "RELION score translation was explicitly requested but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     image_h, image_w = (int(size) for size in image_shape)
     half_width = image_w // 2 + 1
@@ -86,7 +86,7 @@ def relion_translate_score_f32(
         jnp.complex64,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_TRANSLATE_SCORE_F32,
+        library.TARGET_RELION_TRANSLATE_SCORE_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -135,7 +135,7 @@ def relion_translate_score_f64(
         raise RuntimeError(
             "RELION score translation was explicitly requested but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     image_h, image_w = (int(size) for size in image_shape)
     half_width = image_w // 2 + 1
@@ -147,7 +147,7 @@ def relion_translate_score_f64(
         jnp.complex128,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_TRANSLATE_SCORE_F64,
+        library.TARGET_RELION_TRANSLATE_SCORE_F64,
         out_type,
         vmap_method="sequential",
     )(
@@ -209,7 +209,7 @@ def relion_translate_bpref_f32(
         raise RuntimeError(
             "RELION BPref translation was explicitly requested but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     image_h, image_w = (int(size) for size in image_shape)
     half_width = image_w // 2 + 1
@@ -221,7 +221,7 @@ def relion_translate_bpref_f32(
         jnp.complex64,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_TRANSLATE_BPREF_F32,
+        library.TARGET_RELION_TRANSLATE_BPREF_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -278,7 +278,7 @@ def relion_translate_bpref_f64(
         raise RuntimeError(
             "RELION BPref translation was explicitly requested but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     image_h, image_w = (int(size) for size in image_shape)
     half_width = image_w // 2 + 1
@@ -290,7 +290,7 @@ def relion_translate_bpref_f64(
         jnp.complex128,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_TRANSLATE_BPREF_F64,
+        library.TARGET_RELION_TRANSLATE_BPREF_F64,
         out_type,
         vmap_method="sequential",
     )(
@@ -470,7 +470,7 @@ def relion_translate_sum_flat_rows_f32(
             "flat-row translate-and-sum was explicitly requested but custom "
             "CUDA is disabled"
         )
-    library._ensure_optional_ffi(library._TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32)
+    library.ensure_optional_ffi(library.TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32)
 
     image_h, image_w = (int(size) for size in image_shape)
     outputs = (
@@ -483,7 +483,7 @@ def relion_translate_sum_flat_rows_f32(
         ),
     )
     results = jax.ffi.ffi_call(
-        library._TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32,
+        library.TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32,
         outputs,
         vmap_method="sequential",
     )(

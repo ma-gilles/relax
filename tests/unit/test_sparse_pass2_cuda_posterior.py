@@ -124,7 +124,7 @@ def test_row_state_bytes_match_header():
 
 
 def _gpu_library_has(symbol):
-    library._ensure_ffi()
-    return hasattr(library._get_lib(), symbol)
+    library.ensure_ffi()
+    return hasattr(library.get_lib(), symbol)
 
 

@@ -1,9 +1,9 @@
 """RELION projector kernels on the GPU: half-volume projection at a runtime radius, and the capacity and persistent
 half-volume textures with their native handle lifetimes.
 
-The texture classes own their librelax_cuda.so handles (created and destroyed through ``library._get_lib()``);
-each wrapper registers the library targets through ``library._ensure_ffi()`` or
-``library._ensure_optional_ffi(target)`` before its first FFI call.
+The texture classes own their librelax_cuda.so handles (created and destroyed through ``library.get_lib()``);
+each wrapper registers the library targets through ``library.ensure_ffi()`` or
+``library.ensure_optional_ffi(target)`` before its first FFI call.
 """
 
 from __future__ import annotations
@@ -101,11 +101,11 @@ def project_relion_half_capacity(
     if rotation_matrices.shape[0] * n_pixels > np.iinfo(np.int32).max:
         raise ValueError("projection output exceeds int32 kernel indexing")
     if image_r_max is None:
-        library._ensure_optional_ffi(library._TARGET_PROJECT_RELION_HALF_RUNTIME)
-        target = library._TARGET_PROJECT_RELION_HALF_RUNTIME
+        library.ensure_optional_ffi(library.TARGET_PROJECT_RELION_HALF_RUNTIME)
+        target = library.TARGET_PROJECT_RELION_HALF_RUNTIME
     else:
-        library._ensure_optional_ffi(library._TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS)
-        target = library._TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS
+        library.ensure_optional_ffi(library.TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS)
+        target = library.TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS
     rot6 = _rot_to_compact(rotation_matrices, jnp.float32)
     output = jax.ShapeDtypeStruct((rotation_matrices.shape[0], n_pixels), jnp.complex64)
     operands = (projector_half, rot6, logical_r_max)
@@ -147,12 +147,12 @@ class RelionCapacityHalfTextureF32:
             raise ValueError("projector_half must be C64 [pf*Q+3,pf*Q+3,pf*Q//2+2]")
         if jax.default_backend() != "gpu" or not custom_cuda_requested():
             raise RuntimeError("a persistent capacity projector texture requires the custom CUDA GPU backend")
-        library._ensure_optional_ffi(library._TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE)
+        library.ensure_optional_ffi(library.TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE)
         (device,) = projector_half.devices()
         device_ordinal = int(getattr(device, "local_hardware_id", getattr(device, "id", -1)))
         # The C API reads the device buffer directly on its own stream.
         projector_half = jax.block_until_ready(projector_half)
-        lib = library._get_lib()
+        lib = library.get_lib()
         create = (
             lib.relax_relion_capacity_half_texture_f32_create_reusable
             if reusable_staging else lib.relax_relion_capacity_half_texture_f32_create
@@ -229,7 +229,7 @@ class RelionCapacityHalfTextureF32:
         rotation_matrices = jnp.asarray(rotation_matrices)
         if rotation_matrices.dtype != jnp.float32 or rotation_matrices.ndim != 3 or rotation_matrices.shape[1:] != (3, 3):
             raise ValueError("rotation_matrices must be F32 [rotation,3,3]")
-        library._ensure_optional_ffi(library._TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED)
+        library.ensure_optional_ffi(library.TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED)
         output = _project_relion_half_capacity_texture_compact_packed(
             rotation_matrices,
             jnp.asarray(image_r_max, dtype=jnp.int32),
@@ -287,7 +287,7 @@ class RelionCapacityHalfTextureF32:
         start = time.perf_counter()
         jax.block_until_ready(completion)
         projector_half = jax.block_until_ready(projector_half)
-        refresh = library._get_lib().relax_relion_capacity_half_texture_f32_refresh
+        refresh = library.get_lib().relax_relion_capacity_half_texture_f32_refresh
         refresh.argtypes = (ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int, ctypes.c_int)
         refresh.restype = ctypes.c_int
         status = int(refresh(
@@ -321,7 +321,7 @@ class RelionCapacityHalfTextureF32:
 
 
 def _destroy_capacity_half_texture(handle: int, *, raise_on_error: bool = False) -> None:
-    destroy = library._get_lib().relax_relion_capacity_half_texture_f32_destroy
+    destroy = library.get_lib().relax_relion_capacity_half_texture_f32_destroy
     destroy.argtypes = (ctypes.c_uint64,)
     destroy.restype = ctypes.c_int
     status = int(destroy(ctypes.c_uint64(int(handle))))
@@ -333,7 +333,7 @@ def _destroy_capacity_half_texture(handle: int, *, raise_on_error: bool = False)
 def _project_relion_half_capacity_texture(rotation_matrices, image_r_max, *, owner_handle, image_shape, has_image_radius):
     n_pixels = image_shape[0] * (image_shape[1] // 2 + 1)
     output = jax.ShapeDtypeStruct((rotation_matrices.shape[0], n_pixels), jnp.complex64)
-    return jax.ffi.ffi_call(library._TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE, output, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library.TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE, output, vmap_method="sequential")(
         _rot_to_compact(rotation_matrices, jnp.float32),
         image_r_max,
         owner_handle=np.int64(owner_handle),
@@ -348,7 +348,7 @@ def _project_relion_half_capacity_texture_compact_packed(
     rotation_matrices, image_r_max, crop_index, *, owner_handle, image_shape, scale
 ):
     output = jax.ShapeDtypeStruct((rotation_matrices.shape[0], 2 * crop_index.shape[0]), jnp.float32)
-    return jax.ffi.ffi_call(library._TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED, output, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library.TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED, output, vmap_method="sequential")(
         _rot_to_compact(rotation_matrices, jnp.float32),
         image_r_max,
         crop_index,
@@ -360,7 +360,7 @@ def _project_relion_half_capacity_texture_compact_packed(
 
 
 def _persistent_relion_half_texture_c_api():
-    lib = library._get_lib()
+    lib = library.get_lib()
     create = lib.recovar_relion_persistent_half_texture_f32_create
     create.argtypes = (
         ctypes.c_void_p,
@@ -471,7 +471,7 @@ class RelionPersistentHalfTextureF32:
         if device_ordinal < 0:
             raise ValueError("could not resolve the CUDA ordinal for the JAX GPU device")
 
-        library._ensure_ffi()
+        library.ensure_ffi()
         create, _ = _persistent_relion_half_texture_c_api()
         owner_handle = ctypes.c_uint64()
         status = int(
@@ -601,7 +601,7 @@ def _relion_projector_persistent_half_texture_f32(
         jnp.complex64,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32,
+        library.TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32,
         output_type,
         vmap_method="sequential",
     )(
@@ -725,7 +725,7 @@ def relion_projector_half_texture_f32(
         raise RuntimeError(
             "RELION half-texture projection requires the custom CUDA extension"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
     compact_rotations = _rot_to_compact(rotation_matrices, jnp.float32)
     output_type = jax.ShapeDtypeStruct(
         (
@@ -735,7 +735,7 @@ def relion_projector_half_texture_f32(
         jnp.complex64,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32,
+        library.TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32,
         output_type,
         vmap_method="sequential",
     )(

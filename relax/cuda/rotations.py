@@ -1,6 +1,6 @@
 """RELION scoring rotations on the GPU: the f32, left-multiplied f32 and f64 rotation builds of librelax_cuda.so.
 
-Each wrapper registers the library targets through ``library._ensure_ffi()`` before its first FFI call.
+Each wrapper registers the library targets through ``library.ensure_ffi()`` before its first FFI call.
 """
 
 from __future__ import annotations
@@ -46,11 +46,11 @@ def relion_make_scoring_rotations_f32(
         raise RuntimeError("RELION scorer-rotation construction requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION scorer-rotation construction was explicitly requested but custom CUDA is disabled")
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct((eulers_deg.shape[0], 3, 3), jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_MAKE_SCORING_ROTATIONS_F32,
+        library.TARGET_RELION_MAKE_SCORING_ROTATIONS_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -89,11 +89,11 @@ def relion_make_scoring_rotations_left_f32(
         raise RuntimeError("RELION scorer-rotation construction requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION scorer-rotation construction was explicitly requested but custom CUDA is disabled")
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct((left_matrices.shape[0], eulers_deg.shape[0], 3, 3), jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32,
+        library.TARGET_RELION_MAKE_SCORING_ROTATIONS_LEFT_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -129,11 +129,11 @@ def relion_make_scoring_rotations_f64(
         raise RuntimeError("RELION scorer-rotation construction requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION scorer-rotation construction was explicitly requested but custom CUDA is disabled")
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct((eulers_deg.shape[0], 3, 3), jnp.float64)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_MAKE_SCORING_ROTATIONS_F64,
+        library.TARGET_RELION_MAKE_SCORING_ROTATIONS_F64,
         out_type,
         vmap_method="sequential",
     )(

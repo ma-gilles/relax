@@ -5,7 +5,7 @@ librelax_cuda.so preprocessing kernels; the deferred-check scopes queue its devi
 raise at a drain point instead of synchronizing every batch. Importing this module registers
 relion_preprocess_real_f32 as the relion_cuda image backend of recovar.data_io.image_backends (relax split seam
 S2), so a module that needs that backend imports this one. Each wrapper registers the library targets through
-``library._ensure_ffi()`` before its first FFI call.
+``library.ensure_ffi()`` before its first FFI call.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def _relion_preprocess_real_f32_impl(
         raise RuntimeError("RELION CUDA preprocessing requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION CUDA preprocessing was explicitly requested but custom CUDA is disabled")
-    library._ensure_ffi()
+    library.ensure_ffi()
     if images.dtype != jnp.float32:
         raise TypeError(f"images must be float32, got {images.dtype}")
     if normalization_factors.dtype != jnp.float32:
@@ -117,12 +117,12 @@ def _relion_preprocess_real_f32_impl(
         jnp.uint8,
     )
     target = (
-        library._TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_ATOMIC
+        library.TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_ATOMIC
         if native_atomic_reduction
         else (
-            library._TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_LANE
+            library.TARGET_RELION_PREPROCESS_REAL_F32_NATIVE_LANE
             if native_lane_reduction
-            else library._TARGET_RELION_PREPROCESS_REAL_F32
+            else library.TARGET_RELION_PREPROCESS_REAL_F32
         )
     )
     # Result order matches the handler binding: images, masked, workspace, count.

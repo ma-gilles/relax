@@ -2,7 +2,7 @@
 batched or per image) and the normalized cross-correlation pairs (from projections or from the native
 projector texture).
 
-Each wrapper registers the library targets through ``library._ensure_ffi()`` before its first FFI call; the
+Each wrapper registers the library targets through ``library.ensure_ffi()`` before its first FFI call; the
 operand checks shared with the fine pass come from ``relax.cuda.fine``.
 """
 
@@ -21,7 +21,7 @@ from recovar.cuda_backproject import (
 )
 
 from relax.cuda import library
-from relax.cuda.fine import _validate_relion_fine_diff2_inputs
+from relax.cuda.fine import validate_relion_fine_diff2_inputs
 
 
 @jax.jit
@@ -42,7 +42,7 @@ def relion_coarse_diff2_rectangular_f32(
     high-resolution image term, as in RELION's coarse scorer.
     """
 
-    _validate_relion_fine_diff2_inputs(
+    validate_relion_fine_diff2_inputs(
         reference,
         shifted_image,
         weight,
@@ -79,7 +79,7 @@ def relion_coarse_diff2_rectangular_f32(
         jnp.float32,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32,
+        library.TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, initial_diff2, full_to_compact)
@@ -132,10 +132,10 @@ def relion_coarse_normalized_cc_pairs_f32(
         raise RuntimeError(
             "RELION coarse normalized-CC pairs require the custom CUDA extension",
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
     out_type = jax.ShapeDtypeStruct(shifted_image.shape[:-1], jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_COARSE_NORMALIZED_CC_PAIRS_F32,
+        library.TARGET_RELION_COARSE_NORMALIZED_CC_PAIRS_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -236,13 +236,13 @@ def relion_coarse_normalized_cc_native_texture_pairs_f32(
         raise RuntimeError(
             "RELION native texture normalized-CC pairs require the custom CUDA extension"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
     eulers = jnp.swapaxes(rotation_matrices, -1, -2).reshape(
         rotation_matrices.shape[0], 9
     )
     out_type = jax.ShapeDtypeStruct((shifted_image.shape[0], 3), jnp.float32)
     components = jax.ffi.ffi_call(
-        library._TARGET_RELION_COARSE_NORMALIZED_CC_NATIVE_TEXTURE_PAIRS_F32,
+        library.TARGET_RELION_COARSE_NORMALIZED_CC_NATIVE_TEXTURE_PAIRS_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -325,7 +325,7 @@ def _prepare_relion_coarse_diff2_projector_f32(
         raise RuntimeError(
             "RELION fused coarse projector was requested but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
     compact_rotations = _rot_to_compact(rotation_matrices, jnp.float32)
     out_type = jax.ShapeDtypeStruct(
         (images.shape[0], rotation_matrices.shape[0], translation_angles.shape[0]),
@@ -440,7 +440,7 @@ def relion_coarse_diff2_projector_f32(
         model_max_r=model_max_r,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_COARSE_DIFF2_PROJECTOR_F32,
+        library.TARGET_RELION_COARSE_DIFF2_PROJECTOR_F32,
         out_type,
         vmap_method="sequential",
     )(
@@ -507,7 +507,7 @@ def relion_coarse_diff2_projector_per_image_f32(
         model_max_r=model_max_r,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
+        library.TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
         jax.ShapeDtypeStruct((n_images, n_rotations, int(translation_angles.shape[1])), jnp.float32),
         vmap_method="sequential",
     )(

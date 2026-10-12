@@ -48,9 +48,9 @@ def test_masked_fine_diff2_is_optional_ffi_target():
     from recovar import cuda_backproject
     from relax.cuda import library
 
-    target = library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
+    target = library.TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
     assert target == "cuda_relion_fine_diff2_rectangular_masked_f32"
-    assert target in library._OPTIONAL_FFI_REGISTRATIONS
+    assert target in library.OPTIONAL_FFI_REGISTRATIONS
     assert target not in dict(cuda_backproject._FFI_REGISTRATIONS)
 
 
@@ -109,10 +109,10 @@ def test_masked_support_probe_reports_false_without_a_library(monkeypatch):
         cuda_backproject, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
     monkeypatch.setattr(
-        library, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
+        library, "ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
     monkeypatch.setattr(
-        library, "_ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
+        library, "ensure_ffi", lambda: (_ for _ in ()).throw(RuntimeError("no lib"))
     )
     assert cuda_fine.relion_fine_diff2_rectangular_masked_supported() is False
 

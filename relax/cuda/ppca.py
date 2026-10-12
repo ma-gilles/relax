@@ -1,7 +1,7 @@
 """The PPCA kernels of librelax_cuda.so: the moment scatter and the streamed window projection, latent epilogue and
 posterior preparation.
 
-Each wrapper registers the library's targets through ``library._ensure_ffi()`` before its first FFI call.
+Each wrapper registers the library's targets through ``library.ensure_ffi()`` before its first FFI call.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def ppca_moment_scatter_f32(
     half image, no RELION x-fold, unit upsampling) into a zero volume, up to float32 order.
     """
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     lhs_images, rhs_parts, projections = (jnp.asarray(x) for x in (lhs_images, rhs_parts, projections))
     if any(x.dtype != jnp.float32 for x in (lhs_images, rhs_parts, projections)):
         raise ValueError("ppca_moment_scatter_f32 expects float32 LHS/RHS images and planar projections")
@@ -56,7 +56,7 @@ def ppca_moment_scatter_f32(
         jax.ShapeDtypeStruct((-(-channels // 32), N0 * N1 * (N2 // 2 + 1), 32), jnp.float32),
         jax.ShapeDtypeStruct((lhs_images.shape[2],), jnp.float32),
     )
-    return jax.ffi.ffi_call(library._TARGET_PPCA_MOMENT_SCATTER_F32, out_types, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library.TARGET_PPCA_MOMENT_SCATTER_F32, out_types, vmap_method="sequential")(
         lhs_images,
         rhs_parts,
         projections,
@@ -94,7 +94,7 @@ def ppca_window_project_f32(
     upsampling) at the windowed pixels, up to float32 association.
     """
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     volume_voxel_major = jnp.asarray(volume_voxel_major)
     if volume_voxel_major.dtype != jnp.complex64:
         raise ValueError("ppca_window_project_f32 expects complex64 volumes")
@@ -108,7 +108,7 @@ def ppca_window_project_f32(
         jax.ShapeDtypeStruct((P, R, 2 * F), jnp.float32),
         jax.ShapeDtypeStruct((P * (P + 1) // 2, R, F) if with_products else (0,), jnp.float32),
     )
-    return jax.ffi.ffi_call(library._TARGET_PPCA_WINDOW_PROJECT_F32, out_types, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library.TARGET_PPCA_WINDOW_PROJECT_F32, out_types, vmap_method="sequential")(
         volume_voxel_major,
         rot6,
         pixel_indices,
@@ -140,11 +140,11 @@ def ppca_latent_epilogue_f32(inner, gram, rows, prior_tables, start, kept):
     ``sum_t exp(score - maximum)``. Latent rank at most 16.
     """
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     out_types = tuple(jax.ShapeDtypeStruct(x.shape, x.dtype) for x in kept)
     first = 9
     return jax.ffi.ffi_call(
-        library._TARGET_PPCA_LATENT_EPILOGUE_F32,
+        library.TARGET_PPCA_LATENT_EPILOGUE_F32,
         out_types,
         input_output_aliases={first + i: i for i in range(len(kept))},
         vmap_method="sequential",
@@ -172,7 +172,7 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
     the count ``(R, B)`` of poses with ``gamma > 1e-3``.
     """
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     cap, B, T = kept_score.shape
     q = kept_mean.shape[0]
     P, R = q + 1, int(block_size)
@@ -185,7 +185,7 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
         jax.ShapeDtypeStruct((2, R, B), jnp.float32),
         jax.ShapeDtypeStruct((R, B), jnp.int32),
     )
-    return jax.ffi.ffi_call(library._TARGET_PPCA_POSTERIOR_PREP_F32, out_types, vmap_method="sequential")(
+    return jax.ffi.ffi_call(library.TARGET_PPCA_POSTERIOR_PREP_F32, out_types, vmap_method="sequential")(
         kept_score,
         kept_mean,
         kept_covariance,

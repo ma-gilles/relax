@@ -840,7 +840,7 @@ def test_relion_fine_diff2_f64_uses_double_ffi_target(
     monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_fine, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
     function = getattr(cuda_fine, function_name).__wrapped__
     reference_shape = (1, 2, 5)

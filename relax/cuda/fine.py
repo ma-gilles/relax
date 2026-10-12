@@ -2,8 +2,8 @@
 translate-and-score over flat candidate rows) and the Wavg reductions of the fine M-step (rotation-atomic,
 sequential and exact-position flat-row triplets).
 
-Each wrapper registers the library targets through ``library._ensure_ffi()`` or
-``library._ensure_optional_ffi(target)`` before its first FFI call; the masked fine diff2 and the flat-row Wavg
+Each wrapper registers the library targets through ``library.ensure_ffi()`` or
+``library.ensure_optional_ffi(target)`` before its first FFI call; the masked fine diff2 and the flat-row Wavg
 targets are optional ABIs with support probes here.
 """
 
@@ -18,7 +18,7 @@ from recovar.cuda_backproject import (
 from relax.cuda import library
 
 
-def _validate_relion_fine_diff2_inputs(
+def validate_relion_fine_diff2_inputs(
     reference: jax.Array,
     shifted_image: jax.Array,
     weight: jax.Array,
@@ -49,7 +49,7 @@ def _validate_relion_fine_diff2_inputs(
         raise RuntimeError(
             "RELION fine diff2 was explicitly requested but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
 
 
 def _validate_relion_fine_rectangular_shapes(reference, shifted_image, weight):
@@ -114,7 +114,7 @@ def relion_fine_diff2_rectangular_f32(
     and RELION's final in-kernel ``sum + sum_init`` operation.
     """
 
-    _validate_relion_fine_diff2_inputs(
+    validate_relion_fine_diff2_inputs(
         reference,
         shifted_image,
         weight,
@@ -137,7 +137,7 @@ def relion_fine_diff2_rectangular_f32(
         jnp.float32,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32,
+        library.TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, initial_diff2, full_to_compact)
@@ -151,11 +151,11 @@ def relion_fine_diff2_rectangular_masked_supported() -> bool:
     """
 
     try:
-        library._ensure_ffi()
-        symbol_name = library._OPTIONAL_FFI_REGISTRATIONS[
-            library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
+        library.ensure_ffi()
+        symbol_name = library.OPTIONAL_FFI_REGISTRATIONS[
+            library.TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32
         ][0]
-        return getattr(library._get_lib(), symbol_name, None) is not None
+        return getattr(library.get_lib(), symbol_name, None) is not None
     except Exception:
         return False
 
@@ -179,7 +179,7 @@ def relion_fine_diff2_rectangular_masked_f32(
     requires a library built with ``RelionFineDiff2RectangularMaskedF32``.
     """
 
-    _validate_relion_fine_diff2_inputs(
+    validate_relion_fine_diff2_inputs(
         reference,
         shifted_image,
         weight,
@@ -204,10 +204,10 @@ def relion_fine_diff2_rectangular_masked_f32(
             "masked rectangular fine diff2 initial_diff2 must be float32 with shape "
             f"({reference.shape[0]},), got {initial_diff2.shape} {initial_diff2.dtype}"
         )
-    library._ensure_optional_ffi(library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32)
+    library.ensure_optional_ffi(library.TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32)
     out_type = jax.ShapeDtypeStruct(expected, jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32,
+        library.TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, initial_diff2, full_to_compact, candidate_mask)
@@ -346,7 +346,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
             "runtime flat-row fused RELION fine diff2 was explicitly requested "
             "but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     out_type = jax.ShapeDtypeStruct(
         (reference.shape[0], translation_angles.shape[-2]),
@@ -364,7 +364,7 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
     )
     if translation_chunk_live is None:
         return jax.ffi.ffi_call(
-            library._TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
+            library.TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
             out_type,
             vmap_method="sequential",
         )(*operands)
@@ -378,9 +378,9 @@ def relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
             f"translation_chunk_live must have shape {expected_live_shape}, "
             f"got {tuple(translation_chunk_live.shape)}"
         )
-    library._ensure_optional_ffi(library._TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32)
+    library.ensure_optional_ffi(library.TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32,
+        library.TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32,
         out_type,
         vmap_method="sequential",
     )(*operands, jnp.asarray(translation_chunk_live, dtype=jnp.uint8))
@@ -418,7 +418,7 @@ def relion_fine_diff2_pairs_f32(
     ``weight=(B,N)``, and ``full_to_compact=(F,)``; output is ``(B,P)``.
     """
 
-    _validate_relion_fine_diff2_inputs(
+    validate_relion_fine_diff2_inputs(
         reference,
         shifted_image,
         weight,
@@ -427,7 +427,7 @@ def relion_fine_diff2_pairs_f32(
     _validate_relion_fine_pairs_shapes(reference, shifted_image, weight)
     out_type = jax.ShapeDtypeStruct(reference.shape[:2], jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_FINE_DIFF2_PAIRS_F32,
+        library.TARGET_RELION_FINE_DIFF2_PAIRS_F32,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, full_to_compact)
@@ -442,7 +442,7 @@ def relion_fine_diff2_rectangular_f64(
 ) -> jax.Array:
     """ACC_DOUBLE_PRECISION specialization of the rectangular fine tree."""
 
-    _validate_relion_fine_diff2_inputs(
+    validate_relion_fine_diff2_inputs(
         reference, shifted_image, weight, full_to_compact,
         real_dtype=jnp.float64,
     )
@@ -452,7 +452,7 @@ def relion_fine_diff2_rectangular_f64(
         jnp.float64,
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_FINE_DIFF2_RECTANGULAR_F64,
+        library.TARGET_RELION_FINE_DIFF2_RECTANGULAR_F64,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, full_to_compact)
@@ -467,14 +467,14 @@ def relion_fine_diff2_pairs_f64(
 ) -> jax.Array:
     """ACC_DOUBLE_PRECISION specialization of the compact-pair fine tree."""
 
-    _validate_relion_fine_diff2_inputs(
+    validate_relion_fine_diff2_inputs(
         reference, shifted_image, weight, full_to_compact,
         real_dtype=jnp.float64,
     )
     _validate_relion_fine_pairs_shapes(reference, shifted_image, weight)
     out_type = jax.ShapeDtypeStruct(reference.shape[:2], jnp.float64)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_FINE_DIFF2_PAIRS_F64,
+        library.TARGET_RELION_FINE_DIFF2_PAIRS_F64,
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, full_to_compact)
@@ -488,7 +488,7 @@ def relion_wavg_rotation_atomic_runtime_triplet_add_f32(
 ) -> jax.Array:
     """Run Wavg atomics over a logical prefix of fixed-capacity storage."""
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     terms = jnp.asarray(terms)
     accumulator = jnp.asarray(accumulator)
     logical_pixel_count = jnp.asarray(logical_pixel_count, dtype=jnp.int32)
@@ -508,7 +508,7 @@ def relion_wavg_rotation_atomic_runtime_triplet_add_f32(
         raise ValueError("logical_pixel_count must be an int32 scalar")
     output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32,
+        library.TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32,
         output_type,
         input_output_aliases={1: 0},
         vmap_method="sequential",
@@ -578,12 +578,12 @@ def relion_wavg_sequential_runtime_flat_rows_triplet_f32(
         raise RuntimeError("flat-row RELION Wavg requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("flat-row RELION Wavg requires custom CUDA")
-    library._ensure_optional_ffi(
-        library._TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
+    library.ensure_optional_ffi(
+        library.TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
     )
     output_type = jax.ShapeDtypeStruct((row_count, pixel_capacity, 3), jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32,
+        library.TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32,
         output_type,
         vmap_method="sequential",
     )(
@@ -642,12 +642,12 @@ def relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
         )
     if logical_pixel_count.shape != ():
         raise ValueError("logical_pixel_count must be an int32 scalar")
-    library._ensure_optional_ffi(
-        library._TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
+    library.ensure_optional_ffi(
+        library.TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
     )
     output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32,
+        library.TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32,
         output_type,
         input_output_aliases={2: 0},
         vmap_method="sequential",
@@ -692,10 +692,10 @@ def relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
         raise ValueError("exact-position RELION Wavg atomics require a float32 [batch,rect pixel,3] accumulator")
     if logical_pixel_count.shape != ():
         raise ValueError("logical_pixel_count must be an int32 scalar")
-    library._ensure_optional_ffi(library._TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32)
+    library.ensure_optional_ffi(library.TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32)
     output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32,
+        library.TARGET_RELION_WAVG_EXACT_ATOMIC_FLAT_ROWS_TRIPLET_ADD_F32,
         output_type,
         input_output_aliases={3: 0},
         vmap_method="sequential",
@@ -705,14 +705,14 @@ def relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
 def relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported() -> bool:
     """Return whether the loaded library exports the flat-row Wavg target."""
 
-    return library._optional_target_supported(
-        library._TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
+    return library.optional_target_supported(
+        library.TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
     )
 
 
 def relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported() -> bool:
     """Return whether the loaded library exports the flat-row Wavg atomics."""
 
-    return library._optional_target_supported(
-        library._TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
+    return library.optional_target_supported(
+        library.TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
     )

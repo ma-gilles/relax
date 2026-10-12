@@ -165,7 +165,7 @@ def test_capacity_texture_refresh_requires_concrete_boundary_and_same_geometry(m
         return 0
 
     monkeypatch.setattr(
-        library, "_get_lib", lambda: type("Lib", (), {"relax_relion_capacity_half_texture_f32_refresh": staticmethod(native_refresh)})()
+        library, "get_lib", lambda: type("Lib", (), {"relax_relion_capacity_half_texture_f32_refresh": staticmethod(native_refresh)})()
     )
     texture = object.__new__(cuda_projector.RelionCapacityHalfTextureF32)
     texture._handle = 601
@@ -276,7 +276,7 @@ def _install_fake_texture_runtime(monkeypatch, *, fail_device_put=False):
     monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_projector, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(
         cuda_projector,
         "_persistent_relion_half_texture_c_api",
@@ -585,7 +585,7 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
 
     # The persistent textures live in the EM library (librelax_cuda.so), which binds like the pipeline one.
     with jax.default_device(gpu_device):
-        library._ensure_ffi()
+        library.ensure_ffi()
         bound = library._LIBRARY.loaded_path
         reference = project()
         copy = tmp_path / "second_copy" / "librelax_cuda.so"

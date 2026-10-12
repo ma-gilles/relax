@@ -15,16 +15,16 @@ def test_em_ffi_registrations_cover_all_em_target_constants():
     em_target_constants = {
         v
         for k, v in vars(library).items()
-        if k.startswith("_TARGET_") and isinstance(v, str) and v not in recovar_targets
+        if k.startswith("TARGET_") and isinstance(v, str) and v not in recovar_targets
     }
-    em_targets_in_table = {target for target, _symbol in library._FFI_REGISTRATIONS}
-    em_optional_targets = set(library._OPTIONAL_FFI_REGISTRATIONS)
+    em_targets_in_table = {target for target, _symbol in library.FFI_REGISTRATIONS}
+    em_optional_targets = set(library.OPTIONAL_FFI_REGISTRATIONS)
     assert em_targets_in_table.isdisjoint(em_optional_targets)
     assert em_target_constants == em_targets_in_table | em_optional_targets
 
 
 def test_em_ffi_registrations_have_unique_targets_and_symbols():
-    targets = [t for t, _s in library._FFI_REGISTRATIONS]
-    symbols = [s for _t, s in library._FFI_REGISTRATIONS]
+    targets = [t for t, _s in library.FFI_REGISTRATIONS]
+    symbols = [s for _t, s in library.FFI_REGISTRATIONS]
     assert len(set(targets)) == len(targets)
     assert len(set(symbols)) == len(symbols)

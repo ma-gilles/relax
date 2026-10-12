@@ -2,7 +2,7 @@
 first-iteration fused BPref build, the point-group symmetrisation of BPref and the device-signature scope of
 the backprojection diagnostics.
 
-Each wrapper registers the library targets through ``library._ensure_ffi()`` before its first FFI call.
+Each wrapper registers the library targets through ``library.ensure_ffi()`` before its first FFI call.
 """
 
 from __future__ import annotations
@@ -142,13 +142,13 @@ def relion_point_group_symmetrise_bpref(
             "RELION point-group BPref symmetry was requested but custom CUDA is disabled"
         )
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     output_types = (
         jax.ShapeDtypeStruct(data_volume.shape, data_volume.dtype),
         jax.ShapeDtypeStruct(weight_volume.shape, weight_volume.dtype),
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF,
+        library.TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF,
         output_types,
         vmap_method="sequential",
     )(
@@ -289,13 +289,13 @@ def _relion_point_group_symmetrise_bpref_complex_range_static(
 ) -> tuple[jax.Array, jax.Array]:
     """Emit one bounded complex/weight range from full complex input."""
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     output_types = (
         jax.ShapeDtypeStruct((range_voxels,), jnp.complex64),
         jax.ShapeDtypeStruct((range_voxels,), jnp.float32),
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_COMPLEX_RANGE,
+        library.TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_COMPLEX_RANGE,
         output_types,
         vmap_method="sequential",
     )(
@@ -331,7 +331,7 @@ def relion_fused_x_half_backproject_indexed(
     output buffers alias their corresponding input accumulators.
     """
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     _validate_inputs(volume_shape, image_shape, 1, True, True, max_r=max_r)
     if max_r is None:
         raise ValueError("RELION fused x-half backprojection requires an explicit support radius")
@@ -414,7 +414,7 @@ def relion_fused_x_half_backproject_indexed(
         jax.ShapeDtypeStruct(weight_volume.shape, weight_volume.dtype),
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_FUSED_X_HALF_BP,
+        library.TARGET_RELION_FUSED_X_HALF_BP,
         out_types,
         input_output_aliases={4: 0, 5: 1},
         vmap_method="sequential",
@@ -450,7 +450,7 @@ def relion_fused_x_half_backproject_particle_grid_indexed(
     combining their atomic streams.
     """
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     _validate_inputs(volume_shape, image_shape, 1, True, True, max_r=max_r)
     if max_r is None:
         raise ValueError("RELION fused x-half particle grid requires an explicit support radius")
@@ -516,7 +516,7 @@ def relion_fused_x_half_backproject_particle_grid_indexed(
         jax.ShapeDtypeStruct(weight_volume.shape, weight_volume.dtype),
     )
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID,
+        library.TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID,
         out_types,
         input_output_aliases={4: 0, 5: 1},
         vmap_method="sequential",
@@ -643,7 +643,7 @@ def _relion_firstiter_bpref_fused_x_half_split_impl(
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Validate and issue the shared three-accumulator firstiter FFI call."""
 
-    library._ensure_ffi()
+    library.ensure_ffi()
     _validate_inputs(volume_shape, image_shape, 1, True, True, max_r=max_r)
     if int(volume_shape[2]) % 2 == 0:
         raise ValueError(
@@ -713,7 +713,7 @@ def _relion_firstiter_bpref_fused_x_half_split_impl(
         jax.ShapeDtypeStruct(weight_volume.shape, weight_volume.dtype),
     )
     data_real_out, data_imag_out, weight_out = jax.ffi.ffi_call(
-        library._TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF,
+        library.TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF,
         out_types,
         input_output_aliases={8: 0, 9: 1, 10: 2},
         vmap_method="sequential",

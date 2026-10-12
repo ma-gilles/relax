@@ -193,7 +193,7 @@ def test_relion_scoring_rotations_ffi_has_no_aliases(monkeypatch):
     monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_rotations, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
     result = cuda_rotations.relion_make_scoring_rotations_f32.__wrapped__(
         jnp.zeros((2, 3), dtype=jnp.float32),
@@ -226,7 +226,7 @@ def test_relion_scoring_rotations_f64_ffi_dtype_and_target(monkeypatch):
     monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_rotations, "custom_cuda_requested", lambda: True)
     monkeypatch.setattr(cuda_backproject, "_ensure_ffi", lambda: None)
-    monkeypatch.setattr(library, "_ensure_ffi", lambda: None)
+    monkeypatch.setattr(library, "ensure_ffi", lambda: None)
     monkeypatch.setattr(cuda_backproject.jax.ffi, "ffi_call", fake_ffi_call)
     result = cuda_rotations.relion_make_scoring_rotations_f64.__wrapped__(
         jnp.zeros((2, 3), dtype=jnp.float64),

@@ -1,8 +1,8 @@
 """RELION posterior kernels on the GPU: the f32 exponentiate, divide, CUB sort-scan and coarse-cut steps of the
 significant-sample posterior, and the segmented sparse pass-2 log-Z and posterior.
 
-Each wrapper registers the library targets through ``library._ensure_ffi()`` or
-``library._ensure_optional_ffi(target)`` before its first FFI call; the segmented pass-2 targets are an optional
+Each wrapper registers the library targets through ``library.ensure_ffi()`` or
+``library.ensure_optional_ffi(target)`` before its first FFI call; the segmented pass-2 targets are an optional
 ABI, which sparse_pass2_segmented_supported probes.
 """
 
@@ -33,7 +33,7 @@ def _relion_posterior_rows_f32(target: str, operation: str, operand_name: str, v
         raise RuntimeError(f"RELION float32 {operation} requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError(f"RELION float32 {operation} was requested but custom CUDA is disabled")
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
     return jax.ffi.ffi_call(
@@ -61,7 +61,7 @@ def _relion_posterior_batched_f32(target: str, operation: str, operand_name: str
         raise RuntimeError(
             f"RELION batched float32 {operation} was requested but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     return jax.ffi.ffi_call(
         target,
@@ -73,7 +73,7 @@ def _relion_posterior_batched_f32(target: str, operation: str, operand_name: str
 def relion_exponentiate_f32(values: jax.Array, add: jax.Array) -> jax.Array:
     """Apply RELION's fine-weight ``expf(value + add)`` CUDA kernel."""
 
-    return _relion_posterior_rows_f32(library._TARGET_RELION_EXPONENTIATE_F32, "exponentiation", "add", values, add)
+    return _relion_posterior_rows_f32(library.TARGET_RELION_EXPONENTIATE_F32, "exponentiation", "add", values, add)
 
 
 @jax.jit
@@ -84,7 +84,7 @@ def relion_exponentiate_batched_f32(
     """Apply RELION's float32 posterior exponentiation to a row batch."""
 
     return _relion_posterior_batched_f32(
-        library._TARGET_RELION_EXPONENTIATE_BATCHED_F32, "exponentiation", "add", values, add
+        library.TARGET_RELION_EXPONENTIATE_BATCHED_F32, "exponentiation", "add", values, add
     )
 
 
@@ -92,7 +92,7 @@ def relion_exponentiate_batched_f32(
 def relion_divide_f32(values: jax.Array, divisor: jax.Array) -> jax.Array:
     """Apply RELION's CUDA ``float / float`` posterior normalization."""
 
-    return _relion_posterior_rows_f32(library._TARGET_RELION_DIVIDE_F32, "division", "divisor", values, divisor)
+    return _relion_posterior_rows_f32(library.TARGET_RELION_DIVIDE_F32, "division", "divisor", values, divisor)
 
 
 @jax.jit
@@ -103,7 +103,7 @@ def relion_divide_batched_f32(
     """Apply RELION float32 division to all posterior rows in one FFI call."""
 
     return _relion_posterior_batched_f32(
-        library._TARGET_RELION_DIVIDE_BATCHED_F32, "division", "divisor", values, divisor
+        library.TARGET_RELION_DIVIDE_BATCHED_F32, "division", "divisor", values, divisor
     )
 
 
@@ -128,11 +128,11 @@ def relion_cub_sort_scan_f32(values: jax.Array) -> tuple[jax.Array, jax.Array]:
         raise RuntimeError("RELION CUB sort/scan requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION CUB sort/scan was requested but custom CUDA is disabled")
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_CUB_SORT_SCAN_F32,
+        library.TARGET_RELION_CUB_SORT_SCAN_F32,
         (output_type, output_type),
         vmap_method="sequential",
     )(values)
@@ -163,11 +163,11 @@ def relion_cub_sort_scan_batched_f32(
         raise RuntimeError(
             "RELION batched CUB sort/scan was requested but custom CUDA is disabled"
         )
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32,
+        library.TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32,
         (output_type, output_type),
     )(values)
 
@@ -197,11 +197,11 @@ def relion_coarse_cut_f32(
         raise RuntimeError("RELION coarse cut requires a JAX GPU backend")
     if not custom_cuda_requested():
         raise RuntimeError("RELION coarse cut was requested but custom CUDA is disabled")
-    library._ensure_ffi()
+    library.ensure_ffi()
 
     rows = weights.shape[0]
     return jax.ffi.ffi_call(
-        library._TARGET_RELION_COARSE_CUT_F32,
+        library.TARGET_RELION_COARSE_CUT_F32,
         (
             jax.ShapeDtypeStruct((rows,), jnp.float32),
             jax.ShapeDtypeStruct((rows,), jnp.float32),
@@ -279,9 +279,9 @@ def sparse_pass2_segmented_log_z_f64(
 
     _, segments = _sparse_pass2_segment_geometry(scores, segment_offsets, n_valid_images)
     _require_sparse_pass2_cuda_backend("Segmented sparse pass-2 log-Z")
-    library._ensure_optional_ffi(library._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64)
+    library.ensure_optional_ffi(library.TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64)
     return jax.ffi.ffi_call(
-        library._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
+        library.TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
         jax.ShapeDtypeStruct((segments,), jnp.float64),
     )(scores, segment_offsets, n_valid_images.astype(jnp.int32).reshape(()))
 
@@ -348,7 +348,7 @@ def sparse_pass2_segmented_posterior_f32(
     if type(return_scratch) is not bool:
         raise TypeError("return_scratch must be a static Python bool")
     _require_sparse_pass2_cuda_backend("Segmented sparse pass-2 posterior")
-    library._ensure_optional_ffi(library._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32)
+    library.ensure_optional_ffi(library.TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32)
     full = scores.shape
     outputs = (
         jax.ShapeDtypeStruct((segments,), jnp.float64),  # log_z
@@ -367,7 +367,7 @@ def sparse_pass2_segmented_posterior_f32(
             (segments, _SPARSE_PASS2_SEGMENT_STATE_BYTES), jnp.uint8
         ),                                               # segment state
     )
-    result = jax.ffi.ffi_call(library._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32, outputs)(
+    result = jax.ffi.ffi_call(library.TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32, outputs)(
         scores,
         segment_offsets,
         n_valid_images.astype(jnp.int32).reshape(()),
@@ -388,13 +388,13 @@ def sparse_pass2_segmented_supported() -> bool:
     """
 
     try:
-        library._ensure_ffi()
-        lib = library._get_lib()
+        library.ensure_ffi()
+        lib = library.get_lib()
         return all(
-            getattr(lib, library._OPTIONAL_FFI_REGISTRATIONS[target][0], None) is not None
+            getattr(lib, library.OPTIONAL_FFI_REGISTRATIONS[target][0], None) is not None
             for target in (
-                library._TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
-                library._TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
+                library.TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
+                library.TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
             )
         )
     except Exception:
