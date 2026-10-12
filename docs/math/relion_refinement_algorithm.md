@@ -138,7 +138,7 @@ The pieces:
   schedule (`--relion-scale-followers` resolves to 0 without
   `--relion_init_dir`/`--perturb_replay_relion_dir`). Emulating
   `relion_refine_mpi`'s follower-local scales
-  ([`relion_worker_scale`](../../relax/relion/worker_scale.py)) needs a
+  ([`follower_scale`](../../relax/refinement/follower_scale.py)) needs a
   captured dispatch schedule and stays a debug replay tool.
 - No RELION output: without `--relion_optimiser`, `--relion_init_dir`,
   `--perturb_replay_relion_dir` or `--relion_half_sets`, a Class3D run does not
@@ -1183,7 +1183,7 @@ dictionary reaches archive and benchmark outputs.
 
 ### Follower-topology admission before refinement
 
-[`prepare_follower_topology`](../../relax/relion/worker_scale.py) owns
+[`prepare_follower_topology`](../../relax/refinement/follower_scale.py) owns
 follower count admission, causal replay validation, oracle reduction-mode
 selection and per-iteration ownership. Command source discovery and oracle
 admission remain before this operation, through the command-options owner. Captured particle IDs determine
