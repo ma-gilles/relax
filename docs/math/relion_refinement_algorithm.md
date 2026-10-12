@@ -209,7 +209,7 @@ Accumulator shape and half-spectrum axis metadata must travel with the arrays.
 Scoring input operands contain no output collector. Numbered and final controllers
 record returned results explicitly with `PerHalfOutputs.update_from`.
 
-[`prepare_numbered_local_sampling`](../../relax/local_search/sampling.py)
+[`prepare_numbered_local_sampling`](../../relax/refinement/local_sampling.py)
 returns local grids, optional source Euler rows and pass windows in one
 `LocalSampling`. Numbered scoring, tomography and pose export use that same
 result. Its pass-1 window uses the incoming sizing order, which can differ from
@@ -554,7 +554,7 @@ pads empty image segments with the valid end offset; drivers retain their
 existing device placement and posterior kernels.
 
 **Exact local search.**
-[`half.py`](../../relax/local_search/half.py)
+[`local_half.py`](../../relax/refinement/local_half.py)
 constructs per-image neighborhoods and runs both the fine pass and RELION's pass-1
 parent probe on the device-resident local driver.
 [`layout.py`](../../relax/local_search/layout.py)
@@ -878,7 +878,7 @@ angles (the input STAR's at iteration 1; 0 where the STAR has none, and
 [`prepare_initial_poses`](../../relax/relion/input_poses.py) centres a start without any pose source at
 (0, 0, 0) with a warning). The one exception is RELION's prior mode below the local-search order:
 there an angle with an `rlnAngle*Prior` is centred on that prior in every iteration, including the final
-one ([`local_search_centre_half`](../../relax/local_search/sampling.py); non-helical).
+one ([`local_search_centre_half`](../../relax/refinement/local_sampling.py); non-helical).
 With `--firstiter_cc`, iteration 1 of such a search is RELION's CC iteration in the local window: the
 parent probe and the fine pass score the normalized CC with no orientational or translational prior and
 keep only each image's best hidden variable (ml_optimiser.cpp:9266-9292), as the global CC iteration

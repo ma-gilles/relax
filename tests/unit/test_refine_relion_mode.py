@@ -79,9 +79,6 @@ from relax.fourier.resolution import (
     relion_optics_image_current_sizes,
     shell_index_to_resolution_angstrom,
 )
-from relax.local_search import half as local_half
-from relax.local_search import sampling as local_sampling
-from relax.local_search.half import LocalSearchResult
 from relax.local_search.layout import (
     EXACT_LOCAL_BUCKET_RADIX_ENV,
     LocalHypothesisLayout,
@@ -98,12 +95,21 @@ from relax.reconstruction import regularization as regularization_relion
 from relax.reconstruction.half_volume_mstep import (
     relion_backprojector_volume_shape,
 )
-from relax.refinement import dense_half, finalization, score_outputs, scoring_policy, trial_grids
+from relax.refinement import (
+    dense_half,
+    finalization,
+    local_half,
+    local_sampling,
+    score_outputs,
+    scoring_policy,
+    trial_grids,
+)
 from relax.refinement import image_size_plans as image_size_plans_module
 from relax.refinement import maximization as maximization_module
 from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 from relax.refinement import precision as dtype_policy_module
 from relax.refinement.iteration_loop import refine_single_volume
+from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.map_postprocess import _align_fourier_volume_sign_to_reference
 from relax.refinement.noise_updates import (
     _combined_noise_stats,
@@ -2472,7 +2478,7 @@ def test_relion_mstep_generation_keeps_source_eulers_float64_until_host_inverse(
 
 
 def test_exact_local_fine_grid_precompute_auto_policy():
-    from relax.local_search.sampling import _precompute_exact_local_fine_grid_enabled
+    from relax.refinement.local_sampling import _precompute_exact_local_fine_grid_enabled
 
     assert _precompute_exact_local_fine_grid_enabled(5, "C1")
     assert not _precompute_exact_local_fine_grid_enabled(6, "C1")

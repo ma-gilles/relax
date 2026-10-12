@@ -15,8 +15,7 @@ from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
-from relax.local_search import half as local_half
-from relax.refinement import dense_half, half_inputs, optics_shapes, scoring_policy, shape_class_scoring
+from relax.refinement import dense_half, half_inputs, local_half, optics_shapes, scoring_policy, shape_class_scoring
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
 from relax.refinement.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs

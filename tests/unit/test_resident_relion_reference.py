@@ -552,7 +552,7 @@ def _run_local(case, current_size: int):
 
     from test_resident_local_pass2 import N_IMAGES, OVERSAMPLING, PARENT_ORDER, _prior_eulers
 
-    from relax.local_search import half as local_half
+    from relax.refinement import local_half
 
     return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
@@ -740,7 +740,7 @@ def _run_local_parent_probe(case, current_size: int):
 
     from test_resident_local_pass2 import N_IMAGES, PARENT_ORDER, _prior_eulers
 
-    from relax.local_search import half as local_half
+    from relax.refinement import local_half
 
     return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],

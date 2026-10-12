@@ -28,7 +28,6 @@ from relax.local_search.records import (
     LocalSearchSupportPolicy,
 )
 from relax.local_search.resident_pass2 import compute_local_search_resident
-from relax.local_search.sampling import LocalSampling
 from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 from relax.refinement import scoring_policy
 from relax.refinement.dense_half import (
@@ -39,6 +38,7 @@ from relax.refinement.dense_half import (
 )
 from relax.refinement.engine_record import record_pass_engine
 from relax.refinement.half_inputs import HalfScoringData
+from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.ports import ExpectationProbe
 from relax.refinement.precision import DensePrecisionPolicy
 from relax.refinement.refinement_options import LocalAdaptivePass2Support

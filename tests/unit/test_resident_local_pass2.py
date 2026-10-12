@@ -32,12 +32,12 @@ from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
 from relax.fine_pass import resident_pass2 as rp
-from relax.local_search import half
 from relax.local_search import resident_pass2 as rlp
 from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
+from relax.refinement import local_half
 from relax.relion.projector_setup import reference_to_relion_projector_half_maps
 from relax.sampling import build_local_search_grid_metadata
 
@@ -198,7 +198,7 @@ def _run(
         image_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         scale_corrections = rng.uniform(0.9, 1.1, N_IMAGES).astype(np.float32)
         trans_centers = rng.uniform(-0.5, 0.5, (N_IMAGES, 2)).astype(np.float32)
-    return half._run_local_search_iteration(*local_iteration_owners(
+    return local_half._run_local_search_iteration(*local_iteration_owners(
         case["dataset"],
         case["volume"],
         case["noise_variance"],
@@ -263,7 +263,7 @@ def _dispatched_arguments(monkeypatch, **run):
         bound.append((signature.bind(*args, **kwargs), set(kwargs)))
         raise _Dispatched
 
-    monkeypatch.setattr(half, "compute_local_search_resident", resident)
+    monkeypatch.setattr(local_half, "compute_local_search_resident", resident)
     with pytest.raises(_Dispatched):
         _run(_case(), monkeypatch=monkeypatch, **run)
     (arguments, keywords), = bound

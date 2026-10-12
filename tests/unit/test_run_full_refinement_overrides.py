@@ -938,7 +938,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
     from helpers.refinement_specs import local_half_owners
     from helpers.sparse_pass2_mock import MockDataset
 
-    from relax.local_search import half as local_half
+    from relax.refinement import local_half
     from relax.sampling import relion_angular_sampling_deg
 
     class Scored(Exception):

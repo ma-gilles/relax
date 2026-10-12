@@ -200,8 +200,8 @@ def unmagnified(monkeypatch):
 
 
 def _local_grid(model_pixel, model_support_size=38):
-    from relax.local_search.sampling import LocalSampling
     from relax.refinement import dense_half
+    from relax.refinement.local_sampling import LocalSampling
 
     scale = optics_groups.scale_difference(128, STAR_PIXEL, 128, model_pixel)
     sampling = LocalSampling(

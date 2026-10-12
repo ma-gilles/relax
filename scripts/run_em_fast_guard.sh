@@ -62,7 +62,7 @@ for diagnostic in ("iteration", "reconstruction"):
 execution_modules = (
     "refinement.iteration_loop", "refinement.dense_half", "classification.k_class",
     "scoring.significance", "fine_pass.resident_pass2", "fine_pass.dispatch",
-    "local_search.half",
+    "refinement.local_half",
 )
 loaded = [name for name in execution_modules
           if f"relax.{name}" in sys.modules]

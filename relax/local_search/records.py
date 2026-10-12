@@ -3,7 +3,7 @@
 :func:`relax.local_search.resident_pass2.compute_local_search_resident` takes the images and
 per-image corrections (:class:`LocalSearchData`), the kernel, window, projector and optics choices
 (:class:`LocalSearchKernelPolicy`) and the posterior-support and returned-detail choices
-(:class:`LocalSearchSupportPolicy`). ``relax/local_search/half.py`` builds them once per pass and
+(:class:`LocalSearchSupportPolicy`). ``relax/refinement/local_half.py`` builds them once per pass and
 its ``_run_local_search_iteration`` passes them on; they live beside the engine so that it
 does not import from the refinement controller. The records are frozen; the arrays they hold are not
 copied and are not mutated by the engine.

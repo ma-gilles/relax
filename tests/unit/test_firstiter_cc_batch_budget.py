@@ -12,10 +12,8 @@ from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
-from relax.local_search import half as local_half
 from relax.local_search import records
-from relax.local_search import sampling as local_sampling
-from relax.refinement import dense_half, half_inputs, scoring_policy, shape_class_scoring
+from relax.refinement import dense_half, half_inputs, local_half, local_sampling, scoring_policy, shape_class_scoring
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.refinement_options import ScoringVariants
 from relax.runtime import batch_planning

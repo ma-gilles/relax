@@ -13,15 +13,7 @@ import numpy as np
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.fourier.resolution import ImageGeometry
-from relax.local_search import sampling as local_sampling
-from relax.local_search.half import (
-    LocalBatchPolicy,
-    LocalDiagnosticPolicy,
-    LocalExecutionPolicy,
-    LocalPriorSpec,
-    _score_half_local_in_bpref_scope,
-)
-from relax.refinement import half_inputs, image_size_plans, iteration_planning, shape_class_scoring
+from relax.refinement import half_inputs, image_size_plans, iteration_planning, local_sampling, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
@@ -32,6 +24,13 @@ from relax.refinement.dense_half import (
 )
 from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
 from relax.refinement.half_inputs import HalfScoringData
+from relax.refinement.local_half import (
+    LocalBatchPolicy,
+    LocalDiagnosticPolicy,
+    LocalExecutionPolicy,
+    LocalPriorSpec,
+    _score_half_local_in_bpref_scope,
+)
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.precision import _diagnostic_float64_pass2_matches
 from relax.refinement.refinement_options import RefinementOptions

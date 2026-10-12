@@ -996,9 +996,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             from relax.refinement.local_search_iteration import LocalSearchResult
         except ImportError:  # a source in which the local search is local_half's own
             try:
-                from relax.local_search.half import LocalSearchResult
-            except ImportError:  # the source before the package layout move
                 from relax.refinement.local_half import LocalSearchResult
+            except ImportError:  # the source in which local_half was relax/local_search/half.py (layout S7)
+                from relax.local_search.half import LocalSearchResult
         from relax.sampling import rotation_grid_size
 
         fields = {f.name: getattr(owner, f.name) for owner in owners for f in dataclasses.fields(owner)}

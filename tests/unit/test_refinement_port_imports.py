@@ -53,7 +53,7 @@ ALLOWED_IMPORTS = {
     ("relax.refinement.iteration_loop", "relax.diagnostics.iteration"): _INLINE_DUMP,
     ("relax.refinement.iteration_loop", "relax.diagnostics.reconstruction"): _INLINE_CHECK,
     ("relax.refinement.iteration_loop", "relax.parity.relion_replay"): _REPLAY,
-    ("relax.local_search.half", "relax.diagnostics.local_debug"): _INLINE_DUMP,
+    ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _INLINE_DUMP,
     ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): "the run report's timing rows (" + _INLINE_DUMP + ")",
     ("relax.relion.normalization", "relax.diagnostics.finite_check"): _INLINE_CHECK,
     ("relax.scoring.pass1_assembly", "relax.diagnostics.coarse_score_diagnostics"): _INLINE_DUMP,

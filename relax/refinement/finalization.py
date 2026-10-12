@@ -19,14 +19,6 @@ from relax.fourier.resolution import (
     relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
-from relax.local_search.half import (
-    LocalBatchPolicy,
-    LocalDiagnosticPolicy,
-    LocalExecutionPolicy,
-    LocalPriorSpec,
-    _score_half_local_in_bpref_scope,
-)
-from relax.local_search.sampling import LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement import final_reconstruction, half_inputs, shape_class_scoring
 from relax.refinement.dense_half import (
     DenseBatchPolicy,
@@ -38,6 +30,14 @@ from relax.refinement.dense_half import (
 )
 from relax.refinement.half_inputs import HalfScoringData, local_search_centre_half
 from relax.refinement.iteration_planning import IterationCarry
+from relax.refinement.local_half import (
+    LocalBatchPolicy,
+    LocalDiagnosticPolicy,
+    LocalExecutionPolicy,
+    LocalPriorSpec,
+    _score_half_local_in_bpref_scope,
+)
+from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
 from relax.refinement.optics_shapes import image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource
