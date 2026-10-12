@@ -84,7 +84,7 @@ def _stage_driver(monkeypatch, weights, row_partial):
 
     add_block = jax.jit(lambda carry, operands, start: _add_rows(carry, jax.lax.dynamic_slice_in_dim(operands, start, BLOCK_ROWS)))
 
-    def block_at(start, blocks, operands, tables, carry, *, spec, cuda_backproject):
+    def block_at(start, blocks, operands, tables, carry, *, spec):
         return add_block(carry, operands, start)
 
     monkeypatch.setattr(rp, "_resident_glue_jit_enabled", lambda: False)
@@ -164,7 +164,6 @@ def _local_driver(monkeypatch, weights, row_partial):
         mstep_current_size=8,
         relion_x_half_recon_indices=None,
         max_adjoint_block_bytes=1 << 20,
-        cuda_backproject=None,
         row_partial=row_partial,
     )
     return out[0], out[1]
@@ -333,7 +332,7 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
     def translate(window_rows, valid, angles, rect_indices, exact_positions, *, image_shape):
         return window_rows, window_rows
 
-    def block_at(start, blocks, operands, tables, carry, *, spec, cuda_backproject):
+    def block_at(start, blocks, operands, tables, carry, *, spec):
         block = jax.lax.dynamic_slice_in_dim(row_weight, start, block_rows)
         if spec.presum_adjoint:  # the row-sum merge: each row's partial lands on its own row of [C_R, recon]
             ids = start + jnp.arange(block_rows)

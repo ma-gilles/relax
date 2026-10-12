@@ -459,7 +459,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
         tile = (window_rows[:, None, :] * jnp.exp(1j * phases)).astype(jnp.complex64)
         return tile, tile[:, :, exact_positions]
 
-    def block_at(start, blocks, operands, tables, carry, *, spec, cuda_backproject):
+    def block_at(start, blocks, operands, tables, carry, *, spec):
         power = jnp.abs(operands.raw_translated_wavg_rectangle) ** 2
         return carry._replace(Ft_y=carry.Ft_y + jnp.sum(power) * blocks.row_posterior.sum())
 

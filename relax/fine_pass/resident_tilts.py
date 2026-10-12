@@ -303,7 +303,6 @@ def run_tilt_chunk(
     The per-stage (non-jitted) path.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
     from relax.fine_pass import resident_pass2 as rp
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
@@ -460,7 +459,6 @@ def run_tilt_chunk(
             scored,
             rows,
             image_capacity=unit_capacity,
-            cuda_backproject=em_cuda_kernels,
             row_is_valid=row_is_valid,
             kernel_row_image_ids=kernel_row_image_ids,
         )
@@ -529,7 +527,6 @@ def run_tilt_chunk(
             spec=rp._make_chunk_program_spec(
                 row_capacity=chunk.row_capacity, image_capacity=unit_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
             ),
-            cuda_backproject=em_cuda_kernels,
             row_is_valid=row_is_valid,
             kernel_row_image_ids=kernel_row_image_ids,
         )
@@ -983,7 +980,6 @@ def _tilt_mstep_program(
     the flush counts tilt images.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
     from relax.fine_pass import resident_pass2 as rp
 
     row_capacity = int(row_posterior.shape[0])
@@ -1052,7 +1048,6 @@ def _tilt_mstep_program(
                     slot_tables,
                     carry,
                     spec=slot_spec,
-                    cuda_backproject=em_cuda_kernels,
                 )
 
             if flush_blocks_into_volumes:

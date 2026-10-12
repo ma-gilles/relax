@@ -618,7 +618,6 @@ def test_translate_sum_kernel_matches_the_block_reduction(
                 image_shape=IMAGE_SHAPE,
                 n_recon_pixels=n_pixels,
                 kernel_ctf_probs=kernel_ctf_probs,
-                cuda_backproject=cuda_backproject,
             )
         )
 

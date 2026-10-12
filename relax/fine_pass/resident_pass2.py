@@ -1142,7 +1142,6 @@ def _resident_block_weighted_sums_kernel(
     image_shape,
     n_recon_pixels: int,
     kernel_ctf_probs: bool,
-    cuda_backproject,
 ):
     """T15's translate-and-sum kernel in place of the gathered-tile reduction.
 
@@ -1169,9 +1168,11 @@ def _resident_block_weighted_sums_kernel(
     is never used for anything else.
     """
 
+    from relax.cuda import kernels as em_cuda_kernels
+
     row_posterior = jnp.asarray(row_posterior, dtype=jnp.float32)
     block_rows = int(row_posterior.shape[0])
-    outputs = cuda_backproject.relion_translate_sum_flat_rows_f32(
+    outputs = em_cuda_kernels.relion_translate_sum_flat_rows_f32(
         jnp.asarray(recon_image, dtype=jnp.complex64),
         jnp.asarray(noise_image, dtype=jnp.complex64),
         jnp.asarray(row_image_ids, dtype=jnp.int32),
@@ -2608,7 +2609,6 @@ def _resident_pass2(
             "resident pass 2 only (not subtomogram or full-grid GEMM passes)"
         )
 
-    from relax.cuda import kernels as em_cuda_kernels
     from relax.fine_pass.window import (
         _fine_translation_prior_2d,
         _pass2_projection_budget,
@@ -4684,7 +4684,6 @@ def _resident_pass2(
             image_tables=image_tables,
             Ft_y_total=Ft_y_total,
             Ft_ctf_total=Ft_ctf_total,
-            cuda_backproject=em_cuda_kernels,
             submitted_keys=submitted_keys,
             optics_groups_np=optics_groups_np,
             relion_native_fine_units=relion_native_fine_units,
@@ -6769,7 +6768,6 @@ def _verify_resident_chunk_operands(
     n_recon_pixels: int,
     bpref_recon_operand: bool,
     label: str,
-    cuda_backproject,
 ) -> None:
     """Prove one real chunk's resident operands equal the per-chunk preparation.
 
@@ -6780,11 +6778,13 @@ def _verify_resident_chunk_operands(
     difference here would be a changed reconstruction operand.
     """
 
+    from relax.cuda import kernels as em_cuda_kernels
+
     image_capacity = int(np.asarray(reference_recon["shifted_recon"]).shape[0])
     angles = jnp.asarray(translation_angles, dtype=jnp.float32)
     indices = jnp.asarray(recon_pixel_indices, dtype=jnp.int32)
     if bpref_recon_operand:
-        translated_recon = cuda_backproject.relion_translate_bpref_f32(
+        translated_recon = em_cuda_kernels.relion_translate_bpref_f32(
             jnp.asarray(resident_recon["recon_image"], dtype=jnp.complex64),
             jnp.asarray(resident_recon["recon_weight"], dtype=jnp.float32),
             angles,
@@ -6792,13 +6792,13 @@ def _verify_resident_chunk_operands(
             image_shape,
         )
     else:
-        translated_recon = cuda_backproject.relion_translate_score_f32(
+        translated_recon = em_cuda_kernels.relion_translate_score_f32(
             jnp.asarray(resident_recon["recon_image"], dtype=jnp.complex64),
             angles,
             indices,
             image_shape,
         )
-    translated_noise = cuda_backproject.relion_translate_score_f32(
+    translated_noise = em_cuda_kernels.relion_translate_score_f32(
         jnp.asarray(resident_recon["noise_image"], dtype=jnp.complex64),
         angles,
         indices,
@@ -7321,7 +7321,6 @@ def _resident_chunk_posterior(
     tables: _ChunkStageTables,
     *,
     spec: _ChunkProgramSpec,
-    cuda_backproject,
 ) -> _ChunkPosterior:
     """Gather, cached projection, score and the segmented RELION posterior.
 
@@ -7341,7 +7340,6 @@ def _resident_chunk_posterior(
             operands,
             tables,
             spec=spec,
-            cuda_backproject=cuda_backproject,
             row_is_valid=row_is_valid,
             kernel_row_image_ids=kernel_row_image_ids,
         )
@@ -7375,7 +7373,6 @@ def _resident_chunk_posterior(
         rows,
         tables,
         spec=spec,
-        cuda_backproject=cuda_backproject,
         row_is_valid=row_is_valid,
         kernel_row_image_ids=kernel_row_image_ids,
     )
@@ -7387,11 +7384,12 @@ def _chunk_posterior_from_scores(
     tables: _ChunkStageTables,
     *,
     spec: _ChunkProgramSpec,
-    cuda_backproject,
     row_is_valid,
     kernel_row_image_ids,
 ) -> _ChunkPosterior:
     """The segmented RELION posterior of a scored chunk (:func:`_resident_chunk_posterior`'s tail)."""
+
+    from relax.cuda import kernels as em_cuda_kernels
 
     scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
 
@@ -7404,10 +7402,10 @@ def _chunk_posterior_from_scores(
         external_sum_weight = coarse_sum_weight.astype(jnp.float32)
     else:
         external_sum_weight = jnp.ones((spec.image_capacity,), dtype=jnp.float32)
-    log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
+    log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
         scores_flat, rows.segment_offsets, rows.n_valid_images
     )
-    posterior = cuda_backproject.sparse_pass2_segmented_posterior_f32(
+    posterior = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
         scores_flat,
         rows.segment_offsets,
         rows.n_valid_images,
@@ -7449,7 +7447,6 @@ def _chunk_posterior_from_scores(
             row_is_valid,
             n_segments=spec.image_capacity * int(spec.n_classes),
             n_classes=int(spec.n_classes),
-            cuda_backproject=cuda_backproject,
         )
     return _ChunkPosterior(
         row_posterior=jnp.asarray(reconstruction_probs, dtype=jnp.float32).reshape(
@@ -7466,9 +7463,7 @@ def _chunk_posterior_from_scores(
     )
 
 
-def _class_sub_segment_posterior(
-    scores, rows, row_is_valid, *, n_segments: int, n_classes: int, cuda_backproject
-):
+def _class_sub_segment_posterior(scores, rows, row_is_valid, *, n_segments: int, n_classes: int):
     """Each (slot, class) sub-segment's log-Z and first maximum, for the per-class statistics.
 
     The scores are the joint-min-centred ones the image's posterior normalizes,
@@ -7478,8 +7473,10 @@ def _class_sub_segment_posterior(
     maximum in row order, as for the image (:func:`_winner_take_all_cells`).
     """
 
+    from relax.cuda import kernels as em_cuda_kernels
+
     layout = rows.classes
-    log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
+    log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
         scores.reshape(-1),
         layout.segment_offsets,
         rows.n_valid_images * jnp.int32(n_classes),
@@ -7537,7 +7534,6 @@ def _resident_chunk_posterior_firstiter_cc(
     tables: _ChunkStageTables,
     *,
     spec: _ChunkProgramSpec,
-    cuda_backproject,
     row_is_valid,
     kernel_row_image_ids,
 ) -> _ChunkPosterior:
@@ -7574,20 +7570,21 @@ def _resident_chunk_posterior_firstiter_cc(
         scored,
         rows,
         image_capacity=spec.image_capacity,
-        cuda_backproject=cuda_backproject,
         row_is_valid=row_is_valid,
         kernel_row_image_ids=kernel_row_image_ids,
     )
 
 
 def _winner_take_all_posterior(
-    scored, rows, *, image_capacity: int, cuda_backproject, row_is_valid, kernel_row_image_ids
+    scored, rows, *, image_capacity: int, row_is_valid, kernel_row_image_ids
 ) -> _ChunkPosterior:
     """The ``--firstiter_cc`` posterior of a chunk's normalized-CC scores (one segment per image or particle)."""
 
+    from relax.cuda import kernels as em_cuda_kernels
+
     scores = jnp.asarray(scored.scores, dtype=jnp.float32)
     scores_flat = scores.reshape(-1)
-    log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
+    log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
         scores_flat, rows.segment_offsets, rows.n_valid_images
     )
 
@@ -7652,7 +7649,6 @@ def _resident_mstep_block(
     tables: _ChunkStageTables,
     carry: _ChunkMstepCarry,
     spec: _ChunkProgramSpec,
-    cuda_backproject,
 ) -> _ChunkMstepCarry:
     """One pixel-axis row block: weighted sums, Wavg, noise, both adjoints.
 
@@ -7665,6 +7661,8 @@ def _resident_mstep_block(
     global pass passes ``_cached_block_projections(tables, block_fine_rot)``,
     local search passes a slice of the projections it computed for this chunk.
     """
+
+    from relax.cuda import kernels as em_cuda_kernels
 
     proj, proj_abs2, block_mstep_rotations = block_projections[:3]
     # The SGD residual's projection when it differs from the Wavg one (_cached_block_projections).
@@ -7693,7 +7691,6 @@ def _resident_mstep_block(
             image_shape=spec.image_shape,
             n_recon_pixels=int(spec.n_recon_pixels),
             kernel_ctf_probs=bool(spec.kernel_ctf_probs),
-            cuda_backproject=cuda_backproject,
         )
     else:
         summed, summed_masked, ctf_probs, _probs_sum_t = _resident_block_weighted_sums(
@@ -7741,7 +7738,7 @@ def _resident_mstep_block(
             block_optics_groups,
         )
     else:
-        exact_terms = cuda_backproject.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
+        exact_terms = em_cuda_kernels.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
             jnp.asarray(proj, dtype=jnp.complex64),
             block_kernel_ids,
             jnp.asarray(operands.direct_ctf_rfloat_recon, dtype=jnp.float32),
@@ -7753,7 +7750,7 @@ def _resident_mstep_block(
     # The image power is added once per chunk after the block walk
     # (_add_chunk_wavg_image_power); the blocks add their rows' exact terms at
     # their rectangle positions, the rest of the rectangle receiving nothing.
-    wavg_triplet_pixels = cuda_backproject.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
+    wavg_triplet_pixels = em_cuda_kernels.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
         jnp.asarray(exact_terms, dtype=jnp.float32),
         block_kernel_ids,
         jnp.asarray(tables.exact_positions, dtype=jnp.int32),
@@ -8116,7 +8113,6 @@ def _resident_mstep_block_at(
     carry: _ChunkMstepCarry,
     *,
     spec: _ChunkProgramSpec,
-    cuda_backproject,
 ) -> _ChunkMstepCarry:
     """Slice one block out of the chunk's row arrays and run the block body.
 
@@ -8169,7 +8165,6 @@ def _resident_mstep_block_at(
         tables=tables,
         carry=carry,
         spec=spec,
-        cuda_backproject=cuda_backproject,
     )
 
 
@@ -8191,8 +8186,6 @@ def _resident_mstep_block_program(
     place, as they are when the adjoint FFI is dispatched on its own.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
-
     return _resident_mstep_block_at(
         block_start,
         blocks,
@@ -8200,7 +8193,6 @@ def _resident_mstep_block_program(
         tables,
         carry,
         spec=spec,
-        cuda_backproject=em_cuda_kernels,
     )
 
 
@@ -8220,11 +8212,7 @@ def _resident_chunk_posterior_program(
     weight -- each of which was a dispatch and a single-primitive program.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
-
-    return _resident_chunk_posterior(
-        rows, operands, tables, spec=spec, cuda_backproject=em_cuda_kernels
-    )
+    return _resident_chunk_posterior(rows, operands, tables, spec=spec)
 
 
 @partial(jax.jit, static_argnames=("spec",), donate_argnums=(0,))
@@ -8411,14 +8399,10 @@ def _run_resident_chunk_stages(
 def _resident_chunk_stages_front(rows, operands, tables, *, spec, timing_hook=None):
     """The per-stage path's posterior and M-step row order, enqueued; no host read."""
 
-    from relax.cuda import kernels as em_cuda_kernels
-
     if _resident_glue_jit_enabled():
         posterior = _resident_chunk_posterior_program(rows, operands, tables, spec=spec)
     else:
-        posterior = _resident_chunk_posterior(
-            rows, operands, tables, spec=spec, cuda_backproject=em_cuda_kernels
-        )
+        posterior = _resident_chunk_posterior(rows, operands, tables, spec=spec)
     if timing_hook is not None:
         timing_hook("posterior", posterior.row_posterior)
     return posterior, _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
@@ -8450,8 +8434,6 @@ def _resident_chunk_stages_finish(
     With ``row_partial`` the blocks scatter into the pass's partial pair, which is added into the slot's
     totals every ``blocks_per_flush`` blocks and when the slot's blocks end (relax#65).
     """
-
-    from relax.cuda import kernels as em_cuda_kernels
 
     glue_jit = _resident_glue_jit_enabled()
     posterior, blocks = front
@@ -8489,7 +8471,6 @@ def _resident_chunk_stages_finish(
                     tables,
                     mstep,
                     spec=block_spec,
-                    cuda_backproject=em_cuda_kernels,
                 )
             if row_partial is not None:
                 mstep, slot_y, slot_ctf = row_partial.block_done(mstep, slot_y, slot_ctf, block_rows=block_rows)
@@ -8584,7 +8565,6 @@ def _run_resident_chunk(
     image_tables,
     Ft_y_total,
     Ft_ctf_total,
-    cuda_backproject,
     submitted_keys=None,
     optics_groups_np=None,
     relion_native_fine_units=False,
@@ -8773,7 +8753,6 @@ def _run_resident_chunk(
                 n_recon_pixels=int(n_recon_windowed),
                 bpref_recon_operand=resident_operands.recon_weight is not None,
                 label=f"chunk images {chunk.image_start}-{chunk.image_stop}",
-                cuda_backproject=cuda_backproject,
             )
     # The unshifted operands, the half's or this chunk's, carry recon_image; the
     # M-step translates them inside the translate-and-sum kernel.
@@ -8965,7 +8944,6 @@ def _run_lone_resident_chunk(
     projector calls changes.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
     from relax.fine_pass.resident_scoring import cached_score_reference, score_resident_chunk_in_row_blocks
 
@@ -9021,7 +8999,6 @@ def _run_lone_resident_chunk(
         rows,
         tables,
         spec=spec,
-        cuda_backproject=em_cuda_kernels,
         row_is_valid=row_is_valid,
         kernel_row_image_ids=kernel_row_image_ids,
     )
@@ -9083,7 +9060,6 @@ def run_resident_mstep_blocks(
     mstep_max_r=None,
     relion_x_half_recon_indices,
     max_adjoint_block_bytes,
-    cuda_backproject,
     n_optics_groups: int = 1,
     row_ids=None,
     recon_pixel_indices=None,
@@ -9316,7 +9292,6 @@ def run_resident_mstep_blocks(
             tables=tables,
             carry=carry,
             spec=spec,
-            cuda_backproject=cuda_backproject,
         )
         if row_partial is not None:
             carry, Ft_y_total, Ft_ctf_total = row_partial.block_done(

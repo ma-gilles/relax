@@ -465,8 +465,6 @@ def compute_local_search_resident(
 
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
-
     overall_t0 = time.time()
     image_shape = data.experiment_dataset.image_shape
     volume_shape = data.experiment_dataset.volume_shape
@@ -1188,7 +1186,6 @@ def compute_local_search_resident(
                 source_faithful_spectrum_norm=resolved_spectrum_norm,
                 stats_config=stats_config,
                 image_tables=image_tables,
-                cuda_backproject=em_cuda_kernels,
                 operand_route=operand_route,
                 firstiter_cc=bool(kernel.firstiter_cc),
                 relion_projector_capacity_texture=capacity_texture,
@@ -1525,7 +1522,7 @@ def _cc_block_rows(row_capacity: int) -> int:
 
 
 def _local_firstiter_cc_posterior(
-    scores, row_image_local, row_is_valid, segment_offsets, n_valid_images, *, image_capacity: int, cuda_backproject
+    scores, row_image_local, row_is_valid, segment_offsets, n_valid_images, *, image_capacity: int
 ):
     """RELION's ``--firstiter_cc`` posterior of a local chunk's normalized-CC scores.
 
@@ -1537,8 +1534,10 @@ def _local_firstiter_cc_posterior(
     n_significant)``.
     """
 
+    from relax.cuda import kernels as em_cuda_kernels
+
     scores = jnp.asarray(scores, dtype=jnp.float32)
-    log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(scores.reshape(-1), segment_offsets, n_valid_images)
+    log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(scores.reshape(-1), segment_offsets, n_valid_images)
     best_log_score, best_cell_index, row_posterior = rp._winner_take_all_cells(
         scores, row_image_local, row_is_valid, segment_offsets, image_capacity=image_capacity
     )
@@ -1814,7 +1813,6 @@ def _run_resident_parent_probe(
                 segment_offsets,
                 n_valid_images_device,
                 image_capacity=chunk.image_capacity,
-                cuda_backproject=em_cuda_kernels,
             )
             weights = winner.reshape(-1)
             mask = weights > 0
@@ -2212,7 +2210,6 @@ def _start_resident_local_chunk(
     optics_groups_np=None,
     stats_config,
     image_tables,
-    cuda_backproject,
     operand_route,
     firstiter_cc=False,
     relion_projector_capacity_texture=None,
@@ -2255,6 +2252,8 @@ def _start_resident_local_chunk(
     The ``--firstiter_cc`` iteration scores the blocks with the normalized-CC block core
     (:func:`~relax.fine_pass.resident_scoring.score_resident_chunk_normalized_cc_in_row_blocks`).
     """
+
+    from relax.cuda import kernels as em_cuda_kernels
 
     if lone_block_rows is not None:
         if int(lone_block_rows) % int(mstep_block_rows) or int(chunk.row_capacity) % int(lone_block_rows):
@@ -2493,7 +2492,6 @@ def _start_resident_local_chunk(
             segment_offsets,
             n_valid_images_device,
             image_capacity=chunk.image_capacity,
-            cuda_backproject=cuda_backproject,
         )
     else:
         # --- stage 3: score ----------------------------------------------------
@@ -2556,10 +2554,10 @@ def _start_resident_local_chunk(
         mark("score", scores_flat)
 
         # --- stage 4: segmented RELION float32 fine posterior -------------------
-        log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
+        log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
             scores_flat, segment_offsets, n_valid_images_device
         )
-        posterior = cuda_backproject.sparse_pass2_segmented_posterior_f32(
+        posterior = em_cuda_kernels.sparse_pass2_segmented_posterior_f32(
             scores_flat,
             segment_offsets,
             n_valid_images_device,
@@ -2614,7 +2612,6 @@ def _start_resident_local_chunk(
             row_is_valid,
             n_segments=chunk.image_capacity * n_classes,
             n_classes=n_classes,
-            cuda_backproject=cuda_backproject,
         )
         # A class's M-step reads only its own rows' weights: the block walk's last block runs past the
         # live rows, so the other classes' rows there must carry zero posterior, not theirs. Each class's
@@ -2694,7 +2691,6 @@ def _start_resident_local_chunk(
                 mstep_max_r=mstep_max_r,
                 relion_x_half_recon_indices=relion_x_half_recon_indices,
                 max_adjoint_block_bytes=max_adjoint_block_bytes,
-                cuda_backproject=cuda_backproject,
                 n_optics_groups=int(stats_config.n_optics_groups),
                 row_partial=row_partial,
             )

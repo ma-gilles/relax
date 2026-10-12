@@ -156,7 +156,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
                 ops.recon_image, ops.recon_weight, ops.noise_image,
                 ops.ctf2_over_nv_recon, ops.recon_pixel_indices, angles,
                 image_shape=plan.image_shape, n_recon_pixels=plan.n_recon_pixels,
-                kernel_ctf_probs=False, cuda_backproject=cuda_backproject,
+                kernel_ctf_probs=False,
             )
             live = jnp.arange(plan.n_recon_pixels, dtype=jnp.int32) < ops.logical_recon_pixels
             summed_masked = jnp.where(live, summed_masked, 0)
