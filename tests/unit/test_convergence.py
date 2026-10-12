@@ -31,7 +31,6 @@ from relax.refinement.refinement_state import (
     effective_angular_step,
     hard_class_change_fraction,
     refine_angular_sampling,
-    relion_mpi_hidden_variable_change_is_small,
     resolution_required_angular_sampling,
     resolution_triggers_angular_refinement,
     update_angular_sampling,
@@ -42,6 +41,7 @@ from relax.sampling import (
     get_rotation_grid_at_order,
 )
 from relax.sampling.healpix import angular_sampling_deg
+from relax.steps.convergence import relion_mpi_hidden_variable_change_is_small
 
 pytestmark = pytest.mark.unit
 

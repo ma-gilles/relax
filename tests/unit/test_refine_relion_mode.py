@@ -122,7 +122,7 @@ from relax.refinement.refinement_options import (
     StartState,
     SymmetryOptions,
 )
-from relax.refinement.refinement_state import RefinementState, _relion_optimizer_average_pmax
+from relax.refinement.refinement_state import RefinementState
 from relax.relion import ctf
 from relax.sampling import (
     _get_relion_rotation_grid_eulers_float64,
@@ -153,6 +153,7 @@ from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float3
 from relax.scoring.pass1_results import Pass1Result
 from relax.scoring.significance import _compute_k_class_significance_batched
 from relax.steps import score_outputs, scoring_policy
+from relax.steps.convergence import _relion_optimizer_average_pmax
 from relax.types import LocalEMResult, NoiseStats, RelionStats
 
 pytestmark = pytest.mark.unit

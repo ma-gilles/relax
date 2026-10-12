@@ -15,6 +15,7 @@ from helpers.float_compare import assert_matches
 
 from relax.refinement import refinement_state
 from relax.refinement.refinement_state import concatenate_assignments, concatenate_assignments_or_none
+from relax.steps import convergence
 
 pytestmark = pytest.mark.unit
 
@@ -63,6 +64,6 @@ def test_pmax_mass_feeds_the_optimizer_average():
     mass = refinement_state.relion_k1_pmax_normalization_mass_per_half(
         [SimpleNamespace(sumw=3.0), SimpleNamespace(sumw=1.0)],
     )
-    combined, average, denominator = refinement_state._relion_optimizer_average_pmax(max_posterior_per_half, mass)
+    combined, average, denominator = convergence._relion_optimizer_average_pmax(max_posterior_per_half, mass)
     assert denominator == 3.0 and average == pytest.approx(0.25)
     assert combined.tolist() == [0.5, 0.25, 1.0]

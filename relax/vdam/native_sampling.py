@@ -15,13 +15,13 @@ import numpy as np
 from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 from relax import sampling
-from relax.refinement.refinement_state import (
+from relax.relion import optics_groups
+from relax.relion.optics_aberrations import expected_accuracy_optics
+from relax.steps.convergence import (
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
     relion_mpi_hidden_variable_change_is_small,
 )
-from relax.relion import optics_groups
-from relax.relion.optics_aberrations import expected_accuracy_optics
 from relax.steps.expected_accuracy import (
     ExpectedAccuracy,
     _combine_group_expected_accuracies,

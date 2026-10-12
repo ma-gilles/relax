@@ -89,8 +89,6 @@ ALLOWED_UPWARD = {
     ("relax.scoring.pass1_publish", "relax.diagnostics.coarse_gaussian_diagnostics"): _B,
     ("relax.scoring.tree_rescore", "relax.diagnostics.coarse_gaussian_diagnostics"): _B,
     ("relax.vdam.estep_setup", "relax.refinement.engine_record"): _A,
-    ("relax.vdam.iteration_loop", "relax.refinement.refinement_state"): _A,
-    ("relax.vdam.native_sampling", "relax.refinement.refinement_state"): _A,
 }
 
 
