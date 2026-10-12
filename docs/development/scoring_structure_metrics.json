@@ -21,15 +21,15 @@
     }
   },
   "ceilings": {
-    "recorded_date": "2026-10-09",
-    "source_commit": "2b676980fb01388d0d1438b04203f4eca3a20b6e",
+    "recorded_date": "2026-10-12",
+    "source_commit": "0e4659bca72b31bb6abbd9d18b159c8dcf203ee1",
     "totals": {
-      "maximum_function_line_span": 466,
+      "maximum_function_line_span": 465,
       "maximum_parameter_count": 23,
-      "large_argument_function_count": 19,
+      "large_argument_function_count": 15,
       "very_large_argument_function_count": 1,
-      "physical_lines": 8747,
-      "nonblank_noncomment_lines": 7489
+      "physical_lines": 7126,
+      "nonblank_noncomment_lines": 6028
     }
   }
 }
