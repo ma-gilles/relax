@@ -21,18 +21,14 @@ from relax.numerics import finite_check
 def enabled(monkeypatch):
     monkeypatch.setenv(finite_check.FINITE_CHECK_ENV, "1")
     monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
-    finite_check.report_tracked("test reset")
     yield
-    finite_check.report_tracked("test reset")
 
 
 @pytest.fixture
 def warn_only(monkeypatch):
     monkeypatch.setenv(finite_check.FINITE_CHECK_ENV, "1")
     monkeypatch.setenv(finite_check.FINITE_CHECK_WARN_ENV, "1")
-    finite_check.report_tracked("test reset")
     yield
-    finite_check.report_tracked("test reset")
 
 
 def test_every_check_is_silent_unless_the_flag_is_set(monkeypatch):
@@ -44,8 +40,6 @@ def test_every_check_is_silent_unless_the_flag_is_set(monkeypatch):
     assert finite_check.check_per_image("s", {"a": poisoned}) is None
     assert finite_check.check_posterior_bounds("s", np.array([[5.0]])) is None
     assert finite_check.check_bundle("s", {"a": poisoned}, posterior=np.array([[5.0]])) is None
-    assert finite_check.track_max("a", poisoned) is None
-    assert finite_check.report_tracked("nothing") is None
 
 
 def test_check_arrays_names_the_first_offender_and_its_operands(enabled):
@@ -127,18 +121,6 @@ def test_warn_mode_records_every_occurrence_instead_of_dying(warn_only, caplog):
         second = finite_check.check_posterior_bounds("p", np.array([[2.0]], dtype=np.float32))
     assert first is not None and second is not None
     assert len(caplog.records) == 2
-
-
-def test_tracked_maxima_survive_a_clean_pass_and_record_infinity(enabled):
-    finite_check.track_max("ctf_probs", np.array([1.0, -7.5]))
-    finite_check.track_max("ctf_probs", np.array([3.0]))
-    finite_check.track_max("summed", np.array([np.inf, 1.0]))
-    message = finite_check.report_tracked("iteration=15 half=2")
-    assert "iteration=15 half=2" in message
-    assert "ctf_probs=7.5" in message
-    assert "summed=inf" in message
-    # Reporting clears them, so the next pass starts from its own maxima.
-    assert finite_check.report_tracked("again") is None
 
 
 def _guard_from_environ():

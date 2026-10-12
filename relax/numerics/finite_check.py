@@ -47,9 +47,6 @@ __all__ = [
     "finite_check_enabled",
     "finite_check_warn_only",
     "check_half_accumulators",
-    "report_tracked",
-    "track_max",
-    "track_max_host",
 ]
 
 # ``reconstruction_probs`` are ``raw_weight / sum_weight`` where the numerator
@@ -281,57 +278,6 @@ def check_per_image(stage: str, arrays: dict, *, image_ids=None, context: str = 
     raise FiniteCheckError(message)
 
 
-_TRACKED: dict[str, float] = {}
-
-
-def track_max(name: str, value) -> float | None:
-    """Record the largest magnitude seen for ``name`` across the run.
-
-    The maximum is reduced on the device, so one scalar crosses the boundary.
-    A run that never overflows still reports how close it came, which is the
-    only evidence a non-reproducing repeat can give.
-    """
-
-    if not finite_check_enabled() or value is None:
-        return None
-    try:
-        import jax.numpy as jnp
-
-        array = jnp.asarray(value)
-        if array.dtype.kind not in "fgc":
-            return None
-        magnitude = jnp.abs(array)
-        finite = jnp.isfinite(magnitude)
-        current = float(jnp.max(jnp.where(finite, magnitude, jnp.asarray(0, magnitude.dtype))))
-        if not bool(jnp.all(finite)):
-            current = float("inf")
-    except Exception:  # pragma: no cover - host arrays
-        array = np.asarray(value)
-        if array.dtype.kind not in "fgc":
-            return None
-        magnitude = np.abs(array)
-        finite = np.isfinite(magnitude)
-        current = float(magnitude[finite].max()) if finite.any() else 0.0
-        if not finite.all():
-            current = float("inf")
-    previous = _TRACKED.get(name)
-    if previous is None or current > previous:
-        _TRACKED[name] = current
-    return current
-
-
-def report_tracked(context: str = "") -> str | None:
-    """Log every tracked maximum and clear them for the next pass."""
-
-    if not finite_check_enabled() or not _TRACKED:
-        return None
-    parts = " ".join(f"{k}={v:.6g}" for k, v in sorted(_TRACKED.items()))
-    message = f"finite-check maxima {context}: {parts}"
-    logger.warning("%s", message)
-    _TRACKED.clear()
-    return message
-
-
 def check_posterior_bounds(stage: str, probs, *, context: str = "", image_ids=None):
     """Assert the posterior bound that the M-step operands inherit.
 
@@ -354,8 +300,6 @@ def check_posterior_bounds(stage: str, probs, *, context: str = "", image_ids=No
     row_sums = jnp.sum(finite_rows, axis=1, dtype=jnp.float64)
     entry_max = float(jnp.max(finite_rows)) if rows.size else 0.0
     row_sum_max = float(jnp.max(row_sums)) if rows.size else 0.0
-    track_max(f"{stage}.entry_max", jnp.asarray(entry_max))
-    track_max(f"{stage}.image_sum_max", jnp.asarray(row_sum_max))
 
     if entry_max <= POSTERIOR_UPPER_BOUND and row_sum_max <= POSTERIOR_UPPER_BOUND:
         return None
@@ -393,7 +337,7 @@ def check_bundle(
 ):
     """Check several arrays and the posterior bound with one synchronisation.
 
-    ``check_arrays`` plus ``check_posterior_bounds`` plus ``track_max`` cost one
+    ``check_arrays`` plus ``check_posterior_bounds`` cost one
     device synchronisation each, and a bucket has half a dozen of them; at 200
     to 350 buckets a half that serialises the pass being watched and costs
     about four times the uninstrumented wall, which buys four times less
@@ -438,7 +382,6 @@ def check_bundle(
     for index, name in enumerate(names):
         maximum = float(host[2 * index])
         all_finite = bool(host[2 * index + 1] > 0.5)
-        track_max_host(name, float("inf") if not all_finite else maximum)
         if not all_finite:
             offenders.append(name)
 
@@ -446,8 +389,6 @@ def check_bundle(
     if has_posterior:
         entry_max = float(host[-2])
         row_sum_max = float(host[-1])
-        track_max_host(f"{posterior_name}.entry_max", entry_max)
-        track_max_host(f"{posterior_name}.image_sum_max", row_sum_max)
 
     messages = []
     # Exact reduction invariants, free because the maxima are already here.
@@ -501,16 +442,6 @@ def check_bundle(
             )
         )
     return [m for m in messages if m] or None
-
-
-def track_max_host(name: str, value: float) -> None:
-    """Record a maximum already pulled to the host by a bundled check."""
-
-    if not finite_check_enabled():
-        return
-    previous = _TRACKED.get(name)
-    if previous is None or value > previous:
-        _TRACKED[name] = value
 
 
 def check_half_accumulators(accumulators: dict, *, mode: str, context: str = ""):
