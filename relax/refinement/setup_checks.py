@@ -274,6 +274,130 @@ def expected_accuracy_inputs_for_run(
     )
 
 
+def _has_numbered_replay_iteration_overrides(replay_iteration_overrides) -> bool:
+    """Return whether replay contains state beyond the cold-start boundary.
+
+    Override slot zero is also used by ``--relion_init_dir`` to seed RELION's
+    iter-0 particle/model state for an otherwise autonomous refinement.  That
+    cold-start state must not implicitly turn the final all-data iteration
+    into a numbered replay.  Genuine trajectory replay populates at least one
+    later slot; an explicit final-replay environment override remains handled
+    separately by the caller.
+    """
+    if replay_iteration_overrides is None or len(replay_iteration_overrides) <= 1:
+        return False
+    return any(override is not None for override in replay_iteration_overrides[1:])
+
+
+def _validate_k1_bpref_particle_order_scope(
+    *,
+    preserve_bpref_particle_order: bool,
+    init_relion_iteration: int,
+    perturb_replay_relion_dir,
+    replay_iteration_overrides,
+    sealed_sampling_state,
+    sealed_scoring_context,
+    allow_replayed_bpref_particle_order: bool = False,
+    allow_state_swap_fresh_bpref_particle_order: bool = False,
+    continues_own_run: bool = False,
+) -> None:
+    """Fail closed unless RELION's physical order can be preserved for this K=1 run.
+
+    Preserving RELION's order selects the production K=1 arithmetic
+    (the source-faithful powerClass normalisation), so every K=1 run that knows the
+    order uses it: a fresh run, a fresh run that replays RELION's
+    perturbations and per-iteration state (``--perturb_replay_relion_dir``),
+    and an imported-boundary replay that reconstructs the native order
+    (``allow_replayed_bpref_particle_order``). A sealed boundary fixes its own
+    arithmetic, so it is refused. A ``--continue`` of relax's own run
+    (``continues_own_run``) keeps that run's fresh order, and with it the
+    same arithmetic.
+    """
+
+    if not preserve_bpref_particle_order:
+        return
+    if sealed_sampling_state is not None or sealed_scoring_context is not None:
+        raise ValueError(
+            "RELION BPref particle-order preservation cannot alter a sealed boundary"
+        )
+    if allow_state_swap_fresh_bpref_particle_order:
+        if int(init_relion_iteration) != 0:
+            raise ValueError(
+                "state-swap RELION BPref particle-order preservation requires a fresh iteration-0 run"
+            )
+        if perturb_replay_relion_dir is None:
+            raise ValueError(
+                "state-swap RELION BPref particle-order preservation requires perturbation replay"
+            )
+        if not _has_numbered_replay_iteration_overrides(replay_iteration_overrides):
+            raise ValueError(
+                "state-swap RELION BPref particle-order preservation requires numbered replay state"
+            )
+        return
+    if int(init_relion_iteration) > 0 and continues_own_run:
+        if perturb_replay_relion_dir is not None or _has_numbered_replay_iteration_overrides(
+            replay_iteration_overrides
+        ):
+            raise ValueError("a continued run cannot also replay a RELION trajectory")
+        return
+    if int(init_relion_iteration) > 0:
+        if not allow_replayed_bpref_particle_order:
+            raise ValueError(
+                "RELION BPref particle-order preservation at an imported iteration requires "
+                "the native RELION order (allow_replayed_bpref_particle_order)"
+            )
+        if perturb_replay_relion_dir is None:
+            raise ValueError(
+                "replayed RELION BPref particle-order preservation requires perturbation replay"
+            )
+        return
+    if (
+        _has_numbered_replay_iteration_overrides(replay_iteration_overrides)
+        and perturb_replay_relion_dir is None
+    ):
+        raise ValueError(
+            "numbered replay state without perturbation replay has no RELION trajectory"
+        )
+
+
+def _validate_bpref_particle_order_scope(
+    *,
+    preserve_bpref_particle_order: bool,
+    n_classes: int,
+    init_relion_iteration: int,
+    perturb_replay_relion_dir,
+    replay_iteration_overrides,
+    sealed_sampling_state,
+    sealed_scoring_context,
+    allow_replayed_bpref_particle_order: bool = False,
+    allow_state_swap_fresh_bpref_particle_order: bool = False,
+    continues_own_run: bool = False,
+) -> None:
+    """Fail closed unless RELION's physical order can be preserved for this run.
+
+    This is the one remaining mode decision of the order-scope check, to be
+    removed when the K=1 trajectory calls
+    ``_validate_k1_bpref_particle_order_scope`` directly: Class3D refuses the
+    preservation and has no scope to check.
+    """
+
+    if int(n_classes) != 1:
+        if preserve_bpref_particle_order:
+            raise ValueError("RELION BPref particle-order preservation is K=1-only")
+        return
+    _validate_k1_bpref_particle_order_scope(
+        preserve_bpref_particle_order=preserve_bpref_particle_order,
+        init_relion_iteration=init_relion_iteration,
+        perturb_replay_relion_dir=perturb_replay_relion_dir,
+        replay_iteration_overrides=replay_iteration_overrides,
+        sealed_sampling_state=sealed_sampling_state,
+        sealed_scoring_context=sealed_scoring_context,
+        allow_replayed_bpref_particle_order=allow_replayed_bpref_particle_order,
+        allow_state_swap_fresh_bpref_particle_order=allow_state_swap_fresh_bpref_particle_order,
+        continues_own_run=continues_own_run,
+    )
+
+
 @dataclass(frozen=True, kw_only=True)
 class RunContext:
     """What a refinement run resolves once from its datasets and options before the first iteration, and only

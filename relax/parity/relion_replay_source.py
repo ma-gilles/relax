@@ -31,7 +31,6 @@ from relax.parity.frozen_boundary import (
 )
 from relax.parity.relion_replay import (
     _class_tau2_replay,
-    _has_numbered_replay_iteration_overrides,
     _install_sealed_sampling,
     _past_perturb_replay_max_iter,
     _perturbation_restart_state_iteration,
@@ -53,6 +52,7 @@ from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_s
 from relax.refinement.image_size_plans import CoarseImageSize
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState, StartSeeds
 from relax.refinement.reference_state import class_mixture_from_weights
+from relax.refinement.setup_checks import _has_numbered_replay_iteration_overrides
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.refinement.trial_grids import CoarseGrids, FinalSamplingSettings, native_final_sampling_settings
 from relax.runtime.env_flags import parse_env_true_flag

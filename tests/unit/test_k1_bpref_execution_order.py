@@ -6,7 +6,7 @@ import pytest
 from relax.classification.k_class import _apply_bpref_particle_order_policy
 from relax.fine_pass.bucket_arrays import _bucket_pass2_inputs
 from relax.fine_pass.policy import _BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV
-from relax.parity.relion_replay import _validate_bpref_particle_order_scope
+from relax.refinement.setup_checks import _validate_bpref_particle_order_scope
 from relax.runtime.batch_planning import plan_consecutive_padded_batches
 from relax.runtime.env_flags import parse_env_flag
 

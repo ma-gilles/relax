@@ -28,7 +28,6 @@ DIAGNOSTIC_PACKAGES = ("relax.diagnostics", "relax.parity")
 
 _INLINE_DUMP = "an inline dump/capture called from the algorithm; it needs a RunObserver hook (deep2 PLAN c2)"
 _INLINE_CHECK = "an inline finite/accumulator check that raises inside the algorithm; it needs a port (deep2 PLAN c2)"
-_REPLAY = "a replay policy called by the controller; it needs an InputSource method (deep2 PLAN c3 follow-up)"
 
 # (importing module, imported module) -> why the edge is still there.
 ALLOWED_IMPORTS = {
@@ -38,7 +37,6 @@ ALLOWED_IMPORTS = {
     ("relax.refinement.dense_half", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
     ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
     ("relax.refinement.iteration_loop", "relax.diagnostics.iteration"): _INLINE_DUMP,
-    ("relax.refinement.iteration_loop", "relax.parity.relion_replay"): _REPLAY,
     ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _INLINE_DUMP,
     ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
 }
@@ -112,4 +110,4 @@ def test_the_command_does_import_the_observers_and_the_input_sources():
     )
     assert out.stdout.strip().splitlines()[-1] == "True"
     edges = {target for _, target in _diagnostic_imports()}
-    assert "relax.diagnostics.bpref_diagnostics" in edges and "relax.parity.relion_replay" in edges
+    assert "relax.diagnostics.bpref_diagnostics" in edges

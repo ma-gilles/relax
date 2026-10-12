@@ -20,7 +20,6 @@ import numpy as np
 from recovar.data_io import cryoem_dataset
 
 import relax.diagnostics.iteration as iteration_diagnostics
-import relax.parity.relion_replay as replay_policy
 import relax.refinement.refinement_state as convergence_helpers
 from relax.classification.probes import KClassProbe, NoProbe
 from relax.diagnostics import bpref_diagnostics
@@ -510,7 +509,7 @@ def refine_single_volume(
     observer.run_started(ctx)
     # The run's one mode decision: the K=1 or the Class3D run's own set-up and iteration statements.
     mode = _ClassIteration() if ctx.k_class_enabled else _K1Iteration()
-    replay_policy._validate_bpref_particle_order_scope(
+    setup_checks._validate_bpref_particle_order_scope(
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
         n_classes=options.k_class.n_classes,
         init_relion_iteration=options.schedule.init_relion_iteration,

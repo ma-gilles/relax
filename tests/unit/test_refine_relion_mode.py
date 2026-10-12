@@ -26,7 +26,7 @@ from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostic
 from relax.reconstruction import volume_solver
 from relax.reconstruction.resolution import ImageGeometry
 from relax.reconstruction.volume_solver import ReconstructionPrograms
-from relax.refinement import map_postprocess
+from relax.refinement import map_postprocess, setup_checks
 from relax.refinement.local_sampling import relion_local_pass1_current_size
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver, StartSeeds
@@ -1110,7 +1110,7 @@ def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
     ],
 )
 def test_final_all_data_replay_ignores_cold_start_only_overrides(overrides, expected):
-    assert relion_replay_module._has_numbered_replay_iteration_overrides(overrides) is expected
+    assert setup_checks._has_numbered_replay_iteration_overrides(overrides) is expected
 
 
 
