@@ -8,6 +8,7 @@ maximum_significants floor on the threshold index.
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from oracles import cuda_posterior as cuda_oracle
 
 pytest.importorskip("jax")
 import jax
@@ -104,7 +105,6 @@ def test_coarse_cut_keeps_relions_cub_sort_and_scan_cut(monkeypatch, custom_cuda
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import posterior as cuda_posterior
     from relax.sampling.oversampling import _relion_cuda_f32_tail_target
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -115,7 +115,7 @@ def test_coarse_cut_keeps_relions_cub_sort_and_scan_cut(monkeypatch, custom_cuda
     total, _, cutoff = _cut(weights, fraction, -1, gpu_device)
     with jax.default_device(gpu_device):
         matrix = jnp.asarray(weights)
-        _, cumulative = cuda_posterior.relion_cub_sort_scan_batched_f32(matrix)
+        _, cumulative = cuda_oracle.relion_cub_sort_scan_batched_f32(matrix)
         target = _relion_cuda_f32_tail_target(cumulative[:, -1], fraction)
         index = jax.vmap(lambda row, t: jnp.searchsorted(row, t, side="right"))(cumulative, target)
         index = jnp.maximum(index, weights.shape[1] - jnp.sum(matrix > 0, axis=1))

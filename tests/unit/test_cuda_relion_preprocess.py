@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from helpers import cuda_targets
 from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
@@ -174,6 +175,7 @@ def test_relion_cuda_preprocess_rejects_wrong_dtypes(images, factors, shifts, er
 
 def test_relion_cuda_preprocess_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import preprocess as cuda_preprocess
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
@@ -189,6 +191,7 @@ def test_relion_cuda_preprocess_fails_closed_without_gpu(monkeypatch):
 
 def test_relion_cuda_preprocess_fails_closed_when_custom_cuda_disabled(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import preprocess as cuda_preprocess
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "gpu")
@@ -263,10 +266,10 @@ def test_relion_cuda_non_finite_image_without_a_mask_is_queued_not_read(gpu_devi
             cosine_width=3.0,
             apply_mask=False,
         )
-        assert cuda_preprocess.pending_relion_preprocess_checks() == 1
+        assert cuda_targets.pending_relion_preprocess_checks() == 1
         with pytest.raises(RuntimeError, match=r"deferred check.*1 image\(s\) had a non-finite pixel"):
             cuda_preprocess.drain_relion_preprocess_checks()
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
 
 
 @pytest.mark.parametrize("pixel", [(5, 7), (16, 16)], ids=["mask_exterior", "inside_mask"])
@@ -367,7 +370,7 @@ def test_relion_cuda_softmask_deferred_check_queues_and_fails_closed_on_drain(gp
             deferred_finite_check=True,
         )
         masked = np.asarray(masked)
-        assert cuda_preprocess.pending_relion_preprocess_checks() == 1
+        assert cuda_targets.pending_relion_preprocess_checks() == 1
         for row in (0, 2):
             _single_shifted, single = relion_preprocess_real_f32(
                 jnp.asarray(images[row : row + 1]),
@@ -385,7 +388,7 @@ def test_relion_cuda_softmask_deferred_check_queues_and_fails_closed_on_drain(gp
     assert np.all(np.isnan(masked[1][exterior]))
     with pytest.raises(RuntimeError, match="deferred check.*1 image"):
         cuda_preprocess.drain_relion_preprocess_checks()
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
 
 
 def test_relion_cuda_softmask_deferred_check_drains_clean_batches(gpu_device):
@@ -415,7 +418,7 @@ def test_relion_cuda_softmask_deferred_check_drains_clean_batches(gpu_device):
             apply_mask=False,
             deferred_finite_check=True,
         )
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 4
+    assert cuda_targets.pending_relion_preprocess_checks() == 4
     assert cuda_preprocess.drain_relion_preprocess_checks() == 4
     assert cuda_preprocess.drain_relion_preprocess_checks() == 0
 

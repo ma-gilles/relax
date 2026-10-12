@@ -367,13 +367,6 @@ def _queue_relion_preprocess_check(invalid_count: jax.Array, batch_images: np.nd
         drain_relion_preprocess_checks()
 
 
-def pending_relion_preprocess_checks() -> int:
-    """Number of queued deferred soft-mask checks (test and diagnostics hook)."""
-
-    with _RELION_PREPROCESS_PENDING_LOCK:
-        return len(_RELION_PREPROCESS_PENDING_CHECKS)
-
-
 def drain_relion_preprocess_checks() -> int:
     """Wait on every queued deferred soft-mask check and fail closed on invalid images.
 

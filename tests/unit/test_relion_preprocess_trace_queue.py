@@ -2,8 +2,11 @@
 import jax
 import jax.numpy as jnp
 import pytest
-from relax.cuda import preprocess as cuda_preprocess
+from helpers import cuda_targets
 from helpers.float_compare import assert_matches
+
+from relax.cuda import preprocess as cuda_preprocess
+
 
 @pytest.mark.parametrize("traced", [False, True])
 def test_deferred_check_only_queues_concrete_results(monkeypatch, traced):
@@ -19,7 +22,7 @@ def test_deferred_check_only_queues_concrete_results(monkeypatch, traced):
     actual=(jax.jit(call) if traced else call)(images)
     assert_matches(actual, images)
     assert seen == [traced]
-    assert cuda_preprocess.pending_relion_preprocess_checks() == (0 if traced else 1)
+    assert cuda_targets.pending_relion_preprocess_checks() == (0 if traced else 1)
     assert cuda_preprocess.drain_relion_preprocess_checks() == (0 if traced else 1)
 
 
@@ -28,7 +31,7 @@ def test_deferred_invalid_status_fails_and_drains(monkeypatch):
     cuda_preprocess._queue_relion_preprocess_check(jnp.asarray([2],dtype=jnp.int32))
     with pytest.raises(RuntimeError, match="2 image"):
         cuda_preprocess.drain_relion_preprocess_checks()
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
 
 
 def _run_expectation(run_half):
@@ -57,14 +60,14 @@ def test_an_expectation_that_raises_leaves_no_check_for_a_later_run(monkeypatch)
 
     with pytest.raises(ValueError, match="half 1 failed"):
         _run_expectation(run_half)
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
     # The next run in the process reads only its own checks.
     assert _run_expectation(lambda k: cuda_preprocess._queue_relion_preprocess_check(jnp.zeros(2, jnp.int32))) == [1]
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
 
 
 def test_an_expectation_reads_its_checks_when_the_halves_are_done(monkeypatch):
     monkeypatch.setattr(cuda_preprocess, "_RELION_PREPROCESS_PENDING_CHECKS", [])
     with pytest.raises(RuntimeError, match="1 image"):
         _run_expectation(lambda k: cuda_preprocess._queue_relion_preprocess_check(jnp.asarray([k, 0], jnp.int32)))
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0

@@ -1,9 +1,10 @@
-"""RELION posterior kernels on the GPU: the f32 exponentiate, divide, CUB sort-scan and coarse-cut steps of the
+"""RELION posterior kernels on the GPU: the batched f32 exponentiate and divide and the coarse cut of the
 significant-sample posterior, and the segmented sparse pass-2 log-Z and posterior.
 
 Each wrapper registers the library targets through ``library.ensure_ffi()`` or
 ``library.ensure_optional_ffi(target)`` before its first FFI call; the segmented pass-2 targets are an optional
-ABI, which sparse_pass2_segmented_supported probes.
+ABI. The per-row kernels and the batched CUB sort-scan the tests compare these with are in
+``tests/oracles/cuda_posterior.py``.
 """
 
 from __future__ import annotations
@@ -18,29 +19,6 @@ from recovar.cuda_backproject import (
 )
 
 from relax.cuda import library
-
-
-def _relion_posterior_rows_f32(target: str, operation: str, operand_name: str, values, operand):
-    """One RELION float32 posterior kernel on a 1-D ``values`` and a float32 scalar ``operand`` (traced)."""
-
-    if values.dtype != jnp.float32:
-        raise TypeError(f"values must be float32, got {values.dtype}")
-    if values.ndim != 1 or values.shape[0] < 1:
-        raise ValueError(f"values must be a nonempty 1-D array, got {values.shape}")
-    if operand.dtype != jnp.float32 or operand.ndim != 0:
-        raise TypeError(f"{operand_name} must be a float32 scalar, got {operand.dtype} {operand.shape}")
-    if jax.default_backend() != "gpu":
-        raise RuntimeError(f"RELION float32 {operation} requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError(f"RELION float32 {operation} was requested but custom CUDA is disabled")
-    library.ensure_ffi()
-
-    output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
-    return jax.ffi.ffi_call(
-        target,
-        output_type,
-        vmap_method="sequential",
-    )(values, operand)
 
 
 def _relion_posterior_batched_f32(target: str, operation: str, operand_name: str, values, operand):
@@ -70,13 +48,6 @@ def _relion_posterior_batched_f32(target: str, operation: str, operand_name: str
 
 
 @jax.jit
-def relion_exponentiate_f32(values: jax.Array, add: jax.Array) -> jax.Array:
-    """Apply RELION's fine-weight ``expf(value + add)`` CUDA kernel."""
-
-    return _relion_posterior_rows_f32(library.TARGET_RELION_EXPONENTIATE_F32, "exponentiation", "add", values, add)
-
-
-@jax.jit
 def relion_exponentiate_batched_f32(
     values: jax.Array,
     add: jax.Array,
@@ -89,13 +60,6 @@ def relion_exponentiate_batched_f32(
 
 
 @jax.jit
-def relion_divide_f32(values: jax.Array, divisor: jax.Array) -> jax.Array:
-    """Apply RELION's CUDA ``float / float`` posterior normalization."""
-
-    return _relion_posterior_rows_f32(library.TARGET_RELION_DIVIDE_F32, "division", "divisor", values, divisor)
-
-
-@jax.jit
 def relion_divide_batched_f32(
     values: jax.Array,
     divisor: jax.Array,
@@ -105,71 +69,6 @@ def relion_divide_batched_f32(
     return _relion_posterior_batched_f32(
         library.TARGET_RELION_DIVIDE_BATCHED_F32, "division", "divisor", values, divisor
     )
-
-
-@jax.jit
-def relion_cub_sort_scan_f32(values: jax.Array) -> tuple[jax.Array, jax.Array]:
-    """Sort and inclusively scan one float32 vector with RELION's CUB calls.
-
-    A test reference: relax's cuts use :func:`relion_coarse_cut_f32`.
-
-    This is a strict diagnostic primitive for the coarse-significance boundary.
-    RELION invokes ``cub::DeviceRadixSort::SortKeys`` followed by
-    ``cub::DeviceScan::InclusiveSum`` on each particle's positive weights.
-    Keeping both intermediate arrays observable lets parity tests identify a
-    sort discrepancy separately from a scan discrepancy.
-    """
-
-    if values.dtype != jnp.float32:
-        raise TypeError(f"values must be float32, got {values.dtype}")
-    if values.ndim != 1 or values.shape[0] < 1:
-        raise ValueError(f"values must be a nonempty 1-D array, got {values.shape}")
-    if jax.default_backend() != "gpu":
-        raise RuntimeError("RELION CUB sort/scan requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError("RELION CUB sort/scan was requested but custom CUDA is disabled")
-    library.ensure_ffi()
-
-    output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
-    return jax.ffi.ffi_call(
-        library.TARGET_RELION_CUB_SORT_SCAN_F32,
-        (output_type, output_type),
-        vmap_method="sequential",
-    )(values)
-
-
-@jax.jit
-def relion_cub_sort_scan_batched_f32(
-    values: jax.Array,
-) -> tuple[jax.Array, jax.Array]:
-    """Run the exact RELION CUB sort/scan row order in one FFI call.
-
-    A test reference: relax's cuts use :func:`relion_coarse_cut_f32`.
-
-    Rows remain serialized on the caller's XLA stream. The implementation
-    reuses one stream-ordered scratch allocation, so this changes dispatch and
-    allocation topology without changing any row's CUB arithmetic. Rows must be
-    posterior weights (zero or positive, no NaN): only the positive weights are
-    radix-sorted and the zeros are written in front of them.
-    """
-
-    if values.dtype != jnp.float32 or values.ndim != 2:
-        raise TypeError(f"values must be a float32 matrix, got {values.dtype} {values.shape}")
-    if values.shape[0] < 1 or values.shape[1] < 1:
-        raise ValueError(f"values must be nonempty, got {values.shape}")
-    if jax.default_backend() != "gpu":
-        raise RuntimeError("RELION batched CUB sort/scan requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError(
-            "RELION batched CUB sort/scan was requested but custom CUDA is disabled"
-        )
-    library.ensure_ffi()
-
-    output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
-    return jax.ffi.ffi_call(
-        library.TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32,
-        (output_type, output_type),
-    )(values)
 
 
 def relion_coarse_cut_f32(
@@ -378,24 +277,3 @@ def sparse_pass2_segmented_posterior_f32(
         use_external_sum_weight=np.int64(use_external_sum_weight),
     )
     return tuple(result[:12] if return_scratch else result[:11])
-
-
-def sparse_pass2_segmented_supported() -> bool:
-    """Return whether the loaded library exports both segmented pass-2 targets.
-
-    The segmented handlers are an optional ABI, so a library built before them
-    stays loadable and callers fall back to the rectangular handlers.
-    """
-
-    try:
-        library.ensure_ffi()
-        lib = library.get_lib()
-        return all(
-            getattr(lib, library.OPTIONAL_FFI_REGISTRATIONS[target][0], None) is not None
-            for target in (
-                library.TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
-                library.TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
-            )
-        )
-    except Exception:
-        return False

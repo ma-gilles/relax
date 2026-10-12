@@ -10,7 +10,9 @@ results (default float32 band).
 
 import numpy as np
 import pytest
+from helpers import cuda_targets
 from helpers.float_compare import assert_matches
+from oracles import cuda_wavg
 
 pytest.importorskip("jax")
 import jax
@@ -58,10 +60,10 @@ def _cuda_backproject(monkeypatch, custom_cuda_lib):
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
     monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
-    if not cuda_fine.relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported():
+    if not cuda_targets.relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported():
         pytest.skip("loaded CUDA library predates the flat-row Wavg targets")
     if not (
-        cuda_fine.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
+        cuda_targets.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported()
     ):
         pytest.skip("loaded CUDA library predates the flat-row Wavg atomics")
 
@@ -126,13 +128,13 @@ def test_flat_rows_wavg_atomics_match_flattened_rectangular(
     row_image_ids = np.repeat(np.arange(batch_size, dtype=np.int32), rotation_count)
 
     with jax.default_device(gpu_device):
-        expected = cuda_backproject.relion_wavg_rotation_atomic_runtime_triplet_add_f32(
+        expected = cuda_wavg.relion_wavg_rotation_atomic_runtime_triplet_add_f32(
             jnp.asarray(terms),
             jnp.asarray(accumulator),
             jnp.asarray(logical_pixel_count, dtype=jnp.int32),
         )
         actual = (
-            cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
+            cuda_wavg.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
                 jnp.asarray(terms.reshape(-1, pixel_capacity, 3)),
                 jnp.asarray(row_image_ids),
                 jnp.asarray(accumulator),
@@ -173,7 +175,7 @@ def test_exact_position_atomics_match_the_embedded_rectangle(
 
     with jax.default_device(gpu_device):
         logical = jnp.asarray(logical_pixel_count, dtype=jnp.int32)
-        expected = cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
+        expected = cuda_wavg.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
             jnp.asarray(rectangle), jnp.asarray(row_image_ids), jnp.asarray(accumulator), logical
         )
         actual = cuda_backproject.relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
@@ -208,13 +210,13 @@ def test_flat_rows_wavg_atomics_ragged_and_padded_rows(
     rect_terms[row_image_ids[valid], row_rotation_ids[valid]] = flat_terms[valid]
 
     with jax.default_device(gpu_device):
-        expected = cuda_backproject.relion_wavg_rotation_atomic_runtime_triplet_add_f32(
+        expected = cuda_wavg.relion_wavg_rotation_atomic_runtime_triplet_add_f32(
             jnp.asarray(rect_terms),
             jnp.asarray(accumulator),
             jnp.asarray(pixel_capacity, dtype=jnp.int32),
         )
         actual = (
-            cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
+            cuda_wavg.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
                 jnp.asarray(flat_terms),
                 jnp.asarray(row_image_ids),
                 jnp.asarray(accumulator),
@@ -248,7 +250,7 @@ def test_flat_rows_wavg_atomics_long_runs_sum_in_row_order(monkeypatch, custom_c
     accumulator = rng.standard_normal((batch_size, pixel_capacity, 3)).astype(np.float32)
 
     with jax.default_device(gpu_device):
-        actual = cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
+        actual = cuda_wavg.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
             jnp.asarray(terms),
             jnp.asarray(row_image_ids),
             jnp.asarray(accumulator),
@@ -294,7 +296,7 @@ def test_flat_rows_wavg_all_padding_rows_leave_operands_untouched(
             jnp.asarray(pixel_capacity, dtype=jnp.int32),
         )
         accumulated = (
-            cuda_backproject.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
+            cuda_wavg.relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
                 jnp.asarray(terms),
                 jnp.asarray(row_image_ids),
                 jnp.asarray(accumulator),
@@ -362,8 +364,6 @@ def test_flat_rows_wavg_rejects_inconsistent_operands(mutate, message):
     ],
 )
 def test_flat_rows_wavg_atomics_reject_inconsistent_operands(mutate, message):
-    from relax.cuda import fine as cuda_fine
-
     args = [
         jnp.zeros((1, 1, 3), dtype=jnp.float32),
         jnp.zeros((1,), dtype=jnp.int32),
@@ -373,7 +373,7 @@ def test_flat_rows_wavg_atomics_reject_inconsistent_operands(mutate, message):
     mutate(args)
     with pytest.raises(ValueError, match=message):
         wrapped = (
-            cuda_fine
+            cuda_wavg
             .relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32
             .__wrapped__
         )

@@ -167,17 +167,6 @@ TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_CAPACITY_X_HALF = (
 )
 
 
-def optional_target_supported(target: str) -> bool:
-    """Return whether the loaded library exports an optional target's symbol."""
-
-    try:
-        ensure_ffi()
-        symbol_name = OPTIONAL_FFI_REGISTRATIONS[target][0]
-        return getattr(get_lib(), symbol_name, None) is not None
-    except Exception:
-        return False
-
-
 _RELAX_CUDA_LIB_ENV = "RELAX_CUDA_LIB"
 
 

@@ -13,6 +13,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers import cuda_targets
 from helpers.float_compare import assert_matches
 from recovar import cuda_backproject as cb
 
@@ -134,7 +135,7 @@ def test_segmented_targets_are_optional_abi():
     ):
         assert target in library.OPTIONAL_FFI_REGISTRATIONS
         assert target not in {name for name, _symbol in cb._FFI_REGISTRATIONS}
-    assert isinstance(cuda_posterior.sparse_pass2_segmented_supported(), bool)
+    assert isinstance(cuda_targets.sparse_pass2_segmented_supported(), bool)
 
 
 @pytest.mark.parametrize(

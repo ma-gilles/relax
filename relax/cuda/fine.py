@@ -4,7 +4,8 @@ sequential and exact-position flat-row triplets).
 
 Each wrapper registers the library targets through ``library.ensure_ffi()`` or
 ``library.ensure_optional_ffi(target)`` before its first FFI call; the masked fine diff2 and the flat-row Wavg
-targets are optional ABIs with support probes here.
+targets are optional ABIs. The rectangular and flat-row Wavg atomics the tests compare the exact-position
+kernel with are in ``tests/oracles/cuda_wavg.py``.
 """
 
 from __future__ import annotations
@@ -481,41 +482,6 @@ def relion_fine_diff2_pairs_f64(
 
 
 @jax.jit
-def relion_wavg_rotation_atomic_runtime_triplet_add_f32(
-    terms: jax.Array,
-    accumulator: jax.Array,
-    logical_pixel_count: jax.Array,
-) -> jax.Array:
-    """Run Wavg atomics over a logical prefix of fixed-capacity storage."""
-
-    library.ensure_ffi()
-    terms = jnp.asarray(terms)
-    accumulator = jnp.asarray(accumulator)
-    logical_pixel_count = jnp.asarray(logical_pixel_count, dtype=jnp.int32)
-    if terms.dtype != jnp.float32 or terms.ndim != 4 or terms.shape[-1] != 3:
-        raise ValueError(
-            "runtime RELION Wavg triplets require float32 [batch,rotation,pixel,3] terms"
-        )
-    if accumulator.dtype != jnp.float32 or accumulator.shape != (
-        terms.shape[0],
-        terms.shape[2],
-        3,
-    ):
-        raise ValueError(
-            "runtime RELION Wavg triplets require a matching [batch,pixel,3] accumulator"
-        )
-    if logical_pixel_count.shape != ():
-        raise ValueError("logical_pixel_count must be an int32 scalar")
-    output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
-    return jax.ffi.ffi_call(
-        library.TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32,
-        output_type,
-        input_output_aliases={1: 0},
-        vmap_method="sequential",
-    )(terms, accumulator, logical_pixel_count)
-
-
-@jax.jit
 def relion_wavg_sequential_runtime_flat_rows_triplet_f32(
     projections: jax.Array,
     row_image_ids: jax.Array,
@@ -597,63 +563,6 @@ def relion_wavg_sequential_runtime_flat_rows_triplet_f32(
     )
 
 
-@jax.jit
-def relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32(
-    terms: jax.Array,
-    row_image_ids: jax.Array,
-    accumulator: jax.Array,
-    logical_pixel_count: jax.Array,
-) -> jax.Array:
-    """Atomically add packed-row Wavg triplets into per-image accumulators.
-
-    ``terms`` is ``(Q,P,3)``, ``row_image_ids`` ``(Q,)`` and ``accumulator``
-    ``(B,P,3)``.  The launch keeps one block per row, so a flattened
-    rectangular problem issues exactly the same multiset of per-cell atomic
-    adds as :func:`relion_wavg_rotation_atomic_runtime_triplet_add_f32`, and
-    the linear block index matches that kernel's ``rotation + image *
-    rotation_count``.  The order in which those adds land is hardware
-    scheduled, so the accumulated float32 sums agree bitwise only when the
-    summands are exactly representable; the rectangular kernel does not
-    reproduce itself bitwise either at realistic rotation counts.  Rows whose
-    id is negative contribute nothing.
-    """
-
-    terms = jnp.asarray(terms)
-    row_image_ids = jnp.asarray(row_image_ids)
-    accumulator = jnp.asarray(accumulator)
-    logical_pixel_count = jnp.asarray(logical_pixel_count, dtype=jnp.int32)
-    if terms.dtype != jnp.float32 or terms.ndim != 3 or terms.shape[-1] != 3:
-        raise ValueError(
-            "flat-row RELION Wavg atomics require float32 [row, pixel, 3] terms"
-        )
-    row_count, pixel_capacity = terms.shape[0], terms.shape[1]
-    if row_image_ids.dtype != jnp.int32 or row_image_ids.shape != (row_count,):
-        raise ValueError(
-            "flat-row RELION Wavg atomics require int32 row_image_ids[Q]"
-        )
-    if (
-        accumulator.dtype != jnp.float32
-        or accumulator.ndim != 3
-        or accumulator.shape[1] != pixel_capacity
-        or accumulator.shape[2] != 3
-    ):
-        raise ValueError(
-            "flat-row RELION Wavg atomics require a float32 [batch,pixel,3] accumulator"
-        )
-    if logical_pixel_count.shape != ():
-        raise ValueError("logical_pixel_count must be an int32 scalar")
-    library.ensure_optional_ffi(
-        library.TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
-    )
-    output_type = jax.ShapeDtypeStruct(accumulator.shape, jnp.float32)
-    return jax.ffi.ffi_call(
-        library.TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32,
-        output_type,
-        input_output_aliases={2: 0},
-        vmap_method="sequential",
-    )(terms, row_image_ids, accumulator, logical_pixel_count)
-
-
 def relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
     exact_terms: jax.Array,
     row_image_ids: jax.Array,
@@ -661,7 +570,7 @@ def relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
     accumulator: jax.Array,
     logical_pixel_count: jax.Array,
 ) -> jax.Array:
-    """:func:`relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32` on the exact pixels only.
+    """The flat-row Wavg atomics (``tests/oracles/cuda_wavg.py``) on the exact pixels only.
 
     ``exact_terms`` is ``(Q, P_exact, 3)`` and ``exact_positions`` ``(P_exact,)``
     their positions in the ``(B, P_rect, 3)`` accumulator's rectangle; the
@@ -700,19 +609,3 @@ def relion_wavg_exact_atomic_flat_rows_triplet_add_f32(
         input_output_aliases={3: 0},
         vmap_method="sequential",
     )(exact_terms, row_image_ids, exact_positions, accumulator, logical_pixel_count)
-
-
-def relion_wavg_sequential_runtime_flat_rows_triplet_f32_supported() -> bool:
-    """Return whether the loaded library exports the flat-row Wavg target."""
-
-    return library.optional_target_supported(
-        library.TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32
-    )
-
-
-def relion_wavg_rotation_atomic_runtime_flat_rows_triplet_add_f32_supported() -> bool:
-    """Return whether the loaded library exports the flat-row Wavg atomics."""
-
-    return library.optional_target_supported(
-        library.TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_FLAT_ROWS_TRIPLET_ADD_F32
-    )

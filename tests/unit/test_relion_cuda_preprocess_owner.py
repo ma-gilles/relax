@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import jax.numpy as jnp
 import pytest
+from helpers import cuda_targets
 
 from relax.relion import image_preprocessing
 from relax.vdam import adaptive_estep
@@ -73,7 +74,7 @@ def test_deferred_check_scope_defers_inside_and_checks_on_normal_exit(monkeypatc
     assert seen == [False] * 5
     assert outer.pending == [] and inner.pending == []
     assert cuda_preprocess._RELION_PREPROCESS_DEFERRED_SCOPES == []
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
 
 
 def test_eager_call_outside_a_scope_raises_at_once_and_names_the_noted_image(monkeypatch):
@@ -84,7 +85,7 @@ def test_eager_call_outside_a_scope_raises_at_once_and_names_the_noted_image(mon
     cuda_preprocess.note_relion_preprocess_batch([31])
     with pytest.raises(RuntimeError, match=r"1 image\(s\) had a non-finite pixel"):
         call()
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
 
 
 def test_deferred_check_scope_names_the_pass_and_the_batches(monkeypatch):
@@ -114,7 +115,7 @@ def test_deferred_check_scope_drops_its_checks_when_the_loop_raises(monkeypatch)
             call()  # an invalid image is queued, then the loop fails for another reason
             raise KeyError("loop failure")
     assert cuda_preprocess._RELION_PREPROCESS_DEFERRED_SCOPES == []
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
     assert cuda_preprocess.drain_relion_preprocess_checks() == 0
     with cuda_preprocess.deferred_relion_preprocess_checks("next pass"):
         call()

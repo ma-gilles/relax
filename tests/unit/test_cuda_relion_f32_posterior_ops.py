@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from oracles import cuda_posterior as cuda_oracle
 
 pytest.importorskip("jax")
 import jax
@@ -83,7 +84,6 @@ def test_relion_f32_posterior_cuda_primitives_preserve_float32_chain(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import posterior as cuda_posterior
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -94,12 +94,12 @@ def test_relion_f32_posterior_cuda_primitives_preserve_float32_chain(
     values = np.asarray([-53.920059, -54.920059, -55.920059, -200.0], dtype=np.float32)
     add = np.asarray(53.920059, dtype=np.float32)
     with jax.default_device(gpu_device):
-        raw = cuda_posterior.relion_exponentiate_f32(
+        raw = cuda_oracle.relion_exponentiate_f32(
             jnp.asarray(values),
             jnp.asarray(add),
         )
-        sorted_weights, cumulative = cuda_posterior.relion_cub_sort_scan_f32(raw)
-        normalized = cuda_posterior.relion_divide_f32(raw, cumulative[-1])
+        sorted_weights, cumulative = cuda_oracle.relion_cub_sort_scan_f32(raw)
+        normalized = cuda_oracle.relion_divide_f32(raw, cumulative[-1])
 
     raw = np.asarray(raw)
     sorted_weights = np.asarray(sorted_weights)
@@ -149,14 +149,14 @@ def test_batched_relion_f32_posterior_primitives_match_scalar_rows(
     with jax.default_device(gpu_device):
         values_jax = jnp.asarray(values)
         add_jax = jnp.asarray(add)
-        scalar_raw = jax.vmap(cuda_posterior.relion_exponentiate_f32)(
+        scalar_raw = jax.vmap(cuda_oracle.relion_exponentiate_f32)(
             values_jax,
             add_jax,
         )
         scalar_sorted, scalar_cumulative = jax.vmap(
-            cuda_posterior.relion_cub_sort_scan_f32
+            cuda_oracle.relion_cub_sort_scan_f32
         )(scalar_raw)
-        scalar_normalized = jax.vmap(cuda_posterior.relion_divide_f32)(
+        scalar_normalized = jax.vmap(cuda_oracle.relion_divide_f32)(
             scalar_raw,
             scalar_cumulative[:, -1],
         )
@@ -166,7 +166,7 @@ def test_batched_relion_f32_posterior_primitives_match_scalar_rows(
             add_jax,
         )
         batched_sorted, batched_cumulative = (
-            cuda_posterior.relion_cub_sort_scan_batched_f32(batched_raw)
+            cuda_oracle.relion_cub_sort_scan_batched_f32(batched_raw)
         )
         batched_normalized = cuda_posterior.relion_divide_batched_f32(
             batched_raw,
@@ -207,7 +207,6 @@ def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
 
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import posterior as cuda_posterior
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -223,8 +222,8 @@ def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
 
     with jax.default_device(gpu_device):
         matrix = jnp.asarray(weights)
-        scalar_sorted, scalar_cumulative = jax.vmap(cuda_posterior.relion_cub_sort_scan_f32)(matrix)
-        batched_sorted, batched_cumulative = cuda_posterior.relion_cub_sort_scan_batched_f32(matrix)
+        scalar_sorted, scalar_cumulative = jax.vmap(cuda_oracle.relion_cub_sort_scan_f32)(matrix)
+        batched_sorted, batched_cumulative = cuda_oracle.relion_cub_sort_scan_batched_f32(matrix)
 
     assert_matches(np.asarray(batched_sorted), np.asarray(scalar_sorted))
     assert_matches(np.asarray(batched_cumulative), np.asarray(scalar_cumulative))
@@ -241,11 +240,11 @@ def test_relion_f32_posterior_cuda_primitives_fail_closed_without_gpu(monkeypatc
     scalar = jnp.asarray(1.0, dtype=jnp.float32)
 
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        cuda_posterior.relion_exponentiate_f32.__wrapped__(values, scalar)
+        cuda_oracle.relion_exponentiate_f32.__wrapped__(values, scalar)
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        cuda_posterior.relion_divide_f32.__wrapped__(values, scalar)
+        cuda_oracle.relion_divide_f32.__wrapped__(values, scalar)
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        cuda_posterior.relion_cub_sort_scan_f32.__wrapped__(values)
+        cuda_oracle.relion_cub_sort_scan_f32.__wrapped__(values)
 
     matrix = values[None, :]
     vector = scalar[None]
@@ -254,7 +253,7 @@ def test_relion_f32_posterior_cuda_primitives_fail_closed_without_gpu(monkeypatc
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
         cuda_posterior.relion_divide_batched_f32.__wrapped__(matrix, vector)
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        cuda_posterior.relion_cub_sort_scan_batched_f32.__wrapped__(matrix)
+        cuda_oracle.relion_cub_sort_scan_batched_f32.__wrapped__(matrix)
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
         cuda_posterior.relion_coarse_cut_f32(matrix, adaptive_fraction=0.999, max_significants=-1)
 

@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers import cuda_targets
 
 
 def _run_adaptive_k2(monkeypatch, dataset_edit=None):
@@ -18,6 +19,7 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
     """
     from helpers.em_arrays import _hermitian_volume
     from helpers.sparse_pass2_mock import VOLUME_SHAPE
+
     from relax.classification import k_class
     from relax.relion import ctf
 
@@ -113,4 +115,4 @@ def test_pass1_non_finite_image_fails_before_pass2(monkeypatch, inside_mask):
     assert pass2_calls == []
     # Nothing is left for a later pass to report.
     assert cuda_preprocess._RELION_PREPROCESS_DEFERRED_SCOPES == []
-    assert cuda_preprocess.pending_relion_preprocess_checks() == 0
+    assert cuda_targets.pending_relion_preprocess_checks() == 0
