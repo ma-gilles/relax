@@ -11,7 +11,7 @@ from typing import Optional
 import numpy as np
 
 
-def _relion_optimizer_average_pmax(max_posterior_per_half, normalization_mass_per_half=None):
+def relion_optimizer_average_pmax(max_posterior_per_half, normalization_mass_per_half=None):
     """Return RELION's optimizer Pmax scalar and its normalization mass.
 
     In split-half refinement, RELION computes this independently per half,

@@ -28,17 +28,17 @@ import numpy as np
 from relax.runtime.env_flags import parse_env_float_or_default, parse_env_int_or_default, parse_env_true_flag
 from relax.sampling.healpix import angular_sampling_deg
 from relax.steps.convergence import (
-    _relion_optimizer_average_pmax,
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
     relion_mpi_hidden_variable_change_is_small,
+    relion_optimizer_average_pmax,
 )
 from relax.types import total_sumw
 
 logger = logging.getLogger(__name__)
 
 def relion_class_pmax_normalization_mass_per_half(class_posterior_per_half):
-    """Class3D per-half normalization mass for :func:`_relion_optimizer_average_pmax`.
+    """Class3D per-half normalization mass for :func:`relion_optimizer_average_pmax`.
 
     Class3D divides half 1's Pmax sum by that half's retained M-step posterior
     mass, the sum of ``wsum_model.pdf_class``, as a float64 host scalar.
@@ -51,7 +51,7 @@ def relion_class_pmax_normalization_mass_per_half(class_posterior_per_half):
 
 
 def relion_k1_pmax_normalization_mass_per_half(noise_stats_per_half):
-    """K=1 per-half normalization mass for :func:`_relion_optimizer_average_pmax`.
+    """K=1 per-half normalization mass for :func:`relion_optimizer_average_pmax`.
 
     K=1 divides by the half's noise ``sumw`` particle mass, a float64 host
     scalar; a missing noise statistic stays ``None``.
@@ -166,7 +166,7 @@ def expectation_statistics(per_half, previous_assignments, pmax_mass_per_half) -
         raise RuntimeError(
             "RELION mode expected per-image posterior maxima from the EM engine",
         )
-    max_posterior, ave_pmax, ave_pmax_mass = _relion_optimizer_average_pmax(per_half.max_posterior, pmax_mass_per_half)
+    max_posterior, ave_pmax, ave_pmax_mass = relion_optimizer_average_pmax(per_half.max_posterior, pmax_mass_per_half)
     return ExpectationStatistics(
         assignments=concatenate_assignments(per_half.coarse_ha),
         previous_assignments=concatenate_assignments_or_none(previous_assignments),

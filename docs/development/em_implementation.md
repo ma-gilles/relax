@@ -23,7 +23,7 @@ is used for the current iteration and the tolerant form for a previous
 iteration that may not have recorded assignments. The optimizer Pmax
 normalization mass comes from `convergence._relion_pmax_normalization_mass_per_half`:
 Class3D uses each half's retained M-step posterior mass, K=1 the half's noise
-`sumw`, and `_relion_optimizer_average_pmax` divides half 1's Pmax sum by it.
+`sumw`, and `relion_optimizer_average_pmax` divides half 1's Pmax sum by it.
 
 Direction-prior construction, learning and scoring belong to
 [`orientation_priors`](../../relax/sampling/orientation_priors.py).

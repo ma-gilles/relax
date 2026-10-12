@@ -153,7 +153,7 @@ from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float3
 from relax.scoring.pass1_results import Pass1Result
 from relax.scoring.significance import _compute_k_class_significance_batched
 from relax.steps import score_outputs, scoring_policy
-from relax.steps.convergence import _relion_optimizer_average_pmax
+from relax.steps.convergence import relion_optimizer_average_pmax
 from relax.types import LocalEMResult, NoiseStats, RelionStats
 
 pytestmark = pytest.mark.unit
@@ -163,7 +163,7 @@ def test_relion_optimizer_average_pmax_uses_kclass_mstep_mass():
     pmax = [np.asarray([0.1, 0.2]), np.asarray([0.3])]
     class_mstep_mass = [np.asarray([0.9, 0.08]), np.asarray([1.8, 0.15])]
 
-    combined, average, denominator = _relion_optimizer_average_pmax(
+    combined, average, denominator = relion_optimizer_average_pmax(
         pmax,
         [np.sum(class_mstep_mass[0]), np.sum(class_mstep_mass[1])],
     )
@@ -175,7 +175,7 @@ def test_relion_optimizer_average_pmax_uses_kclass_mstep_mass():
 
 
 def test_relion_optimizer_average_pmax_uses_k1_mstep_mass():
-    _, average, denominator = _relion_optimizer_average_pmax(
+    _, average, denominator = relion_optimizer_average_pmax(
         [np.asarray([0.1, 0.2]), np.asarray([0.3])],
         [1.8, 0.9],
     )
@@ -190,7 +190,7 @@ def test_relion_optimizer_average_pmax_preserves_double_particle_values():
         np.asarray([0.987654321098765], dtype=np.float64),
     ]
 
-    combined, average, denominator = _relion_optimizer_average_pmax(pmax)
+    combined, average, denominator = relion_optimizer_average_pmax(pmax)
 
     assert combined.dtype == np.float64
     assert_matches(combined, np.concatenate(pmax))

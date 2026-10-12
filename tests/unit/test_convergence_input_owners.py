@@ -2,7 +2,7 @@
 
 ``helpers.convergence`` joins both half-sets' assignment indices for
 convergence tracking; ``helpers.convergence`` selects the per-half normalization mass
-that ``_relion_optimizer_average_pmax`` divides by.
+that ``relion_optimizer_average_pmax`` divides by.
 """
 
 from __future__ import annotations
@@ -64,6 +64,6 @@ def test_pmax_mass_feeds_the_optimizer_average():
     mass = refinement_state.relion_k1_pmax_normalization_mass_per_half(
         [SimpleNamespace(sumw=3.0), SimpleNamespace(sumw=1.0)],
     )
-    combined, average, denominator = convergence._relion_optimizer_average_pmax(max_posterior_per_half, mass)
+    combined, average, denominator = convergence.relion_optimizer_average_pmax(max_posterior_per_half, mass)
     assert denominator == 3.0 and average == pytest.approx(0.25)
     assert combined.tolist() == [0.5, 0.25, 1.0]

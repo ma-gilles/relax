@@ -32,7 +32,7 @@ import numpy as np
 from relax.reconstruction import regularization
 from relax.reconstruction.regularization import resolution_from_data_vs_prior
 from relax.relion.macros import relion_round
-from relax.steps.convergence import _relion_optimizer_average_pmax
+from relax.steps.convergence import relion_optimizer_average_pmax
 from relax.vdam.estep_common import EstepSums, estep_sums
 from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
 from relax.vdam.model_update import (
@@ -158,7 +158,7 @@ def _ave_pmax(sums: EstepSums) -> float | None:
     # RELION accumulates Pmax over all VDAM pseudo-halfsets, then divides by the retained M-step
     # posterior mass (rather than the particle count). Treat the two pseudo-halfsets as one optimiser
     # population when reusing the Class3D normalization helper.
-    _, average, _ = _relion_optimizer_average_pmax([sums.pmax], [float(np.sum(sums.class_mass))])
+    _, average, _ = relion_optimizer_average_pmax([sums.pmax], [float(np.sum(sums.class_mass))])
     return average
 
 

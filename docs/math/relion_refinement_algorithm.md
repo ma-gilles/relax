@@ -964,7 +964,7 @@ from one reference scores each particle against its seed class only
 [`expected_accuracy.py`](../../relax/steps/expected_accuracy.py)
 owns the RELION-style accuracy trial calculation. The approximate posterior
 helper `calculate_expected_angular_errors` is a different route. Likewise,
-`convergence._relion_optimizer_average_pmax` uses the split-half optimizer's
+`convergence.relion_optimizer_average_pmax` uses the split-half optimizer's
 mass normalization, rather than just averaging all recorded Pmax values.
 
 ## 7. Final output and validation boundaries
