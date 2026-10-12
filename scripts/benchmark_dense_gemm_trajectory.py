@@ -321,7 +321,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
         image_shape=dataset.image_shape, noise_variance_half=checkpoint.noise_half[half_index],
         scale_corrections_enabled=True, half_weights=score_half_weights,
         powerclass=relion_cuda_powerclass_highres_xi2_half,
-        current_size=checkpoint.current_size, use_float64_scoring=False,
+        current_size=checkpoint.current_size,
     )
 
     window = geometry["window"]

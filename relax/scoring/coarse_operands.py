@@ -55,7 +55,6 @@ def relion_exact_coarse_operands(
     half_weights,
     *,
     image_shape,
-    use_float64_scoring,
     scale_corrections_enabled,
 ):
     """Assemble the exact-source coarse operands of one image batch.
@@ -75,40 +74,29 @@ def relion_exact_coarse_operands(
 
     from relax.fine_pass.scoring import (
         relion_cuda_corr_img_from_native_noise_variance,
-        relion_cuda_corr_img_from_rfloat_ctf,
         relion_cuda_pixel_correction_from_rfloat_ctf,
     )
 
-    real_dtype = jnp.float64 if use_float64_scoring else jnp.float32
-    complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
     pixel_correction = relion_cuda_pixel_correction_from_rfloat_ctf(
         batch_scale_exact[:, None],
         ctf_half_rfloat,
-        output_dtype=real_dtype,
+        output_dtype=jnp.float32,
     )
-    processed_score = jnp.asarray(processed_direct, dtype=complex_dtype)[:, score_indices]
+    processed_score = jnp.asarray(processed_direct, dtype=jnp.complex64)[:, score_indices]
     exact_unshifted_corrected = processed_score * pixel_correction
     exact_unshifted_corrected = jnp.where(
         score_active_mask[None, :],
         exact_unshifted_corrected,
         jnp.zeros((), dtype=exact_unshifted_corrected.dtype),
-    ).astype(complex_dtype)
+    ).astype(jnp.complex64)
     # One shared spectrum [P], or each image's optics-group spectrum [B, P].
     score_noise_variance = noise_variance_half[..., score_indices]
-    if use_float64_scoring:
-        inverse_noise_half = jnp.reciprocal(jnp.asarray(score_noise_variance, dtype=jnp.float64))
-        exact_corr_img = relion_cuda_corr_img_from_rfloat_ctf(
-            pixel_rows(inverse_noise_half), ctf_half_rfloat,
-            batch_scale_exact[:, None] if scale_corrections_enabled else None,
-            output_dtype=real_dtype,
-        )
-    else:
-        exact_corr_img = relion_cuda_corr_img_from_native_noise_variance(
-            pixel_rows(score_noise_variance),
-            ctf_half_rfloat,
-            image_shape,
-            batch_scale_exact[:, None] if scale_corrections_enabled else None,
-        )
+    exact_corr_img = relion_cuda_corr_img_from_native_noise_variance(
+        pixel_rows(score_noise_variance),
+        ctf_half_rfloat,
+        image_shape,
+        batch_scale_exact[:, None] if scale_corrections_enabled else None,
+    )
     exact_square_corr_img = exact_corr_img
     exact_square_corr_img = jnp.where(
         score_active_mask[None, :],
@@ -117,8 +105,8 @@ def relion_exact_coarse_operands(
     )
     pixel_weight = jnp.asarray(
         exact_square_corr_img
-        * jnp.asarray(half_weights[score_indices], dtype=real_dtype)[None, :],
-        dtype=real_dtype,
+        * jnp.asarray(half_weights[score_indices], dtype=jnp.float32)[None, :],
+        dtype=jnp.float32,
     )
     return exact_unshifted_corrected, pixel_weight
 
@@ -127,7 +115,6 @@ _relion_exact_coarse_operand_program = jax.jit(
     relion_exact_coarse_operands,
     static_argnames=(
         "image_shape",
-        "use_float64_scoring",
         "scale_corrections_enabled",
     ),
 )
@@ -324,7 +311,6 @@ def assemble_relion_exact_coarse_gaussian_operands(
     powerclass,
     current_size,
     runtime_current_size=None,
-    use_float64_scoring: bool = False,
     relion_translation_angle_scale: float = 1.0,
     coarse_kernel_window: int | None = None,
     coarse_kernel_r_max: int | None = None,
@@ -338,16 +324,8 @@ def assemble_relion_exact_coarse_gaussian_operands(
     """
 
     from relax.cuda import translate as cuda_translate
-    from relax.fine_pass.bucket_io import (
-        relion_translation_angles_f32,
-        relion_translation_angles_f64,
-    )
+    from relax.fine_pass.bucket_io import relion_translation_angles_f32
     from relax.relion.ctf import relion_exact_ctf_half_from_source_star
-
-    real_dtype = jnp.float64 if use_float64_scoring else jnp.float32
-    complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
-    angle_fn = relion_translation_angles_f64 if use_float64_scoring else relion_translation_angles_f32
-    translate_fn = cuda_translate.relion_translate_score_f64 if use_float64_scoring else cuda_translate.relion_translate_score_f32
 
     # The padded rows of a short last batch repeat its first image's CTF row.
     ctf_half_rfloat = relion_exact_ctf_half_from_source_star(
@@ -356,7 +334,7 @@ def assemble_relion_exact_coarse_gaussian_operands(
         image_shape,
         pixel_indices=score_indices_np,
     )
-    batch_scale_exact = jnp.asarray(batch_scale_np, dtype=real_dtype)
+    batch_scale_exact = jnp.asarray(batch_scale_np, dtype=jnp.float32)
     exact_unshifted_corrected, pixel_weight = _relion_exact_coarse_operand_program(
         ctf_half_rfloat,
         batch_scale_exact,
@@ -366,15 +344,14 @@ def assemble_relion_exact_coarse_gaussian_operands(
         noise_variance_half,
         half_weights,
         image_shape=tuple(int(size) for size in image_shape),
-        use_float64_scoring=bool(use_float64_scoring),
         scale_corrections_enabled=bool(scale_corrections_enabled),
     )
     translation_angles = jnp.asarray(
-        angle_fn(translations_source, image_shape, angle_scale=relion_translation_angle_scale),
-        dtype=real_dtype,
+        relion_translation_angles_f32(translations_source, image_shape, angle_scale=relion_translation_angle_scale),
+        dtype=jnp.float32,
     )
     shifted_corrected = relion_coarse_translate(
-        translate_fn,
+        cuda_translate.relion_translate_score_f32,
         exact_unshifted_corrected,
         translation_angles,
         score_indices,
@@ -384,7 +361,7 @@ def assemble_relion_exact_coarse_gaussian_operands(
         r_max=coarse_kernel_r_max,
     )
     return RelionExactCoarseGaussianOperands(
-        shifted_corrected=jnp.asarray(shifted_corrected, dtype=complex_dtype),
+        shifted_corrected=jnp.asarray(shifted_corrected, dtype=jnp.complex64),
         pixel_weight=pixel_weight,
         unshifted_corrected=exact_unshifted_corrected,
         initial_diff2=powerclass(

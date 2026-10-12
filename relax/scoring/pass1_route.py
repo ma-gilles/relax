@@ -82,7 +82,6 @@ def plan_gaussian_route(
             score_with_masked_images=request.score_with_masked_images,
             nyquist_column_counting=request.nyquist_column_counting,
             scale_corrections_enabled=request.scale_corrections is not None,
-            use_float64_scoring=request.use_float64_scoring,
             stable_fourier_window_shapes=request.stable_fourier_window_shapes,
             score_size=shape.score_size,
             current_size=request.current_size,

@@ -59,14 +59,11 @@ def _active_mask(rng):
     return jnp.asarray(mask)
 
 
-@pytest.mark.parametrize("use_float64_scoring", [False, True])
 @pytest.mark.parametrize("scale_corrections_enabled", [False, True])
-def test_exact_program_matches_the_eager_assembly(
-    use_float64_scoring, scale_corrections_enabled
-):
+def test_exact_program_matches_the_eager_assembly(scale_corrections_enabled):
     rng = np.random.default_rng(20260921)
-    real_dtype = jnp.float64 if use_float64_scoring else jnp.float32
-    complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
+    real_dtype = jnp.float32
+    complex_dtype = jnp.complex64
     ctf = jnp.asarray(rng.uniform(-1.5, 1.5, (ACTUAL_BATCH, N_SCORE)), dtype=jnp.float64)
     # RELION's CTF crosses zero; the pixel correction has a magnitude guard there.
     ctf = ctf.at[:, ::9].set(0.0)
@@ -82,7 +79,6 @@ def test_exact_program_matches_the_eager_assembly(
 
     kwargs = dict(
         image_shape=(IMAGE_SIZE, IMAGE_SIZE),
-        use_float64_scoring=use_float64_scoring,
         scale_corrections_enabled=scale_corrections_enabled,
     )
     eager = relion_exact_coarse_operands(
@@ -117,7 +113,6 @@ def test_exact_program_holds_on_a_repeat_padded_last_batch():
     half_weights = jnp.asarray(rng.uniform(0.5, 1.5, N_HALF), dtype=jnp.float64)
     kwargs = dict(
         image_shape=(IMAGE_SIZE, IMAGE_SIZE),
-        use_float64_scoring=False,
         scale_corrections_enabled=True,
     )
 

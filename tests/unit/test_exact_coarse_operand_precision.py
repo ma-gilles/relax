@@ -13,19 +13,17 @@ from relax.scoring import coarse_operands
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize("use_float64", [False, True])
 @pytest.mark.parametrize("batch_size", [2, 3])
 @pytest.mark.parametrize("compact", [False, True])
 @pytest.mark.parametrize("scale_enabled", [False, True])
 def test_exact_coarse_assembly_precision_and_padding(
     monkeypatch,
-    use_float64,
     batch_size,
     compact,
     scale_enabled,
 ):
-    real_dtype = jnp.float64 if use_float64 else jnp.float32
-    complex_dtype = jnp.complex128 if use_float64 else jnp.complex64
+    real_dtype = jnp.float32
+    complex_dtype = jnp.complex64
     score_indices = np.asarray([11, 0, 5, 5, 1, 2, 3, 4], dtype=np.int32) if compact else np.arange(12, dtype=np.int32)
     ctf = np.asarray([[1.125] * 12, [1.375] * 12], dtype=np.float64)
     scales = np.ones(batch_size, dtype=np.float64)
@@ -52,11 +50,7 @@ def test_exact_coarse_assembly_precision_and_padding(
         seen.append(images)
         return jnp.broadcast_to(images[:, None, :], (batch_size, 2, len(score_indices)))
 
-    monkeypatch.setattr(
-        cuda_translate,
-        "relion_translate_score_f64" if use_float64 else "relion_translate_score_f32",
-        translate,
-    )
+    monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", translate)
     source_images = jnp.asarray(np.arange(batch_size * 12).reshape(batch_size, 12) + 1j, dtype=complex_dtype)
 
     def full_powerclass(images, **_kwargs):
@@ -80,7 +74,6 @@ def test_exact_coarse_assembly_precision_and_padding(
         half_weights=jnp.ones(12, dtype=real_dtype),
         powerclass=full_powerclass,
         current_size=4,
-        use_float64_scoring=use_float64,
     )
     expected_ctf = ctf if batch_size == 2 else np.concatenate((ctf, ctf[:1]), axis=0)
     correction = bucket_io.relion_cuda_pixel_correction_from_rfloat_ctf(
@@ -97,20 +90,12 @@ def test_exact_coarse_assembly_precision_and_padding(
     assert len(seen) == 1
     assert result.pixel_weight.dtype == real_dtype
     assert result.unshifted_corrected.dtype == complex_dtype
-    if use_float64:
-        full_corr = bucket_io.relion_cuda_corr_img_from_rfloat_ctf(
-            jnp.full((1, 12), 0.5, dtype=jnp.float64),
-            jnp.asarray(expected_ctf),
-            scale_operand if scale_enabled else None,
-            output_dtype=real_dtype,
-        )
-    else:
-        full_corr = bucket_io.relion_cuda_corr_img_from_native_noise_variance(
-            jnp.full((1, 12), 2.0, dtype=jnp.float64),
-            jnp.asarray(expected_ctf),
-            (4, 4),
-            scale_operand if scale_enabled else None,
-        )
+    full_corr = bucket_io.relion_cuda_corr_img_from_native_noise_variance(
+        jnp.full((1, 12), 2.0, dtype=jnp.float64),
+        jnp.asarray(expected_ctf),
+        (4, 4),
+        scale_operand if scale_enabled else None,
+    )
     assert_matches(
         result.pixel_weight,
         jnp.where(active_mask[None, :], full_corr[:, score_indices], 0.0),

@@ -67,7 +67,6 @@ class GaussianOperandPlan:
     score_with_masked_images: bool
     nyquist_column_counting: str
     scale_corrections_enabled: bool
-    use_float64_scoring: bool
     stable_fourier_window_shapes: bool
     score_size: int
     current_size: int | None
@@ -104,7 +103,6 @@ class GaussianOperandPlan:
             self.experiment_dataset,
             processed_direct,
             indices,
-            use_float64_scoring=self.use_float64_scoring,
             batch_scale_np=batch.batch_scale_np,
             batch_size=batch.batch_size,
             score_indices=self.gaussian_plan.score_indices,

@@ -152,7 +152,6 @@ def tilt_image_coarse_operands(
         noise_rows(noise_variance_half, optics_group_ids, image_indices),
         layout.half_weights,
         image_shape=layout.image_shape,
-        use_float64_scoring=False,
         scale_corrections_enabled=scale_corrections is not None,
     )
     initial = relion_cuda_powerclass_highres_xi2_half(
