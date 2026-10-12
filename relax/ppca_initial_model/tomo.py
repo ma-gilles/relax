@@ -27,6 +27,7 @@ from relax.ppca_initial_model.initialization import initial_noise, seed_model
 from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import compute_ini_high_shell
+from relax.sampling.tomo_particles import tilt_image_shifts
 
 
 @dataclasses.dataclass(frozen=True)
@@ -173,10 +174,12 @@ def tilt_tiles(particles: TiltParticles, ids, tile_size: int) -> list[np.ndarray
 def tilt_shifts(frames, translations) -> np.ndarray:
     """2D shift ``[Aproj t]_{1,2}`` of each frame for each 3D shift, ``(K, T, 2)`` float32.
 
-    RELION's ``Experiment::getTranslationInTiltSeries`` (:func:`relax.sampling.tomo_particles.tilt_image_shifts`).
+    RELION's ``Experiment::getTranslationInTiltSeries`` in its summation order
+    (:func:`relax.sampling.tomo_particles.tilt_image_shifts`, in float64), with no old offset: PPCA's
+    translations are absolute.
     """
-    frames = np.asarray(frames, dtype=np.float64)
-    return np.einsum("kab,tb->kta", frames[:, :2, :], np.asarray(translations, dtype=np.float64)).astype(np.float32)
+    n_frames = len(frames)
+    return tilt_image_shifts(translations, np.zeros((1, 3)), frames, np.zeros(n_frames, np.int64)).astype(np.float32)
 
 
 def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observation: bool):

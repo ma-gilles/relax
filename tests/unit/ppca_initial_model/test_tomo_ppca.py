@@ -471,6 +471,17 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
     assert embeddings["z"].shape == (n_particles, 2)
 
 
+def test_tilt_shifts_are_each_frames_projection_of_each_shift():
+    """``[Aproj_k t]_{1,2}`` per frame and shift, in RELION's summation order (a0 x + a1 y + a2 z, double), then float32."""
+    translations = np.asarray([[0.7, -1.4, 2.1], [-3.5, 0.0, 0.35]], np.float32)
+    shifts = tilt_shifts(FRAMES, translations)
+    assert shifts.shape == (len(FRAMES), 2, 2) and shifts.dtype == np.float32
+    for k, frame in enumerate(np.asarray(FRAMES, np.float64)):
+        for t, shift in enumerate(translations.astype(np.float64)):
+            expected = [frame[r, 0] * shift[0] + frame[r, 1] * shift[1] + frame[r, 2] * shift[2] for r in (0, 1)]
+            np.testing.assert_array_equal(shifts[k, t], np.asarray(expected, np.float32))
+
+
 def test_update_noise_keeps_groups_without_images():
     from relax.ppca_initial_model.noise import update_noise
 
