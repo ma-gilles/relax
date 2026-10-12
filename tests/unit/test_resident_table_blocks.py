@@ -16,6 +16,7 @@ from helpers.float_compare import assert_matches
 from test_resident_significance import _csr_from_supports, _supports
 
 import relax.fine_pass.resident_pass2 as rp
+from relax.fine_pass import resident_chunk_programs
 from relax.fine_pass.resident_candidates import CandidateTableBlocks, plan_capacity_chunks, table_block_starts
 from relax.fine_pass.resident_significance import (
     DeviceCompactedSignificantSamples,
@@ -133,8 +134,8 @@ def test_blocked_chunk_rows_are_the_whole_table_rows(n_classes, execution_order,
     assert [c.image_start for c in chunks[1:]] == [c.image_stop for c in chunks[:-1]]
     assert chunks[-1].image_stop == N_IMAGES
     for chunk in chunks:
-        _, got, _ = rp._chunk_host_rows(blocked, chunk)
-        _, want, _ = rp._chunk_host_rows(whole, chunk)
+        _, got, _ = resident_chunk_programs.chunk_host_rows(blocked, chunk)
+        _, want, _ = resident_chunk_programs.chunk_host_rows(whole, chunk)
         assert got.keys() == want.keys()
         for key in got:
             if key == "row_log_prior":

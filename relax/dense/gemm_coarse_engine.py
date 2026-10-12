@@ -231,8 +231,9 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
 
     from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
     from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
+    from relax.fine_pass.resident_chunk_programs import make_chunk_translation_sqdist
     from relax.fine_pass.resident_operands import prepare_resident_half_operands
-    from relax.fine_pass.resident_pass2 import _make_chunk_translation_sqdist, _relion_scale_correction_pixel_mask
+    from relax.fine_pass.resident_pass2 import _relion_scale_correction_pixel_mask
     from relax.fine_pass.resident_statistics import (
         make_resident_statistics,
         resolve_statistics_config,
@@ -482,7 +483,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
             return jnp.pad(jnp.asarray(array[:count]), ((0, b - count),) + ((0, 0),) * (array.ndim - 1), constant_values=fill)
         fine_parent = np.pad(np.asarray(state.fine_rotation_parent, np.int32), (0, rpad - len(state.fine_rotations)), constant_values=state.n_coarse_rot)
         fine_ids = np.pad(np.arange(len(state.fine_rotations), dtype=np.int32), (0, rpad - len(state.fine_rotations)))
-        sqdist = _make_chunk_translation_sqdist(
+        sqdist = make_chunk_translation_sqdist(
             None, translation_prior_centers_np=state.translation_prior_centers,
             image_indices=image_ids, image_capacity=b, n_valid_images=count,
             fine_translations=state.fine_translations, voxel_size=dataset.voxel_size,

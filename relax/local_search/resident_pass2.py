@@ -76,6 +76,7 @@ from relax.fine_pass import (
     resident_chunk_inputs,
     resident_chunk_memory,
     resident_chunk_posterior,
+    resident_chunk_programs,
     resident_chunk_records,
     resident_configuration,
     resident_image_terms,
@@ -2065,7 +2066,7 @@ def _expand_posterior_bins(sums, posterior_bin_ids, n_posterior_bins: int) -> np
 class _ClassRows(NamedTuple):
     """The two fields of a chunk's rows :func:`resident_chunk_posterior.class_sub_segment_posterior` reads."""
 
-    classes: object  # resident_pass2._ChunkClassLayout
+    classes: object  # resident_chunk_programs._ChunkClassLayout
     n_valid_images: object  # int32 device scalar
 
 
@@ -2612,7 +2613,7 @@ def _start_resident_local_chunk(
         # Class3D: the image's joint posterior above, each (image, class) sub-segment's
         # evidence and winner here, and each class's live rows for its own BPref.
         n_classes = len(class_projectors)
-        class_layout = rp._chunk_class_layout(
+        class_layout = resident_chunk_programs.chunk_class_layout(
             host_chunk, chunk, n_classes=n_classes, n_fine_trans=int(n_fine_trans), place=resident_chunk_records.PLACE_ON_DEVICE
         )
         class_posterior = resident_chunk_posterior.class_sub_segment_posterior(

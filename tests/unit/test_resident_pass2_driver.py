@@ -36,6 +36,7 @@ from relax.fine_pass import (
     resident_block_programs,
     resident_chunk_inputs,
     resident_chunk_memory,
+    resident_chunk_programs,
     resident_chunk_records,
     resident_configuration,
     resident_projections,
@@ -995,6 +996,7 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
     patch.setattr(resident_chunk_inputs, "prepare_chunk_reconstruction_operands", prepare)
     patch.setattr(rp, "gather_resident_chunk_operands", gather)
     patch.setattr(resident_chunk_inputs, "gather_resident_chunk_operands", gather)
+    patch.setattr(resident_chunk_programs, "gather_resident_chunk_operands", gather)
     try:
         rp.compute_pass2_stats_resident(**args)
     finally:

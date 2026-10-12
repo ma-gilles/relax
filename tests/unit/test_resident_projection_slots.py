@@ -5,8 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.fine_pass import resident_pass2 as rp
-from relax.fine_pass import resident_projections, resident_stable_windows
+from relax.fine_pass import resident_chunk_programs, resident_projections, resident_stable_windows
 from relax.fine_pass.resident_significance import (
     CoarseSignificanceCSR,
     build_resident_candidate_tables_from_csr,
@@ -103,11 +102,11 @@ def test_rows_map_to_their_cache_rows_and_padded_rows_to_row_zero(small_slots):
     slots = _slots([SimpleNamespace(csr=csr)], 2)
     rotations = _table_rotations(csr)
     host_chunk = {"row_fine_rot": np.concatenate([rotations, [5, 5]]), "n_valid_rows": rotations.size}
-    mapped = rp._row_projection_ids(host_chunk, None, slots.slot_of_projection)
+    mapped = resident_chunk_programs.row_projection_ids(host_chunk, None, slots.slot_of_projection)
     np.testing.assert_array_equal(slots.slot_projection[mapped[: rotations.size]], rotations)
     np.testing.assert_array_equal(mapped[rotations.size :], 0)
     with pytest.raises(RuntimeError, match="not in the significant-parent projection cache"):
-        rp._row_projection_ids({"row_fine_rot": np.array([0]), "n_valid_rows": 1}, None, slots.slot_of_projection)
+        resident_chunk_programs.row_projection_ids({"row_fine_rot": np.array([0]), "n_valid_rows": 1}, None, slots.slot_of_projection)
 
 
 def test_supports_that_take_every_parent_cache_the_whole_grid(small_slots):

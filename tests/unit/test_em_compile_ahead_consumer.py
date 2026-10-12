@@ -34,7 +34,7 @@ from test_resident_candidates import (  # noqa: E402
 )
 
 import relax.fine_pass.resident_pass2 as rp  # noqa: E402
-from relax.fine_pass import resident_chunk_records, resident_chunk_stages
+from relax.fine_pass import resident_chunk_programs, resident_chunk_records, resident_chunk_stages
 from relax.fine_pass.resident_candidates import (  # noqa: E402
     CandidateTableBlocks,
     plan_capacity_chunks,
@@ -83,11 +83,11 @@ def test_the_aval_placement_matches_the_device_placement():
 
     tables, chunks = _chunks()
     for chunk in chunks:
-        real = rp._make_chunk_row_arrays(
+        real = resident_chunk_programs.make_chunk_row_arrays(
             tables, chunk, N_FINE_TRANS, place=resident_chunk_records.PLACE_ON_DEVICE
         )
-        predicted = rp._make_chunk_row_arrays(
-            tables, chunk, N_FINE_TRANS, place=rp._PLACE_AS_AVAL
+        predicted = resident_chunk_programs.make_chunk_row_arrays(
+            tables, chunk, N_FINE_TRANS, place=resident_chunk_programs._PLACE_AS_AVAL
         )
         got_leaves, got_tree = jax.tree_util.tree_flatten(predicted)
         want_leaves, want_tree = jax.tree_util.tree_flatten(real)
@@ -102,8 +102,8 @@ def test_the_aval_placement_does_no_device_work():
     """It must be usable before the operands exist, so it cannot allocate."""
 
     tables, chunks = _chunks()
-    predicted = rp._make_chunk_row_arrays(
-        tables, chunks[0], N_FINE_TRANS, place=rp._PLACE_AS_AVAL
+    predicted = resident_chunk_programs.make_chunk_row_arrays(
+        tables, chunks[0], N_FINE_TRANS, place=resident_chunk_programs._PLACE_AS_AVAL
     )
     for value in jax.tree_util.tree_leaves(predicted):
         assert isinstance(value, jax.ShapeDtypeStruct), type(value)
@@ -337,20 +337,20 @@ def test_the_warm_up_reads_the_same_path_decision_as_the_chunk_loop(monkeypatch)
     """
 
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
-    assert rp.chunk_program_path() == "per-stage"
+    assert resident_chunk_programs.chunk_program_path() == "per-stage"
 
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
-    assert rp.chunk_program_path() == "eager"
+    assert resident_chunk_programs.chunk_program_path() == "eager"
 
 
 def test_the_default_path_is_the_one_production_runs(monkeypatch):
     """No flags set: the per-stage path, and there is no fused chunk program to select (relax#76)."""
 
     monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", raising=False)
-    assert rp.chunk_program_path() == "per-stage"
+    assert resident_chunk_programs.chunk_program_path() == "per-stage"
     assert not hasattr(rp, "_run_resident_chunk_program") and not hasattr(rp, "_chunk_jit_enabled")
     with pytest.raises(ValueError, match="unknown chunk program path"):
-        rp.chunk_programs_for_path("fused")
+        resident_chunk_programs.chunk_programs_for_path("fused")
 
 
 def test_nothing_is_queued_when_there_is_no_program_to_warm(monkeypatch):
@@ -363,7 +363,7 @@ def test_nothing_is_queued_when_there_is_no_program_to_warm(monkeypatch):
             raise AssertionError("the eager path has no program to warm")
 
     tables, chunks = _chunks()
-    assert rp._submit_resident_chunk_warmup(
+    assert resident_chunk_programs.submit_resident_chunk_warmup(
         Refuse(),
         chunks=chunks,
         tables=tables,
@@ -404,17 +404,17 @@ def test_every_program_a_runner_submits_is_one_the_warm_up_warms():
             (resident_chunk_stages.run_resident_chunk_stages, resident_chunk_stages.resident_chunk_stages_front, resident_chunk_stages.resident_chunk_stages_finish),
         ),
     ):
-        warmed = {f.__name__ for f in rp.chunk_programs_for_path(path)}
+        warmed = {f.__name__ for f in resident_chunk_programs.chunk_programs_for_path(path)}
         assert warmed == referenced(*runners), (path, warmed, referenced(*runners))
 
 
 def test_the_eager_path_warms_nothing():
-    assert rp.chunk_programs_for_path("eager") == ()
+    assert resident_chunk_programs.chunk_programs_for_path("eager") == ()
 
 
 def test_an_unknown_path_is_refused_rather_than_silently_warming_nothing():
     with pytest.raises(ValueError, match="unknown chunk program path"):
-        rp.chunk_programs_for_path("something-else")
+        resident_chunk_programs.chunk_programs_for_path("something-else")
 
 
 # ------------------------------------------------------- the hit rate's unit ---
@@ -434,17 +434,17 @@ def test_a_program_key_is_the_function_and_its_static_argument():
     """
 
     a, b = _Spec("rows=131072,rfloat=1"), _Spec("rows=131072,rfloat=0")
-    keys_a = rp.chunk_program_keys("per-stage", a)
-    keys_b = rp.chunk_program_keys("per-stage", b)
+    keys_a = resident_chunk_programs.chunk_program_keys("per-stage", a)
+    keys_b = resident_chunk_programs.chunk_program_keys("per-stage", b)
     assert len(keys_a) == 3
     assert keys_a.isdisjoint(keys_b), "a different spec must give different keys"
     assert {name for name, _ in keys_a} == {
-        f.__name__ for f in rp.chunk_programs_for_path("per-stage")
+        f.__name__ for f in resident_chunk_programs.chunk_programs_for_path("per-stage")
     }
 
 
 def test_the_eager_path_has_no_key():
-    assert rp.chunk_program_keys("eager", _Spec("s")) == frozenset()
+    assert resident_chunk_programs.chunk_program_keys("eager", _Spec("s")) == frozenset()
 
 
 # --------------------------------------------- the spec prediction's unit ---
@@ -457,7 +457,7 @@ class _Operands:
 
 
 def test_the_spec_prediction_is_quiet_when_it_agrees():
-    message = rp.describe_chunk_spec_prediction(
+    message = resident_chunk_programs.describe_chunk_spec_prediction(
         predicted_rfloat_ctf_wavg=True,
         predicted_bpref_recon_operand=True,
         predicted_translate_sum_kernel=True,
@@ -474,7 +474,7 @@ def test_the_spec_prediction_names_a_wrong_rfloat_ctf_flag():
     comparison cannot see this; that is why it has its own check.
     """
 
-    message = rp.describe_chunk_spec_prediction(
+    message = resident_chunk_programs.describe_chunk_spec_prediction(
         predicted_rfloat_ctf_wavg=True,
         predicted_bpref_recon_operand=False,
         predicted_translate_sum_kernel=True,
@@ -485,7 +485,7 @@ def test_the_spec_prediction_names_a_wrong_rfloat_ctf_flag():
 
 
 def test_the_spec_prediction_names_a_wrong_bpref_flag():
-    message = rp.describe_chunk_spec_prediction(
+    message = resident_chunk_programs.describe_chunk_spec_prediction(
         predicted_rfloat_ctf_wavg=False,
         predicted_bpref_recon_operand=True,
         predicted_translate_sum_kernel=True,
@@ -495,7 +495,7 @@ def test_the_spec_prediction_names_a_wrong_bpref_flag():
 
 
 def test_the_spec_prediction_says_so_when_no_operands_were_prepared():
-    message = rp.describe_chunk_spec_prediction(
+    message = resident_chunk_programs.describe_chunk_spec_prediction(
         predicted_rfloat_ctf_wavg=False,
         predicted_bpref_recon_operand=False,
         predicted_translate_sum_kernel=True,
@@ -523,7 +523,7 @@ def test_the_presence_predicate_and_the_spec_check_tell_one_story():
             direct_ctf_rfloat_recon=object() if exact_bpref else None,
             recon_weight=object() if exact_bpref else None,
         )
-        assert rp.describe_chunk_spec_prediction(
+        assert resident_chunk_programs.describe_chunk_spec_prediction(
             predicted_rfloat_ctf_wavg=presence.has_direct_ctf_rfloat,
             predicted_bpref_recon_operand=presence.has_recon_weight,
             predicted_translate_sum_kernel=True,
@@ -567,7 +567,7 @@ def test_the_warm_ups_spec_equals_the_loops_spec():
             accumulate_noise=True,
             current_size=32,
         )
-        warm = rp._make_chunk_program_spec(
+        warm = resident_chunk_programs.make_chunk_program_spec(
             row_capacity=131072,
             image_capacity=128,
             use_rfloat_ctf_wavg=presence.has_direct_ctf_rfloat,
@@ -576,7 +576,7 @@ def test_the_warm_ups_spec_equals_the_loops_spec():
             **_spec_kwargs(),
         )
         # what the loop builds, from the prepared operands rather than the flags
-        loop = rp._make_chunk_program_spec(
+        loop = resident_chunk_programs.make_chunk_program_spec(
             row_capacity=131072,
             image_capacity=128,
             use_rfloat_ctf_wavg=exact_bpref,
@@ -586,7 +586,7 @@ def test_the_warm_ups_spec_equals_the_loops_spec():
         )
         assert warm == loop
         assert hash(warm) == hash(loop)
-        assert rp.chunk_program_keys("per-stage", warm) == rp.chunk_program_keys(
+        assert resident_chunk_programs.chunk_program_keys("per-stage", warm) == resident_chunk_programs.chunk_program_keys(
             "per-stage", loop
         )
 
@@ -594,17 +594,17 @@ def test_the_warm_ups_spec_equals_the_loops_spec():
 def test_one_wrong_boolean_makes_the_keys_disjoint():
     """So the hit rate, not an assertion, is what reports a mis-predicted spec."""
 
-    right = rp._make_chunk_program_spec(
+    right = resident_chunk_programs.make_chunk_program_spec(
         row_capacity=131072, image_capacity=128, use_rfloat_ctf_wavg=True,
         use_translate_sum_kernel=True, bpref_recon_operand=True, **_spec_kwargs(),
     )
-    wrong = rp._make_chunk_program_spec(
+    wrong = resident_chunk_programs.make_chunk_program_spec(
         row_capacity=131072, image_capacity=128, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=True, **_spec_kwargs(),
     )
     assert right != wrong
-    assert rp.chunk_program_keys("per-stage", right).isdisjoint(
-        rp.chunk_program_keys("per-stage", wrong)
+    assert resident_chunk_programs.chunk_program_keys("per-stage", right).isdisjoint(
+        resident_chunk_programs.chunk_program_keys("per-stage", wrong)
     )
 
 
@@ -617,12 +617,12 @@ def test_the_environment_fields_are_read_by_the_constructor(monkeypatch):
     """
 
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS", "0")
-    one = rp._make_chunk_program_spec(
+    one = resident_chunk_programs.make_chunk_program_spec(
         row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
     )
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS", "1")
-    two = rp._make_chunk_program_spec(
+    two = resident_chunk_programs.make_chunk_program_spec(
         row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
     )

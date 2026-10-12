@@ -19,6 +19,7 @@ from test_resident_pass2_driver import _driver_fixture_args, requires_resident_g
 
 from relax.fine_pass import (
     policy,
+    resident_chunk_programs,
     resident_chunk_records,
     resident_chunk_stages,
     resident_mstep_blocks,
@@ -69,7 +70,7 @@ def _chunk(row_counts_by_image_and_class, *, row_capacity, image_capacity, image
 def test_class_layout_sub_segments():
     counts = [(2, 0, 1), (0, 3, 2), (1, 1, 0)]
     host, chunk = _chunk(counts, row_capacity=16, image_capacity=4)
-    layout = rp._chunk_class_layout(host, chunk, n_classes=3, n_fine_trans=5, place=resident_chunk_records.PLACE_ON_DEVICE)
+    layout = resident_chunk_programs.chunk_class_layout(host, chunk, n_classes=3, n_fine_trans=5, place=resident_chunk_records.PLACE_ON_DEVICE)
 
     flat = np.zeros(4 * 3, dtype=np.int64)
     flat[:9] = np.asarray(counts).reshape(-1)
@@ -86,7 +87,7 @@ def test_class_layout_refuses_rows_out_of_hidden_space_order():
     host, chunk = _chunk([(1, 1)], row_capacity=4, image_capacity=2)
     host["row_class"][:2] = [1, 0]
     with pytest.raises(ValueError, match="image-major, then class-major"):
-        rp._chunk_class_layout(host, chunk, n_classes=2, n_fine_trans=3, place=resident_chunk_records.PLACE_ON_DEVICE)
+        resident_chunk_programs.chunk_class_layout(host, chunk, n_classes=2, n_fine_trans=3, place=resident_chunk_records.PLACE_ON_DEVICE)
 
 
 def _block_inputs(host, chunk, live_cells, *, n_classes, n_slots=None, n_fine_trans=3):
@@ -101,7 +102,7 @@ def _block_inputs(host, chunk, live_cells, *, n_classes, n_slots=None, n_fine_tr
     classes = (
         None
         if n_classes == 1
-        else rp._chunk_class_layout(host, chunk, n_classes=n_classes, n_fine_trans=n_fine_trans, place=resident_chunk_records.PLACE_ON_DEVICE)
+        else resident_chunk_programs.chunk_class_layout(host, chunk, n_classes=n_classes, n_fine_trans=n_fine_trans, place=resident_chunk_records.PLACE_ON_DEVICE)
     )
     rows = resident_chunk_records.ChunkRowArrays(
         row_image_local=jnp.asarray(host["row_image_local"], dtype=jnp.int32),
@@ -116,7 +117,7 @@ def _block_inputs(host, chunk, live_cells, *, n_classes, n_slots=None, n_fine_tr
         image_row_start=None,
         image_row_count=None,
         classes=classes,
-        mstep=None if n_slots == 1 else rp._chunk_mstep_layout(host, place=resident_chunk_records.PLACE_ON_DEVICE),
+        mstep=None if n_slots == 1 else resident_chunk_programs._chunk_mstep_layout(host, place=resident_chunk_records.PLACE_ON_DEVICE),
     )
     row_is_valid = np.arange(row_capacity) < n_valid
     posterior_out = resident_chunk_records.ChunkPosterior(

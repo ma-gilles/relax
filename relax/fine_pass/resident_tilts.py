@@ -308,6 +308,7 @@ def run_tilt_chunk(
 
     from relax.fine_pass import (
         resident_chunk_posterior,
+        resident_chunk_programs,
         resident_chunk_records,
         resident_chunk_stages,
         resident_mstep_blocks,
@@ -331,8 +332,8 @@ def run_tilt_chunk(
     n_accumulators = len(Ft_y_total)
     if n_accumulators != int(tables.n_slots):
         raise ValueError(f"{n_accumulators} BPref pairs for the tables' {int(tables.n_slots)} accumulator slots")
-    rows = rp._make_chunk_row_arrays(tables, chunk, n_fine_trans, place=resident_chunk_records.PLACE_ON_DEVICE, n_fine_rot=n_fine_rot)
-    _block_tables, host, _local_chunk = rp._chunk_host_rows(tables, chunk)
+    rows = resident_chunk_programs.make_chunk_row_arrays(tables, chunk, n_fine_trans, place=resident_chunk_records.PLACE_ON_DEVICE, n_fine_rot=n_fine_rot)
+    _block_tables, host, _local_chunk = resident_chunk_programs.chunk_host_rows(tables, chunk)
     layout = chunk_tilt_layout(
         tilt.unit_image_offsets,
         unit_start=int(chunk.image_start),
@@ -403,7 +404,7 @@ def run_tilt_chunk(
         jnp.asarray(operand_slots >= 0),
     )
     noise_scale = np.where(valid_images, np.asarray(tilt.image_noise_scale, dtype=np.float32)[safe_images], 0.0)
-    operands = rp._make_chunk_stage_operands(recon, None)._replace(image_noise_scale=jnp.asarray(noise_scale))
+    operands = resident_chunk_programs.make_chunk_stage_operands(recon, None)._replace(image_noise_scale=jnp.asarray(noise_scale))
     if resident_operands.cc_half_batch_norm is not None:
         # The CC iteration's per-image evidence offset (the chunk gather carries the Gaussian fields).
         operands = operands._replace(
@@ -428,7 +429,7 @@ def run_tilt_chunk(
         )
 
     stage_tables = block_tables(0, n_slots, (score_cache, recon_cache, recon_abs2_cache))
-    spec = rp._make_chunk_program_spec(
+    spec = resident_chunk_programs.make_chunk_program_spec(
         row_capacity=chunk.row_capacity, image_capacity=image_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
     )
 
@@ -533,7 +534,7 @@ def run_tilt_chunk(
             scored,
             rows,
             stage_tables,
-            spec=rp._make_chunk_program_spec(
+            spec=resident_chunk_programs.make_chunk_program_spec(
                 row_capacity=chunk.row_capacity, image_capacity=unit_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
             ),
             row_is_valid=row_is_valid,
@@ -601,7 +602,7 @@ def run_tilt_chunk(
         )
     if mstep_census is not None:
         mstep_census.add(n_unit_trans, translation_blocks[0].index.size, len(translation_blocks))
-    slot_spec = rp._make_chunk_program_spec(
+    slot_spec = resident_chunk_programs.make_chunk_program_spec(
         row_capacity=mstep_row_capacity,
         image_capacity=unit_capacity,
         n_fine_trans=int(translation_blocks[0].index.size),
