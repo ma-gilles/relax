@@ -529,7 +529,9 @@ def score_numbered_half(
         previous_translations_k, dtype=scoring_dtype
     )
     # Resolved once per half: the batch plan and the execution policy read the same answer.
-    diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(numbered_relion_iteration)
+    diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(
+        numbered_relion_iteration, options.environment.diagnostic_float64_pass2_iterations,
+    )
     half_batching = prepare_half_batches(
         particle_half.dataset,
         half.data.projector,
@@ -704,7 +706,10 @@ def score_numbered_half(
                 relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
                 adaptive_pass2=options.variants.local_adaptive_pass2.at(sampling.search.oversampling_order),
                 precision=options.precision,
-                fine_precision=local_precision(options.precision, numbered_relion_iteration, pass_index=2),
+                fine_precision=local_precision(
+                    options.precision, numbered_relion_iteration, pass_index=2,
+                    float64_pass2_iterations=options.environment.diagnostic_float64_pass2_iterations,
+                ),
                 score_only=options.local_search.stop_after_local_search_score_only,
                 # A search local from iteration 1 (--sigma_ang) scores RELION's --firstiter_cc
                 # iteration with the normalized CC, as the subtomogram local path above does.

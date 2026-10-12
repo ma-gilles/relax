@@ -6,7 +6,7 @@ from relax.classification.probes import NoProbe as KClassNoProbe
 from relax.local_search import records
 from relax.refinement import dense_half, local_half, local_sampling
 from relax.refinement.ports import NoProbe
-from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
+from relax.refinement.refinement_options import LocalAdaptivePass2Support, RefinementEnvironment, ScoringVariants
 from relax.steps import half_inputs, scoring_policy, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
 from relax.steps.projector_preparation import PreparedProjector
@@ -205,6 +205,8 @@ def local_half_owners(**values):
                 scoring_policy.DENSE_PRECISION,
                 values["iteration"] + 1 if values.get("debug_iteration") is None else values["debug_iteration"],
                 pass_index=2,
+                # The environment, read as the command does.
+                float64_pass2_iterations=RefinementEnvironment.from_environ().diagnostic_float64_pass2_iterations,
             ),
             score_only=values.pop("diagnostic_score_only"),
             firstiter_cc=values.pop("firstiter_cc", False),

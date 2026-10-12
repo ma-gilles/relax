@@ -715,6 +715,19 @@ def half_accumulator_guard_mode(raw: str | None, *, warn_only: bool) -> str:
 
 
 FIRSTITER_FUSED_BPREF_ENV = "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF"
+DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS_ENV = "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS"
+
+
+def _diagnostic_float64_pass2_iterations() -> frozenset[int]:
+    """The RELION iterations whose pass 2 scores in float64: RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS,
+    comma-separated integers (blank tokens skipped); unset or blank is none; anything else is refused."""
+    raw = read_env_text(DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS_ENV, "")
+    if not raw.strip():
+        return frozenset()
+    try:
+        return frozenset(int(token.strip()) for token in raw.split(",") if token.strip())
+    except ValueError as exc:
+        raise ValueError(f"{DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS_ENV} must be comma-separated integers") from exc
 
 
 def _optional_env_flag(name: str) -> bool | None:
@@ -735,11 +748,14 @@ class RefinementEnvironment:
     (``env_flags.parse_env_true_flag``); see :func:`half_accumulator_guard_mode`.
     ``firstiter_fused_bpref`` (RELAX_K1_RELION_FIRSTITER_FUSED_BPREF, :func:`_optional_env_flag`; None: the
     first-iteration BPref takes its fused kernel wherever it is supported; False: never; True: required there,
-    refused elsewhere; ``firstiter_bpref._relion_firstiter_fused_bpref_enabled``).
+    refused elsewhere; ``firstiter_bpref._relion_firstiter_fused_bpref_enabled``). ``diagnostic_float64_pass2_iterations``
+    (RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS, :func:`_diagnostic_float64_pass2_iterations`): the RELION
+    iterations whose pass 2 scores and is planned in float64.
     """
 
     half_accumulator_guard: str = "raise"
     firstiter_fused_bpref: bool | None = None
+    diagnostic_float64_pass2_iterations: frozenset[int] = frozenset()
 
     @classmethod
     def from_environ(cls) -> RefinementEnvironment:
@@ -749,6 +765,7 @@ class RefinementEnvironment:
                 warn_only=parse_env_true_flag("RELAX_EM_FINITE_CHECK_WARN"),  # finite_check.FINITE_CHECK_WARN_ENV
             ),
             firstiter_fused_bpref=_optional_env_flag(FIRSTITER_FUSED_BPREF_ENV),
+            diagnostic_float64_pass2_iterations=_diagnostic_float64_pass2_iterations(),
         )
 
 

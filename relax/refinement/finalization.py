@@ -253,7 +253,10 @@ def run_final_all_data(
         rng=ctx.perturb_rng,
         dtype=scoring_dtype,
     )
-    final_precision = local_precision(options.precision, final_sampling.settings.relion_iteration, pass_index=2)
+    final_precision = local_precision(
+        options.precision, final_sampling.settings.relion_iteration, pass_index=2,
+        float64_pass2_iterations=options.environment.diagnostic_float64_pass2_iterations,
+    )
     ## THIS ALL SHOULD BE AN OBJECT/DICT/ENUM OR SOMETHING PROBABLY WITH THESE DECISIONS OR SOMETHING?
     ## SHOULD BE WANTING TO DEFINE 100 THINGS LIKE THIS
     if final_use_local:
@@ -339,7 +342,9 @@ def run_final_all_data(
         )
     else:
         # Resolved once: the batch plan and the execution policy read the same answer.
-        diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(final_sampling.settings.relion_iteration)
+        diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(
+            final_sampling.settings.relion_iteration, options.environment.diagnostic_float64_pass2_iterations,
+        )
         final_dense_sampling = DenseSamplingSpec(
             effective_rotations=final_sampling.grid.rotations,
             current_translations=final_sampling.grid.translations,

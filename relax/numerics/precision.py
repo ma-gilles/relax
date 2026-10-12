@@ -101,8 +101,8 @@ class DensePrecisionPolicy:
     use_float64_scoring: bool = False
     use_float64_projections: bool = False
 
-    def for_local_pass(self, iteration: int | None, *, pass_index: int):
-        if pass_index == 2 and _diagnostic_float64_pass2_matches(iteration):
+    def for_local_pass(self, iteration: int | None, *, pass_index: int, float64_pass2_iterations: frozenset[int]):
+        if pass_index == 2 and _diagnostic_float64_pass2_matches(iteration, float64_pass2_iterations):
             return replace(self, use_float64_scoring=True, use_float64_projections=True)
         return self
 
@@ -133,16 +133,8 @@ class DensePrecisionPolicy:
         )
 
 
-def _diagnostic_float64_pass2_matches(debug_iteration: int | None) -> bool:
-    """Select genuine-f64 pass 2 without perturbing an earlier f32 boundary."""
+def _diagnostic_float64_pass2_matches(debug_iteration: int | None, iterations: frozenset[int]) -> bool:
+    """Select genuine-f64 pass 2 without perturbing an earlier f32 boundary: ``debug_iteration`` is one of
+    ``iterations`` (``RefinementEnvironment.diagnostic_float64_pass2_iterations``)."""
 
-    raw = os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "")
-    if debug_iteration is None or not raw.strip():
-        return False
-    try:
-        requested = {int(token.strip()) for token in raw.split(",") if token.strip()}
-    except ValueError as exc:
-        raise ValueError(
-            "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS must be comma-separated integers"
-        ) from exc
-    return int(debug_iteration) in requested
+    return debug_iteration is not None and int(debug_iteration) in iterations

@@ -183,11 +183,10 @@ def test_float64_diagnostic_changes_the_plan_of_the_listed_iterations_only(plann
     from relax.numerics.precision import _diagnostic_float64_pass2_matches
 
     calls = capture_estimates(monkeypatch)
-    monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "2")
     float64_by_iteration = {}
     for iteration in (1, 2, 3):
         del calls[:]
-        listed = _diagnostic_float64_pass2_matches(iteration)
+        listed = _diagnostic_float64_pass2_matches(iteration, frozenset({2}))
         policy = prepare(planner, use_adaptive=True, diagnostic_float64_pass2=listed)
         policy.safe_batch_sizes(576, 29)
         planner.for_expectation(diagnostic_float64_pass2=listed)(576, 29)  # the final pass's planner

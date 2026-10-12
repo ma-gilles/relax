@@ -63,3 +63,34 @@ def test_firstiter_fused_bpref_reaches_the_batch_plan(monkeypatch):
     seen = _received(monkeypatch, expectation, "prepare_half_batches", "bpref_half",
                      RefinementEnvironment(firstiter_fused_bpref=False))
     assert seen and {half.fused_request for half in seen} == {False}
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, frozenset()), (" ", frozenset()), ("4, 7", {4, 7}), ("3,", {3})])
+def test_diagnostic_float64_pass2_iterations_are_read_once(monkeypatch, value, expected):
+    env = _from_environ(monkeypatch, "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", value)
+    assert env.diagnostic_float64_pass2_iterations == frozenset(expected)
+
+
+def test_malformed_float64_pass2_iterations_are_refused(monkeypatch):
+    with pytest.raises(ValueError, match="comma-separated integers"):
+        _from_environ(monkeypatch, "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "4,bad")
+
+
+def test_diagnostic_float64_pass2_iterations_reach_the_command(monkeypatch, tmp_path):
+    env = _command_environment(monkeypatch, tmp_path, "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "1")
+    assert env.diagnostic_float64_pass2_iterations == frozenset({1})
+
+
+def test_diagnostic_float64_pass2_iterations_reach_the_expectation(monkeypatch):
+    from relax.refinement import expectation
+
+    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    original = expectation._diagnostic_float64_pass2_matches
+    seen = []
+    monkeypatch.setattr(
+        expectation, "_diagnostic_float64_pass2_matches",
+        lambda iteration, iterations: seen.append(iterations) or original(iteration, iterations),
+    )
+    run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False,
+                        environment=RefinementEnvironment(diagnostic_float64_pass2_iterations=frozenset({99})))
+    assert seen and set(seen) == {frozenset({99})}

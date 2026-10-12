@@ -199,16 +199,12 @@ def test_relion_optimizer_average_pmax_preserves_double_particle_values():
     assert denominator == 1.0
 
 
-def test_diagnostic_float64_pass2_iteration_selector(monkeypatch):
-    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(4) is False
-    monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "4, 7")
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(3) is False
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(4) is True
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(7) is True
-    monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "4,bad")
-    with pytest.raises(ValueError, match="comma-separated integers"):
-        dtype_policy_module._diagnostic_float64_pass2_matches(4)
+def test_diagnostic_float64_pass2_iteration_selector():
+    assert dtype_policy_module._diagnostic_float64_pass2_matches(4, frozenset()) is False
+    assert dtype_policy_module._diagnostic_float64_pass2_matches(3, frozenset({4, 7})) is False
+    assert dtype_policy_module._diagnostic_float64_pass2_matches(4, frozenset({4, 7})) is True
+    assert dtype_policy_module._diagnostic_float64_pass2_matches(7, frozenset({4, 7})) is True
+    assert dtype_policy_module._diagnostic_float64_pass2_matches(None, frozenset({4})) is False
 
 
 def test_local_search_precision_defaults_to_production_float32(monkeypatch):
@@ -222,17 +218,19 @@ def test_local_search_precision_defaults_to_production_float32(monkeypatch):
         "DENSE_PRECISION",
         replace(scoring_policy.DENSE_PRECISION, use_float64_projections=False),
     )
-    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    listed = frozenset()
 
     assert scoring_policy.local_precision(
         scoring_policy.DENSE_PRECISION,
         12,
         pass_index=1,
+        float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy()
     assert scoring_policy.local_precision(
         scoring_policy.DENSE_PRECISION,
         12,
         pass_index=2,
+        float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy()
 
 
@@ -247,22 +245,25 @@ def test_local_search_precision_targeted_diagnostic_upgrades_only_pass2(monkeypa
         "DENSE_PRECISION",
         replace(scoring_policy.DENSE_PRECISION, use_float64_projections=False),
     )
-    monkeypatch.setenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "12")
+    listed = frozenset({12})
 
     assert scoring_policy.local_precision(
         scoring_policy.DENSE_PRECISION,
         12,
         pass_index=1,
+        float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy()
     assert scoring_policy.local_precision(
         scoring_policy.DENSE_PRECISION,
         12,
         pass_index=2,
+        float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
     assert scoring_policy.local_precision(
         scoring_policy.DENSE_PRECISION,
         11,
         pass_index=2,
+        float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy()
 
 
@@ -277,17 +278,19 @@ def test_local_search_precision_global_switches_upgrade_both_passes(monkeypatch)
         "DENSE_PRECISION",
         replace(scoring_policy.DENSE_PRECISION, use_float64_projections=True),
     )
-    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    listed = frozenset()
 
     assert scoring_policy.local_precision(
         scoring_policy.DENSE_PRECISION,
         12,
         pass_index=1,
+        float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
     assert scoring_policy.local_precision(
         scoring_policy.DENSE_PRECISION,
         12,
         pass_index=2,
+        float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
 
 
@@ -459,12 +462,13 @@ def test_dense_global_prior_helpers_honor_explicit_float64_dtype():
 
 
 def test_local_search_precision_rejects_unknown_pass(monkeypatch):
-    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    listed = frozenset()
     with pytest.raises(ValueError, match="pass_index"):
         scoring_policy.local_precision(
             scoring_policy.DENSE_PRECISION,
             12,
                 pass_index=3,
+            float64_pass2_iterations=frozenset(),
         )
 
 # ---------------------------------------------------------------------------
@@ -2199,7 +2203,7 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
         "DENSE_PRECISION",
         replace(scoring_policy.DENSE_PRECISION, use_float64_projections=True),
     )
-    monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
+    listed = frozenset()
     monkeypatch.setattr(local_half, "_run_local_search_iteration", fake_run_local_search_iteration)
     with pytest.raises(DispatchCaptured):
         local_half._score_half_local(*local_half_owners(
