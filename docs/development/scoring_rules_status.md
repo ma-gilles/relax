@@ -17,8 +17,8 @@ here in the commit that closes it; record a decision in the "Decided" section. "
 | Largest function of `relax/scoring` | 1,819 lines | 465 lines (`tomo_coarse.particle_coarse_supports`, the subtomogram coarse pass); pass 1's largest is `plan_pass1` |
 | Largest parameter list of `relax/scoring` | 46 | 23 (`particle_coarse_supports`); pass 1's widest is `assemble_relion_exact_coarse_gaussian_operands` with 19 (20 until its float64 arm went), then `_pass1_block_update` with 14 (nine static settings are one `ProgramStatics`) |
 | Parameters never read | `disc_type`, `do_gridding_correction`; `means` read only for `n_classes` | deleted |
-| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 7,126 / 6,028, below the baseline: the layout work (2026-10-12) moved modules between packages, and the 2026-10-12 round deleted 199 net lines of `relax/scoring` |
-| Ceilings | `docs/development/scoring_structure_metrics.json` (the totals on that date) | lowered to the measured values on 2026-10-12 with `report_refinement_structure.py --lower-ceilings`: span 465, parameters 23, large-argument functions 15, lines 7,126 / 6,028 (very-large-argument functions: 1, as before) |
+| `relax/scoring` production lines (physical / nonblank) | 7,632 / 6,619 | 7,120 / 6,022, below the baseline: the layout work (2026-10-12) moved modules between packages, and the 2026-10-12 round deleted 205 net lines of `relax/scoring` |
+| Ceilings | `docs/development/scoring_structure_metrics.json` (the totals on that date) | lowered to the measured values on 2026-10-12 with `report_refinement_structure.py --lower-ceilings`: span 465, parameters 23, large-argument functions 15, lines 7,120 / 6,022 (very-large-argument functions: 1, as before) |
 
 ## Coverage
 
