@@ -196,12 +196,12 @@ def direct_rows_diff2(
     """Direct-square diff2 ``[B, M, T]`` at each particle's own rotations ``[B, S, M, 3, 3]``.
 
     RELION's fused coarse kernel on every image ``[B, S]`` with its own phases ``[B, S, T, 2]``
-    (:func:`relax.cuda.kernels.relion_coarse_diff2_projector_per_image_f32`, the translations in blocks of
+    (:func:`relax.cuda.coarse.relion_coarse_diff2_projector_per_image_f32`, the translations in blocks of
     its capacity), the particle's ``S`` images added in slot order; a single-particle image is ``S = 1``.
     A rotation's diff2 does not depend on the other rotations of the call.
     """
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     n_particles, n_slots, n_rows = (int(n) for n in rotations.shape[:3])
     n_images, n_trans = n_particles * n_slots, int(translation_angles.shape[2])
@@ -214,7 +214,7 @@ def direct_rows_diff2(
     for first in range(0, n_rows, block_rows):
         rows = images[:, first : first + block_rows]
         blocks = [
-            em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
+            cuda_coarse.relion_coarse_diff2_projector_per_image_f32(
                 projector_full,
                 rows,
                 unshifted.reshape(n_images, -1),

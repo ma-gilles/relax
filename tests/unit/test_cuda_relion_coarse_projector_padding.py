@@ -50,7 +50,7 @@ def _euler_matrix(a, b, c):
 def test_padding_factor_two_matches_scaled_rotations_at_padding_one(monkeypatch, custom_cuda_lib, gpu_device):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -63,12 +63,12 @@ def test_padding_factor_two_matches_scaled_rotations_at_padding_one(monkeypatch,
         rotation_count=131, translation_count=21, batch=3,
     )
     with jax.default_device(gpu_device):
-        padded = em_cuda_kernels.relion_coarse_diff2_projector_f32(
+        padded = cuda_coarse.relion_coarse_diff2_projector_f32(
             jnp.asarray(projector), jnp.asarray(rotations), jnp.asarray(images), jnp.asarray(angles),
             jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(lookup),
             current_size=current_size, physical_image_size=current_size, model_max_r=model_max_r, padding_factor=2,
         )
-        scaled = em_cuda_kernels.relion_coarse_diff2_projector_f32(
+        scaled = cuda_coarse.relion_coarse_diff2_projector_f32(
             jnp.asarray(projector), jnp.asarray(2.0 * rotations), jnp.asarray(images), jnp.asarray(angles),
             jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(lookup),
             current_size=current_size, physical_image_size=current_size, model_max_r=2 * model_max_r, padding_factor=1,
@@ -86,7 +86,7 @@ def test_padding_factor_two_matches_scaled_rotations_at_padding_one(monkeypatch,
 def test_padding_factor_default_is_one(monkeypatch, custom_cuda_lib, gpu_device):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -98,8 +98,8 @@ def test_padding_factor_default_is_one(monkeypatch, custom_cuda_lib, gpu_device)
     with jax.default_device(gpu_device):
         common = dict(current_size=8, physical_image_size=8, model_max_r=2)
         args = [jnp.asarray(x) for x in (projector, rotations, images, angles, weight, initial, lookup)]
-        default = np.asarray(em_cuda_kernels.relion_coarse_diff2_projector_f32(*args, **common))
-        explicit = np.asarray(em_cuda_kernels.relion_coarse_diff2_projector_f32(*args, padding_factor=1, **common))
+        default = np.asarray(cuda_coarse.relion_coarse_diff2_projector_f32(*args, **common))
+        explicit = np.asarray(cuda_coarse.relion_coarse_diff2_projector_f32(*args, padding_factor=1, **common))
     assert_matches(default, explicit)
 
 

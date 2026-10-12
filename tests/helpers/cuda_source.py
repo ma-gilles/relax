@@ -10,7 +10,7 @@ from recovar.cuda_build import include_dir
 # for the EM package once it lives in its own repository (relax split).
 PUBLIC_INCLUDE_DIR = include_dir()
 CUDA_DIR = PUBLIC_INCLUDE_DIR.parent
-EM_CUDA_DIR = Path(importlib.util.find_spec("relax.cuda.kernels").origin).resolve().parent
+EM_CUDA_DIR = Path(importlib.util.find_spec("relax.cuda.library").origin).resolve().parent
 
 
 def read_cuda_source(filename="cuda_backproject.cu", base_dir=CUDA_DIR, skip=()):

@@ -8,7 +8,6 @@ from helpers.cuda_source import read_em_cuda_source
 from scripts import run_vdam_exact_native_host_replay
 
 ROOT = Path(__file__).resolve().parents[3]
-PYTHON_WRAPPER = ROOT / "relax" / "cuda" / "kernels.py"
 LOCAL_ENGINE = ROOT / 'relax' / 'local' / 'local_em_engine.py'
 REPLAY_HELPER = ROOT / 'relax' / 'diagnostics' / 'vdam_replay.py'
 HELPER = ROOT / "scripts" / "run_vdam_exact_native_host_replay.py"

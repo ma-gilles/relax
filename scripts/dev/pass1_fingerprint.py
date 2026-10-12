@@ -415,10 +415,20 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         ``tests/unit/test_refine_relion_mode.py`` replaces the same things: the kernel runs only on a GPU.
         """
+        import importlib
+
         import jax
         import recovar.cuda_backproject as cuda_backproject
 
-        from relax.cuda import kernels as em_cuda_kernels
+        # Every module of CUDA wrappers that reads custom_cuda_requested: the kernel families, or the one
+        # kernels module of a source tree from before the split by family.
+        kernel_modules = []
+        for name in ("backprojection", "coarse", "fine", "posterior", "preprocess", "projector", "rotations",
+                     "translate", "kernels"):
+            try:
+                kernel_modules.append(importlib.import_module(f"relax.cuda.{name}"))
+            except ImportError:
+                pass
         try:
             from relax.scoring import coarse_kernels as scoring_module
         except ImportError:  # the source before the package layout move
@@ -426,7 +436,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         patch.setattr(jax, "default_backend", lambda: "gpu")
         patch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
-        patch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
+        for module in kernel_modules:
+            patch.setattr(module, "custom_cuda_requested", lambda: True)
         patch.setattr(cuda_backproject, "cuda_available", lambda: True)
 
         def rescore(shifted_candidates, score_weight_candidates, projection_candidates, half_weights, fftw_order, **kw):

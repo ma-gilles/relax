@@ -24,7 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.cuda.backprojection import relion_fused_x_half_backproject_particle_grid_indexed
-from relax.cuda.kernels import relion_coarse_diff2_projector_f32, relion_coarse_diff2_rectangular_f32
+from relax.cuda.coarse import relion_coarse_diff2_projector_f32, relion_coarse_diff2_rectangular_f32
 from relax.cuda.projector import RelionCapacityHalfTextureF32
 from relax.cuda.translate import relion_translate_score_f32, relion_translate_sum_flat_rows_f32
 from relax.dense.gemm_kernels import (
@@ -141,14 +141,12 @@ def _native_identity():
 
     from recovar import cuda_backproject
 
-    from relax.cuda import kernels
-
     paths = {"recovar": os.environ.get("RECOVAR_CUDA_LIB"), "relax": os.environ.get("RELAX_CUDA_LIB")}
     if any(path is None for path in paths.values()):
         raise RuntimeError("set both RECOVAR_CUDA_LIB and RELAX_CUDA_LIB to exclusive built libraries")
     if not cuda_backproject.cuda_available():
         raise RuntimeError("pinned RECOVAR CUDA library did not load")
-    if not kernels.custom_cuda_requested():
+    if not cuda_backproject.custom_cuda_requested():
         raise RuntimeError("pinned RELAX CUDA library was disabled")
     return {
         name: {"path": path, "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()}

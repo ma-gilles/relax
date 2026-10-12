@@ -16,7 +16,7 @@ from scipy.spatial.transform import Rotation
 
 
 def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
     from relax.cuda import translate as cuda_translate
     from relax.fine_pass.bucket_io import relion_translation_angles_f32
     from relax.projection.projection import (
@@ -44,7 +44,7 @@ def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
     weight = (rng.uniform(0.1, 2.0, images.shape) * np.asarray(layout.score_active_mask)[None]).astype(np.float32)
     initial = np.zeros(2, dtype=np.float32)
     angles = jnp.asarray(relion_translation_angles_f32(rng.uniform(-3.0, 3.0, (9, 2)), image_shape), dtype=jnp.float32)
-    fused = em_cuda_kernels.relion_coarse_diff2_projector_f32(
+    fused = cuda_coarse.relion_coarse_diff2_projector_f32(
         relion_projector_half_to_texture_full(jnp.asarray(projector_half)).astype(jnp.complex64),
         jnp.asarray(rotations),
         jnp.asarray(images),

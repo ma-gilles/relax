@@ -6549,7 +6549,13 @@ class TestRelionModeSmokeTest:
         import relax.projection.projection as projection_module
         import relax.scoring.coarse_kernels as scoring_module
         import relax.scoring.pass1_program as pass1_program
-        from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import backprojection as cuda_backprojection
+        from relax.cuda import coarse as cuda_coarse
+        from relax.cuda import fine as cuda_fine
+        from relax.cuda import posterior as cuda_posterior
+        from relax.cuda import preprocess as cuda_preprocess
+        from relax.cuda import projector as cuda_projector
+        from relax.cuda import rotations as cuda_rotations
         from relax.cuda import translate as cuda_translate
 
         dataset = half_datasets[0]
@@ -6563,7 +6569,12 @@ class TestRelionModeSmokeTest:
         translations = jnp.zeros((1, 2), dtype=jnp.float32)
         monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
         monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
-        monkeypatch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
+        # Every CUDA wrapper reads custom_cuda_requested from its own family module.
+        for kernel_module in (
+            cuda_backprojection, cuda_coarse, cuda_fine, cuda_posterior,
+            cuda_preprocess, cuda_projector, cuda_rotations, cuda_translate,
+        ):
+            monkeypatch.setattr(kernel_module, "custom_cuda_requested", lambda: True)
         monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
         monkeypatch.setattr(
             ctf,

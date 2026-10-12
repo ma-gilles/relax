@@ -136,7 +136,7 @@ def relion_coarse_normalized_cc_rescore(
     if jax.default_backend() == "gpu":
         from recovar import cuda_backproject
 
-        from relax.cuda import kernels as em_cuda_kernels
+        from relax.cuda import coarse as cuda_coarse
 
         if cuda_backproject.custom_cuda_requested():
             n_pixels = int(shifted.shape[-1])
@@ -177,7 +177,7 @@ def relion_coarse_normalized_cc_rescore(
                         -1, n_pixels
                     )
                 native_scores = (
-                    em_cuda_kernels.relion_coarse_normalized_cc_native_texture_pairs_f32(
+                    cuda_coarse.relion_coarse_normalized_cc_native_texture_pairs_f32(
                         jnp.asarray(projector_full, dtype=jnp.complex64),
                         rotations.reshape(-1, 3, 3),
                         shifted.reshape(-1, n_pixels),
@@ -197,7 +197,7 @@ def relion_coarse_normalized_cc_rescore(
                     "preprojected normalized-CC replay requires projection candidates"
                 )
             native_shape = (1, int(shifted.size // n_pixels), n_pixels)
-            native_scores = em_cuda_kernels.relion_coarse_normalized_cc_pairs_f32(
+            native_scores = cuda_coarse.relion_coarse_normalized_cc_pairs_f32(
                 shifted.reshape(native_shape),
                 score_weight.reshape(native_shape),
                 projection.reshape(native_shape),

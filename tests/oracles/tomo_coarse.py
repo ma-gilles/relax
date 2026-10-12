@@ -25,11 +25,11 @@ def tilt_image_coarse_diff2(
 ):
     """One tilt image's coarse diff2 ``[R, T]`` with its own matrices ``[R, 3, 3]`` and phases ``[T, 2]``."""
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     translation_angles = jnp.asarray(translation_angles, dtype=jnp.float32)
     chunks = [
-        em_cuda_kernels.relion_coarse_diff2_projector_f32(
+        cuda_coarse.relion_coarse_diff2_projector_f32(
             projector_full,
             jnp.asarray(rotations, dtype=jnp.float32),
             jnp.asarray(unshifted, dtype=jnp.complex64)[None],

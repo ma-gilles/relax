@@ -487,10 +487,10 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
 def test_relion_coarse_single_lane_canonical_rejects_unsupported_counts(
     translation_count,
 ):
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     with pytest.raises(ValueError, match="requires 65--128 translations"):
-        em_cuda_kernels.relion_coarse_diff2_projector_f32.__wrapped__(
+        cuda_coarse.relion_coarse_diff2_projector_f32.__wrapped__(
             jnp.zeros((5, 5, 5), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -507,10 +507,10 @@ def test_relion_coarse_single_lane_canonical_rejects_unsupported_counts(
 
 
 def test_relion_coarse_single_lane_canonical_requires_canonical_reduction():
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     with pytest.raises(ValueError, match="requires canonical_reduction=True"):
-        em_cuda_kernels.relion_coarse_diff2_projector_f32.__wrapped__(
+        cuda_coarse.relion_coarse_diff2_projector_f32.__wrapped__(
             jnp.zeros((5, 5, 5), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -638,7 +638,7 @@ def test_relion_coarse_diff2_rectangular_matches_atomic_envelope(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
@@ -675,7 +675,7 @@ def test_relion_coarse_diff2_rectangular_matches_atomic_envelope(
 
     with jax.default_device(gpu_device):
         actual = np.asarray(
-            em_cuda_kernels.relion_coarse_diff2_rectangular_f32(
+            cuda_coarse.relion_coarse_diff2_rectangular_f32(
                 jnp.asarray(reference),
                 jnp.asarray(shifted),
                 jnp.asarray(weight),
@@ -886,11 +886,11 @@ def test_relion_fine_diff2_fails_closed_without_gpu(monkeypatch, function_name):
 def test_relion_coarse_diff2_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_coarse_diff2_rectangular_f32.__wrapped__(
+        cuda_coarse.relion_coarse_diff2_rectangular_f32.__wrapped__(
             jnp.zeros((1, 2), dtype=jnp.complex64),
             jnp.zeros((1, 29, 2), dtype=jnp.complex64),
             jnp.ones((1, 2), dtype=jnp.float32),
@@ -902,11 +902,11 @@ def test_relion_coarse_diff2_fails_closed_without_gpu(monkeypatch):
 def test_relion_coarse_normalized_cc_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="require a JAX GPU backend"):
-        em_cuda_kernels.relion_coarse_normalized_cc_pairs_f32.__wrapped__(
+        cuda_coarse.relion_coarse_normalized_cc_pairs_f32.__wrapped__(
             jnp.zeros((1, 2, 3), dtype=jnp.complex64),
             jnp.ones((1, 2, 3), dtype=jnp.float32),
             jnp.zeros((1, 2, 3), dtype=jnp.complex64),
@@ -920,11 +920,11 @@ def test_relion_coarse_normalized_cc_native_texture_fails_closed_without_gpu(
 ):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="require a JAX GPU backend"):
-        em_cuda_kernels.relion_coarse_normalized_cc_native_texture_pairs_f32.__wrapped__(
+        cuda_coarse.relion_coarse_normalized_cc_native_texture_pairs_f32.__wrapped__(
             jnp.zeros((5, 5, 5), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             jnp.zeros((1, 1), dtype=jnp.complex64),
@@ -956,11 +956,11 @@ def test_relion_projector_half_texture_fails_closed_without_gpu(monkeypatch):
 def test_relion_coarse_vdam_projector_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")
     with pytest.raises(RuntimeError, match="requires a JAX GPU backend"):
-        em_cuda_kernels.relion_coarse_diff2_projector_f32.__wrapped__(
+        cuda_coarse.relion_coarse_diff2_projector_f32.__wrapped__(
             jnp.zeros((5, 5, 5), dtype=jnp.complex64),
             jnp.eye(3, dtype=jnp.float32)[None, :, :],
             jnp.zeros((1, 1), dtype=jnp.complex64),

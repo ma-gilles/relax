@@ -39,7 +39,7 @@ def _dump(output: Path) -> None:
     import jax.numpy as jnp
     import numpy as np
 
-    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda import coarse as cuda_coarse
 
     if jax.default_backend() != "gpu":
         raise RuntimeError("the coarse-projector binary gate requires a GPU")
@@ -65,7 +65,7 @@ def _dump(output: Path) -> None:
         initial_diff2 = rng.uniform(10.0, 20.0, images.shape[0]).astype(np.float32)
 
         with jax.default_device(jax.devices("gpu")[0]):
-            _, lanes = em_cuda_kernels.relion_coarse_diff2_projector_lanes_f32(
+            _, lanes = cuda_coarse.relion_coarse_diff2_projector_lanes_f32(
                 jnp.asarray(projector),
                 jnp.asarray(rotations),
                 jnp.asarray(images),
@@ -77,7 +77,7 @@ def _dump(output: Path) -> None:
                 physical_image_size=current_size,
                 model_max_r=model_max_r,
             )
-            canonical = em_cuda_kernels.relion_coarse_diff2_projector_f32(
+            canonical = cuda_coarse.relion_coarse_diff2_projector_f32(
                 jnp.asarray(projector),
                 jnp.asarray(rotations),
                 jnp.asarray(images),

@@ -80,7 +80,7 @@ their semantics already match:
 | `scoring/`, `sparse_pass2/` | Coarse scores/support and sparse second-pass execution |
 | `helpers/` | Shared array layouts, operators, batching, precision and statistics |
 | `relion/` | Runtime RELION metadata, normalization, CTF and native adapters |
-| `cuda/` | The EM CUDA library `librelax_cuda.so`: translation unit `relax_kernels.cu`, its headers and Makefile, and the Python side (`library.py`: build inputs, FFI target names, registration tables and the `NativeLibrary` loader; `kernels.py`: FFI wrappers; `noise_residual.py`) |
+| `cuda/` | The EM CUDA library `librelax_cuda.so`: translation unit `relax_kernels.cu`, its headers and Makefile, and the Python side: `library.py` (build inputs, FFI target names, registration tables and the `NativeLibrary` loader) and the FFI wrappers by kernel family, `preprocess.py`, `rotations.py`, `coarse.py`, `fine.py` (fine diff2 and Wavg), `posterior.py`, `translate.py`, `projector.py` (projection and its textures), `backprojection.py` and `ppca.py` |
 | `reconstruction/` | EM-only RELION variants split from `recovar.reconstruction` (`regularization_relion`, `relion_functions_relion`, `noise_relion`) |
 | `diagnostics/` | Optional capture writers, replay and intervention tools |
 | `reference/` | Independent earlier EM/covariance formulations and deterministic numerical replays |

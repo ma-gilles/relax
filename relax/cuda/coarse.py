@@ -1,8 +1,11 @@
-"""EM-only symbols relocated from ``recovar.cuda_backproject`` (relax split P1, pure move).
+"""RELION coarse-pass kernels on the GPU: the coarse diff2 scores (rectangular, and on the fly from the projector,
+batched or per image) and the normalized cross-correlation pairs (from projections or from the native
+projector texture).
 
-Function bodies are AST-identical to their originals at Q (tag q-reconcile-20260923); only the module
-path changed.  See pr179_coordination/relax_split_plan_20260923/PLAN.md.
+Each wrapper registers the library targets through ``library._ensure_ffi()`` before its first FFI call; the
+operand checks shared with the fine pass come from ``relax.cuda.fine``.
 """
+
 from __future__ import annotations
 
 import functools

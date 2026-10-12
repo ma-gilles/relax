@@ -12,7 +12,7 @@ from oracles.tomo_coarse import tilt_image_coarse_diff2
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.cuda import kernels as em_cuda_kernels
+from relax.cuda import coarse as cuda_coarse
 from relax.cuda import translate as cuda_translate
 from relax.scoring import tomo_coarse
 
@@ -61,7 +61,7 @@ def _fake_projector(projector_full, rotations, images, angles, weight, initial, 
 
 
 def test_translations_are_scored_in_chunks_and_images_add_in_slot_order(monkeypatch):
-    monkeypatch.setattr(em_cuda_kernels, "relion_coarse_diff2_projector_f32", _fake_projector)
+    monkeypatch.setattr(cuda_coarse, "relion_coarse_diff2_projector_f32", _fake_projector)
     rng = np.random.default_rng(3)
     layout = tomo_coarse.CoarseScoreLayout(
         (8, 8), 6, np.arange(4), jnp.ones(4, bool), jnp.zeros(1, jnp.int32), jnp.ones(40)
@@ -351,8 +351,7 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
     """The batched per-image launch and one call per image score every (image, rotation, translation) alike."""
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -383,7 +382,7 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
         weight = rng.uniform(0.1, 1.0, size=(n_images, n_px)).astype(np.float32)
         initial = rng.uniform(10.0, 20.0, size=n_images).astype(np.float32)
         angles = rng.uniform(-0.2, 0.2, size=(n_images, n_trans, 2)).astype(np.float32)
-        batched = em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
+        batched = cuda_coarse.relion_coarse_diff2_projector_per_image_f32(
             projector,
             jnp.asarray(rotations),
             jnp.asarray(images),
@@ -458,8 +457,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
     """
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -515,8 +513,7 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
     at three score-window sizes: the largest observed difference stays under it."""
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -561,8 +558,8 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, mo
     (the kernel's int32 output count) they are the one-block values."""
 
     import jax
+    from recovar.cuda_backproject import custom_cuda_requested
 
-    from relax.cuda.kernels import custom_cuda_requested
     from relax.scoring import exact_cut
 
     if not custom_cuda_requested():
@@ -615,8 +612,7 @@ def test_packed_rows_are_the_complex_projections_split(gpu_device):
     reads and dense scale, in one kernel), so the GEMM's reference operand does not change."""
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -647,8 +643,7 @@ def test_the_class_texture_is_refilled_for_the_next_pass(gpu_device):
     programs capture its handle), and it projects what a texture staged fresh from that projector projects."""
 
     import jax
-
-    from relax.cuda.kernels import custom_cuda_requested
+    from recovar.cuda_backproject import custom_cuda_requested
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -905,8 +900,8 @@ def test_undecided_scorer_rotations_are_the_rotation_kernels_per_particle(gpu_de
     """The same with RELION's rotation kernel (perturbed, left matrices): the per-particle calls' matrices."""
 
     import jax
+    from recovar.cuda_backproject import custom_cuda_requested
 
-    from relax.cuda.kernels import custom_cuda_requested
     from relax.sampling import relion_adaptive_pass1_rotations
 
     if jax.default_backend() != "gpu" or not custom_cuda_requested():

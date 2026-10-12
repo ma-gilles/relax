@@ -81,7 +81,7 @@ def test_touched_gpu_tests_follow_imports(tmp_path):
     (tests / "test_a.py").write_text(
         "import pytest\nfrom relax.local import local_em_engine\npytestmark = pytest.mark.gpu\n"
     )
-    (tests / "test_b.py").write_text("import pytest\nimport relax.cuda.kernels\npytestmark = pytest.mark.gpu\n")
+    (tests / "test_b.py").write_text("import pytest\nimport relax.cuda.library\npytestmark = pytest.mark.gpu\n")
     (tests / "test_c.py").write_text("from relax.local import local_em_engine\n")  # no gpu marker
     run_test_tier.TIERS_DIR, saved = tmp_path / "tests" / "tiers", run_test_tier.TIERS_DIR
     try:

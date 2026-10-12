@@ -574,7 +574,7 @@ def _native_fixture_program(args, geometry, bp_shape, current_size, image_shape,
     GEMM arm, while using existing CUDA owners for both scorer and M-step.
     """
     from relax.cuda.backprojection import relion_fused_x_half_backproject_particle_grid_indexed
-    from relax.cuda.kernels import relion_coarse_diff2_projector_f32
+    from relax.cuda.coarse import relion_coarse_diff2_projector_f32
     from relax.cuda.translate import relion_translate_sum_flat_rows_f32
     from relax.dense.gemm_kernels import (
         empty_normalizer_table,
