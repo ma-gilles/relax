@@ -76,7 +76,7 @@ def test_moment_scatter_matches_xla_statistics_and_recovar_adjoint(
     """
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda.kernels import ppca_moment_scatter_f32
+    from relax.cuda.ppca import ppca_moment_scatter_f32
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)

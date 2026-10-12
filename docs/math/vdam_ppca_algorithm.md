@@ -1009,7 +1009,7 @@ scientific contract; runnable code alone does not establish recovery.
   trace channel alone (`TracePPCAStats`, `ppca_momentum_sgd.md`).
   On GPU the metric and residual images of a block are backprojected together
   into one voxel-major half volume of 32-float voxel rows
-  ([ppca_moment_scatter_f32](../../relax/cuda/kernels.py)): each lane
+  ([ppca_moment_scatter_f32](../../relax/cuda/ppca.py)): each lane
   of a warp forms its own pixel's expected residual and noise correction from
   the block's moment images and projections, and expands the pixel's trilinear
   and Hermitian-partner targets, as RECOVAR's windowed adjoint does; then the
@@ -1032,19 +1032,19 @@ scientific contract; runnable code alone does not establish recovery.
   around the four GEMMs runs in relax CUDA kernels
   ([ppca_stream.cuh](../../relax/cuda/ppca_stream.cuh)); the XLA formulation above
   stays the CPU path and the float64 reference of the tests. The window
-  projector ([ppca_window_project_f32](../../relax/cuda/kernels.py)) evaluates
+  projector ([ppca_window_project_f32](../../relax/cuda/ppca.py)) evaluates
   all `P` components of a voxel-major model copy at once, at the score-window
   pixels only, into the planar `[Re | Im]` GEMM operand and the packed products
   `Re(conj(A_i) A_j)` of the Gram GEMM; it replaces RECOVAR's per-component
   projection loop, whose XLA loop predicate synchronized the host every block.
-  The latent epilogue ([ppca_latent_epilogue_f32](../../relax/cuda/kernels.py))
+  The latent epilogue ([ppca_latent_epilogue_f32](../../relax/cuda/ppca.py))
   writes the scores, latent means and covariances in place into the kept
   buffers, and per (rotation, image) the maximum score over translations, the
   first maximizing translation and `sum_t exp(score - maximum)`; the tile
   normalization reduces these partials
   ([_normalize_partials](../../relax/ppca_refinement/full_row_stream.py)), with the
   same first-maximum order, instead of every kept score. The posterior
-  preparation ([ppca_posterior_prep_f32](../../relax/cuda/kernels.py)) forms the
+  preparation ([ppca_posterior_prep_f32](../../relax/cuda/ppca.py)) forms the
   weights `gamma [1, E z]` and the translation sums of `gamma E[a a^T]`; the
   embedding, rotation mass and latent trace follow from those sums. The GEMM
   window is padded with zero pixels to a multiple of four so every GEMM row is

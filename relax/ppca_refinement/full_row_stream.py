@@ -59,7 +59,7 @@ from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.triangular import tri_size
 from recovar.reconstruction import noise as noise_utils
 
-from relax.cuda.kernels import (
+from relax.cuda.ppca import (
     ppca_latent_epilogue_f32,
     ppca_moment_scatter_f32,
     ppca_posterior_prep_f32,
@@ -782,7 +782,7 @@ def _backproject_moments(real_images, complex_images, indices, rotations, static
 
     Real channels ``(C_r, R, F)`` then the real and imaginary parts of the complex channels
     ``(C_c, R, F)``, into zero half volumes, with the shared windowed adjoint per channel type:
-    the layout :func:`relax.cuda.kernels.ppca_moment_scatter_f32` produces on GPU streams.
+    the layout :func:`relax.cuda.ppca.ppca_moment_scatter_f32` produces on GPU streams.
     """
     half = int(np.prod(static.volume_shape[:2])) * (int(static.volume_shape[2]) // 2 + 1)
 

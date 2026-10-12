@@ -45,7 +45,7 @@ import numpy as np
 from recovar.ppca.triangular import tri_size
 
 from relax import sampling
-from relax.cuda.kernels import ppca_window_project_f32
+from relax.cuda.ppca import ppca_window_project_f32
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings
 from relax.ppca_refinement.full_row_stream import (
