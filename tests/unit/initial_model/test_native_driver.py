@@ -2486,6 +2486,19 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
 
     assert config.sampling.oversampling_order == 0
     assert config.sampling.healpix_order == 0
+    # The options' accumulator dump directory (VdamEnvironment) reaches the E-step config.
+    assert config.accum_dump_dir is None
+    dumping = estep_setup.initial_model_estep_config(
+        dataset,
+        replace(opts, environment=native_options.VdamEnvironment(accum_dump_dir="/accum")),
+        np.ones(5, dtype=np.float32),
+        plan,
+        np.zeros((1, 2), dtype=np.float32),
+        sigma_offset_angstrom=10.0,
+        pass1_healpix_order=plan.healpix_order,
+        max_significants=-1,
+    )
+    assert dumping.accum_dump_dir == "/accum"
 
 
 def test_final_outputs_replace_stale_files_of_a_reused_prefix(tmp_path):

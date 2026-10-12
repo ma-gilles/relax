@@ -461,6 +461,7 @@ def run_adaptive_initial_model_estep(
         state,
         half_count=2 if grouped else None,
         padding_factor=config.padding_factor,
+        dump_dir=config.accum_dump_dir,
     )
     # vdam_m_step reads the list by position, halfset-major (m_step.py: accumulators[k]
     # and accumulators[K + k]); the grouped adapter emits it class-major.

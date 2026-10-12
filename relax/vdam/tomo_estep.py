@@ -209,6 +209,7 @@ def run_tomo_initial_model_estep(
         state,
         half_count=2,
         padding_factor=int(padding_factor),
+        dump_dir=environment.accum_dump_dir,
     )
     # vdam_m_step reads the list halfset-major (accumulators[k], accumulators[K + k]).
     accumulators = sorted(accumulators, key=lambda accum: (accum.halfset_idx, accum.class_idx))

@@ -151,6 +151,7 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
         state,
         half_count=None,
         padding_factor=1,
+        dump_dir=None,
     )[0]
 
     data_scale, weight_scale = relion_bpref_frame_scales(state.box_size)
@@ -187,12 +188,36 @@ def test_arrays_to_accumulators_splits_grouped_halfsets():
         state,
         half_count=2,
         padding_factor=1,
+        dump_dir=None,
     )
 
     assert [value.halfset_idx for value in actual] == [0, 1]
     assert [value.class_idx for value in actual] == [0, 0]
     assert not np.array_equal(actual[0].data, actual[1].data)
     assert not np.array_equal(actual[0].weight, actual[1].weight)
+
+
+def test_accumulator_dump_directory_is_read_once_and_receives_each_accumulator(monkeypatch, tmp_path):
+    """RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR is read into VdamEnvironment; arrays_to_accumulators writes one file per
+    half and class there, and nothing without it."""
+    from relax.vdam.native_options import VdamEnvironment
+
+    monkeypatch.delenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", raising=False)
+    assert VdamEnvironment.from_environ().accum_dump_dir is None
+    monkeypatch.setenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", "")
+    assert VdamEnvironment.from_environ().accum_dump_dir is None
+    monkeypatch.setenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", str(tmp_path))
+    dump_dir = VdamEnvironment.from_environ().accum_dump_dir
+    assert dump_dir == str(tmp_path)
+
+    state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
+    state.current_size = 4
+    data = np.ones((1, 2, 7 * 7 * 7), dtype=np.complex64)
+    weight = np.ones((1, 2, 7 * 7 * 7), dtype=np.float32)
+    arrays_to_accumulators(data, weight, state, half_count=2, padding_factor=1, dump_dir=None)
+    assert not list(tmp_path.iterdir())
+    arrays_to_accumulators(data, weight, state, half_count=2, padding_factor=1, dump_dir=dump_dir)
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["accum_h0_k0.npz", "accum_h1_k0.npz"]
 
 
 def _capture_adaptive_route(monkeypatch):
@@ -216,7 +241,7 @@ def _projector_config(n_classes, **overrides):
         sampling=estep_sampling_stub(),
     )
     values.update(overrides)
-    return InitialModelEstepConfig(**values)
+    return InitialModelEstepConfig(**values, accum_dump_dir=None)
 
 
 def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_adaptive_route(monkeypatch):
@@ -435,6 +460,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         relion_projector_half_by_class=half,
         relion_projector_r_max=r_max,
         sampling=estep_sampling_stub(),
+        accum_dump_dir=None,
     )
 
     means, mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
@@ -458,6 +484,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
         relion_projector_half_by_class=projector_half,
         relion_projector_r_max=2,
         sampling=estep_sampling_stub(),
+        accum_dump_dir=None,
     )
 
     means, variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
@@ -562,8 +589,8 @@ def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
         full_weight.append(weight_full.reshape(-1))
 
     common = dict(state=state, half_count=None, padding_factor=1)
-    compact = arrays_to_accumulators(compact_data, compact_weight, **common)
-    full = arrays_to_accumulators(full_data, full_weight, **common)
+    compact = arrays_to_accumulators(compact_data, compact_weight, **common, dump_dir=None)
+    full = arrays_to_accumulators(full_data, full_weight, **common, dump_dir=None)
 
     assert [(value.halfset_idx, value.class_idx) for value in compact] == [
         (0, 0),
@@ -602,6 +629,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
             state,
             half_count=None,
                     padding_factor=1,
+                    dump_dir=None,
         )
 
 
@@ -624,6 +652,7 @@ def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
         state,
         half_count=None,
         padding_factor=1,
+        dump_dir=None,
     )
 
     assert len(accumulators) == 4

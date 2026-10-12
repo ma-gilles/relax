@@ -172,6 +172,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
             adaptive_fraction=None,
             multi_shape_translations=None,
         ),
+        accum_dump_dir=None,
     )
     engine_kwargs = {
         "class_rotation_log_prior": prior_relion,
@@ -251,6 +252,7 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
             coarse_base_translations=plan.coarse_base_translations,
             translation_step=plan.offset_step_px,
         ),
+        accum_dump_dir=None,
     )
     result = adaptive_estep.run_adaptive_initial_model_estep(
         _Dataset(),

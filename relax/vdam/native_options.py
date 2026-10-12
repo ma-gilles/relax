@@ -96,6 +96,7 @@ class VdamEnvironment:
     (TF_GPU_ALLOCATOR; "default" when unset), ``jax_compilation_cache_dir`` (JAX_COMPILATION_CACHE_DIR) and
     ``jax_persistent_cache_min_compile_time_secs`` (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS); None when unset.
     ``projector_dump_dir`` (RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR, stripped; None when unset or blank) dumps each projector.
+    ``accum_dump_dir`` (RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR as set; None when unset or empty) dumps each accumulator.
     """
 
     clear_jax_caches_per_iteration: bool = False
@@ -107,6 +108,7 @@ class VdamEnvironment:
     jax_compilation_cache_dir: str | None = None
     jax_persistent_cache_min_compile_time_secs: str | None = None
     projector_dump_dir: str | None = None
+    accum_dump_dir: str | None = None
 
     @classmethod
     def from_environ(cls) -> VdamEnvironment:
@@ -127,7 +129,8 @@ class VdamEnvironment:
                    read_env_text("TF_GPU_ALLOCATOR", "default"),
                    read_env_text("JAX_COMPILATION_CACHE_DIR"),
                    read_env_text("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"),
-                   read_env_text("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", "").strip() or None)
+                   read_env_text("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", "").strip() or None,
+                   read_env_text("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR") or None)
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -303,7 +303,9 @@ LOC_BUDGETS = {
     # relax/steps/sgd_schedule.py, which PPCA also imports: schedules.py -259 lines. The relocated ceiling,
     # 2029 - 259 = 1770, fails: the total was already 2131, 102 above 2029 (its whole 5% slack), and the
     # slack of the smaller ceiling is 89. 1782 is the lowest ceiling the measured 1872 passes; it still warns.
-    "controller": (1782, (
+    # rule 5 (2026-10-12): RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR moves from estep_common.arrays_to_accumulators into
+    # VdamEnvironment (native_options.py +3 lines; relocation: ceiling +3, estep -2 for the removed read and import).
+    "controller": (1785, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset_schedule.py", "ports.py",
     )),
@@ -341,7 +343,8 @@ LOC_BUDGETS = {
     # +4: particle_update (then estep_meta_updates) keeps the coarse cut's rlnNrOfSignificantSamples per particle (2026-10-01).
     # Several optics groups (2026-10-01): per-group noise rows, ids and the per-group noise update (+47).
     # +139: layout.py's allowance, with the file merged into estep_common.py (2026-10-08, e3).
-    "estep": (2287, (
+    # -2: the accumulator dump directory's read and the os import left estep_common.py for VdamEnvironment (rule 5).
+    "estep": (2285, (
         "estep_setup.py", "estep_common.py", "model_update.py", "particle_update.py", "adaptive_estep.py",
         "tomo_estep.py",
     )),

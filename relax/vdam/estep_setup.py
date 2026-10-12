@@ -259,6 +259,7 @@ def initial_model_estep_config(
         padding_factor=int(opts.padding_factor),
         engine_kwargs=engine_kwargs,
         sampling=sampling,
+        accum_dump_dir=opts.environment.accum_dump_dir,
     )
 
 

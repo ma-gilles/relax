@@ -8,7 +8,6 @@ BackProjector centered half-complex slabs comes first.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -199,6 +198,8 @@ class InitialModelEstepConfig:
     noise_variance: Any
     translations: Any
     sampling: EstepSampling
+    # Where arrays_to_accumulators dumps each accumulator (VdamEnvironment.accum_dump_dir); None: nowhere.
+    accum_dump_dir: str | None
     image_batch_size: int = 500
     rotation_block_size: int = 5000
     coarse_engine: str = "auto"
@@ -359,11 +360,13 @@ def arrays_to_accumulators(
     *,
     half_count: int | None,
     padding_factor: int,
+    dump_dir: str | None,
 ) -> list[VdamAccumulator]:
     """The engine's per-class M-step arrays as RELION BPref accumulators, class-major.
 
     ``half_count``: the size of each class array's leading pseudo-halfset axis, or None when the arrays have
-    no such axis (one half, slot 0).
+    no such axis (one half, slot 0). ``dump_dir`` (``VdamEnvironment.accum_dump_dir``; None: none) receives
+    each accumulator, ``accum_h<half>_k<class>.npz``.
     """
     # Refuse a class axis other than K on either array before building a partially aligned list.
     try:
@@ -378,7 +381,6 @@ def arrays_to_accumulators(
         )
     r_max = state.effective_current_size // 2
     data_scale, weight_scale = relion_bpref_frame_scales(state.box_size)
-    dump_dir = os.environ.get("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR")
 
     grouped = half_count is not None
 
