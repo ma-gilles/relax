@@ -192,7 +192,7 @@ results from those modes must remain distinguishable from autonomous refinement.
 Their implementation belongs to
 [`relion_replay.py`](../../relax/parity/relion_replay.py).
 
-[`score_outputs.py`](../../relax/refinement/score_outputs.py)
+[`score_outputs.py`](../../relax/steps/score_outputs.py)
 defines the controller's scoring payloads:
 
 - `HalfScoreResult` holds one half's accumulators, assignments, poses and statistics.

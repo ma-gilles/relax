@@ -84,8 +84,8 @@ def test_the_subtomogram_estep_honours_the_environments_engine_diagnostics(monke
     import pytest
 
     from relax.refinement import tomo_scoring
-    from relax.refinement.scoring_policy import RELION_ADAPTIVE_FRACTION
     from relax.sampling import rotation_grid_size
+    from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
     from relax.vdam import tomo_estep
 
     class Reached(Exception):

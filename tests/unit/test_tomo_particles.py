@@ -178,8 +178,8 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
     from types import SimpleNamespace
 
     from relax.refinement import tomo_scoring
-    from relax.refinement.scoring_policy import RELION_ADAPTIVE_FRACTION
     from relax.sampling import rotation_grid_size
+    from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
 
     captured = {}
 

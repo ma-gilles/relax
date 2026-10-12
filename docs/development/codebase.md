@@ -76,6 +76,7 @@ their semantics already match:
 | `refinement/` | Standard EM iteration, convergence/finalization, options and map updates |
 | `vdam/` | InitialModel driver, subset schedule, learning rates and VDAM state transitions |
 | `classification/` | K-class routing, inputs and joint result assembly |
+| `steps/` | Step functions and records two or more controllers use; they take records, never a controller's options, state or history |
 | `dense/`, `local/` | Dense and exact-local execution |
 | `scoring/`, `sparse_pass2/` | Coarse scores/support and sparse second-pass execution |
 | `helpers/` | Shared array layouts, operators, batching, precision and statistics |

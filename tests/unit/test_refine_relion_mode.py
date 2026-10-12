@@ -102,8 +102,6 @@ from relax.refinement import (
     finalization,
     local_half,
     local_sampling,
-    score_outputs,
-    scoring_policy,
     trial_grids,
 )
 from relax.refinement import image_size_plans as image_size_plans_module
@@ -153,6 +151,7 @@ from relax.sampling.orientation_priors import (
 from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores
 from relax.scoring.pass1_results import Pass1Result
 from relax.scoring.significance import _compute_k_class_significance_batched
+from relax.steps import score_outputs, scoring_policy
 from relax.types import LocalEMResult, NoiseStats, RelionStats
 
 pytestmark = pytest.mark.unit

@@ -30,7 +30,6 @@ from relax.local_search.records import (
 from relax.local_search.resident_pass2 import compute_local_search_resident
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
-from relax.refinement import scoring_policy
 from relax.refinement.dense_half import (
     expand_significant_samples_to_full_parent_translations,
     merge_shape_class_results,
@@ -42,15 +41,6 @@ from relax.refinement.half_inputs import HalfScoringData
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.ports import ExpectationProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
-from relax.refinement.score_outputs import (
-    HalfScoreResult,
-    class_em_to_half_result,
-)
-from relax.refinement.scoring_policy import (
-    RELION_ACC_DOUBLE_FLOORF_QUIRK,
-    RELION_ADAPTIVE_FRACTION,
-    RELION_FOURIER_WINDOW_SQUARE,
-)
 from relax.refinement.shape_class_scoring import OpticsSpec, reconstruction_image_radius
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
@@ -65,6 +55,16 @@ from relax.sampling import (
     build_local_search_grid_metadata,
     project_rows,
     relion_angular_sampling_deg,
+)
+from relax.steps import scoring_policy
+from relax.steps.score_outputs import (
+    HalfScoreResult,
+    class_em_to_half_result,
+)
+from relax.steps.scoring_policy import (
+    RELION_ACC_DOUBLE_FLOORF_QUIRK,
+    RELION_ADAPTIVE_FRACTION,
+    RELION_FOURIER_WINDOW_SQUARE,
 )
 from relax.types import NoiseStats, RelionStats
 

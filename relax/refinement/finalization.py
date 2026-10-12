@@ -49,15 +49,6 @@ from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_EN
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.refinement_state import update_angular_sampling
 from relax.refinement.result_files import final_pass_result
-from relax.refinement.score_outputs import (
-    PerHalfOutputs,
-    _record_score_profile,
-    resolve_mstep_accumulator_shape,
-    resolve_mstep_full_half_axis,
-)
-from relax.refinement.scoring_policy import (
-    local_precision,
-)
 from relax.refinement.shape_class_scoring import OpticsSpec
 from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop
@@ -77,6 +68,15 @@ from relax.sampling.orientation_priors import (
     relion_translation_search_base,
 )
 from relax.star.metadata import relion_metadata_translations
+from relax.steps.score_outputs import (
+    PerHalfOutputs,
+    _record_score_profile,
+    resolve_mstep_accumulator_shape,
+    resolve_mstep_full_half_axis,
+)
+from relax.steps.scoring_policy import (
+    local_precision,
+)
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext

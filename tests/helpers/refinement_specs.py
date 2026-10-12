@@ -3,11 +3,12 @@
 import dataclasses
 
 from relax.local_search import records
-from relax.refinement import dense_half, half_inputs, local_half, local_sampling, scoring_policy, shape_class_scoring
+from relax.refinement import dense_half, half_inputs, local_half, local_sampling, shape_class_scoring
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.ports import NoProbe
 from relax.refinement.projector_preparation import PreparedProjector
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
+from relax.steps import scoring_policy
 
 _LOCAL_ITERATION_POSITIONAL = (
     "experiment_dataset",

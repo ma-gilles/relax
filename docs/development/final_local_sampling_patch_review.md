@@ -7795,7 +7795,7 @@ This private operation and its caller remain in the existing optics owner:
 def _merge_class_scores(summaries, classes, n_half, ref_box):
     """Merge class assignments, posterior sums and noise into one half's result."""
 
-    from relax.refinement.score_outputs import ClassScoreSummary
+    from relax.steps.score_outputs import ClassScoreSummary
 
     if all(summary is None for summary in summaries):
         return None

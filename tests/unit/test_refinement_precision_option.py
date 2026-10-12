@@ -7,8 +7,8 @@ import pytest
 from helpers.run_options import stand_in
 
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.refinement import scoring_policy
 from relax.refinement.ports import InputSource, RunObserver
+from relax.steps import scoring_policy
 
 pytestmark = pytest.mark.unit
 

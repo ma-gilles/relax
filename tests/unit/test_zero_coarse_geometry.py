@@ -21,9 +21,9 @@ from relax.refinement import (
     iteration_loop,
     local_half,
     local_sampling,
-    scoring_policy,
 )
 from relax.sampling import DevicePass1Source
+from relax.steps import scoring_policy
 
 pytestmark = pytest.mark.unit
 

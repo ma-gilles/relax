@@ -18,7 +18,7 @@ import logging
 import numpy as np
 
 from relax import sampling
-from relax.refinement.scoring_policy import RELION_ADAPTIVE_FRACTION
+from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.vdam.adaptive_estep import (
     direction_posterior_stats,
     recovar_order_prior,

@@ -211,7 +211,7 @@ def write_numbered_half_manifest(save_dir, scored: DenseHalfScored) -> None:
     ``random_perturbation``, the half's direction and translation log priors, ``particles`` (corrections),
     ``half`` (reference, prior and noise) and the engine's per-image maximum posterior.
     """
-    from relax.refinement import scoring_policy
+    from relax.steps import scoring_policy
 
     (iteration, half_index, grid, sampling, direction_priors, translation_log_prior, particles,
      translation_search_base, previous_translations, half, image_window_size, perturb_factor, result) = scored

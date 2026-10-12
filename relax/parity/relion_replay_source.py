@@ -53,11 +53,11 @@ from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_s
 from relax.refinement.image_size_plans import CoarseImageSize
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState, StartSeeds
 from relax.refinement.reference_state import class_mixture_from_weights
-from relax.refinement.scoring_policy import _dense_global_scoring_dtype
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.refinement.trial_grids import CoarseGrids, FinalSamplingSettings, native_final_sampling_settings
 from relax.runtime.env_flags import parse_env_true_flag
 from relax.star.metadata import read_relion_sampling_metadata
+from relax.steps.scoring_policy import _dense_global_scoring_dtype
 
 # The controller's log: what the replay installs is logged under its name, as before.
 logger = logging.getLogger("relax.refinement.iteration_loop")

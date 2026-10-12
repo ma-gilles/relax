@@ -54,7 +54,6 @@ from relax.refinement import (
     particle_loading,
     refinement_options,
     run_files,
-    scoring_policy,
     startup_noise,
     startup_references,
 )
@@ -74,6 +73,7 @@ from relax.runtime import xla_memory_reserve
 from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 from relax.star import input_particle_table, input_poses
 from relax.star import metadata as relion_metadata
+from relax.steps import scoring_policy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -87,7 +87,7 @@ _CONCRETE_RECOVAR_PROVENANCE_MODULES = (
     "relax",
     "relax.refinement.iteration_loop",
     "relax.refinement.dense_half",
-    "relax.refinement.scoring_policy",
+    "relax.steps.scoring_policy",
     "relax.classification.k_class",
     "relax.scoring.significance",
 )

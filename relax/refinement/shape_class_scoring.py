@@ -627,7 +627,7 @@ def _require_one_backprojector_layout(results) -> None:
 def merge_class_results(results, classes, n_half, model_box_size):
     """One ``HalfScoreResult`` for the half from its shape classes' results."""
 
-    from relax.refinement.score_outputs import HalfScoreResult
+    from relax.steps.score_outputs import HalfScoreResult
 
     first = results[0]
     _require_one_backprojector_layout(results)
@@ -668,7 +668,7 @@ def merge_class_results(results, classes, n_half, model_box_size):
 def _merge_class_scores(summaries, classes, n_half, model_box_size):
     """Merge class assignments, posterior sums and noise into one half's result."""
 
-    from relax.refinement.score_outputs import ClassScoreSummary
+    from relax.steps.score_outputs import ClassScoreSummary
 
     if all(summary is None for summary in summaries):
         return None

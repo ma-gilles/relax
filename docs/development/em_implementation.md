@@ -270,7 +270,7 @@ local engine, the InitialModel adapter and the controller's early fresh-K=1 chec
 it ([`test_relion_cuda_preprocess_owner.py`](../../tests/unit/test_relion_cuda_preprocess_owner.py)).
 The controller calls its two BPref-scoped entry points and retains iteration
 scheduling, state transitions, reconstruction and device-buffer lifetime.
-[`scoring_policy`](../../relax/refinement/scoring_policy.py)
+[`scoring_policy`](../../relax/steps/scoring_policy.py)
 owns shared padding/window constants, the import-time static kwargs object,
 and the existing call-time environment selectors. Their override precedence,
 invalid-value handling and float32 defaults are preserved. The controller and
@@ -328,7 +328,7 @@ block. The materialized NumPy comparison lives in
 It has no production callers and retains a separate mask-building algorithm
 for checking lazy blocks and explicit/complement coarse support.
 
-[`score_outputs`](../../relax/refinement/score_outputs.py) owns
+[`score_outputs`](../../relax/steps/score_outputs.py) owns
 the scoring containers and class/coarse-grid result adapters. It also owns
 optional half-accumulator combination, shape/axis resolution and profile-row
 recording. The controller retains scheduling and device-buffer offloading.

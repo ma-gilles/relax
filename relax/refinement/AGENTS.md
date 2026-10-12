@@ -16,7 +16,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `iteration_loop.py` | `refine_single_volume`: the numbered-iteration controller for K=1 and for K classes |
 | `setup_checks.py` | what the controller checks or resolves from its inputs before the first iteration |
 | `iteration_planning.py`, `image_size_plans.py`, `trial_grids.py`, `numbered_transitions.py`, `refinement_state.py`, `iteration_history.py`, `iteration_snapshot.py` | start-up state, sampling and convergence transitions, the state one iteration hands to the next |
-| `expectation.py`, `expectation_batches.py`, `dense_half.py`, `half_inputs.py`, `particle_poses.py`, `score_outputs.py`, `scoring_policy.py`, `given_poses.py`, `firstiter_bpref.py`, `engine_record.py` | preparing and running a half's expectation |
+| `expectation.py`, `expectation_batches.py`, `dense_half.py`, `half_inputs.py`, `particle_poses.py`, `given_poses.py`, `firstiter_bpref.py`, `engine_record.py` | preparing and running a half's expectation |
 | `local_half.py`, `local_sampling.py` | the exact-local route of a half: its sampling, its per-half adapter around the `relax/local_search/` engine |
 | `maximization.py` | the numbered M-steps (K=1 split-half, Class3D) the controller chooses, and their results |
 | `reference_state.py` | the reference model (half maps and tau2) and the class mixture a run carries between iterations |
@@ -30,6 +30,8 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `optics_shapes.py`, `shape_class_scoring.py` | optics groups with different pixel size or box: the shape classes and their datasets; scoring a half one shape class at a time and merging the results |
 | `tomo_half.py`, `tomo_scoring.py` | subtomogram particles (RELION 5 2D stacks): the dataset, half and sampling records (also read by VDAM and PPCA); the E-step and M-step of a subtomogram half. The per-tilt-image arithmetic (shifts, offsets, the 3D offset prior, tilt projection matrices) is `relax/sampling/tomo_particles.py` |
 | `particle_loading.py`, `startup_references.py`, `startup_noise.py`, `projector_preparation.py` | input loading and half sets, start-up maps, prior and noise, projector slabs |
+
+Steps this controller shares with VDAM live in `relax/steps/`: `score_outputs.py` (a half's score records) and `scoring_policy.py` (the scoring execution defaults and diagnostic selectors).
 
 ## Rules
 

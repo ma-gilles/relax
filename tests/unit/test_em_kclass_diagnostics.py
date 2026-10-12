@@ -13,8 +13,8 @@ import relax.diagnostics.coarse_gaussian_diagnostics as coarse_diagnostics
 import relax.sampling.oversampling as oversampling_mod
 from relax.diagnostics import coarse_gaussian_diagnostics
 from relax.diagnostics import iteration as debug_dumps
-from relax.refinement import score_outputs, scoring_policy
 from relax.refinement.refinement_options import ScoringVariants
+from relax.steps import score_outputs, scoring_policy
 
 pytestmark = pytest.mark.unit
 

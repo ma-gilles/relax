@@ -12,7 +12,8 @@ import relax.diagnostics.reconstruction as reconstruction_diagnostics
 from relax.diagnostics import observers
 from relax.diagnostics import reconstruction as diagnostics
 from relax.reconstruction.volume_solver import ReconstructionPrograms
-from relax.refinement import maximization, score_outputs
+from relax.refinement import maximization
+from relax.steps import score_outputs
 
 pytestmark = pytest.mark.unit
 

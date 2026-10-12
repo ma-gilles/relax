@@ -21,8 +21,8 @@ import relax.sampling as sampling_module
 from relax.parity import relion_replay_source
 from relax.parity.relion_replay import _sealed_sampling_base_grids
 from relax.refinement import trial_grids
-from relax.refinement.scoring_policy import _dense_global_scoring_dtype
 from relax.sampling import _translation_grid_for_class_count
+from relax.steps.scoring_policy import _dense_global_scoring_dtype
 
 pytestmark = pytest.mark.unit
 

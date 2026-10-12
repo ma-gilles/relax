@@ -13,7 +13,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.reconstruction.resolution import _firstiter_cc_ini_high_tapered
-from relax.refinement import score_outputs
 from relax.refinement.iteration_planning import NumberedIteration
 from relax.refinement.numbered_reconstruction import reconstruct_numbered_class_maps, reconstruct_numbered_k1_halfmaps
 from relax.refinement.ports import ClassTau2
@@ -37,6 +36,7 @@ from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR, REFERENCE_FILTE
 from relax.runtime.timing import Stopwatch
 from relax.sampling import rotation_grid_size
 from relax.sampling.orientation_priors import DirectionPrior, learn_class_direction_priors, learn_k1_direction_priors
+from relax.steps import score_outputs
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext

@@ -18,19 +18,7 @@ from relax.classification.k_class_results import KClassEMResult
 from relax.cuda import backprojection as cuda_backprojection
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.refinement import scoring_policy
 from relax.refinement.half_inputs import HalfScoringData
-from relax.refinement.score_outputs import (
-    HalfScoreResult,
-    _collapse_fine_pose_assignments_to_coarse,
-    _collapse_single_class_stats_to_coarse,
-    _select_single_class_accumulator,
-    class_em_to_half_result,
-)
-from relax.refinement.scoring_policy import (
-    RELION_ADAPTIVE_FRACTION,
-    RELION_FOURIER_WINDOW_SQUARE,
-)
 from relax.refinement.shape_class_scoring import OpticsSpec, engine_projection_inputs, reference_grid_kwargs
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
@@ -57,6 +45,18 @@ from relax.sampling.oversampling import (
     project_pass2_rotations,
 )
 from relax.sampling.symmetry import canonicalize_rotational_symmetry
+from relax.steps import scoring_policy
+from relax.steps.score_outputs import (
+    HalfScoreResult,
+    _collapse_fine_pose_assignments_to_coarse,
+    _collapse_single_class_stats_to_coarse,
+    _select_single_class_accumulator,
+    class_em_to_half_result,
+)
+from relax.steps.scoring_policy import (
+    RELION_ADAPTIVE_FRACTION,
+    RELION_FOURIER_WINDOW_SQUARE,
+)
 
 logger = logging.getLogger("relax.dense.half_scoring")
 

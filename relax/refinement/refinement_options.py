@@ -530,7 +530,7 @@ class ScoringVariants:
 
     @classmethod
     def from_environ(cls) -> ScoringVariants:
-        from relax.refinement import scoring_policy as sp
+        from relax.steps import scoring_policy as sp
 
         log = logging.getLogger(__name__)
         k1 = parse_env_optional_flag(sp.K1_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K=1 RELION x-half M-step default")
@@ -783,13 +783,13 @@ class RefinementOptions:
 
 
 def _process_dense_precision() -> DensePrecisionPolicy:
-    """The process's dense precision, ``relax.refinement.scoring_policy.DENSE_PRECISION``.
+    """The process's dense precision, ``relax.steps.scoring_policy.DENSE_PRECISION``.
 
     That policy owns the default: ``RELAX_USE_FLOAT64_SCORING`` and ``RELAX_USE_FLOAT64_PROJECTIONS``, read once
-    when ``relax.refinement.scoring_policy`` is imported. The scoring engines still read it there, so the
+    when ``relax.steps.scoring_policy`` is imported. The scoring engines still read it there, so the
     refinement refuses options whose precision differs (``require_process_precision``).
     """
-    from relax.refinement import scoring_policy
+    from relax.steps import scoring_policy
 
     return scoring_policy.DENSE_PRECISION
 
@@ -800,7 +800,7 @@ def require_process_precision(options: RefinementOptions) -> None:
     if options.precision != process:
         raise ValueError(
             f"options.precision={options.precision!r} differs from the process's dense precision {process!r} "
-            "(relax.refinement.scoring_policy.DENSE_PRECISION), which the scoring engines read; build the options "
+            "(relax.steps.scoring_policy.DENSE_PRECISION), which the scoring engines read; build the options "
             "after setting RELAX_USE_FLOAT64_SCORING / RELAX_USE_FLOAT64_PROJECTIONS"
         )
 

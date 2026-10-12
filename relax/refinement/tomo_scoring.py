@@ -10,13 +10,13 @@ import logging
 import numpy as np
 
 from relax.refinement.half_inputs import HalfScoringData
-from relax.refinement.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.refinement.tomo_half import TomoHalf, TomoSampling, tomo_local_rotations, tomo_translation_grids
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
 )
 from relax.sampling import tomo_particles
+from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
 
 logger = logging.getLogger(__name__)
 
@@ -694,8 +694,8 @@ def score_tomo_half_in_loop(
     """
 
     from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
-    from relax.refinement.score_outputs import HalfScoreResult
     from relax.sampling import rotation_grid_size
+    from relax.steps.score_outputs import HalfScoreResult
 
     half = data.particles.dataset
     volume, noise_variance = data.reference, data.noise_variance
@@ -807,7 +807,7 @@ def score_tomo_half_in_loop(
     )
     if n_classes > 1:
         from relax.classification.k_class import _class_segmented_em_result
-        from relax.refinement.score_outputs import class_em_to_half_result
+        from relax.steps.score_outputs import class_em_to_half_result
 
         k_class_result = _class_segmented_em_result(
             pass2,

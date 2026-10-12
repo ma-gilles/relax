@@ -27,7 +27,6 @@ from relax.classification.k_class_results import (
     _zero_subset_noise_stats,
 )
 from relax.fine_pass.bucket_io import relion_translation_angles_f32
-from relax.refinement.score_outputs import _combine_optional_half_accumulators, _select_single_class_accumulator
 from relax.refinement.sigma_offset import update_class_sigma_offset_from_posterior
 from relax.sampling.orientation_priors import (
     class_weights_from_direction_prior,
@@ -36,6 +35,7 @@ from relax.sampling.orientation_priors import (
 from relax.sampling.oversampling import build_adaptive_pass2_grids
 from relax.scoring.pass1_results import Pass1Result
 from relax.star.metadata import read_relion_direction_priors
+from relax.steps.score_outputs import _combine_optional_half_accumulators, _select_single_class_accumulator
 from relax.types import (
     SparsePass2Output,
     make_noise_stats,

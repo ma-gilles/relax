@@ -34,14 +34,6 @@ from relax.refinement.local_half import (
 )
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe
 from relax.refinement.refinement_options import RefinementOptions
-from relax.refinement.score_outputs import (
-    HalfScoreResult,
-    PerHalfOutputs,
-    _maybe_host_offload_half0_local_accumulators,
-    _record_score_profile,
-    empty_half_result,
-)
-from relax.refinement.scoring_policy import local_precision
 from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
 from relax.refinement.tomo_scoring import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.runtime.host_memory import return_freed_heap
@@ -52,6 +44,14 @@ from relax.sampling.orientation_priors import (
     relion_half_translation_prior_inputs,
     relion_translation_search_base,
 )
+from relax.steps.score_outputs import (
+    HalfScoreResult,
+    PerHalfOutputs,
+    _maybe_host_offload_half0_local_accumulators,
+    _record_score_profile,
+    empty_half_result,
+)
+from relax.steps.scoring_policy import local_precision
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext

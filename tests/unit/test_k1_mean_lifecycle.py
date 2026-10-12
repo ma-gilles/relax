@@ -15,7 +15,7 @@ from relax.reconstruction import regularization
 from relax.refinement import finalization, iteration_loop, maximization, reference_state
 from relax.refinement.iteration_snapshot import IterationSnapshot
 from relax.refinement.refinement_options import CheckpointOptions
-from relax.refinement.score_outputs import PerHalfOutputs
+from relax.steps.score_outputs import PerHalfOutputs
 
 pytestmark = pytest.mark.unit
 

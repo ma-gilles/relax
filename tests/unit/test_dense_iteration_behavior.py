@@ -11,11 +11,12 @@ from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
 from relax.diagnostics import local_debug
-from relax.refinement import local_half, score_outputs, scoring_policy
+from relax.refinement import local_half
 from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
 from relax.refinement.refinement_state import native_final_perturbation_healpix_order
 from relax.relion import normalization
+from relax.steps import score_outputs, scoring_policy
 
 pytestmark = pytest.mark.unit
 
