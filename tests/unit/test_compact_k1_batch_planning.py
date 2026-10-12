@@ -232,7 +232,6 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
     monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
     for name in (
         "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
-        "RELAX_RELION_FIRSTITER_DEFERRED_BPREF",
         "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
         "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
         "RELAX_BPREF_MEMBERSHIP_DUMP_DIR",
@@ -275,17 +274,11 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
     )
     monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda: None)
     monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: None)
-    monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "1")
-    forced_deferred = _compact_route_decision(projector_half=host_projector)
-    assert forced_deferred.enabled is True
-    assert forced_deferred.deferred_firstiter_bpref is True
+    # Without a device reading the host-staged route is not chosen, so the direct peak must fit.
+    unknown_memory = _compact_route_decision(projector_half=host_projector)
+    assert unknown_memory.enabled is False
+    assert unknown_memory.deferred_firstiter_bpref is False
 
-    monkeypatch.setenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "0")
-    disabled_deferred = _compact_route_decision(projector_half=host_projector)
-    assert disabled_deferred.enabled is False
-    assert disabled_deferred.deferred_firstiter_bpref is False
-
-    monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF")
     disabled_fused = _compact_route_decision(projector_half=host_projector, fused_bpref_request=False)
     assert disabled_fused.enabled is False
 
@@ -293,7 +286,6 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
 def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch, diagnostic_env):
     monkeypatch.setenv(diagnostic_env, "1")
     host = SimpleNamespace(shape=(1603, 1603, 802), dtype=np.dtype(np.complex64))
-    monkeypatch.delenv("RELAX_RELION_FIRSTITER_DEFERRED_BPREF", raising=False)
     decision = _compact_route_decision(projector_half=host)
     assert not decision.enabled
     assert not decision.deferred_firstiter_bpref
@@ -351,7 +343,7 @@ def test_compact_planning_asks_the_probe_about_its_numbered_half(monkeypatch):
     fused route compact planning needs."""
     monkeypatch.setattr(firstiter_bpref.memory_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
     monkeypatch.setattr(firstiter_bpref.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
-    for name in ("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "RELAX_RELION_FIRSTITER_DEFERRED_BPREF", "RELAX_EM_FINITE_CHECK"):
+    for name in ("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "RELAX_EM_FINITE_CHECK"):
         monkeypatch.delenv(name, raising=False)
     asked = []
 

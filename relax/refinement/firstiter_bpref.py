@@ -6,7 +6,6 @@ own the final conversion to RECOVAR FFT normalization and CTF sign.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -17,14 +16,10 @@ from relax.numerics import finite_check
 from relax.refinement.ports import ExpectationProbe
 from relax.refinement.refinement_options import FIRSTITER_FUSED_BPREF_ENV
 from relax.runtime import memory_budget
-from relax.runtime.env_flags import parse_env_flag as _env_flag_enabled
 
 logger = logging.getLogger(__name__)
 
-_RELION_FIRSTITER_DEFERRED_BPREF_ENV = "RELAX_RELION_FIRSTITER_DEFERRED_BPREF"
-_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES_ENV = "RELAX_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES"
 _AUTO_DEFERRED_FIRSTITER_BPREF_DEVICE_FRACTION = 0.500
-_DEFAULT_DEFERRED_FIRSTITER_BPREF_MAX_HOST_BYTES = 128 * 1024**3
 
 
 def _relion_firstiter_fused_bpref_enabled(
@@ -101,7 +96,8 @@ def _relion_firstiter_deferred_bpref_enabled(
     allocator_free_memory_bytes: int | None = None,
     diagnostics_active: bool = False,
 ) -> bool:
-    """Select exact host-staged BPref when the direct GPU overlap is unsafe."""
+    """Select exact host-staged BPref when the direct GPU overlap is unsafe (from the memory readings; nothing
+    forces it)."""
 
     supported = bool(
         relion_firstiter_fused_bpref
@@ -109,15 +105,6 @@ def _relion_firstiter_deferred_bpref_enabled(
         and projector_device_owned
         and not diagnostics_active
     )
-    raw = os.environ.get(_RELION_FIRSTITER_DEFERRED_BPREF_ENV)
-    if raw is not None and raw.strip():
-        requested = _env_flag_enabled(_RELION_FIRSTITER_DEFERRED_BPREF_ENV)
-        if requested and not supported:
-            raise ValueError(
-                f"{_RELION_FIRSTITER_DEFERRED_BPREF_ENV}=1 requires a fresh "
-                "firstiter fused-BPref call with a host-owned RELION projector"
-            )
-        return bool(requested and supported)
     if not supported or device_memory_bytes is None or int(device_memory_bytes) <= 0:
         return False
     _, accumulator_bytes, direct_peak_bytes = _relion_firstiter_bpref_overlap_bytes(

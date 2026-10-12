@@ -7,9 +7,7 @@ from relax.diagnostics import bpref_diagnostics
 from relax.refinement import firstiter_bpref as sparse
 
 
-def test_deferred_firstiter_bpref_gate_uses_texture_peak_and_force_override(
-    monkeypatch,
-):
+def test_deferred_firstiter_bpref_gate_uses_texture_peak():
     box800_projector_bytes, box800_accumulator_bytes, box800_peak_bytes = (
         sparse._relion_firstiter_bpref_overlap_bytes(
             projector_shape=(1603, 1603, 802),
@@ -46,7 +44,6 @@ def test_deferred_firstiter_bpref_gate_uses_texture_peak_and_force_override(
     assert accumulator_bytes == 1_200
     assert peak_bytes == 10_800
 
-    monkeypatch.delenv(sparse._RELION_FIRSTITER_DEFERRED_BPREF_ENV, raising=False)
     assert sparse._relion_firstiter_deferred_bpref_enabled(
         **common,
         device_memory_bytes=20_000,
@@ -60,28 +57,15 @@ def test_deferred_firstiter_bpref_gate_uses_texture_peak_and_force_override(
         device_memory_bytes=22_000,
         allocator_free_memory_bytes=1_000,
     )
-
-    monkeypatch.setenv(sparse._RELION_FIRSTITER_DEFERRED_BPREF_ENV, "1")
-    assert sparse._relion_firstiter_deferred_bpref_enabled(
-        **common,
-        device_memory_bytes=1_000_000,
+    # Not supported (a device-owned projector, an armed diagnostic): never host-staged.
+    assert not sparse._relion_firstiter_deferred_bpref_enabled(
+        **(common | {"projector_device_owned": False}),
+        device_memory_bytes=20_000,
     )
-    with pytest.raises(ValueError, match="host-owned RELION projector"):
-        sparse._relion_firstiter_deferred_bpref_enabled(
-            **(common | {"projector_device_owned": False}),
-            device_memory_bytes=20_000,
-        )
-    with pytest.raises(ValueError, match="host-owned RELION projector"):
-        sparse._relion_firstiter_deferred_bpref_enabled(
-            **common,
-            device_memory_bytes=20_000,
-            diagnostics_active=True,
-        )
-
-    monkeypatch.setenv(sparse._RELION_FIRSTITER_DEFERRED_BPREF_ENV, "0")
     assert not sparse._relion_firstiter_deferred_bpref_enabled(
         **common,
         device_memory_bytes=20_000,
+        diagnostics_active=True,
     )
 
 
@@ -155,8 +139,4 @@ def test_deferred_firstiter_preserves_requested_capture_route(monkeypatch, name)
         recon_y_dtype=np.complex64, recon_ctf_dtype=np.float32,
         device_memory_bytes=80 * 1024**3, diagnostics_active=active,
     )
-    monkeypatch.delenv(sparse._RELION_FIRSTITER_DEFERRED_BPREF_ENV, raising=False)
     assert not sparse._relion_firstiter_deferred_bpref_enabled(**common)
-    monkeypatch.setenv(sparse._RELION_FIRSTITER_DEFERRED_BPREF_ENV, '1')
-    with pytest.raises(ValueError):
-        sparse._relion_firstiter_deferred_bpref_enabled(**common)

@@ -304,8 +304,6 @@
   "RECOVAR_RELION_FINE_DIFF2_FUSED_FFI": "RELAX_RELION_FINE_DIFF2_FUSED_FFI",
   "RECOVAR_RELION_FINE_DIFF2_MASKED": "RELAX_RELION_FINE_DIFF2_MASKED",
   "RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER": "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER",
-  "RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF": "RELAX_RELION_FIRSTITER_DEFERRED_BPREF",
-  "RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES": "RELAX_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES",
   "RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET": "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET",
   "RECOVAR_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS": "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
   "RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP",
@@ -703,6 +701,10 @@
   "RECOVAR_EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES": "the local bucket planner (scripts/lib) never caps its distinct bucket sizes, the default; no relax command reached it (2026-10-12)",
   "RELAX_EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES": "the local bucket planner (scripts/lib) never caps its distinct bucket sizes, the default; no relax command reached it (2026-10-12)",
   "RECOVAR_LOCAL_IMAGE_CAPACITY_LADDER": "the local bucket planner (scripts/lib) takes its image-capacity ladder only as an argument (off by default); no relax command read the variable (2026-10-12)",
-  "RELAX_LOCAL_IMAGE_CAPACITY_LADDER": "the local bucket planner (scripts/lib) takes its image-capacity ladder only as an argument (off by default); no relax command read the variable (2026-10-12)"
+  "RELAX_LOCAL_IMAGE_CAPACITY_LADDER": "the local bucket planner (scripts/lib) takes its image-capacity ladder only as an argument (off by default); no relax command read the variable (2026-10-12)",
+  "RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF": "the first-iteration host-staged BPref is chosen from the memory readings only; the override changed no plan or result (A/B job 15402502, 2026-10-12)",
+  "RELAX_RELION_FIRSTITER_DEFERRED_BPREF": "the first-iteration host-staged BPref is chosen from the memory readings only; the override changed no plan or result (A/B job 15402502, 2026-10-12)",
+  "RECOVAR_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES": "no reader: the deferred first-iteration BPref host budget was never consulted (removed 2026-10-12)",
+  "RELAX_RELION_FIRSTITER_DEFERRED_BPREF_MAX_HOST_BYTES": "no reader: the deferred first-iteration BPref host budget was never consulted (removed 2026-10-12)"
  }
 }
