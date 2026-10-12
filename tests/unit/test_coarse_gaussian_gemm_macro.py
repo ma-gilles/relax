@@ -653,12 +653,6 @@ def test_coarse_gaussian_gemm_macro_is_shared_by_em_and_initial_model():
         "_compute_k_class_significance_batched"
         in k_class.run_dense_k_class_em_adaptive.__code__.co_names
     )
-    assert (
-        coarse_kernels.relion_coarse_gaussian_gemm_scores_jit._fun.__globals__[
-            "_e_step_block_scores_windowed"
-        ]
-        is coarse_kernels._e_step_block_scores_windowed
-    )
 
 
 def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(

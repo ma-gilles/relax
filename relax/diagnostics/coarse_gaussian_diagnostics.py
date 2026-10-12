@@ -420,8 +420,8 @@ def maybe_dump_k_class_significance_batch(
             score_capture_mode=np.asarray(str(score_capture_mode)),
         )
         if scores_pre_prior_per_class is not None:
-            # Per-class raw recovar score (= -0.5 * residual in
-            # `_e_step_block_scores_windowed`; differs from RELION's diff2 by the
+            # Per-class raw recovar score (= -0.5 * residual of the coarse
+            # Gaussian GEMM; differs from RELION's diff2 by the
             # per-image Xi2/2 constant which cancels in relative pose
             # comparisons). Shape (n_classes, n_rot, n_trans).
             save_kwargs["scores_pre_prior_per_class"] = scores_pre_prior_per_class
