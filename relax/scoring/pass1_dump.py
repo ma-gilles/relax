@@ -1,12 +1,10 @@
-"""Which batches of pass 1 are score-dump batches, and which of their rows are dumped (``RELAX_SIGNIFICANCE_DUMP_*``)."""
+"""Which batches of pass 1 are score-dump batches, and which of their rows are dumped (the pass's probe decides)."""
 
 from typing import NamedTuple
 
 import numpy as np
 
-from relax.diagnostics.coarse_gaussian_diagnostics import significance_debug_dump_matches
-from relax.io.batch_fetch import original_image_indices
-from relax.runtime.env_flags import parse_env_int_set
+from relax.scoring.probes import Pass1Probe
 
 
 class DumpTargets(NamedTuple):
@@ -19,25 +17,20 @@ class DumpTargets(NamedTuple):
     rows: np.ndarray | None
 
 
-def select_dump_targets(experiment_dataset, indices, *, collect_significance, current_size, debug_iteration) -> DumpTargets:
+def select_dump_targets(
+    probe: Pass1Probe, experiment_dataset, indices, *, collect_significance, current_size, debug_iteration
+) -> DumpTargets:
     """The dump request of the batch of dataset images ``indices``.
 
-    A dump batch needs the significant samples (``collect_significance``) and an iteration the dump asks for.
-    The target images are the original image indices listed in ``RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES``; the
-    pass-1 program records their raw (pre-prior) and with-prior scores, to be diffed against RELION's
-    ``exp_Mweight_diff2`` without keeping the whole ``[batch, n_classes, n_rot * n_trans]`` score cache.
+    A dump batch needs the significant samples (``collect_significance``) and a pass the ``probe`` dumps
+    (:meth:`~relax.scoring.probes.Pass1Probe.score_dump_requested`). The probe names the target rows; the pass-1
+    program records their raw (pre-prior) and with-prior scores, to be diffed against RELION's ``exp_Mweight_diff2``
+    without keeping the whole ``[batch, n_classes, n_rot * n_trans]`` score cache.
     """
 
-    enabled = collect_significance and significance_debug_dump_matches(
+    enabled = collect_significance and probe.score_dump_requested(
         current_size=current_size,
         debug_iteration=debug_iteration,
     )
-    rows = None
-    if enabled:
-        targets = parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
-        if targets:
-            original = original_image_indices(experiment_dataset, np.asarray(indices, dtype=np.int64))
-            positions = np.flatnonzero(np.isin(original, np.fromiter(targets, dtype=np.int64)))
-            if positions.size:
-                rows = positions.astype(np.int64)
+    rows = probe.score_dump_rows(experiment_dataset, indices) if enabled else None
     return DumpTargets(enabled=enabled, rows=rows)

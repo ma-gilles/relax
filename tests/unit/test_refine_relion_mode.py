@@ -22,6 +22,7 @@ from helpers.reconstruction_settings import reconstruction_settings
 from helpers.tiny_refinement import unconverged_accuracy
 
 import relax.refinement.noise_updates as noise_updates
+from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostics
 from relax.reconstruction import volume_solver
 from relax.reconstruction.resolution import ImageGeometry
 from relax.reconstruction.volume_solver import ReconstructionPrograms
@@ -6716,6 +6717,7 @@ class TestRelionModeSmokeTest:
             rotation_block_size=2,
             current_size=6,
             score_with_masked_images=False,
+            probe=SignificanceDiagnostics(),
             **projector,
         )
 
@@ -6763,6 +6765,7 @@ class TestRelionModeSmokeTest:
             score_with_masked_images=False,
             collect_significance=False,
             return_class_best=True,
+            probe=SignificanceDiagnostics(),
             **projector,
         )
 

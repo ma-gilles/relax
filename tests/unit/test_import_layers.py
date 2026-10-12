@@ -77,10 +77,6 @@ ALLOWED_UPWARD = {
     ("relax.refinement.local_half", "relax.diagnostics.local_debug"): _B,
     ("relax.refinement.result_files", "relax.diagnostics.parity_dump"): _B,
     ("relax.relion.normalization", "relax.diagnostics.finite_check"): _B,
-    ("relax.scoring.pass1_assembly", "relax.diagnostics.coarse_score_diagnostics"): _B,
-    ("relax.scoring.pass1_dump", "relax.diagnostics.coarse_gaussian_diagnostics"): _B,
-    ("relax.scoring.pass1_publish", "relax.diagnostics.coarse_gaussian_diagnostics"): _B,
-    ("relax.scoring.tree_rescore", "relax.diagnostics.coarse_gaussian_diagnostics"): _B,
     ("relax.vdam.estep_setup", "relax.refinement.engine_record"): _A,
 }
 

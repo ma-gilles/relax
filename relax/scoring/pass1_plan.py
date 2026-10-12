@@ -157,7 +157,7 @@ class Pass1Plan:
     """A planned pass 1: what :func:`relax.scoring.significance.run_pass1` runs its batches from.
 
     ``experiment_dataset`` yields the ``n_images`` images in batches of ``image_batch_size``; ``current_size``,
-    ``debug_iteration`` and ``collect_significance`` are the request's. ``route`` is what the score route decided (its
+    ``debug_iteration``, ``probe`` and ``collect_significance`` are the request's. ``route`` is what the score route decided (its
     operand plan, support route, tree rescore plan and backend name). The stage plans: ``batch_input_plan``
     (preprocessing), ``score_program_plan``, ``support_plan``, ``output_plan`` (the results and how they are allocated
     and published) and ``dump_context`` (the score dump).
@@ -168,6 +168,7 @@ class Pass1Plan:
     image_batch_size: int
     current_size: Any
     debug_iteration: Any
+    probe: Any
     collect_significance: bool
     route: RoutePlan
     batch_input_plan: Any
@@ -363,6 +364,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         relion_projector_r_max=request.relion_projector_r_max,
         projection_padding_factor=request.projection_padding_factor,
         score_indices=route.operand_plan.score_indices,
+        probe=request.probe,
     )
     batch_input_plan = BatchInputPlan(
         experiment_dataset=request.experiment_dataset,
@@ -381,6 +383,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         image_batch_size=image_batch_size,
         current_size=request.current_size,
         debug_iteration=request.debug_iteration,
+        probe=request.probe,
         collect_significance=request.collect_significance,
         route=route,
         batch_input_plan=batch_input_plan,

@@ -9,6 +9,7 @@ import os
 
 import numpy as np
 
+from relax.diagnostics.coarse_score_diagnostics import coarse_significance_support_audit
 from relax.io.batch_fetch import original_image_indices
 from relax.runtime.env_flags import parse_env_int_set
 
@@ -435,3 +436,35 @@ def maybe_dump_k_class_significance_batch(
         )
 
 
+
+
+class SignificanceDiagnostics:
+    """Pass 1's :class:`relax.scoring.probes.Pass1Probe` that the commands build: the environment's diagnostics.
+
+    Each hook reads its switches when it is called, so a variable set after the probe was built still counts: the
+    ``RELAX_SIGNIFICANCE_DUMP_*`` score dumps (:func:`significance_debug_dump_matches`, the target images of
+    ``RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES``, :func:`maybe_dump_k_class_significance_batch`,
+    :func:`maybe_dump_tree_rescore_batch`) and the ``RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT`` support hash
+    (:func:`relax.diagnostics.coarse_score_diagnostics.coarse_significance_support_audit`). With every switch unset each
+    hook only reads the environment.
+    """
+
+    def score_dump_requested(self, *, current_size, debug_iteration) -> bool:
+        return significance_debug_dump_matches(current_size=current_size, debug_iteration=debug_iteration)
+
+    def score_dump_rows(self, experiment_dataset, indices):
+        targets = parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
+        if not targets:
+            return None
+        original = original_image_indices(experiment_dataset, np.asarray(indices, dtype=np.int64))
+        positions = np.flatnonzero(np.isin(original, np.fromiter(targets, dtype=np.int64)))
+        return positions.astype(np.int64) if positions.size else None
+
+    def significance_batch_scored(self, **values) -> None:
+        maybe_dump_k_class_significance_batch(**values)
+
+    def tree_rescore_scored(self, **values) -> None:
+        maybe_dump_tree_rescore_batch(**values)
+
+    def support_audit(self, significant_sample_indices, *, samples_per_class: int) -> dict | None:
+        return coarse_significance_support_audit(significant_sample_indices, samples_per_class=samples_per_class)

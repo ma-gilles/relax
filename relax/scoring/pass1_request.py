@@ -6,6 +6,8 @@ from typing import Any
 
 import numpy as np
 
+from relax.scoring.probes import NoProbe, Pass1Probe
+
 
 @dataclass(frozen=True, kw_only=True)
 class Pass1Request:
@@ -19,6 +21,9 @@ class Pass1Request:
     ``firstiter_cc_support="gaussian"`` weights a normalized-CC pass, and its image power, on the Gaussian support of the
     current size; ``nyquist_column_counting="once"`` drops the redundant members of the full-size Nyquist column from the
     Gaussian weights and from the image power (docs/math/relion_consistency_options.md).
+
+    ``probe`` observes the pass for its diagnostics (:class:`relax.scoring.probes.Pass1Probe`: the score dumps, the
+    support audit); the default :class:`~relax.scoring.probes.NoProbe` observes nothing, and no result depends on it.
 
     Building the request refuses what its own fields contradict, with a ``ValueError`` (a non-integer ``image_batch_size``
     raises the ``TypeError`` of ``operator.index``): a runner-up without the best, RELION's float32 normalization
@@ -60,6 +65,7 @@ class Pass1Request:
     return_class_best: bool = False
     return_class_second: bool = False
     debug_iteration: int | None = None
+    probe: Pass1Probe = field(default_factory=NoProbe)
     coarse_healpix_order: int | None = None
     coarse_rotation_ids: Any = None
     translation_phase_source: Any = None

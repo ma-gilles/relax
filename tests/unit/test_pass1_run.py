@@ -13,7 +13,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_em_stage_glue_programs import _assert_significance_results_match, _significance_call
 
-from relax.scoring import pass1_publish, significance
+from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostics
+from relax.scoring import significance
 from relax.scoring.pass1_assembly import log_batch_timing
 from relax.scoring.pass1_plan import plan_pass1
 from relax.scoring.pass1_publish import publish_batch
@@ -264,8 +265,19 @@ def test_a_deferred_batch_publishes_the_same_rows_as_one_published_at_once(make)
                        getattr(at_once, name)[..., TAIL_START:] if name != "sig_rot_any" else at_once.sig_rot_any)
 
 
-def test_a_dump_batch_keeps_a_host_mask_and_its_support_rows_and_hands_the_dump_what_it_needs(make, monkeypatch):
-    plan, args, _ = make()
+class _DumpRecorder(SignificanceDiagnostics):
+    """The diagnostics probe, recording what a dump batch hands it instead of writing the dump."""
+
+    def __init__(self):
+        self.calls = []
+
+    def significance_batch_scored(self, **values):
+        self.calls.append(values)
+
+
+def test_a_dump_batch_keeps_a_host_mask_and_its_support_rows_and_hands_the_dump_what_it_needs(make):
+    recorder = _DumpRecorder()
+    plan, args, _ = make(probe=recorder)
     prepared = _prepared(plan, args)
     outputs = score_batch(plan, prepared, defer_publish=False).outputs
     dump_batch = dataclasses.replace(
@@ -275,11 +287,9 @@ def test_a_dump_batch_keeps_a_host_mask_and_its_support_rows_and_hands_the_dump_
         dump_target_pre_prior_blocks_per_class=None,
         dump_target_with_prior_blocks_per_class=None,
     )
-    calls = []
-    monkeypatch.setattr(pass1_publish, "maybe_dump_k_class_significance_batch", lambda **kwargs: calls.append(kwargs))
     results = Pass1Outputs.allocate(plan.output_plan)
     publish_batch(dump_batch, results, plan.output_plan, plan.dump_context)
-    (dump,) = calls
+    (dump,) = recorder.calls
     assert dump["batch_sig_mask"].dtype == bool and dump["batch_sig_mask"].shape == (3, 30)
     assert len(dump["class_weight_mats"]) == 2 and dump["class_weight_mats"][0].shape == (3, 15)
     assert dump["n_classes"] == 2 and dump["relion_f32_sum_weight"] is not None
@@ -383,19 +393,34 @@ def test_a_pass_that_collects_no_support_returns_none_for_it_and_zero_counts(mak
 
 def test_the_support_audit_hashes_the_supports_and_refuses_a_pass_that_collected_none(make, monkeypatch):
     monkeypatch.setenv("RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT", "1")
-    audit = significance.run_pass1(make()[0]).stats.coarse_significance_support_audit
+    # Without the diagnostics probe the switch is not read: no audit.
+    assert significance.run_pass1(make()[0]).stats.coarse_significance_support_audit is None
+    audit = significance.run_pass1(make(probe=SignificanceDiagnostics())[0]).stats.coarse_significance_support_audit
     assert audit["n_classes"] == 2 and audit["n_images"] == 7 and audit["support_ids_included"] is False
     assert len(audit["aggregate_support_sha256"]) == 64 and "per_class_image_support_ids" not in audit
     monkeypatch.setenv("RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS", "1")
-    assert "per_class_image_support_ids" in significance.run_pass1(make()[0]).stats.coarse_significance_support_audit
+    audit = significance.run_pass1(make(probe=SignificanceDiagnostics())[0]).stats.coarse_significance_support_audit
+    assert "per_class_image_support_ids" in audit
     with pytest.raises(RuntimeError, match="requires collect_significance=True"):
-        significance.run_pass1(make(collect_significance=False)[0])
+        significance.run_pass1(make(collect_significance=False, probe=SignificanceDiagnostics())[0])
+
+
+def test_the_probe_observes_and_never_steers_the_pass(make, monkeypatch, tmp_path):
+    """With the dump switches set, the diagnostics probe writes the dump and the pass returns what it returns with
+    the default NoProbe, which writes nothing (code rule 9)."""
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(tmp_path))
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "1,6")
+    control = significance.run_pass1(make()[0])
+    assert not list(tmp_path.iterdir())
+    candidate = significance.run_pass1(make(probe=SignificanceDiagnostics())[0])
+    assert sorted(path.name.split("_")[1] for path in tmp_path.glob("significance_orig*.npz")) == ["orig000001", "orig000006"]
+    _assert_significance_results_match(candidate, control)
 
 
 def test_the_audit_of_the_same_pass_is_the_same_hash(make, monkeypatch):
     monkeypatch.setenv("RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT", "1")
-    first = significance.run_pass1(make()[0]).stats.coarse_significance_support_audit
-    second = significance.run_pass1(make()[0]).stats.coarse_significance_support_audit
+    first = significance.run_pass1(make(probe=SignificanceDiagnostics())[0]).stats.coarse_significance_support_audit
+    second = significance.run_pass1(make(probe=SignificanceDiagnostics())[0]).stats.coarse_significance_support_audit
     assert first["aggregate_support_sha256"] == second["aggregate_support_sha256"]
 
 

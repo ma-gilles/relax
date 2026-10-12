@@ -268,8 +268,8 @@ MUTATIONS = (
      "the rotated-radius clipping is ignored (always the source-pixel disk)", True),
     ("support_audit_ignored", "if _coarse_significance_support_audit_enabled():", "if False:",
      "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT is ignored", True),
-    ("dump_ignored", "enabled = collect_significance and significance_debug_dump_matches(",
-     "enabled = False and significance_debug_dump_matches(",
+    ("dump_ignored", "enabled = collect_significance and probe.score_dump_requested(",
+     "enabled = False and probe.score_dump_requested(",
      "the score dump is never taken", True),
     ("f32_normalization_sum_weight", "relion_f32_sum_weight[batch.start_idx:batch.end_idx] = np.asarray(\n batch.sum_weight,",
      "relion_f32_sum_weight[batch.start_idx:batch.end_idx] = 2.0 * np.asarray(\n batch.sum_weight,",
@@ -531,6 +531,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             args.insert(1, jnp.zeros((n_classes, args[0].volume_size), dtype=jnp.complex64))
         if "disc_type" in parameters:
             args.append("linear_interp")
+        # A tree whose pass 1 takes a probe (layout S15) dumps through the diagnostics one the commands build.
+        from relax.diagnostics import coarse_gaussian_diagnostics
+
+        if hasattr(coarse_gaussian_diagnostics, "SignificanceDiagnostics"):
+            kwargs = dict(kwargs, probe=coarse_gaussian_diagnostics.SignificanceDiagnostics())
         return function(*args, **kwargs)
 
     def full_stats_dict(stats, class_assignment):

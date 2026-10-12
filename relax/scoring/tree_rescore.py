@@ -17,8 +17,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics.coarse_gaussian_diagnostics import maybe_dump_tree_rescore_batch
 from relax.scoring.coarse_operands import select_relion_coarse_rescore_winner_slots
+from relax.scoring.probes import Pass1Probe
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +219,7 @@ def rescore_ambiguous_images(
     experiment_dataset,
     indices,
     debug_iteration,
+    probe: Pass1Probe,
 ) -> TreeRescoreBatch:
     """Rescore the images of one batch whose best and runner-up scores are within ``plan.max_margin``.
 
@@ -226,7 +227,7 @@ def rescore_ambiguous_images(
     the normalized-CC operand assembly). For each ambiguous row the two candidate poses are scored again by the direct
     texture projection and the better one replaces the row's best (and the other its runner-up) in the returned state;
     the rows that are not ambiguous, and every array when none is, are untouched. ``experiment_dataset``, ``indices``
-    and ``debug_iteration`` only name the candidates of a ``RELAX_SIGNIFICANCE_DUMP_*`` dump.
+    and ``debug_iteration`` only name the candidates for ``probe`` (:meth:`Pass1Probe.tree_rescore_scored`).
     """
 
     from relax.scoring.coarse_kernels import relion_coarse_normalized_cc_rescore
@@ -292,7 +293,7 @@ def rescore_ambiguous_images(
         score_dtype=tree_score_dtype,
         **({"symmetry_label": plan.geometry.symmetry_label} if plan.geometry.symmetry_label != "C1" else {}),
     )
-    maybe_dump_tree_rescore_batch(
+    probe.tree_rescore_scored(
         experiment_dataset=experiment_dataset,
         indices=indices,
         ambiguous_rows=ambiguous_rows,

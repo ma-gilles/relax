@@ -58,6 +58,7 @@ def prepare_batch(plan: Pass1Plan, batch_data, indices, start_idx: int, end_idx:
     operands = plan.route.operand_plan.prepare(inputs, indices)
 
     dump_targets = select_dump_targets(
+        plan.probe,
         plan.experiment_dataset,
         indices,
         collect_significance=plan.collect_significance,
@@ -98,6 +99,7 @@ def _with_tree_rescore(plan: Pass1Plan, batch: PreparedBatch, scores: BatchScore
         experiment_dataset=plan.experiment_dataset,
         indices=batch.indices,
         debug_iteration=plan.debug_iteration,
+        probe=plan.probe,
     )
     return (
         scores._replace(

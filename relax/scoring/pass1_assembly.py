@@ -3,19 +3,15 @@
 import logging
 import time
 
-from relax.diagnostics.coarse_score_diagnostics import build_coarse_significance_support_audit
 from relax.fine_pass.resident_significance import (
     DeviceCompactedSignificantSamples,
     build_coarse_significance_csr,
     host_support_rows,
 )
-from relax.runtime.env_flags import parse_env_strict_flag
 from relax.scoring.pass1_results import OutputPlan, Pass1Outputs, Pass1Stats
+from relax.scoring.probes import Pass1Probe
 
 logger = logging.getLogger(__name__)
-
-_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV = "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT"
-_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV = "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS"
 
 
 def log_batch_timing(batch_starts, loop_start, n_images):
@@ -115,43 +111,21 @@ def significant_samples_after_loop(outputs: Pass1Outputs, plan: OutputPlan):
     return samples
 
 
-def _coarse_significance_support_audit_enabled(*, default: bool = False) -> bool:
-    """Resolve exact, diagnostic-only coarse-support hashing."""
-
-    return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV, default=default)
-
-
-def _coarse_significance_support_audit_ids_enabled() -> bool:
-    """Whether a support audit also retains its exact selected IDs."""
-    return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV)
-
-
 def build_stats(
     outputs: Pass1Outputs,
     significant_sample_indices,
     plan: OutputPlan,
     *,
     executed_backend: str,
+    probe: Pass1Probe,
 ) -> Pass1Stats:
     """The pass's :class:`Pass1Stats`: its per-image statistics.
 
     ``executed_backend`` names the scorer that ran. The class best and runner-up statistics are present when the plan
-    asked for them. The support audit (an environment diagnostic) adds the hash of the supports, and refuses a pass that
-    collected none.
+    asked for them. ``probe`` gives the support audit the statistics report (:meth:`Pass1Probe.support_audit`).
     """
 
-    support_audit = None
-    if _coarse_significance_support_audit_enabled():
-        if significant_sample_indices is None:
-            raise RuntimeError(
-                f"{_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV}=1 requires "
-                "collect_significance=True",
-            )
-        support_audit = build_coarse_significance_support_audit(
-            significant_sample_indices,
-            samples_per_class=plan.n_rot * plan.n_trans,
-            include_ids=_coarse_significance_support_audit_ids_enabled(),
-        )
+    support_audit = probe.support_audit(significant_sample_indices, samples_per_class=plan.n_rot * plan.n_trans)
     return Pass1Stats(
         normalization_log_z=outputs.normalization_log_z,
         normalization_log_evidence=outputs.normalization_log_evidence,

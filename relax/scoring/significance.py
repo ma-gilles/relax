@@ -2,7 +2,7 @@
 
 The shared scorer serves K=1, multiclass refinement and initial-model searches.
 It selects per-image significant samples from one class/rotation/translation
-posterior, with optional diagnostic capture of the coarse scoring boundary.
+posterior; the request's probe (:mod:`relax.scoring.probes`) may observe the coarse scoring boundary.
 
 A pass is a request (:class:`~relax.scoring.pass1_request.Pass1Request`), a plan
 (:func:`~relax.scoring.pass1_plan.plan_pass1`: the refusals, the route and each stage's plan) and a run
@@ -81,6 +81,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
         significant_sample_indices,
         plan.output_plan,
         executed_backend=plan.route.executed_backend,
+        probe=plan.probe,
     )
     if plan.tree_rescore_enabled:
         log_tree_rescore_totals(tree_rescore_totals)

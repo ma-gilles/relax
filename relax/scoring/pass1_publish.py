@@ -4,7 +4,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.diagnostics.coarse_gaussian_diagnostics import maybe_dump_k_class_significance_batch
 from relax.fine_pass.resident_significance import compact_batch_significance_classes
 from relax.fine_pass.significant_samples import compact_significant_sample_indices_from_mask
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
@@ -189,7 +188,7 @@ def _dump_batch(
     global_log_z_np,
     best_score_np,
 ) -> None:
-    """Write the score dump of a dump batch (``RELAX_SIGNIFICANCE_DUMP_*``) from the batch and what was published."""
+    """Hand the probe a dump batch's scores, support and operands, from the batch and what was published."""
 
     # Concatenate per-class per-block raw scores for the dump targets
     # into per-class arrays of shape (n_targets, n_rot, n_trans).
@@ -209,7 +208,7 @@ def _dump_batch(
             for blocks in batch.dump_target_with_prior_blocks_per_class
         ]
         target_local_positions_for_dump = batch.dump_target_local_positions
-    maybe_dump_k_class_significance_batch(
+    dump.probe.significance_batch_scored(
         experiment_dataset=dump.experiment_dataset,
         indices=batch.indices,
         n_classes=plan.n_classes,

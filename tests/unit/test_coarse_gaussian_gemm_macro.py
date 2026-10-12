@@ -14,6 +14,7 @@ from helpers.exact_pass1_harness import ExactPass1Dataset, mock_unit_ctf_and_zer
 from helpers.float_compare import assert_matches
 from helpers.pass1_programs import clear_pass1_programs
 
+from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostics
 from relax.fine_pass.significant_samples import significant_sample_ids
 from relax.projection.projection_cache import build_projection_cache
 from relax.relion import ctf
@@ -1140,6 +1141,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         class_prior=active_class_prior,
         rotation_prior=active_rotation_prior,
         translation_prior=active_translation_prior,
+        probe=SignificanceDiagnostics(),
     )
     images = jnp.asarray(np.arange(1, 4, dtype=np.complex64)[:, None, None] * np.ones((3, 2, 1), np.complex64))
     expected_pre_prior = np.stack(

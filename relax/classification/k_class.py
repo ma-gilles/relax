@@ -29,6 +29,7 @@ from relax.classification.k_class_results import (
     _full_stats_from_subset,
     _zero_subset_noise_stats,
 )
+from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostics
 from relax.diagnostics.coarse_score_diagnostics import (
     _with_coarse_significance_diagnostics,
 )
@@ -845,6 +846,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         return_class_best=True,
         return_class_second=bool(os.environ.get("RELAX_GLOBAL_WINNER_SUMMARY_PATH", "").strip()),
         debug_iteration=engine_kwargs.get("debug_iteration"),
+        probe=SignificanceDiagnostics(),
         coarse_healpix_order=engine_kwargs.get("coarse_healpix_order"),
         coarse_rotation_ids=engine_kwargs.get("coarse_rotation_ids"),
         translation_phase_source=engine_kwargs.get("translation_phase_source"),
@@ -1889,6 +1891,7 @@ def run_dense_k_class_em_adaptive(
             relion_projector_r_max=relion_projector_r_max,
             relion_projector_texture_interp=coarse_relion_projector_texture_interp,
             debug_iteration=debug_iteration,
+            probe=SignificanceDiagnostics(),
             translation_phase_source=coarse_translation_phase_source,
             tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
