@@ -2254,7 +2254,7 @@ def test_vdam_refuses_iteration_counts_with_a_nan_tau2_fudge(nr_iter):
 
 
 def test_every_accepted_vdam_iteration_count_schedules_a_finite_tau2_fudge():
-    from relax.vdam.schedules import compute_phase_lengths, compute_tau2_fudge
+    from relax.steps.sgd_schedule import compute_phase_lengths, compute_tau2_fudge
 
     for nr_iter in (1, 2, 3, 6, 7, 8, 25, 200):
         native_options.NativeInitialModelOptions(fn_img="x", nr_iter=nr_iter).validate_run()

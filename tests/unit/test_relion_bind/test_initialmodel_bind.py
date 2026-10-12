@@ -6,9 +6,9 @@ trajectories against the corresponding RELION C++ functions compiled into
 `_relion_bind_core`.
 
 Covers:
-  - vdam_compute_subset_size    vs schedules.compute_subset_size
-  - vdam_compute_stepsize       vs schedules.compute_stepsize
-  - vdam_compute_tau2_fudge     vs schedules.compute_tau2_fudge
+  - vdam_compute_subset_size    vs sgd_schedule.compute_subset_size
+  - vdam_compute_stepsize       vs sgd_schedule.compute_stepsize
+  - vdam_compute_tau2_fudge     vs sgd_schedule.compute_tau2_fudge
   - vdam_randomise_particles_order  — RELION's std::shuffle(mt19937) subset
         order used by the native parity path.
 
@@ -25,7 +25,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.vdam.schedules import (
+from relax.steps.sgd_schedule import (
     DEFAULT_GRAD_EM_ITERS,
     compute_phase_lengths,
     compute_stepsize,

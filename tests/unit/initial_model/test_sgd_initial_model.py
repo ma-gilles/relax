@@ -14,6 +14,7 @@ from relax import sampling
 from relax.commands.initial_model import _native_options_dict, make_parser
 from relax.fourier.half_spectrum import _host_half_spectrum_plan
 from relax.relion.projector_setup import setup_relion_projector, swap_relion_volume_layout
+from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_setup import noise_variance_from_sigma2
@@ -22,7 +23,6 @@ from relax.vdam.model_update import update_probabilities_from_estep
 from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment, VdamPilotControls
 from relax.vdam.native_sampling import build_sampling_plan, initial_sampling_state
 from relax.vdam.ports import NoProbe, VdamObserver
-from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.sgd import (
     GAMMA,
     INFLATED_PRIOR_COUNT,

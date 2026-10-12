@@ -19,8 +19,7 @@ import math
 import pytest
 
 from relax.relion.macros import relion_round
-from relax.vdam.native_options import InitialModelDefaults
-from relax.vdam.schedules import (
+from relax.steps.sgd_schedule import (
     DEFAULT_GRAD_EM_ITERS,
     DEFAULT_STEPSIZE_3D_INITIAL_MODEL,
     DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL,
@@ -31,6 +30,9 @@ from relax.vdam.schedules import (
     compute_tau2_fudge,
     default_subset_sizes_for_3d_initial_model,
     phase_lengths_from_effective_fractions,
+)
+from relax.vdam.native_options import InitialModelDefaults
+from relax.vdam.schedules import (
     should_estimate_native_sampling_accuracy,
 )
 

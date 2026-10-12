@@ -14,7 +14,7 @@ from typing import Literal
 from relax.io.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
 from relax.runtime.env_flags import parse_env_strict_flag, read_env_text
 from relax.sampling.symmetry import is_identity_symmetry
-from relax.vdam.schedules import (
+from relax.steps.sgd_schedule import (
     DEFAULT_GRAD_EM_ITERS,
     DEFAULT_GRAD_FIN_FRAC,
     DEFAULT_GRAD_INI_FRAC,

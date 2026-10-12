@@ -1,7 +1,7 @@
 import pytest
 
+from relax.steps.sgd_schedule import default_subset_sizes_for_3d_initial_model
 from relax.vdam.native_options import NativeInitialModelOptions, VdamPilotControls
-from relax.vdam.schedules import default_subset_sizes_for_3d_initial_model
 
 pytestmark = pytest.mark.unit
 
@@ -48,7 +48,7 @@ def test_caps_and_stop_file(tmp_path):
 
 def test_vdam_batch_step_factor():
     from relax.ppca_initial_model.config import Config
-    from relax.vdam.schedules import (
+    from relax.steps.sgd_schedule import (
         DEFAULT_GRAD_EM_ITERS,
         compute_phase_lengths,
         compute_subset_size,

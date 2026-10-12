@@ -233,6 +233,7 @@ Use this index only after reading the algorithm sections above.
 - VDAM loop and schedules:
   [`iteration_loop.py::run_vdam_iterations`](../../relax/vdam/iteration_loop.py),
   [`schedules.py`](../../relax/vdam/schedules.py),
+  [`sgd_schedule.py`](../../relax/steps/sgd_schedule.py),
   [`subset_schedule.py::select_vdam_subset`](../../relax/vdam/subset_schedule.py)
 - InitialModel dense bridge and M-step:
   [`estep_setup.py`](../../relax/vdam/estep_setup.py),
@@ -585,7 +586,7 @@ C++ primitive, not reimplemented Python code in this branch.
 Later native InitialModel iterations therefore reuse the same Python-carried
 state fields but update the reference through RELION's VDAM binding. The
 regularization strength seen by that binding changes through
-[`schedules.py::compute_tau2_fudge`](../../relax/vdam/schedules.py),
+[`sgd_schedule.py::compute_tau2_fudge`](../../relax/steps/sgd_schedule.py),
 which mirrors RELION `updateTau2Fudge`: for GUI InitialModel defaults
 `--tau2_fudge 4` and an empty scheme, the scheduled value grows from near `1`
 toward `4` over the gradient phases. This is different from standard dense EM,

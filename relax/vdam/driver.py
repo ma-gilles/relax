@@ -33,6 +33,11 @@ from relax.steps.optics_shapes import (
     optics_shape_class_rows,
     shape_datasets,
 )
+from relax.steps.sgd_schedule import (
+    DEFAULT_SIGMA2_FUDGE,
+    default_subset_sizes_for_3d_initial_model,
+    phase_lengths_from_effective_fractions,
+)
 from relax.steps.tomo_half import (
     TiltImageAccuracyInputs,
     TomoDataset,
@@ -62,11 +67,6 @@ from relax.vdam.native_sampling import (
 from relax.vdam.output import write_final_outputs, write_iteration_artifacts
 from relax.vdam.ports import ExpectationProbe, VdamInputSource, VdamObserver
 from relax.vdam.relion_checkpoint import _load_native_vdam_continuation, _validate_continuation_order_replay
-from relax.vdam.schedules import (
-    DEFAULT_SIGMA2_FUDGE,
-    default_subset_sizes_for_3d_initial_model,
-    phase_lengths_from_effective_fractions,
-)
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation
 from relax.vdam.tomo_estep import run_tomo_initial_model_estep

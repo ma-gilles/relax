@@ -7,12 +7,12 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import relative_metrics
 from recovar.utils.helpers import recovar_volume_to_relion
 
+from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam import estep_setup as adapter
 from relax.vdam import iteration_loop as loop
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.ports import NoProbe, VdamObserver
-from relax.vdam.schedules import DEFAULT_GRAD_MU
 
 pytestmark = pytest.mark.unit
 

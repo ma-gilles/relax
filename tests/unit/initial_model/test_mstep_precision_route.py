@@ -12,11 +12,11 @@ from helpers.vdam import keep_tau2
 
 from relax.commands import initial_model as initial_model_command
 from relax.parity import vdam_mstep_replay, vdam_replay
+from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam import driver, estep_setup, initial_model_io, iteration_loop, m_step, native_options
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.ports import NoProbe, VdamObserver
-from relax.vdam.schedules import DEFAULT_GRAD_MU
 
 pytestmark = pytest.mark.unit
 

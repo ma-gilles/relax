@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.vdam.schedules import (
+from relax.steps.sgd_schedule import (
     DEFAULT_GRAD_EM_ITERS,
     compute_phase_lengths,
     compute_stepsize,

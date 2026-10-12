@@ -614,7 +614,8 @@ general monotone-resolution guarantee.
 
 Sources: [sampling](../../relax/vdam/native_sampling.py),
 [E-step](../../relax/vdam/adaptive_estep.py),
-[schedules](../../relax/vdam/schedules.py), and the iteration loop.
+[schedules](../../relax/vdam/schedules.py), [the gradient schedule](../../relax/steps/sgd_schedule.py) and the
+iteration loop.
 
 ### PPCA changes and decisions
 
@@ -774,7 +775,7 @@ The general initial count is `clamp(round(0.005*N), 200, 5000)` and the final
 subset count is `clamp(round(0.1*N), 1000, 50000)`. These are **total** counts,
 not per-class counts. Actual pseudo-half counts follow particle identity.
 Sources: `default_subset_sizes_for_3d_initial_model` and `compute_subset_size`
-in [schedules.py](../../relax/vdam/schedules.py).
+in [sgd_schedule.py](../../relax/steps/sgd_schedule.py).
 
 Recommendation: begin with this batch schedule, including an explicitly
 specified final all-data update for PPCA. The user requested this comparison

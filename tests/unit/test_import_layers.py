@@ -58,7 +58,6 @@ ALLOWED_UPWARD = {
     ("relax.fine_pass.resident_pass2", "relax.dense.gemm_coarse_engine"): _D,
     ("relax.fine_pass.resident_scoring", "relax.local_search.resident_layout"): _D,
     ("relax.fine_pass.resident_significance", "relax.scoring.significant_samples"): _D,
-    ("relax.ppca_initial_model.config", "relax.vdam.schedules"): _E,
     ("relax.refinement.command_options", "relax.parity.frozen_boundary_cli"): _B,
     ("relax.refinement.command_options", "relax.parity.state_swap_probe"): _B,
     ("relax.refinement.dense_half", "relax.diagnostics.parity_dump"): _B,
