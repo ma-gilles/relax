@@ -85,7 +85,7 @@ from relax.fine_pass.projection_blocks import (
     _projection_kwargs_for_relion_score_window,
     projection_window_union,
 )
-from relax.fine_pass.resident_candidates import chunk_segment_offsets
+from relax.fine_pass.resident_candidates import chunk_segment_offsets, expand_local_chunk_mask_jnp
 from relax.fine_pass.resident_operands import (
     ResidentOperandsUnsupported,
     require_unshifted_operand_support,
@@ -122,7 +122,6 @@ from relax.fourier.half_spectrum import (
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.local_search import records
 from relax.local_search.resident_layout import (
-    expand_local_chunk_mask_jnp,
     materialize_local_chunk,
     plan_local_capacity_chunks,
     tables_from_local_layout,

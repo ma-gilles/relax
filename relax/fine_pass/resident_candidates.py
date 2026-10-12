@@ -62,6 +62,7 @@ __all__ = [
     "ResidentCandidateTables",
     "build_resident_candidate_tables",
     "expand_chunk_mask_jnp",
+    "expand_local_chunk_mask_jnp",
     "expand_mask_jnp",
     "expand_mask_rows",
     "materialize_chunk",
@@ -727,6 +728,34 @@ def expand_chunk_mask_jnp(row_mask_bits, row_mask_mode, fine_translation_parent)
     is_full = (row_mask_mode == _MASK_MODE_FULL)[:, None]
     is_empty = (row_mask_mode == _MASK_MODE_EMPTY)[:, None]
     return jnp.where(is_full, True, jnp.where(is_empty, False, bitset))
+
+
+def expand_local_chunk_mask_jnp(row_mask_bits, *, n_trans: int):
+    """Dense candidate mask of one padded chunk, from its packed per-row bytes.
+
+    ``jax.numpy`` twin of :func:`expand_local_mask_rows` for a whole
+    :func:`materialize_local_chunk` output at once, so a jitted device program
+    rebuilds ``bool[row_capacity, n_trans]`` with no host array. ``row_mask_bits``
+    is uint8 ``[row_capacity, n_mask_bytes]`` in the layout's little-endian bit
+    order: translation ``t`` is byte ``t // 8``, bit ``t % 8``.
+
+    ``row_mask_bits is None`` returns ``None``, the caller's signal that every
+    cell is a candidate; the caller still applies its own row-validity mask, so
+    padded rows are excluded there rather than here.
+    """
+
+    import jax.numpy as jnp
+
+    if row_mask_bits is None:
+        return None
+    row_mask_bits = jnp.asarray(row_mask_bits, dtype=jnp.uint8)
+    if row_mask_bits.ndim != 2:
+        raise ValueError(f"row_mask_bits must be 2-D, got {row_mask_bits.shape}")
+    trans = jnp.arange(n_trans, dtype=jnp.int32)
+    byte_index = trans // jnp.int32(8)
+    bit_index = (trans % jnp.int32(8)).astype(jnp.uint8)
+    selected = row_mask_bits[:, byte_index]
+    return ((selected >> bit_index[None, :]) & jnp.uint8(1)) != 0
 
 
 def _smallest_fit(ladder: tuple[int, ...], value: int) -> int | None:

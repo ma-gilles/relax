@@ -17,6 +17,7 @@ from helpers.float_compare import assert_matches, matches
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
+from relax.fine_pass.resident_candidates import expand_local_chunk_mask_jnp
 from relax.local_search import resident_layout as rll
 from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
@@ -149,7 +150,7 @@ def test_mask_expansion_matches_the_layouts_own_unpacking():
     expanded = rll.expand_local_mask_rows(tables, 0, tables.n_rows)
     assert_matches(expanded, reference)
 
-    device = rll.expand_local_chunk_mask_jnp(
+    device = expand_local_chunk_mask_jnp(
         jnp.asarray(tables.row_mask_bits), n_trans=tables.n_trans
     )
     assert_matches(np.asarray(device), reference)
@@ -165,7 +166,7 @@ def test_full_support_layout_keeps_the_compact_none_spelling():
         rll.expand_local_mask_rows(tables, 0, tables.n_rows),
         np.ones((tables.n_rows, tables.n_trans), dtype=bool),
     )
-    assert rll.expand_local_chunk_mask_jnp(None, n_trans=tables.n_trans) is None
+    assert expand_local_chunk_mask_jnp(None, n_trans=tables.n_trans) is None
 
 
 @pytest.mark.parametrize("n_trans", [1, 7, 8, 9, 31, 84, 129])
@@ -176,7 +177,7 @@ def test_device_mask_expansion_is_bit_exact_for_any_translation_count(n_trans):
     rows = 11
     dense = rng.random((rows, n_trans)) < 0.5
     bits = np.packbits(dense, axis=1, bitorder="little")
-    device = rll.expand_local_chunk_mask_jnp(jnp.asarray(bits), n_trans=n_trans)
+    device = expand_local_chunk_mask_jnp(jnp.asarray(bits), n_trans=n_trans)
     assert_matches(np.asarray(device), dense)
 
 
@@ -234,7 +235,7 @@ def test_materialized_chunk_is_the_slice_plus_inert_padding():
 
         # Padding is inert: no candidate cell, a dropped histogram bin, a finite
         # rotation and a prior no winner can reach.
-        mask = rll.expand_local_chunk_mask_jnp(
+        mask = expand_local_chunk_mask_jnp(
             host["row_mask_bits"], n_trans=tables.n_trans
         )
         if mask is not None:

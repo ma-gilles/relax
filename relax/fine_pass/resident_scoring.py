@@ -63,6 +63,7 @@ from relax.fine_pass.resident_candidates import (
     CapacityChunk,
     ResidentCandidateTables,
     expand_chunk_mask_jnp,
+    expand_local_chunk_mask_jnp,
     materialize_chunk,
 )
 from relax.fine_pass.scoring import (
@@ -71,7 +72,6 @@ from relax.fine_pass.scoring import (
     _relion_powerclass_noise_terms,
 )
 from relax.io.batch_fetch import fetch_indexed_batch
-from relax.local_search.resident_layout import expand_local_chunk_mask_jnp
 
 __all__ = [
     "ResidentChunkScores",

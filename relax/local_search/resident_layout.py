@@ -24,7 +24,7 @@ differences this module resolves:
    per-*parent* bitset over *coarse* translations, which cannot hold the local
    per-row mask over fine translations (the auto-refine local pass 2 runs 84). This module keeps the layout's packing and expands it on the
    device with the same little-endian bit order
-   (:func:`expand_local_chunk_mask_jnp`).
+   (:func:`relax.fine_pass.resident_candidates.expand_local_chunk_mask_jnp`).
    ``sample_mask_bits is None`` is the layout's compact spelling of "every
    (row, translation) is a candidate" and is preserved as such, never expanded
    into an all-ones host array.
@@ -34,9 +34,9 @@ differences this module resolves:
    carry it, the posterior falls back to the fine ``rotation_ids_flat``, as the
    retired exact local engine did.
 
-Everything here is host planning in plain numpy, plus one ``jax.numpy`` mask
-expander used inside the jitted chunk programs. No scoring, projection or
-M-step arithmetic lives in this module.
+Everything here is host planning in plain numpy; the ``jax.numpy`` expander of
+the packed masks inside the jitted chunk programs lives with pass 2's candidate
+tables. No scoring, projection or M-step arithmetic lives in this module.
 
 Index conventions
 -----------------
@@ -60,7 +60,6 @@ from relax.fine_pass.resident_candidates import CapacityChunk, plan_pass_chunks
 
 __all__ = [
     "ResidentLocalTables",
-    "expand_local_chunk_mask_jnp",
     "expand_local_mask_rows",
     "materialize_local_chunk",
     "plan_local_capacity_chunks",
@@ -303,34 +302,6 @@ def expand_local_mask_rows(tables: ResidentLocalTables, start: int, stop: int) -
         count=int(tables.n_trans),
         bitorder="little",
     ).view(np.bool_)
-
-
-def expand_local_chunk_mask_jnp(row_mask_bits, *, n_trans: int):
-    """Dense candidate mask of one padded chunk, from its packed per-row bytes.
-
-    ``jax.numpy`` twin of :func:`expand_local_mask_rows` for a whole
-    :func:`materialize_local_chunk` output at once, so a jitted device program
-    rebuilds ``bool[row_capacity, n_trans]`` with no host array. ``row_mask_bits``
-    is uint8 ``[row_capacity, n_mask_bytes]`` in the layout's little-endian bit
-    order: translation ``t`` is byte ``t // 8``, bit ``t % 8``.
-
-    ``row_mask_bits is None`` returns ``None``, the caller's signal that every
-    cell is a candidate; the caller still applies its own row-validity mask, so
-    padded rows are excluded there rather than here.
-    """
-
-    import jax.numpy as jnp
-
-    if row_mask_bits is None:
-        return None
-    row_mask_bits = jnp.asarray(row_mask_bits, dtype=jnp.uint8)
-    if row_mask_bits.ndim != 2:
-        raise ValueError(f"row_mask_bits must be 2-D, got {row_mask_bits.shape}")
-    trans = jnp.arange(n_trans, dtype=jnp.int32)
-    byte_index = trans // jnp.int32(8)
-    bit_index = (trans % jnp.int32(8)).astype(jnp.uint8)
-    selected = row_mask_bits[:, byte_index]
-    return ((selected >> bit_index[None, :]) & jnp.uint8(1)) != 0
 
 
 def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -> dict:
