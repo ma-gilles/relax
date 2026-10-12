@@ -15,7 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fourier.half_spectrum import bin_shell_values_jax, make_shell_indices_half
-from relax.fourier.shells import shell_of_radius_sq
+from relax.numerics.shells import shell_of_radius_sq
 from relax.runtime.env_flags import parse_env_flag
 
 _RELION_FINE_DIFF2_FUSED_FFI_ENV = "RELAX_RELION_FINE_DIFF2_FUSED_FFI"

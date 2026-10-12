@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.fourier.shells import shell_of_radius_sq
+from relax.numerics.shells import shell_of_radius_sq
 from relax.refinement.half_inputs import HalfPair
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.refinement.tomo_half import TomoDataset

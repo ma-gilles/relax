@@ -18,8 +18,8 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.data_io.starfile import star_column
 
-from relax.fourier.shells import shell_of_radius_sq
 from relax.io.batch_fetch import original_image_indices
+from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.tomo_input import relion_tomo_damping
 
 _RELION_EXACT_CTF_SOURCE_CACHE: dict[tuple[str, tuple[int, int]], dict] = {}

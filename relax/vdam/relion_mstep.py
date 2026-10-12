@@ -25,12 +25,12 @@ from recovar.reconstruction.relion_functions import (
 )
 
 from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
-from relax.fourier.shells import shell_of_radius_sq
 from relax.numerics.deterministic_reduce import (
     deterministic_reductions_enabled,
     fixed_order_shell_sums,
     static_shell_voxel_lists,
 )
+from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.projector_setup import (
     setup_relion_projector,
     setup_relion_projector_uncorrected,

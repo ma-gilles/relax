@@ -26,8 +26,8 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.fourier.shells import shell_of_radius_sq
 from relax.numerics.relion_random import RAND_MAX, GlibcRand
+from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.macros import relion_round
 
 # randomize_at is the first shell whose unmasked FSC falls below this; the corrected formula starts

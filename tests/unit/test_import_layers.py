@@ -85,7 +85,6 @@ ALLOWED_UPWARD = {
     ("relax.local_search.sampling", "relax.refinement.refinement_state"): _A,
     ("relax.local_search.sampling", "relax.refinement.setup_checks"): _A,
     ("relax.local_search.sampling", "relax.refinement.trial_grids"): _A,
-    ("relax.numerics.deterministic_reduce", "relax.fourier.shells"): _E,
     ("relax.ppca_initial_model.config", "relax.vdam.schedules"): _E,
     ("relax.ppca_initial_model.initialization", "relax.vdam.bootstrap_iref"): _E,
     ("relax.ppca_initial_model.iteration_loop", "relax.refinement.refinement_state"): _A,
@@ -284,8 +283,8 @@ def test_the_upward_ratchet_sees_lazy_and_type_checking_imports():
         "    from ..numerics import shells\n"
     )
     found = _relax_imports(source, "relax.sampling")
-    assert found == {"relax.vdam.driver", "relax.refinement.ports", "relax.numerics"}
+    assert found == {"relax.vdam.driver", "relax.refinement.ports", "relax.numerics.shells"}
     assert _upward("relax.sampling", "relax.vdam.driver") and _upward("relax.sampling", "relax.refinement.ports")
-    assert not _upward("relax.sampling", "relax.numerics")
+    assert not _upward("relax.sampling", "relax.numerics.shells")
     assert _upward("relax.vdam.driver", "relax.refinement.ports")  # controller to controller
     assert not _upward("relax.commands.refine", "relax.command_line")  # one command band

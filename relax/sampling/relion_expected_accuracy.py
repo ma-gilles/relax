@@ -42,8 +42,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
-from relax.fourier.shells import shell_of_radius_sq
 from relax.numerics import relion_random
+from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.macros import PI, relion_round_array
 from relax.runtime.memory_budget import ACCURACY_SLAB_STREAM_CHUNK_BYTES, accuracy_slab_resident_bytes
 

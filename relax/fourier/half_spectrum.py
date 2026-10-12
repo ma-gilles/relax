@@ -9,8 +9,8 @@ import jax.numpy as jnp
 import numpy as np
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
-from relax.fourier.shells import shell_index
 from relax.numerics.deterministic_reduce import deterministic_reductions_enabled, fixed_order_segment_sum
+from relax.numerics.shells import shell_index
 
 
 @dataclass(frozen=True)

@@ -16,7 +16,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fourier.shells import shell_of_radius_sq
+from relax.numerics.shells import shell_of_radius_sq
 from relax.runtime.env_flags import parse_env_binary_flag
 
 DETERMINISTIC_REDUCTIONS_ENV = "RELAX_EM_DETERMINISTIC_REDUCTIONS"

@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.fourier.shells import shell_index
+from relax.numerics.shells import shell_index
 from relax.sampling.orientation_priors import relion_translation_search_base
 
 

@@ -17,7 +17,7 @@ from recovar.reconstruction.regularization import (  # noqa: F401  (staying help
     logger,
 )
 
-from relax.fourier.shells import shell_of_radius
+from relax.numerics.shells import shell_of_radius
 from relax.relion.macros import relion_round, relion_round_array
 from relax.runtime.env_flags import parse_env_auto_flag
 from relax.runtime.xla_memory_reserve import device_fits
@@ -32,7 +32,7 @@ _SHELL_STATS_DEVICE_BYTES_PER_VOXEL = 48
 # beside the final all-data pass's accumulators and the XLA pool's fragmentation, and the estimate above counts the
 # named arrays only, not the reductions' temporaries; half leaves room for both.
 _SHELL_STATS_DEVICE_SHARE = 0.5
-# `shell_rounding` ("round" is RELION ROUND) as a relax.fourier.shells rule.
+# `shell_rounding` ("round" is RELION ROUND) as a relax.numerics.shells rule.
 _SHELL_RULE = {"round": "half_up", "floor": "floor"}
 
 

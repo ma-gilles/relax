@@ -22,12 +22,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
-from relax.fourier.shells import shell_of_radius_sq
 from relax.numerics.deterministic_reduce import (
     deterministic_reductions_enabled,
     fixed_order_shell_sums,
     static_shell_voxel_lists,
 )
+from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.project import gridding_correct_volume_real, gridding_correct_volume_real_separable
 from relax.runtime.xla_memory_reserve import single_working_set_bytes
 
