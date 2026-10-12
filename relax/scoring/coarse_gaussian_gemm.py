@@ -10,10 +10,10 @@ import operator
 import os
 from typing import NamedTuple
 
-import jax
 import numpy as np
 
 from relax.projection import projection_cache as projection_cache_helpers
+from relax.runtime import memory_budget
 from relax.runtime.env_flags import parse_env_strict_flag
 
 _COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV = (
@@ -97,21 +97,21 @@ def coarse_gaussian_gemm_projection_cache_budget_bytes(
 ) -> int:
     """Return the call-scoped cache budget.
 
-    Without an explicit budget the cache may use a fifth of the GPU's memory
-    (16 GB on an 80 GB H100/A100); off-GPU it keeps the fixed 4 GB default.
+    Without an explicit budget the cache may use a fifth of this worker's
+    share of the JAX allocator limit (16 GB on an 80 GB H100/A100 alone, 8 GB
+    each when two half-sets share the device under ``--overlap_halves``);
+    off-GPU it keeps the fixed 4 GB default.
     """
 
     if default_gb is None:
         default_gb = _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEFAULT_MAX_GB
-        devices = jax.local_devices()
-        if devices and devices[0].platform == "gpu":
-            stats = devices[0].memory_stats() or {}
-            if "bytes_limit" in stats:
-                default_gb = (
-                    _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEVICE_FRACTION
-                    * float(stats["bytes_limit"])
-                    / 1024**3
-                )
+        limit_bytes = memory_budget._share(memory_budget._jax_allocator_limit_bytes())
+        if limit_bytes is not None:
+            default_gb = (
+                _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEVICE_FRACTION
+                * float(limit_bytes)
+                / 1024**3
+            )
     token = os.environ.get(
         _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB_ENV,
         str(default_gb),
