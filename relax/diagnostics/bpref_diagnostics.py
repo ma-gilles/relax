@@ -29,6 +29,14 @@ _RELION_X_HALF_BP_FUSED_ATOMICS_ENV = "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS"
 
 _bpref_contribution_context = {"iteration": -1, "half": -1}
 
+# The variables the BPref observer (``relax.diagnostics.observers.BpRefDiagnosticsObserver``) reads; the command
+# builds it when one of them is set. Unset or blank, its hooks do nothing.
+BPREF_DIAGNOSTIC_ENVS = (
+    "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION",
+    "RELAX_BPREF_CONTRIBUTION_DUMP_HALF",
+)
+
 
 _bpref_image_identity_cache: dict[str, np.ndarray] = {}
 

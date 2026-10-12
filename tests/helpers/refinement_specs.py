@@ -274,6 +274,7 @@ def dense_execution_policy(**fields):
             "firstiter_cc_support": "relion",
             "nyquist_column_counting": "relion",
             "k_class_probe": KClassNoProbe(),
+            "keep_pose_rotation_eulers": False,
             **fields,
         }
     )

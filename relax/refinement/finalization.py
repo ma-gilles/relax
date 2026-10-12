@@ -391,6 +391,7 @@ def run_final_all_data(
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
             precision=options.precision,
             k_class_probe=ctx.k_class_probe,
+            keep_pose_rotation_eulers=ctx.expectation_probe.keeps_pose_rotation_eulers,
         )
     final_outs = PerHalfOutputs()
     first_projector_power_spectrum = None

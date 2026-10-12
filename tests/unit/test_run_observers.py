@@ -137,3 +137,48 @@ def test_a_one_half_dump_target_is_the_environment_target_half_observer(monkeypa
     assert target[0].scored_halves(2, n_classes=1, experiment_datasets=datasets) == (1,)
     group = observers.ObserverGroup([RunObserver(), target[0]])
     assert group.scored_halves(2, n_classes=1, experiment_datasets=datasets) == (1,)
+
+
+def test_the_controller_tells_the_observer_of_each_recorded_numbered_half(monkeypatch):
+    class Halves(RunObserver):
+        def __init__(self):
+            self.recorded = []
+
+        def numbered_half_recorded(self, recorded):
+            assert recorded.particles.index == recorded.half_index
+            assert recorded.per_half.coarse_ha[recorded.half_index] is recorded.score_result.coarse_ha
+            self.recorded.append((recorded.iteration, recorded.half_index))
+
+    observer = Halves()
+    run_tiny_refinement(monkeypatch, max_iter=2, observer=observer)
+    assert observer.recorded == [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+
+def test_the_parity_capture_asks_for_the_pose_eulers_only_while_it_dumps(monkeypatch, tmp_path):
+    monkeypatch.delenv("RELAX_PARITY_DUMP_DIR", raising=False)
+    assert not RunObserver().keeps_pose_rotation_eulers
+    assert not observers.ParityDumpObserver().keeps_pose_rotation_eulers
+    monkeypatch.setenv("RELAX_PARITY_DUMP_DIR", str(tmp_path / "parity"))
+    assert observers.ParityDumpObserver().keeps_pose_rotation_eulers
+    assert observers.ObserverGroup([RunObserver(), observers.ParityDumpObserver()]).keeps_pose_rotation_eulers
+
+
+def test_a_bpref_device_panel_variable_builds_its_observer_ahead_of_the_parity_capture(monkeypatch, tmp_path):
+    from relax.diagnostics import bpref_diagnostics
+
+    for name in (*bpref_diagnostics.BPREF_DIAGNOSTIC_ENVS, "RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    assert not any(isinstance(o, observers.BpRefDiagnosticsObserver) for o in observers.observers_from_environment())
+    monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", str(tmp_path / "panels"))
+    monkeypatch.setenv("RELAX_PARITY_TIMING_DIR", str(tmp_path / "timing"))
+    assert [type(o) for o in observers.observers_from_environment()][:2] == [
+        observers.BpRefDiagnosticsObserver, observers.ParityDumpObserver,
+    ]
+    flushed = []
+    monkeypatch.setattr(observers.bpref_diagnostics, "flush_selected_bpref_device_panel", lambda **kw: flushed.append(kw))
+    # A scored half's panel is flushed; an empty half has none.
+    for n_units in (2, 0):
+        observers.BpRefDiagnosticsObserver().numbered_half_recorded(SimpleNamespace(
+            iteration=3, half_index=1, particles=SimpleNamespace(dataset=SimpleNamespace(n_units=n_units)),
+        ))
+    assert flushed == [dict(iteration_index=3, half_index=1)]

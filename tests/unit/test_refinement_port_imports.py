@@ -32,9 +32,7 @@ _INLINE_CHECK = "an inline finite/accumulator check that raises inside the algor
 # (importing module, imported module) -> why the edge is still there.
 ALLOWED_IMPORTS = {
     ("relax.refinement.expectation", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.expectation", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
     ("relax.refinement.finalization", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
-    ("relax.refinement.dense_half", "relax.diagnostics.parity_dump"): _INLINE_DUMP,
     ("relax.refinement.iteration_loop", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
     ("relax.refinement.firstiter_bpref", "relax.diagnostics.bpref_diagnostics"): _INLINE_DUMP,
 }

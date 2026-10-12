@@ -13,8 +13,8 @@ The command chooses the observer once (``relax.diagnostics.observers``) and hand
 The base ``RunObserver`` is the default and does nothing. Each hook is named for the moment of the run it is called
 at and receives the values the run holds then; an observer must not mutate them, and must not keep a device
 array past the hook unless it says so (it would extend that array's lifetime, code rule 3). The two
-collection requests (``keeps_rotation_posteriors``, ``collects_local_search_profiles``) and
-``wants_unfiltered_maps`` ask the run to keep or compute something beside its own values; they cost memory
+collection requests (``keeps_rotation_posteriors``, ``collects_local_search_profiles``,
+``keeps_pose_rotation_eulers``) and ``wants_unfiltered_maps`` ask the run to keep or compute something beside its own values; they cost memory
 or time, never a number of the run. ``scored_halves`` is a diagnostic boundary's request: score one half of a
 numbered iteration only, at a dump target after which the run stops.
 """
@@ -92,6 +92,18 @@ class DenseHalfScored(NamedTuple):
     image_window_size: Any
     perturb_factor: float
     result: Any
+
+
+class NumberedHalfRecorded(NamedTuple):
+    """One half of a numbered iteration once it is scored, published and recorded: ``particles`` is its
+    ``HalfSet``, ``score_result`` its ``HalfScoreResult`` and ``per_half`` the iteration's ``PerHalfOutputs``, whose
+    slots ``half_index`` now hold this half (an observer reads that slot only, and copies what it keeps)."""
+
+    iteration: int
+    half_index: int
+    particles: Any
+    score_result: Any
+    per_half: Any
 
 
 class FinalHalfScored(NamedTuple):
@@ -372,6 +384,9 @@ class RunObserver:
     keeps_rotation_posteriors: bool = False
     # A local search collects its per-bucket profile where ``--local_search_profile`` is ``auto``.
     collects_local_search_profiles: bool = False
+    # An adaptive K=1 half also reports its fine pose grid as RELION Euler angles
+    # (``HalfScoreResult.pose_rotation_eulers``).
+    keeps_pose_rotation_eulers: bool = False
 
     def wants_unfiltered_maps(self, numbered_relion_iteration: int) -> bool:
         """Whether this numbered iteration should also reconstruct its unregularized maps for the observer."""
@@ -435,6 +450,10 @@ class RunObserver:
     def dense_half_scored(self, scored: DenseHalfScored) -> None:
         """One half of a numbered iteration was scored on the single-pass dense route."""
 
+    def numbered_half_recorded(self, recorded: NumberedHalfRecorded) -> None:
+        """One half of a numbered iteration is scored and published, with its profile and significance counts
+        recorded (an empty half: published only)."""
+
     def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None:
         """A local search of one half returned its profile (only when the run collects profiles)."""
 
@@ -445,9 +464,14 @@ class RunObserver:
 class ExpectationProbe(Protocol):
     """The observer hooks an expectation calls mid-step, with data that exists only inside it (a half's scored
     result before its accumulators leave the device, a local search's profile): the hooks of
-    :class:`RunObserver` of the same names. Steps receive this, never the observer."""
+    :class:`RunObserver` of the same names, and its ``keeps_pose_rotation_eulers`` request. Steps receive this, never
+    the observer."""
+
+    keeps_pose_rotation_eulers: bool
 
     def dense_half_scored(self, scored: DenseHalfScored) -> None: ...
+
+    def numbered_half_recorded(self, recorded: NumberedHalfRecorded) -> None: ...
 
     def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None: ...
 
@@ -472,7 +496,12 @@ class MaximizationProbe(Protocol):
 class NoProbe:
     """The no-op :class:`ExpectationProbe` and :class:`MaximizationProbe`: a step called without an observer."""
 
+    keeps_pose_rotation_eulers = False
+
     def dense_half_scored(self, scored) -> None:
+        pass
+
+    def numbered_half_recorded(self, recorded) -> None:
         pass
 
     def local_search_profile(self, iteration, half_index, profile) -> None:
@@ -497,8 +526,15 @@ class ObserverExpectationProbe:
 
     observer: RunObserver
 
+    @property
+    def keeps_pose_rotation_eulers(self) -> bool:
+        return self.observer.keeps_pose_rotation_eulers
+
     def dense_half_scored(self, scored: DenseHalfScored) -> None:
         self.observer.dense_half_scored(scored)
+
+    def numbered_half_recorded(self, recorded: NumberedHalfRecorded) -> None:
+        self.observer.numbered_half_recorded(recorded)
 
     def local_search_profile(self, iteration: int, half_index: int, profile: dict) -> None:
         self.observer.local_search_profile(iteration, half_index, profile)

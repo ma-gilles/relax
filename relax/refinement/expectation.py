@@ -12,7 +12,6 @@ import numpy as np
 
 from relax.classification.probes import KClassProbe
 from relax.diagnostics import bpref_diagnostics
-from relax.diagnostics import parity_dump as _parity_dump
 from relax.numerics.precision import _diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans, iteration_planning, local_sampling
@@ -32,7 +31,7 @@ from relax.refinement.local_half import (
     LocalPriorSpec,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.ports import DenseHalfScored, ExpectationProbe
+from relax.refinement.ports import DenseHalfScored, ExpectationProbe, NumberedHalfRecorded
 from relax.refinement.refinement_options import RefinementOptions
 from relax.runtime.host_memory import return_freed_heap
 from relax.sampling import TrialGrid, rotation_grid_size
@@ -93,76 +92,33 @@ class SignificanceStatistics:
 def record_numbered_half(
     score_result: HalfScoreResult,
     particle_half: half_inputs.HalfSet,
-    per_half: PerHalfOutputs,
-    significance: SignificanceStatistics,
-    *,
-    profile_history: list,
-    iteration: int,
-    image_window_size: int | None,
-    healpix_order: int,
-    k_class_enabled: bool,
+    recording: "NumberedHalfRecording",
 ) -> None:
-    """Record an already-published half's profile, support counts and captures.
+    """Record an already-published half's profile and support counts in ``recording``, then tell its probe (the
+    observer's captures: ``numbered_half_recorded``).
 
-    Empty halves keep the existing zero capture without a profile or device
-    panel flush. Scoring and accumulator offloading remain with the caller.
+    An empty half has no profile or support counts; the probe hears of it too. Scoring and accumulator
+    offloading remain with the caller.
     """
     k = particle_half.index
+    recorded = NumberedHalfRecorded(recording.iteration, k, particle_half, score_result, recording.per_half)
     if particle_half.dataset.n_units == 0:
-        _parity_dump.collect_e_step(
-            half=k,
-            em_stats=score_result.em_stats,
-            hard_assignment=score_result.ha,
-            coarse_hard_assignment=per_half.coarse_ha[k],
-            noise_stats=score_result.noise_stats,
-            Ft_y=score_result.Ft_y,
-            Ft_ctf=score_result.Ft_ctf,
-            pose_rotation_eulers=per_half.pose_rotation_eulers[k],
-            best_pose_rotation_eulers=per_half.best_pose_rotation_eulers[k],
-            best_pose_translations=per_half.best_pose_translations[k],
-            translation_search_base=per_half.translation_search_bases[k],
-            original_image_indices=np.zeros(0, dtype=np.int64),
-        )
+        recording.probe.numbered_half_recorded(recorded)
         return
 
     _record_score_profile(
-        profile_history,
+        recording.profile_history,
         score_result,
         phase="iteration",
-        iteration=iteration,
-        relion_iteration=iteration + 1,
+        iteration=recording.iteration,
+        relion_iteration=recording.iteration + 1,
         half_index=k,
-        current_size=image_window_size,
-        healpix_order=healpix_order,
-        k_class_enabled=k_class_enabled,
+        current_size=recording.image_window_size,
+        healpix_order=recording.healpix_order,
+        k_class_enabled=recording.k_class_enabled,
     )
-    significance.record(k, score_result.significant_counts, for_convergence=not k_class_enabled)
-    bpref_diagnostics.flush_selected_bpref_device_panel(iteration_index=iteration, half_index=k)
-
-    # The parity dump records each image's row in the input stack; a dataset without an index layout has none.
-    index_layout = getattr(particle_half.dataset, "_index_layout", None)
-    original_image_indices = (
-        np.asarray(
-            index_layout.original_image_indices_for_local(np.arange(particle_half.dataset.n_images, dtype=np.int32)),
-            dtype=np.int64,
-        )
-        if index_layout is not None and _parity_dump.is_active()
-        else None
-    )
-    _parity_dump.collect_e_step(
-        half=k,
-        em_stats=score_result.em_stats,
-        hard_assignment=score_result.ha,
-        coarse_hard_assignment=per_half.coarse_ha[k],
-        noise_stats=per_half.noise_stats[k],
-        Ft_y=score_result.Ft_y,
-        Ft_ctf=score_result.Ft_ctf,
-        pose_rotation_eulers=per_half.pose_rotation_eulers[k],
-        best_pose_rotation_eulers=per_half.best_pose_rotation_eulers[k],
-        best_pose_translations=per_half.best_pose_translations[k],
-        translation_search_base=per_half.translation_search_bases[k],
-        original_image_indices=original_image_indices,
-    )
+    recording.significance.record(k, score_result.significant_counts, for_convergence=not recording.k_class_enabled)
+    recording.probe.numbered_half_recorded(recorded)
 
 
 @dataclass(frozen=True)
@@ -192,6 +148,8 @@ class NumberedHalfRecording:
     image_window_size: int | None
     healpix_order: int
     k_class_enabled: bool
+    # The observer's per-half hooks (RunContext.expectation_probe), told of each recorded half.
+    probe: ExpectationProbe
 
 
 def finish_numbered_half(
@@ -223,17 +181,7 @@ def finish_numbered_half(
             log=logger,
         )
     recording.per_half.update_from(k, score_result, dtype=dtype)
-    record_numbered_half(
-        score_result,
-        particle_half,
-        recording.per_half,
-        recording.significance,
-        profile_history=recording.profile_history,
-        iteration=recording.iteration,
-        image_window_size=recording.image_window_size,
-        healpix_order=recording.healpix_order,
-        k_class_enabled=recording.k_class_enabled,
-    )
+    record_numbered_half(score_result, particle_half, recording)
 
 
 def _score_and_finish_half(score_half, finish_half, half_inputs, k) -> None:
@@ -461,6 +409,7 @@ def run_numbered_expectation(
                 per_half, significance, profile_history=history.global_profile_history,
                 iteration=this_iteration.iteration, image_window_size=plan.sampling_plan.windows.image_window_size,
                 healpix_order=carry.coarse_grids.rotation_grid.healpix_order, k_class_enabled=ctx.k_class_enabled,
+                probe=ctx.expectation_probe,
             ),
             use_local=use_local, dtype=ctx.scoring_dtype,
         ),
@@ -916,6 +865,7 @@ def score_numbered_half(
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
             precision=options.precision,
             k_class_probe=k_class_probe,
+            keep_pose_rotation_eulers=probe.keeps_pose_rotation_eulers,
         )
         dense_result = _score_half_dense_in_bpref_scope(
             dense_half,

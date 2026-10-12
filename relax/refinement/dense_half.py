@@ -17,7 +17,6 @@ from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.classification.k_class_results import KClassEMResult
 from relax.classification.probes import KClassProbe
 from relax.cuda import backprojection as cuda_backprojection
-from relax.diagnostics import parity_dump as _parity_dump
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
@@ -213,6 +212,8 @@ class DenseExecutionPolicy:
     precision: DensePrecisionPolicy
     # The K-class E-step's diagnostics (relax.classification.probes.KClassProbe): they observe, never steer.
     k_class_probe: KClassProbe
+    # The observer asks for an adaptive K=1 half's fine pose grid as RELION Euler angles (its expectation probe).
+    keep_pose_rotation_eulers: bool
 
 
 def _score_adaptive_kclass_dense(
@@ -886,7 +887,7 @@ def _score_half_dense_one_shape(
             adaptive_oversampling=adaptive_os_local, symmetry=symmetry
         ).fine_rotations
     fine_rotation_eulers_for_pose = None
-    if fine_rotations_for_pose is not None and _parity_dump.is_active():
+    if fine_rotations_for_pose is not None and execution.keep_pose_rotation_eulers:
         fine_rotation_eulers_for_pose = utils.R_to_relion(
             np.asarray(fine_rotations_for_pose, dtype=np.float32),
             degrees=True,
