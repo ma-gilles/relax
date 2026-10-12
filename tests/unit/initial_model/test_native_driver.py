@@ -2488,9 +2488,13 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
     assert config.sampling.healpix_order == 0
     # The options' accumulator dump directory (VdamEnvironment) reaches the E-step config.
     assert config.accum_dump_dir is None
+    from relax.runtime.compile_ahead import CompileAheadConfig
+    from relax.runtime.engine_tuning import EngineTuning
+
+    dumping_opts_engine = EngineTuning(compile_ahead=CompileAheadConfig(enabled=True))
     dumping = estep_setup.initial_model_estep_config(
         dataset,
-        replace(opts, environment=native_options.VdamEnvironment(accum_dump_dir="/accum")),
+        replace(opts, environment=native_options.VdamEnvironment(accum_dump_dir="/accum", engine=dumping_opts_engine)),
         np.ones(5, dtype=np.float32),
         plan,
         np.zeros((1, 2), dtype=np.float32),
@@ -2499,6 +2503,8 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
         max_significants=-1,
     )
     assert dumping.accum_dump_dir == "/accum"
+    # And the options' engine tuning (VdamEnvironment.engine).
+    assert dumping.engine_tuning is dumping_opts_engine
 
 
 def test_final_outputs_replace_stale_files_of_a_reused_prefix(tmp_path):

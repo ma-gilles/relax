@@ -398,6 +398,7 @@ def run_final_all_data(
             precision=options.precision,
             k_class_probe=ctx.k_class_probe,
             keep_pose_rotation_eulers=ctx.expectation_probe.keeps_pose_rotation_eulers,
+            engine_tuning=options.environment.engine,
         )
     final_outs = PerHalfOutputs()
     first_projector_power_spectrum = None
@@ -529,6 +530,7 @@ def run_final_all_data(
                 max_significants=options.adaptive.max_significants,
                 reconstruction_current_size=final_current_size,
                 symmetry=options.symmetry.point_group,
+                engine_tuning=options.environment.engine,
             )
         else:
             # The final pass scores each half with its own priors on the grid rows it

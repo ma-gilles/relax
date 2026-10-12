@@ -173,10 +173,8 @@ from relax.reconstruction.half_volume_mstep import (
 from relax.relion import ctf
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
 from relax.relion.scale_groups import prepare_scale_correction_groups
-from relax.runtime.compile_ahead import (
-    CompileAheadPool,
-    resolve_compile_ahead_config,
-)
+from relax.runtime.compile_ahead import CompileAheadPool
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.env_flags import parse_env_capacity_ladder, parse_env_flag
 from relax.runtime.memory_budget import (
     _device_free_memory_bytes,
@@ -598,6 +596,7 @@ def _resident_pass2(
     nside_level,
     disc_type,
     *,
+    engine_tuning: EngineTuning,
     oversampling_order,
     current_size,
     reconstruction_current_size=None,
@@ -2419,13 +2418,12 @@ def _resident_pass2(
             # that describes the wrong program costs its own compile time and
             # changes nothing else, so the two log lines after the block, not an
             # assertion, are what report it.
-            warm_config = resolve_compile_ahead_config()
-            warm_pool = CompileAheadPool(warm_config)
+            warm_pool = CompileAheadPool(engine_tuning.compile_ahead)
             warm_predicted = None
             with warm_pool:
                 # The warm-up describes the cached tables; a streamed pass keys
                 # its programs on chunk-local tables, so it compiles in the loop.
-                if warm_config.enabled and not stream_projections and n_classes == 1:
+                if engine_tuning.compile_ahead.enabled and not stream_projections and n_classes == 1:
                     # A warm-up must never fail a run. The pool swallows a
                     # failure on its helper thread; this covers the submission
                     # itself, which runs here on the main thread and reaches
@@ -2572,7 +2570,7 @@ def _resident_pass2(
             # Leaving the block joined the helper: any compile still running
             # when the preparation finished was one the chunk loop was about to
             # wait for anyway.
-            if warm_config.enabled:
+            if engine_tuning.compile_ahead.enabled:
                 logger.info("Resident pass-2 %s", warm_pool.summary)
                 for message in warm_pool.summary.errors:
                     logger.info("Resident pass-2 compile-ahead error: %s", message)
@@ -2998,6 +2996,7 @@ def compute_pass2_stats_resident(
     nside_level,
     disc_type,
     *,
+    engine_tuning: EngineTuning,
     oversampling_order,
     current_size,
     reconstruction_current_size=None,

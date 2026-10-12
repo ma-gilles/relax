@@ -348,7 +348,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         except ImportError:  # the source before tomo_half moved to steps (layout S8b)
             from relax.refinement.tomo_half import tomo_translation_grids
 
-        scalars = dict(kwargs, relion_projector_r_max=relion_projector_r_max, sampling=repr(sampling),
+        scalars = dict(without_probe(kwargs), relion_projector_r_max=relion_projector_r_max, sampling=repr(sampling),
                        sigma_offset_angst=sigma_offset_angst, adaptive_fraction=adaptive_fraction,
                        max_significants=max_significants, padding_factor=padding_factor,
                        reconstruction_group_count=reconstruction_group_count, n_units=int(half.n_units))

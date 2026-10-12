@@ -11,6 +11,7 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import estep_sampling_stub, initial_model_state_stub
 
 from relax.local_search.layout import LocalHypothesisLayout
+from relax.runtime.engine_tuning import EngineTuning
 from relax.vdam.adaptive_estep import _safe_coarse_significance_image_batch_size, resolve_sparse_pass1_current_size
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import (
@@ -241,7 +242,7 @@ def _projector_config(n_classes, **overrides):
         sampling=estep_sampling_stub(),
     )
     values.update(overrides)
-    return InitialModelEstepConfig(**values, accum_dump_dir=None)
+    return InitialModelEstepConfig(**values, accum_dump_dir=None, engine_tuning=EngineTuning.from_environ())
 
 
 def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_adaptive_route(monkeypatch):
@@ -461,6 +462,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         relion_projector_r_max=r_max,
         sampling=estep_sampling_stub(),
         accum_dump_dir=None,
+        engine_tuning=EngineTuning.from_environ(),
     )
 
     means, mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
@@ -485,6 +487,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
         relion_projector_r_max=2,
         sampling=estep_sampling_stub(),
         accum_dump_dir=None,
+        engine_tuning=EngineTuning.from_environ(),
     )
 
     means, variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)

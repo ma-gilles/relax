@@ -16,6 +16,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from relax.runtime.engine_tuning import EngineTuning
+
 
 def _k2_inputs(monkeypatch):
     """The K=2 adaptive E-step fixture of tests/integration/test_pass1_deferred_preprocess_check_gpu.py."""
@@ -91,6 +93,7 @@ def _given_pose_pass(dataset, volumes, noise, args, grids, supports, translation
         given_supports=supports,
         **given,
         **keywords,
+        engine_tuning=EngineTuning.from_environ(),
     )
 
 

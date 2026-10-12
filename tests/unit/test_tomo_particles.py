@@ -10,6 +10,7 @@ from helpers import tomo_particles_reference as tomo_ref
 from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling import tomo_particles
 
 pytestmark = pytest.mark.unit
@@ -205,5 +206,6 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
             data, use_adaptive=True, sampling=sampling,
             rotation_log_prior=np.zeros(rotation_grid_size(0, "C1"), dtype=np.float32), sigma_offset_angst=1.0,
             max_significants=None, reconstruction_current_size=4,
+            engine_tuning=EngineTuning.from_environ(),
         )
     assert captured["adaptive_fraction"] == RELION_ADAPTIVE_FRACTION == float(np.float32(0.999))

@@ -10,6 +10,8 @@ import numpy as np
 import pytest
 from helpers import cuda_targets
 
+from relax.runtime.engine_tuning import EngineTuning
+
 
 def _run_adaptive_k2(monkeypatch, dataset_edit=None):
     """Run the public adaptive K=2 E-step on the native-preprocessing fixture, three images per pass-1 batch.
@@ -78,6 +80,7 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
             dataset, volumes, None, noise,
             fine_rotations[::2], translations, fine_rotations, fine_translations,
             rot_parent, trans_parent, disc_type, **keywords,
+            engine_tuning=EngineTuning.from_environ(),
         )
 
     return run, pass2_calls, dataset

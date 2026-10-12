@@ -16,6 +16,7 @@ from helpers.tiny_refinement import MockHalfSet, engine_stage_kwargs, record_cal
 from relax.fourier import half_spectrum
 from relax.reconstruction import noise as noise_relion
 from relax.refinement.refinement_options import RelionConsistencyOptions
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -240,6 +241,7 @@ def test_resident_pass_refuses_the_rule_for_subtomograms_and_the_full_grid_gemm_
                 half_spectrum_scoring=True, projection_padding_factor=2, reconstruction_padding_factor=2,
                 image_corrections=None, scale_corrections=None, image_pre_shifts=None, use_float64_scoring=False,
                 random_perturbation=0.0, nyquist_column_counting="once", **refused,
+                engine_tuning=EngineTuning.from_environ(),
             )
 
 

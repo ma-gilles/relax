@@ -28,6 +28,8 @@ pytest.importorskip("jax")
 import jax.numpy as jnp
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import EngineTuning
+
 pytestmark = pytest.mark.unit
 
 # The keyword the Class3D and InitialModel callers pass to take RELION's zero-oversampling route with K>1 (relax#73).
@@ -101,9 +103,9 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
     import relax.classification.k_class as k_class_module
     from relax.classification.k_class import run_dense_k_class_em_adaptive
     from relax.classification.k_class_results import _assemble_result
-    from relax.types import make_relion_stats
     from relax.scoring import significance
     from relax.scoring.pass1_results import Pass1Result, Pass1Stats
+    from relax.types import make_relion_stats
 
     coarse_calls, fine_calls = [], []
     coarse_sum = np.asarray([123.0], dtype=np.float32)
@@ -145,6 +147,7 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
         mstep_relion_x_half=True, relion_firstiter_score_mode="gaussian",
         relion_firstiter_winner_take_all=False, use_float64_scoring=False,
         **({CLASS_REUSE_KEYWORD: True} if passes_keyword else {}),
+        engine_tuning=EngineTuning.from_environ(),
     )
     assert len(coarse_calls) == len(fine_calls) == 1
     assert coarse_calls[0].get("return_relion_f32_normalization", False) is enabled
@@ -211,7 +214,7 @@ def test_duplicated_class_at_zero_oversampling_is_the_one_class_pass_split_in_ha
     from relax.fine_pass import resident_pass2 as rp
 
     args = _os0_driver_args()
-    single = rp.compute_pass2_stats_resident(**args)
+    single = rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ())
     k_args = dict(args)
     support = k_args.pop("significant_sample_indices")
     prior = k_args.pop("rotation_log_prior")

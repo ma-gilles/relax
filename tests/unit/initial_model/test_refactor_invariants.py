@@ -305,7 +305,9 @@ LOC_BUDGETS = {
     # slack of the smaller ceiling is 89. 1782 is the lowest ceiling the measured 1872 passes; it still warns.
     # rule 5 (2026-10-12): RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR moves from estep_common.arrays_to_accumulators into
     # VdamEnvironment (native_options.py +3 lines; relocation: ceiling +3, estep -2 for the removed read and import).
-    "controller": (1785, (
+    # rule 5 (2026-10-12): VdamEnvironment.engine (EngineTuning, the engines' execution settings the command reads
+    # once): native_options.py +4 lines (import, field, its read, docstring line); relocation: ceiling +4.
+    "controller": (1789, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset_schedule.py", "ports.py",
     )),

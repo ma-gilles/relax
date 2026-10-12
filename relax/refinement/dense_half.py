@@ -32,6 +32,7 @@ from relax.runtime.batch_planning import (
     safe_dense_k_class_rotation_block_size,
     safe_firstiter_cc_image_batch_size,
 )
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.device_rotations import project_rows
 from relax.sampling.oversampling import (
     AdaptivePass2Grids,
@@ -212,6 +213,8 @@ class DenseExecutionPolicy:
     k_class_probe: KClassProbe
     # The observer asks for an adaptive K=1 half's fine pose grid as RELION Euler angles (its expectation probe).
     keep_pose_rotation_eulers: bool
+    # How the engines execute (RefinementEnvironment.engine, read by the command).
+    engine_tuning: EngineTuning
 
 
 def _score_adaptive_kclass_dense(
@@ -324,6 +327,7 @@ def _score_adaptive_kclass_dense(
         fine_mstep_rotations_override=projected_mstep,
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
+        engine_tuning=execution.engine_tuning,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
         **adaptive_em_kwargs,
@@ -445,6 +449,7 @@ def _score_kclass_at_given_poses(
         relion_fine_mstep_prune=True,
         return_best_pose_details=True,
         bpref_device_signature_active=execution.bpref_device_signature_active,
+        engine_tuning=execution.engine_tuning,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
         image_seed_classes=half.image_seed_classes,
@@ -583,6 +588,7 @@ def _score_adaptive_k1_dense(
         fine_mstep_rotations_override=projected_mstep,
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
+        engine_tuning=execution.engine_tuning,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
         **adaptive_em_kwargs,
@@ -1329,6 +1335,7 @@ def _score_kclass_firstiter_cc_pass2(
             fine_mstep_rot
         ),
         bpref_device_signature_active=execution.bpref_device_signature_active,
+        engine_tuning=execution.engine_tuning,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
         coarse_translation_phase_source=(

@@ -1635,6 +1635,7 @@ def main() -> None:
     # samples that survive pass-1's adaptive_fraction pruning.
     from relax.classification.k_class import run_dense_k_class_em_adaptive
     from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
+    from relax.runtime.engine_tuning import EngineTuning
     from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     adaptive_os = int(args.adaptive_oversampling)
@@ -1718,6 +1719,7 @@ def main() -> None:
             os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
         ),
         **adaptive_em_kwargs,
+        engine_tuning=EngineTuning.from_environ(),
     )
     elapsed_s = time.time() - t0
     print(f"  RECOVAR K-class E/M step completed in {elapsed_s:.1f}s")
@@ -1800,6 +1802,7 @@ def main() -> None:
                     normalization_score_mode="gaussian",
                     relion_projector_half=relion_projector_half_by_class[class_index],
                     relion_projector_r_max=relion_projector_r_max,
+                    engine_tuning=EngineTuning.from_environ(),
                 )
                 sparse_Ft_y.append(class_output.Ft_y)
                 sparse_Ft_ctf.append(class_output.Ft_ctf)

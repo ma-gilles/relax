@@ -82,9 +82,19 @@ def _aval(n=256):
 # ------------------------------------------------------------------ option ---
 
 
+def _from_environ():
+    """The warm-up the command reads (``EngineTuning.from_environ``)."""
+    from relax.runtime.engine_tuning import EngineTuning
+
+    return EngineTuning.from_environ().compile_ahead
+
+
 def test_default_is_off(monkeypatch):
     monkeypatch.delenv(ca.COMPILE_AHEAD_ENV, raising=False)
-    assert ca.resolve_compile_ahead_config().enabled is False
+    assert _from_environ() == ca.CompileAheadConfig(enabled=False)
+    from relax.runtime.engine_tuning import EngineTuning
+
+    assert EngineTuning().compile_ahead == _from_environ()
 
 
 @pytest.mark.parametrize("token,expected", [
@@ -93,20 +103,34 @@ def test_default_is_off(monkeypatch):
 ])
 def test_env_tokens(monkeypatch, token, expected):
     monkeypatch.setenv(ca.COMPILE_AHEAD_ENV, token)
-    assert ca.resolve_compile_ahead_config().enabled is expected
+    assert _from_environ().enabled is expected
 
 
-def test_explicit_beats_the_environment(monkeypatch):
+def test_the_program_cap_is_read_with_the_switch(monkeypatch):
     monkeypatch.setenv(ca.COMPILE_AHEAD_ENV, "1")
-    assert ca.resolve_compile_ahead_config(False).enabled is False
-    monkeypatch.setenv(ca.COMPILE_AHEAD_ENV, "0")
-    assert ca.resolve_compile_ahead_config(True).enabled is True
+    monkeypatch.delenv(ca.COMPILE_AHEAD_MAX_ENV, raising=False)
+    assert _from_environ().max_programs == ca.DEFAULT_MAX_PROGRAMS
+    monkeypatch.setenv(ca.COMPILE_AHEAD_MAX_ENV, "3")
+    assert _from_environ().max_programs == 3
+    monkeypatch.setenv(ca.COMPILE_AHEAD_MAX_ENV, "-1")
+    with pytest.raises(ValueError, match="must not be negative"):
+        _from_environ()
 
 
 def test_a_bad_token_is_refused(monkeypatch):
     monkeypatch.setenv(ca.COMPILE_AHEAD_ENV, "sometimes")
     with pytest.raises(ValueError):
-        ca.resolve_compile_ahead_config()
+        _from_environ()
+
+
+def test_the_engine_tuning_reaches_the_resident_pass(monkeypatch):
+    """The K-class engine hands its ``engine_tuning`` (the command's) to the resident pass 2's keywords."""
+    from helpers.tiny_refinement import engine_stage_kwargs
+
+    from relax.runtime.engine_tuning import EngineTuning
+
+    tuning = EngineTuning(compile_ahead=ca.CompileAheadConfig(enabled=True, max_programs=3))
+    assert engine_stage_kwargs(monkeypatch, engine_tuning=tuning)["pass2"]["engine_tuning"] is tuning
 
 
 def test_disabled_pool_accepts_nothing():

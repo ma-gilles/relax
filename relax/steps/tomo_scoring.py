@@ -13,6 +13,7 @@ from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
 )
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling import tomo_particles
 from relax.steps.half_inputs import HalfScoringData
 from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
@@ -97,8 +98,10 @@ def score_tomo_half(
     mstep_subtract_ctf_projection: bool = False,
     normalized_cc: bool = False,
     coarse_cc_winners=None,
+    engine_tuning: EngineTuning,
 ) -> TomoScoreResult:
-    """RELION's adaptive two-pass E-step and M-step of subtomogram particles (global search).
+    """RELION's adaptive two-pass E-step and M-step of subtomogram particles (global search); ``engine_tuning``
+    is how the resident pass 2 executes (``EngineTuning``).
 
     Pass 1 scores every particle's tilt images on the coarse grid and cuts the particle's summed
     posterior (:func:`relax.scoring.tomo_coarse.particle_coarse_supports`); pass 2 scores the
@@ -166,6 +169,7 @@ def score_tomo_half(
                 scale_correction_group_count=scale_correction_group_count,
                 scale_correction_data_vs_prior=scale_correction_data_vs_prior,
                 reconstruction_current_size=reconstruction_current_size, symmetry=symmetry,
+                engine_tuning=engine_tuning,
             )
         if np.any(np.asarray(unit_seed_classes) != 0):
             # One reference for K classes: the CC iteration is K=1 against it (ml_optimiser.cpp:4389-4402).
@@ -192,6 +196,7 @@ def score_tomo_half(
             reconstruction_current_size=reconstruction_current_size,
             symmetry=symmetry,
             normalized_cc=True,
+            engine_tuning=engine_tuning,
         )
         return dataclasses.replace(first, pass2=_first_class_k_class_output(first.pass2, n_classes, sampling, half.voxel_size))
     if n_classes > 1 and (local_rotations is not None or np.ndim(rotation_log_prior) != 2):
@@ -308,6 +313,7 @@ def score_tomo_half(
         np.asarray(group_ids, dtype=np.int32), np.diff(half.unit_image_offsets)
     )
     options = dict(
+        engine_tuning=engine_tuning,
         # RELION's asymmetric-unit grid and its symmetrised BPref (symmetriseReconstructions).
         symmetry_label=symmetry,
         oversampling_order=sampling.oversampling_order,
@@ -669,8 +675,10 @@ def score_tomo_half_in_loop(
     class_rotation_log_prior=None,
     unit_seed_classes=None,
     normalized_cc: bool = False,
+    engine_tuning: EngineTuning,
 ):
-    """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``.
+    """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``
+    (``engine_tuning``: ``RefinementEnvironment.engine``).
 
     ``data`` is the half's expectation operands, as the SPA scorers take them: its particles (a
     ``TomoHalf`` dataset with their previous translations, optics groups and scale corrections), reference,
@@ -799,6 +807,7 @@ def score_tomo_half_in_loop(
         symmetry=symmetry,
         unit_seed_classes=unit_seed_classes,
         normalized_cc=normalized_cc,
+        engine_tuning=engine_tuning,
     )
     pass2 = result.pass2
     mstep_size = sampling.fine_size if reconstruction_current_size is None else int(reconstruction_current_size)

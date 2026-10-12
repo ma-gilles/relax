@@ -12,6 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.utils.nvtx_shim import nvtx
 
+import relax.runtime.engine_tuning
 from relax.classification.k_class_inputs import (
     _as_class_means,
     _class_log_priors,
@@ -373,6 +374,7 @@ def _run_sparse_k_class_adaptive_pass2(
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         nyquist_column_counting=base_engine_kwargs.get("nyquist_column_counting", "relion"),
         firstiter_cc_support=base_engine_kwargs.get("firstiter_cc_support", "relion"),
+        engine_tuning=base_engine_kwargs["engine_tuning"],
         **({"symmetry_label": base_engine_kwargs["symmetry_label"]}
            if base_engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(base_engine_kwargs),
@@ -1256,6 +1258,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             noise_variance,
             coarse_translations_np,
             subset_sig,
+            engine_tuning=pass2_kwargs["engine_tuning"],
             rotation_log_prior=_class_rotation_prior(class_index),
             translation_log_prior=None,
             accumulate_noise=accumulate_noise,
@@ -1475,6 +1478,7 @@ def run_dense_k_class_em_adaptive(
     given_image_translations=None,
     zero_oversampling_coarse_state_for_classes: bool = False,
     probe: KClassProbe | None = None,
+    engine_tuning: relax.runtime.engine_tuning.EngineTuning,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + sparse fine pass 2.
@@ -1527,6 +1531,8 @@ def run_dense_k_class_em_adaptive(
         The diagnostics that observe the pass (:mod:`relax.classification.probes`: score dumps, the support audit,
         the first-iteration winner summary); None is the :class:`~relax.classification.probes.NoProbe`, which
         observes nothing. No result depends on it.
+    engine_tuning : EngineTuning
+        How the engines execute (``relax.runtime.engine_tuning``; the command reads it from the environment).
     coarse_healpix_order, oversampling_order : int or None
         RELION sampling metadata for sparse pass-2 diagnostics.  When omitted,
         the values are inferred from exact HEALPix grid sizes for compatibility
@@ -1543,6 +1549,8 @@ def run_dense_k_class_em_adaptive(
         the strict-parity default is RELION texture interpolation.
     """
     probe = NoProbe() if probe is None else probe
+    # How the resident pass 2 executes (EngineTuning); it travels with the pass-2 keyword arguments.
+    engine_kwargs["engine_tuning"] = engine_tuning
     if "relion_exact_coarse" in engine_kwargs:
         raise TypeError(
             "relion_exact_coarse was removed on 2026-10-02: pass 1 always scores RELION's exact coarse operands"

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.vdam.state import InitialModelState, VdamAccumulator
 
 if TYPE_CHECKING:
@@ -200,6 +201,8 @@ class InitialModelEstepConfig:
     sampling: EstepSampling
     # Where arrays_to_accumulators dumps each accumulator (VdamEnvironment.accum_dump_dir); None: nowhere.
     accum_dump_dir: str | None
+    # How the engines execute (VdamEnvironment.engine).
+    engine_tuning: EngineTuning
     image_batch_size: int = 500
     rotation_block_size: int = 5000
     coarse_engine: str = "auto"

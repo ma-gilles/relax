@@ -29,6 +29,8 @@ import jax.numpy as jnp
 from helpers import relion_estep_reference as ref
 from helpers.refinement_specs import local_iteration_owners
 
+from relax.runtime.engine_tuning import EngineTuning
+
 pytestmark = pytest.mark.unit
 
 N = 8
@@ -286,7 +288,7 @@ def test_resident_driver_is_relions_fine_pass(_resident_env, current_size, noise
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(current_size, noise)
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ()), reference)
 
 
 def _assert_k1_pass(
@@ -357,7 +359,7 @@ def test_wide_translation_grids_are_relions_fine_pass(_resident_env, n_coarse_tr
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_wide_driver_args(n_coarse_trans))
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ()), reference)
 
 
 @requires_resident_gpu
@@ -370,7 +372,9 @@ def test_vdam_residual_backprojection_is_relions_grad_pass(_resident_env, groups
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_vdam_args(residual=True, groups=groups), subtract_reference=True)
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference, scale_sums=groups)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(
+        **args, engine_tuning=EngineTuning.from_environ(),
+    ), reference, scale_sums=groups)
 
 
 @requires_resident_gpu
@@ -409,7 +413,7 @@ def test_zero_oversampling_reuses_relions_coarse_normalization(_resident_env):
     n_cells = max(len(post.cells) for post in ref.posteriors(reference))
     stats_rtol = 2.0 * np.sqrt(n_cells) * float(np.finfo(np.float32).eps)
     _assert_k1_pass(
-        rp.compute_pass2_stats_resident(**args),
+        rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ()),
         reference,
         posterior=False,
         best=winners,
@@ -427,7 +431,7 @@ def test_c4_pass_is_relions_fine_pass_on_the_asymmetric_unit(_resident_env):
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_c4_driver_args(), symmetry="C4")
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ()), reference)
 
 
 def _accumulator(actual, half):

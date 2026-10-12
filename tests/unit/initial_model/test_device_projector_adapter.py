@@ -10,6 +10,7 @@ from helpers.vdam import estep_sampling_stub, relative_metrics
 from recovar.utils.helpers import recovar_volume_to_relion
 
 from relax.relion import projector_setup
+from relax.runtime.engine_tuning import EngineTuning
 from relax.vdam import estep_setup as adapter
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from scripts.lib.native_projector_setup import (
@@ -117,6 +118,7 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
         translations=np.zeros((1, 2)),
         sampling=estep_sampling_stub(),
         accum_dump_dir=None,
+        engine_tuning=EngineTuning.from_environ(),
     )
     assert not hasattr(config, "projector_setup_backend")
 

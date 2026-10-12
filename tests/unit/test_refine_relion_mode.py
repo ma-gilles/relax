@@ -33,6 +33,7 @@ from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver, StartSeeds
 from relax.refinement.refinement_options import OpticsGeometry
 from relax.refinement.startup_references import StartupHandoff
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling import oversampling as oversampling_grids
 from relax.sampling.orientation_priors import (
     DirectionPrior,
@@ -9561,6 +9562,7 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
         image_batch_size=n_images,
         rotation_block_size=rotations.shape[0],
         score_with_masked_images=True,
+        engine_tuning=EngineTuning.from_environ(),
     )
 
     assert len(score_calls) == 1

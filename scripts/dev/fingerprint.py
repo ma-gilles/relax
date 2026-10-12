@@ -183,13 +183,19 @@ def engine_kwargs_without_defaults(kwargs: dict) -> dict:
 def without_probe(kwargs: dict) -> dict:
     """``kwargs`` less ``probe``, the K-class engine's diagnostics (layout S15): they observe the pass and never steer
     it, and a tree from before S15 passes none. Refuses a ``probe`` that is not a probe (or None), so no other value
-    can leave the digest under that name."""
+    can leave the digest under that name. Also less ``engine_tuning`` (``relax.runtime.engine_tuning.EngineTuning``,
+    rule 5 env slice, 2026-10-12): how the engines execute, which changes no value; a tree from before it reads the
+    same settings from the environment. Refuses an ``engine_tuning`` that is not an ``EngineTuning``."""
 
     probe = kwargs.get("probe")
     assert probe is None or all(
         callable(getattr(probe, hook, None)) for hook in ("score_dump_requested", "support_audit", "firstiter_winners_scored")
     ), f"the engine's probe keyword holds {type(probe).__name__}, not a K-class probe"
-    return {key: value for key, value in kwargs.items() if key != "probe"}
+    tuning = kwargs.get("engine_tuning")
+    assert tuning is None or type(tuning).__name__ == "EngineTuning", (
+        f"the engine's engine_tuning keyword holds {type(tuning).__name__}, not an EngineTuning"
+    )
+    return {key: value for key, value in kwargs.items() if key not in ("probe", "engine_tuning")}
 
 
 

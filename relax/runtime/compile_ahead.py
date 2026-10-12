@@ -30,7 +30,6 @@ option is a performance switch and its correctness claim is bitwise equality.
 from __future__ import annotations
 
 import logging
-import os
 import queue
 import threading
 import time
@@ -62,37 +61,26 @@ class CompileAheadConfig:
             raise ValueError("max_programs must not be negative")
 
 
-def resolve_compile_ahead_config(explicit=None) -> CompileAheadConfig:
-    """Resolve the option; ``explicit`` beats the environment.
+def parse_compile_ahead_config(raw: str, max_programs_raw: str) -> CompileAheadConfig:
+    """The warm-up the text of RELAX_EM_COMPILE_AHEAD (``raw``) and RELAX_EM_COMPILE_AHEAD_MAX_PROGRAMS
+    (``max_programs_raw``) ask for, read once by ``relax.runtime.engine_tuning.EngineTuning.from_environ``.
 
-    Accepted: ``None`` (consult the environment), a ``CompileAheadConfig``,
-    ``False``/``"0"``/``"off"``/``""`` (disabled), ``True``/``"1"``/``"on"``
-    (enabled with the default cap). Only the EM entry points call this with
-    ``None``; every other caller passes an explicit value, so the variable
-    cannot re-configure a pipeline that has its own validation.
+    ``""``/``0``/``off``/``false``/``no``/``none`` (any case, stripped): disabled; ``1``/``on``/``true``/``yes``:
+    enabled, with ``max_programs_raw`` as the cap (blank: :data:`DEFAULT_MAX_PROGRAMS`, an integer, not negative);
+    anything else is refused.
     """
 
-    if isinstance(explicit, CompileAheadConfig):
-        return explicit
-    raw = explicit
-    if raw is None:
-        raw = os.environ.get(COMPILE_AHEAD_ENV, "")
-    if raw is False:
-        return CompileAheadConfig(enabled=False)
-    if raw is True:
-        return CompileAheadConfig(enabled=True, max_programs=_max_programs_from_env())
     token = str(raw).strip().lower()
     if token in {"", "0", "off", "false", "no", "none"}:
         return CompileAheadConfig(enabled=False)
     if token in {"1", "on", "true", "yes"}:
-        return CompileAheadConfig(enabled=True, max_programs=_max_programs_from_env())
+        return CompileAheadConfig(enabled=True, max_programs=_max_programs(max_programs_raw))
     raise ValueError(
         f"{COMPILE_AHEAD_ENV} must be one of 0/off/false/no or 1/on/true/yes, got {raw!r}"
     )
 
 
-def _max_programs_from_env() -> int:
-    raw = os.environ.get(COMPILE_AHEAD_MAX_ENV, "")
+def _max_programs(raw: str) -> int:
     if not raw.strip():
         return DEFAULT_MAX_PROGRAMS
     value = int(raw)

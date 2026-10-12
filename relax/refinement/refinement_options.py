@@ -25,6 +25,7 @@ from relax.refinement.refinement_state import (
     LowPmaxRefineGuard,
 )
 from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.env_flags import (
     parse_env_choice,
     parse_env_flag,
@@ -795,6 +796,7 @@ class RefinementEnvironment:
     (:func:`_low_pmax_refine_guard`; None: off) holds the angular refinement while the posterior is diffuse.
     ``projector_files`` (``steps.projector_preparation.ProjectorFiles``): the projector slab cache
     (RELAX_RELION_PROJECTOR_CACHE_DIR) and dump (RELAX_RELION_PROJECTOR_DUMP_DIR).
+    ``engine`` (``relax.runtime.engine_tuning.EngineTuning``): how the scoring and reconstruction engines execute.
     """
 
     half_accumulator_guard: str = "raise"
@@ -802,6 +804,7 @@ class RefinementEnvironment:
     diagnostic_float64_pass2_iterations: frozenset[int] = frozenset()
     low_pmax_refine_guard: LowPmaxRefineGuard | None = None
     projector_files: ProjectorFiles = ProjectorFiles()
+    engine: EngineTuning = EngineTuning()
 
     @classmethod
     def from_environ(cls) -> RefinementEnvironment:
@@ -817,6 +820,7 @@ class RefinementEnvironment:
                 cache_dir=read_env_text("RELAX_RELION_PROJECTOR_CACHE_DIR", "").strip() or None,
                 dump_dir=read_env_text("RELAX_RELION_PROJECTOR_DUMP_DIR") or None,
             ),
+            engine=EngineTuning.from_environ(),
         )
 
 

@@ -7,6 +7,7 @@ from helpers.pass1_stats import make_pass1_stats
 
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.noise_updates import NoiseModel
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.orientation_priors import DirectionPrior
 from relax.steps.half_inputs import initialize_halfsets
 
@@ -127,6 +128,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
         "linear_interp", coarse_healpix_order=0, oversampling_order=order, sparse_pass2=True,
         mstep_relion_x_half=True, relion_firstiter_score_mode=score_mode,
         relion_firstiter_winner_take_all=winner, use_float64_scoring=double,
+        engine_tuning=EngineTuning.from_environ(),
     )
     assert len(coarse_calls) == len(fine_calls) == 1
     assert coarse_calls[0].get("return_relion_f32_normalization", False) is enabled
@@ -163,6 +165,7 @@ def test_adaptive_engine_refuses_the_removed_dense_pass2():
             "linear_interp",
             sparse_pass2=False,
             relion_exact_fine_gaussian=True,
+            engine_tuning=EngineTuning.from_environ(),
         )
 
 
@@ -228,6 +231,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch):
         relion_exact_fine_gaussian=True,
         pass2_use_float64_scoring=True,
         pass2_use_float64_projections=True,
+        engine_tuning=EngineTuning.from_environ(),
     )
     return significance_calls, sparse_calls, result
 
@@ -848,6 +852,7 @@ def test_adaptive_k_class_firstiter_uses_coarse_current_size_for_probe(monkeypat
         coarse_healpix_order=0,
         oversampling_order=1,
         sparse_pass2=True,
+        engine_tuning=EngineTuning.from_environ(),
     )
 
     assert len(probe_calls) == 1
@@ -958,6 +963,7 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
         image_corrections=np.arange(4, dtype=np.float32),
         group_ids=np.asarray([7, 8, 9, 10], dtype=np.int64),
         scale_correction_group_count=11,
+        engine_tuning=EngineTuning.from_environ(),
     )
 
     assert [call[1] for call in sparse_calls] == [(0, 3), (1, 2)]
@@ -1064,7 +1070,7 @@ def test_sparse_firstiter_k1_adapter_forwards_exact_cc_and_spectrum_norm(monkeyp
         oversampling_order=1,
         accumulate_noise=False,
         return_best_pose_details=False,
-        pass2_kwargs={"source_faithful_spectrum_norm": True},
+        pass2_kwargs={"source_faithful_spectrum_norm": True, "engine_tuning": EngineTuning()},
     )
 
     assert len(calls) == 1
@@ -1152,6 +1158,7 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch, d
             "relion_exact_fine_gaussian": False,
             "source_faithful_spectrum_norm": True,
             "dense_gemm_full_grid": dense_full_grid,
+            "engine_tuning": EngineTuning(),
         },
     )
 

@@ -16,6 +16,7 @@ from relax.dense.gemm_coarse_statistics import (
 )
 from relax.dense.gemm_kernels import DenseGemmTileConfig, make_joint_k_batch_program, pad_batch, pad_grid, score_tile
 from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
+from relax.runtime.engine_tuning import EngineTuning
 
 
 @pytest.mark.unit
@@ -130,6 +131,7 @@ def test_public_adaptive_dense_dispatch_uses_complete_grid(n_classes, symmetry, 
         coarse_engine="gemm_dense", symmetry_label=symmetry,
         mstep_relion_x_half=configured_native,
         relion_f32_normalization_sum_weight=jnp.ones(2, jnp.float32),
+        engine_tuning=EngineTuning.from_environ(),
     )
     assert len(seen) == 1
     args, kwargs = seen[0]

@@ -27,6 +27,7 @@ from relax.fine_pass import (
 )
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.resident_candidates import CapacityChunk
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -250,6 +251,7 @@ def _resident(args, volumes, supports, priors):
         resident_args.pop("disc_type"),
         rotation_log_priors_by_class=priors,
         **resident_args,
+        engine_tuning=EngineTuning.from_environ(),
     )
 
 
@@ -283,7 +285,7 @@ def test_duplicated_class_is_the_k1_pass(_resident_production_env):
     """
 
     args = _driver_fixture_args()
-    single = rp.compute_pass2_stats_resident(**args)
+    single = rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ())
     k_args = dict(args)
     support = k_args.pop("significant_sample_indices")
     prior = k_args.pop("rotation_log_prior")
@@ -391,7 +393,7 @@ def test_k1_pass_backprojects_every_row(_resident_production_env, monkeypatch):
     """Auto-refine (K=1) keeps the per-row backprojection even when the sums would fit."""
 
     flushes = _count_projection_sum_flushes(monkeypatch)
-    rp.compute_pass2_stats_resident(**_driver_fixture_args())
+    rp.compute_pass2_stats_resident(**_driver_fixture_args(), engine_tuning=EngineTuning.from_environ())
     assert not flushes
 
 

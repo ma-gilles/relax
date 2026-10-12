@@ -668,6 +668,7 @@ def score_numbered_half(
             class_rotation_log_prior=half.direction_priors.class_rotation_log_prior,
             unit_seed_classes=seed_classes_k,
             normalized_cc=phase.variant.score_mode == "normalized_cc",
+            engine_tuning=options.environment.engine,
         )
     elif use_local:
         local_optics = shape_class_scoring.prepare_optics(
@@ -779,6 +780,7 @@ def score_numbered_half(
             precision=options.precision,
             k_class_probe=k_class_probe,
             keep_pose_rotation_eulers=probe.keeps_pose_rotation_eulers,
+            engine_tuning=options.environment.engine,
         )
         dense_result = _score_half_dense_in_bpref_scope(
             dense_half,

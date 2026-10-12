@@ -18,6 +18,8 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 from helpers.run_options import stand_in
 
+from relax.runtime.engine_tuning import EngineTuning
+
 IMAGE_SHAPE = (8, 8)
 IMAGE_SIZE = 64
 VOLUME_SHAPE = (8, 8, 8)
@@ -383,7 +385,9 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
     translations, fine_translations = np.zeros((2, 2), np.float32), np.zeros((4, 2), np.float32)
     rotation_parents, translation_parents = np.repeat(np.arange(4), 2), np.repeat(np.arange(2), 2)
     means = jnp.zeros((1, VOLUME_SIZE), jnp.complex64)
-    keywords = dict(half_spectrum_scoring=True, mstep_relion_x_half=True, **engine_kwargs)
+    # The engine tuning the command reads from the environment, unless the caller gives one.
+    keywords = dict(half_spectrum_scoring=True, mstep_relion_x_half=True,
+                    **{"engine_tuning": EngineTuning.from_environ(), **engine_kwargs})
     stages = {}
     for name, cc in (("pass1", False), ("pass1_cc", True)):
         try:

@@ -797,6 +797,13 @@ def _z_rotation(angle):
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
 
 
+def _engine():
+    """How the engines execute, read from the environment as the command reads it (``EngineTuning``)."""
+    from relax.runtime.engine_tuning import EngineTuning
+
+    return EngineTuning.from_environ()
+
+
 def _driver_fixture_args(seed=20260918):
     """A small K=1 pass in the production configuration both engines accept.
 
@@ -998,7 +1005,7 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
     patch.setattr(resident_chunk_inputs, "gather_resident_chunk_operands", gather)
     patch.setattr(resident_chunk_programs, "gather_resident_chunk_operands", gather)
     try:
-        rp.compute_pass2_stats_resident(**args)
+        rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     finally:
         patch.undo()
     assert planned and measured
@@ -1026,7 +1033,7 @@ def test_global_chunks_prepare_their_own_unshifted_operands(_resident_production
         0.2, 1.0, dataset.image_size, dtype=jnp.float32
     ).reshape(dataset.image_shape)
     args["score_with_masked_images"] = True
-    resident = rp.compute_pass2_stats_resident(**args)
+    resident = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
 
     chunk_calls, tile_calls = [], []
     real_chunk, real_tiles = resident_chunk_inputs.unshifted_chunk_operands, resident_chunk_inputs.prepare_chunk_reconstruction_operands
@@ -1037,7 +1044,7 @@ def test_global_chunks_prepare_their_own_unshifted_operands(_resident_production
     monkeypatch.setattr(
         resident_chunk_inputs, "prepare_chunk_reconstruction_operands", lambda **k: tile_calls.append(1) or real_tiles(**k)
     )
-    per_chunk = rp.compute_pass2_stats_resident(**args)
+    per_chunk = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     assert chunk_calls and not tile_calls
 
     assert_matches(resident.hard_assignment, per_chunk.hard_assignment)
@@ -1085,7 +1092,7 @@ def test_exact_float32_accumulation_switch_runs_the_global_driver(_resident_prod
     from relax.reconstruction import half_volume_mstep as hvm
 
     args = _driver_fixture_args()
-    default = rp.compute_pass2_stats_resident(**args)
+    default = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     allocated = []
     real_allocate = rp.allocate_row_partial
 
@@ -1095,7 +1102,7 @@ def test_exact_float32_accumulation_switch_runs_the_global_driver(_resident_prod
 
     monkeypatch.setattr(rp, "allocate_row_partial", allocate)
     monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
-    exact = rp.compute_pass2_stats_resident(**args)
+    exact = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
     assert_matches(default.hard_assignment, exact.hard_assignment)
     num = float(np.linalg.norm(np.asarray(default.Ft_y) - np.asarray(exact.Ft_y)))
@@ -1107,8 +1114,8 @@ def test_resident_driver_repeats_itself(_resident_production_env):
     """The resident driver's own repeat band, the reference for the table above."""
 
     args = _driver_fixture_args()
-    first = rp.compute_pass2_stats_resident(**args)
-    second = rp.compute_pass2_stats_resident(**args)
+    first = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
+    second = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     assert_matches(first.hard_assignment, second.hard_assignment)
     # The statistics whose reductions are ordered are bit-reproducible.
     assert_matches(
@@ -1160,14 +1167,14 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
 
     args = _driver_fixture_args()
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
-    loose = rp.compute_pass2_stats_resident(**args)
+    loose = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     # The loose path's own repeat, in this process: the self-repeat band the
     # racing accumulators below are read against. It is measured, not assumed,
     # because the float32 BPref atomics and the CUDA shell binning do not
     # reproduce between two identical calls.
-    loose_repeat = rp.compute_pass2_stats_resident(**args)
+    loose_repeat = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
-    programs = rp.compute_pass2_stats_resident(**args)
+    programs = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
 
     assert_matches(loose.hard_assignment, programs.hard_assignment)
     assert_matches(
@@ -1236,7 +1243,7 @@ def test_gate_refuses_a_finite_cross_class_normalizer(_resident_production_env):
         args["experiment_dataset"].n_units, dtype=np.float64
     )
     with pytest.raises(NotImplementedError, match="finite cross-class"):
-        rp.compute_pass2_stats_resident(**args)
+        rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
 
 
 @requires_resident_gpu
@@ -1246,7 +1253,7 @@ def test_resident_driver_refuses_an_unsupported_pass(_resident_production_env):
     args = _driver_fixture_args()
     args["relion_x_half_mstep"] = False
     with pytest.raises(NotImplementedError, match="x-half M-step"):
-        rp.compute_pass2_stats_resident(**args)
+        rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
 
 
 def test_chunk_operands_are_padded_on_the_host():
@@ -1394,7 +1401,7 @@ def test_dispatcher_sends_every_pass_to_the_resident_engine(monkeypatch):
     args = _driver_fixture_args()
     args.setdefault("mean_variance", None)
     take_pass_engines()
-    assert sparse_dispatch.compute_pass2_stats_sparse(**args) == "resident"
+    assert sparse_dispatch.compute_pass2_stats_sparse(**args, engine_tuning=_engine()) == "resident"
     assert len(calls) == 1
     assert take_pass_engines() == ["global:resident"]
 
@@ -1541,9 +1548,9 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
     """
 
     args = _driver_fixture_args()
-    cached = rp.compute_pass2_stats_resident(**args)
+    cached = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
-    streamed = rp.compute_pass2_stats_resident(**args)
+    streamed = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
 
     # Discrete state: integer indices, compared exactly.
     assert_matches(cached.hard_assignment, streamed.hard_assignment)
@@ -1664,14 +1671,14 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(
 
     monkeypatch.setattr(rp, "_compute_sparse_pass2_windowed_projections_block", recording)
     args = _driver_fixture_args()
-    rp.compute_pass2_stats_resident(**args)
+    rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     assert len(calls) == 1
     grid, (union_indices, no_recon), (union_rows, _, _) = calls.pop()
     assert no_recon is None
     index = {row.tobytes(): i for i, row in enumerate(grid.reshape(grid.shape[0], -1))}
 
     monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
-    rp.compute_pass2_stats_resident(**args)
+    rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     assert calls, "the streamed pass made no projection call"
     compared = 0
     for rotations, (score_indices, recon_indices), streamed in calls:
@@ -1758,9 +1765,9 @@ def test_stable_windows_match_the_logical_window(_resident_production_env, monke
 
     args = {**_driver_fixture_args(), "current_size": 4}
     monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, "0")
-    logical = rp.compute_pass2_stats_resident(**args)
+    logical = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, "1")
-    stable = rp.compute_pass2_stats_resident(**args)
+    stable = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
 
     assert_matches(logical.hard_assignment, stable.hard_assignment)
     assert_matches(logical.best_rotation_indices, stable.best_rotation_indices)
@@ -1886,7 +1893,7 @@ def test_lone_overflow_chunks_match_the_whole_chunk_pass(_resident_production_en
     args = _driver_fixture_args()
     if streamed:
         monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
-    whole = rp.compute_pass2_stats_resident(**args)
+    whole = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     lone_calls = []
     real_lone = rp._run_lone_resident_chunk
 
@@ -1897,7 +1904,7 @@ def test_lone_overflow_chunks_match_the_whole_chunk_pass(_resident_production_en
     monkeypatch.setattr(rp, "_run_lone_resident_chunk", spy)
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "16")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "16")
-    lone = rp.compute_pass2_stats_resident(**args)
+    lone = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     assert lone_calls, "the 16-row ladder made no lone chunk"
 
     assert_matches(whole.hard_assignment, lone.hard_assignment)
@@ -1986,7 +1993,7 @@ def test_row_blocked_projection_cache_matches_the_one_array_pass(_resident_produ
     """The global pass with its union cache in row blocks gives the one-array pass."""
 
     args = _driver_fixture_args()
-    whole = rp.compute_pass2_stats_resident(**args)
+    whole = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     real_allocate = resident_projections._allocate_projection_cache
     heights = []
 
@@ -1995,7 +2002,7 @@ def test_row_blocked_projection_cache_matches_the_one_array_pass(_resident_produ
         return None if len(heights) == 1 else real_allocate(rows, pixels, dtype)
 
     monkeypatch.setattr(resident_projections, "_allocate_projection_cache", refuse_whole)
-    blocked = rp.compute_pass2_stats_resident(**args)
+    blocked = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     assert len(heights) >= 3, "the pass must allocate its cache in row blocks"
 
     assert_matches(whole.hard_assignment, blocked.hard_assignment)
@@ -2035,18 +2042,20 @@ def test_weighted_sums_keep_the_current_size_when_the_e_step_scores_below_it(_re
     """
 
     args = _driver_fixture_args()
-    full = rp.compute_pass2_stats_resident(**args)
+    full = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine())
     capped_args = dict(args, current_size=4, reconstruction_current_size=6)
     with pytest.raises(ValueError, match="cannot exceed the particle-image crop"):
-        rp.compute_pass2_stats_resident(**capped_args)
-    capped = rp.compute_pass2_stats_resident(**dict(capped_args, wsum_current_size=6))
+        rp.compute_pass2_stats_resident(**capped_args, engine_tuning=_engine())
+    capped = rp.compute_pass2_stats_resident(**dict(capped_args, wsum_current_size=6), engine_tuning=_engine())
     noise_full = np.asarray(full.noise_stats.wsum_sigma2_noise)
     noise_capped = np.asarray(capped.noise_stats.wsum_sigma2_noise)
     assert noise_capped.shape == noise_full.shape
     assert noise_capped[3] > 0.0
     assert_matches(noise_capped != 0.0, noise_full != 0.0)
     assert np.asarray(capped.Ft_ctf).any()
-    same = rp.compute_pass2_stats_resident(**dict(args, wsum_current_size=args["current_size"]))
+    same = rp.compute_pass2_stats_resident(**dict(
+        args, wsum_current_size=args["current_size"]), engine_tuning=_engine(),
+    )
     assert_matches(np.asarray(same.noise_stats.wsum_sigma2_noise), noise_full)
     assert_matches(same.hard_assignment, full.hard_assignment)
 

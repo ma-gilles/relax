@@ -3,6 +3,7 @@
 import logging
 
 from relax.runtime.engine_record import record_pass_engine
+from relax.runtime.engine_tuning import EngineTuning
 
 # Preserve the category consumed by existing run-log collectors.
 logger = logging.getLogger("relax.sampling.oversampling")
@@ -88,8 +89,10 @@ def compute_pass2_stats_sparse(
     full_grid_engine=None,
     nyquist_column_counting: str = "relion",
     firstiter_cc_support: str = "relion",
+    engine_tuning: EngineTuning,
 ):
-    """Exact sparse pass 2 over per-image significant coarse samples.
+    """Exact sparse pass 2 over per-image significant coarse samples (``engine_tuning``: how the resident
+    engine executes, ``EngineTuning``).
 
     This matches RELION's pass-2 structure more closely than the dense-union
     approximation: each image only evaluates oversampled children of the
@@ -140,6 +143,7 @@ def compute_pass2_stats_sparse(
         significant_sample_indices,
         nside_level,
         disc_type,
+        engine_tuning=engine_tuning,
         oversampling_order=oversampling_order,
         current_size=current_size,
         reconstruction_current_size=reconstruction_current_size,

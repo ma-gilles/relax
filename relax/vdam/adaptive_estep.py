@@ -391,6 +391,7 @@ def run_adaptive_initial_model_estep(
     route_kwargs = {name: value for name, value in route_kwargs.items() if value is not None}
     engine_call = dict(
         coarse_engine=config.coarse_engine,
+        engine_tuning=config.engine_tuning,
         class_log_priors=class_log_priors,
         accumulate_noise=True,
         adaptive_fraction=(

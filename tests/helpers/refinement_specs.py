@@ -277,6 +277,8 @@ def dense_execution_policy(**fields):
             "nyquist_column_counting": "relion",
             "k_class_probe": KClassNoProbe(),
             "keep_pose_rotation_eulers": False,
+            # The environment, read as the command does.
+            "engine_tuning": RefinementEnvironment.from_environ().engine,
             **fields,
         }
     )

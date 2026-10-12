@@ -13,6 +13,7 @@ from helpers.refinement_specs import local_half_owners
 from helpers.run_options import stand_in
 
 from relax.refinement.refinement_options import ScoringVariants
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.symmetry import (
     canonicalize_rotational_symmetry,
     parse_rotational_symmetry,
@@ -624,6 +625,7 @@ def test_non_c1_adaptive_engine_rejects_unsupported_reconstruction_route_early(
             symmetry_label="I1",
             sparse_pass2=sparse_pass2,
             mstep_relion_x_half=x_half,
+            engine_tuning=EngineTuning.from_environ(),
         )
 
 
@@ -648,6 +650,7 @@ def test_non_c1_adaptive_engine_requires_explicit_oversampling_order():
             symmetry_label="I1",
             sparse_pass2=True,
             mstep_relion_x_half=True,
+            engine_tuning=EngineTuning.from_environ(),
         )
 
 

@@ -293,3 +293,30 @@ def test_fsc_dump_writes_the_split_half_fsc(monkeypatch, tmp_path):
     run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False, environment=RefinementEnvironment(),
                         variants=variants)
     assert (tmp_path / "tiny_downsampled_fsc.txt").exists()
+
+
+def test_engine_tuning_is_read_once(monkeypatch):
+    from relax.runtime.compile_ahead import CompileAheadConfig
+    from relax.runtime.engine_tuning import EngineTuning
+
+    monkeypatch.delenv("RELAX_EM_COMPILE_AHEAD_MAX_PROGRAMS", raising=False)
+    assert _from_environ(monkeypatch, "RELAX_EM_COMPILE_AHEAD", None).engine == EngineTuning()
+    assert _from_environ(monkeypatch, "RELAX_EM_COMPILE_AHEAD", "on").engine.compile_ahead == CompileAheadConfig(
+        enabled=True)
+
+
+def test_engine_tuning_reaches_the_command(monkeypatch, tmp_path):
+    env = _command_environment(monkeypatch, tmp_path, "RELAX_EM_COMPILE_AHEAD", "1")
+    assert env.engine.compile_ahead.enabled is True
+
+
+def test_engine_tuning_reaches_the_dense_engine(monkeypatch):
+    from relax.runtime.compile_ahead import CompileAheadConfig
+    from relax.runtime.engine_tuning import EngineTuning
+
+    monkeypatch.delenv("RELAX_EM_COMPILE_AHEAD", raising=False)
+    tuning = EngineTuning(compile_ahead=CompileAheadConfig(enabled=True, max_programs=5))
+    calls = []
+    run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False, engine_calls=calls,
+                        environment=RefinementEnvironment(engine=tuning))
+    assert calls and all(call["kwargs"]["engine_tuning"] is tuning for call in calls)
