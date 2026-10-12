@@ -74,7 +74,6 @@ from relax.fine_pass.rotation_buckets import EXACT_LOCAL_BUCKET_RADIX_ENV, exact
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
 from relax.local_search.layout import (
     LocalHypothesisLayout,
-    bucket_local_hypothesis_layout,
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
@@ -1351,6 +1350,7 @@ def _mock_reconstruction_accumulator_size(experiment_dataset, kwargs, *, current
 
 def test_build_local_hypothesis_layout_and_bucketization_preserve_per_image_support(monkeypatch):
     import relax.local_search.layout as local_layout_mod
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
 
     call_count = {"value": 0}
 
@@ -1413,6 +1413,8 @@ def test_build_local_hypothesis_layout_and_bucketization_preserve_per_image_supp
 
 
 def test_build_pass2_hypothesis_layout_preserves_sparse_rotation_translation_mask():
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
     translations = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
     significant_samples = [
         np.array([0, 3], dtype=np.int32),  # rot 0/trans 0 and rot 1/trans 1
@@ -1695,6 +1697,8 @@ def test_build_local_adaptive_pass2_hypothesis_layout_masks_parent_pairs():
 
 
 def test_build_local_adaptive_pass2_hypothesis_layout_empty_significant_samples_fallback_to_local_support():
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
     parent_order = 0
     oversampling_order = 1
     coarse_translations = np.array([[0.0, 0.0], [2.0, 0.0]], dtype=np.float32)
@@ -2500,6 +2504,8 @@ def test_exact_local_bucket_radix_can_collapse_adjacent_power_two_shapes(monkeyp
 
 
 def test_bucket_local_hypothesis_layout_coarsens_large_exact_neighborhoods_without_4096_floor():
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
     layout = LocalHypothesisLayout(
         n_global_rotations=2000,
         n_pixels=768,
@@ -2529,6 +2535,8 @@ def test_bucket_local_hypothesis_layout_coarsens_large_exact_neighborhoods_witho
 
 
 def test_bucket_local_hypothesis_layout_quantum_env_can_request_finer_tail_shapes(monkeypatch):
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
     monkeypatch.setenv("RELAX_LOCAL_BUCKET_QUANTUM", "128")
     layout = LocalHypothesisLayout(
         n_global_rotations=2000,
@@ -2554,6 +2562,8 @@ def test_bucket_local_hypothesis_layout_quantum_env_can_request_finer_tail_shape
 
 
 def test_bucket_local_hypothesis_layout_batches_moderate_local_search_neighborhoods(monkeypatch):
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
     monkeypatch.delenv("RELAX_LOCAL_BUCKET_QUANTUM", raising=False)
     n_images = 120
     rotation_counts = np.full(n_images, 198, dtype=np.int32)
@@ -2589,6 +2599,8 @@ def test_bucket_local_hypothesis_layout_unify_env_collapses_shape_classes(monkey
     """RELAX_LOCAL_BUCKET_UNIFY=1 collapses ~13 unique bucket shape classes
     into one max-sized class so the JIT only compiles one shape per layout.
     Pins the 7.3× perf win measured on 50k/256 K=1 (commit 8e868d5e)."""
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
 
     rotation_counts = np.array([16, 16, 128, 256, 512, 1024, 1280, 1408], dtype=np.int32)
     rotation_ids = np.arange(int(rotation_counts.sum()), dtype=np.int32)
@@ -2633,6 +2645,8 @@ def test_bucket_local_hypothesis_layout_unify_env_collapses_shape_classes(monkey
 
 
 def test_bucket_local_hypothesis_layout_unify_argument_collapses_shape_classes(monkeypatch):
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
     monkeypatch.delenv("RELAX_LOCAL_BUCKET_UNIFY", raising=False)
     rotation_counts = np.array([16, 128, 512, 1408], dtype=np.int32)
     rotation_ids = np.arange(int(rotation_counts.sum()), dtype=np.int32)
@@ -2675,6 +2689,8 @@ def test_bucket_local_hypothesis_layout_unify_argument_collapses_shape_classes(m
 
 
 def test_bucket_local_hypothesis_layout_can_preserve_physical_image_order(monkeypatch):
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
     monkeypatch.delenv("RELAX_LOCAL_BUCKET_UNIFY", raising=False)
     rotation_counts = np.array([16, 64, 16, 64], dtype=np.int32)
     rotation_offsets = np.concatenate([[0], np.cumsum(rotation_counts)]).astype(np.int64)
@@ -2712,6 +2728,8 @@ def test_bucket_local_hypothesis_layout_can_preserve_physical_image_order(monkey
 
 
 def test_bucket_local_hypothesis_layout_aligns_preserved_chunks_to_pool_three(monkeypatch):
+    from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
+
     monkeypatch.delenv("RELAX_LOCAL_BUCKET_UNIFY", raising=False)
     rotation_counts = np.full(7, 16, dtype=np.int32)
     rotation_offsets = np.concatenate([[0], np.cumsum(rotation_counts)]).astype(np.int64)

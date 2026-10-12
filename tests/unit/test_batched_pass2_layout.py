@@ -7,6 +7,7 @@ from helpers.float_compare import assert_matches
 
 from relax.local_search import layout as local_layout
 from relax.sampling import grids, oversampled_grids
+from scripts.lib import local_bucket_layout
 
 pytestmark = pytest.mark.unit
 
@@ -92,7 +93,7 @@ def test_packed_mask_preserves_boolean_rows_and_bucket_padding(n_translations):
     assert layout.sample_mask_bits.nbytes == 10 * ((n_translations + 7) // 8)
     assert_matches(layout.sample_mask_rows(), mask)
     assert_matches(layout.sample_mask_rows(3, 8), mask[3:8])
-    for bucket in local_layout.bucket_local_hypothesis_layout(layout, 2, 16):
+    for bucket in local_bucket_layout.bucket_local_hypothesis_layout(layout, 2, 16):
         assert bucket.local_sample_mask.dtype == np.bool_
         for row, image in enumerate(bucket.image_indices):
             start, stop = layout.rotation_offsets[image:image + 2]
@@ -118,7 +119,7 @@ def _unequal_support_layout():
 def test_bucket_unification_applies_while_the_padding_it_adds_is_bounded():
     layout = _unequal_support_layout()
 
-    plans = local_layout.plan_local_hypothesis_buckets(layout, 2, 32, unify_bucket_sizes=True)
+    plans = local_bucket_layout.plan_local_hypothesis_buckets(layout, 2, 32, unify_bucket_sizes=True)
 
     assert len({plan.bucket_rotation_count for plan in plans}) == 1
 
@@ -128,10 +129,10 @@ def test_bucket_unification_is_dropped_when_it_would_add_too_many_rows(monkeypat
     more than the extra compiled shapes it avoids. Measured on K=4 100k/256, where it
     turned 54.1 M padded rows into 204.8 M and doubled pass-2 time at the all-data
     iteration."""
-    monkeypatch.setattr(local_layout, "EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS", 0)
+    monkeypatch.setattr(local_bucket_layout, "EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS", 0)
     layout = _unequal_support_layout()
 
-    plans = local_layout.plan_local_hypothesis_buckets(layout, 2, 32, unify_bucket_sizes=True)
+    plans = local_bucket_layout.plan_local_hypothesis_buckets(layout, 2, 32, unify_bucket_sizes=True)
 
     sizes = {plan.bucket_rotation_count for plan in plans}
     assert len(sizes) > 1

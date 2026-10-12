@@ -19,9 +19,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.local_search.layout import (
+from relax.local_search.layout import LocalHypothesisLayout
+from scripts.lib.local_bucket_layout import (
     DEFAULT_LOCAL_IMAGE_CAPACITY_LADDER,
-    LocalHypothesisLayout,
     _ladder_image_capacity,
     plan_local_hypothesis_buckets,
     resolve_local_image_capacity_ladder,

@@ -21,7 +21,7 @@ from recovar.ppca.triangular import tri_size as _tri_size
 from recovar.reconstruction import noise as noise_utils
 
 from relax.io.batch_fetch import fetch_indexed_batch
-from relax.local_search.layout import LocalHypothesisLayout, bucket_local_hypothesis_layout
+from relax.local_search.layout import LocalHypothesisLayout
 from relax.ppca_refinement.config import (
     GeometryConfig,
     PoseSelectionConfig,
@@ -54,6 +54,7 @@ from relax.ppca_refinement.pose_selection import (
 from relax.ppca_refinement.postprocess import PostprocessConfig, postprocess_ppca_half_volumes
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
 from relax.relion.image_preprocessing import prepare_reconstruction_batch, preprocess_batch
+from scripts.lib.local_bucket_layout import bucket_local_hypothesis_layout
 
 # Smart-sizing defaults mirror the K-class engine's
 # ``EXACT_LOCAL_TARGET_ROW_PIXELS`` (190 M scoring pixels per microbatch),
