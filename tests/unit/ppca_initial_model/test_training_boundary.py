@@ -120,3 +120,17 @@ def test_source_identity_without_git_checkout(monkeypatch):
     identity = command.source_identity()
     assert identity["head"] is None
     assert "relax/ppca_initial_model/iteration_loop.py" in identity["files"]
+
+
+def test_source_identity_covers_the_shared_modules_ppca_imports():
+    """The code hash covers the relax modules PPCA imports, also lazily, not only its own packages, and lists
+    them in one order in every call."""
+    from relax.commands import ppca_initial_model as command
+
+    first = list(command.source_identity()["files"])
+    assert first == list(command.source_identity()["files"])
+    # initialization.py and tomo.py import the ini-high shell; engine.py imports the adjoint inside a function.
+    assert "relax/reconstruction/resolution.py" in first
+    assert "relax/projection/adjoint.py" in first
+    assert "relax/relion/project.py" in first
+    assert "relax/refinement/iteration_loop.py" not in first

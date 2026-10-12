@@ -1,6 +1,7 @@
 """Learn one ab-initio PPCA model from particles and known CTFs."""
 
 import argparse
+import ast
 import dataclasses
 import json
 import logging
@@ -266,6 +267,35 @@ def tilt_series_hash(tomograms_star):
     return digest.hexdigest()
 
 
+def ppca_source_files(repo: Path) -> list[Path]:
+    """The source files a PPCA checkpoint's code hash covers, sorted: PPCA's own modules (``relax/ppca_initial_model``,
+    ``relax/ppca_refinement``), this command, ``relax/relion/project.py``, and every relax module those import by
+    name, at any scope (top level, inside a function, under TYPE_CHECKING). The imports are read from the source
+    text, so the set is the same in every process whatever it has imported. It is not the transitive closure:
+    while the package graph is cyclic that would be most of relax, and every relax edit would refuse a resume.
+    """
+    own = sorted((repo / "relax/ppca_initial_model").glob("*.py"))
+    own += sorted((repo / "relax/ppca_refinement").glob("*.py"))
+    own += [Path(__file__).resolve(), repo / "relax/relion/project.py"]
+    files = set(own)
+    for path in own:
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names = [node.module] + [f"{node.module}.{alias.name}" for alias in node.names]
+            else:
+                continue
+            for name in names:
+                if name.split(".")[0] != "relax":
+                    continue
+                module = repo.joinpath(*name.split("."))
+                files.update(
+                    candidate for candidate in (module.with_suffix(".py"), module / "__init__.py") if candidate.is_file()
+                )
+    return sorted(files)
+
+
 def source_identity():
     import jax
     import recovar
@@ -279,9 +309,7 @@ def source_identity():
         native["cuda_sha256"] = file_hash(cuda_backproject._loaded_lib_path)
     repo = Path(__file__).resolve().parents[2]
     # Includes untracked implementation files; a clean HEAD alone is insufficient.
-    files = sorted((repo / "relax/ppca_initial_model").glob("*.py"))
-    files += sorted((repo / "relax/ppca_refinement").glob("*.py"))
-    files += [Path(__file__), repo / "relax/relion/project.py"]
+    files = ppca_source_files(repo)
     # A plain file snapshot or an installed package has no lock file or git checkout; the file
     # hashes identify the source on their own.
     files += [path for path in (repo / "pixi.lock",) if path.is_file()]
