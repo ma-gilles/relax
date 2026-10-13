@@ -37,7 +37,6 @@ from relax.numerics.precision import DensePrecisionPolicy, audit_operand_precisi
 from relax.relion import ctf
 from relax.relion.image_preprocessing import prepare_batch_preprocess_operands, process_half_image
 from relax.relion.optics_groups import noise_rows, pixel_rows
-from relax.runtime.env_flags import parse_env_binary_flag
 
 logger = logging.getLogger(__name__)
 
@@ -191,9 +190,6 @@ def _ctf_over_noise_weighted_pair(processed_score_half_raw, processed_recon_half
     )
 
 
-_SPARSE_PASS2_F64_NOISE_OPERANDS_ENV = "RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS"
-
-
 @jax.jit
 def _weighted_ctf_pair(processed_score_half_raw, processed_recon_half_raw, weighted_ctf_half):
     """Weight score and reconstruction images by ``CTF * Minvsigma2`` in one program."""
@@ -213,8 +209,6 @@ def _generic_inverse_noise_operands(noise_variance_half, *, optics_group_rows: b
     its broadcasting is unchanged.
     """
 
-    if parse_env_binary_flag(_SPARSE_PASS2_F64_NOISE_OPERANDS_ENV):
-        return False
     return optics_group_rows or int(jnp.ndim(noise_variance_half)) == 1
 
 

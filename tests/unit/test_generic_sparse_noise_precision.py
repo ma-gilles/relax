@@ -1,14 +1,11 @@
 import numpy as np
 import jax.numpy as jnp
-import pytest
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, MockDataset
 from recovar.core.configs import ForwardModelConfig
 from relax.fine_pass.bucket_io import prepare_unshifted_bucket_operands
 from helpers.float_compare import assert_matches
 
-@pytest.mark.parametrize("diagnostic", [False, True])
-def test_generic_noise_operands_follow_selected_precision(monkeypatch, diagnostic):
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS", str(int(diagnostic)))
+def test_generic_noise_operands_follow_selected_precision():
     ds=MockDataset(n_images=3,seed=612)
     ids=np.arange(3)
     config=ForwardModelConfig.from_dataset(ds,disc_type="linear_interp",process_fn=ds.process_images)
@@ -17,10 +14,9 @@ def test_generic_noise_operands_follow_selected_precision(monkeypatch, diagnosti
     out=prepare_unshifted_bucket_operands(ds,jnp.asarray(ds._images),jnp.asarray(ds.CTF_params),ids,
         noise_variance_half=noise,config=config,score_with_masked_images=False,
         image_corrections=None,scale_corrections=None,image_pre_shifts=None,use_float64_scoring=False)
-    assert out.score_weighted_half.dtype == (jnp.complex128 if diagnostic else jnp.complex64)
-    assert out.ctf2_over_nv_half.dtype == (jnp.float64 if diagnostic else jnp.float32)
-    if not diagnostic:
-        expected_inverse=np.reciprocal(np.asarray(noise)).astype(np.float32)
-        assert_matches(out.inverse_noise_half,expected_inverse)
-        weighted=np.asarray(out.ctf_half)*expected_inverse[None,:]
-        assert_matches(out.ctf2_over_nv_half,weighted*np.asarray(out.ctf_half))
+    assert out.score_weighted_half.dtype == jnp.complex64
+    assert out.ctf2_over_nv_half.dtype == jnp.float32
+    expected_inverse=np.reciprocal(np.asarray(noise)).astype(np.float32)
+    assert_matches(out.inverse_noise_half,expected_inverse)
+    weighted=np.asarray(out.ctf_half)*expected_inverse[None,:]
+    assert_matches(out.ctf2_over_nv_half,weighted*np.asarray(out.ctf_half))

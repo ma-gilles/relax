@@ -402,7 +402,6 @@
   "RECOVAR_SPARSE_PASS2_CUDA_POSTERIOR": "RELAX_SPARSE_PASS2_CUDA_POSTERIOR",
   "RECOVAR_SPARSE_PASS2_DEVICE_MEMORY_GB": "RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB",
   "RECOVAR_SPARSE_PASS2_EXACT_RAW_DIFF2_CACHE_MAX_BYTES": "RELAX_SPARSE_PASS2_EXACT_RAW_DIFF2_CACHE_MAX_BYTES",
-  "RECOVAR_SPARSE_PASS2_F64_NOISE_OPERANDS": "RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS",
   "RECOVAR_SPARSE_PASS2_FUSED_KCLASS_SCORE_GATHER_FRACTION": "RELAX_SPARSE_PASS2_FUSED_KCLASS_SCORE_GATHER_FRACTION",
   "RECOVAR_SPARSE_PASS2_GROUP_PROGRESS_CHUNKS": "RELAX_SPARSE_PASS2_GROUP_PROGRESS_CHUNKS",
   "RECOVAR_SPARSE_PASS2_GROUP_PROGRESS_SECONDS": "RELAX_SPARSE_PASS2_GROUP_PROGRESS_SECONDS",
@@ -721,6 +720,8 @@
   "RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
   "RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
   "RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
-  "RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)"
+  "RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
+  "RECOVAR_SPARSE_PASS2_F64_NOISE_OPERANDS": "no user: the generic path's binary64 noise-operand arm was set only by its own test; the XFLOAT-reciprocal operand is the one path (2026-10-13)",
+  "RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS": "no user: the generic path's binary64 noise-operand arm was set only by its own test; the XFLOAT-reciprocal operand is the one path (2026-10-13)"
  }
 }
