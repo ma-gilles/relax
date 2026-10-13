@@ -20,7 +20,7 @@ bitwise equality.
 The exact-BPref reconstruction operand needs a RELION source STAR and RELION
 CUDA preprocessing, which this fixture's dataset does not have; that
 configuration is covered on a real chunk by the driver's
-``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY=1`` arm, which runs the same
+``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY=1`` arm (``EngineTuning.resident_operands_verify``), which runs the same
 comparison against the per-chunk preparation inside a production pass.
 """
 

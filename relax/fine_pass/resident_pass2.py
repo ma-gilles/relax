@@ -2646,7 +2646,7 @@ def _resident_pass2(
         logger.info("Resident pass-2 plans its chunks again for the per-chunk operand preparation")
         memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan = plan_chunks(False)
 
-    verify_operands = resident_operands is not None and policy.resident_operands_verify_enabled()
+    verify_operands = resident_operands is not None and engine_tuning.resident_operands_verify
 
     # ---- chunk loop --------------------------------------------------------
     # With the warm-up on, collect the (program, spec) keys the loop actually

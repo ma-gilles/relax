@@ -2184,3 +2184,13 @@ def test_chunk_timing_is_read_once_at_the_boundary(monkeypatch):
     for raw, expected in (("", False), ("off", False), ("yes", True)):
         monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", raw)
         assert EngineTuning.from_environ().chunk_timing is expected
+
+
+def test_resident_operands_verify_is_read_once_at_the_boundary(monkeypatch):
+    """RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY (env_flags.parse_env_flag): unset and blank off, set on."""
+    for raw, expected in ((None, False), ("", False), ("1", True), ("off", False)):
+        if raw is None:
+            monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY", raising=False)
+        else:
+            monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY", raw)
+        assert EngineTuning.from_environ().resident_operands_verify is expected

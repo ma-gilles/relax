@@ -145,15 +145,6 @@ def _projection_cache_enabled_for_pass(
 _RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 
 
-# Diagnostic, default off. For the first chunk of a half it also runs the
-# per-chunk preparation and checks, on that chunk's real operands, that
-# translating the resident per-image arrays reproduces the pre-shifted tiles
-# bitwise and that the kernel's weighted sums equal the XLA reduction. It
-# doubles that chunk's preparation cost, so an arm with it set is a diagnostic
-# arm, never a timing arm.
-_RESIDENT_OPERANDS_VERIFY_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY"
-
-
 # Take ``ctf_probs`` from the translate-and-sum kernel's fourth output instead
 # of the XLA statement. Measurement only: see
 # ``resident_block_weighted_sums_kernel`` for why it is not the default.
@@ -175,12 +166,6 @@ def kernel_ctf_probs_enabled() -> bool:
     """Whether the M-step's ``ctf_probs`` comes from the kernel's fourth output."""
 
     return parse_env_flag(_KERNEL_CTF_PROBS_ENV, default=False)
-
-
-def resident_operands_verify_enabled() -> bool:
-    """Whether to check the first chunk of a half against the per-chunk path."""
-
-    return parse_env_flag(_RESIDENT_OPERANDS_VERIFY_ENV, default=False)
 
 
 def resident_operands_requested() -> bool:
