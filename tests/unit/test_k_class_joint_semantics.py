@@ -1639,3 +1639,11 @@ def test_relion_projector_compaction_rejects_post_transfer_jax_array():
                 r_max=6,
                 padding_factor=2,
             )
+
+
+def test_fused_atomics_arm_read_at_the_boundary_reaches_the_adaptive_pass(monkeypatch):
+    """RELAX_RELION_X_HALF_BP_FUSED_ATOMICS, read by the command into EngineTuning.resident_diagnostics, is refused
+    where the fused atomics are not qualified (a later pass without a device-signature scope), as before."""
+    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+    with pytest.raises(RuntimeError, match="RELAX_RELION_X_HALF_BP_FUSED_ATOMICS is qualified only"):
+        _adaptive_run_with_fake_coarse(monkeypatch)

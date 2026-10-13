@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import NamedTuple
 
@@ -35,7 +34,6 @@ from relax.classification.probes import KClassProbe, NoProbe
 from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
 from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 from relax.relion.scale_groups import prepare_scale_correction_groups
-from relax.runtime.env_flags import parse_env_flag
 from relax.types import RelionStats, make_relion_stats
 
 logger = logging.getLogger(__name__)
@@ -2021,10 +2019,9 @@ def run_dense_k_class_em_adaptive(
     if "current_size" not in pass2_kwargs and fine_current_size is not None:
         pass2_kwargs["current_size"] = fine_current_size
 
-    device_signature_configured = bool(
-        os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "").strip()
-    )
-    fused_atomic_env_enabled = parse_env_flag(_RELION_X_HALF_BP_FUSED_ATOMICS_ENV)
+    # The diagnostic dump and arm the command read (EngineTuning.resident_diagnostics names the set ones).
+    device_signature_configured = "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR" in engine_tuning.resident_diagnostics
+    fused_atomic_env_enabled = _RELION_X_HALF_BP_FUSED_ATOMICS_ENV in engine_tuning.resident_diagnostics
     fused_atomic_diagnostic_requested = bool(
         fused_atomic_env_enabled
         and (bpref_device_signature_active or not device_signature_configured)
