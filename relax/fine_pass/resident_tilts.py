@@ -204,6 +204,18 @@ def tilt_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators
     )
 
 
+def tilt_mstep_tile_bytes(n_units: int, *, n_rect_pixels: int, n_exact_pixels: int) -> int:
+    """Device bytes one M-step translation adds to a slot's translated Wavg tiles (:func:`_tilt_mstep_program`).
+
+    The tiles are per unit, ``[units, T, pixels]``: the translated rectangle (complex64) and its copy with the
+    padded units zeroed (:func:`_slot_view_translate`), its exact-radius gather, and the rectangle's float32
+    power and the product it is built from (``add_wavg_rectangle_image_power``). The M-step kernels read them
+    by each row's image; no tile has a row axis.
+    """
+
+    return int(n_units) * (3 * int(n_rect_pixels) + int(n_exact_pixels)) * 8
+
+
 def _slot_tables_block(slots: "SlotMstepTables", start: int, stop: int) -> "SlotMstepTables":
     """Slots ``start:stop`` of :func:`_slot_mstep_tables`, renumbered from 0 (their block's projections)."""
 
@@ -285,10 +297,11 @@ def run_tilt_chunk(
     - The M-step visits each particle's own translations with posterior mass (:func:`unit_mstep_translations`):
       a row's posterior and its image's phases are taken at its particle's ``k`` translations, so the
       translated tiles cover only those (the dropped terms carry exactly zero posterior).
-    - Memory: the translated Wavg tiles of one slot are ``[C_U, T_b, P_rect]`` (the slot view) and
-      ``[block rows, T_b, P_rect]`` (the per-row gather), for blocks of ``T_b`` of the particles'
-      ``k`` translations, sized so both fit ``tile_budget_bytes`` (:func:`mstep_translation_blocks`);
-      ``mstep_census`` records each chunk's ``k`` and blocks (:class:`TiltMstepCensus`).
+    - Memory: the translated Wavg tiles of one slot are ``[C_U, T_b, P_rect]`` (the slot view), for blocks
+      of ``T_b`` of the particles' ``k`` translations, sized to fit ``tile_budget_bytes``
+      (:func:`tilt_mstep_tile_bytes`, :func:`mstep_translation_blocks`); ``mstep_census`` records each
+      chunk's ``k`` and blocks (:class:`TiltMstepCensus`). Every translation block repeats the M-step
+      block bodies of the slot's rows, so a block holds as many translations as fit (relax#82).
     - K>1 classes (RELION subtomogram Class3D): a particle's rows are class-major (the candidate
       tables' class layout), each (slot, row) projects from its class's reference, the posterior
       segment is the particle's over every class, and each accumulator slot's rows backproject into
@@ -302,7 +315,8 @@ def run_tilt_chunk(
       the rows' ``[C_R, T]`` diff2; its posterior is formed over all of its rows as before, and the M-step
       projects and backprojects its rows with posterior mass, that many at a time. Each row's diff2 keeps its
       slot order and the posterior is the one-call chunk's; only the grouping of the projector calls and of
-      the M-step blocks changes.
+      the M-step blocks changes. Its M-step tables and translated tiles hold its one unit, not the chunk's
+      unit capacity.
     The per-stage (non-jitted) path.
     """
 
@@ -319,6 +333,8 @@ def run_tilt_chunk(
     from relax.fine_pass.resident_scoring import tilt_image_rows_raw_diff2, tilt_rows_scores_from_raw
 
     lone = lone_block_rows is not None
+    if lone and int(chunk.n_valid_images) != 1:
+        raise ValueError(f"a chunk run in row blocks holds one particle, not {int(chunk.n_valid_images)}")
     if lone and (bool(spec_kwargs.get("firstiter_cc")) or int(chunk.row_capacity) % int(lone_block_rows)):
         raise ResidentConfigurationUnsupported(
             "a particle past the largest row class runs in row blocks that divide its rows, which the "
@@ -578,8 +594,12 @@ def run_tilt_chunk(
         jnp.zeros((), row_posterior.dtype),
     )
     unit_kept = MstepTranslations(index=np.arange(n_unit_trans, dtype=np.int64), valid=np.ones(n_unit_trans, dtype=bool))
-    bytes_per_translation = (
-        (unit_capacity + block_rows) * (int(rect_indices_device.shape[0]) + int(exact_positions_device.shape[0])) * 8
+    # The M-step's units: the chunk's, or the one particle of a chunk run in row blocks (unit 0).
+    mstep_units = 1 if lone else unit_capacity
+    bytes_per_translation = tilt_mstep_tile_bytes(
+        mstep_units,
+        n_rect_pixels=int(rect_indices_device.shape[0]),
+        n_exact_pixels=int(exact_positions_device.shape[0]),
     )
     translation_blocks = mstep_translation_blocks(
         unit_kept, bytes_per_translation=bytes_per_translation, tile_budget_bytes=int(tile_budget_bytes)
@@ -604,12 +624,12 @@ def run_tilt_chunk(
         mstep_census.add(n_unit_trans, translation_blocks[0].index.size, len(translation_blocks))
     slot_spec = resident_chunk_programs.make_chunk_program_spec(
         row_capacity=mstep_row_capacity,
-        image_capacity=unit_capacity,
+        image_capacity=mstep_units,
         n_fine_trans=int(translation_blocks[0].index.size),
         presum_adjoint=merge_row_partials,
         **spec_kwargs,
     )
-    unit_slot_images = _unit_slot_images(layout, unit_capacity=unit_capacity, slot_capacity=n_slots)
+    unit_slot_images = _unit_slot_images(layout, unit_capacity=unit_capacity, slot_capacity=n_slots)[:, :mstep_units]
     kept_index = jnp.asarray(np.stack([kept.index for kept in translation_blocks]), dtype=jnp.int32)
     kept_valid = jnp.asarray(np.stack([kept.valid for kept in translation_blocks]))
     # Each accumulator slot (class + K * group) backprojects its own rows into its BPref pair; the
@@ -639,7 +659,7 @@ def run_tilt_chunk(
             block_rows=block_rows,
             image_angles=np.asarray(tilt.image_angles, dtype=np.float32),
             layout_image_ids=np.asarray(layout.image_ids),
-            unit_translations=unit_translations.index,
+            unit_translations=unit_translations.index[:mstep_units],
             translation_blocks=translation_blocks,
             image_capacity=image_capacity,
         )

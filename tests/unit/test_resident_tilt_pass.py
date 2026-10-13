@@ -437,9 +437,19 @@ def _lone_tilt_runs(monkeypatch, args, tilt):
         lone_rows.append(int(tilt_chunk.row_capacity) // k["lone_block_rows"] if k.get("lone_block_rows") else 0)
         return real_chunk(tilt_chunk, *a, **k)
 
+    def slot_tables(unit_slot_images, **k):
+        # A row-blocked particle's M-step holds its one unit (relax#82): its tables' unit axis.
+        if int(k["row_capacity"]) == 16:
+            assert np.asarray(unit_slot_images).shape[1] == 1
+            mstep_units.append(1)
+        return real_tables(unit_slot_images, **k)
+
+    mstep_units, real_tables = [], resident_tilts._slot_mstep_tables
     monkeypatch.setattr(resident_chunk_memory, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(resident_tilts, "run_tilt_chunk", chunk)
+    monkeypatch.setattr(resident_tilts, "_slot_mstep_tables", slot_tables)
     whole = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt, engine_tuning=_engine())
+    assert not mstep_units
     assert lone_rows and not any(lone_rows), "a particle that fits whole must not run in row blocks"
     assert resident_chunk_memory.overflow_row_capacity(plans[-1]["max_image_rows"], (16,)) > 16, "the fixture has no overflow particle"
 
@@ -452,6 +462,7 @@ def _lone_tilt_runs(monkeypatch, args, tilt):
         del lone_rows[:]
         blocked = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt, engine_tuning=_engine())
         if any(lone_rows):
+            assert mstep_units, "the row-blocked particles' M-step tables were not built for one unit"
             print(f"row-blocked at a budget of {fraction} of the whole-particle peak ({whole_peak} bytes)")
             return whole, blocked, list(lone_rows)
     raise AssertionError("no budget made the whole-particle plan refuse while the row-blocked one fit")

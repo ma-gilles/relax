@@ -257,6 +257,35 @@ def test_mstep_translation_blocks_fit_the_tile_budget_and_cover_every_kept_trans
 
 
 @pytest.mark.unit
+def test_tilt_mstep_tiles_are_counted_per_unit_so_a_flat_particle_keeps_one_translation_block():
+    """relax#82: the tilt M-step's translated tiles are ``[units, T, pixels]``; none has a row axis.
+
+    Every translation block repeats the M-step block bodies of all of a slot's rows, so the block count is a
+    cost. A particle with a flat posterior keeps all 1,176 fine translations of a 5-pixel 3D search; run alone
+    in row blocks it is its chunk's one unit, and at current size 152 (an 11,704-pixel Wavg rectangle) its
+    translations fit one block of an 80 GB card's tile budget. Counted with the M-step's 256 block rows, as
+    the tiles were before, they took 74 blocks of 16.
+    """
+    from relax.runtime.memory_budget import _max_translation_tile_bytes_for_pass
+
+    n_rect, n_exact, k = 11704, 11704, 1176
+    kept = resident_tilts.MstepTranslations(index=np.arange(k, dtype=np.int64), valid=np.ones(k, dtype=bool))
+    one_unit = resident_tilts.tilt_mstep_tile_bytes(1, n_rect_pixels=n_rect, n_exact_pixels=n_exact)
+    assert one_unit == (3 * n_rect + n_exact) * 8
+    assert resident_tilts.tilt_mstep_tile_bytes(32, n_rect_pixels=n_rect, n_exact_pixels=n_exact) == 32 * one_unit
+    budget = _max_translation_tile_bytes_for_pass(80 * 1024**3)
+    assert resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=one_unit, tile_budget_bytes=budget) == (kept,)
+    with_block_rows = (128 + 256) * (n_rect + n_exact) * 8
+    blocks = resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=with_block_rows, tile_budget_bytes=budget)
+    assert (len(blocks), int(blocks[0].index.size)) == (74, 16)
+    # A 16 GB card's budget still holds the particle's translations in a few blocks.
+    small = resident_tilts.mstep_translation_blocks(
+        kept, bytes_per_translation=one_unit, tile_budget_bytes=_max_translation_tile_bytes_for_pass(16 * 1024**3)
+    )
+    assert len(small) <= 4
+
+
+@pytest.mark.unit
 def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
     """At the S1 full box (T = 4120, 41 tilts) a tilt unit costs its S gathered images, not T tiles.
 
