@@ -2099,6 +2099,7 @@ def _resident_pass2(
             n_recon_pixels=n_recon_windowed,
             max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
             row_capacity_ladder=row_ladder_start,
+            override=engine_tuning.mstep_block_rows,
         )
         def plan_memory(lone_row_bytes, projection_factor):
             return resident_chunk_memory.plan_resident_chunk_memory(

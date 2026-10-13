@@ -57,6 +57,8 @@ class EngineTuning:
     (RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS, ``int()`` of the text, default
     :data:`DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS`): voxels per host chunk of the point-group BPref finalizer (its
     caller refuses a value that is not positive).
+    ``mstep_block_rows`` (RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS, :func:`parse_mstep_block_rows`): the resident
+    M-step's rows per pixel-axis block, None for the budget-derived one.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -66,6 +68,7 @@ class EngineTuning:
     resident_diagnostics: tuple[str, ...] = ()
     bpref_symmetry_chunk_voxels: int = DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS
 
+    mstep_block_rows: int | None = None
     @classmethod
     def from_environ(cls) -> EngineTuning:
         return cls(
@@ -88,6 +91,7 @@ class EngineTuning:
             bpref_symmetry_chunk_voxels=int(read_env_text(
                 "RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", str(DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS),
             )),
+            mstep_block_rows=parse_mstep_block_rows(read_env_text(MSTEP_BLOCK_ROWS_ENV, "")),
         )
 
 
@@ -117,3 +121,18 @@ def parse_projection_cache_request(raw: str | None) -> bool | None:
     if mode in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"{PROJECTION_CACHE_ENV} must be 'auto', 'on', or 'off', got {raw!r}")
+
+
+MSTEP_BLOCK_ROWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
+
+
+def parse_mstep_block_rows(raw: str) -> int | None:
+    """RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS (stripped): blank is None; ``int()`` refuses a non-integer, and a
+    value that is not a positive power of two is refused."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    block = int(raw)
+    if block <= 0 or block & (block - 1):
+        raise ValueError(f"{MSTEP_BLOCK_ROWS_ENV} must be a positive power of two, got {block}")
+    return block

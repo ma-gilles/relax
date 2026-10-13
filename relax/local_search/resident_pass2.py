@@ -990,6 +990,7 @@ def compute_local_search_resident(
             n_recon_pixels=n_recon_windowed,
             max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
             row_capacity_ladder=row_ladder,
+            override=support.engine_tuning.mstep_block_rows,
         )
         memory_plan = resident_chunk_memory.plan_resident_chunk_memory(
             row_capacity_ladder=row_ladder,

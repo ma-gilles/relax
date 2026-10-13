@@ -398,10 +398,30 @@ def test_wavg_shifted_power_commutes_with_a_row_gather():
 def test_mstep_block_rows_divides_every_row_capacity():
     ladder = rp._DEFAULT_ROW_CAPACITY_LADDER
     block = resident_chunk_memory.resolve_mstep_block_rows(
-        n_recon_pixels=4324, max_block_bytes=513124859, row_capacity_ladder=ladder
+        n_recon_pixels=4324, max_block_bytes=513124859, row_capacity_ladder=ladder, override=None,
     )
     assert block > 0 and block & (block - 1) == 0
     assert all(capacity % block == 0 for capacity in ladder)
+    # The command's override (EngineTuning.mstep_block_rows) is taken, then capped by the smallest row capacity.
+    assert resident_chunk_memory.resolve_mstep_block_rows(
+        n_recon_pixels=4324, max_block_bytes=513124859, row_capacity_ladder=ladder, override=8,
+    ) == 8
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, None), ("  ", None), ("128", 128), (" 16 ", 16)])
+def test_mstep_block_rows_are_read_once(monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", raising=False)
+    else:
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", value)
+    assert _engine().mstep_block_rows == expected
+
+
+@pytest.mark.parametrize("value", ["0", "-4", "12", "rows"])
+def test_malformed_mstep_block_rows_are_refused(monkeypatch, value):
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", value)
+    with pytest.raises(ValueError):
+        _engine()
 
 
 def test_image_capacity_ladder_is_capped_by_the_translation_tile_budget():

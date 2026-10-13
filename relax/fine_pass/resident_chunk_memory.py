@@ -9,7 +9,6 @@ measured budget (:func:`plan_resident_chunk_memory`), and the lone overflow chun
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -18,8 +17,6 @@ from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_statistics import posterior_translation_bucket_scratch_bytes
 from relax.runtime.memory_budget import current_device_available_bytes
 from relax.runtime.shape_buckets import pow2_floor
-
-_MSTEP_BLOCK_ROWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
 
 
 @dataclass(frozen=True)
@@ -37,8 +34,10 @@ def resolve_mstep_block_rows(
     n_recon_pixels: int,
     max_block_bytes: int,
     row_capacity_ladder: tuple,
+    override: int | None,
 ) -> int:
-    """Rows per pixel-axis block: a power of two dividing every row capacity.
+    """Rows per pixel-axis block: a power of two dividing every row capacity (``override``:
+    ``EngineTuning.mstep_block_rows``, already a positive power of two).
 
     A block holds, per row and reconstruction pixel, one complex64 projection,
     one float32 ``|proj|^2``, two complex64 weighted sums, one float32 CTF sum
@@ -48,11 +47,8 @@ def resolve_mstep_block_rows(
     pixel-axis program count at one per pixel count.
     """
 
-    override = os.environ.get(_MSTEP_BLOCK_ROWS_ENV, "").strip()
-    if override:
-        block = int(override)
-        if block <= 0 or block & (block - 1):
-            raise ValueError(f"{_MSTEP_BLOCK_ROWS_ENV} must be a positive power of two, got {block}")
+    if override is not None:
+        block = override
     else:
         bytes_per_row = max(int(n_recon_pixels), 1) * 44
         block = pow2_floor(max(int(max_block_bytes) // bytes_per_row, 1))
