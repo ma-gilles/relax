@@ -185,7 +185,6 @@
   "RECOVAR_K1_LOCAL_PASS2_STABLE_ROW_CAPACITY": "RELAX_K1_LOCAL_PASS2_STABLE_ROW_CAPACITY",
   "RECOVAR_K1_LOCAL_PASS2_STABLE_WINDOWS": "RELAX_K1_LOCAL_PASS2_STABLE_WINDOWS",
   "RECOVAR_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES": "RELAX_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES",
-  "RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
   "RECOVAR_K1_RELION_EXACT_TRANSLATION_GRID": "RELAX_K1_RELION_EXACT_TRANSLATION_GRID",
   "RECOVAR_K1_RELION_FIRSTITER_FUSED_BPREF": "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
   "RECOVAR_K1_RELION_LIVE_INITIAL_NOISE": "RELAX_K1_RELION_LIVE_INITIAL_NOISE",
@@ -722,6 +721,8 @@
   "RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
   "RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
   "RECOVAR_SPARSE_PASS2_F64_NOISE_OPERANDS": "no user: the generic path's binary64 noise-operand arm was set only by its own test; the XFLOAT-reciprocal operand is the one path (2026-10-13)",
-  "RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS": "no user: the generic path's binary64 noise-operand arm was set only by its own test; the XFLOAT-reciprocal operand is the one path (2026-10-13)"
+  "RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS": "no user: the generic path's binary64 noise-operand arm was set only by its own test; the XFLOAT-reciprocal operand is the one path (2026-10-13)",
+  "RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "no user: the deterministic float64 norm reduction follows RELION's powerClass spectrum (source_faithful_spectrum_norm); nothing set the variable (2026-10-13)",
+  "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "no user: the deterministic float64 norm reduction follows RELION's powerClass spectrum (source_faithful_spectrum_norm); nothing set the variable (2026-10-13)"
  }
 }

@@ -257,7 +257,7 @@ def resolve_statistics_config(
     n_classes: int = 1,
     float32_bucketed_image_sums: bool = True,
 ) -> ResidentStatisticsConfig:
-    """Build a config, reading the same environment the host tail reads.
+    """Build a config (``RECOVAR_DISABLE_CUDA``, the process's CUDA switch, selects the CPU shell binning).
 
     ``source_faithful_spectrum_norm`` mirrors
     ``sparse_pass2_wavg._weighted_image_power_shells_and_per_image``: it selects
@@ -265,10 +265,7 @@ def resolve_statistics_config(
     norm reduction.
     """
 
-    deterministic_norm_reduction = source_faithful_spectrum_norm or parse_env_flag(
-        "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
-        default=False,
-    )
+    deterministic_norm_reduction = bool(source_faithful_spectrum_norm)
     cutoff = None if current_size is None else int(current_size) // 2
     return ResidentStatisticsConfig(
         n_shells=int(n_shells),
