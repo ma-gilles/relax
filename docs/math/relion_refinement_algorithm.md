@@ -943,7 +943,9 @@ to that tilt.
   nothing of the prior or the sampling (`ml_optimiser.cpp:10152-10160`), so a run that converges below
   `--auto_local_healpix_order` scores its final all-data iteration with the tilt prior on the same
   sampling. [`run_final_all_data`](../../relax/refinement/finalization.py) does the same for
-  subtomograms (without the option that final pass has no orientation prior to use and is refused).
+  subtomograms. Without the option the same branch leaves the run with no orientational prior, and the
+  final iteration is the global search of the numbered ones, each orientation weighted by the half's
+  `pdf_direction` (`acc_ml_optimiser_impl.h:1968-1969`); the subtomogram final pass scores it that way too.
 - Not implemented, refused with a message: single-particle refinement and classification (their global
   pass scores every particle on one shared grid) and subtomogram Class3D (its K-class pass has no
   per-particle orientation lists and does not implement `--sigma_ang` either).

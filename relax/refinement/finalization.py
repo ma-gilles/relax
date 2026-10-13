@@ -452,7 +452,7 @@ def run_final_all_data(
             # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the
             # previous poses), with the merged reference for both halves.
             # RELION's final iteration keeps the orientational prior the run converged with: a local search,
-            # or below --auto_local_healpix_order the --sigma_tilt prior on the global sampling
+            # or below --auto_local_healpix_order the --sigma_tilt prior or none, on the global sampling
             # (the convergence branch sets has_converged, do_join_random_halves and do_use_all_data and
             # nothing of the prior or the sampling, ml_optimiser.cpp:10152-10160).
             tilt_prior = half_inputs.tilt_prior_for_half(
@@ -477,11 +477,7 @@ def run_final_all_data(
                     sigma_psi=final_local_sampling.search.sigma_psi,
                     sigma_tilt_deg=0.0,
                 )
-            elif tilt_prior is not None:
-                logger.info(
-                    "RELION final all-data iteration under the --sigma_tilt prior: healpix_order=%d, sigma_tilt=%g deg",
-                    final_sampling.settings.grid_order, tilt_prior.sigma_deg,
-                )
+            else:
                 tomo_final_sampling = local_tomo_sampling(
                     fine_order=final_sampling.settings.grid_order + carry.state.adaptive_oversampling,
                     oversampling_order=carry.state.adaptive_oversampling,
@@ -498,21 +494,44 @@ def run_final_all_data(
                     ),
                     current_size=final_current_size,
                 )
-                tomo_final_search = dict(
-                    previous_eulers_deg=(
-                        np.zeros((half.dataset.n_units, 3), dtype=np.float64)
-                        if half.rotation_eulers is None
-                        else half.rotation_eulers
-                    ),
-                    sigma_rot=0.0,
-                    sigma_psi=0.0,
-                    sigma_tilt_deg=tilt_prior.sigma_deg,
-                    prior_tilt_deg=tilt_prior.centre_deg,
-                )
-            else:
-                raise NotImplementedError(
-                    "a subtomogram final all-data pass without local search needs the global direction priors"
-                )
+                if tilt_prior is not None:
+                    logger.info(
+                        "RELION final all-data iteration under the --sigma_tilt prior: healpix_order=%d, "
+                        "sigma_tilt=%g deg",
+                        final_sampling.settings.grid_order, tilt_prior.sigma_deg,
+                    )
+                    tomo_final_search = dict(
+                        previous_eulers_deg=(
+                            np.zeros((half.dataset.n_units, 3), dtype=np.float64)
+                            if half.rotation_eulers is None
+                            else half.rotation_eulers
+                        ),
+                        sigma_rot=0.0,
+                        sigma_psi=0.0,
+                        sigma_tilt_deg=tilt_prior.sigma_deg,
+                        prior_tilt_deg=tilt_prior.centre_deg,
+                    )
+                else:
+                    # No orientational prior (RELION's NOPRIOR): the global search of the numbered iterations,
+                    # each orientation weighted by this half's direction distribution
+                    # (acc_ml_optimiser_impl.h:1968-1969), which is even when the sampling changed since it
+                    # was learned.
+                    logger.info(
+                        "RELION final all-data iteration as a global subtomogram search: healpix_order=%d",
+                        final_sampling.settings.grid_order,
+                    )
+                    tomo_final_search = None
+                    tomo_final_direction_log_prior = relion_direction_log_priors_for_half(
+                        use_local=False,
+                        scoring_healpix_order=final_sampling.settings.grid_order,
+                        n_classes=options.k_class.n_classes,
+                        prior=carry.direction_priors[half.index],
+                        sealed_sampling_state=None,
+                        dtype=scoring_dtype,
+                        log=logger,
+                        half_index=half.index,
+                        symmetry=options.symmetry.point_group,
+                    ).rotation_log_prior
             final_result = score_tomo_half_in_loop(
                 HalfScoringData(
                     particles=half,
@@ -526,7 +545,7 @@ def run_final_all_data(
                 use_adaptive=tomo_final_sampling.oversampling_order > 0,
                 sampling=tomo_final_sampling,
                 local_search=tomo_final_search,
-                rotation_log_prior=None,
+                rotation_log_prior=None if tomo_final_search is not None else tomo_final_direction_log_prior,
                 sigma_offset_angst=final_sigma_offset_k,
                 max_significants=options.adaptive.max_significants,
                 reconstruction_current_size=final_current_size,

@@ -18,6 +18,10 @@ state a run is in when it converges before the local searches start. RELION's fi
 prior (convergence changes neither the prior nor the sampling), so the final pass must run under the tilt
 prior and give finite half maps.
 
+The control run does the same without the prior (relax#86): RELION then has no orientational prior in its
+final iteration either, which is the global search of the numbered iterations weighted by the direction
+distribution they learned. The final pass must run as that global search and give finite half maps.
+
 That relax selects RELION's orientations and weights is tested against a transcription of RELION's code on the
 CPU (tests/unit/test_tilt_prior_selection.py); against RELION itself, iteration by iteration, it was measured
 on a 1000-particle fixture (relax#84).
@@ -25,6 +29,7 @@ on a 1000-particle fixture (relax#84).
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -92,7 +97,7 @@ def test_sigma_tilt_keeps_every_particle_near_its_prior_tilt(tmp_path: Path):
     with_prior = _refine(
         project, reference, tmp_path / "run_sigma_tilt", "--sigma_tilt", str(SIGMA_TILT), final_pass=True
     )
-    control = _refine(project, reference, tmp_path / "run_control")
+    control = _refine(project, reference, tmp_path / "run_control", final_pass=True)
 
     def assigned(run, iteration):
         return starfile.read(run / f"run_it{iteration:03d}_data.star", always_dict=True)["particles"]
@@ -119,6 +124,16 @@ def test_sigma_tilt_keeps_every_particle_near_its_prior_tilt(tmp_path: Path):
         final_map = np.asarray(mrcfile.open(with_prior / f"final_half{half}_unfil.mrc").data, dtype=np.float64)
         assert final_map.shape == (GRID,) * 3 and np.isfinite(final_map).all() and np.abs(final_map).max() > 0.0
     assert "final all-data iteration under the --sigma_tilt prior" in log_text
+    # Without the prior the final all-data iteration is a global search under the learned direction distribution.
+    control_final_log = (tmp_path / "run_control.log").read_text().split("=== RELION final all-data Nyquist iteration ===")[1]
+    assert "final all-data iteration under the --sigma_tilt prior" not in control_final_log
+    for half in (1, 2):
+        start = re.search(rf"RELION final all-data half-{half} start: .*", control_final_log).group(0)
+        assert f"current_size={GRID} healpix_order=2 " in start and start.endswith("local_search=False"), start
+        assert f"Using learned global direction prior half-{half}: 192 directions at healpix_order=2" in control_final_log
+        assert f"RELION final all-data half-{half} done" in control_final_log
+        final_map = np.asarray(mrcfile.open(control / f"final_half{half}_unfil.mrc").data, dtype=np.float64)
+        assert final_map.shape == (GRID,) * 3 and np.isfinite(final_map).all() and np.abs(final_map).max() > 0.0
     outside = int((np.abs(assigned(control, 1)["rlnAngleTilt"].to_numpy(dtype=float) - PRIOR_TILT) > MAX_TILT_DEVIATION).sum())
     print(f"control without the prior: {outside} of {N_PARTICLES} particles assigned outside the band")
     assert outside > 0, "the control assigns no tilt outside the band: this project cannot show the prior acting"
