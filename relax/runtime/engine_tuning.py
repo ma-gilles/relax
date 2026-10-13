@@ -27,6 +27,7 @@ DEFAULT_PREPARE_IMAGE_BATCH = 256
 DEFAULT_PREFETCH_BATCHES = 2
 DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET = 268_435_456
 DEFAULT_EM_BATCH_PROJECTION_FRACTION = 0.20
+DEFAULT_COARSE_GEMM_TRANSIENT_MAX_BYTES = int(2.0 * 1024**3)
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
 # One local resident projector call's transient: the 4 GiB the exact local engine budgeted for its fused projection
 # matmul (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB), so the two reserved comparable headroom.
@@ -114,6 +115,8 @@ class EngineTuning:
     Two diagnostic switches of the opt-in dense GEMM engine's layout, each :func:`parse_zero_one_switch`:
     ``dense_gemm_score_cache`` (RELAX_DENSE_GEMM_SCORE_CACHE, which implies class-batched scores) and
     ``dense_gemm_class_batch_scores`` (RELAX_DENSE_GEMM_CLASS_BATCH_SCORES).
+    ``coarse_gemm_transient_max_bytes`` (RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB, GiB through
+    :func:`parse_gib_budget`; default 2 GiB): the coarse GEMM's projector transient per rotation block.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -134,6 +137,7 @@ class EngineTuning:
     em_batch_projection_fraction: float = DEFAULT_EM_BATCH_PROJECTION_FRACTION
     dense_gemm_score_cache: bool = False
     dense_gemm_class_batch_scores: bool = False
+    coarse_gemm_transient_max_bytes: int = DEFAULT_COARSE_GEMM_TRANSIENT_MAX_BYTES
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -179,6 +183,9 @@ class EngineTuning:
             dense_gemm_score_cache=parse_zero_one_switch(DENSE_GEMM_SCORE_CACHE_ENV, read_env_text(DENSE_GEMM_SCORE_CACHE_ENV)),
             dense_gemm_class_batch_scores=parse_zero_one_switch(
                 DENSE_GEMM_CLASS_BATCH_SCORES_ENV, read_env_text(DENSE_GEMM_CLASS_BATCH_SCORES_ENV),
+            ),
+            coarse_gemm_transient_max_bytes=parse_gib_budget(
+                COARSE_GEMM_TRANSIENT_MAX_GB_ENV, read_env_text(COARSE_GEMM_TRANSIENT_MAX_GB_ENV, "2.0"),
             ),
         )
 
@@ -357,3 +364,20 @@ def parse_zero_one_switch(name: str, raw: str | None) -> bool:
     if value not in {"0", "1"}:
         raise ValueError(f"{name} must be 0 or 1")
     return value == "1"
+
+
+COARSE_GEMM_TRANSIENT_MAX_GB_ENV = "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB"
+COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB"
+
+
+def parse_gib_budget(name: str, raw: str) -> int:
+    """A GiB budget in bytes, ``int(gib * 1024**3)``: the text (stripped) must be a finite positive number, else it is
+    refused naming ``name``."""
+    token = raw.strip()
+    try:
+        budget_gb = float(token)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a finite positive number, got {token!r}") from error
+    if not math.isfinite(budget_gb) or budget_gb <= 0.0:
+        raise ValueError(f"{name} must be a finite positive number, got {token!r}")
+    return int(budget_gb * 1024**3)

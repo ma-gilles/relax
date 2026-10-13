@@ -70,6 +70,7 @@ def plan_gaussian_route(
         rotation_block_size=rotation_block_size,
         image_batch_size=image_batch_size,
         stable_fourier_window_shapes=request.stable_fourier_window_shapes,
+        engine_tuning=request.engine_tuning,
     )
     return RoutePlan(
         operand_plan=GaussianOperandPlan(

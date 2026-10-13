@@ -1496,3 +1496,19 @@ def test_coarse_pass1_dump_rows_are_the_target_rows_scores():
         after_prior = np.concatenate([np.asarray(after) for _, after in class_dumps], axis=1)
         assert_matches(pre_prior, raw[targets, k])
         assert_matches(after_prior, with_prior[targets, k])
+
+
+def test_coarse_gemm_transient_budget_is_read_once_at_the_boundary(monkeypatch):
+    """RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB: unset is 2 GiB; a finite positive GiB count (stripped)
+    is taken; blank, zero, inf and text are refused, as the old reader did."""
+    from relax.runtime.engine_tuning import EngineTuning
+
+    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB"
+    monkeypatch.delenv(variable, raising=False)
+    assert EngineTuning.from_environ().coarse_gemm_transient_max_bytes == 2 * 1024**3
+    monkeypatch.setenv(variable, " 0.5 ")
+    assert EngineTuning.from_environ().coarse_gemm_transient_max_bytes == 512 * 1024**2
+    for raw in ("", "0", "inf", "two"):
+        monkeypatch.setenv(variable, raw)
+        with pytest.raises(ValueError, match=f"{variable} must be a finite positive number"):
+            EngineTuning.from_environ()

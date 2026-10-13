@@ -13,7 +13,6 @@ from relax.scoring.coarse_gaussian_gemm import (
     COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV,
     coarse_gaussian_gemm_cached_block_rows,
     coarse_gaussian_gemm_fit_rotation_block_size,
-    coarse_gaussian_gemm_projected_transient_budget_bytes,
     coarse_gaussian_gemm_projection_cache_budget_bytes,
     coarse_gaussian_gemm_projection_cache_enabled,
     coarse_gaussian_gemm_projection_row_bytes,
@@ -93,8 +92,11 @@ def plan_coarse_gaussian(
     rotation_block_size: int,
     image_batch_size: int,
     stable_fourier_window_shapes: bool,
+    engine_tuning,
 ) -> CoarseGaussianPlan:
     """Plan the Gaussian route of a pass over ``shape``, scoring the rows ``window_score_indices_np`` (``None``: all).
+
+    ``engine_tuning`` (the request's ``EngineTuning``) gives the projector transient budget.
 
     Refuses more than 128 translations and a backend without the custom CUDA library. Logs the plan.
     """
@@ -120,7 +122,7 @@ def plan_coarse_gaussian(
         stable_fourier_window_shapes=bool(stable_fourier_window_shapes),
     )
     square_score_count = square_layout.physical_square_count
-    transient_budget = coarse_gaussian_gemm_projected_transient_budget_bytes()
+    transient_budget = engine_tuning.coarse_gemm_transient_max_bytes
     # The plain GEMM splits the rotation axis until the projector
     # transient fits.
     fitted_block_size = coarse_gaussian_gemm_fit_rotation_block_size(
@@ -178,7 +180,7 @@ def plan_coarse_gaussian(
             image_batch_size=int(image_batch_size),
             n_translations=int(shape.n_trans),
             compact_pixel_count=int(square_score_count),
-            budget_bytes=coarse_gaussian_gemm_projected_transient_budget_bytes(),
+            budget_bytes=engine_tuning.coarse_gemm_transient_max_bytes,
         )
     logger.info(
         "Coarse pass on RELION's exact operands (coarse GEMMs): classes=%d rotations=%d "

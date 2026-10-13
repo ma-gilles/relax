@@ -16,11 +16,6 @@ import numpy as np
 from relax.projection import projection_cache as projection_cache_helpers
 from relax.runtime.env_flags import parse_env_strict_flag
 
-_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB"
-)
-
-
 COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV = (
     "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE"
 )
@@ -61,31 +56,6 @@ class CoarseGaussianGemmResources(NamedTuple):
     compact_projection_abs2_bytes: int
     predicted_peak_projection_bytes: int
     projected_transient_budget_bytes: int
-
-
-def coarse_gaussian_gemm_projected_transient_budget_bytes(
-    *,
-    default_gb: float = 2.0,
-) -> int:
-    """Return the explicit conservative projection-transient budget."""
-
-    token = os.environ.get(
-        _COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV,
-        str(default_gb),
-    ).strip()
-    try:
-        budget_gb = float(token)
-    except ValueError as error:
-        raise ValueError(
-            f"{_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV} must be "
-            f"a finite positive number, got {token!r}",
-        ) from error
-    if not np.isfinite(budget_gb) or budget_gb <= 0.0:
-        raise ValueError(
-            f"{_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV} must be "
-            f"a finite positive number, got {token!r}",
-        )
-    return int(budget_gb * 1024**3)
 
 
 _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEVICE_FRACTION = 0.2
@@ -242,7 +212,7 @@ def coarse_gaussian_gemm_resources(
     if resources.predicted_peak_projection_bytes > resources.projected_transient_budget_bytes:
         raise MemoryError(
             "coarse GEMM predicted projection transient exceeds "
-            f"{_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV}: "
+            "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB: "
             f"{resources.predicted_peak_projection_bytes} > "
             f"{resources.projected_transient_budget_bytes} bytes",
         )
