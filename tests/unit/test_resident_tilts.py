@@ -273,14 +273,14 @@ def test_tilt_mstep_tiles_are_counted_per_unit_so_a_flat_particle_keeps_one_tran
     one_unit = resident_tilts.tilt_mstep_tile_bytes(1, n_rect_pixels=n_rect, n_exact_pixels=n_exact)
     assert one_unit == (3 * n_rect + n_exact) * 8
     assert resident_tilts.tilt_mstep_tile_bytes(32, n_rect_pixels=n_rect, n_exact_pixels=n_exact) == 32 * one_unit
-    budget = _max_translation_tile_bytes_for_pass(80 * 1024**3)
+    budget = _max_translation_tile_bytes_for_pass(80 * 1024**3, override=None)
     assert resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=one_unit, tile_budget_bytes=budget) == (kept,)
     with_block_rows = (128 + 256) * (n_rect + n_exact) * 8
     blocks = resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=with_block_rows, tile_budget_bytes=budget)
     assert (len(blocks), int(blocks[0].index.size)) == (74, 16)
     # A 16 GB card's budget still holds the particle's translations in a few blocks.
     small = resident_tilts.mstep_translation_blocks(
-        kept, bytes_per_translation=one_unit, tile_budget_bytes=_max_translation_tile_bytes_for_pass(16 * 1024**3)
+        kept, bytes_per_translation=one_unit, tile_budget_bytes=_max_translation_tile_bytes_for_pass(16 * 1024**3, override=None)
     )
     assert len(small) <= 4
 
