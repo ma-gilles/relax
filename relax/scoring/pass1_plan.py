@@ -6,7 +6,6 @@ the projector (and the Gaussian route's projection cache) and each stage's plan 
 """
 
 import operator
-import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,14 +37,6 @@ _COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
     "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH"
 )
 NVTX_DOMAIN_EM = "recovar_em"
-
-
-def _coarse_rotated_radius_enabled(*, default: bool = False) -> bool:
-    """Select canonical clipping when the active projector supports it."""
-    token = os.environ.get("RELAX_K1_COARSE_ROTATED_RADIUS", "1" if default else "0")
-    if token not in {"0", "1"}:
-        raise ValueError("RELAX_K1_COARSE_ROTATED_RADIUS must be 0 or 1")
-    return token == "1"
 
 
 def _require_exact_pass1_operands(
@@ -310,7 +301,9 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     # crop into a full image and immediately gathering the same rows again.
     # This is an exact index remapping and avoids a large transient scatter for
     # global rotation blocks.
-    coarse_rotated_radius = _coarse_rotated_radius_enabled(default=route.compact_rows is not None)
+    # Canonical clipping where the compact projector supports it, unless the command read an override.
+    requested_radius = request.scoring_overrides.coarse_rotated_radius
+    coarse_rotated_radius = route.compact_rows is not None if requested_radius is None else requested_radius
     if coarse_rotated_radius and route.compact_rows is None:
         raise ValueError("rotated coarse radius requires the compact RELION texture projector")
 

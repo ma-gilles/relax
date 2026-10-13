@@ -10,7 +10,7 @@ from recovar import cuda_backproject as cb
 from relax.cuda import library
 from relax.cuda import projector as cuda_projector
 from relax.projection import projection
-from relax.scoring import pass1_plan
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
 
@@ -27,18 +27,20 @@ _ROTATION = np.array(
 )[None]
 
 
-@pytest.mark.parametrize("token,expected", [(None, False), ("0", False), ("1", True)])
+@pytest.mark.parametrize("token,expected", [(None, None), ("0", False), ("1", True)])
 def test_optin(monkeypatch, token, expected):
+    """RELAX_K1_COARSE_ROTATED_RADIUS, read once by the command: unset is None (the pass's default)."""
     monkeypatch.delenv("RELAX_K1_COARSE_ROTATED_RADIUS", raising=False)
     if token is not None:
         monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", token)
-    assert pass1_plan._coarse_rotated_radius_enabled() is expected
+    assert ScoringOverrides.from_environ().coarse_rotated_radius is expected
 
 
-def test_invalid_optin(monkeypatch):
-    monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", "typo")
+@pytest.mark.parametrize("token", ["typo", "", " 1"])
+def test_invalid_optin(monkeypatch, token):
+    monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", token)
     with pytest.raises(ValueError, match="must be 0 or 1"):
-        pass1_plan._coarse_rotated_radius_enabled()
+        ScoringOverrides.from_environ()
 
 
 @pytest.mark.parametrize("radius", [np.float32(13), np.array([13], np.int32)])
@@ -142,10 +144,15 @@ def test_gpu_invalid_image_radius_is_nan(radius):
 
 
 def test_canonical_default_can_be_explicitly_overridden(monkeypatch):
+    """The pass's default (on with the compact projector) holds unless the override read at the boundary says 0."""
+    from test_pass1_planning import _plan
+
     monkeypatch.delenv("RELAX_K1_COARSE_ROTATED_RADIUS", raising=False)
-    assert pass1_plan._coarse_rotated_radius_enabled(default=True)
+    plan, _, _ = _plan(monkeypatch, n_classes=1)
+    assert plan.route.compact_rows is not None and plan.score_program_plan.projector.rotated_radius is True
     monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", "0")
-    assert not pass1_plan._coarse_rotated_radius_enabled(default=True)
+    plan, _, _ = _plan(monkeypatch, n_classes=1)
+    assert plan.score_program_plan.projector.rotated_radius is False
 
 
 @pytest.mark.parametrize("active_size", [None, 26])
