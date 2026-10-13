@@ -255,6 +255,7 @@ def _score_adaptive_kclass_dense(
         fine_current_size=fine_current_size,
         safe_batch_sizes=batching.safe_batch_sizes,
         significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
+        firstiter_cc_recon_complex_budget=execution.engine_tuning.firstiter_cc_recon_complex_budget,
     )
     adaptive_em_kwargs["image_batch_size"] = grid_batch_plan.pass2_image_batch_size
     adaptive_em_kwargs["rotation_block_size"] = grid_batch_plan.pass2_rotation_block_size
@@ -393,6 +394,7 @@ def _score_kclass_at_given_poses(
         fine_current_size=sampling.image_window_size,
         safe_batch_sizes=batching.safe_batch_sizes,
         significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
+        firstiter_cc_recon_complex_budget=execution.engine_tuning.firstiter_cc_recon_complex_budget,
     )
     engine_kwargs = dict(em_kwargs)
     engine_kwargs["image_batch_size"] = plan.pass2_image_batch_size
@@ -1254,6 +1256,7 @@ def _score_kclass_firstiter_cc_pass2(
             ),
             safe_batch_sizes=batching.safe_batch_sizes,
             significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
+            firstiter_cc_recon_complex_budget=execution.engine_tuning.firstiter_cc_recon_complex_budget,
         )
         requested_firstiter_image_batch_size = int(em_kwargs["image_batch_size"])
         firstiter_image_batch_size = min(
@@ -1261,6 +1264,7 @@ def _score_kclass_firstiter_cc_pass2(
             safe_firstiter_cc_image_batch_size(
                 fine_trans.shape[0],
                 half.particles.dataset.image_shape,
+                complex_budget=execution.engine_tuning.firstiter_cc_recon_complex_budget,
             ),
         )
         firstiter_rotation_block_size = min(
@@ -1288,6 +1292,7 @@ def _score_kclass_firstiter_cc_pass2(
             safe_firstiter_cc_image_batch_size(
                 fine_trans.shape[0],
                 half.particles.dataset.image_shape,
+                complex_budget=execution.engine_tuning.firstiter_cc_recon_complex_budget,
             ),
         )
         firstiter_rotation_block_size = int(em_kwargs["rotation_block_size"])

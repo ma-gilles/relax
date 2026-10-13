@@ -48,8 +48,6 @@ RELION_EM_COMPACT_K1_FIXED_BASE_GB = 4.0
 
 
 # Dense reconstruction-tile and class-hypothesis limits.
-RELION_FIRSTITER_RECON_COMPLEX_BUDGET = 268_435_456
-RELION_FIRSTITER_RECON_COMPLEX_BUDGET_ENV = "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET"
 RELION_DENSE_K_CLASS_HYPOTHESES_BUDGET = 2_000_000
 
 
@@ -108,20 +106,7 @@ class _RelionEMBatchPlan:
             )
 
 
-def _firstiter_cc_recon_complex_budget() -> int:
-    raw = os.environ.get(RELION_FIRSTITER_RECON_COMPLEX_BUDGET_ENV)
-    if raw is None or raw.strip() == "":
-        return int(RELION_FIRSTITER_RECON_COMPLEX_BUDGET)
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError(f"{RELION_FIRSTITER_RECON_COMPLEX_BUDGET_ENV} must be a positive integer") from exc
-    if value <= 0:
-        raise ValueError(f"{RELION_FIRSTITER_RECON_COMPLEX_BUDGET_ENV} must be a positive integer")
-    return value
-
-
-def safe_firstiter_cc_image_batch_size(n_trans, image_shape):
+def safe_firstiter_cc_image_batch_size(n_trans, image_shape, *, complex_budget: int):
     """Cap dense K-class reconstruction batches by the temporary footprint.
 
     ``prepare_reconstruction_batch`` materializes a
@@ -131,11 +116,12 @@ def safe_firstiter_cc_image_batch_size(n_trans, image_shape):
     ``score_with_masked_images=True`` need a separate clamp.  The
     first-iteration winner-take-all route is the most obvious case, but
     the same bound also protects later dense K-class iterations that reuse
-    the same reconstruction path.
+    the same reconstruction path. ``complex_budget`` is the command's
+    ``EngineTuning.firstiter_cc_recon_complex_budget``.
     """
 
     n_half = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
-    return max(1, _firstiter_cc_recon_complex_budget() // max(int(n_trans) * n_half, 1))
+    return max(1, int(complex_budget) // max(int(n_trans) * n_half, 1))
 
 
 def safe_dense_k_class_rotation_block_size(n_trans, image_batch_size):
@@ -173,6 +159,7 @@ def plan_adaptive_dense_batch_sizes(
     cs_for_engine,
     coarse_cs,
     safe_batch_sizes,
+    firstiter_cc_recon_complex_budget: int,
     significance_safe_batch_sizes=None,
 ) -> _AdaptiveDenseBatchSizes:
     """Plan adaptive dense microbatches from each pass' Fourier window."""
@@ -190,6 +177,7 @@ def plan_adaptive_dense_batch_sizes(
             safe_firstiter_cc_image_batch_size(
                 n_trans,
                 image_shape,
+                complex_budget=firstiter_cc_recon_complex_budget,
             ),
         )
         pass2_rotation_block_size = min(
@@ -230,6 +218,7 @@ def _plan_kclass_adaptive_grid_batch_sizes(
     coarse_current_size,
     fine_current_size,
     safe_batch_sizes,
+    firstiter_cc_recon_complex_budget: int,
     significance_safe_batch_sizes=None,
 ) -> _AdaptiveDenseBatchSizes:
     """Plan K-class adaptive pass-1/pass-2 batches from the actual grids."""
@@ -257,6 +246,7 @@ def _plan_kclass_adaptive_grid_batch_sizes(
         safe_firstiter_cc_image_batch_size(
             int(np.asarray(fine_translations).shape[0]),
             image_shape,
+            complex_budget=firstiter_cc_recon_complex_budget,
         ),
     )
     if int(n_classes) > 1:
@@ -285,6 +275,7 @@ def _plan_kclass_adaptive_grid_batch_sizes(
         safe_firstiter_cc_image_batch_size(
             int(np.asarray(coarse_translations).shape[0]),
             image_shape,
+            complex_budget=firstiter_cc_recon_complex_budget,
         ),
     )
     if int(n_classes) > 1:

@@ -303,35 +303,40 @@ def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_norma
     assert_matches(np.asarray(result.stats.max_posterior_per_image), np.ones(1))
 
 
+def _budget() -> int:
+    return EngineTuning.from_environ().firstiter_cc_recon_complex_budget
+
+
 def test_firstiter_cc_budget_preserves_256_k4_completion_batch_size():
     # K=4 completion benchmarks use 256^2 images and 116 fine translations
     # at adaptive_oversampling=1. The cap must not collapse the requested
     # batch size 50 back to single digits on A100/H100 runs.
-    assert safe_firstiter_cc_image_batch_size(116, (256, 256)) >= 50
+    assert safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=_budget()) >= 50
 
 
 def test_firstiter_cc_budget_still_caps_larger_tiles():
-    assert 1 <= safe_firstiter_cc_image_batch_size(137, (384, 384)) < 250
+    assert 1 <= safe_firstiter_cc_image_batch_size(137, (384, 384), complex_budget=_budget()) < 250
 
 
 def test_firstiter_cc_budget_env_override_lifts_debug_cap(monkeypatch):
-    default_batch = safe_firstiter_cc_image_batch_size(116, (256, 256))
+    """The budget read at the boundary (unset or blank: the default) reaches the batch cap."""
+    monkeypatch.delenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", raising=False)
+    default_batch = safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=_budget())
     assert default_batch == 70
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", " ")
+    assert _budget() == 268_435_456
 
     monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", str(3 * 268_435_456))
 
-    assert safe_firstiter_cc_image_batch_size(116, (256, 256)) >= 187
+    assert safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=_budget()) >= 187
 
 
-def test_firstiter_cc_budget_env_override_rejects_invalid(monkeypatch):
-    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", "0")
+@pytest.mark.parametrize("raw", ["0", "-5", "1e9", "lots"])
+def test_firstiter_cc_budget_env_override_rejects_invalid(monkeypatch, raw):
+    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", raw)
 
-    try:
-        safe_firstiter_cc_image_batch_size(116, (256, 256))
-    except ValueError as exc:
-        assert "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET" in str(exc)
-    else:
-        raise AssertionError("invalid firstiter budget override did not raise")
+    with pytest.raises(ValueError, match="RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET must be a positive integer"):
+        EngineTuning.from_environ()
 
 
 def test_kclass_adaptive_grid_batch_plan_uses_fine_grid_for_pass2():
@@ -355,6 +360,7 @@ def test_kclass_adaptive_grid_batch_plan_uses_fine_grid_for_pass2():
         coarse_current_size=40,
         fine_current_size=90,
         safe_batch_sizes=fake_safe_batch_sizes,
+        firstiter_cc_recon_complex_budget=EngineTuning().firstiter_cc_recon_complex_budget,
     )
 
     assert calls == [
@@ -412,8 +418,8 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
 
     assert dispatch.result == "result"
     assert dispatch.n_fine_translations == 116
-    expected_fine_ibs = min(88, safe_firstiter_cc_image_batch_size(116, (256, 256)))
-    expected_coarse_ibs = min(120, safe_firstiter_cc_image_batch_size(29, (256, 256)))
+    expected_fine_ibs = min(88, safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=_budget()))
+    expected_coarse_ibs = min(120, safe_firstiter_cc_image_batch_size(29, (256, 256), complex_budget=_budget()))
     assert captured["image_batch_size"] == expected_fine_ibs
     assert captured["rotation_block_size"] == min(576, safe_dense_k_class_rotation_block_size(116, expected_fine_ibs))
     assert captured["significance_image_batch_size"] == expected_coarse_ibs
@@ -572,7 +578,7 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
         (4608, 116, n_classes, (256, 256), 90),
         (576, 29, n_classes, (256, 256), 40),
     ]
-    assert captured["image_batch_size"] == safe_firstiter_cc_image_batch_size(116, (256, 256))
+    assert captured["image_batch_size"] == safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=_budget())
     assert captured["significance_image_batch_size"] == (133 if separate_coarse else 187)
     assert captured["rotation_block_size"] == min(700, safe_dense_k_class_rotation_block_size(116, captured["image_batch_size"]))
     # K-class applies the existing coarse score-tile cap; K=1 retains its batch.

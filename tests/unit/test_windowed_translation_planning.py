@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+from relax.runtime.engine_tuning import EngineTuning
+
 
 def test_windowed_translation_tile_lifts_the_coarse_pass_image_cap():
     """The K-class passes translate inside the current-size window; sizing them by the
@@ -57,6 +59,7 @@ def test_kclass_adaptive_planner_requests_windowed_translation_when_supported():
             coarse_current_size=14,
             fine_current_size=38,
             safe_batch_sizes=fn,
+            firstiter_cc_recon_complex_budget=EngineTuning().firstiter_cc_recon_complex_budget,
         )
     assert seen == [True, True, "no-kw", "no-kw"], seen
 
@@ -77,5 +80,6 @@ def test_separate_planners_negotiate_window_keyword_independently(fine_accepts):
         n_classes=4, image_shape=(256, 256), coarse_current_size=14, fine_current_size=38,
         safe_batch_sizes=accepts if fine_accepts else legacy,
         significance_safe_batch_sizes=legacy if fine_accepts else accepts,
+        firstiter_cc_recon_complex_budget=EngineTuning().firstiter_cc_recon_complex_budget,
     )
     assert seen == ([True, "legacy"] if fine_accepts else ["legacy", True])

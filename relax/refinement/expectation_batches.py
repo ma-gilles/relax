@@ -21,6 +21,7 @@ from relax.runtime.batch_planning import (
     estimate_relion_em_batch_sizes,
     plan_adaptive_dense_batch_sizes,
 )
+from relax.runtime.engine_tuning import EngineTuning
 from relax.steps import shape_class_scoring
 
 
@@ -34,6 +35,8 @@ class BatchPlanner:
     n_classes: int
     # The run's dense precision (RefinementOptions.precision).
     precision: DensePrecisionPolicy
+    # How the engines execute (RefinementOptions.environment.engine).
+    engine_tuning: EngineTuning
     log: object
 
     def __call__(
@@ -248,6 +251,7 @@ def prepare_half_batches(
             coarse_cs=coarse_cs,
             significance_safe_batch_sizes=significance_safe_batch_sizes_for_half,
             safe_batch_sizes=safe_batch_sizes_for_half,
+            firstiter_cc_recon_complex_budget=planner.engine_tuning.firstiter_cc_recon_complex_budget,
         )
         k_class_image_batch_size = adaptive_batch_plan.pass2_image_batch_size
         dense_k_class_rotation_block_size = adaptive_batch_plan.pass2_rotation_block_size
@@ -265,6 +269,7 @@ def prepare_half_batches(
                     n_classes=n_classes,
                     significance_safe_batch_sizes=significance_safe_batch_sizes_for_half,
                     safe_batch_sizes=safe_batch_sizes_for_half,
+                    firstiter_cc_recon_complex_budget=planner.engine_tuning.firstiter_cc_recon_complex_budget,
                 ),
                 cs_for_engine=cs_for_engine,
                 coarse_cs=coarse_cs,

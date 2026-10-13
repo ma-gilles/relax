@@ -12,6 +12,7 @@ from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import expectation_batches as batches
 from relax.refinement.firstiter_bpref import NumberedBPrefHalf
 from relax.refinement.ports import NoProbe
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -22,7 +23,7 @@ def planner(monkeypatch):
     return batches.BatchPlanner(
         requested=stand_in.execution(image_batch_size=200, rotation_block_size=1000),
         image_shape=(16, 16), volume_shape=(16, 16, 16), n_classes=1, precision=DensePrecisionPolicy(),
-        log=SimpleNamespace(info=lambda *args: None),
+        engine_tuning=EngineTuning(), log=SimpleNamespace(info=lambda *args: None),
     )
 
 

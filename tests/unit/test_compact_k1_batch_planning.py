@@ -9,6 +9,7 @@ from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape
 from relax.refinement import firstiter_bpref
 from relax.refinement.ports import ObserverExpectationProbe
 from relax.runtime.batch_planning import estimate_relion_em_batch_sizes
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -330,6 +331,7 @@ def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
         n_rot=40, n_trans=9, n_classes=1, image_shape=(800, 800),
         cs_for_engine=62, coarse_cs=62, safe_batch_sizes=fine,
         significance_safe_batch_sizes=coarse,
+        firstiter_cc_recon_complex_budget=EngineTuning().firstiter_cc_recon_complex_budget,
     )
     assert calls == [("fine", 40, 9, 62), ("coarse", 40, 9, 62)]
     assert (plan.pass2_image_batch_size, plan.pass2_rotation_block_size) == (7, 11)

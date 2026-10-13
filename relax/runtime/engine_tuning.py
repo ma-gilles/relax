@@ -24,6 +24,7 @@ DEFAULT_PREPARE_IMAGE_BATCH = 256
 # 2115 vs 1933 s (job 14515590), 1925 vs 1756 s (14515190) and 1770 vs 1593 s
 # (14523034), with equal GT scores (14522527).
 DEFAULT_PREFETCH_BATCHES = 2
+DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET = 268_435_456
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
 # One local resident projector call's transient: the 4 GiB the exact local engine budgeted for its fused projection
 # matmul (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB), so the two reserved comparable headroom.
@@ -102,6 +103,9 @@ class EngineTuning:
     ``x_half_large_grid`` (:class:`XHalfLargeGrid`, :func:`read_x_half_large_grid`): the RELION x-half M-step's
     large-grid routes, RELAX_RELION_X_HALF_TO_NATIVE_HALF, _FULL_HOST and _HOST_X0, each with a ``_MIN_VOXELS``
     variable (:func:`parse_large_grid_switch`); host or device and the accumulator layout, never a value.
+    ``firstiter_cc_recon_complex_budget`` (RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET,
+    :func:`parse_firstiter_cc_recon_complex_budget`): complex values the dense K-class reconstruction batch may
+    materialize (``batch x translations x half pixels``), which caps its image batch.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -118,6 +122,7 @@ class EngineTuning:
     max_projected_rotations: int | None = None
     prefetch_depth: int = DEFAULT_PREFETCH_BATCHES
     x_half_large_grid: XHalfLargeGrid = XHalfLargeGrid()
+    firstiter_cc_recon_complex_budget: int = DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -156,6 +161,9 @@ class EngineTuning:
             ),
             prefetch_depth=parse_prefetch_depth(read_env_text(PREFETCH_BATCHES_ENV)),
             x_half_large_grid=read_x_half_large_grid(),
+            firstiter_cc_recon_complex_budget=parse_firstiter_cc_recon_complex_budget(
+                read_env_text(FIRSTITER_CC_RECON_COMPLEX_BUDGET_ENV),
+            ),
         )
 
 
@@ -287,3 +295,20 @@ def read_x_half_large_grid() -> XHalfLargeGrid:
             ("host_x0", X_HALF_HOST_X0_ENV),
         )
     })
+
+
+FIRSTITER_CC_RECON_COMPLEX_BUDGET_ENV = "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET"
+
+
+def parse_firstiter_cc_recon_complex_budget(raw: str | None) -> int:
+    """RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET: unset or blank is
+    :data:`DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET`; anything that is not a positive integer is refused."""
+    if raw is None or raw.strip() == "":
+        return DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{FIRSTITER_CC_RECON_COMPLEX_BUDGET_ENV} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{FIRSTITER_CC_RECON_COMPLEX_BUDGET_ENV} must be a positive integer")
+    return value

@@ -19,7 +19,13 @@ def test_k_class_replay_batch_plan_applies_estimator_and_kclass_caps(monkeypatch
         return SimpleNamespace(image_batch_size=250, rotation_block_size=5000)
 
     monkeypatch.setattr(batch_planning, "estimate_relion_em_batch_sizes", fake_estimator)
-    monkeypatch.setattr(batch_planning, "safe_firstiter_cc_image_batch_size", lambda *_args: 17)
+    budgets = []
+
+    def fake_firstiter_cap(*_args, complex_budget):
+        budgets.append(complex_budget)
+        return 17
+
+    monkeypatch.setattr(batch_planning, "safe_firstiter_cc_image_batch_size", fake_firstiter_cap)
     monkeypatch.setattr(batch_planning, "safe_dense_k_class_rotation_block_size", lambda *_args: 31)
 
     plan = _safe_k_class_replay_batch_plan(
@@ -34,6 +40,10 @@ def test_k_class_replay_batch_plan_applies_estimator_and_kclass_caps(monkeypatch
         current_size=128,
     )
 
+    # The script reads the planner's two budgets from the environment as a command (EngineTuning).
+    from relax.runtime.engine_tuning import EngineTuning
+
+    assert budgets == [EngineTuning.from_environ().firstiter_cc_recon_complex_budget]
     assert captured["requested_image_batch_size"] == 250
     assert captured["requested_rotation_block_size"] == 5000
     assert captured["n_rot"] == 24576
@@ -306,7 +316,7 @@ def test_k_class_replay_batch_plan_preserves_smaller_estimator_plan(monkeypatch)
         "estimate_relion_em_batch_sizes",
         lambda **_kwargs: SimpleNamespace(image_batch_size=9, rotation_block_size=11),
     )
-    monkeypatch.setattr(batch_planning, "safe_firstiter_cc_image_batch_size", lambda *_args: 17)
+    monkeypatch.setattr(batch_planning, "safe_firstiter_cc_image_batch_size", lambda *_args, complex_budget: 17)
     monkeypatch.setattr(batch_planning, "safe_dense_k_class_rotation_block_size", lambda *_args: 31)
 
     plan = _safe_k_class_replay_batch_plan(

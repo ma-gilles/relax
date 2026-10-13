@@ -85,6 +85,7 @@ def _safe_k_class_replay_batch_plan(
         safe_dense_k_class_rotation_block_size,
         safe_firstiter_cc_image_batch_size,
     )
+    from relax.runtime.engine_tuning import EngineTuning
 
     plan = estimate_relion_em_batch_sizes(
         requested_image_batch_size=requested_image_batch_size,
@@ -99,7 +100,10 @@ def _safe_k_class_replay_batch_plan(
     )
     image_batch_size = min(
         int(plan.image_batch_size),
-        safe_firstiter_cc_image_batch_size(n_trans, image_shape),
+        safe_firstiter_cc_image_batch_size(
+            n_trans, image_shape,
+            complex_budget=EngineTuning.from_environ().firstiter_cc_recon_complex_budget,
+        ),
     )
     rotation_block_size = min(
         int(plan.rotation_block_size),

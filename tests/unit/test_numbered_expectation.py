@@ -20,6 +20,7 @@ from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
 from relax.refinement.local_half import LocalDiagnosticPolicy
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import NoProbe, ObserverExpectationProbe
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.grids import TrialGrid
 from relax.sampling.orientation_priors import HalfDirectionLogPriors
 from relax.steps.half_inputs import HalfScoringData, HalfSet
@@ -72,7 +73,8 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         class_log_priors=None, sigma_offset_angstrom=2.,
         batch_planner=BatchPlanner(requested=stand_in.execution(image_batch_size=2, rotation_block_size=2),
                                    image_shape=(4, 4), volume_shape=(4, 4, 4), n_classes=n_classes,
-                                   precision=DensePrecisionPolicy(), log=logging.getLogger(__name__)),
+                                   precision=DensePrecisionPolicy(), engine_tuning=EngineTuning(),
+                                   log=logging.getLogger(__name__)),
         image_geometry=ImageGeometry(image_shape=(4, 4), pixel_size_angstrom=1.25),
         padded_volume_shape=(8, 8, 8),
         use_adaptive=adaptive, multi_shape_halves=False, variant=variant,
