@@ -136,7 +136,7 @@ def load_half_metadata(models, data_table, half_rows, *, voxel_size, base_transl
 
     direction_pdfs = [np.asarray(model["model_pdf_orient_class_1"]["rlnOrientationDistribution"], np.float32)
                       for model in models]
-    global_prior, global_order, _, _ = initial_direction_priors_from_snapshot(
+    direction_priors = initial_direction_priors_from_snapshot(
         direction_pdfs, n_classes=1, dtype=np.float32, log=log, symmetry="C1", expected_order=3,
     )
     result = []
@@ -158,9 +158,7 @@ def load_half_metadata(models, data_table, half_rows, *, voxel_size, base_transl
         previous = previous.astype(np.float32)
         pre_shift = relion_translation_search_base(previous, dtype=np.float32)
         direction = relion_direction_log_priors_for_half(
-            use_local=False, scoring_healpix_order=3, n_classes=1,
-            class_direction_prior=None, class_direction_prior_order=None,
-            global_direction_prior=global_prior[half], global_direction_prior_order=global_order[half],
+            use_local=False, scoring_healpix_order=3, n_classes=1, prior=direction_priors[half],
             sealed_sampling_state=None, dtype=np.float32, log=log, half_index=half, symmetry="C1",
         ).rotation_log_prior
         if direction is None or len(direction) != score_rotations:

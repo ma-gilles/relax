@@ -171,7 +171,6 @@ def compute_best_pose_embedding(
         q=int(W_half.shape[1]),
         volume_domain="fourier_half",
         current_size=int(current_size),
-        half_spectrum_scoring=False,
         square_window=False,
     )
     config = ForwardModelConfig.from_dataset(dataset, disc_type="linear_interp", process_fn=dataset.process_images)

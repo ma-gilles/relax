@@ -15,6 +15,7 @@ import starfile
 from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.reconstruction import noise as recon_noise
 
+from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.dense_dataset import run_dense_ppca_fused_em_iteration
 from relax.sampling.grids import (
     get_relion_rotation_grid_eulers,
@@ -154,15 +155,14 @@ def main() -> None:
         noise_variance=noise_variance,
         rotations=rotations,
         translations=translations,
-        image_batch_size=int(args.image_batch_size),
-        rotation_block_size=int(args.rotation_block_size),
-        current_size=current_size,
-        q=q,
-        volume_domain="real",
+        geometry=GeometryConfig(current_size=current_size, q=q, volume_domain="real"),
+        schedule=ScheduleConfig(
+            image_batch_size=int(args.image_batch_size),
+            rotation_block_size=int(args.rotation_block_size),
+            mstep_chunk_size=int(args.mstep_chunk_size),
+        ),
+        scoring=ScoringConfig(square_window=False),
         image_indices=image_indices,
-        mstep_chunk_size=int(args.mstep_chunk_size),
-        half_spectrum_scoring=False,
-        square_window=False,
     )
     jax.block_until_ready(result.mu_half)
     jax.block_until_ready(result.W_half)
