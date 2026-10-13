@@ -495,9 +495,18 @@ def _is_environ(node) -> bool:
     return ast.unparse(node) in ("os.environ", "environ")
 
 
+def _env_flags_reader(func) -> bool:
+    """``func`` names one of relax.runtime.env_flags' environment readers, called bare or through a module."""
+    name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
+    return name.startswith("parse_env_") or name == "read_env_text"
+
+
 def check_env_reads(repo: Repo) -> list[Finding]:
     """The environment is read only in relax/runtime/env_flags.py and the command boundary (``ENV_READ_ALLOWED``);
-    code below receives the value as an argument or an options field. [rule 7]"""
+    code below receives the value as an argument or an options field. [rule 7]
+
+    A call of an env_flags reader (``parse_env_*``, ``read_env_text``) is a read too: the helper parses the value,
+    but the caller still reads the environment where it stands."""
     out = []
     for rel in repo.files("relax"):
         if allowed(rel, ENV_READ_ALLOWED):
@@ -513,6 +522,7 @@ def check_env_reads(repo: Repo) -> list[Finding]:
                     and node.args
                     and (
                         ast.unparse(node.func) in ("os.getenv", "getenv")
+                        or _env_flags_reader(node.func)
                         or (
                             isinstance(node.func, ast.Attribute)
                             and node.func.attr == "get"

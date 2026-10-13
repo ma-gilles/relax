@@ -126,6 +126,15 @@ def test_env_reads_outside_allowlist(tmp_path):
     assert keys(smell_check.check_env_reads(repo)) == {f"env-read:relax.algo:f:{v}" for v in "ABCD"}
 
 
+def test_env_flags_readers_are_env_reads(tmp_path):
+    reads = (
+        "from relax.runtime import env_flags\nfrom relax.runtime.env_flags import parse_env_flag\n\n"
+        "def f():\n    return parse_env_flag(\"E\"), env_flags.read_env_text(\"F\"), env_flags.parse_int_set(\"7\")\n"
+    )
+    repo = make_repo(tmp_path, {"relax/algo.py": reads})
+    assert keys(smell_check.check_env_reads(repo)) == {"env-read:relax.algo:f:E", "env-read:relax.algo:f:F"}
+
+
 def test_diagnostics_imports(tmp_path):
     repo = make_repo(
         tmp_path,
