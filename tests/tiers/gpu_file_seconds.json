@@ -201,7 +201,6 @@
 "tests/unit/test_pass2_window_setup_owner.py": 0,
 "tests/unit/test_powerclass_noise_terms_owner.py": 0,
 "tests/unit/test_relion_startup_noise.py": 0,
-"tests/unit/test_k1_pose_publication.py": 3,
 "tests/unit/test_k1_scale_aa_pixels.py": 1,
 "tests/unit/test_k4_projector_coordinate_harness.py": 0,
 "tests/unit/test_k_class_joint_semantics.py": 4,

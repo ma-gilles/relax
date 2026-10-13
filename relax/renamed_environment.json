@@ -185,7 +185,6 @@
   "RECOVAR_K1_LOCAL_PASS2_STABLE_ROW_CAPACITY": "RELAX_K1_LOCAL_PASS2_STABLE_ROW_CAPACITY",
   "RECOVAR_K1_LOCAL_PASS2_STABLE_WINDOWS": "RELAX_K1_LOCAL_PASS2_STABLE_WINDOWS",
   "RECOVAR_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES": "RELAX_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES",
-  "RECOVAR_K1_POSE_PUBLISH_DIRECT": "RELAX_K1_POSE_PUBLISH_DIRECT",
   "RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
   "RECOVAR_K1_RELION_EXACT_TRANSLATION_GRID": "RELAX_K1_RELION_EXACT_TRANSLATION_GRID",
   "RECOVAR_K1_RELION_FIRSTITER_FUSED_BPREF": "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
@@ -711,6 +710,8 @@
   "RECOVAR_K1_RELION_EXACT_CTF_STAR": "no production reader: only tests set the exact-CTF STAR override; exact CTF rows are read from the dataset's own particle STAR (2026-10-13)",
   "RELAX_K1_RELION_EXACT_CTF_STAR": "no production reader: only tests set the exact-CTF STAR override; exact CTF rows are read from the dataset's own particle STAR (2026-10-13)",
   "RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "its only effect was a refusal: pass 1 scores with RELION's texture-interpolated coarse projector only (2026-10-13)",
-  "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "its only effect was a refusal: pass 1 scores with RELION's texture-interpolated coarse projector only (2026-10-13)"
+  "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "its only effect was a refusal: pass 1 scores with RELION's texture-interpolated coarse projector only (2026-10-13)",
+  "RECOVAR_K1_POSE_PUBLISH_DIRECT": "no user: the sole-class direct pose publication was never selected outside its own tests; poses are always gathered by class (2026-10-13)",
+  "RELAX_K1_POSE_PUBLISH_DIRECT": "no user: the sole-class direct pose publication was never selected outside its own tests; poses are always gathered by class (2026-10-13)"
  }
 }
