@@ -726,6 +726,7 @@ def prepare_resident_half_operands(
     group_ids_np=None,
     precision_policy: DensePrecisionPolicy | None = None,
     image_batch_size: int,
+    prefetch_depth: int,
     optics_groups_np=None,
     relion_native_fine_units: bool = False,
     log_summary: bool = True,
@@ -857,8 +858,8 @@ def prepare_resident_half_operands(
         )
 
     starts = range(0, n_images, image_batch_size)
-    # The host reads run ahead on a worker thread (RELAX_EM_PREFETCH_BATCHES,
-    # default 2), as in the coarse pass; the batches and their order are unchanged.
+    # The host reads run ahead ``prefetch_depth`` batches on a worker thread, as in
+    # the coarse pass; the batches and their order are unchanged.
     fetches = (
         fetch_indexed_batch(experiment_dataset, image_indices[start : start + image_batch_size])
         for start in starts
@@ -866,7 +867,7 @@ def prepare_resident_half_operands(
     source = (
         nullcontext(iter((staged_batch,)))
         if staged_batch is not None
-        else prefetched_batches(fetches)
+        else prefetched_batches(fetches, depth=prefetch_depth)
     )
     with source as fetched_batches:
         for start, (batch_data, ctf_params, fetched_indices) in zip(starts, fetched_batches, strict=True):

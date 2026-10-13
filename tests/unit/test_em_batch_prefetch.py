@@ -4,7 +4,8 @@ import threading
 
 import pytest
 
-from relax.io.batch_fetch import prefetch_depth, prefetched_batches
+from relax.io.batch_fetch import prefetched_batches
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -52,16 +53,18 @@ def test_exit_releases_full_queue(consumer_error):
 
 def test_default_depth_is_two_and_zero_turns_it_off(monkeypatch):
     monkeypatch.delenv("RELAX_EM_PREFETCH_BATCHES", raising=False)
-    assert prefetch_depth() == 2
-    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "0")
-    assert prefetch_depth() == 0
+    assert EngineTuning.from_environ().prefetch_depth == 2
+    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", " 0 ")
+    assert EngineTuning.from_environ().prefetch_depth == 0
+    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "")
+    assert EngineTuning.from_environ().prefetch_depth == 2
 
 
 @pytest.mark.parametrize("value", ["-1", "invalid", "1.5"])
 def test_invalid_depth_rejected(monkeypatch, value):
     monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", value)
     with pytest.raises(ValueError, match="non-negative integer"):
-        prefetch_depth()
+        EngineTuning.from_environ()
 
 
 def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
@@ -80,11 +83,14 @@ def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
             yield batch
 
     monkeypatch.setattr(args[0], "iter_batches", capture)
+    # The depth read at the command boundary reaches the coarse pass's reader.
     monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "0")
+    kwargs["engine_tuning"] = EngineTuning.from_environ()
     expected = significance._compute_k_class_significance_batched(*args, **kwargs)
     assert threads and set(threads) == {threading.get_ident()}
     threads.clear()
     monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "2")
+    kwargs["engine_tuning"] = EngineTuning.from_environ()
     actual = significance._compute_k_class_significance_batched(*args, **kwargs)
     assert threads and threading.get_ident() not in threads
     _assert_significance_results_match(actual, expected)

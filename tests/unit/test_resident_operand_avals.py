@@ -302,7 +302,7 @@ def test_the_optional_operands_dtypes_against_the_real_preparation(
             use_exact_relion_gaussian=False,
             accumulate_noise=True,
             source_faithful_spectrum_norm=False,
-            image_batch_size=4,
+            image_batch_size=4, prefetch_depth=2,
         )
     except (ResidentOperandsUnsupported, NotImplementedError, ValueError) as exc:
         # The mock dataset is not STAR-backed and the exact RELION CTF is read
@@ -568,7 +568,7 @@ def test_the_optional_operands_against_a_star_backed_preparation(
             use_exact_relion_gaussian=True,
             accumulate_noise=True,
             source_faithful_spectrum_norm=source_faithful,
-            image_batch_size=n_images,
+            image_batch_size=n_images, prefetch_depth=2,
         )
         presence = resident_half_operand_presence(
             relion_exact_bpref_operands=True,

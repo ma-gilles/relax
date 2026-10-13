@@ -442,7 +442,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
             fine_translation_prior_2d=state.fine_translation_prior,
             scale_corrections_np=state.scale_corrections,
             group_ids_np=scale_group_ids, precision_policy=state.precision_policy,
-            image_batch_size=b, optics_groups_np=optics,
+            image_batch_size=b, prefetch_depth=state.engine_tuning.prefetch_depth, optics_groups_np=optics,
             relion_native_fine_units=state.relion_native_fine_units,
             log_summary=False, allow_normalized_cc=True,
         )

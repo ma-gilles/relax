@@ -325,6 +325,8 @@ def unshifted_chunk_operands(
         group_ids_np=group_ids_np,
         precision_policy=precision_policy,
         image_batch_size=int(image_capacity),
+        # One batch covers the chunk, so there is nothing to read ahead.
+        prefetch_depth=0,
         optics_groups_np=optics_groups_np,
         relion_native_fine_units=bool(relion_native_fine_units),
         log_summary=False,

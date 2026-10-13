@@ -22,6 +22,7 @@ import recovar.core.fourier_transform_utils as ftu
 from helpers.dense_posterior_reference import compute_e_step_weights
 from helpers.em_arrays import _hermitian_volume, _make_rotations, _raw_real_image_2d
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.oversampling import (
     _find_significant_mask_full_sort,
     _find_significant_mask_topk,
@@ -141,6 +142,7 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     kwargs = dict(
         **projector,
         class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),
+        engine_tuning=EngineTuning.from_environ(),
         rotation_log_prior=np.linspace(0, -0.4, 5, dtype=np.float32),
         translation_log_prior=np.array([[0, -0.1], [-0.2, 0], [0, -0.3]], dtype=np.float32),
         adaptive_fraction=0.9,
@@ -210,6 +212,7 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
             *args,
             **projector,
             class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes)),
+            engine_tuning=EngineTuning.from_environ(),
             rotation_log_prior=rotation_log_prior,
             translation_log_prior=translation_log_prior,
             adaptive_fraction=0.9,
@@ -285,6 +288,7 @@ def test_coarse_numeric_normalization_rejects_incompatible_modes(kwargs):
             None,
             None,
             class_log_priors=None,
+            engine_tuning=EngineTuning.from_environ(),
             adaptive_fraction=0.999,
             max_significants=-1,
             image_batch_size=1,
@@ -1274,6 +1278,7 @@ def test_coarse_projections_are_computed_once_per_block_across_image_batches(mon
     kwargs = dict(
         **projector,
         class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),
+        engine_tuning=EngineTuning.from_environ(),
         adaptive_fraction=0.9,
         max_significants=4,
         image_batch_size=2,

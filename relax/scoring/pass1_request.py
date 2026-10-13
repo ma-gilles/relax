@@ -78,6 +78,8 @@ class Pass1Request:
     tree_rescore_max_margin: float | None = None
     firstiter_cc_support: str = "relion"
     nyquist_column_counting: str = "relion"
+    # How the engines execute (relax.runtime.engine_tuning.EngineTuning, read by the command).
+    engine_tuning: Any
 
     def __post_init__(self):
         if self.return_class_second and not self.return_class_best:

@@ -20,6 +20,10 @@ from relax.runtime.compile_ahead import (
 from relax.runtime.env_flags import parse_env_flag, read_env_text
 
 DEFAULT_PREPARE_IMAGE_BATCH = 256
+# Two image batches ahead by default: K4 100k/256 Class3D, same node, depth 0 against 2:
+# 2115 vs 1933 s (job 14515590), 1925 vs 1756 s (14515190) and 1770 vs 1593 s
+# (14523034), with equal GT scores (14522527).
+DEFAULT_PREFETCH_BATCHES = 2
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
 # One local resident projector call's transient: the 4 GiB the exact local engine budgeted for its fused projection
 # matmul (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB), so the two reserved comparable headroom.
@@ -68,6 +72,8 @@ class EngineTuning:
     ``translation_tile_max_bytes`` (RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES), ``adjoint_block_max_bytes``
     (RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES) and ``max_projected_rotations``
     (RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS, rotations per projection call, also for the projection cache build).
+    ``prefetch_depth`` (RELAX_EM_PREFETCH_BATCHES, :func:`parse_prefetch_depth`): image batches read ahead on a worker
+    thread by the coarse pass and the resident operand preparation; the batches and their order are unchanged.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -82,6 +88,7 @@ class EngineTuning:
     translation_tile_max_bytes: int | None = None
     adjoint_block_max_bytes: int | None = None
     max_projected_rotations: int | None = None
+    prefetch_depth: int = DEFAULT_PREFETCH_BATCHES
     @classmethod
     def from_environ(cls) -> EngineTuning:
         return cls(
@@ -117,6 +124,7 @@ class EngineTuning:
             max_projected_rotations=parse_positive_integer(
                 MAX_PROJECTED_ROTATIONS_ENV, read_env_text(MAX_PROJECTED_ROTATIONS_ENV),
             ),
+            prefetch_depth=parse_prefetch_depth(read_env_text(PREFETCH_BATCHES_ENV)),
         )
 
 
@@ -195,3 +203,21 @@ def parse_positive_integer(name: str, raw: str | None) -> int | None:
     if value <= 0:
         raise ValueError(f"{name} must be a positive integer, got {raw!r}")
     return value
+
+
+PREFETCH_BATCHES_ENV = "RELAX_EM_PREFETCH_BATCHES"
+
+
+def parse_prefetch_depth(raw: str | None) -> int:
+    """RELAX_EM_PREFETCH_BATCHES (stripped): unset or blank is :data:`DEFAULT_PREFETCH_BATCHES`; a non-negative
+    integer is taken (0 reads synchronously); anything else is refused."""
+    raw = (str(DEFAULT_PREFETCH_BATCHES) if raw is None else raw).strip()
+    if raw == "":
+        return DEFAULT_PREFETCH_BATCHES
+    try:
+        depth = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{PREFETCH_BATCHES_ENV} must be a non-negative integer, got {raw!r}") from exc
+    if depth < 0:
+        raise ValueError(f"{PREFETCH_BATCHES_ENV} must be a non-negative integer, got {raw!r}")
+    return depth

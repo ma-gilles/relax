@@ -366,7 +366,8 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
         fine_translation_prior_2d=metadata.translation_log_prior[:, geometry["translation_ids"]],
         scale_corrections_np=metadata.scale_corrections,
         group_ids_np=None, precision_policy=None,
-        image_batch_size=batch_capacity, optics_groups_np=None,
+        image_batch_size=batch_capacity, prefetch_depth=EngineTuning.from_environ().prefetch_depth,
+        optics_groups_np=None,
         relion_native_fine_units=False, log_summary=False,
         staged_batch=(raw_device, ctf_params, np.asarray(fetched_indices)),
     )

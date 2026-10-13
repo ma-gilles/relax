@@ -170,6 +170,8 @@ class Pass1Plan:
     debug_iteration: Any
     probe: Any
     collect_significance: bool
+    # Image batches read ahead (the request's EngineTuning.prefetch_depth).
+    prefetch_depth: int
     route: RoutePlan
     batch_input_plan: Any
     score_program_plan: Any
@@ -385,6 +387,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         debug_iteration=request.debug_iteration,
         probe=request.probe,
         collect_significance=request.collect_significance,
+        prefetch_depth=request.engine_tuning.prefetch_depth,
         route=route,
         batch_input_plan=batch_input_plan,
         score_program_plan=score_program_plan,

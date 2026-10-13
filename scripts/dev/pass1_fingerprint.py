@@ -25,6 +25,7 @@ for move-only commits, not a merge gate for numerical changes.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -536,6 +537,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         if hasattr(coarse_gaussian_diagnostics, "SignificanceDiagnostics"):
             kwargs = dict(kwargs, probe=coarse_gaussian_diagnostics.SignificanceDiagnostics())
+        # A tree whose Pass1Request carries the engines' execution settings (rule 5, 2026-10-12) takes them as the
+        # commands read them, after the case's environment is set; an older tree reads the same variables itself.
+        from relax.scoring import pass1_request
+
+        if "engine_tuning" in {field.name for field in dataclasses.fields(pass1_request.Pass1Request)}:
+            from relax.runtime.engine_tuning import EngineTuning
+
+            kwargs = dict(kwargs, engine_tuning=EngineTuning.from_environ())
         return function(*args, **kwargs)
 
     def full_stats_dict(stats, class_assignment):

@@ -2572,7 +2572,7 @@ def _resident_pass2(
                 try:
                     resident_operands = prepare_resident_half_operands(
                         experiment_dataset, np.arange(n_images, dtype=np.int64), image_batch_size=prepare_batch,
-                        **resident_operand_kwargs,
+                        prefetch_depth=engine_tuning.prefetch_depth, **resident_operand_kwargs,
                     )
                 except ResidentOperandsUnsupported as reason:
                     logger.info(
@@ -2722,6 +2722,7 @@ def _resident_pass2(
                     experiment_dataset,
                     np.arange(operand_image_start, operand_image_stop, dtype=np.int64),
                     image_batch_size=engine_tuning.prepare_image_batch,
+                    prefetch_depth=engine_tuning.prefetch_depth,
                     **resident_operand_kwargs,
                 )
             tilt_spec_kwargs.update(

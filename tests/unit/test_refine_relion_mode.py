@@ -4285,6 +4285,7 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
             _make_rotations(1, seed=884),
             np.zeros((1, 2), dtype=np.float32),
             class_log_priors=np.zeros(1, dtype=np.float64),
+            engine_tuning=EngineTuning.from_environ(),
             adaptive_fraction=1.0,
             max_significants=1,
             image_batch_size=1,
@@ -4327,6 +4328,7 @@ def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng, monke
             _make_rotations(1, seed=886),
             np.zeros((1, 2), dtype=np.float32),
             class_log_priors=np.zeros(1, dtype=np.float64),
+            engine_tuning=EngineTuning.from_environ(),
             adaptive_fraction=1.0,
             max_significants=1,
             image_batch_size=1,
@@ -6419,6 +6421,7 @@ class TestRelionModeSmokeTest:
             translations,
             **projector,
             class_log_priors=np.zeros(1, dtype=np.float64),
+            engine_tuning=EngineTuning.from_environ(),
             adaptive_fraction=0.999,
             max_significants=-1,
             image_batch_size=N_IMAGES,
@@ -6497,6 +6500,7 @@ class TestRelionModeSmokeTest:
             rotations,
             jnp.zeros((1, 2), dtype=jnp.float32),
             class_log_priors=np.zeros(1, dtype=np.float64),
+            engine_tuning=EngineTuning.from_environ(),
             adaptive_fraction=1.0,
             max_significants=1,
             image_batch_size=dataset.n_units,
@@ -6547,6 +6551,7 @@ class TestRelionModeSmokeTest:
             image_batch_size=dataset.n_units,
             pad_final_image_batch=False,
             **common_kwargs,
+            engine_tuning=EngineTuning.from_environ(),
         )
         padded = _compute_k_class_significance_batched(
             dataset,
@@ -6556,6 +6561,7 @@ class TestRelionModeSmokeTest:
             image_batch_size=dataset.n_units + 1,
             pad_final_image_batch=True,
             **common_kwargs,
+            engine_tuning=EngineTuning.from_environ(),
         )
 
         from relax.fine_pass.significant_samples import significant_sample_ids
@@ -6692,6 +6698,7 @@ class TestRelionModeSmokeTest:
             rotations,
             translations,
             class_log_priors=np.zeros(1, dtype=np.float64),
+            engine_tuning=EngineTuning.from_environ(),
             adaptive_fraction=1.0,
             max_significants=1,
             image_batch_size=dataset.n_units,
@@ -6757,6 +6764,7 @@ class TestRelionModeSmokeTest:
             rotations,
             translations,
             class_log_priors=class_log_priors,
+            engine_tuning=EngineTuning.from_environ(),
             adaptive_fraction=0.999,
             max_significants=-1,
             image_batch_size=dataset.n_units,
@@ -6803,6 +6811,7 @@ class TestRelionModeSmokeTest:
             rotations,
             translations,
             class_log_priors=class_log_priors,
+            engine_tuning=EngineTuning.from_environ(),
             adaptive_fraction=0.999,
             max_significants=-1,
             image_batch_size=dataset.n_units,

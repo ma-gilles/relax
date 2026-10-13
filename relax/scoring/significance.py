@@ -41,7 +41,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
     # The image preprocess kernel's finite check is read at the end of the loop: read at each call, it
     # waits for the previous batch's score program inside the next batch's preparation.
     with deferred_relion_preprocess_checks("pass 1") as preprocess_checks, prefetched_batches(
-        iter_indexed_batches(plan.experiment_dataset, image_indices, plan.image_batch_size)
+        iter_indexed_batches(plan.experiment_dataset, image_indices, plan.image_batch_size), depth=plan.prefetch_depth,
     ) as batches:
         for batch_data, _, _, _, _, _, indices in batches:
             batch_starts.append(time.time())

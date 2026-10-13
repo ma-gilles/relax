@@ -35,6 +35,8 @@ def _significance_call(monkeypatch, n_classes=2):
 
     from helpers.exact_pass1_harness import ExactPass1Dataset, coded_class_projectors, install_exact_pass1_mocks
 
+    from relax.runtime.engine_tuning import EngineTuning
+
     install_exact_pass1_mocks(monkeypatch)
     dataset = ExactPass1Dataset(np.arange(7))
     rotations = np.tile(np.eye(3, dtype=np.float32), (5, 1, 1))
@@ -47,6 +49,7 @@ def _significance_call(monkeypatch, n_classes=2):
     )
     kwargs = dict(
         class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),
+        engine_tuning=EngineTuning.from_environ(),
         rotation_log_prior=np.linspace(0.0, -0.4, 5, dtype=np.float32),
         translation_log_prior=np.linspace(
             0.0, -0.3, 7 * 3, dtype=np.float32

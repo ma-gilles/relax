@@ -318,7 +318,7 @@ def test_unmasked_scoring_is_refused():
             image_shape=case["image_shape"],
             current_size=case["current_size"],
             n_fine_trans=N_FINE_TRANS,
-            image_batch_size=256,
+            image_batch_size=256, prefetch_depth=2,
             use_exact_relion_gaussian=False,
             accumulate_noise=False,
             source_faithful_spectrum_norm=False,
@@ -354,7 +354,7 @@ def _resident_operands(case, image_indices=None, *, staged_batch=None):
         use_exact_relion_gaussian=False,
         accumulate_noise=False,
         source_faithful_spectrum_norm=False,
-        image_batch_size=4,
+        image_batch_size=4, prefetch_depth=2,
         staged_batch=staged_batch,
     )
 
@@ -406,7 +406,7 @@ def test_native_fine_units_keep_the_score_modes_distinct(monkeypatch, score_mode
             image_shape=case["image_shape"], current_size=case["current_size"],
             n_fine_trans=N_FINE_TRANS, use_exact_relion_gaussian=False,
             accumulate_noise=False, source_faithful_spectrum_norm=False,
-            image_batch_size=2, relion_native_fine_units=native_units,
+            image_batch_size=2, prefetch_depth=2, relion_native_fine_units=native_units,
             allow_normalized_cc=True,
         )
 

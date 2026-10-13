@@ -18,6 +18,7 @@ from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostic
 from relax.fine_pass.significant_samples import significant_sample_ids
 from relax.projection.projection_cache import build_projection_cache
 from relax.relion import ctf
+from relax.runtime.engine_tuning import EngineTuning
 from relax.scoring import coarse_gaussian_gemm, coarse_kernels, pass1_batch, pass1_program, significance
 from relax.scoring.pass1_plan import plan_pass1
 from relax.scoring.pass1_request import Pass1Request
@@ -741,6 +742,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     relion_projector = jnp.ones((1, 3, 3, 2), dtype=jnp.complex64)
     common = dict(
         class_log_priors=np.zeros(1, dtype=np.float64),
+        engine_tuning=EngineTuning.from_environ(),
         adaptive_fraction=0.5,
         max_significants=1,
         image_batch_size=2,
@@ -1002,6 +1004,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             rotations,
             translations,
             class_log_priors=class_prior,
+            engine_tuning=EngineTuning.from_environ(),
             rotation_log_prior=rotation_prior,
             translation_log_prior=selected_translation_prior,
             **common,

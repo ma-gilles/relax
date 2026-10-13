@@ -303,7 +303,7 @@ def _prepare_resident(case, native):
         use_exact_relion_gaussian=True,
         accumulate_noise=False,
         source_faithful_spectrum_norm=True,
-        image_batch_size=2,
+        image_batch_size=2, prefetch_depth=2,
         relion_native_fine_units=native,
     )
 

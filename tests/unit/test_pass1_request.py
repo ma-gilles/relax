@@ -5,6 +5,7 @@ import dataclasses
 import numpy as np
 import pytest
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.scoring.pass1_request import Pass1Request
 
 pytestmark = pytest.mark.unit
@@ -17,6 +18,7 @@ def _request(**overrides):
 
     fields = dict(
         class_log_priors=np.zeros(1),
+        engine_tuning=EngineTuning.from_environ(),
         adaptive_fraction=0.9,
         max_significants=4,
         image_batch_size=2,

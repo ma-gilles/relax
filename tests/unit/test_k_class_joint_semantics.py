@@ -766,6 +766,7 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,
+            engine_tuning=EngineTuning.from_environ(),
             rotation_log_prior=np.asarray([0.0, -1.0, -2.0, -3.0, -4.0], dtype=np.float32),
             translation_log_prior=np.asarray([0.0, -0.5, -1.0], dtype=np.float32),
             use_float64_projections=projection_double,
@@ -1582,6 +1583,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,
+            engine_tuning=EngineTuning.from_environ(),
             current_size=6,
             half_spectrum_scoring=True,
             projection_padding_factor=padding_factor,
