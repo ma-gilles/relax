@@ -33,7 +33,7 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
-from relax.fine_pass import policy, resident_chunk_memory, resident_image_terms, resident_mstep_blocks
+from relax.fine_pass import resident_chunk_memory, resident_image_terms, resident_mstep_blocks
 from relax.local_search import resident_pass2 as rlp
 from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
@@ -187,9 +187,9 @@ def _run(
     """One fine pass 2 through the production dispatch."""
 
     if resident_operands is None:
-        monkeypatch.delenv(policy._RESIDENT_OPERANDS_ENV, raising=False)
+        monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", raising=False)
     else:
-        monkeypatch.setenv(policy._RESIDENT_OPERANDS_ENV, "1" if resident_operands else "0")
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", "1" if resident_operands else "0")
     layout = case["layout"]
     projector = case["projector_half"]
     if projector_dtype is not None:

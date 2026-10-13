@@ -136,13 +136,6 @@ def _projection_cache_enabled_for_pass(
 # this set is a diagnostic arm and never a timing arm.
 
 
-# T16: prepare the per-image operands once per half and keep them resident, and
-# take the M-step's weighted sums with T15's flat-row translate-and-sum kernel
-# instead of a gathered ``[images, translations, pixels]`` tile. Default on;
-# ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=0`` selects the per-chunk
-# ``_prepare_bucket_io`` preparation and the XLA tile reduction, which stay as
-# the oracle both forms are compared against.
-_RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 
 
 # Take ``ctf_probs`` from the translate-and-sum kernel's fourth output instead
@@ -166,17 +159,6 @@ def kernel_ctf_probs_enabled() -> bool:
     """Whether the M-step's ``ctf_probs`` comes from the kernel's fourth output."""
 
     return parse_env_flag(_KERNEL_CTF_PROBS_ENV, default=False)
-
-
-def resident_operands_requested() -> bool:
-    """Whether the per-image operands are prepared once per half (T16).
-
-    Default on. ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=0`` keeps the per-chunk
-    ``_prepare_bucket_io`` preparation and the XLA tile reduction, which are the
-    oracle for every bitwise comparison of the new path.
-    """
-
-    return parse_env_flag(_RESIDENT_OPERANDS_ENV, default=True)
 
 
 def resident_glue_jit_enabled() -> bool:

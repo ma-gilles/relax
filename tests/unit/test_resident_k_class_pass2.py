@@ -18,7 +18,6 @@ from helpers.float_compare import assert_matches
 from test_resident_pass2_driver import _driver_fixture_args, requires_resident_gpu
 
 from relax.fine_pass import (
-    policy,
     resident_chunk_programs,
     resident_chunk_records,
     resident_chunk_stages,
@@ -345,11 +344,16 @@ def test_projection_sums_yield_to_the_resident_operands(monkeypatch, operand_pea
     """The sums are refused only when they alone would push admitted operands out of budget."""
 
     gib = float(1024**3)
-    monkeypatch.setattr(policy, "resident_operands_requested", lambda: True)
     monkeypatch.setattr(resident_projections, "resident_half_operand_sizes", lambda **_: (0, int(operand_peak_gib * gib)))
     monkeypatch.setattr(resident_projections, "current_device_available_bytes", lambda: 60.0 * gib)
     monkeypatch.setattr(resident_projections, "resident_operands_max_bytes", lambda available, override: 0.5 * float(available))
-    assert resident_projections.projection_sums_displace_resident_operands(int(sums_gib * gib), operand_max_bytes=None) is displaced
+    assert resident_projections.projection_sums_displace_resident_operands(
+        int(sums_gib * gib), operand_max_bytes=None, resident_operands=True,
+    ) is displaced
+    # Without the resident operands nothing is displaced.
+    assert not resident_projections.projection_sums_displace_resident_operands(
+        int(sums_gib * gib), operand_max_bytes=None, resident_operands=False,
+    )
 
 
 def _count_projection_sum_flushes(monkeypatch):

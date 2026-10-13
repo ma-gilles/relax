@@ -148,6 +148,9 @@ class EngineTuning:
     ``resident_operands_verify`` (RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY, ``env_flags.parse_env_flag``, default
     off): check each half's first resident chunk operands against the per-chunk preparation (a diagnostic arm that
     raises on a mismatch; it doubles that chunk's preparation, never a timing arm).
+    ``resident_operands`` (RELAX_SPARSE_PASS2_RESIDENT_OPERANDS, ``env_flags.parse_env_flag``, default on): the
+    resident passes prepare the per-image operands once per half; off keeps the per-chunk preparation and the XLA tile
+    reduction, the oracle both forms are compared against (the same values).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -184,6 +187,7 @@ class EngineTuning:
     local_row_capacities: tuple[int, ...] | None = None
     local_image_capacities: tuple[int, ...] | None = None
     resident_operands_verify: bool = False
+    resident_operands: bool = True
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -256,6 +260,7 @@ class EngineTuning:
             local_row_capacities=parse_capacity_ladder(LOCAL_ROW_CAPACITIES_ENV, read_env_text(LOCAL_ROW_CAPACITIES_ENV)),
             local_image_capacities=parse_capacity_ladder(LOCAL_IMAGE_CAPACITIES_ENV, read_env_text(LOCAL_IMAGE_CAPACITIES_ENV)),
             resident_operands_verify=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY", default=False),
+            resident_operands=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", default=True),
         )
 
 

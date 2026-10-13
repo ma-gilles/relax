@@ -2194,3 +2194,20 @@ def test_resident_operands_verify_is_read_once_at_the_boundary(monkeypatch):
         else:
             monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY", raw)
         assert EngineTuning.from_environ().resident_operands_verify is expected
+
+
+def test_resident_operands_switch_is_read_once_at_the_boundary(monkeypatch):
+    """RELAX_SPARSE_PASS2_RESIDENT_OPERANDS (env_flags.parse_env_flag, default on); 0 keeps the per-chunk oracle."""
+    from relax.fine_pass import resident_chunk_inputs
+
+    for raw, expected in ((None, True), ("", True), ("0", False), ("1", True)):
+        if raw is None:
+            monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", raising=False)
+        else:
+            monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", raw)
+        assert EngineTuning.from_environ().resident_operands is expected
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", "0")
+    assert not resident_chunk_inputs.chunk_unshifted_operands_supported(
+        {}, window_indices=None, recon_window_indices=None, firstiter_cc=False, relion_native_fine_units=False,
+        relion_exact_bpref_operands=False, requested=EngineTuning.from_environ().resident_operands,
+    )

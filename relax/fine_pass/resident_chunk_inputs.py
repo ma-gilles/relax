@@ -19,7 +19,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fine_pass import policy
 from relax.fine_pass.bucket_io import _prepare_bucket_io, premultiplied_bpref_weights
 from relax.fine_pass.resident_operands import (
     ResidentOperandsUnsupported,
@@ -241,8 +240,10 @@ def chunk_unshifted_operands_supported(
     firstiter_cc,
     relion_native_fine_units,
     relion_exact_bpref_operands,
+    requested: bool,
 ) -> bool:
-    """Whether a chunk can take its own images' unshifted operands (:func:`unshifted_chunk_operands`).
+    """Whether a chunk can take its own images' unshifted operands (:func:`unshifted_chunk_operands`);
+    ``requested`` is ``EngineTuning.resident_operands``.
 
     The checks :func:`prepare_resident_half_operands` makes, before any image
     is prepared, so the chunks are sized for the operand family they will use.
@@ -250,7 +251,7 @@ def chunk_unshifted_operands_supported(
     which only the translated preparation builds.
     """
 
-    if not policy.resident_operands_requested() or firstiter_cc:
+    if not requested or firstiter_cc:
         return False
     try:
         require_unshifted_operand_support(

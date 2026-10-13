@@ -73,7 +73,6 @@ from recovar.reconstruction import noise as noise_utils
 import relax.runtime.engine_tuning
 import relax.runtime.env_flags
 from relax.fine_pass import (
-    policy,
     resident_chunk_inputs,
     resident_chunk_memory,
     resident_chunk_posterior,
@@ -311,10 +310,11 @@ def _local_chunk_loop_pipelined(*, chunk_profile: bool) -> bool:
     return not chunk_profile
 
 
-def _unshifted_operands_route(bucket_io_kwargs, *, window_indices, recon_window_indices) -> bool:
-    """Whether this pass's chunks take the unshifted per-image operands (T16) or the translated tiles."""
+def _unshifted_operands_route(bucket_io_kwargs, *, window_indices, recon_window_indices, requested: bool) -> bool:
+    """Whether this pass's chunks take the unshifted per-image operands (T16) or the translated tiles
+    (``requested``: ``EngineTuning.resident_operands``)."""
 
-    if not policy.resident_operands_requested():
+    if not requested:
         return False
     try:
         require_unshifted_operand_support(
@@ -897,7 +897,8 @@ def compute_local_search_resident(
         # the pre-shifted family prepares (resident_pass2 refuses unshifted operands for it too).
         operand_route = {
             "unshifted": (not kernel.firstiter_cc) and _unshifted_operands_route(
-                bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices
+                bucket_io_kwargs, window_indices=window_indices, recon_window_indices=recon_window_indices,
+                requested=support.engine_tuning.resident_operands,
             )
         }
 

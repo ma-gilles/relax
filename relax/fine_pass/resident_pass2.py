@@ -75,7 +75,6 @@ from recovar.reconstruction import noise as noise_utils
 
 import relax.runtime.engine_tuning
 from relax.fine_pass import (
-    policy,
     resident_block_programs,
     resident_chunk_inputs,
     resident_chunk_memory,
@@ -1442,6 +1441,7 @@ def _resident_pass2(
         and not resident_projections.projection_sums_displace_resident_operands(
             sums_bytes,
             operand_max_bytes=engine_tuning.resident_operand_max_bytes,
+            resident_operands=engine_tuning.resident_operands,
             n_images=n_images,
             n_windowed=n_windowed,
             n_recon_windowed=n_recon_windowed,
@@ -1743,7 +1743,7 @@ def _resident_pass2(
     # iteration 2 (box 800, bigbox 14446465).
     reserved_operand_bytes = 0
     # A tilt pass's CC iteration translates each image's resident CC operands per image slot (resident_tilts).
-    if policy.resident_operands_requested() and (not firstiter_cc or tilt is not None):
+    if engine_tuning.resident_operands and (not firstiter_cc or tilt is not None):
         operand_bytes, operand_peak_bytes = resident_projections.resident_half_operand_sizes(
             n_images=n_images,
             n_windowed=n_windowed,
@@ -2271,6 +2271,7 @@ def _resident_pass2(
         firstiter_cc=firstiter_cc,
         relion_native_fine_units=relion_native_fine_units,
         relion_exact_bpref_operands=relion_exact_bpref_operands,
+        requested=engine_tuning.resident_operands,
     )
     planned_unshifted = bool(reserved_operand_bytes) or chunk_unshifted_supported
     memory_plan, row_ladder, image_ladder, mstep_block_rows, chunks, plan = plan_chunks(planned_unshifted)
@@ -2396,7 +2397,7 @@ def _resident_pass2(
     # normalized-CC tiles, which only the per-chunk preparation builds; it is
     # one iteration at a small current size.
     # A tilt pass's CC iteration translates each image's resident CC operands per image slot (resident_tilts).
-    if policy.resident_operands_requested() and (not firstiter_cc or tilt is not None):
+    if engine_tuning.resident_operands and (not firstiter_cc or tilt is not None):
         operand_bytes, operand_peak_bytes = resident_projections.resident_half_operand_sizes(
             n_images=n_images,
             n_windowed=n_windowed,

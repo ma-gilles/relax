@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fine_pass import policy, resident_chunk_memory, resident_stable_windows
+from relax.fine_pass import resident_chunk_memory, resident_stable_windows
 from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_operands import (
@@ -43,7 +43,7 @@ def projection_sums_bytes(*, n_slots, n_fine_rot, n_recon_pixels, y_dtype, ctf_d
 
 
 def projection_sums_displace_resident_operands(
-    sums_bytes, *, operand_max_bytes: int | None, **operand_size_kwargs
+    sums_bytes, *, operand_max_bytes: int | None, resident_operands: bool, **operand_size_kwargs
 ) -> bool:
     """Whether the sums would push one half's resident operands out of their budget.
 
@@ -51,10 +51,11 @@ def projection_sums_displace_resident_operands(
     current size 90, 5.9 GiB of sums next to 21.2 GiB of operands sent the pass
     to the per-chunk operand preparation, and its pass 2 went from 57 to 89 s
     (job 14589109). The same predicate as the operand admission
-    (resident_operands_fit), read before either is allocated.
+    (resident_operands_fit), read before either is allocated. ``resident_operands`` is
+    ``EngineTuning.resident_operands``: without them nothing is displaced.
     """
 
-    if not policy.resident_operands_requested():
+    if not resident_operands:
         return False
     _, operand_peak_bytes = resident_half_operand_sizes(**operand_size_kwargs)
     available = current_device_available_bytes()
