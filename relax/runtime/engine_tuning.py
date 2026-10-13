@@ -111,6 +111,9 @@ class EngineTuning:
     ``em_batch_projection_fraction`` (RELAX_RELION_EM_BATCH_PROJECTION_FRACTION,
     :func:`parse_em_batch_projection_fraction`): the share of usable device memory the EM batch planner gives the
     projected poses (``batch_planning.estimate_relion_em_batch_sizes``), within its fixed bounds.
+    Two diagnostic switches of the opt-in dense GEMM engine's layout, each :func:`parse_zero_one_switch`:
+    ``dense_gemm_score_cache`` (RELAX_DENSE_GEMM_SCORE_CACHE, which implies class-batched scores) and
+    ``dense_gemm_class_batch_scores`` (RELAX_DENSE_GEMM_CLASS_BATCH_SCORES).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -129,6 +132,8 @@ class EngineTuning:
     x_half_large_grid: XHalfLargeGrid = XHalfLargeGrid()
     firstiter_cc_recon_complex_budget: int = DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET
     em_batch_projection_fraction: float = DEFAULT_EM_BATCH_PROJECTION_FRACTION
+    dense_gemm_score_cache: bool = False
+    dense_gemm_class_batch_scores: bool = False
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -171,6 +176,10 @@ class EngineTuning:
                 read_env_text(FIRSTITER_CC_RECON_COMPLEX_BUDGET_ENV),
             ),
             em_batch_projection_fraction=parse_em_batch_projection_fraction(read_env_text(EM_BATCH_PROJECTION_FRACTION_ENV)),
+            dense_gemm_score_cache=parse_zero_one_switch(DENSE_GEMM_SCORE_CACHE_ENV, read_env_text(DENSE_GEMM_SCORE_CACHE_ENV)),
+            dense_gemm_class_batch_scores=parse_zero_one_switch(
+                DENSE_GEMM_CLASS_BATCH_SCORES_ENV, read_env_text(DENSE_GEMM_CLASS_BATCH_SCORES_ENV),
+            ),
         )
 
 
@@ -336,3 +345,15 @@ def parse_em_batch_projection_fraction(raw: str | None) -> float:
     if not math.isfinite(value) or value <= 0:
         raise ValueError(f"{EM_BATCH_PROJECTION_FRACTION_ENV} must be a positive finite float, got {raw!r}")
     return float(value)
+
+
+DENSE_GEMM_SCORE_CACHE_ENV = "RELAX_DENSE_GEMM_SCORE_CACHE"
+DENSE_GEMM_CLASS_BATCH_SCORES_ENV = "RELAX_DENSE_GEMM_CLASS_BATCH_SCORES"
+
+
+def parse_zero_one_switch(name: str, raw: str | None) -> bool:
+    """A 0/1 switch: unset is 0; exactly ``0`` or ``1`` (not stripped), anything else refused naming ``name``."""
+    value = "0" if raw is None else raw
+    if value not in {"0", "1"}:
+        raise ValueError(f"{name} must be 0 or 1")
+    return value == "1"

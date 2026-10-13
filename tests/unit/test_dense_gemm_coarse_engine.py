@@ -468,3 +468,21 @@ def test_gradient_presum_and_cc_winner_with_distinct_reconstruction_pixels(score
         assert_matches(residual.image_posterior_mass, np.ones(1, np.float32))
         assert_matches(residual.class_posterior_sums.sum(), 1.0)
         assert np.count_nonzero(np.asarray(residual.class_posterior_sums)) == 1
+
+
+@pytest.mark.parametrize("name", ["RELAX_DENSE_GEMM_SCORE_CACHE", "RELAX_DENSE_GEMM_CLASS_BATCH_SCORES"])
+def test_dense_gemm_layout_switches_are_read_once_at_the_boundary(monkeypatch, name):
+    """Unset is off; exactly 0 or 1 is taken; anything else (blank and " 1" too) is refused, as before."""
+    from relax.runtime.engine_tuning import EngineTuning
+
+    field = {"RELAX_DENSE_GEMM_SCORE_CACHE": "dense_gemm_score_cache",
+             "RELAX_DENSE_GEMM_CLASS_BATCH_SCORES": "dense_gemm_class_batch_scores"}[name]
+    monkeypatch.delenv(name, raising=False)
+    assert getattr(EngineTuning.from_environ(), field) is False
+    for raw, expected in (("0", False), ("1", True)):
+        monkeypatch.setenv(name, raw)
+        assert getattr(EngineTuning.from_environ(), field) is expected
+    for raw in ("", " 1", "true", "2"):
+        monkeypatch.setenv(name, raw)
+        with pytest.raises(ValueError, match=f"{name} must be 0 or 1"):
+            EngineTuning.from_environ()

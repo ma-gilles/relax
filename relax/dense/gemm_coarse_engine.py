@@ -10,7 +10,6 @@ Wavg/noise statistics, and result finalization use their existing owners.
 from __future__ import annotations
 
 import logging
-import os
 
 import jax.numpy as jnp
 import numpy as np
@@ -124,19 +123,6 @@ def _memory_tiles(
     return b, q, u, qs
 
 
-def _experimental_class_batch_flags() -> tuple[bool, bool]:
-    """Explicit diagnostic switches for the opt-in dense engine's GEMM layout."""
-    def enabled(name: str) -> bool:
-        value = os.environ.get(name, "0")
-        if value not in {"0", "1"}:
-            raise ValueError(f"{name} must be 0 or 1")
-        return value == "1"
-
-    cache_scores = enabled("RELAX_DENSE_GEMM_SCORE_CACHE")
-    class_batch_scores = enabled("RELAX_DENSE_GEMM_CLASS_BATCH_SCORES") or cache_scores
-    return class_batch_scores, cache_scores
-
-
 def _expanded_rotation_priors(priors, parent, image_indices, n_images: int, n_classes: int, rpad: int):
     """Broadcast RELION's parent log PDF onto every configured child."""
 
@@ -244,7 +230,9 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     dataset = state.dataset
     n_images = int(dataset.n_units)
     k = len(state.class_volumes)
-    class_batch_scores, cache_scores = _experimental_class_batch_flags()
+    # The engine's diagnostic layout switches; the score cache implies class-batched scores.
+    cache_scores = state.engine_tuning.dense_gemm_score_cache
+    class_batch_scores = state.engine_tuning.dense_gemm_class_batch_scores or cache_scores
     if n_images <= 0 or k <= 0:
         raise ValueError("dense GEMM needs images and classes")
     if state.precision_policy.score_real_dtype != jnp.float32:
