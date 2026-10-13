@@ -13,9 +13,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.utils.nvtx_shim import nvtx
 
-from relax.runtime.env_flags import (
-    parse_env_strict_flag,
-)
 from relax.scoring.coarse_operands import (
     infer_relion_coarse_healpix_order,
 )
@@ -32,9 +29,6 @@ from relax.scoring.pass1_scores import plan_score_program
 from relax.scoring.pass1_support import plan_support
 from relax.scoring.pass1_window import coarse_kernel_window, plan_scoring_window
 
-_COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
-    "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH"
-)
 NVTX_DOMAIN_EM = "recovar_em"
 
 
@@ -65,29 +59,6 @@ def _require_exact_pass1_operands(
         missing.append("float32 scoring and projections")
     if missing:
         raise ValueError("pass 1 scores RELION's exact coarse operands and needs " + ", ".join(missing))
-
-
-def _coarse_pad_final_image_batch_enabled(*, default: bool = True) -> bool:
-    """Whether every coarse image batch is padded to the requested batch size.
-
-    A half set is rarely an exact multiple of ``image_batch_size``, so its last
-    batch has its own image extent and every program in the coarse pass,
-    significance and image preprocessing is traced and compiled a second time
-    for it. Padding repeats image row zero up to ``image_batch_size``; the
-    repeated rows are discarded from every science output, so the retained
-    values are bit-for-bit those of the unpadded batch (the per-image
-    computations are independent, and the batch-level reductions are maxima
-    over rows that row zero already contributes).
-
-    On by default since the K=1 resident flip (qualified with the resident flag
-    set on the fast tier and the four flip datasets); ``=0`` turns it off. VDAM
-    requests the same padding explicitly through ``pad_final_image_batch``.
-    """
-
-    return parse_env_strict_flag(
-        _COARSE_PAD_FINAL_IMAGE_BATCH_ENV,
-        default=default,
-    )
 
 
 @nvtx.annotate("kclass.adaptive.pass1_significance", color="orange", domain=NVTX_DOMAIN_EM)
@@ -174,7 +145,8 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
 
     # VDAM asks for the padded tail batch explicitly; the global coarse pass
     # opts in through the environment while the bitwise equality is qualified.
-    pad_final_image_batch = bool(pad_final_image_batch) or _coarse_pad_final_image_batch_enabled()
+    # The command's switch (EngineTuning.coarse_pad_final_image_batch, on by default; VDAM also asks explicitly).
+    pad_final_image_batch = bool(pad_final_image_batch) or request.engine_tuning.coarse_pad_final_image_batch
     # RELION's pdf_orientation/pdf_offset priors and score/evidence/Pmax
     # outputs are RFLOAT (double), never narrowed -- derive from the
     # caller's own use_float64_scoring instead of hardcoding float32.

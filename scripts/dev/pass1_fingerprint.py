@@ -221,7 +221,7 @@ MUTATIONS = (
      "K=1 loses RELION's log-weight order", True),
     ("pad_target", "target_size=int(plan.image_batch_size),", "target_size=int(plan.image_batch_size) + 2,",
      "a padded tail batch is two images too long", True),
-    ("pad_env_ignored", "pad_final_image_batch = bool(pad_final_image_batch) or _coarse_pad_final_image_batch_enabled()",
+    ("pad_env_ignored", "pad_final_image_batch = bool(pad_final_image_batch) or request.engine_tuning.coarse_pad_final_image_batch",
      "pad_final_image_batch = bool(pad_final_image_batch)",
      "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH is ignored", True),
     ("noise_group_rows", "batch_groups = plan.noise.image_groups_host[np.asarray(indices, dtype=np.int64)]",

@@ -138,6 +138,9 @@ class EngineTuning:
     ``local_block_row_program`` (RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM, ``env_flags.parse_env_flag``, default
     on): the local M-step block program gathers its own rows; off, a Python callback slices them per block (the
     oracle; the rows are the same).
+    ``coarse_pad_final_image_batch`` (RELAX_COARSE_PAD_FINAL_IMAGE_BATCH, :func:`parse_strict_switch`, default on):
+    pass 1 pads its last image batch with image row zero to the batch size, so the batch reuses the programs of the
+    others; the padded rows are discarded and every retained value is bit-for-bit the unpadded batch's.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -168,6 +171,7 @@ class EngineTuning:
     stable_windows: bool = True
     local_chunk_profile: bool = False
     local_block_row_program: bool = True
+    coarse_pad_final_image_batch: bool = True
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -230,6 +234,9 @@ class EngineTuning:
             stable_windows=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", default=True),
             local_chunk_profile=parse_env_flag("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", default=False),
             local_block_row_program=parse_env_flag("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", default=True),
+            coarse_pad_final_image_batch=parse_strict_switch(
+                "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", read_env_text("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH"),
+            ) is not False,
         )
 
 

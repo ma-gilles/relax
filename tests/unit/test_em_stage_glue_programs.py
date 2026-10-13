@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytest.importorskip("jax")
@@ -143,9 +144,13 @@ def _run_padding_pair(monkeypatch):
 
     args, kwargs = _significance_call(monkeypatch)
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
-    control = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
+    control = significance._compute_k_class_significance_batched(
+        *args, **dict(kwargs, engine_tuning=EngineTuning.from_environ()), scoring_overrides=ScoringOverrides.from_environ(),
+    )
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
-    candidate = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
+    candidate = significance._compute_k_class_significance_batched(
+        *args, **dict(kwargs, engine_tuning=EngineTuning.from_environ()), scoring_overrides=ScoringOverrides.from_environ(),
+    )
     return candidate, control
 
 
@@ -188,12 +193,16 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
     monkeypatch.setattr(pass1_operands, "process_relion_exact_coarse_half_image", record)
 
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
-    significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
+    significance._compute_k_class_significance_batched(
+        *args, **dict(kwargs, engine_tuning=EngineTuning.from_environ()), scoring_overrides=ScoringOverrides.from_environ(),
+    )
     unpadded = list(seen)
 
     seen.clear()
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
-    significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
+    significance._compute_k_class_significance_batched(
+        *args, **dict(kwargs, engine_tuning=EngineTuning.from_environ()), scoring_overrides=ScoringOverrides.from_environ(),
+    )
     padded = list(seen)
 
     assert unpadded == [3, 3, 1]
@@ -282,12 +291,17 @@ def test_collate_keeps_device_arrays_on_device():
     assert_matches(np.asarray(collated), np.asarray([1.0, 2.0], dtype=np.float32))
 
 
+def _coarse_pad_final_image_batch():
+    """The pad switch as the command reads it (EngineTuning.coarse_pad_final_image_batch)."""
+    return EngineTuning.from_environ().coarse_pad_final_image_batch
+
+
 @pytest.mark.parametrize(
     "name, reader, unset",
     [
         (
             "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH",
-            "relax.scoring.pass1_plan:_coarse_pad_final_image_batch_enabled",
+            "relax.runtime.engine_tuning:_coarse_pad_final_image_batch",
             True,  # on by default since the K=1 resident flip
         ),
         (
@@ -301,7 +315,10 @@ def test_stage_glue_flags_fail_closed_on_bad_tokens(monkeypatch, name, reader, u
     import importlib
 
     module_name, attribute = reader.split(":")
-    read = getattr(importlib.import_module(module_name), attribute)
+    read = (
+        _coarse_pad_final_image_batch if attribute == "_coarse_pad_final_image_batch"
+        else getattr(importlib.import_module(module_name), attribute)
+    )
 
     monkeypatch.delenv(name, raising=False)
     assert read() is unset
