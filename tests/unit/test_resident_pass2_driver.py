@@ -2165,3 +2165,18 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
             f"{reading['limit'] / 2**30:.1f} GiB pool"
         )
     assert reading["available"] <= reading["limit"]
+
+
+def test_chunk_timing_is_read_once_at_the_boundary(monkeypatch):
+    """RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING (env_flags.parse_env_flag, default off) unpipelines the global loop."""
+    from relax.fine_pass.resident_pass2 import _global_chunk_loop_pipelined
+    from relax.runtime.engine_tuning import EngineTuning
+
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", raising=False)
+    assert EngineTuning.from_environ().chunk_timing is False
+    assert _global_chunk_loop_pipelined(False, chunk_timing=EngineTuning.from_environ().chunk_timing)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", "1")
+    assert not _global_chunk_loop_pipelined(False, chunk_timing=EngineTuning.from_environ().chunk_timing)
+    for raw, expected in (("", False), ("off", False), ("yes", True)):
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", raw)
+        assert EngineTuning.from_environ().chunk_timing is expected

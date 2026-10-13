@@ -2121,7 +2121,7 @@ def _resident_pass2(
                 n_recon_pixels=n_recon_windowed,
                 budget_bytes=chunk_budget_bytes,
                 rows_live_during_prepare=True,
-                pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
+                pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections, chunk_timing=engine_tuning.chunk_timing),
                 float32_posterior_buckets=(
                     _FLOAT32_BUCKETED_IMAGE_SUMS
                     and tilt is None
@@ -2760,7 +2760,7 @@ def _resident_pass2(
         mstep_census.log()
         if n_lone_chunks:
             logger.info("Resident pass-2 ran %d lone overflow particle(s) in row blocks", n_lone_chunks)
-    deferred = _global_chunk_loop_pipelined(stream_projections)
+    deferred = _global_chunk_loop_pipelined(stream_projections, chunk_timing=engine_tuning.chunk_timing)
     pending = None
     pending_alone = False
     for chunk in chunks if tilt is None else ():
@@ -2770,6 +2770,7 @@ def _resident_pass2(
             pending = None
         result = _run_resident_chunk(
             chunk,
+            chunk_timing=engine_tuning.chunk_timing,
             tables=tables,
             window_logical=window_logical,
             experiment_dataset=experiment_dataset,
@@ -3312,14 +3313,14 @@ def compute_k_class_pass2_stats_resident(
     )
 
 
-def _global_chunk_loop_pipelined(stream_projections: bool) -> bool:
+def _global_chunk_loop_pipelined(stream_projections: bool, *, chunk_timing: bool) -> bool:
     """Whether the global chunk loop overlaps chunk k+1's front with chunk k's M-step.
 
     The chunk plan counts the second chunk's arrays (:func:`resident_chunk_bytes`)
-    exactly when the loop runs this way.
+    exactly when the loop runs this way. ``chunk_timing`` is ``EngineTuning.chunk_timing``.
     """
 
-    return not policy.chunk_timing_enabled() and not stream_projections
+    return not chunk_timing and not stream_projections
 
 
 @jax.jit
@@ -3368,6 +3369,7 @@ def _window_logical_sizes(
 def _run_resident_chunk(
     chunk,
     *,
+    chunk_timing: bool,
     tables,
     window_logical=None,
     experiment_dataset,
@@ -3477,7 +3479,7 @@ def _run_resident_chunk(
     # The operands' powerClass terms sum above the weighted sums' size (--strict_highres_exp).
     operand_current_size = current_size if wsum_current_size is None else wsum_current_size
     image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
-    timing = policy.chunk_timing_enabled()
+    timing = chunk_timing
     chunk_t0 = time.time()
     stage_t = {}
     if timing:

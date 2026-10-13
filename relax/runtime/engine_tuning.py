@@ -128,6 +128,8 @@ class EngineTuning:
     ``stable_window_quantum`` (RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM, :func:`parse_stable_window_quantum`):
     the stable Fourier windows' physical-size quantum for every refinement and VDAM run, None for the command's own
     (capacity only; the logical windows are unchanged).
+    ``chunk_timing`` (RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING, ``env_flags.parse_env_flag``, default off): log each
+    resident chunk's occupancy, block count and synchronised wall (the global chunk loop then runs unpipelined).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -154,6 +156,7 @@ class EngineTuning:
     local_selector_chunk_size: int | None = None
     local_selector_max_elements: int = DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS
     stable_window_quantum: int | None = None
+    chunk_timing: bool = False
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -212,6 +215,7 @@ class EngineTuning:
             ),
             **dict(zip(("local_selector_chunk_size", "local_selector_max_elements"), read_local_selector_chunking())),
             stable_window_quantum=parse_stable_window_quantum(read_env_text(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "")),
+            chunk_timing=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", default=False),
         )
 
 

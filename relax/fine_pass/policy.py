@@ -147,7 +147,6 @@ def _windowed_prepare_enabled_for_pass(use_window: bool) -> bool:
 # its M-step block count and a device-synchronised wall, and counts the T7
 # offsets readbacks. The synchronisation perturbs the wall, so an arm with
 # this set is a diagnostic arm and never a timing arm.
-_CHUNK_TIMING_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING"
 
 
 # T16: prepare the per-image operands once per half and keep them resident, and
@@ -189,12 +188,6 @@ _RESIDENT_GLUE_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
 # the flag exists so a test, or a suspicious run, can prove the arithmetic
 # still agrees with them.
 _CARRY_AVAL_PROBE_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE"
-
-
-def chunk_timing_enabled() -> bool:
-    """Whether to log per-chunk occupancy, block count and synchronised wall."""
-
-    return parse_env_flag(_CHUNK_TIMING_ENV, default=False)
 
 
 def kernel_ctf_probs_enabled() -> bool:
