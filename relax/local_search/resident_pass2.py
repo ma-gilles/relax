@@ -167,11 +167,6 @@ logger = logging.getLogger(__name__)
 
 _ROW_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES"
 _IMAGE_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES"
-# Diagnostic only: log one line per chunk with its occupancy, padding and
-# per-stage seconds. It inserts ``block_until_ready`` between stages, so it
-# serialises work that normally overlaps and inflates the loop; never use a
-# profiled arm for a wall-time comparison.
-_CHUNK_PROFILE_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE"
 # P3-G, opt-in and off by default. Hand the M-step entry point the chunk's
 # whole row arrays instead of a Python callback that slices a block out of them
 # per block: the block program then takes its own ``dynamic_slice`` of the row
@@ -313,14 +308,15 @@ def _refuse_requested_diagnostics(requested_diagnostics) -> None:
         _require(False, f"the diagnostic flag {name} is set; this driver has no such arm")
 
 
-def _local_chunk_loop_pipelined() -> bool:
-    """Whether the chunk loop enqueues chunk k+1 before chunk k's M-step (off while profiling).
+def _local_chunk_loop_pipelined(*, chunk_profile: bool) -> bool:
+    """Whether the chunk loop enqueues chunk k+1 before chunk k's M-step (off while profiling: ``chunk_profile``,
+    ``EngineTuning.local_chunk_profile``).
 
     The chunk plan counts the second chunk's arrays exactly when it does
     (:func:`resident_chunk_memory.resident_chunk_bytes`).
     """
 
-    return not parse_env_flag(_CHUNK_PROFILE_ENV, default=False)
+    return not chunk_profile
 
 
 def _unshifted_operands_route(bucket_io_kwargs, *, window_indices, recon_window_indices) -> bool:
@@ -989,7 +985,7 @@ def compute_local_search_resident(
             n_fine_trans=n_fine_trans,
             n_recon_pixels=n_recon_windowed,
             budget_bytes=chunk_budget_bytes,
-            pipelined=_local_chunk_loop_pipelined(),
+            pipelined=_local_chunk_loop_pipelined(chunk_profile=support.engine_tuning.local_chunk_profile),
             projection_transient_bytes=projection_block_rows * projection_row_bytes,
             fixed_bytes=accumulator_bytes,
             max_image_rows=resident_chunk_memory.max_image_rows(tables.row_offsets),
@@ -1111,7 +1107,7 @@ def compute_local_search_resident(
         # row count back, so the device works through k+1's front while the host
         # waits on and dispatches k's M-step. The chunk-profile diagnostic finishes
         # every chunk at once so its stage timers stay per chunk.
-        pipelined = _local_chunk_loop_pipelined()
+        pipelined = _local_chunk_loop_pipelined(chunk_profile=support.engine_tuning.local_chunk_profile)
         pending = None
         pending_alone = False
         n_lone_chunks = 0
@@ -1127,6 +1123,7 @@ def compute_local_search_resident(
                 pending = None
             finish = _start_resident_local_chunk(
                 chunk,
+                engine_tuning=support.engine_tuning,
                 tables=tables,
                 posterior_bins=row_posterior_bin,
                 experiment_dataset=data.experiment_dataset,
@@ -2221,6 +2218,7 @@ def _start_resident_local_chunk(
     class_scale_masks_rect=None,
     lone_block_rows=None,
     row_partial=None,
+    engine_tuning,
 ):
     """Enqueue one local capacity chunk's front stages; return its ``finish``.
 
@@ -2269,7 +2267,7 @@ def _start_resident_local_chunk(
     # The operands' powerClass terms sum above the weighted sums' size (--strict_highres_exp).
     operand_current_size = current_size if wsum_current_size is None else wsum_current_size
 
-    profile = parse_env_flag(_CHUNK_PROFILE_ENV, default=False)
+    profile = engine_tuning.local_chunk_profile
     marks: dict[str, float] = {}
 
     def mark(name, *values):

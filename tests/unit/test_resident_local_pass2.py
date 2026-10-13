@@ -1453,3 +1453,16 @@ def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES", "0")
     with pytest.raises(ValueError, match="must be positive"):
         EngineTuning.from_environ()
+
+
+def test_local_chunk_profile_is_read_once_at_the_boundary(monkeypatch):
+    """RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE (env_flags.parse_env_flag, default off) unpipelines the chunk loop."""
+    from relax.local_search import resident_pass2 as local_resident
+
+    monkeypatch.delenv("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", raising=False)
+    tuning = EngineTuning.from_environ()
+    assert tuning.local_chunk_profile is False
+    assert local_resident._local_chunk_loop_pipelined(chunk_profile=tuning.local_chunk_profile)
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", "1")
+    tuning = EngineTuning.from_environ()
+    assert not local_resident._local_chunk_loop_pipelined(chunk_profile=tuning.local_chunk_profile)

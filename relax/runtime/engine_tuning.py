@@ -132,6 +132,9 @@ class EngineTuning:
     resident chunk's occupancy, block count and synchronised wall (the global chunk loop then runs unpipelined).
     ``stable_windows`` (RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS, ``env_flags.parse_env_flag``, default on): the
     resident pass 2 and pass 1 run in quantized physical windows (capacity only; the logical windows are unchanged).
+    ``local_chunk_profile`` (RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE, ``env_flags.parse_env_flag``, default off):
+    time each local resident chunk's stages (the chunk loop then runs unpipelined; it serialises work that normally
+    overlaps, so a profiled arm is no wall-time comparison).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -160,6 +163,7 @@ class EngineTuning:
     stable_window_quantum: int | None = None
     chunk_timing: bool = False
     stable_windows: bool = True
+    local_chunk_profile: bool = False
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -220,6 +224,7 @@ class EngineTuning:
             stable_window_quantum=parse_stable_window_quantum(read_env_text(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "")),
             chunk_timing=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", default=False),
             stable_windows=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", default=True),
+            local_chunk_profile=parse_env_flag("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", default=False),
         )
 
 
