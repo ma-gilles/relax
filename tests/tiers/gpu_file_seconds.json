@@ -333,7 +333,6 @@
 "tests/unit/test_sparse_pass2_normalized_cc_reduction.py": 2,
 "tests/unit/test_sparse_pass2_relion_diff2_tree.py": 17,
 "tests/unit/test_sparse_pass2_relion_f32_posterior.py": 8,
-"tests/unit/test_sparse_pass2_vectorized_hypothesis_prep.py": 11,
 "tests/unit/test_sparse_pass2_window_setup_owner.py": 0,
 "tests/unit/test_sparse_projection_radius.py": 1,
 "tests/unit/test_star_array_rows.py": 0,
