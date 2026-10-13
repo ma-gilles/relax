@@ -62,7 +62,6 @@ paths run.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import NamedTuple
 
@@ -179,42 +178,24 @@ _CHUNK_PROFILE_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE"
 # ids and reads the rows inside the jit. The callback is kept as the oracle
 # every bitwise comparison of this change is made against.
 _BLOCK_ROW_PROGRAM_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM"
-_PROJECTION_CALL_MAX_BYTES_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES"
-# One projector call's transient. The exact local engine budgets its own fused
-# projection matmul at 4 GiB by default
-# (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB); use the same figure
-# so the two engines reserve comparable headroom.
-_DEFAULT_PROJECTION_CALL_MAX_BYTES = 4 * 1024**3
-
-
 # The share of the chunk budget one projector call may take; the rest is the chunk's rows, tiles and M-step block.
 _PROJECTION_CALL_BUDGET_SHARE = 0.5
 
 
-def _projection_block_rows(projection_row_bytes: int, chunk_budget_bytes: int | None) -> int:
-    """Rows per projector call: the per-call cap, lowered to ``_PROJECTION_CALL_BUDGET_SHARE`` of the chunk budget.
+def _projection_block_rows(projection_row_bytes: int, chunk_budget_bytes: int | None, call_max_bytes: int) -> int:
+    """Rows per projector call: the per-call cap (``call_max_bytes``, ``EngineTuning.local_projection_call_max_bytes``),
+    lowered to ``_PROJECTION_CALL_BUDGET_SHARE`` of the chunk budget.
 
     The fixed 4 GiB call was most of the smallest chunk at a 16 GB card's full-box final pass (box 448: 4.28 GiB
     against a 3.63 GiB budget, relax#49). Fewer rows per call change only how the calls group the rows; each row's
     projection is the same. Large cards keep the cap.
     """
 
-    max_bytes = _projection_call_transient_max_bytes()
+    max_bytes = call_max_bytes
     if chunk_budget_bytes is not None:
         max_bytes = min(max_bytes, int(_PROJECTION_CALL_BUDGET_SHARE * int(chunk_budget_bytes)))
     return max(1, int(max_bytes) // int(projection_row_bytes))
 
-
-def _projection_call_transient_max_bytes() -> int:
-    """Bytes one projector call may hold (:func:`relax.fine_pass.resident_chunk_memory.projection_call_row_bytes`)."""
-
-    raw = os.environ.get(_PROJECTION_CALL_MAX_BYTES_ENV, "").strip()
-    if not raw:
-        return _DEFAULT_PROJECTION_CALL_MAX_BYTES
-    value = int(raw)
-    if value <= 0:
-        raise ValueError(f"{_PROJECTION_CALL_MAX_BYTES_ENV} must be positive, got {raw!r}")
-    return value
 
 # Row capacities are powers of two so a chunk decomposes into whole M-step
 # blocks; the ladder is truncated at run time by the projection byte budget,
@@ -897,6 +878,7 @@ def compute_local_search_resident(
                     -1 if support.applied_max_significants is None else int(support.applied_max_significants)
                 ),
                 firstiter_cc=bool(kernel.firstiter_cc),
+                projection_call_max_bytes=support.engine_tuning.local_projection_call_max_bytes,
                 window_union=(
                     projection_window_union(
                         window_indices,
@@ -960,7 +942,9 @@ def compute_local_search_resident(
             n_recon_pixels=n_recon_windowed,
             complex_bytes=projector_slab_bytes,
         )
-        projection_block_rows = _projection_block_rows(projection_row_bytes, chunk_budget_bytes)
+        projection_block_rows = _projection_block_rows(
+            projection_row_bytes, chunk_budget_bytes, support.engine_tuning.local_projection_call_max_bytes
+        )
         tile_pixels = resident_chunk_memory.chunk_translated_tile_pixels(
             unshifted_operands=operand_route["unshifted"],
             n_score_pixels=n_windowed,
@@ -1641,6 +1625,7 @@ def _run_resident_parent_probe(
     firstiter_cc=False,
     window_union=None,
     class_projectors=None,
+    projection_call_max_bytes: int,
 ) -> LocalEMResult:
     """RELION's local pass 1 (the adaptive parent probe) on the resident stages.
 
@@ -1685,7 +1670,7 @@ def _run_resident_parent_probe(
         complex_bytes=int(np.dtype(relion_projector_half.dtype).itemsize),
     )
     budget = resident_chunk_memory.resident_chunk_budget_bytes()
-    projection_block_rows = _projection_block_rows(projection_row_bytes, budget)
+    projection_block_rows = _projection_block_rows(projection_row_bytes, budget, projection_call_max_bytes)
     row_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER))
     image_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _PROBE_IMAGE_CAPACITY_LADDER))
 

@@ -21,6 +21,9 @@ from relax.runtime.env_flags import parse_env_flag, read_env_text
 
 DEFAULT_PREPARE_IMAGE_BATCH = 256
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
+# One local resident projector call's transient: the 4 GiB the exact local engine budgeted for its fused projection
+# matmul (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB), so the two reserved comparable headroom.
+DEFAULT_LOCAL_PROJECTION_CALL_MAX_BYTES = 4 * 1024**3
 RESIDENT_DIAGNOSTIC_DIR_ENVS = (
     "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",
     "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
@@ -59,6 +62,8 @@ class EngineTuning:
     caller refuses a value that is not positive).
     ``mstep_block_rows`` (RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS, :func:`parse_mstep_block_rows`): the resident
     M-step's rows per pixel-axis block, None for the budget-derived one.
+    ``local_projection_call_max_bytes`` (RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES,
+    :func:`parse_local_projection_call_max_bytes`): bytes one local resident projector call may hold.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -69,6 +74,7 @@ class EngineTuning:
     bpref_symmetry_chunk_voxels: int = DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS
 
     mstep_block_rows: int | None = None
+    local_projection_call_max_bytes: int = DEFAULT_LOCAL_PROJECTION_CALL_MAX_BYTES
     @classmethod
     def from_environ(cls) -> EngineTuning:
         return cls(
@@ -92,6 +98,9 @@ class EngineTuning:
                 "RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", str(DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS),
             )),
             mstep_block_rows=parse_mstep_block_rows(read_env_text(MSTEP_BLOCK_ROWS_ENV, "")),
+            local_projection_call_max_bytes=parse_local_projection_call_max_bytes(
+                read_env_text(LOCAL_PROJECTION_CALL_MAX_BYTES_ENV, ""),
+            ),
         )
 
 
@@ -136,3 +145,18 @@ def parse_mstep_block_rows(raw: str) -> int | None:
     if block <= 0 or block & (block - 1):
         raise ValueError(f"{MSTEP_BLOCK_ROWS_ENV} must be a positive power of two, got {block}")
     return block
+
+
+LOCAL_PROJECTION_CALL_MAX_BYTES_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES"
+
+
+def parse_local_projection_call_max_bytes(raw: str) -> int:
+    """RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES (stripped): blank is
+    :data:`DEFAULT_LOCAL_PROJECTION_CALL_MAX_BYTES`; ``int()`` refuses a non-integer; not positive is refused."""
+    raw = raw.strip()
+    if not raw:
+        return DEFAULT_LOCAL_PROJECTION_CALL_MAX_BYTES
+    value = int(raw)
+    if value <= 0:
+        raise ValueError(f"{LOCAL_PROJECTION_CALL_MAX_BYTES_ENV} must be positive, got {raw!r}")
+    return value
