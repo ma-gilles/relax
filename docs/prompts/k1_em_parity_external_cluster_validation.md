@@ -1,5 +1,24 @@
 # Prompt: validate the K=1 RELION-parity checkpoint on another cluster
 
+> **Status note (2026-10-13).** This prompt is historical: it predates the RECOVAR to RELAX rename and the rule-5
+> move of environment reads to the commands. Its variables now stand as follows (relax/renamed_environment.json
+> refuses a retired name at import):
+>
+> - Retired: `RECOVAR_FINAL_ALL_DATA_GRID_CORRECT`, `RECOVAR_K1_COARSE_GAUSSIAN_FFI`,
+>   `RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF`, `RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM`, and the Wavg switches
+>   `RECOVAR_RELION_WAVG_ATOMIC_SCALE_AA`, `RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY` and
+>   `RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL` (the atomic triplet with the direct low-shell residual is the only
+>   resident arithmetic). The exports of the three Wavg switches were removed from the recipe below.
+> - Renamed and read by the command into its options record: `RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER`
+>   (`FinalPassOptions`), `RELAX_K1_RELION_LIVE_INITIAL_NOISE` (the refinement command's start-up),
+>   `RELAX_K1_RELION_TRANSLATED_WAVG_NORM` (a resident diagnostic arm the engines refuse,
+>   `EngineTuning.resident_diagnostics`).
+> - Read by the command under its old name: `RECOVAR_K1_RELION_F32_COARSE_SUPPORT`
+>   (`relax.runtime.scoring_overrides.ScoringOverrides.f32_coarse_support`, default on).
+> - Pending a RELION A/B: `RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER` (this recipe's `RECOVAR_` export), now
+>   `ScoringOverrides.fine_rotation_execution_order`, default off. The A/B decides whether the order becomes the
+>   default or the switch is retired.
+
 Copy everything below this line into the external ChatGPT Pro/Codex agent.
 
 ---
