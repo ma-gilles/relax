@@ -74,6 +74,7 @@ import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
 import relax.runtime.engine_tuning
+import relax.runtime.env_flags
 from relax.fine_pass import (
     resident_block_programs,
     resident_chunk_inputs,
@@ -91,10 +92,8 @@ from relax.fine_pass import (
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
 from relax.fine_pass.policy import (
-    _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
     ResidentConfigurationUnsupported,
     _projection_cache_enabled_for_pass,
-    _relion_wavg_direct_modes,
 )
 from relax.fine_pass.posterior import (
     _relion_fine_parent_execution_order_enabled,
@@ -174,7 +173,6 @@ from relax.relion import ctf
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
 from relax.relion.scale_groups import prepare_scale_correction_groups
 from relax.runtime.compile_ahead import CompileAheadPool
-from relax.runtime.env_flags import parse_env_flag
 from relax.runtime.memory_budget import (
     _device_free_memory_bytes,
     _jax_allocator_free_memory_bytes,
@@ -234,8 +232,9 @@ def _resident_wavg_arithmetic(
 ):
     """Resolve the pass's Wavg arithmetic: RELION's atomic triplet with the direct low-shell residual.
 
-    Returns ``(spectrum_norm, exact_bpref_operands, direct_noise_default,
-    atomic_scale_aa)``. The resident statistics stage implements RELION's atomic Wavg triplet
+    Returns ``(spectrum_norm, exact_bpref_operands, atomic_scale_aa)``: the atomic triplet, and with it the
+    direct low-shell residual, runs whenever the pass accumulates noise with the triplet's groups.
+    The resident statistics stage implements RELION's atomic Wavg triplet
     only, for fresh passes and subset or focused replays alike (user decision 2026-09-26: the
     replays' earlier unordered, non-atomic arithmetic was the compact engine's).
     ``preserve_bpref_particle_order`` no longer changes it.
@@ -245,13 +244,8 @@ def _resident_wavg_arithmetic(
     # A pass that preserves RELION's BPref order (every fresh K=1 pass) runs RELION's
     # powerClass spectrum with its exact BPref operands; there is no other variant.
     spectrum_norm = exact_bpref_operands = bool(source_faithful_spectrum_norm)
-    direct_noise_default = True
-    atomic_scale_aa = bool(
-        accumulate_noise
-        and scale_groups_available
-        and parse_env_flag(_RELION_WAVG_ATOMIC_SCALE_AA_ENV, default=direct_noise_default)
-    )
-    return spectrum_norm, exact_bpref_operands, direct_noise_default, atomic_scale_aa
+    atomic_scale_aa = bool(accumulate_noise and scale_groups_available)
+    return spectrum_norm, exact_bpref_operands, atomic_scale_aa
 
 
 def _require_gpu_pass2() -> None:
@@ -884,7 +878,6 @@ def _resident_pass2(
     (
         resolved_spectrum_norm,
         relion_exact_bpref_operands,
-        direct_noise_default,
         relion_wavg_atomic_scale_aa,
     ) = _resident_wavg_arithmetic(
         accumulate_noise=accumulate_noise,
@@ -909,14 +902,10 @@ def _resident_pass2(
         has_ctf_rfloat=relion_exact_bpref_operands,
     ) and not (firstiter_cc and tilt is not None)  # a tilt CC pass translates its score image (resident_tilts)
     native_fft_size = int(np.prod(image_shape))
-    relion_wavg_atomic_direct_noise, relion_wavg_atomic_direct_norm = _relion_wavg_direct_modes(
-        accumulate_noise=bool(accumulate_noise),
-        scale_groups_available=wavg_triplet_available,
-        scale_aa_enabled=bool(relion_wavg_atomic_scale_aa),
-        direct_noise_only_default=direct_noise_default,
-    )
+    # RELION's direct low-shell residual supplies the shell noise wherever the atomic triplet runs.
+    relion_wavg_atomic_direct_noise = relion_wavg_atomic_scale_aa
 
-    soft_posterior_block_bpref = parse_env_flag(
+    soft_posterior_block_bpref = relax.runtime.env_flags.parse_env_flag(
         _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV, default=True
     )
     projection_cache_enabled = _projection_cache_enabled_for_pass(
@@ -949,7 +938,6 @@ def _resident_pass2(
         projection_cache_available=projection_cache_enabled,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
         relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
-        relion_wavg_atomic_direct_norm=relion_wavg_atomic_direct_norm,
         relion_projector_texture=relion_projector_texture,
         requested_diagnostics=engine_tuning.resident_diagnostics,
         )

@@ -313,9 +313,6 @@
   "RECOVAR_RELION_VDAM_WORKER_REPLAY_ITER": "RELAX_RELION_VDAM_WORKER_REPLAY_ITER",
   "RECOVAR_RELION_VDAM_WORKER_REPLAY_TOPOLOGY": "RELAX_RELION_VDAM_WORKER_REPLAY_TOPOLOGY",
   "RECOVAR_RELION_VDAM_WORKER_SCHEDULE_NPZ": "RELAX_RELION_VDAM_WORKER_SCHEDULE_NPZ",
-  "RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY": "RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY",
-  "RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL": "RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL",
-  "RECOVAR_RELION_WAVG_ATOMIC_SCALE_AA": "RELAX_RELION_WAVG_ATOMIC_SCALE_AA",
   "RECOVAR_RELION_WAVG_DETERMINISTIC_ROTATION_SUM": "RELAX_RELION_WAVG_DETERMINISTIC_ROTATION_SUM",
   "RECOVAR_RELION_X_HALF_BP_FUSED_ATOMICS": "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
   "RECOVAR_RELION_X_HALF_BP_PARTICLE_POOL_SIZE": "RELAX_RELION_X_HALF_BP_PARTICLE_POOL_SIZE",
@@ -718,6 +715,12 @@
   "RECOVAR_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES": "no source: the resident hypothesis tables came only from the retired vectorized hypothesis preparation (2026-10-13)",
   "RELAX_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES": "no source: the resident hypothesis tables came only from the retired vectorized hypothesis preparation (2026-10-13)",
   "RECOVAR_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS": "no user: the fused ctf_probs from the translate-and-sum kernel was a measurement arm nothing selected; the M-step keeps the XLA statement (2026-10-13)",
-  "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS": "no user: the fused ctf_probs from the translate-and-sum kernel was a measurement arm nothing selected; the M-step keeps the XLA statement (2026-10-13)"
+  "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS": "no user: the fused ctf_probs from the translate-and-sum kernel was a measurement arm nothing selected; the M-step keeps the XLA statement (2026-10-13)",
+  "RECOVAR_RELION_WAVG_ATOMIC_SCALE_AA": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
+  "RELAX_RELION_WAVG_ATOMIC_SCALE_AA": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
+  "RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
+  "RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
+  "RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)",
+  "RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL": "no non-default user: the resident engines run RELION's atomic Wavg triplet with the direct low-shell residual wherever noise accumulates by group, and refused the other arms; only tests set the default (2026-10-13)"
  }
 }

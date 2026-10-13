@@ -79,7 +79,6 @@ def _production_gate_kwargs(**overrides):
         projection_cache_available=True,
         relion_wavg_atomic_scale_aa=True,
         relion_wavg_atomic_direct_noise=True,
-        relion_wavg_atomic_direct_norm=False,
         relion_projector_texture=None,
         requested_diagnostics=(),
     )
@@ -110,7 +109,6 @@ def test_production_configuration_is_accepted():
         ({"projection_cache_available": False}, "projection cache"),
         ({"relion_wavg_atomic_scale_aa": False}, "atomic Wavg triplet"),
         ({"relion_wavg_atomic_direct_noise": False}, "direct low-shell residual"),
-        ({"relion_wavg_atomic_direct_norm": True}, "stopped diagnostic"),
         ({"relion_firstiter_score_mode": "normalized_cc"}, "fine Gaussian"),
         ({"relion_projector_texture": object()}, "not a caller.s persistent texture"),
     ],
@@ -959,8 +957,6 @@ def _float32_atomic_order_bound(args) -> float:
 @pytest.fixture
 def _resident_production_env(monkeypatch):
     monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_SCALE_AA", "1")
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")

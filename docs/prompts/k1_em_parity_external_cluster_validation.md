@@ -173,11 +173,8 @@ composition:
 ```bash
 export RECOVAR_K1_RELION_LIVE_INITIAL_NOISE=1
 export RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER=1
-export RECOVAR_RELION_WAVG_ATOMIC_SCALE_AA=1
-export RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY=1
 unset RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM
 unset RECOVAR_K1_RELION_TRANSLATED_WAVG_NORM
-unset RECOVAR_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL
 unset RECOVAR_FINAL_ALL_DATA_GRID_CORRECT RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER
 ```
 
@@ -191,10 +188,8 @@ unset RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF
 
 The external candidate adds the isolated direct-noise update to fine-parent
 order, the fused RELION-order XA/AA Wavg schedule, and this coarse-Gaussian
-arm. If resources permit, run a one-variable factorial control in a separate
-output directory by unsetting only
-`RECOVAR_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY`; keep every other input and
-option identical.
+arm. (The fused XA/AA Wavg schedule and the direct-noise update are now the only resident arithmetic; their
+variables, and the factorial control that unset the direct-noise one, are retired.)
 
 Do **not** enable the power-class spectrum normalization, translated-Wavg
 normalization, or the coupled atomic direct-residual variable above. That

@@ -87,9 +87,7 @@ from relax.fine_pass.bucket_io import (
     _relion_cuda_score_translation_angles_if_available,
 )
 from relax.fine_pass.policy import (
-    _RELION_WAVG_ATOMIC_SCALE_AA_ENV,
     ResidentConfigurationUnsupported,
-    _relion_wavg_direct_modes,
 )
 from relax.fine_pass.projection_blocks import (
     _projection_kwargs_for_relion_score_window,
@@ -271,10 +269,6 @@ def require_resident_local_configuration(**kwargs) -> None:
     _require(
         bool(kwargs["relion_wavg_atomic_direct_noise"]),
         "the resident statistics stage uses RELION's direct low-shell residual",
-    )
-    _require(
-        not bool(kwargs["relion_wavg_atomic_direct_norm"]),
-        "the direct per-particle Wavg norm arm is a stopped diagnostic",
     )
     # RELION scores its radial support at every current size, the final
     # all-data iteration's full box included (updateImageSizeAndResolutionPointers
@@ -484,17 +478,9 @@ def compute_local_search_resident(
     # those on its production path.
     resolved_spectrum_norm = bool(kernel.source_faithful_spectrum_norm)
     scale_groups_available = data.group_ids is not None
-    relion_wavg_atomic_scale_aa = bool(
-        kernel.accumulate_noise
-        and scale_groups_available
-        and relax.runtime.env_flags.parse_env_flag(_RELION_WAVG_ATOMIC_SCALE_AA_ENV, default=True)
-    )
-    relion_wavg_atomic_direct_noise, relion_wavg_atomic_direct_norm = _relion_wavg_direct_modes(
-        accumulate_noise=bool(kernel.accumulate_noise),
-        scale_groups_available=scale_groups_available,
-        scale_aa_enabled=bool(relion_wavg_atomic_scale_aa),
-        direct_noise_only_default=True,
-    )
+    # RELION's atomic Wavg triplet, and with it the direct low-shell residual, wherever noise accumulates by group.
+    relion_wavg_atomic_scale_aa = bool(kernel.accumulate_noise and scale_groups_available)
+    relion_wavg_atomic_direct_noise = relion_wavg_atomic_scale_aa
     require_resident_local_configuration(
         requested_diagnostics=support.engine_tuning.resident_diagnostics,
         score_only=support.score_only,
@@ -517,7 +503,6 @@ def compute_local_search_resident(
         use_window=budget_window_spec.use_window,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
         relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
-        relion_wavg_atomic_direct_norm=relion_wavg_atomic_direct_norm,
     )
     _require(
         jax.default_backend() == "gpu" and cuda_backproject.custom_cuda_requested(),

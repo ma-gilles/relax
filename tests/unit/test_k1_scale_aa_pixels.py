@@ -1,73 +1,14 @@
 from pathlib import Path
 
 import numpy as np
-import pytest
 from helpers.float_compare import assert_matches
 
-from relax.fine_pass.policy import _relion_wavg_direct_modes
 from relax.fine_pass.wavg import _make_relion_wavg_rectangle
 from relax.fourier.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
 )
 from scripts.analyze_k1_scale_aa_pixels import analyze
-
-
-def test_wavg_direct_noise_only_is_independent_from_direct_norm(monkeypatch):
-    monkeypatch.delenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", raising=False)
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
-
-    assert _relion_wavg_direct_modes(
-        accumulate_noise=True,
-        scale_groups_available=True,
-        scale_aa_enabled=True,
-    ) == (True, False)
-    # Fresh iteration 1 has no scale-group accumulator, so the stopped arm is
-    # intentionally dormant rather than changing first-iteration behavior.
-    assert _relion_wavg_direct_modes(
-        accumulate_noise=True,
-        scale_groups_available=False,
-        scale_aa_enabled=False,
-    ) == (False, False)
-
-
-def test_fresh_k1_default_enables_direct_noise_but_explicit_zero_disables(monkeypatch):
-    monkeypatch.delenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", raising=False)
-    monkeypatch.delenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", raising=False)
-
-    kwargs = dict(
-        accumulate_noise=True,
-        scale_groups_available=True,
-        scale_aa_enabled=True,
-        direct_noise_only_default=True,
-    )
-    assert _relion_wavg_direct_modes(**kwargs) == (True, False)
-
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "0")
-    assert _relion_wavg_direct_modes(**kwargs) == (False, False)
-
-
-def test_wavg_direct_modes_reject_overlapping_factorial_arms(monkeypatch):
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1")
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", "1")
-
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        _relion_wavg_direct_modes(
-            accumulate_noise=True,
-            scale_groups_available=True,
-            scale_aa_enabled=True,
-        )
-
-
-def test_wavg_direct_residual_preserves_coupled_noise_and_norm(monkeypatch):
-    monkeypatch.setenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_RESIDUAL", "1")
-    monkeypatch.delenv("RELAX_RELION_WAVG_ATOMIC_DIRECT_NOISE_ONLY", raising=False)
-
-    assert _relion_wavg_direct_modes(
-        accumulate_noise=True,
-        scale_groups_available=True,
-        scale_aa_enabled=True,
-    ) == (True, True)
 
 
 def test_relion_wavg_rectangle_matches_native_size60_topology_and_order():

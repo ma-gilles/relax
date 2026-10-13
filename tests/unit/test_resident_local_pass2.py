@@ -345,7 +345,6 @@ def test_gate_names_the_missing_piece(override, expected):
         use_window=True,
         relion_wavg_atomic_scale_aa=True,
         relion_wavg_atomic_direct_noise=True,
-        relion_wavg_atomic_direct_norm=False,
         requested_diagnostics=(),
     )
     kwargs.update(override)
@@ -375,7 +374,6 @@ _PROBE_KWARGS = dict(
     use_window=True,
     relion_wavg_atomic_scale_aa=False,
     relion_wavg_atomic_direct_noise=False,
-    relion_wavg_atomic_direct_norm=False,
 )
 
 

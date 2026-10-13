@@ -136,10 +136,6 @@ def require_resident_production_configuration(**kwargs) -> None:
         bool(kwargs["relion_wavg_atomic_direct_noise"]),
         "the resident statistics stage uses RELION's direct low-shell residual",
     )
-    require(
-        not bool(kwargs["relion_wavg_atomic_direct_norm"]),
-        "the direct per-particle Wavg norm arm is a stopped diagnostic",
-    )
     for name in kwargs["requested_diagnostics"]:
         require(
             name not in DIAGNOSTIC_DIR_ENVS,
