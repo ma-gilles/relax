@@ -50,10 +50,8 @@ def audit_operand_precision(policy, operands: Mapping[str, object], *, where: st
     policy. That costs bandwidth everywhere and is invisible in results.
 
     This audit reads dtypes only (no device synchronisation) and is meant to sit
-    at operand boundaries. ``mode`` is the command's
-    ``EngineTuning.operand_precision_check`` (RELAX_EM_OPERAND_PRECISION_CHECK):
-    ``warn`` warns once per distinct violation, ``raise`` (the tests' setting)
-    turns it into an error and ``off`` disables it.
+    at operand boundaries. ``mode`` ``warn`` warns once per distinct
+    violation, ``raise`` turns it into an error and ``off`` disables it.
     """
 
     if mode == "off":
@@ -72,7 +70,7 @@ def audit_operand_precision(policy, operands: Mapping[str, object], *, where: st
         f"EM operand precision: {where} returned {len(offenders)} operand(s) wider than the "
         f"{'float64' if policy.use_float64_scoring else 'float32'} precision policy: "
         f"{', '.join(offenders)}. Production EM precision is float32; a float64 factor upstream "
-        f"promotes these rows and every consumer of them. Set RELAX_EM_OPERAND_PRECISION_CHECK=off to silence."
+        f"promotes these rows and every consumer of them. Audit with mode='off' to silence."
     )
     if mode == "raise":
         raise ValueError(message)

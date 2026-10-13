@@ -1,4 +1,4 @@
-"""``RELAX_EM_OPERAND_PRECISION_CHECK``: catch operands carried wider than the precision policy.
+"""``audit_operand_precision``: catch operands carried wider than the precision policy.
 
 Production EM precision is float32 (``relax/CLAUDE.md``). The ``DensePrecisionPolicy.cast_*``
 helpers narrow the score operands unconditionally but narrow the reconstruction operands only when
@@ -13,7 +13,6 @@ import pytest
 
 from relax.numerics import precision
 from relax.numerics.precision import DensePrecisionPolicy, audit_operand_precision
-from relax.runtime.engine_tuning import OPERAND_PRECISION_CHECK_ENV, EngineTuning
 
 F32 = DensePrecisionPolicy(use_float64_scoring=False)
 F64 = DensePrecisionPolicy(use_float64_scoring=True)
@@ -25,18 +24,6 @@ def _clean_f32():
         "ctf2_over_nv_half": jnp.zeros((2, 4), jnp.float32),
         "shifted_recon_half": jnp.zeros((2, 4), jnp.complex64),
     }
-
-
-def test_mode_parsing(monkeypatch):
-    """The command reads the mode once (EngineTuning.from_environ): unset is warn, refused as before."""
-    monkeypatch.delenv(OPERAND_PRECISION_CHECK_ENV, raising=False)
-    assert EngineTuning.from_environ().operand_precision_check == "warn"
-    for mode in ("warn", "raise", "off", "RAISE", " off "):
-        monkeypatch.setenv(OPERAND_PRECISION_CHECK_ENV, mode)
-        assert EngineTuning.from_environ().operand_precision_check == mode.strip().lower()
-    monkeypatch.setenv(OPERAND_PRECISION_CHECK_ENV, "yes")
-    with pytest.raises(ValueError, match="must be warn, raise or off"):
-        EngineTuning.from_environ()
 
 
 def test_float32_policy_accepts_narrow_operands():

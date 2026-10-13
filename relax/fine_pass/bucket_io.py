@@ -767,8 +767,8 @@ def _prepare_bucket_io(
     (removed on 2026-10-03).
 
     ``native_bpref_operand_check`` None returns the standard result; a mode
-    (the command's ``EngineTuning.operand_precision_check``) also returns the
-    native BPref operands, audited in that mode by ``audit_operand_precision``.
+    (``warn``, ``raise`` or ``off``) also returns the native BPref operands,
+    audited in that mode by ``audit_operand_precision``.
     """
     if return_windowed_shifted:
         if window_indices is None:

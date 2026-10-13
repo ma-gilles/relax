@@ -99,8 +99,6 @@ class EngineTuning:
     (RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS, rotations per projection call, also for the projection cache build).
     ``prefetch_depth`` (RELAX_EM_PREFETCH_BATCHES, :func:`parse_prefetch_depth`): image batches read ahead on a worker
     thread by the coarse pass and the resident operand preparation; the batches and their order are unchanged.
-    ``operand_precision_check`` (RELAX_EM_OPERAND_PRECISION_CHECK, :func:`parse_operand_precision_check`; default
-    ``warn``): the operand dtype audit of :func:`relax.numerics.precision.audit_operand_precision`.
     ``x_half_large_grid`` (:class:`XHalfLargeGrid`, :func:`read_x_half_large_grid`): the RELION x-half M-step's
     large-grid routes, RELAX_RELION_X_HALF_TO_NATIVE_HALF, _FULL_HOST and _HOST_X0, each with a ``_MIN_VOXELS``
     variable (:func:`parse_large_grid_switch`); host or device and the accumulator layout, never a value.
@@ -119,7 +117,6 @@ class EngineTuning:
     adjoint_block_max_bytes: int | None = None
     max_projected_rotations: int | None = None
     prefetch_depth: int = DEFAULT_PREFETCH_BATCHES
-    operand_precision_check: str = "warn"
     x_half_large_grid: XHalfLargeGrid = XHalfLargeGrid()
 
     @classmethod
@@ -158,7 +155,6 @@ class EngineTuning:
                 MAX_PROJECTED_ROTATIONS_ENV, read_env_text(MAX_PROJECTED_ROTATIONS_ENV),
             ),
             prefetch_depth=parse_prefetch_depth(read_env_text(PREFETCH_BATCHES_ENV)),
-            operand_precision_check=parse_operand_precision_check(read_env_text(OPERAND_PRECISION_CHECK_ENV, "warn")),
             x_half_large_grid=read_x_half_large_grid(),
         )
 
@@ -256,18 +252,6 @@ def parse_prefetch_depth(raw: str | None) -> int:
     if depth < 0:
         raise ValueError(f"{PREFETCH_BATCHES_ENV} must be a non-negative integer, got {raw!r}")
     return depth
-
-
-OPERAND_PRECISION_CHECK_ENV = "RELAX_EM_OPERAND_PRECISION_CHECK"
-
-
-def parse_operand_precision_check(raw: str) -> str:
-    """RELAX_EM_OPERAND_PRECISION_CHECK (stripped, any case): ``warn``, ``raise`` or ``off``; anything else is
-    refused."""
-    mode = raw.strip().lower()
-    if mode not in {"warn", "raise", "off"}:
-        raise ValueError(f"{OPERAND_PRECISION_CHECK_ENV} must be warn, raise or off, got {mode!r}")
-    return mode
 
 
 X_HALF_TO_NATIVE_HALF_ENV = "RELAX_RELION_X_HALF_TO_NATIVE_HALF"
