@@ -56,7 +56,6 @@ _BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV = (
 
 
 
-_SPARSE_PASS2_WINDOWED_PREPARE_ENV = "RELAX_SPARSE_PASS2_WINDOWED_PREPARE"
 
 
 def _relion_wavg_direct_modes(
@@ -129,18 +128,6 @@ def _projection_cache_enabled_for_pass(
         # adjudicated: production uses the cache and operand dumps do not.
         return not bool(dump_pass2_operands)
     return requested
-
-
-def _windowed_prepare_enabled_for_pass(use_window: bool) -> bool:
-    """Return whether sparse pass-2 should materialize only active Fourier windows."""
-
-    return bool(
-        use_window
-        and parse_env_flag(
-            _SPARSE_PASS2_WINDOWED_PREPARE_ENV,
-            default=True,
-        )
-    )
 
 
 # Attribution only, default off. Logs one line per chunk with its occupancy,

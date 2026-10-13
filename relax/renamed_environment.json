@@ -446,7 +446,6 @@
   "RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES": "RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_IMAGES",
   "RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_INFLATION": "RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MAX_INFLATION",
   "RECOVAR_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MIN_BUCKET_SIZE": "RELAX_SPARSE_PASS2_TAIL_BUCKET_COALESCE_MIN_BUCKET_SIZE",
-  "RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE": "RELAX_SPARSE_PASS2_WINDOWED_PREPARE",
   "RECOVAR_SPARSE_PASS2_WINDOWED_TRANSLATION_TILE_MAX_MULTIPLIER": "RELAX_SPARSE_PASS2_WINDOWED_TRANSLATION_TILE_MAX_MULTIPLIER",
   "RECOVAR_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER": "RELAX_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER",
   "RECOVAR_TEST_FALSE_FLAG": "RELAX_TEST_FALSE_FLAG",
@@ -714,6 +713,8 @@
   "RECOVAR_RELION_PREPROCESS_DEFERRED_CHECK": "no user: preprocess checks defer inside a deferred_relion_preprocess_checks block (pass 1 opens one) or by the call's deferred_finite_check; nothing set the process-wide switch (2026-10-13)",
   "RELAX_RELION_PREPROCESS_DEFERRED_CHECK": "no user: preprocess checks defer inside a deferred_relion_preprocess_checks block (pass 1 opens one) or by the call's deferred_finite_check; nothing set the process-wide switch (2026-10-13)",
   "RECOVAR_SPARSE_PASS2_VECTORIZED_HYPOTHESIS_PREP": "no user: the vectorized per-image hypothesis preparation was never selected outside its own tests; the per-image loop is the one path (2026-10-13)",
-  "RELAX_SPARSE_PASS2_VECTORIZED_HYPOTHESIS_PREP": "no user: the vectorized per-image hypothesis preparation was never selected outside its own tests; the per-image loop is the one path (2026-10-13)"
+  "RELAX_SPARSE_PASS2_VECTORIZED_HYPOTHESIS_PREP": "no user: the vectorized per-image hypothesis preparation was never selected outside its own tests; the per-image loop is the one path (2026-10-13)",
+  "RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE": "no user: a windowed pass always prepares only its active Fourier rows; nothing set the switch off (2026-10-13)",
+  "RELAX_SPARSE_PASS2_WINDOWED_PREPARE": "no user: a windowed pass always prepares only its active Fourier rows; nothing set the switch off (2026-10-13)"
  }
 }

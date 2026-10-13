@@ -16,10 +16,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core.configs import ForwardModelConfig
 
-from relax.fine_pass.policy import (
-    _SPARSE_PASS2_WINDOWED_PREPARE_ENV,
-    _windowed_prepare_enabled_for_pass,
-)
 from relax.fine_pass.posterior import relion_x_half_f32_fine_posterior_enabled
 from relax.fine_pass.scoring import _RELION_FINE_DIFF2_FUSED_FFI_ENV
 from relax.fourier.fourier_window import centered_half_indices_to_fftw_half_indices, make_fourier_window_spec
@@ -105,15 +101,14 @@ def _sparse_pass2_window_setup(
             image_shape,
             centered_recon_indices,
         )
-    windowed_prepare = _windowed_prepare_enabled_for_pass(use_window)
+    # A windowed pass materializes only its active Fourier rows.
+    windowed_prepare = bool(use_window)
     n_windowed = window_spec.n_score
     n_recon_windowed = window_spec.n_recon
     if windowed_prepare:
         logger.info(
-            "%s windowed prepare enabled; set %s=0 to disable "
-            "(score_pixels=%d recon_pixels=%d full_half_pixels=%d)",
+            "%s windowed prepare (score_pixels=%d recon_pixels=%d full_half_pixels=%d)",
             log_label,
-            _SPARSE_PASS2_WINDOWED_PREPARE_ENV,
             int(n_windowed),
             int(n_recon_windowed),
             int(n_half),

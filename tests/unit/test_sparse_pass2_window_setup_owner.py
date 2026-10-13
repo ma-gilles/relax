@@ -7,18 +7,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from relax.fine_pass import window as sp
 from relax.fine_pass import window
+from relax.fine_pass import window as sp
 
 pytestmark = pytest.mark.unit
 
 
-def _setup(monkeypatch, *, use_window, recon, x_half, prepare):
+def _setup(monkeypatch, *, use_window, recon, x_half):
     calls = []
     monkeypatch.setattr(window.ForwardModelConfig, "from_dataset", lambda ds, *, disc_type, process_fn: calls.append(("config", disc_type)) or "config")
     monkeypatch.setattr(window, "make_fourier_window_spec", lambda *a, **kw: SimpleNamespace(use_window=use_window, score_indices_np="sinp", score_indices="si", recon_indices=recon, n_score=11, n_recon=7))
     monkeypatch.setattr(window, "centered_half_indices_to_fftw_half_indices", lambda shape, idx: calls.append(("fftw", idx if not hasattr(idx, "shape") else int(idx.shape[0]))) or "xhalf")
-    monkeypatch.setattr(window, "_windowed_prepare_enabled_for_pass", lambda use_window: prepare)
     out = sp._sparse_pass2_window_setup(
         SimpleNamespace(process_images=None), disc_type="linear", image_shape=(8, 8), current_size=6, n_half=40, mstep_current_size=8,
         square_window=False, window_spec_kwargs={}, use_relion_x_half_mstep=x_half, log_label="Sparse pass-2",
@@ -27,16 +26,18 @@ def _setup(monkeypatch, *, use_window, recon, x_half, prepare):
 
 
 def test_setup_returns_windows_and_indices(monkeypatch):
-    out, calls = _setup(monkeypatch, use_window=True, recon="recon", x_half=False, prepare=True)
+    out, calls = _setup(monkeypatch, use_window=True, recon="recon", x_half=False)
     assert out.config == "config" and out.use_window is True and out.window_indices_np == "sinp" and out.window_indices == "si"
     assert out.recon_window_indices == "recon" and out.relion_x_half_recon_indices is None and out.windowed_prepare is True
     assert (out.n_windowed, out.n_recon_windowed) == (11, 7) and calls == [("config", "linear")]
 
 
 def test_x_half_mstep_converts_the_reconstruction_window_or_the_full_half(monkeypatch):
-    out, calls = _setup(monkeypatch, use_window=True, recon="recon", x_half=True, prepare=False)
+    out, calls = _setup(monkeypatch, use_window=True, recon="recon", x_half=True)
+    assert out.windowed_prepare is True  # a windowed pass always prepares its window
     assert out.relion_x_half_recon_indices == "xhalf" and calls[-1] == ("fftw", "recon")
-    out, calls = _setup(monkeypatch, use_window=False, recon=None, x_half=True, prepare=False)
+    out, calls = _setup(monkeypatch, use_window=False, recon=None, x_half=True)
+    assert out.windowed_prepare is False
     assert out.relion_x_half_recon_indices == "xhalf" and calls[-1] == ("fftw", 40)
 
 
