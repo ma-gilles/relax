@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
@@ -13,7 +12,6 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-OPERAND_PRECISION_CHECK_ENV = "RELAX_EM_OPERAND_PRECISION_CHECK"
 _REPORTED_PRECISION_VIOLATIONS: set[tuple[str, tuple[str, ...]]] = set()
 
 
@@ -30,15 +28,6 @@ def use_float32_matmuls() -> None:
     jax.config.update("jax_default_matmul_precision", "highest")
 
 
-def operand_precision_check_mode() -> str:
-    """Return ``warn`` (default), ``raise`` or ``off`` for the operand dtype audit."""
-
-    mode = os.environ.get(OPERAND_PRECISION_CHECK_ENV, "warn").strip().lower()
-    if mode not in {"warn", "raise", "off"}:
-        raise ValueError(f"{OPERAND_PRECISION_CHECK_ENV} must be warn, raise or off, got {mode!r}")
-    return mode
-
-
 def _real_component_bytes(dtype) -> int | None:
     """Return the width of one real component, or None for non-floating dtypes."""
 
@@ -50,7 +39,7 @@ def _real_component_bytes(dtype) -> int | None:
     return None
 
 
-def audit_operand_precision(policy, operands: Mapping[str, object], *, where: str, mode: str | None = None):
+def audit_operand_precision(policy, operands: Mapping[str, object], *, where: str, mode: str):
     """Report operands carried wider than the precision policy allows.
 
     Production EM precision is float32 (``relax/AGENTS.md``). The ``cast_*``
@@ -61,12 +50,12 @@ def audit_operand_precision(policy, operands: Mapping[str, object], *, where: st
     policy. That costs bandwidth everywhere and is invisible in results.
 
     This audit reads dtypes only (no device synchronisation) and is meant to sit
-    at operand boundaries. It warns once per distinct violation by default;
-    ``RELAX_EM_OPERAND_PRECISION_CHECK=raise`` turns it into an error for tests
-    and ``off`` disables it.
+    at operand boundaries. ``mode`` is the command's
+    ``EngineTuning.operand_precision_check`` (RELAX_EM_OPERAND_PRECISION_CHECK):
+    ``warn`` warns once per distinct violation, ``raise`` (the tests' setting)
+    turns it into an error and ``off`` disables it.
     """
 
-    mode = operand_precision_check_mode() if mode is None else mode
     if mode == "off":
         return ()
     limit = 8 if policy.use_float64_scoring else 4
@@ -83,7 +72,7 @@ def audit_operand_precision(policy, operands: Mapping[str, object], *, where: st
         f"EM operand precision: {where} returned {len(offenders)} operand(s) wider than the "
         f"{'float64' if policy.use_float64_scoring else 'float32'} precision policy: "
         f"{', '.join(offenders)}. Production EM precision is float32; a float64 factor upstream "
-        f"promotes these rows and every consumer of them. Set {OPERAND_PRECISION_CHECK_ENV}=off to silence."
+        f"promotes these rows and every consumer of them. Set RELAX_EM_OPERAND_PRECISION_CHECK=off to silence."
     )
     if mode == "raise":
         raise ValueError(message)

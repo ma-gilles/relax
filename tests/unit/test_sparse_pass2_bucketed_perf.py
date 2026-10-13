@@ -1738,7 +1738,7 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
         use_float64_scoring=False,
         relion_score_translation_angles=jnp.zeros((1, 2), dtype=jnp.float32),
         relion_exact_bpref_operands=True,
-        return_native_bpref_operands=True,
+        native_bpref_operand_check=EngineTuning.from_environ().operand_precision_check,
     )
 
     raw = np.asarray(_raw_real_process_half(batch))

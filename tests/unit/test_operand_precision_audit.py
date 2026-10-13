@@ -12,11 +12,8 @@ import numpy as np
 import pytest
 
 from relax.numerics import precision
-from relax.numerics.precision import (
-    DensePrecisionPolicy,
-    audit_operand_precision,
-    operand_precision_check_mode,
-)
+from relax.numerics.precision import DensePrecisionPolicy, audit_operand_precision
+from relax.runtime.engine_tuning import OPERAND_PRECISION_CHECK_ENV, EngineTuning
 
 F32 = DensePrecisionPolicy(use_float64_scoring=False)
 F64 = DensePrecisionPolicy(use_float64_scoring=True)
@@ -31,14 +28,15 @@ def _clean_f32():
 
 
 def test_mode_parsing(monkeypatch):
-    monkeypatch.delenv(precision.OPERAND_PRECISION_CHECK_ENV, raising=False)
-    assert operand_precision_check_mode() == "warn"
-    for mode in ("warn", "raise", "off", "RAISE"):
-        monkeypatch.setenv(precision.OPERAND_PRECISION_CHECK_ENV, mode)
-        assert operand_precision_check_mode() == mode.lower()
-    monkeypatch.setenv(precision.OPERAND_PRECISION_CHECK_ENV, "yes")
-    with pytest.raises(ValueError):
-        operand_precision_check_mode()
+    """The command reads the mode once (EngineTuning.from_environ): unset is warn, refused as before."""
+    monkeypatch.delenv(OPERAND_PRECISION_CHECK_ENV, raising=False)
+    assert EngineTuning.from_environ().operand_precision_check == "warn"
+    for mode in ("warn", "raise", "off", "RAISE", " off "):
+        monkeypatch.setenv(OPERAND_PRECISION_CHECK_ENV, mode)
+        assert EngineTuning.from_environ().operand_precision_check == mode.strip().lower()
+    monkeypatch.setenv(OPERAND_PRECISION_CHECK_ENV, "yes")
+    with pytest.raises(ValueError, match="must be warn, raise or off"):
+        EngineTuning.from_environ()
 
 
 def test_float32_policy_accepts_narrow_operands():

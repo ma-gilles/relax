@@ -754,7 +754,7 @@ def _prepare_bucket_io(
     return_shifted_score=True,
     relion_exact_normalized_cc_operands=False,
     relion_exact_bpref_operands=False,
-    return_native_bpref_operands=False,
+    native_bpref_operand_check=None,
     noise_optics_groups=None,
     cc_power_weights=None,
     nyquist_column_counting="relion",
@@ -765,6 +765,10 @@ def _prepare_bucket_io(
     Mirrors the ``_preprocess_batch`` pipeline so the bucketed sparse pass 2
     scores the same operands as the dense per-image calculation it replaced
     (removed on 2026-10-03).
+
+    ``native_bpref_operand_check`` None returns the standard result; a mode
+    (the command's ``EngineTuning.operand_precision_check``) also returns the
+    native BPref operands, audited in that mode by ``audit_operand_precision``.
     """
     if return_windowed_shifted:
         if window_indices is None:
@@ -1124,7 +1128,7 @@ def _prepare_bucket_io(
         ctf_half_rfloat,
     )
 
-    if not return_native_bpref_operands:
+    if native_bpref_operand_check is None:
         return result
     if not relion_exact_bpref_operands or score_only:
         raise ValueError("native BPref operands require reconstruction with exact operands")
@@ -1141,6 +1145,7 @@ def _prepare_bucket_io(
             "direct_score_input": direct_score_input,
         },
         where="_prepare_bucket_io",
+        mode=native_bpref_operand_check,
     )
 
     return result + (
