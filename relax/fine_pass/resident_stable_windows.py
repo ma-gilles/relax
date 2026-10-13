@@ -24,15 +24,8 @@ from relax.fourier.fourier_window import (
     stable_fourier_window_quantum,
     stable_fourier_window_quantum_scope,
 )
-from relax.reconstruction.volume_solver import _RESIDENT_STABLE_WINDOWS_ENV
-from relax.runtime.env_flags import parse_env_flag
 
 logger = logging.getLogger(__name__)
-
-
-def resident_stable_windows_requested() -> bool:
-    # On by default for Class3D, auto-refine and VDAM (VDAM gate 14502014).
-    return parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=True)
 
 
 # Physical window classes this refinement has already run, by (box, quantum).
@@ -195,10 +188,11 @@ def resident_stable_window_plan(
     square_window,
     window_spec_kwargs,
     firstiter_cc,
+    requested: bool,
 ):
     """The pass's stable-window plan, or None to keep the logical window.
 
-    The plan applies when the flag is on and the current size is below the box,
+    The plan applies when ``requested`` (``EngineTuning.stable_windows``) and the current size is below the box,
     with one current size for scoring and reconstruction on the model grid.
     The --firstiter_cc iteration (normalized-CC tiles) and a split
     score/reconstruction current size keep RELION's logical window, as the
@@ -207,7 +201,7 @@ def resident_stable_window_plan(
     the caller (:func:`stable_reference_volume_class`).
     """
 
-    if not resident_stable_windows_requested():
+    if not requested:
         return None
     reasons = []
     if int(current_size) >= int(image_shape[0]):

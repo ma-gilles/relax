@@ -51,6 +51,7 @@ from relax.fine_pass.resident_candidates import (
     plan_capacity_chunks,
 )
 from relax.reconstruction import volume_solver
+from relax.runtime.engine_tuning import EngineTuning
 from scripts.lib.bucketed_pass2 import compute_local_mstep_sums
 
 pytestmark = pytest.mark.unit
@@ -1750,9 +1751,12 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, ca
         window_spec_kwargs={"window_at_box": True},
         firstiter_cc=False,
     )
+    # The switch read at the boundary (EngineTuning.stable_windows): "0" keeps the logical window, unset plans.
     monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, "0")
-    assert resident_stable_windows.resident_stable_window_plan((64, 64), **kwargs) is None
+    requested = EngineTuning.from_environ().stable_windows
+    assert resident_stable_windows.resident_stable_window_plan((64, 64), **kwargs, requested=requested) is None
     monkeypatch.delenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    kwargs["requested"] = EngineTuning.from_environ().stable_windows
     plan = resident_stable_windows.resident_stable_window_plan((64, 64), **kwargs)
     assert plan.logical_current_size == 36 and plan.physical_current_size == 40
     assert plan.physical_reconstruction_pixels > plan.logical_reconstruction_pixels

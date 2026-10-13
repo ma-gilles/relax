@@ -130,6 +130,8 @@ class EngineTuning:
     (capacity only; the logical windows are unchanged).
     ``chunk_timing`` (RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING, ``env_flags.parse_env_flag``, default off): log each
     resident chunk's occupancy, block count and synchronised wall (the global chunk loop then runs unpipelined).
+    ``stable_windows`` (RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS, ``env_flags.parse_env_flag``, default on): the
+    resident pass 2 and pass 1 run in quantized physical windows (capacity only; the logical windows are unchanged).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -157,6 +159,7 @@ class EngineTuning:
     local_selector_max_elements: int = DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS
     stable_window_quantum: int | None = None
     chunk_timing: bool = False
+    stable_windows: bool = True
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -216,6 +219,7 @@ class EngineTuning:
             **dict(zip(("local_selector_chunk_size", "local_selector_max_elements"), read_local_selector_chunking())),
             stable_window_quantum=parse_stable_window_quantum(read_env_text(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "")),
             chunk_timing=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", default=False),
+            stable_windows=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", default=True),
         )
 
 

@@ -1212,6 +1212,7 @@ def _resident_pass2(
         square_window=square_window,
         window_spec_kwargs=window_spec_kwargs,
         firstiter_cc=firstiter_cc,
+        requested=engine_tuning.stable_windows,
     )
     stable_window_spec = None
     # The spec's current size: the physical class with stable windows, RELION's otherwise.
