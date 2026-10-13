@@ -24,6 +24,7 @@ from pathlib import Path
 import numpy as np
 
 from relax.reconstruction.half_volume_mstep import enforce_half_volume_x0
+from relax.runtime.engine_tuning import EngineTuning
 from relax.vdam.estep_common import relion_bpref_frame_scales
 from scripts import analyze_vdam_mstep_boundary, run_vdam_exact_native_host_replay
 
@@ -540,6 +541,7 @@ def _native_metrics(
             recon_volume_shape,
             logger=logging.getLogger(__name__),
             label=f"Worker-private half {group}",
+            large_grid=EngineTuning.from_environ().x_half_large_grid,
             force_host=True,
         )
         candidate_data = (

@@ -83,8 +83,10 @@ def empty_half_result(
     image_window_size: int | None,
     model_support_size: int | None,
     use_x_half_mstep: bool,
+    large_grid,
 ) -> HalfScoreResult:
-    """Zero expectation payload with the selected reconstruction layout."""
+    """Zero expectation payload with the selected reconstruction layout (``large_grid``: the command's
+    ``EngineTuning.x_half_large_grid``)."""
     accumulator_shape = (
         relion_backprojector_volume_shape(
             volume_shape,
@@ -101,7 +103,7 @@ def empty_half_result(
         Ft_y_x_half = jnp.zeros(flat_x_half_shape, dtype=jnp.complex128)
         Ft_ctf_x_half = jnp.zeros(flat_x_half_shape, dtype=jnp.complex128)
         Ft_y, Ft_ctf = relion_x_half_accumulators_to_public_layout(
-            Ft_y_x_half, Ft_ctf_x_half, accumulator_shape,
+            Ft_y_x_half, Ft_ctf_x_half, accumulator_shape, large_grid=large_grid,
         )
     else:
         flat_padded_shape = (int(np.prod(padded_volume_shape)),)

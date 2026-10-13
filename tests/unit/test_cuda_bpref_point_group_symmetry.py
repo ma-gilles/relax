@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import EngineTuning
+
 jnp = pytest.importorskip("jax.numpy")
 
 
@@ -159,6 +161,7 @@ def test_complex_ranged_cuda_matches_full_output(symmetry, via_finalizer, monkey
     )
     if via_finalizer:
         import logging
+
         from relax.reconstruction.half_volume_mstep import finalize_half_volume_bpref
         split_data, split_weight = finalize_half_volume_bpref(
             jnp.asarray(raw_data.reshape(-1)),
@@ -166,6 +169,7 @@ def test_complex_ranged_cuda_matches_full_output(symmetry, via_finalizer, monkey
             _VOLUME_SHAPE, logger=logging.getLogger(__name__), label="bounded",
             symmetry_label=symmetry, relion_x_half=True, force_host=True,
             symmetry_chunk_voxels=37,
+            large_grid=EngineTuning.from_environ().x_half_large_grid,
         )
         assert isinstance(split_data, np.ndarray)
         assert isinstance(split_weight, np.ndarray)

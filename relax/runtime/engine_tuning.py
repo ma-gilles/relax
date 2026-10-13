@@ -46,6 +46,31 @@ RESIDENT_DIAGNOSTIC_FLAG_ENVS = (
 )
 
 
+@dataclass(frozen=True)
+class LargeGridSwitch:
+    """A RELION x-half large-grid route: ``forced`` (its flag, when set) decides, else the route is on from
+    ``min_voxels`` full-grid voxels."""
+
+    min_voxels: int
+    forced: bool | None = None
+
+    def on(self, full_voxels: int) -> bool:
+        if self.forced is not None:
+            return self.forced
+        return int(full_voxels) >= int(self.min_voxels)
+
+
+@dataclass(frozen=True, kw_only=True)
+class XHalfLargeGrid:
+    """Where the RELION x-half M-step puts a large grid (relax.reconstruction.half_volume_mstep): ``to_native_half``
+    repacks the public accumulators to the native half layout, ``full_host`` expands them on the host and
+    ``host_x0`` enforces the x=0 plane (and the point-group finalize) on the host."""
+
+    to_native_half: LargeGridSwitch = LargeGridSwitch(200_000_000)
+    full_host: LargeGridSwitch = LargeGridSwitch(100_000_000)
+    host_x0: LargeGridSwitch = LargeGridSwitch(200_000_000)
+
+
 @dataclass(frozen=True, kw_only=True)
 class EngineTuning:
     """The engines' execution settings (no effect on any value).
@@ -76,6 +101,9 @@ class EngineTuning:
     thread by the coarse pass and the resident operand preparation; the batches and their order are unchanged.
     ``operand_precision_check`` (RELAX_EM_OPERAND_PRECISION_CHECK, :func:`parse_operand_precision_check`; default
     ``warn``): the operand dtype audit of :func:`relax.numerics.precision.audit_operand_precision`.
+    ``x_half_large_grid`` (:class:`XHalfLargeGrid`, :func:`read_x_half_large_grid`): the RELION x-half M-step's
+    large-grid routes, RELAX_RELION_X_HALF_TO_NATIVE_HALF, _FULL_HOST and _HOST_X0, each with a ``_MIN_VOXELS``
+    variable (:func:`parse_large_grid_switch`); host or device and the accumulator layout, never a value.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -92,6 +120,7 @@ class EngineTuning:
     max_projected_rotations: int | None = None
     prefetch_depth: int = DEFAULT_PREFETCH_BATCHES
     operand_precision_check: str = "warn"
+    x_half_large_grid: XHalfLargeGrid = XHalfLargeGrid()
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -130,6 +159,7 @@ class EngineTuning:
             ),
             prefetch_depth=parse_prefetch_depth(read_env_text(PREFETCH_BATCHES_ENV)),
             operand_precision_check=parse_operand_precision_check(read_env_text(OPERAND_PRECISION_CHECK_ENV, "warn")),
+            x_half_large_grid=read_x_half_large_grid(),
         )
 
 
@@ -238,3 +268,38 @@ def parse_operand_precision_check(raw: str) -> str:
     if mode not in {"warn", "raise", "off"}:
         raise ValueError(f"{OPERAND_PRECISION_CHECK_ENV} must be warn, raise or off, got {mode!r}")
     return mode
+
+
+X_HALF_TO_NATIVE_HALF_ENV = "RELAX_RELION_X_HALF_TO_NATIVE_HALF"
+X_HALF_FULL_HOST_ENV = "RELAX_RELION_X_HALF_FULL_HOST"
+X_HALF_HOST_X0_ENV = "RELAX_RELION_X_HALF_HOST_X0"
+
+
+def parse_large_grid_switch(flag_raw: str | None, min_voxels_raw: str | None, default_min_voxels: int) -> LargeGridSwitch:
+    """A large-grid switch from its two variables: a set flag is on unless it is a false token (0/false/no/off, any
+    case, stripped); a minimum that is not an integer silently keeps ``default_min_voxels``."""
+
+    forced = None if flag_raw is None else flag_raw.strip().lower() not in {"0", "false", "no", "off"}
+    min_voxels = default_min_voxels
+    if min_voxels_raw is not None:
+        try:
+            min_voxels = int(min_voxels_raw)
+        except ValueError:
+            min_voxels = default_min_voxels
+    return LargeGridSwitch(min_voxels, forced)
+
+
+def read_x_half_large_grid() -> XHalfLargeGrid:
+    """The three switches, each with its ``_MIN_VOXELS`` variable."""
+
+    default = XHalfLargeGrid()
+    return XHalfLargeGrid(**{
+        field_name: parse_large_grid_switch(
+            read_env_text(name), read_env_text(f"{name}_MIN_VOXELS"), getattr(default, field_name).min_voxels,
+        )
+        for field_name, name in (
+            ("to_native_half", X_HALF_TO_NATIVE_HALF_ENV),
+            ("full_host", X_HALF_FULL_HOST_ENV),
+            ("host_x0", X_HALF_HOST_X0_ENV),
+        )
+    })

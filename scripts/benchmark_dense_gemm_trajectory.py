@@ -502,13 +502,15 @@ def _finalize_and_reconstruct(result, checkpoint, half, volume_shape, bp_shape):
     from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
 
+    engine_tuning = EngineTuning.from_environ()
     numerator, denominator = finalize_half_volume_bpref(
         result.numerator, result.denominator, bp_shape, logger=log,
         label="Dense GEMM fixed-grid fixture", symmetry_label="C1", relion_x_half=True,
-        symmetry_chunk_voxels=EngineTuning.from_environ().bpref_symmetry_chunk_voxels,
+        symmetry_chunk_voxels=engine_tuning.bpref_symmetry_chunk_voxels,
+        large_grid=engine_tuning.x_half_large_grid,
     )
     numerator, denominator = relion_x_half_accumulators_to_public_layout(
-        numerator, denominator, bp_shape,
+        numerator, denominator, bp_shape, large_grid=engine_tuning.x_half_large_grid,
     )
     new_map = _reconstruct_volume_eager(
         denominator, numerator, volume_shape, 2,

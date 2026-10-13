@@ -23,6 +23,7 @@ from relax.refinement import final_reconstruction, priors, startup_references
 from relax.refinement.refinement_options import RelionConsistencyOptions
 from relax.relion import projector_setup as setup
 from relax.relion import reference_initialization
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -135,10 +136,10 @@ def _public_layouts(x_half, monkeypatch):
     """The two layouts an x-half accumulator reaches the statistics in: full, and (large grids) native half."""
     size = x_half.shape[0]
     flat = np.ascontiguousarray(x_half).reshape(-1)
-    full = np.asarray(half_volume_mstep.relion_x_half_volume_to_full(flat, (size,) * 3))
+    full = np.asarray(half_volume_mstep.relion_x_half_volume_to_full(flat, (size,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid))
     with monkeypatch.context() as patch:
         patch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "1")
-        native_half = np.asarray(half_volume_mstep.relion_x_half_volume_to_public_layout(flat, (size,) * 3))
+        native_half = np.asarray(half_volume_mstep.relion_x_half_volume_to_public_layout(flat, (size,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid))
     assert native_half.size == size * size * (size // 2 + 1) and full.size == size**3
     return {"full": full, "native_half": native_half}
 
@@ -228,7 +229,7 @@ def test_default_counting_is_relions_and_an_unknown_rule_is_refused():
     jax.config.update("jax_enable_x64", True)
     grid = GRIDS["odd_bpref_19_current_4"]
     volume_shape, padding_factor, accumulator_volume_shape, r_max = grid
-    weight = half_volume_mstep.relion_x_half_volume_to_full(_x_half(19, seed=3).reshape(-1), (19,) * 3)
+    weight = half_volume_mstep.relion_x_half_volume_to_full(_x_half(19, seed=3).reshape(-1), (19,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid)
     kwargs = dict(
         padding_factor=padding_factor, r_max=r_max, full_half_axis=RELION_X_AXIS,
         accumulator_volume_shape=accumulator_volume_shape,
@@ -382,7 +383,7 @@ def test_backprojector_fsc_counting_changes_the_curve_and_the_default_is_relions
     once = _downsampled_fsc(data, weights, grid, "once")
     assert np.max(np.abs(relion[1:] - once[1:])) > 1e-4
     y0, y1, w0, w1 = (
-        np.asarray(half_volume_mstep.relion_x_half_volume_to_full(values.reshape(-1), (19,) * 3))
+        np.asarray(half_volume_mstep.relion_x_half_volume_to_full(values.reshape(-1), (19,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid))
         for values in (*data, *weights)
     )
     kwargs = dict(

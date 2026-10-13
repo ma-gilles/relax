@@ -9,6 +9,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.reconstruction import half_volume_mstep
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -18,8 +19,8 @@ def test_c1_finalizer_is_exact_historical_x0_callthrough(monkeypatch):
     weight_result = object()
     calls = []
 
-    def fake_x0(data, weight, shape, *, logger, label):
-        calls.append((data, weight, shape, logger, label))
+    def fake_x0(data, weight, shape, *, logger, label, large_grid):
+        calls.append((data, weight, shape, logger, label, large_grid))
         return data_result, weight_result
 
     def forbidden_cuda(*args, **kwargs):  # pragma: no cover - only runs on regression
@@ -37,6 +38,7 @@ def test_c1_finalizer_is_exact_historical_x0_callthrough(monkeypatch):
     weight = object()
     logger = logging.getLogger("test_c1_finalizer")
 
+    large_grid = EngineTuning.from_environ().x_half_large_grid
     actual_data, actual_weight = half_volume_mstep.finalize_half_volume_bpref(
         data,
         weight,
@@ -46,11 +48,12 @@ def test_c1_finalizer_is_exact_historical_x0_callthrough(monkeypatch):
         symmetry_label="c1",
         relion_x_half=True,
         symmetry_chunk_voxels=16 * 1024 * 1024,
+        large_grid=large_grid,
     )
 
     assert actual_data is data_result
     assert actual_weight is weight_result
-    assert calls == [(data, weight, (7, 7, 7), logger, "test")]
+    assert calls == [(data, weight, (7, 7, 7), logger, "test", large_grid)]
 
 
 def test_c1_finalizer_matches_historical_x0_result():
@@ -74,6 +77,7 @@ def test_c1_finalizer_matches_historical_x0_result():
         shape,
         logger=logger,
         label="historical",
+        large_grid=EngineTuning.from_environ().x_half_large_grid,
     )
     actual_data, actual_weight = half_volume_mstep.finalize_half_volume_bpref(
         data,
@@ -84,6 +88,7 @@ def test_c1_finalizer_matches_historical_x0_result():
         symmetry_label="C1",
         relion_x_half=True,
         symmetry_chunk_voxels=16 * 1024 * 1024,
+        large_grid=EngineTuning.from_environ().x_half_large_grid,
     )
 
     assert_matches(jax.device_get(actual_data), jax.device_get(expected_data))
@@ -108,6 +113,7 @@ def test_non_c1_native_half_volume_fails_closed_before_cuda():
             symmetry_operators=c2,
             relion_x_half=False,
             symmetry_chunk_voxels=16 * 1024 * 1024,
+            large_grid=EngineTuning.from_environ().x_half_large_grid,
         )
 
 
@@ -129,4 +135,5 @@ def test_c1_rejects_a_nonidentity_operator_payload():
             symmetry_operators=c2,
             relion_x_half=False,
             symmetry_chunk_voxels=16 * 1024 * 1024,
+            large_grid=EngineTuning.from_environ().x_half_large_grid,
         )

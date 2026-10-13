@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from functools import partial
 
 import jax
@@ -11,13 +10,10 @@ import jax.numpy as jnp
 import numpy as np
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
+from relax.runtime.engine_tuning import XHalfLargeGrid
 from relax.runtime.env_flags import parse_env_binary_flag, parse_env_flag
 
-_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS = 200_000_000
-_RELION_X_HALF_FULL_HOST_MIN_VOXELS = 100_000_000
-_RELION_X_HALF_HOST_X0_MIN_VOXELS = 200_000_000
 _RELION_X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
-_RELION_X_HALF_HOST_X0_ENV = "RELAX_RELION_X_HALF_HOST_X0"
 
 
 def _relion_x_half_mstep_double_enabled() -> bool:
@@ -164,57 +160,6 @@ def allocate_row_partial(volume_size: int, y_dtype, ctf_dtype) -> RowPartial | N
     return RowPartial(volume_size, y_dtype, ctf_dtype)
 
 
-def _large_grid_switch(flag_raw: str | None, min_voxels_raw: str | None, default_min_voxels: int, full_voxels: int) -> bool:
-    """Whether a large-grid route is on: an explicit flag value decides, else ``full_voxels >= min_voxels``.
-
-    ``flag_raw`` is on unless it is a false token; ``min_voxels_raw`` overrides ``default_min_voxels``, and a value
-    that is not an integer silently keeps the default (unchanged behaviour of the three switches below).
-    """
-
-    if flag_raw is not None:
-        return flag_raw.strip().lower() not in {"0", "false", "no", "off"}
-    min_voxels = default_min_voxels
-    if min_voxels_raw is not None:
-        try:
-            min_voxels = int(min_voxels_raw)
-        except ValueError:
-            min_voxels = default_min_voxels
-    return int(full_voxels) >= int(min_voxels)
-
-
-def _large_relion_x_half_to_native_half_enabled(full_voxels: int) -> bool:
-    """Return whether large RELION x-half accumulators should stay half-packed."""
-
-    return _large_grid_switch(
-        os.environ.get("RELAX_RELION_X_HALF_TO_NATIVE_HALF"),
-        os.environ.get("RELAX_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS"),
-        _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS,
-        full_voxels,
-    )
-
-
-def _large_relion_x_half_full_host_enabled(full_voxels: int) -> bool:
-    """Return whether large RELION x-half full expansion should run on host."""
-
-    return _large_grid_switch(
-        os.environ.get("RELAX_RELION_X_HALF_FULL_HOST"),
-        os.environ.get("RELAX_RELION_X_HALF_FULL_HOST_MIN_VOXELS"),
-        _RELION_X_HALF_FULL_HOST_MIN_VOXELS,
-        full_voxels,
-    )
-
-
-def _large_relion_x_half_host_x0_enabled(full_voxels: int) -> bool:
-    """Return whether x=0 plane enforcement should run on host for large grids."""
-
-    return _large_grid_switch(
-        os.environ.get(_RELION_X_HALF_HOST_X0_ENV),
-        os.environ.get("RELAX_RELION_X_HALF_HOST_X0_MIN_VOXELS"),
-        _RELION_X_HALF_HOST_X0_MIN_VOXELS,
-        full_voxels,
-    )
-
-
 def half_volume_accumulator_shape(recon_volume_shape):
     """Return the packed half-volume accumulator shape."""
 
@@ -252,13 +197,15 @@ def enforce_half_volume_x0(
     *,
     logger: logging.Logger,
     label: str,
+    large_grid: XHalfLargeGrid,
     force_host: bool = False,
 ):
-    """Apply RELION x=0 Hermitian-plane enforcement to half-volume accumulators."""
+    """Apply RELION x=0 Hermitian-plane enforcement to half-volume accumulators (on the host when ``force_host``
+    or ``large_grid.host_x0`` is on)."""
 
     logger.info("%s M-step: enforcing RELION half-volume x=0 Hermitian plane", label)
     full_voxels = int(np.prod(recon_volume_shape))
-    if force_host or _large_relion_x_half_host_x0_enabled(full_voxels):
+    if force_host or large_grid.host_x0.on(full_voxels):
         logger.info(
             "%s M-step: using host x=0 Hermitian enforcement for large RELION half-volume "
             "accumulators (shape=%s, full_voxels=%d)",
@@ -319,9 +266,11 @@ def finalize_half_volume_bpref(
     relion_x_half: bool,
     force_host: bool | None = None,
     symmetry_chunk_voxels: int,
+    large_grid: XHalfLargeGrid,
 ):
     """Finalize half-volume BPref accumulators before layout conversion (``symmetry_chunk_voxels``: the host
-    point-group finalizer's chunk, ``EngineTuning.bpref_symmetry_chunk_voxels``).
+    point-group finalizer's chunk, ``EngineTuning.bpref_symmetry_chunk_voxels``; ``large_grid``:
+    ``EngineTuning.x_half_large_grid``).
 
     C1 deliberately calls the historical x=0 helper verbatim.  This keeps
     existing C1 output bitwise stable.  Non-C1 currently requires RELION's
@@ -345,6 +294,7 @@ def finalize_half_volume_bpref(
             recon_volume_shape,
             logger=logger,
             label=label,
+            large_grid=large_grid,
             **({"force_host": force_host} if force_host is not None else {}),
         )
 
@@ -402,7 +352,7 @@ def finalize_half_volume_bpref(
 
     use_host = (
         (data.dtype == jnp.dtype(jnp.complex64)
-         and _large_relion_x_half_host_x0_enabled(int(np.prod(recon_volume_shape))))
+         and large_grid.host_x0.on(int(np.prod(recon_volume_shape))))
         if force_host is None else bool(force_host)
     )
     finalize = (
@@ -436,7 +386,7 @@ def _relion_x_half_volume_pair_to_full_device(Ft_y, Ft_ctf, recon_volume_shape):
     )
 
 
-def relion_x_half_volume_to_full(volume_flat, recon_volume_shape, *, force_host: bool = False):
+def relion_x_half_volume_to_full(volume_flat, recon_volume_shape, *, large_grid: XHalfLargeGrid, force_host: bool = False):
     """Expand a RELION-layout ``(z, y, xhalf)`` accumulator to RECOVAR full layout.
 
     RELION's BackProjector packs the Fourier x-axis and stores arrays in
@@ -445,7 +395,7 @@ def relion_x_half_volume_to_full(volume_flat, recon_volume_shape, *, force_host:
     layout followed by a ``(2, 1, 0)`` transpose.
     """
 
-    if force_host or _large_relion_x_half_full_host_enabled(int(np.prod(recon_volume_shape))):
+    if force_host or large_grid.full_host.on(int(np.prod(recon_volume_shape))):
         logging.getLogger(__name__).info(
             "RELION x-half M-step: expanding large accumulator to public full layout on host "
             "(shape=%s, full_voxels=%d)",
@@ -463,7 +413,9 @@ def relion_x_half_volume_to_native_half(volume_flat, recon_volume_shape):
     return _relion_x_half_volume_to_native_half_host(volume_flat, recon_volume_shape).reshape(-1)
 
 
-def relion_x_half_volume_to_public_layout(volume_flat, recon_volume_shape, *, force_host: bool = False):
+def relion_x_half_volume_to_public_layout(
+    volume_flat, recon_volume_shape, *, large_grid: XHalfLargeGrid, force_host: bool = False,
+):
     """Convert RELION x-half to the downstream public accumulator layout.
 
     Normal grids keep the historical full-volume contract.  Very large grids
@@ -471,7 +423,7 @@ def relion_x_half_volume_to_public_layout(volume_flat, recon_volume_shape, *, fo
     RELION FSC/tau2/reconstruction path already accepts by shape inference.
     """
 
-    if _large_relion_x_half_to_native_half_enabled(int(np.prod(recon_volume_shape))):
+    if large_grid.to_native_half.on(int(np.prod(recon_volume_shape))):
         logging.getLogger(__name__).info(
             "RELION x-half M-step: repacking large accumulator to RECOVAR native half layout "
             "(shape=%s, full_voxels=%d)",
@@ -479,7 +431,7 @@ def relion_x_half_volume_to_public_layout(volume_flat, recon_volume_shape, *, fo
             int(np.prod(recon_volume_shape)),
         )
         return relion_x_half_volume_to_native_half(volume_flat, recon_volume_shape)
-    return relion_x_half_volume_to_full(volume_flat, recon_volume_shape, force_host=force_host)
+    return relion_x_half_volume_to_full(volume_flat, recon_volume_shape, large_grid=large_grid, force_host=force_host)
 
 
 def relion_x_half_accumulators_to_public_layout(
@@ -487,6 +439,7 @@ def relion_x_half_accumulators_to_public_layout(
     Ft_ctf,
     recon_volume_shape,
     *,
+    large_grid: XHalfLargeGrid,
     force_host: bool = False,
 ):
     """Convert RELION ``(z, y, xhalf)`` accumulators for downstream consumers."""
@@ -494,12 +447,14 @@ def relion_x_half_accumulators_to_public_layout(
     full_voxels = int(np.prod(recon_volume_shape))
     if (
         force_host
-        or _large_relion_x_half_to_native_half_enabled(full_voxels)
-        or _large_relion_x_half_full_host_enabled(full_voxels)
+        or large_grid.to_native_half.on(full_voxels)
+        or large_grid.full_host.on(full_voxels)
     ):
         return (
-            relion_x_half_volume_to_public_layout(Ft_y, recon_volume_shape, force_host=force_host),
-            relion_x_half_volume_to_public_layout(Ft_ctf, recon_volume_shape, force_host=force_host),
+            relion_x_half_volume_to_public_layout(Ft_y, recon_volume_shape, large_grid=large_grid, force_host=force_host),
+            relion_x_half_volume_to_public_layout(
+                Ft_ctf, recon_volume_shape, large_grid=large_grid, force_host=force_host,
+            ),
         )
     # Both accumulators in one program: two per shape compiled at every new size.
     return _relion_x_half_volume_pair_to_full_device(Ft_y, Ft_ctf, tuple(int(v) for v in recon_volume_shape))
@@ -550,7 +505,9 @@ def crop_relion_x_half_accumulator(
     ].reshape(-1)
 
 
-def physical_bpref_finalize_applies(physical_volume_shape, logical_volume_shape, symmetry_label) -> bool:
+def physical_bpref_finalize_applies(
+    physical_volume_shape, logical_volume_shape, symmetry_label, *, large_grid: XHalfLargeGrid,
+) -> bool:
     """Whether a stable-window pass can finalize its BPref at the physical cube and crop afterwards.
 
     C1 only (the x=0 enforcement is then the whole finalize), and only while
@@ -562,7 +519,7 @@ def physical_bpref_finalize_applies(physical_volume_shape, logical_volume_shape,
         return False
     for shape in (physical_volume_shape, logical_volume_shape):
         voxels = int(np.prod(tuple(int(v) for v in shape)))
-        if _large_relion_x_half_host_x0_enabled(voxels) or _large_relion_x_half_to_native_half_enabled(voxels):
+        if large_grid.host_x0.on(voxels) or large_grid.to_native_half.on(voxels):
             return False
     return True
 

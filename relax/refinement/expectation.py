@@ -611,6 +611,7 @@ def score_numbered_half(
             image_window_size=image_window_size,
             model_support_size=model_support_size,
             use_x_half_mstep=empty_k1_x_half_mstep,
+            large_grid=options.environment.engine.x_half_large_grid,
         )
         empty_result.coarse_ha = empty_result.ha
         empty_result.translation_search_base = translation_search_base

@@ -18,6 +18,7 @@ from relax.reconstruction import (
     half_volume_mstep,  # noqa: E402
     regularization,  # noqa: E402
 )
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -109,12 +110,12 @@ def _relion_rule_shell_stats(x_half_weight, volume_shape, grid_shape, padding_fa
 
 
 def _full_route(x_half_weight, grid_shape):
-    return np.asarray(half_volume_mstep.relion_x_half_volume_to_full(x_half_weight, grid_shape))
+    return np.asarray(half_volume_mstep.relion_x_half_volume_to_full(x_half_weight, grid_shape, large_grid=EngineTuning.from_environ().x_half_large_grid))
 
 
 def _native_half_route(x_half_weight, grid_shape, monkeypatch):
     monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "1")
-    native_half = half_volume_mstep.relion_x_half_volume_to_public_layout(x_half_weight, grid_shape)
+    native_half = half_volume_mstep.relion_x_half_volume_to_public_layout(x_half_weight, grid_shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
     half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(grid_shape)
     assert native_half.shape == (int(np.prod(half_shape)),)
     return native_half

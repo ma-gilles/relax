@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from helpers.vdam import bpref_to_run_em_output
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.vdam.estep_common import relion_x_public_output_to_bpref
-from helpers.float_compare import assert_matches
 
 
 def bpref_of_relion_order_cube(Ft_y, Ft_ctf, ori_size, r_max, padding_factor=1):
@@ -208,8 +209,10 @@ def test_bpref_converter_accepts_shared_compact_backprojector_cube(ori_size, r_m
 
 
 def test_relion_x_public_output_to_bpref_exactly_inverts_shared_public_layout():
-    from relax.reconstruction.half_volume_mstep import relion_x_half_volume_to_full
-    from relax.reconstruction.half_volume_mstep import enforce_relion_half_volume_x0_hermitian_host
+    from relax.reconstruction.half_volume_mstep import (
+        enforce_relion_half_volume_x0_hermitian_host,
+        relion_x_half_volume_to_full,
+    )
 
     ori_size = 128
     r_max = 19
@@ -226,8 +229,8 @@ def test_relion_x_public_output_to_bpref_exactly_inverts_shared_public_layout():
     bp_weight = enforce_relion_half_volume_x0_hermitian_host(
         bp_weight.reshape(-1), (compact_size,) * 3
     ).reshape(half_shape)
-    public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), (compact_size,) * 3)
-    public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), (compact_size,) * 3)
+    public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), (compact_size,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid)
+    public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), (compact_size,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid)
 
     actual_data, actual_weight = relion_x_public_output_to_bpref(
         public_data,

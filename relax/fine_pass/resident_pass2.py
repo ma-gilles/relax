@@ -2903,7 +2903,8 @@ def _resident_pass2(
     logical_recon_volume_shape = tuple(int(v) for v in recon_volume_shape)
     cropped = program_recon_volume_shape != logical_recon_volume_shape
     finalize_physical = cropped and physical_bpref_finalize_applies(
-        program_recon_volume_shape, logical_recon_volume_shape, symmetry_label
+        program_recon_volume_shape, logical_recon_volume_shape, symmetry_label,
+        large_grid=engine_tuning.x_half_large_grid,
     )
     finalize_shape = program_recon_volume_shape if finalize_physical else logical_recon_volume_shape
     Ft_y_out, Ft_ctf_out = [], []
@@ -2922,11 +2923,13 @@ def _resident_pass2(
             symmetry_label=symmetry_label,
             relion_x_half=True,
             symmetry_chunk_voxels=engine_tuning.bpref_symmetry_chunk_voxels,
+            large_grid=engine_tuning.x_half_large_grid,
         )
         class_Ft_y, class_Ft_ctf = relion_x_half_accumulators_to_public_layout(
             class_Ft_y,
             class_Ft_ctf,
             finalize_shape,
+            large_grid=engine_tuning.x_half_large_grid,
         )
         # ``keep_physical_bpref``: the caller slices the logical cube out of the physical one itself
         # (VDAM's accumulator adapter, on the host), so no crop program compiles per logical size.

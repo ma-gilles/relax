@@ -143,8 +143,8 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
     bp_weight = enforce_relion_half_volume_x0_hermitian_host(
         bp_weight.reshape(-1), compact_shape
     ).reshape(half_shape)
-    public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), compact_shape)
-    public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), compact_shape)
+    public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), compact_shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
+    public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), compact_shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
 
     actual = arrays_to_accumulators(
         [public_data],

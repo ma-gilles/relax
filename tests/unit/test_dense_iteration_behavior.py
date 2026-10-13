@@ -15,6 +15,7 @@ from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
 from relax.refinement.refinement_state import native_final_perturbation_healpix_order
 from relax.relion import normalization
+from relax.runtime.engine_tuning import EngineTuning
 from relax.steps import score_outputs, scoring_policy
 
 pytestmark = pytest.mark.unit
@@ -28,6 +29,7 @@ def test_empty_expectation_keeps_reconstruction_layout_and_particle_dimensions(n
         n_classes=n_classes, n_shells=5, n_rotations=7,
         translation_dimension=translation_dimension,
         image_window_size=4, model_support_size=6, use_x_half_mstep=use_x_half,
+        large_grid=EngineTuning.from_environ().x_half_large_grid,
     )
     assert result.ha.shape == (0,) and result.ha.dtype == np.int32
     assert result.best_pose_translations.shape == (0, translation_dimension)
