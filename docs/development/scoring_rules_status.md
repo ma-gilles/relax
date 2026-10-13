@@ -53,13 +53,13 @@ device scoring (`defer_publish`).
    the normalized-CC tree rescore reads them. The callers (`k_class.py`, `scripts/run_k_class_parity.py`, about 30 tests)
    still pass keywords that `_compute_k_class_significance_batched` turns into a `Pass1Request`; that entry is the seam
    they patch and the fingerprint calls, so it stays until they build the request.
-2. **The environment steers pass 1 below the boundary (rule 5).** Read in `pass1_plan.py`:
-   `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (also the field `pad_final_image_batch`: two owners) and
-   `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect is a refusal); in `pass1_assembly.py` the
-   support-audit variables; in `pass1_dump.py` the dump target list. Moved to the commands (2026-10-12): the
+2. **The environment steers pass 1 below the boundary (rule 5).** Read in `pass1_assembly.py`: the support-audit
+   variables; in `pass1_dump.py`: the dump target list. Moved to the commands (2026-10-12/13):
+   `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (`EngineTuning`, still OR'd with the field `pad_final_image_batch`), the
    projection-cache variables and the projector transient budget (`EngineTuning`, through `Pass1Request.engine_tuning`)
    and `RELAX_K1_COARSE_ROTATED_RADIUS`, `RELAX_COARSE_GEMM_FLOAT64` and `RECOVAR_K1_RELION_F32_COARSE_SUPPORT`
-   (`relax.runtime.scoring_overrides.ScoringOverrides`, through `Pass1Request.scoring_overrides`).
+   (`relax.runtime.scoring_overrides.ScoringOverrides`, through `Pass1Request.scoring_overrides`). Retired:
+   `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect was a refusal).
 3. **A diagnostic steers execution (rule 9).** A dump batch switches off device compaction and deferred publishing.
    The dump and the audit are imported by `pass1_publish.py`, `pass1_dump.py`, `pass1_assembly.py` and
    `tree_rescore.py` (the allowlist of `tests/unit/test_refinement_port_imports.py` names the four edges; the two
