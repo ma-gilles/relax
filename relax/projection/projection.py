@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 from functools import partial
 from types import SimpleNamespace
 from typing import NamedTuple
@@ -1046,13 +1045,9 @@ def compute_relion_projector_projections_block(
 
 
 def _dense_means_scale(box_size: int):
-    """The dense-means projection scale, ``-N^2`` unless ``RELAX_DENSE_MEANS_SCALE`` selects ``N2``."""
+    """The dense-means projection scale, ``-N^2``."""
 
-    token = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
-    scale = {"-N2": -(box_size**2), "N2": float(box_size**2)}.get(token)
-    if scale is None:
-        raise ValueError(f"Unsupported RELAX_DENSE_MEANS_SCALE={token!r}")
-    return scale
+    return -(box_size**2)
 
 
 def relion_coarse_packed_rows_serve(box_size: int, projector_output_size: int, r_max: int) -> bool:

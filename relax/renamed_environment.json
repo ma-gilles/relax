@@ -53,7 +53,6 @@
   "RECOVAR_DEBUG_DUMP_DIR_OURS": "RELAX_DEBUG_DUMP_DIR_OURS",
   "RECOVAR_DEBUG_DUMP_MSTEP_ITER": "RELAX_DEBUG_DUMP_MSTEP_ITER",
   "RECOVAR_DEBUG_PER_POSE_DUMP_LABEL": "RELAX_DEBUG_PER_POSE_DUMP_LABEL",
-  "RECOVAR_DENSE_MEANS_SCALE": "RELAX_DENSE_MEANS_SCALE",
   "RECOVAR_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS": "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS",
   "RECOVAR_DIR": "RELAX_DIR",
   "RECOVAR_DISABLE_LOCAL_BIG_JIT": "RELAX_DISABLE_LOCAL_BIG_JIT",
@@ -708,6 +707,8 @@
   "RECOVAR_BPREF_CONTRIBUTION_STOP_AFTER_TARGET": "no reader: nothing in relax stops after the BPref contribution dump's target (2026-10-12)",
   "RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET": "no reader: nothing in relax stops after the BPref contribution dump's target (2026-10-12)",
   "RECOVAR_EM_OPERAND_PRECISION_CHECK": "no production reader: only the native BPref operand branch of _prepare_bucket_io audits operand dtypes, and its one caller (a test) passes the mode (2026-10-12)",
-  "RELAX_EM_OPERAND_PRECISION_CHECK": "no production reader: only the native BPref operand branch of _prepare_bucket_io audits operand dtypes, and its one caller (a test) passes the mode (2026-10-12)"
+  "RELAX_EM_OPERAND_PRECISION_CHECK": "no production reader: only the native BPref operand branch of _prepare_bucket_io audits operand dtypes, and its one caller (a test) passes the mode (2026-10-12)",
+  "RECOVAR_DENSE_MEANS_SCALE": "no alternative in use: the dense-means projection scale is always -N^2; the N2 branch was deleted as an unused switch (2026-10-13)",
+  "RELAX_DENSE_MEANS_SCALE": "no alternative in use: the dense-means projection scale is always -N^2; the N2 branch was deleted as an unused switch (2026-10-13)"
  }
 }

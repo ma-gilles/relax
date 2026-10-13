@@ -70,7 +70,6 @@ def test_half_staging_preserves_current_crop_mask_and_scaling(
     zero_rows = p.relion_kernel_zero_rows(48, output_size, 16)
     if zero_rows is not None:
         expected = jnp.where(zero_rows if indices is None else zero_rows[indices], 0, expected)
-    monkeypatch.delenv("RELAX_DENSE_MEANS_SCALE", raising=False)
     if dense_scale:
         expected = expected * -(48**2)
     projected, abs2 = p.compute_relion_projector_projections_block(

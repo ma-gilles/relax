@@ -22,20 +22,10 @@ from relax.scoring.probes import Pass1Probe
 
 logger = logging.getLogger(__name__)
 
-_DENSE_MEANS_SCALE_ENV = "RELAX_DENSE_MEANS_SCALE"
-
-
 def _dense_projection_scale(image_shape) -> float:
-    """Match the dense E-step projection scaling used by the shared helper."""
+    """Match the dense E-step projection scaling used by the shared helper: ``-N^2``."""
 
-    import os
-
-    token = (os.environ.get(_DENSE_MEANS_SCALE_ENV) or "-N2").strip()
-    n = int(image_shape[0])
-    scale = {"-N2": -(n**2), "N2": float(n**2)}.get(token)
-    if scale is None:
-        raise ValueError(f"Unsupported {_DENSE_MEANS_SCALE_ENV}={token!r}")
-    return scale
+    return -(int(image_shape[0]) ** 2)
 
 
 @dataclass(frozen=True)
