@@ -44,6 +44,7 @@ def test_k_class_replay_batch_plan_applies_estimator_and_kclass_caps(monkeypatch
     from relax.runtime.engine_tuning import EngineTuning
 
     assert budgets == [EngineTuning.from_environ().firstiter_cc_recon_complex_budget]
+    assert captured["projection_fraction"] == EngineTuning.from_environ().em_batch_projection_fraction
     assert captured["requested_image_batch_size"] == 250
     assert captured["requested_rotation_block_size"] == 5000
     assert captured["n_rot"] == 24576

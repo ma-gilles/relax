@@ -20,6 +20,7 @@ def test_windowed_translation_tile_lifts_the_coarse_pass_image_cap():
         n_classes=4,
         gpu_memory_gb=80.0,
         current_size=14,
+        projection_fraction=EngineTuning().em_batch_projection_fraction,
     )
     full = estimate_relion_em_batch_sizes(**common)
     windowed = estimate_relion_em_batch_sizes(**common, windowed_translation=True)

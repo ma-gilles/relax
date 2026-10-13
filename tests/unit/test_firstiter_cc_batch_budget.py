@@ -734,6 +734,7 @@ def test_dense_global_k1_batch_plan_accounts_for_pose_pixel_tile():
         n_classes=1,
         gpu_memory_gb=42,
         current_size=56,
+        projection_fraction=EngineTuning().em_batch_projection_fraction,
     )
 
     assert plan.image_batch_size == 187
@@ -753,6 +754,7 @@ def test_dense_global_k1_high_current_size_keeps_pose_pixel_tile_below_large_all
         n_classes=1,
         gpu_memory_gb=42,
         current_size=184,
+        projection_fraction=EngineTuning().em_batch_projection_fraction,
     )
 
     assert 100 <= plan.image_batch_size < 150

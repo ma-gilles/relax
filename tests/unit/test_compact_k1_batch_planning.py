@@ -202,6 +202,7 @@ def _box800_plan(**overrides):
         n_classes=1,
         gpu_memory_gb=80,
         current_size=62,
+        projection_fraction=EngineTuning().em_batch_projection_fraction,
     )
     kwargs.update(overrides)
     return estimate_relion_em_batch_sizes(**kwargs)

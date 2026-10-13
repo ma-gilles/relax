@@ -9,6 +9,7 @@ The default instance is the unset environment.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from relax.runtime.compile_ahead import (
@@ -25,6 +26,7 @@ DEFAULT_PREPARE_IMAGE_BATCH = 256
 # (14523034), with equal GT scores (14522527).
 DEFAULT_PREFETCH_BATCHES = 2
 DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET = 268_435_456
+DEFAULT_EM_BATCH_PROJECTION_FRACTION = 0.20
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
 # One local resident projector call's transient: the 4 GiB the exact local engine budgeted for its fused projection
 # matmul (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB), so the two reserved comparable headroom.
@@ -106,6 +108,9 @@ class EngineTuning:
     ``firstiter_cc_recon_complex_budget`` (RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET,
     :func:`parse_firstiter_cc_recon_complex_budget`): complex values the dense K-class reconstruction batch may
     materialize (``batch x translations x half pixels``), which caps its image batch.
+    ``em_batch_projection_fraction`` (RELAX_RELION_EM_BATCH_PROJECTION_FRACTION,
+    :func:`parse_em_batch_projection_fraction`): the share of usable device memory the EM batch planner gives the
+    projected poses (``batch_planning.estimate_relion_em_batch_sizes``), within its fixed bounds.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -123,6 +128,7 @@ class EngineTuning:
     prefetch_depth: int = DEFAULT_PREFETCH_BATCHES
     x_half_large_grid: XHalfLargeGrid = XHalfLargeGrid()
     firstiter_cc_recon_complex_budget: int = DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET
+    em_batch_projection_fraction: float = DEFAULT_EM_BATCH_PROJECTION_FRACTION
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -164,6 +170,7 @@ class EngineTuning:
             firstiter_cc_recon_complex_budget=parse_firstiter_cc_recon_complex_budget(
                 read_env_text(FIRSTITER_CC_RECON_COMPLEX_BUDGET_ENV),
             ),
+            em_batch_projection_fraction=parse_em_batch_projection_fraction(read_env_text(EM_BATCH_PROJECTION_FRACTION_ENV)),
         )
 
 
@@ -312,3 +319,20 @@ def parse_firstiter_cc_recon_complex_budget(raw: str | None) -> int:
     if value <= 0:
         raise ValueError(f"{FIRSTITER_CC_RECON_COMPLEX_BUDGET_ENV} must be a positive integer")
     return value
+
+
+EM_BATCH_PROJECTION_FRACTION_ENV = "RELAX_RELION_EM_BATCH_PROJECTION_FRACTION"
+
+
+def parse_em_batch_projection_fraction(raw: str | None) -> float:
+    """RELAX_RELION_EM_BATCH_PROJECTION_FRACTION: unset or blank is :data:`DEFAULT_EM_BATCH_PROJECTION_FRACTION`;
+    anything that is not a positive finite float is refused."""
+    if raw is None or raw.strip() == "":
+        return float(DEFAULT_EM_BATCH_PROJECTION_FRACTION)
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{EM_BATCH_PROJECTION_FRACTION_ENV} must be a positive finite float, got {raw!r}") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{EM_BATCH_PROJECTION_FRACTION_ENV} must be a positive finite float, got {raw!r}")
+    return float(value)

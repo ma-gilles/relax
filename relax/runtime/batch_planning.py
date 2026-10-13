@@ -13,7 +13,6 @@ EM dispatch.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -25,7 +24,6 @@ logger = logging.getLogger(__name__)
 RELION_SCORE_TENSOR_FLOAT_BUDGET = 200_000_000
 _RELION_EM_BATCH_DEFAULT_GPU_GB = 80.0
 _RELION_EM_BATCH_USABLE_FRACTION = 0.65
-_RELION_EM_BATCH_PROJECTION_FRACTION = 0.20
 _RELION_EM_BATCH_SCORE_FRACTION = 0.20
 _RELION_EM_BATCH_MAX_PROJECTION_GB = 10.0
 _RELION_EM_BATCH_MIN_PROJECTION_GB = 0.5
@@ -41,7 +39,6 @@ _RELION_EM_BATCH_RUNTIME_TRANSLATION_TILE_FRACTION = 0.17
 _RELION_EM_BATCH_MAX_TRANSLATION_TILE_GB = 14.0
 _RELION_EM_BATCH_MIN_TRANSLATION_TILE_GB = 0.5
 _RELION_EM_BATCH_RUNTIME_FREE_FRACTION = 0.80
-_RELION_EM_BATCH_PROJECTION_FRACTION_ENV = "RELAX_RELION_EM_BATCH_PROJECTION_FRACTION"
 
 # Compact estimates require explicit single-texture lifetime qualification.
 RELION_EM_COMPACT_K1_FIXED_BASE_GB = 4.0
@@ -302,19 +299,6 @@ def _safe_int(value, default):
         return int(default)
 
 
-def _positive_env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None or raw.strip() == "":
-        return float(default)
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be a positive finite float, got {raw!r}") from exc
-    if not np.isfinite(value) or value <= 0:
-        raise ValueError(f"{name} must be a positive finite float, got {raw!r}")
-    return float(value)
-
-
 def _active_half_spectrum_pixels(image_shape, current_size: int | None) -> int:
     full_half_pixels = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
     if current_size is None:
@@ -347,11 +331,15 @@ def estimate_relion_em_batch_sizes(
     runtime_free_memory_gb: float | None = None,
     score_projector_staging_bytes: int = 0,
     windowed_translation: bool = False,
+    projection_fraction: float,
 ) -> _RelionEMBatchPlan:
     """Choose EM microbatch sizes from pose-grid, image, class, and GPU size.
 
     ``windowed_translation`` sizes translated images from the score window;
     callers that materialize full images retain the default full-image estimate.
+
+    ``projection_fraction`` is the command's
+    ``EngineTuning.em_batch_projection_fraction``.
 
     ``use_float64_scoring=True`` retains the historical conservative
     complex128 tile estimate for callers that do not state their score
@@ -534,13 +522,9 @@ def estimate_relion_em_batch_sizes(
             ),
         )
     )
-    projection_fraction = _positive_env_float(
-        _RELION_EM_BATCH_PROJECTION_FRACTION_ENV,
-        _RELION_EM_BATCH_PROJECTION_FRACTION,
-    )
     projection_budget_gb = max(
         _RELION_EM_BATCH_MIN_PROJECTION_GB,
-        min(_RELION_EM_BATCH_MAX_PROJECTION_GB, usable_gb * projection_fraction),
+        min(_RELION_EM_BATCH_MAX_PROJECTION_GB, usable_gb * float(projection_fraction)),
     )
     translation_tile_budget_gb = max(
         _RELION_EM_BATCH_MIN_TRANSLATION_TILE_GB,

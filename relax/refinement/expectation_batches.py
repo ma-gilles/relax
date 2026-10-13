@@ -86,6 +86,7 @@ class BatchPlanner:
             runtime_free_memory_gb=runtime_free_memory_gb,
             score_projector_staging_bytes=score_projector_staging_bytes,
             windowed_translation=windowed_translation,
+            projection_fraction=self.engine_tuning.em_batch_projection_fraction,
         )
         plan.log_adjustment(
             requested_image_batch_size=self.requested.image_batch_size,

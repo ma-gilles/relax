@@ -97,6 +97,7 @@ def _safe_k_class_replay_batch_plan(
         padding_factor=padding_factor,
         n_classes=n_classes,
         current_size=current_size,
+        projection_fraction=EngineTuning.from_environ().em_batch_projection_fraction,
     )
     image_batch_size = min(
         int(plan.image_batch_size),

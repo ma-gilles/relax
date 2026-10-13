@@ -7,7 +7,11 @@ from recovar import utils as recovar_utils
 
 from relax.local_search.layout import LocalHypothesisLayout
 from relax.runtime.batch_planning import estimate_relion_em_batch_sizes
+from relax.runtime.engine_tuning import EngineTuning
 from scripts.lib.bucket_shapes import _local_search_engine_rotation_block_size
+
+# The planner's projection share with the variable unset (EngineTuning.em_batch_projection_fraction).
+_FRACTION = EngineTuning().em_batch_projection_fraction
 
 IMAGE_SHAPE = (8, 8)
 VOLUME_SHAPE = (8, 8, 8)
@@ -54,6 +58,7 @@ def test_relion_em_batch_sizing_preserves_small_safe_requests():
         padding_factor=2,
         n_classes=1,
         gpu_memory_gb=80.0,
+        projection_fraction=_FRACTION,
     )
 
     assert plan.image_batch_size == 4
@@ -71,6 +76,7 @@ def test_relion_em_batch_sizing_clamps_highres_projection_tiles():
         padding_factor=2,
         n_classes=1,
         gpu_memory_gb=80.0,
+        projection_fraction=_FRACTION,
     )
 
     assert plan.image_batch_size == 4
@@ -92,6 +98,7 @@ def test_relion_em_batch_sizing_does_not_pad_beyond_actual_rotation_grid():
         padding_factor=2,
         n_classes=1,
         gpu_memory_gb=80.0,
+        projection_fraction=_FRACTION,
     )
 
     assert plan.image_batch_size == 46
@@ -114,6 +121,7 @@ def test_relion_em_batch_sizing_uses_runtime_gpu_occupancy(monkeypatch):
         padding_factor=2,
         n_classes=1,
         gpu_memory_gb=None,
+        projection_fraction=_FRACTION,
     )
 
     assert plan.gpu_used_estimate_gb == pytest.approx(60.0)
@@ -135,6 +143,7 @@ def test_relion_em_batch_sizing_caps_runtime_highres_local_translation_tile(monk
         padding_factor=2,
         n_classes=1,
         gpu_memory_gb=None,
+        projection_fraction=_FRACTION,
     )
 
     assert plan.image_batch_size <= 56
@@ -156,6 +165,7 @@ def test_relion_em_batch_sizing_caps_dense_big_jit_score_workspace(monkeypatch):
         padding_factor=2,
         n_classes=1,
         gpu_memory_gb=None,
+        projection_fraction=_FRACTION,
     )
 
     assert plan.image_batch_size == 50
@@ -181,8 +191,8 @@ def test_relion_em_batch_sizing_uses_active_window_for_dense_score_workspace(mon
         n_classes=1,
         gpu_memory_gb=None,
     )
-    low_res = estimate_relion_em_batch_sizes(**common, current_size=56)
-    high_res = estimate_relion_em_batch_sizes(**common, current_size=248)
+    low_res = estimate_relion_em_batch_sizes(**common, current_size=56, projection_fraction=_FRACTION)
+    high_res = estimate_relion_em_batch_sizes(**common, current_size=248, projection_fraction=_FRACTION)
 
     assert low_res.rotation_block_size == 8192
     assert high_res.rotation_block_size < 8192
@@ -202,8 +212,8 @@ def test_relion_em_batch_sizing_allows_larger_adaptive_pass1_blocks():
         gpu_memory_gb=80.0,
     )
 
-    pass1_coarse = estimate_relion_em_batch_sizes(**common, current_size=100)
-    pass2_fine = estimate_relion_em_batch_sizes(**common, current_size=154)
+    pass1_coarse = estimate_relion_em_batch_sizes(**common, current_size=100, projection_fraction=_FRACTION)
+    pass2_fine = estimate_relion_em_batch_sizes(**common, current_size=154, projection_fraction=_FRACTION)
 
     assert pass1_coarse.score_pixel_count < pass2_fine.score_pixel_count
     assert pass1_coarse.rotation_block_size > pass2_fine.rotation_block_size
@@ -225,33 +235,30 @@ def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks(
         current_size=100,
     )
 
+    # The fraction read at the boundary reaches the planner; unset or blank is the default.
     monkeypatch.delenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", raising=False)
-    default = estimate_relion_em_batch_sizes(**common)
+    default = estimate_relion_em_batch_sizes(
+        **common, projection_fraction=EngineTuning.from_environ().em_batch_projection_fraction,
+    )
+    monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", " ")
+    assert EngineTuning.from_environ().em_batch_projection_fraction == 0.20
 
     monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", "0.40")
-    expanded = estimate_relion_em_batch_sizes(**common)
+    expanded = estimate_relion_em_batch_sizes(
+        **common, projection_fraction=EngineTuning.from_environ().em_batch_projection_fraction,
+    )
 
     assert expanded.rotation_block_size > default.rotation_block_size
     assert expanded.rotation_block_size <= common["requested_rotation_block_size"]
     assert expanded.pose_pixel_tile_gb <= expanded.projection_budget_gb
 
 
-def test_relion_em_batch_sizing_projection_budget_override_rejects_invalid(monkeypatch):
-    monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", "0")
+@pytest.mark.parametrize("raw", ["0", "-0.1", "inf", "nan", "big"])
+def test_relion_em_batch_sizing_projection_budget_override_rejects_invalid(monkeypatch, raw):
+    monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", raw)
 
-    with pytest.raises(ValueError, match="RELAX_RELION_EM_BATCH_PROJECTION_FRACTION"):
-        estimate_relion_em_batch_sizes(
-            requested_image_batch_size=64,
-            requested_rotation_block_size=8192,
-            n_rot=36864,
-            n_trans=29,
-            image_shape=(256, 256),
-            volume_shape=(256, 256, 256),
-            padding_factor=2,
-            n_classes=1,
-            gpu_memory_gb=80.0,
-            current_size=100,
-        )
+    with pytest.raises(ValueError, match="RELAX_RELION_EM_BATCH_PROJECTION_FRACTION must be a positive finite float"):
+        EngineTuning.from_environ()
 
 
 def test_relion_em_batch_sizing_clamps_highres_translation_tiles():
@@ -265,6 +272,7 @@ def test_relion_em_batch_sizing_clamps_highres_translation_tiles():
         padding_factor=2,
         n_classes=1,
         gpu_memory_gb=80.0,
+        projection_fraction=_FRACTION,
     )
 
     assert plan.image_batch_size == 9
@@ -284,6 +292,7 @@ def test_relion_em_batch_sizing_accounts_for_k_classes():
         padding_factor=2,
         n_classes=1,
         gpu_memory_gb=80.0,
+        projection_fraction=_FRACTION,
     )
     k4 = estimate_relion_em_batch_sizes(
         requested_image_batch_size=250,
@@ -295,6 +304,7 @@ def test_relion_em_batch_sizing_accounts_for_k_classes():
         padding_factor=2,
         n_classes=4,
         gpu_memory_gb=80.0,
+        projection_fraction=_FRACTION,
     )
 
     assert k4.image_batch_size <= single.image_batch_size
