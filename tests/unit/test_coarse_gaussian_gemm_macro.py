@@ -119,7 +119,7 @@ def _relion_coarse_gaussian_gemm_scores(
         n_trans=n_trans,
         image_shape=tuple(int(value) for value in image_shape),
         volume_shape=tuple(int(value) for value in volume_shape),
-        float64=coarse_kernels.coarse_gemm_float64_requested(),
+        float64=ScoringOverrides.from_environ().coarse_gemm_float64,
     )
 
 

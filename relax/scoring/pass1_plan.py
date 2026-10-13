@@ -17,9 +17,6 @@ from recovar.utils.nvtx_shim import nvtx
 from relax.runtime.env_flags import (
     parse_env_strict_flag,
 )
-from relax.scoring.coarse_kernels import (
-    coarse_gemm_float64_requested,
-)
 from relax.scoring.coarse_operands import (
     infer_relion_coarse_healpix_order,
 )
@@ -331,7 +328,7 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
         rotation_blocks,
         class_log_priors_np,
         exact_weight_order=exact_weight_order,
-        float64=coarse_gemm_float64_requested(),
+        float64=request.scoring_overrides.coarse_gemm_float64,
         rotated_radius=coarse_rotated_radius,
     )
     support_plan = plan_support(

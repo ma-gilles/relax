@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from relax.runtime.env_flags import read_env_text
 
 F32_COARSE_SUPPORT_ENV = "RECOVAR_K1_RELION_F32_COARSE_SUPPORT"
+COARSE_GEMM_FLOAT64_ENV = "RELAX_COARSE_GEMM_FLOAT64"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -25,14 +26,18 @@ class ScoringOverrides:
     ``f32_coarse_support`` (RECOVAR_K1_RELION_F32_COARSE_SUPPORT, :func:`parse_strict_flag`; default on): the
     coarse pass's significance support follows RELION's CUDA float32 coarse weights; off selects the generic
     Gaussian support route (a diagnosis of the support, used by tests).
+    ``coarse_gemm_float64`` (RELAX_COARSE_GEMM_FLOAT64, :func:`parse_coarse_gemm_float64`; default off): the coarse
+    GEMMs accumulate in binary64 instead of RELION's float32 (a precision diagnosis).
     """
 
     f32_coarse_support: bool = True
+    coarse_gemm_float64: bool = False
 
     @classmethod
     def from_environ(cls) -> ScoringOverrides:
         return cls(
             f32_coarse_support=parse_strict_flag(F32_COARSE_SUPPORT_ENV, read_env_text(F32_COARSE_SUPPORT_ENV), True),
+            coarse_gemm_float64=parse_coarse_gemm_float64(read_env_text(COARSE_GEMM_FLOAT64_ENV, "0")),
         )
 
 
@@ -45,3 +50,11 @@ def parse_strict_flag(name: str, raw: str | None, default: bool) -> bool:
     if token in {"1", "true", "yes", "on"}:
         return True
     raise ValueError(f"Unsupported {name}={token!r}")
+
+
+def parse_coarse_gemm_float64(raw: str) -> bool:
+    """RELAX_COARSE_GEMM_FLOAT64 (stripped): exactly 0 or 1; anything else (blank too) is refused."""
+    token = raw.strip()
+    if token not in {"0", "1"}:
+        raise ValueError(f"Unsupported {COARSE_GEMM_FLOAT64_ENV}={token!r}")
+    return token == "1"

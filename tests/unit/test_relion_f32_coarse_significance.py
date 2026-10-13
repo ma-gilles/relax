@@ -207,3 +207,27 @@ def test_relion_f32_coarse_support_is_read_once_at_the_boundary(monkeypatch):
         monkeypatch.setenv(F32_COARSE_SUPPORT_ENV, raw)
         with pytest.raises(ValueError, match=f"Unsupported {F32_COARSE_SUPPORT_ENV}"):
             ScoringOverrides.from_environ()
+
+
+def test_coarse_gemm_float64_is_read_once_at_the_boundary(monkeypatch):
+    """RELAX_COARSE_GEMM_FLOAT64: unset is 0 (RELION's float32 GEMMs); exactly 0 or 1 after stripping; anything else
+    is refused, as before."""
+    from relax.runtime.scoring_overrides import COARSE_GEMM_FLOAT64_ENV, ScoringOverrides
+
+    monkeypatch.delenv(COARSE_GEMM_FLOAT64_ENV, raising=False)
+    assert ScoringOverrides.from_environ().coarse_gemm_float64 is False
+    monkeypatch.setenv(COARSE_GEMM_FLOAT64_ENV, " 1 ")
+    assert ScoringOverrides.from_environ().coarse_gemm_float64 is True
+    for raw in ("", "true", "2"):
+        monkeypatch.setenv(COARSE_GEMM_FLOAT64_ENV, raw)
+        with pytest.raises(ValueError, match=f"Unsupported {COARSE_GEMM_FLOAT64_ENV}"):
+            ScoringOverrides.from_environ()
+
+
+def test_coarse_gemm_float64_reaches_the_pass1_score_program(monkeypatch):
+    """The precision read at the boundary is the score program's static (pass1_plan)."""
+    from test_pass1_planning import _plan
+
+    monkeypatch.setenv("RELAX_COARSE_GEMM_FLOAT64", "1")
+    plan, _, _ = _plan(monkeypatch, n_classes=1)
+    assert plan.score_program_plan.statics.float64 is True

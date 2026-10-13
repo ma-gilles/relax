@@ -1,6 +1,5 @@
 """JAX scoring kernels for the coarse pass (RELION coarse GEMMs, normalized-CC rescoring, certificates)."""
 
-import os
 from functools import partial
 
 import jax
@@ -218,15 +217,6 @@ def relion_coarse_normalized_cc_rescore(
         jnp.asarray(half_weights, dtype=jnp.float32),
         jnp.asarray(fftw_order, dtype=jnp.int32),
     )
-
-
-def coarse_gemm_float64_requested() -> bool:
-    """Whether ``RELAX_COARSE_GEMM_FLOAT64=1`` asks for binary64 coarse GEMMs."""
-
-    token = os.environ.get("RELAX_COARSE_GEMM_FLOAT64", "0").strip()
-    if token not in {"0", "1"}:
-        raise ValueError(f"Unsupported RELAX_COARSE_GEMM_FLOAT64={token!r}")
-    return token == "1"
 
 
 def relion_coarse_gemm_terms(
