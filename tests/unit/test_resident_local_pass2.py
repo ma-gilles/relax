@@ -844,9 +844,9 @@ def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_l
     """
 
     case = _case()
-    monkeypatch.setenv(rlp._BLOCK_ROW_PROGRAM_ENV, "0")
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", "0")
     off = _run(case, monkeypatch=monkeypatch, production_shapes=True)
-    monkeypatch.setenv(rlp._BLOCK_ROW_PROGRAM_ENV, "1")
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", "1")
     on = _run(case, monkeypatch=monkeypatch, production_shapes=True)
 
     assert_matches(
@@ -1466,3 +1466,13 @@ def test_local_chunk_profile_is_read_once_at_the_boundary(monkeypatch):
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", "1")
     tuning = EngineTuning.from_environ()
     assert not local_resident._local_chunk_loop_pipelined(chunk_profile=tuning.local_chunk_profile)
+
+
+def test_local_block_row_program_is_read_once_at_the_boundary(monkeypatch):
+    """RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM (env_flags.parse_env_flag): unset or blank on, false tokens off."""
+    for raw, expected in ((None, True), ("", True), ("0", False), ("off", False), ("1", True)):
+        if raw is None:
+            monkeypatch.delenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", raising=False)
+        else:
+            monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", raw)
+        assert EngineTuning.from_environ().local_block_row_program is expected

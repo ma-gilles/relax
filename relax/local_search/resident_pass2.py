@@ -71,6 +71,7 @@ import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
 import relax.runtime.engine_tuning
+import relax.runtime.env_flags
 from relax.fine_pass import (
     policy,
     resident_chunk_inputs,
@@ -155,7 +156,7 @@ from relax.relion.projector_setup import (
     prepare_local_projector_slab,
 )
 from relax.relion.scale_groups import prepare_scale_correction_groups
-from relax.runtime.env_flags import parse_env_capacity_ladder, parse_env_flag
+from relax.runtime.env_flags import parse_env_capacity_ladder
 from relax.runtime.memory_budget import (
     _max_adjoint_block_bytes_for_pass,
     _max_translation_tile_bytes_for_pass,
@@ -167,12 +168,6 @@ logger = logging.getLogger(__name__)
 
 _ROW_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES"
 _IMAGE_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES"
-# P3-G, opt-in and off by default. Hand the M-step entry point the chunk's
-# whole row arrays instead of a Python callback that slices a block out of them
-# per block: the block program then takes its own ``dynamic_slice`` of the row
-# ids and reads the rows inside the jit. The callback is kept as the oracle
-# every bitwise comparison of this change is made against.
-_BLOCK_ROW_PROGRAM_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM"
 # The share of the chunk budget one projector call may take; the rest is the chunk's rows, tiles and M-step block.
 _PROJECTION_CALL_BUDGET_SHARE = 0.5
 
@@ -495,7 +490,7 @@ def compute_local_search_resident(
     relion_wavg_atomic_scale_aa = bool(
         kernel.accumulate_noise
         and scale_groups_available
-        and parse_env_flag(_RELION_WAVG_ATOMIC_SCALE_AA_ENV, default=True)
+        and relax.runtime.env_flags.parse_env_flag(_RELION_WAVG_ATOMIC_SCALE_AA_ENV, default=True)
     )
     relion_wavg_atomic_direct_noise, relion_wavg_atomic_direct_norm = _relion_wavg_direct_modes(
         accumulate_noise=bool(kernel.accumulate_noise),
@@ -2639,7 +2634,7 @@ def _start_resident_local_chunk(
         # RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM=0 has the Python callback
         # gather them per block, three eager dispatches each time; on the full
         # EMPIAR-10097 run that path took 2964 s against 2868 s (job 14550046).
-        block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=True)
+        block_row_program = engine_tuning.local_block_row_program
 
         def run_mstep(rows, n_live, Ft_y, Ft_ctf, projector=None):
             if lone_block_rows is not None:

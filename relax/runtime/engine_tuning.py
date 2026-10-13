@@ -135,6 +135,9 @@ class EngineTuning:
     ``local_chunk_profile`` (RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE, ``env_flags.parse_env_flag``, default off):
     time each local resident chunk's stages (the chunk loop then runs unpipelined; it serialises work that normally
     overlaps, so a profiled arm is no wall-time comparison).
+    ``local_block_row_program`` (RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM, ``env_flags.parse_env_flag``, default
+    on): the local M-step block program gathers its own rows; off, a Python callback slices them per block (the
+    oracle; the rows are the same).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -164,6 +167,7 @@ class EngineTuning:
     chunk_timing: bool = False
     stable_windows: bool = True
     local_chunk_profile: bool = False
+    local_block_row_program: bool = True
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -225,6 +229,7 @@ class EngineTuning:
             chunk_timing=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", default=False),
             stable_windows=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", default=True),
             local_chunk_profile=parse_env_flag("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", default=False),
+            local_block_row_program=parse_env_flag("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", default=True),
         )
 
 
