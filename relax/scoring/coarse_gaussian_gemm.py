@@ -7,22 +7,17 @@ pass and calls it per image batch.
 """
 
 import operator
-import os
 from typing import NamedTuple
 
 import jax
 import numpy as np
 
 from relax.projection import projection_cache as projection_cache_helpers
+from relax.runtime.engine_tuning import COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV, parse_gib_budget
 from relax.runtime.env_flags import parse_env_strict_flag
 
 COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV = (
     "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE"
-)
-
-
-_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB"
 )
 
 
@@ -63,14 +58,18 @@ _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEVICE_FRACTION = 0.2
 
 def coarse_gaussian_gemm_projection_cache_budget_bytes(
     *,
+    override: int | None,
     default_gb: float | None = None,
 ) -> int:
-    """Return the call-scoped cache budget.
+    """Return the call-scoped cache budget: ``override`` (the command's
+    ``EngineTuning.coarse_gemm_projection_cache_max_bytes``) when set.
 
     Without an explicit budget the cache may use a fifth of the GPU's memory
     (16 GB on an 80 GB H100/A100); off-GPU it keeps the fixed 4 GB default.
     """
 
+    if override is not None:
+        return int(override)
     if default_gb is None:
         default_gb = _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEFAULT_MAX_GB
         devices = jax.local_devices()
@@ -82,23 +81,7 @@ def coarse_gaussian_gemm_projection_cache_budget_bytes(
                     * float(stats["bytes_limit"])
                     / 1024**3
                 )
-    token = os.environ.get(
-        _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB_ENV,
-        str(default_gb),
-    ).strip()
-    try:
-        budget_gb = float(token)
-    except ValueError as error:
-        raise ValueError(
-            f"{_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB_ENV} must be "
-            f"a finite positive number, got {token!r}",
-        ) from error
-    if not np.isfinite(budget_gb) or budget_gb <= 0.0:
-        raise ValueError(
-            f"{_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB_ENV} must be "
-            f"a finite positive number, got {token!r}",
-        )
-    return int(budget_gb * 1024**3)
+    return parse_gib_budget(COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV, str(default_gb))
 
 
 def coarse_gaussian_gemm_projection_row_bytes(*, image_shape, compact_pixel_count: int) -> int:

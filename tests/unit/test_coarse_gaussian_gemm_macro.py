@@ -207,7 +207,7 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     monkeypatch.delenv(variable, raising=False)
     # Off-GPU the default budget is 4 GB; on a GPU it is a fifth of its memory.
     budget_bytes = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes(
-        default_gb=4.0,
+        override=EngineTuning.from_environ().coarse_gemm_projection_cache_max_bytes, default_gb=4.0,
     )
     plan = coarse_gaussian_gemm.plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=36_864,
@@ -239,8 +239,8 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
         n_rotations=36_864,
         compact_pixel_count=5_100,
         image_shape=(128, 128),
-        budget_bytes=(
-            coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes()
+        budget_bytes=coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes(
+            override=EngineTuning.from_environ().coarse_gemm_projection_cache_max_bytes,
         ),
     )
     assert not rejected.admitted
@@ -1238,7 +1238,17 @@ def test_coarse_gaussian_gemm_projection_cache_default_budget_is_a_fifth_of_gpu_
 
     monkeypatch.delenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB", raising=False)
     monkeypatch.setattr(coarse_gaussian_gemm.jax, "local_devices", lambda: [_Gpu()])
-    assert coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes() == 16 * 1024**3
+    assert EngineTuning.from_environ().coarse_gemm_projection_cache_max_bytes is None
+    assert coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes(override=None) == 16 * 1024**3
+
+
+@pytest.mark.parametrize("raw", ["", "0", "-1", "nan", "lots"])
+def test_coarse_gemm_projection_cache_budget_refusals_at_the_boundary(monkeypatch, raw):
+    """A set RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB must be a finite positive GiB count (blank too)."""
+    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB"
+    monkeypatch.setenv(variable, raw)
+    with pytest.raises(ValueError, match=f"{variable} must be a finite positive number"):
+        EngineTuning.from_environ()
 
 
 def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget():
@@ -1501,7 +1511,6 @@ def test_coarse_pass1_dump_rows_are_the_target_rows_scores():
 def test_coarse_gemm_transient_budget_is_read_once_at_the_boundary(monkeypatch):
     """RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB: unset is 2 GiB; a finite positive GiB count (stripped)
     is taken; blank, zero, inf and text are refused, as the old reader did."""
-    from relax.runtime.engine_tuning import EngineTuning
 
     variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB"
     monkeypatch.delenv(variable, raising=False)

@@ -117,6 +117,8 @@ class EngineTuning:
     ``dense_gemm_class_batch_scores`` (RELAX_DENSE_GEMM_CLASS_BATCH_SCORES).
     ``coarse_gemm_transient_max_bytes`` (RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB, GiB through
     :func:`parse_gib_budget`; default 2 GiB): the coarse GEMM's projector transient per rotation block.
+    ``coarse_gemm_projection_cache_max_bytes`` (RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB, GiB through
+    :func:`parse_gib_budget`): the coarse GEMM projection cache's budget, None for the device-derived one.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -138,6 +140,7 @@ class EngineTuning:
     dense_gemm_score_cache: bool = False
     dense_gemm_class_batch_scores: bool = False
     coarse_gemm_transient_max_bytes: int = DEFAULT_COARSE_GEMM_TRANSIENT_MAX_BYTES
+    coarse_gemm_projection_cache_max_bytes: int | None = None
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -186,6 +189,10 @@ class EngineTuning:
             ),
             coarse_gemm_transient_max_bytes=parse_gib_budget(
                 COARSE_GEMM_TRANSIENT_MAX_GB_ENV, read_env_text(COARSE_GEMM_TRANSIENT_MAX_GB_ENV, "2.0"),
+            ),
+            coarse_gemm_projection_cache_max_bytes=(
+                None if (raw := read_env_text(COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV)) is None
+                else parse_gib_budget(COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV, raw)
             ),
         )
 

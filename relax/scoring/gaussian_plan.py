@@ -96,7 +96,7 @@ def plan_coarse_gaussian(
 ) -> CoarseGaussianPlan:
     """Plan the Gaussian route of a pass over ``shape``, scoring the rows ``window_score_indices_np`` (``None``: all).
 
-    ``engine_tuning`` (the request's ``EngineTuning``) gives the projector transient budget.
+    ``engine_tuning`` (the request's ``EngineTuning``) gives the projector transient and projection cache budgets.
 
     Refuses more than 128 translations and a backend without the custom CUDA library. Logs the plan.
     """
@@ -162,7 +162,9 @@ def plan_coarse_gaussian(
             n_rotations=shape.n_rot,
             compact_pixel_count=int(square_score_count),
             image_shape=shape.image_shape,
-            budget_bytes=coarse_gaussian_gemm_projection_cache_budget_bytes(),
+            budget_bytes=coarse_gaussian_gemm_projection_cache_budget_bytes(
+                override=engine_tuning.coarse_gemm_projection_cache_max_bytes,
+            ),
         )
         if not (projection_cache_plan.admitted or cache_explicit):
             logger.info(
