@@ -526,24 +526,16 @@ def test_relion_coarse_single_lane_canonical_requires_canonical_reduction():
         )
 
 
-def test_exact_relion_ctf_source_defaults_to_dataset_star(monkeypatch, tmp_path):
+def test_exact_relion_ctf_source_defaults_to_dataset_star(tmp_path):
     from types import SimpleNamespace
 
     from relax.relion.ctf import _relion_exact_ctf_source_star
 
     dataset_star = tmp_path / "particles.star"
-    explicit_star = tmp_path / "override.star"
-    monkeypatch.delenv("RELAX_K1_RELION_EXACT_CTF_STAR", raising=False)
     assert _relion_exact_ctf_source_star(
         SimpleNamespace(particles_file=str(dataset_star)),
     ) == dataset_star.resolve()
 
-    monkeypatch.setenv("RELAX_K1_RELION_EXACT_CTF_STAR", str(explicit_star))
-    assert _relion_exact_ctf_source_star(
-        SimpleNamespace(particles_file=str(dataset_star)),
-    ) == explicit_star.resolve()
-
-    monkeypatch.delenv("RELAX_K1_RELION_EXACT_CTF_STAR", raising=False)
     with pytest.raises(ValueError, match="STAR-backed dataset"):
         _relion_exact_ctf_source_star(SimpleNamespace(particles_file="particles.mrcs"))
 

@@ -187,7 +187,6 @@
   "RECOVAR_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES": "RELAX_K1_LOCAL_PASS2_UNIFY_BUCKET_SIZES",
   "RECOVAR_K1_POSE_PUBLISH_DIRECT": "RELAX_K1_POSE_PUBLISH_DIRECT",
   "RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
-  "RECOVAR_K1_RELION_EXACT_CTF_STAR": "RELAX_K1_RELION_EXACT_CTF_STAR",
   "RECOVAR_K1_RELION_EXACT_TRANSLATION_GRID": "RELAX_K1_RELION_EXACT_TRANSLATION_GRID",
   "RECOVAR_K1_RELION_FIRSTITER_FUSED_BPREF": "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
   "RECOVAR_K1_RELION_LIVE_INITIAL_NOISE": "RELAX_K1_RELION_LIVE_INITIAL_NOISE",
@@ -709,6 +708,8 @@
   "RECOVAR_EM_OPERAND_PRECISION_CHECK": "no production reader: only the native BPref operand branch of _prepare_bucket_io audits operand dtypes, and its one caller (a test) passes the mode (2026-10-12)",
   "RELAX_EM_OPERAND_PRECISION_CHECK": "no production reader: only the native BPref operand branch of _prepare_bucket_io audits operand dtypes, and its one caller (a test) passes the mode (2026-10-12)",
   "RECOVAR_DENSE_MEANS_SCALE": "no alternative in use: the dense-means projection scale is always -N^2; the N2 branch was deleted as an unused switch (2026-10-13)",
-  "RELAX_DENSE_MEANS_SCALE": "no alternative in use: the dense-means projection scale is always -N^2; the N2 branch was deleted as an unused switch (2026-10-13)"
+  "RELAX_DENSE_MEANS_SCALE": "no alternative in use: the dense-means projection scale is always -N^2; the N2 branch was deleted as an unused switch (2026-10-13)",
+  "RECOVAR_K1_RELION_EXACT_CTF_STAR": "no production reader: only tests set the exact-CTF STAR override; exact CTF rows are read from the dataset's own particle STAR (2026-10-13)",
+  "RELAX_K1_RELION_EXACT_CTF_STAR": "no production reader: only tests set the exact-CTF STAR override; exact CTF rows are read from the dataset's own particle STAR (2026-10-13)"
  }
 }

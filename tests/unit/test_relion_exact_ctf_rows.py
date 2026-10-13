@@ -105,7 +105,6 @@ def source(monkeypatch):
     """``source(star)``: a dataset reading that STAR through an empty source cache."""
 
     monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
-    monkeypatch.delenv("RELAX_K1_RELION_EXACT_CTF_STAR", raising=False)
     return lambda star: SimpleNamespace(particles_file=str(star))
 
 

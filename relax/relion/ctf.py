@@ -10,7 +10,6 @@ are preserved.
 from __future__ import annotations
 
 import functools
-import os
 from pathlib import Path
 
 import jax
@@ -95,9 +94,6 @@ def dataset_optics_source_star(experiment_dataset) -> Path | None:
     classes' datasets) raises AttributeError.
     """
 
-    source_star = os.environ.get("RELAX_K1_RELION_EXACT_CTF_STAR", "").strip()
-    if source_star:
-        return Path(source_star).expanduser().resolve()
     dataset_source = experiment_dataset.particles_file
     if dataset_source is None:
         if getattr(experiment_dataset, "premultiplied_ctf", False):
@@ -110,7 +106,7 @@ def dataset_optics_source_star(experiment_dataset) -> Path | None:
         raise ValueError(
             f"{type(experiment_dataset).__name__} is not a STAR-backed dataset (particles_file={dataset_source!r}): its RELION "
             "optics table, and so its CTF-premultiplied, aberrated or magnified optics groups, are unknown; load it "
-            "from a particle STAR or set RELAX_K1_RELION_EXACT_CTF_STAR"
+            "from a particle STAR"
         )
     return Path(dataset_source).expanduser().resolve()
 

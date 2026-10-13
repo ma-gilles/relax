@@ -168,7 +168,6 @@ def test_exact_ctf_matches_simulated_tomo_ctf(project, monkeypatch):
     pytest.importorskip("relax.relion_bind._relion_bind_core")
     out, flat = project
     rows, optics = read_star(str(flat))
-    monkeypatch.setenv("RELAX_K1_RELION_EXACT_CTF_STAR", str(flat))
     monkeypatch.setattr(ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
     dataset = SimpleNamespace(particles_file=str(flat))
     indices = np.arange(len(rows), dtype=np.int64)
