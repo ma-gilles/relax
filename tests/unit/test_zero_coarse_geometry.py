@@ -228,9 +228,9 @@ def _local_one_shape(monkeypatch, *, parent_probe):
     return trace, layout
 
 
-def test_local_adaptive_parent_layout_exposes_five_story_inputs(monkeypatch):
+def test_local_adaptive_parent_layout_exposes_five_story_inputs_and_its_engine_tuning(monkeypatch):
     assert _parameters(local_half._build_local_adaptive_parent_layout) == [
-        "half", "sampling", "priors", "translation_prior_reference_translations", "layout_dtype",
+        "half", "sampling", "priors", "translation_prior_reference_translations", "layout_dtype", "engine_tuning",
     ]
 
     def parent_probe(*args):
