@@ -20,7 +20,6 @@ from relax.projection.projection import compute_projections_block as _compute_pr
 from relax.projection.projection import (
     compute_relion_projector_projections_block as _compute_relion_projector_projections_block,
 )
-from relax.runtime.memory_budget import _MAX_PROJECTED_ROTATIONS_ENV, _optional_positive_int_env
 from relax.runtime.shape_buckets import pow2_ceil
 
 logger = logging.getLogger(__name__)
@@ -146,8 +145,6 @@ def _compute_sparse_pass2_projections_block(
             **projection_kwargs,
         )
 
-    if max_projected_rotations is None:
-        max_projected_rotations = _optional_positive_int_env(_MAX_PROJECTED_ROTATIONS_ENV)
     if max_projected_rotations is None:
         proj_half, proj_abs2 = _project(rotations_block)
         if output_complex_dtype is not None:
@@ -302,9 +299,6 @@ def _compute_sparse_pass2_windowed_projections_block(
     first: at EMPIAR-10202 box 800 a row is 320,800 pixels for a ~155,000-pixel
     window (bigbox 14558025).
     """
-
-    if max_projected_rotations is None:
-        max_projected_rotations = _optional_positive_int_env(_MAX_PROJECTED_ROTATIONS_ENV)
 
     projection_kwargs = dict(projection_kwargs)
     projection_kwargs["return_abs2"] = False

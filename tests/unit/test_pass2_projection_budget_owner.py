@@ -1,7 +1,7 @@
 """The pass-2 projection budget is sized by one owner (sparse_pass2_window)."""
 
-from relax.fine_pass import window as sp
 from relax.fine_pass import window
+from relax.fine_pass import window as sp
 
 
 def test_owner_threads_the_budget(monkeypatch):
@@ -16,7 +16,13 @@ def test_owner_threads_the_budget(monkeypatch):
     class Window:
         use_window = True
 
-    out = sp._pass2_projection_budget("f32", Policy(), n_half=9, use_relion_projector=True, budget_window_spec=Window(), device_memory_bytes=123, include_abs2=False)
+    out = sp._pass2_projection_budget(
+        "f32", Policy(), n_half=9, use_relion_projector=True, budget_window_spec=Window(), device_memory_bytes=123,
+        include_abs2=False, max_projected_rotations_override=7,
+    )
     assert out == ("CDT", 77, 5)
     assert seen[0] == ("dtype", "f32", "c64", True) and seen[1] == ("pixels", 9, True)
-    assert seen[2][1] == {"device_memory_bytes": 123, "n_projection_pixels": 77, "projection_complex_dtype": "CDT", "include_abs2": False}
+    assert seen[2][1] == {
+        "device_memory_bytes": 123, "n_projection_pixels": 77, "projection_complex_dtype": "CDT", "include_abs2": False,
+        "override": 7,
+    }

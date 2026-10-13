@@ -709,7 +709,9 @@ def _resident_cuda_fixture_program(
     row_count = image_capacity * qsize
     padded_rows = -(-row_count // row_tile) * row_tile
     n_row_tiles = padded_rows // row_tile
-    max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass()
+    max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(
+        None, override=EngineTuning.from_environ().adjoint_block_max_bytes
+    )
     exact = mode == "exact"
     score_indices = jnp.asarray(geometry["score_indices"], dtype=jnp.int32)
     recon_indices = jnp.asarray(geometry["window"].recon_window_indices, dtype=jnp.int32)

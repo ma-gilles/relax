@@ -1536,6 +1536,7 @@ def _resident_pass2(
         budget_window_spec=budget_window_spec,
         device_memory_bytes=device_memory_bytes,
         include_abs2=False,
+        max_projected_rotations_override=engine_tuning.max_projected_rotations,
     )
     transient_projection_bytes = _projection_cache_transient_bytes(
         n_projections,
@@ -1679,6 +1680,7 @@ def _resident_pass2(
             max_projected_rotations=_projection_cache_build_max_rotations_per_call(
                 max_projected_rotations_per_projection_call,
                 int(np.asarray(rotations).shape[0]),
+                engine_tuning.max_projected_rotations,
             ),
             output_complex_dtype=precision_policy.score_complex_dtype,
             output_abs2_dtype=precision_policy.score_real_dtype,
@@ -1865,7 +1867,7 @@ def _resident_pass2(
         # after the chunk's gather (score_resident_chunk), and the recon window
         # keeps RECOVAR units, as in the three-cache build.
         rows_per_call = _projection_cache_build_max_rotations_per_call(
-            max_projected_rotations_per_projection_call, cache_rows_per_class
+            max_projected_rotations_per_projection_call, cache_rows_per_class, engine_tuning.max_projected_rotations,
         ) or cache_rows_per_class
 
         def project_union_rows(class_index, start, stop):
@@ -2091,13 +2093,16 @@ def _resident_pass2(
                 n_fine_trans=plan_translations,
                 n_recon_pixels=n_recon_windowed,
                 max_tile_bytes=_max_translation_tile_bytes_for_pass(
-                    device_memory_bytes, has_external_normalization=False
+                    device_memory_bytes, override=engine_tuning.translation_tile_max_bytes,
+                    has_external_normalization=False,
                 ),
                 chunk_budget_bytes=chunk_budget_bytes,
             )
         mstep_block_rows = resident_chunk_memory.resolve_mstep_block_rows(
             n_recon_pixels=n_recon_windowed,
-            max_block_bytes=_max_adjoint_block_bytes_for_pass(device_memory_bytes),
+            max_block_bytes=_max_adjoint_block_bytes_for_pass(
+                device_memory_bytes, override=engine_tuning.adjoint_block_max_bytes
+            ),
             row_capacity_ladder=row_ladder_start,
             override=engine_tuning.mstep_block_rows,
         )
@@ -2350,7 +2355,9 @@ def _resident_pass2(
         mstep_max_r=None if stable_window_plan is None else _runtime_mstep_radius(mstep_max_r),
     )
 
-    max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(device_memory_bytes)
+    max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(
+        device_memory_bytes, override=engine_tuning.adjoint_block_max_bytes
+    )
     exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
     rect_indices_device = jnp.asarray(relion_wavg_rectangle.centered_indices, dtype=jnp.int32)
     noise_variance_for_noise_device = jnp.asarray(noise_variance_for_noise)
@@ -2739,7 +2746,8 @@ def _resident_pass2(
                 rect_indices_device=rect_indices_device,
                 exact_positions_device=exact_positions_device,
                 tile_budget_bytes=_max_translation_tile_bytes_for_pass(
-                    device_memory_bytes, has_external_normalization=False
+                    device_memory_bytes, override=engine_tuning.translation_tile_max_bytes,
+                    has_external_normalization=False,
                 ),
                 slot_block=tilt_slot_block,
                 mstep_census=mstep_census,

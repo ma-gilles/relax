@@ -59,6 +59,7 @@ from relax.fine_pass.significant_samples import (
 )
 from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.fourier.preprocessing import apply_half_translation_phases, half_translation_phase_table
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.memory_budget import (
     _max_projected_rotations_per_call_for_pass,
     _nvidia_smi_visible_device_memory_bytes,
@@ -691,6 +692,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
         n_projection_pixels=default_pixels,
         projection_complex_dtype=np.complex64,
         include_abs2=False,
+        override=EngineTuning.from_environ().max_projected_rotations,
     )
     relion_dtype = _projection_cache_budget_complex_dtype(
         np.complex64,
@@ -702,6 +704,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
         n_projection_pixels=relion_pixels,
         projection_complex_dtype=relion_dtype,
         include_abs2=False,
+        override=EngineTuning.from_environ().max_projected_rotations,
     )
 
     assert default_cap == 51622
@@ -712,12 +715,14 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
         n_projection_pixels=default_pixels,
         projection_complex_dtype=np.complex128,
         include_abs2=False,
+        override=EngineTuning.from_environ().max_projected_rotations,
     )
     relion_cap64 = _max_projected_rotations_per_call_for_pass(
         device_memory_bytes=large_gpu,
         n_projection_pixels=relion_pixels,
         projection_complex_dtype=np.complex128,
         include_abs2=False,
+        override=EngineTuning.from_environ().max_projected_rotations,
     )
 
     assert default_cap64 == 25811
@@ -738,6 +743,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
             n_projection_pixels=relion_pixels,
             projection_complex_dtype=np.complex64,
             include_abs2=False,
+            override=EngineTuning.from_environ().max_projected_rotations,
         )
         is None
     )
@@ -901,6 +907,7 @@ def test_relion_windowed_projection_cache_estimate_admits_retained_window_cache(
             use_relion_projector=True,
         ),
         include_abs2=False,
+        override=EngineTuning.from_environ().max_projected_rotations,
     )
     assert per_call_cap is not None
     assert per_call_cap < n_fine_rot
@@ -952,6 +959,7 @@ def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize(monke
         n_projection_pixels=n_half,
         projection_complex_dtype=np.complex64,
         include_abs2=False,
+        override=EngineTuning.from_environ().max_projected_rotations,
     )
     assert cap is not None
     assert cap < 90_112
@@ -962,6 +970,7 @@ def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize(monke
         n_projection_pixels=n_half,
         projection_complex_dtype=np.complex64,
         include_abs2=True,
+        override=EngineTuning.from_environ().max_projected_rotations,
     )
     assert cap_with_abs2 is not None
     assert cap_with_abs2 < cap
@@ -973,6 +982,7 @@ def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize(monke
             n_projection_pixels=n_half,
             projection_complex_dtype=np.complex64,
             include_abs2=False,
+            override=EngineTuning.from_environ().max_projected_rotations,
         )
         == 1234
     )

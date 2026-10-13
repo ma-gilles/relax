@@ -77,32 +77,16 @@ ACCURACY_SLAB_STREAM_CHUNK_BYTES = 512 * 1024**2
 _DEFAULT_ADJOINT_BLOCK_MAX_BYTES = 512 * 1024**2
 
 
-_MAX_TRANSLATION_TILE_BYTES_ENV = "RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES"
 
 
-_MAX_ADJOINT_BLOCK_BYTES_ENV = "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES"
 
 
-_MAX_PROJECTED_ROTATIONS_ENV = "RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS"
 
 
 _PROJECTION_CACHE_MAX_BYTES_ENV = "RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES"
 
 
 _DEFAULT_PROJECTION_CACHE_MAX_BYTES = 3 * 1024**3
-
-
-def _optional_positive_int_env(name: str) -> int | None:
-    raw = os.environ.get(name)
-    if raw is None or raw == "":
-        return None
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be a positive integer, got {raw!r}") from exc
-    if value <= 0:
-        raise ValueError(f"{name} must be a positive integer, got {raw!r}")
-    return value
 
 
 def _jax_allocator_limit_bytes() -> int | None:
@@ -374,10 +358,12 @@ def _complex_counterpart_real_dtype(complex_dtype):
 def _max_translation_tile_bytes_for_pass(
     device_memory_bytes: int | None = None,
     *,
+    override: int | None,
     has_external_normalization: bool = False,
     fused_k_class: bool = False,
 ) -> int:
-    override = _optional_positive_int_env(_MAX_TRANSLATION_TILE_BYTES_ENV)
+    """The translation tile byte budget: ``override`` (``EngineTuning.translation_tile_max_bytes``), else a share
+    of the device, else the fixed default."""
     if override is not None:
         return override
     if device_memory_bytes is None:
@@ -391,8 +377,9 @@ def _max_translation_tile_bytes_for_pass(
     return max(1, int(float(device_memory_bytes) * fraction))
 
 
-def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
-    override = _optional_positive_int_env(_MAX_ADJOINT_BLOCK_BYTES_ENV)
+def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None, *, override: int | None) -> int:
+    """The adjoint block byte budget: ``override`` (``EngineTuning.adjoint_block_max_bytes``), else a share of the
+    device, else the fixed default."""
     if override is not None:
         return int(override)
     if device_memory_bytes is None:
@@ -469,8 +456,10 @@ def _max_projected_rotations_per_call_for_pass(
     n_projection_pixels: int,
     projection_complex_dtype,
     include_abs2: bool,
+    override: int | None,
 ) -> int | None:
-    override = _optional_positive_int_env(_MAX_PROJECTED_ROTATIONS_ENV)
+    """Rotations per projection call: ``override`` (``EngineTuning.max_projected_rotations``), else what the
+    device's projection call budget holds."""
     if override is not None:
         return int(override)
     if device_memory_bytes is None or int(n_projection_pixels) <= 0:
@@ -493,6 +482,7 @@ _PROJECTION_CACHE_BUILD_ROTATION_MULTIPLIER = 4
 def _projection_cache_build_max_rotations_per_call(
     per_call_max_rotations: int | None,
     n_fine_rotations: int,
+    override: int | None,
 ) -> int | None:
     """Rotations per projection call while building the fine-projection cache.
 
@@ -504,12 +494,12 @@ def _projection_cache_build_max_rotations_per_call(
     build took 19.9 s per half at 809 rotations per call and 3.6 s at 4096
     (jobs 14051847 / 14052595), while the scoring-loop budget kept the peak
     memory profile unchanged.  An explicit
-    ``RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS`` still applies verbatim.
+    ``RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS`` (``override``, ``EngineTuning.max_projected_rotations``) still
+    applies verbatim.
     """
 
     if per_call_max_rotations is None:
         return None
-    override = _optional_positive_int_env(_MAX_PROJECTED_ROTATIONS_ENV)
     if override is not None:
         return int(override)
     scaled = int(per_call_max_rotations) * _PROJECTION_CACHE_BUILD_ROTATION_MULTIPLIER

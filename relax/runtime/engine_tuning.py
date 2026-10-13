@@ -64,6 +64,10 @@ class EngineTuning:
     M-step's rows per pixel-axis block, None for the budget-derived one.
     ``local_projection_call_max_bytes`` (RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES,
     :func:`parse_local_projection_call_max_bytes`): bytes one local resident projector call may hold.
+    Three pass-2 memory overrides, each :func:`parse_positive_integer` (None: the device-derived budget):
+    ``translation_tile_max_bytes`` (RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES), ``adjoint_block_max_bytes``
+    (RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES) and ``max_projected_rotations``
+    (RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS, rotations per projection call, also for the projection cache build).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -75,6 +79,9 @@ class EngineTuning:
 
     mstep_block_rows: int | None = None
     local_projection_call_max_bytes: int = DEFAULT_LOCAL_PROJECTION_CALL_MAX_BYTES
+    translation_tile_max_bytes: int | None = None
+    adjoint_block_max_bytes: int | None = None
+    max_projected_rotations: int | None = None
     @classmethod
     def from_environ(cls) -> EngineTuning:
         return cls(
@@ -100,6 +107,15 @@ class EngineTuning:
             mstep_block_rows=parse_mstep_block_rows(read_env_text(MSTEP_BLOCK_ROWS_ENV, "")),
             local_projection_call_max_bytes=parse_local_projection_call_max_bytes(
                 read_env_text(LOCAL_PROJECTION_CALL_MAX_BYTES_ENV, ""),
+            ),
+            translation_tile_max_bytes=parse_positive_integer(
+                TRANSLATION_TILE_MAX_BYTES_ENV, read_env_text(TRANSLATION_TILE_MAX_BYTES_ENV),
+            ),
+            adjoint_block_max_bytes=parse_positive_integer(
+                ADJOINT_BLOCK_MAX_BYTES_ENV, read_env_text(ADJOINT_BLOCK_MAX_BYTES_ENV),
+            ),
+            max_projected_rotations=parse_positive_integer(
+                MAX_PROJECTED_ROTATIONS_ENV, read_env_text(MAX_PROJECTED_ROTATIONS_ENV),
             ),
         )
 
@@ -159,4 +175,23 @@ def parse_local_projection_call_max_bytes(raw: str) -> int:
     value = int(raw)
     if value <= 0:
         raise ValueError(f"{LOCAL_PROJECTION_CALL_MAX_BYTES_ENV} must be positive, got {raw!r}")
+    return value
+
+
+TRANSLATION_TILE_MAX_BYTES_ENV = "RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES"
+ADJOINT_BLOCK_MAX_BYTES_ENV = "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES"
+MAX_PROJECTED_ROTATIONS_ENV = "RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS"
+
+
+def parse_positive_integer(name: str, raw: str | None) -> int | None:
+    """A positive integer override: unset or empty is None; anything that is not a positive integer is refused,
+    naming ``name``."""
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer, got {raw!r}") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer, got {raw!r}")
     return value

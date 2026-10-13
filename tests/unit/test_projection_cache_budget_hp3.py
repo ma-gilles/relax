@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.memory_budget import (
     _projection_cache_fits_budget,
     _projection_cache_max_bytes_for_pass,
@@ -72,12 +73,20 @@ def test_cache_build_rotations_per_call_scales_scoring_budget(monkeypatch):
     from relax.runtime.memory_budget import _projection_cache_build_max_rotations_per_call
 
     _clear_env(monkeypatch)
-    assert _projection_cache_build_max_rotations_per_call(809, 294912) == 4 * 809
+    assert _projection_cache_build_max_rotations_per_call(
+        809, 294912, override=EngineTuning.from_environ().max_projected_rotations,
+    ) == 4 * 809
     # never more rotations than the fine grid holds, never below one
-    assert _projection_cache_build_max_rotations_per_call(809, 1000) == 1000
-    assert _projection_cache_build_max_rotations_per_call(None, 294912) is None
+    assert _projection_cache_build_max_rotations_per_call(
+        809, 1000, override=EngineTuning.from_environ().max_projected_rotations,
+    ) == 1000
+    assert _projection_cache_build_max_rotations_per_call(
+        None, 294912, override=EngineTuning.from_environ().max_projected_rotations,
+    ) is None
     monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "4096")
-    assert _projection_cache_build_max_rotations_per_call(809, 294912) == 4096
+    assert _projection_cache_build_max_rotations_per_call(
+        809, 294912, override=EngineTuning.from_environ().max_projected_rotations,
+    ) == 4096
 
 
 def test_flatten_bucket_rotations_is_host_side_for_numpy_and_not_jitted():
@@ -172,3 +181,35 @@ def test_projector_build_log_reports_the_slab_dtype(monkeypatch, caplog):
         f"RELION mode: built exact Projector::data for scoring at current_size={built[0].args[0]} "
         f"r_max={slab.r_max} dtype={slab.data.dtype} in "
     )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES",
+        "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES",
+        "RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS",
+    ],
+)
+def test_pass2_memory_overrides_are_read_once(monkeypatch, name):
+    """Each override is read by EngineTuning.from_environ: unset or empty is None, a positive integer is taken,
+    anything else is refused; the budget functions take the record's value."""
+    from relax.runtime.memory_budget import _max_adjoint_block_bytes_for_pass, _max_translation_tile_bytes_for_pass
+
+    field = {
+        "RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES": "translation_tile_max_bytes",
+        "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES": "adjoint_block_max_bytes",
+        "RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS": "max_projected_rotations",
+    }[name]
+    monkeypatch.delenv(name, raising=False)
+    assert getattr(EngineTuning.from_environ(), field) is None
+    monkeypatch.setenv(name, "")
+    assert getattr(EngineTuning.from_environ(), field) is None
+    monkeypatch.setenv(name, "4096")
+    assert getattr(EngineTuning.from_environ(), field) == 4096
+    for bad in ("0", "-3", "lots"):
+        monkeypatch.setenv(name, bad)
+        with pytest.raises(ValueError, match="must be a positive integer"):
+            EngineTuning.from_environ()
+    assert _max_translation_tile_bytes_for_pass(_H100_BYTES, override=12345) == 12345
+    assert _max_adjoint_block_bytes_for_pass(_H100_BYTES, override=54321) == 54321

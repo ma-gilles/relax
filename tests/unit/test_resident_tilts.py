@@ -295,7 +295,7 @@ def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
     from relax.fine_pass.resident_chunk_memory import _cap_image_capacity_ladder
     from relax.runtime.memory_budget import _max_translation_tile_bytes_for_pass
 
-    n_recon_pixels, slots, budget = 128 * 65, 41, _max_translation_tile_bytes_for_pass(80 * 1024**3)
+    n_recon_pixels, slots, budget = 128 * 65, 41, _max_translation_tile_bytes_for_pass(80 * 1024**3, override=None)
     ladder = (32, 64, 128, 256)
     spa = _cap_image_capacity_ladder(ladder, n_fine_trans=4120, n_recon_pixels=n_recon_pixels, max_tile_bytes=budget)
     tilt = _cap_image_capacity_ladder(ladder, n_fine_trans=slots, n_recon_pixels=n_recon_pixels, max_tile_bytes=budget)
