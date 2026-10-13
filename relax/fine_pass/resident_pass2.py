@@ -175,7 +175,7 @@ from relax.relion import ctf
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
 from relax.relion.scale_groups import prepare_scale_correction_groups
 from relax.runtime.compile_ahead import CompileAheadPool
-from relax.runtime.env_flags import parse_env_capacity_ladder, parse_env_flag
+from relax.runtime.env_flags import parse_env_flag
 from relax.runtime.memory_budget import (
     _device_free_memory_bytes,
     _jax_allocator_free_memory_bytes,
@@ -194,12 +194,10 @@ from relax.types import SparsePass2Output, make_noise_stats, make_relion_stats
 
 logger = logging.getLogger(__name__)
 
-_ROW_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES"
 # The resident pass sums its float32 posterior and norm rows into their images with
 # the scatter-add; the bucketed segment_sum (and its planned scratch) is the dense
 # GEMM coarse engine's.
 _FLOAT32_BUCKETED_IMAGE_SUMS = False
-_IMAGE_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES"
 _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV = "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF"
 
 # Row capacities are multiples of the M-step block so every chunk decomposes
@@ -2000,7 +1998,7 @@ def _resident_pass2(
     # A row-blocked cache's gather holds the rows taken so far next to the next
     # block's (resident_scoring.cache_rows): two row copies instead of one.
     gathered_row_copies = 2 if isinstance(score_cache, tuple) else 1
-    row_ladder = parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER)
+    row_ladder = engine_tuning.resident_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER
     if stream_projections:
         row_ladder = resident_projections.stream_row_capacity_ladder(
             row_ladder,
@@ -2083,7 +2081,7 @@ def _resident_pass2(
     def plan_chunks(unshifted_operands: bool):
         nonlocal tilt_slot_block, tilt_lone_row_blocks
         chunk_budget_bytes = resident_chunk_memory.resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
-        image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
+        image_ladder = engine_tuning.resident_image_capacities or _DEFAULT_IMAGE_CAPACITY_LADDER
         if tilt is not None or not (unshifted_operands and chunk_budget_bytes is not None):
             # The fixed translation-tile budget bounds the translated tiles; an
             # unshifted chunk holds only the Wavg rectangle and its exact

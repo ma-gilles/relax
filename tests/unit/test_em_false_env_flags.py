@@ -6,7 +6,6 @@ import pytest
 
 from relax.runtime.env_flags import (
     parse_env_binary_flag,
-    parse_env_capacity_ladder,
     parse_env_flag,
     parse_env_flag_or_false,
     parse_env_true_flag,
@@ -56,20 +55,35 @@ def test_parsing_is_live_and_other_flag_contracts_remain_distinct(monkeypatch):
         parse_env_binary_flag(NAME)
 
 
+@pytest.mark.parametrize("name", [
+    "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES",
+    "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES",
+])
 @pytest.mark.parametrize("raw, expected", [
-    (None, (2, 4)), ("", (2, 4)), ("  ", (2, 4)),
+    (None, None), ("", None), ("  ", None),
     ("1, 2  4", (1, 2, 4)), ("2,2,4", (2, 2, 4)),
 ])
-def test_capacity_ladder_preserves_defaults_and_equal_adjacent_values(monkeypatch, raw, expected):
+def test_capacity_ladders_are_read_once_at_the_boundary(monkeypatch, name, raw, expected):
+    """Unset or blank is None (the engine's own ladder); equal adjacent values are kept."""
+    from relax.runtime.engine_tuning import EngineTuning
+
+    field = {
+        "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES": "resident_row_capacities",
+        "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES": "resident_image_capacities",
+        "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES": "local_row_capacities",
+        "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES": "local_image_capacities",
+    }[name]
     if raw is None:
-        monkeypatch.delenv(NAME, raising=False)
+        monkeypatch.delenv(name, raising=False)
     else:
-        monkeypatch.setenv(NAME, raw)
-    assert parse_env_capacity_ladder(NAME, ("2", 4)) == expected
+        monkeypatch.setenv(name, raw)
+    assert getattr(EngineTuning.from_environ(), field) == expected
 
 
 @pytest.mark.parametrize("raw", [",", "0,2", "-1,2", "4,2", "two", "1;2"])
 def test_capacity_ladder_rejects_invalid_values(monkeypatch, raw):
-    monkeypatch.setenv(NAME, raw)
+    from relax.runtime.engine_tuning import EngineTuning
+
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", raw)
     with pytest.raises(ValueError):
-        parse_env_capacity_ladder(NAME, (2, 4))
+        EngineTuning.from_environ()

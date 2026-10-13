@@ -141,6 +141,10 @@ class EngineTuning:
     ``coarse_pad_final_image_batch`` (RELAX_COARSE_PAD_FINAL_IMAGE_BATCH, :func:`parse_strict_switch`, default on):
     pass 1 pads its last image batch with image row zero to the batch size, so the batch reuses the programs of the
     others; the padded rows are discarded and every retained value is bit-for-bit the unpadded batch's.
+    Four capacity ladders, each :func:`parse_capacity_ladder` (None: the engine's own ladder): the resident pass 2's
+    ``resident_row_capacities`` and ``resident_image_capacities`` (RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES, _IMAGE_CAPACITIES)
+    and the local resident pass's ``local_row_capacities`` and ``local_image_capacities``
+    (RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES, _IMAGE_CAPACITIES): the chunk capacity classes (shapes only).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -172,6 +176,10 @@ class EngineTuning:
     local_chunk_profile: bool = False
     local_block_row_program: bool = True
     coarse_pad_final_image_batch: bool = True
+    resident_row_capacities: tuple[int, ...] | None = None
+    resident_image_capacities: tuple[int, ...] | None = None
+    local_row_capacities: tuple[int, ...] | None = None
+    local_image_capacities: tuple[int, ...] | None = None
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -237,6 +245,12 @@ class EngineTuning:
             coarse_pad_final_image_batch=parse_strict_switch(
                 "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", read_env_text("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH"),
             ) is not False,
+            resident_row_capacities=parse_capacity_ladder(RESIDENT_ROW_CAPACITIES_ENV, read_env_text(RESIDENT_ROW_CAPACITIES_ENV)),
+            resident_image_capacities=parse_capacity_ladder(
+                RESIDENT_IMAGE_CAPACITIES_ENV, read_env_text(RESIDENT_IMAGE_CAPACITIES_ENV),
+            ),
+            local_row_capacities=parse_capacity_ladder(LOCAL_ROW_CAPACITIES_ENV, read_env_text(LOCAL_ROW_CAPACITIES_ENV)),
+            local_image_capacities=parse_capacity_ladder(LOCAL_IMAGE_CAPACITIES_ENV, read_env_text(LOCAL_IMAGE_CAPACITIES_ENV)),
         )
 
 
@@ -479,3 +493,21 @@ def parse_stable_window_quantum(raw: str) -> int | None:
     if quantum < 2 or quantum % 2:
         raise ValueError(f"{STABLE_FOURIER_WINDOW_QUANTUM_ENV} must be an even integer >= 2, got {raw!r}")
     return quantum
+
+
+RESIDENT_ROW_CAPACITIES_ENV = "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES"
+RESIDENT_IMAGE_CAPACITIES_ENV = "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES"
+LOCAL_ROW_CAPACITIES_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES"
+LOCAL_IMAGE_CAPACITIES_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES"
+
+
+def parse_capacity_ladder(name: str, raw: str | None) -> tuple[int, ...] | None:
+    """A capacity ladder (stripped; numbers split on commas or spaces): unset or blank is None, the engine's own
+    ladder; anything that is not an increasing list of positive integers is refused naming ``name``."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    values = tuple(int(part) for part in raw.replace(",", " ").split())
+    if not values or list(values) != sorted(values) or values[0] <= 0:
+        raise ValueError(f"{name} must be an increasing list of positive integers, got {raw!r}")
+    return values

@@ -156,7 +156,6 @@ from relax.relion.projector_setup import (
     prepare_local_projector_slab,
 )
 from relax.relion.scale_groups import prepare_scale_correction_groups
-from relax.runtime.env_flags import parse_env_capacity_ladder
 from relax.runtime.memory_budget import (
     _max_adjoint_block_bytes_for_pass,
     _max_translation_tile_bytes_for_pass,
@@ -166,8 +165,6 @@ from relax.types import LocalEMResult, make_noise_stats, make_relion_stats
 
 logger = logging.getLogger(__name__)
 
-_ROW_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES"
-_IMAGE_CAPACITY_LADDER_ENV = "RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES"
 # The share of the chunk budget one projector call may take; the rest is the chunk's rows, tiles and M-step block.
 _PROJECTION_CALL_BUDGET_SHARE = 0.5
 
@@ -869,7 +866,7 @@ def compute_local_search_resident(
                     -1 if support.applied_max_significants is None else int(support.applied_max_significants)
                 ),
                 firstiter_cc=bool(kernel.firstiter_cc),
-                projection_call_max_bytes=support.engine_tuning.local_projection_call_max_bytes,
+                engine_tuning=support.engine_tuning,
                 window_union=(
                     projection_window_union(
                         window_indices,
@@ -906,7 +903,7 @@ def compute_local_search_resident(
 
         # ---- capacity plan ----------------------------------------------------
         row_ladder = _cap_row_capacity_ladder(
-            parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER),
+            support.engine_tuning.local_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER,
             n_score_pixels=n_windowed,
             n_recon_pixels=n_recon_windowed,
             max_bytes=_projection_cache_max_bytes_for_pass(device_memory_bytes),
@@ -945,7 +942,7 @@ def compute_local_search_resident(
             normalized_cc=bool(kernel.firstiter_cc),
             masked_scoring=True,
         )
-        image_ladder = parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _DEFAULT_IMAGE_CAPACITY_LADDER)
+        image_ladder = support.engine_tuning.local_image_capacities or _DEFAULT_IMAGE_CAPACITY_LADDER
         if not (operand_route["unshifted"] and chunk_budget_bytes is not None):
             # The fixed translation-tile budget bounds the pre-shifted route's
             # three recon tiles per image. An unshifted chunk holds only the
@@ -1627,7 +1624,7 @@ def _run_resident_parent_probe(
     firstiter_cc=False,
     window_union=None,
     class_projectors=None,
-    projection_call_max_bytes: int,
+    engine_tuning,
 ) -> LocalEMResult:
     """RELION's local pass 1 (the adaptive parent probe) on the resident stages.
 
@@ -1672,9 +1669,11 @@ def _run_resident_parent_probe(
         complex_bytes=int(np.dtype(relion_projector_half.dtype).itemsize),
     )
     budget = resident_chunk_memory.resident_chunk_budget_bytes()
-    projection_block_rows = _projection_block_rows(projection_row_bytes, budget, projection_call_max_bytes)
-    row_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER))
-    image_ladder = tuple(int(v) for v in parse_env_capacity_ladder(_IMAGE_CAPACITY_LADDER_ENV, _PROBE_IMAGE_CAPACITY_LADDER))
+    projection_block_rows = _projection_block_rows(
+        projection_row_bytes, budget, engine_tuning.local_projection_call_max_bytes,
+    )
+    row_ladder = tuple(int(v) for v in engine_tuning.local_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER)
+    image_ladder = tuple(int(v) for v in engine_tuning.local_image_capacities or _PROBE_IMAGE_CAPACITY_LADDER)
 
     def peak(rows, images):
         return _probe_chunk_bytes(
