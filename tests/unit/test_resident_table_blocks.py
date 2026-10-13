@@ -109,6 +109,7 @@ def _source(n_classes, *, whole, execution_order, groups, monkeypatch):
         use_relion_f32_fine_posterior=execution_order,
         dtype=np.float32,
         symmetry_label="C1",
+        fine_rotation_execution_order=False,
     )
     return blocks
 

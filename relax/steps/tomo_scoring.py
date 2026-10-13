@@ -100,6 +100,7 @@ def score_tomo_half(
     normalized_cc: bool = False,
     coarse_cc_winners=None,
     engine_tuning: EngineTuning,
+    scoring_overrides,
 ) -> TomoScoreResult:
     """RELION's adaptive two-pass E-step and M-step of subtomogram particles (global search); ``engine_tuning``
     is how the resident pass 2 executes (``EngineTuning``).
@@ -177,6 +178,7 @@ def score_tomo_half(
                 scale_correction_data_vs_prior=scale_correction_data_vs_prior,
                 reconstruction_current_size=reconstruction_current_size, symmetry=symmetry,
                 engine_tuning=engine_tuning,
+                scoring_overrides=scoring_overrides,
             )
         if np.any(np.asarray(unit_seed_classes) != 0):
             # One reference for K classes: the CC iteration is K=1 against it (ml_optimiser.cpp:4389-4402).
@@ -204,6 +206,7 @@ def score_tomo_half(
             symmetry=symmetry,
             normalized_cc=True,
             engine_tuning=engine_tuning,
+            scoring_overrides=scoring_overrides,
         )
         return dataclasses.replace(first, pass2=_first_class_k_class_output(first.pass2, n_classes, sampling, half.voxel_size))
     if n_classes > 1 and local_rotations is None and np.ndim(rotation_log_prior) != 2:
@@ -324,6 +327,7 @@ def score_tomo_half(
     )
     options = dict(
         engine_tuning=engine_tuning,
+        scoring_overrides=scoring_overrides,
         # RELION's asymmetric-unit grid and its symmetrised BPref (symmetriseReconstructions).
         symmetry_label=symmetry,
         oversampling_order=sampling.oversampling_order,
@@ -698,6 +702,7 @@ def score_tomo_half_in_loop(
     unit_seed_classes=None,
     normalized_cc: bool = False,
     engine_tuning: EngineTuning,
+    scoring_overrides,
 ):
     """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``
     (``engine_tuning``: ``RefinementEnvironment.engine``).
@@ -841,6 +846,7 @@ def score_tomo_half_in_loop(
         unit_seed_classes=unit_seed_classes,
         normalized_cc=normalized_cc,
         engine_tuning=engine_tuning,
+        scoring_overrides=scoring_overrides,
     )
     pass2 = result.pass2
     if n_classes > 1 and local_rotations is not None:

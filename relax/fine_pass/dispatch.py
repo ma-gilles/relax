@@ -90,9 +90,10 @@ def compute_pass2_stats_sparse(
     nyquist_column_counting: str = "relion",
     firstiter_cc_support: str = "relion",
     engine_tuning: EngineTuning,
+    scoring_overrides,
 ):
     """Exact sparse pass 2 over per-image significant coarse samples (``engine_tuning``: how the resident
-    engine executes, ``EngineTuning``).
+    engine executes, ``EngineTuning``; ``scoring_overrides``: the run's ``ScoringOverrides``).
 
     This matches RELION's pass-2 structure more closely than the dense-union
     approximation: each image only evaluates oversampled children of the
@@ -144,6 +145,7 @@ def compute_pass2_stats_sparse(
         nside_level,
         disc_type,
         engine_tuning=engine_tuning,
+        scoring_overrides=scoring_overrides,
         oversampling_order=oversampling_order,
         current_size=current_size,
         reconstruction_current_size=reconstruction_current_size,

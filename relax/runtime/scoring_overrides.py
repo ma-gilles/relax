@@ -13,11 +13,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from relax.runtime.env_flags import read_env_text
+from relax.runtime.env_flags import parse_env_flag, read_env_text
 
 F32_COARSE_SUPPORT_ENV = "RECOVAR_K1_RELION_F32_COARSE_SUPPORT"
 COARSE_GEMM_FLOAT64_ENV = "RELAX_COARSE_GEMM_FLOAT64"
 COARSE_ROTATED_RADIUS_ENV = "RELAX_K1_COARSE_ROTATED_RADIUS"
+FINE_ROTATION_EXECUTION_ORDER_ENV = "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -32,11 +33,16 @@ class ScoringOverrides:
     ``coarse_rotated_radius`` (RELAX_K1_COARSE_ROTATED_RADIUS, :func:`parse_coarse_rotated_radius`; default None,
     RELION's rotated-radius clipping wherever the compact RELION texture projector runs): False keeps the legacy
     source-pixel disk, True asks for the rotated radius (refused without the compact projector).
+    ``fine_rotation_execution_order`` (RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER, ``env_flags.parse_env_flag``;
+    default off): the resident pass 2 orders its fine candidates in RELION's parent execution order even without the
+    float32 fine posterior (which always takes that order). A parity note called it trajectory-improving; pending a
+    RELION A/B that makes it the default or retires it.
     """
 
     f32_coarse_support: bool = True
     coarse_gemm_float64: bool = False
     coarse_rotated_radius: bool | None = None
+    fine_rotation_execution_order: bool = False
 
     @classmethod
     def from_environ(cls) -> ScoringOverrides:
@@ -44,6 +50,7 @@ class ScoringOverrides:
             f32_coarse_support=parse_strict_flag(F32_COARSE_SUPPORT_ENV, read_env_text(F32_COARSE_SUPPORT_ENV), True),
             coarse_gemm_float64=parse_coarse_gemm_float64(read_env_text(COARSE_GEMM_FLOAT64_ENV, "0")),
             coarse_rotated_radius=parse_coarse_rotated_radius(read_env_text(COARSE_ROTATED_RADIUS_ENV)),
+            fine_rotation_execution_order=parse_env_flag(FINE_ROTATION_EXECUTION_ORDER_ENV, default=False),
         )
 
 

@@ -214,7 +214,7 @@ def test_duplicated_class_at_zero_oversampling_is_the_one_class_pass_split_in_ha
     from relax.fine_pass import resident_pass2 as rp
 
     args = _os0_driver_args()
-    single = rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ())
+    single = rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ())
     k_args = dict(args)
     support = k_args.pop("significant_sample_indices")
     prior = k_args.pop("rotation_log_prior")

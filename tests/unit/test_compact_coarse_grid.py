@@ -139,6 +139,7 @@ def test_k_class_tables_on_a_compact_grid_carry_each_class_supports_own_priors()
         symmetry_label="C1",
         coarse_rotation_ids=used,
         per_image_rotation_log_prior=priors,
+        fine_rotation_execution_order=False,
     )
     tables = blocks.block_tables(0)
     assert (tables.n_images, tables.n_classes) == (n_units, n_classes)
@@ -163,4 +164,5 @@ def test_k_class_tables_on_a_compact_grid_carry_each_class_supports_own_priors()
             supports, (None, None), whole=False, reconstruction_group_ids=None, reconstruction_group_count=None,
             n_images=n_units, n_coarse_rot=used.size, n_coarse_trans=n_trans, coarse_rotation_ids=used,
             per_image_rotation_log_prior=priors[:1],
+            fine_rotation_execution_order=False,
         )  # fmt: skip

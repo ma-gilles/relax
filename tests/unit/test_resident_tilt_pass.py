@@ -4,6 +4,7 @@ A particle with one image, an identity left matrix and the SPA phases is an SPA 
 then keeps the SPA matrices (isIdentity, acc_ml_optimiser_impl.h:1100-1104) and divides nothing by the
 image count. So ``_resident_pass2(
     tilt=..., engine_tuning=_engine(),
+    scoring_overrides=ScoringOverrides(),
 )``, which scores and backprojects through the tilt chunk runner,
 must reproduce ``_resident_pass2`` on the SPA driver fixture: the discrete state exactly, the scores in the
 float band, and the maps and sums inside the resident driver's own repeat band.
@@ -19,6 +20,8 @@ from test_resident_pass2_driver import (
     _resident_production_env,  # noqa: F401 (fixture)
     requires_resident_gpu,
 )
+
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
 
@@ -75,10 +78,11 @@ def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  
 
     # The once-per-half resident operands, which the tilt runner needs, cover masked scoring only.
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
-    spa = rp._resident_pass2(**args, engine_tuning=_engine())
+    spa = rp._resident_pass2(**args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides())
     # The tilt pass takes the offset prior per particle, from the tilt inputs.
     tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(
         args), engine_tuning=_engine(),
+        scoring_overrides=ScoringOverrides(),
     )
     _assert_tilt_pass_matches_spa(spa, tomo)
 
@@ -94,7 +98,7 @@ def test_exact_float32_accumulation_switch_runs_the_tilt_driver(_resident_produc
     from relax.reconstruction import half_volume_mstep as hvm
 
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
-    spa = rp._resident_pass2(**args, engine_tuning=_engine())
+    spa = rp._resident_pass2(**args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides())
     allocated = []
     real_allocate = rp.allocate_row_partial
 
@@ -106,6 +110,7 @@ def test_exact_float32_accumulation_switch_runs_the_tilt_driver(_resident_produc
     monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
     tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(
         args), engine_tuning=_engine(),
+        scoring_overrides=ScoringOverrides(),
     )
     assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
     _assert_tilt_pass_matches_spa(spa, tomo)
@@ -119,10 +124,11 @@ def test_tilt_chunks_prepare_their_own_operands_when_the_half_does_not_fit(_resi
     from relax.fine_pass import resident_projections
 
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
-    spa = rp._resident_pass2(**args, engine_tuning=_engine())
+    spa = rp._resident_pass2(**args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides())
     monkeypatch.setattr(resident_projections, "resident_operands_fit", lambda *a, **k: False)
     tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(
         args), engine_tuning=_engine(),
+        scoring_overrides=ScoringOverrides(),
     )
     _assert_tilt_pass_matches_spa(spa, tomo)
 
@@ -233,6 +239,7 @@ def test_duplicated_class_of_tilt_particles_is_the_k1_pass(_resident_production_
     args["translation_log_prior"] = None
     single = rp.compute_tilt_pass2_stats_resident(
         tilt=tilt, significant_sample_indices=support, **args, engine_tuning=_engine(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
 
     k_args = dict(args, tilt=tilt)
@@ -337,9 +344,10 @@ def test_one_image_particles_reproduce_the_spa_vdam_pass(_resident_production_en
     args = dict(_driver_fixture_args(), score_with_masked_images=True)
     n_images = args["experiment_dataset"].n_units
     vdam = dict(args, **_vdam_options(n_images))
-    spa = rp._resident_pass2(**vdam, engine_tuning=_engine())
+    spa = rp._resident_pass2(**vdam, engine_tuning=_engine(), scoring_overrides=ScoringOverrides())
     tomo = rp._resident_pass2(**dict(vdam, translation_log_prior=None), tilt=_one_image_tilt_inputs(
         args), engine_tuning=_engine(),
+        scoring_overrides=ScoringOverrides(),
     )
     for field in ("hard_assignment", "best_fine_rotation_indices"):
         assert_matches(getattr(spa.finalized, field), getattr(tomo.finalized, field), err_msg=field)
@@ -350,6 +358,7 @@ def test_one_image_particles_reproduce_the_spa_vdam_pass(_resident_production_en
         **dict(args, translation_log_prior=None, reconstruction_group_ids=None, reconstruction_group_count=None),
         tilt=_one_image_tilt_inputs(args),
         engine_tuning=_engine(),
+        scoring_overrides=ScoringOverrides(),
     )
     # The two slots partition the particles; the residual moves Ft_y and leaves the CTF weights.
     assert _rel_l2(plain.Ft_ctf[0], np.asarray(tomo.Ft_ctf[0]) + np.asarray(tomo.Ft_ctf[1])) < 1e-6
@@ -448,7 +457,7 @@ def _lone_tilt_runs(monkeypatch, args, tilt):
     monkeypatch.setattr(resident_chunk_memory, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(resident_tilts, "run_tilt_chunk", chunk)
     monkeypatch.setattr(resident_tilts, "_slot_mstep_tables", slot_tables)
-    whole = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt, engine_tuning=_engine())
+    whole = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt, engine_tuning=_engine(), scoring_overrides=ScoringOverrides())
     assert not mstep_units
     assert lone_rows and not any(lone_rows), "a particle that fits whole must not run in row blocks"
     assert resident_chunk_memory.overflow_row_capacity(plans[-1]["max_image_rows"], (16,)) > 16, "the fixture has no overflow particle"
@@ -460,7 +469,7 @@ def _lone_tilt_runs(monkeypatch, args, tilt):
         budget = int(whole_peak * fraction)
         monkeypatch.setattr(resident_chunk_memory, "resident_chunk_budget_bytes", lambda budget=budget, **k: budget)
         del lone_rows[:]
-        blocked = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt, engine_tuning=_engine())
+        blocked = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt, engine_tuning=_engine(), scoring_overrides=ScoringOverrides())
         if any(lone_rows):
             assert mstep_units, "the row-blocked particles' M-step tables were not built for one unit"
             print(f"row-blocked at a budget of {fraction} of the whole-particle peak ({whole_peak} bytes)")
@@ -710,9 +719,10 @@ def test_one_image_particles_reproduce_the_spa_firstiter_cc_pass(_resident_produ
         relion_firstiter_winner_take_all=True,
         relion_exact_fine_normalized_cc=True,
     )
-    spa = rp._resident_pass2(**args, engine_tuning=_engine())
+    spa = rp._resident_pass2(**args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides())
     tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(
         args), engine_tuning=_engine(),
+        scoring_overrides=ScoringOverrides(),
     )
     for field in ("hard_assignment", "best_fine_rotation_indices"):
         assert_matches(getattr(spa.finalized, field), getattr(tomo.finalized, field), err_msg=field)

@@ -22,6 +22,7 @@ from relax.runtime.batch_planning import (
     safe_firstiter_cc_image_batch_size,
 )
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling import oversampling
 from relax.steps import half_inputs, scoring_policy, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
@@ -861,6 +862,7 @@ def test_firstiter_cc_global_winner_pass2_carries_each_images_optics_group(monke
             return_best_pose_details=False,
             pass2_kwargs={
                 "engine_tuning": EngineTuning(),
+                "scoring_overrides": ScoringOverrides(),
                 "optics_group_ids": optics,
                 "reconstruction_volume_current_size": 12,
                 "reconstruction_image_radius": 5.5,
@@ -925,7 +927,7 @@ def test_firstiter_cc_global_winner_pass2_keeps_the_optics_group_noise_table_wit
             oversampling_order=0,
             accumulate_noise=True,
             return_best_pose_details=False,
-            pass2_kwargs={"optics_group_ids": optics, "engine_tuning": EngineTuning()},
+            pass2_kwargs={"optics_group_ids": optics, "engine_tuning": EngineTuning(), "scoring_overrides": ScoringOverrides()},
         )
 
     np.testing.assert_array_equal(captured["noise_variance"], noise)

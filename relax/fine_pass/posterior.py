@@ -15,11 +15,6 @@ import jax.numpy as jnp
 from relax.runtime.env_flags import parse_env_flag
 from relax.sampling.oversampling import _relion_cuda_f32_tail_target
 
-_RELION_FINE_ROTATION_EXECUTION_ORDER_ENV = (
-    "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER"
-)
-
-
 _RELION_X_HALF_F32_FINE_POSTERIOR_ENV = "RELAX_RELION_X_HALF_F32_FINE_POSTERIOR"
 
 
@@ -146,12 +141,11 @@ def relion_x_half_f32_fine_posterior_enabled(*, default: bool = False) -> bool:
 def _relion_fine_parent_execution_order_enabled(
     *,
     use_relion_f32_fine_posterior: bool,
+    requested: bool,
 ) -> bool:
-    """Keep exact fine-posterior diagnostics in RELION's candidate order."""
+    """Keep exact fine-posterior diagnostics in RELION's candidate order (``requested``:
+    ``ScoringOverrides.fine_rotation_execution_order``)."""
 
-    return bool(use_relion_f32_fine_posterior) or parse_env_flag(
-        _RELION_FINE_ROTATION_EXECUTION_ORDER_ENV,
-        default=False,
-    )
+    return bool(use_relion_f32_fine_posterior) or bool(requested)
 
 

@@ -373,6 +373,7 @@ def _run_sparse_k_class_adaptive_pass2(
         nyquist_column_counting=base_engine_kwargs.get("nyquist_column_counting", "relion"),
         firstiter_cc_support=base_engine_kwargs.get("firstiter_cc_support", "relion"),
         engine_tuning=base_engine_kwargs["engine_tuning"],
+        scoring_overrides=base_engine_kwargs["scoring_overrides"],
         **({"symmetry_label": base_engine_kwargs["symmetry_label"]}
            if base_engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(base_engine_kwargs),
@@ -1260,6 +1261,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             coarse_translations_np,
             subset_sig,
             engine_tuning=pass2_kwargs["engine_tuning"],
+            scoring_overrides=pass2_kwargs["scoring_overrides"],
             rotation_log_prior=_class_rotation_prior(class_index),
             translation_log_prior=None,
             accumulate_noise=accumulate_noise,
@@ -1555,6 +1557,8 @@ def run_dense_k_class_em_adaptive(
     probe = NoProbe() if probe is None else probe
     # How the resident pass 2 executes (EngineTuning); it travels with the pass-2 keyword arguments.
     engine_kwargs["engine_tuning"] = engine_tuning
+    # The run's value-changing overrides travel with it too (the resident pass 2 reads its fine execution order).
+    engine_kwargs["scoring_overrides"] = scoring_overrides
     if "relion_exact_coarse" in engine_kwargs:
         raise TypeError(
             "relion_exact_coarse was removed on 2026-10-02: pass 1 always scores RELION's exact coarse operands"

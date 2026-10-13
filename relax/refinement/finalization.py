@@ -552,6 +552,7 @@ def run_final_all_data(
                 reconstruction_current_size=final_current_size,
                 symmetry=options.symmetry.point_group,
                 engine_tuning=options.environment.engine,
+                scoring_overrides=options.environment.scoring,
             )
         else:
             # The final pass scores each half with its own priors on the grid rows it

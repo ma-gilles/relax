@@ -231,3 +231,23 @@ def test_coarse_gemm_float64_reaches_the_pass1_score_program(monkeypatch):
     monkeypatch.setenv("RELAX_COARSE_GEMM_FLOAT64", "1")
     plan, _, _ = _plan(monkeypatch, n_classes=1)
     assert plan.score_program_plan.statics.float64 is True
+
+
+def test_fine_rotation_execution_order_is_read_once_at_the_boundary(monkeypatch):
+    """RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER (env_flags.parse_env_flag, default off) is a ScoringOverrides field;
+    the resident pass 2 takes RELION's parent execution order when it is set or with the float32 fine posterior."""
+    from relax.fine_pass.posterior import _relion_fine_parent_execution_order_enabled
+    from relax.runtime.scoring_overrides import FINE_ROTATION_EXECUTION_ORDER_ENV, ScoringOverrides
+
+    monkeypatch.delenv(FINE_ROTATION_EXECUTION_ORDER_ENV, raising=False)
+    requested = ScoringOverrides.from_environ().fine_rotation_execution_order
+    assert requested is False
+    assert not _relion_fine_parent_execution_order_enabled(use_relion_f32_fine_posterior=False, requested=requested)
+    assert _relion_fine_parent_execution_order_enabled(use_relion_f32_fine_posterior=True, requested=requested)
+    for raw, expected in (("", False), ("0", False), ("1", True), ("yes", True)):
+        monkeypatch.setenv(FINE_ROTATION_EXECUTION_ORDER_ENV, raw)
+        requested = ScoringOverrides.from_environ().fine_rotation_execution_order
+        assert requested is expected
+        assert _relion_fine_parent_execution_order_enabled(
+            use_relion_f32_fine_posterior=False, requested=requested,
+        ) is expected

@@ -616,10 +616,11 @@ def test_k1_full_grid_matches_resident_exact_operands(monkeypatch):
 
     monkeypatch.setattr(gemm_coarse_engine, "run_dense_gemm_full_grid", checked)
     monkeypatch.setattr(gemm_coarse_engine, "pad_batch", capture_batch)
-    control = resident_pass2.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ())
+    control = resident_pass2.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ())
     candidate = resident_pass2.compute_pass2_stats_resident(
         **dict(args, full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid),
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     assert called == [True]
     if path := os.environ.get("RELAX_DENSE_GEMM_DIAGNOSTIC_NPZ"):
@@ -700,6 +701,7 @@ def test_k2_square_cc_full_grid_maps_wavg_and_keeps_one_winner(monkeypatch):
         rotation_log_priors_by_class=[prior + np.float32(np.log(0.5))] * 2,
         **args,
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     assert_matches(output.stats.max_posterior_per_image, np.ones(dataset.n_units), rtol=1e-6)
     assert_matches(np.sum(output.class_reconstruction_posterior_sums), dataset.n_units, rtol=1e-6)
@@ -846,6 +848,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
             options.pop("nside_level"), options.pop("disc_type"),
             rotation_log_priors_by_class=priors, **options,
             engine_tuning=EngineTuning.from_environ(),
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
     diagnostic_path = os.environ.get("RELAX_DENSE_GEMM_K4_DIAGNOSTIC_NPZ")
@@ -999,7 +1002,7 @@ def test_k1_firstiter_cc_keeps_canonical_winner_and_statistics(monkeypatch):
             return result
 
         monkeypatch.setattr(resident_scoring, "score_resident_chunk_normalized_cc", capture_control_cc)
-    control = resident_pass2.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ())
+    control = resident_pass2.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ())
     if diagnostic_path:
         monkeypatch.setattr(resident_scoring, "score_resident_chunk_normalized_cc", original_cc_scorer)
         original_dense = gemm_coarse_engine.run_dense_gemm_full_grid
@@ -1030,6 +1033,7 @@ def test_k1_firstiter_cc_keeps_canonical_winner_and_statistics(monkeypatch):
     candidate = resident_pass2.compute_pass2_stats_resident(
         **dict(args, full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid),
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     if diagnostic_path:
         _save_k1_cc_score_diagnostic(
@@ -1108,7 +1112,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
         # A preceding fixture may have compiled the same row program without
         # diagnostics. The opt-in probe must be present in the traced call.
         jax.clear_caches()
-    control = resident_pass2._resident_pass2(**args, engine_tuning=EngineTuning.from_environ())
+    control = resident_pass2._resident_pass2(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides())
     if row_diagnostic_path:
         jax.block_until_ready(control.noise_stats.wsum_norm_correction)
         jax.effects_barrier()
@@ -1136,6 +1140,7 @@ def test_k1_gradient_grouped_bpref_with_distinct_windows_and_translation_tail(mo
         jax.clear_caches()
     candidate = resident_pass2._resident_pass2(**dict(
         args, full_grid_engine=gemm_coarse_engine.run_dense_gemm_full_grid), engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
     if path := diagnostic_path or (str(Path(row_diagnostic_path).with_name("gradient.npz"))
                                    if row_diagnostic_path else None):

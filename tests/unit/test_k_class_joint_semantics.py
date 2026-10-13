@@ -1078,7 +1078,7 @@ def test_sparse_firstiter_k1_adapter_forwards_exact_cc_and_spectrum_norm(monkeyp
         oversampling_order=1,
         accumulate_noise=False,
         return_best_pose_details=False,
-        pass2_kwargs={"source_faithful_spectrum_norm": True, "engine_tuning": EngineTuning()},
+        pass2_kwargs={"source_faithful_spectrum_norm": True, "engine_tuning": EngineTuning(), "scoring_overrides": ScoringOverrides()},
     )
 
     assert len(calls) == 1
@@ -1167,6 +1167,7 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch, d
             "source_faithful_spectrum_norm": True,
             "dense_gemm_full_grid": dense_full_grid,
             "engine_tuning": EngineTuning(),
+            "scoring_overrides": ScoringOverrides(),
         },
     )
 

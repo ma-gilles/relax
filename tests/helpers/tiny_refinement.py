@@ -406,7 +406,7 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
             rotation_parents, fine_translations, translation_parents, [[np.array([0], np.int32)] * 3], "linear_interp",
             class_log_priors=np.zeros(1), accumulate_noise=True, return_best_pose_details=False,
             coarse_healpix_order=0, oversampling_order=1, random_perturbation=0.0,
-            engine_kwargs=dict(keywords, current_size=None),
+            engine_kwargs=dict(keywords, current_size=None, scoring_overrides=ScoringOverrides.from_environ()),
         )
     except _Reached:
         stages["pass2"] = recorded[-1]

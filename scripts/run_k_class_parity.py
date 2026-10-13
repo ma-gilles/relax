@@ -1810,6 +1810,7 @@ def main() -> None:
                     relion_projector_half=relion_projector_half_by_class[class_index],
                     relion_projector_r_max=relion_projector_r_max,
                     engine_tuning=EngineTuning.from_environ(),
+                    scoring_overrides=ScoringOverrides.from_environ(),
                 )
                 sparse_Ft_y.append(class_output.Ft_y)
                 sparse_Ft_ctf.append(class_output.Ft_ctf)

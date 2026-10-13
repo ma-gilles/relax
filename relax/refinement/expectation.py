@@ -670,6 +670,7 @@ def score_numbered_half(
             unit_seed_classes=seed_classes_k,
             normalized_cc=phase.variant.score_mode == "normalized_cc",
             engine_tuning=options.environment.engine,
+            scoring_overrides=options.environment.scoring,
         )
     elif use_local:
         local_optics = shape_class_scoring.prepare_optics(

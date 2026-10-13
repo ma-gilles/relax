@@ -161,6 +161,7 @@ def run_tomo_initial_model_estep(
         reconstruction_group_count=2,
         mstep_subtract_ctf_projection=environment.subtract_projected_reference,
         engine_tuning=environment.engine,
+        scoring_overrides=environment.scoring,
     )
     counts = np.asarray(scored.significant_counts)
     logger.info(
