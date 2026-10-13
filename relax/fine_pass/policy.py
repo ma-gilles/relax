@@ -138,10 +138,6 @@ def _projection_cache_enabled_for_pass(
 
 
 
-# Take ``ctf_probs`` from the translate-and-sum kernel's fourth output instead
-# of the XLA statement. Measurement only: see
-# ``resident_block_weighted_sums_kernel`` for why it is not the default.
-_KERNEL_CTF_PROBS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
 
 
 # P3-A: dispatch the per-stage chunk loop's three stages as jitted programs
@@ -153,12 +149,6 @@ _KERNEL_CTF_PROBS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
 _RESIDENT_GLUE_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
 
 
-
-
-def kernel_ctf_probs_enabled() -> bool:
-    """Whether the M-step's ``ctf_probs`` comes from the kernel's fourth output."""
-
-    return parse_env_flag(_KERNEL_CTF_PROBS_ENV, default=False)
 
 
 def resident_glue_jit_enabled() -> bool:

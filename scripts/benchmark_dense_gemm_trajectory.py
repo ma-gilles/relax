@@ -789,7 +789,6 @@ def _resident_cuda_fixture_program(
                     batch.rec_raw_image, batch.rec_weighted_ctf, batch.rec_raw_image,
                     batch.rec_weight, recon_indices, angles,
                     image_shape=image_shape, n_recon_pixels=n_recon_pixels,
-                    kernel_ctf_probs=False,
                 )
                 row_rotations = rotations[row_rotation]
                 adjoint_kwargs = dict(

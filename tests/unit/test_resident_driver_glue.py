@@ -56,7 +56,6 @@ def _spec(**overrides):
         use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=False,
         bpref_recon_operand=False,
-        kernel_ctf_probs=False,
     )
     kwargs.update(overrides)
     return resident_chunk_records.ChunkProgramSpec(**kwargs)

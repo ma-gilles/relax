@@ -429,7 +429,6 @@
   "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_TIMING": "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING",
   "RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT": "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT",
   "RECOVAR_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES": "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES",
-  "RECOVAR_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS": "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS",
   "RECOVAR_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS": "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS",
   "RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS": "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS",
   "RECOVAR_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY": "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY",
@@ -717,6 +716,8 @@
   "RECOVAR_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "no user: only a unit test armed the carry aval check, which the test now calls itself (2026-10-13)",
   "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "no user: only a unit test armed the carry aval check, which the test now calls itself (2026-10-13)",
   "RECOVAR_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES": "no source: the resident hypothesis tables came only from the retired vectorized hypothesis preparation (2026-10-13)",
-  "RELAX_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES": "no source: the resident hypothesis tables came only from the retired vectorized hypothesis preparation (2026-10-13)"
+  "RELAX_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES": "no source: the resident hypothesis tables came only from the retired vectorized hypothesis preparation (2026-10-13)",
+  "RECOVAR_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS": "no user: the fused ctf_probs from the translate-and-sum kernel was a measurement arm nothing selected; the M-step keeps the XLA statement (2026-10-13)",
+  "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS": "no user: the fused ctf_probs from the translate-and-sum kernel was a measurement arm nothing selected; the M-step keeps the XLA statement (2026-10-13)"
  }
 }

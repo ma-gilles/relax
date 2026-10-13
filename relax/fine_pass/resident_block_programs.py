@@ -78,7 +78,6 @@ def resident_block_weighted_sums_kernel(
     *,
     image_shape,
     n_recon_pixels: int,
-    kernel_ctf_probs: bool,
 ):
     """T15's translate-and-sum kernel in place of the gathered-tile reduction.
 
@@ -100,9 +99,8 @@ def resident_block_weighted_sums_kernel(
     ``[2048, 21]``, and it does not at ``[64, 21]``, where the fourth output
     moves 53% of the cells by up to 1 relative ulp. ``ctf_probs`` feeds the
     ``Ft_ctf`` accumulator and the Wavg and noise terms, so the default keeps
-    the XLA statement the per-chunk path used, on the same gathered CTF row;
-    the fused form stays selectable for measurement, and the kernel's own mass
-    is never used for anything else.
+    the XLA statement the per-chunk path used, on the same gathered CTF row,
+    and the kernel's own mass is never used.
     """
 
     from relax.cuda import translate as cuda_translate
@@ -121,14 +119,9 @@ def resident_block_weighted_sums_kernel(
         recon_weight=(
             None if recon_weight is None else jnp.asarray(recon_weight, dtype=jnp.float32)
         ),
-        ctf2_over_nv=(
-            jnp.asarray(ctf2_over_nv_recon, dtype=jnp.float32) if kernel_ctf_probs else None
-        ),
+        ctf2_over_nv=None,
         image_shape=tuple(int(size) for size in image_shape),
     )
-    if kernel_ctf_probs:
-        summed, summed_masked, probs_sum_t, ctf_probs = outputs
-        return summed, summed_masked, ctf_probs, probs_sum_t
     summed, summed_masked, _kernel_mass = outputs
     ctf_probs, probs_sum_t = resident_block_ctf_probs(
         row_posterior, row_image_local, ctf2_over_nv_recon

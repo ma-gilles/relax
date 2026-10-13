@@ -553,17 +553,10 @@ def test_resident_operands_translate_to_the_per_chunk_tiles(
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("kernel_ctf_probs", [False, True])
-def test_translate_sum_kernel_matches_the_block_reduction(
-    monkeypatch, custom_cuda_lib, gpu_device, kernel_ctf_probs
-):
+def test_translate_sum_kernel_matches_the_block_reduction(monkeypatch, custom_cuda_lib, gpu_device):
     """T15's kernel equals the gathered-tile reduction at 21 translations.
 
-    ``summed`` and ``summed_masked`` match in both forms, and so does
-    ``ctf_probs`` in the default form, which keeps the XLA statement. In the
-    fused form the kernel's own ``probs_sum_t`` reduces the translations
-    sequentially and XLA does not at this block shape, which moves the fourth
-    output by up to one relative ulp; that arm is held to its measured bound.
+    ``summed``, ``summed_masked`` and ``ctf_probs`` (the XLA statement) match.
     """
 
     from relax.fine_pass.resident_block_programs import (
@@ -618,7 +611,6 @@ def test_translate_sum_kernel_matches_the_block_reduction(
                 angles,
                 image_shape=IMAGE_SHAPE,
                 n_recon_pixels=n_pixels,
-                kernel_ctf_probs=kernel_ctf_probs,
             )
         )
 
@@ -628,16 +620,8 @@ def test_translate_sum_kernel_matches_the_block_reduction(
     _assert_matches(np.asarray(masked)[live], np.asarray(masked_ref)[live], "summed_masked")
     assert np.all(np.asarray(summed)[7] == 0)
     assert np.all(np.asarray(summed)[3] == 0)
-    if not kernel_ctf_probs:
-        _assert_matches(np.asarray(ctf_probs)[live], np.asarray(ctf_ref)[live], "ctf_probs")
-        assert np.all(np.asarray(ctf_probs)[7] == 0) and np.all(np.asarray(ctf_probs)[3] == 0)
-    else:
-        # The fused fourth output is the measured exception: a bounded ulp gap,
-        # not an equality. Record the bound the arm is allowed to show.
-        actual = np.asarray(ctf_probs)[live].astype(np.float64)
-        expected = np.asarray(ctf_ref)[live].astype(np.float64)
-        relative = np.abs(actual - expected) / np.maximum(np.abs(expected), 1e-30)
-        assert float(relative.max()) <= 4.0 * np.finfo(np.float32).eps, float(relative.max())
+    _assert_matches(np.asarray(ctf_probs)[live], np.asarray(ctf_ref)[live], "ctf_probs")
+    assert np.all(np.asarray(ctf_probs)[7] == 0) and np.all(np.asarray(ctf_probs)[3] == 0)
 
 
 @pytest.mark.gpu

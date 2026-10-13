@@ -606,24 +606,3 @@ def test_one_wrong_boolean_makes_the_keys_disjoint():
     assert resident_chunk_programs.chunk_program_keys("per-stage", right).isdisjoint(
         resident_chunk_programs.chunk_program_keys("per-stage", wrong)
     )
-
-
-def test_the_environment_fields_are_read_by_the_constructor(monkeypatch):
-    """The environment-read fields are why one constructor had to exist.
-
-    Both callers must read them at the same moment. This pins that they come
-    from the constructor rather than from either call site, so the only way to
-    get two different values is to change the environment mid-iteration.
-    """
-
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS", "0")
-    one = resident_chunk_programs.make_chunk_program_spec(
-        row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
-        use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
-    )
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS", "1")
-    two = resident_chunk_programs.make_chunk_program_spec(
-        row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
-        use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
-    )
-    assert one.kernel_ctf_probs != two.kernel_ctf_probs

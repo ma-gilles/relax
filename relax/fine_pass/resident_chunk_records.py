@@ -129,10 +129,6 @@ class ChunkProgramSpec:
     # the BPref convention (a weight) or the score convention (no weight).
     use_translate_sum_kernel: bool
     bpref_recon_operand: bool
-    # Whether ``ctf_probs`` comes from the kernel's fourth output instead of the
-    # XLA statement the per-chunk path used. Off by default: the kernel's own
-    # translation mass is bitwise against ``jnp.sum`` only at some shapes.
-    kernel_ctf_probs: bool
     # Zero oversampling: the posterior keeps every weight, divides by the
     # retained coarse sum and reports the coarse winner and Pmax
     # (CoarseNormalizationReuse). The tables carry the arrays.

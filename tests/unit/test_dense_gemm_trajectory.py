@@ -85,7 +85,7 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
     def weighted_rows(posterior, row_ids, row_local, recon, recon_weight,
                       noise, ctf2, indices, angles, **kwargs):
         selected["row_traces"] += 1
-        assert kwargs["kernel_ctf_probs"] is False
+        assert "kernel_ctf_probs" not in kwargs
         assert posterior.shape == (4, 2)
         assert indices.shape == (1,) and angles.shape == (2, 2)
         assert recon_weight.shape == recon.shape and noise.shape == recon.shape

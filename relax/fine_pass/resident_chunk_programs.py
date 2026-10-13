@@ -373,7 +373,6 @@ def make_chunk_program_spec(
         use_translate_sum_kernel=bool(use_translate_sum_kernel),
         bpref_recon_operand=bool(bpref_recon_operand),
         mstep_max_r=float(int(mstep_current_size) // 2) if mstep_max_r is None else mstep_max_r,
-        kernel_ctf_probs=policy.kernel_ctf_probs_enabled(),
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
         firstiter_cc=bool(firstiter_cc),
         n_slots=int(n_slots),

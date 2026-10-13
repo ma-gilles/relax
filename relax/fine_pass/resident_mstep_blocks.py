@@ -161,7 +161,6 @@ def _resident_mstep_block(
             tables.translation_angles,
             image_shape=spec.image_shape,
             n_recon_pixels=int(spec.n_recon_pixels),
-            kernel_ctf_probs=bool(spec.kernel_ctf_probs),
         )
     else:
         summed, summed_masked, ctf_probs, _probs_sum_t = resident_block_programs.resident_block_weighted_sums(
@@ -359,12 +358,7 @@ def _mstep_block_operand_dtypes(
         summed_masked_dtype = jnp.dtype(
             jnp.result_type(jnp.float32, operands.shifted_noise.dtype)
         )
-    if spec.use_translate_sum_kernel and spec.kernel_ctf_probs:
-        ctf_probs_dtype = jnp.dtype(jnp.float32)
-    else:
-        ctf_probs_dtype = jnp.dtype(
-            jnp.result_type(jnp.float32, operands.ctf2_over_nv_recon.dtype)
-        )
+    ctf_probs_dtype = jnp.dtype(jnp.result_type(jnp.float32, operands.ctf2_over_nv_recon.dtype))
 
     a2_dtype = jnp.dtype(jnp.result_type(proj_abs2_dtype, ctf_probs_dtype, noise_dtype))
     cross_dtype = jnp.dtype(jnp.result_type(proj_dtype, summed_masked_dtype))
@@ -764,7 +758,6 @@ def run_resident_mstep_blocks(
         # inside the reduction; pre-shifted tiles take the XLA statement.
         use_translate_sum_kernel=use_translate_sum_kernel,
         bpref_recon_operand=use_translate_sum_kernel and recon.get("recon_weight") is not None,
-        kernel_ctf_probs=use_translate_sum_kernel and policy.kernel_ctf_probs_enabled(),
     )
     operands = resident_chunk_records.ChunkStageOperands(
         score_input=None,
