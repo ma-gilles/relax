@@ -54,12 +54,12 @@ device scoring (`defer_publish`).
    still pass keywords that `_compute_k_class_significance_batched` turns into a `Pass1Request`; that entry is the seam
    they patch and the fingerprint calls, so it stays until they build the request.
 2. **The environment steers pass 1 below the boundary (rule 5).** Read in `pass1_plan.py`:
-   `RELAX_K1_COARSE_ROTATED_RADIUS`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (also the field `pad_final_image_batch`: two
-   owners), `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect is a refusal) and
-   `RELAX_COARSE_GEMM_FLOAT64` (read once per pass, then passed to `plan_score_program`); in `pass1_route.py`
-   `RECOVAR_K1_RELION_F32_COARSE_SUPPORT` (selects the generic support route); the projection-cache variables
-   (`gaussian_plan.py`: they change `rotation_block_size`); in `pass1_assembly.py` the support-audit variables; in
-   `pass1_dump.py` the dump target list.
+   `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (also the field `pad_final_image_batch`: two owners) and
+   `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect is a refusal); in `pass1_assembly.py` the
+   support-audit variables; in `pass1_dump.py` the dump target list. Moved to the commands (2026-10-12): the
+   projection-cache variables and the projector transient budget (`EngineTuning`, through `Pass1Request.engine_tuning`)
+   and `RELAX_K1_COARSE_ROTATED_RADIUS`, `RELAX_COARSE_GEMM_FLOAT64` and `RECOVAR_K1_RELION_F32_COARSE_SUPPORT`
+   (`relax.runtime.scoring_overrides.ScoringOverrides`, through `Pass1Request.scoring_overrides`).
 3. **A diagnostic steers execution (rule 9).** A dump batch switches off device compaction and deferred publishing.
    The dump and the audit are imported by `pass1_publish.py`, `pass1_dump.py`, `pass1_assembly.py` and
    `tree_rescore.py` (the allowlist of `tests/unit/test_refinement_port_imports.py` names the four edges; the two
