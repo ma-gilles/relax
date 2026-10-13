@@ -131,23 +131,34 @@ def test_stable_window_size_rejects_invalid_shapes(current_size, image_size, qua
         stable_fourier_window_current_size(current_size, image_size, quantum=quantum)
 
 
+@pytest.fixture
+def stable_quantum_32():
+    """The run's quantum 32, as a command enters it from RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM=32."""
+    from relax.fourier.fourier_window import stable_fourier_window_quantum_scope
+
+    with stable_fourier_window_quantum_scope(32):
+        yield
+
+
 def test_stable_window_runtime_quantum_is_diagnostic_and_fail_closed(monkeypatch):
     from relax.fourier.fourier_window import (
         DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
-        STABLE_FOURIER_WINDOW_QUANTUM_ENV,
         stable_fourier_window_quantum,
+        stable_fourier_window_quantum_scope,
     )
+    from relax.runtime.engine_tuning import STABLE_FOURIER_WINDOW_QUANTUM_ENV, EngineTuning
 
     monkeypatch.delenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, raising=False)
     assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM == 8
 
     monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "16")
-    assert stable_fourier_window_quantum() == 16
+    with stable_fourier_window_quantum_scope(EngineTuning.from_environ().stable_window_quantum):
+        assert stable_fourier_window_quantum() == 16
 
     for invalid in ("0", "3", "nope"):
         monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, invalid)
         with pytest.raises(ValueError, match=STABLE_FOURIER_WINDOW_QUANTUM_ENV):
-            stable_fourier_window_quantum()
+            EngineTuning.from_environ()
 
 
 def _active_coarse_score_indices(current_size: int) -> np.ndarray:
@@ -160,11 +171,8 @@ def _active_coarse_score_indices(current_size: int) -> np.ndarray:
     return np.asarray(plan.logical_spec.score_indices_np, dtype=np.int32)
 
 
+@pytest.mark.usefixtures("stable_quantum_32")
 def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
-    monkeypatch.setenv(
-        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
-        "32",
-    )
     logical_size = 70
     layout = plan_coarse_gaussian_square_layout(
         _IMAGE_SHAPE,
@@ -226,13 +234,10 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
     assert not np.any(layout.logical_projector_mask_np[logical_count:])
 
 
+@pytest.mark.usefixtures("stable_quantum_32")
 def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
     """Regression for the live current_size=26, physical_size=32 fused failure."""
 
-    monkeypatch.setenv(
-        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
-        "32",
-    )
     logical_size = 26
     layout = plan_coarse_gaussian_square_layout(
         _IMAGE_SHAPE,
@@ -257,13 +262,10 @@ def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
     )
 
 
+@pytest.mark.usefixtures("stable_quantum_32")
 def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
     """Physical size 96 must retain the logical size-86 projector disk."""
 
-    monkeypatch.setenv(
-        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
-        "32",
-    )
     logical_size = 86
     layout = plan_coarse_gaussian_square_layout(
         _IMAGE_SHAPE,
@@ -343,11 +345,8 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
     assert_matches(default_route, np.complex64(1))
 
 
+@pytest.mark.usefixtures("stable_quantum_32")
 def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
-    monkeypatch.setenv(
-        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
-        "32",
-    )
     layouts = [
         plan_coarse_gaussian_square_layout(
             _IMAGE_SHAPE,
@@ -364,11 +363,8 @@ def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
     assert len({layout.logical_square_count for layout in layouts}) == 6
 
 
+@pytest.mark.usefixtures("stable_quantum_32")
 def test_disabled_coarse_square_layout_is_legacy_exact(monkeypatch):
-    monkeypatch.setenv(
-        "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
-        "32",
-    )
     current_size = 70
     active = _active_coarse_score_indices(current_size)
     layout = plan_coarse_gaussian_square_layout(

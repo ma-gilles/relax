@@ -125,6 +125,9 @@ class EngineTuning:
     ``local_selector_chunk_size`` and ``local_selector_max_elements`` (RELAX_LOCAL_SELECTOR_CHUNK_SIZE,
     RELAX_LOCAL_SELECTOR_MAX_ELEMENTS; :func:`read_local_selector_chunking`): images per chunk of the local
     search's orientation selector, given, or sized so a chunk holds at most that many elements.
+    ``stable_window_quantum`` (RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM, :func:`parse_stable_window_quantum`):
+    the stable Fourier windows' physical-size quantum for every refinement and VDAM run, None for the command's own
+    (capacity only; the logical windows are unchanged).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -150,6 +153,7 @@ class EngineTuning:
     coarse_gemm_projection_cache: bool | None = None
     local_selector_chunk_size: int | None = None
     local_selector_max_elements: int = DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS
+    stable_window_quantum: int | None = None
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -207,6 +211,7 @@ class EngineTuning:
                 COARSE_GEMM_PROJECTION_CACHE_ENV, read_env_text(COARSE_GEMM_PROJECTION_CACHE_ENV),
             ),
             **dict(zip(("local_selector_chunk_size", "local_selector_max_elements"), read_local_selector_chunking())),
+            stable_window_quantum=parse_stable_window_quantum(read_env_text(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "")),
         )
 
 
@@ -431,3 +436,21 @@ def read_local_selector_chunking() -> tuple[int | None, int]:
     if explicit:
         return int(explicit), DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS
     return None, int(read_env_text(LOCAL_SELECTOR_MAX_ELEMENTS_ENV, str(DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS)))
+
+
+STABLE_FOURIER_WINDOW_QUANTUM_ENV = "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM"
+
+
+def parse_stable_window_quantum(raw: str) -> int | None:
+    """RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM (stripped): blank is None; anything that is not an even integer >= 2 is
+    refused."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        quantum = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{STABLE_FOURIER_WINDOW_QUANTUM_ENV} must be an even integer >= 2, got {raw!r}") from exc
+    if quantum < 2 or quantum % 2:
+        raise ValueError(f"{STABLE_FOURIER_WINDOW_QUANTUM_ENV} must be an even integer >= 2, got {raw!r}")
+    return quantum

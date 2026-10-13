@@ -20,7 +20,6 @@ See ``docs/math/plan_relion_parity.md``, Phase 3.
 
 import contextlib
 import contextvars
-import os
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any
@@ -35,9 +34,6 @@ from relax.runtime.shape_buckets import round_up_to_multiple
 # Representative sizes kept for explicit callers that still want a bounded set.
 ALLOWED_CURRENT_SIZES = [16, 24, 32, 48, 64, 80, 96, 104, 112, 120, 128, 160, 192, 224, 256]
 _DEFAULT_PROJECTION_MAX_R = object()
-STABLE_FOURIER_WINDOW_QUANTUM_ENV = (
-    "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM"
-)
 DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM = 8
 # VDAM's class step (relax.vdam.driver). A new physical class compiles the resident
 # pass programs again (about 5 s each), while padding the window costs VDAM's small
@@ -71,27 +67,13 @@ def stable_fourier_window_quantum_scope(quantum: int | None):
 def stable_fourier_window_quantum() -> int:
     """Return the shared physical-size quantum for stable EM windows.
 
-    The environment variable overrides; otherwise the quantum of the refinement
-    in progress (:func:`stable_fourier_window_quantum_scope`), else the default.
+    The quantum of the refinement in progress
+    (:func:`stable_fourier_window_quantum_scope`, which the commands enter with
+    ``EngineTuning.stable_window_quantum`` when it is set), else the default.
     """
 
-    raw = os.environ.get(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "").strip()
-    if not raw:
-        scoped = _REFINEMENT_QUANTUM.get()
-        return DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM if scoped is None else scoped
-    try:
-        quantum = int(raw)
-    except ValueError as exc:
-        raise ValueError(
-            f"{STABLE_FOURIER_WINDOW_QUANTUM_ENV} must be an even integer >= 2, "
-            f"got {raw!r}"
-        ) from exc
-    if quantum < 2 or quantum % 2:
-        raise ValueError(
-            f"{STABLE_FOURIER_WINDOW_QUANTUM_ENV} must be an even integer >= 2, "
-            f"got {raw!r}"
-        )
-    return quantum
+    scoped = _REFINEMENT_QUANTUM.get()
+    return DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM if scoped is None else scoped
 
 
 @dataclass(frozen=True)

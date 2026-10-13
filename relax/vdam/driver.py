@@ -681,8 +681,8 @@ def run_native_initial_model(
         return source.iteration_references(current, iteration=int(iteration), meta=meta)
     profile.record("iteration_setup")
 
-    # One stable-window class history for the run, as refinements have, on VDAM's ladder.
-    with stable_window_class_history(quantum=VDAM_STABLE_FOURIER_WINDOW_QUANTUM):
+    # One stable-window class history for the run, on VDAM's ladder unless the command read an override quantum.
+    with stable_window_class_history(quantum=opts.environment.engine.stable_window_quantum or VDAM_STABLE_FOURIER_WINDOW_QUANTUM):
         final_state = run_vdam_iterations(
             state,
             nr_particles=n_particles,

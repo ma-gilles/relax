@@ -1324,7 +1324,7 @@ def main(command=None):
     # One stable-window class history for the refinement (see refine_single_volume).
     from relax.fine_pass.resident_stable_windows import stable_window_class_history
 
-    with stable_window_class_history():
+    with stable_window_class_history(quantum=run_options.environment.engine.stable_window_quantum):
         result = refine_single_volume(
             experiment_datasets=experiment_datasets,
             startup=startup,

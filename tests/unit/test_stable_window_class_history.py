@@ -6,7 +6,6 @@ import pytest
 from relax.fine_pass.resident_stable_windows import _stable_window_physical_class, stable_window_class_history
 from relax.fourier.fourier_window import (
     DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
-    STABLE_FOURIER_WINDOW_QUANTUM_ENV,
     VDAM_STABLE_FOURIER_WINDOW_QUANTUM,
     make_stable_fourier_window_shape_plan,
     stable_fourier_window_quantum,
@@ -28,8 +27,7 @@ def test_a_new_class_reuses_a_run_class_at_most_one_quantum_larger():
         assert _stable_window_physical_class(128, 80, 8) == 80  # a new refinement starts empty
 
 
-def test_a_refinement_runs_on_its_own_quantum(monkeypatch):
-    monkeypatch.delenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, raising=False)
+def test_a_refinement_runs_on_its_own_quantum():
     assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
     with stable_window_class_history(quantum=VDAM_STABLE_FOURIER_WINDOW_QUANTUM):
         quantum = stable_fourier_window_quantum()
@@ -37,9 +35,6 @@ def test_a_refinement_runs_on_its_own_quantum(monkeypatch):
         # The 10k/256 VDAM ramp: 56 at iteration 1, then 30, 66, 82, 104, 114.
         chosen = [_stable_window_physical_class(256, size, quantum) for size in (56, 30, 66, 82, 104, 114)]
         assert chosen == [72, 72, 72, 96, 120, 120]
-        monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "16")
-        assert stable_fourier_window_quantum() == 16  # the environment overrides
-        monkeypatch.delenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV)
     assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
     with stable_window_class_history():
         assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
@@ -47,6 +42,29 @@ def test_a_refinement_runs_on_its_own_quantum(monkeypatch):
         with pytest.raises(ValueError, match="even integer"):
             with stable_window_class_history(quantum=bad):
                 pass
+
+
+def test_the_quantum_override_is_read_once_at_the_boundary(monkeypatch):
+    """RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM: unset or blank is None (the command's own quantum); the
+    commands enter the run's scope with a set value, which every pass then reads; odd, small and text values are
+    refused, as before."""
+    from relax.runtime.engine_tuning import STABLE_FOURIER_WINDOW_QUANTUM_ENV, EngineTuning
+
+    for raw in (None, " "):
+        if raw is None:
+            monkeypatch.delenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, raising=False)
+        else:
+            monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, raw)
+        assert EngineTuning.from_environ().stable_window_quantum is None
+    monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, " 16 ")
+    quantum = EngineTuning.from_environ().stable_window_quantum
+    assert quantum == 16
+    with stable_window_class_history(quantum=quantum):
+        assert stable_fourier_window_quantum() == 16
+    for bad in ("7", "0", "eight"):
+        monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, bad)
+        with pytest.raises(ValueError, match="must be an even integer >= 2"):
+            EngineTuning.from_environ()
 
 
 def test_an_explicit_physical_class_keeps_the_logical_window():
