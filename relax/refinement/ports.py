@@ -401,7 +401,11 @@ class RunObserver:
 
     def bpref_diagnostics_armed(self, iteration: int, half_index: int, *, bpref_device_signature_active: bool) -> bool:
         """Whether a BPref capture or diagnostic override is armed for half ``half_index`` of numbered iteration
-        ``iteration`` (both zero-based), so that half's first-iteration BPref takes its direct path."""
+        ``iteration`` (both zero-based), so that half's first-iteration BPref takes its direct path.
+
+        An armed dump therefore forces direct planning of that half (not deferred to the host, not planned
+        compact): the captures are taken on the direct path only. Direct planning matches compact planning to
+        float noise, so a dumped half is not bit-identical to the same half run without the dump."""
         return False
 
     def run_started(self, context) -> None:

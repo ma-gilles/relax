@@ -216,7 +216,11 @@ class BpRefDiagnosticsObserver(RunObserver):
     """Flushes the BPref device-panel capture of each scored numbered half (``RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR``,
     limited by ``RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION`` and ``_HALF``), and says when a BPref capture or
     diagnostic override (``bpref_diagnostics.BPREF_DIAGNOSTIC_ENVS``) is armed for a numbered half, read from the
-    environment at each call."""
+    environment at each call.
+
+    An armed capture (among them RELAX_BPREF_ACCUMULATOR_DELTA_DUMP_DIR, RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR and
+    RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE) forces that half's first-iteration BPref onto direct planning, where
+    the captures are taken; direct planning matches compact planning to float noise, not bit for bit."""
 
     def bpref_diagnostics_armed(self, iteration, half_index, *, bpref_device_signature_active):
         return bpref_diagnostics._relion_firstiter_bpref_diagnostics_active(
