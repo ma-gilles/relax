@@ -13,13 +13,11 @@ import jax
 import numpy as np
 
 from relax.projection import projection_cache as projection_cache_helpers
-from relax.runtime.engine_tuning import COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV, parse_gib_budget
-from relax.runtime.env_flags import parse_env_strict_flag
-
-COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV = (
-    "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE"
+from relax.runtime.engine_tuning import (
+    COARSE_GEMM_PROJECTION_CACHE_ENV,
+    COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV,
+    parse_gib_budget,
 )
-
 
 _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_DEFAULT_MAX_GB = 4.0
 
@@ -32,15 +30,6 @@ _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ROW_ALIGNMENT = 16
 
 
 _K1_RELION_F32_COARSE_SUPPORT_ENV = "RECOVAR_K1_RELION_F32_COARSE_SUPPORT"
-
-
-def coarse_gaussian_gemm_projection_cache_enabled(
-    *,
-    default: bool = False,
-) -> bool:
-    """Resolve the explicit call-scoped coarse-projection cache toggle."""
-
-    return parse_env_strict_flag(COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV, default=default)
 
 
 class CoarseGaussianGemmResources(NamedTuple):
@@ -213,7 +202,7 @@ def validate_coarse_gaussian_gemm_projection_cache_request(
     returns, one table per class, so any class count is served unchanged.
     """
 
-    prefix = f"{COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV}=1 requires"
+    prefix = f"{COARSE_GEMM_PROJECTION_CACHE_ENV}=1 requires"
     if int(n_rotations) <= 0 or int(n_rotations) % int(
         _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ROW_ALIGNMENT
     ):

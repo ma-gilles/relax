@@ -259,7 +259,7 @@ MUTATIONS = (
     ("stable_windows", "stable_fourier_window_shapes=bool(stable_fourier_window_shapes),",
      "stable_fourier_window_shapes=False,",
      "the quantized physical window is ignored", True),
-    ("projection_cache_disabled", "requested = coarse_gaussian_gemm_projection_cache_enabled(default=True)",
+    ("projection_cache_disabled", "requested = True if explicit_request is None else explicit_request",
      "requested = False",
      "the projection cache is never requested", True),
     ("generic_route_ignored", "float32_support=k1_relion_f32_coarse_support_enabled(default=True),",

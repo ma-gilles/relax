@@ -1,7 +1,6 @@
 """Planning the Gaussian route of pass 1 before its first batch: the scored rows, the GEMM's resources, the cache."""
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -10,11 +9,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.scoring.coarse_gaussian_gemm import (
-    COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV,
     coarse_gaussian_gemm_cached_block_rows,
     coarse_gaussian_gemm_fit_rotation_block_size,
     coarse_gaussian_gemm_projection_cache_budget_bytes,
-    coarse_gaussian_gemm_projection_cache_enabled,
     coarse_gaussian_gemm_projection_row_bytes,
     coarse_gaussian_gemm_resources,
     plan_coarse_gaussian_gemm_projection_cache,
@@ -57,14 +54,15 @@ def _custom_cuda_ready() -> bool:
     return jax.default_backend() == "gpu" and cuda_backproject.cuda_available()
 
 
-def _projection_cache_requested(shape: PassShape, relion_projector_half) -> tuple[bool, bool]:
-    """Whether the pass asks for the projection cache, and whether the environment asked for it explicitly.
+def _projection_cache_requested(shape: PassShape, relion_projector_half, explicit_request) -> tuple[bool, bool]:
+    """Whether the pass asks for the projection cache, and whether the command asked for it explicitly
+    (``explicit_request``: ``EngineTuning.coarse_gemm_projection_cache``, None when unset).
 
     An explicit request fails closed; the default cache quietly stands down wherever its contract does not hold.
     """
 
-    requested = coarse_gaussian_gemm_projection_cache_enabled(default=True)
-    explicit = COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV in os.environ
+    requested = True if explicit_request is None else explicit_request
+    explicit = explicit_request is not None
     if requested:
         try:
             validate_coarse_gaussian_gemm_projection_cache_request(
@@ -96,12 +94,15 @@ def plan_coarse_gaussian(
 ) -> CoarseGaussianPlan:
     """Plan the Gaussian route of a pass over ``shape``, scoring the rows ``window_score_indices_np`` (``None``: all).
 
-    ``engine_tuning`` (the request's ``EngineTuning``) gives the projector transient and projection cache budgets.
+    ``engine_tuning`` (the request's ``EngineTuning``) gives the projector transient and projection cache budgets and
+    the explicit cache request.
 
     Refuses more than 128 translations and a backend without the custom CUDA library. Logs the plan.
     """
 
-    cache_requested, cache_explicit = _projection_cache_requested(shape, relion_projector_half)
+    cache_requested, cache_explicit = _projection_cache_requested(
+        shape, relion_projector_half, engine_tuning.coarse_gemm_projection_cache,
+    )
     if shape.n_trans > 128:
         raise ValueError(f"the coarse GEMM scorer supports at most 128 translations, got {shape.n_trans}")
     from relax.fine_pass.scoring import (

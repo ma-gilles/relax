@@ -146,32 +146,28 @@ def _direct_scores(projected, shifted, weight, initial):
     )
 
 
-@pytest.mark.parametrize(
-    ("variable", "enabled_flag"),
-    [
-        (
-            'RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE',
-            coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_enabled,
-        ),
-    ],
-)
-def test_coarse_gaussian_flags_are_default_off_and_fail_closed(
-    monkeypatch, variable, enabled_flag,
-):
+def test_coarse_gemm_projection_cache_request_is_read_once_at_the_boundary(monkeypatch):
+    """RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE: unset is None (the pass asks for the cache, not explicitly);
+    the true and false tokens are explicit; anything else is refused, as the strict flag did."""
+    from types import SimpleNamespace
+
+    from relax.scoring import gaussian_plan
+
+    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE"
     monkeypatch.delenv(variable, raising=False)
-    assert not enabled_flag()
-    assert enabled_flag(default=True)
-
-    for disabled in ("0", "false", "no", "off"):
-        monkeypatch.setenv(variable, disabled)
-        assert not enabled_flag(default=True)
-    for enabled in ("1", "true", "yes", "on"):
-        monkeypatch.setenv(variable, enabled)
-        assert enabled_flag()
-
-    monkeypatch.setenv(variable, "automatic")
-    with pytest.raises(ValueError, match=variable):
-        enabled_flag()
+    assert EngineTuning.from_environ().coarse_gemm_projection_cache is None
+    shape = SimpleNamespace(n_rot=16)
+    projector = np.zeros((1, 2), np.complex64)
+    assert gaussian_plan._projection_cache_requested(shape, projector, None) == (True, False)
+    for raw, expected in (("0", False), (" OFF ", False), ("no", False), ("1", True), ("Yes", True), ("on", True)):
+        monkeypatch.setenv(variable, raw)
+        request = EngineTuning.from_environ().coarse_gemm_projection_cache
+        assert request is expected
+        assert gaussian_plan._projection_cache_requested(shape, projector, request) == (expected, True)
+    for raw in ("automatic", ""):
+        monkeypatch.setenv(variable, raw)
+        with pytest.raises(ValueError, match=variable):
+            EngineTuning.from_environ()
 
 
 def _projection_cache_request_kwargs(**updates):
@@ -773,6 +769,8 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
 
     projection_calls.clear()
     monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "1")
+    # The explicit request read at the boundary reaches the pass-1 plan.
+    common["engine_tuning"] = EngineTuning.from_environ()
     plan = plan_pass1(Pass1Request(dataset, jnp.ones(dataset.image_size, dtype=jnp.float32), rotations, translations, **common))
     cached = significance.run_pass1(plan)
     assert len(projection_calls) == 1

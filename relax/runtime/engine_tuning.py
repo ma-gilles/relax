@@ -119,6 +119,8 @@ class EngineTuning:
     :func:`parse_gib_budget`; default 2 GiB): the coarse GEMM's projector transient per rotation block.
     ``coarse_gemm_projection_cache_max_bytes`` (RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB, GiB through
     :func:`parse_gib_budget`): the coarse GEMM projection cache's budget, None for the device-derived one.
+    ``coarse_gemm_projection_cache`` (RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE, :func:`parse_strict_switch`):
+    the coarse GEMM projection cache asked for explicitly (True or False), None when unset (on where it fits).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -141,6 +143,7 @@ class EngineTuning:
     dense_gemm_class_batch_scores: bool = False
     coarse_gemm_transient_max_bytes: int = DEFAULT_COARSE_GEMM_TRANSIENT_MAX_BYTES
     coarse_gemm_projection_cache_max_bytes: int | None = None
+    coarse_gemm_projection_cache: bool | None = None
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -193,6 +196,9 @@ class EngineTuning:
             coarse_gemm_projection_cache_max_bytes=(
                 None if (raw := read_env_text(COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV)) is None
                 else parse_gib_budget(COARSE_GEMM_PROJECTION_CACHE_MAX_GB_ENV, raw)
+            ),
+            coarse_gemm_projection_cache=parse_strict_switch(
+                COARSE_GEMM_PROJECTION_CACHE_ENV, read_env_text(COARSE_GEMM_PROJECTION_CACHE_ENV),
             ),
         )
 
@@ -388,3 +394,19 @@ def parse_gib_budget(name: str, raw: str) -> int:
     if not math.isfinite(budget_gb) or budget_gb <= 0.0:
         raise ValueError(f"{name} must be a finite positive number, got {token!r}")
     return int(budget_gb * 1024**3)
+
+
+COARSE_GEMM_PROJECTION_CACHE_ENV = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE"
+
+
+def parse_strict_switch(name: str, raw: str | None) -> bool | None:
+    """A strict boolean switch: unset is None; a set value (stripped, any case) must be 1/true/yes/on or
+    0/false/no/off, anything else (blank too) is refused naming ``name``."""
+    if raw is None:
+        return None
+    token = raw.strip().lower()
+    if token in {"0", "false", "no", "off"}:
+        return False
+    if token in {"1", "true", "yes", "on"}:
+        return True
+    raise ValueError(f"Unsupported {name}={token!r}")
