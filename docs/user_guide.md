@@ -193,6 +193,9 @@ iteration; pass `--no-firstiter_cc` when the reference is on the images' greysca
 For particles picked on a membrane or lattice, `--sigma_tilt S` is RELION's prior on the tilt angle:
 the search keeps the directions within 3 S degrees of each particle's `rlnAngleTiltPrior` (RELION's
 tutorial uses `--sigma_tilt 10`), until auto-refine switches to local searches.
+`relax class3d` takes subtomogram particles with the same option, and with `--sigma_ang S` for local
+searches of S degrees around each particle's angles in the input STAR (RELION's "local angular searches"
+in a classification; with both options given, `--sigma_ang` is the one used, as in RELION).
 
 ## Subtomogram 3D initial model (VDAM)
 

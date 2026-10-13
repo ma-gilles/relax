@@ -882,6 +882,7 @@ def particle_coarse_supports(
     scale_corrections=None,
     unit_rotation_ids=None,
     unit_rotation_log_priors=None,
+    empty_classes=(),
 ):
     """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, and its coarse Pmax.
 
@@ -905,6 +906,12 @@ def particle_coarse_supports(
     particle's weights over (class, rotation, translation) are cut jointly, as RELION's
     convertAllSquaredDifferencesToWeights sorts all classes' weights of the particle together
     (acc_ml_optimiser_impl.h:2245-2345). The supports are then a list per class.
+
+    Class3D under an orientational prior (``--sigma_ang``, ``--sigma_tilt``) passes the K projectors with the
+    particles' own rotations: RELION selects one orientation list per particle and scores every class on it,
+    and its orientation weight is then ``directions_prior * psi_prior`` alone, without ``pdf_class`` or
+    ``pdf_direction`` (acc_ml_optimiser_impl.h:1960-1972). ``empty_classes`` are the classes it skips
+    (``pdf_class == 0``): they keep no sample.
     """
 
     from relax.projection.projection import relion_projector_half_to_texture_full
@@ -913,10 +920,14 @@ def particle_coarse_supports(
 
     class_projectors = tuple(projector_half) if isinstance(projector_half, (tuple, list)) else (projector_half,)
     n_classes = len(class_projectors)
-    if n_classes > 1 and (
-        unit_rotation_ids is not None or rotation_log_prior is None or np.ndim(rotation_log_prior) != 2
+    if n_classes > 1 and unit_rotation_ids is None and (
+        rotation_log_prior is None or np.ndim(rotation_log_prior) != 2
     ):
-        raise ValueError("a K-class coarse pass is a global search with one rotation log prior per class, [K, R]")
+        raise ValueError("a global K-class coarse pass takes one rotation log prior per class, [K, R]")
+    empty_classes = tuple(int(k) for k in empty_classes)
+    if empty_classes and (unit_rotation_ids is None or n_classes == 1):
+        raise ValueError("a global pass carries an empty class in its rotation log prior")
+    scored_classes = [k for k in range(n_classes) if k not in empty_classes]
     offsets = np.asarray(unit_image_offsets, dtype=np.int64)
     image_projections = np.asarray(image_projections, dtype=np.float64)
     image_left = np.asarray(image_left, dtype=np.float64)
@@ -1022,10 +1033,13 @@ def particle_coarse_supports(
 
     def rotation_prior_of(batch_units):
         if local:
-            rotation_prior = np.full((batch_units.size, r_pad_all), -np.inf, dtype=np.float32)
+            # The particle's own prior for every scored class, class-major (class k at k * R_pad), padding at -inf.
+            rotation_prior = np.full((batch_units.size, n_classes, r_pad_all), -np.inf, dtype=np.float32)
             for i, unit in enumerate(batch_units):
-                rotation_prior[i, : int(rotation_counts[unit])] = np.asarray(unit_rotation_log_priors[unit], np.float32)
-            return rotation_prior
+                rotation_prior[i, scored_classes, : int(rotation_counts[unit])] = np.asarray(
+                    unit_rotation_log_priors[unit], np.float32
+                )
+            return rotation_prior.reshape(batch_units.size, -1)
         if n_classes > 1:
             # The classes' rotations side by side, class-major (class k at k * R_pad), padding at -inf.
             rotation_prior = np.full((n_classes, r_pad_all), -np.inf, dtype=np.float32)

@@ -202,7 +202,7 @@ including the `--no-...` forms where that command omits a GUI option.
 | `--maxsig` (default -1) | default, resolved as RELION does |
 | `--offset 10` (default) | default `--offset_sigma_angstrom 10` |
 | `--sigma_ang S` | `--sigma_ang S` |
-| `--sigma_tilt S` (subtomograms; ignored with `--sigma_ang`) | `--sigma_tilt S` (subtomogram auto-refine only) |
+| `--sigma_tilt S` (subtomograms; ignored with `--sigma_ang`) | `--sigma_tilt S` (subtomogram auto-refine and Class3D) |
 
 Start-up norm corrections come from the input `rlnNormCorrection` and tau2
 and `data_vs_prior` from `initialiseDataVersusPrior` on the low-passed

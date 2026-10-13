@@ -1173,6 +1173,7 @@ def main(command=None):
         local_search_at_start=resume_snapshot is None
         and int(args.init_relion_iteration) == 0
         and (args.sigma_ang is not None or (int(args.n_classes) == 1 and args.healpix_order >= args.auto_local_healpix_order)),
+        tilt_prior_at_start=refinement_arguments.resolve_local_search(args).tilt_prior_deg(do_local_search=False) > 0.0,
         skip_align=bool(args.skip_align),
         log=logger,
     )

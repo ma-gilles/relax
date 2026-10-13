@@ -358,7 +358,8 @@ def _class_candidate_tables(
     """One class's per-image hypotheses and candidate table (T5), exactly the K=1 build.
 
     ``coarse_rotation_ids`` and ``per_image_rotation_log_prior`` are the compact coarse grid and
-    the per-unit priors of a subtomogram local search (``_prepare_per_image_pass2_inputs``).
+    the per-unit priors of a subtomogram local search (``_prepare_per_image_pass2_inputs``); the priors
+    are over this class's support.
     Returns ``(tables, hypothesis_prep_seconds, table_seconds)``.
     """
 
@@ -458,15 +459,24 @@ def _candidate_table_blocks(
     def merged(tables_by_class):
         return tables_by_class[0] if len(tables_by_class) == 1 else merge_class_tables(tables_by_class)
 
-    # A subtomogram local search's compact coarse grid and per-unit priors take the host build.
-    compact_local = (
-        table_kwargs.get("coarse_rotation_ids") is not None
-        or table_kwargs.get("per_image_rotation_log_prior") is not None
-    )
+    # A subtomogram local search's compact coarse grid and per-unit priors take the host build. The priors are
+    # one list per unit over its support's coarse rotations; K classes give one such list per class.
+    per_image_priors = table_kwargs.pop("per_image_rotation_log_prior", None)
+    compact_local = table_kwargs.get("coarse_rotation_ids") is not None or per_image_priors is not None
+    if per_image_priors is None:
+        class_image_priors = (None,) * len(class_supports)
+    elif len(class_supports) == 1:
+        class_image_priors = (per_image_priors,)
+    else:
+        class_image_priors = tuple(per_image_priors)
+        if len(class_image_priors) != len(class_supports):
+            raise ValueError("a K-class local search gives each class its particles' priors")
     if whole or compact_local or any(csr is None for csr in csrs):
         class_builds = map_over_classes(
-            lambda item: _class_candidate_tables(item[0], item[1], **table_kwargs),
-            zip(class_supports, class_rotation_priors),
+            lambda item: _class_candidate_tables(
+                item[0], item[1], per_image_rotation_log_prior=item[2], **table_kwargs
+            ),
+            zip(class_supports, class_rotation_priors, class_image_priors),
         )
         table_t0 = time.time()
         tables = with_groups(merged([built for built, _, _ in class_builds]), 0, n_images)
@@ -814,9 +824,13 @@ def _resident_pass2(
     if coarse_rotation_ids is not None or unit_rotation_log_prior is not None:
         # A subtomogram local search (relax.steps.tomo_half): its coarse grid is the union of the
         # particles' local rotations (coarse id c is grid rotation coarse_rotation_ids[c]) and each
-        # particle carries its own orientation prior over its support's coarse rotations.
-        resident_configuration.require(tilt is not None and classes is None, "a compact coarse grid is the subtomogram local search's")
-        resident_configuration.require(rotation_log_prior is None, "a local search's rotation priors are the particles' own")
+        # particle carries its own orientation prior over its support's coarse rotations (K classes: over each
+        # class's support, ``unit_rotation_log_prior`` then holding one list per class).
+        resident_configuration.require(tilt is not None, "a compact coarse grid is the subtomogram local search's")
+        resident_configuration.require(
+            rotation_log_prior is None and all(prior is None for prior in class_rotation_priors),
+            "a local search's rotation priors are the particles' own",
+        )
         if coarse_rotation_ids is not None:
             n_coarse_rot = int(np.asarray(coarse_rotation_ids).size)
     image_shape = experiment_dataset.image_shape

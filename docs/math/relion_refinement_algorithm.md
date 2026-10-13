@@ -946,9 +946,14 @@ to that tilt.
   subtomograms. Without the option the same branch leaves the run with no orientational prior, and the
   final iteration is the global search of the numbered ones, each orientation weighted by the half's
   `pdf_direction` (`acc_ml_optimiser_impl.h:1968-1969`); the subtomogram final pass scores it that way too.
+- Class3D. The parsing, the centre and the selection are the same; nothing changes the width during a
+  classification. Every class is scored on the particle's one list and the weights are those of the next
+  paragraph. A start from the input STAR reads the particles' `rlnAngleTiltPrior` and their input tilt,
+  the centre where the prior is absent
+  ([`_load_input_star_class3d_translations`](../../relax/star/input_poses.py)).
 - Not implemented, refused with a message: single-particle refinement and classification (their global
-  pass scores every particle on one shared grid) and subtomogram Class3D (its K-class pass has no
-  per-particle orientation lists and does not implement `--sigma_ang` either).
+  pass scores every particle on one shared grid), and `--sigma_rot` and `--sigma_psi`, which relax does
+  not have.
 
 **Class3D with `--sigma_ang` (K>1).** Every iteration is a local search of that width at the fixed HEALPix
 order, centred on each particle's previous best angles (the input STAR's at iteration 1). RELION scores
@@ -963,6 +968,18 @@ backprojects each class into its own BPref
 ([`compute_local_search_resident`](../../relax/local_search/resident_pass2.py)). The first iteration
 from one reference scores each particle against its seed class only
 ([`restrict_local_layout_classes`](../../relax/local_search/layout.py)).
+
+**Subtomogram Class3D under a prior (`--sigma_ang`, or `--sigma_tilt` alone).** The same rules on the
+subtomogram passes, which sum each particle's tilt images. The particle's orientation list
+([`tomo_local_rotations`](../../relax/steps/tomo_half.py): the local search's, or the tilt prior's on the
+otherwise global sampling) is scored against every class with a positive `pdf_class`; the coarse cut is
+taken once over (class, rotation, translation) with the particle's own prior repeated for each scored
+class ([`particle_coarse_supports`](../../relax/scoring/tomo_coarse.py)), and the fine pass builds each
+class's candidates from that class's significant samples with the same priors
+([`score_tomo_half`](../../relax/steps/tomo_scoring.py)). The weights accumulated for `pdf_direction` go
+to the directions' own grid indices, as RELION's do (`ml_optimiser.cpp:8710-8717`). The RELION 5
+subtomogram tutorial's Class3D command (`--sigma_tilt 10 --sigma_ang 1.66667`, K = 9 from one reference,
+HEALPix order 4) is this case with the tilt option ignored.
 
 [`expected_accuracy.py`](../../relax/steps/expected_accuracy.py)
 owns the RELION-style accuracy trial calculation. The approximate posterior

@@ -354,9 +354,9 @@ def validate_sigma_tilt_route(args, *, subtomograms: bool) -> None:
     Called where the particle loader learns the route. The loader is also driven with argument records that
     hold only the fields it reads (as its ``skip_align`` reads allow), so an absent ``sigma_tilt`` is no option.
 
-    The prior needs each particle's own orientation list in a search that is otherwise global. Subtomogram
-    auto-refine has that pass (the local-search coarse pass, relax.scoring.tomo_coarse). The single-particle
-    global pass and the K-class subtomogram pass score every particle on one shared grid.
+    The prior needs each particle's own orientation list in a search that is otherwise global. The subtomogram
+    passes have it, for one class and for K (the local-search coarse pass, relax.scoring.tomo_coarse). The
+    single-particle global pass scores every particle on one shared grid.
     """
 
     if getattr(args, "sigma_tilt", None) is None:
@@ -365,11 +365,6 @@ def validate_sigma_tilt_route(args, *, subtomograms: bool) -> None:
         raise SystemExit(
             "--sigma_tilt is implemented for subtomogram particles (RELION 5 2D stacks) only: the "
             "single-particle global search has no per-particle orientation prior"
-        )
-    if int(args.n_classes) > 1:
-        raise SystemExit(
-            "--sigma_tilt is implemented for subtomogram auto-refine only: the subtomogram Class3D pass has no "
-            "per-particle orientation lists (it does not implement --sigma_ang either)"
         )
 
 

@@ -53,11 +53,12 @@ def test_sigma_ang_wins_over_sigma_tilt_as_in_relion(caplog):
 @pytest.mark.unit
 def test_sigma_tilt_routes():
     args = _args("--sigma_tilt", "10")
+    classes = _args("--sigma_tilt", "10", "--n_classes", "2")
     refinement_arguments.validate_sigma_tilt_route(args, subtomograms=True)  # subtomogram auto-refine
-    with pytest.raises(SystemExit, match="subtomogram particles .* only"):
-        refinement_arguments.validate_sigma_tilt_route(args, subtomograms=False)
-    with pytest.raises(SystemExit, match="subtomogram auto-refine only"):
-        refinement_arguments.validate_sigma_tilt_route(_args("--sigma_tilt", "10", "--n_classes", "2"), subtomograms=True)
+    refinement_arguments.validate_sigma_tilt_route(classes, subtomograms=True)  # subtomogram Class3D (relax#85)
+    for single_particle in (args, classes):
+        with pytest.raises(SystemExit, match="subtomogram particles .* only"):
+            refinement_arguments.validate_sigma_tilt_route(single_particle, subtomograms=False)
     refinement_arguments.validate_sigma_tilt_route(_args(), subtomograms=False)  # no option: nothing to refuse
 
 
@@ -122,3 +123,43 @@ def test_tilt_prior_centres_are_the_given_priors_else_the_current_tilt():
     no_poses = SimpleNamespace(dataset=SimpleNamespace(n_units=2), rotation_eulers=None)
     np.testing.assert_array_equal(half_inputs.tilt_prior_for_half(no_poses, None, 10.0).centre_deg, [0.0, 0.0])
     assert half_inputs.tilt_prior_for_half(half, priors, 0.0) is None
+
+
+@pytest.mark.unit
+def test_class3d_start_reads_the_tilt_priors_and_the_input_tilts_they_fall_back_on():
+    """A Class3D start under --sigma_tilt centres each particle's prior on its rlnAngleTiltPrior and, where the
+    STAR has none (RELION's 999), on its input tilt (ml_optimiser.cpp:5970-5992): the loader returns both, in
+    the order of the run's one all-data accumulator."""
+
+    import pandas as pd
+
+    from relax.star import input_poses
+
+    rng = np.random.default_rng(4)
+    n = 5
+    tilt = rng.uniform(0.0, 180.0, n)
+    particles = pd.DataFrame(
+        {
+            "rlnAngleRot": rng.uniform(-180.0, 180.0, n),
+            "rlnAngleTilt": tilt,
+            "rlnAnglePsi": rng.uniform(-180.0, 180.0, n),
+            "rlnAngleTiltPrior": [90.0, 999.0, 85.5, 999.0, 90.0],
+            "rlnOriginXAngst": np.zeros(n),
+            "rlnOriginYAngst": np.zeros(n),
+        }
+    )
+    rows = rng.permutation(n)
+    start = input_poses._load_input_star_class3d_translations(particles, rows, voxel_size=2.0, with_orientations=True)
+    priors, empty = start["angle_priors"]
+    assert empty.shape == (0, 3)
+    np.testing.assert_array_equal(np.isnan(priors[:, 1]), np.array([False, True, False, True, False])[rows])
+    assert np.all(np.isnan(priors[:, [0, 2]]))  # no rot or psi prior column
+    half = SimpleNamespace(dataset=SimpleNamespace(n_units=n), rotation_eulers=start["previous_best_rotation_eulers"][0])
+    centre = half_inputs.tilt_prior_for_half(half, priors, 10.0).centre_deg
+    np.testing.assert_array_equal(
+        centre, np.where(np.isin(np.arange(n), [1, 3]), tilt.astype(np.float32), particles["rlnAngleTiltPrior"])[rows]
+    )
+    # A global Class3D start without the option keeps reading no orientations and no priors.
+    searched = input_poses._load_input_star_class3d_translations(particles, rows, voxel_size=2.0)
+    assert searched["previous_best_rotation_eulers"] == [None, None] and searched["angle_priors"] is None
+    assert input_poses._input_star_angle_priors(particles.drop(columns="rlnAngleTiltPrior")) is None

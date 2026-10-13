@@ -209,16 +209,7 @@ def _load_input_star_previous_best_poses(
     else:
         norm_corrections = np.ones(n_particles, dtype=np.float64)
 
-    # rlnAngle*Prior centre --sigma_ang searches below the local-search order (local_search_centre_half);
-    # relion_refine marks an absent prior 999 (ml_optimiser.cpp, getFourierTransformsAndCtfs).
-    prior_columns = ("rlnAngleRotPrior", "rlnAngleTiltPrior", "rlnAnglePsiPrior")
-    angle_priors = None
-    if any(column in input_particles.columns for column in prior_columns):
-        angle_priors = np.full((n_particles, 3), np.nan, dtype=np.float64)
-        for axis, column in enumerate(prior_columns):
-            if column in input_particles.columns:
-                values = _input_numeric_columns(input_particles, (column,), field="angle-prior")[:, 0]
-                angle_priors[:, axis] = np.where(np.abs(values - 999.0) < 0.01, np.nan, values)
+    angle_priors = _input_star_angle_priors(input_particles)
 
     eulers_per_half = [
         np.ascontiguousarray(eulers[indices], dtype=np.float32)
@@ -252,6 +243,24 @@ def _load_input_star_previous_best_poses(
     }
 
 
+def _input_star_angle_priors(input_particles):
+    """The input ``rlnAngle*Prior`` columns as ``[N, 3]`` degrees, NaN where absent; None without any column.
+
+    They centre ``--sigma_ang`` searches below the local-search order (``local_search_centre_half``) and the
+    ``--sigma_tilt`` prior (``tilt_prior_for_half``); relion_refine marks an absent prior 999
+    (ml_optimiser.cpp, getFourierTransformsAndCtfs).
+    """
+    prior_columns = ("rlnAngleRotPrior", "rlnAngleTiltPrior", "rlnAnglePsiPrior")
+    if not any(column in input_particles.columns for column in prior_columns):
+        return None
+    angle_priors = np.full((len(input_particles), 3), np.nan, dtype=np.float64)
+    for axis, column in enumerate(prior_columns):
+        if column in input_particles.columns:
+            values = _input_numeric_columns(input_particles, (column,), field="angle-prior")[:, 0]
+            angle_priors[:, axis] = np.where(np.abs(values - 999.0) < 0.01, np.nan, values)
+    return angle_priors
+
+
 def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: float, with_orientations: bool = False):
     """Return a fresh Class3D run's input origins in its all-data particle order.
 
@@ -266,6 +275,8 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
     all-data accumulator, and the second accumulator is empty. With local
     searches from the start (``--sigma_ang``, ``with_angles``) the input angles
     are the searches' centres, 0 where the STAR has none, as relion_refine reads them.
+    Under ``--sigma_tilt`` they come with the ``rlnAngle*Prior`` columns (``angle_priors``): the prior is
+    centred on ``rlnAngleTiltPrior`` and on the input tilt where that is absent.
     """
     rows = np.asarray(rows, dtype=np.int64)
     n_particles = len(input_particles)
@@ -280,8 +291,10 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
     selected = np.ascontiguousarray(translations[rows], dtype=np.float32)
     if not np.all(np.isfinite(selected)):
         raise ValueError("Class3D input origins are not finite after float32 conversion")
-    eulers = [None, None]
+    eulers, angle_priors = [None, None], None
     if with_orientations:
+        priors = _input_star_angle_priors(input_particles)
+        angle_priors = None if priors is None else [priors[rows], np.empty((0, 3), dtype=np.float64)]
         angles = np.zeros((n_particles, 3), dtype=np.float64)
         for axis, column in enumerate(("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")):
             if column in input_particles.columns:
@@ -302,6 +315,7 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
         "previous_best_translations": [selected, np.empty((0, 2), dtype=np.float32)],
         "translation_units": translation_units,
         "norm_corrections": [np.ascontiguousarray(norm_corrections[rows]), np.empty(0, dtype=np.float64)],
+        "angle_priors": angle_priors,
     }
 
 
@@ -462,6 +476,7 @@ def prepare_initial_poses(
     class3d_translations,
     class3d_translation_path,
     local_search_at_start: bool = False,
+    tilt_prior_at_start: bool = False,
     log: Logger,
     skip_align: bool = False,
 ) -> InitialPoses:
@@ -470,7 +485,8 @@ def prepare_initial_poses(
     ``local_search_at_start``: iteration 1 is a local angular search (``--sigma_ang``, or a K=1 start at
     or above ``--auto_local_healpix_order``). relion_refine then centres each search on the input angles,
     which are 0 where the STAR has none; a start without any pose source is centred at (0, 0, 0) and zero
-    origins the same way, with a warning.
+    origins the same way, with a warning. ``tilt_prior_at_start``: the run has ``--sigma_tilt`` alone, whose
+    prior a Class3D start centres on the input ``rlnAngleTiltPrior`` or, without one, on the input tilt.
 
     See ``docs/math/relion_refinement_algorithm.md#startup-particle-state-and-norm-corrections``.
     """
@@ -554,15 +570,18 @@ def prepare_initial_poses(
                 input_particles,
                 particle_layout.half1_rows,
                 voxel_size=pixel_size_angstrom,
-                # --skip_align classifies at the input poses; --sigma_ang centres its local searches on them.
-                with_orientations=skip_align or local_search_at_start,
+                # --skip_align classifies at the input poses; --sigma_ang centres its local searches on them,
+                # --sigma_tilt its prior on their tilt where the particle has no rlnAngleTiltPrior.
+                with_orientations=skip_align or local_search_at_start or tilt_prior_at_start,
             )
         except (TypeError, ValueError) as exc:
             raise SystemExit(f"Invalid input-STAR Class3D origin initialization: {exc}") from exc
         initial_image_corrections, initial_scale_corrections = _initial_corrections_from_norm(
             init_previous_best_poses["norm_corrections"],
         )
-        resolved_initial_pose_source = "input_star" if local_search_at_start else "input_star_translations"
+        resolved_initial_pose_source = (
+            "input_star" if local_search_at_start or tilt_prior_at_start else "input_star_translations"
+        )
         initial_pose_source_path = input_pose_path
         initial_pose_source_sha256 = _sha256_file(input_pose_path)
         log.info(
@@ -577,6 +596,8 @@ def prepare_initial_poses(
             if skip_align
             else "orientations: the local searches' centres"
             if local_search_at_start
+            else "orientations: the --sigma_tilt prior's centres where rlnAngleTiltPrior is absent"
+            if tilt_prior_at_start
             else "orientations intentionally unset",
         )
     elif use_input_star_pose_seed:

@@ -694,16 +694,10 @@ def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():
         assert_matches(np.asarray(batched["pmax"][p]), np.asarray(alone["pmax"][0]))
 
 
-@pytest.mark.parametrize("flushes", ["one_flush", "flush_per_particle"])
-def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatch, flushes):
-    """Class3D: every image is scored against each class; the particle's (class, rotation, translation) weights
-    are cut once (convertAllSquaredDifferencesToWeights sorts all classes' weights together), and each cell
-    goes back to its class's support. One particle per batch and flush exercises the deferred readback and
-    the compaction-size guess (exact first, then guessed, recompacted on overflow)."""
-
-    rng = np.random.default_rng(11)
-    offsets = np.array([0, 2, 5, 6])
-    n_images, n_rot, n_trans = int(offsets[-1]), 5, 7
+def _fake_coarse_kernels(monkeypatch, rng, flushes):
+    """Stand-ins for the coarse pass's device kernels (diff2 a function of the scorer matrices and the class's
+    "projector" value alone, so the classes compete and a re-scored rotation keeps its value) and a capture of
+    every significance call. Returns ``(captured, layout)``; ``flush_per_particle`` cuts one particle at a time."""
 
     def fake_block(total, error, class_value, rotations, unshifted, weight, initial, angles, score_indices, first, *, count, **kwargs):
         block = slice(int(first), int(first) + count)
@@ -769,6 +763,21 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     layout = tomo_coarse.CoarseScoreLayout(
         (8, 8), 6, np.arange(4), jnp.ones(4, bool), jnp.zeros(1, jnp.int32), jnp.ones(40)
     )
+    return captured, layout
+
+
+@pytest.mark.parametrize("flushes", ["one_flush", "flush_per_particle"])
+def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatch, flushes):
+    """Class3D: every image is scored against each class; the particle's (class, rotation, translation) weights
+    are cut once (convertAllSquaredDifferencesToWeights sorts all classes' weights together), and each cell
+    goes back to its class's support. One particle per batch and flush exercises the deferred readback and
+    the compaction-size guess (exact first, then guessed, recompacted on overflow)."""
+
+    rng = np.random.default_rng(11)
+    offsets = np.array([0, 2, 5, 6])
+    n_images, n_rot, n_trans = int(offsets[-1]), 5, 7
+
+    captured, layout = _fake_coarse_kernels(monkeypatch, rng, flushes)
     class_prior = np.log(rng.uniform(0.2, 1.0, size=(2, n_rot))).astype(np.float32)
     supports, pmax = tomo_coarse.particle_coarse_supports(
         None,
@@ -812,6 +821,81 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         for k in range(2):
             np.testing.assert_array_equal(supports[k][p], np.flatnonzero(expected[k]))
             n_significant += supports[k][p].size
+    assert n_significant > 3  # the cut keeps more than each particle's winner
+    assert pmax.shape == (3,)
+
+
+@pytest.mark.parametrize("flushes", ["one_flush", "flush_per_particle"])
+def test_k_class_particles_with_their_own_rotations_are_cut_over_the_scored_classes(monkeypatch, flushes):
+    """Class3D under an orientational prior (--sigma_ang, --sigma_tilt): every class is scored on the particle's
+    own rotations, the particle's prior over them is the whole orientation weight of each scored class (no
+    pdf_class, acc_ml_optimiser_impl.h:1960-1972), the weights are cut once over (class, rotation, translation),
+    and a class RELION skips (pdf_class 0) keeps no sample. The supports index the grid's rotations."""
+
+    rng = np.random.default_rng(13)
+    offsets = np.array([0, 2, 5, 6])
+    n_images, n_rot, n_trans, n_classes, empty = int(offsets[-1]), 6, 7, 3, 1
+    captured, layout = _fake_coarse_kernels(monkeypatch, rng, flushes)
+    unit_rotations = [np.array([0, 2, 3]), np.array([1, 5]), np.arange(n_rot)]
+    unit_priors = [np.log(rng.uniform(0.2, 1.0, size=rows.size)).astype(np.float32) for rows in unit_rotations]
+    supports, pmax = tomo_coarse.particle_coarse_supports(
+        None,
+        unit_image_offsets=offsets,
+        image_projections=np.tile(np.eye(3), (n_images, 1, 1)),
+        image_left=np.eye(3)[None] * (1.0 + np.arange(n_images))[:, None, None],
+        unit_old_offsets_px=np.zeros((3, 3)),
+        coarse_eulers_deg=rng.uniform(0.0, 180.0, size=(n_rot, 3)),
+        random_perturbation=0.0,
+        angular_sampling_deg=15.0,
+        coarse_translations_px=rng.uniform(-1.0, 1.0, size=(n_trans, 3)),
+        projector_half=(jnp.float32(0.3), jnp.float32(5.0), jnp.float32(-0.2)),
+        layout=layout,
+        noise_variance_half=None,
+        rotation_log_prior=None,
+        unit_translation_log_prior=np.log(rng.uniform(0.1, 1.0, size=(3, n_trans))).astype(np.float32),
+        adaptive_fraction=0.999,
+        max_significants=None,
+        model_max_r=3,
+        padding_factor=2,
+        box_size=8,
+        unit_rotation_ids=unit_rotations,
+        unit_rotation_log_priors=unit_priors,
+        empty_classes=(empty,),
+    )
+    assert len(supports) == n_classes and all(len(class_supports) == 3 for class_supports in supports)
+    # A batch with an undecided rotation is cut again (same translation prior): its last cut is published.
+    last_cut = {}
+    for call in captured:
+        last_cut[call[2].tobytes()] = call
+    captured = list(last_cut.values())
+    assert len(captured) == (1 if flushes == "one_flush" else 3)
+    diff2 = np.concatenate([c[0] for c in captured])
+    rotation_prior = np.concatenate([c[1] for c in captured])
+    translation_prior = np.concatenate([c[2] for c in captured])
+    r_pad = diff2.shape[1] // n_classes
+    n_significant = 0
+    for p, rows in enumerate(unit_rotations):
+        # The particle's own prior under every scored class; the skipped class and the padding at -inf.
+        prior = rotation_prior[p].reshape(n_classes, r_pad)
+        for k in range(n_classes):
+            if k == empty:
+                assert np.all(np.isneginf(prior[k]))
+            else:
+                assert_matches(prior[k, : rows.size], unit_priors[p])
+                assert np.all(np.isneginf(prior[k, rows.size :]))
+        scored = np.isfinite(rotation_prior[p])
+        log_weight = (rotation_prior[p][:, None] + translation_prior[p][None, :]) + (
+            diff2[p][scored].min() - diff2[p]
+        )
+        expected = _relion_coarse_cut(log_weight.astype(np.float32).reshape(-1), 0.999).reshape(
+            n_classes, r_pad, n_trans
+        )
+        assert not expected[empty].any() and not expected[:, rows.size :].any()
+        for k in range(n_classes):
+            local_rotation, translation = np.nonzero(expected[k])
+            np.testing.assert_array_equal(supports[k][p], rows[local_rotation] * n_trans + translation)
+            n_significant += supports[k][p].size
+    assert all(supports[empty][p].size == 0 for p in range(3))
     assert n_significant > 3  # the cut keeps more than each particle's winner
     assert pmax.shape == (3,)
 

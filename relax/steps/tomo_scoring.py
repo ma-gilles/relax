@@ -91,6 +91,7 @@ def score_tomo_half(
     scale_correction_data_vs_prior=None,
     reconstruction_current_size=None,
     local_rotations=None,
+    empty_classes=(),
     symmetry: str = "C1",
     unit_seed_classes=None,
     reconstruction_group_ids=None,
@@ -122,9 +123,15 @@ def score_tomo_half(
     ``rotation_log_prior`` is ``[K, R]``, each class's direction prior with its ``log pdf_class``. Pass 1
     cuts each particle's weights over every class jointly and pass 2 scores all classes in the
     particle's one posterior segment, each class backprojecting into its own BPref
-    (``resident_pass2.compute_k_class_pass2_stats_resident``). A global search only. ``unit_seed_classes``
+    (``resident_pass2.compute_k_class_pass2_stats_resident``). ``unit_seed_classes``
     ``[P]`` is RELION's first iteration from one reference: each particle is scored against that class
     only (``k_class_inputs.seed_iteration_supports``; its other classes have no candidates).
+
+    Class3D under an orientational prior (``--sigma_ang``, ``--sigma_tilt``) passes ``local_rotations`` with
+    the K references: every class is scored on the particle's own orientations, whose prior is the whole
+    orientation weight (``rotation_log_prior`` must be None; RELION then uses neither ``pdf_class`` nor
+    ``pdf_direction``, acc_ml_optimiser_impl.h:1960-1972). ``empty_classes`` are the classes RELION skips
+    (``pdf_class == 0``). The returned class rotation sums are over the union of the particles' rotations.
 
     InitialModel (VDAM, ``relax.vdam.tomo_estep``) passes ``reconstruction_group_ids`` ``[P]``, each
     particle's pseudo-halfset (RELION's ``part_id % 2``: every tilt image of a particle backprojects into
@@ -199,8 +206,8 @@ def score_tomo_half(
             engine_tuning=engine_tuning,
         )
         return dataclasses.replace(first, pass2=_first_class_k_class_output(first.pass2, n_classes, sampling, half.voxel_size))
-    if n_classes > 1 and (local_rotations is not None or np.ndim(rotation_log_prior) != 2):
-        raise ValueError("a K-class tomo pass is a global search with one rotation log prior per class, [K, R]")
+    if n_classes > 1 and local_rotations is None and np.ndim(rotation_log_prior) != 2:
+        raise ValueError("a global K-class tomo pass takes one rotation log prior per class, [K, R]")
     pixel = float(half.voxel_size)
     size = int(half.grid_size)
     unit_groups = np.asarray(unit_groups, dtype=np.int32)
@@ -248,7 +255,8 @@ def score_tomo_half(
     if unit_seed_classes is not None:
         if n_classes == 1:
             raise ValueError("a seed iteration is a K-class pass")
-        (coarse_halves,), (coarse_prior,) = seed_iteration_first_class(relion_projector_half, rotation_log_prior)
+        first_halves, first_prior = seed_iteration_first_class(relion_projector_half, rotation_log_prior)
+        coarse_halves, coarse_prior = first_halves[0], None if first_prior is None else first_prior[0]
     if normalized_cc:
         if n_classes != 1 or local_rotations is not None or symmetry != "C1":
             raise NotImplementedError("the subtomogram --firstiter_cc iteration is a K=1 global search in C1")
@@ -293,6 +301,8 @@ def score_tomo_half(
                 else {
                     "unit_rotation_ids": local_rotations.unit_rotation_ids,
                     "unit_rotation_log_priors": local_rotations.unit_rotation_log_priors,
+                    # A seed iteration scores one class (the first copy), which is never an empty one.
+                    "empty_classes": () if unit_seed_classes is not None else empty_classes,
                 }
             ),
         )
@@ -373,7 +383,15 @@ def score_tomo_half(
             if local_rotations is None
             else {
                 "coarse_rotation_ids": coarse_ids,
-                "unit_rotation_log_prior": local_rotations.support_priors(supports, coarse_px.shape[0]),
+                # Each particle's prior over its support's rotations; K classes: over each class's support.
+                "unit_rotation_log_prior": (
+                    local_rotations.support_priors(supports, coarse_px.shape[0])
+                    if n_classes == 1
+                    else tuple(
+                        local_rotations.support_priors(class_supports, coarse_px.shape[0])
+                        for class_supports in supports
+                    )
+                ),
             }
         ),
     )
@@ -401,7 +419,11 @@ def score_tomo_half(
             supports,
             sampling.healpix_order,
             "linear_interp",
-            rotation_log_priors_by_class=[np.asarray(prior, dtype=np.float32) for prior in rotation_log_prior],
+            rotation_log_priors_by_class=(
+                [None] * n_classes
+                if local_rotations is not None
+                else [np.asarray(prior, dtype=np.float32) for prior in rotation_log_prior]
+            ),
             **options,
         )
         # The particle's class is its best-scoring class (k_class_results._assemble_result's argmax).
@@ -692,13 +714,18 @@ def score_tomo_half_in_loop(
     (``previous_eulers_deg``), ``sigma_rot`` and ``sigma_psi`` and the pass-1 HEALPix order
     (``parent_order``); ``sampling`` then carries that order and the local grid's perturbation.
 
-    Class3D (K>1, a global search): ``volume`` and ``relion_projector_half`` keep the loop's class axis,
+    Class3D (K>1): ``volume`` and ``relion_projector_half`` keep the loop's class axis,
     ``class_log_priors`` are the classes' ``log pdf_class`` and ``class_rotation_log_prior`` their
     direction priors ``[K, R]`` (or None: the shared ``rotation_log_prior``), folded as the SPA K-class
     pass folds them (``k_class.rotation_prior_with_class_log_prior``). Class outputs use the same SPA result adaptation
     (``_class_segmented_em_result``, ``class_em_to_half_result``). ``unit_seed_classes`` are the particles' classes in RELION's
     first iteration from one reference (:func:`score_tomo_half`). ``normalized_cc`` is the
     ``--firstiter_cc`` iteration (:func:`score_tomo_half`).
+
+    Class3D with ``local_search`` (RELION's ``--sigma_ang`` or ``--sigma_tilt``): every class is scored on the
+    particle's own orientations and their prior is the whole orientation weight, so the direction priors and
+    ``class_log_priors`` are not folded in; a class whose ``log pdf_class`` is ``-inf`` is skipped
+    (:func:`score_tomo_half`). The class rotation sums come back on the whole grid of ``sampling.healpix_order``.
     """
 
     from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
@@ -739,7 +766,7 @@ def score_tomo_half_in_loop(
             raise ValueError(f"{np.shape(volume)[0]} class volumes for {n_classes} classes")
         if n_classes == 1:
             volume = volume[0]
-    local_rotations = None
+    local_rotations, empty_classes = None, ()
     if local_search is not None:
         local_rotations = tomo_local_rotations(
             local_search["previous_eulers_deg"],
@@ -753,6 +780,10 @@ def score_tomo_half_in_loop(
             symmetry=symmetry,
         )
         prior = None
+        if n_classes > 1:
+            empty_classes = tuple(
+                int(k) for k in np.flatnonzero(np.isneginf(np.asarray(class_log_priors, dtype=np.float64).reshape(-1)))
+            )
     else:
         n_rot = int(rotation_grid_size(sampling.healpix_order, symmetry))
         prior = (
@@ -804,12 +835,22 @@ def score_tomo_half_in_loop(
         scale_correction_data_vs_prior=scale_correction_data_vs_prior,
         reconstruction_current_size=reconstruction_current_size,
         local_rotations=local_rotations,
+        empty_classes=empty_classes,
         symmetry=symmetry,
         unit_seed_classes=unit_seed_classes,
         normalized_cc=normalized_cc,
         engine_tuning=engine_tuning,
     )
     pass2 = result.pass2
+    if n_classes > 1 and local_rotations is not None:
+        # RELION adds a local search's weights to pdf_direction at the directions' own indices
+        # (ml_optimiser.cpp:8710-8717): the sums over the particles' union go back on the grid.
+        on_grid = np.zeros((n_classes, int(rotation_grid_size(sampling.healpix_order, symmetry))), dtype=np.float64)
+        on_grid[:, local_rotations.coarse_rotation_ids] = np.asarray(pass2.class_rotation_posterior_sums)
+        pass2 = pass2._replace(
+            class_rotation_posterior_sums=on_grid,
+            stats=pass2.stats._replace(rotation_posterior_sums=on_grid.sum(axis=0)),
+        )
     mstep_size = sampling.fine_size if reconstruction_current_size is None else int(reconstruction_current_size)
     mstep_accumulator_shape = relion_backprojector_volume_shape(
         half.volume_shape, RECONSTRUCTION_PADDING_FACTOR, current_size=mstep_size

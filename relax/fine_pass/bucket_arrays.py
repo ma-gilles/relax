@@ -551,6 +551,9 @@ def _prepare_per_image_pass2_inputs(
             if use_full_rotation_support:
                 raise ValueError("a per-image rotation prior needs each image's explicit coarse support")
             image_prior = np.asarray(per_image_rotation_log_prior[image_idx], dtype=dtype).reshape(-1)
+            if image_prior.size == 0 and coarse_rot.size == 0:
+                # No candidate (a class the image is not scored against): the placeholder rotation, masked out.
+                image_prior = np.zeros(unique_rot.size, dtype=dtype)
             if image_prior.shape != (unique_rot.size,):
                 raise ValueError(
                     f"image {image_idx}'s rotation prior covers {image_prior.size} rotations, "
