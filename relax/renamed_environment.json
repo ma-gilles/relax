@@ -427,7 +427,6 @@
   "RECOVAR_SPARSE_PASS2_PIPELINE_TAIL": "RELAX_SPARSE_PASS2_PIPELINE_TAIL",
   "RECOVAR_SPARSE_PASS2_PROJECTION_CACHE": "RELAX_SPARSE_PASS2_PROJECTION_CACHE",
   "RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES": "RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES",
-  "RECOVAR_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_TIMING": "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING",
   "RECOVAR_SPARSE_PASS2_RESIDENT_GLUE_JIT": "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT",
   "RECOVAR_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES": "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES",
@@ -715,6 +714,8 @@
   "RECOVAR_SPARSE_PASS2_VECTORIZED_HYPOTHESIS_PREP": "no user: the vectorized per-image hypothesis preparation was never selected outside its own tests; the per-image loop is the one path (2026-10-13)",
   "RELAX_SPARSE_PASS2_VECTORIZED_HYPOTHESIS_PREP": "no user: the vectorized per-image hypothesis preparation was never selected outside its own tests; the per-image loop is the one path (2026-10-13)",
   "RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE": "no user: a windowed pass always prepares only its active Fourier rows; nothing set the switch off (2026-10-13)",
-  "RELAX_SPARSE_PASS2_WINDOWED_PREPARE": "no user: a windowed pass always prepares only its active Fourier rows; nothing set the switch off (2026-10-13)"
+  "RELAX_SPARSE_PASS2_WINDOWED_PREPARE": "no user: a windowed pass always prepares only its active Fourier rows; nothing set the switch off (2026-10-13)",
+  "RECOVAR_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "no user: only a unit test armed the carry aval check, which the test now calls itself (2026-10-13)",
+  "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "no user: only a unit test armed the carry aval check, which the test now calls itself (2026-10-13)"
  }
 }

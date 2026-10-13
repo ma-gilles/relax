@@ -332,8 +332,8 @@ def _mstep_block_operand_dtypes(
     * ``XA`` promotes the noise variance against the real part of
       ``proj * conj(summed_masked)``.
 
-    ``carry_aval_probe_enabled`` checks this against ``jax.eval_shape`` of the
-    real block stages; the unit tests set it.
+    :func:`_check_mstep_carry_avals` checks this against ``jax.eval_shape`` of
+    the real block stages (tests/unit/test_resident_driver_glue.py).
     """
 
     if projection_dtypes is None:
@@ -522,8 +522,6 @@ def initial_mstep_carry(
     dtypes = _mstep_block_operand_dtypes(
         operands, tables, spec=spec, projection_dtypes=projection_dtypes
     )
-    if policy.carry_aval_probe_enabled():
-        _check_mstep_carry_avals(tables, spec=spec, dtypes=dtypes)
     n_class_scale = 2 if int(getattr(spec, "n_classes", 1)) > 1 else 0
     # K>1: the per-image class scale sums are zeroed in the same program.
     wavg_triplet_pixels, noise_shells, a2_per_image, xa_per_image, *scale_sums = zero_block_partials(

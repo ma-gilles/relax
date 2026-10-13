@@ -131,10 +131,9 @@ def test_static_carry_dtypes_match_the_traced_block_stages(
     assert jnp.dtype(xa.dtype) == dtypes["xa"]
 
 
-def test_initial_mstep_carry_has_the_probed_shapes_and_no_probe_by_default(monkeypatch):
+def test_initial_mstep_carry_has_the_probed_shapes_without_a_probe(monkeypatch):
     """The carry the loop starts from, built without tracing anything."""
 
-    monkeypatch.delenv(policy._CARRY_AVAL_PROBE_ENV, raising=False)
     calls = []
     original = resident_mstep_blocks._probe_mstep_block_output_avals
     monkeypatch.setattr(
@@ -165,17 +164,6 @@ def test_initial_mstep_carry_has_the_probed_shapes_and_no_probe_by_default(monke
     assert not np.any(np.asarray(carry.noise_shells))
     assert not np.any(np.asarray(carry.a2_per_image))
     assert not np.any(np.asarray(carry.wavg_triplet_pixels))
-
-    monkeypatch.setenv(policy._CARRY_AVAL_PROBE_ENV, "1")
-    resident_mstep_blocks.initial_mstep_carry(
-        Ft_y,
-        Ft_ctf,
-        operands,
-        tables,
-        spec=spec,
-        projection_dtypes=(jnp.complex64, jnp.float32),
-    )
-    assert calls == [1]
 
 
 def test_the_carry_aval_check_rejects_a_wrong_dtype():

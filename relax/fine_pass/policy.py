@@ -169,12 +169,6 @@ _KERNEL_CTF_PROBS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_KERNEL_CTF_PROBS"
 _RESIDENT_GLUE_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
 
 
-# Diagnostic, default off. Checks the statically computed M-step carry avals
-# against a ``jax.eval_shape`` probe of the same block stages, once per
-# capacity class. The probes are what this change removes from the chunk loop;
-# the flag exists so a test, or a suspicious run, can prove the arithmetic
-# still agrees with them.
-_CARRY_AVAL_PROBE_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE"
 
 
 def kernel_ctf_probs_enabled() -> bool:
@@ -210,9 +204,3 @@ def resident_glue_jit_enabled() -> bool:
     """
 
     return parse_env_flag(_RESIDENT_GLUE_JIT_ENV, default=True)
-
-
-def carry_aval_probe_enabled() -> bool:
-    """Whether to check the static carry avals against a shape probe."""
-
-    return parse_env_flag(_CARRY_AVAL_PROBE_ENV, default=False)
