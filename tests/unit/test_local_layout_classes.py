@@ -13,6 +13,7 @@ from relax.local_search.layout import (
     expand_local_layout_classes,
 )
 from relax.local_search.resident_layout import materialize_local_chunk, tables_from_local_layout
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.grids import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
@@ -32,6 +33,7 @@ def _parent():
         grid_metadata=build_local_search_grid_metadata(ORDER), translation_prior_reference_translations=TRANSLATIONS,
         dtype=np.float32,
         sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
     )
 
 

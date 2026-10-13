@@ -13,6 +13,7 @@ import pytest
 
 from relax import sampling
 from relax.relion.optics_aberrations import relax_projection_magnification, relion_projection_left_matrix
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling import device_rotations, grids, oversampled_grids, perturbation
 from relax.sampling.oversampling import build_adaptive_pass2_grids, project_pass2_rotations
 
@@ -248,6 +249,7 @@ def _local_parent_layout():
         translation_prior_reference_translations=translations,
         rotation_grid_random_perturbation=PERTURBATION, rotation_grid_angular_sampling_deg=step, dtype=np.float32,
         sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
     )
 
 

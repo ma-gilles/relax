@@ -323,8 +323,9 @@ def _build_local_adaptive_parent_layout(
     priors: LocalPriorSpec,
     translation_prior_reference_translations,
     layout_dtype,
+    engine_tuning,
 ):
-    """Build the coarse parent layout used by exact-local adaptive pass 1."""
+    """Build the coarse parent layout used by exact-local adaptive pass 1 (``engine_tuning``: the run's)."""
 
     parent_prior_translations = priors.trans_prior_center
     if parent_prior_translations is None:
@@ -367,6 +368,7 @@ def _build_local_adaptive_parent_layout(
         ),
         dtype=layout_dtype,
         sigma_tilt_deg=0.0,
+        engine_tuning=engine_tuning,
     )
     return parent_layout, parent_order
 
@@ -663,6 +665,7 @@ def _score_half_local_one_shape(
             priors,
             translation_prior_reference_translations,
             parent_local_layout_dtype,
+            execution.engine_tuning,
         )
         if n_classes > 1:
             # Class3D: pass 1 and pass 2 share the class-expanded parents, so the significant samples
@@ -1073,6 +1076,7 @@ def _run_local_search_iteration(
             generate_relion_mstep_rotations=grid.generate_relion_mstep_rotations,
             dtype=local_layout_dtype,
             sigma_tilt_deg=0.0,
+            engine_tuning=support.engine_tuning,
         )
         selector_time = layout_clock.seconds
     else:

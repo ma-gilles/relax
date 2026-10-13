@@ -28,6 +28,7 @@ DEFAULT_PREFETCH_BATCHES = 2
 DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET = 268_435_456
 DEFAULT_EM_BATCH_PROJECTION_FRACTION = 0.20
 DEFAULT_COARSE_GEMM_TRANSIENT_MAX_BYTES = int(2.0 * 1024**3)
+DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS = 16_000_000
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
 # One local resident projector call's transient: the 4 GiB the exact local engine budgeted for its fused projection
 # matmul (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB), so the two reserved comparable headroom.
@@ -121,6 +122,9 @@ class EngineTuning:
     :func:`parse_gib_budget`): the coarse GEMM projection cache's budget, None for the device-derived one.
     ``coarse_gemm_projection_cache`` (RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE, :func:`parse_strict_switch`):
     the coarse GEMM projection cache asked for explicitly (True or False), None when unset (on where it fits).
+    ``local_selector_chunk_size`` and ``local_selector_max_elements`` (RELAX_LOCAL_SELECTOR_CHUNK_SIZE,
+    RELAX_LOCAL_SELECTOR_MAX_ELEMENTS; :func:`read_local_selector_chunking`): images per chunk of the local
+    search's orientation selector, given, or sized so a chunk holds at most that many elements.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -144,6 +148,8 @@ class EngineTuning:
     coarse_gemm_transient_max_bytes: int = DEFAULT_COARSE_GEMM_TRANSIENT_MAX_BYTES
     coarse_gemm_projection_cache_max_bytes: int | None = None
     coarse_gemm_projection_cache: bool | None = None
+    local_selector_chunk_size: int | None = None
+    local_selector_max_elements: int = DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -200,6 +206,7 @@ class EngineTuning:
             coarse_gemm_projection_cache=parse_strict_switch(
                 COARSE_GEMM_PROJECTION_CACHE_ENV, read_env_text(COARSE_GEMM_PROJECTION_CACHE_ENV),
             ),
+            **dict(zip(("local_selector_chunk_size", "local_selector_max_elements"), read_local_selector_chunking())),
         )
 
 
@@ -410,3 +417,17 @@ def parse_strict_switch(name: str, raw: str | None) -> bool | None:
     if token in {"1", "true", "yes", "on"}:
         return True
     raise ValueError(f"Unsupported {name}={token!r}")
+
+
+LOCAL_SELECTOR_CHUNK_SIZE_ENV = "RELAX_LOCAL_SELECTOR_CHUNK_SIZE"
+LOCAL_SELECTOR_MAX_ELEMENTS_ENV = "RELAX_LOCAL_SELECTOR_MAX_ELEMENTS"
+
+
+def read_local_selector_chunking() -> tuple[int | None, int]:
+    """(chunk size, max elements) of the local selector: a non-blank RELAX_LOCAL_SELECTOR_CHUNK_SIZE is ``int()`` of
+    its text and the maximum is then not read; otherwise RELAX_LOCAL_SELECTOR_MAX_ELEMENTS, ``int()`` of its text
+    (default :data:`DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS`). ``int()`` refuses a non-integer."""
+    explicit = read_env_text(LOCAL_SELECTOR_CHUNK_SIZE_ENV, "")
+    if explicit:
+        return int(explicit), DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS
+    return None, int(read_env_text(LOCAL_SELECTOR_MAX_ELEMENTS_ENV, str(DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS)))

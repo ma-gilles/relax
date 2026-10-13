@@ -498,6 +498,7 @@ def tomo_local_rotations(
     symmetry: str = "C1",
     sigma_tilt_deg: float,
     prior_tilt_deg=None,
+    engine_tuning,
 ) -> TomoLocalRotations:
     """Every particle's local orientations and log priors around its previous pose (subtomogram local search).
 
@@ -506,7 +507,8 @@ def tomo_local_rotations(
 
     The single-particle local search's neighbourhoods (relax.local_search.layout.build_local_hypothesis_layout,
     RELION's selectOrientationsWithNonZeroPriorProbability) with the particle's subtomogram-frame angles;
-    only the rotation part is used (the 3D offset prior is the particle's own, score_tomo_half).
+    only the rotation part is used (the 3D offset prior is the particle's own, score_tomo_half). ``engine_tuning``
+    sizes the selector's chunks.
     """
 
     from relax.local_search.layout import build_local_hypothesis_layout
@@ -532,6 +534,7 @@ def tomo_local_rotations(
         dtype=np.float32,
         sigma_tilt_deg=sigma_tilt_deg,
         prior_tilt_deg=prior_tilt_deg,
+        engine_tuning=engine_tuning,
     )
     offsets = np.asarray(layout.rotation_offsets, dtype=np.int64)
     ids = np.asarray(layout.rotation_ids_flat, dtype=np.int64)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import functools
-import os
 from dataclasses import dataclass, replace
 from typing import NamedTuple
 
@@ -109,12 +108,15 @@ def _resolve_prior_rotations(prior_rotations: np.ndarray, healpix_order: int, gr
     return prior_eulers, prior_rotation_mats
 
 
-def _local_selector_chunk_size(n_images: int, n_pixels: int, n_psi: int, use_direction: bool, use_psi: bool) -> int:
-    explicit = os.environ.get("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", "")
-    if explicit:
-        return max(1, min(int(n_images), int(explicit)))
+def _local_selector_chunk_size(
+    n_images: int, n_pixels: int, n_psi: int, use_direction: bool, use_psi: bool, *, engine_tuning,
+) -> int:
+    """Images per selector chunk: ``engine_tuning.local_selector_chunk_size`` when given, else as many as keep a
+    chunk within ``engine_tuning.local_selector_max_elements``."""
+    if engine_tuning.local_selector_chunk_size is not None:
+        return max(1, min(int(n_images), int(engine_tuning.local_selector_chunk_size)))
 
-    max_elements = int(os.environ.get("RELAX_LOCAL_SELECTOR_MAX_ELEMENTS", "16000000"))
+    max_elements = int(engine_tuning.local_selector_max_elements)
     per_image_elements = 0
     if use_direction:
         per_image_elements += int(n_pixels)
@@ -318,6 +320,7 @@ def _build_factorized_local_entries(
     dtype: np.dtype = np.float32,
     sigma_tilt_deg: float,
     prior_tilt_deg: np.ndarray | None = None,
+    engine_tuning,
 ):
     """Build exact per-image local supports for factorized HEALPix x psi grids.
 
@@ -384,6 +387,7 @@ def _build_factorized_local_entries(
         int(grid_metadata["n_psi"]),
         sigma_rot_deg > 0.0 or sigma_tilt_deg > 0.0,
         sigma_psi_deg > 0.0,
+        engine_tuning=engine_tuning,
     )
     if sigma_tilt_deg > 0.0:
         # The tilt distances are held once per symmetry mate.
@@ -495,6 +499,7 @@ def _build_parent_expanded_local_entries(
     symmetry: str = "C1",
     sigma_tilt_deg: float,
     prior_tilt_deg: np.ndarray | None = None,
+    engine_tuning,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
     """Build RELION-style local support by expanding selected coarse parents.
 
@@ -534,6 +539,7 @@ def _build_parent_expanded_local_entries(
         dtype=dtype,
         sigma_tilt_deg=sigma_tilt_deg,
         prior_tilt_deg=prior_tilt_deg,
+        engine_tuning=engine_tuning,
     )
 
     n_images = int(parent_counts.shape[0])
@@ -830,8 +836,11 @@ def build_local_hypothesis_layout(
     dtype: np.dtype = np.float32,
     sigma_tilt_deg: float,
     prior_tilt_deg: np.ndarray | None = None,
+    engine_tuning,
 ) -> LocalHypothesisLayout:
     """Build exact per-image local neighborhoods and translation priors.
+
+    ``engine_tuning`` (the command's ``EngineTuning``) sizes the orientation selector's image chunks.
 
     ``sigma_tilt_deg`` with ``prior_tilt_deg`` (and ``sigma_rot == sigma_psi == 0``) is RELION's prior on
     the tilt angle alone (``--sigma_tilt``, in degrees as given): every in-plane angle and the directions
@@ -896,6 +905,7 @@ def build_local_hypothesis_layout(
             symmetry=symmetry,
             sigma_tilt_deg=sigma_tilt_deg,
             prior_tilt_deg=prior_tilt_deg,
+            engine_tuning=engine_tuning,
         )
     elif str(grid_metadata["mode"]) == "factorized":
         offsets, counts, rotation_ids_flat, rotation_log_priors_flat = _build_factorized_local_entries(
@@ -907,6 +917,7 @@ def build_local_hypothesis_layout(
             dtype=dtype,
             sigma_tilt_deg=sigma_tilt_deg,
             prior_tilt_deg=prior_tilt_deg,
+            engine_tuning=engine_tuning,
         )
     else:
         if sigma_tilt_deg > 0.0:

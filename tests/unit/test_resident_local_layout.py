@@ -24,6 +24,7 @@ from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.grids import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
@@ -64,6 +65,7 @@ def _parent_layout(n_images=N_IMAGES, n_coarse_trans=4, seed=20260919):
         translation_prior_reference_translations=translations,
         dtype=np.float32,
         sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
     ), translations
 
 

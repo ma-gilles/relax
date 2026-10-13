@@ -333,3 +333,26 @@ def test_bpref_symmetry_chunk_is_read_once(monkeypatch):
     monkeypatch.setenv("RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS", "many")
     with pytest.raises(ValueError):
         EngineTuning.from_environ()
+
+
+def test_local_selector_chunking_is_read_once_at_the_boundary(monkeypatch):
+    """A non-blank RELAX_LOCAL_SELECTOR_CHUNK_SIZE wins and the maximum is not read; otherwise
+    RELAX_LOCAL_SELECTOR_MAX_ELEMENTS (default 16M); int() refuses text, as the old reader did."""
+    import pytest
+
+    from relax.runtime.engine_tuning import EngineTuning
+
+    monkeypatch.delenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", raising=False)
+    monkeypatch.delenv("RELAX_LOCAL_SELECTOR_MAX_ELEMENTS", raising=False)
+    tuning = EngineTuning.from_environ()
+    assert (tuning.local_selector_chunk_size, tuning.local_selector_max_elements) == (None, 16_000_000)
+    monkeypatch.setenv("RELAX_LOCAL_SELECTOR_MAX_ELEMENTS", "1000")
+    assert EngineTuning.from_environ().local_selector_max_elements == 1000
+    monkeypatch.setenv("RELAX_LOCAL_SELECTOR_MAX_ELEMENTS", "many")
+    with pytest.raises(ValueError):
+        EngineTuning.from_environ()
+    monkeypatch.setenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", "7")
+    assert EngineTuning.from_environ().local_selector_chunk_size == 7
+    monkeypatch.setenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", "seven")
+    with pytest.raises(ValueError):
+        EngineTuning.from_environ()

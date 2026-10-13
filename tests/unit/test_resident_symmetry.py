@@ -34,6 +34,7 @@ from test_resident_significance import (
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.resident_candidates import build_resident_candidate_tables
 from relax.fine_pass.resident_significance import build_resident_candidate_tables_from_csr
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -281,6 +282,7 @@ def _c4_local_case(monkeypatch):
         translation_prior_reference_translations=translations,
         dtype=np.float32,
         sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
     )
     n_coarse_trans = int(translations.shape[0])
     rng = np.random.default_rng(seed + 1)

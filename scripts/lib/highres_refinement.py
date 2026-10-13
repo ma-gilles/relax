@@ -12,6 +12,7 @@ from relax.local_search.layout import (
     LocalHypothesisLayout,
     build_local_hypothesis_layout,
 )
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.grids import build_local_search_grid_metadata
 
 
@@ -98,6 +99,7 @@ def build_top_p_local_hypothesis_layout(
             float(voxel_size),
             grid_metadata=metadata,
             sigma_tilt_deg=0.0,
+            engine_tuning=EngineTuning.from_environ(),
         )
         unique_ids, first_idx, inverse = np.unique(
             np.asarray(local.rotation_ids_flat, dtype=np.int32),

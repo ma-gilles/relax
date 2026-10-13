@@ -778,6 +778,7 @@ def score_tomo_half_in_loop(
             random_perturbation=float(sampling.random_perturbation),
             voxel_size=half.voxel_size,
             symmetry=symmetry,
+            engine_tuning=engine_tuning,
         )
         prior = None
         if n_classes > 1:

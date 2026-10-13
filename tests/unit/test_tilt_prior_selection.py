@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from relax.local_search.layout import _build_factorized_local_entries, build_local_hypothesis_layout
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.grids import build_local_search_grid_metadata
 from relax.sampling.symmetry import relion_symmetry_operators
 
@@ -86,6 +87,7 @@ def test_tilt_prior_selection_is_relions(symmetry, healpix_order, sigma_tilt_deg
     offsets, counts, ids, log_priors = _build_factorized_local_entries(
         prior_eulers, healpix_order, 0.0, 0.0, metadata, dtype=np.float64,
         sigma_tilt_deg=sigma_tilt_deg, prior_tilt_deg=PRIOR_TILTS,
+        engine_tuning=EngineTuning(),
     )  # fmt: skip
     ref_ids, ref_log_priors, ref_counts = _reference_entries(PRIOR_TILTS, sigma_tilt_deg, metadata, symmetry)
     np.testing.assert_array_equal(counts, ref_counts)
@@ -109,7 +111,7 @@ def test_width_below_the_grid_spacing_keeps_relions_single_direction(symmetry):
     eulers = np.column_stack([np.zeros(5), prior_tilts, np.zeros(5)])
     offsets, counts, ids, log_priors = _build_factorized_local_entries(
         eulers, 1, 0.0, 0.0, metadata, dtype=np.float64, sigma_tilt_deg=0.01, prior_tilt_deg=prior_tilts
-    )
+    , engine_tuning=EngineTuning())
     ref_ids, ref_log_priors, ref_counts = _reference_entries(prior_tilts, 0.01, metadata, symmetry)
     np.testing.assert_array_equal(counts, ref_counts)
     np.testing.assert_array_equal(ids, ref_ids)
@@ -123,7 +125,7 @@ def test_tilt_prior_does_not_depend_on_the_particles_rot_and_psi():
     entries = [
         _build_factorized_local_entries(
             np.column_stack([rot, tilts, psi]), 2, 0.0, 0.0, metadata, sigma_tilt_deg=10.0, prior_tilt_deg=tilts
-        )
+        , engine_tuning=EngineTuning())
         for rot, psi in ((np.zeros(2), np.zeros(2)), (np.array([77.0, -140.0]), np.array([33.0, 310.0])))
     ]
     for a, b in zip(*entries):
@@ -139,8 +141,8 @@ def test_layout_children_inherit_the_parent_tilt_prior():
     eulers = np.column_stack([np.array([10.0, 20.0]), tilts, np.array([5.0, 6.0])])
     common = dict(grid_metadata=build_local_search_grid_metadata(2), sigma_tilt_deg=10.0, prior_tilt_deg=tilts)
     flat = (np.zeros((1, 2), dtype=np.float32), np.zeros((2, 2), dtype=np.float32), 1.0, None, 4.0)
-    parents = build_local_hypothesis_layout(eulers, None, 0.0, 0.0, 2, *flat, **common)
-    children = build_local_hypothesis_layout(eulers, None, 0.0, 0.0, 3, *flat, local_parent_oversampling_order=1, **common)
+    parents = build_local_hypothesis_layout(eulers, None, 0.0, 0.0, 2, *flat, **common, engine_tuning=EngineTuning())
+    children = build_local_hypothesis_layout(eulers, None, 0.0, 0.0, 3, *flat, local_parent_oversampling_order=1, **common, engine_tuning=EngineTuning())
     np.testing.assert_array_equal(children.rotation_counts, 8 * parents.rotation_counts)
     for image in range(2):
         parent = np.asarray(parents.rotation_log_priors_flat)[parents.rotation_offsets[image] : parents.rotation_offsets[image + 1]]
@@ -153,6 +155,6 @@ def test_tilt_prior_needs_its_inputs():
     metadata = build_local_search_grid_metadata(1)
     eulers = np.zeros((2, 3))
     with pytest.raises(ValueError, match="one prior tilt angle per image"):
-        _build_factorized_local_entries(eulers, 1, 0.0, 0.0, metadata, sigma_tilt_deg=6.0)
+        _build_factorized_local_entries(eulers, 1, 0.0, 0.0, metadata, sigma_tilt_deg=6.0, engine_tuning=EngineTuning())
     with pytest.raises(NotImplementedError, match="separate rot prior"):
-        _build_factorized_local_entries(eulers, 1, 0.2, 0.2, metadata, sigma_tilt_deg=6.0, prior_tilt_deg=np.zeros(2))
+        _build_factorized_local_entries(eulers, 1, 0.2, 0.2, metadata, sigma_tilt_deg=6.0, prior_tilt_deg=np.zeros(2), engine_tuning=EngineTuning())

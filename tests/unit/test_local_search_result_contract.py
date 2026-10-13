@@ -7,6 +7,7 @@ import pytest
 from helpers.refinement_specs import local_iteration_owners
 
 from relax.refinement import local_half
+from relax.runtime.engine_tuning import EngineTuning
 from relax.types import LocalEMResult
 
 pytestmark = pytest.mark.unit
@@ -102,6 +103,7 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
                 grid_metadata=build_local_search_grid_metadata(2, symmetry="C1"),
                 rotation_grid_random_perturbation=rp, rotation_grid_angular_sampling_deg=step,
                 sigma_tilt_deg=0.0,
+                engine_tuning=EngineTuning(),
             ),
         )
     local_half._run_local_search_iteration(*local_iteration_owners(
@@ -128,6 +130,7 @@ def test_rescaled_local_rows_pass_the_provenance_check_and_are_projected(monkeyp
         prior, None, 0.2, 0.2, 2, translations[:1], translations, 1.0, None, 1.0,
         grid_metadata=build_local_search_grid_metadata(2, symmetry="C1"),
         sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
     )
     if route != "oversampled children":
         assert np.abs(unperturbed.rotations_flat / scale - layout.rotations_flat).max() > 1e-3
@@ -151,6 +154,7 @@ def test_adaptive_pass2_children_rebuild_from_their_source_eulers():
         None, 1.0, grid_metadata=build_local_search_grid_metadata(2, symmetry="C1"),
         rotation_grid_random_perturbation=rp, rotation_grid_angular_sampling_deg=15.0,
         sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
     )
     children = build_local_adaptive_pass2_hypothesis_layout(
         parent, [None] * parent.rotation_counts.size, 2, oversampling_order=1, random_perturbation=rp, symmetry="C1"

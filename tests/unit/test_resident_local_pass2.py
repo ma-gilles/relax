@@ -40,6 +40,7 @@ from relax.local_search.layout import (
     build_local_hypothesis_layout,
 )
 from relax.refinement import local_half
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.grids import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
@@ -97,6 +98,7 @@ def _pass2_layout(seed=20260919, full_support=False):
         translation_prior_reference_translations=translations,
         dtype=np.float32,
         sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
     )
     n_coarse_trans = int(translations.shape[0])
     rng = np.random.default_rng(seed + 1)
@@ -504,6 +506,7 @@ def _parent_layout(seed=20260919):
         translation_prior_reference_translations=translations,
         dtype=np.float32,
         sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
     )
     return parent, translations
 
