@@ -394,7 +394,6 @@
   "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS": "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS",
   "RECOVAR_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE": "RELAX_SPARSE_KCLASS_RECTANGULAR_ACTIVE_ROWS_MIN_BUCKET_SIZE",
   "RECOVAR_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE": "RELAX_SPARSE_KCLASS_RELION_FINE_MSTEP_PRUNE",
-  "RECOVAR_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES": "RELAX_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES",
   "RECOVAR_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED": "RELAX_SPARSE_KCLASS_RESIDUAL_TERMS_FUSED",
   "RECOVAR_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS": "RELAX_SPARSE_KCLASS_REUSE_COMPACT_NOISE_SUMS",
   "RECOVAR_SPARSE_KCLASS_ROTATIONS_BY_INDEX": "RELAX_SPARSE_KCLASS_ROTATIONS_BY_INDEX",
@@ -716,6 +715,8 @@
   "RECOVAR_SPARSE_PASS2_WINDOWED_PREPARE": "no user: a windowed pass always prepares only its active Fourier rows; nothing set the switch off (2026-10-13)",
   "RELAX_SPARSE_PASS2_WINDOWED_PREPARE": "no user: a windowed pass always prepares only its active Fourier rows; nothing set the switch off (2026-10-13)",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "no user: only a unit test armed the carry aval check, which the test now calls itself (2026-10-13)",
-  "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "no user: only a unit test armed the carry aval check, which the test now calls itself (2026-10-13)"
+  "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "no user: only a unit test armed the carry aval check, which the test now calls itself (2026-10-13)",
+  "RECOVAR_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES": "no source: the resident hypothesis tables came only from the retired vectorized hypothesis preparation (2026-10-13)",
+  "RELAX_SPARSE_KCLASS_RESIDENT_HYPOTHESIS_TABLES": "no source: the resident hypothesis tables came only from the retired vectorized hypothesis preparation (2026-10-13)"
  }
 }

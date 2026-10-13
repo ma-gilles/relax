@@ -459,3 +459,35 @@ def test_sparse_pass2_prepare_per_image_inputs_honors_explicit_float64_dtype():
     )
 
 
+
+
+def test_sparse_pass2_rotations_by_index_build_matches_the_host_build(monkeypatch):
+    """The device gather by fine-grid index (RELAX_SPARSE_KCLASS_ROTATIONS_BY_INDEX) is the one table route left
+    after the vectorized resident hypothesis tables went: it builds the same padded score and M-step rotations as
+    the host build, identity padding included."""
+    pytest.importorskip("jax")
+    from scripts.lib import bucketed_pass2
+
+    score_rotations = np.stack([_z_rotation(angle) for angle in (0.1, 0.2, 0.3, 0.4)])
+    mstep_rotations = np.stack([_z_rotation(angle) for angle in (1.1, 1.2, 1.3, 1.4)])
+    per_image = _prepare_per_image_pass2_inputs(
+        [np.asarray([0, 1], dtype=np.int32), np.asarray([1], dtype=np.int32)],
+        n_coarse_rot=12,
+        n_coarse_trans=1,
+        nside_level=0,
+        oversampling_order=0,
+        n_fine_trans=1,
+        fine_translation_parent=np.asarray([0], dtype=np.int32),
+        rotation_log_prior=np.zeros(12, dtype=np.float32),
+        random_perturbation=0.0,
+        fine_rotations_override=score_rotations,
+        fine_mstep_rotations_override=mstep_rotations,
+        fine_rotation_parent_override=np.asarray([0, 0, 1, 1], dtype=np.int32),
+    )
+    assert "resident_hypothesis" not in per_image
+    bucket = {"bucket_size": 6, "image_indices": np.asarray([0, 1], dtype=np.int64)}
+    host = _build_bucket_arrays(bucket, per_image, n_fine_trans=1)
+    monkeypatch.setenv(bucketed_pass2.ROTATIONS_BY_INDEX_ENV, "1")
+    device = _build_bucket_arrays(bucket, per_image, n_fine_trans=1, capacity_rows=2, device_rotations=True)
+    for key in ("rotations", "mstep_rotations"):
+        assert_matches(np.asarray(device[key]), np.asarray(host[key]))
