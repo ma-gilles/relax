@@ -261,6 +261,7 @@ def initial_model_estep_config(
         sampling=sampling,
         accum_dump_dir=opts.environment.accum_dump_dir,
         engine_tuning=opts.environment.engine,
+        scoring_overrides=opts.environment.scoring,
     )
 
 

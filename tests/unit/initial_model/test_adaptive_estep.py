@@ -7,6 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling import device_rotations, grids
 from relax.types import make_relion_stats
 from relax.vdam import adaptive_estep, native_options, native_sampling
@@ -175,6 +176,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
         ),
         accum_dump_dir=None,
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     engine_kwargs = {
         "class_rotation_log_prior": prior_relion,
@@ -256,6 +258,7 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
         ),
         accum_dump_dir=None,
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     result = adaptive_estep.run_adaptive_initial_model_estep(
         _Dataset(),

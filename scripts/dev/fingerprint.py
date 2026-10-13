@@ -185,7 +185,9 @@ def without_probe(kwargs: dict) -> dict:
     it, and a tree from before S15 passes none. Refuses a ``probe`` that is not a probe (or None), so no other value
     can leave the digest under that name. Also less ``engine_tuning`` (``relax.runtime.engine_tuning.EngineTuning``,
     rule 5 env slice, 2026-10-12): how the engines execute, which changes no value; a tree from before it reads the
-    same settings from the environment. Refuses an ``engine_tuning`` that is not an ``EngineTuning``."""
+    same settings from the environment. Refuses an ``engine_tuning`` that is not an ``EngineTuning``. Also less a
+    ``scoring_overrides`` (``relax.runtime.scoring_overrides.ScoringOverrides``, 2026-10-12) at its defaults, the
+    production path a tree from before it took; a set override changes values and stays in the digest."""
 
     probe = kwargs.get("probe")
     assert probe is None or all(
@@ -195,7 +197,21 @@ def without_probe(kwargs: dict) -> dict:
     assert tuning is None or type(tuning).__name__ == "EngineTuning", (
         f"the engine's engine_tuning keyword holds {type(tuning).__name__}, not an EngineTuning"
     )
-    return {key: value for key, value in kwargs.items() if key not in ("probe", "engine_tuning")}
+    overrides = kwargs.get("scoring_overrides")
+    assert overrides is None or type(overrides).__name__ == "ScoringOverrides", (
+        f"the engine's scoring_overrides keyword holds {type(overrides).__name__}, not a ScoringOverrides"
+    )
+    return {
+        key: value for key, value in kwargs.items()
+        if key not in ("probe", "engine_tuning") and not default_scoring_overrides(value)
+    }
+
+
+def default_scoring_overrides(value) -> bool:
+    """Whether ``value`` is a ``ScoringOverrides`` at its defaults: the production path, which is not an operand (a
+    tree from before the record took the same path with no argument)."""
+
+    return type(value).__name__ == "ScoringOverrides" and value == type(value)()
 
 
 
@@ -303,7 +319,7 @@ def digest_operands(*values) -> int:
             h.update(repr(value).encode())
         elif isinstance(value, dict):
             for key in sorted(value, key=str):
-                if type(value[key]).__name__ == "EngineTuning":
+                if type(value[key]).__name__ == "EngineTuning" or default_scoring_overrides(value[key]):
                     continue  # not an operand (see below), so not its key either
                 h.update(str(key).encode())
                 feed(value[key], depth + 1)
@@ -318,7 +334,7 @@ def digest_operands(*values) -> int:
             h.update(np.ascontiguousarray(host).tobytes())
         elif callable(value):
             h.update(b"<callable>")
-        elif type(value).__name__ == "EngineTuning":
+        elif type(value).__name__ == "EngineTuning" or default_scoring_overrides(value):
             # How the engines execute (relax.runtime.engine_tuning, rule 5 env slice): no value depends on it, and
             # an older tree reads the same settings from the environment, so it is not an operand.
             return

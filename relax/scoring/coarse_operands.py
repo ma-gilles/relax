@@ -14,10 +14,6 @@ import numpy as np
 
 from relax.projection.projection import relion_coarse_relabel
 from relax.relion.optics_groups import pixel_rows
-from relax.runtime.env_flags import parse_env_strict_flag
-from relax.scoring.coarse_gaussian_gemm import (
-    _K1_RELION_F32_COARSE_SUPPORT_ENV,
-)
 
 
 def repeat_pad_batch_axis(value, target_size: int):
@@ -36,12 +32,6 @@ def repeat_pad_batch_axis(value, target_size: int):
         [array, np.repeat(array[:1], target_size - array.shape[0], axis=0)],
         axis=0,
     )
-
-
-def k1_relion_f32_coarse_support_enabled(*, default: bool = False) -> bool:
-    """Return whether the RELION CUDA float32 coarse support is active."""
-
-    return parse_env_strict_flag(_K1_RELION_F32_COARSE_SUPPORT_ENV, default=default)
 
 
 

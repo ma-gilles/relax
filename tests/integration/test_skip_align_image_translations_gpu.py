@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 
 def _k2_inputs(monkeypatch):
@@ -94,6 +95,7 @@ def _given_pose_pass(dataset, volumes, noise, args, grids, supports, translation
         **given,
         **keywords,
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
 
 

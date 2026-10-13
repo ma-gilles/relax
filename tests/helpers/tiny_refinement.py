@@ -19,6 +19,7 @@ from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 from helpers.run_options import stand_in
 
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 IMAGE_SHAPE = (8, 8)
 IMAGE_SIZE = 64
@@ -395,6 +396,7 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
                 dataset, means, None, jnp.ones(IMAGE_SIZE), coarse, translations, fine, fine_translations,
                 rotation_parents, translation_parents, "linear_interp",
                 oversampling_order=1, coarse_healpix_order=0, firstiter_cc_pass2_only_best_coarse=cc, **keywords,
+                scoring_overrides=ScoringOverrides.from_environ(),
             )
         except _Reached:
             stages[name] = recorded[-1]

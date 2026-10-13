@@ -36,6 +36,7 @@ from relax.runtime.env_flags import (
     parse_env_true_flag,
     read_env_text,
 )
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.symmetry import canonicalize_rotational_symmetry
 from relax.steps.projector_preparation import ProjectorFiles
 
@@ -797,6 +798,7 @@ class RefinementEnvironment:
     ``projector_files`` (``steps.projector_preparation.ProjectorFiles``): the projector slab cache
     (RELAX_RELION_PROJECTOR_CACHE_DIR) and dump (RELAX_RELION_PROJECTOR_DUMP_DIR).
     ``engine`` (``relax.runtime.engine_tuning.EngineTuning``): how the scoring and reconstruction engines execute.
+    ``scoring`` (``relax.runtime.scoring_overrides.ScoringOverrides``): the diagnostic overrides that change values.
     """
 
     half_accumulator_guard: str = "raise"
@@ -805,6 +807,7 @@ class RefinementEnvironment:
     low_pmax_refine_guard: LowPmaxRefineGuard | None = None
     projector_files: ProjectorFiles = ProjectorFiles()
     engine: EngineTuning = EngineTuning()
+    scoring: ScoringOverrides = ScoringOverrides()
 
     @classmethod
     def from_environ(cls) -> RefinementEnvironment:
@@ -821,6 +824,7 @@ class RefinementEnvironment:
                 dump_dir=read_env_text("RELAX_RELION_PROJECTOR_DUMP_DIR") or None,
             ),
             engine=EngineTuning.from_environ(),
+            scoring=ScoringOverrides.from_environ(),
         )
 
 

@@ -1639,6 +1639,7 @@ def main() -> None:
     from relax.classification.k_class import run_dense_k_class_em_adaptive
     from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
     from relax.runtime.engine_tuning import EngineTuning
+    from relax.runtime.scoring_overrides import ScoringOverrides
     from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
 
     adaptive_os = int(args.adaptive_oversampling)
@@ -1723,6 +1724,7 @@ def main() -> None:
         ),
         **adaptive_em_kwargs,
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     elapsed_s = time.time() - t0
     print(f"  RECOVAR K-class E/M step completed in {elapsed_s:.1f}s")
@@ -1743,6 +1745,7 @@ def main() -> None:
             translations.astype(np.float32),
             class_log_priors=class_log_priors,
             engine_tuning=EngineTuning.from_environ(),
+            scoring_overrides=ScoringOverrides.from_environ(),
             adaptive_fraction=args.significance_adaptive_fraction,
             max_significants=int(max_significants.active_max_significants),
             image_batch_size=significance_support_batch_plan.image_batch_size,
@@ -1857,6 +1860,7 @@ def main() -> None:
             translations.astype(np.float32),
             class_log_priors=class_log_priors,
             engine_tuning=EngineTuning.from_environ(),
+            scoring_overrides=ScoringOverrides.from_environ(),
             adaptive_fraction=args.significance_adaptive_fraction,
             max_significants=int(max_significants.active_max_significants),
             image_batch_size=significance_support_batch_plan.image_batch_size,

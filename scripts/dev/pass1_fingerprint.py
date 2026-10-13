@@ -262,7 +262,7 @@ MUTATIONS = (
     ("projection_cache_disabled", "requested = True if explicit_request is None else explicit_request",
      "requested = False",
      "the projection cache is never requested", True),
-    ("generic_route_ignored", "float32_support=k1_relion_f32_coarse_support_enabled(default=True),",
+    ("generic_route_ignored", "float32_support=request.scoring_overrides.f32_coarse_support,",
      "float32_support=True,",
      "RECOVAR_K1_RELION_F32_COARSE_SUPPORT is ignored", True),
     ("rotated_radius_disk", "mask_current_image_disk=not self.rotated_radius,", "mask_current_image_disk=True,",
@@ -545,6 +545,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             from relax.runtime.engine_tuning import EngineTuning
 
             kwargs = dict(kwargs, engine_tuning=EngineTuning.from_environ())
+        if "scoring_overrides" in {field.name for field in dataclasses.fields(pass1_request.Pass1Request)}:
+            from relax.runtime.scoring_overrides import ScoringOverrides
+
+            kwargs = dict(kwargs, scoring_overrides=ScoringOverrides.from_environ())
         return function(*args, **kwargs)
 
     def full_stats_dict(stats, class_assignment):

@@ -13,6 +13,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 
 def _install_native_preprocessing(dataset):
@@ -760,6 +761,7 @@ def test_public_k2_dense_engine_runs_joint_full_grid(monkeypatch):
         fine_current_size=args["current_size"],
         coarse_engine="gemm_dense", **args,
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     assert np.all(np.isfinite(np.asarray(result.stats.log_evidence_per_image)))
     assert np.sum(np.asarray(result.class_posterior_sums)) == pytest.approx(

@@ -734,8 +734,10 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     *,
     engine_kwargs: dict,
     probe: KClassProbe,
+    scoring_overrides,
 ) -> _DenseKClassScoreProbeResult:
-    """Score RELION firstiter-CC K-class coarse poses in one shared pass; ``probe`` observes it."""
+    """Score RELION firstiter-CC K-class coarse poses in one shared pass; ``probe`` observes it
+    (``scoring_overrides``: the run's ScoringOverrides)."""
 
     from relax.projection.projection import compact_relion_projector_half_for_centered_indices
     from relax.scoring.pass1_plan import global_pass1_relion_projector_texture_enabled
@@ -809,6 +811,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         translations,
         class_log_priors=firstiter_class_log_priors,
         engine_tuning=engine_kwargs["engine_tuning"],
+        scoring_overrides=scoring_overrides,
         adaptive_fraction=1.0,
         max_significants=1,
         image_batch_size=int(engine_kwargs.get("image_batch_size", 500)),
@@ -1478,6 +1481,7 @@ def run_dense_k_class_em_adaptive(
     zero_oversampling_coarse_state_for_classes: bool = False,
     probe: KClassProbe | None = None,
     engine_tuning: relax.runtime.engine_tuning.EngineTuning,
+    scoring_overrides,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + sparse fine pass 2.
@@ -1532,6 +1536,9 @@ def run_dense_k_class_em_adaptive(
         observes nothing. No result depends on it.
     engine_tuning : EngineTuning
         How the engines execute (``relax.runtime.engine_tuning``; the command reads it from the environment).
+    scoring_overrides : ScoringOverrides
+        The diagnostic overrides of pass 1 that change values (``relax.runtime.scoring_overrides``; the command
+        reads them from the environment).
     coarse_healpix_order, oversampling_order : int or None
         RELION sampling metadata for sparse pass-2 diagnostics.  When omitted,
         the values are inferred from exact HEALPix grid sizes for compatibility
@@ -1843,6 +1850,7 @@ def run_dense_k_class_em_adaptive(
                     coarse_translations_np,
                     engine_kwargs=coarse_probe_kwargs,
                     probe=probe,
+                    scoring_overrides=scoring_overrides,
                 )
         coarse_actual_backend = coarse_result.coarse_score_backend
         # ``per_class_hard_assignments[k, i]`` is class k's best coarse pose
@@ -1922,6 +1930,7 @@ def run_dense_k_class_em_adaptive(
                 coarse_translations_np,
                 class_log_priors=significance_log_priors,
                 engine_tuning=engine_tuning,
+                scoring_overrides=scoring_overrides,
                 **sig_kwargs,
                 **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
                 **_translation_angle_scale_kwargs(engine_kwargs),

@@ -6,6 +6,7 @@ import pytest
 
 from relax.io.batch_fetch import prefetched_batches
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
 
@@ -86,11 +87,11 @@ def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
     # The depth read at the command boundary reaches the coarse pass's reader.
     monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "0")
     kwargs["engine_tuning"] = EngineTuning.from_environ()
-    expected = significance._compute_k_class_significance_batched(*args, **kwargs)
+    expected = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     assert threads and set(threads) == {threading.get_ident()}
     threads.clear()
     monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "2")
     kwargs["engine_tuning"] = EngineTuning.from_environ()
-    actual = significance._compute_k_class_significance_batched(*args, **kwargs)
+    actual = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     assert threads and threading.get_ident() not in threads
     _assert_significance_results_match(actual, expected)

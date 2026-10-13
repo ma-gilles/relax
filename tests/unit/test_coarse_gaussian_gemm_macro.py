@@ -19,6 +19,7 @@ from relax.fine_pass.significant_samples import significant_sample_ids
 from relax.projection.projection_cache import build_projection_cache
 from relax.relion import ctf
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.scoring import coarse_gaussian_gemm, coarse_kernels, pass1_batch, pass1_program, significance
 from relax.scoring.pass1_plan import plan_pass1
 from relax.scoring.pass1_request import Pass1Request
@@ -760,6 +761,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
             rotations,
             translations,
             **common,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
     uncached = run()
@@ -771,7 +773,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "1")
     # The explicit request read at the boundary reaches the pass-1 plan.
     common["engine_tuning"] = EngineTuning.from_environ()
-    plan = plan_pass1(Pass1Request(dataset, jnp.ones(dataset.image_size, dtype=jnp.float32), rotations, translations, **common))
+    plan = plan_pass1(Pass1Request(dataset, jnp.ones(dataset.image_size, dtype=jnp.float32), rotations, translations, **common, scoring_overrides=ScoringOverrides.from_environ()))
     cached = significance.run_pass1(plan)
     assert len(projection_calls) == 1
     assert_matches(projection_calls[0][0], np.arange(1, 17))
@@ -1007,6 +1009,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             translation_log_prior=selected_translation_prior,
             **common,
             **options,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
     zero_priors = run_with_priors(

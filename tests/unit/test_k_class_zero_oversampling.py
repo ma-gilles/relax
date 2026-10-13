@@ -29,6 +29,7 @@ import jax.numpy as jnp
 from helpers.float_compare import assert_matches
 
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
 
@@ -148,6 +149,7 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
         relion_firstiter_winner_take_all=False, use_float64_scoring=False,
         **({CLASS_REUSE_KEYWORD: True} if passes_keyword else {}),
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     assert len(coarse_calls) == len(fine_calls) == 1
     assert coarse_calls[0].get("return_relion_f32_normalization", False) is enabled

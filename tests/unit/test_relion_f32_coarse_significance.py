@@ -1,6 +1,7 @@
 """RELION CUDA float32 coarse-posterior significance tests."""
 
 import numpy as np
+import pytest
 from helpers.float_compare import assert_matches
 
 from relax.sampling.oversampling import (
@@ -8,8 +9,6 @@ from relax.sampling.oversampling import (
     relion_cuda_f32_coarse_log_weights,
     relion_cuda_f32_coarse_posterior,
 )
-from relax.scoring.coarse_gaussian_gemm import _K1_RELION_F32_COARSE_SUPPORT_ENV
-from relax.scoring.coarse_operands import k1_relion_f32_coarse_support_enabled
 
 
 def _numpy_reference(scores, adaptive_fraction, max_significants):
@@ -193,11 +192,18 @@ def test_relion_cuda_f32_tail_target_preserves_text_to_float_semantics():
     assert_matches(target, np.asarray([1606715186], dtype=np.uint32).view(np.float32))
 
 
-def test_relion_f32_coarse_support_gate_honors_scoped_default(monkeypatch):
-    monkeypatch.delenv(_K1_RELION_F32_COARSE_SUPPORT_ENV, raising=False)
-    assert not k1_relion_f32_coarse_support_enabled()
-    assert k1_relion_f32_coarse_support_enabled(default=True)
-    monkeypatch.setenv(_K1_RELION_F32_COARSE_SUPPORT_ENV, "0")
-    assert not k1_relion_f32_coarse_support_enabled(default=True)
-    monkeypatch.setenv(_K1_RELION_F32_COARSE_SUPPORT_ENV, "1")
-    assert k1_relion_f32_coarse_support_enabled()
+def test_relion_f32_coarse_support_is_read_once_at_the_boundary(monkeypatch):
+    """RECOVAR_K1_RELION_F32_COARSE_SUPPORT (a strict flag): unset is on, the production RELION float32 support;
+    0 selects the generic support route; anything else is refused, as before."""
+    from relax.runtime.scoring_overrides import F32_COARSE_SUPPORT_ENV, ScoringOverrides
+
+    monkeypatch.delenv(F32_COARSE_SUPPORT_ENV, raising=False)
+    assert ScoringOverrides.from_environ().f32_coarse_support is True
+    monkeypatch.setenv(F32_COARSE_SUPPORT_ENV, " OFF ")
+    assert ScoringOverrides.from_environ().f32_coarse_support is False
+    monkeypatch.setenv(F32_COARSE_SUPPORT_ENV, "1")
+    assert ScoringOverrides.from_environ().f32_coarse_support is True
+    for raw in ("", "maybe"):
+        monkeypatch.setenv(F32_COARSE_SUPPORT_ENV, raw)
+        with pytest.raises(ValueError, match=f"Unsupported {F32_COARSE_SUPPORT_ENV}"):
+            ScoringOverrides.from_environ()

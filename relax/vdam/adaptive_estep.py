@@ -392,6 +392,7 @@ def run_adaptive_initial_model_estep(
     engine_call = dict(
         coarse_engine=config.coarse_engine,
         engine_tuning=config.engine_tuning,
+        scoring_overrides=config.scoring_overrides,
         class_log_priors=class_log_priors,
         accumulate_noise=True,
         adaptive_fraction=(

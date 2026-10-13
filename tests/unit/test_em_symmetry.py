@@ -14,6 +14,7 @@ from helpers.run_options import stand_in
 
 from relax.refinement.refinement_options import ScoringVariants
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.symmetry import (
     canonicalize_rotational_symmetry,
     parse_rotational_symmetry,
@@ -627,6 +628,7 @@ def test_non_c1_adaptive_engine_rejects_unsupported_reconstruction_route_early(
             sparse_pass2=sparse_pass2,
             mstep_relion_x_half=x_half,
             engine_tuning=EngineTuning.from_environ(),
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
 
@@ -652,6 +654,7 @@ def test_non_c1_adaptive_engine_requires_explicit_oversampling_order():
             sparse_pass2=True,
             mstep_relion_x_half=True,
             engine_tuning=EngineTuning.from_environ(),
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
 

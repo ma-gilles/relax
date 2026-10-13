@@ -7,6 +7,7 @@ from relax.local_search import records
 from relax.refinement import dense_half, local_half, local_sampling
 from relax.refinement.ports import NoProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, RefinementEnvironment, ScoringVariants
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.steps import half_inputs, scoring_policy, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
 from relax.steps.projector_preparation import PreparedProjector
@@ -284,4 +285,4 @@ def dense_execution_policy(**fields):
             "engine_tuning": RefinementEnvironment.from_environ().engine,
             **fields,
         }
-    )
+    , scoring_overrides=ScoringOverrides.from_environ())

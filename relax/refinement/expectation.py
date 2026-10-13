@@ -783,6 +783,7 @@ def score_numbered_half(
             k_class_probe=k_class_probe,
             keep_pose_rotation_eulers=probe.keeps_pose_rotation_eulers,
             engine_tuning=options.environment.engine,
+            scoring_overrides=options.environment.scoring,
         )
         dense_result = _score_half_dense_in_bpref_scope(
             dense_half,

@@ -34,6 +34,7 @@ from relax.refinement.ports import InputSource, RunObserver, StartSeeds
 from relax.refinement.refinement_options import OpticsGeometry
 from relax.refinement.startup_references import StartupHandoff
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling import oversampling as oversampling_grids
 from relax.sampling.orientation_priors import (
     DirectionPrior,
@@ -4314,6 +4315,7 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
             score_mode="normalized_cc",
             collect_significance=False,
             **_EXACT_PASS1_PROJECTOR,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
     assert_matches(captured["batch"], dataset._images)
@@ -4355,6 +4357,7 @@ def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng, monke
             scale_corrections=np.asarray([2.0], dtype=np.float32),
             image_pre_shifts=np.asarray([[1.0, -1.0]], dtype=np.float32),
             **_EXACT_PASS1_PROJECTOR,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
     assert_matches(captured["batch"], dataset._images)
@@ -6444,6 +6447,7 @@ class TestRelionModeSmokeTest:
             rotation_block_size=rotations.shape[0] + 1,
             current_size=None,
             rotation_log_prior=np.zeros(rotations.shape[0], dtype=np.float32),
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
         assert sig_rot_any.shape == (1, rotations.shape[0])
@@ -6527,6 +6531,7 @@ class TestRelionModeSmokeTest:
             collect_significance=False,
             return_class_best=True,
             **projector,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
         assert calls
@@ -6568,6 +6573,7 @@ class TestRelionModeSmokeTest:
             pad_final_image_batch=False,
             **common_kwargs,
             engine_tuning=EngineTuning.from_environ(),
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
         padded = _compute_k_class_significance_batched(
             dataset,
@@ -6578,6 +6584,7 @@ class TestRelionModeSmokeTest:
             pad_final_image_batch=True,
             **common_kwargs,
             engine_tuning=EngineTuning.from_environ(),
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
         from relax.fine_pass.significant_samples import significant_sample_ids
@@ -6728,6 +6735,7 @@ class TestRelionModeSmokeTest:
             collect_significance=False,
             return_class_best=True,
             tree_rescore_max_margin=4e-6,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
         assert stats.executed_coarse_backend == "exact_cc_gemm"
@@ -6789,6 +6797,7 @@ class TestRelionModeSmokeTest:
             score_with_masked_images=False,
             probe=SignificanceDiagnostics(),
             **projector,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
         files = sorted(dump_dir.glob("*.npz"))
@@ -6838,6 +6847,7 @@ class TestRelionModeSmokeTest:
             return_class_best=True,
             probe=SignificanceDiagnostics(),
             **projector,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
         assert not list(dump_dir.glob("*.npz"))
@@ -9588,6 +9598,7 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
         rotation_block_size=rotations.shape[0],
         score_with_masked_images=True,
         engine_tuning=EngineTuning.from_environ(),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
 
     assert len(score_calls) == 1

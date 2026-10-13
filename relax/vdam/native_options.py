@@ -14,6 +14,7 @@ from typing import Literal
 from relax.io.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
 from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.env_flags import parse_env_strict_flag, read_env_text
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.symmetry import is_identity_symmetry
 from relax.steps.sgd_schedule import (
     DEFAULT_GRAD_EM_ITERS,
@@ -99,6 +100,7 @@ class VdamEnvironment:
     ``projector_dump_dir`` (RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR, stripped; None when unset or blank) dumps each projector.
     ``accum_dump_dir`` (RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR as set; None when unset or empty) dumps each accumulator.
     ``engine`` (``relax.runtime.engine_tuning.EngineTuning.from_environ``): how the engines execute.
+    ``scoring`` (``relax.runtime.scoring_overrides.ScoringOverrides.from_environ``): overrides that change values.
     """
 
     clear_jax_caches_per_iteration: bool = False
@@ -112,6 +114,7 @@ class VdamEnvironment:
     projector_dump_dir: str | None = None
     accum_dump_dir: str | None = None
     engine: EngineTuning = EngineTuning()
+    scoring: ScoringOverrides = ScoringOverrides()
 
     @classmethod
     def from_environ(cls) -> VdamEnvironment:
@@ -134,7 +137,8 @@ class VdamEnvironment:
                    read_env_text("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"),
                    read_env_text("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", "").strip() or None,
                    read_env_text("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR") or None,
-                   EngineTuning.from_environ())
+                   EngineTuning.from_environ(),
+                   ScoringOverrides.from_environ())
 
 
 @dataclass(frozen=True, kw_only=True)

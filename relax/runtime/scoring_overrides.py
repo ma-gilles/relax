@@ -1,0 +1,47 @@
+"""Diagnostic scoring overrides, read once from the environment (code rule 5).
+
+:class:`ScoringOverrides` holds the environment switches that change computed values: each one replaces a step of
+the production scoring path with another for diagnosis or parity work. Every default is the production path,
+RELION-faithful, and the default instance is the unset environment. Unlike ``relax.runtime.engine_tuning``
+(execution settings that change no value), a run with an override set computes different numbers.
+:meth:`ScoringOverrides.from_environ` reads them through ``relax.runtime.env_flags``; the commands call it once
+(``RefinementEnvironment.scoring``, ``VdamEnvironment.scoring``) and the scoring engines receive the record as an
+argument.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from relax.runtime.env_flags import read_env_text
+
+F32_COARSE_SUPPORT_ENV = "RECOVAR_K1_RELION_F32_COARSE_SUPPORT"
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScoringOverrides:
+    """Diagnostic switches that change computed values; each default is the production RELION-faithful path.
+
+    ``f32_coarse_support`` (RECOVAR_K1_RELION_F32_COARSE_SUPPORT, :func:`parse_strict_flag`; default on): the
+    coarse pass's significance support follows RELION's CUDA float32 coarse weights; off selects the generic
+    Gaussian support route (a diagnosis of the support, used by tests).
+    """
+
+    f32_coarse_support: bool = True
+
+    @classmethod
+    def from_environ(cls) -> ScoringOverrides:
+        return cls(
+            f32_coarse_support=parse_strict_flag(F32_COARSE_SUPPORT_ENV, read_env_text(F32_COARSE_SUPPORT_ENV), True),
+        )
+
+
+def parse_strict_flag(name: str, raw: str | None, default: bool) -> bool:
+    """A strict boolean (``env_flags.parse_env_strict_flag``'s rule): unset is ``default``; a set value (stripped,
+    any case) must be 1/true/yes/on or 0/false/no/off, anything else (blank too) is refused naming ``name``."""
+    token = ("1" if default else "0") if raw is None else raw.strip().lower()
+    if token in {"0", "false", "no", "off"}:
+        return False
+    if token in {"1", "true", "yes", "on"}:
+        return True
+    raise ValueError(f"Unsupported {name}={token!r}")

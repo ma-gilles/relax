@@ -21,6 +21,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.scoring_overrides import ScoringOverrides
+
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
@@ -141,9 +143,9 @@ def _run_padding_pair(monkeypatch):
 
     args, kwargs = _significance_call(monkeypatch)
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
-    control = significance._compute_k_class_significance_batched(*args, **kwargs)
+    control = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
-    candidate = significance._compute_k_class_significance_batched(*args, **kwargs)
+    candidate = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     return candidate, control
 
 
@@ -186,12 +188,12 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
     monkeypatch.setattr(pass1_operands, "process_relion_exact_coarse_half_image", record)
 
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
-    significance._compute_k_class_significance_batched(*args, **kwargs)
+    significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     unpadded = list(seen)
 
     seen.clear()
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
-    significance._compute_k_class_significance_batched(*args, **kwargs)
+    significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     padded = list(seen)
 
     assert unpadded == [3, 3, 1]

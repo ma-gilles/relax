@@ -80,6 +80,9 @@ class Pass1Request:
     nyquist_column_counting: str = "relion"
     # How the engines execute (relax.runtime.engine_tuning.EngineTuning, read by the command).
     engine_tuning: Any
+    # The diagnostic overrides that change values (relax.runtime.scoring_overrides.ScoringOverrides, read by the
+    # command); the default instance is the production path.
+    scoring_overrides: Any
 
     def __post_init__(self):
         if self.return_class_second and not self.return_class_best:

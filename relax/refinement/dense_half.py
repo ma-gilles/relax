@@ -33,6 +33,7 @@ from relax.runtime.batch_planning import (
     safe_firstiter_cc_image_batch_size,
 )
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.device_rotations import project_rows
 from relax.sampling.oversampling import (
     AdaptivePass2Grids,
@@ -215,6 +216,8 @@ class DenseExecutionPolicy:
     keep_pose_rotation_eulers: bool
     # How the engines execute (RefinementEnvironment.engine, read by the command).
     engine_tuning: EngineTuning
+    # The diagnostic overrides that change values (RefinementEnvironment.scoring, read by the command).
+    scoring_overrides: ScoringOverrides
 
 
 def _score_adaptive_kclass_dense(
@@ -329,6 +332,7 @@ def _score_adaptive_kclass_dense(
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         engine_tuning=execution.engine_tuning,
+        scoring_overrides=execution.scoring_overrides,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
         **adaptive_em_kwargs,
@@ -452,6 +456,7 @@ def _score_kclass_at_given_poses(
         return_best_pose_details=True,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         engine_tuning=execution.engine_tuning,
+        scoring_overrides=execution.scoring_overrides,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
         image_seed_classes=half.image_seed_classes,
@@ -591,6 +596,7 @@ def _score_adaptive_k1_dense(
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         engine_tuning=execution.engine_tuning,
+        scoring_overrides=execution.scoring_overrides,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
         **adaptive_em_kwargs,
@@ -1341,6 +1347,7 @@ def _score_kclass_firstiter_cc_pass2(
         ),
         bpref_device_signature_active=execution.bpref_device_signature_active,
         engine_tuning=execution.engine_tuning,
+        scoring_overrides=execution.scoring_overrides,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
         coarse_translation_phase_source=(

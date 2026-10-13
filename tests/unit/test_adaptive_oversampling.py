@@ -23,6 +23,7 @@ from helpers.dense_posterior_reference import compute_e_step_weights
 from helpers.em_arrays import _hermitian_volume, _make_rotations, _raw_real_image_2d
 
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.oversampling import (
     _find_significant_mask_full_sort,
     _find_significant_mask_topk,
@@ -125,10 +126,10 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
     from relax.fine_pass import posterior
-    from relax.scoring import pass1_route, significance
+    from relax.scoring import significance
 
     install_exact_pass1_mocks(monkeypatch)
-    monkeypatch.setattr(pass1_route, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
+    monkeypatch.setenv("RECOVAR_K1_RELION_F32_COARSE_SUPPORT", "0")
     captured = []
     original = posterior.relion_f32_fine_probabilities
 
@@ -151,12 +152,13 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         rotation_block_size=2,
         pad_final_image_batch=pad_tail,
     )
-    control = significance._compute_k_class_significance_batched(*args, **kwargs)
+    control = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     assert not captured
     candidate = significance._compute_k_class_significance_batched(
         *args,
         **kwargs,
         return_relion_f32_normalization=True,
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     assert len(captured) == 2
     for actual, expected in zip(candidate[:4], control[:4]):
@@ -192,10 +194,10 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
     from relax.sampling import oversampling
-    from relax.scoring import pass1_route, pass1_support, significance
+    from relax.scoring import pass1_support, significance
 
     install_exact_pass1_mocks(monkeypatch)
-    monkeypatch.setattr(pass1_route, "k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
+    monkeypatch.setenv("RECOVAR_K1_RELION_F32_COARSE_SUPPORT", "1")
     support_program = pass1_support.coarse_support_posterior
 
     def run(n_classes, rotation_log_prior, translation_log_prior):
@@ -219,6 +221,7 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
             max_significants=4,
             image_batch_size=2,
             rotation_block_size=2,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
         return result, calls
 
@@ -296,6 +299,7 @@ def test_coarse_numeric_normalization_rejects_incompatible_modes(kwargs):
             current_size=None,
             return_relion_f32_normalization=True,
             **kwargs,
+            scoring_overrides=ScoringOverrides.from_environ(),
         )
 
 
@@ -1285,12 +1289,12 @@ def test_coarse_projections_are_computed_once_per_block_across_image_batches(mon
         rotation_block_size=2,
         score_mode="normalized_cc",
     )
-    memoized = significance._compute_k_class_significance_batched(*args, **kwargs)
+    memoized = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     n_blocks = 3  # 5 rotations in blocks of 2
     assert len(calls) == n_classes * n_blocks
     monkeypatch.setattr(coarse_projector, "_PASS1_PROJECTION_MEMO_MAX_BYTES", 0)
     calls.clear()
-    recomputed = significance._compute_k_class_significance_batched(*args, **kwargs)
+    recomputed = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     assert len(calls) > n_classes * n_blocks
     for actual, expected in zip(memoized[:4], recomputed[:4]):
         assert_matches(actual, expected)

@@ -10,6 +10,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_em_stage_glue_programs import _significance_call
 
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.scoring.pass1_batch import resolve_noise_tables
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
 from relax.scoring.pass1_plan import plan_pass1
@@ -264,7 +265,7 @@ def test_a_pass_that_collects_no_support_has_no_support_rows():
 def _plan(monkeypatch, n_classes=2, **overrides):
     args, kwargs = _significance_call(monkeypatch, n_classes=n_classes)
     kwargs.update(overrides)
-    return plan_pass1(Pass1Request(*args, **kwargs)), args, kwargs
+    return plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())), args, kwargs
 
 
 def test_a_gaussian_pass_plans_the_gemm_route_on_the_float32_support(monkeypatch):
@@ -335,7 +336,7 @@ def _cc_kwargs(kwargs):
 
 def test_a_normalized_cc_pass_plans_the_exact_cc_route_without_the_float32_support(monkeypatch):
     args, kwargs = _significance_call(monkeypatch, n_classes=1)
-    plan = plan_pass1(Pass1Request(*args, **_cc_kwargs(kwargs)))
+    plan = plan_pass1(Pass1Request(*args, **_cc_kwargs(kwargs), scoring_overrides=ScoringOverrides.from_environ()))
     route = plan.route
     assert (route.score_kind, route.executed_backend) == ("normalized_cc", "exact_cc_gemm")
     assert route.float32_support is False and route.projection_cache_plan is None
@@ -359,7 +360,7 @@ def test_the_tree_rescore_is_refused_where_it_cannot_run(monkeypatch, overrides,
     kwargs = _cc_kwargs(kwargs)
     kwargs.update(overrides, tree_rescore_max_margin=0.5)
     with pytest.raises(error, match=message):
-        plan_pass1(Pass1Request(*args, **kwargs))
+        plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ()))
 
 
 def test_the_tail_batch_is_padded_by_default_and_the_environment_can_turn_it_off(monkeypatch):
@@ -419,4 +420,4 @@ def test_the_planner_refuses_priors_and_noise_tables_that_do_not_fit_the_pass(mo
         args = (args[0], np.ones((2, args[0].image_size), dtype=np.float32), *args[2:])
     kwargs.update(overrides)
     with pytest.raises(ValueError, match=message):
-        plan_pass1(Pass1Request(*args, **kwargs))
+        plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ()))

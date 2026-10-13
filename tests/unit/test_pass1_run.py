@@ -14,6 +14,7 @@ from helpers.float_compare import assert_matches
 from test_em_stage_glue_programs import _assert_significance_results_match, _significance_call
 
 from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostics
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.scoring import significance
 from relax.scoring.pass1_assembly import log_batch_timing
 from relax.scoring.pass1_plan import plan_pass1
@@ -45,7 +46,7 @@ def make(monkeypatch):
     def build(n_classes=2, **overrides):
         args, kwargs = _significance_call(monkeypatch, n_classes=n_classes)
         kwargs.update(overrides)
-        return plan_pass1(Pass1Request(*args, **kwargs)), args, kwargs
+        return plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())), args, kwargs
 
     return build
 
@@ -350,7 +351,7 @@ def test_running_the_plan_is_what_the_keyword_entry_does(make):
     plan, args, kwargs = make()
     result = significance.run_pass1(plan)
     assert isinstance(result, Pass1Result)
-    _assert_significance_results_match(result, significance._compute_k_class_significance_batched(*args, **kwargs))
+    _assert_significance_results_match(result, significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ()))
 
 
 def test_the_stats_are_typed_fields_with_the_shapes_and_dtypes_of_the_pass(make):

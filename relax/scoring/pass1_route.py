@@ -12,7 +12,6 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from relax.scoring.coarse_operands import k1_relion_f32_coarse_support_enabled
 from relax.scoring.coarse_projector import CompactRows
 from relax.scoring.gaussian_plan import plan_coarse_gaussian
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
@@ -92,7 +91,7 @@ def plan_gaussian_route(
         ),
         score_kind="gaussian",
         executed_backend="gemm_macro",
-        float32_support=k1_relion_f32_coarse_support_enabled(default=True),
+        float32_support=request.scoring_overrides.f32_coarse_support,
         rotation_block_size=gaussian_plan.rotation_block_size,
         compact_rows=CompactRows(gaussian_plan.score_indices_np, gaussian_plan.projector_output_size),
         projection_cache_plan=gaussian_plan.projection_cache_plan,

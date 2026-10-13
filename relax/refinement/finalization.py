@@ -400,6 +400,7 @@ def run_final_all_data(
             k_class_probe=ctx.k_class_probe,
             keep_pose_rotation_eulers=ctx.expectation_probe.keeps_pose_rotation_eulers,
             engine_tuning=options.environment.engine,
+            scoring_overrides=options.environment.scoring,
         )
     final_outs = PerHalfOutputs()
     first_projector_power_spectrum = None
