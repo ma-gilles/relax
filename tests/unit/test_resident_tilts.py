@@ -104,6 +104,50 @@ def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
 
 
 @pytest.mark.unit
+def test_tilt_slot_rotations_built_in_threaded_parts_are_the_per_entry_matrices(monkeypatch):
+    """The entries are built by a few host threads, each row's Euler matrix once (relax#80): every entry is
+    still RELION's host ``inv(L_i A_r)`` of its own image and row, an identity image keeps its SPA matrix and
+    an entry without an image the identity."""
+    from relax.sampling.grids import relion_mstep_rotations_from_eulers
+
+    rng = np.random.default_rng(5)
+    n_units, n_rows, n_slots = 5, 40, 4
+    counts = np.array([4, 1, 3, 2, 4])
+    offsets = validate_unit_image_offsets(np.concatenate([[0], np.cumsum(counts)]), n_units)
+    layout = resident_tilts.chunk_tilt_layout(
+        offsets,
+        unit_start=0,
+        n_valid_units=n_units,
+        row_unit_local=np.sort(rng.integers(0, n_units, size=n_rows)),
+        n_valid_rows=n_rows - 3,
+        image_capacity=n_units * n_slots,
+        slot_capacity=n_slots,
+    )
+    eulers = rng.uniform(-180, 180, size=(n_rows, 3))
+    left = np.stack([np.linalg.qr(rng.normal(size=(3, 3)))[0] * rng.uniform(0.9, 1.1) for _ in range(int(counts.sum()))])
+    left[::4] = np.eye(3)
+    spa = rng.normal(size=(n_rows, 3, 3)).astype(np.float32)
+    monkeypatch.setattr(resident_tilts, "_SLOT_ROTATION_THREAD_ENTRIES", 7)
+    got = resident_tilts.tilt_slot_rotations(layout, eulers, left, row_spa_matrices=spa)
+    assert got.dtype == np.float32 and got.shape == (n_slots * n_rows, 3, 3)
+    kinds = set()
+    for slot in range(n_slots):
+        for row in range(n_rows):
+            image = layout.slot_image_ids[slot, row]
+            if image < 0:
+                expected, kind = np.eye(3, dtype=np.float32), "none"
+            elif np.array_equal(left[layout.image_ids[image]], np.eye(3)):
+                expected, kind = spa[row], "identity"
+            else:
+                expected, kind = relion_mstep_rotations_from_eulers(
+                    eulers[row : row + 1], left_matrices=left[layout.image_ids[image]][None]
+                )[0], "left"
+            kinds.add(kind)
+            assert_matches(got[slot * n_rows + row], expected)
+    assert kinds == {"none", "identity", "left"}
+
+
+@pytest.mark.unit
 def test_tilt_capacity_ladders_divide_the_rows_by_the_slot_count():
     # Rows project once per slot; the Wavg tile is built per slot for the units' images, so units keep the
     # image ladder.

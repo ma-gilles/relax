@@ -23,6 +23,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fine_pass.projection_blocks import project_rows_by_class
+from relax.fine_pass.resident_candidates import map_over_classes
 from relax.fine_pass.wavg import (
     _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     weighted_image_power_from_shells,
@@ -90,6 +91,10 @@ def chunk_tilt_layout(
     )
 
 
+# Entries of (image slot, row) matrices one host thread builds before another joins it.
+_SLOT_ROTATION_THREAD_ENTRIES = 32768
+
+
 def tilt_slot_rotations(
     layout: ChunkTiltLayout, row_source_eulers, image_left, *, row_spa_matrices=None, dtype=np.float32
 ) -> np.ndarray:
@@ -106,33 +111,49 @@ def tilt_slot_rotations(
     entry ``s * C_R + r``.
     """
 
-    from relax.sampling.grids import relion_mstep_rotations_from_eulers
+    from relax.sampling.grids import relion_mstep_rotations_from_euler_matrices, relion_mstep_rotations_from_eulers
+    from relax.sampling.healpix import euler_angles_to_matrix
     from relax.sampling.tomo_particles import relion_left_matrices
 
     n_slots, n_rows = layout.slot_image_ids.shape
-    out = np.tile(np.eye(3, dtype=dtype), (n_slots * n_rows, 1, 1))
-    chunk_image = layout.slot_image_ids.reshape(-1).astype(np.int64)
-    valid = chunk_image >= 0
-    if not np.any(valid):
+    out = np.empty((n_slots * n_rows, 3, 3), dtype=dtype)
+    out[:] = np.eye(3, dtype=dtype)
+    chunk_image = layout.slot_image_ids.reshape(-1)
+    # Only the entries with an image are built: a particle has fewer images than the pass's slots.
+    entries = np.flatnonzero(chunk_image >= 0)
+    if entries.size == 0:
         return out
-    rows = np.tile(np.arange(n_rows), n_slots)
-    images = np.zeros_like(chunk_image)
-    images[valid] = layout.image_ids[chunk_image[valid]]
-    left, applies = relion_left_matrices(np.asarray(image_left, dtype=np.float64)[images])
-    with_left = valid & applies
+    rows = entries % n_rows
+    entry_image = chunk_image[entries].astype(np.int64)
+    # One L per chunk image and one Euler matrix per row, gathered per entry (the trigonometry of a row
+    # serves all of its images).
+    left, applies = relion_left_matrices(
+        np.asarray(image_left, dtype=np.float64)[layout.image_ids[: int(layout.n_valid_images)]]
+    )
+    with_left = applies[entry_image]
     if np.any(with_left):
-        out[with_left] = relion_mstep_rotations_from_eulers(
-            np.asarray(row_source_eulers, dtype=np.float64)[rows[with_left]],
-            dtype=dtype,
-            left_matrices=left[with_left],
-        )
-    spa = valid & ~applies
-    if np.any(spa):
-        out[spa] = (
-            np.asarray(row_spa_matrices, dtype=dtype)[rows[spa]]
+        row_matrices = euler_angles_to_matrix(np.asarray(row_source_eulers, dtype=np.float64))
+        left_entries, left_rows, left_images = entries[with_left], rows[with_left], entry_image[with_left]
+
+        def inverses(part):
+            return relion_mstep_rotations_from_euler_matrices(
+                row_matrices[left_rows[part]], dtype=dtype, left_matrices=left[left_images[part]]
+            )
+
+        # Each entry's inverse is its own NumPy arithmetic, so a few host threads build them side by side
+        # (a soft global iteration has about 300,000 entries in each of thousands of chunks, relax#80).
+        n_parts = min(8, left_entries.size // _SLOT_ROTATION_THREAD_ENTRIES) + 1
+        bounds = np.linspace(0, left_entries.size, n_parts + 1, dtype=np.int64)
+        parts = [slice(int(a), int(b)) for a, b in zip(bounds[:-1], bounds[1:])]
+        for part, block in zip(parts, map_over_classes(inverses, parts)):
+            out[left_entries[part]] = block
+    if not np.all(with_left):
+        spa_rows = rows[~with_left]
+        out[entries[~with_left]] = (
+            np.asarray(row_spa_matrices, dtype=dtype)[spa_rows]
             if row_spa_matrices is not None
             else relion_mstep_rotations_from_eulers(
-                np.asarray(row_source_eulers, dtype=np.float64)[rows[spa]], dtype=dtype
+                np.asarray(row_source_eulers, dtype=np.float64)[spa_rows], dtype=dtype
             )
         )
     return out

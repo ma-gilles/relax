@@ -228,7 +228,9 @@ def test_k4_restart_uses_seed_exact_perturbation_for_captured_mstep_rotations():
 
 
 def test_relion_mstep_rotation_helper_preserves_matrix2d_inverse_source_order():
-    source = inspect.getsource(relion_mstep_rotations_from_eulers)
+    # The Euler entry builds the RFLOAT matrices and hands them to the one inverse.
+    assert "relion_mstep_rotations_from_euler_matrices(" in inspect.getsource(relion_mstep_rotations_from_eulers)
+    source = inspect.getsource(grids_module.relion_mstep_rotations_from_euler_matrices)
     cofactor_assignments = [
         "inverse[:, 0, 0] = matrix[:, 2, 2] * matrix[:, 1, 1] - matrix[:, 2, 1] * matrix[:, 1, 2]",
         "inverse[:, 0, 1] = -(matrix[:, 2, 2] * matrix[:, 0, 1] - matrix[:, 2, 1] * matrix[:, 0, 2])",

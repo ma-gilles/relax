@@ -476,11 +476,27 @@ def relion_mstep_rotations_from_eulers(
     3212-3234). The inverse is then ``inv(L A)`` (acc_helper_functions_impl.h:248-255).
     """
     eulers = np.asarray(eulers_deg, dtype=np.float64).reshape(-1, 3)
+    return relion_mstep_rotations_from_euler_matrices(
+        healpix.euler_angles_to_matrix(eulers), dtype=dtype, left_matrices=left_matrices
+    )
+
+
+def relion_mstep_rotations_from_euler_matrices(
+    matrix: np.ndarray,
+    *,
+    dtype: np.dtype = np.float32,
+    left_matrices: np.ndarray | None = None,
+) -> np.ndarray:
+    """:func:`relion_mstep_rotations_from_eulers` from the rows' RFLOAT Euler matrices ``[N, 3, 3]``.
+
+    A caller whose rows repeat a rotation under different ``left_matrices`` (a subtomogram's tilt images)
+    builds each rotation's Euler matrix once and passes it gathered per row.
+    """
+    matrix = np.asarray(matrix, dtype=np.float64).reshape(-1, 3, 3)
     if left_matrices is not None:
         left_matrices = np.asarray(left_matrices, dtype=np.float64)
-        if left_matrices.shape != (eulers.shape[0], 3, 3):
-            raise ValueError(f"left_matrices must have shape {(eulers.shape[0], 3, 3)}, got {left_matrices.shape}")
-    matrix = healpix.euler_angles_to_matrix(eulers)
+        if left_matrices.shape != (matrix.shape[0], 3, 3):
+            raise ValueError(f"left_matrices must have shape {(matrix.shape[0], 3, 3)}, got {left_matrices.shape}")
     if left_matrices is not None:
         # Matrix2D operator*: each entry sums over k in order.
         matrix = sum(left_matrices[:, :, k, None] * matrix[:, None, k, :] for k in range(3))
