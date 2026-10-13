@@ -48,7 +48,6 @@ def _fake_preprocess(monkeypatch, invalid_counts):
         seen.append(bool(check_now))
         return images, images, jnp.asarray([invalid_counts[len(seen) - 1]], dtype=jnp.int32)
 
-    monkeypatch.delenv(cuda_preprocess.RELION_PREPROCESS_DEFERRED_CHECK_ENV, raising=False)
     monkeypatch.setattr(cuda_preprocess, "_relion_preprocess_real_f32_jit", fake_jit)
     monkeypatch.setattr(cuda_preprocess, "_RELION_PREPROCESS_PENDING_CHECKS", [])
     monkeypatch.setattr(cuda_preprocess, "_RELION_PREPROCESS_DEFERRED_SCOPES", [])

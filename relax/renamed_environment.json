@@ -302,7 +302,6 @@
   "RECOVAR_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS": "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
   "RECOVAR_RELION_HOST_FFT_WORKERS": "RELAX_RELION_HOST_FFT_WORKERS",
   "RECOVAR_RELION_HOST_IRFFT": "RELAX_RELION_HOST_IRFFT",
-  "RECOVAR_RELION_PREPROCESS_DEFERRED_CHECK": "RELAX_RELION_PREPROCESS_DEFERRED_CHECK",
   "RECOVAR_RELION_PROJECTOR_CACHE_DIR": "RELAX_RELION_PROJECTOR_CACHE_DIR",
   "RECOVAR_RELION_PROJECTOR_DUMP_DIR": "RELAX_RELION_PROJECTOR_DUMP_DIR",
   "RECOVAR_RELION_PROJECTOR_TEXTURE_INTERP": "RELAX_RELION_PROJECTOR_TEXTURE_INTERP",
@@ -712,6 +711,8 @@
   "RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "its only effect was a refusal: pass 1 scores with RELION's texture-interpolated coarse projector only (2026-10-13)",
   "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "its only effect was a refusal: pass 1 scores with RELION's texture-interpolated coarse projector only (2026-10-13)",
   "RECOVAR_K1_POSE_PUBLISH_DIRECT": "no user: the sole-class direct pose publication was never selected outside its own tests; poses are always gathered by class (2026-10-13)",
-  "RELAX_K1_POSE_PUBLISH_DIRECT": "no user: the sole-class direct pose publication was never selected outside its own tests; poses are always gathered by class (2026-10-13)"
+  "RELAX_K1_POSE_PUBLISH_DIRECT": "no user: the sole-class direct pose publication was never selected outside its own tests; poses are always gathered by class (2026-10-13)",
+  "RECOVAR_RELION_PREPROCESS_DEFERRED_CHECK": "no user: preprocess checks defer inside a deferred_relion_preprocess_checks block (pass 1 opens one) or by the call's deferred_finite_check; nothing set the process-wide switch (2026-10-13)",
+  "RELAX_RELION_PREPROCESS_DEFERRED_CHECK": "no user: preprocess checks defer inside a deferred_relion_preprocess_checks block (pass 1 opens one) or by the call's deferred_finite_check; nothing set the process-wide switch (2026-10-13)"
  }
 }

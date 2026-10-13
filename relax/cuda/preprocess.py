@@ -22,7 +22,6 @@ from recovar.cuda_backproject import (
 from recovar.data_io import image_backends as _image_backends
 
 from relax.cuda import library
-from relax.runtime.env_flags import parse_env_binary_flag
 
 _RELION_PREPROCESS_BLOCK_SIZE = 128      # kRelionPreprocessBlockSize in cuda_backproject.cu
 
@@ -184,8 +183,7 @@ def relion_preprocess_real_f32(
     nothing back: its count is queued and read when the queue drains.
 
     ``deferred_finite_check`` (default: on inside a
-    :func:`deferred_relion_preprocess_checks` block, else from
-    ``RELAX_RELION_PREPROCESS_DEFERRED_CHECK``, off) removes that per-call
+    :func:`deferred_relion_preprocess_checks` block, else off) removes that per-call
     read-back and stream synchronization: the device counts invalid images
     into a small array that is queued on the open block, which reads it when
     the block ends, or else for :func:`drain_relion_preprocess_checks`, which
@@ -195,7 +193,7 @@ def relion_preprocess_real_f32(
     """
 
     if deferred_finite_check is None:
-        deferred_finite_check = bool(_RELION_PREPROCESS_DEFERRED_SCOPES) or relion_preprocess_deferred_check_requested()
+        deferred_finite_check = bool(_RELION_PREPROCESS_DEFERRED_SCOPES)
     # A Python queue cannot retain status tracers from the local big JIT.
     # Keep the native fail-closed check inside that compiled execution.
     eager = type(jax.core.trace_ctx.trace).__name__ == "EvalTrace"
@@ -268,7 +266,6 @@ def _count_and_first(invalid_count: jax.Array) -> jax.Array:
 relion_preprocess_real_f32.__wrapped__ = _relion_preprocess_real_f32_impl
 
 
-RELION_PREPROCESS_DEFERRED_CHECK_ENV = "RELAX_RELION_PREPROCESS_DEFERRED_CHECK"
 
 
 _RELION_PREPROCESS_PENDING_CHECKS: list[jax.Array] = []
@@ -278,12 +275,6 @@ _RELION_PREPROCESS_PENDING_LOCK = threading.Lock()
 
 
 _RELION_PREPROCESS_PENDING_LIMIT = 1024
-
-
-def relion_preprocess_deferred_check_requested() -> bool:
-    """Strict 0/1 read of ``RELAX_RELION_PREPROCESS_DEFERRED_CHECK`` (unset is off)."""
-
-    return parse_env_binary_flag(RELION_PREPROCESS_DEFERRED_CHECK_ENV)
 
 
 class DeferredPreprocessChecks:
@@ -354,8 +345,8 @@ def deferred_relion_preprocess_checks(where: str):
 
 
 def _queue_relion_preprocess_check(invalid_count: jax.Array, batch_images: np.ndarray | None = None) -> None:
-    """Queue one device invalid-image count: on the innermost open scope, else on the process queue
-    (``RELAX_RELION_PREPROCESS_DEFERRED_CHECK``), which drains when full."""
+    """Queue one device invalid-image count: on the innermost open scope, else on the process queue (a call
+    that asked for ``deferred_finite_check`` outside a scope), which drains when full."""
 
     if _RELION_PREPROCESS_DEFERRED_SCOPES:
         _RELION_PREPROCESS_DEFERRED_SCOPES[-1].queue(invalid_count, batch_images)

@@ -421,15 +421,3 @@ def test_relion_cuda_softmask_deferred_check_drains_clean_batches(gpu_device):
     assert cuda_targets.pending_relion_preprocess_checks() == 4
     assert cuda_preprocess.drain_relion_preprocess_checks() == 4
     assert cuda_preprocess.drain_relion_preprocess_checks() == 0
-
-
-def test_relion_preprocess_deferred_check_flag_is_strict(monkeypatch):
-    from relax.cuda import preprocess as cuda_preprocess
-
-    monkeypatch.setenv(cuda_preprocess.RELION_PREPROCESS_DEFERRED_CHECK_ENV, "1")
-    assert cuda_preprocess.relion_preprocess_deferred_check_requested() is True
-    monkeypatch.delenv(cuda_preprocess.RELION_PREPROCESS_DEFERRED_CHECK_ENV)
-    assert cuda_preprocess.relion_preprocess_deferred_check_requested() is False
-    monkeypatch.setenv(cuda_preprocess.RELION_PREPROCESS_DEFERRED_CHECK_ENV, "yes")
-    with pytest.raises(ValueError, match="must be 0 or 1"):
-        cuda_preprocess.relion_preprocess_deferred_check_requested()
