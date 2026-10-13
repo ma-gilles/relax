@@ -2929,21 +2929,6 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
     assert len(calls) == 1
 
 
-def test_global_pass1_relion_projector_texture_defaults_to_texture(monkeypatch):
-    from relax.scoring import pass1_plan
-
-    monkeypatch.delenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", raising=False)
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "1")
-    assert pass1_plan.global_pass1_relion_projector_texture_enabled()
-
-    monkeypatch.setenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "1")
-    assert pass1_plan.global_pass1_relion_projector_texture_enabled()
-
-    monkeypatch.setenv("RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP", "invalid")
-    with pytest.raises(ValueError, match="RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"):
-        pass1_plan.global_pass1_relion_projector_texture_enabled()
-
-
 def test_texture_centered_crop_masks_current_image_disk():
     from relax.projection.projection import _texture_centered_crop_to_full
 

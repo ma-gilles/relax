@@ -740,7 +740,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     (``scoring_overrides``: the run's ScoringOverrides)."""
 
     from relax.projection.projection import compact_relion_projector_half_for_centered_indices
-    from relax.scoring.pass1_plan import global_pass1_relion_projector_texture_enabled
     from relax.scoring.significance import _compute_k_class_significance_batched
 
     means_array = _as_class_means(means_array)
@@ -759,7 +758,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         False,
     )
     if score_texture_interp is None:
-        score_texture_interp = global_pass1_relion_projector_texture_enabled()
+        score_texture_interp = True  # RELION's texture interpolation, pass 1's only coarse projector
     if score_projector_half is not None and n_classes == 1 and score_texture_interp:
         from relax.fourier.fourier_window import make_fourier_window_spec
 
@@ -1551,8 +1550,7 @@ def run_dense_k_class_em_adaptive(
         executable. Splitting only the image axis leaves every score unchanged.
     coarse_relion_projector_texture_interp : bool or None
         Explicitly select the supplied-PPref coarse projector.  ``None``
-        defers to ``RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP``;
-        the strict-parity default is RELION texture interpolation.
+        is RELION texture interpolation, the strict-parity default.
     """
     probe = NoProbe() if probe is None else probe
     # How the resident pass 2 executes (EngineTuning); it travels with the pass-2 keyword arguments.

@@ -301,7 +301,6 @@
   "RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER": "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER",
   "RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET": "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET",
   "RECOVAR_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS": "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
-  "RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP",
   "RECOVAR_RELION_HOST_FFT_WORKERS": "RELAX_RELION_HOST_FFT_WORKERS",
   "RECOVAR_RELION_HOST_IRFFT": "RELAX_RELION_HOST_IRFFT",
   "RECOVAR_RELION_PREPROCESS_DEFERRED_CHECK": "RELAX_RELION_PREPROCESS_DEFERRED_CHECK",
@@ -710,6 +709,8 @@
   "RECOVAR_DENSE_MEANS_SCALE": "no alternative in use: the dense-means projection scale is always -N^2; the N2 branch was deleted as an unused switch (2026-10-13)",
   "RELAX_DENSE_MEANS_SCALE": "no alternative in use: the dense-means projection scale is always -N^2; the N2 branch was deleted as an unused switch (2026-10-13)",
   "RECOVAR_K1_RELION_EXACT_CTF_STAR": "no production reader: only tests set the exact-CTF STAR override; exact CTF rows are read from the dataset's own particle STAR (2026-10-13)",
-  "RELAX_K1_RELION_EXACT_CTF_STAR": "no production reader: only tests set the exact-CTF STAR override; exact CTF rows are read from the dataset's own particle STAR (2026-10-13)"
+  "RELAX_K1_RELION_EXACT_CTF_STAR": "no production reader: only tests set the exact-CTF STAR override; exact CTF rows are read from the dataset's own particle STAR (2026-10-13)",
+  "RECOVAR_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "its only effect was a refusal: pass 1 scores with RELION's texture-interpolated coarse projector only (2026-10-13)",
+  "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP": "its only effect was a refusal: pass 1 scores with RELION's texture-interpolated coarse projector only (2026-10-13)"
  }
 }

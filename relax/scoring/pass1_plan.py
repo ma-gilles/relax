@@ -32,7 +32,6 @@ from relax.scoring.pass1_scores import plan_score_program
 from relax.scoring.pass1_support import plan_support
 from relax.scoring.pass1_window import coarse_kernel_window, plan_scoring_window
 
-_GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
 _COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
     "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH"
 )
@@ -88,18 +87,6 @@ def _coarse_pad_final_image_batch_enabled(*, default: bool = True) -> bool:
     return parse_env_strict_flag(
         _COARSE_PAD_FINAL_IMAGE_BATCH_ENV,
         default=default,
-    )
-
-
-def global_pass1_relion_projector_texture_enabled() -> bool:
-    """Whether dense/global pass-1 significance uses texture arithmetic.
-
-    Coarse significance defaults to RELION's texture projector.  Set the
-    environment flag to false to force the manual/JAX diagnostic fallback.
-    """
-    return parse_env_strict_flag(
-        _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV,
-        default=True,
     )
 
 
@@ -232,10 +219,9 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     kernel_window = (
         coarse_kernel_window(score_size, request.relion_projector_r_max, request.rotations) if use_relion_projector else None
     )
+    # None is RELION's texture interpolation, the only coarse projector pass 1 scores with.
     coarse_texture_interp = (
-        global_pass1_relion_projector_texture_enabled()
-        if request.relion_projector_texture_interp is None
-        else bool(request.relion_projector_texture_interp)
+        True if request.relion_projector_texture_interp is None else bool(request.relion_projector_texture_interp)
     )
     # Pass 1 scores RELION's exact coarse operands only: the Gaussian passes with the coarse GEMMs
     # (relion_coarse_gaussian_gemm_scores_jit), the --firstiter_cc passes with RELION's coarse CC

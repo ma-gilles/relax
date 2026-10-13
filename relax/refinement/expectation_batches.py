@@ -230,10 +230,7 @@ def prepare_half_batches(
                 planner, compact_k1_relion_layout=True,
                 compact_accumulator_shape_for_batch=compact_accumulator_shape,
             )
-            from relax.scoring.pass1_plan import global_pass1_relion_projector_texture_enabled
-            if (projector_half.dtype == np.dtype(np.complex64)
-                and global_pass1_relion_projector_texture_enabled()
-                and firstiter_cc_tree_rescore_max_margin is None):
+            if projector_half.dtype == np.dtype(np.complex64) and firstiter_cc_tree_rescore_max_margin is None:
                 significance_safe_batch_sizes_for_half = partial(
                     safe_batch_sizes_for_half,
                     score_projector_staging_bytes=int(projector_half.nbytes),
