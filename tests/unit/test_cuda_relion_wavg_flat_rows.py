@@ -309,6 +309,131 @@ def test_flat_rows_wavg_all_padding_rows_leave_operands_untouched(
     assert_matches(accumulated, accumulator)
 
 
+def _sequential_wavg_triplets(projections, row_image_ids, raw_ctf, scale, shifted_images, posterior, logical):
+    """NumPy float32 reference: each row's triplet summed over translations in order, one rounding per operation."""
+
+    f = np.float32
+    rows, capacity = projections.shape
+    out = np.zeros((rows, capacity, 3), dtype=np.float32)
+    for row in range(rows):
+        b = int(row_image_ids[row])
+        if b < 0:
+            continue
+        cws = f(raw_ctf[b, :logical] * f(scale[b]))
+        ref_real = f(projections[row, :logical].real * cws)
+        ref_imag = f(projections[row, :logical].imag * cws)
+        ref_abs2 = f(f(ref_real * ref_real) + f(ref_imag * ref_imag))
+        xa = np.zeros(logical, np.float32)
+        aa = np.zeros(logical, np.float32)
+        d2 = np.zeros(logical, np.float32)
+        for t in range(posterior.shape[1]):
+            w = f(posterior[row, t])
+            if w == 0:
+                continue
+            tr = shifted_images[b, t, :logical].real
+            ti = shifted_images[b, t, :logical].imag
+            dr = f(ref_real - tr)
+            di = f(ref_imag - ti)
+            dabs = f(f(dr * dr) + f(di * di))
+            cross = f(f(ref_real * tr) + f(ref_imag * ti))
+            xa = f(xa + f(w * cross))
+            aa = f(aa + f(w * ref_abs2))
+            d2 = f(d2 + f(w * dabs))
+        safe = max(f(scale[b]), f(1.0e-30))
+        out[row, :logical, 0] = f(xa * f(f(1.0) / safe))
+        out[row, :logical, 1] = f(aa * f(f(1.0) / f(safe * safe)))
+        out[row, :logical, 2] = d2
+    return out
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize(
+    "row_image_ids, logical_pixel_count, translation_count",
+    [
+        # Few rows: the launch splits each row's pixels over several blocks.
+        ([0] * 11, 300, 300),
+        # Padding rows between runs of images.
+        ([0, 0, 0, 1, 1, -1, 1, 2, 2, 2, 2, 2, 0, -1, -1, 1, 1], 270, 300),
+        # More translations than the kernel stages at once (restaged inside each pixel pass).
+        ([2, 0, 1, -1, 0], 257, 2100),
+    ],
+)
+def test_flat_rows_wavg_matches_sequential_reference(
+    monkeypatch, custom_cuda_lib, gpu_device, row_image_ids, logical_pixel_count, translation_count
+):
+    """Every row's triplet is its own float32 sum over translations in order, whatever the launch layout.
+
+    The kernel stages a row's posterior in shared memory and visits only its translations with weight, its pixels
+    split over blocks; sparse posteriors, more translations than one staged tile and a logical prefix inside the
+    last pixel pass cover the layout's edges.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(9107 + len(row_image_ids))
+    batch_size, pixel_capacity = 3, 300
+    row_image_ids = np.asarray(row_image_ids, dtype=np.int32)
+    rows = row_image_ids.size
+    projections = _complex64(rng, (rows, pixel_capacity))
+    raw_ctf = rng.normal(0.0, 1.5, (batch_size, pixel_capacity)).astype(np.float32)
+    scale = rng.uniform(0.4, 2.5, (batch_size,)).astype(np.float32)
+    shifted_images = _complex64(rng, (batch_size, translation_count, pixel_capacity))
+    posterior = rng.uniform(0.0, 1.0, (rows, translation_count)).astype(np.float32)
+    posterior[rng.uniform(size=posterior.shape) < 0.6] = 0.0
+
+    with jax.default_device(gpu_device):
+        actual = cuda_backproject.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
+            jnp.asarray(projections),
+            jnp.asarray(row_image_ids),
+            jnp.asarray(raw_ctf),
+            jnp.asarray(scale),
+            jnp.asarray(shifted_images),
+            jnp.asarray(posterior),
+            jnp.asarray(logical_pixel_count, dtype=jnp.int32),
+        )
+        actual = np.asarray(jax.block_until_ready(actual))
+
+    expected = _sequential_wavg_triplets(
+        projections, row_image_ids, raw_ctf, scale, shifted_images, posterior, logical_pixel_count
+    )
+    assert_matches(actual, expected)
+    assert np.all(actual[:, logical_pixel_count:, :] == 0.0)
+    assert np.all(actual[row_image_ids < 0] == 0.0)
+
+
+@pytest.mark.gpu
+def test_flat_rows_wavg_out_of_range_row_fails_only_that_row(monkeypatch, custom_cuda_lib, gpu_device):
+    """An out-of-range image id NaN-fills every physical pixel of its own row (split over blocks); other rows are unaffected."""
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(4471)
+    batch_size, translation_count, pixel_capacity, logical = 2, 5, 300, 260
+    row_image_ids = np.asarray([0, 0, batch_size, 0, 1], dtype=np.int32)
+    projections = _complex64(rng, (row_image_ids.size, pixel_capacity))
+    raw_ctf = rng.normal(0.0, 1.5, (batch_size, pixel_capacity)).astype(np.float32)
+    scale = rng.uniform(0.4, 2.5, (batch_size,)).astype(np.float32)
+    shifted_images = _complex64(rng, (batch_size, translation_count, pixel_capacity))
+    posterior = rng.uniform(0.0, 1.0, (row_image_ids.size, translation_count)).astype(np.float32)
+
+    with jax.default_device(gpu_device):
+        actual = cuda_backproject.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
+            jnp.asarray(projections),
+            jnp.asarray(row_image_ids),
+            jnp.asarray(raw_ctf),
+            jnp.asarray(scale),
+            jnp.asarray(shifted_images),
+            jnp.asarray(posterior),
+            jnp.asarray(logical, dtype=jnp.int32),
+        )
+        actual = np.asarray(jax.block_until_ready(actual))
+
+    assert np.all(np.isnan(actual[2]))
+    valid = row_image_ids < batch_size
+    expected = _sequential_wavg_triplets(
+        projections[valid], row_image_ids[valid], raw_ctf, scale, shifted_images, posterior[valid], logical
+    )
+    assert_matches(actual[valid], expected)
+
+
 def test_flat_rows_wavg_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
 

@@ -1523,8 +1523,25 @@ cudaError_t launch_relion_wavg_sequential_triplet_f32(
     return cudaGetLastError();
 }
 
+/* The Wavg launch (relax#91).  A block owns one row and a span of 256-pixel
+ * passes (blockIdx.y), so a launch with few rows still fills the GPU, and it
+ * stages its row's posterior in shared memory, at most kWavgTranslationTile
+ * translations at a time, with the list of the translations that carry
+ * weight: the translation loop then reads neither the posterior from global
+ * memory nor the zero-weight translations.  Each output element is computed
+ * by the same statements in the same translation order as before. */
+constexpr int kWavgThreads = 256;
+constexpr int kWavgTranslationTile = 2048;
+// Blocks a launch aims for: the pixel passes are split until the grid has them.
+constexpr int64_t kWavgTargetBlocks = 8192;
+
+__host__ __device__ inline int64_t wavg_translation_tile(int64_t translation_count)
+{
+    return translation_count < kWavgTranslationTile ? translation_count : kWavgTranslationTile;
+}
+
 template <bool INDEXED_RECTANGLE = false, bool FLAT_ROWS = false>
-__global__ void __launch_bounds__(256)
+__global__ void __launch_bounds__(kWavgThreads)
 relion_wavg_sequential_runtime_triplet_f32_kernel(
     const float2* __restrict__ projections,
     const float* __restrict__ raw_ctf,
@@ -1552,12 +1569,11 @@ relion_wavg_sequential_runtime_triplet_f32_kernel(
      * below, the translation order included, is the rectangular body. */
     static_assert(!(INDEXED_RECTANGLE && FLAT_ROWS),
                   "indexed-rectangle and flat-row addressing are exclusive");
-    const int64_t rotation = FLAT_ROWS ? 0 : static_cast<int64_t>(blockIdx.x);
-    const int64_t row = FLAT_ROWS
-        ? static_cast<int64_t>(blockIdx.x)
-        : static_cast<int64_t>(blockIdx.y) * rotation_count +
-              static_cast<int64_t>(blockIdx.x);
-    int64_t batch = FLAT_ROWS ? -1 : static_cast<int64_t>(blockIdx.y);
+    // blockIdx.x is the row, ``batch * rotation_count + rotation`` on the
+    // rectangular grids; blockIdx.y the block's span of pixel passes.
+    const int64_t row = static_cast<int64_t>(blockIdx.x);
+    const int64_t rotation = FLAT_ROWS ? 0 : row % rotation_count;
+    int64_t batch = FLAT_ROWS ? -1 : row / rotation_count;
     if constexpr (FLAT_ROWS) {
         if (row >= row_count) return;
     } else {
@@ -1568,19 +1584,25 @@ relion_wavg_sequential_runtime_triplet_f32_kernel(
         ? pixel_capacity
         : static_cast<int64_t>(runtime_logical_pixel_count[0]);
     if (logical_pixel_count < 0 || logical_pixel_count > pixel_capacity) {
-        if (row == 0 && threadIdx.x == 0)
+        if (row == 0 && blockIdx.y == 0 && threadIdx.x == 0)
             output[0] = nanf("");
         return;
     }
+    // This block's pixels: passes [pass_begin, pass_end) of kWavgThreads over
+    // the physical capacity (the logical prefix is a device scalar).
+    const int64_t pass_count = (pixel_capacity + kWavgThreads - 1) / kWavgThreads;
+    const int64_t passes_per_block = (pass_count + gridDim.y - 1) / gridDim.y;
+    const int64_t pass_begin = static_cast<int64_t>(blockIdx.y) * passes_per_block;
+    const int64_t pass_end = min(pass_count, pass_begin + passes_per_block);
     if constexpr (FLAT_ROWS) {
         batch = static_cast<int64_t>(row_image_ids[row]);
         /* Padding rows read nothing and keep the zeros the launcher wrote. */
         if (batch < 0) return;
         if (batch >= batch_size) {
             /* Fail closed on an out-of-range map, as the runtime kernels do. */
-            for (int64_t pixel = threadIdx.x;
-                 pixel < pixel_capacity;
-                 pixel += blockDim.x) {
+            for (int64_t pixel = pass_begin * kWavgThreads + threadIdx.x;
+                 pixel < min(pixel_capacity, pass_end * kWavgThreads);
+                 pixel += kWavgThreads) {
                 const int64_t invalid_base = (row * pixel_capacity + pixel) * 3;
                 output[invalid_base] = nanf("");
                 output[invalid_base + 1] = nanf("");
@@ -1598,61 +1620,107 @@ relion_wavg_sequential_runtime_triplet_f32_kernel(
     const int64_t projection_base = FLAT_ROWS
         ? row * pixel_capacity
         : (batch * rotation_count + rotation) * pixel_capacity;
-    for (int64_t pixel = threadIdx.x;
-         pixel < (INDEXED_RECTANGLE ? pixel_capacity : logical_pixel_count);
-         pixel += blockDim.x)
+    const int64_t pixel_end = INDEXED_RECTANGLE ? pixel_capacity : logical_pixel_count;
+    // Uniform over the block: a span past the pixel loop's bound has no work.
+    if (pass_begin * kWavgThreads >= pixel_end) return;
+
+    // The row's posterior, a tile of translations at a time, and the tile's
+    // translations with nonzero weight, in increasing order.  The fine
+    // posterior is zero outside RELION's significant samples.  A zero weight
+    // adds +-0 to accumulators that start at +0 and, in round-to-nearest,
+    // never become -0, so skipping it leaves every sum bitwise unchanged and
+    // saves the image read.
+    const int64_t tile = wavg_translation_tile(translation_count);
+    extern __shared__ float wavg_shared[];
+    float* shared_weights = wavg_shared;                                    // [tile]
+    int32_t* shared_active = reinterpret_cast<int32_t*>(wavg_shared + tile);  // [tile]
+    __shared__ int32_t shared_active_count;
+    auto stage_tile = [&](int64_t tile_start, int tile_count) {
+        __syncthreads();
+        for (int offset = threadIdx.x; offset < tile_count; offset += kWavgThreads)
+            shared_weights[offset] = posterior[posterior_base + tile_start + offset];
+        __syncthreads();
+        if (threadIdx.x < 32) {
+            int32_t count = 0;
+            for (int first = 0; first < tile_count; first += 32) {
+                const int offset = first + static_cast<int>(threadIdx.x);
+                const bool weighted = offset < tile_count && shared_weights[offset] != 0.0f;
+                const unsigned mask = __ballot_sync(0xffffffffu, weighted);
+                if (weighted)
+                    shared_active[count + __popc(mask & ((1u << threadIdx.x) - 1u))] = offset;
+                count += __popc(mask);
+            }
+            if (threadIdx.x == 0) shared_active_count = count;
+        }
+        __syncthreads();
+    };
+    const bool one_tile = translation_count <= tile;
+    if (one_tile) stage_tile(0, static_cast<int>(translation_count));
+
+    // Passes, not a per-thread pixel loop: every thread takes the same number
+    // of trips, so a row with more than one tile can restage inside them.
+    for (int64_t pass = pass_begin; pass < pass_end; ++pass)
     {
-        const int64_t stored_pixel = INDEXED_RECTANGLE ? exact_positions[pixel] : pixel;
+        const int64_t pixel = pass * kWavgThreads + threadIdx.x;
+        const bool pixel_in_range = pixel < pixel_end;
+        const int64_t stored_pixel = !pixel_in_range
+            ? 0
+            : (INDEXED_RECTANGLE ? static_cast<int64_t>(exact_positions[pixel]) : pixel);
         const int64_t output_base = INDEXED_RECTANGLE
             ? ((batch * rotation_count + rotation) * rectangle_capacity + stored_pixel) * 3
             : (projection_base + pixel) * 3;
-        if constexpr (INDEXED_RECTANGLE) {
-            if (pixel >= logical_pixel_count) {
-                output[output_base] = 0.0f;
-                output[output_base + 1] = 0.0f;
-                output[output_base + 2] = 0.0f;
-                continue;
-            }
+        // The indexed rectangle writes zeros past the logical prefix.
+        const bool pixel_live = pixel_in_range && pixel < logical_pixel_count;
+        if (INDEXED_RECTANGLE && pixel_in_range && !pixel_live) {
+            output[output_base] = 0.0f;
+            output[output_base + 1] = 0.0f;
+            output[output_base + 2] = 0.0f;
         }
-        const float ctf_value = INDEXED_RECTANGLE
-            ? __double2float_rn(full_ctf[batch * full_pixel_count + recon_indices[pixel]])
-            : raw_ctf[batch * pixel_capacity + pixel];
-        const float ctf_with_scale = __fmul_rn(ctf_value, batch_scale);
-        const float2 projection = projections[projection_base + pixel];
-        const float ref_real = __fmul_rn(projection.x, ctf_with_scale);
-        const float ref_imag = __fmul_rn(projection.y, ctf_with_scale);
-        const float ref_abs2 = __fadd_rn(
-            __fmul_rn(ref_real, ref_real),
-            __fmul_rn(ref_imag, ref_imag));
+        float ref_real = 0.0f;
+        float ref_imag = 0.0f;
+        float ref_abs2 = 0.0f;
+        if (pixel_live) {
+            const float ctf_value = INDEXED_RECTANGLE
+                ? __double2float_rn(full_ctf[batch * full_pixel_count + recon_indices[pixel]])
+                : raw_ctf[batch * pixel_capacity + pixel];
+            const float ctf_with_scale = __fmul_rn(ctf_value, batch_scale);
+            const float2 projection = projections[projection_base + pixel];
+            ref_real = __fmul_rn(projection.x, ctf_with_scale);
+            ref_imag = __fmul_rn(projection.y, ctf_with_scale);
+            ref_abs2 = __fadd_rn(
+                __fmul_rn(ref_real, ref_real),
+                __fmul_rn(ref_imag, ref_imag));
+        }
 
         float xa_raw = 0.0f;
         float aa_raw = 0.0f;
         float diff2 = 0.0f;
-        for (int64_t translation = 0;
-             translation < translation_count;
-             ++translation)
+        for (int64_t tile_start = 0; tile_start < translation_count; tile_start += tile)
         {
-            const float weight = posterior[posterior_base + translation];
-            /* The fine posterior is zero outside RELION's significant samples.
-             * A zero weight adds +-0 to accumulators that start at +0 and, in
-             * round-to-nearest, never become -0, so skipping it leaves every
-             * sum bitwise unchanged and saves the image read; the branch is
-             * uniform over the block's threads (one row per block). */
-            if (weight == 0.0f) continue;
-            const float2 translated = shifted_images[
-                shifted_base + translation * shifted_stride + stored_pixel];
-            const float diff_real = __fsub_rn(ref_real, translated.x);
-            const float diff_imag = __fsub_rn(ref_imag, translated.y);
-            const float diff_abs2 = __fadd_rn(
-                __fmul_rn(diff_real, diff_real),
-                __fmul_rn(diff_imag, diff_imag));
-            const float cross = __fadd_rn(
-                __fmul_rn(ref_real, translated.x),
-                __fmul_rn(ref_imag, translated.y));
-            xa_raw = __fadd_rn(xa_raw, __fmul_rn(weight, cross));
-            aa_raw = __fadd_rn(aa_raw, __fmul_rn(weight, ref_abs2));
-            diff2 = __fadd_rn(diff2, __fmul_rn(weight, diff_abs2));
+            if (!one_tile)
+                stage_tile(tile_start, static_cast<int>(min(tile, translation_count - tile_start)));
+            if (!pixel_live) continue;
+            const int32_t active_count = shared_active_count;
+            for (int32_t active = 0; active < active_count; ++active)
+            {
+                const int32_t offset = shared_active[active];
+                const float weight = shared_weights[offset];
+                const float2 translated = shifted_images[
+                    shifted_base + (tile_start + offset) * shifted_stride + stored_pixel];
+                const float diff_real = __fsub_rn(ref_real, translated.x);
+                const float diff_imag = __fsub_rn(ref_imag, translated.y);
+                const float diff_abs2 = __fadd_rn(
+                    __fmul_rn(diff_real, diff_real),
+                    __fmul_rn(diff_imag, diff_imag));
+                const float cross = __fadd_rn(
+                    __fmul_rn(ref_real, translated.x),
+                    __fmul_rn(ref_imag, translated.y));
+                xa_raw = __fadd_rn(xa_raw, __fmul_rn(weight, cross));
+                aa_raw = __fadd_rn(aa_raw, __fmul_rn(weight, ref_abs2));
+                diff2 = __fadd_rn(diff2, __fmul_rn(weight, diff_abs2));
+            }
         }
+        if (!pixel_live) continue;
 
         const float safe_scale = fmaxf(batch_scale, 1.0e-30f);
         output[output_base] = __fmul_rn(xa_raw, __frcp_rn(safe_scale));
@@ -1660,6 +1728,26 @@ relion_wavg_sequential_runtime_triplet_f32_kernel(
             aa_raw, __frcp_rn(__fmul_rn(safe_scale, safe_scale)));
         output[output_base + 2] = diff2;
     }
+}
+
+// The launch geometry of relion_wavg_sequential_runtime_triplet_f32_kernel:
+// one block per row by spans of pixel passes over the physical capacity, split
+// until the grid has about kWavgTargetBlocks blocks, and its shared bytes.
+struct WavgTripletLaunch {
+    dim3 grid;
+    size_t shared_bytes;
+};
+
+inline WavgTripletLaunch wavg_triplet_launch(
+    int64_t rows, int64_t pixel_capacity, int64_t translation_count)
+{
+    const int64_t passes = (pixel_capacity + kWavgThreads - 1) / kWavgThreads;
+    int64_t spans = (kWavgTargetBlocks + rows - 1) / rows;
+    spans = spans < 1 ? 1 : (spans > passes ? passes : spans);
+    return WavgTripletLaunch{
+        dim3(static_cast<unsigned>(rows), static_cast<unsigned>(spans)),
+        static_cast<size_t>(wavg_translation_tile(translation_count)) *
+            (sizeof(float) + sizeof(int32_t))};
 }
 
 cudaError_t launch_relion_wavg_sequential_runtime_triplet_f32(
@@ -1684,10 +1772,10 @@ cudaError_t launch_relion_wavg_sequential_runtime_triplet_f32(
         static_cast<size_t>(output_count) * 3 * sizeof(float),
         stream);
     if (err != cudaSuccess) return err;
-    dim3 grid(
-        static_cast<unsigned>(rotation_count),
-        static_cast<unsigned>(batch_size));
-    relion_wavg_sequential_runtime_triplet_f32_kernel<false><<<grid, 256, 0, stream>>>(
+    const WavgTripletLaunch geometry =
+        wavg_triplet_launch(batch_size * rotation_count, pixel_capacity, translation_count);
+    relion_wavg_sequential_runtime_triplet_f32_kernel<false><<<
+        geometry.grid, kWavgThreads, geometry.shared_bytes, stream>>>(
         projections,
         raw_ctf,
         scale,
@@ -1727,8 +1815,10 @@ cudaError_t launch_relion_wavg_sequential_runtime_flat_rows_triplet_f32(
         static_cast<size_t>(output_count) * 3 * sizeof(float),
         stream);
     if (err != cudaSuccess) return err;
-    dim3 grid(static_cast<unsigned>(row_count));
-    relion_wavg_sequential_runtime_triplet_f32_kernel<false, true><<<grid, 256, 0, stream>>>(
+    const WavgTripletLaunch geometry =
+        wavg_triplet_launch(row_count, pixel_capacity, translation_count);
+    relion_wavg_sequential_runtime_triplet_f32_kernel<false, true><<<
+        geometry.grid, kWavgThreads, geometry.shared_bytes, stream>>>(
         projections,
         raw_ctf,
         scale,
@@ -8584,8 +8674,9 @@ ffi::Error RelionWavgNativePrefixCommon(
         static_cast<const float*>(image_power.untyped_data()), terms, terms_count);
     err = cudaGetLastError();
     if (err != cudaSuccess) return finish(err);
-    dim3 grid(static_cast<unsigned>(R), static_cast<unsigned>(B));
-    relion_wavg_sequential_runtime_triplet_f32_kernel<true><<<grid, 256, 0, stream>>>(
+    const WavgTripletLaunch geometry = wavg_triplet_launch(B * R, Pe, T);
+    relion_wavg_sequential_runtime_triplet_f32_kernel<true><<<
+        geometry.grid, kWavgThreads, geometry.shared_bytes, stream>>>(
         reinterpret_cast<const float2*>(projections.untyped_data()), nullptr,
         static_cast<const float*>(scale.untyped_data()),
         reinterpret_cast<const float2*>(raw_rectangle.untyped_data()),
