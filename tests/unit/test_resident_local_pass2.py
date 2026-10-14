@@ -41,6 +41,7 @@ from relax.local_search.layout import (
 )
 from relax.refinement import local_half
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.grids import build_local_search_grid_metadata
 
 pytestmark = pytest.mark.unit
@@ -681,8 +682,7 @@ def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch, _r
         return allocated[-1]
 
     monkeypatch.setattr(rlp, "allocate_row_partial", allocate)
-    monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
-    exact = _run(case, monkeypatch=monkeypatch)
+    exact = _run(case, monkeypatch=monkeypatch, scoring_overrides=ScoringOverrides(exact_float32_accumulation=True))
     assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
     assert_matches(np.asarray(default.hard_assignment), np.asarray(exact.hard_assignment))
     a, b = np.asarray(default.Ft_y, dtype=np.complex128), np.asarray(exact.Ft_y, dtype=np.complex128)
@@ -921,19 +921,15 @@ def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch, _r
     bench 14641044, which the dispatcher refused); it is the box-size pass
     (:func:`_assert_the_same_pass` says how the two results are compared)."""
 
-    from relax.reconstruction import half_volume_mstep as hvm
-
     case = _case()
     box = int(case["dataset"].image_shape[0])
 
-    def pair():
-        unset = _run(case, monkeypatch=monkeypatch, current_size=None)
-        return _run(case, monkeypatch=monkeypatch, current_size=box), unset
+    def pair(scoring_overrides=ScoringOverrides()):
+        unset = _run(case, monkeypatch=monkeypatch, current_size=None, scoring_overrides=scoring_overrides)
+        return _run(case, monkeypatch=monkeypatch, current_size=box, scoring_overrides=scoring_overrides), unset
 
     default_pairs = [pair() for _ in range(5)]
-    with monkeypatch.context() as exact:
-        exact.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
-        exact_pair = pair()
+    exact_pair = pair(ScoringOverrides(exact_float32_accumulation=True))
     _assert_the_same_pass(default_pairs, exact_pair)
 
 

@@ -107,10 +107,9 @@ def test_exact_float32_accumulation_switch_runs_the_tilt_driver(_resident_produc
         return allocated[-1]
 
     monkeypatch.setattr(rp, "allocate_row_partial", allocate)
-    monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
     tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(
         args), engine_tuning=_engine(),
-        scoring_overrides=ScoringOverrides(),
+        scoring_overrides=ScoringOverrides(exact_float32_accumulation=True),
     )
     assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
     _assert_tilt_pass_matches_spa(spa, tomo)

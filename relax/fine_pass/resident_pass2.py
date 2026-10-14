@@ -1462,7 +1462,12 @@ def _resident_pass2(
     row_partial = (
         None
         if presum_adjoint
-        else allocate_row_partial(program_recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype)
+        else allocate_row_partial(
+            program_recon_volume_size,
+            recon_y_accum_dtype,
+            recon_ctf_accum_dtype,
+            exact_float32_accumulation=scoring_overrides.exact_float32_accumulation,
+        )
     )
     logger.info(
         "Resident pass-2 M-step adjoint: %s (per-projection sums %.2f GiB, %s GiB available to the allocator)",

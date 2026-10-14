@@ -28,6 +28,7 @@ from relax.fine_pass import (
     resident_tilts,
 )
 from relax.reconstruction import half_volume_mstep as hvm
+from relax.runtime.scoring_overrides import EXACT_FLOAT32_ACCUMULATION_ENV, ScoringOverrides
 
 pytestmark = pytest.mark.unit
 
@@ -257,12 +258,15 @@ def test_the_switch_is_off_by_default_and_then_nothing_is_allocated(monkeypatch)
     monkeypatch.setattr(hvm, "RowPartial", no_allocation)
     for value in (None, "0"):
         if value is None:
-            monkeypatch.delenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, raising=False)
+            monkeypatch.delenv(EXACT_FLOAT32_ACCUMULATION_ENV, raising=False)
         else:
-            monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, value)
-        assert not hvm.exact_float32_accumulation_enabled()
-        assert hvm.allocate_row_partial(1000, np.complex64, np.float32) is None
-    assert hvm.EXACT_FLOAT32_ACCUMULATION_ENV == "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
+            monkeypatch.setenv(EXACT_FLOAT32_ACCUMULATION_ENV, value)
+        assert not ScoringOverrides.from_environ().exact_float32_accumulation
+    assert not ScoringOverrides().exact_float32_accumulation
+    assert hvm.allocate_row_partial(1000, np.complex64, np.float32, exact_float32_accumulation=False) is None
+    assert EXACT_FLOAT32_ACCUMULATION_ENV == "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
+    monkeypatch.setenv(EXACT_FLOAT32_ACCUMULATION_ENV, "1")
+    assert ScoringOverrides.from_environ().exact_float32_accumulation
 
 
 def test_the_switch_changes_the_accumulators_where_the_loss_shows(monkeypatch):
@@ -272,8 +276,9 @@ def test_the_switch_changes_the_accumulators_where_the_loss_shows(monkeypatch):
     reference = float(weights.astype(np.float64).sum())
     results = {}
     for value in ("0", "1"):
-        monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, value)
-        row_partial = hvm.allocate_row_partial(VOLUME, jnp.complex64, jnp.float32)  # what a pass asks, once
+        row_partial = hvm.allocate_row_partial(  # what a pass asks, once
+            VOLUME, jnp.complex64, jnp.float32, exact_float32_accumulation=value == "1"
+        )
         assert (row_partial is None) == (value == "0")
         results[value] = float(np.asarray(_stage_driver(monkeypatch, weights, row_partial)[1])[0])
     assert results["0"] != results["1"]
@@ -286,13 +291,14 @@ def test_pairs_above_the_size_rule_get_no_partial(caplog, monkeypatch):
 
     import logging
 
-    monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
     pair_itemsize = np.dtype(np.complex64).itemsize + np.dtype(np.float32).itemsize
     assert pair_itemsize == 12
-    assert isinstance(hvm.allocate_row_partial(1000, np.complex64, np.float32), hvm.RowPartial)
+    assert isinstance(
+        hvm.allocate_row_partial(1000, np.complex64, np.float32, exact_float32_accumulation=True), hvm.RowPartial
+    )
     too_large = hvm.ROW_PARTIAL_MAX_PAIR_BYTES // pair_itemsize + 1
     with caplog.at_level(logging.INFO, logger="relax.reconstruction.half_volume_mstep"):
-        assert hvm.allocate_row_partial(too_large, np.complex64, np.float32) is None
+        assert hvm.allocate_row_partial(too_large, np.complex64, np.float32, exact_float32_accumulation=True) is None
     assert "accumulated directly" in caplog.text
     # Box 256 at padding 2 (515 x 515 x 258 half grid) is 0.76 GiB a pair; box 800 (1603 x 1603 x 802) is 23 GiB.
     assert 515 * 515 * 258 * pair_itemsize < hvm.ROW_PARTIAL_MAX_PAIR_BYTES < 1603 * 1603 * 802 * pair_itemsize

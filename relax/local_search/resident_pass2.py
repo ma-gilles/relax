@@ -874,7 +874,12 @@ def compute_local_search_resident(
             Ft_y_total = [jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(tables.n_classes)]
             Ft_ctf_total = [jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(tables.n_classes)]
         # Every local row is backprojected on its own: the rows go through one partial pair (relax#65).
-        row_partial = allocate_row_partial(recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype)
+        row_partial = allocate_row_partial(
+            recon_volume_size,
+            recon_y_accum_dtype,
+            recon_ctf_accum_dtype,
+            exact_float32_accumulation=support.scoring_overrides.exact_float32_accumulation,
+        )
 
         # The operand family decides what a chunk holds, so it is chosen before the
         # plan; the per-chunk fallback in _start_resident_local_chunk stays as a guard.

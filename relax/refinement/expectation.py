@@ -723,6 +723,7 @@ def score_numbered_half(
                 # iteration with the normalized CC, as the subtomogram local path above does.
                 firstiter_cc=phase.variant.score_mode == "normalized_cc",
                 engine_tuning=options.environment.engine,
+                scoring_overrides=options.environment.scoring,
             ),
             diagnostics=replace(
                 phase.local_diagnostics, bpref_device_signature_active=bpref_device_signature_active,

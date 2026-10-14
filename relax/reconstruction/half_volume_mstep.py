@@ -11,7 +11,7 @@ import numpy as np
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
 from relax.runtime.engine_tuning import XHalfLargeGrid
-from relax.runtime.env_flags import parse_env_binary_flag, parse_env_flag
+from relax.runtime.env_flags import parse_env_flag
 
 _RELION_X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
 
@@ -38,18 +38,10 @@ def relion_x_half_mstep_accumulator_dtypes(dataset_dtype, *, use_relion_x_half_m
     return base_dtype, base_dtype
 
 
-# Opt-in diagnostic, default off: exact float32 accumulation of the per-row backprojection, for one-to-one
-# comparison with RELION builds whose device backprojection accumulates in double. Production keeps the direct
-# accumulation, which loses the same low-resolution weight as stock GPU RELION (relax#65, user 2026-10-11).
-EXACT_FLOAT32_ACCUMULATION_ENV = "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
-
-
-def exact_float32_accumulation_enabled() -> bool:
-    """Read the opt-in; unset or ``0`` keeps one accumulator pair per pass (:func:`allocate_row_partial` asks once per pass)."""
-
-    return parse_env_binary_flag(EXACT_FLOAT32_ACCUMULATION_ENV)
-
-
+# Opt-in diagnostic, default off (ScoringOverrides.exact_float32_accumulation): exact float32 accumulation of the
+# per-row backprojection, for one-to-one comparison with RELION builds whose device backprojection accumulates in
+# double. Production keeps the direct accumulation, which loses the same low-resolution weight as stock GPU RELION
+# (relax#65, user 2026-10-11).
 # A float32 accumulator loses an addend below half an ulp of the running total. With every row of a pass
 # scattered into one pair, the low shells of a soft pass lost 1e-2 of their weight (relax#65: 9.9e-3 and 1.5e-2
 # at shell 0 of a tilt-series VDAM iteration, 1.6e-2 at shell 0 of a Refine3D iteration 1 with 11.2M rows).
@@ -134,8 +126,11 @@ class RowPartial:
         return self.bind(carry), total_y, total_ctf
 
 
-def allocate_row_partial(volume_size: int, y_dtype, ctf_dtype) -> RowPartial | None:
-    """The pass's :class:`RowPartial` under ``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1``, else ``None`` (direct accumulation).
+def allocate_row_partial(
+    volume_size: int, y_dtype, ctf_dtype, *, exact_float32_accumulation: bool
+) -> RowPartial | None:
+    """The pass's :class:`RowPartial` under ``exact_float32_accumulation`` (``ScoringOverrides``, set by
+    ``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1``), else ``None`` (direct accumulation).
 
     ``None`` without the switch (the default: nothing is allocated and every row-block loop runs as before), and
     under it for a pair above ``ROW_PARTIAL_MAX_PAIR_BYTES``.
@@ -146,13 +141,13 @@ def allocate_row_partial(volume_size: int, y_dtype, ctf_dtype) -> RowPartial | N
     (diagnostic switch)" in ``docs/math/relion_refinement_algorithm.md``.
     """
 
-    if not exact_float32_accumulation_enabled():
+    if not exact_float32_accumulation:
         return None
     pair_bytes = int(volume_size) * (np.dtype(y_dtype).itemsize + np.dtype(ctf_dtype).itemsize)
     if pair_bytes > ROW_PARTIAL_MAX_PAIR_BYTES:
         logging.getLogger(__name__).info(
             "%s=1: M-step accumulators of %.2f GiB a pair exceed %.0f GiB, rows are accumulated directly, without partials",
-            EXACT_FLOAT32_ACCUMULATION_ENV,
+            "RELAX_EM_EXACT_FLOAT32_ACCUMULATION",
             pair_bytes / float(1024**3),
             ROW_PARTIAL_MAX_PAIR_BYTES / float(1024**3),
         )

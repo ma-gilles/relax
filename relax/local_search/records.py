@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -86,6 +87,8 @@ class LocalSearchSupportPolicy:
     return_profile: bool
     # How the resident engine executes (EngineTuning, read by the command).
     engine_tuning: EngineTuning
+    # The run's value-changing diagnostic overrides (ScoringOverrides, read by the command).
+    scoring_overrides: ScoringOverrides
 
     @property
     def applied_max_significants(self) -> int | None:

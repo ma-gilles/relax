@@ -654,10 +654,10 @@ of a 5k K=1 cold start agree with stock RELION to a few 1e-6).
 with RELION builds whose device backprojection accumulates in double. Under it, every row that is
 backprojected on its own is scattered into a zeroed partial pair, which is added into the pass's totals every
 `ROW_PARTIAL_FLUSH_ROWS` = 32,768 backprojected rows and when a slot's row blocks of a chunk end
-(`exact_float32_accumulation_enabled`, `allocate_row_partial`, `RowPartial`, `flush_partial`,
-`flushed_block_loop` and `blocks_per_flush` in
+(`allocate_row_partial`, `RowPartial`, `flush_partial`, `flushed_block_loop` and `blocks_per_flush` in
 [`half_volume_mstep.py`](../../relax/reconstruction/half_volume_mstep.py)). No accumulator is double. The
-switch is read once per pass, when the pass allocates its accumulators; without it nothing is allocated and
+command reads the switch once (`ScoringOverrides.exact_float32_accumulation`), and each pass consults it when it
+allocates its accumulators; without it nothing is allocated and
 the three row-block loops run as before: `resident_chunk_stages_finish` in
 [`fine_pass/resident_chunk_stages.py`](../../relax/fine_pass/resident_chunk_stages.py), `_tilt_mstep_program` in
 [`resident_tilts.py`](../../relax/fine_pass/resident_tilts.py) (a row is one tilt image there) and

@@ -334,6 +334,7 @@ def run_final_all_data(
             score_only=False,
             firstiter_cc=False,
             engine_tuning=options.environment.engine,
+            scoring_overrides=options.environment.scoring,
         )
         final_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration + 1,

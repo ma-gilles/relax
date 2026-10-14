@@ -114,6 +114,7 @@ def local_iteration_owners(*args, **values):
             return_profile=values.pop("return_profile", False),
             # The environment, read as the command does.
             engine_tuning=RefinementEnvironment.from_environ().engine,
+            scoring_overrides=values.pop("scoring_overrides", ScoringOverrides()),
         ),
     )
     assert not values, f"unmapped local iteration owner values: {sorted(values)}"
@@ -214,6 +215,7 @@ def local_half_owners(**values):
             score_only=values.pop("diagnostic_score_only"),
             firstiter_cc=values.pop("firstiter_cc", False),
             engine_tuning=RefinementEnvironment.from_environ().engine,
+            scoring_overrides=values.pop("scoring_overrides", ScoringOverrides()),
         ),
         local_half.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),

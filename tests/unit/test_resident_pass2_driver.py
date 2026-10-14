@@ -1137,8 +1137,9 @@ def test_exact_float32_accumulation_switch_runs_the_global_driver(_resident_prod
         return allocated[-1]
 
     monkeypatch.setattr(rp, "allocate_row_partial", allocate)
-    monkeypatch.setenv(hvm.EXACT_FLOAT32_ACCUMULATION_ENV, "1")
-    exact = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides.from_environ())
+    exact = rp.compute_pass2_stats_resident(
+        **args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides(exact_float32_accumulation=True)
+    )
     assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
     assert_matches(default.hard_assignment, exact.hard_assignment)
     num = float(np.linalg.norm(np.asarray(default.Ft_y) - np.asarray(exact.Ft_y)))
