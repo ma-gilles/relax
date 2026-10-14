@@ -171,11 +171,6 @@
   "RECOVAR_ITERATION_RE": "RELAX_ITERATION_RE",
   "RECOVAR_ITER_DONE_RE": "RELAX_ITER_DONE_RE",
   "RECOVAR_ITER_START_RE": "RELAX_ITER_START_RE",
-  "RECOVAR_K1_BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT": "RELAX_K1_BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT",
-  "RECOVAR_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE": "RELAX_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE",
-  "RECOVAR_K1_BPREF_EXECUTION_ORDER_CHUNK_SIZE": "RELAX_K1_BPREF_EXECUTION_ORDER_CHUNK_SIZE",
-  "RECOVAR_K1_BPREF_EXECUTION_ORDER_LOCAL_FILE": "RELAX_K1_BPREF_EXECUTION_ORDER_LOCAL_FILE",
-  "RECOVAR_K1_BPREF_REVERSE_PHYSICAL_ORDER": "RELAX_K1_BPREF_REVERSE_PHYSICAL_ORDER",
   "RECOVAR_K1_COARSE_GAUSSIAN_SKIP_PADDED_IMAGES": "RELAX_K1_COARSE_GAUSSIAN_SKIP_PADDED_IMAGES",
   "RECOVAR_K1_COARSE_ROTATED_RADIUS": "RELAX_K1_COARSE_ROTATED_RADIUS",
   "RECOVAR_K1_LOCAL_PASS2_FLAT_ROWS": "RELAX_K1_LOCAL_PASS2_FLAT_ROWS",
@@ -723,6 +718,16 @@
   "RECOVAR_SPARSE_PASS2_F64_NOISE_OPERANDS": "no user: the generic path's binary64 noise-operand arm was set only by its own test; the XFLOAT-reciprocal operand is the one path (2026-10-13)",
   "RELAX_SPARSE_PASS2_F64_NOISE_OPERANDS": "no user: the generic path's binary64 noise-operand arm was set only by its own test; the XFLOAT-reciprocal operand is the one path (2026-10-13)",
   "RECOVAR_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "no user: the deterministic float64 norm reduction follows RELION's powerClass spectrum (source_faithful_spectrum_norm); nothing set the variable (2026-10-13)",
-  "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "no user: the deterministic float64 norm reduction follows RELION's powerClass spectrum (source_faithful_spectrum_norm); nothing set the variable (2026-10-13)"
+  "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION": "no user: the deterministic float64 norm reduction follows RELION's powerClass spectrum (source_faithful_spectrum_norm); nothing set the variable (2026-10-13)",
+  "RECOVAR_K1_BPREF_EXECUTION_ORDER_LOCAL_FILE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RELAX_K1_BPREF_EXECUTION_ORDER_LOCAL_FILE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RECOVAR_K1_BPREF_REVERSE_PHYSICAL_ORDER": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RELAX_K1_BPREF_REVERSE_PHYSICAL_ORDER": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RECOVAR_K1_BPREF_EXECUTION_ORDER_CHUNK_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RELAX_K1_BPREF_EXECUTION_ORDER_CHUNK_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RECOVAR_K1_BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RELAX_K1_BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RECOVAR_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RELAX_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)"
  }
 }

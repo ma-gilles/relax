@@ -782,7 +782,6 @@ def test_relion_binary_identity_is_recorded_in_case_job(tmp_path):
     "case, env_name, value",
     [
         ("4", "RECOVAR_K1_COARSE_GAUSSIAN_FFI", "1"),
-        ("7", "RELAX_K1_BPREF_EXECUTION_ORDER_CHUNK_SIZE", "220"),
         ("10", "RELAX_K1_RELION_EXACT_TRANSLATION_GRID", "0"),
         ("32", "RELAX_K1_RELION_X_HALF_MSTEP", "0"),
         ("26", "RELAX_RELION_X_HALF_MSTEP_DOUBLE", "1"),

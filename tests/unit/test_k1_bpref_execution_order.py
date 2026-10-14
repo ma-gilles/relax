@@ -4,9 +4,7 @@ import numpy as np
 import pytest
 
 from relax.classification.k_class import _apply_bpref_particle_order_policy
-from relax.fine_pass.policy import _BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV
 from relax.refinement.setup_checks import _validate_bpref_particle_order_scope
-from relax.runtime.env_flags import parse_env_flag
 from scripts.lib.bucket_shapes import plan_consecutive_padded_batches
 from scripts.lib.bucketed_pass2 import _bucket_pass2_inputs
 
@@ -275,11 +273,6 @@ def test_sparse_pass2_execution_order_can_stay_stable_within_size_buckets():
         [1, 4],
     ]
     assert [int(bucket["bucket_size"]) for bucket in buckets] == [16, 32, 64]
-
-
-def test_grouped_execution_order_environment_flag_uses_module_parser(monkeypatch):
-    monkeypatch.setenv(_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV, "1")
-    assert parse_env_flag(_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV)
 
 
 def test_sparse_pass_order_policy_is_k1_only_and_dormant_by_default():
