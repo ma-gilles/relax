@@ -4211,6 +4211,7 @@ def test_pass2_operands_route_relion_cuda_norm_and_shift_before_fft(rng):
             scale_corrections=np.asarray([2.0], dtype=np.float32),
             image_pre_shifts=np.asarray([[1.0, -1.0]], dtype=np.float32),
             use_float64_scoring=False,
+            finite_check_mode="off",
         )
 
     # Raw pixels reach strict CUDA unchanged; RELION normalization and the

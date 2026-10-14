@@ -335,6 +335,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     selected_prior = metadata.translation_log_prior[np.ix_(local_indices, geometry["translation_ids"])]
     bucket_kwargs = dict(
         noise_variance_half=checkpoint.noise_half[half_index],
+        finite_check_mode=EngineTuning.from_environ().finite_check,
         fine_translations=geometry["translation_values"],
         config=window.config, n_trans=len(geometry["translation_ids"]),
         score_with_masked_images=True, half_spectrum_scoring=True,

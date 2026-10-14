@@ -15,40 +15,32 @@ import numpy as np
 import pytest
 
 from relax.numerics import finite_check
+from relax.runtime.engine_tuning import FINITE_CHECK_ENV, FINITE_CHECK_WARN_ENV, EngineTuning
 
 
-@pytest.fixture
-def enabled(monkeypatch):
-    monkeypatch.setenv(finite_check.FINITE_CHECK_ENV, "1")
-    monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
-    yield
+def test_the_mode_is_read_once_and_is_off_unless_the_flag_is_set(monkeypatch):
+    """Production must pay nothing: unset, the mode is "off" and no caller runs a check; the warn switch alone
+    does not arm them."""
+
+    monkeypatch.delenv(FINITE_CHECK_ENV, raising=False)
+    monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)
+    assert EngineTuning.from_environ().finite_check == "off" == EngineTuning().finite_check
+    monkeypatch.setenv(FINITE_CHECK_WARN_ENV, "1")
+    assert EngineTuning.from_environ().finite_check == "off"
+    monkeypatch.setenv(FINITE_CHECK_ENV, "1")
+    assert EngineTuning.from_environ().finite_check == "warn"
+    monkeypatch.delenv(FINITE_CHECK_WARN_ENV)
+    assert EngineTuning.from_environ().finite_check == "raise"
 
 
-@pytest.fixture
-def warn_only(monkeypatch):
-    monkeypatch.setenv(finite_check.FINITE_CHECK_ENV, "1")
-    monkeypatch.setenv(finite_check.FINITE_CHECK_WARN_ENV, "1")
-    yield
-
-
-def test_every_check_is_silent_unless_the_flag_is_set(monkeypatch):
-    """Production must pay nothing, so an unset flag returns before any work."""
-
-    monkeypatch.delenv(finite_check.FINITE_CHECK_ENV, raising=False)
-    poisoned = np.array([1.0, np.inf])
-    assert finite_check.check_arrays("s", {"a": poisoned}) is None
-    assert finite_check.check_per_image("s", {"a": poisoned}) is None
-    assert finite_check.check_posterior_bounds("s", np.array([[5.0]])) is None
-    assert finite_check.check_bundle("s", {"a": poisoned}, posterior=np.array([[5.0]])) is None
-
-
-def test_check_arrays_names_the_first_offender_and_its_operands(enabled):
+def test_check_arrays_names_the_first_offender_and_its_operands():
     clean = np.array([3.0, 4.0])
     poisoned = np.array([1.0, 2.0, np.nan, np.inf])
     with pytest.raises(finite_check.FiniteCheckError) as excinfo:
         finite_check.check_arrays(
             "mstep-sums",
             {"clean": clean, "poisoned": poisoned},
+            warn_only=False,
             context="half=2 bucket=17",
             operands={"operand": clean},
         )
@@ -59,66 +51,66 @@ def test_check_arrays_names_the_first_offender_and_its_operands(enabled):
     assert "operand operand" in message
 
 
-def test_check_per_image_names_the_offending_image_ids(enabled):
+def test_check_per_image_names_the_offending_image_ids():
     statistic = np.array([1.0, np.nan, 3.0, np.inf])
     ids = np.array([100, 101, 102, 103])
     with pytest.raises(finite_check.FiniteCheckError) as excinfo:
         finite_check.check_per_image(
-            "norm", {"wsum_norm_correction": statistic}, image_ids=ids,
+            "norm", {"wsum_norm_correction": statistic}, warn_only=False, image_ids=ids,
         )
     message = str(excinfo.value)
     assert "2/4 non-finite" in message
     assert "[101, 103]" in message
 
 
-def test_posterior_bound_passes_a_pruned_posterior_and_fails_a_broken_one(enabled):
+def test_posterior_bound_passes_a_pruned_posterior_and_fails_a_broken_one():
     # RELION prunes to the adaptive fraction, so a healthy image total sits
     # just under one and must not be reported.
     pruned = np.array([[0.5, 0.3, 0.199], [0.999, 0.0, 0.0]], dtype=np.float32)
-    assert finite_check.check_posterior_bounds("p", pruned, image_ids=np.array([7, 8])) is None
+    assert finite_check.check_posterior_bounds("p", pruned, warn_only=False, image_ids=np.array([7, 8])) is None
 
     # A stale or uninitialised padded row shows up here: the total is taken
     # over every row and translation of the full array.
     broken = pruned.copy()
     broken[1, 1] = 0.5
     with pytest.raises(finite_check.FiniteCheckError) as excinfo:
-        finite_check.check_posterior_bounds("p", broken, image_ids=np.array([7, 8]))
+        finite_check.check_posterior_bounds("p", broken, warn_only=False, image_ids=np.array([7, 8]))
     assert "image ids [8]" in str(excinfo.value)
 
 
-def test_reduction_bound_fires_on_a_sum_larger_than_its_operand(enabled):
+def test_reduction_bound_fires_on_a_sum_larger_than_its_operand():
     operand = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
     within = {"summed": operand * 0.9, "shifted": operand}
     bound = (("summed", "shifted", 1e-3),)
-    assert finite_check.check_bundle("m", within, dominated_by=bound) is None
+    assert finite_check.check_bundle("m", within, warn_only=False, dominated_by=bound) is None
 
     beyond = {"summed": operand * 1.5, "shifted": operand}
     with pytest.raises(finite_check.FiniteCheckError) as excinfo:
-        finite_check.check_bundle("m", beyond, dominated_by=bound)
+        finite_check.check_bundle("m", beyond, warn_only=False, dominated_by=bound)
     assert "max |summed| = 6" in str(excinfo.value)
 
 
-def test_operand_bound_uses_the_product_of_several_factors(enabled):
+def test_operand_bound_uses_the_product_of_several_factors():
     ctf = np.array([[0.5, -0.8], [0.9, 0.2]], dtype=np.float32)
     inverse_noise = np.array([1e-4, 2e-4], dtype=np.float32)
     weighted = ctf * inverse_noise[None, :]
     bound = (("weighted", ("ctf", "inverse_noise"), 1e-3),)
     arrays = {"ctf": ctf, "inverse_noise": inverse_noise, "weighted": weighted}
-    assert finite_check.check_bundle("io", arrays, dominated_by=bound) is None
+    assert finite_check.check_bundle("io", arrays, warn_only=False, dominated_by=bound) is None
 
     arrays["weighted"] = weighted.copy()
     arrays["weighted"][1, 1] = np.float32(1e3)
     with pytest.raises(finite_check.FiniteCheckError) as excinfo:
-        finite_check.check_bundle("io", arrays, dominated_by=bound)
+        finite_check.check_bundle("io", arrays, warn_only=False, dominated_by=bound)
     message = str(excinfo.value)
     assert "max |ctf| * max |inverse_noise|" in message
 
 
-def test_warn_mode_records_every_occurrence_instead_of_dying(warn_only, caplog):
+def test_warn_mode_records_every_occurrence_instead_of_dying(caplog):
     poisoned = np.array([1.0, np.inf])
     with caplog.at_level(logging.ERROR, logger=finite_check.__name__):
-        first = finite_check.check_arrays("s", {"a": poisoned})
-        second = finite_check.check_posterior_bounds("p", np.array([[2.0]], dtype=np.float32))
+        first = finite_check.check_arrays("s", {"a": poisoned}, warn_only=True)
+        second = finite_check.check_posterior_bounds("p", np.array([[2.0]], dtype=np.float32), warn_only=True)
     assert first is not None and second is not None
     assert len(caplog.records) == 2
 
@@ -136,7 +128,7 @@ def test_half_accumulator_guard_is_on_by_default_and_names_the_half(monkeypatch)
     from relax.refinement.refinement_options import RefinementEnvironment
 
     monkeypatch.delenv(HALF_ACCUMULATOR_GUARD_ENV, raising=False)
-    monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
+    monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)
     assert _guard_from_environ() == "raise" == RefinementEnvironment().half_accumulator_guard
 
     poisoned = {"Ft_ctf_1": np.array([1.0, np.inf]), "Ft_y_0": np.array([1.0, 2.0])}
@@ -156,7 +148,7 @@ def test_half_accumulator_guard_opt_out_and_warn_modes(monkeypatch, caplog):
     from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
 
     poisoned = {"Ft_ctf_1": np.array([1.0, np.inf])}
-    monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
+    monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)
     for value in ("0", "off", "false", "no"):
         monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, value)
         assert _guard_from_environ() == "off"
@@ -174,10 +166,10 @@ def test_half_accumulator_guard_opt_out_and_warn_modes(monkeypatch, caplog):
 
     # The per-bucket warn switch demotes the guard as well.
     monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "1")
-    monkeypatch.setenv(finite_check.FINITE_CHECK_WARN_ENV, "1")
+    monkeypatch.setenv(FINITE_CHECK_WARN_ENV, "1")
     assert _guard_from_environ() == "warn"
 
-    monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
+    monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)
     monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "maybe")
     with pytest.raises(ValueError, match="RELAX_EM_BPREF_FINITE_GUARD"):
         _guard_from_environ()
@@ -189,7 +181,7 @@ def test_the_command_reads_the_guard_mode_into_the_options(monkeypatch, tmp_path
 
     from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
 
-    monkeypatch.delenv(finite_check.FINITE_CHECK_WARN_ENV, raising=False)
+    monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)
     monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "warn")
     inputs = controller_inputs(monkeypatch, tmp_path, "refine")
     assert inputs["options"].environment.half_accumulator_guard == "warn"

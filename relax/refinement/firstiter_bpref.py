@@ -12,10 +12,10 @@ from typing import NamedTuple
 import jax
 import numpy as np
 
-from relax.numerics import finite_check
 from relax.refinement.ports import ExpectationProbe
 from relax.refinement.refinement_options import FIRSTITER_FUSED_BPREF_ENV
 from relax.runtime import memory_budget
+from relax.runtime.engine_tuning import EngineTuning
 
 logger = logging.getLogger(__name__)
 
@@ -189,9 +189,11 @@ def relion_firstiter_compact_batch_planning_decision(
     recon_volume_size: int,
     fixed_base_bytes: int,
     half: NumberedBPrefHalf,
+    engine_tuning: EngineTuning,
 ) -> _RelionFirstiterCompactBatchPlanningDecision:
     """Preflight compact planning through the authoritative BPref gates, for the numbered ``half``.
-    The fused-kernel request is the half's (``half.fused_request``)."""
+    The fused-kernel request is the half's (``half.fused_request``); an armed finite check
+    (``engine_tuning.finite_check``) is a diagnostic that keeps the plan off the compact route."""
 
     if projector_half is None:
         return _RelionFirstiterCompactBatchPlanningDecision(False, False, 0)
@@ -199,7 +201,7 @@ def relion_firstiter_compact_batch_planning_decision(
     projector_dtype = np.dtype(projector_half.dtype)
     projector_host_owned = not isinstance(projector_half, jax.Array)
     diagnostics_active = (
-        finite_check.finite_check_enabled()
+        engine_tuning.finite_check != "off"
         or half.diagnostics_armed()
     )
     fresh_k1_guard = bool(source_faithful_spectrum_norm)

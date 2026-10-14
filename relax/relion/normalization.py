@@ -346,14 +346,18 @@ def prepare_norm_scale_update(
     dtype,
     iteration: int,
     current_size: int,
+    finite_check_mode: str,
 ) -> NormScaleCorrectionUpdateResult:
     """Audit particle statistics and estimate corrections from the current halves.
+
+    ``finite_check_mode`` (``EngineTuning.finite_check``: "off", "raise" or "warn") first names the particles behind
+    a non-finite statistic (``finite_check.check_per_image``).
 
     The caller admits complete statistics and supplies physical group IDs;
     follower statistic routing remains separate. No particle state is installed.
     See ``docs/math/relion_refinement_algorithm.md``, normalization/scale updates.
     """
-    if finite_check.finite_check_enabled():
+    if finite_check_mode != "off":
         # P4-D. Name the particles behind a non-finite statistic before
         # the shared validator raises with only "must be finite".
         for _p4d_half, _p4d_stats in enumerate(noise_stats_per_half):
@@ -366,6 +370,7 @@ def prepare_norm_scale_update(
                     "wsum_sigma2_noise": getattr(_p4d_stats, "wsum_sigma2_noise", None),
                     "sumw": getattr(_p4d_stats, "sumw", None),
                 },
+                warn_only=finite_check_mode == "warn",
                 context=finite_check.describe_context(
                     iteration=iteration + 1, half=_p4d_half + 1, current_size=current_size
                 ),
@@ -394,6 +399,7 @@ def numbered_norm_scale_update(
     dtype,
     iteration: int,
     current_size: int,
+    finite_check_mode: str,
 ) -> NormScaleCorrectionUpdateResult | None:
     """A numbered expectation's norm and scale corrections, or None when a half lacks the statistics.
 
@@ -423,6 +429,7 @@ def numbered_norm_scale_update(
         dtype=dtype,
         iteration=iteration,
         current_size=current_size,
+        finite_check_mode=finite_check_mode,
     )
 
 

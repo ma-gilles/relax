@@ -8,7 +8,8 @@ that ``joinTwoHalvesAtLowResolution`` copies across from half 2. The sums cannot
 say which row produced the first ``inf``, because a sum hides its terms.
 
 This module adds that missing step. The per-bucket checks are off unless
-``RELAX_EM_FINITE_CHECK=1``: the clean path reduces on the device and pulls
+``RELAX_EM_FINITE_CHECK=1`` (``EngineTuning.finite_check``, read once by the command; the callers run a check
+only when it is not ``"off"``): the clean path reduces on the device and pulls
 back one boolean per field, so it costs a reduction and a synchronisation
 rather than a transfer, but it still serialises the pass it watches. An arm
 with it set is a diagnostic arm and never a timing arm. The once-per-iteration
@@ -17,8 +18,8 @@ by default, see ``relax.refinement.refinement_options.half_accumulator_guard_mod
 
 On the first non-finite value it reports the half, the bucket, the field, how
 many entries are bad, the first bad flat index, and the operands at that index,
-then raises unless ``RELAX_EM_FINITE_CHECK_WARN=1`` asks it to keep going and
-collect every occurrence.
+then raises unless ``RELAX_EM_FINITE_CHECK_WARN=1`` (``EngineTuning.finite_check == "warn"``; the checks take
+``warn_only``) asks it to keep going and collect every occurrence.
 """
 
 from __future__ import annotations
@@ -28,24 +29,15 @@ from functools import lru_cache
 
 import numpy as np
 
-from relax.runtime.env_flags import parse_env_true_flag
-
 logger = logging.getLogger(__name__)
 
-FINITE_CHECK_ENV = "RELAX_EM_FINITE_CHECK"
-FINITE_CHECK_WARN_ENV = "RELAX_EM_FINITE_CHECK_WARN"
-
 __all__ = [
-    "FINITE_CHECK_ENV",
-    "FINITE_CHECK_WARN_ENV",
     "FiniteCheckError",
     "check_arrays",
     "check_bundle",
     "check_per_image",
     "check_posterior_bounds",
     "describe_context",
-    "finite_check_enabled",
-    "finite_check_warn_only",
     "check_half_accumulators",
 ]
 
@@ -60,18 +52,6 @@ POSTERIOR_UPPER_BOUND = 1.0 + 1e-3
 
 class FiniteCheckError(AssertionError):
     """A pass-2 operand or accumulator held a non-finite value."""
-
-
-def finite_check_enabled() -> bool:
-    """Whether the opt-in finite checks run at all."""
-
-    return parse_env_true_flag(FINITE_CHECK_ENV)
-
-
-def finite_check_warn_only() -> bool:
-    """Whether a non-finite value is logged and survived rather than raised."""
-
-    return parse_env_true_flag(FINITE_CHECK_WARN_ENV)
 
 
 def _array_all_finite(array):
@@ -188,17 +168,14 @@ def _summarise(name, value, bad_index):
     )
 
 
-def check_arrays(stage: str, arrays: dict, *, context: str = "", operands: dict | None = None):
-    """Check ``arrays`` for non-finite entries; report the first offender.
+def check_arrays(stage: str, arrays: dict, *, warn_only: bool, context: str = "", operands: dict | None = None):
+    """Check ``arrays`` for non-finite entries; report the first offender (logged under ``warn_only``, else raised).
 
     ``arrays`` are the values under test; ``operands`` are additional arrays to
     describe at the offending index, so the report says not only which sum went
     non-finite but what it was built from. Only a field that fails the device
     reduction is brought to the host, and only to build the report.
     """
-
-    if not finite_check_enabled():
-        return None
 
     # Fast path: reduce on whatever device holds the array and pull back one
     # boolean per field. The M-step sums are [images, rotations, pixels]; moving
@@ -232,21 +209,18 @@ def check_arrays(stage: str, arrays: dict, *, context: str = "", operands: dict 
         if value is not None:
             lines.append("  operand " + _summarise(name, value, None))
     message = "\n".join(lines)
-    if finite_check_warn_only():
+    if warn_only:
         logger.error("%s", message)
         return message
     raise FiniteCheckError(message)
 
 
-def check_per_image(stage: str, arrays: dict, *, image_ids=None, context: str = ""):
-    """Check per-image statistics and name the offending image ids.
+def check_per_image(stage: str, arrays: dict, *, warn_only: bool, image_ids=None, context: str = ""):
+    """Check per-image statistics and name the offending image ids (logged under ``warn_only``, else raised).
 
     ``wsum_norm_correction`` is the statistic that failed in job 14178118, and
     it is per image, so the report is only useful if it says which particles.
     """
-
-    if not finite_check_enabled():
-        return None
 
     ids = None if image_ids is None else np.asarray(image_ids).reshape(-1)
     reports = []
@@ -272,14 +246,14 @@ def check_per_image(stage: str, arrays: dict, *, image_ids=None, context: str = 
     if not reports:
         return None
     message = "\n".join([f"non-finite per-image statistic in stage {stage!r}: {context}", *reports])
-    if finite_check_warn_only():
+    if warn_only:
         logger.error("%s", message)
         return message
     raise FiniteCheckError(message)
 
 
-def check_posterior_bounds(stage: str, probs, *, context: str = "", image_ids=None):
-    """Assert the posterior bound that the M-step operands inherit.
+def check_posterior_bounds(stage: str, probs, *, warn_only: bool, context: str = "", image_ids=None):
+    """Assert the posterior bound that the M-step operands inherit (logged under ``warn_only``, else raised).
 
     ``probs`` is ``[images, ...]``.  Both the largest entry and each image's
     total must stay at or below one.  This fires on a denominator that is only
@@ -287,7 +261,7 @@ def check_posterior_bounds(stage: str, probs, *, context: str = "", image_ids=No
     never reaches ``inf`` still shows whether the bound is being broken.
     """
 
-    if not finite_check_enabled() or probs is None:
+    if probs is None:
         return None
 
     import jax.numpy as jnp
@@ -318,7 +292,7 @@ def check_posterior_bounds(stage: str, probs, *, context: str = "", image_ids=No
         f"{np.asarray(named[:8]).tolist()} sums "
         f"{[float(x) for x in sums[offenders[:8]]]}"
     )
-    if finite_check_warn_only():
+    if warn_only:
         logger.error("%s", message)
         return message
     raise FiniteCheckError(message)
@@ -328,6 +302,7 @@ def check_bundle(
     stage: str,
     arrays: dict,
     *,
+    warn_only: bool,
     posterior=None,
     posterior_name: str = "posterior",
     dominated_by: tuple | None = None,
@@ -346,11 +321,9 @@ def check_bundle(
     Here every reduction is issued asynchronously and only the stacked scalars
     cross the boundary, so a clean bucket pays one synchronisation for the
     whole set. The expensive per-array host analysis runs only when a scalar
-    says something is wrong, and then it is free to synchronise again.
+    says something is wrong, and then it is free to synchronise again. A report is logged under ``warn_only``,
+    else raised.
     """
-
-    if not finite_check_enabled():
-        return None
 
     import jax.numpy as jnp
 
@@ -416,7 +389,7 @@ def check_bundle(
                 f"sum from those, with non-negative weights summing to at most "
                 f"one, so this cannot be rounding"
             )
-            if finite_check_warn_only():
+            if warn_only:
                 logger.error("%s", broken)
                 messages.append(broken)
             else:
@@ -426,6 +399,7 @@ def check_bundle(
             check_arrays(
                 stage,
                 {name: arrays[name] for name in names},
+                warn_only=warn_only,
                 context=context,
                 operands=operands,
             )
@@ -437,6 +411,7 @@ def check_bundle(
             check_posterior_bounds(
                 posterior_name,
                 posterior,
+                warn_only=warn_only,
                 context=context,
                 image_ids=image_ids,
             )

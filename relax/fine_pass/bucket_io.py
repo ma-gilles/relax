@@ -308,6 +308,7 @@ def prepare_unshifted_bucket_operands(
     *,
     noise_variance_half,
     config,
+    finite_check_mode: str,
     score_with_masked_images,
     image_corrections,
     scale_corrections,
@@ -333,6 +334,9 @@ def prepare_unshifted_bucket_operands(
 
     ``noise_variance_half`` is one shared spectrum or a per-optics-group table
     whose rows ``noise_optics_groups`` selects per image (:mod:`relax.relion.optics_groups`).
+
+    ``finite_check_mode`` (``EngineTuning.finite_check``: "off", "raise" or "warn") runs the opt-in
+    finite and bound checks of the operands (``relax.numerics.finite_check.check_bundle``).
 
     ``cc_power_weights`` (normalized CC only; one weight per score-window pixel) restricts
     the image power ``Xi2`` to the pixels the score counts. None is RELION's sum over the
@@ -619,7 +623,7 @@ def prepare_unshifted_bucket_operands(
         if return_direct_scoring_io:
             sparse_score_input_half = sparse_score_input_half * phase_factors
 
-    if finite_check.finite_check_enabled():
+    if finite_check_mode != "off":
         # P4-D. The per-image per-pixel operands, before any translation or
         # posterior weighting. The accumulator geometry of job 14178118 points
         # at exactly these: a scattered corruption here ruins the weighted
@@ -658,6 +662,7 @@ def prepare_unshifted_bucket_operands(
                 first_image=int(np.asarray(image_indices).reshape(-1)[0]),
             ),
             image_ids=image_indices,
+            warn_only=finite_check_mode == "warn",
         )
     return UnshiftedBucketOperands(
         image_shape=image_shape,
@@ -753,6 +758,8 @@ def _prepare_bucket_io(
     cc_power_weights=None,
     nyquist_column_counting="relion",
     image_translations=None,
+    *,
+    finite_check_mode: str,
 ):
     """Run preprocessing for a batch of images (translations tiled, CTF/noise ratios).
 
@@ -777,6 +784,7 @@ def _prepare_bucket_io(
         image_indices,
         noise_variance_half=noise_variance_half,
         config=config,
+        finite_check_mode=finite_check_mode,
         score_with_masked_images=score_with_masked_images,
         image_corrections=image_corrections,
         scale_corrections=scale_corrections,

@@ -147,6 +147,7 @@ def _bucket_io_kwargs(dataset, *, current_size, window_indices, translation_angl
         dataset, disc_type="linear_interp", process_fn=dataset.process_images
     )
     return dict(
+        finite_check_mode="off",
         noise_variance_half=noise_variance_half,
         fine_translations=fine_translations,
         config=config,

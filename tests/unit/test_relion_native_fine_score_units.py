@@ -254,6 +254,7 @@ def _resident_native_case(monkeypatch, image_size, current_size, with_scale):
         noise_variance_half=noise_variance_half,
         fine_translations=fine_translations,
         config=config,
+        finite_check_mode="off",
         n_trans=1,
         score_with_masked_images=True,
         half_spectrum_scoring=True,

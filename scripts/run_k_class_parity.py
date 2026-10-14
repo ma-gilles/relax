@@ -709,6 +709,7 @@ def _relion_bpref_maps_from_sparse_support(
     from relax.io.batch_fetch import fetch_indexed_batch
     from relax.projection.projection import compute_projections_block as _compute_projections_block
     from relax.relion_bind import _relion_bind_core as bind
+    from relax.runtime.engine_tuning import EngineTuning
     from relax.sampling.grids import rotation_grid_size
     from relax.sampling.oversampled_grids import get_oversampled_translation_grid
     from scripts.lib.bucketed_pass2 import (
@@ -886,6 +887,7 @@ def _relion_bpref_maps_from_sparse_support(
                 image_pre_shifts,
                 use_float64_scoring,
                 return_direct_scoring_io=True,
+                finite_check_mode=EngineTuning.from_environ().finite_check,
             )
             del shifted_score_half
 

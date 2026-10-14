@@ -207,7 +207,9 @@ def _box800_plan(**overrides):
     kwargs.update(overrides)
     return estimate_relion_em_batch_sizes(**kwargs)
 
-def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64, fused_bpref_request=None):
+def _compact_route_decision(
+    *, projector_half, score_complex_dtype=np.complex64, fused_bpref_request=None, engine_tuning=EngineTuning()
+):
     sparse = firstiter_bpref
     return sparse.relion_firstiter_compact_batch_planning_decision(
         source_faithful_spectrum_norm=True,
@@ -222,6 +224,7 @@ def _compact_route_decision(*, projector_half, score_complex_dtype=np.complex64,
         half=firstiter_bpref.NumberedBPrefHalf(
             0, 0, False, ObserverExpectationProbe(observers.BpRefDiagnosticsObserver()), fused_request=fused_bpref_request,
         ),
+        engine_tuning=engine_tuning,
     )
 
 def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch):
@@ -284,10 +287,13 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
     disabled_fused = _compact_route_decision(projector_half=host_projector, fused_bpref_request=False)
     assert disabled_fused.enabled is False
 
-@pytest.mark.parametrize("diagnostic_env", ["RELAX_EM_FINITE_CHECK", "RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR"])
-def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch, diagnostic_env):
-    monkeypatch.setenv(diagnostic_env, "1")
+def test_compact_planning_excludes_current_runtime_diagnostics(monkeypatch):
     host = SimpleNamespace(shape=(1603, 1603, 802), dtype=np.dtype(np.complex64))
+    for mode in ("raise", "warn"):  # EngineTuning.finite_check, read by the command
+        decision = _compact_route_decision(projector_half=host, engine_tuning=EngineTuning(finite_check=mode))
+        assert not decision.enabled
+        assert not decision.deferred_firstiter_bpref
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR", "1")
     decision = _compact_route_decision(projector_half=host)
     assert not decision.enabled
     assert not decision.deferred_firstiter_bpref
@@ -346,8 +352,7 @@ def test_compact_planning_asks_the_probe_about_its_numbered_half(monkeypatch):
     fused route compact planning needs."""
     monkeypatch.setattr(firstiter_bpref.memory_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
     monkeypatch.setattr(firstiter_bpref.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
-    for name in ("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", "RELAX_EM_FINITE_CHECK"):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", raising=False)
     asked = []
 
     class Probe:
@@ -362,7 +367,7 @@ def test_compact_planning_asks_the_probe_about_its_numbered_half(monkeypatch):
     common = dict(
         source_faithful_spectrum_norm=True, winner_take_all=True, preserve_bpref_particle_order=True,
         use_relion_x_half_mstep=True, projector_half=host, score_complex_dtype=np.complex64,
-        recon_volume_size=1603 * 1603 * 802, fixed_base_bytes=4_000_000_000,
+        recon_volume_size=1603 * 1603 * 802, fixed_base_bytes=4_000_000_000, engine_tuning=EngineTuning(),
     )
     decide = firstiter_bpref.relion_firstiter_compact_batch_planning_decision
     half = firstiter_bpref.NumberedBPrefHalf

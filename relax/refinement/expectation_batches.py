@@ -222,6 +222,7 @@ def prepare_half_batches(
             recon_volume_size=int(np.prod(compact_accumulator_shape)),
             fixed_base_bytes=int(RELION_EM_COMPACT_K1_FIXED_BASE_GB * 1e9),
             half=bpref_half,
+            engine_tuning=planner.engine_tuning,
         )
         if decision.enabled:
             if model_size <= 0:

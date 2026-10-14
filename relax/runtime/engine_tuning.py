@@ -18,8 +18,11 @@ from relax.runtime.compile_ahead import (
     CompileAheadConfig,
     parse_compile_ahead_config,
 )
-from relax.runtime.env_flags import parse_env_flag, read_env_text
+from relax.runtime.env_flags import parse_env_flag, parse_env_true_flag, read_env_text
 
+# relax.numerics.finite_check's opt-in checks and their warn-only mode (EngineTuning.finite_check).
+FINITE_CHECK_ENV = "RELAX_EM_FINITE_CHECK"
+FINITE_CHECK_WARN_ENV = "RELAX_EM_FINITE_CHECK_WARN"
 DEFAULT_PREPARE_IMAGE_BATCH = 256
 # Two image batches ahead by default: K4 100k/256 Class3D, same node, depth 0 against 2:
 # 2115 vs 1933 s (job 14515590), 1925 vs 1756 s (14515190) and 1770 vs 1593 s
@@ -151,6 +154,10 @@ class EngineTuning:
     ``resident_operands`` (RELAX_SPARSE_PASS2_RESIDENT_OPERANDS, ``env_flags.parse_env_flag``, default on): the
     resident passes prepare the per-image operands once per half; off keeps the per-chunk preparation and the XLA tile
     reduction, the oracle both forms are compared against (the same values).
+    ``finite_check`` (RELAX_EM_FINITE_CHECK and RELAX_EM_FINITE_CHECK_WARN, each ``env_flags.parse_env_true_flag``;
+    :func:`finite_check_mode`): "off" (default), "raise" or "warn": the opt-in per-bucket finite and bound checks of
+    ``relax.numerics.finite_check`` and whether a report is raised or logged. A check serialises the pass it watches,
+    so an arm with it on is a diagnostic arm, never a timing arm.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -188,6 +195,7 @@ class EngineTuning:
     local_image_capacities: tuple[int, ...] | None = None
     resident_operands_verify: bool = False
     resident_operands: bool = True
+    finite_check: str = "off"
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -261,6 +269,7 @@ class EngineTuning:
             local_image_capacities=parse_capacity_ladder(LOCAL_IMAGE_CAPACITIES_ENV, read_env_text(LOCAL_IMAGE_CAPACITIES_ENV)),
             resident_operands_verify=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY", default=False),
             resident_operands=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", default=True),
+            finite_check=finite_check_mode(parse_env_true_flag(FINITE_CHECK_ENV), parse_env_true_flag(FINITE_CHECK_WARN_ENV)),
         )
 
 
@@ -521,3 +530,10 @@ def parse_capacity_ladder(name: str, raw: str | None) -> tuple[int, ...] | None:
     if not values or list(values) != sorted(values) or values[0] <= 0:
         raise ValueError(f"{name} must be an increasing list of positive integers, got {raw!r}")
     return values
+
+
+def finite_check_mode(enabled: bool, warn: bool) -> str:
+    """The finite checks' mode: "off" unless ``enabled``, then "warn" under ``warn``, else "raise"."""
+    if not enabled:
+        return "off"
+    return "warn" if warn else "raise"

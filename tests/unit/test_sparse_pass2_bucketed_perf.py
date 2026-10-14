@@ -1589,6 +1589,7 @@ def test_prepare_bucket_io_routes_direct_score_translation_through_relion_cuda(
         recon_window_indices=window_spec.recon_indices,
         relion_score_translation_angles=translation_angles,
         return_windowed_shifted=True,
+        finite_check_mode="off",
     )
 
     direct_score_calls = [
@@ -1649,10 +1650,11 @@ def test_prepare_bucket_io_exact_cc_keeps_relion_image_and_corr_operands_separat
         score_mode="normalized_cc",
     )
 
-    folded = _prepare_bucket_io(**common)
+    folded = _prepare_bucket_io(**common, finite_check_mode="off")
     exact = _prepare_bucket_io(
         **common,
         relion_exact_normalized_cc_operands=True,
+        finite_check_mode="off",
     )
     folded_image = np.asarray(folded[7]).reshape(batch_indices.size, 1, n_half)
     corrected_image = np.asarray(exact[7]).reshape(batch_indices.size, 1, n_half)
@@ -1739,6 +1741,7 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
         relion_score_translation_angles=jnp.zeros((1, 2), dtype=jnp.float32),
         relion_exact_bpref_operands=True,
         native_bpref_operand_check="raise",
+        finite_check_mode="off",
     )
 
     raw = np.asarray(_raw_real_process_half(batch))
@@ -1798,6 +1801,7 @@ def test_prepare_bucket_io_routes_relion_cuda_operands_to_score_and_reconstructi
         scale_corrections,
         image_pre_shifts,
         False,
+        finite_check_mode="off",
     )
 
     assert [call[1] for call in calls] == [True, False]
@@ -1872,12 +1876,12 @@ def test_prepare_bucket_io_windowed_reuses_unmasked_recon_shift_for_noise(monkey
         return original_apply(images, phases)
 
     monkeypatch.setattr(bucket_io, "apply_half_translation_phases", counting_apply)
-    unmasked = _prepare_bucket_io(**common_kwargs, score_with_masked_images=False)
+    unmasked = _prepare_bucket_io(**common_kwargs, score_with_masked_images=False, finite_check_mode="off")
     assert len(call_shapes) == 3
     assert_matches(np.asarray(unmasked[5]), np.asarray(unmasked[1]))
 
     call_shapes.clear()
-    _prepare_bucket_io(**common_kwargs, score_with_masked_images=True)
+    _prepare_bucket_io(**common_kwargs, score_with_masked_images=True, finite_check_mode="off")
     assert len(call_shapes) == 4
 
 

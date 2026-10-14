@@ -526,6 +526,7 @@ def test_the_optional_operands_against_a_star_backed_preparation(
     kwargs = dict(
         noise_variance_half=noise_variance_half,
         fine_translations=fine_translations,
+        finite_check_mode="off",
         config=ForwardModelConfig.from_dataset(
             dataset, disc_type="linear_interp", process_fn=dataset.process_images
         ),
@@ -653,6 +654,7 @@ def test_exact_bpref_is_refused_by_name_on_a_dataset_that_is_not_production_shap
             use_float64_scoring=False,
             window_indices=case["window_indices"],
             relion_exact_bpref_operands=True,
+            finite_check_mode="off",
         )
 
 

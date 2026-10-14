@@ -13,7 +13,7 @@ def test_generic_noise_operands_follow_selected_precision():
     noise=jnp.linspace(.8,1.4,n_half,dtype=jnp.float64)
     out=prepare_unshifted_bucket_operands(ds,jnp.asarray(ds._images),jnp.asarray(ds.CTF_params),ids,
         noise_variance_half=noise,config=config,score_with_masked_images=False,
-        image_corrections=None,scale_corrections=None,image_pre_shifts=None,use_float64_scoring=False)
+        image_corrections=None,scale_corrections=None,image_pre_shifts=None,use_float64_scoring=False, finite_check_mode="off")
     assert out.score_weighted_half.dtype == jnp.complex64
     assert out.ctf2_over_nv_half.dtype == jnp.float32
     expected_inverse=np.reciprocal(np.asarray(noise)).astype(np.float32)

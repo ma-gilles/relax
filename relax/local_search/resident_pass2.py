@@ -786,6 +786,7 @@ def compute_local_search_resident(
             noise_variance_half=noise_variance_half,
             fine_translations=fine_translations,
             config=config,
+            finite_check_mode=support.engine_tuning.finite_check,
             n_trans=n_fine_trans,
             score_with_masked_images=True,
             half_spectrum_scoring=kernel.half_spectrum_scoring,

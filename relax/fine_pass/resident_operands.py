@@ -793,6 +793,7 @@ def prepare_resident_half_operands(
     unshifted_kwargs = dict(
         noise_variance_half=kwargs["noise_variance_half"],
         config=kwargs["config"],
+        finite_check_mode=kwargs["finite_check_mode"],
         score_with_masked_images=score_with_masked_images,
         image_corrections=kwargs["image_corrections"],
         scale_corrections=kwargs["scale_corrections"],

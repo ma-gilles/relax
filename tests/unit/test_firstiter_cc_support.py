@@ -112,6 +112,7 @@ def _cc_operands(box=8, current_size=6, **kwargs):
         score_with_masked_images=False, image_corrections=None, scale_corrections=None, image_pre_shifts=None,
         use_float64_scoring=False, return_direct_scoring_io=True, score_mode="normalized_cc",
         window_indices=spec.score_indices, **kwargs,
+        finite_check_mode="off",
     )
     return operands, np.asarray(spec.score_indices_np)
 

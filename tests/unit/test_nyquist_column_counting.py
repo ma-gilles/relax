@@ -144,6 +144,7 @@ def _unshifted_operands(**kwargs):
         noise_variance_half=jnp.ones(8 * 5, dtype=jnp.float32), config=config, score_with_masked_images=False,
         image_corrections=None, scale_corrections=None, image_pre_shifts=None, use_float64_scoring=False,
         return_direct_scoring_io=True, **kwargs,
+        finite_check_mode="off",
     )
 
 

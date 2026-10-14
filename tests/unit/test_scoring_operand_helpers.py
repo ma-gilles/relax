@@ -58,7 +58,7 @@ def test_logsumexp_initial_block_handles_underflow_without_nan():
     assert np.all(np.isfinite(np.asarray(sum_exp)))
 
 
-def _unshifted_cc_operands(dataset, *, image_corrections=None, scale_corrections=None):
+def _unshifted_cc_operands(dataset, *, image_corrections=None, scale_corrections=None, finite_check_mode="off"):
     from recovar.core.configs import ForwardModelConfig
     from recovar.reconstruction import noise as noise_utils
 
@@ -80,7 +80,24 @@ def _unshifted_cc_operands(dataset, *, image_corrections=None, scale_corrections
         image_pre_shifts=None,
         use_float64_scoring=True,
         score_mode="normalized_cc",
+        finite_check_mode=finite_check_mode,
     )
+
+
+def test_operand_finite_checks_run_only_in_the_mode_the_command_read(monkeypatch):
+    """``EngineTuning.finite_check``: "off" (the default) calls no check; "raise" and "warn" check the operands
+    once, raising or logging."""
+
+    from relax.numerics import finite_check
+
+    calls = []
+    monkeypatch.setattr(finite_check, "check_bundle", lambda stage, arrays, **kw: calls.append((stage, kw["warn_only"])))
+    dataset = MockDataset(n_images=2, seed=7)
+    _unshifted_cc_operands(dataset, finite_check_mode="off")
+    assert calls == []
+    _unshifted_cc_operands(dataset, finite_check_mode="raise")
+    _unshifted_cc_operands(dataset, finite_check_mode="warn")
+    assert calls == [("bucket-io-operands", False), ("bucket-io-operands", True)]
 
 
 def test_relion_firstiter_cc_keeps_cross_scale_correction():

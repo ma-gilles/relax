@@ -403,7 +403,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     invalid_mass = jnp.zeros((n_images,), bool)
     bucket_kwargs = dict(
         noise_variance_half=noise_half, fine_translations=state.fine_translations,
-        config=window.config, n_trans=len(state.fine_translations),
+        config=window.config, finite_check_mode=state.engine_tuning.finite_check, n_trans=len(state.fine_translations),
         score_with_masked_images=True, half_spectrum_scoring=True,
         image_corrections=state.image_corrections, scale_corrections=state.scale_corrections,
         image_pre_shifts=state.image_pre_shifts, use_float64_scoring=False,

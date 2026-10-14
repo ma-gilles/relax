@@ -117,6 +117,7 @@ def _case(*, relion_angles, current_size=6, seed=20260919):
         noise_variance_half=noise_variance_half,
         fine_translations=fine_translations,
         config=config,
+        finite_check_mode="off",
         n_trans=N_FINE_TRANS,
         score_with_masked_images=True,
         half_spectrum_scoring=True,
@@ -201,6 +202,7 @@ def test_unshifted_record_is_the_prepare_bucket_io_prologue():
         window_indices=kwargs["window_indices"],
         relion_exact_normalized_cc_operands=False,
         relion_exact_bpref_operands=False,
+        finite_check_mode="off",
     )
     (
         _shifted_score_half,
@@ -273,6 +275,7 @@ def test_column_gather_commutes_with_the_translation():
         use_float64_scoring=False,
         return_direct_scoring_io=True,
         window_indices=case["window_indices"],
+        finite_check_mode="off",
     )
     windowed_then_shifted = apply_half_translation_phases(
         jnp.asarray(unshifted.recon_weighted_half)[:, jnp.asarray(window)],
