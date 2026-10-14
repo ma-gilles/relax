@@ -97,11 +97,12 @@ class _K1Iteration:
         )
 
     def initial_reference_model(self, ctx, options, init_volume, init_mean_variance):
-        """Each half's flat start-up reference with the shared or per-half tau2."""
+        """Each half's flat start-up reference with the shared or per-half tau2 (a ``[2, V]`` start-up tau2 is each
+        half set's own: each half scores with it until the first M-step)."""
         return reference_state.initialize_reference_model(
             reference_state.initial_half_references(init_volume, options.k_class.n_classes), jnp.asarray(init_mean_variance),
-            use_per_half_mean_variance=options.parity.use_per_half_mean_variance, dtype=ctx.scoring_dtype,
-            log=logger,
+            use_per_half_mean_variance=options.parity.use_per_half_mean_variance or np.ndim(init_mean_variance) == 2,
+            dtype=ctx.scoring_dtype, log=logger,
         )
 
     def snapshot_reference_model(self, ctx, resume):
@@ -966,6 +967,11 @@ def refine_single_volume(
         scoring_inputs = expectation.numbered_half_inputs(
             ctx, carry, plan, options, halves=halves, reference_model=reference_model, projectors=projectors,
             follower_setup=follower_setup,
+            # A fresh run's first iteration: half set 2's scale gate is its own start-up curve.
+            scale_gate_half2=(
+                None if has_previous_iteration or options.start.init_data_vs_prior_half2 is None
+                else np.asarray(options.start.init_data_vs_prior_half2, dtype=ctx.scoring_dtype)
+            ),
         )
         # --- E-step on each half: one pass (adaptive_oversampling=0) or coarse then fine (>=1) ---
         expected = expectation.run_numbered_expectation(

@@ -1546,6 +1546,7 @@ def resolve_start_state(
     init_data_vs_prior,
     relion_init_sigma_offset_angstrom,
     frozen_boundary,
+    init_data_vs_prior_half2=None,
 ) -> StartState:
     """The state the run starts from: the particles' groups, poses and corrections and the first iteration's
     resolution and translation-prior seeds.
@@ -1581,6 +1582,7 @@ def resolve_start_state(
         ),
         ini_high_angstrom=ini_high_angstrom,
         init_data_vs_prior=init_data_vs_prior,
+        init_data_vs_prior_half2=init_data_vs_prior_half2,
     )
 
 

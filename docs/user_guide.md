@@ -117,7 +117,11 @@ relax refine \
 ```
 
 The run stops at convergence, as RELION's auto-refine does. Without
-`--init_volume` it reads `<data_dir>/reference_init_relion.mrc`. The defaults are
+`--init_volume` it reads `<data_dir>/reference_init_relion.mrc`. As in RELION's
+split-halves refinement, a reference whose file name contains `half1` (or `half2`)
+starts each half set from its own file: `--init_volume Reconstruct/job072/half1.mrc`
+gives half set 2 `Reconstruct/job072/half2.mrc`, which must exist (the log names
+the file each half reads). The defaults are
 the RELION GUI's job defaults ([audit](development/relion_defaults.md)); pass
 `--no-firstiter_cc` when the reference is on the images' greyscale.
 

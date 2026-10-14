@@ -338,6 +338,7 @@ def numbered_half_inputs(
     reference_model,
     projectors,
     follower_setup,
+    scale_gate_half2=None,
 ) -> list[NumberedHalfInputs]:
     """Each half's scoring inputs of one numbered iteration: its particles (centred for a local search), its
     reference, tau2, noise and projector, its scale groups and the iteration-start scale-gate curve, its
@@ -345,7 +346,8 @@ def numbered_half_inputs(
 
     Reads from ``carry``: ``state``, ``noise_model``, ``sigma_offset`` and
     ``previous_data_vs_prior_for_scheduling`` (still the iteration-start curve: RELION's scale XA/AA shell
-    gate reads it, the scheduling curve changes later); from ``ctx``: ``tomo_halves``; from
+    gate reads it, the scheduling curve changes later; ``scale_gate_half2``, when given, is half set 2's own
+    iteration-start curve, a fresh run's start-up one); from ``ctx``: ``tomo_halves``; from
     ``follower_setup``: the halves' scale-statistics groups; from ``options``: ``replay.init_angle_priors``.
     """
     return [
@@ -370,7 +372,10 @@ def numbered_half_inputs(
                 projector=projectors[k],
                 scale_group_ids=follower_setup.scale_stats_group_ids_per_half[k],
                 scale_group_count=follower_setup.scale_stats_group_count_per_half[k],
-                scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
+                scale_correction_data_vs_prior=(
+                    scale_gate_half2 if k == 1 and scale_gate_half2 is not None
+                    else carry.previous_data_vs_prior_for_scheduling
+                ),
             ),
             direction_priors=plan.direction_log_priors[k],
             sigma_offset_angstrom=carry.sigma_offset.for_half(k),

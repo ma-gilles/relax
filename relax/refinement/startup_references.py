@@ -14,6 +14,7 @@ With a start-up low-pass (``--apply-initial-lowpass``), each map is filtered as 
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 
 import jax.numpy as jnp
@@ -31,19 +32,20 @@ class StartupReferences:
     """The references a run starts from.
 
     ``fourier``: the loop's start-up volume as a ``HalfPair``: ``(V,)`` for K=1 or ``(K, V)`` for Class3D,
-    shared by the halves, or each half's own from a frozen boundary. ``prior_source``: the Fourier volume the start-up tau2 is bootstrapped from (the
+    shared by the halves, or each half's own (a K=1 reference named ``half1``/``half2``,
+    :func:`relion_half_reference_path`, or a frozen boundary). ``prior_source``: the Fourier volume the start-up tau2 is bootstrapped from (the
     reference or class 1); None from a frozen boundary, which owns its tau2. ``real_for_projector``: the
-    real-space maps handed to the first projector (float64) when that handoff is on, else None.
-    ``reference_real`` (K=1) and
-    ``class_references_real`` (Class3D, a list): the float64 real maps of RELION's start-up data-vs-prior.
+    real-space maps handed to the first projector (float64, a ``HalfPair``) when that handoff is on, else None.
+    ``reference_real`` (K=1, a ``HalfPair``: each half set's map) and
+    ``class_references_real`` (Class3D, a list): the float64 real maps of RELION's start-up tau2 and data-vs-prior.
     ``model_pixel_size``: the reference maps' header pixel size, RELION's model pixel size (None from a frozen
     boundary).
     """
 
     fourier: HalfPair
     prior_source: np.ndarray | None
-    real_for_projector: np.ndarray | None = None
-    reference_real: np.ndarray | None = None
+    real_for_projector: HalfPair | None = None
+    reference_real: HalfPair | np.ndarray | None = None
     class_references_real: list | None = None
     model_pixel_size: float | None = None
 
@@ -105,6 +107,25 @@ def _startup_map(volume_real, *, volume_shape, pixel_size, ini_high: float | Non
     return fourier, real64
 
 
+def relion_half_reference_path(path, halfset: int) -> str:
+    """The reference half set ``halfset`` (1 or 2) of a split-halves refinement reads for ``--ref path``.
+
+    RELION's MPI refinement gives each half-set rank ``fn_ref.getHalf(fn_ref, my_halfset)``
+    (ml_optimiser_mpi.cpp:726-731): in the base name (after the last ``/``), every ``half1`` becomes ``half2``
+    for half set 2 when the name contains ``half1``, else every ``half2`` becomes ``half1`` for half set 1
+    when it contains ``half2``; any other name is read as given (``FileName::getHalf``, filename.cpp:474-489).
+    """
+    path = str(path)
+    directory, slash, base = path.rpartition("/")
+    if "half1" in base and halfset == 2:
+        base = base.replace("half1", "half2")
+    elif "half2" in base and halfset == 1:
+        base = base.replace("half2", "half1")
+    else:
+        return path
+    return directory + slash + base
+
+
 def load_k1_reference(
     path,
     *,
@@ -114,8 +135,62 @@ def load_k1_reference(
     real_dtype,
     complex_dtype,
     log: logging.Logger,
+    split_halves: bool = True,
 ) -> StartupReferences:
-    """Load the K=1 reference map ``path``, low-pass filtered at ``ini_high`` in the map's own pixel size."""
+    """Load the K=1 reference map ``path``, low-pass filtered at ``ini_high`` in the map's own pixel size.
+
+    With ``split_halves`` (a fresh auto-refine; a continued run reads no reference, as RELION's ``--continue``
+    does not), each half set reads its own file, :func:`relion_half_reference_path`: ``--ref half1.mrc`` gives
+    half set 2 ``half2.mrc``. A missing file stops the run, as RELION's read of it does. ``reference_real`` holds
+    each half set's map, from which each half's start-up tau2 and data-vs-prior follow, as each RELION rank's
+    ``initialiseDataVersusPrior`` reads its own ``Iref`` (ml_optimiser_mpi.cpp:771); ``prior_source`` (the
+    bootstrap of a start that is not RELION's) is half 1's.
+    """
+    paths = (
+        HalfPair(relion_half_reference_path(path, 1), relion_half_reference_path(path, 2))
+        if split_halves
+        else HalfPair.shared(str(path))
+    )
+    for half_path in dict.fromkeys(paths):
+        if not os.path.exists(half_path):
+            raise SystemExit(
+                f"Initial reference {half_path} does not exist; RELION's split-halves refinement reads it for one "
+                f"half set when --ref is {path} (ml_optimiser_mpi.cpp:730, FileName::getHalf)"
+            )
+    log.info("Initial reference per half set: half 1 reads %s, half 2 reads %s", paths.half1, paths.half2)
+    loaded = {
+        half_path: _load_k1_map(
+            half_path, volume_shape=volume_shape, ini_high=ini_high, real_dtype=real_dtype,
+            complex_dtype=complex_dtype, log=log,
+        )
+        for half_path in dict.fromkeys(paths)
+    }
+    pixel_sizes = {loaded[p][2] for p in loaded}
+    if len(pixel_sizes) > 1:
+        raise SystemExit(
+            f"The half-set references {paths.half1} and {paths.half2} have different header pixel sizes "
+            f"{sorted(pixel_sizes)}; relax keeps one model pixel size"
+        )
+    fourier = HalfPair(loaded[paths.half1][0], loaded[paths.half2][0])
+    reference_real = HalfPair(loaded[paths.half1][1], loaded[paths.half2][1])
+    if paths.half2 == paths.half1:
+        fourier, reference_real = HalfPair.shared(fourier.half1), HalfPair.shared(reference_real.half1)
+    if ini_high is not None:
+        log.info(
+            "Applied RELION initialLowPassFilterReferences to init reference: ini_high=%.2f A, fmask_edge=%d shells",
+            ini_high, REFERENCE_FILTER_EDGE_SHELLS,
+        )
+    return StartupReferences(
+        fourier=fourier,
+        prior_source=fourier.half1,
+        real_for_projector=reference_real if real_for_projector else None,
+        reference_real=reference_real,
+        model_pixel_size=loaded[paths.half1][2],
+    )
+
+
+def _load_k1_map(path, *, volume_shape, ini_high, real_dtype, complex_dtype, log):
+    """One K=1 reference map as the loop starts from it: ``(fourier, real64, model_pixel_size)``."""
     from recovar.utils.helpers import load_relion_volume
 
     init_vol_real = load_relion_volume(path).astype(real_dtype)
@@ -136,24 +211,13 @@ def load_k1_reference(
         real_dtype=real_dtype,
         complex_dtype=complex_dtype,
     )
-    if ini_high is not None:
-        log.info(
-            "Applied RELION initialLowPassFilterReferences to init reference: ini_high=%.2f A, fmask_edge=%d shells",
-            ini_high, REFERENCE_FILTER_EDGE_SHELLS,
-        )
     log.info(
         "Initial volume loaded from %s: shape=%s model_pixel_size=%.9g A/px",
         path,
         init_vol_real.shape,
         model_pixel_size,
     )
-    return StartupReferences(
-        fourier=HalfPair.shared(init_vol_ft),
-        prior_source=init_vol_ft,
-        real_for_projector=reference_real if real_for_projector else None,
-        reference_real=reference_real,
-        model_pixel_size=model_pixel_size,
-    )
+    return init_vol_ft, reference_real, model_pixel_size
 
 
 def load_class_references(
@@ -217,7 +281,7 @@ def load_class_references(
         fourier=HalfPair.shared(np.stack(per_class_ft, axis=0)),
         # The K-class start-up prior uses class 1 as the representative (a single spectrum).
         prior_source=per_class_ft[0],
-        real_for_projector=np.stack(per_class_real_for_projector, axis=0) if real_for_projector else None,
+        real_for_projector=HalfPair.shared(np.stack(per_class_real_for_projector, axis=0)) if real_for_projector else None,
         class_references_real=class_references_real,
         model_pixel_size=model_pixel_size,
     )
@@ -303,6 +367,38 @@ def relion_start_tau2_and_data_vs_prior(
         recovar_utils.make_radial_image(tau2 * float(box_size) ** 4, volume_shape, extend_last_frequency=True)
     ).reshape(-1)
     return mean_variance, data_vs_prior
+
+
+def relion_start_half_sets(
+    reference_real: HalfPair, initial_noise_radial, nr_particles, *, box_size, volume_shape, tau2_fudge,
+    shell_pair_counting,
+):
+    """Each auto-refine half set's start-up tau2 and data_vs_prior, as its RELION rank computes them.
+
+    Every rank runs ``initialiseDataVersusPrior`` (ml_optimiser_mpi.cpp:771) on its own ``Iref`` (the getHalf
+    reference, :func:`relion_half_reference_path`) with the noise rank 1 estimated and broadcast (:753) and its own
+    half set's particle count ``nr_particles[k]``. Returns ``(mean_variance, (data_vs_prior_1, data_vs_prior_2))``:
+    the tau2 is ``(V,)`` when the halves share one reference and ``[2, V]`` (each half's own) when they do not.
+    An empty half set 2 (``--diagnostic_single_half``, never scored) takes half set 1's.
+    """
+
+    def start(reference, count):
+        return relion_start_tau2_and_data_vs_prior(
+            reference,
+            initial_noise_radial,
+            box_size=box_size,
+            volume_shape=volume_shape,
+            tau2_fudge=tau2_fudge,
+            nr_particles=int(count),
+            shell_pair_counting=shell_pair_counting,
+        )
+
+    tau2_1, curve_1 = start(reference_real.half1, nr_particles[0])
+    if int(nr_particles[1]) == 0:
+        return tau2_1, (curve_1, curve_1)
+    tau2_2, curve_2 = start(reference_real.half2, nr_particles[1])
+    mean_variance = tau2_1 if reference_real.half2 is reference_real.half1 else jnp.stack([tau2_1, tau2_2])
+    return mean_variance, (curve_1, curve_2)
 
 
 def class_start_data_vs_prior(

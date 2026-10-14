@@ -67,7 +67,6 @@ from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 from relax.star import input_particle_table, input_poses
 from relax.star import metadata as relion_metadata
 from relax.steps import scoring_policy
-from relax.steps.half_inputs import HalfPair
 
 logging.basicConfig(
     level=logging.INFO,
@@ -722,6 +721,11 @@ def main(command=None):
     elif args.n_classes == 1:
         init_mrc_path = args.init_volume or os.path.join(args.data_dir, "reference_init_relion.mrc")
         _require_relion_convention_reference(init_mrc_path, "--init_volume")
+        for halfset in (1, 2) if resume_snapshot is None else ():
+            # The other half set's reference (RELION's getHalf); a missing one stops load_k1_reference.
+            half_path = startup_references.relion_half_reference_path(init_mrc_path, halfset)
+            if half_path != init_mrc_path and os.path.exists(half_path):
+                _require_relion_convention_reference(half_path, f"--init_volume (half set {halfset})")
         references = startup_references.load_k1_reference(
             init_mrc_path,
             volume_shape=ds.volume_shape,
@@ -730,6 +734,8 @@ def main(command=None):
             real_dtype=_init_volume_dtype,
             complex_dtype=_init_volume_complex_dtype,
             log=logger,
+            # RELION reads a reference per half set in a split-halves refinement; --continue reads none.
+            split_halves=resume_snapshot is None,
         )
         relion_model_pixel_size = references.model_pixel_size
     else:
@@ -920,6 +926,7 @@ def main(command=None):
         )
 
     relion_start_data_vs_prior = None
+    relion_start_data_vs_prior_half2 = None
     # RELION's start-up tau2 is defined against RELION's start-up noise.
     fresh_relion_start = (
         frozen_boundary is None
@@ -928,18 +935,21 @@ def main(command=None):
         and int(args.init_relion_iteration) == 0
     )
     if references.reference_real is not None and fresh_relion_start:
-        mean_variance, relion_start_data_vs_prior = startup_references.relion_start_tau2_and_data_vs_prior(
-            references.reference_real,
-            initial_noise_radial,
-            box_size=box_size,
-            volume_shape=ds.volume_shape,
-            tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
-            nr_particles=int(ds_half1.n_units),
-            shell_pair_counting=consistency_options.shell_pair_counting,
+        mean_variance, (relion_start_data_vs_prior, relion_start_data_vs_prior_half2) = (
+            startup_references.relion_start_half_sets(
+                references.reference_real,
+                initial_noise_radial,
+                (int(ds_half1.n_units), int(ds_half2.n_units)),
+                box_size=box_size,
+                volume_shape=ds.volume_shape,
+                tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
+                shell_pair_counting=consistency_options.shell_pair_counting,
+            )
         )
         logger.info(
-            "RELION start-up tau2/data_vs_prior (initialiseDataVersusPrior): %d shells with data_vs_prior > 3",
-            int(np.sum(relion_start_data_vs_prior > 3.0)),
+            "RELION start-up tau2/data_vs_prior (initialiseDataVersusPrior): %d / %d shells with data_vs_prior > 3 "
+            "(half 1 / half 2)",
+            int(np.sum(relion_start_data_vs_prior > 3.0)), int(np.sum(relion_start_data_vs_prior_half2 > 3.0)),
         )
     elif references.class_references_real is not None and fresh_relion_start and resume_snapshot is None:
         # Without it every shell entered the first scale-correction sums (subtomogram Class3D it001 group
@@ -1246,8 +1256,7 @@ def main(command=None):
         references.fourier,
         np.asarray(jax.device_get(mean_variance)),
         (
-            None if resume_snapshot is not None or references.real_for_projector is None
-            else HalfPair.shared(references.real_for_projector)
+            None if resume_snapshot is not None else references.real_for_projector
         ),
     )
     del mean_variance, references
@@ -1309,6 +1318,7 @@ def main(command=None):
             initial_poses=initial_poses,
             ini_high_angstrom=_ini_high_for_lowpass,
             init_data_vs_prior=relion_start_data_vs_prior,
+            init_data_vs_prior_half2=relion_start_data_vs_prior_half2,
             relion_init_sigma_offset_angstrom=relion_init_sigma_offset_angstrom,
             frozen_boundary=frozen_boundary,
         ),

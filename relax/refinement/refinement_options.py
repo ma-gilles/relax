@@ -647,8 +647,10 @@ class StartState:
     # (ml_optimiser.cpp:6768); None leaves it unset, as RELION without --ini_high.
     ini_high_angstrom: float | None = None
     # RELION-unit data_vs_prior spectrum of the start-up model (initialiseDataVersusPrior);
-    # it selects the iteration-1 scale-correction shells (ml_optimiser.cpp:10473).
+    # it selects the iteration-1 scale-correction shells (ml_optimiser.cpp:10473). It is half set 1's; half set 2's
+    # own (its reference and particle count, as its RELION rank computes it) gates half set 2's iteration-1 shells.
     init_data_vs_prior: Any | None = None
+    init_data_vs_prior_half2: Any | None = None
 
 
 CLEAR_JAX_CACHES_BETWEEN_ITERATIONS_ENV = "RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"
