@@ -17,6 +17,8 @@ Each test compares the changed path against the unchanged one within the float
 band (discrete outputs exactly).
 """
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -52,7 +54,7 @@ def _significance_call(monkeypatch, n_classes=2):
     )
     kwargs = dict(
         class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         rotation_log_prior=np.linspace(0.0, -0.4, 5, dtype=np.float32),
         translation_log_prior=np.linspace(
             0.0, -0.3, 7 * 3, dtype=np.float32
@@ -143,13 +145,13 @@ def _run_padding_pair(monkeypatch):
     from relax.scoring import significance
 
     args, kwargs = _significance_call(monkeypatch)
-    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     control = significance._compute_k_class_significance_batched(
-        *args, **dict(kwargs, engine_tuning=EngineTuning.from_environ()), scoring_overrides=ScoringOverrides.from_environ(),
+        *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=False)),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
-    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
     candidate = significance._compute_k_class_significance_batched(
-        *args, **dict(kwargs, engine_tuning=EngineTuning.from_environ()), scoring_overrides=ScoringOverrides.from_environ(),
+        *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=True)),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     return candidate, control
 
@@ -192,16 +194,16 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
 
     monkeypatch.setattr(pass1_operands, "process_relion_exact_coarse_half_image", record)
 
-    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     significance._compute_k_class_significance_batched(
-        *args, **dict(kwargs, engine_tuning=EngineTuning.from_environ()), scoring_overrides=ScoringOverrides.from_environ(),
+        *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=False)),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     unpadded = list(seen)
 
     seen.clear()
-    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
     significance._compute_k_class_significance_batched(
-        *args, **dict(kwargs, engine_tuning=EngineTuning.from_environ()), scoring_overrides=ScoringOverrides.from_environ(),
+        *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=True)),
+        scoring_overrides=ScoringOverrides.from_environ(),
     )
     padded = list(seen)
 

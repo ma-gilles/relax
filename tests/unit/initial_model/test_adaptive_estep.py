@@ -175,7 +175,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
             multi_shape_translations=None,
         ),
         accum_dump_dir=None,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
     engine_kwargs = {
@@ -257,7 +257,7 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
             translation_step=plan.offset_step_px,
         ),
         accum_dump_dir=None,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
     result = adaptive_estep.run_adaptive_initial_model_estep(

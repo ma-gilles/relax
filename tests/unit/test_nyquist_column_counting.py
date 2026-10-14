@@ -243,7 +243,7 @@ def test_resident_pass_refuses_the_rule_for_subtomograms_and_the_full_grid_gemm_
                 half_spectrum_scoring=True, projection_padding_factor=2, reconstruction_padding_factor=2,
                 image_corrections=None, scale_corrections=None, image_pre_shifts=None, use_float64_scoring=False,
                 random_perturbation=0.0, nyquist_column_counting="once", **refused,
-                engine_tuning=EngineTuning.from_environ(),
+                engine_tuning=EngineTuning(),
                 scoring_overrides=ScoringOverrides(),
             )
 

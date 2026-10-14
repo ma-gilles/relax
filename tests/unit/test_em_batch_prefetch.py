@@ -1,6 +1,7 @@
 """Ordered EM prefetch must preserve outputs and release stopped producers."""
 
 import threading
+from dataclasses import replace
 
 import pytest
 
@@ -84,14 +85,12 @@ def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
             yield batch
 
     monkeypatch.setattr(args[0], "iter_batches", capture)
-    # The depth read at the command boundary reaches the coarse pass's reader.
-    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "0")
-    kwargs["engine_tuning"] = EngineTuning.from_environ()
+    # The engine tuning's depth reaches the coarse pass's reader.
+    kwargs["engine_tuning"] = replace(EngineTuning(), prefetch_depth=0)
     expected = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     assert threads and set(threads) == {threading.get_ident()}
     threads.clear()
-    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "2")
-    kwargs["engine_tuning"] = EngineTuning.from_environ()
+    kwargs["engine_tuning"] = replace(EngineTuning(), prefetch_depth=2)
     actual = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())
     assert threads and threading.get_ident() not in threads
     _assert_significance_results_match(actual, expected)

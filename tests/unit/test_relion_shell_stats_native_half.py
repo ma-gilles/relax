@@ -7,6 +7,8 @@ as a full volume expanded from that storage; grids of 200M voxels or more reach 
 to RECOVAR's native half ``(x, y, z >= 0)``. Both must give RELION's sums.
 """
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -110,12 +112,13 @@ def _relion_rule_shell_stats(x_half_weight, volume_shape, grid_shape, padding_fa
 
 
 def _full_route(x_half_weight, grid_shape):
-    return np.asarray(half_volume_mstep.relion_x_half_volume_to_full(x_half_weight, grid_shape, large_grid=EngineTuning.from_environ().x_half_large_grid))
+    return np.asarray(half_volume_mstep.relion_x_half_volume_to_full(x_half_weight, grid_shape, large_grid=EngineTuning().x_half_large_grid))
 
 
-def _native_half_route(x_half_weight, grid_shape, monkeypatch):
-    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "1")
-    native_half = half_volume_mstep.relion_x_half_volume_to_public_layout(x_half_weight, grid_shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
+def _native_half_route(x_half_weight, grid_shape):
+    large_grid = EngineTuning().x_half_large_grid
+    large_grid = replace(large_grid, to_native_half=replace(large_grid.to_native_half, forced=True))
+    native_half = half_volume_mstep.relion_x_half_volume_to_public_layout(x_half_weight, grid_shape, large_grid=large_grid)
     half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(grid_shape)
     assert native_half.shape == (int(np.prod(half_shape)),)
     return native_half
@@ -170,7 +173,7 @@ def test_full_route_shell_stats_follow_relion_stored_half(grid_name, shell_round
 
 @pytest.mark.parametrize("shell_rounding", ["round", "floor"])
 @pytest.mark.parametrize("grid_name", sorted(_GRIDS))
-def test_native_half_route_shell_stats_follow_relion_stored_half(grid_name, shell_rounding, reducer, monkeypatch):
+def test_native_half_route_shell_stats_follow_relion_stored_half(grid_name, shell_rounding, reducer):
     grid = _GRIDS[grid_name]
     volume_shape, padding_factor, accumulator_volume_shape, r_max = grid
     grid_shape = _grid_shape(volume_shape, padding_factor, accumulator_volume_shape)
@@ -179,7 +182,7 @@ def test_native_half_route_shell_stats_follow_relion_stored_half(grid_name, shel
         x_half_weight, volume_shape, grid_shape, padding_factor, r_max, shell_rounding
     )
 
-    native_half = _native_half_route(x_half_weight, grid_shape, monkeypatch)
+    native_half = _native_half_route(x_half_weight, grid_shape)
     stats = _production_shell_stats(native_half, grid, shell_rounding)
 
     _assert_relion_shell_stats(stats, expected_sum, expected_count)
@@ -189,7 +192,7 @@ def test_native_half_route_shell_stats_follow_relion_stored_half(grid_name, shel
 
 
 @pytest.mark.parametrize("grid_name", ["odd_bpref_27_full_size", "odd_bpref_27_current_8", "even_padded_24_current_8"])
-def test_native_half_route_tau2_and_data_vs_prior_match_full_route(grid_name, reducer, monkeypatch):
+def test_native_half_route_tau2_and_data_vs_prior_match_full_route(grid_name, reducer):
     """The two consumers of the statistics, called as relax/refinement/iteration_loop.py calls them."""
 
     volume_shape, padding_factor, accumulator_volume_shape, r_max = _GRIDS[grid_name]
@@ -224,7 +227,7 @@ def test_native_half_route_tau2_and_data_vs_prior_match_full_route(grid_name, re
         return np.asarray(details["prior_shells"]), np.asarray(details["sigma2_shells"]), np.asarray(data_vs_prior)
 
     full = consumers(_full_route(x_half_weight, grid_shape))
-    native = consumers(_native_half_route(x_half_weight, grid_shape, monkeypatch))
+    native = consumers(_native_half_route(x_half_weight, grid_shape))
 
     for native_values, full_values in zip(native, full):
         assert np.any(full_values > 0)

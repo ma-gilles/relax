@@ -81,7 +81,7 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
             dataset, volumes, None, noise,
             fine_rotations[::2], translations, fine_rotations, fine_translations,
             rot_parent, trans_parent, disc_type, **keywords,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             scoring_overrides=ScoringOverrides.from_environ(),
         )
 

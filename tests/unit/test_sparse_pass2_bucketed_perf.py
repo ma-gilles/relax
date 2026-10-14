@@ -668,7 +668,6 @@ def test_sparse_pass2_tail_bucket_coalescing_respects_inflation_cap():
 
 
 def test_relion_windowed_projection_budget_accounts_for_centered_full_half_transient(monkeypatch):
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
     monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", raising=False)
 
     large_gpu = 80 * 1024**3
@@ -692,7 +691,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
         n_projection_pixels=default_pixels,
         projection_complex_dtype=np.complex64,
         include_abs2=False,
-        override=EngineTuning.from_environ().max_projected_rotations,
+        override=EngineTuning().max_projected_rotations,
     )
     relion_dtype = _projection_cache_budget_complex_dtype(
         np.complex64,
@@ -704,7 +703,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
         n_projection_pixels=relion_pixels,
         projection_complex_dtype=relion_dtype,
         include_abs2=False,
-        override=EngineTuning.from_environ().max_projected_rotations,
+        override=EngineTuning().max_projected_rotations,
     )
 
     assert default_cap == 51622
@@ -715,14 +714,14 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
         n_projection_pixels=default_pixels,
         projection_complex_dtype=np.complex128,
         include_abs2=False,
-        override=EngineTuning.from_environ().max_projected_rotations,
+        override=EngineTuning().max_projected_rotations,
     )
     relion_cap64 = _max_projected_rotations_per_call_for_pass(
         device_memory_bytes=large_gpu,
         n_projection_pixels=relion_pixels,
         projection_complex_dtype=np.complex128,
         include_abs2=False,
-        override=EngineTuning.from_environ().max_projected_rotations,
+        override=EngineTuning().max_projected_rotations,
     )
 
     assert default_cap64 == 25811
@@ -743,7 +742,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
             n_projection_pixels=relion_pixels,
             projection_complex_dtype=np.complex64,
             include_abs2=False,
-            override=EngineTuning.from_environ().max_projected_rotations,
+            override=EngineTuning().max_projected_rotations,
         )
         is None
     )
@@ -907,7 +906,7 @@ def test_relion_windowed_projection_cache_estimate_admits_retained_window_cache(
             use_relion_projector=True,
         ),
         include_abs2=False,
-        override=EngineTuning.from_environ().max_projected_rotations,
+        override=EngineTuning().max_projected_rotations,
     )
     assert per_call_cap is not None
     assert per_call_cap < n_fine_rot
@@ -951,15 +950,14 @@ def test_single_class_sparse_pass2_bucket_quantum_can_coarsen_pathological_tail(
     assert default_sizes[-1] >= counts[-1]
 
 
-def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize(monkeypatch):
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
+def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize():
     n_half = 128 * (128 // 2 + 1)
     cap = _max_projected_rotations_per_call_for_pass(
         device_memory_bytes=80 * 1024**3,
         n_projection_pixels=n_half,
         projection_complex_dtype=np.complex64,
         include_abs2=False,
-        override=EngineTuning.from_environ().max_projected_rotations,
+        override=EngineTuning().max_projected_rotations,
     )
     assert cap is not None
     assert cap < 90_112
@@ -970,19 +968,18 @@ def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize(monke
         n_projection_pixels=n_half,
         projection_complex_dtype=np.complex64,
         include_abs2=True,
-        override=EngineTuning.from_environ().max_projected_rotations,
+        override=EngineTuning().max_projected_rotations,
     )
     assert cap_with_abs2 is not None
     assert cap_with_abs2 < cap
 
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "1234")
     assert (
         _max_projected_rotations_per_call_for_pass(
             device_memory_bytes=80 * 1024**3,
             n_projection_pixels=n_half,
             projection_complex_dtype=np.complex64,
             include_abs2=False,
-            override=EngineTuning.from_environ().max_projected_rotations,
+            override=1234,
         )
         == 1234
     )

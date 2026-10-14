@@ -9,12 +9,12 @@ production-shaped 8x8 fixture of ``test_resident_pass2_driver``.
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.engine_settings import RESIDENT_PRODUCTION_ENGINE
 from helpers.float_compare import assert_matches
 from test_resident_zero_oversampling import _rel_l2, _resident_production_env, requires_resident_gpu  # noqa: F401
 
 import relax.fine_pass.resident_pass2 as rp
 from relax.fine_pass import resident_block_programs
-from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
@@ -69,11 +69,11 @@ def test_resident_without_scale_groups_keeps_the_scale_one_wavg():
     """
 
     grouped = rp.compute_pass2_stats_resident(**_vdam_args(
-        residual=True, groups=True), engine_tuning=EngineTuning.from_environ(),
+        residual=True, groups=True), engine_tuning=RESIDENT_PRODUCTION_ENGINE,
         scoring_overrides=ScoringOverrides.from_environ(),
     )
     ungrouped = rp.compute_pass2_stats_resident(**_vdam_args(
-        residual=True, groups=False), engine_tuning=EngineTuning.from_environ(),
+        residual=True, groups=False), engine_tuning=RESIDENT_PRODUCTION_ENGINE,
         scoring_overrides=ScoringOverrides.from_environ(),
     )
     np.testing.assert_array_equal(grouped.hard_assignment, ungrouped.hard_assignment)
@@ -209,9 +209,9 @@ def test_resident_k1_slots_split_the_one_slot_pass(split):
     args = _vdam_args(residual=True, groups=False)
     n_images = len(args["significant_sample_indices"])
     group_ids = np.arange(n_images) % 2 if split == "alternate" else np.zeros(n_images, dtype=np.int64)
-    plain = rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ())
+    plain = rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ())
     grouped = rp.compute_pass2_stats_resident(
-        **args, reconstruction_group_ids=group_ids, reconstruction_group_count=2, engine_tuning=EngineTuning.from_environ(),
+        **args, reconstruction_group_ids=group_ids, reconstruction_group_count=2, engine_tuning=RESIDENT_PRODUCTION_ENGINE,
         scoring_overrides=ScoringOverrides.from_environ(),
     )
     np.testing.assert_array_equal(plain.hard_assignment, grouped.hard_assignment)
@@ -240,7 +240,7 @@ def test_resident_k2_slots_split_each_class():
         return rp.compute_k_class_pass2_stats_resident(
             experiment_dataset, volumes, noise_variance, translations, supports, nside_level, disc_type,
             rotation_log_priors_by_class=priors, **call, **extra,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=RESIDENT_PRODUCTION_ENGINE,
             scoring_overrides=ScoringOverrides.from_environ(),
         )
 

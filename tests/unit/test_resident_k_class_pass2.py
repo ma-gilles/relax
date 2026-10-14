@@ -11,9 +11,12 @@ default band, while maps and noise sums change reduction order.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.engine_settings import RESIDENT_PRODUCTION_ENGINE
 from helpers.float_compare import assert_matches
 from test_resident_pass2_driver import _driver_fixture_args, requires_resident_gpu
 
@@ -26,7 +29,6 @@ from relax.fine_pass import (
 )
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.resident_candidates import CapacityChunk
-from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
@@ -236,7 +238,7 @@ def _k_class_args(n_classes, seed=20260925):
     return args, volumes, supports, priors
 
 
-def _resident(args, volumes, supports, priors):
+def _resident(args, volumes, supports, priors, engine_tuning=RESIDENT_PRODUCTION_ENGINE):
     resident_args = dict(args)
     experiment_dataset = resident_args.pop("experiment_dataset")
     noise_variance = resident_args.pop("noise_variance")
@@ -251,7 +253,7 @@ def _resident(args, volumes, supports, priors):
         resident_args.pop("disc_type"),
         rotation_log_priors_by_class=priors,
         **resident_args,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=engine_tuning,
         scoring_overrides=ScoringOverrides.from_environ(),
     )
 
@@ -266,9 +268,6 @@ def _rel_l2(a, b):
 @pytest.fixture
 def _resident_production_env(monkeypatch):
     monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")
 
 
 @requires_resident_gpu
@@ -284,7 +283,7 @@ def test_duplicated_class_is_the_k1_pass(_resident_production_env):
     """
 
     args = _driver_fixture_args()
-    single = rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ())
+    single = rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ())
     k_args = dict(args)
     support = k_args.pop("significant_sample_indices")
     prior = k_args.pop("rotation_log_prior")
@@ -397,7 +396,7 @@ def test_k1_pass_backprojects_every_row(_resident_production_env, monkeypatch):
     """Auto-refine (K=1) keeps the per-row backprojection even when the sums would fit."""
 
     flushes = _count_projection_sum_flushes(monkeypatch)
-    rp.compute_pass2_stats_resident(**_driver_fixture_args(), engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ())
+    rp.compute_pass2_stats_resident(**_driver_fixture_args(), engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ())
     assert not flushes
 
 
@@ -486,8 +485,8 @@ def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(_resident_produ
     winner back to its rotation (bench 14694988, Class3D K4 100k: a missing table crashed).
     """
 
-    def run():
-        return _resident(*_k_class_args(3))
+    def run(engine_tuning=RESIDENT_PRODUCTION_ENGINE):
+        return _resident(*_k_class_args(3), engine_tuning=engine_tuning)
 
     if streamed:
         monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
@@ -502,9 +501,7 @@ def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(_resident_produ
         return real_lone(*a, **k)
 
     monkeypatch.setattr(rp, "_run_lone_resident_chunk", spy)
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "16")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "16")
-    lone = run()
+    lone = run(replace(RESIDENT_PRODUCTION_ENGINE, resident_row_capacities=(16,), mstep_block_rows=16))
     assert lone_calls, "the 16-row ladder made no lone chunk"
 
     np.testing.assert_array_equal(whole.per_class_hard_assignments, lone.per_class_hard_assignments)

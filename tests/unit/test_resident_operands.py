@@ -739,8 +739,7 @@ def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
     gib = 1024**3
     from relax.runtime.engine_tuning import EngineTuning
 
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", raising=False)
-    unset = EngineTuning.from_environ().resident_operand_max_bytes
+    unset = EngineTuning().resident_operand_max_bytes
     assert unset is None
     # A grown pool: nvidia-smi sees 10 GiB free, the pool holds 50 GiB unused,
     # the allocator could hand out 70 GiB; the device bound is 60 GiB.
@@ -750,9 +749,9 @@ def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
     assert device_available_bytes(None, None, None) is None
     assert device_available_bytes(12 * gib, None, None) == 12 * gib
     assert resident_operands_max_bytes(None, unset) == 6 * gib
+    assert resident_operands_max_bytes(available, 3 * gib) == 3 * gib
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", f" {3 * gib} ")
-    override = EngineTuning.from_environ().resident_operand_max_bytes
-    assert resident_operands_max_bytes(available, override) == 3 * gib
+    assert EngineTuning.from_environ().resident_operand_max_bytes == 3 * gib
     for bad in ("0", "-5", "lots"):
         monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", bad)
         with pytest.raises(ValueError):
@@ -770,8 +769,8 @@ def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
     from relax.runtime.engine_tuning import EngineTuning
 
     monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", raising=False)
-    configured = EngineTuning.from_environ().prepare_image_batch
-    assert configured == 256 == EngineTuning().prepare_image_batch
+    assert EngineTuning.from_environ().prepare_image_batch == 256 == EngineTuning().prepare_image_batch
+    configured = EngineTuning().prepare_image_batch
     box = (380, 380)
     per_image = resident_prepare_image_bytes(box)
     assert per_image == 192 * 380 * 191
@@ -780,8 +779,9 @@ def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
     assert resident_prepare_batch_size(10_000 * per_image, box, configured) == 256
     # The admission already counted the smallest batch, so the batch never drops below it.
     assert resident_prepare_batch_size(0, box, configured) == 16
+    assert resident_prepare_batch_size(10_000 * per_image, box, 64) == 64
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", "64")
-    assert resident_prepare_batch_size(10_000 * per_image, box, EngineTuning.from_environ().prepare_image_batch) == 64
+    assert EngineTuning.from_environ().prepare_image_batch == 64
     for bad in ("0", "x"):
         monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", bad)
         with pytest.raises(ValueError):

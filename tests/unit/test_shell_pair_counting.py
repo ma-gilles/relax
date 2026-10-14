@@ -8,6 +8,8 @@ which makes each statistic the one of the whole Fourier grid, every voxel once. 
 are plain numpy on the raw x-half storage or on the whole grid; they share no code with production.
 """
 
+from dataclasses import replace
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -132,14 +134,14 @@ def _whole_grid_stats(x_half, grid, shell_rounding):
     )
 
 
-def _public_layouts(x_half, monkeypatch):
+def _public_layouts(x_half):
     """The two layouts an x-half accumulator reaches the statistics in: full, and (large grids) native half."""
     size = x_half.shape[0]
     flat = np.ascontiguousarray(x_half).reshape(-1)
-    full = np.asarray(half_volume_mstep.relion_x_half_volume_to_full(flat, (size,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid))
-    with monkeypatch.context() as patch:
-        patch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "1")
-        native_half = np.asarray(half_volume_mstep.relion_x_half_volume_to_public_layout(flat, (size,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid))
+    large_grid = EngineTuning().x_half_large_grid
+    full = np.asarray(half_volume_mstep.relion_x_half_volume_to_full(flat, (size,) * 3, large_grid=large_grid))
+    native_half_grid = replace(large_grid, to_native_half=replace(large_grid.to_native_half, forced=True))
+    native_half = np.asarray(half_volume_mstep.relion_x_half_volume_to_public_layout(flat, (size,) * 3, large_grid=native_half_grid))
     assert native_half.size == size * size * (size // 2 + 1) and full.size == size**3
     return {"full": full, "native_half": native_half}
 
@@ -159,7 +161,7 @@ def reducer(request, monkeypatch):
 @pytest.mark.parametrize("counting", COUNTINGS)
 @pytest.mark.parametrize("grid_name", sorted(GRIDS))
 def test_weight_shell_statistics_follow_the_counting_rule_on_both_layouts(
-    grid_name, counting, shell_rounding, reducer, monkeypatch
+    grid_name, counting, shell_rounding, reducer
 ):
     jax.config.update("jax_enable_x64", True)
     grid = GRIDS[grid_name]
@@ -167,7 +169,7 @@ def test_weight_shell_statistics_follow_the_counting_rule_on_both_layouts(
     x_half = _x_half(_grid_size(grid), seed=3)
     expected_sum, expected_count = _stored_half_stats(x_half, grid, shell_rounding, counting)
 
-    for layout, weight in _public_layouts(x_half, monkeypatch).items():
+    for layout, weight in _public_layouts(x_half).items():
         stats = rr.compute_relion_weight_shell_stats(
             weight,
             volume_shape,
@@ -229,7 +231,7 @@ def test_default_counting_is_relions_and_an_unknown_rule_is_refused():
     jax.config.update("jax_enable_x64", True)
     grid = GRIDS["odd_bpref_19_current_4"]
     volume_shape, padding_factor, accumulator_volume_shape, r_max = grid
-    weight = half_volume_mstep.relion_x_half_volume_to_full(_x_half(19, seed=3).reshape(-1), (19,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid)
+    weight = half_volume_mstep.relion_x_half_volume_to_full(_x_half(19, seed=3).reshape(-1), (19,) * 3, large_grid=EngineTuning().x_half_large_grid)
     kwargs = dict(
         padding_factor=padding_factor, r_max=r_max, full_half_axis=RELION_X_AXIS,
         accumulator_volume_shape=accumulator_volume_shape,
@@ -244,7 +246,7 @@ def test_default_counting_is_relions_and_an_unknown_rule_is_refused():
 
 @pytest.mark.parametrize("counting", COUNTINGS)
 @pytest.mark.parametrize("grid_name", ["odd_bpref_19_full_size", "odd_bpref_11_current_4", "even_padded_16_current_4"])
-def test_tau2_and_data_vs_prior_use_the_counted_shell_mean(grid_name, counting, reducer, monkeypatch):
+def test_tau2_and_data_vs_prior_use_the_counted_shell_mean(grid_name, counting, reducer):
     """sigma2 = 1 / (pf^3 mean weight), tau2 = SSNR sigma2 and data_vs_prior = mean weight tau2 pf^3."""
     jax.config.update("jax_enable_x64", True)
     grid = GRIDS[grid_name]
@@ -262,7 +264,7 @@ def test_tau2_and_data_vs_prior_use_the_counted_shell_mean(grid_name, counting, 
     data_vs_prior[r_max + 1 :] = 0.0
 
     results = {}
-    for layout, weight in _public_layouts(x_half, monkeypatch).items():
+    for layout, weight in _public_layouts(x_half).items():
         _, _, details = rr.compute_relion_tau2_from_weights(
             weight, weight, fsc, volume_shape,
             padding_factor=padding_factor, r_max=r_max, return_details=True, full_half_axis=RELION_X_AXIS,
@@ -346,13 +348,13 @@ def _half_accumulators(size, seed):
 @pytest.mark.parametrize(
     "grid_name", ["odd_bpref_19_full_size", "odd_bpref_19_current_4", "odd_bpref_11_current_4", "odd_bpref_15_box_6"]
 )
-def test_backprojector_fsc_follows_the_counting_rule_on_both_layouts(grid_name, counting, monkeypatch):
+def test_backprojector_fsc_follows_the_counting_rule_on_both_layouts(grid_name, counting):
     grid = GRIDS[grid_name]
     volume_shape, padding_factor, accumulator_volume_shape, r_max = grid
     data, weights = _half_accumulators(_grid_size(grid), seed=13)
     expected = _downsampled_fsc(data, weights, grid, counting)
 
-    layouts = [_public_layouts(values, monkeypatch) for values in (*data, *weights)]
+    layouts = [_public_layouts(values) for values in (*data, *weights)]
     for layout in ("full", "native_half"):
         y0, y1, w0, w1 = (values[layout] for values in layouts)
         fsc = rr.compute_relion_fsc_from_backprojector(
@@ -383,7 +385,7 @@ def test_backprojector_fsc_counting_changes_the_curve_and_the_default_is_relions
     once = _downsampled_fsc(data, weights, grid, "once")
     assert np.max(np.abs(relion[1:] - once[1:])) > 1e-4
     y0, y1, w0, w1 = (
-        np.asarray(half_volume_mstep.relion_x_half_volume_to_full(values.reshape(-1), (19,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid))
+        np.asarray(half_volume_mstep.relion_x_half_volume_to_full(values.reshape(-1), (19,) * 3, large_grid=EngineTuning().x_half_large_grid))
         for values in (*data, *weights)
     )
     kwargs = dict(

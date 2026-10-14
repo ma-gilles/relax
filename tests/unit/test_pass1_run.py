@@ -14,6 +14,7 @@ from helpers.float_compare import assert_matches
 from test_em_stage_glue_programs import _assert_significance_results_match, _significance_call
 
 from relax.diagnostics.coarse_gaussian_diagnostics import SignificanceDiagnostics
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.scoring import significance
 from relax.scoring.pass1_assembly import log_batch_timing
@@ -35,17 +36,16 @@ def _cpu_stand_ins_only():
         pytest.skip("CPU-only contract: the stage tests run on the exact-operand harness's CPU stand-ins")
 
 TAIL_START = 6  # images 0-2 and 3-5 fill two batches; image 6 is the tail
+_ENGINE = dataclasses.replace(EngineTuning(), prefetch_depth=0)  # the batches are read in the calling thread
 
 
 @pytest.fixture
 def make(monkeypatch):
     """``make(n_classes, **request_overrides)`` -> ``(plan, args, kwargs)`` of a planned pass on the harness."""
 
-    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "0")
-
     def build(n_classes=2, **overrides):
         args, kwargs = _significance_call(monkeypatch, n_classes=n_classes)
-        kwargs.update(overrides)
+        kwargs.update({"engine_tuning": _ENGINE, **overrides})
         return plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())), args, kwargs
 
     return build
@@ -90,9 +90,8 @@ def test_the_tail_batch_is_repeat_padded_to_the_full_extent_but_keeps_its_one_im
     assert batch.operands.shifted.shape[0] == 3
 
 
-def test_without_padding_the_tail_batch_has_its_own_extent(make, monkeypatch):
-    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
-    plan, args, _ = make()
+def test_without_padding_the_tail_batch_has_its_own_extent(make):
+    plan, args, _ = make(engine_tuning=dataclasses.replace(_ENGINE, coarse_pad_final_image_batch=False))
     batch = _prepared(plan, args)
     assert batch.inputs.batch_size == 1 and batch.operands.shifted.shape[0] == 1
 

@@ -94,7 +94,7 @@ def _given_pose_pass(dataset, volumes, noise, args, grids, supports, translation
         given_supports=supports,
         **given,
         **keywords,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
 

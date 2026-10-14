@@ -144,8 +144,8 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
     bp_weight = enforce_relion_half_volume_x0_hermitian_host(
         bp_weight.reshape(-1), compact_shape
     ).reshape(half_shape)
-    public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), compact_shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
-    public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), compact_shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
+    public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), compact_shape, large_grid=EngineTuning().x_half_large_grid)
+    public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), compact_shape, large_grid=EngineTuning().x_half_large_grid)
 
     actual = arrays_to_accumulators(
         [public_data],
@@ -243,7 +243,7 @@ def _projector_config(n_classes, **overrides):
         sampling=estep_sampling_stub(),
     )
     values.update(overrides)
-    return InitialModelEstepConfig(**values, accum_dump_dir=None, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ())
+    return InitialModelEstepConfig(**values, accum_dump_dir=None, engine_tuning=EngineTuning(), scoring_overrides=ScoringOverrides.from_environ())
 
 
 def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_adaptive_route(monkeypatch):
@@ -464,7 +464,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         relion_projector_r_max=r_max,
         sampling=estep_sampling_stub(),
         accum_dump_dir=None,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
 
@@ -490,7 +490,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
         relion_projector_r_max=2,
         sampling=estep_sampling_stub(),
         accum_dump_dir=None,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
 

@@ -3,6 +3,8 @@ builds the run's options (code rule 5), and reaches its consumer as an argument.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from helpers.tiny_main import controller_inputs
 from helpers.tiny_refinement import run_tiny_refinement
@@ -18,6 +20,13 @@ def _from_environ(monkeypatch, name, value):
     else:
         monkeypatch.setenv(name, value)
     return RefinementEnvironment.from_environ()
+
+
+def _unset_relax_environment(monkeypatch):
+    """Delete every RELAX_ and RECOVAR_ variable for the test."""
+    for name in list(os.environ):
+        if name.startswith(("RELAX_", "RECOVAR_")):
+            monkeypatch.delenv(name)
 
 
 def _command_environment(monkeypatch, tmp_path, name, value):
@@ -308,6 +317,15 @@ def test_engine_tuning_is_read_once(monkeypatch):
 def test_engine_tuning_reaches_the_command(monkeypatch, tmp_path):
     env = _command_environment(monkeypatch, tmp_path, "RELAX_EM_COMPILE_AHEAD", "1")
     assert env.engine.compile_ahead.enabled is True
+
+
+def test_engine_tuning_defaults_are_the_unset_environment(monkeypatch):
+    """``EngineTuning()`` is what the command reads with no variable set: tests pass it (or a ``replace`` of it)
+    for the command's default engine settings."""
+    from relax.runtime.engine_tuning import EngineTuning
+
+    _unset_relax_environment(monkeypatch)
+    assert EngineTuning.from_environ() == EngineTuning()
 
 
 def test_engine_tuning_reaches_the_dense_engine(monkeypatch):

@@ -74,18 +74,17 @@ def test_cache_build_rotations_per_call_scales_scoring_budget(monkeypatch):
 
     _clear_env(monkeypatch)
     assert _projection_cache_build_max_rotations_per_call(
-        809, 294912, override=EngineTuning.from_environ().max_projected_rotations,
+        809, 294912, override=EngineTuning().max_projected_rotations,
     ) == 4 * 809
     # never more rotations than the fine grid holds, never below one
     assert _projection_cache_build_max_rotations_per_call(
-        809, 1000, override=EngineTuning.from_environ().max_projected_rotations,
+        809, 1000, override=EngineTuning().max_projected_rotations,
     ) == 1000
     assert _projection_cache_build_max_rotations_per_call(
-        None, 294912, override=EngineTuning.from_environ().max_projected_rotations,
+        None, 294912, override=EngineTuning().max_projected_rotations,
     ) is None
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", "4096")
     assert _projection_cache_build_max_rotations_per_call(
-        809, 294912, override=EngineTuning.from_environ().max_projected_rotations,
+        809, 294912, override=4096,
     ) == 4096
 
 

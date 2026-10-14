@@ -4,12 +4,15 @@ The pure stages are called on small arrays. The route and the planner's refusals
 harness (``helpers.exact_pass1_harness``), whose CUDA stand-ins let the planner build its records without a GPU.
 """
 
+from dataclasses import replace
+
 import jax
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from test_em_stage_glue_programs import _significance_call
 
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.scoring.pass1_batch import resolve_noise_tables
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
@@ -363,11 +366,10 @@ def test_the_tree_rescore_is_refused_where_it_cannot_run(monkeypatch, overrides,
         plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ()))
 
 
-def test_the_tail_batch_is_padded_by_default_and_the_environment_can_turn_it_off(monkeypatch):
+def test_the_tail_batch_is_padded_by_default_and_the_engine_tuning_can_turn_it_off(monkeypatch):
     plan, _, _ = _plan(monkeypatch)
     assert plan.batch_input_plan.pad_final_image_batch is True
-    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
-    unpadded, _, _ = _plan(monkeypatch)
+    unpadded, _, _ = _plan(monkeypatch, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=False))
     assert unpadded.batch_input_plan.pad_final_image_batch is False
     explicit, _, _ = _plan(monkeypatch, pad_final_image_batch=True)
     assert explicit.batch_input_plan.pad_final_image_batch is True

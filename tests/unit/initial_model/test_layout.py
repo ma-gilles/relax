@@ -229,8 +229,8 @@ def test_relion_x_public_output_to_bpref_exactly_inverts_shared_public_layout():
     bp_weight = enforce_relion_half_volume_x0_hermitian_host(
         bp_weight.reshape(-1), (compact_size,) * 3
     ).reshape(half_shape)
-    public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), (compact_size,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid)
-    public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), (compact_size,) * 3, large_grid=EngineTuning.from_environ().x_half_large_grid)
+    public_data = relion_x_half_volume_to_full(bp_data.reshape(-1), (compact_size,) * 3, large_grid=EngineTuning().x_half_large_grid)
+    public_weight = relion_x_half_volume_to_full(bp_weight.reshape(-1), (compact_size,) * 3, large_grid=EngineTuning().x_half_large_grid)
 
     actual_data, actual_weight = relion_x_public_output_to_bpref(
         public_data,

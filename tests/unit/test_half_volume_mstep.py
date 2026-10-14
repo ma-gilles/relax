@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import logging
 import re
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -22,6 +23,12 @@ from relax.runtime.engine_tuning import EngineTuning, XHalfLargeGrid
 from relax.runtime.scoring_overrides import X_HALF_MSTEP_DOUBLE_ENV, ScoringOverrides
 
 pytestmark = pytest.mark.unit
+
+
+def _large_grid(**forced):
+    """The default large-grid routes with the named switches forced on (True) or off (False)."""
+    default = XHalfLargeGrid()
+    return replace(default, **{name: replace(getattr(default, name), forced=value) for name, value in forced.items()})
 
 
 def _random_complex(shape, seed=0, dtype=np.complex64):
@@ -94,7 +101,6 @@ def test_relion_x_half_public_layout_guard_avoids_full_expand_when_forced(monkey
     def fail_half_volume_to_full_volume(*args, **kwargs):
         raise AssertionError("JAX half-volume expansion should not be used")
 
-    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "1")
     monkeypatch.setattr(
         half_volume_mstep.fourier_transform_utils,
         "half_volume_to_full_volume",
@@ -104,7 +110,7 @@ def test_relion_x_half_public_layout_guard_avoids_full_expand_when_forced(monkey
     native_half = half_volume_mstep.relion_x_half_volume_to_public_layout(
         jnp.asarray(half_grid).reshape(-1),
         volume_shape,
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=_large_grid(to_native_half=True),
     )
     actual = np.asarray(original_half_volume_to_full_volume(jnp.asarray(native_half).reshape(half_shape), volume_shape))
 
@@ -282,12 +288,9 @@ def test_enforce_relion_x0_hermitian_uses_centered_odd_grid_partner():
     assert np.max(np.abs(unshifted_plane - expected_plane)) > 1e-3
 
 
-def test_device_pair_programs_match_the_single_accumulator_route(monkeypatch):
+def test_device_pair_programs_match_the_single_accumulator_route():
     """The y/ctf pair programs give each accumulator's single-array result."""
 
-    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
-    monkeypatch.setenv("RELAX_RELION_X_HALF_FULL_HOST", "0")
-    monkeypatch.setenv("RELAX_RELION_X_HALF_HOST_X0", "0")
     volume_shape = (9, 9, 9)
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
     Ft_y = jnp.asarray(_random_complex(half_shape, seed=93)).reshape(-1)
@@ -295,15 +298,15 @@ def test_device_pair_programs_match_the_single_accumulator_route(monkeypatch):
 
     got_y, got_ctf = half_volume_mstep.enforce_half_volume_x0(
         Ft_y, Ft_ctf, volume_shape, logger=logging.getLogger(__name__), label="unit"
-    , large_grid=EngineTuning.from_environ().x_half_large_grid)
+    , large_grid=_large_grid(to_native_half=False, full_host=False, host_x0=False))
     for got, single in ((got_y, Ft_y), (got_ctf, Ft_ctf)):
         expected = half_volume_mstep.enforce_relion_half_volume_x0_hermitian(single, volume_shape)
         assert got.dtype == expected.dtype
         assert_matches(got, expected)
 
-    full_y, full_ctf = half_volume_mstep.relion_x_half_accumulators_to_public_layout(got_y, got_ctf, volume_shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
+    full_y, full_ctf = half_volume_mstep.relion_x_half_accumulators_to_public_layout(got_y, got_ctf, volume_shape, large_grid=_large_grid(to_native_half=False, full_host=False, host_x0=False))
     for got, single in ((full_y, got_y), (full_ctf, got_ctf)):
-        expected = half_volume_mstep.relion_x_half_volume_to_public_layout(single, volume_shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
+        expected = half_volume_mstep.relion_x_half_volume_to_public_layout(single, volume_shape, large_grid=_large_grid(to_native_half=False, full_host=False, host_x0=False))
         assert got.dtype == expected.dtype
         assert_matches(got, expected)
 
@@ -321,7 +324,6 @@ def test_enforce_half_volume_x0_can_force_host_path(monkeypatch):
         half_volume_mstep.enforce_relion_half_volume_x0_hermitian(jnp.asarray(Ft_ctf).reshape(-1), volume_shape)
     )
 
-    monkeypatch.setenv("RELAX_RELION_X_HALF_HOST_X0", "0")
 
     def fail_device_enforcement(*args, **kwargs):
         raise AssertionError("device x0 enforcement should not run for large-grid host path")
@@ -335,7 +337,7 @@ def test_enforce_half_volume_x0_can_force_host_path(monkeypatch):
         logger=logging.getLogger(__name__),
         label="unit",
         force_host=True,
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=_large_grid(host_x0=False),
     )
 
     assert isinstance(got_y, np.ndarray)
@@ -344,24 +346,22 @@ def test_enforce_half_volume_x0_can_force_host_path(monkeypatch):
     np.testing.assert_allclose(got_ctf, expected_ctf, rtol=1e-6, atol=1e-6)
 
 
-def test_relion_x_half_public_layout_shape_switch(monkeypatch):
+def test_relion_x_half_public_layout_shape_switch():
     volume_shape = (4, 4, 4)
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
     half_grid = _valid_relion_x_half_grid(volume_shape, seed=789)
 
-    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
     full = half_volume_mstep.relion_x_half_volume_to_public_layout(
         jnp.asarray(half_grid).reshape(-1),
         volume_shape,
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=_large_grid(to_native_half=False),
     )
     assert full.shape == (int(np.prod(volume_shape)),)
 
-    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "1")
     native_half = half_volume_mstep.relion_x_half_volume_to_public_layout(
         jnp.asarray(half_grid).reshape(-1),
         volume_shape,
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=_large_grid(to_native_half=True),
     )
     assert native_half.shape == (int(np.prod(half_shape)),)
 
@@ -374,8 +374,6 @@ def test_relion_x_half_public_full_layout_uses_host_expand_when_forced(monkeypat
     def fail_half_volume_to_full_volume(*args, **kwargs):
         raise AssertionError("JAX half-volume expansion should not be used")
 
-    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
-    monkeypatch.setenv("RELAX_RELION_X_HALF_FULL_HOST", "0")
     monkeypatch.setattr(
         half_volume_mstep.fourier_transform_utils,
         "half_volume_to_full_volume",
@@ -386,7 +384,7 @@ def test_relion_x_half_public_full_layout_uses_host_expand_when_forced(monkeypat
         jnp.asarray(half_grid).reshape(-1),
         volume_shape,
         force_host=True,
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=_large_grid(to_native_half=False, full_host=False),
     )
 
     assert isinstance(full, np.ndarray)
@@ -394,10 +392,9 @@ def test_relion_x_half_public_full_layout_uses_host_expand_when_forced(monkeypat
     np.testing.assert_allclose(full, expected, rtol=1e-6, atol=1e-5)
 
 
-def test_relion_x_half_public_full_tau2_shell_stats_use_relion_x_axis(monkeypatch):
+def test_relion_x_half_public_full_tau2_shell_stats_use_relion_x_axis():
     """Tau2 shell stats must match RELION x-half storage after public-full expansion."""
 
-    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
     volume_shape = (8, 8, 8)
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
     rng = np.random.default_rng(112)
@@ -405,7 +402,7 @@ def test_relion_x_half_public_full_tau2_shell_stats_use_relion_x_axis(monkeypatc
     relion_x_public_full = half_volume_mstep.relion_x_half_volume_to_full(
         jnp.asarray(relion_x_half_weight).reshape(-1),
         volume_shape,
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=_large_grid(to_native_half=False),
     )
     fsc = np.full(volume_shape[0] // 2 + 1, 0.5, dtype=np.float64)
 
@@ -1370,7 +1367,6 @@ def test_enforce_half_volume_x0_uses_host_path_for_large_grids(monkeypatch):
         half_volume_mstep.enforce_relion_half_volume_x0_hermitian(jnp.asarray(Ft_ctf).reshape(-1), volume_shape)
     )
 
-    monkeypatch.setenv("RELAX_RELION_X_HALF_HOST_X0", "1")
 
     def fail_device_enforcement(*args, **kwargs):
         raise AssertionError("device x0 enforcement should not run for large-grid host path")
@@ -1383,7 +1379,7 @@ def test_enforce_half_volume_x0_uses_host_path_for_large_grids(monkeypatch):
         volume_shape,
         logger=logging.getLogger(__name__),
         label="unit",
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=_large_grid(host_x0=True),
     )
 
     assert isinstance(got_y, np.ndarray)
@@ -1406,16 +1402,16 @@ def test_physical_finalize_then_crop_matches_crop_then_finalize(logical, physica
     half = physical * physical * (physical // 2 + 1)
     Ft_y = jnp.asarray(_random_complex((half,), seed=physical))
     Ft_ctf = jnp.asarray(np.random.default_rng(logical).random(half).astype(np.float32))
-    assert half_volume_mstep.physical_bpref_finalize_applies(physical_shape, logical_shape, "C1", large_grid=EngineTuning.from_environ().x_half_large_grid)
-    assert not half_volume_mstep.physical_bpref_finalize_applies(physical_shape, logical_shape, "D2", large_grid=EngineTuning.from_environ().x_half_large_grid)
+    assert half_volume_mstep.physical_bpref_finalize_applies(physical_shape, logical_shape, "C1", large_grid=EngineTuning().x_half_large_grid)
+    assert not half_volume_mstep.physical_bpref_finalize_applies(physical_shape, logical_shape, "D2", large_grid=EngineTuning().x_half_large_grid)
 
     def finalize(y, c, shape):
         y, c = half_volume_mstep.finalize_half_volume_bpref(
             y, c, shape, logger=logger, label="test", symmetry_label="C1", relion_x_half=True,
             symmetry_chunk_voxels=16 * 1024 * 1024,
-            large_grid=EngineTuning.from_environ().x_half_large_grid,
+            large_grid=EngineTuning().x_half_large_grid,
         )
-        return half_volume_mstep.relion_x_half_accumulators_to_public_layout(y, c, shape, large_grid=EngineTuning.from_environ().x_half_large_grid)
+        return half_volume_mstep.relion_x_half_accumulators_to_public_layout(y, c, shape, large_grid=EngineTuning().x_half_large_grid)
 
     crop = half_volume_mstep.crop_relion_x_half_accumulator
     expected = finalize(crop(Ft_y, physical_shape, logical_shape), crop(Ft_ctf, physical_shape, logical_shape), logical_shape)

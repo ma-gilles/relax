@@ -235,18 +235,17 @@ def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks(
         current_size=100,
     )
 
-    # The fraction read at the boundary reaches the planner; unset or blank is the default.
+    # Unset or blank is the default fraction.
     monkeypatch.delenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", raising=False)
-    default = estimate_relion_em_batch_sizes(
-        **common, projection_fraction=EngineTuning.from_environ().em_batch_projection_fraction,
-    )
+    assert EngineTuning.from_environ().em_batch_projection_fraction == EngineTuning().em_batch_projection_fraction
     monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", " ")
     assert EngineTuning.from_environ().em_batch_projection_fraction == 0.20
 
-    monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", "0.40")
-    expanded = estimate_relion_em_batch_sizes(
-        **common, projection_fraction=EngineTuning.from_environ().em_batch_projection_fraction,
+    # The engine tuning's fraction reaches the planner.
+    default = estimate_relion_em_batch_sizes(
+        **common, projection_fraction=EngineTuning().em_batch_projection_fraction,
     )
+    expanded = estimate_relion_em_batch_sizes(**common, projection_fraction=0.40)
 
     assert expanded.rotation_block_size > default.rotation_block_size
     assert expanded.rotation_block_size <= common["requested_rotation_block_size"]

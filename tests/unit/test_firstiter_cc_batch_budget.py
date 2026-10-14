@@ -305,7 +305,7 @@ def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_norma
 
 
 def _budget() -> int:
-    return EngineTuning.from_environ().firstiter_cc_recon_complex_budget
+    return EngineTuning().firstiter_cc_recon_complex_budget
 
 
 def test_firstiter_cc_budget_preserves_256_k4_completion_batch_size():
@@ -321,15 +321,15 @@ def test_firstiter_cc_budget_still_caps_larger_tiles():
 
 def test_firstiter_cc_budget_env_override_lifts_debug_cap(monkeypatch):
     """The budget read at the boundary (unset or blank: the default) reaches the batch cap."""
-    monkeypatch.delenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", raising=False)
     default_batch = safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=_budget())
     assert default_batch == 70
     monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", " ")
-    assert _budget() == 268_435_456
+    assert EngineTuning.from_environ().firstiter_cc_recon_complex_budget == _budget() == 268_435_456
 
     monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", str(3 * 268_435_456))
+    assert EngineTuning.from_environ().firstiter_cc_recon_complex_budget == 3 * 268_435_456
 
-    assert safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=_budget()) >= 187
+    assert safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=3 * 268_435_456) >= 187
 
 
 @pytest.mark.parametrize("raw", ["0", "-5", "1e9", "lots"])

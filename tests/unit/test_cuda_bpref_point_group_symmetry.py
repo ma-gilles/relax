@@ -169,7 +169,7 @@ def test_complex_ranged_cuda_matches_full_output(symmetry, via_finalizer, monkey
             _VOLUME_SHAPE, logger=logging.getLogger(__name__), label="bounded",
             symmetry_label=symmetry, relion_x_half=True, force_host=True,
             symmetry_chunk_voxels=37,
-            large_grid=EngineTuning.from_environ().x_half_large_grid,
+            large_grid=EngineTuning().x_half_large_grid,
         )
         assert isinstance(split_data, np.ndarray)
         assert isinstance(split_weight, np.ndarray)

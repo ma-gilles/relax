@@ -2404,7 +2404,7 @@ def test_lazy_pass2_layouts_request_aligned_relion_mstep_rotations(monkeypatch, 
     )
 
 
-def test_build_local_hypothesis_layout_factorized_chunking_preserves_support(monkeypatch):
+def test_build_local_hypothesis_layout_factorized_chunking_preserves_support():
     healpix_order = 3
     grid_metadata = build_local_search_grid_metadata(healpix_order)
     rotation_grid = get_relion_rotation_grid(healpix_order).astype(np.float32)
@@ -2429,15 +2429,14 @@ def test_build_local_hypothesis_layout_factorized_chunking_preserves_support(mon
         grid_metadata=grid_metadata,
     )
 
-    # The chunk size read at the boundary reaches the selector; unset sizes chunks from the element budget.
-    monkeypatch.delenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", raising=False)
-    assert EngineTuning.from_environ().local_selector_chunk_size is None
+    # The engine tuning's chunk size reaches the selector; the default sizes chunks from the element budget.
+    assert EngineTuning().local_selector_chunk_size is None
     full_layout = build_local_hypothesis_layout(
-        prior_eulers, rotation_grid, **kwargs, sigma_tilt_deg=0.0, engine_tuning=EngineTuning.from_environ(),
+        prior_eulers, rotation_grid, **kwargs, sigma_tilt_deg=0.0, engine_tuning=EngineTuning(),
     )
-    monkeypatch.setenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", "1")
     chunked_layout = build_local_hypothesis_layout(
-        prior_eulers, rotation_grid, **kwargs, sigma_tilt_deg=0.0, engine_tuning=EngineTuning.from_environ(),
+        prior_eulers, rotation_grid, **kwargs, sigma_tilt_deg=0.0,
+        engine_tuning=replace(EngineTuning(), local_selector_chunk_size=1),
     )
 
     assert_matches(chunked_layout.rotation_offsets, full_layout.rotation_offsets)
@@ -4245,7 +4244,6 @@ def _exact_pass1_on_cpu(monkeypatch):
 
     monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
-    monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "0")
 
 
 def _exact_pass1_inputs(monkeypatch, *, n_images=2, n_classes=1):
@@ -4304,7 +4302,7 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
             _make_rotations(1, seed=884),
             np.zeros((1, 2), dtype=np.float32),
             class_log_priors=np.zeros(1, dtype=np.float64),
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=replace(EngineTuning(), coarse_gemm_projection_cache=False),
             adaptive_fraction=1.0,
             max_significants=1,
             image_batch_size=1,
@@ -4348,7 +4346,7 @@ def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng, monke
             _make_rotations(1, seed=886),
             np.zeros((1, 2), dtype=np.float32),
             class_log_priors=np.zeros(1, dtype=np.float64),
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=replace(EngineTuning(), coarse_gemm_projection_cache=False),
             adaptive_fraction=1.0,
             max_significants=1,
             image_batch_size=1,
@@ -6442,7 +6440,7 @@ class TestRelionModeSmokeTest:
             translations,
             **projector,
             class_log_priors=np.zeros(1, dtype=np.float64),
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             adaptive_fraction=0.999,
             max_significants=-1,
             image_batch_size=N_IMAGES,
@@ -6522,7 +6520,7 @@ class TestRelionModeSmokeTest:
             rotations,
             jnp.zeros((1, 2), dtype=jnp.float32),
             class_log_priors=np.zeros(1, dtype=np.float64),
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             adaptive_fraction=1.0,
             max_significants=1,
             image_batch_size=dataset.n_units,
@@ -6574,7 +6572,7 @@ class TestRelionModeSmokeTest:
             image_batch_size=dataset.n_units,
             pad_final_image_batch=False,
             **common_kwargs,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             scoring_overrides=ScoringOverrides.from_environ(),
         )
         padded = _compute_k_class_significance_batched(
@@ -6585,7 +6583,7 @@ class TestRelionModeSmokeTest:
             image_batch_size=dataset.n_units + 1,
             pad_final_image_batch=True,
             **common_kwargs,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             scoring_overrides=ScoringOverrides.from_environ(),
         )
 
@@ -6723,7 +6721,7 @@ class TestRelionModeSmokeTest:
             rotations,
             translations,
             class_log_priors=np.zeros(1, dtype=np.float64),
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             adaptive_fraction=1.0,
             max_significants=1,
             image_batch_size=dataset.n_units,
@@ -6790,7 +6788,7 @@ class TestRelionModeSmokeTest:
             rotations,
             translations,
             class_log_priors=class_log_priors,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             adaptive_fraction=0.999,
             max_significants=-1,
             image_batch_size=dataset.n_units,
@@ -6838,7 +6836,7 @@ class TestRelionModeSmokeTest:
             rotations,
             translations,
             class_log_priors=class_log_priors,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             adaptive_fraction=0.999,
             max_significants=-1,
             image_batch_size=dataset.n_units,
@@ -9599,7 +9597,7 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
         image_batch_size=n_images,
         rotation_block_size=rotations.shape[0],
         score_with_masked_images=True,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
 

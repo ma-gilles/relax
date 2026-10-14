@@ -1434,9 +1434,8 @@ def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):
 
     from relax.runtime.engine_tuning import EngineTuning
 
-    monkeypatch.delenv("RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES", raising=False)
     gib = 1024**3
-    cap = EngineTuning.from_environ().local_projection_call_max_bytes
+    cap = EngineTuning().local_projection_call_max_bytes
     assert cap == 4 * gib
     row = 1_500_000  # bytes per projected row at box 448, full radius
     assert rlp._projection_block_rows(row, None, cap) == 4 * gib // row
@@ -1444,9 +1443,9 @@ def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):
     assert rlp._projection_block_rows(row, int(3.63 * gib), cap) == int(0.5 * 3.63 * gib) // row
     assert rlp._projection_block_rows(10 * gib, int(3.63 * gib), cap) == 1
     # The command's override (EngineTuning) replaces the cap; a value that is not positive is refused.
+    assert rlp._projection_block_rows(row, None, gib) == gib // row
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES", str(gib))
-    override = EngineTuning.from_environ().local_projection_call_max_bytes
-    assert rlp._projection_block_rows(row, None, override) == gib // row
+    assert EngineTuning.from_environ().local_projection_call_max_bytes == gib
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES", "0")
     with pytest.raises(ValueError, match="must be positive"):
         EngineTuning.from_environ()

@@ -22,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from helpers import cuda_targets
+from helpers.engine_settings import RESIDENT_PRODUCTION_ENGINE
 from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
@@ -30,7 +31,6 @@ import jax.numpy as jnp
 from helpers import relion_estep_reference as ref
 from helpers.refinement_specs import local_iteration_owners
 
-from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
@@ -261,9 +261,6 @@ requires_resident_gpu = pytest.mark.skipif(not _gpu_available(), reason="every r
 @pytest.fixture
 def _resident_env(monkeypatch):
     monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")
     monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")
 
 
@@ -288,7 +285,7 @@ def test_resident_driver_is_relions_fine_pass(_resident_env, current_size, noise
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(current_size, noise)
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ()), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ()), reference)
 
 
 def _assert_k1_pass(
@@ -359,7 +356,7 @@ def test_wide_translation_grids_are_relions_fine_pass(_resident_env, n_coarse_tr
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_wide_driver_args(n_coarse_trans))
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ()), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ()), reference)
 
 
 @requires_resident_gpu
@@ -373,7 +370,7 @@ def test_vdam_residual_backprojection_is_relions_grad_pass(_resident_env, groups
 
     args, reference = _case(6, 200.0, base_args=_vdam_args(residual=True, groups=groups), subtract_reference=True)
     _assert_k1_pass(rp.compute_pass2_stats_resident(
-        **args, engine_tuning=EngineTuning.from_environ(),
+        **args, engine_tuning=RESIDENT_PRODUCTION_ENGINE,
         scoring_overrides=ScoringOverrides.from_environ(),
     ), reference, scale_sums=groups)
 
@@ -414,7 +411,7 @@ def test_zero_oversampling_reuses_relions_coarse_normalization(_resident_env):
     n_cells = max(len(post.cells) for post in ref.posteriors(reference))
     stats_rtol = 2.0 * np.sqrt(n_cells) * float(np.finfo(np.float32).eps)
     _assert_k1_pass(
-        rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ()),
+        rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ()),
         reference,
         posterior=False,
         best=winners,
@@ -432,7 +429,7 @@ def test_c4_pass_is_relions_fine_pass_on_the_asymmetric_unit(_resident_env):
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_c4_driver_args(), symmetry="C4")
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ()), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ()), reference)
 
 
 def _accumulator(actual, half):

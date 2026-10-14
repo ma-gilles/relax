@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -129,7 +130,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
         "linear_interp", coarse_healpix_order=0, oversampling_order=order, sparse_pass2=True,
         mstep_relion_x_half=True, relion_firstiter_score_mode=score_mode,
         relion_firstiter_winner_take_all=winner, use_float64_scoring=double,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
     assert len(coarse_calls) == len(fine_calls) == 1
@@ -167,12 +168,12 @@ def test_adaptive_engine_refuses_the_removed_dense_pass2():
             "linear_interp",
             sparse_pass2=False,
             relion_exact_fine_gaussian=True,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             scoring_overrides=ScoringOverrides.from_environ(),
         )
 
 
-def _adaptive_run_with_fake_coarse(monkeypatch):
+def _adaptive_run_with_fake_coarse(monkeypatch, engine_tuning=EngineTuning()):
     from relax.scoring import significance as significance_module
 
     class TinyDataset:
@@ -234,7 +235,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch):
         relion_exact_fine_gaussian=True,
         pass2_use_float64_scoring=True,
         pass2_use_float64_projections=True,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=engine_tuning,
         scoring_overrides=ScoringOverrides.from_environ(),
     )
     return significance_calls, sparse_calls, result
@@ -252,17 +253,13 @@ def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatc
     assert_matches(np.asarray(result.Ft_ctf), np.array([[5, 6, 7, 8]], dtype=np.float32))
 
 
-@pytest.mark.parametrize("flag, expected", [(None, True), ("0", False)])
-def test_adaptive_coarse_pass_follows_the_stable_window_policy(monkeypatch, flag, expected):
+@pytest.mark.parametrize("stable_windows, expected", [(EngineTuning().stable_windows, True), (False, False)])
+def test_adaptive_coarse_pass_follows_the_stable_window_policy(monkeypatch, stable_windows, expected):
     # Pass 1 takes pass 2's quantized physical windows (on by default) so a new current
-    # size reuses its class's programs; RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS=0 turns both off.
-    from relax.reconstruction import volume_solver
-
-    if flag is None:
-        monkeypatch.delenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
-    else:
-        monkeypatch.setenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, flag)
-    significance_calls, _sparse_calls, _result = _adaptive_run_with_fake_coarse(monkeypatch)
+    # size reuses its class's programs; EngineTuning.stable_windows off turns both off.
+    significance_calls, _sparse_calls, _result = _adaptive_run_with_fake_coarse(
+        monkeypatch, replace(EngineTuning(), stable_windows=stable_windows),
+    )
 
     assert significance_calls[0]["stable_fourier_window_shapes"] is expected
 
@@ -770,7 +767,7 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             rotation_log_prior=np.asarray([0.0, -1.0, -2.0, -3.0, -4.0], dtype=np.float32),
             translation_log_prior=np.asarray([0.0, -0.5, -1.0], dtype=np.float32),
             use_float64_projections=projection_double,
@@ -858,7 +855,7 @@ def test_adaptive_k_class_firstiter_uses_coarse_current_size_for_probe(monkeypat
         coarse_healpix_order=0,
         oversampling_order=1,
         sparse_pass2=True,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
 
@@ -970,7 +967,7 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
         image_corrections=np.arange(4, dtype=np.float32),
         group_ids=np.asarray([7, 8, 9, 10], dtype=np.int64),
         scale_correction_group_count=11,
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
 
@@ -1591,7 +1588,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=EngineTuning(),
             current_size=6,
             half_spectrum_scoring=True,
             projection_padding_factor=padding_factor,
@@ -1653,6 +1650,6 @@ def test_relion_projector_compaction_rejects_post_transfer_jax_array():
 def test_fused_atomics_arm_read_at_the_boundary_reaches_the_adaptive_pass(monkeypatch):
     """RELAX_RELION_X_HALF_BP_FUSED_ATOMICS, read by the command into EngineTuning.resident_diagnostics, is refused
     where the fused atomics are not qualified (a later pass without a device-signature scope), as before."""
-    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+    engine_tuning = replace(EngineTuning(), resident_diagnostics=("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",))
     with pytest.raises(RuntimeError, match="RELAX_RELION_X_HALF_BP_FUSED_ATOMICS is qualified only"):
-        _adaptive_run_with_fake_coarse(monkeypatch)
+        _adaptive_run_with_fake_coarse(monkeypatch, engine_tuning)

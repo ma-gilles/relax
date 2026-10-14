@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import jax
 import jax.numpy as jnp
@@ -197,14 +198,10 @@ def test_coarse_gaussian_gemm_projection_cache_rejects_unqualified_contracts(
         )
 
 
-def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
-    monkeypatch,
-):
-    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB"
-    monkeypatch.delenv(variable, raising=False)
+def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46():
     # Off-GPU the default budget is 4 GB; on a GPU it is a fifth of its memory.
     budget_bytes = coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes(
-        override=EngineTuning.from_environ().coarse_gemm_projection_cache_max_bytes, default_gb=4.0,
+        override=EngineTuning().coarse_gemm_projection_cache_max_bytes, default_gb=4.0,
     )
     plan = coarse_gaussian_gemm.plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=36_864,
@@ -231,13 +228,12 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     assert stats["h100_observed_alias_peak_bytes"] == 1_998_766_080
     assert stats["h100_alias_evidence_used_for_admission"] is False
 
-    monkeypatch.setenv(variable, "3.0")
     rejected = coarse_gaussian_gemm.plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=36_864,
         compact_pixel_count=5_100,
         image_shape=(128, 128),
         budget_bytes=coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes(
-            override=EngineTuning.from_environ().coarse_gemm_projection_cache_max_bytes,
+            override=3 * 1024**3,
         ),
     )
     assert not rejected.admitted
@@ -663,10 +659,13 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
 
     from relax.cuda import translate as cuda_translate
     from relax.projection import projection as projection_helpers
+    engine_tuning = replace(
+        EngineTuning(),
+        coarse_gemm_projection_cache=False,
+        coarse_gemm_projection_cache_max_bytes=int(0.001 * 1024**3),
+        coarse_gemm_transient_max_bytes=int(0.01 * 1024**3),
+    )
     for name, value in {
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "0",
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB": "0.001",
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB": "0.01",
         "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "0",
     }.items():
         monkeypatch.setenv(name, value)
@@ -739,7 +738,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     relion_projector = jnp.ones((1, 3, 3, 2), dtype=jnp.complex64)
     common = dict(
         class_log_priors=np.zeros(1, dtype=np.float64),
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=engine_tuning,
         adaptive_fraction=0.5,
         max_significants=1,
         image_batch_size=2,
@@ -770,9 +769,8 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     assert all(returned_abs2 for _codes, returned_abs2 in uncached_calls)
 
     projection_calls.clear()
-    monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "1")
-    # The explicit request read at the boundary reaches the pass-1 plan.
-    common["engine_tuning"] = EngineTuning.from_environ()
+    # The explicit request reaches the pass-1 plan.
+    common["engine_tuning"] = replace(engine_tuning, coarse_gemm_projection_cache=True)
     plan = plan_pass1(Pass1Request(dataset, jnp.ones(dataset.image_size, dtype=jnp.float32), rotations, translations, **common, scoring_overrides=ScoringOverrides.from_environ()))
     cached = significance.run_pass1(plan)
     assert len(projection_calls) == 1
@@ -807,9 +805,10 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     from relax.cuda import translate as cuda_translate
     from relax.fine_pass import scoring as sparse_pass2_scoring
     from relax.projection import projection as projection_helpers
+    engine_tuning = replace(
+        EngineTuning(), coarse_gemm_projection_cache=False, coarse_gemm_transient_max_bytes=int(0.01 * 1024**3),
+    )
     for name, value in {
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "0",
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB": "0.01",
         "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "0",
     }.items():
         monkeypatch.setenv(name, value)
@@ -1004,7 +1003,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             rotations,
             translations,
             class_log_priors=class_prior,
-            engine_tuning=EngineTuning.from_environ(),
+            engine_tuning=engine_tuning,
             rotation_log_prior=rotation_prior,
             translation_log_prior=selected_translation_prior,
             **common,
@@ -1237,9 +1236,8 @@ def test_coarse_gaussian_gemm_projection_cache_default_budget_is_a_fifth_of_gpu_
         def memory_stats(self):
             return {"bytes_limit": 80 * 1024**3}
 
-    monkeypatch.delenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB", raising=False)
     monkeypatch.setattr(coarse_gaussian_gemm.jax, "local_devices", lambda: [_Gpu()])
-    assert EngineTuning.from_environ().coarse_gemm_projection_cache_max_bytes is None
+    assert EngineTuning().coarse_gemm_projection_cache_max_bytes is None
     assert coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes(override=None) == 16 * 1024**3
 
 

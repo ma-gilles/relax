@@ -19,7 +19,7 @@ def _request(**overrides):
 
     fields = dict(
         class_log_priors=np.zeros(1),
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         adaptive_fraction=0.9,
         max_significants=4,
         image_batch_size=2,

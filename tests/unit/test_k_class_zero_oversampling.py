@@ -26,6 +26,7 @@ import pytest
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
+from helpers.engine_settings import RESIDENT_PRODUCTION_ENGINE
 from helpers.float_compare import assert_matches
 
 from relax.runtime.engine_tuning import EngineTuning
@@ -148,7 +149,7 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
         mstep_relion_x_half=True, relion_firstiter_score_mode="gaussian",
         relion_firstiter_winner_take_all=False, use_float64_scoring=False,
         **({CLASS_REUSE_KEYWORD: True} if passes_keyword else {}),
-        engine_tuning=EngineTuning.from_environ(),
+        engine_tuning=EngineTuning(),
         scoring_overrides=ScoringOverrides.from_environ(),
     )
     assert len(coarse_calls) == len(fine_calls) == 1
@@ -185,9 +186,6 @@ requires_resident_gpu = pytest.mark.skipif(not _resident_gpu_available(), reason
 @pytest.fixture
 def _resident_production_env(monkeypatch):
     monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")
 
 
 def _rel_l2(a, b):
@@ -214,7 +212,7 @@ def test_duplicated_class_at_zero_oversampling_is_the_one_class_pass_split_in_ha
     from relax.fine_pass import resident_pass2 as rp
 
     args = _os0_driver_args()
-    single = rp.compute_pass2_stats_resident(**args, engine_tuning=EngineTuning.from_environ(), scoring_overrides=ScoringOverrides.from_environ())
+    single = rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ())
     k_args = dict(args)
     support = k_args.pop("significant_sample_indices")
     prior = k_args.pop("rotation_log_prior")

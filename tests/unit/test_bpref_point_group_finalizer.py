@@ -38,7 +38,7 @@ def test_c1_finalizer_is_exact_historical_x0_callthrough(monkeypatch):
     weight = object()
     logger = logging.getLogger("test_c1_finalizer")
 
-    large_grid = EngineTuning.from_environ().x_half_large_grid
+    large_grid = EngineTuning().x_half_large_grid
     actual_data, actual_weight = half_volume_mstep.finalize_half_volume_bpref(
         data,
         weight,
@@ -77,7 +77,7 @@ def test_c1_finalizer_matches_historical_x0_result():
         shape,
         logger=logger,
         label="historical",
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=EngineTuning().x_half_large_grid,
     )
     actual_data, actual_weight = half_volume_mstep.finalize_half_volume_bpref(
         data,
@@ -88,7 +88,7 @@ def test_c1_finalizer_matches_historical_x0_result():
         symmetry_label="C1",
         relion_x_half=True,
         symmetry_chunk_voxels=16 * 1024 * 1024,
-        large_grid=EngineTuning.from_environ().x_half_large_grid,
+        large_grid=EngineTuning().x_half_large_grid,
     )
 
     assert_matches(jax.device_get(actual_data), jax.device_get(expected_data))
@@ -113,7 +113,7 @@ def test_non_c1_native_half_volume_fails_closed_before_cuda():
             symmetry_operators=c2,
             relion_x_half=False,
             symmetry_chunk_voxels=16 * 1024 * 1024,
-            large_grid=EngineTuning.from_environ().x_half_large_grid,
+            large_grid=EngineTuning().x_half_large_grid,
         )
 
 
@@ -135,5 +135,5 @@ def test_c1_rejects_a_nonidentity_operator_payload():
             symmetry_operators=c2,
             relion_x_half=False,
             symmetry_chunk_voxels=16 * 1024 * 1024,
-            large_grid=EngineTuning.from_environ().x_half_large_grid,
+            large_grid=EngineTuning().x_half_large_grid,
         )

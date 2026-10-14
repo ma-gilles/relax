@@ -388,7 +388,7 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
     means = jnp.zeros((1, VOLUME_SIZE), jnp.complex64)
     # The engine tuning the command reads from the environment, unless the caller gives one.
     keywords = dict(half_spectrum_scoring=True, mstep_relion_x_half=True,
-                    **{"engine_tuning": EngineTuning.from_environ(), **engine_kwargs})
+                    **{"engine_tuning": EngineTuning(), **engine_kwargs})
     stages = {}
     for name, cc in (("pass1", False), ("pass1_cc", True)):
         try:
