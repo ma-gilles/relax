@@ -2537,6 +2537,7 @@ def _resident_pass2(
                                 use_rfloat_ctf_wavg=presence.has_direct_ctf_rfloat,
                                 use_translate_sum_kernel=True,
                                 bpref_recon_operand=presence.has_recon_weight,
+                                glue_jit=engine_tuning.resident_glue_jit,
                                 reuse_coarse_normalization=coarse_reuse is not None,
                                 n_slots=int(tables.n_slots),
                                 mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
@@ -2699,6 +2700,7 @@ def _resident_pass2(
             max_adjoint_block_bytes=max_adjoint_block_bytes,
             stats_config=stats_config,
             use_translate_sum_kernel=True,
+            glue_jit=engine_tuning.resident_glue_jit,
             n_classes=n_classes,
             # VDAM: each tilt image backprojects its residual (cuda_kernel_backproject3D_SGD per image).
             mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
@@ -2772,6 +2774,7 @@ def _resident_pass2(
         result = _run_resident_chunk(
             chunk,
             chunk_timing=engine_tuning.chunk_timing,
+            glue_jit=engine_tuning.resident_glue_jit,
             tables=tables,
             window_logical=window_logical,
             experiment_dataset=experiment_dataset,
@@ -3372,6 +3375,7 @@ def _run_resident_chunk(
     chunk,
     *,
     chunk_timing: bool,
+    glue_jit: bool,
     tables,
     window_logical=None,
     experiment_dataset,
@@ -3685,6 +3689,7 @@ def _run_resident_chunk(
         use_rfloat_ctf_wavg=recon["direct_ctf_rfloat_recon"] is not None,
         use_translate_sum_kernel=unshifted_operands,
         bpref_recon_operand=unshifted_operands and recon.get("recon_weight") is not None,
+        glue_jit=glue_jit,
         reuse_coarse_normalization=coarse_reuse is not None,
         firstiter_cc=firstiter_cc,
         n_slots=int(tables.n_slots),
@@ -3723,7 +3728,7 @@ def _run_resident_chunk(
         )
 
     if submitted_keys is not None:
-        submitted_keys.update(resident_chunk_programs.chunk_program_keys(resident_chunk_programs.chunk_program_path(), spec))
+        submitted_keys.update(resident_chunk_programs.chunk_program_keys(resident_chunk_programs.chunk_program_path(spec.glue_jit), spec))
 
     if deferred and not timing:
         front = resident_chunk_stages.resident_chunk_stages_front(rows, operands, stage_tables, spec=spec)

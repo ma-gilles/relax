@@ -20,7 +20,6 @@ import numpy as np
 import pytest
 
 from relax.fine_pass import (
-    policy,
     resident_block_programs,
     resident_chunk_records,
     resident_chunk_stages,
@@ -84,6 +83,7 @@ class _Spec:
     n_classes: int = 1
     row_capacity: int = N_ROWS
     presum_adjoint: bool = False
+    glue_jit: bool = False  # the eager stage path, the oracle
 
 
 def _stage_driver(monkeypatch, weights, row_partial):
@@ -94,7 +94,6 @@ def _stage_driver(monkeypatch, weights, row_partial):
     def block_at(start, blocks, operands, tables, carry, *, spec):
         return add_block(carry, operands, start)
 
-    monkeypatch.setattr(policy, "resident_glue_jit_enabled", lambda: False)
     monkeypatch.setattr(resident_mstep_blocks, "resident_mstep_block_at", block_at)
     monkeypatch.setattr(resident_mstep_blocks, "initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
@@ -130,7 +129,6 @@ def _local_driver(monkeypatch, weights, row_partial):
     def block(*, block_row_image, carry, **kwargs):
         return add_rows(carry, block_row_image)
 
-    monkeypatch.setattr(policy, "resident_glue_jit_enabled", lambda: False)
     monkeypatch.setattr(resident_mstep_blocks, "_resident_mstep_block", block)
     monkeypatch.setattr(resident_mstep_blocks, "initial_mstep_carry", lambda Ft_y, Ft_ctf, *a, **k: _carry(Ft_y, Ft_ctf))
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", lambda mstep, *a, **k: mstep)
@@ -153,6 +151,7 @@ def _local_driver(monkeypatch, weights, row_partial):
         row_capacity=n_rows,
         n_valid_rows=n_rows,
         mstep_block_rows=BLOCK_ROWS,
+        glue_jit=False,
         image_capacity=1,
         row_image_local=jnp.asarray(weights),
         kernel_row_image_ids=np.zeros(n_rows, np.int32),

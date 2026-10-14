@@ -129,6 +129,9 @@ class ChunkProgramSpec:
     # the BPref convention (a weight) or the score convention (no weight).
     use_translate_sum_kernel: bool
     bpref_recon_operand: bool
+    # EngineTuning.resident_glue_jit (P3-A): the three chunk stages run as jitted programs keyed on this spec; off,
+    # the same stage functions run as loose eager operations (the oracle of the bitwise comparisons).
+    glue_jit: bool
     # Zero oversampling: the posterior keeps every weight, divides by the
     # retained coarse sum and reports the coarse winner and Pmax
     # (CoarseNormalizationReuse). The tables carry the arrays.

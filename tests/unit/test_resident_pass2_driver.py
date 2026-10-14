@@ -22,6 +22,8 @@ needs a GPU and the custom CUDA library; it is the GPU test at the end.
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 from helpers import cuda_targets
@@ -1203,15 +1205,15 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
     )
 
     args = _driver_fixture_args()
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
-    loose = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides.from_environ())
+    eager = dataclasses.replace(_engine(), resident_glue_jit=False)
+    loose = rp.compute_pass2_stats_resident(**args, engine_tuning=eager, scoring_overrides=ScoringOverrides.from_environ())
     # The loose path's own repeat, in this process: the self-repeat band the
     # racing accumulators below are read against. It is measured, not assumed,
     # because the float32 BPref atomics and the CUDA shell binning do not
     # reproduce between two identical calls.
-    loose_repeat = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides.from_environ())
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
-    programs = rp.compute_pass2_stats_resident(**args, engine_tuning=_engine(), scoring_overrides=ScoringOverrides.from_environ())
+    loose_repeat = rp.compute_pass2_stats_resident(**args, engine_tuning=eager, scoring_overrides=ScoringOverrides.from_environ())
+    jitted = dataclasses.replace(_engine(), resident_glue_jit=True)
+    programs = rp.compute_pass2_stats_resident(**args, engine_tuning=jitted, scoring_overrides=ScoringOverrides.from_environ())
 
     assert_matches(loose.hard_assignment, programs.hard_assignment)
     assert_matches(

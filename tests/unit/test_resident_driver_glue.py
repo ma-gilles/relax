@@ -30,7 +30,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.fine_pass import policy, resident_chunk_records, resident_mstep_blocks
+from relax.fine_pass import resident_chunk_records, resident_mstep_blocks
 from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
@@ -56,6 +56,7 @@ def _spec(**overrides):
         use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=False,
         bpref_recon_operand=False,
+        glue_jit=True,
     )
     kwargs.update(overrides)
     return resident_chunk_records.ChunkProgramSpec(**kwargs)
@@ -208,12 +209,15 @@ def test_device_row_offsets_are_made_once_per_value():
 
 
 def test_glue_jit_is_on_by_default_and_reads_the_environment(monkeypatch):
-    monkeypatch.delenv(policy._RESIDENT_GLUE_JIT_ENV, raising=False)
-    assert policy.resident_glue_jit_enabled() is True
-    monkeypatch.setenv(policy._RESIDENT_GLUE_JIT_ENV, "0")
-    assert policy.resident_glue_jit_enabled() is False
-    monkeypatch.setenv(policy._RESIDENT_GLUE_JIT_ENV, "1")
-    assert policy.resident_glue_jit_enabled() is True
+    from relax.runtime.engine_tuning import EngineTuning
+
+    name = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
+    monkeypatch.delenv(name, raising=False)
+    assert EngineTuning.from_environ().resident_glue_jit is True is EngineTuning().resident_glue_jit
+    monkeypatch.setenv(name, "0")
+    assert EngineTuning.from_environ().resident_glue_jit is False
+    monkeypatch.setenv(name, "1")
+    assert EngineTuning.from_environ().resident_glue_jit is True
 
 
 def test_the_block_program_is_keyed_on_the_capacity_class_not_the_offset():

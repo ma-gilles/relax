@@ -336,18 +336,16 @@ def test_the_warm_up_reads_the_same_path_decision_as_the_chunk_loop(monkeypatch)
     took, so it compiled programs the loop never called and bought nothing.
     """
 
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "1")
-    assert resident_chunk_programs.chunk_program_path() == "per-stage"
-
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
-    assert resident_chunk_programs.chunk_program_path() == "eager"
+    assert resident_chunk_programs.chunk_program_path(True) == "per-stage"
+    assert resident_chunk_programs.chunk_program_path(False) == "eager"
 
 
-def test_the_default_path_is_the_one_production_runs(monkeypatch):
-    """No flags set: the per-stage path, and there is no fused chunk program to select (relax#76)."""
+def test_the_default_path_is_the_one_production_runs():
+    """The default EngineTuning: the per-stage path, and there is no fused chunk program to select (relax#76)."""
 
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", raising=False)
-    assert resident_chunk_programs.chunk_program_path() == "per-stage"
+    from relax.runtime.engine_tuning import EngineTuning
+
+    assert resident_chunk_programs.chunk_program_path(EngineTuning().resident_glue_jit) == "per-stage"
     assert not hasattr(rp, "_run_resident_chunk_program") and not hasattr(rp, "_chunk_jit_enabled")
     with pytest.raises(ValueError, match="unknown chunk program path"):
         resident_chunk_programs.chunk_programs_for_path("fused")
@@ -356,7 +354,6 @@ def test_the_default_path_is_the_one_production_runs(monkeypatch):
 def test_nothing_is_queued_when_there_is_no_program_to_warm(monkeypatch):
     """The eager path submits no program, so the warm-up must submit no job."""
 
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", "0")
 
     class Refuse:
         def submit_thunk(self, *a, **k):
@@ -375,7 +372,7 @@ def test_nothing_is_queued_when_there_is_no_program_to_warm(monkeypatch):
         rect_indices=None,
         exact_positions=None,
         image_shape=(8, 8),
-        spec_kwargs={},
+        spec_kwargs={"glue_jit": False},
         translation_prior_centers_np=None,
         fine_translations=None,
         voxel_size=1.0,
@@ -547,6 +544,7 @@ def _spec_kwargs():
         recon_volume_shape=(64, 64, 64),
         max_adjoint_block_bytes=1 << 30,
         stats_config=("stats", 33),
+        glue_jit=True,
     )
 
 

@@ -742,6 +742,7 @@ def test_mstep_adapter_refuses_unshifted_operands_without_the_kernel_tables():
             row_capacity=64,
             n_valid_rows=8,
             mstep_block_rows=64,
+            glue_jit=True,
             image_capacity=2,
             row_image_local=None,
             kernel_row_image_ids=None,

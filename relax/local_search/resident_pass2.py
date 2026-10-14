@@ -2669,6 +2669,7 @@ def _start_resident_local_chunk(
                 n_rect=int(n_rect),
                 n_shells=int(stats_config.n_shells),
                 n_recon_windowed=int(n_recon_windowed),
+                glue_jit=engine_tuning.resident_glue_jit,
                 noise_variance_for_noise=noise_variance_for_noise,
                 shell_indices_noise=shell_indices_noise,
                 exact_positions_device=exact_positions_device,

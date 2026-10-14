@@ -16,7 +16,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fine_pass import (
-    policy,
     resident_chunk_inputs,
     resident_chunk_posterior,
     resident_chunk_records,
@@ -228,8 +227,8 @@ def make_chunk_stage_operands(recon, translation_sqdist_ang) -> resident_chunk_r
     )
 
 
-def chunk_program_path() -> str:
-    """Which programs a chunk of this half will actually submit.
+def chunk_program_path(glue_jit: bool) -> str:
+    """Which programs a chunk of this half will actually submit (``glue_jit``: ``EngineTuning.resident_glue_jit``).
 
     ``"per-stage"`` is the default path's three glue programs, ``"eager"`` the
     loose dispatch with no program to warm. The compile-ahead warm-up reads this
@@ -237,7 +236,7 @@ def chunk_program_path() -> str:
     program per chunk, was removed in relax#76: nothing selected it.)
     """
 
-    if policy.resident_glue_jit_enabled():
+    if glue_jit:
         return "per-stage"
     return "eager"
 
@@ -336,6 +335,7 @@ def make_chunk_program_spec(
     use_rfloat_ctf_wavg,
     use_translate_sum_kernel,
     bpref_recon_operand,
+    glue_jit: bool,
     mstep_max_r=None,
     reuse_coarse_normalization=False,
     firstiter_cc=False,
@@ -372,6 +372,7 @@ def make_chunk_program_spec(
         use_rfloat_ctf_wavg=bool(use_rfloat_ctf_wavg),
         use_translate_sum_kernel=bool(use_translate_sum_kernel),
         bpref_recon_operand=bool(bpref_recon_operand),
+        glue_jit=glue_jit,
         mstep_max_r=float(int(mstep_current_size) // 2) if mstep_max_r is None else mstep_max_r,
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
         firstiter_cc=bool(firstiter_cc),
@@ -427,7 +428,7 @@ def submit_resident_chunk_warmup(
     # Warm the programs the configured path will actually submit: the per-stage
     # path with the glue JIT on is what production runs, and it is three
     # programs. The path is decided here, before any work, and named in the log line.
-    path = chunk_program_path()
+    path = chunk_program_path(spec_kwargs["glue_jit"])
     if path == "eager":
         return ()
 

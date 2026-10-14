@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fine_pass import policy, resident_block_programs, resident_chunk_records
+from relax.fine_pass import resident_block_programs, resident_chunk_records
 from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
 from relax.fine_pass.resident_scoring import cache_dtype, cache_rows
 from relax.reconstruction.half_volume_mstep import RowPartial
@@ -658,13 +658,15 @@ def run_resident_mstep_blocks(
     mstep_max_r=None,
     relion_x_half_recon_indices,
     max_adjoint_block_bytes,
+    glue_jit: bool,
     n_optics_groups: int = 1,
     row_ids=None,
     recon_pixel_indices=None,
     translation_angles=None,
     row_partial: RowPartial | None = None,
 ):
-    """Walk one chunk's pixel axis in row blocks: Wavg, noise and both adjoints.
+    """Walk one chunk's pixel axis in row blocks: Wavg, noise and both adjoints (``glue_jit``:
+    ``EngineTuning.resident_glue_jit``, the block program jitted or run eagerly).
 
     With ``row_partial`` (the pass's partial accumulator pair) the blocks scatter into it, and it is added
     into ``Ft_y_total``/``Ft_ctf_total`` every ``blocks_per_flush`` blocks and after the last (relax#65).
@@ -758,6 +760,7 @@ def run_resident_mstep_blocks(
         # inside the reduction; pre-shifted tiles take the XLA statement.
         use_translate_sum_kernel=use_translate_sum_kernel,
         bpref_recon_operand=use_translate_sum_kernel and recon.get("recon_weight") is not None,
+        glue_jit=glue_jit,
     )
     operands = resident_chunk_records.ChunkStageOperands(
         score_input=None,
@@ -813,7 +816,6 @@ def run_resident_mstep_blocks(
 
     block_rows = int(mstep_block_rows)
     carry = None
-    glue_jit = policy.resident_glue_jit_enabled()
     if chunk_projections is None:
         chunk_row_ids = None
         projection_dtypes = None

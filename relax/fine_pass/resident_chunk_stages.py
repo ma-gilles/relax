@@ -15,7 +15,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fine_pass import (
-    policy,
     resident_block_programs,
     resident_chunk_posterior,
     resident_chunk_records,
@@ -247,7 +246,7 @@ def run_resident_chunk_stages(
 def resident_chunk_stages_front(rows, operands, tables, *, spec, timing_hook=None):
     """The per-stage path's posterior and M-step row order, enqueued; no host read."""
 
-    if policy.resident_glue_jit_enabled():
+    if spec.glue_jit:
         posterior = resident_chunk_posterior.resident_chunk_posterior_program(rows, operands, tables, spec=spec)
     else:
         posterior = resident_chunk_posterior.resident_chunk_posterior(rows, operands, tables, spec=spec)
@@ -283,7 +282,6 @@ def resident_chunk_stages_finish(
     totals every ``blocks_per_flush`` blocks and when the slot's blocks end (relax#65).
     """
 
-    glue_jit = policy.resident_glue_jit_enabled()
     posterior, blocks = front
     Ft_y_total, Ft_ctf_total, stats = carry
     mstep = resident_mstep_blocks.initial_mstep_carry(
@@ -307,7 +305,7 @@ def resident_chunk_stages_finish(
                 if block_projections is None
                 else class_blocks._replace(row_fine_rot=None, projections=block_projections(start, block_rows))
             )
-            if glue_jit:
+            if spec.glue_jit:
                 mstep = resident_mstep_blocks.resident_mstep_block_program(
                     resident_chunk_records.device_int32(start), start_blocks, operands, tables, mstep, spec=block_spec
                 )
@@ -336,7 +334,7 @@ def resident_chunk_stages_finish(
     if timing_hook is not None:
         timing_hook("mstep", (Ft_y_out, Ft_ctf_out))
 
-    if glue_jit:
+    if spec.glue_jit:
         # The program adds the chunk's Wavg image power first, as below.
         stats = resident_chunk_statistics_program(
             stats, rows, operands, tables, posterior, mstep, spec=spec

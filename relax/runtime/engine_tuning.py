@@ -158,6 +158,10 @@ class EngineTuning:
     :func:`finite_check_mode`): "off" (default), "raise" or "warn": the opt-in per-bucket finite and bound checks of
     ``relax.numerics.finite_check`` and whether a report is raised or logged. A check serialises the pass it watches,
     so an arm with it on is a diagnostic arm, never a timing arm.
+    ``resident_glue_jit`` (RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT, ``env_flags.parse_env_flag``, default on): the
+    resident chunk loop dispatches its three stages as jitted programs keyed on the capacity class; off runs the same
+    stage functions in the same order as loose eager operations, the oracle of the bitwise comparisons (only the JIT
+    boundary moves).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -196,6 +200,7 @@ class EngineTuning:
     resident_operands_verify: bool = False
     resident_operands: bool = True
     finite_check: str = "off"
+    resident_glue_jit: bool = True
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -270,6 +275,7 @@ class EngineTuning:
             resident_operands_verify=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY", default=False),
             resident_operands=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", default=True),
             finite_check=finite_check_mode(parse_env_true_flag(FINITE_CHECK_ENV), parse_env_true_flag(FINITE_CHECK_WARN_ENV)),
+            resident_glue_jit=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", default=True),
         )
 
 
