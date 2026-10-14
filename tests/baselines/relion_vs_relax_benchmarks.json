@@ -23297,6 +23297,368 @@
     "c": "arm-script walls (WALL.json), end to end, cold",
     "d": "H100 80GB HBM3 for every arm (GPU.csv / PROVENANCE.txt per arm)"
    }
+  },
+  {
+   "id": "relion5_tutorial_hiv_30k_96_tomo_autorefine_c6_2e8b21b9",
+   "section": "real",
+   "dataset": "RELION 5 subtomogram-averaging tutorial (Zenodo 10.5281/zenodo.11068319): HIV-1 immature capsid, 5 tilt series, 30,596 subtomograms as CTF-premultiplied 2D stacks (497,561 tilt images), bin 6",
+   "empiar_id": null,
+   "particles": 30596,
+   "box": 96,
+   "pixel_size_A": 8.1,
+   "symmetry": "C6",
+   "classes": 1,
+   "workflow": "cryo-ET auto-refine K=1 (RELION 5 tomo Refine3D), the tutorial's Refine3D/job012 command with the tilt prior (--auto_refine --split_random_halves --sigma_tilt 10 --ini_high 60 --particle_diameter 500 --healpix_order 2 --auto_local_healpix_order 4 --offset_range 5 --offset_step 2 --sym C6 --low_resol_join_halves 40, reference Reconstruct/job011/merged.mrc), seed 1",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 page build (relion_patched_coarsemag_bpd_20261006, relion-5.0.1-mpiscale-bpdouble-coarsemag), relion_refine_mpi 3 ranks x 4 threads, --gpu on one H100, cold. RELION's auto-refine with split halves runs only under MPI, so this is its configuration for the row",
+    "reference_build": {
+     "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_patched_coarsemag_bpd_20261006/relion-5.0.1-mpiscale-bpdouble-coarsemag/build/bin/relion_refine_mpi",
+     "sha256": "4cb6366501613c9f4f1bb11218cff8f7c2ad8294c74e4ce21fb20c335f9c804e"
+    },
+    "resolution_A": 16.54,
+    "resolution_definition": "engine_current_resolution",
+    "relion_reported_resolution_A": 16.544682,
+    "masked_resolution_A": null,
+    "wall_s": 50733,
+    "wall_definition": "first pair: arm-script wall of relion_refine_mpi (WALL.json), end to end, cold, one H100 + 12 CPUs (3 ranks x 4 threads), step 1 of job 15470018 (della-h20g1), started together with the relax arm",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 28,
+    "jobs": [
+     "15470018",
+     "15474869",
+     "15519784",
+     "15519785"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "source_sha": "2e8b21b964ffbcf6521b2973682b77634c8c35cf",
+    "source_repo": "relax main 2e8b21b9 (contains the tilt-series speed fixes aed297d9 and 2504257d); frozen at relax_tutorial_refine_bench_2e8b21b9_20261013/src (git archive of the sha, natives built at the sha and checked against its sources); production defaults",
+    "resolution_A": 16.54,
+    "resolution_definition": "engine_current_resolution",
+    "masked_resolution_A": null,
+    "wall_s": 21447,
+    "wall_definition": "first pair: arm-script wall of relax refine end to end (WALL.json), cold (arm-local empty JAX cache), one H100 + 12 CPUs, step 0 of job 15470018 (della-h20g1), started together with the RELION arm",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 28,
+    "jobs": [
+     "15470018",
+     "15474869",
+     "15519784",
+     "15519785"
+    ],
+    "masked_band_auc": null
+   },
+   "gt": {
+    "metric": "FSC-AUC of the final merged map against RELION's shipped tutorial result (Refine3D/job012/run_class001.mrc; not a ground truth) after the rigid fit about the C6 axis (rotation about z, shift along z); normalized trapezoid of the shell FSC, full spectrum, every map times the soft sphere inscribed in the box (radius 45 px); scripts/score_axis_registered_maps.py",
+    "relion": 0.988005,
+    "relax": 0.987965,
+    "relion_band": [
+     0.988005,
+     0.98815
+    ],
+    "relion_band_runs": [
+     "seed 1 x4"
+    ],
+    "relax_per_seed": {
+     "1": 0.987965
+    },
+    "relion_per_seed": {
+     "1": 0.988005
+    },
+    "relax_runs_per_seed": {
+     "1": [
+      0.987965,
+      0.987778,
+      0.987782,
+      0.987837
+     ]
+    },
+    "relion_runs_per_seed": {
+     "1": [
+      0.988005,
+      0.98815,
+      0.988104,
+      0.988129
+     ]
+    },
+    "inside_500A_sphere": {
+     "relax_runs": [
+      0.992202,
+      0.992072,
+      0.992076,
+      0.992112
+     ],
+     "relion_runs": [
+      0.99228,
+      0.992397,
+      0.992371,
+      0.99238
+     ]
+    },
+    "fit_about_axis": {
+     "relax": {
+      "rotation_deg": 40.73,
+      "z_shift_px": 0.16,
+      "flip": false,
+      "correlation": 0.9975
+     },
+     "relax_rep2": {
+      "rotation_deg": 40.73,
+      "z_shift_px": 0.16,
+      "flip": false,
+      "correlation": 0.9974
+     },
+     "relax_rep3": {
+      "rotation_deg": 40.72,
+      "z_shift_px": 0.16,
+      "flip": false,
+      "correlation": 0.9975
+     },
+     "relax_rep4": {
+      "rotation_deg": 40.73,
+      "z_shift_px": 0.16,
+      "flip": false,
+      "correlation": 0.9974
+     },
+     "relion": {
+      "rotation_deg": 41.12,
+      "z_shift_px": 0.21,
+      "flip": false,
+      "correlation": 0.9975
+     },
+     "relion_rep2": {
+      "rotation_deg": 41.09,
+      "z_shift_px": 0.21,
+      "flip": false,
+      "correlation": 0.9975
+     },
+     "relion_rep3": {
+      "rotation_deg": 41.04,
+      "z_shift_px": 0.21,
+      "flip": false,
+      "correlation": 0.9975
+     },
+     "relion_rep4": {
+      "rotation_deg": 41.08,
+      "z_shift_px": 0.21,
+      "flip": false,
+      "correlation": 0.9975
+     }
+    },
+    "map_fsc_auc_pairs_after_fit": {
+     "relax:relion": 0.994705,
+     "relax:relion_rep2": 0.994747,
+     "relax_rep2:relion": 0.99468,
+     "relax_rep2:relion_rep2": 0.994751,
+     "relax:relax_rep2": 0.998059,
+     "relion:relion_rep2": 0.997805,
+     "relax_rep3:relion_rep3": 0.994838,
+     "relax_rep4:relion_rep4": 0.994721
+    },
+    "iterations": {
+     "relax": 28,
+     "relax_rep2": 28,
+     "relax_rep3": 28,
+     "relax_rep4": 28,
+     "relion": 28,
+     "relion_rep2": 28,
+     "relion_rep3": 28,
+     "relion_rep4": 28
+    },
+    "reported_resolution_A": {
+     "relax": 16.54,
+     "relax_rep2": 16.54,
+     "relax_rep3": 16.54,
+     "relax_rep4": 16.54,
+     "relion": 16.54,
+     "relion_rep2": 16.54,
+     "relion_rep3": 16.54,
+     "relion_rep4": 16.54
+    },
+    "wall_s": {
+     "relax": 21447,
+     "relax_rep2": 21650,
+     "relax_rep3": 22866,
+     "relax_rep4": 22821,
+     "relion": 50733,
+     "relion_rep2": 49419,
+     "relion_rep3": 49118,
+     "relion_rep4": 49611
+    }
+   },
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": 0.42,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "New row 2026-10-14 (first real cryo-ET row; user via team-lead): the RELION 5 tutorial's bin-6 subtomogram Refine3D (Refine3D/job012 command, --sigma_tilt 10, C6) at seed 1, 4 same-node pairs: each pair is one Slurm job on one node with one H100 and 12 CPUs per program, both cold, started together (jobs 15470018, 15474869, 15519784, 15519785). Iterations before the final one, relax / RELION: 28, 28, 28, 28 / 28, 28, 28, 28; final resolution 16.54, 16.54, 16.54, 16.54 / 16.54, 16.54, 16.54, 16.54 A (the shipped run, another seed: 25 iterations, 16.54 A).",
+    "Verdict metric: FSC-AUC of the final merged map against RELION's shipped tutorial map (Refine3D/job012/run_class001.mrc). That map is RELION's own published result of this command, not a ground truth. Before the FSC each map is fitted rigidly about the C6 axis (rotation about z, shift along z), because a C6 refinement leaves exactly that motion free: all 8 maps sit 40.7-41.1 degrees about the axis and 0.16-0.21 px along it from the shipped map (correlation 0.83 as written, 0.9974 after the fit), relax and RELION alike, so the rotation belongs to seed 1 against the shipped run's seed, not to either program. 'Unmasked' here means every map, the shipped one included, times one soft sphere inscribed in the box (radius 45 of 48 px, 3 px edge): a rotated cube loses its corners; no structure mask is used and no frozen mask is registered for this dataset, so the page's masked fields are empty.",
+    "Values, relax runs / RELION runs: 0.987965, 0.987778, 0.987782, 0.987837 / 0.988005, 0.988150, 0.988104, 0.988129 (inside the 500 A particle sphere: 0.992202, 0.992072, 0.992076, 0.992112 / 0.992280, 0.992397, 0.992371, 0.992380). relax's best run is 4.0e-05 below RELION's lowest run, so the run ranges do not overlap and the page rule reads a miss; the gap is 0.21 of relax's own 4-run spread (1.9e-04) and 0.27 of RELION's (1.5e-04). Scorer resolution 1.6e-05: the largest change of a relax-minus-RELION gap when the same 8 maps are scored the other way round (the shipped map fitted onto each map instead of each map onto the shipped map), 16 pairs.",
+    "Map agreement after the fit (same metric): relax against RELION 0.994680-0.994838 over 6 pairs, relax against relax 0.998059, RELION against RELION 0.997805 (pairs 1 and 2): two runs of one program agree more closely than a relax run and a RELION run, and all agree with each other more closely than with the shipped map. Supplementary, independent of the shipped map (all eight maps in the shipped map's frame): a relax map against the mean of its three other relax runs 0.998703, against means of three RELION maps 0.995502; a RELION map against the mean of its three other RELION runs 0.998524, against means of three relax maps 0.995414 (averages over the four maps of each program). The shipped reference is a RELION map, so a small difference between the two programs' maps counts against relax in the verdict metric whichever program is nearer the true structure.",
+    "Why relax sits below RELION on this metric: relax's default accumulates the reconstruction sums in single precision, like stock RELION 5.0.1; the page RELION build accumulates in double precision (relax#65, relax#87; the user kept the single-precision default on 2026-10-11). On this dataset that moves the converged map by about 0.4 degrees about the axis and 0.05 px along it: the default relax maps sit at 40.72-40.73 degrees from the shipped map, the RELION maps at 41.04-41.12. Two supplementary relax runs at the same sha with the debug switch RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1 (job 15521679, same command and seed; not in the verdict or the wall) land on RELION's map: 41.14, 41.18 degrees and +0.21 px, FSC-AUC 0.988002, 0.988067 against the shipped map (RELION 0.988005-0.988150), 0.997008-0.997187 against RELION maps (default relax 0.994680-0.994838; RELION pair 1 against pair 2 0.997805), walls 22,784 and 22,784 s (both arms ended in the same second; the default arms took 21,447-22,866 s). The scorer itself loses 2e-6 for a 0.4-degree fit (checks/score_floor.json), so the difference is in the maps. The eight values and the open question are in relax#92.",
+    "Walls (WALL.json, end to end, cold), relax / RELION: pair 1 21,447 / 50,733 s (0.42x); pair 2 21,650 / 49,419 s (0.44x); pair 3 22,866 / 49,118 s (0.47x); pair 4 22,821 / 49,611 s (0.46x); the row quotes pair 1. Pair 3 shared its node (della-h19g2) with the two supplementary runs of job 15521679; relax's pairs 3 and 4 took 5-7% longer than pairs 1 and 2 (pair 4 without a shared node), RELION's did not. That slowdown is not explained; the row's wall is pair 1. All eight runs are seed 1, so the page rule's across-seed RELION band is here simply the range of RELION's four seed-1 runs; the verdict cell names it that way. RELION is relion_refine_mpi with 3 ranks x 4 threads on one H100: its auto-refine with split halves runs only under MPI (non-MPI relion_refine stops with 'Cannot split data into random halves without using MPI'), so this is RELION's configuration for the row, as for the page's other auto-refine rows."
+   ],
+   "null_reasons": {
+    "relion.masked_resolution_A": "no frozen mask is registered for this dataset",
+    "relax.masked_resolution_A": "no frozen mask is registered for this dataset",
+    "relion.masked_band_auc": "no frozen mask is registered for this dataset",
+    "relax.masked_band_auc": "no frozen mask is registered for this dataset",
+    "cross_engine_masked_band_auc": "no frozen mask is registered for this dataset",
+    "mask": "no frozen mask is registered for this dataset",
+    "cross_engine": "relax-vs-RELION map agreement after the fit is recorded per pair in gt.map_fsc_auc_pairs_after_fit"
+   },
+   "mask": null,
+   "evidence": {
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/relion5_tomo_tutorial_20261010",
+    "data_view": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_curw_20261008/relion5_tutorial_check_20261010/view (the shipped particle STAR; stacks re-extracted with relion_tomo_subtomo 5.0.1, the archive ships none)",
+    "reference_map": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/relion5_tomo_tutorial_20261010/Relion-5.0/Refine3D/job012/run_class001.mrc",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/score_final.json",
+    "score_json_more": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/score_pairs34.json"
+    ],
+    "score_json_reverse": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/score_final_reverse.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/score_pairs34_reverse.json"
+    ],
+    "trajectory": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/trajectory_8arms.json",
+    "supplementary": {
+     "cross_means": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/cross_means.json",
+     "checks": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/checks",
+     "exact_accumulation_runs": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relax_exact_rep1",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relax_exact_rep2"
+     ]
+    },
+    "scorer": "scripts/score_axis_registered_maps.py",
+    "report": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/REPORT_final_20261013.md",
+    "relax_runs": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relax",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relax_rep2",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relax_rep3",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relax_rep4"
+    ],
+    "relion_runs": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relion_mpi",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relion_mpi_rep2",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relion_mpi_rep3",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/arm_relion_mpi_rep4"
+    ],
+    "job_scripts": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/bench.sbatch",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/bench_rep2.sbatch",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/bench_rep3.sbatch",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/bench_rep4.sbatch",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/bench_exact.sbatch"
+    ],
+    "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/add_tutorial_tomo_row.py"
+   },
+   "date": "2026-10-14",
+   "history": [],
+   "quality_pass": false,
+   "quality_reason": "FSC-AUC vs RELION's shipped map after the fit about the C6 axis: worst s1 −4.0e-5 vs same-seed RELION; run ranges compared at s1 (both engines repeated); relax's s1 run range below the RELION run range at s1 0.988005-0.98815 (four runs each)",
+   "label": "RELION 5 tutorial (HIV-1 capsid, C6)",
+   "feature_reference": "anisotropic magnification (rlnMagMat) in SPA Refine3D: RELION 5.0.1 + MPI scale-sum patch (mpiscale), relion_refine_mpi 3 ranks x 4 threads, one H100, seed 42, three runs",
+   "time_check": {
+    "a": "relax 1 H100 + 12 CPUs, one process; RELION 1 H100 + 12 CPUs, relion_refine_mpi 3 ranks x 4 threads (auto-refine with split halves needs MPI); the two arms are steps of one job on one node, started together",
+    "b": "relax main 2e8b21b9 frozen snapshot with production defaults (no RELAX_* option set; only the library paths of the frozen natives); no --scratch_dir or pre-read on either engine; no diagnostic, capture, replay or dump options",
+    "c": "arm-script walls (WALL.json), end to end, cold: start-up, compilation with an empty arm-local cache, all iterations and the final all-data iteration",
+    "d": "H100 80GB HBM3 for every arm (gpu.txt per arm; della-h20g1 for jobs 15470018 and 15519785, della-h19g2 for 15474869 and 15519784)"
+   },
+   "table": "cryoet",
+   "scorer_resolution": {
+    "value": 1.64e-05,
+    "method": "largest change of a relax-minus-RELION gap between the two directions of the rigid fit (each map fitted onto the shipped map; the shipped map fitted onto each map), the 8 maps of this row, 16 pairs",
+    "evidence": {
+     "score_a": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/score_final.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/score_pairs34.json"
+     ],
+     "score_b": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/score_final_reverse.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_tutorial_refine_bench_2e8b21b9_20261013/analysis/score_pairs34_reverse.json"
+     ],
+     "metric": "fsc_auc_window",
+     "pairs": [
+      [
+       "relax",
+       "relion"
+      ],
+      [
+       "relax",
+       "relion_rep2"
+      ],
+      [
+       "relax",
+       "relion_rep3"
+      ],
+      [
+       "relax",
+       "relion_rep4"
+      ],
+      [
+       "relax_rep2",
+       "relion"
+      ],
+      [
+       "relax_rep2",
+       "relion_rep2"
+      ],
+      [
+       "relax_rep2",
+       "relion_rep3"
+      ],
+      [
+       "relax_rep2",
+       "relion_rep4"
+      ],
+      [
+       "relax_rep3",
+       "relion"
+      ],
+      [
+       "relax_rep3",
+       "relion_rep2"
+      ],
+      [
+       "relax_rep3",
+       "relion_rep3"
+      ],
+      [
+       "relax_rep3",
+       "relion_rep4"
+      ],
+      [
+       "relax_rep4",
+       "relion"
+      ],
+      [
+       "relax_rep4",
+       "relion_rep2"
+      ],
+      [
+       "relax_rep4",
+       "relion_rep3"
+      ],
+      [
+       "relax_rep4",
+       "relion_rep4"
+      ]
+     ]
+    }
+   }
   }
  ],
  "initial_model_intro": [
