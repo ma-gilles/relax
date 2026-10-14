@@ -600,7 +600,7 @@ def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
         vdam_input_source,
     )
     from relax.vdam.driver import run_native_initial_model
-    from relax.vdam.native_options import NativeInitialModelOptions
+    from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
 
     source = vdam_input_source(
         reference_template=os.environ.get(INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "").strip(),
@@ -610,7 +610,9 @@ def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
         oracle_m_step=oracle_m_step,
     )
     result = run_native_initial_model(
-        NativeInitialModelOptions(**options_dict), source=source, observer=vdam_command_observer()
+        NativeInitialModelOptions(**options_dict, environment=VdamEnvironment.from_environ()),
+        source=source,
+        observer=vdam_command_observer(),
     )
     print(f"recovar InitialModel complete: {result.final_mrc}")
     print(f"Final model STAR: {result.final_model_star}")

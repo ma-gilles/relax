@@ -2180,38 +2180,38 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
 )
 def test_expected_accuracy_diagnostic_switches_are_explicit_and_strict(monkeypatch, name, field):
     monkeypatch.delenv(name, raising=False)
-    assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is False
+    assert getattr(native_options.VdamEnvironment.from_environ(), field) is False
 
     monkeypatch.setenv(name, "1")
-    assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is True
+    assert getattr(native_options.VdamEnvironment.from_environ(), field) is True
 
     monkeypatch.setenv(name, "yes")
     with pytest.raises(ValueError, match="must be 0 or 1"):
-        native_options.NativeInitialModelOptions(fn_img="x")
+        native_options.VdamEnvironment.from_environ()
 
 
-def test_engine_diagnostic_switches_are_read_once_with_the_options(monkeypatch):
+def test_engine_diagnostic_switches_are_read_once_by_from_environ(monkeypatch):
     monkeypatch.delenv("RELAX_ADAPTIVE_FRACTION", raising=False)
     monkeypatch.delenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", raising=False)
-    environment = native_options.NativeInitialModelOptions(fn_img="x").environment
+    environment = native_options.VdamEnvironment.from_environ()
     assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, True)
 
     monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "")  # empty is unset, as the E-step read it
     monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "0")  # a false token leaves it on
-    environment = native_options.NativeInitialModelOptions(fn_img="x").environment
+    environment = native_options.VdamEnvironment.from_environ()
     assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, True)
     monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "1")
-    environment = native_options.NativeInitialModelOptions(fn_img="x").environment
+    environment = native_options.VdamEnvironment.from_environ()
     assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, False)
 
     monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "0.99")
-    options = native_options.NativeInitialModelOptions(fn_img="x")
-    monkeypatch.delenv("RELAX_ADAPTIVE_FRACTION")  # read when the options were built, not later
-    assert options.environment.adaptive_fraction == 0.99
+    environment = native_options.VdamEnvironment.from_environ()
+    monkeypatch.delenv("RELAX_ADAPTIVE_FRACTION")  # read when the command built it, not later
+    assert environment.adaptive_fraction == 0.99
 
     monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "most")
     with pytest.raises(ValueError):
-        native_options.NativeInitialModelOptions(fn_img="x")
+        native_options.VdamEnvironment.from_environ()
 
 
 @pytest.mark.parametrize(
@@ -2224,20 +2224,20 @@ def test_engine_diagnostic_switches_are_read_once_with_the_options(monkeypatch):
 def test_environment_flags_take_the_shared_tokens_and_refuse_a_malformed_value(monkeypatch, name, field, on):
     """deep2 V2-4: one flag parser (env_flags.parse_env_strict_flag); ``=0`` is off and a typo is an error."""
     monkeypatch.delenv(name, raising=False)
-    assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is (not on)
+    assert getattr(native_options.VdamEnvironment.from_environ(), field) is (not on)
     for token, expected in (("1", on), ("yes", on), ("True", on), ("0", not on), ("false", not on), ("off", not on)):
         monkeypatch.setenv(name, token)
-        assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is expected
+        assert getattr(native_options.VdamEnvironment.from_environ(), field) is expected
     monkeypatch.setenv(name, "maybe")
     with pytest.raises(ValueError, match=name):
-        native_options.NativeInitialModelOptions(fn_img="x")
+        native_options.VdamEnvironment.from_environ()
 
 
-def test_float64_scoring_switch_is_refused_with_the_options(monkeypatch):
+def test_float64_scoring_switch_is_refused_by_from_environ(monkeypatch):
     # The resident E-step never took it: InitialModel ignored RELAX_USE_FLOAT64_SCORING until 2026-10-06.
     monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1")
     with pytest.raises(NotImplementedError, match="float32 only"):
-        native_options.NativeInitialModelOptions(fn_img="x")
+        native_options.VdamEnvironment.from_environ()
 
 
 @pytest.mark.parametrize("nr_iter", [4, 5])
@@ -2898,12 +2898,15 @@ def test_log_likelihood_contribution_of_a_group_on_another_grid():
 
 
 def test_run_metadata_records_the_library_settings_the_options_read(monkeypatch, tmp_path):
-    """The options file's allocator and JAX cache entries come from ``VdamEnvironment`` (read when the options are
-    built), not from the process environment at write time; unset variables give "default", None and None."""
+    """The options file's allocator and JAX cache entries come from ``VdamEnvironment`` (read once by
+    ``from_environ``, as the command does), not from the process environment at write time; unset variables give
+    "default", None and None."""
     names = ("TF_GPU_ALLOCATOR", "JAX_COMPILATION_CACHE_DIR", "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS")
 
     def written(tag):
-        opts = native_options.NativeInitialModelOptions(fn_img="x", outputname=str(tmp_path / tag / "run"))
+        opts = native_options.NativeInitialModelOptions(
+            fn_img="x", outputname=str(tmp_path / tag / "run"), environment=native_options.VdamEnvironment.from_environ()
+        )
         for name in names:  # what the environment holds after the options are built must not matter
             monkeypatch.setenv(name, "changed-later")
         output.write_initial_run_metadata(opts, None)
