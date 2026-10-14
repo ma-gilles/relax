@@ -131,7 +131,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
         mstep_relion_x_half=True, relion_firstiter_score_mode=score_mode,
         relion_firstiter_winner_take_all=winner, use_float64_scoring=double,
         engine_tuning=EngineTuning(),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
     assert len(coarse_calls) == len(fine_calls) == 1
     assert coarse_calls[0].get("return_relion_f32_normalization", False) is enabled
@@ -169,7 +169,7 @@ def test_adaptive_engine_refuses_the_removed_dense_pass2():
             sparse_pass2=False,
             relion_exact_fine_gaussian=True,
             engine_tuning=EngineTuning(),
-            scoring_overrides=ScoringOverrides.from_environ(),
+            scoring_overrides=ScoringOverrides(),
         )
 
 
@@ -236,7 +236,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch, engine_tuning=EngineTuning()):
         pass2_use_float64_scoring=True,
         pass2_use_float64_projections=True,
         engine_tuning=engine_tuning,
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
     return significance_calls, sparse_calls, result
 
@@ -777,7 +777,7 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
             coarse_relion_projector_texture_interp=True,
             translation_phase_source=phase_source,
         ),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
 
     assert len(calls) == 1
@@ -856,7 +856,7 @@ def test_adaptive_k_class_firstiter_uses_coarse_current_size_for_probe(monkeypat
         oversampling_order=1,
         sparse_pass2=True,
         engine_tuning=EngineTuning(),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
 
     assert len(probe_calls) == 1
@@ -968,7 +968,7 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
         group_ids=np.asarray([7, 8, 9, 10], dtype=np.int64),
         scale_correction_group_count=11,
         engine_tuning=EngineTuning(),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
 
     assert [call[1] for call in sparse_calls] == [(0, 3), (1, 2)]
@@ -1596,7 +1596,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
             relion_projector_half=projector,
             relion_projector_r_max=projector_r_max,
         ),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
 
     assert len(calls) == 1

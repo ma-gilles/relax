@@ -1,5 +1,7 @@
 """RELION coarse image clipping retains rotated float32 boundary samples."""
 
+from dataclasses import replace
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -144,14 +146,12 @@ def test_gpu_invalid_image_radius_is_nan(radius):
 
 
 def test_canonical_default_can_be_explicitly_overridden(monkeypatch):
-    """The pass's default (on with the compact projector) holds unless the override read at the boundary says 0."""
+    """The pass's default (on with the compact projector) holds unless the ScoringOverrides override is False."""
     from test_pass1_planning import _plan
 
-    monkeypatch.delenv("RELAX_K1_COARSE_ROTATED_RADIUS", raising=False)
     plan, _, _ = _plan(monkeypatch, n_classes=1)
     assert plan.route.compact_rows is not None and plan.score_program_plan.projector.rotated_radius is True
-    monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", "0")
-    plan, _, _ = _plan(monkeypatch, n_classes=1)
+    plan, _, _ = _plan(monkeypatch, n_classes=1, scoring_overrides=replace(ScoringOverrides(), coarse_rotated_radius=False))
     assert plan.score_program_plan.projector.rotated_radius is False
 
 

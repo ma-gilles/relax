@@ -287,4 +287,4 @@ def dense_execution_policy(**fields):
             "engine_tuning": RefinementEnvironment.from_environ().engine,
             **fields,
         }
-    , scoring_overrides=ScoringOverrides.from_environ())
+    , scoring_overrides=ScoringOverrides())

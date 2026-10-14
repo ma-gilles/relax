@@ -265,10 +265,10 @@ def test_a_pass_that_collects_no_support_has_no_support_rows():
 # ------------------------------------------------------------------------------------------- the route, planned
 
 
-def _plan(monkeypatch, n_classes=2, **overrides):
+def _plan(monkeypatch, n_classes=2, scoring_overrides=ScoringOverrides(), **overrides):
     args, kwargs = _significance_call(monkeypatch, n_classes=n_classes)
     kwargs.update(overrides)
-    return plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())), args, kwargs
+    return plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=scoring_overrides)), args, kwargs
 
 
 def test_a_gaussian_pass_plans_the_gemm_route_on_the_float32_support(monkeypatch):
@@ -283,9 +283,8 @@ def test_a_gaussian_pass_plans_the_gemm_route_on_the_float32_support(monkeypatch
     assert plan.n_images == 7 and plan.image_batch_size == 3 and plan.current_size == 4
 
 
-def test_the_environment_switch_to_the_generic_support_route_is_read_once_at_the_route(monkeypatch):
-    monkeypatch.setenv("RECOVAR_K1_RELION_F32_COARSE_SUPPORT", "0")
-    plan, _, _ = _plan(monkeypatch, n_classes=1)
+def test_the_switch_to_the_generic_support_route_is_read_at_the_route(monkeypatch):
+    plan, _, _ = _plan(monkeypatch, n_classes=1, scoring_overrides=replace(ScoringOverrides(), f32_coarse_support=False))
     assert plan.route.float32_support is False
     assert plan.output_plan.relion_f32_coarse_support_enabled is False
     assert plan.score_program_plan.statics.exact_weight_order is False
@@ -339,7 +338,7 @@ def _cc_kwargs(kwargs):
 
 def test_a_normalized_cc_pass_plans_the_exact_cc_route_without_the_float32_support(monkeypatch):
     args, kwargs = _significance_call(monkeypatch, n_classes=1)
-    plan = plan_pass1(Pass1Request(*args, **_cc_kwargs(kwargs), scoring_overrides=ScoringOverrides.from_environ()))
+    plan = plan_pass1(Pass1Request(*args, **_cc_kwargs(kwargs), scoring_overrides=ScoringOverrides()))
     route = plan.route
     assert (route.score_kind, route.executed_backend) == ("normalized_cc", "exact_cc_gemm")
     assert route.float32_support is False and route.projection_cache_plan is None
@@ -363,7 +362,7 @@ def test_the_tree_rescore_is_refused_where_it_cannot_run(monkeypatch, overrides,
     kwargs = _cc_kwargs(kwargs)
     kwargs.update(overrides, tree_rescore_max_margin=0.5)
     with pytest.raises(error, match=message):
-        plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ()))
+        plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides()))
 
 
 def test_the_tail_batch_is_padded_by_default_and_the_engine_tuning_can_turn_it_off(monkeypatch):
@@ -422,4 +421,4 @@ def test_the_planner_refuses_priors_and_noise_tables_that_do_not_fit_the_pass(mo
         args = (args[0], np.ones((2, args[0].image_size), dtype=np.float32), *args[2:])
     kwargs.update(overrides)
     with pytest.raises(ValueError, match=message):
-        plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ()))
+        plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides()))

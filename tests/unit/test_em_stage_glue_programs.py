@@ -147,11 +147,11 @@ def _run_padding_pair(monkeypatch):
     args, kwargs = _significance_call(monkeypatch)
     control = significance._compute_k_class_significance_batched(
         *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=False)),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
     candidate = significance._compute_k_class_significance_batched(
         *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=True)),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
     return candidate, control
 
@@ -196,14 +196,14 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
 
     significance._compute_k_class_significance_batched(
         *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=False)),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
     unpadded = list(seen)
 
     seen.clear()
     significance._compute_k_class_significance_batched(
         *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=True)),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
     padded = list(seen)
 

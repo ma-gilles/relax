@@ -33,7 +33,7 @@ def _request(**overrides):
         np.tile(np.eye(3, dtype=np.float32), (N_ROT, 1, 1)),
         np.zeros((N_TRANS, 2), dtype=np.float32),
         **fields,
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
 
 
@@ -54,7 +54,7 @@ def test_the_request_is_frozen():
 
 def test_only_the_four_inputs_are_positional():
     with pytest.raises(TypeError):
-        Pass1Request(object(), np.ones(16), np.zeros((1, 3, 3)), np.zeros((1, 2)), np.zeros(1), scoring_overrides=ScoringOverrides.from_environ())
+        Pass1Request(object(), np.ones(16), np.zeros((1, 3, 3)), np.zeros((1, 2)), np.zeros(1), scoring_overrides=ScoringOverrides())
 
 
 REFUSALS = [

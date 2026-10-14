@@ -1,5 +1,7 @@
 """RELION CUDA float32 coarse-posterior significance tests."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -225,9 +227,10 @@ def test_coarse_gemm_float64_is_read_once_at_the_boundary(monkeypatch):
 
 
 def test_coarse_gemm_float64_reaches_the_pass1_score_program(monkeypatch):
-    """The precision read at the boundary is the score program's static (pass1_plan)."""
+    """The ScoringOverrides precision is the score program's static (pass1_plan)."""
     from test_pass1_planning import _plan
 
-    monkeypatch.setenv("RELAX_COARSE_GEMM_FLOAT64", "1")
-    plan, _, _ = _plan(monkeypatch, n_classes=1)
+    from relax.runtime.scoring_overrides import ScoringOverrides
+
+    plan, _, _ = _plan(monkeypatch, n_classes=1, scoring_overrides=replace(ScoringOverrides(), coarse_gemm_float64=True))
     assert plan.score_program_plan.statics.float64 is True

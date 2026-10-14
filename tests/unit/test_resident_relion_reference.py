@@ -12,8 +12,8 @@ it free of float ties that are not conventions:
 - The noise variance is 1e30 on the four axis pixels of radius ``current_size/2``. Those pixels
   sit exactly on the BackProjector sphere (and, at the box, the projector's), so whether a
   float32 rotation keeps them is a last-bit tie.
-- ``RELAX_RELION_PROJECTOR_TEXTURE_INTERP=0`` (``ScoringOverrides(projector_texture_interp=False)`` for the local
-  passes): the CUDA texture unit interpolates with 8-bit fixed-point weights, a hardware approximation the float64
+- ``ScoringOverrides(projector_texture_interp=False)`` (``_MANUAL_INTERP``, RELAX_RELION_PROJECTOR_TEXTURE_INTERP=0):
+  the CUDA texture unit interpolates with 8-bit fixed-point weights, a hardware approximation the float64
   reference does not model.
 """
 
@@ -256,12 +256,13 @@ def _gpu_available():
 
 
 requires_resident_gpu = pytest.mark.skipif(not _gpu_available(), reason="every resident stage is a CUDA FFI target")
+# The manual float interpolation: the texture unit's 8-bit weights are not in the float64 reference.
+_MANUAL_INTERP = ScoringOverrides(projector_texture_interp=False)
 
 
 @pytest.fixture
 def _resident_env(monkeypatch):
     monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")
 
 
 @requires_resident_gpu
@@ -285,7 +286,7 @@ def test_resident_driver_is_relions_fine_pass(_resident_env, current_size, noise
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(current_size, noise)
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ()), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=_MANUAL_INTERP), reference)
 
 
 def _assert_k1_pass(
@@ -356,7 +357,7 @@ def test_wide_translation_grids_are_relions_fine_pass(_resident_env, n_coarse_tr
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_wide_driver_args(n_coarse_trans))
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ()), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=_MANUAL_INTERP), reference)
 
 
 @requires_resident_gpu
@@ -371,7 +372,7 @@ def test_vdam_residual_backprojection_is_relions_grad_pass(_resident_env, groups
     args, reference = _case(6, 200.0, base_args=_vdam_args(residual=True, groups=groups), subtract_reference=True)
     _assert_k1_pass(rp.compute_pass2_stats_resident(
         **args, engine_tuning=RESIDENT_PRODUCTION_ENGINE,
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=_MANUAL_INTERP,
     ), reference, scale_sums=groups)
 
 
@@ -411,7 +412,7 @@ def test_zero_oversampling_reuses_relions_coarse_normalization(_resident_env):
     n_cells = max(len(post.cells) for post in ref.posteriors(reference))
     stats_rtol = 2.0 * np.sqrt(n_cells) * float(np.finfo(np.float32).eps)
     _assert_k1_pass(
-        rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ()),
+        rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=_MANUAL_INTERP),
         reference,
         posterior=False,
         best=winners,
@@ -429,7 +430,7 @@ def test_c4_pass_is_relions_fine_pass_on_the_asymmetric_unit(_resident_env):
     from relax.fine_pass import resident_pass2 as rp
 
     args, reference = _case(6, 200.0, base_args=_c4_driver_args(), symmetry="C4")
-    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides.from_environ()), reference)
+    _assert_k1_pass(rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=_MANUAL_INTERP), reference)
 
 
 def _accumulator(actual, half):
@@ -447,7 +448,7 @@ def test_resident_k_class_pass_is_relions_class3d_fine_pass(_resident_env, n_cla
     from test_resident_k_class_pass2 import _resident
 
     args, volumes, supports, priors, reference = _k_class_case(n_classes, current_size, 200.0)
-    out = _resident(args, volumes, supports, priors)
+    out = _resident(args, volumes, supports, priors, scoring_overrides=_MANUAL_INTERP)
     posts = ref.posteriors(reference)
     mstep = ref.mstep(reference, posts)
     n_fine_trans = reference.fine_translations.shape[0]
@@ -589,8 +590,7 @@ def _run_local(case, current_size: int):
         max_significants=-1,
         return_best_pose_details=True,
         pass2_layout=case["layout"],
-        # The manual float interpolation: the texture unit's 8-bit weights are not in the float64 reference.
-        scoring_overrides=ScoringOverrides(projector_texture_interp=False),
+        scoring_overrides=_MANUAL_INTERP,
     ))
 
 
@@ -777,8 +777,7 @@ def _run_local_parent_probe(case, current_size: int):
         return_reconstruction_sample_indices=True,
         apply_max_significants_to_support=True,
         score_only=True,
-        # The manual float interpolation: the texture unit's 8-bit weights are not in the float64 reference.
-        scoring_overrides=ScoringOverrides(projector_texture_interp=False),
+        scoring_overrides=_MANUAL_INTERP,
     ))
 
 

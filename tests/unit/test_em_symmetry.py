@@ -628,7 +628,7 @@ def test_non_c1_adaptive_engine_rejects_unsupported_reconstruction_route_early(
             sparse_pass2=sparse_pass2,
             mstep_relion_x_half=x_half,
             engine_tuning=EngineTuning(),
-            scoring_overrides=ScoringOverrides.from_environ(),
+            scoring_overrides=ScoringOverrides(),
         )
 
 
@@ -654,7 +654,7 @@ def test_non_c1_adaptive_engine_requires_explicit_oversampling_order():
             sparse_pass2=True,
             mstep_relion_x_half=True,
             engine_tuning=EngineTuning(),
-            scoring_overrides=ScoringOverrides.from_environ(),
+            scoring_overrides=ScoringOverrides(),
         )
 
 

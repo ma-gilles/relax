@@ -120,7 +120,7 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
         sampling=estep_sampling_stub(),
         accum_dump_dir=None,
         engine_tuning=EngineTuning(),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
     assert not hasattr(config, "projector_setup_backend")
 

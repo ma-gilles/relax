@@ -243,7 +243,7 @@ def _projector_config(n_classes, **overrides):
         sampling=estep_sampling_stub(),
     )
     values.update(overrides)
-    return InitialModelEstepConfig(**values, accum_dump_dir=None, engine_tuning=EngineTuning(), scoring_overrides=ScoringOverrides.from_environ())
+    return InitialModelEstepConfig(**values, accum_dump_dir=None, engine_tuning=EngineTuning(), scoring_overrides=ScoringOverrides())
 
 
 def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_adaptive_route(monkeypatch):
@@ -465,7 +465,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         sampling=estep_sampling_stub(),
         accum_dump_dir=None,
         engine_tuning=EngineTuning(),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
 
     means, mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
@@ -491,7 +491,7 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
         sampling=estep_sampling_stub(),
         accum_dump_dir=None,
         engine_tuning=EngineTuning(),
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
 
     means, variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)

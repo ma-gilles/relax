@@ -208,6 +208,6 @@ def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
             rotation_log_prior=np.zeros(rotation_grid_size(0, "C1"), dtype=np.float32), sigma_offset_angst=1.0,
             max_significants=None, reconstruction_current_size=4,
             engine_tuning=EngineTuning(),
-            scoring_overrides=ScoringOverrides.from_environ(),
+            scoring_overrides=ScoringOverrides(),
         )
     assert captured["adaptive_fraction"] == RELION_ADAPTIVE_FRACTION == float(np.float32(0.999))

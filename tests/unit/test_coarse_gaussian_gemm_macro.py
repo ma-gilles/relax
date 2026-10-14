@@ -120,7 +120,7 @@ def _relion_coarse_gaussian_gemm_scores(
         n_trans=n_trans,
         image_shape=tuple(int(value) for value in image_shape),
         volume_shape=tuple(int(value) for value in volume_shape),
-        float64=ScoringOverrides.from_environ().coarse_gemm_float64,
+        float64=ScoringOverrides().coarse_gemm_float64,
     )
 
 
@@ -665,10 +665,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
         coarse_gemm_projection_cache_max_bytes=int(0.001 * 1024**3),
         coarse_gemm_transient_max_bytes=int(0.01 * 1024**3),
     )
-    for name, value in {
-        "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "0",
-    }.items():
-        monkeypatch.setenv(name, value)
+    scoring_overrides = replace(ScoringOverrides(), f32_coarse_support=False)
 
     monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
@@ -760,7 +757,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
             rotations,
             translations,
             **common,
-            scoring_overrides=ScoringOverrides.from_environ(),
+            scoring_overrides=scoring_overrides,
         )
 
     uncached = run()
@@ -771,7 +768,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     projection_calls.clear()
     # The explicit request reaches the pass-1 plan.
     common["engine_tuning"] = replace(engine_tuning, coarse_gemm_projection_cache=True)
-    plan = plan_pass1(Pass1Request(dataset, jnp.ones(dataset.image_size, dtype=jnp.float32), rotations, translations, **common, scoring_overrides=ScoringOverrides.from_environ()))
+    plan = plan_pass1(Pass1Request(dataset, jnp.ones(dataset.image_size, dtype=jnp.float32), rotations, translations, **common, scoring_overrides=scoring_overrides))
     cached = significance.run_pass1(plan)
     assert len(projection_calls) == 1
     assert_matches(projection_calls[0][0], np.arange(1, 17))
@@ -808,10 +805,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     engine_tuning = replace(
         EngineTuning(), coarse_gemm_projection_cache=False, coarse_gemm_transient_max_bytes=int(0.01 * 1024**3),
     )
-    for name, value in {
-        "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "0",
-    }.items():
-        monkeypatch.setenv(name, value)
+    scoring_overrides = replace(ScoringOverrides(), f32_coarse_support=False)
 
     monkeypatch.setattr(jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
@@ -1008,7 +1002,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             translation_log_prior=selected_translation_prior,
             **common,
             **options,
-            scoring_overrides=ScoringOverrides.from_environ(),
+            scoring_overrides=scoring_overrides,
         )
 
     zero_priors = run_with_priors(

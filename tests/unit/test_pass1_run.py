@@ -37,16 +37,17 @@ def _cpu_stand_ins_only():
 
 TAIL_START = 6  # images 0-2 and 3-5 fill two batches; image 6 is the tail
 _ENGINE = dataclasses.replace(EngineTuning(), prefetch_depth=0)  # the batches are read in the calling thread
+_GENERIC_SUPPORT = dataclasses.replace(ScoringOverrides(), f32_coarse_support=False)  # the generic support route
 
 
 @pytest.fixture
 def make(monkeypatch):
     """``make(n_classes, **request_overrides)`` -> ``(plan, args, kwargs)`` of a planned pass on the harness."""
 
-    def build(n_classes=2, **overrides):
+    def build(n_classes=2, scoring_overrides=ScoringOverrides(), **overrides):
         args, kwargs = _significance_call(monkeypatch, n_classes=n_classes)
         kwargs.update({"engine_tuning": _ENGINE, **overrides})
-        return plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ())), args, kwargs
+        return plan_pass1(Pass1Request(*args, **kwargs, scoring_overrides=scoring_overrides)), args, kwargs
 
     return build
 
@@ -140,9 +141,8 @@ def test_the_float32_route_publishes_the_winner_of_its_weights_for_one_class(mak
     assert_matches(np.asarray(outputs.best_argmax), np.argmax(np.asarray(outputs.weights), axis=1))
 
 
-def test_the_generic_route_has_the_posterior_weights_but_none_of_the_float32_sums(make, monkeypatch):
-    monkeypatch.setenv("RECOVAR_K1_RELION_F32_COARSE_SUPPORT", "0")
-    plan, args, _ = make()
+def test_the_generic_route_has_the_posterior_weights_but_none_of_the_float32_sums(make):
+    plan, args, _ = make(scoring_overrides=_GENERIC_SUPPORT)
     outputs = score_batch(plan, _prepared(plan, args), defer_publish=False).outputs
     assert outputs.weights is not None and outputs.sig_mask is not None
     assert outputs.pmax is None and outputs.sum_weight is None and outputs.significant_weight is None
@@ -217,9 +217,8 @@ def test_asking_for_the_normalization_also_stores_the_row_maximum_as_float32(mak
     assert results.relion_f32_max_posterior[TAIL_START] == np.float32(0.25)
 
 
-def test_the_generic_route_derives_the_maximum_posterior_from_the_best_score(make, monkeypatch):
-    monkeypatch.setenv("RECOVAR_K1_RELION_F32_COARSE_SUPPORT", "0")
-    plan, args, _ = make()
+def test_the_generic_route_derives_the_maximum_posterior_from_the_best_score(make):
+    plan, args, _ = make(scoring_overrides=_GENERIC_SUPPORT)
     outputs, results = _published(plan, args)
     expected = np.exp(float(np.asarray(outputs.best_score)[0]) - float(np.asarray(outputs.global_log_z)[0]))
     assert results.max_posterior[TAIL_START] == pytest.approx(expected, rel=1e-6)
@@ -332,8 +331,7 @@ def test_the_float32_route_publishes_each_batch_after_the_next_batchs_operands_a
 @pytest.mark.parametrize("how", ["generic_route", "no_support"])
 def test_a_batch_that_does_not_defer_is_published_before_the_next_batch_is_prepared(make, monkeypatch, how):
     if how == "generic_route":
-        monkeypatch.setenv("RECOVAR_K1_RELION_F32_COARSE_SUPPORT", "0")
-        plan, _, _ = make()
+        plan, _, _ = make(scoring_overrides=_GENERIC_SUPPORT)
     else:
         plan, _, _ = make(collect_significance=False)
     assert _loop_events(monkeypatch, plan) == [
@@ -350,7 +348,7 @@ def test_running_the_plan_is_what_the_keyword_entry_does(make):
     plan, args, kwargs = make()
     result = significance.run_pass1(plan)
     assert isinstance(result, Pass1Result)
-    _assert_significance_results_match(result, significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides.from_environ()))
+    _assert_significance_results_match(result, significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides()))
 
 
 def test_the_stats_are_typed_fields_with_the_shapes_and_dtypes_of_the_pass(make):

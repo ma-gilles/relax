@@ -240,7 +240,7 @@ def test_duplicated_class_of_tilt_particles_is_the_k1_pass(_resident_production_
     args["translation_log_prior"] = None
     single = rp.compute_tilt_pass2_stats_resident(
         tilt=tilt, significant_sample_indices=support, **args, engine_tuning=RESIDENT_PRODUCTION_ENGINE,
-        scoring_overrides=ScoringOverrides.from_environ(),
+        scoring_overrides=ScoringOverrides(),
     )
 
     k_args = dict(args, tilt=tilt)
