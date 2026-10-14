@@ -23,7 +23,7 @@ def planner(monkeypatch):
     return batches.BatchPlanner(
         requested=stand_in.execution(image_batch_size=200, rotation_block_size=1000),
         image_shape=(16, 16), volume_shape=(16, 16, 16), n_classes=1, precision=DensePrecisionPolicy(),
-        engine_tuning=EngineTuning(), log=SimpleNamespace(info=lambda *args: None),
+        engine_tuning=EngineTuning(), projector_texture_interp=True, log=SimpleNamespace(info=lambda *args: None),
     )
 
 

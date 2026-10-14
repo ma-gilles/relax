@@ -431,6 +431,7 @@ def test_relion_projector_projection_dense_scale_matches_embedded_means(monkeypa
         r_max=1,
         centered_rows=True,
         dense_scale=True,
+        texture_interp_default=True,
     )
 
     expected = np.asarray(raw) * -16.0

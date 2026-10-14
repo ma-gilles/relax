@@ -71,11 +71,13 @@ def test_relion_projection_rows_are_bitwise_invariant_to_duplicate_batching(
         jnp.asarray(projector_half),
         jnp.asarray(duplicate_rotations),
         **common,
+        texture_interp_default=True,
     )
     unique, _ = compute_relion_projector_projections_block(
         jnp.asarray(projector_half),
         jnp.asarray(unique_rotations),
         **common,
+        texture_interp_default=True,
     )
 
     assert_matches(np.asarray(direct), np.asarray(unique)[duplicate_ids])

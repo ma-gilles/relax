@@ -477,7 +477,8 @@ def test_row_capacity_ladder_is_capped_by_the_projection_budget():
 def test_local_projector_texture_is_not_opened_for_manual_or_double_projection():
     slab = np.zeros((11, 11, 6), dtype=np.complex64)
     kwargs = dict(relion_projector_r_max=4, projection_padding_factor=1)
-    projection_kwargs = {"projector_output_size": 8, "relion_texture_interp": None}
+    # The run's choice (texture_interp_default) is the unset RELAX_RELION_PROJECTOR_TEXTURE_INTERP's.
+    projection_kwargs = {"projector_output_size": 8, "relion_texture_interp": None, "texture_interp_default": True}
     assert rlp._open_capacity_texture(None, projection_kwargs=projection_kwargs, **kwargs) is None
     assert (
         rlp._open_capacity_texture(slab, projection_kwargs=dict(projection_kwargs, relion_texture_interp=False), **kwargs)

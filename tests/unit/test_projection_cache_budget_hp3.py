@@ -128,16 +128,16 @@ def test_texture_projector_fallback_is_reported_once_per_reason(monkeypatch, cap
     monkeypatch.setattr(projection, "_cuda_projection_available", lambda: True)
     projection._TEXTURE_FALLBACK_REPORTED.clear()
     good = jnp.zeros((187, 187, 94), jnp.complex64)
-    assert projection._relion_projector_texture_enabled(good, r_max=46, padding_factor=2) is True
+    assert projection._relion_projector_texture_enabled(good, r_max=46, padding_factor=2, enabled=True) is True
 
     wrong_dtype = jnp.zeros((187, 187, 94), jnp.complex128)
     with caplog.at_level(logging.WARNING, logger=projection.logger.name):
         assert (
-            projection._relion_projector_texture_enabled(wrong_dtype, r_max=46, padding_factor=2)
+            projection._relion_projector_texture_enabled(wrong_dtype, r_max=46, padding_factor=2, enabled=True)
             is False
         )
         assert (
-            projection._relion_projector_texture_enabled(wrong_dtype, r_max=46, padding_factor=2)
+            projection._relion_projector_texture_enabled(wrong_dtype, r_max=46, padding_factor=2, enabled=True)
             is False
         )
     messages = [r.message for r in caplog.records if "texture projector unavailable" in r.message]
@@ -154,10 +154,10 @@ def test_pass2_projector_cast_unblocks_the_texture_projector(monkeypatch):
     monkeypatch.setattr(projection, "_cuda_projection_available", lambda: True)
     projection._TEXTURE_FALLBACK_REPORTED.clear()
     slab = jnp.zeros((187, 187, 94), jnp.complex128)
-    assert projection._relion_projector_texture_enabled(slab, r_max=46, padding_factor=2) is False
+    assert projection._relion_projector_texture_enabled(slab, r_max=46, padding_factor=2, enabled=True) is False
     assert (
         projection._relion_projector_texture_enabled(
-            slab.astype(jnp.complex64), r_max=46, padding_factor=2
+            slab.astype(jnp.complex64), r_max=46, padding_factor=2, enabled=True
         )
         is True
     )

@@ -37,6 +37,9 @@ class BatchPlanner:
     precision: DensePrecisionPolicy
     # How the engines execute (RefinementOptions.environment.engine).
     engine_tuning: EngineTuning
+    # RefinementOptions.environment.scoring.projector_texture_interp: whether the fine pass's RELION projector
+    # interpolates through the CUDA texture (the compact route needs it).
+    projector_texture_interp: bool
     log: object
 
     def __call__(
@@ -203,7 +206,8 @@ def prepare_half_batches(
         and relion_firstiter_cc_this_iter and compact_precision
         and host_relion_projector_texture_enabled(
             projector_half, r_max=None if projector is None else projector.r_max,
-            padding_factor=PROJECTION_PADDING_FACTOR, allow_float32_cast=True,
+            padding_factor=PROJECTION_PADDING_FACTOR, enabled=planner.projector_texture_interp,
+            allow_float32_cast=True,
         )
     ):
         model_size = int(volume_shape[0] if model_current_size_for_engine is None

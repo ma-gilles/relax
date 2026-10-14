@@ -74,7 +74,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         batch_planner=BatchPlanner(requested=stand_in.execution(image_batch_size=2, rotation_block_size=2),
                                    image_shape=(4, 4), volume_shape=(4, 4, 4), n_classes=n_classes,
                                    precision=DensePrecisionPolicy(), engine_tuning=EngineTuning(),
-                                   log=logging.getLogger(__name__)),
+                                   projector_texture_interp=True, log=logging.getLogger(__name__)),
         image_geometry=ImageGeometry(image_shape=(4, 4), pixel_size_angstrom=1.25),
         padded_volume_shape=(8, 8, 8),
         use_adaptive=adaptive, multi_shape_halves=False, variant=variant,

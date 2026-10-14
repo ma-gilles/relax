@@ -406,7 +406,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
         score_indices=score_indices, recon_indices=None,
         relion_projector_half=slab, relion_projector_r_max=state.projector_r_max,
         projection_padding_factor=state.projection_padding_factor,
-        projector_output_size=state.current_size, mask_current_image_disk=False,
+        projector_output_size=state.current_size, mask_current_image_disk=False, texture_interp_default=True,
         **window.window_spec.projection_kwargs(return_abs2=False),
     )
     if state.relion_native_fine_units:

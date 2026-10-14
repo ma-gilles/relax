@@ -15,7 +15,7 @@ def _open_persistent_relion_projector_texture(
     *,
     relion_projector_r_max,
     projection_padding_factor,
-    relion_texture_interp=None,
+    relion_texture_interp=True,  # the unset RELAX_RELION_PROJECTOR_TEXTURE_INTERP
     log_label="Sparse pass-2",
 ):
     """Upload an eligible host ``PPref`` slab once as a persistent float32 RELION texture.
@@ -638,7 +638,7 @@ def test_host_texture_planning_and_dispatch_share_eligibility(monkeypatch, layou
     if layout == "double": slab = slab.astype(np.complex128)
     if layout == "class_axis": slab = slab[None]
     if layout == "missing_radius": radius = None
-    assert projection.host_relion_projector_texture_enabled(slab, r_max=radius, padding_factor=2) is (layout == "valid")
+    assert projection.host_relion_projector_texture_enabled(slab, r_max=radius, padding_factor=2, enabled=True) is (layout == "valid")
     assert len(calls) == (1 if layout == "valid" else 0)
 
 
@@ -706,7 +706,7 @@ def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
     captured = []
     monkeypatch.setattr(projection, "_relion_projector_texture_enabled", lambda value, **kw: value.dtype == np.complex64)
     monkeypatch.setattr(cuda_projector, "RelionPersistentHalfTextureF32", lambda value, **kw: captured.append(value) or object())
-    assert projection.host_relion_projector_texture_enabled(source, r_max=1, padding_factor=1, allow_float32_cast=True)
+    assert projection.host_relion_projector_texture_enabled(source, r_max=1, padding_factor=1, enabled=True, allow_float32_cast=True)
     _open_persistent_relion_projector_texture(source, relion_projector_r_max=1, projection_padding_factor=1)
     assert captured[0].dtype == np.complex64
     assert_matches(captured[0], source.astype(np.complex64))
@@ -726,7 +726,10 @@ def test_host_cast_matches_device_cast_and_texture_projection(custom_cuda_lib, g
         old_float = old_double.astype(jnp.complex64)
         assert_matches(np.asarray(old_float), source.astype(np.complex64))
         rotations = jnp.asarray(_rotations())
-        kwargs = dict(r_max=7, padding_factor=2, projector_output_size=16, centered_rows=True, dense_scale=True)
+        kwargs = dict(
+            r_max=7, padding_factor=2, projector_output_size=16, centered_rows=True, dense_scale=True,
+            texture_interp_default=True,
+        )
         expected = compute_relion_projector_projections_block(old_float, rotations, (16, 16), **kwargs)
         texture = _open_persistent_relion_projector_texture(source, relion_projector_r_max=7, projection_padding_factor=2)
         assert texture is not None

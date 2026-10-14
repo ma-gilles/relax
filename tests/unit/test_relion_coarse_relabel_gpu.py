@@ -71,6 +71,7 @@ def _fused_and_gemm_scores(box, window, r_max, scale, *, relabel):
         relion_texture_interp=True,
         relion_kernel="coarse",
         image_r_max=jnp.asarray(window // 2, dtype=jnp.int32),
+        texture_interp_default=True,
     )
     shifted = relion_coarse_translate(
         cuda_translate.relion_translate_score_f32,

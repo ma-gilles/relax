@@ -1400,6 +1400,7 @@ def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypat
         centered_rows,
         dense_scale,
         relion_texture_interp,
+        texture_interp_default,
         projector_output_size=None,
         mask_current_image_disk=True,
         relion_kernel=None,
@@ -1419,6 +1420,7 @@ def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypat
                 "centered_rows": bool(centered_rows),
                 "dense_scale": bool(dense_scale),
                 "relion_texture_interp": relion_texture_interp,
+                "texture_interp_default": texture_interp_default,
                 "mask_current_image_disk": bool(mask_current_image_disk),
                 "projector_shape": tuple(volume_relion_half.shape),
             }
@@ -1460,6 +1462,7 @@ def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypat
             "centered_rows": True,
             "dense_scale": True,
             "relion_texture_interp": False,
+            "texture_interp_default": None,  # the request is explicit; no run default was given
             "mask_current_image_disk": False,
             "projector_shape": (4, 4, 3),
         }

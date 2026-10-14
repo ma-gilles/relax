@@ -512,7 +512,8 @@ def build_run_context(
         batch_planner=BatchPlanner(
             requested=options.execution, image_shape=image_geometry.image_shape, volume_shape=volume_shape,
             n_classes=options.k_class.n_classes, precision=options.precision,
-            engine_tuning=options.environment.engine, log=logger,
+            engine_tuning=options.environment.engine,
+            projector_texture_interp=options.environment.scoring.projector_texture_interp, log=logger,
         ),
         collect_local_search_profile=options.local_search.collects_profile(observer.collects_local_search_profiles),
         perturb_rng=None if options.parity.perturb_seed is not None else np.random.default_rng(),

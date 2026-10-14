@@ -2815,6 +2815,7 @@ def test_relion_projector_indexed_centered_rows_match_full_window(rng):
         return_abs2=False,
         centered_rows=True,
         projector_output_size=6,
+        texture_interp_default=True,
     )
     indexed, _ = compute_relion_projector_projections_block(
         jnp.asarray(projector_half),
@@ -2826,6 +2827,7 @@ def test_relion_projector_indexed_centered_rows_match_full_window(rng):
         centered_rows=True,
         projector_output_size=6,
         pixel_indices=window_spec.projection_indices,
+        texture_interp_default=True,
     )
 
     np.testing.assert_allclose(
@@ -2852,19 +2854,28 @@ def test_relion_projector_texture_full_embeds_positive_x_half():
 
 def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypatch):
     from relax.projection import projection as projection_helpers
+    from relax.runtime.scoring_overrides import PROJECTOR_TEXTURE_INTERP_ENV, ScoringOverrides
 
     projector_half = jnp.ones((5, 5, 3), dtype=jnp.complex64)
     rotations = jnp.eye(3, dtype=jnp.float32)[None]
     calls = []
 
-    monkeypatch.delenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", raising=False)
+    # The run's choice (ScoringOverrides.projector_texture_interp): on unless the variable says 0.
+    monkeypatch.delenv(PROJECTOR_TEXTURE_INTERP_ENV, raising=False)
+    assert ScoringOverrides.from_environ().projector_texture_interp is True is ScoringOverrides().projector_texture_interp
+    monkeypatch.setenv(PROJECTOR_TEXTURE_INTERP_ENV, "0")
+    assert ScoringOverrides.from_environ().projector_texture_interp is False
+    monkeypatch.setenv(PROJECTOR_TEXTURE_INTERP_ENV, "maybe")
+    with pytest.raises(ValueError, match=PROJECTOR_TEXTURE_INTERP_ENV):
+        ScoringOverrides.from_environ()
+
     monkeypatch.setattr(projection_helpers, "_cuda_projection_available", lambda: True)
     assert projection_helpers._relion_projector_texture_enabled(
         projector_half,
         r_max=1,
         padding_factor=1,
+        enabled=True,
     )
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "1")
 
     def fake_texture(projector, rotations_block, image_shape, **kwargs):
         calls.append((tuple(projector.shape), tuple(rotations_block.shape), tuple(image_shape), dict(kwargs)))
@@ -2880,6 +2891,7 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
         return_abs2=False,
         centered_rows=True,
         projector_output_size=2,
+        texture_interp_default=True,
     )
     assert_matches(np.asarray(got), np.full((1, 12), 2.0 + 1.0j, dtype=np.complex64))
     assert calls == [
@@ -2891,7 +2903,6 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
         )
     ]
 
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")
     monkeypatch.setattr(
         projection_helpers,
         "project_relion_projector_half_spectrum_centered_rows",
@@ -2906,11 +2917,11 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
         return_abs2=False,
         centered_rows=True,
         projector_output_size=2,
+        texture_interp_default=False,
     )
     assert_matches(np.asarray(fallback), np.full((1, 12), 7.0 + 0.0j, dtype=np.complex64))
     assert len(calls) == 1
 
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "1")
     explicit_fallback, _ = projection_helpers.compute_relion_projector_projections_block(
         projector_half,
         rotations,
@@ -2921,6 +2932,7 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
         centered_rows=True,
         projector_output_size=2,
         relion_texture_interp=False,
+        texture_interp_default=True,
     )
     assert_matches(
         np.asarray(explicit_fallback),
@@ -3026,6 +3038,7 @@ def test_texture_projector_compact_indices_bypass_full_scatter(monkeypatch):
         centered_rows=True,
         projector_output_size=2,
         pixel_indices=requested,
+        texture_interp_default=True,
     )
     assert_matches(
         np.asarray(got),

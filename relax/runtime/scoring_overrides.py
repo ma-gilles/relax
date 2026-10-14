@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from relax.runtime.env_flags import parse_env_binary_flag, parse_env_flag, read_env_text
+from relax.runtime.env_flags import parse_env_binary_flag, parse_env_flag, parse_env_strict_flag, read_env_text
 
 F32_COARSE_SUPPORT_ENV = "RECOVAR_K1_RELION_F32_COARSE_SUPPORT"
 COARSE_GEMM_FLOAT64_ENV = "RELAX_COARSE_GEMM_FLOAT64"
@@ -21,6 +21,7 @@ COARSE_ROTATED_RADIUS_ENV = "RELAX_K1_COARSE_ROTATED_RADIUS"
 FINE_ROTATION_EXECUTION_ORDER_ENV = "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER"
 EXACT_FLOAT32_ACCUMULATION_ENV = "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
 X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
+PROJECTOR_TEXTURE_INTERP_ENV = "RELAX_RELION_PROJECTOR_TEXTURE_INTERP"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -48,6 +49,10 @@ class ScoringOverrides:
     x-half M-step accumulates ``Ft_y``/``Ft_ctf`` in complex128/float64 instead of RELION's single-precision
     ``BackProjector`` (``half_volume_mstep.relion_x_half_mstep_accumulator_dtypes``), a diagnostic for isolating
     boundary-shell differences.
+    ``projector_texture_interp`` (RELAX_RELION_PROJECTOR_TEXTURE_INTERP, ``env_flags.parse_env_strict_flag``; default
+    on): a RELION projection that asks for no interpolator of its own (``relion_texture_interp=None``) takes RELION's
+    CUDA texture interpolator where it is available; off takes the manual float interpolation, which the float64
+    reference tests compare against (the texture unit weighs with 8-bit fixed-point fractions).
     """
 
     f32_coarse_support: bool = True
@@ -56,6 +61,7 @@ class ScoringOverrides:
     fine_rotation_execution_order: bool = False
     exact_float32_accumulation: bool = False
     x_half_mstep_double: bool = False
+    projector_texture_interp: bool = True
 
     @classmethod
     def from_environ(cls) -> ScoringOverrides:
@@ -66,6 +72,7 @@ class ScoringOverrides:
             fine_rotation_execution_order=parse_env_flag(FINE_ROTATION_EXECUTION_ORDER_ENV, default=False),
             exact_float32_accumulation=parse_env_binary_flag(EXACT_FLOAT32_ACCUMULATION_ENV),
             x_half_mstep_double=parse_env_flag(X_HALF_MSTEP_DOUBLE_ENV),
+            projector_texture_interp=parse_env_strict_flag(PROJECTOR_TEXTURE_INTERP_ENV, default=True),
         )
 
 

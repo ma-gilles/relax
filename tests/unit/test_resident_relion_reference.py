@@ -12,8 +12,9 @@ it free of float ties that are not conventions:
 - The noise variance is 1e30 on the four axis pixels of radius ``current_size/2``. Those pixels
   sit exactly on the BackProjector sphere (and, at the box, the projector's), so whether a
   float32 rotation keeps them is a last-bit tie.
-- ``RELAX_RELION_PROJECTOR_TEXTURE_INTERP=0``: the CUDA texture unit interpolates with 8-bit
-  fixed-point weights, a hardware approximation the float64 reference does not model.
+- ``RELAX_RELION_PROJECTOR_TEXTURE_INTERP=0`` (``ScoringOverrides(projector_texture_interp=False)`` for the local
+  passes): the CUDA texture unit interpolates with 8-bit fixed-point weights, a hardware approximation the float64
+  reference does not model.
 """
 
 from __future__ import annotations
@@ -591,6 +592,8 @@ def _run_local(case, current_size: int):
         max_significants=-1,
         return_best_pose_details=True,
         pass2_layout=case["layout"],
+        # The manual float interpolation: the texture unit's 8-bit weights are not in the float64 reference.
+        scoring_overrides=ScoringOverrides(projector_texture_interp=False),
     ))
 
 
@@ -605,7 +608,6 @@ def test_resident_local_pass_is_relions_local_fine_pass(monkeypatch, noise, curr
 
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")
     case, reference = _local_case(current_size, noise)
     out = _run_local(case, current_size)
     posts = ref.posteriors(reference)
@@ -778,6 +780,8 @@ def _run_local_parent_probe(case, current_size: int):
         return_reconstruction_sample_indices=True,
         apply_max_significants_to_support=True,
         score_only=True,
+        # The manual float interpolation: the texture unit's 8-bit weights are not in the float64 reference.
+        scoring_overrides=ScoringOverrides(projector_texture_interp=False),
     ))
 
 
@@ -794,7 +798,6 @@ def test_resident_parent_probe_is_relions_local_pass_1(monkeypatch, noise, curre
 
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")
     case, reference = _local_parent_case(current_size, noise)
     out = _run_local_parent_probe(case, current_size)
     posts = ref.posteriors(reference)

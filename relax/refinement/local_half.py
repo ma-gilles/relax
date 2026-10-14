@@ -808,7 +808,7 @@ def _score_half_local_one_shape(
     local_accumulate_noise = not execution.score_only
     logger.info(
         "RELION local fine pass 2: supplied-PPref interpolation follows "
-        "RELAX_RELION_PROJECTOR_TEXTURE_INTERP (default texture)"
+        "ScoringOverrides.projector_texture_interp (RELAX_RELION_PROJECTOR_TEXTURE_INTERP, default texture)"
     )
     local_outputs = _run_local_search_iteration(
         local_data,

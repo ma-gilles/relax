@@ -1580,6 +1580,7 @@ def _resident_pass2(
         current_size=current_size,
     )
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
+    projection_kwargs["texture_interp_default"] = scoring_overrides.projector_texture_interp
     # Stable windows also project at the physical class: a center-padded capacity
     # slab into the physical crop, with RELION's logical model and image radii as
     # runtime values (_capacity_projection). The projection programs then keep one

@@ -80,11 +80,11 @@ def test_projection_block_applies_the_named_kernels_rule():
     label[0] = 10
     matrices = Rotation.random(2, random_state=5).as_matrix()
     # Unscaled rotations: the rows beyond maxR are outside the sphere anyway, so the rule is inert.
-    plain, _ = compute_relion_projector_projections_block(projector, jnp.asarray(matrices), (20, 20), **kwargs)
+    plain, _ = compute_relion_projector_projections_block(projector, jnp.asarray(matrices), (20, 20), **kwargs, texture_interp_default=True)
     assert not np.asarray(plain).reshape(2, 20, 11)[:, np.abs(label) > 8].any()
     scaled = jnp.asarray(matrices / 1.12)
-    fine, _ = compute_relion_projector_projections_block(projector, scaled, (20, 20), **kwargs)
-    coarse, _ = compute_relion_projector_projections_block(projector, scaled, (20, 20), relion_kernel="coarse", **kwargs)
+    fine, _ = compute_relion_projector_projections_block(projector, scaled, (20, 20), **kwargs, texture_interp_default=True)
+    coarse, _ = compute_relion_projector_projections_block(projector, scaled, (20, 20), relion_kernel="coarse", **kwargs, texture_interp_default=True)
     fine, coarse = np.asarray(fine).reshape(2, 20, 11), np.asarray(coarse).reshape(2, 20, 11)
     assert not fine[:, np.abs(label) > 8].any() and not coarse[:, label > 8].any()
     # The coarse kernel still projects the negative rows beyond maxR; both keep the rest unchanged.
@@ -165,6 +165,7 @@ def test_coarse_projection_in_the_band_projects_relions_relabelled_rows(compact)
         projector, rotations, (window, window), r_max=r_max, padding_factor=1, centered_rows=True,
         projector_output_size=window, relion_texture_interp=False, relion_kernel="coarse",
         pixel_indices=jnp.asarray(indices, jnp.int32) if compact else None,
+        texture_interp_default=True,
     )
     coarse = np.asarray(coarse)
     # Reference: the plain projector on a grid large enough to hold every kernel coordinate.
@@ -195,6 +196,7 @@ def test_coarse_projection_band_refuses_routes_that_cannot_relabel():
         compute_relion_projector_projections_block(
             projector, rotations, (18, 18), r_max=8, padding_factor=1, centered_rows=False,
             projector_output_size=18, relion_texture_interp=False, relion_kernel="coarse",
+            texture_interp_default=True,
         )
 
 
@@ -211,8 +213,8 @@ def test_sgd_kernel_projects_every_row_inside_the_sphere(scale, r_max):
     projector = jnp.asarray(rng.standard_normal((2 * r_max + 3, 2 * r_max + 3, r_max + 2)) + 0j, dtype=jnp.complex128)
     rotations = jnp.asarray(Rotation.random(3, random_state=7).as_matrix() / scale)
     kwargs = dict(r_max=r_max, padding_factor=1, centered_rows=True, projector_output_size=window, relion_texture_interp=False)
-    sgd, _ = compute_relion_projector_projections_block(projector, rotations, (window, window), relion_kernel="sgd", **kwargs)
-    fine, _ = compute_relion_projector_projections_block(projector, rotations, (window, window), **kwargs)
+    sgd, _ = compute_relion_projector_projections_block(projector, rotations, (window, window), relion_kernel="sgd", **kwargs, texture_interp_default=True)
+    fine, _ = compute_relion_projector_projections_block(projector, rotations, (window, window), **kwargs, texture_interp_default=True)
     plain = project_relion_projector_half_spectrum_centered_rows(projector, rotations, (window, window), r_max, 1, window, False)
     sgd, fine, plain = (np.asarray(a).reshape(3, window, window // 2 + 1) for a in (sgd, fine, plain))
     label = np.arange(window) - window // 2

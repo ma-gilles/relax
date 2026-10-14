@@ -86,6 +86,7 @@ def test_half_staging_preserves_current_crop_mask_and_scaling(
         relion_texture_interp=True,
         mask_current_image_disk=mask_disk,
         current_image_mask_size=output_size - 4,
+        texture_interp_default=True,
     )
     assert_matches(projected, expected)
     assert_matches(abs2, jnp.abs(expected) ** 2)

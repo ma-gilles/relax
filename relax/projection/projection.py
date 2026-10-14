@@ -15,12 +15,10 @@ from recovar import core
 from recovar.cuda_backproject import cuda_available as _cuda_projection_available
 
 from relax.fourier.half_spectrum import bin_shell_values_jax
-from relax.runtime.env_flags import parse_env_strict_flag
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROJECTION_MAX_R = object()
-_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_PROJECTOR_TEXTURE_INTERP"
 
 
 @partial(jax.jit, static_argnums=(2, 3, 4, 5))
@@ -423,12 +421,14 @@ def _relion_projector_texture_enabled(
     *,
     r_max: int,
     padding_factor: int,
-    enabled: bool | None = None,
+    enabled: bool,
 ) -> bool:
+    """Whether the texture interpolator projects this slab: ``enabled`` (a request, or the run's
+    ``ScoringOverrides.projector_texture_interp``) and the custom CUDA projector, complex64 and RELION's
+    padded geometry."""
     if enabled is None:
-        if not parse_env_strict_flag(_RELION_PROJECTOR_TEXTURE_ENV, default=True):
-            return False
-    elif not bool(enabled):
+        raise TypeError("the texture interpolator needs an explicit choice (ScoringOverrides.projector_texture_interp)")
+    if not enabled:
         return False
     shape = tuple(int(value) for value in volume_relion_half.shape)
     expected_pad = 2 * (int(float(padding_factor) * float(r_max) + 0.5) + 1) + 1
@@ -456,9 +456,10 @@ def _relion_projector_texture_enabled(
 
 
 def host_relion_projector_texture_enabled(
-    projector_half, *, r_max, padding_factor, allow_float32_cast=False, enabled=None,
+    projector_half, *, r_max, padding_factor, enabled: bool, allow_float32_cast=False,
 ):
-    """Check upload geometry using the fine consumer's effective dtype.
+    """Check upload geometry using the fine consumer's effective dtype (``enabled``: the run's
+    ``ScoringOverrides.projector_texture_interp``).
 
     Planning inspects metadata only. The fine dispatcher performs the existing
     c128-to-c64 production cast on host; coarse callers retain their source.
@@ -617,7 +618,7 @@ def _half_storage_projection(volume_relion_half, *, r_max, padding_factor, proje
 
 
 def relion_capacity_texture_serves(
-    volume_relion_half, *, r_max, padding_factor, projector_output_size, relion_texture_interp=None
+    volume_relion_half, *, r_max, padding_factor, projector_output_size, relion_texture_interp: bool
 ) -> bool:
     """Whether :class:`~relax.cuda.projector.RelionCapacityHalfTextureF32` can serve this slab's projections.
 
@@ -819,6 +820,7 @@ def compute_relion_projector_projections_block(
     projector_output_size: int | None = None,
     pixel_indices=None,
     relion_texture_interp: bool | None = None,
+    texture_interp_default: bool | None = None,
     relion_acc_double_floorf_quirk: bool = False,
     mask_current_image_disk: bool = False,
     current_image_mask_size=None,
@@ -832,9 +834,10 @@ def compute_relion_projector_projections_block(
     """Project precomputed RELION ``PPref`` data for one rotation block.
 
     Strict parity defaults to RELION's CUDA texture interpolator when the
-    custom CUDA projector is available.  Set
-    ``RELAX_RELION_PROJECTOR_TEXTURE_INTERP=0`` to force the manual/JAX
-    diagnostic fallback.
+    custom CUDA projector is available. ``relion_texture_interp`` asks for it (True) or for the manual/JAX
+    fallback (False); None takes ``texture_interp_default``, the run's
+    ``ScoringOverrides.projector_texture_interp`` (RELAX_RELION_PROJECTOR_TEXTURE_INTERP=0 forces the
+    manual/JAX diagnostic fallback there).
 
     ``relion_acc_double_floorf_quirk`` only applies to that manual/JAX
     fallback (the texture path is float32-only hardware interpolation, unrelated
@@ -910,7 +913,7 @@ def compute_relion_projector_projections_block(
             volume_relion_half,
             r_max=int(r_max),
             padding_factor=int(padding_factor),
-            enabled=relion_texture_interp,
+            enabled=texture_interp_default if relion_texture_interp is None else relion_texture_interp,
         )
 
     if use_texture:

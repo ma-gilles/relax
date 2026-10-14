@@ -719,9 +719,10 @@ def compute_local_search_resident(
         current_size=current_size,
     )
     # The exact local engine passes all four of these to the same projector;
-    # ``relion_texture_interp=None`` means "resolve as strict parity does",
-    # which is RELION's CUDA texture interpolator.
+    # ``relion_texture_interp=None`` means "resolve as strict parity does":
+    # the run's ScoringOverrides.projector_texture_interp (RELION's CUDA texture interpolator by default).
     projection_kwargs["relion_texture_interp"] = kernel.projection_relion_texture_interp
+    projection_kwargs["texture_interp_default"] = support.scoring_overrides.projector_texture_interp
     projection_kwargs["relion_acc_double_floorf_quirk"] = bool(
         kernel.projection_relion_acc_double_floorf_quirk
     )
@@ -2004,7 +2005,11 @@ def _open_capacity_texture(
         r_max=int(relion_projector_r_max),
         padding_factor=int(projection_padding_factor),
         projector_output_size=int(projection_kwargs["projector_output_size"]),
-        relion_texture_interp=projection_kwargs.get("relion_texture_interp"),
+        relion_texture_interp=(
+            projection_kwargs["texture_interp_default"]
+            if projection_kwargs.get("relion_texture_interp") is None
+            else projection_kwargs["relion_texture_interp"]
+        ),
     ):
         return None
     from relax.cuda.projector import RelionCapacityHalfTextureF32

@@ -1230,6 +1230,7 @@ def test_relion_half_texture_projection_matches_legacy_full_staging(
             dense_scale=True,
             projector_output_size=current_size,
             relion_texture_interp=True,
+            texture_interp_default=True,
         )
         legacy_scaled = legacy * np.float32(-(current_size**2))
         legacy_abs2 = jnp.abs(legacy_scaled) ** 2
@@ -1301,12 +1302,14 @@ def test_relion_half_texture_full_even_indexed_projection_matches_full_scatter(
             jnp.asarray(projector),
             jnp.asarray(rotations),
             **common,
+            texture_interp_default=True,
         )
         indexed_projection, indexed_abs2 = compute_relion_projector_projections_block(
             jnp.asarray(projector),
             jnp.asarray(rotations),
             pixel_indices=pixel_indices,
             **common,
+            texture_interp_default=True,
         )
 
     assert_matches(
@@ -1467,12 +1470,14 @@ def test_relion_half_texture_projection_is_invariant_to_host_support_crop(
             jnp.asarray(rotations),
             r_max=projector_r_max,
             **common,
+            texture_interp_default=True,
         )
         compact_projection, compact_abs2 = compute_relion_projector_projections_block(
             jnp.asarray(compact),
             jnp.asarray(rotations),
             r_max=compact_r_max,
             **common,
+            texture_interp_default=True,
         )
 
     assert_matches(

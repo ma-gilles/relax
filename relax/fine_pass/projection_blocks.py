@@ -70,6 +70,8 @@ def _compute_sparse_pass2_projections_block(
     # sparse pass 2 silently use a different radius from coarse scoring.
     projection_max_r = projection_kwargs.get("max_r", None)
     projection_relion_texture_interp = projection_kwargs.get("relion_texture_interp")
+    # The run's ScoringOverrides.projector_texture_interp, for a projection that asks for no interpolator (None).
+    texture_interp_default = projection_kwargs.pop("texture_interp_default", None)
     projection_mask_current_image_disk = bool(
         projection_kwargs.pop("mask_current_image_disk", False)
     )
@@ -115,6 +117,7 @@ def _compute_sparse_pass2_projections_block(
                 centered_rows=True,
                 dense_scale=True,
                 relion_texture_interp=projection_relion_texture_interp,
+                texture_interp_default=texture_interp_default,
                 projector_output_size=projector_output_size,
                 relion_kernel=relion_kernel,
                 mask_current_image_disk=projection_mask_current_image_disk,
