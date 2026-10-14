@@ -57,6 +57,7 @@ def test_scalar_curvature_step_is_corrected_forward_adjoint_on_active_band():
         box_size=n,
         padding_factor=1,
         compute_dtype=jnp.float32,
+        deterministic_reductions=False,
     )
     yz = jnp.arange(capacity) - capacity // 2
     x = jnp.arange(capacity // 2 + 1)
@@ -71,6 +72,7 @@ def test_scalar_curvature_step_is_corrected_forward_adjoint_on_active_band():
             box_size=n,
             padding_factor=1,
             compute_dtype=jnp.float32,
+            deterministic_reductions=False,
         )
         return jnp.real(jnp.sum(hermitian_weight[None, None, :] * jnp.conj(residual) * projected * active))
 
@@ -147,6 +149,7 @@ def test_known_target_residual_step_reduces_projected_quadratic():
         box_size=n,
         padding_factor=1,
         compute_dtype=jnp.float32,
+        deterministic_reductions=False,
     )
     capacity = n + 3
     yz = jnp.arange(capacity) - capacity // 2
@@ -170,6 +173,7 @@ def test_known_target_residual_step_reduces_projected_quadratic():
         box_size=n,
         padding_factor=1,
         compute_dtype=jnp.float32,
+        deterministic_reductions=False,
     )
     before = float(jnp.sum(jnp.abs(residual) ** 2))
     after = float(jnp.sum(jnp.abs(jnp.where(active, target_fourier - updated_fourier, 0)) ** 2))
@@ -384,7 +388,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
             post_mstep_update=lambda state, iteration, meta: replace(state, has_converged=True),
             projector_refresh_fn=keep_tau2,
             update=(
-                VdamUpdate(padding_factor=1, mstep_compute_dtype="float32", probe=NoProbe())
+                VdamUpdate(padding_factor=1, mstep_compute_dtype="float32", probe=NoProbe(), deterministic_reductions=False)
                 if optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=1.0, padding_factor=1)
             ),

@@ -51,13 +51,13 @@ def test_noise_block_per_group_equals_one_group_blocks():
     row_groups = np.array([0, 1, 2, 1, 0, 0, 2, 2, 1, 0, 1, 2], dtype=np.int32)
 
     per_group = compute_noise_block_per_optics_group(
-        proj, proj_abs2, summed, ctf_probs, jnp.asarray(table), jnp.asarray(row_groups), shells, N_SHELLS
+        proj, proj_abs2, summed, ctf_probs, jnp.asarray(table), jnp.asarray(row_groups), shells, N_SHELLS, deterministic=False
     )
     assert per_group.shape == (n_groups, N_SHELLS)
     for g in range(n_groups):
         mine = row_groups == g
         expected, _, _ = compute_noise_block(
-            proj[mine], proj_abs2[mine], summed[mine], ctf_probs[mine], table[g], shells, N_SHELLS
+            proj[mine], proj_abs2[mine], summed[mine], ctf_probs[mine], table[g], shells, N_SHELLS, deterministic=False
         )
         np.testing.assert_allclose(np.asarray(per_group[g]), np.asarray(expected), rtol=1e-12, atol=1e-12)
 
@@ -86,6 +86,7 @@ def test_block_norm_terms_use_each_rows_group_noise():
         jnp.asarray(row_groups),
         n_shells=N_SHELLS,
         image_capacity=capacity,
+        deterministic_reductions=False,
     )
     assert shells_g.shape == (2, N_SHELLS)
     for g in range(2):
@@ -100,6 +101,7 @@ def test_block_norm_terms_use_each_rows_group_noise():
             jnp.asarray(row_image[mine]),
             n_shells=N_SHELLS,
             image_capacity=capacity,
+            deterministic_reductions=False,
         )
         np.testing.assert_allclose(np.asarray(shells_g[g]), np.asarray(one_shells), rtol=1e-12, atol=1e-12)
         images = image_groups == g
@@ -162,6 +164,7 @@ def test_chunk_statistics_per_group_equal_one_group_runs():
             current_size=8,
             accumulate_scale=False,
             n_optics_groups=g,
+            deterministic_reductions=False,
         )
 
     stats = resident_image_terms.accumulate_chunk_image_terms(
@@ -235,6 +238,7 @@ def test_chunk_statistics_take_the_shell_cutoff_from_the_tables():
             n_scale_groups=1,
             current_size=current_size,
             accumulate_scale=False,
+            deterministic_reductions=False,
         )
         return resident_image_terms.accumulate_chunk_image_terms(
             make_resident_statistics(config),

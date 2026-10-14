@@ -133,6 +133,8 @@ def normalize_wsum_to_sigma2_noise(
         jnp.ones_like(shell_indices, dtype=jnp.float32),
         shell_indices,
         n_shells,
+        # A count of ones is exact in any summation order, so no run override applies.
+        deterministic=False,
     )
 
     if summed_current_size is not None:

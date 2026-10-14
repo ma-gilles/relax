@@ -85,8 +85,7 @@ class VdamPilotControls:
 class VdamEnvironment:
     """The InitialModel's switches of the process environment, read once by the command (code rule 5).
 
-    :meth:`from_environ` reads them (``relax.commands.initial_model`` calls it); the default instance has every
-    switch off.
+    :meth:`from_environ` reads them (the command calls it); the default instance has every switch off.
     ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: a strict flag) releases JAX's
     buffers after each iteration (CUFFT_ALLOC_FAILED at 50k x 256^2); ``skip_expected_accuracy`` and
     ``isolate_expected_accuracy`` (RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY and
@@ -211,8 +210,7 @@ class NativeInitialModelOptions(InitialModelDefaults):
     diagnostic_continue_optimiser: str | None = None
     diagnostic_stop_after_iteration: int | None = None
     diagnostic_continue_input_order: bool = False
-    # The command reads it from the environment (VdamEnvironment.from_environ); nothing below reads it again. Not part
-    # of the saved options file.
+    # Read once by the command (VdamEnvironment.from_environ); not part of the saved options file.
     environment: VdamEnvironment = VdamEnvironment()
 
     def validate_run(self) -> None:

@@ -67,7 +67,7 @@ def test_adapter_native_radius_layout_frame_and_consumer_policy(size, padding, c
         for _ in range(2)
     ]
     candidates = [
-        projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs)
+        projector_setup.reference_to_relion_projector_half_maps_and_power(references, **kwargs, deterministic_reductions=False)
         for _ in range(2)
     ]
     assert len(raw) == 4  # The native controls never enter the device helper.
@@ -105,7 +105,7 @@ def test_unsupported_projector_geometry_is_refused(size, padding, interpolator):
     refs = np.random.default_rng(31).normal(size=(1, size, size, size))
     with pytest.raises(ValueError, match="projector setup"):
         projector_setup.reference_to_relion_projector_half_maps_and_power(
-            refs, current_size=size, padding_factor=padding, interpolator=interpolator
+            refs, current_size=size, padding_factor=padding, interpolator=interpolator, deterministic_reductions=False
         )
 
 
@@ -131,7 +131,7 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
     def candidate_inputs(projector_dump_dir=None):
         # The E-step's projector, as the iteration's refresh prepares it.
         prepared, _ = adapter.prepare_relion_projector_class_inputs_and_power(
-            state, padding_factor=1, projector_dump_dir=projector_dump_dir
+            state, padding_factor=1, projector_dump_dir=projector_dump_dir, deterministic_reductions=False
         )
         return adapter._resolve_class_inputs(
             state,
@@ -148,7 +148,7 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
         assert_matches(dumped["projector_half"], candidate[2])
         assert int(dumped["current_size"]) == 8
     inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(
-        state, padding_factor=1, projector_dump_dir=None
+        state, padding_factor=1, projector_dump_dir=None, deterministic_reductions=False
     )
     assert_matches(inputs.half_by_class, candidate[2])
     assert power.shape == (1, 5)
@@ -167,6 +167,7 @@ def test_float32_projector_route(monkeypatch):
     monkeypatch.setattr(projector_setup, "setup_relion_projector_on_host", capture)
     halves, power, radius = projector_setup.reference_to_relion_projector_half_maps_and_power(
         refs, current_size=8, compute_dtype=np.float32,
+        deterministic_reductions=False,
     )
     assert radius == 4
     assert halves.dtype == np.complex64
@@ -176,4 +177,5 @@ def test_float32_projector_route(monkeypatch):
     with pytest.raises(ValueError, match="trilinear"):
         projector_setup.reference_to_relion_projector_half_maps_and_power(
             refs, current_size=8, interpolator=0, compute_dtype=np.float32,
+            deterministic_reductions=False,
         )

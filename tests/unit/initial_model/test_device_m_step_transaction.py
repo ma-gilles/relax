@@ -91,12 +91,12 @@ def _assert_case(bind, case):
     if size * padding < 16:
         # RELION's M-step (the oracle) takes these grids; relax's transaction refuses them.
         with pytest.raises(ValueError, match="FFT grid"):
-            relion_vdam_m_step_host(**case)
+            relion_vdam_m_step_host(**case, deterministic_reductions=False)
         return
     pseudo = case["data_h1"] is not None
     before = deepcopy(case)
     expected = _native(bind, case)
-    actual = relion_vdam_m_step_host(**case)
+    actual = relion_vdam_m_step_host(**case, deterministic_reductions=False)
     assert actual.keys() == expected.keys()
     for key in expected:
         if expected[key] is None:
@@ -131,7 +131,7 @@ def test_nan_tau2_fudge_selects_the_fsc_spectrum_like_native(bind, pseudo):
     case = _case(size=16, radius=8, pseudo=pseudo)
     case["tau2_fudge"] = np.nan
     expected = _native(bind, case)
-    actual = relion_vdam_m_step_host(**case)
+    actual = relion_vdam_m_step_host(**case, deterministic_reductions=False)
     assert np.all(np.isfinite(expected["iref"]))
     for key in expected:
         if expected[key] is None:
@@ -165,7 +165,7 @@ def test_dynamic_radius_reuses_device_executable(bind):
     for radius in (1, 2, 8, 0):
         case = _case(size=16, radius=radius or 8)
         case["r_max"] = radius
-        result = relion_vdam_m_step_host(**case)
+        result = relion_vdam_m_step_host(**case, deterministic_reductions=False)
         assert np.all(np.isfinite(result["iref"]))
     assert relion_vdam_m_step_device._cache_size() - cleared == 1
 
@@ -184,7 +184,7 @@ def test_native_ssnr_error_branches(bind, kind):
     with pytest.raises(Exception):
         _native(bind, case)
     with pytest.raises(ValueError, match="native SSNR rejects"):
-        relion_vdam_m_step_host(**case)
+        relion_vdam_m_step_host(**case, deterministic_reductions=False)
 
 
 @pytest.mark.parametrize("size", [8, 16])
@@ -231,10 +231,10 @@ def test_host_backend_capability_attestation(bind, monkeypatch, size, padding, e
     monkeypatch.setattr(helper, "relion_vdam_m_step_device", device)
     if expected_backend == "refused":
         with pytest.raises(ValueError, match="FFT grid"):
-            helper.relion_vdam_m_step_host(**case)
+            helper.relion_vdam_m_step_host(**case, deterministic_reductions=False)
         assert calls == []
         return
-    actual = helper.relion_vdam_m_step_host(**case)
+    actual = helper.relion_vdam_m_step_host(**case, deterministic_reductions=False)
     assert calls == [expected_backend]
     for key in expected:
         if expected[key] is None:
@@ -257,6 +257,7 @@ def test_pure_device_rejects_unsupported_small_fft():
             box_size=8,
             padding_factor=1,
             pseudo_halfsets=True,
+            deterministic_reductions=False,
         )
 
 
@@ -284,7 +285,7 @@ def test_average_ctf2_divides_invtau2_as_relion_update_ssnr_arrays(bind, padding
             spectrum is not None,
             avgctf2=spectrum,
         )
-        result = relion_vdam_m_step_host(**case, average_ctf2=spectrum)
+        result = relion_vdam_m_step_host(**case, average_ctf2=spectrum, deterministic_reductions=False)
         assert_matches(np.asarray(result["data_vs_prior"]), np.asarray(relion_dvp), rtol=1e-12)
         assert_matches(np.asarray(result["fourier_coverage"]), np.asarray(relion_coverage), rtol=1e-12)
 

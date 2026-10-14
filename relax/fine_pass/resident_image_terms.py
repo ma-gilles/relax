@@ -94,6 +94,7 @@ def accumulate_chunk_image_terms(
     # --- 1/2. sigma2 offset and support mass -------------------------------
     translation_posterior = segment_sum_by_image(
         probs, row_image, image_capacity,
+        deterministic=config.deterministic_reductions,
         float32_posterior_bucket_size=(
             128 if config.float32_bucketed_image_sums and probs.dtype == jnp.float32 else None
         ),
@@ -144,6 +145,7 @@ def accumulate_chunk_image_terms(
                 tables.wavg_shell_indices,
                 exclusive_shell_stop=direct_noise_shell_stop,
                 shell_count=config.n_shells,
+                deterministic=config.deterministic_reductions,
             )
         )
     else:
@@ -167,6 +169,7 @@ def accumulate_chunk_image_terms(
                 tables.wavg_shell_indices,
                 exclusive_shell_stop=direct_noise_shell_stop,
                 shell_count=config.n_shells,
+                deterministic=config.deterministic_reductions,
             )
             residual_per_group.append(group_residual)
             power_per_group.append(group_power)

@@ -33,7 +33,7 @@ def _classes(model_pixel):
 
 def _noise_shells(current_size):
     config = resolve_statistics_config(
-        n_shells=65, n_fine_trans=1, n_images=1, n_coarse_rot=1, n_scale_groups=1, current_size=current_size
+        n_shells=65, n_fine_trans=1, n_images=1, n_coarse_rot=1, n_scale_groups=1, current_size=current_size, deterministic_reductions=False
     )
     # (last direct-residual shell, first image-power shell)
     return config.direct_noise_exclusive_shell_stop - 1, config.direct_noise_exclusive_shell_stop

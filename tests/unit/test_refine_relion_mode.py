@@ -3093,9 +3093,9 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
     calls = []
 
     def fake_projector_builder(
-        refs_real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel,
+        refs_real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel, deterministic_reductions,
     ):
-        assert gridding_kernel == "radial"
+        assert gridding_kernel == "radial" and deterministic_reductions is False
         assert projector_data_dtype == "complex128"
         calls.append(np.asarray(refs_real).copy())
         projector_half = np.full((refs_real.shape[0], 3, 3, 2), 7.0 + len(calls), dtype=np.complex64)
@@ -3114,6 +3114,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         padding_factor=2,
         n_classes=1,
         files=_projector_files(),
+        deterministic_reductions=False,
     )
     second = projector_preparation.prepare_scoring_projector(
         mean_ft.reshape(-1),
@@ -3122,6 +3123,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         padding_factor=2,
         n_classes=1,
         files=_projector_files(),
+        deterministic_reductions=False,
     )
 
     assert len(calls) == 1
@@ -3139,9 +3141,9 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
     captured_real = []
 
     def fake_projector_builder(
-        refs_real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel,
+        refs_real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel, deterministic_reductions,
     ):
-        assert gridding_kernel == "radial"
+        assert gridding_kernel == "radial" and deterministic_reductions is False
         assert projector_data_dtype == "complex128"
         captured_real.append(np.asarray(refs_real).copy())
         projector_half = np.ones((refs_real.shape[0], 3, 3, 2), dtype=np.complex64)
@@ -3164,6 +3166,7 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
         n_classes=1,
         real_references=exact_real,
         files=_projector_files(),
+        deterministic_reductions=False,
     )
 
     assert len(captured_real) == 1

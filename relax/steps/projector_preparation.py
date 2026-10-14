@@ -104,6 +104,7 @@ def prepare_scoring_projector(
     reusable: ProjectorReuse | None = None,
     gridding_kernel: str = "radial",
     files: ProjectorFiles,
+    deterministic_reductions: bool,
 ) -> PreparedProjector:
     """Prepare RELION ``Projector::data`` slabs from current Fourier references.
 
@@ -205,6 +206,7 @@ def prepare_scoring_projector(
         # setup narrows to complex64 (the InitialModel consumer) unless told otherwise.
         projector_data_dtype="complex128",
         gridding_kernel=gridding_kernel,
+        deterministic_reductions=deterministic_reductions,
     )
     if cache_path is not None:
         os.makedirs(files.cache_dir, exist_ok=True)
@@ -283,6 +285,7 @@ def build_numbered_projectors(
             dump_label=f"iter{iteration:03d}_half{half.index}",
             gridding_kernel=settings.gridding_kernel,
             files=files,
+            deterministic_reductions=settings.deterministic_reductions,
         )
     require_projectors_for_gridding_kernel(projectors, settings.gridding_kernel)
     log.info(

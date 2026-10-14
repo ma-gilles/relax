@@ -44,6 +44,8 @@ class DenseGemmPreparedState:
     reconstruction_image_radius: float | None
     # How the engines execute (EngineTuning, from the resident driver's caller).
     engine_tuning: object
+    # ScoringOverrides.deterministic_reductions: fixed-order masked sums instead of the scatter-adds.
+    deterministic_reductions: bool
     image_corrections: object
     scale_corrections: object
     image_pre_shifts: object

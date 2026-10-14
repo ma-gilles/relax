@@ -216,6 +216,7 @@ def reconstruction_settings_for_run(
         solvent_correct_fsc=options.solvent.correct_fsc,
         programs=options.variants.reconstruction,
         solvent_phase_stream=_solvent_phase_stream(options) if options.solvent.correct_fsc else None,
+        deterministic_reductions=options.environment.scoring.deterministic_reductions,
     )
 
 
@@ -271,6 +272,7 @@ def expected_accuracy_inputs_for_run(
         expected_accuracy=options.expected_accuracy,
         projector_files=options.environment.projector_files,
         device_memory_override=options.environment.engine.device_memory_bytes,
+        deterministic_reductions=options.environment.scoring.deterministic_reductions,
         optics_group_ids=optics_group_ids,
         gridding_kernel=gridding_kernel,
     )

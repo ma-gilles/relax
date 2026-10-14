@@ -187,6 +187,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
                 row_proj, proj_abs2, noise_masked, noise_ctf,
                 ops.noise_variance, ops.shell_indices_noise, image_slot, row_optics,
                 n_shells=plan.n_shells, image_capacity=b,
+                deterministic_reductions=plan.stats_config.deterministic_reductions,
             )
             return partial._replace(
                 wavg_triplet_pixels=wavg,
@@ -293,7 +294,8 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
             xa = jnp.where(live[None, :], xa, 0.0)
             noise_pixels = jnp.sum(a2, axis=0) - 2.0 * jnp.sum(xa, axis=0)
             shells = bin_shell_values_jax(
-                noise_pixels, ops.shell_indices_noise, plan.n_shells
+                noise_pixels, ops.shell_indices_noise, plan.n_shells,
+                deterministic=plan.stats_config.deterministic_reductions,
             ).astype(jnp.float64)
             return carry._replace(
                 wavg_triplet_pixels=wavg,

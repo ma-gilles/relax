@@ -144,8 +144,7 @@ def _native_expectation_step(
                 optics_group_ids=optics_group_ids,
                 experiment_dataset=accuracy_dataset,
                 isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
-                probe=probe,
-                device_memory_override=opts.environment.engine.device_memory_bytes,
+                probe=probe, device_memory_override=opts.environment.engine.device_memory_bytes,
             )
             if accuracy_estimate is not None:
                 sampling_state.acc_rot = accuracy_estimate.accuracy.acc_rot
@@ -601,7 +600,7 @@ def run_native_initial_model(
             ),
         )
     profile.record("state_setup")
-    projector_context = estep_setup.IterationProjectorContext(projector_dump_dir=opts.environment.projector_dump_dir)
+    projector_context = estep_setup.IterationProjectorContext(opts.environment)
     expectation_step = _native_expectation_step(
         dataset,
         opts,
@@ -707,10 +706,9 @@ def run_native_initial_model(
             projector_padding_factor=int(opts.padding_factor),
             update=(
                 VdamUpdate(
-                    padding_factor=int(opts.padding_factor),
-                    mstep_compute_dtype=opts.mstep_compute_dtype,
-                    probe=maximization_probe,
-                    single_class_m_step=source.single_class_m_step,
+                    padding_factor=int(opts.padding_factor), mstep_compute_dtype=opts.mstep_compute_dtype,
+                    probe=maximization_probe, single_class_m_step=source.single_class_m_step,
+                    deterministic_reductions=opts.environment.scoring.deterministic_reductions,
                 )
                 if opts.optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=float(opts.sgd_learning_rate), padding_factor=int(opts.padding_factor))

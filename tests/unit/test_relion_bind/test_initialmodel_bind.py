@@ -20,6 +20,7 @@ against RELION's `run_itNNN_*` fixture is exercised in Phase 4.
 from __future__ import annotations
 
 import math
+from functools import partial
 
 import numpy as np
 import pytest
@@ -421,7 +422,7 @@ class TestAutoRefineExpectedAccuracyBinding:
 
         builders = {
             "native": native_reference_to_relion_projector_half_maps_and_power,
-            "jax": reference_to_relion_projector_half_maps_and_power,
+            "jax": partial(reference_to_relion_projector_half_maps_and_power, deterministic_reductions=False),
         }
         for backend, build in builders.items():
             slabs, _power, _r_max = build(

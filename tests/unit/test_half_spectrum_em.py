@@ -140,7 +140,7 @@ def test_relion_shell_binning_drops_sentinel_indices_under_jit():
     values = np.arange(1, shell_indices.size + 1, dtype=np.float32)
     expected = bin_shell_values_np(values, shell_indices, shell_count)
 
-    bin_jit = jax.jit(lambda vals, inds: bin_shell_values_jax(vals, inds, shell_count))
+    bin_jit = jax.jit(lambda vals, inds: bin_shell_values_jax(vals, inds, shell_count, deterministic=False))
     actual = np.asarray(bin_jit(jnp.asarray(values), jnp.asarray(shell_indices)))
 
     assert_matches(actual, expected)
@@ -152,7 +152,7 @@ def test_shell_binning_maps_arbitrary_out_of_range_indices_to_drop_bin():
     values = np.asarray([1, 2, 3, 4, 5, 6], dtype=np.float32)
 
     actual_jax = np.asarray(
-        bin_shell_values_jax(jnp.asarray(values), jnp.asarray(shell_indices), shell_count)
+        bin_shell_values_jax(jnp.asarray(values), jnp.asarray(shell_indices), shell_count, deterministic=False)
     )
     actual_np = bin_shell_values_np(values, shell_indices, shell_count)
 

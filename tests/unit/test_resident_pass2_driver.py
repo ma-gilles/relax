@@ -1200,20 +1200,17 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
     :func:`test_resident_driver_repeats_itself` measures.
     """
 
-    from relax.numerics.deterministic_reduce import (
-        deterministic_reductions_enabled,
-    )
-
     args = _driver_fixture_args()
+    scoring = ScoringOverrides.from_environ()
     eager = dataclasses.replace(_engine(), resident_glue_jit=False)
-    loose = rp.compute_pass2_stats_resident(**args, engine_tuning=eager, scoring_overrides=ScoringOverrides.from_environ())
+    loose = rp.compute_pass2_stats_resident(**args, engine_tuning=eager, scoring_overrides=scoring)
     # The loose path's own repeat, in this process: the self-repeat band the
     # racing accumulators below are read against. It is measured, not assumed,
     # because the float32 BPref atomics and the CUDA shell binning do not
     # reproduce between two identical calls.
-    loose_repeat = rp.compute_pass2_stats_resident(**args, engine_tuning=eager, scoring_overrides=ScoringOverrides.from_environ())
+    loose_repeat = rp.compute_pass2_stats_resident(**args, engine_tuning=eager, scoring_overrides=scoring)
     jitted = dataclasses.replace(_engine(), resident_glue_jit=True)
-    programs = rp.compute_pass2_stats_resident(**args, engine_tuning=jitted, scoring_overrides=ScoringOverrides.from_environ())
+    programs = rp.compute_pass2_stats_resident(**args, engine_tuning=jitted, scoring_overrides=scoring)
 
     assert_matches(loose.hard_assignment, programs.hard_assignment)
     assert_matches(
@@ -1263,7 +1260,7 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
             loose_repeat.noise_stats.wsum_img_power,
         ),
     ):
-        if deterministic_reductions_enabled():
+        if scoring.deterministic_reductions:
             assert_matches(
                 np.asarray(candidate), np.asarray(reference), err_msg=name
             )

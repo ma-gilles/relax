@@ -184,7 +184,7 @@ def resident_block_residual(summed, probs_sum_t, proj, ctf2_over_nv_recon, row_i
     return summed - frefctf_delta
 
 
-@partial(jax.jit, static_argnames=("n_shells", "image_capacity", "float32_bucketed_image_sums"))
+@partial(jax.jit, static_argnames=("n_shells", "image_capacity", "float32_bucketed_image_sums", "deterministic_reductions"))
 def resident_block_noise_and_norm(
     proj,  # complex [block, P]
     proj_abs2,  # real [block, P]
@@ -197,9 +197,11 @@ def resident_block_noise_and_norm(
     *,
     n_shells: int,
     image_capacity: int,
+    deterministic_reductions: bool,
     float32_bucketed_image_sums: bool = True,
 ):
-    """One row block's noise shells plus its per-image ``A2``/``XA`` partials.
+    """One row block's noise shells plus its per-image ``A2``/``XA`` partials (``deterministic_reductions``:
+    ``ScoringOverrides.deterministic_reductions``, the statistics config's).
 
     With a per-optics-group noise table each row uses its image's group spectrum
     and the shells come back per group, ``[G, n_shells]``. The resident passes sum
@@ -218,6 +220,7 @@ def resident_block_noise_and_norm(
             shell_indices,
             int(n_shells),
             return_split=False,
+            deterministic=deterministic_reductions,
         )
         row_noise = jnp.asarray(noise_variance)
     else:
@@ -230,6 +233,7 @@ def resident_block_noise_and_norm(
             row_optics_groups,
             shell_indices,
             int(n_shells),
+            deterministic=deterministic_reductions,
         )
         row_noise = jnp.asarray(noise_variance)[row_optics_groups]
     a2_per_row, xa_per_row = _flat_row_norm_and_scale_terms(
@@ -241,10 +245,12 @@ def resident_block_noise_and_norm(
     a2_bucket = 128 if float32_bucketed_image_sums and a2_per_row.dtype == jnp.float32 else None
     xa_bucket = 128 if float32_bucketed_image_sums and xa_per_row.dtype == jnp.float32 else None
     a2_per_image = segment_sum_by_image(
-        a2_per_row, row_image_local, int(image_capacity), float32_scalar_bucket_size=a2_bucket,
+        a2_per_row, row_image_local, int(image_capacity), deterministic=deterministic_reductions,
+        float32_scalar_bucket_size=a2_bucket,
     )
     xa_per_image = segment_sum_by_image(
-        xa_per_row, row_image_local, int(image_capacity), float32_scalar_bucket_size=xa_bucket,
+        xa_per_row, row_image_local, int(image_capacity), deterministic=deterministic_reductions,
+        float32_scalar_bucket_size=xa_bucket,
     )
     return block_noise_shells.astype(jnp.float64), a2_per_image, xa_per_image
 

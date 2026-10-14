@@ -278,8 +278,10 @@ def compute_relion_tau2_from_iref_power_spectrum(
     return_details=False,
     projector_power_spectrum=None,
     shell_pair_counting="relion",
+    deterministic_reductions: bool,
 ):
-    """Compute RELION-style tau2 from a previous Iref Fourier volume.
+    """Compute RELION-style tau2 from a previous Iref Fourier volume (``deterministic_reductions``:
+    ``ScoringOverrides.deterministic_reductions``, the spectrum's fixed-order shell sums when it is built here).
 
     Mirrors RELION's ``Projector::computeFourierTransformMap`` path by
     converting the reference back to real space and taking the power spectrum
@@ -321,6 +323,7 @@ def compute_relion_tau2_from_iref_power_spectrum(
             current_size=-1 if current_size is None else current_size,
             padding_factor=int(padding_factor),
             shell_pair_counting=shell_pair_counting,
+            deterministic_reductions=deterministic_reductions,
         )
         relion_power_spectrum = projector_power[0] / float(volume_shape[0]) ** 2
 

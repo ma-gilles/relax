@@ -268,8 +268,13 @@ def vdam_m_step_single_class_native(
     padding_factor: int = 1,
     mstep_compute_dtype: str = "float64",
     average_ctf2=None,
+    deterministic_reductions: bool,
 ) -> InitialModelState:
-    """Drop-in for ``vdam_m_step_single_class`` running RELION's primitives (float64 only)."""
+    """Drop-in for ``vdam_m_step_single_class`` running RELION's primitives (float64 only).
+
+    RELION's step-by-step sums keep their own order, so ``deterministic_reductions``
+    (``ScoringOverrides.deterministic_reductions``) changes nothing here.
+    """
 
     from relax.vdam import m_step as production
 

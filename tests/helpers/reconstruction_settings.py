@@ -17,6 +17,7 @@ def reconstruction_settings(**fields) -> ReconstructionSettings:
             "solvent_mask": None,
             "solvent_correct_fsc": False,
             "solvent_phase_stream": None,
+            "deterministic_reductions": False,
             **fields,
         }
     )

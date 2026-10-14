@@ -18,6 +18,7 @@ import jax.numpy as jnp
 
 from relax.fourier.half_spectrum import bin_shell_values_jax, bin_shell_values_np
 from relax.numerics import deterministic_reduce as dr
+from relax.runtime.scoring_overrides import DETERMINISTIC_REDUCTIONS_ENV, ScoringOverrides
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -37,10 +38,13 @@ def _shell_case(seed: int = 0):
 
 
 def test_flag_default_off(monkeypatch):
-    monkeypatch.delenv(dr.DETERMINISTIC_REDUCTIONS_ENV, raising=False)
-    assert dr.deterministic_reductions_enabled() is False
-    monkeypatch.setenv(dr.DETERMINISTIC_REDUCTIONS_ENV, "1")
-    assert dr.deterministic_reductions_enabled() is True
+    """Read once by the command (ScoringOverrides.deterministic_reductions): unset and 0 off, 1 on."""
+    monkeypatch.delenv(DETERMINISTIC_REDUCTIONS_ENV, raising=False)
+    assert ScoringOverrides.from_environ().deterministic_reductions is False is ScoringOverrides().deterministic_reductions
+    monkeypatch.setenv(DETERMINISTIC_REDUCTIONS_ENV, "0")
+    assert ScoringOverrides.from_environ().deterministic_reductions is False
+    monkeypatch.setenv(DETERMINISTIC_REDUCTIONS_ENV, "1")
+    assert ScoringOverrides.from_environ().deterministic_reductions is True
 
 
 def test_fixed_order_segment_sum_matches_host_bincount_and_drops_out_of_range():
@@ -67,12 +71,10 @@ def test_fixed_order_segment_sum_leading_axes_and_shape_check():
         dr.fixed_order_segment_sum(jnp.asarray(values[:-1]), ids, n)
 
 
-def test_bin_shell_values_jax_flagged_path_matches_scatter_path(monkeypatch):
+def test_bin_shell_values_jax_flagged_path_matches_scatter_path():
     values, ids, n = _shell_case(5)
-    monkeypatch.delenv(dr.DETERMINISTIC_REDUCTIONS_ENV, raising=False)
-    scatter = np.asarray(bin_shell_values_jax(jnp.asarray(values), ids, n))
-    monkeypatch.setenv(dr.DETERMINISTIC_REDUCTIONS_ENV, "1")
-    fixed = np.asarray(bin_shell_values_jax(jnp.asarray(values), ids, n))
+    scatter = np.asarray(bin_shell_values_jax(jnp.asarray(values), ids, n, deterministic=False))
+    fixed = np.asarray(bin_shell_values_jax(jnp.asarray(values), ids, n, deterministic=True))
     assert fixed.shape == scatter.shape == (n,)
     np.testing.assert_allclose(fixed, scatter, rtol=0, atol=1e-12)
     np.testing.assert_allclose(fixed, bin_shell_values_np(values, ids, n), atol=1e-12)

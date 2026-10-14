@@ -1166,7 +1166,7 @@ def compute_projections_block(
     return proj_half, proj_abs2_half
 
 
-@partial(jax.jit, static_argnums=(6, 7))
+@partial(jax.jit, static_argnums=(6, 7), static_argnames=("shell_count", "return_split", "deterministic"))
 def compute_noise_block(
     proj_half,
     proj_abs2_half,
@@ -1176,8 +1176,11 @@ def compute_noise_block(
     shell_indices,
     shell_count,
     return_split: bool = True,
+    *,
+    deterministic: bool,
 ):
-    """Accumulate RELION-style posterior-weighted noise for one rotation block.
+    """Accumulate RELION-style posterior-weighted noise for one rotation block (``deterministic``:
+    ``ScoringOverrides.deterministic_reductions``, the shell binning's fixed-order sum).
 
     Uses the decomposition::
 
@@ -1212,12 +1215,12 @@ def compute_noise_block(
     xa = jnp.where(cross.real != 0.0, noise_variance_half * cross.real, 0.0)
     block_noise = a2 - 2.0 * xa
 
-    noise_shells = bin_shell_values_jax(block_noise, shell_indices, shell_count)
+    noise_shells = bin_shell_values_jax(block_noise, shell_indices, shell_count, deterministic=deterministic)
     if not return_split:
         zeros = jnp.zeros(shell_count, dtype=block_noise.dtype)
         return noise_shells, zeros, zeros
-    a2_shells = bin_shell_values_jax(a2, shell_indices, shell_count)
-    xa_shells = bin_shell_values_jax(xa, shell_indices, shell_count)
+    a2_shells = bin_shell_values_jax(a2, shell_indices, shell_count, deterministic=deterministic)
+    xa_shells = bin_shell_values_jax(xa, shell_indices, shell_count, deterministic=deterministic)
     return noise_shells, a2_shells, xa_shells
 
 
@@ -1230,6 +1233,8 @@ def compute_noise_block_per_optics_group(
     row_optics_groups,
     shell_indices,
     shell_count,
+    *,
+    deterministic: bool,
 ):
     """:func:`compute_noise_block` with one noise spectrum per optics group.
 
@@ -1255,7 +1260,9 @@ def compute_noise_block_per_optics_group(
     cross = jnp.sum(jnp.where(member[:, :, None], cross_terms[:, None, :], 0.0), axis=0)
     xa = jnp.where(cross.real != 0.0, noise_table * cross.real, 0.0)
     block_noise = a2 - 2.0 * xa
-    return jax.vmap(lambda values: bin_shell_values_jax(values, shell_indices, shell_count))(block_noise)
+    return jax.vmap(lambda values: bin_shell_values_jax(values, shell_indices, shell_count, deterministic=deterministic))(
+        block_noise
+    )
 
 
 def relion_scale_correction_pixel_mask(data_vs_prior, shell_indices, *, n_shells=None):

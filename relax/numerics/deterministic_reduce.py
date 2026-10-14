@@ -2,8 +2,8 @@
 
 ``array.at[ids].add(values)`` with repeated ids lowers to GPU atomics whose
 association order depends on the scheduler, so float sums differ at the ulp
-level between otherwise identical runs.  Under
-``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` the EM engines route their
+level between otherwise identical runs.  Under ``ScoringOverrides.deterministic_reductions``
+(``RELAX_EM_DETERMINISTIC_REDUCTIONS=1``, read once by the command) the EM engines route their
 duplicate-index accumulations (per-shell noise/power binning, per-group scale
 terms, per-image residual totals) through :func:`fixed_order_segment_sum`,
 a masked reduction whose order is fixed by XLA.  Same operands and dtype; only
@@ -17,15 +17,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.numerics.shells import shell_of_radius_sq
-from relax.runtime.env_flags import parse_env_binary_flag
-
-DETERMINISTIC_REDUCTIONS_ENV = "RELAX_EM_DETERMINISTIC_REDUCTIONS"
-
-
-def deterministic_reductions_enabled() -> bool:
-    """Read the opt-in at trace time; unset or ``0`` keeps the atomic scatters."""
-
-    return parse_env_binary_flag(DETERMINISTIC_REDUCTIONS_ENV)
 
 
 def fixed_order_segment_sum(values, segment_ids, n_segments: int):

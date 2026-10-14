@@ -325,6 +325,7 @@ def test_unmasked_scoring_is_refused():
             use_exact_relion_gaussian=False,
             accumulate_noise=False,
             source_faithful_spectrum_norm=False,
+            deterministic_reductions=False,
         )
 
 
@@ -359,6 +360,7 @@ def _resident_operands(case, image_indices=None, *, staged_batch=None):
         source_faithful_spectrum_norm=False,
         image_batch_size=4, prefetch_depth=2,
         staged_batch=staged_batch,
+        deterministic_reductions=False,
     )
 
 
@@ -411,6 +413,7 @@ def test_native_fine_units_keep_the_score_modes_distinct(monkeypatch, score_mode
             accumulate_noise=False, source_faithful_spectrum_norm=False,
             image_batch_size=2, prefetch_depth=2, relion_native_fine_units=native_units,
             allow_normalized_cc=True,
+            deterministic_reductions=False,
         )
 
     ordinary, native = prepared(False), prepared(True)
@@ -697,13 +700,11 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
             use_exact_relion_gaussian=True,
             accumulate_noise=True,
             source_faithful_spectrum_norm=True,
+            deterministic_reductions=deterministic,
         )
 
     for deterministic in (False, True):
-        monkeypatch.setenv("RELAX_EM_DETERMINISTIC_REDUCTIONS", "1" if deterministic else "0")
-        # The flag is read at trace time, and JAX caches a traced program by
-        # shape alone, so the second pass would reuse the first's program.
-        jax.clear_caches()
+        # ScoringOverrides.deterministic_reductions; a static argument, so each value traces its own program.
         with jax.default_device(gpu_device):
             device = jnp.asarray(values)
             _x1, first = terms(device)

@@ -36,7 +36,7 @@ from relax.vdam.estep_common import (
     InitialModelEstepResult,
     MultiShapeTranslations,
 )
-from relax.vdam.native_options import NativeInitialModelOptions
+from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
 from relax.vdam.native_sampling import NativeSamplingPlan
 from relax.vdam.state import InitialModelState
 
@@ -56,9 +56,10 @@ class RelionProjectorInputs:
 
 @dataclass
 class IterationProjectorContext:
-    """One refresh-to-E-step handoff; never a cache across iterations. ``projector_dump_dir``: VdamEnvironment's."""
+    """One refresh-to-E-step handoff; never a cache across iterations. ``environment``: the run's
+    ``VdamEnvironment`` (its projector dump directory and ``scoring.deterministic_reductions``)."""
 
-    projector_dump_dir: str | None
+    environment: VdamEnvironment
     prepared: RelionProjectorInputs | None = None
     reference: np.ndarray | None = None
     geometry: tuple | None = None
@@ -67,7 +68,8 @@ class IterationProjectorContext:
         # Clear even if construction fails, so stale data cannot survive a retry.
         self.prepared = self.reference = self.geometry = None
         inputs, power = prepare_relion_projector_class_inputs_and_power(
-            state, padding_factor=padding_factor, projector_dump_dir=self.projector_dump_dir
+            state, padding_factor=padding_factor, projector_dump_dir=self.environment.projector_dump_dir,
+            deterministic_reductions=self.environment.scoring.deterministic_reductions,
         )
         self.prepared = inputs
         self.reference = state.Iref
@@ -290,6 +292,7 @@ def prepare_relion_projector_class_inputs_and_power(
     *,
     padding_factor: int,
     projector_dump_dir: str | None,
+    deterministic_reductions: bool,
 ) -> tuple[RelionProjectorInputs, np.ndarray]:
     """Produce scoring operands and tau2 from the identical corrected FFT (RELION's linear interpolator); dump
     the projector to ``projector_dump_dir`` (``VdamEnvironment.projector_dump_dir``) unless it is None."""
@@ -297,6 +300,7 @@ def prepare_relion_projector_class_inputs_and_power(
         state.Iref,
         current_size=state.effective_current_size,
         padding_factor=padding_factor,
+        deterministic_reductions=deterministic_reductions,
     )
     return _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max, projector_dump_dir), power
 

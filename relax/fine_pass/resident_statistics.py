@@ -55,10 +55,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.numerics.deterministic_reduce import (
-    deterministic_reductions_enabled,
-    fixed_order_segment_sum,
-)
+from relax.numerics.deterministic_reduce import fixed_order_segment_sum
 from relax.relion.optics_groups import pixel_rows
 from relax.runtime.env_flags import parse_env_flag
 from relax.runtime.shape_buckets import pow2_floor
@@ -198,6 +195,8 @@ class ResidentStatisticsConfig:
     # Resolved on the host so the environment is part of the jit cache key.
     disable_cuda_binning: bool
     deterministic_norm_reduction: bool
+    # ScoringOverrides.deterministic_reductions: fixed-order masked sums instead of the duplicate-index scatter-adds.
+    deterministic_reductions: bool
     use_exact_relion_gaussian: bool
     relion_wavg_atomic_direct_noise: bool
     relion_wavg_atomic_scale_aa: bool
@@ -256,8 +255,10 @@ def resolve_statistics_config(
     n_optics_groups: int = 1,
     n_classes: int = 1,
     float32_bucketed_image_sums: bool = True,
+    deterministic_reductions: bool,
 ) -> ResidentStatisticsConfig:
-    """Build a config (``RECOVAR_DISABLE_CUDA``, the process's CUDA switch, selects the CPU shell binning).
+    """Build a config (``RECOVAR_DISABLE_CUDA``, the process's CUDA switch, selects the CPU shell binning;
+    ``deterministic_reductions``: ``ScoringOverrides.deterministic_reductions``).
 
     ``source_faithful_spectrum_norm`` mirrors
     ``sparse_pass2_wavg._weighted_image_power_shells_and_per_image``: it selects
@@ -277,6 +278,7 @@ def resolve_statistics_config(
         include_unweighted_high_shell=bool(include_unweighted_high_shell),
         disable_cuda_binning=parse_env_flag("RECOVAR_DISABLE_CUDA", default=False),
         deterministic_norm_reduction=bool(deterministic_norm_reduction),
+        deterministic_reductions=deterministic_reductions,
         use_exact_relion_gaussian=bool(use_exact_relion_gaussian),
         relion_wavg_atomic_direct_noise=bool(relion_wavg_atomic_direct_noise),
         relion_wavg_atomic_scale_aa=bool(relion_wavg_atomic_scale_aa),
@@ -330,6 +332,7 @@ def make_resident_statistics(
 
 def segment_sum_by_image(
     values, row_image_local, image_capacity: int, *,
+    deterministic: bool,
     float32_posterior_bucket_size: int | None = None,
     float32_scalar_bucket_size: int | None = None,
 ):
@@ -337,15 +340,15 @@ def segment_sum_by_image(
 
     ``values`` has the row axis first and any trailing axes; the result has the
     image axis first. Uses the same duplicate-index scatter as the host path,
-    or the fixed-order masked reduction under
-    ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1``. The SPA float32 posterior can opt
+    or the fixed-order masked reduction under ``deterministic``
+    (``ScoringOverrides.deterministic_reductions``). The SPA float32 posterior can opt
     into bounded row buckets. The SPA A2/XA scalar norm terms may opt in
     separately; the default and all other callers retain the original scatter.
     """
 
     values = jnp.asarray(values)
     row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
-    if deterministic_reductions_enabled():
+    if deterministic:
         moved = jnp.moveaxis(values, 0, -1)
         return jnp.moveaxis(fixed_order_segment_sum(moved, row_image_local, image_capacity), -1, 0)
     if float32_posterior_bucket_size is not None or float32_scalar_bucket_size is not None:

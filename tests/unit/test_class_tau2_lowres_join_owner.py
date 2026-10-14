@@ -315,6 +315,7 @@ class TestClassTau2FromIrefPowerSpectrum:
             padding_factor=PADDING_FACTOR,
             current_size=6,
             frame_scale=frame_scale,
+            deterministic_reductions=True,
         )
 
         assert len(calls) == 1
@@ -325,6 +326,7 @@ class TestClassTau2FromIrefPowerSpectrum:
             "return_details": True,
             "projector_power_spectrum": None,
             "shell_pair_counting": "relion",
+            "deterministic_reductions": True,
         }
         expected_tau2 = relion_tau2 * jnp.asarray(frame_scale, dtype=jnp.float32)
         expected_shells_relion = jnp.asarray(relion_shells, dtype=jnp.float32)

@@ -134,6 +134,7 @@ def _capture_chunk_norm(collector, original, stats, operands, tables, *, config)
     marginal = segment_sum_by_image(
         posterior, operands.row_image_local, image_capacity,
         float32_posterior_bucket_size=128 if posterior.dtype == jnp.float32 else None,
+        deterministic=False,
     )
     support_mass = jnp.where(operands.image_ids >= 0, jnp.sum(marginal, axis=1), 0.0)
     cutoff = (tables.norm_shell_cutoff if tables.norm_shell_cutoff is not None
@@ -871,6 +872,7 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
                 float32_posterior_bucket_size=(
                     128 if operands.row_posterior.dtype == jnp.float32 else None
                 ),
+                deterministic=False,
             )
             mass = jnp.sum(translation_mass, axis=1)
             jax.debug.callback(

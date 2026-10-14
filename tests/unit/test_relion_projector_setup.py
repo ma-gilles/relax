@@ -66,7 +66,7 @@ def test_native_projector_and_power_fp64_and_consumer_cast(size, padding, full, 
         bind.compute_fourier_transform_map(reference, size, padding, 1, 2 * radius, gridding, 2) for _ in range(2)
     ]
     candidates = [
-        setup_relion_projector(reference, np.int32(radius), box_size=size, padding_factor=padding, do_gridding=gridding)
+        setup_relion_projector(reference, np.int32(radius), box_size=size, padding_factor=padding, do_gridding=gridding, deterministic_reductions=False)
         for _ in range(2)
     ]
     records = {}
@@ -103,7 +103,7 @@ def test_radius_and_gridding_reuse_one_compiled_shape():
     outputs = []
     for radius, corrected in [(0, True), (2, True), (4, False), (-1, False)]:
         result = setup_relion_projector(
-            reference, np.int32(radius), box_size=8, padding_factor=2, do_gridding=corrected
+            reference, np.int32(radius), box_size=8, padding_factor=2, do_gridding=corrected, deterministic_reductions=False
         )
         jax.block_until_ready(result)
         outputs.append(result)
@@ -117,11 +117,13 @@ def test_corrected_projector_float32_keeps_compute_precision():
     lowered = setup_relion_projector.lower(
         reference, np.int32(4), box_size=8, do_gridding=True,
         compute_dtype=np.float32,
+        deterministic_reductions=False,
     )
     assert "f64" not in str(lowered.compiler_ir(dialect="stablehlo"))
     projector, power = setup_relion_projector(
         reference, np.int32(4), box_size=8, do_gridding=True,
         compute_dtype=np.float32,
+        deterministic_reductions=False,
     )
     assert projector.dtype == np.complex64
     assert power.dtype == np.float32
@@ -135,7 +137,7 @@ def test_positive_nyquist_only_and_inclusive_sphere():
 
     reference = np.zeros((8,) * 3, dtype=np.float64)
     reference[4, 4, 4] = 1.0
-    candidate, power = setup_relion_projector(reference, np.int32(4), box_size=8, do_gridding=False)
+    candidate, power = setup_relion_projector(reference, np.int32(4), box_size=8, do_gridding=False, deterministic_reductions=False)
     actual = np.asarray(candidate)
     native, native_power, *_ = bind.compute_fourier_transform_map(reference, 8, 1, 1, 8, False, 2)
     assert_matches(actual, native)
@@ -187,7 +189,7 @@ def test_host_window_build_meets_the_derived_float64_bound(size, padding, full):
     native_slab, native_power, *_ = bind.compute_fourier_transform_map(
         reference, size, padding, 1, 2 * radius, True, 2
     )
-    slab, power = setup_relion_projector_on_host(reference, radius, box_size=size, padding_factor=padding)
+    slab, power = setup_relion_projector_on_host(reference, radius, box_size=size, padding_factor=padding, deterministic_reductions=False)
     assert slab.dtype == np.complex128 and slab.shape == np.asarray(native_slab).shape
     assert_matches(slab == 0, np.asarray(native_slab) == 0)
     bound = _float64_fft_bound(size, padding)
@@ -198,7 +200,7 @@ def test_host_window_build_meets_the_derived_float64_bound(size, padding, full):
         metrics = _relative_metrics(control, candidate)
         assert all(value < limit for value in metrics.values()), (metrics, limit)
     capacity_slab, capacity_power = setup_relion_projector(
-        reference, np.int32(radius), box_size=size, padding_factor=padding
+        reference, np.int32(radius), box_size=size, padding_factor=padding, deterministic_reductions=False
     )
     metrics = _relative_metrics(_crop(np.asarray(capacity_slab), radius, padding), slab)
     assert all(value < bound for value in metrics.values()), (metrics, bound)
@@ -208,8 +210,8 @@ def test_host_window_build_is_chunking_invariant():
     from relax.relion.projector_setup import setup_relion_projector_on_host
 
     reference = np.random.default_rng(63).normal(size=(16,) * 3).astype(np.float64)
-    whole = setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2)
-    chunked = setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2, chunk_bytes=1)
+    whole = setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2, deterministic_reductions=False)
+    chunked = setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2, chunk_bytes=1, deterministic_reductions=False)
     # Each one-dimensional FFT sees the same row, so the slab is unchanged; the
     # shell power is summed per chunk, in a different order.
     assert_matches(chunked[0], whole[0])
@@ -231,7 +233,7 @@ def test_jax_backend_builds_on_the_device_at_every_size(monkeypatch):
     monkeypatch.setattr(setup, "_CHUNK_BYTES", 1)
     reference = np.random.default_rng(64).normal(size=(1, 16, 16, 16)).astype(np.float64)
     slab, power, r_max = setup.reference_to_relion_projector_half_maps_and_power(
-        reference, current_size=12, padding_factor=2, projector_data_dtype="complex128"
+        reference, current_size=12, padding_factor=2, projector_data_dtype="complex128", deterministic_reductions=False
     )
     assert called == [1]
     native, native_power, *_ = bind.compute_fourier_transform_map(
@@ -250,14 +252,14 @@ def test_host_build_reuses_programs_inside_a_stable_window_class():
 
     reference = np.random.default_rng(65).normal(size=(32,) * 3).astype(np.float64)
     programs = (setup._transform_xy, setup._transform_z, setup._mask_and_shell_power)
-    setup.setup_relion_projector_on_host(reference, 5, box_size=32, padding_factor=2)
+    setup.setup_relion_projector_on_host(reference, 5, box_size=32, padding_factor=2, deterministic_reductions=False)
     compiled = [program._cache_size() for program in programs]
-    slab, power = setup.setup_relion_projector_on_host(reference, 6, box_size=32, padding_factor=2)
+    slab, power = setup.setup_relion_projector_on_host(reference, 6, box_size=32, padding_factor=2, deterministic_reductions=False)
     assert [program._cache_size() for program in programs] == compiled
     # Current sizes 10 and 12 both run in class 16; the slab is still cropped to radius 6.
     assert slab.shape == (27, 27, 14)
     exact = setup._build_projector_window(
-        setup.gridding_correct_volume_real(reference, 32, 2), 6, 32, 2, 6, to_host=True
+        setup.gridding_correct_volume_real(reference, 32, 2), 6, 32, 2, 6, to_host=True, deterministic_reductions=False
     )
     assert_matches(slab, exact[0])
     assert all(value < _float64_power_bound(32, 2) for value in _relative_metrics(exact[1], power).values())

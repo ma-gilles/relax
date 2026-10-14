@@ -32,6 +32,7 @@ def test_estimator_receives_run_constants_and_per_pass_operands(monkeypatch):
         trial_order_local="order", dataset="half1", volume_shape=[8, 8, 8], padding_factor=2, sigma2_fudge=np.float64(4.0), optimizer_random_seed=np.int64(11), expected_accuracy=ea,
         projector_files=ProjectorFiles(),
         device_memory_override=7 * 1024**3,
+        deterministic_reductions=False,
     )
     out = inputs.estimate( reference_fourier="ref", best_eulers_deg="eul", class_ids="ids", class_weights="w", sigma2_noise_native="noise", current_image_size=np.int64(56),
     )

@@ -64,6 +64,7 @@ def _call(state, k, transaction, monkeypatch):
         min_resol_shell=1.0,
         mstep_compute_dtype="float64",
         average_ctf2=None,
+        deterministic_reductions=False,
     )
 
 

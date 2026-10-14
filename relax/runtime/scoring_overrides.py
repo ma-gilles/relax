@@ -22,6 +22,7 @@ FINE_ROTATION_EXECUTION_ORDER_ENV = "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER"
 EXACT_FLOAT32_ACCUMULATION_ENV = "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
 X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
 PROJECTOR_TEXTURE_INTERP_ENV = "RELAX_RELION_PROJECTOR_TEXTURE_INTERP"
+DETERMINISTIC_REDUCTIONS_ENV = "RELAX_EM_DETERMINISTIC_REDUCTIONS"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,6 +54,10 @@ class ScoringOverrides:
     on): a RELION projection that asks for no interpolator of its own (``relion_texture_interp=None``) takes RELION's
     CUDA texture interpolator where it is available; off takes the manual float interpolation, which the float64
     reference tests compare against (the texture unit weighs with 8-bit fixed-point fractions).
+    ``deterministic_reductions`` (RELAX_EM_DETERMINISTIC_REDUCTIONS, ``env_flags.parse_env_binary_flag``; default off):
+    the EM engines' duplicate-index sums (per-shell noise and power binning, per-image row sums, the projector and VDAM
+    M-step shell sums) take a fixed-order masked reduction (``relax.numerics.deterministic_reduce``) instead of the
+    scatter-add, whose GPU association order varies between runs; the same operands, another summation order.
     """
 
     f32_coarse_support: bool = True
@@ -62,6 +67,7 @@ class ScoringOverrides:
     exact_float32_accumulation: bool = False
     x_half_mstep_double: bool = False
     projector_texture_interp: bool = True
+    deterministic_reductions: bool = False
 
     @classmethod
     def from_environ(cls) -> ScoringOverrides:
@@ -73,6 +79,7 @@ class ScoringOverrides:
             exact_float32_accumulation=parse_env_binary_flag(EXACT_FLOAT32_ACCUMULATION_ENV),
             x_half_mstep_double=parse_env_flag(X_HALF_MSTEP_DOUBLE_ENV),
             projector_texture_interp=parse_env_strict_flag(PROJECTOR_TEXTURE_INTERP_ENV, default=True),
+            deterministic_reductions=parse_env_binary_flag(DETERMINISTIC_REDUCTIONS_ENV),
         )
 
 

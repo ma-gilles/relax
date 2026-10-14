@@ -137,6 +137,7 @@ def test_the_powerclass_predicate_agrees_with_the_function_that_decides(
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         accumulate_noise=accumulate_noise,
         source_faithful_spectrum_norm=source_faithful,
+        deterministic_reductions=False,
     )
     predicted = relion_powerclass_noise_presence(
         use_exact_relion_gaussian=use_exact_relion_gaussian,
@@ -171,6 +172,7 @@ def test_the_powerclass_dtypes_agree_with_the_function_that_produces_them(
         use_exact_relion_gaussian=True,
         accumulate_noise=True,
         source_faithful_spectrum_norm=source_faithful,
+        deterministic_reductions=False,
     )
     predicted = relion_powerclass_noise_dtypes(
         real_dtype=real_dtype, source_faithful_spectrum_norm=source_faithful

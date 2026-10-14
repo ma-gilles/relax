@@ -33,7 +33,6 @@ from relax.fine_pass.scoring import (
 )
 from relax.fine_pass.wavg import _relion_cuda_translate_wavg_norm_images, image_power_shells
 from relax.io.batch_fetch import fetch_indexed_batch
-from relax.numerics.deterministic_reduce import deterministic_reductions_enabled
 from relax.relion import ctf
 from relax.relion.optics_groups import noise_rows, pixel_rows
 
@@ -292,6 +291,7 @@ def unshifted_chunk_operands(
     precision_policy,
     use_exact_relion_gaussian: bool = True,
     relion_native_fine_units: bool = False,
+    deterministic_reductions: bool,
 ):
     """One chunk's unshifted per-image operands, gathered at the chunk's image capacity.
 
@@ -331,6 +331,7 @@ def unshifted_chunk_operands(
         optics_groups_np=optics_groups_np,
         relion_native_fine_units=bool(relion_native_fine_units),
         log_summary=False,
+        deterministic_reductions=deterministic_reductions,
     )
     n_images = int(np.asarray(image_indices).shape[0])
     image_slots = np.full(int(image_capacity), -1, dtype=np.int32)
@@ -373,6 +374,7 @@ def prepare_chunk_reconstruction_operands(
     normalized_cc=False,
     noise_shell_indices_half=None,
     n_noise_shells=None,
+    deterministic_reductions: bool,
 ):
     """Build one chunk's translated reconstruction, noise and Wavg tiles.
 
@@ -519,6 +521,7 @@ def prepare_chunk_reconstruction_operands(
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         accumulate_noise=accumulate_noise,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+        deterministic_reductions=deterministic_reductions,
     )
     raw_translated_wavg_rectangle = _relion_cuda_translate_wavg_norm_images(
         processed_score_half_for_noise,
@@ -649,6 +652,7 @@ def verify_resident_chunk_operands(
     n_recon_pixels: int,
     bpref_recon_operand: bool,
     label: str,
+    deterministic_reductions: bool,
 ) -> None:
     """Prove one real chunk's resident operands equal the per-chunk preparation.
 
@@ -725,7 +729,7 @@ def verify_resident_chunk_operands(
     # including two of the per-chunk path. It is checked against that spread
     # here, and exactly under ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1``, where
     # the binning becomes a fixed-order masked reduction.
-    racing_scatter = () if deterministic_reductions_enabled() else ("relion_norm_high_shell",)
+    racing_scatter = () if deterministic_reductions else ("relion_norm_high_shell",)
     mismatched = []
     for name, (actual, expected) in checks.items():
         if actual.shape != expected.shape or actual.dtype != expected.dtype:
@@ -763,5 +767,5 @@ def verify_resident_chunk_operands(
         label,
         len(checks),
         int(bpref_recon_operand),
-        int(deterministic_reductions_enabled()),
+        int(deterministic_reductions),
     )

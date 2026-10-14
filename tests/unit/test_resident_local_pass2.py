@@ -762,6 +762,7 @@ def test_mstep_adapter_refuses_unshifted_operands_without_the_kernel_tables():
             mstep_current_size=CURRENT_SIZE,
             relion_x_half_recon_indices=None,
             max_adjoint_block_bytes=1 << 20,
+            deterministic_reductions=False,
         )
 
 

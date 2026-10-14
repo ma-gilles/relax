@@ -789,6 +789,7 @@ def test_compute_noise_block_preserves_float64_inputs():
             shell_indices,
             n_shells,
             True,
+            deterministic=False,
         )
 
     noise_f32, a2_f32, xa_f32 = run(jnp.float32)
@@ -861,7 +862,7 @@ def test_normalize_wsum_fills_shells_below_relions_absolute_threshold_in_relion_
     from relax.fourier.half_spectrum import bin_shell_values_jax, make_relion_noise_shell_indices_half
 
     npix = np.maximum(
-        np.asarray(bin_shell_values_jax(jnp.ones(image_shape[0] * (image_shape[1] // 2 + 1)), make_relion_noise_shell_indices_half(image_shape), 5)),
+        np.asarray(bin_shell_values_jax(jnp.ones(image_shape[0] * (image_shape[1] // 2 + 1)), make_relion_noise_shell_indices_half(image_shape), 5, deterministic=False)),
         1.0,
     )
     relion_units = np.array([1.2e-14, 5.5e-15, 6.0e-15, 2.0e-14, 5.0e-15])
