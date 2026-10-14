@@ -246,10 +246,13 @@ def _pass2_window_setup(
     relion_firstiter_score_mode,
     use_exact_relion_gaussian: bool,
     use_float64_scoring: bool,
+    device_memory_override: int | None,
     window_at_box: bool = False,
     reference_sphere_clip: bool = False,
 ) -> _Pass2WindowSetup:
     """Resolve the M-step current size, the score/recon window and the precision policy of a pass 2.
+
+    ``device_memory_override`` (``EngineTuning.device_memory_bytes``) replaces the device memory probe.
 
     ``reference_sphere_clip`` marks images on another grid than the reference, whose M-step
     adjoint clips at the reference sphere (``relax.projection.adjoint.ReferenceSphereClip``). Their
@@ -302,7 +305,7 @@ def _pass2_window_setup(
         n_half=n_half,
         window_spec_kwargs=window_spec_kwargs,
         budget_window_spec=budget_window_spec,
-        device_memory_bytes=_device_memory_limit_bytes(),
+        device_memory_bytes=_device_memory_limit_bytes(device_memory_override),
         precision_policy=DensePrecisionPolicy(use_float64_scoring=use_float64_scoring),
     )
 

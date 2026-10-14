@@ -186,6 +186,7 @@ def test_expected_accuracy_inputs_hand_the_estimator_the_kernel(monkeypatch, ker
         expected_accuracy=SimpleNamespace(half1_particle_ids="pids", half1_ctf_params="ctf", do_ctf_correction=False),
         gridding_kernel=kernel,
         projector_files=ProjectorFiles(),
+        device_memory_override=None,
     )
     inputs.estimate(
         reference_fourier="ref",
@@ -216,6 +217,7 @@ def test_expected_accuracy_refuses_separable_for_subtomograms():
             sigma2_fudge=1.0,
             random_seed=0,
             gridding_kernel="separable",
+            device_memory_override=None,
         )
 
 

@@ -145,6 +145,7 @@ def _native_expectation_step(
                 experiment_dataset=accuracy_dataset,
                 isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
                 probe=probe,
+                device_memory_override=opts.environment.engine.device_memory_bytes,
             )
             if accuracy_estimate is not None:
                 sampling_state.acc_rot = accuracy_estimate.accuracy.acc_rot

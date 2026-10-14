@@ -1001,6 +1001,7 @@ def test_class_reconstruction_window_at_box_keeps_relions_outer_ring():
         relion_firstiter_score_mode="gaussian",
         use_exact_relion_gaussian=True,
         use_float64_scoring=False,
+        device_memory_override=None,
         window_at_box=True,
     )
     single = _pass2_window_setup((n, n), **common).budget_window_spec

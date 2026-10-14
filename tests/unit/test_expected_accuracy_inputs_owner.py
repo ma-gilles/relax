@@ -31,6 +31,7 @@ def test_estimator_receives_run_constants_and_per_pass_operands(monkeypatch):
     inputs = owner.Half1AccuracyInputs(
         trial_order_local="order", dataset="half1", volume_shape=[8, 8, 8], padding_factor=2, sigma2_fudge=np.float64(4.0), optimizer_random_seed=np.int64(11), expected_accuracy=ea,
         projector_files=ProjectorFiles(),
+        device_memory_override=7 * 1024**3,
     )
     out = inputs.estimate( reference_fourier="ref", best_eulers_deg="eul", class_ids="ids", class_weights="w", sigma2_noise_native="noise", current_image_size=np.int64(56),
     )
@@ -39,5 +40,6 @@ def test_estimator_receives_run_constants_and_per_pass_operands(monkeypatch):
         reference_fourier="ref", volume_shape=(8, 8, 8), best_eulers_deg="eul", class_ids="ids", class_weights="w", sigma2_noise_native="noise", dataset="half1",
         trial_order_local="order", current_image_size=56, padding_factor=2, sigma2_fudge=4.0, random_seed=11, random_seed_particle_ids="pids", ctf_params_override="ctf", do_ctf_correction=False,
         optics_group_ids=None, projector_data=None, gridding_kernel="radial", group_grid=None,
+        device_memory_override=7 * 1024**3,
     )
     assert type(recorded["current_image_size"]) is int and type(recorded["sigma2_fudge"]) is float and type(recorded["random_seed"]) is int

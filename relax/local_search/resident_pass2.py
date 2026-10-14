@@ -461,6 +461,7 @@ def compute_local_search_resident(
             relion_firstiter_score_mode=score_mode,
             use_exact_relion_gaussian=not kernel.firstiter_cc,
             use_float64_scoring=kernel.use_float64_scoring,
+            device_memory_override=support.engine_tuning.device_memory_bytes,
             # RELION's window at every size, including the box (a shape class reaches its
             # box before the reference does): the resident driver never scores a full half.
             window_at_box=True,

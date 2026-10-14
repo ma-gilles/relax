@@ -227,7 +227,8 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
         reconstruction_current_size=checkpoint.current_size,
         half_spectrum_scoring=True, square_window=False,
         relion_firstiter_score_mode="gaussian", use_exact_relion_gaussian=True,
-        use_float64_scoring=False, window_at_box=True,
+        use_float64_scoring=False, device_memory_override=EngineTuning.from_environ().device_memory_bytes,
+        window_at_box=True,
     )
     window = _sparse_pass2_window_setup(
         dataset, disc_type="linear_interp", image_shape=dataset.image_shape,

@@ -481,6 +481,7 @@ def expected_angular_errors(
     image_offsets=None,
     image_projections=None,
     projection_left=None,
+    device_memory_override: int | None,
 ) -> ExpectedErrors:
     """``calculateExpectedAngularErrors`` over the trials, as the binding's oracle computes it.
 
@@ -491,6 +492,8 @@ def expected_angular_errors(
     ``[n_particles + 1]`` and ``image_projections`` ``[n_images, 3, 3]`` (``Aproj``).
     ``projection_left`` (3x3, ``ObservationModel::applyAnisoMag``'s ``inv(M3)``)
     multiplies both projection matrices on the left (ml_optimiser.cpp:9526, 9589).
+    ``device_memory_override`` (``EngineTuning.device_memory_bytes``) replaces the device memory probe that bounds
+    the slab kept whole on the device.
     """
 
     model_pixel_size = float(pixel_size if model_pixel_size is None or model_pixel_size <= 0 else model_pixel_size)
@@ -566,7 +569,7 @@ def expected_angular_errors(
             projector_data[k], int(projector_r_max), int(padding_factor), int(current_image_size),
             capacity_image_size=capacity, capacity_r_max=capacity_r_max,
         )
-        device = projector.device(accuracy_slab_resident_bytes(), ACCURACY_SLAB_STREAM_CHUNK_BYTES)
+        device = projector.device(accuracy_slab_resident_bytes(device_memory_override), ACCURACY_SLAB_STREAM_CHUNK_BYTES)
         errors = [np.empty(n_trials), np.empty(n_trials)]
         for chunk in chunks:
             rows = np.concatenate([np.arange(trial_image_offsets[t], trial_image_offsets[t + 1]) for t in chunk])

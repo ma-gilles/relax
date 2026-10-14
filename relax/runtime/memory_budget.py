@@ -17,7 +17,7 @@ import subprocess
 import jax
 import numpy as np
 
-from relax.runtime.env_flags import parse_env_nonnegative_int, parse_env_positive_float
+from relax.runtime.env_flags import parse_env_nonnegative_int
 from relax.runtime.xla_memory_reserve import _nvidia_smi_visible_device_memory_bytes
 
 logger = logging.getLogger(__name__)
@@ -112,8 +112,9 @@ def _jax_allocator_limit_bytes() -> int | None:
     return None
 
 
-def _device_memory_limit_bytes() -> int | None:
-    """Return the memory this process can allocate on its accelerator.
+def _device_memory_limit_bytes(override_bytes: int | None) -> int | None:
+    """Return the memory this process can allocate on its accelerator: ``override_bytes``
+    (``EngineTuning.device_memory_bytes``) when given, else the probe.
 
     The device's total from nvidia-smi, capped by the JAX allocator's limit:
     under ``XLA_PYTHON_CLIENT_MEM_FRACTION=.50`` an 80 GB H100 gives the process
@@ -122,13 +123,11 @@ def _device_memory_limit_bytes() -> int | None:
     projection cache at 42 GB).
     """
 
-    # ``RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB`` overrides the nvidia-smi probe.
-    # Keep this as a manual escape hatch for reserving headroom on shared GPUs
-    # or working around inaccurate allocator/device probes.
-    # A value that is not a positive number is refused, not ignored.
-    override_gb = parse_env_positive_float("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB")
-    if override_gb is not None:
-        return int(override_gb * (1024 ** 3))
+    # ``RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB`` (read once into EngineTuning) overrides the nvidia-smi probe:
+    # a manual escape hatch for reserving headroom on shared GPUs or working around inaccurate
+    # allocator/device probes.
+    if override_bytes is not None:
+        return int(override_bytes)
 
     # NVML answers in microseconds; the nvidia-smi subprocess (the fallback below) took about 40 ms
     # per pass, 1.25 s of a 60 s window of late 10k VDAM iterations (py-spy). nvidia-smi prints the
@@ -387,11 +386,11 @@ def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None, *, overri
     return max(1, int(float(device_memory_bytes) * _AUTO_ADJOINT_BLOCK_DEVICE_FRACTION))
 
 
-def accuracy_slab_resident_bytes(device_memory_bytes: int | None = None) -> int | None:
-    """The largest expected-accuracy slab kept whole on the device, or None for no bound (no accelerator)."""
+def accuracy_slab_resident_bytes(device_memory_override: int | None) -> int | None:
+    """The largest expected-accuracy slab kept whole on the device (its memory from :func:`_device_memory_limit_bytes`
+    with ``device_memory_override``, ``EngineTuning.device_memory_bytes``), or None for no bound (no accelerator)."""
 
-    if device_memory_bytes is None:
-        device_memory_bytes = _device_memory_limit_bytes()
+    device_memory_bytes = _device_memory_limit_bytes(device_memory_override)
     if device_memory_bytes is None:
         return None
     return max(1, int(float(device_memory_bytes) * _AUTO_ACCURACY_SLAB_DEVICE_FRACTION))

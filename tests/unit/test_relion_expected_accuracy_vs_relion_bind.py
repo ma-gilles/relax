@@ -99,6 +99,7 @@ def _ours(case, *, size, current_size, padding, ctf_images, seed=11, fudge=1.0, 
         sigma2_fudge=fudge,
         random_seed=seed,
         random_seed_particle_ids=case["seed_particles"],
+        device_memory_override=None,
     )
 
 
@@ -154,7 +155,7 @@ def test_slab_at_and_over_the_device_budget_matches(monkeypatch, planes_short, c
     size, current_size, padding = 32, 32, 2
     slab_bytes, plane_bytes = _slab_bytes(size, current_size, padding)
     chunk_bytes = chunk_planes * plane_bytes
-    monkeypatch.setattr(accuracy, "accuracy_slab_resident_bytes", lambda: slab_bytes - planes_short * plane_bytes)
+    monkeypatch.setattr(accuracy, "accuracy_slab_resident_bytes", lambda device_memory_override: slab_bytes - planes_short * plane_bytes)
     monkeypatch.setattr(accuracy, "ACCURACY_SLAB_STREAM_CHUNK_BYTES", chunk_bytes)
     placed = []
     device = accuracy._Projector.device
@@ -326,6 +327,7 @@ def test_tilt_images_match(do_ctf):
         random_seed_particle_ids=case["seed_particles"],
         image_offsets=offsets,
         image_projections=projections,
+        device_memory_override=None,
     )
     _assert_same(ours, oracle)
 
@@ -383,6 +385,7 @@ def test_optics_group_on_another_grid_matches():
         random_seed_particle_ids=case["seed_particles"],
         model_pixel_size=2.1,
         box_size=full,
+        device_memory_override=None,
     )
     _assert_same(ours, oracle)
 
@@ -455,6 +458,7 @@ def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
         do_ctf_correction=True,
         random_seed_particle_ids=case["seed_particles"],
         tilt_images=tilt,
+        device_memory_override=None,
     )
     assert_matches(ours.acc_rot, float(oracle["acc_rot"]))
     assert_matches(ours.acc_trans_angstrom, float(oracle["acc_trans"]))
@@ -496,6 +500,7 @@ def test_prepared_inputs_with_optics_rows_match(magnified):
         amplitude_contrast=0.1, pixel_size=2.1, model_box_size=size, current_image_size=current_size, padding_factor=2,
         sigma2_fudge=1.0, random_seed=11, do_ctf_correction=True, random_seed_particle_ids=case["seed_particles"],
         optics=optics,
+        device_memory_override=None,
     )
     assert_matches(ours.acc_rot, float(oracle["acc_rot"]))
     assert_matches(ours.acc_trans_angstrom, float(oracle["acc_trans"]))

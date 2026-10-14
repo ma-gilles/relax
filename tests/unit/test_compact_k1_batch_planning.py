@@ -233,7 +233,7 @@ def test_compact_k1_route_gate_requires_host_c64_and_no_diagnostics(monkeypatch)
         shape=(1603, 1603, 802),
         dtype=np.dtype(np.complex64),
     )
-    monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
+    monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda override: 85 * 1024**3)
     monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
     for name in (
         "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF",
@@ -277,7 +277,7 @@ def test_compact_k1_route_gate_honors_explicit_route_env(monkeypatch):
         shape=(1603, 1603, 802),
         dtype=np.dtype(np.complex64),
     )
-    monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda: None)
+    monkeypatch.setattr(sparse.memory_budget, "_device_memory_limit_bytes", lambda override: None)
     monkeypatch.setattr(sparse.memory_budget, "_jax_allocator_free_memory_bytes", lambda: None)
     # Without a device reading the host-staged route is not chosen, so the direct peak must fit.
     unknown_memory = _compact_route_decision(projector_half=host_projector)
@@ -350,7 +350,7 @@ def test_adaptive_planner_distinguishes_allocation_phases_with_equal_windows():
 def test_compact_planning_asks_the_probe_about_its_numbered_half(monkeypatch):
     """The decision asks the run's probe about the half it plans, and only the first numbered iteration takes the
     fused route compact planning needs."""
-    monkeypatch.setattr(firstiter_bpref.memory_budget, "_device_memory_limit_bytes", lambda: 85 * 1024**3)
+    monkeypatch.setattr(firstiter_bpref.memory_budget, "_device_memory_limit_bytes", lambda override: 85 * 1024**3)
     monkeypatch.setattr(firstiter_bpref.memory_budget, "_jax_allocator_free_memory_bytes", lambda: 40 * 1024**3)
     monkeypatch.delenv("RELAX_K1_RELION_FIRSTITER_FUSED_BPREF", raising=False)
     asked = []

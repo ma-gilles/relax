@@ -508,7 +508,6 @@ def test_device_memory_limit_is_capped_by_the_allocator_limit(monkeypatch):
     from relax.runtime import memory_budget as budget
 
     gib = 1024**3
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", raising=False)
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
     # Without NVML the total comes from the nvidia-smi subprocess.
     monkeypatch.setattr(budget, "_nvml_devices", lambda: False)
@@ -519,6 +518,6 @@ def test_device_memory_limit_is_capped_by_the_allocator_limit(monkeypatch):
     )
     total = 81559 * 1024**2
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: 40 * gib)
-    assert budget._device_memory_limit_bytes() == 40 * gib
+    assert budget._device_memory_limit_bytes(None) == 40 * gib
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
-    assert budget._device_memory_limit_bytes() == total
+    assert budget._device_memory_limit_bytes(None) == total

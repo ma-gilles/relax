@@ -768,6 +768,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
         probe=NoProbe(),
+        device_memory_override=None,
     )
 
     assert estimate is not None
@@ -815,6 +816,7 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
         probe=NoProbe(),
+        device_memory_override=None,
     )
 
     assert estimate is not None
@@ -864,6 +866,7 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
             sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
             tilt_images=images,
             probe=NoProbe(),
+            device_memory_override=None,
         )
 
     with pytest.raises(RuntimeError, match="estimator reached"):
@@ -2048,10 +2051,12 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         experiment_dataset,
         isolate_in_subprocess,
         probe,
+        device_memory_override,
     ):
         assert tilt_images is None  # single particles
         assert optics_group_ids is None  # one optics group
         assert isolate_in_subprocess is False
+        assert device_memory_override is None  # the options' default EngineTuning
         event_order.append("estimate_accuracy")
         estimate_calls.append(
             {
@@ -2325,6 +2330,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
         padding_factor=1,
         sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
         probe=dump_observer.expectation_probe(),
+        device_memory_override=None,
     )
     meta = estimate.meta()
 

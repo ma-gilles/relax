@@ -47,6 +47,8 @@ class Half1AccuracyInputs(NamedTuple):
     expected_accuracy: object
     # The files of a projector built here (RefinementEnvironment.projector_files).
     projector_files: object
+    # EngineTuning.device_memory_bytes: the device memory the slab bound takes instead of the probe.
+    device_memory_override: int | None
     # Each half-1 image's row of a per-optics-group noise table; None for one group.
     optics_group_ids: object = None
     # The projector's gridding-correction window when the transform is built here.
@@ -96,6 +98,7 @@ class Half1AccuracyInputs(NamedTuple):
             projector_data=projector_data,
             gridding_kernel=self.gridding_kernel,
             group_grid=None if projector_current_size is None else dict(projector_current_size=int(projector_current_size)),
+            device_memory_override=self.device_memory_override,
         )
 
 
@@ -296,8 +299,10 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     tilt_images=None,
     optics=None,
     gridding_kernel: str = "radial",
+    device_memory_override: int | None,
 ) -> ExpectedAccuracy:
-    """RELION's ``calculateExpectedAngularErrors`` from prepared inputs.
+    """RELION's ``calculateExpectedAngularErrors`` from prepared inputs (``device_memory_override``:
+    ``EngineTuning.device_memory_bytes``).
 
     Supplied-map EM and InitialModel have different state containers and noise
     conventions, but the calculation has one owner
@@ -381,6 +386,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
             None if tilt_images is None else np.asarray(tilt_images.image_projections).astype(np.float64)
         ),
         projection_left=optics.get("projection_left"),
+        device_memory_override=device_memory_override,
     )
     return ExpectedAccuracy(
         acc_rot=out.acc_rot,
@@ -607,8 +613,10 @@ def estimate_relion_expected_accuracy(
     group_grid=None,
     projector_data=None,
     gridding_kernel: str = "radial",
+    device_memory_override: int | None,
 ) -> ExpectedAccuracy:
-    """Evaluate RELION ``calculateExpectedAngularErrors`` on half 1.
+    """Evaluate RELION ``calculateExpectedAngularErrors`` on half 1 (``device_memory_override``:
+    ``EngineTuning.device_memory_bytes``).
 
     The binding consumes RELION map/noise conventions.  RECOVAR's real-space
     maps already have the same physical scale, while its native FFT noise
@@ -654,6 +662,7 @@ def estimate_relion_expected_accuracy(
             do_ctf_correction=do_ctf_correction,
             max_trials=max_trials,
             optics_group_ids=optics_group_ids,
+            device_memory_override=device_memory_override,
         )
     if isinstance(dataset, MultiShapeHalf):
         return _estimate_by_shape_class(
@@ -676,6 +685,7 @@ def estimate_relion_expected_accuracy(
             optics_group_ids=optics_group_ids,
             projector_data=projector_data,
             gridding_kernel=gridding_kernel,
+            device_memory_override=device_memory_override,
         )
     eulers = np.asarray(best_eulers_deg, dtype=np.float64)
     if eulers.ndim != 2 or eulers.shape[1] != 3:
@@ -758,6 +768,7 @@ def estimate_relion_expected_accuracy(
                     group_grid=group_grid,
                     projector_data=projector_data,
                     gridding_kernel=gridding_kernel,
+                    device_memory_override=device_memory_override,
                 )
             )
         return _combine_group_expected_accuracies(per_group, group_positions, trial_local, trial_particle_ids)
@@ -798,6 +809,7 @@ def estimate_relion_expected_accuracy(
         projector_data=projector_data,
         optics=_expected_accuracy_optics(dataset, trial_local),
         gridding_kernel=gridding_kernel,
+        device_memory_override=device_memory_override,
     )
 
 
@@ -888,6 +900,7 @@ def _estimate_tomo_half(
     do_ctf_correction,
     max_trials,
     optics_group_ids,
+    device_memory_override,
 ):
     """Expected accuracy of subtomogram particles (a ``TomoHalf``): RELION's per-image branches.
 
@@ -978,6 +991,7 @@ def _estimate_tomo_half(
                 random_seed_particle_ids=particle_ids[group_trials],
                 tilt_images=tilt,
                 optics=expected_accuracy_optics(half.images, images),
+                device_memory_override=device_memory_override,
             )
         )
     return _combine_group_expected_accuracies(per_group, group_positions, trial_local, particle_ids[trial_local])

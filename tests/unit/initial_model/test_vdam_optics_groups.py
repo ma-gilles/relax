@@ -208,6 +208,7 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
         sigma2_fudge=1.0,
         optics_group_ids=groups,
         probe=NoProbe(),
+        device_memory_override=None,
     )
     meta = estimate.meta()
     assert calls == [

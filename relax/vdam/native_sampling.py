@@ -413,6 +413,7 @@ def estimate_native_sampling_accuracy(
     experiment_dataset=None,
     isolate_in_subprocess: bool = False,
     probe: ExpectationProbe,
+    device_memory_override: int | None,
 ) -> SamplingAccuracyEstimate | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
@@ -425,7 +426,8 @@ def estimate_native_sampling_accuracy(
     Single particles pass ``experiment_dataset`` (subtomograms: the flat dataset of ``tilt_images``' tilt
     images) for the trials' optics-table CTFs
     (:func:`relax.relion.optics_aberrations.expected_accuracy_optics`: CTF^2 of premultiplied
-    images, even Zernike terms); None without optics-table terms.
+    images, even Zernike terms); None without optics-table terms. ``device_memory_override``
+    (``EngineTuning.device_memory_bytes``) replaces the device memory probe of the estimate's slab bound.
     """
     n_trials = min(100, int(particle_order.size))
     if n_trials <= 0:
@@ -558,6 +560,7 @@ def estimate_native_sampling_accuracy(
             # RELION seeds these trials with Experiment's internal ``part_id``,
             # not the original input-table row ids carried by RECOVAR's dataset.
             random_seed_particle_ids=random_seed_particle_ids[trials],
+            device_memory_override=device_memory_override,
         )
 
     sigma2_noise = np.asarray(state.sigma2_noise, dtype=np.float64)

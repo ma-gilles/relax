@@ -18,8 +18,9 @@ from relax.runtime.compile_ahead import (
     CompileAheadConfig,
     parse_compile_ahead_config,
 )
-from relax.runtime.env_flags import parse_env_flag, parse_env_true_flag, read_env_text
+from relax.runtime.env_flags import parse_env_flag, parse_env_positive_float, parse_env_true_flag, read_env_text
 
+DEVICE_MEMORY_GB_ENV = "RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB"
 # relax.numerics.finite_check's opt-in checks and their warn-only mode (EngineTuning.finite_check).
 FINITE_CHECK_ENV = "RELAX_EM_FINITE_CHECK"
 FINITE_CHECK_WARN_ENV = "RELAX_EM_FINITE_CHECK_WARN"
@@ -162,6 +163,10 @@ class EngineTuning:
     resident chunk loop dispatches its three stages as jitted programs keyed on the capacity class; off runs the same
     stage functions in the same order as loose eager operations, the oracle of the bitwise comparisons (only the JIT
     boundary moves).
+    ``device_memory_bytes`` (RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB, GiB through ``env_flags.parse_env_positive_float``,
+    which refuses a value that is not a positive number): the accelerator memory the budgets take instead of the
+    probe (``memory_budget._device_memory_limit_bytes``), an operator escape hatch for shared GPUs or a wrong probe;
+    None probes the device.
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -201,6 +206,7 @@ class EngineTuning:
     resident_operands: bool = True
     finite_check: str = "off"
     resident_glue_jit: bool = True
+    device_memory_bytes: int | None = None
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -276,6 +282,7 @@ class EngineTuning:
             resident_operands=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", default=True),
             finite_check=finite_check_mode(parse_env_true_flag(FINITE_CHECK_ENV), parse_env_true_flag(FINITE_CHECK_WARN_ENV)),
             resident_glue_jit=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", default=True),
+            device_memory_bytes=parse_device_memory_gb(parse_env_positive_float(DEVICE_MEMORY_GB_ENV)),
         )
 
 
@@ -543,3 +550,8 @@ def finite_check_mode(enabled: bool, warn: bool) -> str:
     if not enabled:
         return "off"
     return "warn" if warn else "raise"
+
+
+def parse_device_memory_gb(gib: float | None) -> int | None:
+    """``device_memory_bytes`` of a GiB override (None: no override)."""
+    return None if gib is None else int(gib * (1024**3))

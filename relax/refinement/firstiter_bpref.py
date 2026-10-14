@@ -232,7 +232,7 @@ def relion_firstiter_compact_batch_planning_decision(
         recon_volume_size=recon_volume_size,
         recon_y_dtype=np.complex64,
         recon_ctf_dtype=np.float32,
-        device_memory_bytes=memory_budget._device_memory_limit_bytes(),
+        device_memory_bytes=memory_budget._device_memory_limit_bytes(engine_tuning.device_memory_bytes),
         allocator_free_memory_bytes=memory_budget._jax_allocator_free_memory_bytes(),
         diagnostics_active=diagnostics_active,
     )

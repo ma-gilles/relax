@@ -52,11 +52,12 @@ def test_two_identical_groups_reproduce_one_group():
     rng = np.random.default_rng(0)
     kwargs = _inputs(rng, [300.0] * 8)
     sigma2 = np.linspace(2.0, 1.0, N // 2 + 1) * float(N) ** 4
-    one = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs)
+    one = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs, device_memory_override=None)
     two = estimate_relion_expected_accuracy(
         sigma2_noise_native=np.stack([sigma2, sigma2]),
         optics_group_ids=np.array([0, 1, 1, 0, 1, 0, 0, 1]),
         **kwargs,
+        device_memory_override=None,
     )
     assert one.acc_rot < 999.0
     np.testing.assert_allclose(two.acc_rot, one.acc_rot, rtol=1e-12)
@@ -71,10 +72,10 @@ def test_groups_with_different_constants_and_noise():
     groups = np.array([0, 1, 1, 0, 1, 0])
     kwargs = _inputs(rng, np.where(groups == 0, 300.0, 200.0))
     sigma2 = np.stack([np.full(N // 2 + 1, 1.0), np.full(N // 2 + 1, 4.0)]) * float(N) ** 4
-    result = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, optics_group_ids=groups, **kwargs)
+    result = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, optics_group_ids=groups, **kwargs, device_memory_override=None)
     assert result.acc_rot < 999.0 and int(result.class_counts[0]) == 6
     with pytest.raises(NotImplementedError):
-        estimate_relion_expected_accuracy(sigma2_noise_native=sigma2[0], **kwargs)
+        estimate_relion_expected_accuracy(sigma2_noise_native=sigma2[0], **kwargs, device_memory_override=None)
 
 
 def _multi_shape_half(kwargs, groups_of_images, boxes_and_pixels):
@@ -103,18 +104,18 @@ def test_one_shape_class_reproduces_the_single_grid_estimate():
     rng = np.random.default_rng(2)
     kwargs = _inputs(rng, [300.0] * 8)
     sigma2 = np.linspace(2.0, 1.0, N // 2 + 1) * 1e-6 * float(N) ** 4
-    today = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs)
+    today = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs, device_memory_override=None)
     assert today.acc_rot < 5.0 and today.acc_trans_angstrom < 5.0  # well inside the search caps
     # One class on the model grid: exactly today's estimate.
     half = _multi_shape_half(kwargs, np.zeros(8, dtype=int), [(N, 4.0)])
-    got = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, dataset=half))
+    got = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, dataset=half), device_memory_override=None)
     assert got.acc_rot == today.acc_rot and got.acc_trans_angstrom == today.acc_trans_angstrom
     assert_matches(got.class_counts, today.class_counts)
     assert_matches(got.trial_local_indices, today.trial_local_indices)
     assert_matches(got.trial_particle_ids, today.trial_particle_ids)
     # Two classes both on the model grid: the same estimate up to the count-weighted mean.
     half = _multi_shape_half(kwargs, np.array([0, 1, 1, 0, 1, 0, 0, 1]), [(N, 4.0), (N, 4.0)])
-    got = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, dataset=half))
+    got = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, dataset=half), device_memory_override=None)
     np.testing.assert_allclose(got.acc_rot, today.acc_rot, rtol=1e-12)
     np.testing.assert_allclose(got.acc_trans_angstrom, today.acc_trans_angstrom, rtol=1e-12)
     assert_matches(got.trial_particle_ids, today.trial_particle_ids)
@@ -134,17 +135,19 @@ def test_class_on_another_grid_takes_the_scale_difference():
     same_view = estimate_relion_expected_accuracy(
         sigma2_noise_native=sigma2,
         **dict(kwargs, dataset=_multi_shape_half(kwargs, groups, [(N, 4.0), (2 * N, 2.0)]), current_image_size=8),
+        device_memory_override=None,
     )
-    today = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, current_image_size=8))
+    today = estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **dict(kwargs, current_image_size=8), device_memory_override=None)
     assert same_view.acc_rot < 999.0
     np.testing.assert_allclose(same_view.acc_rot, today.acc_rot, rtol=1e-12)
     # A wider field of view (s = 1.25) is sampled more finely at each shell: more signal per shell.
     wider = estimate_relion_expected_accuracy(
         sigma2_noise_native=sigma2,
         **dict(kwargs, dataset=_multi_shape_half(kwargs, groups, [(N, 4.0), (20, 4.0)])),
+        device_memory_override=None,
     )
     assert int(wider.class_counts[0]) == 8
-    assert wider.acc_rot <= estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs).acc_rot
+    assert wider.acc_rot <= estimate_relion_expected_accuracy(sigma2_noise_native=sigma2, **kwargs, device_memory_override=None).acc_rot
 
 
 def _group_result(terms_rot, terms_trans):
