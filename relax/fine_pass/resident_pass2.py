@@ -974,6 +974,7 @@ def _resident_pass2(
     recon_y_accum_dtype, recon_ctf_accum_dtype = relion_x_half_mstep_accumulator_dtypes(
         experiment_dataset.dtype,
         use_relion_x_half_mstep=True,
+        mstep_double=scoring_overrides.x_half_mstep_double,
     )
     logger.info(
         "Resident pass-2 RELION x-half current-size BPref accumulator shape: "

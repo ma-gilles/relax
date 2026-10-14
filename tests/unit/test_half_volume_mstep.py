@@ -19,6 +19,7 @@ from relax.cuda import backprojection as cuda_backprojection
 from relax.cuda import library
 from relax.reconstruction import half_volume_mstep, regularization
 from relax.runtime.engine_tuning import EngineTuning, XHalfLargeGrid
+from relax.runtime.scoring_overrides import X_HALF_MSTEP_DOUBLE_ENV, ScoringOverrides
 
 pytestmark = pytest.mark.unit
 
@@ -159,12 +160,11 @@ def test_large_grid_switches_read_once_at_the_boundary(monkeypatch, name):
         assert getattr(EngineTuning.from_environ().x_half_large_grid, field).on(1) is forced
 
 
-def test_relion_x_half_mstep_accumulator_dtypes_default_to_relion_acc_float(monkeypatch):
-    monkeypatch.delenv(half_volume_mstep._RELION_X_HALF_MSTEP_DOUBLE_ENV, raising=False)
-
+def test_relion_x_half_mstep_accumulator_dtypes_default_to_relion_acc_float():
     y_dtype, ctf_dtype = half_volume_mstep.relion_x_half_mstep_accumulator_dtypes(
         np.complex64,
         use_relion_x_half_mstep=True,
+        mstep_double=False,
     )
 
     assert y_dtype == np.dtype(np.complex64)
@@ -173,46 +173,44 @@ def test_relion_x_half_mstep_accumulator_dtypes_default_to_relion_acc_float(monk
     y_dtype, ctf_dtype = half_volume_mstep.relion_x_half_mstep_accumulator_dtypes(
         np.complex128,
         use_relion_x_half_mstep=True,
+        mstep_double=False,
     )
 
     assert y_dtype == np.dtype(np.complex64)
     assert ctf_dtype == np.dtype(np.float32)
 
 
-def test_relion_x_half_mstep_accumulator_dtypes_can_opt_into_double(monkeypatch):
-    monkeypatch.setenv(half_volume_mstep._RELION_X_HALF_MSTEP_DOUBLE_ENV, "1")
-
+def test_relion_x_half_mstep_accumulator_dtypes_can_opt_into_double():
     y_dtype, ctf_dtype = half_volume_mstep.relion_x_half_mstep_accumulator_dtypes(
         np.complex64,
         use_relion_x_half_mstep=True,
+        mstep_double=True,
     )
 
     assert y_dtype == np.dtype(np.complex128)
     assert ctf_dtype == np.dtype(np.float64)
 
 
-def test_relion_x_half_mstep_accumulator_dtypes_can_opt_out(monkeypatch):
-    monkeypatch.setenv(half_volume_mstep._RELION_X_HALF_MSTEP_DOUBLE_ENV, "0")
-
-    y_dtype, ctf_dtype = half_volume_mstep.relion_x_half_mstep_accumulator_dtypes(
-        np.complex64,
-        use_relion_x_half_mstep=True,
-    )
-
-    assert y_dtype == np.dtype(np.complex64)
-    assert ctf_dtype == np.dtype(np.float32)
+def test_the_double_switch_is_read_once_by_scoring_overrides(monkeypatch):
+    """RELAX_RELION_X_HALF_MSTEP_DOUBLE (``env_flags.parse_env_flag``): unset and 0 off, 1 on."""
+    monkeypatch.delenv(X_HALF_MSTEP_DOUBLE_ENV, raising=False)
+    assert ScoringOverrides.from_environ().x_half_mstep_double is False is ScoringOverrides().x_half_mstep_double
+    monkeypatch.setenv(X_HALF_MSTEP_DOUBLE_ENV, "0")
+    assert ScoringOverrides.from_environ().x_half_mstep_double is False
+    monkeypatch.setenv(X_HALF_MSTEP_DOUBLE_ENV, "1")
+    assert ScoringOverrides.from_environ().x_half_mstep_double is True
 
 
-def test_non_relion_mstep_keeps_dataset_accumulator_dtype(monkeypatch):
-    monkeypatch.delenv(half_volume_mstep._RELION_X_HALF_MSTEP_DOUBLE_ENV, raising=False)
+def test_non_relion_mstep_keeps_dataset_accumulator_dtype():
+    for mstep_double in (False, True):
+        y_dtype, ctf_dtype = half_volume_mstep.relion_x_half_mstep_accumulator_dtypes(
+            np.complex64,
+            use_relion_x_half_mstep=False,
+            mstep_double=mstep_double,
+        )
 
-    y_dtype, ctf_dtype = half_volume_mstep.relion_x_half_mstep_accumulator_dtypes(
-        np.complex64,
-        use_relion_x_half_mstep=False,
-    )
-
-    assert y_dtype == np.dtype(np.complex64)
-    assert ctf_dtype == np.dtype(np.complex64)
+        assert y_dtype == np.dtype(np.complex64)
+        assert ctf_dtype == np.dtype(np.complex64)
 
 
 def test_relion_backprojector_volume_shape_matches_initzeros_formula():

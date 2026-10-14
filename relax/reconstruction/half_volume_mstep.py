@@ -11,28 +11,19 @@ import numpy as np
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
 from relax.runtime.engine_tuning import XHalfLargeGrid
-from relax.runtime.env_flags import parse_env_flag
-
-_RELION_X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
 
 
-def _relion_x_half_mstep_double_enabled() -> bool:
-    """Return whether RELION x-half M-step accumulates with double precision.
+def relion_x_half_mstep_accumulator_dtypes(dataset_dtype, *, use_relion_x_half_mstep: bool, mstep_double: bool):
+    """Return ``(Ft_y dtype, Ft_ctf dtype)`` for an M-step accumulator.
 
-    RELION stores its ``BackProjector`` accumulators in single precision.
-    Double accumulators are useful as a diagnostic toggle when isolating
-    boundary-shell differences, but they are not the default production path.
+    RELION stores its ``BackProjector`` accumulators in single precision. ``mstep_double``
+    (``ScoringOverrides.x_half_mstep_double``) widens the RELION x-half accumulators to double, a diagnostic
+    toggle for isolating boundary-shell differences, not the default production path.
     """
-
-    return parse_env_flag(_RELION_X_HALF_MSTEP_DOUBLE_ENV)
-
-
-def relion_x_half_mstep_accumulator_dtypes(dataset_dtype, *, use_relion_x_half_mstep: bool):
-    """Return ``(Ft_y dtype, Ft_ctf dtype)`` for an M-step accumulator."""
 
     base_dtype = np.dtype(dataset_dtype)
     if use_relion_x_half_mstep:
-        if _relion_x_half_mstep_double_enabled():
+        if mstep_double:
             return np.dtype(np.complex128), np.dtype(np.float64)
         return np.dtype(np.complex64), np.dtype(np.float32)
     return base_dtype, base_dtype

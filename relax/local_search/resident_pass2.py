@@ -678,6 +678,7 @@ def compute_local_search_resident(
     recon_y_accum_dtype, recon_ctf_accum_dtype = relion_x_half_mstep_accumulator_dtypes(
         data.experiment_dataset.dtype,
         use_relion_x_half_mstep=True,
+        mstep_double=support.scoring_overrides.x_half_mstep_double,
     )
     # ---- projection setup -------------------------------------------------
     # The refinement loop hands local search a projector with a singleton class

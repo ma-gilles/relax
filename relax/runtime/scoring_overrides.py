@@ -20,6 +20,7 @@ COARSE_GEMM_FLOAT64_ENV = "RELAX_COARSE_GEMM_FLOAT64"
 COARSE_ROTATED_RADIUS_ENV = "RELAX_K1_COARSE_ROTATED_RADIUS"
 FINE_ROTATION_EXECUTION_ORDER_ENV = "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER"
 EXACT_FLOAT32_ACCUMULATION_ENV = "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
+X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -43,6 +44,10 @@ class ScoringOverrides:
     ``half_volume_mstep.ROW_PARTIAL_FLUSH_ROWS`` rows (``half_volume_mstep.allocate_row_partial``), for one-to-one
     comparison with RELION builds that accumulate in double; production keeps stock RELION's direct float32
     accumulation (relax#65, user 2026-10-11).
+    ``x_half_mstep_double`` (RELAX_RELION_X_HALF_MSTEP_DOUBLE, ``env_flags.parse_env_flag``; default off): the RELION
+    x-half M-step accumulates ``Ft_y``/``Ft_ctf`` in complex128/float64 instead of RELION's single-precision
+    ``BackProjector`` (``half_volume_mstep.relion_x_half_mstep_accumulator_dtypes``), a diagnostic for isolating
+    boundary-shell differences.
     """
 
     f32_coarse_support: bool = True
@@ -50,6 +55,7 @@ class ScoringOverrides:
     coarse_rotated_radius: bool | None = None
     fine_rotation_execution_order: bool = False
     exact_float32_accumulation: bool = False
+    x_half_mstep_double: bool = False
 
     @classmethod
     def from_environ(cls) -> ScoringOverrides:
@@ -59,6 +65,7 @@ class ScoringOverrides:
             coarse_rotated_radius=parse_coarse_rotated_radius(read_env_text(COARSE_ROTATED_RADIUS_ENV)),
             fine_rotation_execution_order=parse_env_flag(FINE_ROTATION_EXECUTION_ORDER_ENV, default=False),
             exact_float32_accumulation=parse_env_binary_flag(EXACT_FLOAT32_ACCUMULATION_ENV),
+            x_half_mstep_double=parse_env_flag(X_HALF_MSTEP_DOUBLE_ENV),
         )
 
 
